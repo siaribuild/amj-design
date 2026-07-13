@@ -5,26 +5,18 @@ import {
   Mail, MapPin, Plus, Minus, Info, Shield, Bot,
   MessageSquare, CheckCircle, XCircle, Download,
   User, Send, Eye, LogOut, Package, LayoutDashboard,
-  Search, Lock, Key, Bell, Settings, ExternalLink,
-  Gauge, ShieldCheck, BadgeCheck, LayoutGrid
+  Search, Lock, Key, Bell, Settings, ExternalLink
 } from "lucide-react";
+import { type Page, SAGE, DARK, WARM, WindowMark, GhostMark, SLabel, Btn } from "./ui";
+import { ProductsPage } from "../pages/ProductsPage";
+import { ProductDetailPage } from "../pages/ProductDetailPage";
+import { products as catalogueProducts, type CategorySlug } from "../data/catalogue";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Page =
-  | "home" | "products" | "product-detail" | "quote"
-  | "how-it-works" | "resources" | "contact" | "admin"
-  | "approved-quote" | "trade" | "login" | "dashboard"
-  | "track-order" | "profile" | "account-settings";
-
 interface AuthUser {
   name: string; company: string; type: "builder" | "trade" | "owner-builder";
   email: string; phone: string;
 }
-
-// ─── Brand constants ──────────────────────────────────────────────────────────
-const SAGE  = "#5A7A6A";
-const DARK  = "#131311";
-const WARM  = "#FAFAF9";
 
 // Subtle window-grid texture — used on text-only sections
 const GRID_BG = {
@@ -42,83 +34,14 @@ const IMG = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DESIGN PRIMITIVES — the window/door design language
+// DESIGN PRIMITIVES — WindowMark / GhostMark / SLabel / Btn now live in ./ui
 // ═══════════════════════════════════════════════════════════════════════════════
-
-// 4-pane window mark — logo and repeated motif
-function WindowMark({ size = 20, color = SAGE }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <rect x="1" y="1" width="18" height="18" stroke={color} strokeWidth="1.5" />
-      <line x1="10" y1="1" x2="10" y2="19" stroke={color} strokeWidth="1.5" />
-      <line x1="1" y1="10" x2="19" y2="10" stroke={color} strokeWidth="1.5" />
-    </svg>
-  );
-}
 
 // FrameCorners removed — four-corner mark reads as resize handle (universal UI convention).
 // Card framing is now expressed through the border-color transition on hover,
 // dark header strips on widget cards, and the GhostMark watermarks in section backgrounds.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function FrameCorners(_props: unknown) { return null; }
-
-// Large ghost WindowMark — section watermark, creates depth and industry feel
-function GhostMark({ size = 300, opacity = 0.02, color = DARK, pos = "right-0 bottom-0" }: {
-  size?: number; opacity?: number; color?: string; pos?: string;
-}) {
-  // Hard cap — never distracting, always subordinate to content
-  const actual = Math.min(opacity, 0.025);
-  return (
-    <div className={`absolute ${pos} pointer-events-none select-none overflow-hidden`}
-      style={{ opacity: actual }}>
-      <svg width={size} height={size} viewBox="0 0 20 20" fill="none">
-        <rect x="1" y="1" width="18" height="18" stroke={color} strokeWidth="0.5" />
-        <line x1="10" y1="1" x2="10" y2="19" stroke={color} strokeWidth="0.5" />
-        <line x1="1" y1="10" x2="19" y2="10" stroke={color} strokeWidth="0.5" />
-      </svg>
-    </div>
-  );
-}
-
-// Section label — WindowMark prefix, consistent across every page
-function SLabel({ children, light = false }: { children: React.ReactNode; light?: boolean }) {
-  return (
-    <div className="flex items-center gap-2 mb-3">
-      <WindowMark size={10} color={light ? "rgba(255,255,255,0.5)" : SAGE} />
-      <span className={`text-xs font-semibold uppercase tracking-widest ${light ? "text-white/50" : "text-[#5A7A6A]"}`}>
-        {children}
-      </span>
-    </div>
-  );
-}
-
-// ─── Shared UI ────────────────────────────────────────────────────────────────
-function Btn({
-  children, variant = "primary", size = "md", onClick, className = "",
-  type = "button", disabled = false
-}: {
-  children: React.ReactNode;
-  variant?: "primary" | "sage" | "outline" | "ghost" | "white" | "danger";
-  size?: "sm" | "md" | "lg";
-  onClick?: () => void; className?: string;
-  type?: "button" | "submit"; disabled?: boolean;
-}) {
-  const sizes = { sm: "px-4 py-2 text-xs", md: "px-6 py-3 text-sm", lg: "px-8 py-4 text-sm" };
-  const variants: Record<string, string> = {
-    primary: "bg-[#131311] text-white hover:bg-[#2a2a27]",
-    sage:    "bg-[#5A7A6A] text-white hover:bg-[#4a6858]",
-    outline: "border border-[#131311] text-[#131311] hover:bg-[#131311] hover:text-white",
-    ghost:   "text-[#5c5a56] hover:text-[#131311] hover:bg-black/5",
-    white:   "border border-white/40 text-white hover:bg-white hover:text-[#131311]",
-    danger:  "bg-red-600 text-white hover:bg-red-700",
-  };
-  return (
-    <button type={type} onClick={onClick} disabled={disabled}
-      className={`inline-flex items-center gap-2 font-medium tracking-wide transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${sizes[size]} ${variants[variant]} ${className}`}>
-      {children}
-    </button>
-  );
-}
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -232,51 +155,67 @@ function Nav({ page, setPage, user, setUser }: {
     ["Home", "home"], ["Products", "products"], ["How it works", "how-it-works"],
     ["Resources", "resources"], ["Contact", "contact"],
   ];
+  // Products stays active while drilling into a product detail page.
+  const isActive = (p: Page) => page === p || (p === "products" && page === "product-detail");
 
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [open]);
 
+  // Header overlays the hero: fully transparent at the top of a hero page, then
+  // solidifies into a dark bar once the user scrolls. Non-hero pages have no hero
+  // to sit over, so they use the solid dark bar from the start.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  const heroPage = page === "home" || page === "products" || page === "product-detail";
+  const transparent = heroPage && !scrolled;
+
   return (
     <>
-      <header className="fixed left-0 right-0 z-50 bg-white/97 backdrop-blur-sm border-b border-black/8 transition-all"
+      <header className={`fixed left-0 right-0 z-50 ${transparent ? "bg-transparent border-b border-transparent" : "bg-[#0c0c0a] border-b border-white/10 shadow-sm shadow-black/20"}`}
         style={{ top: topOffset }}>
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <button onClick={() => go("home")} className="flex items-center gap-2.5 cursor-pointer flex-shrink-0">
-            <WindowMark size={18} color={SAGE} />
-            <span className="font-semibold text-[15px] tracking-tight text-[#131311]"
+            <WindowMark size={18} color="#f5f3ef" />
+            <span className="font-semibold text-[15px] tracking-tight text-white"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}>AMJ Trade Direct</span>
           </button>
           <nav className="hidden md:flex items-center gap-6 flex-1 justify-center">
             {links.map(([label, p]) => (
               <button key={p} onClick={() => go(p)}
-                className={`text-sm transition-colors relative ${page === p ? "text-[#131311] font-semibold" : "text-[#5c5a56] hover:text-[#131311]"}`}>
+                aria-current={isActive(p) ? "page" : undefined}
+                className={`text-sm transition-colors relative ${isActive(p) ? "text-white font-semibold" : "text-white/70 hover:text-white"}`}>
                 {label}
-                {page === p && <div className="absolute -bottom-0.5 left-0 right-0 h-px bg-[#5A7A6A]" />}
+                {isActive(p) && <div className="absolute -bottom-0.5 left-0 right-0 h-px bg-[#5A7A6A]" />}
               </button>
             ))}
           </nav>
           <div className="hidden md:flex items-center gap-3 flex-shrink-0">
             <a href="tel:0390000000"
-              className="text-sm text-[#5c5a56] hover:text-[#131311] flex items-center gap-1.5 transition-colors">
+              className="text-sm text-white/75 hover:text-white flex items-center gap-1.5 transition-colors">
               <Phone className="w-3.5 h-3.5" />(03) 9000 0000
             </a>
             {!user && (
               <button onClick={() => go("login")}
-                className="text-sm text-[#5c5a56] hover:text-[#131311] cursor-pointer transition-colors ml-2">
+                className="text-sm text-white/75 hover:text-white cursor-pointer transition-colors ml-2">
                 Sign in
               </button>
             )}
             {user && (
               <button onClick={() => go("dashboard")}
-                className="text-sm text-[#5A7A6A] hover:text-[#4a6858] font-medium cursor-pointer flex items-center gap-1.5 transition-colors ml-2">
+                className="text-sm text-[#8CA99B] hover:text-white font-medium cursor-pointer flex items-center gap-1.5 transition-colors ml-2">
                 <LayoutDashboard className="w-4 h-4" />My dashboard
               </button>
             )}
             <Btn variant="sage" size="sm" onClick={() => go("quote")}>Get a quote</Btn>
           </div>
-          <button className="md:hidden p-1.5 text-[#131311]" onClick={() => setOpen(true)}>
+          <button className="md:hidden p-1.5 text-white" onClick={() => setOpen(true)}>
             <Menu className="w-5 h-5" />
           </button>
         </div>
@@ -303,10 +242,11 @@ function Nav({ page, setPage, user, setUser }: {
         <nav className="flex-1 py-2">
           {links.map(([l, p]) => (
             <button key={p} onClick={() => go(p)}
+              aria-current={isActive(p) ? "page" : undefined}
               className={`w-full text-left px-5 py-4 border-b border-black/6 text-base transition-colors flex items-center justify-between
-                ${page === p ? "text-[#131311] font-semibold bg-[#FAFAF9]" : "text-[#131311] hover:bg-[#FAFAF9]"}`}>
+                ${isActive(p) ? "text-[#131311] font-semibold bg-[#FAFAF9]" : "text-[#131311] hover:bg-[#FAFAF9]"}`}>
               {l}
-              {page === p && <WindowMark size={10} color={SAGE} />}
+              {isActive(p) && <WindowMark size={10} color={SAGE} />}
             </button>
           ))}
 
@@ -510,8 +450,7 @@ function HomePage({ setPage }: { setPage: (p: Page) => void }) {
             easing to ~20% by a quarter across so the image reads clearly */}
         <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.85) 0%, rgba(12,12,10,0.5) 12%, rgba(12,12,10,0.2) 27%, rgba(12,12,10,0.12) 60%, rgba(12,12,10,0.1) 100%)" }} />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/40 via-transparent to-transparent" />
-        {/* Glazing frame + mullion grid motif */}
-        <div className="absolute inset-4 md:inset-8 border border-white/12 pointer-events-none" />
+        {/* Mullion grid motif (hero frame rectangle removed) */}
         <div className="absolute top-4 bottom-4 md:top-8 md:bottom-8 left-1/3 w-px bg-white/[0.07] pointer-events-none hidden lg:block" />
         <div className="absolute top-4 bottom-4 md:top-8 md:bottom-8 left-2/3 w-px bg-white/[0.07] pointer-events-none hidden lg:block" />
 
@@ -687,386 +626,6 @@ function HomePage({ setPage }: { setPage: (p: Page) => void }) {
           </div>
         </div>
       </section>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PRODUCTS PAGE — catalogue (category → family filter → product card → detail)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-type CatalogueCategory = "windows" | "doors";
-
-interface CatalogueFamily { slug: string; label: string; shortLabel: string }
-
-interface CatalogueProduct {
-  id: string;
-  name: string;
-  category: CatalogueCategory;
-  family: string;
-  shortDescription: string;
-  image: string;
-  keySpecs: string[];
-  productDetailUrl: string;
-  featuredOrder: number;
-}
-
-const WINDOW_FAMILIES: CatalogueFamily[] = [
-  { slug: "sliding",     label: "Sliding windows",     shortLabel: "Sliding" },
-  { slug: "awning",      label: "Awning windows",      shortLabel: "Awning" },
-  { slug: "casement",    label: "Casement windows",    shortLabel: "Casement" },
-  { slug: "double-hung", label: "Double hung windows", shortLabel: "Double hung" },
-  { slug: "louvre",      label: "Louvre windows",      shortLabel: "Louvre" },
-  { slug: "tilt-turn",   label: "Tilt & turn windows", shortLabel: "Tilt & turn" },
-  { slug: "fixed",       label: "Fixed windows",       shortLabel: "Fixed" },
-  { slug: "bay-bow",     label: "Bay & bow windows",   shortLabel: "Bay & bow" },
-];
-
-const DOOR_FAMILIES: CatalogueFamily[] = [
-  { slug: "sliding",    label: "Sliding doors",    shortLabel: "Sliding" },
-  { slug: "stacker",    label: "Stacker doors",    shortLabel: "Stacker" },
-  { slug: "bi-fold",    label: "Bi-fold doors",    shortLabel: "Bi-fold" },
-  { slug: "hinged",     label: "Hinged doors",     shortLabel: "Hinged" },
-  { slug: "french",     label: "French doors",     shortLabel: "French" },
-  { slug: "pivot",      label: "Pivot doors",      shortLabel: "Pivot" },
-  { slug: "lift-slide", label: "Lift-slide doors", shortLabel: "Lift-slide" },
-];
-
-const CATALOGUE_PRODUCTS: CatalogueProduct[] = [
-  { id: "amj60-sliding-window",  name: "AMJ60 Sliding Window",   category: "windows", family: "sliding",     shortDescription: "Versatile mid-range sliding window system.",           image: IMG.window2, keySpecs: ["60mm frame", "Single/DGU"],          productDetailUrl: "/products/amj60-sliding-window",  featuredOrder: 10 },
-  { id: "amj45-sliding-window",  name: "AMJ45 Sliding Window",   category: "windows", family: "sliding",     shortDescription: "Compact sliding window system for residential projects.", image: IMG.facade,  keySpecs: ["45mm frame", "Single glaze"],        productDetailUrl: "/products/amj45-sliding-window",  featuredOrder: 20 },
-  { id: "amj80t-sliding-window", name: "AMJ80T Sliding Window",  category: "windows", family: "sliding",     shortDescription: "Heavy duty sliding window for larger openings.",       image: IMG.window2, keySpecs: ["80mm frame", "DGU standard"],        productDetailUrl: "/products/amj80t-sliding-window", featuredOrder: 30 },
-  { id: "amj-awning-window",     name: "AMJ Awning Window",      category: "windows", family: "awning",      shortDescription: "Top-hinged window for ventilation in any weather.",    image: IMG.facade,  keySpecs: ["54mm frame", "Weather-resistant seal"], productDetailUrl: "/products/amj-awning-window",     featuredOrder: 40 },
-  { id: "amj-casement-window",   name: "AMJ Casement Window",    category: "windows", family: "casement",    shortDescription: "Side-hinged window for wide openings and easy cleaning.", image: IMG.window2, keySpecs: ["54mm frame", "Full opening clearance"], productDetailUrl: "/products/amj-casement-window",   featuredOrder: 50 },
-  { id: "amj-double-hung-window",name: "AMJ Double Hung Window", category: "windows", family: "double-hung", shortDescription: "Classic vertical sliding sashes with a tilt-in clean feature.", image: IMG.facade, keySpecs: ["58mm frame", "Tilt-in cleaning"],   productDetailUrl: "/products/amj-double-hung-window",featuredOrder: 60 },
-  { id: "amj-louvre-window",     name: "AMJ Louvre Window",      category: "windows", family: "louvre",      shortDescription: "Adjustable blades for natural ventilation and privacy.", image: IMG.window2, keySpecs: ["45mm frame", "Fixed pitch options"], productDetailUrl: "/products/amj-louvre-window",     featuredOrder: 70 },
-  { id: "amj-tilt-turn-window",  name: "AMJ Tilt & Turn Window", category: "windows", family: "tilt-turn",   shortDescription: "Dual-action opening for ventilation and full-clean access.", image: IMG.facade, keySpecs: ["70mm frame", "Multi-point lock"],   productDetailUrl: "/products/amj-tilt-turn-window",  featuredOrder: 80 },
-  { id: "amj-fixed-window",      name: "AMJ Fixed Window",       category: "windows", family: "fixed",       shortDescription: "Clean sightlines and maximum natural light.",          image: IMG.window2, keySpecs: ["40mm frame", "Large format capable"], productDetailUrl: "/products/amj-fixed-window",     featuredOrder: 90 },
-  { id: "amj-bay-bow-window",    name: "AMJ Bay & Bow Window",   category: "windows", family: "bay-bow",     shortDescription: "Create space and bring more light into any room.",     image: IMG.facade,  keySpecs: ["60mm frame", "Custom angles"],       productDetailUrl: "/products/amj-bay-bow-window",    featuredOrder: 100 },
-  { id: "amj-sliding-door",      name: "AMJ Sliding Door",       category: "doors",   family: "sliding",     shortDescription: "Smooth-running sliding door for indoor-outdoor living.", image: IMG.doors,  keySpecs: ["100mm frame", "Stacker optional"],   productDetailUrl: "/products/amj-sliding-door",      featuredOrder: 10 },
-  { id: "amj-stacker-door",      name: "AMJ Stacker Door",       category: "doors",   family: "stacker",     shortDescription: "Panels stack behind for a wide, uninterrupted opening.", image: IMG.detail, keySpecs: ["114mm frame", "Wide clear opening"], productDetailUrl: "/products/amj-stacker-door",      featuredOrder: 20 },
-  { id: "amj-bifold-door",       name: "AMJ Bi-fold Door",       category: "doors",   family: "bi-fold",     shortDescription: "Folding panel door for large openings and entertaining.", image: IMG.doors,  keySpecs: ["90mm frame", "Flexible stacking"],   productDetailUrl: "/products/amj-bifold-door",       featuredOrder: 30 },
-  { id: "amj-hinged-door",       name: "AMJ Hinged Door",        category: "doors",   family: "hinged",      shortDescription: "Single or double leaf entry and utility door.",        image: IMG.detail, keySpecs: ["80mm frame", "Multi-lock hardware"], productDetailUrl: "/products/amj-hinged-door",       featuredOrder: 40 },
-  { id: "amj-french-door",       name: "AMJ French Door",        category: "doors",   family: "french",      shortDescription: "Classic double-leaf door with a fully glazed, symmetrical view.", image: IMG.doors, keySpecs: ["80mm frame", "Full glazed panels"], productDetailUrl: "/products/amj-french-door",      featuredOrder: 50 },
-  { id: "amj-pivot-door",        name: "AMJ Pivot Door",         category: "doors",   family: "pivot",       shortDescription: "Statement entry with centre or offset pivot hardware.", image: IMG.detail, keySpecs: ["120mm frame", "Architect-grade"],    productDetailUrl: "/products/amj-pivot-door",        featuredOrder: 60 },
-  { id: "amj-lift-slide-door",   name: "AMJ Lift-slide Door",    category: "doors",   family: "lift-slide",  shortDescription: "Heavy-duty door system for very large openings.",      image: IMG.doors,  keySpecs: ["168mm frame", "Thermally broken"],   productDetailUrl: "/products/amj-lift-slide-door",   featuredOrder: 70 },
-];
-
-const CATALOGUE_HERO: Record<CatalogueCategory, { label: string; headline: string; sub: string; body: string; image: string; alt: string }> = {
-  windows: {
-    label: "Products",
-    headline: "Aluminium window systems.",
-    sub: "Engineered for performance. Made to suit your project.",
-    body: "Explore our range of aluminium window systems and find the right solution before you build an estimate.",
-    image: IMG.windows,
-    alt: "Aluminium-framed windows set into a contemporary residential facade",
-  },
-  doors: {
-    label: "Products",
-    headline: "Aluminium door systems.",
-    sub: "Built for wide openings, smooth operation and everyday durability.",
-    body: "Explore sliding, stacker, bi-fold, hinged and pivot door systems before building an estimate.",
-    image: IMG.doors,
-    alt: "Large aluminium sliding doors opening onto an alfresco area",
-  },
-};
-
-const CATALOGUE_BENEFITS: Record<CatalogueCategory, { label: string; Icon: typeof Gauge }[]> = {
-  windows: [
-    { label: "Engineered for performance", Icon: Gauge },
-    { label: "Tested for strength & durability", Icon: ShieldCheck },
-    { label: "Australian standards", Icon: BadgeCheck },
-    { label: "Wide range of styles & configurations", Icon: LayoutGrid },
-  ],
-  doors: [
-    { label: "Smooth operation", Icon: Gauge },
-    { label: "Wide opening options", Icon: LayoutGrid },
-    { label: "Durable aluminium systems", Icon: ShieldCheck },
-    { label: "Reviewed before production", Icon: BadgeCheck },
-  ],
-};
-
-const TRUST_ITEMS: { title: string; sub: string; Icon: typeof Truck }[] = [
-  { title: "Manufacturer-backed", sub: "Quality you can trust.", Icon: ShieldCheck },
-  { title: "Verified before deposit", sub: "Checked by our team.", Icon: CheckCircle },
-  { title: "Supply only", sub: "Installation by others.", Icon: Package },
-  { title: "Delivered across Melbourne & Victoria", sub: "Door-to-door delivery.", Icon: Truck },
-];
-
-function familyDescription(category: CatalogueCategory, family: string, label: string): string {
-  if (family === "all") {
-    return category === "windows"
-      ? "Browse our aluminium window systems. Each is designed for performance, durability and a clean, modern look."
-      : "Aluminium door systems for patios, large openings and indoor-outdoor living.";
-  }
-  if (category === "windows" && family === "sliding") {
-    return "Smooth operation, wide openings and clean sightlines for residential and light commercial projects.";
-  }
-  return `${label} systems, engineered for performance, durability and a clean, modern look.`;
-}
-
-function frameDepth(p: CatalogueProduct): number {
-  const m = p.keySpecs[0]?.match(/(\d+)\s*mm/i);
-  return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
-}
-
-// Two-leaf door mark — pairs with WindowMark on the category tiles
-function IconDoorCat({ size = 20, color = SAGE }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <rect x="1" y="1" width="18" height="18" stroke={color} strokeWidth="1.5" />
-      <line x1="10" y1="1" x2="10" y2="19" stroke={color} strokeWidth="1.5" />
-      <circle cx="7.8" cy="10" r="0.9" fill={color} />
-      <circle cx="12.2" cy="10" r="0.9" fill={color} />
-    </svg>
-  );
-}
-
-function CategoryTile({ label, count, icon, active, onClick }: {
-  label: string; count: number; icon: React.ReactNode; active: boolean; onClick: () => void;
-}) {
-  return (
-    <button onClick={onClick} aria-pressed={active}
-      className={`text-left border p-4 w-full transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2 ${active ? "border-[#5A7A6A] bg-[#5A7A6A]/[0.06]" : "border-black/10 bg-white hover:border-black/25"}`}>
-      <div className="mb-2.5">{icon}</div>
-      <p className={`text-sm mb-0.5 ${active ? "font-semibold text-[#131311]" : "font-medium text-[#131311]"}`}
-        style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{label}</p>
-      <p className="text-xs text-[#5c5a56]">{count} system types</p>
-    </button>
-  );
-}
-
-function ProductCard({ product, category, onView }: { product: CatalogueProduct; category: CatalogueCategory; onView: () => void }) {
-  return (
-    <button onClick={onView}
-      className="group relative bg-white border border-black/8 hover:border-[#5A7A6A] hover:shadow-sm transition-all text-left overflow-hidden cursor-pointer flex flex-col focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
-      <div className="relative bg-[#E8E6E2] aspect-[4/3] overflow-hidden">
-        <img src={product.image} alt={`${product.name} aluminium ${category === "windows" ? "window" : "door"} system`}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-80 group-hover:opacity-90" />
-        <div className="absolute inset-2 border border-white/10 group-hover:border-white/28 transition-all duration-300 pointer-events-none" />
-      </div>
-      <div className="p-5 flex flex-col flex-1">
-        <h3 className="font-semibold text-[#131311] mb-1"
-          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{product.name}</h3>
-        <p className="text-sm text-[#5c5a56] leading-relaxed mb-3 line-clamp-2">{product.shortDescription}</p>
-        <div className="flex flex-wrap gap-1.5 mb-4">
-          {product.keySpecs.map(spec => (
-            <span key={spec} className="border border-black/10 text-[#5c5a56] text-[11px] tracking-wide px-2 py-1"
-              style={{ fontFamily: "'DM Mono', monospace" }}>{spec}</span>
-          ))}
-        </div>
-        <span className="mt-auto inline-flex items-center gap-1.5 text-sm font-medium text-[#5A7A6A] group-hover:gap-2.5 transition-all">
-          View product <ArrowRight className="w-3.5 h-3.5" />
-        </span>
-      </div>
-    </button>
-  );
-}
-
-function ProductsPage({ setPage }: { setPage: (p: Page) => void }) {
-  const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const [category, setCategory] = useState<CatalogueCategory>("windows");
-  const [family, setFamily] = useState<string>("all");
-  const [sort, setSort] = useState<"featured" | "name" | "depth">("featured");
-
-  const selectCategory = (c: CatalogueCategory) => { setCategory(c); setFamily("all"); };
-
-  const families = category === "windows" ? WINDOW_FAMILIES : DOOR_FAMILIES;
-  const hero = CATALOGUE_HERO[category];
-  const benefits = CATALOGUE_BENEFITS[category];
-
-  const filtered = CATALOGUE_PRODUCTS.filter(p => p.category === category && (family === "all" || p.family === family));
-  const sorted = [...filtered].sort((a, b) => {
-    if (sort === "name") return a.name.localeCompare(b.name);
-    if (sort === "depth") return frameDepth(a) - frameDepth(b);
-    return a.featuredOrder - b.featuredOrder;
-  });
-
-  const familyLabel = families.find(f => f.slug === family)?.label ?? "";
-  const heading = family === "all" ? (category === "windows" ? "All window systems" : "All door systems") : familyLabel;
-  const description = familyDescription(category, family, familyLabel);
-
-  return (
-    <div className="bg-white min-h-screen">
-      {/* ─── HERO — contextual to selected category ────────────────────────── */}
-      <section className="relative min-h-[320px] md:min-h-[400px] flex items-end bg-[#0c0c0a] overflow-hidden">
-        <img src={hero.image} alt={hero.alt} className="absolute inset-0 w-full h-full object-cover opacity-70" />
-        <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.88) 0%, rgba(12,12,10,0.55) 20%, rgba(12,12,10,0.25) 45%, rgba(12,12,10,0.15) 100%)" }} />
-        <div className="absolute inset-4 md:inset-6 border border-white/12 pointer-events-none" />
-        <div className="relative w-full max-w-6xl mx-auto px-6 pt-24 pb-10 md:pt-28 md:pb-12">
-          <div className="max-w-xl">
-            <div className="flex items-center gap-2 mb-4">
-              <WindowMark size={10} color="rgba(255,255,255,0.55)" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60"
-                style={{ fontFamily: "'DM Mono', monospace" }}>{hero.label}</span>
-            </div>
-            <h1 className="font-semibold text-white leading-[1.05] tracking-tight mb-3"
-              style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2rem, 4.4vw, 3rem)" }}>{hero.headline}</h1>
-            <p className="text-white/85 text-base md:text-lg mb-2">{hero.sub}</p>
-            <p className="text-white/70 text-sm md:text-[15px] leading-relaxed max-w-lg mb-6">{hero.body}</p>
-            <Btn variant="sage" size="md" onClick={() => go("quote")}>Start a quote <ArrowRight className="w-4 h-4" /></Btn>
-          </div>
-        </div>
-      </section>
-
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="lg:grid lg:grid-cols-[272px_1fr] lg:gap-10 py-8 md:py-10">
-
-          {/* ─── MOBILE — category cards + family scroll rail ───────────────── */}
-          <div className="lg:hidden mb-8 space-y-5">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-[#5c5a56] mb-2"
-                style={{ fontFamily: "'DM Mono', monospace" }}>Category</p>
-              <div className="grid grid-cols-2 gap-3">
-                <CategoryTile label="Windows" count={WINDOW_FAMILIES.length} icon={<WindowMark size={20} color={category === "windows" ? SAGE : "#9a9894"} />} active={category === "windows"} onClick={() => selectCategory("windows")} />
-                <CategoryTile label="Doors" count={DOOR_FAMILIES.length} icon={<IconDoorCat size={20} color={category === "doors" ? SAGE : "#9a9894"} />} active={category === "doors"} onClick={() => selectCategory("doors")} />
-              </div>
-            </div>
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-6 px-6">
-              <button onClick={() => setFamily("all")} aria-pressed={family === "all"}
-                className={`flex-shrink-0 px-4 py-2 text-sm border whitespace-nowrap transition-colors cursor-pointer ${family === "all" ? "border-[#5A7A6A] bg-[#5A7A6A] text-white font-medium" : "border-black/12 text-[#5c5a56] bg-white hover:border-black/25"}`}>
-                All
-              </button>
-              {families.map(f => (
-                <button key={f.slug} onClick={() => setFamily(f.slug)} aria-pressed={family === f.slug}
-                  className={`flex-shrink-0 px-4 py-2 text-sm border whitespace-nowrap transition-colors cursor-pointer ${family === f.slug ? "border-[#5A7A6A] bg-[#5A7A6A] text-white font-medium" : "border-black/12 text-[#5c5a56] bg-white hover:border-black/25"}`}>
-                  {f.shortLabel}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ─── DESKTOP — left taxonomy rail ────────────────────────────────── */}
-          <aside className="hidden lg:block">
-            <div className="lg:sticky lg:top-24 space-y-8">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-[#5c5a56] mb-3"
-                  style={{ fontFamily: "'DM Mono', monospace" }}>Category</p>
-                <div className="space-y-2">
-                  <CategoryTile label="Windows" count={WINDOW_FAMILIES.length} icon={<WindowMark size={20} color={category === "windows" ? SAGE : "#9a9894"} />} active={category === "windows"} onClick={() => selectCategory("windows")} />
-                  <CategoryTile label="Doors" count={DOOR_FAMILIES.length} icon={<IconDoorCat size={20} color={category === "doors" ? SAGE : "#9a9894"} />} active={category === "doors"} onClick={() => selectCategory("doors")} />
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-[#5c5a56] mb-2"
-                  style={{ fontFamily: "'DM Mono', monospace" }}>{category === "windows" ? "Window systems" : "Door systems"}</p>
-                <div className="flex flex-col">
-                  <button onClick={() => setFamily("all")} aria-pressed={family === "all"}
-                    className={`text-left px-3 py-2.5 text-sm border-l-2 transition-colors cursor-pointer ${family === "all" ? "border-[#5A7A6A] text-[#131311] font-semibold bg-[#5A7A6A]/[0.05]" : "border-transparent text-[#5c5a56] hover:text-[#131311] hover:bg-black/[0.02]"}`}>
-                    All {category}
-                  </button>
-                  {families.map(f => (
-                    <button key={f.slug} onClick={() => setFamily(f.slug)} aria-pressed={family === f.slug}
-                      className={`text-left px-3 py-2.5 text-sm border-l-2 transition-colors cursor-pointer ${family === f.slug ? "border-[#5A7A6A] text-[#131311] font-semibold bg-[#5A7A6A]/[0.05]" : "border-transparent text-[#5c5a56] hover:text-[#131311] hover:bg-black/[0.02]"}`}>
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Help card */}
-              <div className="border border-black/10 bg-[#FAFAF9] p-5">
-                <div className="flex items-center gap-2 mb-2">
-                  <FileText className="w-4 h-4 text-[#5A7A6A]" />
-                  <p className="text-sm font-semibold text-[#131311]">Not sure what you need?</p>
-                </div>
-                <p className="text-xs text-[#5c5a56] leading-relaxed mb-3">Upload your schedule or speak with our team.</p>
-                <div className="space-y-1.5">
-                  <button onClick={() => go("quote")}
-                    className="flex items-center gap-1 text-sm text-[#5A7A6A] hover:text-[#4a6858] font-medium cursor-pointer transition-colors">
-                    Upload a schedule <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => go("contact")}
-                    className="flex items-center gap-1 text-sm text-[#5A7A6A] hover:text-[#4a6858] font-medium cursor-pointer transition-colors">
-                    Contact us <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </aside>
-
-          {/* ─── MAIN CONTENT — heading, benefits, sort, product grid ─────────── */}
-          <div>
-            <h2 className="font-semibold text-[#131311] leading-tight mb-2"
-              style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.6rem, 2.8vw, 2.1rem)" }}>{heading}</h2>
-            <p className="text-[#5c5a56] text-[15px] leading-relaxed max-w-2xl mb-6">{description}</p>
-
-            {/* Benefit row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 md:gap-6 py-5 border-y border-black/8 mb-8">
-              {benefits.map(b => (
-                <div key={b.label} className="flex items-start gap-2">
-                  <b.Icon className="w-4 h-4 text-[#5A7A6A] flex-shrink-0 mt-0.5" />
-                  <span className="text-xs text-[#5c5a56] leading-snug">{b.label}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Sort row */}
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-[#5c5a56]">{sorted.length} system{sorted.length === 1 ? "" : "s"}</p>
-              <div className="flex items-center gap-2">
-                <label htmlFor="catalogue-sort" className="text-xs text-[#5c5a56]">Sort by</label>
-                <select id="catalogue-sort" value={sort} onChange={e => setSort(e.target.value as typeof sort)}
-                  className="border border-black/15 bg-white text-sm px-2.5 py-1.5 text-[#131311] focus:outline-none focus:border-[#5A7A6A] cursor-pointer">
-                  <option value="featured">Featured</option>
-                  <option value="name">Name</option>
-                  <option value="depth">System depth</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Product grid / empty state */}
-            {sorted.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
-                {sorted.map(p => (
-                  <ProductCard key={p.id} product={p} category={category} onView={() => go("product-detail")} />
-                ))}
-              </div>
-            ) : (
-              <div className="border border-black/10 bg-[#FAFAF9] p-8 text-center mb-10">
-                <AlertCircle className="w-6 h-6 text-[#5A7A6A] mx-auto mb-3" />
-                <p className="text-[#131311] font-medium mb-1">No systems found for this selection.</p>
-                <p className="text-sm text-[#5c5a56] mb-5">Try another family or upload your schedule and we'll help identify the right product.</p>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                  <Btn variant="outline" size="sm" onClick={() => setFamily("all")}>Clear filters</Btn>
-                  <Btn variant="sage" size="sm" onClick={() => go("quote")}>Upload schedule</Btn>
-                </div>
-              </div>
-            )}
-
-            {/* Custom schedule strip */}
-            <div className="border border-black/10 bg-white px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-10">
-              <div className="flex items-start gap-3">
-                <FileText className="w-5 h-5 text-[#5A7A6A] flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-[#131311]">Can't find what you need?</p>
-                  <p className="text-sm text-[#5c5a56]">Upload your schedule or speak with our team. We'll help you find the right system.</p>
-                </div>
-              </div>
-              <div className="flex gap-2 flex-shrink-0">
-                <Btn variant="outline" size="sm" onClick={() => go("quote")}>Upload a schedule</Btn>
-                <Btn variant="ghost" size="sm" onClick={() => go("contact")}>Contact us</Btn>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ─── TRUST STRIP ────────────────────────────────────────────────────── */}
-        <div className="border-t border-black/8 py-8 md:py-10">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
-            {TRUST_ITEMS.map(t => (
-              <div key={t.title} className="flex items-start gap-2.5">
-                <t.Icon className="w-4 h-4 text-[#5A7A6A] flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-semibold text-[#131311] leading-snug">{t.title}</p>
-                  <p className="text-xs text-[#5c5a56]">{t.sub}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -1661,97 +1220,6 @@ function MyProjectView({ quote, onEdit, onAdd, onUpload, onReview }: {
         <Btn variant="outline" size="md" onClick={onUpload} className="flex-1 justify-center"><Upload className="w-4 h-4" />Upload</Btn>
         <Btn variant="primary" size="md" onClick={onAdd} className="flex-1 justify-center"><Plus className="w-4 h-4" />Add item</Btn>
       </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PRODUCT DETAIL
-// ═══════════════════════════════════════════════════════════════════════════════
-function ProductDetailPage({ setPage, quote }: { setPage: (p: Page) => void; quote: QuoteState }) {
-  const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const [tab, setTab] = useState("overview");
-  const productId = "sliding-door";
-  const [seed, setSeed] = useState<Partial<QItem> | null>(null);
-  const [composerKey, setComposerKey] = useState(0);
-  const [justAdded, setJustAdded] = useState<QItem | null>(null);
-  const [live, setLive] = useState<{ unit: number; ok: boolean; add: () => void; hasProduct: boolean }>({ unit: 0, ok: false, add: () => {}, hasProduct: false });
-  const composerRef = useRef<HTMLDivElement>(null);
-
-  const remount = (s: Partial<QItem> | null) => { setSeed(s); setJustAdded(null); setComposerKey(k => k + 1); };
-  const handleAdded = (built: Omit<QItem, "id">) => { const id = quote.add(built); setJustAdded({ ...built, id }); window.scrollTo({ top: 0, behavior: "auto" }); };
-  const scrollToComposer = () => composerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-
-  return (
-    <div className="bg-[#FAFAF9] min-h-screen pb-24 md:pb-0">
-      <div className="relative bg-[#0c0c0a] h-56 md:h-[380px] mt-16">
-        <img src={IMG.detail} alt="Aluminium sliding door with black frame installed in a modern home" className="w-full h-full object-cover opacity-50" />
-        <div className="absolute inset-4 border border-white/10 pointer-events-none hidden md:block" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#0c0c0a]/75 via-[#0c0c0a]/20 to-transparent" />
-        <div className="absolute inset-0 flex items-end max-w-6xl mx-auto px-6 pb-8">
-          <div>
-            <button onClick={() => go("products")} className="text-white/60 text-xs hover:text-white mb-3 flex items-center gap-1 cursor-pointer"><ChevronLeft className="w-3 h-3" />Products</button>
-            <h1 className="text-3xl md:text-5xl font-semibold text-white leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Aluminium Sliding Door</h1>
-            <p className="text-white/75 mt-2 text-sm">Supply only · Melbourne &amp; Victoria delivery</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-6xl mx-auto px-6 py-12 grid grid-cols-1 lg:grid-cols-5 gap-10">
-        <div className="lg:col-span-3 space-y-8">
-          <p className="text-[#5c5a56] leading-relaxed">The most-requested product for alfresco and indoor-outdoor living. Available from 2-panel to large stacker configurations. Supply includes frame, glass, hardware and screen as specified. Installation not included.</p>
-          <div>
-            <div className="flex border-b border-black/8 gap-6 mb-6 overflow-x-auto">
-              {["overview", "specs", "compliance", "delivery"].map(t => (
-                <button key={t} onClick={() => setTab(t)} className={`pb-3 text-sm capitalize border-b-2 transition-all cursor-pointer flex-shrink-0 ${tab === t ? "border-[#5A7A6A] text-[#131311] font-medium" : "border-transparent text-[#5c5a56] hover:text-[#131311]"}`}>{t}</button>
-              ))}
-            </div>
-            {tab === "overview" && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div><p className="text-xs font-semibold text-[#5A7A6A] uppercase tracking-wide mb-2">Best for</p><ul className="space-y-1.5">{["Alfresco and indoor-outdoor living", "Openings 1.8m to 6m+", "New builds and renovation projects"].map(l => <li key={l} className="text-sm text-[#5c5a56] flex gap-2"><Check className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0 mt-0.5" />{l}</li>)}</ul></div>
-                <div><p className="text-xs font-semibold text-[#5c5a56] uppercase tracking-wide mb-2">Consider alternatives when</p><ul className="space-y-1.5">{["Extreme wind rating required", "Very large sealed opening", "High-security entry"].map(l => <li key={l} className="text-sm text-[#5c5a56] flex gap-2"><div className="w-3.5 flex-shrink-0 mt-2"><div className="w-2 h-px bg-[#5c5a56]" /></div>{l}</li>)}</ul></div>
-              </div>
-            )}
-            {tab === "specs" && (
-              <table className="w-full text-sm"><tbody>{[["Frame system", "Residential aluminium (sample)"], ["Standard glass", "4mm toughened clear"], ["Optional glass", "Double glaze 6/12/4 · LowE · Obscure"], ["Frame colours", "Satin Black · Woodland Grey · Surf Mist · Monument · Custom"], ["Width range", "1500mm – 7200mm (stacker — review required)"], ["Height range", "1800mm – 2700mm standard"], ["Wind / water rating", "Confirmed at technical review"]].map(([k, v]) => <tr key={k} className="border-b border-black/6"><td className="py-2.5 pr-4 text-xs text-[#5c5a56] font-medium w-44">{k}</td><td className="py-2.5 text-[#131311]">{v}</td></tr>)}</tbody></table>
-            )}
-            {tab === "compliance" && (
-              <div className="space-y-2 text-sm text-[#5c5a56]"><p>Compliance documentation provided where applicable. Ratings and test reports confirmed at quote review.</p>{["AS 2047 — Windows in buildings", "AS 1288 — Glass in buildings", "WERS rating — on request", "Wind/water rating — confirmed at review"].map(c => <div key={c} className="flex items-center gap-2"><Shield className="w-3.5 h-3.5 text-[#5A7A6A]" />{c}</div>)}</div>
-            )}
-            {tab === "delivery" && (
-              <div className="space-y-2 text-sm text-[#5c5a56]"><p>Door-to-door delivery across Melbourne and Victoria. Timing confirmed at quote review after manufacturing lead time is established.</p><p>Restricted access, crane or forklift must be declared at quote stage.</p></div>
-            )}
-          </div>
-        </div>
-
-        {/* Inline configuration — one progressive experience */}
-        <div className="lg:col-span-2" ref={composerRef}>
-          <div className="lg:sticky lg:top-20">
-            <div className="flex items-center gap-2 mb-3">
-              <WindowMark size={14} color={SAGE} />
-              <h3 className="font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Configure &amp; get price</h3>
-              <span className="text-xs text-[#5c5a56] ml-auto">Indicative only</span>
-            </div>
-            {justAdded ? (
-              <AddedConfirmation item={justAdded} quote={quote}
-                onAnotherLike={() => remount({ productId: justAdded.productId, configId: justAdded.configId, options: justAdded.options, location: justAdded.location })}
-                onAnotherProduct={() => go("products")}
-                onViewProject={() => go("quote")} />
-            ) : (
-              <ItemComposer key={composerKey} quote={quote} initialProductId={productId} seed={seed} embedded onAdded={handleAdded} onLive={setLive} />
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile sticky CTA (Route B) */}
-      {!justAdded && (
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-black/10 px-4 py-3" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
-          {live.ok
-            ? <Btn variant="sage" size="md" onClick={live.add} className="w-full justify-center">{fmt(live.unit)} inc GST — Add to MyProject <Plus className="w-4 h-4" /></Btn>
-            : <Btn variant="sage" size="md" onClick={scrollToComposer} className="w-full justify-center">Enter size and get estimate <ArrowRight className="w-4 h-4" /></Btn>}
-        </div>
-      )}
     </div>
   );
 }
@@ -2698,6 +2166,19 @@ export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const navigateTo = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
 
+  // ─── Catalogue navigation state ──────────────────────────────────────────────
+  // Category/family persist so returning from a product detail restores the
+  // catalogue where the user left it. productSlug drives the product detail page.
+  const [catCategory, setCatCategory] = useState<CategorySlug>("windows");
+  const [catFamily, setCatFamily] = useState<string>("all");
+  const [productSlug, setProductSlug] = useState<string>(catalogueProducts[0]?.slug ?? "");
+
+  const selectCategory = (c: CategorySlug) => { setCatCategory(c); setCatFamily("all"); };
+  const openProduct = (slug: string) => { setProductSlug(slug); navigateTo("product-detail"); };
+  const backToFamily = (categorySlug: CategorySlug, familySlug: string) => {
+    setCatCategory(categorySlug); setCatFamily(familySlug); navigateTo("products");
+  };
+
   // Shared quote state — MyProject persists across the quote builder and product pages
   const [quoteItems, setQuoteItems] = useState<QItem[]>([]);
   const [quoteFiles, setQuoteFiles] = useState<QFile[]>([]);
@@ -2715,8 +2196,8 @@ export default function App() {
   const renderPage = () => {
     switch (page) {
       case "home":             return <HomePage setPage={navigateTo} />;
-      case "products":         return <ProductsPage setPage={navigateTo} />;
-      case "product-detail":   return <ProductDetailPage setPage={navigateTo} quote={quote} />;
+      case "products":         return <ProductsPage setPage={navigateTo} category={catCategory} family={catFamily} onSelectCategory={selectCategory} onSelectFamily={setCatFamily} onOpenProduct={openProduct} />;
+      case "product-detail":   return <ProductDetailPage slug={productSlug} setPage={navigateTo} onOpenProduct={openProduct} onBack={backToFamily} />;
       case "quote":            return <QuotePage setPage={navigateTo} user={user} quote={quote} />;
       case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;
       case "resources":        return <ResourcesPage setPage={navigateTo} />;
@@ -2748,7 +2229,7 @@ export default function App() {
       <Nav page={page} setPage={navigateTo} user={user} setUser={setUser} />
       <main>{renderPage()}</main>
       {page !== "admin" && <Footer setPage={navigateTo} />}
-      {page !== "home" && page !== "quote" && page !== "admin" && page !== "product-detail" && (
+      {page !== "home" && page !== "quote" && page !== "admin" && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-4 py-3 bg-white border-t border-black/8"
           style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
           <Btn variant="sage" size="md" onClick={() => navigateTo("quote")} className="w-full justify-center">Get a quote →</Btn>
