@@ -281,9 +281,10 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack }: {
               style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.4rem, 2.4vw, 1.8rem)" }}>Gallery</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {product.gallery.map((src, i) => (
-                <div key={i} className="relative bg-[#E8E6E2] aspect-[4/3] overflow-hidden group">
+                <div key={i} className="relative bg-[#0c0c0a] aspect-[4/3] overflow-hidden group">
                   <img src={src} alt={`${product.name} — view ${i + 1}`}
-                    className="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-[1.03] transition-all duration-500" />
+                    className="w-full h-full object-cover opacity-70 group-hover:opacity-80 group-hover:scale-[1.03] transition-all duration-500" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/55 via-[#0c0c0a]/10 to-transparent pointer-events-none" />
                   <div className="absolute inset-2 border border-white/12 pointer-events-none" />
                 </div>
               ))}
@@ -310,9 +311,10 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack }: {
               {related.map(r => (
                 <button key={r.id} onClick={() => onOpenProduct(r.slug)}
                   className="group relative bg-white border border-black/8 hover:border-[#5A7A6A] hover:shadow-sm transition-all text-left overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
-                  <div className="relative bg-[#E8E6E2] aspect-[4/3] overflow-hidden">
+                  <div className="relative bg-[#0c0c0a] aspect-[4/3] overflow-hidden">
                     <img src={r.heroImage} alt={`${r.name} aluminium ${isWindow ? "window" : "door"} system`}
-                      className="w-full h-full object-cover opacity-80 group-hover:opacity-90 group-hover:scale-105 transition-all duration-500" />
+                      className="w-full h-full object-cover opacity-70 group-hover:opacity-80 group-hover:scale-105 transition-all duration-500" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/55 via-[#0c0c0a]/10 to-transparent pointer-events-none" />
                     <div className="absolute inset-2 border border-white/10 group-hover:border-white/28 transition-all pointer-events-none" />
                   </div>
                   <div className="p-5 flex flex-col flex-1">

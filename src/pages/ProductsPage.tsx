@@ -3,15 +3,15 @@
 // Data comes from src/data/catalogue.ts (future Sanity source). This file is the
 // presentation template only.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
-  ArrowRight, FileText, AlertCircle, Truck, CheckCircle, Package,
+  ArrowRight, ChevronDown, FileText, AlertCircle, Truck, CheckCircle, Package,
   Gauge, ShieldCheck, BadgeCheck, LayoutGrid,
 } from "lucide-react";
 import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
 import {
-  type CategorySlug, type Product,
-  getCategory, getFamiliesByCategory, getProductsByCategory, getProductsByFamily,
+  type CategorySlug, type Product, type Family,
+  getCategory, getFamiliesByCategory, getProductsByCategory, getProductsByFamily, familyProductCount,
 } from "../data/catalogue";
 
 // ─── Per-category presentation copy (marketing text, not product data) ─────────
@@ -54,11 +54,6 @@ const TRUST_ITEMS: { title: string; sub: string; Icon: typeof Truck }[] = [
   { title: "Delivered across Melbourne & Victoria", sub: "Door-to-door delivery.", Icon: Truck },
 ];
 
-// Short label for the mobile family rail / left-rail secondary text.
-function shortFamilyLabel(name: string): string {
-  return name.replace(/\s+(Window|Door)$/i, "").trim();
-}
-
 function familyDescription(category: CategorySlug, familySlug: string): string {
   if (familySlug === "all") {
     const cat = getCategory(category);
@@ -70,11 +65,6 @@ function familyDescription(category: CategorySlug, familySlug: string): string {
   const fams = getFamiliesByCategory(category);
   const fam = fams.find(f => f.slug === familySlug);
   return fam?.shortDescription ?? "";
-}
-
-function profileDepth(p: Product): number {
-  const m = p.profileThickness?.match(/([\d.]+)/);
-  return m ? parseFloat(m[1]) : Number.MAX_SAFE_INTEGER;
 }
 
 // Two-leaf door mark — pairs with WindowMark on the category tiles
@@ -107,9 +97,10 @@ function ProductCard({ product, category, onView }: { product: Product; category
   return (
     <button onClick={onView}
       className="group relative bg-white border border-black/8 hover:border-[#5A7A6A] hover:shadow-sm transition-all text-left overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
-      <div className="relative bg-[#E8E6E2] aspect-[4/3] overflow-hidden">
+      <div className="relative bg-[#0c0c0a] aspect-[4/3] overflow-hidden">
         <img src={product.heroImage} alt={`${product.name} aluminium ${category === "windows" ? "window" : "door"} system`}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-80 group-hover:opacity-90" />
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-70 group-hover:opacity-80" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/55 via-[#0c0c0a]/10 to-transparent pointer-events-none" />
         <div className="absolute inset-2 border border-white/10 group-hover:border-white/28 transition-all duration-300 pointer-events-none" />
       </div>
       <div className="p-5 flex flex-col flex-1">
@@ -130,6 +121,62 @@ function ProductCard({ product, category, onView }: { product: Product; category
   );
 }
 
+// Mobile family selector — compact in-page dropdown (no horizontal chip rail, no
+// full-screen drawer/modal). Sits under the Windows/Doors switch, shows the current
+// family, expands an inline list of families with product counts, closes on select.
+function MobileFamilySelector({ category, families, family, onSelect }: {
+  category: CategorySlug; families: Family[]; family: string; onSelect: (slug: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, []);
+
+  const allLabel = category === "windows" ? "All windows" : "All doors";
+  const options = [
+    { slug: "all", name: allLabel, count: getProductsByCategory(category).length },
+    ...families.map(f => ({ slug: f.slug, name: f.name, count: familyProductCount(f.slug) })),
+  ];
+  const current = options.find(o => o.slug === family) ?? options[0];
+  const select = (slug: string) => { onSelect(slug); setOpen(false); };
+
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-widest text-[#5c5a56] mb-2"
+        style={{ fontFamily: "'DM Mono', monospace" }}>Browse by family</p>
+      <div className="relative" ref={ref}>
+        <button type="button" onClick={() => setOpen(o => !o)}
+          aria-haspopup="listbox" aria-expanded={open}
+          className="w-full flex items-center justify-between gap-3 border border-black/15 bg-white px-4 py-3 text-sm text-[#131311] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
+          <span className="font-medium">{current.name}</span>
+          <ChevronDown className={`w-4 h-4 text-[#5c5a56] flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+        {open && (
+          <div role="listbox" aria-label="Product family"
+            className="absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-black/15 shadow-lg max-h-[60vh] overflow-y-auto">
+            {options.map(o => {
+              const active = o.slug === family;
+              return (
+                <button key={o.slug} type="button" role="option" aria-selected={active} onClick={() => select(o.slug)}
+                  className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left text-sm border-b border-black/6 last:border-b-0 cursor-pointer transition-colors ${active ? "bg-[#5A7A6A]/[0.06] text-[#131311] font-semibold" : "text-[#131311] hover:bg-black/[0.02]"}`}>
+                  <span>{o.name}</span>
+                  <span className="text-xs text-[#5c5a56] flex-shrink-0">{o.count} system{o.count === 1 ? "" : "s"}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ProductsPage({ setPage, category, family, onSelectCategory, onSelectFamily, onOpenProduct }: {
   setPage: (p: Page) => void;
   category: CategorySlug;
@@ -139,7 +186,6 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
   onOpenProduct: (slug: string) => void;
 }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const [sort, setSort] = useState<"featured" | "name" | "depth">("featured");
 
   const families = getFamiliesByCategory(category);
   const hero = HERO[category];
@@ -147,12 +193,8 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
   const windowCount = getFamiliesByCategory("windows").length;
   const doorCount = getFamiliesByCategory("doors").length;
 
-  const base = family === "all" ? getProductsByCategory(category) : getProductsByFamily(family);
-  const sorted = [...base].sort((a, b) => {
-    if (sort === "name") return a.name.localeCompare(b.name);
-    if (sort === "depth") return profileDepth(a) - profileDepth(b);
-    return a.featuredOrder - b.featuredOrder;
-  });
+  // Products come pre-ordered by featuredOrder from the selectors.
+  const list = family === "all" ? getProductsByCategory(category) : getProductsByFamily(family);
 
   const activeFamily = families.find(f => f.slug === family);
   const heading = family === "all"
@@ -195,18 +237,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
                 <CategoryTile label="Doors" count={doorCount} icon={<IconDoorCat size={20} color={category === "doors" ? SAGE : "#9a9894"} />} active={category === "doors"} onClick={() => onSelectCategory("doors")} />
               </div>
             </div>
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-6 px-6">
-              <button onClick={() => onSelectFamily("all")} aria-pressed={family === "all"}
-                className={`flex-shrink-0 px-4 py-2 text-sm border whitespace-nowrap transition-colors cursor-pointer ${family === "all" ? "border-[#5A7A6A] bg-[#5A7A6A] text-white font-medium" : "border-black/12 text-[#5c5a56] bg-white hover:border-black/25"}`}>
-                All
-              </button>
-              {families.map(f => (
-                <button key={f.slug} onClick={() => onSelectFamily(f.slug)} aria-pressed={family === f.slug}
-                  className={`flex-shrink-0 px-4 py-2 text-sm border whitespace-nowrap transition-colors cursor-pointer ${family === f.slug ? "border-[#5A7A6A] bg-[#5A7A6A] text-white font-medium" : "border-black/12 text-[#5c5a56] bg-white hover:border-black/25"}`}>
-                  {shortFamilyLabel(f.name)}
-                </button>
-              ))}
-            </div>
+            <MobileFamilySelector category={category} families={families} family={family} onSelect={onSelectFamily} />
           </div>
 
           {/* ─── DESKTOP — left taxonomy rail ────────────────────────────────── */}
@@ -275,24 +306,15 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
               ))}
             </div>
 
-            {/* Sort row */}
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-[#5c5a56]">{sorted.length} system{sorted.length === 1 ? "" : "s"}</p>
-              <div className="flex items-center gap-2">
-                <label htmlFor="catalogue-sort" className="text-xs text-[#5c5a56]">Sort by</label>
-                <select id="catalogue-sort" value={sort} onChange={e => setSort(e.target.value as typeof sort)}
-                  className="border border-black/15 bg-white text-sm px-2.5 py-1.5 text-[#131311] focus:outline-none focus:border-[#5A7A6A] cursor-pointer">
-                  <option value="featured">Featured</option>
-                  <option value="name">Name</option>
-                  <option value="depth">System depth</option>
-                </select>
-              </div>
+            {/* Results count */}
+            <div className="mb-4">
+              <p className="text-sm text-[#5c5a56]">{list.length} system{list.length === 1 ? "" : "s"}</p>
             </div>
 
             {/* Product grid / empty state */}
-            {sorted.length > 0 ? (
+            {list.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
-                {sorted.map(p => (
+                {list.map(p => (
                   <ProductCard key={p.id} product={p} category={category} onView={() => onOpenProduct(p.slug)} />
                 ))}
               </div>
