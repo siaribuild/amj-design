@@ -6,11 +6,12 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useState } from "react";
 import {
-  Upload, UploadCloud, FileText, X, Plus, ChevronLeft, ArrowRight, Check,
+  Upload, UploadCloud, X, Plus, ChevronLeft, ArrowRight,
   AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid,
 } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
+import { StickyQuotePanel } from "../components/StickyQuotePanel";
 import { getProductBySlug } from "../data/catalogue";
 import {
   type QuoteState,
@@ -19,15 +20,13 @@ import {
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
 
-interface Draft { key: number; productSlug: string; width: string; height: string; qty: number; attention?: string }
-
 export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void; user: QuoteUser; quote: QuoteState }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [view, setView] = useState<"build" | "review">("build");
   const [newKey, setNewKey] = useState(0);
   const [adding, setAdding] = useState(quote.items.length === 0);
   const [uploading, setUploading] = useState(false);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [uploadNotice, setUploadNotice] = useState<null | { type: "success" | "error"; message: string }>(null);
 
   const [submitted, setSubmitted] = useState(false);
   const [contactName, setContactName] = useState(user?.name || "");
@@ -39,26 +38,47 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
   const attentionCount = quote.items.filter(itemNeedsAttention).length;
   const hasContent = quote.items.length > 0 || quote.files.length > 0;
 
+  // Sticky panel actions scroll directly to the work that needs attention.
+  const [focusReq, setFocusReq] = useState<{ id: number; nonce: number } | null>(null);
+  const smoothScroll = (el: Element | null) => {
+    if (!el) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+  };
+  const reviewIssues = () => {
+    const bad = quote.items.find(itemNeedsAttention);
+    if (!bad) return;
+    smoothScroll(document.getElementById(`qitem-${bad.id}`));
+    setFocusReq({ id: bad.id, nonce: Date.now() }); // opens the invalid section + focuses its field
+  };
+  const finishItem = () => {
+    const el = document.getElementById("new-item-composer");
+    smoothScroll(el);
+    requestAnimationFrame(() => el?.querySelector<HTMLElement>("input, select")?.focus({ preventScroll: true }));
+  };
+
   const fakeUpload = () => {
     setUploading(true);
+    setUploadNotice(null);
     setTimeout(() => {
-      quote.addFiles([{ id: Date.now(), name: "window-schedule-rev-b.pdf", kind: "PDF", status: "Processing" }]);
-      setDrafts([
-        { key: 1, productSlug: "amj80-series-sliding-window", width: "1750", height: "1200", qty: 4 },
-        { key: 2, productSlug: "amj80-series-awning-window", width: "900", height: "1200", qty: 2 },
-        { key: 3, productSlug: "amj80-series-casement-window", width: "700", height: "", qty: 2, attention: "Height not detected — confirm the opening height." },
-      ]);
-      setUploading(false);
+      try {
+        const imported = [
+          { productSlug: "amj80-series-sliding-window", location: "Living room", measuredBy: "opening" as const, width: "1750", height: "1200", qty: 4 },
+          { productSlug: "amj80-series-awning-window", location: "Kitchen", measuredBy: "opening" as const, width: "900", height: "1200", qty: 2 },
+          { productSlug: "amj80-series-casement-window", location: "Bedroom 1", measuredBy: "" as const, width: "700", height: "", qty: 2 },
+        ];
+        imported.forEach(item => {
+          const product = getProductBySlug(item.productSlug);
+          quote.add({ ...item, options: product ? defaultOptions(product) : {}, status: item.height ? "Ready" : "Needs review" });
+        });
+        setAdding(false);
+        setUploadNotice({ type: "success", message: "3 products added from window-schedule-rev-b.pdf. 1 needs attention." });
+      } catch {
+        setUploadNotice({ type: "error", message: "We couldn't read that schedule. No products were added — check the file and try again." });
+      } finally {
+        setUploading(false);
+      }
     }, 1400);
-  };
-  // Add every parsed line as a card; incomplete ones land as cards flagged for
-  // attention (the reviewer resolves them before submitting).
-  const addDraftsToProject = () => {
-    drafts.forEach(d => {
-      const p = getProductBySlug(d.productSlug);
-      quote.add({ productSlug: d.productSlug, location: "", measuredBy: "", width: d.width, height: d.height, options: p ? defaultOptions(p) : {}, qty: d.qty, status: "Ready" });
-    });
-    setDrafts([]);
   };
 
   // ─── Submitted ──────────────────────────────────────────────────────────────
@@ -122,7 +142,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
 
   // ─── Build ────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#FAFAF9]">
+    <div className="min-h-screen bg-[#FAFAF9] flex flex-col">
       {/* ─── Dark functional hero — header overlays it; upload panel is a live
              part of the hero, styled like the panels on the home hero ───────── */}
       <section className="relative bg-[#0c0c0a] overflow-hidden">
@@ -184,63 +204,31 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
         </div>
       </section>
 
-      <div className="max-w-3xl mx-auto px-6 py-10">
-        {/* Parsed-upload review */}
-        {drafts.length > 0 && (
-          <div className="border border-[#5A7A6A]/30 bg-white mb-4">
-            <div className="bg-[#5A7A6A]/8 border-b border-[#5A7A6A]/20 px-5 py-3 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-[#5A7A6A]" />
-              <p className="text-sm font-semibold text-[#131311]">We found {drafts.length} item{drafts.length !== 1 ? "s" : ""} in your file</p>
-            </div>
-            <div className="divide-y divide-black/8">
-              {drafts.map(d => (
-                <div key={d.key} className={`px-5 py-3 ${d.attention ? "bg-amber-50" : ""}`}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-[#131311] truncate">{productLabel(d.productSlug)}</p>
-                      <p className="text-xs text-[#5c5a56]">{mm(d.width)} × {d.height ? mm(d.height) : "—"} · ×{d.qty}</p>
-                    </div>
-                    {d.attention
-                      ? <span className="text-[10px] px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 whitespace-nowrap flex-shrink-0">Needs attention</span>
-                      : <span className="text-[10px] px-2 py-0.5 bg-[#5A7A6A]/10 text-[#5A7A6A] whitespace-nowrap flex-shrink-0 flex items-center gap-1"><Check className="w-3 h-3" />Ready</span>}
-                  </div>
-                  {d.attention && (
-                    <p className="flex items-start gap-1.5 mt-2 text-xs text-amber-800">
-                      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-amber-600" /><span>{d.attention}</span>
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="px-5 py-3 border-t border-black/8 flex items-center justify-between gap-3">
-              <p className="text-xs text-[#5c5a56]">{drafts.filter(d => d.attention).length > 0 ? `${drafts.filter(d => d.attention).length} will need attention in MyProject.` : "All items ready."}</p>
-              <Btn variant="sage" size="sm" onClick={addDraftsToProject}>
-                Add {drafts.length} to MyProject <Plus className="w-4 h-4" />
-              </Btn>
-            </div>
-          </div>
-        )}
-
-        {/* MyProject — items + composer */}
-        <div className={drafts.length > 0 ? "mt-8 pt-8 border-t border-black/10" : ""}>
-          {quote.items.length > 0 && (
-            <div className="flex items-center gap-2 mb-4">
-              <WindowMark size={16} color={SAGE} />
-              <h2 className="text-xl font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>MyProject</h2>
+      <div className="w-full max-w-3xl mx-auto px-6 pt-10 pb-28 flex-1">
+        {/* ─── MyProject — page header; the estimator tool follows ───────────── */}
+        <div className="mb-7">
+          <SLabel>Your project</SLabel>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-2xl md:text-3xl font-semibold text-[#131311] leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>MyProject</h2>
+            {quote.items.length > 0 && (
               <span className="text-xs text-[#5c5a56] border border-black/10 px-2 py-0.5">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span>
-            </div>
-          )}
+            )}
+          </div>
+          <p className="text-[#5c5a56] text-sm mt-1.5 max-w-lg">Add products or upload a schedule — we issue a reviewed quote before any deposit. Supply only.</p>
+        </div>
 
-          {/* Uploaded files chip list */}
-          {quote.files.length > 0 && (
-            <div className="border border-black/10 bg-white mb-3 px-4 py-3">
-              <p className="text-[10px] uppercase tracking-widest text-[#5c5a56] mb-2">Uploaded for review · {quote.files.length}</p>
-              {quote.files.map(f => (
-                <div key={f.id} className="flex items-center justify-between gap-3 text-sm">
-                  <span className="flex items-center gap-2 min-w-0 text-[#131311]"><FileText className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0" /><span className="truncate">{f.name}</span></span>
-                  <span className="flex items-center gap-3 flex-shrink-0"><span className="text-[11px] text-[#5A7A6A]">{f.status}</span><button onClick={() => quote.removeFile(f.id)} className="text-[#5c5a56] hover:text-red-600 cursor-pointer" aria-label="Remove file"><X className="w-3.5 h-3.5" /></button></span>
-                </div>
-              ))}
+        {/* Items + composer */}
+        <div>
+          {uploadNotice && (
+            <div role={uploadNotice.type === "error" ? "alert" : "status"} aria-live="polite"
+              className={`mb-4 flex items-start gap-2.5 border px-4 py-3 text-sm ${uploadNotice.type === "success" ? "border-[#5A7A6A]/30 bg-[#5A7A6A]/8 text-[#355344]" : "border-red-300 bg-red-50 text-red-800"}`}>
+              {uploadNotice.type === "success"
+                ? <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />}
+              <span className="flex-1">{uploadNotice.message}</span>
+              <button onClick={() => setUploadNotice(null)} className="p-1 -m-1 text-current opacity-60 hover:opacity-100 cursor-pointer" aria-label="Dismiss upload result">
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
 
@@ -248,6 +236,8 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
           <div className="space-y-3">
             {quote.items.map((it, i) => (
               <ItemSummaryCard key={it.id} item={it} index={i} quote={quote}
+                id={`qitem-${it.id}`}
+                focusSignal={focusReq?.id === it.id ? focusReq.nonce : undefined}
                 onDuplicate={() => quote.copy(it.id)}
                 onRemove={() => quote.remove(it.id)} />
             ))}
@@ -255,7 +245,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
 
           {/* Add another item — a compact "+" link that opens the composer */}
           {adding ? (
-            <div className="mt-3">
+            <div className="mt-3" id="new-item-composer">
               <ItemForm key={`new-${newKey}`} quote={quote}
                 onCommit={(b) => { quote.add(b); setNewKey(k => k + 1); setAdding(false); }}
                 onCancel={quote.items.length > 0 ? () => setAdding(false) : undefined} />
@@ -267,26 +257,19 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
             </button>
           )}
 
-          {/* Total + review */}
-          {quote.items.length > 0 && (
-            <>
-              {attentionCount > 0 && (
-                <div className="mt-6 flex items-start gap-2 bg-amber-50 border border-amber-300 px-4 py-3 text-sm text-amber-800">
-                  <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <span><span className="font-medium">{attentionCount} item{attentionCount !== 1 ? "s" : ""} need{attentionCount === 1 ? "s" : ""} attention.</span> Resolve the highlighted card{attentionCount !== 1 ? "s" : ""} before submitting for review.</span>
-                </div>
-              )}
-              <div className={`border border-black/10 bg-[#FAFAF9] px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${attentionCount > 0 ? "mt-3" : "mt-6"}`}>
-                <div>
-                  <p className="text-[10px] uppercase tracking-widest text-[#5c5a56]">Estimated total</p>
-                  <p className="text-2xl font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(total)} <span className="text-xs font-normal text-[#5c5a56]">inc GST</span></p>
-                </div>
-                <Btn variant="sage" size="lg" disabled={attentionCount > 0} onClick={() => { setView("review"); window.scrollTo(0, 0); }}>Review quote <ArrowRight className="w-4 h-4" /></Btn>
-              </div>
-            </>
-          )}
         </div>
       </div>
+
+      {/* Persistent orientation and action throughout the build flow. */}
+      <StickyQuotePanel
+        itemCount={quote.items.length}
+        attentionCount={attentionCount}
+        total={total}
+        editingItem={adding}
+        onReviewQuote={() => { setView("review"); window.scrollTo(0, 0); }}
+        onReviewIssues={reviewIssues}
+        onFinishItem={finishItem}
+      />
     </div>
   );
 }

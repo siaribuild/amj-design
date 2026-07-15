@@ -8,7 +8,7 @@
 //  • New items use the same field blocks in a form with a commit button.
 //  • Product-first; picker = two dependent fields (Type → Product).
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Check, AlertCircle, Info, ChevronDown, Plus, Minus, Pencil, Trash2 } from "lucide-react";
 import { SAGE, WindowMark, Btn, FieldLabel, Input } from "../app/ui";
 import { type Product, getProductBySlug, getProductsByFamily } from "../data/catalogue";
@@ -342,15 +342,31 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
 }
 
 // ═══ MyProject ITEM CARD — sections expand/edit inline (live) ══════════════════
-export function ItemSummaryCard({ item, index, added, quote, onDuplicate, onRemove, initialFocus }: {
+export function ItemSummaryCard({ item, index, added, quote, onDuplicate, onRemove, initialFocus, id, focusSignal }: {
   item: QItem; index?: number; added?: boolean; quote: QuoteState;
   onDuplicate?: () => void; onRemove?: () => void; initialFocus?: EditFocus;
+  id?: string; focusSignal?: number;
 }) {
   const [open, setOpen] = useState<EditFocus | null>(initialFocus ?? null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const p = getProductBySlug(item.productSlug);
   const pr = priceConfigured(item);
   const w = parseInt(item.width) || 0, h = parseInt(item.height) || 0;
   const issues = p ? itemIssues(p, item) : [];
+
+  // When the sticky panel's "Review issues" targets this card, open the first
+  // offending section and move focus to its first field.
+  useEffect(() => {
+    if (!focusSignal) return;
+    const section = issues[0]?.section ?? null;
+    if (!section) return;
+    setOpen(section);
+    requestAnimationFrame(() => {
+      const field = rootRef.current?.querySelector<HTMLElement>("input, select, textarea");
+      field?.focus({ preventScroll: true });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSignal]);
   const hasIssue = (s: EditFocus) => issues.some(i => i.section === s);
   const valid = !!p && issues.length === 0;
   const toggle = (s: EditFocus) => setOpen(o => (o === s ? null : s));
@@ -360,7 +376,7 @@ export function ItemSummaryCard({ item, index, added, quote, onDuplicate, onRemo
   const qtySummary = `Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
 
   return (
-    <div className={`border bg-white flex ${issues.length ? "border-amber-400" : added ? "border-[#5A7A6A]/40" : "border-black/10"}`}>
+    <div id={id} ref={rootRef} className={`border bg-white flex scroll-mt-24 ${issues.length ? "border-amber-400" : added ? "border-[#5A7A6A]/40" : "border-black/10"}`}>
       <div className={`w-9 flex-shrink-0 flex items-start justify-center pt-3 border-r border-black/8 ${issues.length ? "bg-amber-50" : added ? "bg-[#5A7A6A]/8" : "bg-[#FAFAF9]"}`}>
         {issues.length ? <AlertCircle className="w-4 h-4 text-amber-600" /> : added ? <Check className="w-4 h-4 text-[#5A7A6A]" /> : <span className="text-[11px] text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>{index != null ? String(index + 1).padStart(2, "0") : ""}</span>}
       </div>
