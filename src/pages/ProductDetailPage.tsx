@@ -186,9 +186,9 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
   };
 
   const remount = (s: Partial<QItem> | null) => { setSeed(s); setJustAdded(null); setComposerKey(k => k + 1); };
-  const handleAdded = (built: Omit<QItem, "id" | "code">) => {
+  const handleAdded = (built: Omit<QItem, "id">) => {
     const id = quote.add(built);
-    setJustAdded({ ...built, id, code: "" });
+    setJustAdded({ ...built, id });
     document.getElementById("configure")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
   const projectTotal = quote.items.reduce((s, it) => s + priceConfigured(it).total, 0);

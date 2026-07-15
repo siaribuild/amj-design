@@ -5,9 +5,8 @@
 // page's existing totals / validation — it does not recompute business logic.
 //
 // It stays present throughout the build flow so estimate, status and next action
-// always have a stable home. It only steps aside for the mobile on-screen keyboard.
+// always have a stable home. Positioning is handled entirely by CSS sticky layout.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useEffect, useState } from "react";
 import { ArrowRight, AlertCircle, Check } from "lucide-react";
 import { Btn } from "../app/ui";
 import { fmt } from "../data/configurator";
@@ -26,21 +25,6 @@ export function StickyQuotePanel({
   itemCount, attentionCount, total, editingItem,
   onReviewQuote, onReviewIssues, onFinishItem,
 }: StickyQuotePanelProps) {
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-
-  // Detect the on-screen keyboard via visualViewport (mobile) and step out of the way.
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const onChange = () => setKeyboardVisible(window.innerHeight - vv.height > 160);
-    onChange();
-    vv.addEventListener("resize", onChange);
-    vv.addEventListener("scroll", onChange);
-    return () => { vv.removeEventListener("resize", onChange); vv.removeEventListener("scroll", onChange); };
-  }, []);
-
-  if (keyboardVisible) return null;
-
   const readyCount = Math.max(0, itemCount - attentionCount);
   const items = (c: number) => `${c} item${c !== 1 ? "s" : ""}`;
 

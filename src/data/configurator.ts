@@ -145,6 +145,24 @@ export function defaultOptions(p: Product): Record<string, string> {
   return out;
 }
 
+const DEMO_SCHEDULE_ITEMS = [
+  { code: "W01", productSlug: "amj80-series-sliding-window", location: "Living room", measuredBy: "opening" as const, width: "1750", height: "1200", qty: 4 },
+  { code: "W02", productSlug: "amj80-series-awning-window", location: "Kitchen", measuredBy: "opening" as const, width: "900", height: "1200", qty: 2 },
+  { code: "W04", productSlug: "amj80-series-casement-window", location: "Bedroom 1", measuredBy: "" as const, width: "700", height: "", qty: 2 },
+];
+
+// Shared demo import used by every simulated schedule-upload entry point.
+export function addDemoSchedule(quote: QuoteState): void {
+  for (const item of DEMO_SCHEDULE_ITEMS) {
+    const product = getProductBySlug(item.productSlug);
+    quote.add({
+      ...item,
+      options: product ? defaultOptions(product) : {},
+      status: item.height ? "Ready" : "Needs review",
+    });
+  }
+}
+
 // ─── Pricing ──────────────────────────────────────────────────────────────────
 export interface PriceResult { unit: number; total: number; ok: boolean; missing: string[] }
 

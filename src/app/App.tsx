@@ -13,7 +13,7 @@ import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { QuotePage } from "../pages/QuotePage";
 import { products as catalogueProducts, type CategorySlug } from "../data/catalogue";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
-import { suggestCode } from "../data/configurator";
+import { suggestCode, addDemoSchedule } from "../data/configurator";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AuthUser {
@@ -387,13 +387,13 @@ function IconBrowse({ size = 22, color = SAGE_LT }: { size?: number; color?: str
   );
 }
 
-function HomePage({ setPage }: { setPage: (p: Page) => void }) {
+function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; onUploadSchedule: () => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
 
   // Task-led entry points — same three actions on hero and final band.
-  const actions: { title: string; sub: string; icon: React.ReactNode; page: Page }[] = [
+  const actions: { title: string; sub: string; icon: React.ReactNode; page: Page; onClick?: () => void }[] = [
     { title: "Build an estimate", sub: "Enter dimensions and options",              icon: <IconEstimate />, page: "quote" },
-    { title: "Upload a schedule", sub: "Send plans or a schedule for review",       icon: <IconUpload />,   page: "quote" },
+    { title: "Upload a schedule", sub: "Send plans or a schedule for review",       icon: <IconUpload />,   page: "quote", onClick: onUploadSchedule },
     { title: "Browse products",   sub: "Explore window and door systems",           icon: <IconBrowse />,   page: "products" },
   ];
 
@@ -458,7 +458,7 @@ function HomePage({ setPage }: { setPage: (p: Page) => void }) {
               {/* Three action cards — the card itself is the action */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 {actions.map(a => (
-                  <button key={a.title} onClick={() => go(a.page)}
+                  <button key={a.title} onClick={() => a.onClick ? a.onClick() : go(a.page)}
                     aria-label={`${a.title} — ${a.sub}`}
                     className="group relative text-left border border-white/15 bg-white/[0.06] hover:bg-white/[0.11] hover:border-[#5A7A6A] transition-all duration-150 p-4 min-h-[116px] flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0a]">
                     <div className="mb-3">{a.icon}</div>
@@ -600,7 +600,7 @@ function HomePage({ setPage }: { setPage: (p: Page) => void }) {
                 <Btn variant="primary" size="lg" onClick={() => go("quote")}>
                   Start a quote <ArrowRight className="w-4 h-4" />
                 </Btn>
-                <Btn variant="white" size="lg" onClick={() => go("quote")}>
+                <Btn variant="white" size="lg" onClick={onUploadSchedule}>
                   Upload a schedule
                 </Btn>
               </div>
@@ -1381,10 +1381,14 @@ export default function App() {
     addFiles: (f) => setQuoteFiles(prev => [...prev, ...f]),
     removeFile: (id) => setQuoteFiles(prev => prev.filter(f => f.id !== id)),
   };
+  const uploadDemoScheduleFromHome = () => {
+    addDemoSchedule(quote);
+    navigateTo("quote");
+  };
 
   const renderPage = () => {
     switch (page) {
-      case "home":             return <HomePage setPage={navigateTo} />;
+      case "home":             return <HomePage setPage={navigateTo} onUploadSchedule={uploadDemoScheduleFromHome} />;
       case "products":         return <ProductsPage setPage={navigateTo} category={catCategory} family={catFamily} onSelectCategory={selectCategory} onSelectFamily={setCatFamily} onOpenProduct={openProduct} />;
       case "product-detail":   return <ProductDetailPage slug={productSlug} setPage={navigateTo} onOpenProduct={openProduct} onBack={backToFamily} quote={quote} />;
       case "quote":            return <QuotePage setPage={navigateTo} user={user} quote={quote} />;
@@ -1399,7 +1403,7 @@ export default function App() {
       case "track-order":      return <TrackOrderPage setPage={navigateTo} />;
       case "profile":          return <ProfilePage user={user} setPage={navigateTo} />;
       case "account-settings": return <AccountSettingsPage user={user} setPage={navigateTo} />;
-      default:                 return <HomePage setPage={navigateTo} />;
+      default:                 return <HomePage setPage={navigateTo} onUploadSchedule={uploadDemoScheduleFromHome} />;
     }
   };
 

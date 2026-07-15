@@ -12,10 +12,9 @@ import {
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
 import { StickyQuotePanel } from "../components/StickyQuotePanel";
-import { getProductBySlug } from "../data/catalogue";
 import {
   type QuoteState, type QItem,
-  priceConfigured, defaultOptions, fmt, mm, productLabel, hasDuplicateCode,
+  priceConfigured, fmt, mm, productLabel, hasDuplicateCode, addDemoSchedule,
 } from "../data/configurator";
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
@@ -68,15 +67,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
     setUploadNotice(null);
     setTimeout(() => {
       try {
-        const imported = [
-          { code: "W01", productSlug: "amj80-series-sliding-window", location: "Living room", measuredBy: "opening" as const, width: "1750", height: "1200", qty: 4 },
-          { code: "W02", productSlug: "amj80-series-awning-window", location: "Kitchen", measuredBy: "opening" as const, width: "900", height: "1200", qty: 2 },
-          { code: "W04", productSlug: "amj80-series-casement-window", location: "Bedroom 1", measuredBy: "" as const, width: "700", height: "", qty: 2 },
-        ];
-        imported.forEach(item => {
-          const product = getProductBySlug(item.productSlug);
-          quote.add({ ...item, options: product ? defaultOptions(product) : {}, status: item.height ? "Ready" : "Needs review" });
-        });
+        addDemoSchedule(quote);
         setAdding(false);
         setUploadNotice({ type: "success", message: "3 products added from window-schedule-rev-b.pdf. 1 needs attention." });
       } catch {
@@ -148,7 +139,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
 
   // ─── Build ────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#FAFAF9]">
+    <div className="min-h-[100svh] bg-[#FAFAF9] flex flex-col">
       {/* ─── Dark functional hero — header overlays it; upload panel is a live
              part of the hero, styled like the panels on the home hero ───────── */}
       <section className="relative bg-[#0c0c0a] overflow-hidden">
@@ -210,7 +201,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
         </div>
       </section>
 
-      <div className="w-full max-w-6xl mx-auto px-6 pt-10 pb-10">
+      <div className="w-full max-w-6xl mx-auto px-6 pt-10 pb-10 flex-1">
         {/* ─── MyProject — page header; the estimator tool follows ───────────── */}
         <div className="mb-7">
           <SLabel>Your project</SLabel>

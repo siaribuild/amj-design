@@ -15,7 +15,7 @@ import { type Product, getProductBySlug, getProductsByFamily } from "../data/cat
 import {
   type QItem, type QuoteState, type MeasuredBy, type OptionChoice, MEASURED_LABELS,
   optionGroupsFor, defaultOptions, priceConfigured, familyGroups,
-  fmt, mm, productLabel, POPULAR_COLOURS,
+  fmt, mm, productLabel, POPULAR_COLOURS, normCode, suggestCode,
 } from "../data/configurator";
 
 export type EditFocus = "dims" | "options" | "qty";
@@ -260,7 +260,7 @@ function Section({ label, summary, open, onToggle, children, variant = "boxed", 
 }) {
   const boxed = variant === "boxed";
   return (
-    <div className={boxed ? `border ${attention ? "border-amber-300" : "border-black/10"}` : ""}>
+    <div className={boxed ? `border ${attention ? "border-amber-300" : "border-black/10"}` : "border-b border-black/[0.06] last:border-b-0"}>
       <button onClick={onToggle} aria-expanded={open} className={`w-full flex items-center justify-between gap-3 text-left cursor-pointer ${attention ? "bg-amber-50" : "bg-white"} ${boxed ? "px-4 py-3" : "px-4 py-2.5 hover:bg-[#FAFAF9] transition-colors"}`}>
         <span className="min-w-0">
           <span className={`text-[10px] uppercase tracking-widest block flex items-center gap-1 ${attention ? "text-amber-700" : "text-[#5c5a56]"}`}>{label}{attention && <AlertCircle className="w-3 h-3" />}</span>
@@ -283,7 +283,7 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
   lockedSlug?: string;
   quote: QuoteState;
   seed?: Partial<QItem> | null;
-  onCommit: (built: Omit<QItem, "id" | "code">) => void;
+  onCommit: (built: Omit<QItem, "id">) => void;
   onCancel?: () => void;
   rail?: boolean;
   submitLabel?: string;
@@ -292,6 +292,8 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
   const [familySlug, setFamilySlug] = useState(lockedSlug ? (getProductBySlug(lockedSlug)?.familySlug || "") : (seedProduct?.familySlug || ""));
   const [productSlug, setProductSlug] = useState(lockedSlug || seed?.productSlug || "");
   const p = getProductBySlug(productSlug);
+  const [code, setCode] = useState(seed?.code || (productSlug ? suggestCode(quote.items, productSlug) : ""));
+  const [codeEdited, setCodeEdited] = useState(!!seed?.code);
 
   const [measuredBy, setMeasuredBy] = useState<MeasuredBy>(seed?.measuredBy || "");
   const [width, setWidth] = useState(seed?.width || "");
@@ -305,11 +307,18 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
   const dimsEntered = w > 0 && h > 0;
   const inRange = !!p && inRangeFor(p, w, h);
   const priced = priceConfigured({ productSlug, width, height, options, qty });
-  const canSave = priced.ok && inRange;
-  const built: Omit<QItem, "id" | "code"> = { productSlug, location, measuredBy, width, height, options, qty, status: "Ready" };
+  const finalCode = normCode(code) || (productSlug ? suggestCode(quote.items, productSlug) : "");
+  const duplicateCode = !!finalCode && quote.items.some(item => normCode(item.code) === finalCode);
+  const canSave = priced.ok && inRange && !duplicateCode;
+  const built: Omit<QItem, "id"> = { code: finalCode, productSlug, location, measuredBy, width, height, options, qty, status: "Ready" };
 
-  const pickFamily = (slug: string) => { setFamilySlug(slug); setProductSlug(""); };
-  const pickProduct = (slug: string) => { setProductSlug(slug); const np = getProductBySlug(slug); setOptions(np ? defaultOptions(np) : {}); };
+  const pickFamily = (slug: string) => { setFamilySlug(slug); setProductSlug(""); if (!codeEdited) setCode(""); };
+  const pickProduct = (slug: string) => {
+    setProductSlug(slug);
+    const np = getProductBySlug(slug);
+    setOptions(np ? defaultOptions(np) : {});
+    if (!codeEdited) setCode(slug ? suggestCode(quote.items, slug) : "");
+  };
   const setOpt = (typeSlug: string, v: string) => setOptions(o => ({ ...o, [typeSlug]: v }));
 
   const famGroups = familyGroups();
@@ -324,16 +333,28 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
       <div className="px-4 md:px-5 py-5 space-y-3">
         {lockedSlug ? (
           p && (
-            <div className="flex items-center gap-2.5">
-              <span className="w-8 h-8 border border-[#5A7A6A]/30 flex items-center justify-center flex-shrink-0"><WindowMark size={15} color={SAGE} /></span>
-              <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-widest text-[#5c5a56]">Product</p>
-                <p className="text-sm font-semibold text-[#131311] truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{p.name}</p>
+            <div className={`grid gap-3 ${rail ? "grid-cols-1" : "sm:grid-cols-[10rem_minmax(0,1fr)] sm:items-end"}`}>
+              <div>
+                <FieldLabel>Item ID</FieldLabel>
+                <Input value={code} maxLength={10} onChange={e => { setCodeEdited(true); setCode(e.target.value.toUpperCase()); }} placeholder="e.g. W01" />
+                {duplicateCode && <p className="text-[11px] text-amber-700 mt-1">Item ID already exist</p>}
+              </div>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-8 h-8 border border-[#5A7A6A]/30 flex items-center justify-center flex-shrink-0"><WindowMark size={15} color={SAGE} /></span>
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-widest text-[#5c5a56]">Product</p>
+                  <p className="text-sm font-semibold text-[#131311] truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{p.name}</p>
+                </div>
               </div>
             </div>
           )
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[10rem_minmax(0,1fr)_minmax(0,1fr)] gap-3">
+            <div>
+              <FieldLabel>Item ID</FieldLabel>
+              <Input value={code} maxLength={10} onChange={e => { setCodeEdited(true); setCode(e.target.value.toUpperCase()); }} placeholder="e.g. W01" />
+              {duplicateCode && <p className="text-[11px] text-amber-700 mt-1">Item ID already exist</p>}
+            </div>
             <div>
               <FieldLabel>Product type</FieldLabel>
               <div className="relative">
@@ -412,17 +433,17 @@ function CodeField({ code, duplicate, editSignal, onCommit }: {
 
   if (editing) {
     return (
-      <input ref={inputRef} value={draft} maxLength={10} aria-label="Item code"
+      <input ref={inputRef} value={draft} maxLength={10} aria-label="Item ID"
         onChange={e => setDraft(e.target.value.toUpperCase())}
         onBlur={commit}
         onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } else if (e.key === "Escape") { e.preventDefault(); cancel(); } }}
-        className="w-20 h-9 border border-[#5A7A6A] bg-white px-2 text-sm font-semibold text-[#131311] focus:outline-none focus:ring-2 focus:ring-[#5A7A6A]/40"
+        className="w-[4.75rem] h-8 border border-[#5A7A6A] bg-white px-2 text-xs font-semibold text-[#131311] focus:outline-none focus:ring-2 focus:ring-[#5A7A6A]/40"
         style={{ fontFamily: "'DM Mono', monospace" }} />
     );
   }
   return (
-    <button onClick={begin} aria-label={`Edit item code${code ? ` ${code}` : ""}`}
-      className={`group/code inline-flex items-center gap-1 h-9 px-2 text-sm font-semibold border transition-colors cursor-pointer ${duplicate ? "border-amber-400 bg-amber-50 text-amber-800" : "border-black/15 bg-[#FAFAF9] text-[#131311] hover:border-[#5A7A6A]"}`}
+    <button onClick={begin} aria-label={`Edit item ID${code ? ` ${code}` : ""}`}
+      className={`group/code inline-flex items-center gap-1 h-8 px-2 text-xs font-semibold border transition-colors cursor-pointer ${duplicate ? "border-amber-400 bg-amber-50 text-amber-800" : "border-black/15 bg-white text-[#131311] hover:border-[#5A7A6A]"}`}
       style={{ fontFamily: "'DM Mono', monospace" }}>
       {code || "Set code"}
       <Pencil className="w-3 h-3 text-[#9a9894] group-hover/code:text-[#5A7A6A]" aria-hidden="true" />
@@ -443,7 +464,7 @@ export function ItemSummaryCard({
   id?: string; focusSignal?: number;
   expanded?: boolean; onToggleExpanded?: () => void; duplicate?: boolean; codeFocusSignal?: number;
 }) {
-  const [open, setOpen] = useState<EditFocus | null>(initialFocus ?? "dims");
+  const [open, setOpen] = useState<EditFocus | null>(initialFocus ?? null);
   const [selfExpanded, setSelfExpanded] = useState(!!initialFocus);
   const isExpanded = expanded ?? selfExpanded;
   const toggleExpanded = onToggleExpanded ?? (() => setSelfExpanded(v => !v));
@@ -476,55 +497,57 @@ export function ItemSummaryCard({
   const dimsSummary = w && h ? `${mm(item.width)} × ${mm(item.height)}${item.measuredBy ? ` · ${MEASURED_LABELS[item.measuredBy as Exclude<MeasuredBy, "">]}` : ""}` : "Enter the opening size";
   const qtySummary = `Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
   const summaryLine = `${dimsSummary} · Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
-  const attentionMsg = duplicate ? "Duplicate item code — give this item a unique code." : issues.map(i => i.msg).join(" · ");
-  const priceLabel = pr.ok ? fmt(pr.total) : "Price after review";
+  const attentionMsg = duplicate ? "Item ID already exist" : issues.map(i => i.msg).join(" · ");
+  const priceLabel = pr.ok ? fmt(pr.total) : "$-,--";
 
   const borderTone = attention ? "border-amber-400" : added ? "border-[#5A7A6A]/50" : "border-black/12";
 
   return (
     <div id={id} ref={rootRef} className={`border bg-white scroll-mt-24 ${borderTone}`}>
-      {/* ── Header row (always visible): code · product+status · price · actions ── */}
-      <div className="flex items-start gap-2.5 sm:gap-3 px-3 sm:px-4 py-2.5">
-        <div className="flex-shrink-0 pt-0.5">
+      {/* Header: product identity and the highest-priority item actions. */}
+      <div className="flex items-center gap-2 px-3 sm:px-4 py-3 bg-[#FAFAF9] border-b border-black/[0.06] whitespace-nowrap">
+        <span className="flex-shrink-0">
           <CodeField code={item.code} duplicate={duplicate} editSignal={codeFocusSignal} onCommit={v => update({ code: v })} />
-        </div>
-
-        {/* Middle — product, status, and (collapsed) the one-line summary */}
+        </span>
         <button onClick={toggleExpanded} aria-expanded={isExpanded}
-          className="flex-1 min-w-0 text-left cursor-pointer group/exp">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-[#131311] leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-              {productLabel(item.productSlug)}
+          className="flex-1 min-w-0 truncate text-left text-sm font-semibold text-[#131311] leading-tight cursor-pointer hover:text-[#5A7A6A]"
+          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+          {productLabel(item.productSlug)}
+        </button>
+        <span className={`flex-shrink-0 text-sm font-semibold ${pr.ok ? "text-[#131311]" : "text-[#5c5a56]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
+          {priceLabel}{pr.ok ? <span className="hidden sm:inline text-[10px] font-normal text-[#5c5a56]"> inc GST</span> : null}
+        </span>
+
+        <div className="flex items-center gap-0.5 flex-shrink-0" aria-label="Item actions">
+          {onDuplicate && <button onClick={onDuplicate} className="w-9 h-9 inline-flex items-center justify-center text-[#5c5a56] hover:text-[#5A7A6A] hover:bg-white cursor-pointer" aria-label="Duplicate item"><Copy className="w-4 h-4" /></button>}
+          {onRemove && <button onClick={onRemove} className="w-9 h-9 inline-flex items-center justify-center text-[#5c5a56] hover:text-red-600 hover:bg-white cursor-pointer" aria-label="Remove item"><Trash2 className="w-4 h-4" /></button>}
+          <button onClick={toggleExpanded} aria-expanded={isExpanded} aria-label={isExpanded ? "Collapse item" : "Expand item"} className="w-9 h-9 inline-flex items-center justify-center text-[#5c5a56] hover:text-[#131311] hover:bg-white cursor-pointer">
+            <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* The compact summary is useful only while the detail groups are collapsed. */}
+      {!isExpanded && (
+        <div className="px-3 sm:px-4 py-3 bg-white">
+          <button onClick={toggleExpanded} aria-expanded={isExpanded}
+            className="w-full text-left cursor-pointer group/summary">
+            <span className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] uppercase tracking-widest text-[#8a8782]">Configuration</span>
+              {attention
+                ? <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800 whitespace-nowrap"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" />Needs attention</span>
+                : <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344] whitespace-nowrap"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
             </span>
-            {attention
-              ? <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800 whitespace-nowrap"><AlertCircle className="w-3 h-3" aria-hidden="true" />Needs attention</span>
-              : <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344] whitespace-nowrap"><Check className="w-3 h-3" aria-hidden="true" />Ready</span>}
-          </div>
-          {!isExpanded && (
-            <p className="text-xs text-[#5c5a56] mt-1 leading-snug">{summaryLine}</p>
-          )}
-          {!isExpanded && attention && attentionMsg && (
-            <p className="text-xs text-amber-700 mt-1 flex items-start gap-1 leading-snug">
-              <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <span className="block text-xs text-[#5c5a56] leading-snug group-hover/summary:text-[#131311]">{summaryLine}</span>
+          </button>
+          {attention && attentionMsg && (
+            <p className="text-xs text-amber-700 mt-2.5 pt-2.5 border-t border-amber-200 flex items-start gap-1.5 leading-snug">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
               <span>{attentionMsg}</span>
             </p>
           )}
-        </button>
-
-        {/* Right — line price + actions */}
-        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-          <span className={`text-sm font-semibold whitespace-nowrap ${pr.ok ? "text-[#131311]" : "text-[#5c5a56]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
-            {priceLabel}{pr.ok ? <span className="text-[10px] font-normal text-[#5c5a56]"> inc GST</span> : null}
-          </span>
-          <div className="flex items-center gap-0.5">
-            {onDuplicate && <button onClick={onDuplicate} className="p-1.5 text-[#5c5a56] hover:text-[#5A7A6A] cursor-pointer" aria-label="Duplicate item"><Copy className="w-4 h-4" /></button>}
-            {onRemove && <button onClick={onRemove} className="p-1.5 text-[#5c5a56] hover:text-red-600 cursor-pointer" aria-label="Remove item"><Trash2 className="w-4 h-4" /></button>}
-            <button onClick={toggleExpanded} aria-expanded={isExpanded} aria-label={isExpanded ? "Collapse item" : "Expand item"} className="p-1.5 text-[#5c5a56] hover:text-[#131311] cursor-pointer">
-              <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-            </button>
-          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Expanded detail groups — one open at a time ── */}
       {isExpanded && p && (
