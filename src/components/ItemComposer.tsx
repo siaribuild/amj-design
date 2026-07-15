@@ -61,6 +61,24 @@ function inRangeFor(p: Product, w: number, h: number) {
     && (p.minHeight == null || h >= p.minHeight) && (p.maxHeight == null || h <= p.maxHeight);
 }
 
+// Validation issues that block submission, grouped by section — surfaced at the
+// card level so they stay visible even when the offending section is collapsed.
+interface Issue { section: EditFocus; msg: string }
+function itemIssues(p: Product, it: { width: string; height: string; options: Record<string, string> }): Issue[] {
+  const issues: Issue[] = [];
+  const w = parseInt(it.width) || 0, h = parseInt(it.height) || 0;
+  if (!w || !h) issues.push({ section: "dims", msg: "Enter the opening size" });
+  else if (!inRangeFor(p, w, h)) issues.push({ section: "dims", msg: "Size is outside the allowed range" });
+  for (const g of optionGroupsFor(p)) if (g.required && !it.options[g.typeSlug]) issues.push({ section: "options", msg: `Choose ${g.label.toLowerCase()}` });
+  return issues;
+}
+
+// Does a saved item still need attention before it can be submitted?
+export function itemNeedsAttention(item: QItem): boolean {
+  const p = getProductBySlug(item.productSlug);
+  return !p || itemIssues(p, item).length > 0;
+}
+
 // ─── Field blocks (shared by the new-item form and the MyProject card) ────────
 function DimensionsFields({ p, width, height, measuredBy, setWidth, setHeight, setMeasuredBy, rail = false }: {
   p: Product; width: string; height: string; measuredBy: MeasuredBy;
@@ -184,15 +202,15 @@ function QtyLocationFields({ qty, location, setQty, setLocation }: {
 }
 
 // ─── Collapsible section shell ────────────────────────────────────────────────
-function Section({ label, summary, open, onToggle, children, variant = "boxed" }: {
-  label: string; summary: string; open: boolean; onToggle: () => void; children: React.ReactNode; variant?: "boxed" | "row";
+function Section({ label, summary, open, onToggle, children, variant = "boxed", attention = false }: {
+  label: string; summary: string; open: boolean; onToggle: () => void; children: React.ReactNode; variant?: "boxed" | "row"; attention?: boolean;
 }) {
   const boxed = variant === "boxed";
   return (
-    <div className={boxed ? "border border-black/10" : ""}>
-      <button onClick={onToggle} aria-expanded={open} className={`w-full flex items-center justify-between gap-3 text-left cursor-pointer bg-white ${boxed ? "px-4 py-3" : "px-4 py-2.5 hover:bg-[#FAFAF9] transition-colors"}`}>
+    <div className={boxed ? `border ${attention ? "border-amber-300" : "border-black/10"}` : ""}>
+      <button onClick={onToggle} aria-expanded={open} className={`w-full flex items-center justify-between gap-3 text-left cursor-pointer ${attention ? "bg-amber-50" : "bg-white"} ${boxed ? "px-4 py-3" : "px-4 py-2.5 hover:bg-[#FAFAF9] transition-colors"}`}>
         <span className="min-w-0">
-          <span className="text-[10px] uppercase tracking-widest text-[#5c5a56] block">{label}</span>
+          <span className={`text-[10px] uppercase tracking-widest block flex items-center gap-1 ${attention ? "text-amber-700" : "text-[#5c5a56]"}`}>{label}{attention && <AlertCircle className="w-3 h-3" />}</span>
           <span className="text-sm text-[#131311] font-medium truncate block">{summary}</span>
         </span>
         <ChevronDown className={`w-4 h-4 text-[#5c5a56] flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
@@ -245,6 +263,8 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
   const familyProducts = familySlug ? getProductsByFamily(familySlug) : [];
   const dimsSummary = dimsEntered ? `${mm(width)} × ${mm(height)}${measuredBy ? ` · ${MEASURED_LABELS[measuredBy as Exclude<MeasuredBy, "">]}` : ""}` : "Enter the opening size";
   const qtySummary = `Qty ${qty}${location ? ` · ${location}` : ""}`;
+  const issues = p ? itemIssues(p, { width, height, options }) : [];
+  const hasIssue = (s: EditFocus) => issues.some(i => i.section === s);
 
   return (
     <div className="border border-black/10 bg-white">
@@ -286,10 +306,10 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
 
         {p && (
           <div className="space-y-2">
-            <Section label="Dimensions" summary={dimsSummary} open={open.dims} onToggle={() => setOpen(o => ({ ...o, dims: !o.dims }))}>
+            <Section label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open.dims} onToggle={() => setOpen(o => ({ ...o, dims: !o.dims }))}>
               <DimensionsFields p={p} width={width} height={height} measuredBy={measuredBy} setWidth={setWidth} setHeight={setHeight} setMeasuredBy={setMeasuredBy} rail={rail} />
             </Section>
-            <Section label="Options" summary={optionSummaryOf(p, options)} open={open.options} onToggle={() => setOpen(o => ({ ...o, options: !o.options }))}>
+            <Section label="Options" summary={optionSummaryOf(p, options)} attention={hasIssue("options")} open={open.options} onToggle={() => setOpen(o => ({ ...o, options: !o.options }))}>
               <OptionsFields p={p} options={options} setOpt={setOpt} />
             </Section>
             <Section label="Quantity & location" summary={qtySummary} open={open.qty} onToggle={() => setOpen(o => ({ ...o, qty: !o.qty }))}>
@@ -301,6 +321,9 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
 
       {p && (
         <div className="border-t border-black/10 bg-white px-4 md:px-5 py-4 md:static sticky bottom-0 z-30" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+          {issues.length > 0 && (
+            <p className="text-xs text-amber-800 mb-2 flex items-start gap-1.5"><AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />{issues.map(i => i.msg).join(" · ")}.</p>
+          )}
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[10px] uppercase tracking-widest text-[#5c5a56]">Estimated price</p>
@@ -327,7 +350,9 @@ export function ItemSummaryCard({ item, index, added, quote, onDuplicate, onRemo
   const p = getProductBySlug(item.productSlug);
   const pr = priceConfigured(item);
   const w = parseInt(item.width) || 0, h = parseInt(item.height) || 0;
-  const valid = !!p && pr.ok && inRangeFor(p, w, h);
+  const issues = p ? itemIssues(p, item) : [];
+  const hasIssue = (s: EditFocus) => issues.some(i => i.section === s);
+  const valid = !!p && issues.length === 0;
   const toggle = (s: EditFocus) => setOpen(o => (o === s ? null : s));
   const update = (patch: Partial<QItem>) => quote.update(item.id, patch);
 
@@ -335,24 +360,30 @@ export function ItemSummaryCard({ item, index, added, quote, onDuplicate, onRemo
   const qtySummary = `Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
 
   return (
-    <div className={`border ${added ? "border-[#5A7A6A]/40" : "border-black/10"} bg-white flex`}>
-      <div className={`w-9 flex-shrink-0 flex items-start justify-center pt-3 border-r border-black/8 ${added ? "bg-[#5A7A6A]/8" : "bg-[#FAFAF9]"}`}>
-        {added ? <Check className="w-4 h-4 text-[#5A7A6A]" /> : <span className="text-[11px] text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>{index != null ? String(index + 1).padStart(2, "0") : ""}</span>}
+    <div className={`border bg-white flex ${issues.length ? "border-amber-400" : added ? "border-[#5A7A6A]/40" : "border-black/10"}`}>
+      <div className={`w-9 flex-shrink-0 flex items-start justify-center pt-3 border-r border-black/8 ${issues.length ? "bg-amber-50" : added ? "bg-[#5A7A6A]/8" : "bg-[#FAFAF9]"}`}>
+        {issues.length ? <AlertCircle className="w-4 h-4 text-amber-600" /> : added ? <Check className="w-4 h-4 text-[#5A7A6A]" /> : <span className="text-[11px] text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>{index != null ? String(index + 1).padStart(2, "0") : ""}</span>}
       </div>
       <div className="flex-1 min-w-0">
         {/* Product (fixed) */}
-        <div className="px-4 py-2.5 flex items-center justify-between gap-2">
+        <div className="px-4 py-2.5">
           <p className="text-sm font-semibold text-[#131311] truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{productLabel(item.productSlug)}</p>
-          {!valid && <span className="text-[10px] px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 flex-shrink-0 whitespace-nowrap">Check size</span>}
         </div>
+        {/* Attention banner — visible even when the offending section is collapsed */}
+        {issues.length > 0 && (
+          <div className="px-4 py-2 bg-amber-50 border-t border-amber-200 flex items-start gap-1.5 text-xs text-amber-800">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <span><span className="font-medium">Needs attention before review:</span> {issues.map(i => i.msg).join(" · ")}.</span>
+          </div>
+        )}
         <div className="border-t border-black/8">
           {p && (
             <>
-              <Section variant="row" label="Dimensions" summary={dimsSummary} open={open === "dims"} onToggle={() => toggle("dims")}>
+              <Section variant="row" label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open === "dims"} onToggle={() => toggle("dims")}>
                 <DimensionsFields p={p} width={item.width} height={item.height} measuredBy={item.measuredBy}
                   setWidth={v => update({ width: v })} setHeight={v => update({ height: v })} setMeasuredBy={v => update({ measuredBy: v })} />
               </Section>
-              <Section variant="row" label="Options" summary={optionSummaryOf(p, item.options)} open={open === "options"} onToggle={() => toggle("options")}>
+              <Section variant="row" label="Options" summary={optionSummaryOf(p, item.options)} attention={hasIssue("options")} open={open === "options"} onToggle={() => toggle("options")}>
                 <OptionsFields p={p} options={item.options} setOpt={(t, v) => update({ options: { ...item.options, [t]: v } })} />
               </Section>
               <Section variant="row" label="Quantity & location" summary={qtySummary} open={open === "qty"} onToggle={() => toggle("qty")}>

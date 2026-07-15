@@ -10,10 +10,11 @@ import {
   AlertCircle, CheckCircle, Send,
 } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
-import { ItemForm, ItemSummaryCard } from "../components/ItemComposer";
+import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
+import { getProductBySlug } from "../data/catalogue";
 import {
   type QuoteState,
-  priceConfigured, fmt, mm, productLabel,
+  priceConfigured, defaultOptions, fmt, mm, productLabel,
 } from "../data/configurator";
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
@@ -35,7 +36,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
   const [suburb, setSuburb] = useState("");
 
   const total = quote.items.reduce((s, it) => s + priceConfigured(it).total, 0);
-  const anyReview = quote.items.some(it => it.status === "Needs review");
+  const attentionCount = quote.items.filter(itemNeedsAttention).length;
   const hasContent = quote.items.length > 0 || quote.files.length > 0;
 
   const fakeUpload = () => {
@@ -50,11 +51,14 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
       setUploading(false);
     }, 1400);
   };
+  // Add every parsed line as a card; incomplete ones land as cards flagged for
+  // attention (the reviewer resolves them before submitting).
   const addDraftsToProject = () => {
-    drafts.filter(d => !d.attention).forEach(d => quote.add({
-      productSlug: d.productSlug, location: "", measuredBy: "", width: d.width, height: d.height, options: {}, qty: d.qty, status: "Ready",
-    }));
-    setDrafts(prev => prev.filter(d => d.attention));
+    drafts.forEach(d => {
+      const p = getProductBySlug(d.productSlug);
+      quote.add({ productSlug: d.productSlug, location: "", measuredBy: "", width: d.width, height: d.height, options: p ? defaultOptions(p) : {}, qty: d.qty, status: "Ready" });
+    });
+    setDrafts([]);
   };
 
   // ─── Submitted ──────────────────────────────────────────────────────────────
@@ -168,9 +172,9 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
               ))}
             </div>
             <div className="px-5 py-3 border-t border-black/8 flex items-center justify-between gap-3">
-              <p className="text-xs text-[#5c5a56]">{drafts.filter(d => d.attention).length > 0 ? `${drafts.filter(d => d.attention).length} still need attention.` : "All items ready."}</p>
-              <Btn variant="sage" size="sm" onClick={addDraftsToProject} disabled={drafts.every(d => d.attention)}>
-                Add {drafts.filter(d => !d.attention).length} to MyProject <Plus className="w-4 h-4" />
+              <p className="text-xs text-[#5c5a56]">{drafts.filter(d => d.attention).length > 0 ? `${drafts.filter(d => d.attention).length} will need attention in MyProject.` : "All items ready."}</p>
+              <Btn variant="sage" size="sm" onClick={addDraftsToProject}>
+                Add {drafts.length} to MyProject <Plus className="w-4 h-4" />
               </Btn>
             </div>
           </div>
@@ -224,13 +228,21 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
 
           {/* Total + review */}
           {quote.items.length > 0 && (
-            <div className="mt-6 border border-black/10 bg-[#FAFAF9] px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <p className="text-[10px] uppercase tracking-widest text-[#5c5a56]">Estimated total{anyReview ? " · excludes items in review" : ""}</p>
-                <p className="text-2xl font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(total)} <span className="text-xs font-normal text-[#5c5a56]">inc GST</span></p>
+            <>
+              {attentionCount > 0 && (
+                <div className="mt-6 flex items-start gap-2 bg-amber-50 border border-amber-300 px-4 py-3 text-sm text-amber-800">
+                  <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <span><span className="font-medium">{attentionCount} item{attentionCount !== 1 ? "s" : ""} need{attentionCount === 1 ? "s" : ""} attention.</span> Resolve the highlighted card{attentionCount !== 1 ? "s" : ""} before submitting for review.</span>
+                </div>
+              )}
+              <div className={`border border-black/10 bg-[#FAFAF9] px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${attentionCount > 0 ? "mt-3" : "mt-6"}`}>
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest text-[#5c5a56]">Estimated total</p>
+                  <p className="text-2xl font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(total)} <span className="text-xs font-normal text-[#5c5a56]">inc GST</span></p>
+                </div>
+                <Btn variant="sage" size="lg" disabled={attentionCount > 0} onClick={() => { setView("review"); window.scrollTo(0, 0); }}>Review quote <ArrowRight className="w-4 h-4" /></Btn>
               </div>
-              <Btn variant="sage" size="lg" onClick={() => { setView("review"); window.scrollTo(0, 0); }}>Review quote <ArrowRight className="w-4 h-4" /></Btn>
-            </div>
+            </>
           )}
         </div>
       </div>
