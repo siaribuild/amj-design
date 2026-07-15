@@ -497,6 +497,7 @@ export function ItemSummaryCard({
   const dimsSummary = w && h ? `${mm(item.width)} × ${mm(item.height)}${item.measuredBy ? ` · ${MEASURED_LABELS[item.measuredBy as Exclude<MeasuredBy, "">]}` : ""}` : "Enter the opening size";
   const qtySummary = `Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
   const summaryLine = `${dimsSummary} · Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
+  const selectedOptionsSummary = optionSummaryOf(p, item.options);
   const attentionMsg = duplicate ? "Item ID already exist" : issues.map(i => i.msg).join(" · ");
   const priceLabel = pr.ok ? fmt(pr.total) : "$-,--";
 
@@ -505,23 +506,28 @@ export function ItemSummaryCard({
   return (
     <div id={id} ref={rootRef} className={`border bg-white scroll-mt-24 ${borderTone}`}>
       {/* Header: product identity and the highest-priority item actions. */}
-      <div className="flex items-center gap-2 px-3 sm:px-4 py-3 bg-[#FAFAF9] border-b border-black/[0.06] whitespace-nowrap">
+      <div className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 bg-[#FAFAF9] border-b border-black/[0.06] whitespace-nowrap">
         <span className="flex-shrink-0">
           <CodeField code={item.code} duplicate={duplicate} editSignal={codeFocusSignal} onCommit={v => update({ code: v })} />
         </span>
-        <button onClick={toggleExpanded} aria-expanded={isExpanded}
-          className="flex-1 min-w-0 truncate text-left text-sm font-semibold text-[#131311] leading-tight cursor-pointer hover:text-[#5A7A6A]"
-          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-          {productLabel(item.productSlug)}
-        </button>
+        <span className="flex-1 min-w-0 flex items-center gap-1.5">
+          <button onClick={toggleExpanded} aria-expanded={isExpanded}
+            className="min-w-0 truncate text-left text-sm font-semibold text-[#131311] leading-tight cursor-pointer hover:text-[#5A7A6A]"
+            style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+            {productLabel(item.productSlug)}
+          </button>
+          {attention
+            ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">Needs </span>attention</span>
+            : <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344]"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
+        </span>
         <span className={`flex-shrink-0 text-sm font-semibold ${pr.ok ? "text-[#131311]" : "text-[#5c5a56]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
           {priceLabel}{pr.ok ? <span className="hidden sm:inline text-[10px] font-normal text-[#5c5a56]"> inc GST</span> : null}
         </span>
 
         <div className="flex items-center gap-0.5 flex-shrink-0" aria-label="Item actions">
-          {onDuplicate && <button onClick={onDuplicate} className="w-9 h-9 inline-flex items-center justify-center text-[#5c5a56] hover:text-[#5A7A6A] hover:bg-white cursor-pointer" aria-label="Duplicate item"><Copy className="w-4 h-4" /></button>}
-          {onRemove && <button onClick={onRemove} className="w-9 h-9 inline-flex items-center justify-center text-[#5c5a56] hover:text-red-600 hover:bg-white cursor-pointer" aria-label="Remove item"><Trash2 className="w-4 h-4" /></button>}
-          <button onClick={toggleExpanded} aria-expanded={isExpanded} aria-label={isExpanded ? "Collapse item" : "Expand item"} className="w-9 h-9 inline-flex items-center justify-center text-[#5c5a56] hover:text-[#131311] hover:bg-white cursor-pointer">
+          {onDuplicate && <button onClick={onDuplicate} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-[#5c5a56] hover:text-[#5A7A6A] hover:bg-white cursor-pointer" aria-label="Duplicate item"><Copy className="w-4 h-4" /></button>}
+          {onRemove && <button onClick={onRemove} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-[#5c5a56] hover:text-red-600 hover:bg-white cursor-pointer" aria-label="Remove item"><Trash2 className="w-4 h-4" /></button>}
+          <button onClick={toggleExpanded} aria-expanded={isExpanded} aria-label={isExpanded ? "Collapse item" : "Expand item"} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-[#5c5a56] hover:text-[#131311] hover:bg-white cursor-pointer">
             <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
           </button>
         </div>
@@ -532,13 +538,9 @@ export function ItemSummaryCard({
         <div className="px-3 sm:px-4 py-3 bg-white">
           <button onClick={toggleExpanded} aria-expanded={isExpanded}
             className="w-full text-left cursor-pointer group/summary">
-            <span className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] uppercase tracking-widest text-[#8a8782]">Configuration</span>
-              {attention
-                ? <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800 whitespace-nowrap"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" />Needs attention</span>
-                : <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344] whitespace-nowrap"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
-            </span>
+            <span className="block text-[10px] uppercase tracking-widest text-[#8a8782] mb-1">Configuration</span>
             <span className="block text-xs text-[#5c5a56] leading-snug group-hover/summary:text-[#131311]">{summaryLine}</span>
+            <span className="block text-xs text-[#5c5a56] leading-snug mt-1 truncate group-hover/summary:text-[#131311]"><span className="text-[#8a8782]">Options:</span> {selectedOptionsSummary}</span>
           </button>
           {attention && attentionMsg && (
             <p className="text-xs text-amber-700 mt-2.5 pt-2.5 border-t border-amber-200 flex items-start gap-1.5 leading-snug">
