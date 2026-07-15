@@ -169,7 +169,7 @@ function Nav({ page, setPage, user, setUser }: {
             <span className="font-semibold text-[15px] tracking-tight text-white"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}>AMJ Trade Direct</span>
           </button>
-          <nav className="hidden md:flex items-center gap-6 flex-1 justify-center">
+          <nav className="hidden xl:flex items-center gap-6 flex-1 justify-center">
             {links.map(([label, p]) => (
               <button key={p} onClick={() => go(p)}
                 aria-current={isActive(p) ? "page" : undefined}
@@ -179,7 +179,7 @@ function Nav({ page, setPage, user, setUser }: {
               </button>
             ))}
           </nav>
-          <div className="hidden md:flex items-center gap-3 flex-shrink-0">
+          <div className="hidden xl:flex items-center gap-3 flex-shrink-0">
             <a href="tel:0390000000"
               className="text-sm text-white/75 hover:text-white flex items-center gap-1.5 transition-colors">
               <Phone className="w-3.5 h-3.5" />(03) 9000 0000
@@ -198,26 +198,26 @@ function Nav({ page, setPage, user, setUser }: {
             )}
             <Btn variant="sage" size="sm" onClick={() => go("quote")}>Get a quote</Btn>
           </div>
-          <button className="md:hidden p-1.5 text-white" onClick={() => setOpen(true)}>
+          <button className="xl:hidden p-2 text-white hover:bg-white/10 transition-colors cursor-pointer" onClick={() => setOpen(true)} aria-label="Open menu">
             <Menu className="w-5 h-5" />
           </button>
         </div>
       </header>
 
       {/* Backdrop */}
-      <div className={`fixed inset-0 z-[55] bg-black/50 backdrop-blur-[2px] transition-opacity duration-300 md:hidden ${open ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+      <div className={`fixed inset-0 z-[55] bg-black/80 backdrop-blur-[3px] transition-opacity duration-300 xl:hidden ${open ? "opacity-100" : "opacity-0 pointer-events-none"}`}
         onClick={() => setOpen(false)} />
 
       {/* Slide-out panel */}
-      <div className="fixed top-0 right-0 h-full z-[56] bg-white flex flex-col transition-transform duration-300 ease-out md:hidden overflow-y-auto"
-        style={{ width: "min(80vw, 400px)", transform: open ? "translateX(0)" : "translateX(100%)", top: topOffset }}>
-        <div className="flex items-center justify-between px-5 h-16 border-b border-black/8 flex-shrink-0">
+      <div className="fixed top-0 right-0 h-full z-[56] bg-[#0c0c0a] text-white flex flex-col transition-transform duration-300 ease-out xl:hidden overflow-y-auto shadow-2xl shadow-black/60"
+        style={{ width: "min(88vw, 440px)", transform: open ? "translateX(0)" : "translateX(100%)", top: topOffset }}>
+        <div className="flex items-center justify-between px-5 h-16 border-b border-white/10 flex-shrink-0">
           <div className="flex items-center gap-2.5">
-            <WindowMark size={16} color={SAGE} />
-            <span className="font-semibold text-sm text-[#131311]"
+            <WindowMark size={16} color="#8CA99B" />
+            <span className="font-semibold text-sm text-white"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Menu</span>
           </div>
-          <button onClick={() => setOpen(false)} className="p-1 text-[#5c5a56] cursor-pointer">
+          <button onClick={() => setOpen(false)} className="p-2 -mr-2 text-white/65 hover:text-white hover:bg-white/10 transition-colors cursor-pointer" aria-label="Close menu">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -226,10 +226,10 @@ function Nav({ page, setPage, user, setUser }: {
           {links.map(([l, p]) => (
             <button key={p} onClick={() => go(p)}
               aria-current={isActive(p) ? "page" : undefined}
-              className={`w-full text-left px-5 py-4 border-b border-black/6 text-base transition-colors flex items-center justify-between
-                ${isActive(p) ? "text-[#131311] font-semibold bg-[#FAFAF9]" : "text-[#131311] hover:bg-[#FAFAF9]"}`}>
+              className={`w-full text-left px-5 py-4 border-b border-white/[0.07] text-base transition-colors flex items-center justify-between cursor-pointer
+                ${isActive(p) ? "text-white font-semibold bg-[#5A7A6A]/25 border-l-2 border-l-[#8CA99B]" : "text-white/75 hover:text-white hover:bg-white/[0.06] border-l-2 border-l-transparent"}`}>
               {l}
-              {isActive(p) && <WindowMark size={10} color={SAGE} />}
+              {isActive(p) && <span className="w-1.5 h-1.5 bg-[#8CA99B] rounded-full" aria-hidden="true" />}
             </button>
           ))}
 
@@ -240,42 +240,42 @@ function Nav({ page, setPage, user, setUser }: {
             </Btn>
           </div>
 
-          <div className="border-t border-black/8 mt-2 pt-2">
+          <div className="border-t border-white/10 mt-2 pt-2">
             {user ? (
               <>
                 <button onClick={() => go("dashboard")}
-                  className="w-full text-left px-5 py-3.5 text-sm text-[#5A7A6A] hover:bg-[#FAFAF9] flex items-center gap-2 cursor-pointer">
+                  className="w-full text-left px-5 py-3.5 text-sm text-[#8CA99B] hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
                   <LayoutDashboard className="w-4 h-4" />My dashboard
                 </button>
                 <button onClick={() => go("profile")}
-                  className="w-full text-left px-5 py-3.5 text-sm text-[#5c5a56] hover:bg-[#FAFAF9] flex items-center gap-2 cursor-pointer">
+                  className="w-full text-left px-5 py-3.5 text-sm text-white/60 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
                   <User className="w-4 h-4" />My profile
                 </button>
                 <button onClick={() => { setUser(null); setOpen(false); go("home"); }}
-                  className="w-full text-left px-5 py-3.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer">
+                  className="w-full text-left px-5 py-3.5 text-sm text-red-300 hover:text-red-200 hover:bg-red-500/10 flex items-center gap-2 cursor-pointer">
                   <LogOut className="w-4 h-4" />Sign out
                 </button>
               </>
             ) : (
               <button onClick={() => go("login")}
-                className="w-full text-left px-5 py-3.5 text-sm text-[#5c5a56] hover:bg-[#FAFAF9] flex items-center gap-2 cursor-pointer">
+                className="w-full text-left px-5 py-3.5 text-sm text-white/60 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
                 <Lock className="w-4 h-4" />Sign in / Register
               </button>
             )}
             <button onClick={() => go("track-order")}
-              className="w-full text-left px-5 py-3.5 text-sm text-[#5c5a56] hover:bg-[#FAFAF9] flex items-center gap-2 cursor-pointer">
+              className="w-full text-left px-5 py-3.5 text-sm text-white/60 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
               <Package className="w-4 h-4" />Track an order
             </button>
           </div>
         </nav>
 
-        <div className="px-5 py-4 border-t border-black/8 flex-shrink-0 bg-[#FAFAF9]">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#5c5a56] mb-2">Contact us</p>
-          <a href="tel:0390000000" className="flex items-center gap-2 text-sm text-[#131311] font-medium mb-1.5 hover:text-[#5A7A6A] transition-colors">
-            <Phone className="w-4 h-4 text-[#5A7A6A]" />(03) 9000 0000
+        <div className="px-5 py-4 border-t border-white/10 flex-shrink-0 bg-white/[0.025]">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 mb-2">Contact us</p>
+          <a href="tel:0390000000" className="flex items-center gap-2 text-sm text-white font-medium mb-1.5 hover:text-[#8CA99B] transition-colors">
+            <Phone className="w-4 h-4 text-[#8CA99B]" />(03) 9000 0000
           </a>
-          <a href="mailto:quotes@amjtradedirect.com.au" className="flex items-center gap-2 text-sm text-[#131311] hover:text-[#5A7A6A] transition-colors">
-            <Mail className="w-4 h-4 text-[#5A7A6A]" />quotes@amjtradedirect.com.au
+          <a href="mailto:quotes@amjtradedirect.com.au" className="flex items-center gap-2 text-sm text-white/65 hover:text-[#8CA99B] transition-colors">
+            <Mail className="w-4 h-4 text-[#8CA99B]" />quotes@amjtradedirect.com.au
           </a>
         </div>
       </div>
