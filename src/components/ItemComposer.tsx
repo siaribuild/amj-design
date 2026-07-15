@@ -9,13 +9,13 @@
 //  • Product-first; picker = two dependent fields (Type → Product).
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useState, useEffect, useRef } from "react";
-import { Check, AlertCircle, Info, ChevronDown, Plus, Minus, Pencil, Trash2 } from "lucide-react";
+import { Check, AlertCircle, Info, ChevronDown, Plus, Minus, Pencil, Trash2, Copy } from "lucide-react";
 import { SAGE, WindowMark, Btn, FieldLabel, Input } from "../app/ui";
 import { type Product, getProductBySlug, getProductsByFamily } from "../data/catalogue";
 import {
-  type QItem, type QuoteState, type MeasuredBy, MEASURED_LABELS,
+  type QItem, type QuoteState, type MeasuredBy, type OptionChoice, MEASURED_LABELS,
   optionGroupsFor, defaultOptions, priceConfigured, familyGroups,
-  fmt, mm, productLabel,
+  fmt, mm, productLabel, POPULAR_COLOURS,
 } from "../data/configurator";
 
 export type EditFocus = "dims" | "options" | "qty";
@@ -141,6 +141,46 @@ function DimensionsFields({ p, width, height, measuredBy, setWidth, setHeight, s
   );
 }
 
+// A colour swatch chip carrying both the name and the actual colour.
+function ColourSwatch({ choice, selected, onPick }: { choice: OptionChoice; selected: boolean; onPick: () => void }) {
+  return (
+    <button onClick={onPick} aria-pressed={selected} title={choice.name}
+      className={`flex items-center gap-2 px-2 py-1.5 border text-left transition-colors cursor-pointer min-w-0 ${selected ? "border-[#131311] bg-[#131311]/[0.04] ring-1 ring-[#131311]" : "border-black/15 bg-white hover:border-[#5A7A6A]"}`}>
+      <span className="w-4 h-4 flex-shrink-0 border border-black/25" style={{ background: choice.hex || "#ccc" }} aria-hidden="true" />
+      <span className="text-xs text-[#131311] truncate flex-1">{choice.name}</span>
+      {selected && <Check className="w-3.5 h-3.5 text-[#131311] flex-shrink-0" aria-hidden="true" />}
+    </button>
+  );
+}
+
+// Colour picker: the four most-popular colours for direct selection, with the full
+// standard range available under "Other". Every choice shows its name and swatch.
+function ColourChoices({ choices, value, onPick }: { choices: OptionChoice[]; value: string; onPick: (name: string) => void }) {
+  const popular = POPULAR_COLOURS.map(n => choices.find(c => c.name === n)).filter(Boolean) as OptionChoice[];
+  const isPopular = POPULAR_COLOURS.includes(value);
+  const [showAll, setShowAll] = useState(!isPopular && !!value); // reveal the full list if a non-popular colour is selected
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-1.5">
+        {popular.map(c => <ColourSwatch key={c.name} choice={c} selected={value === c.name} onPick={() => onPick(c.name)} />)}
+      </div>
+      <button onClick={() => setShowAll(s => !s)} aria-expanded={showAll}
+        className="mt-2 flex items-center gap-1 text-xs font-medium text-[#5A7A6A] hover:text-[#4a6858] cursor-pointer">
+        {showAll ? "Hide other colours" : "Other colours"}
+        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAll ? "rotate-180" : ""}`} />
+      </button>
+      <div className={`grid transition-[grid-template-rows] duration-200 ${showAll ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className="overflow-hidden">
+          <p className="text-[10px] uppercase tracking-widest text-[#5c5a56] pt-2 pb-1.5">All standard colours</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+            {choices.map(c => <ColourSwatch key={c.name} choice={c} selected={value === c.name} onPick={() => onPick(c.name)} />)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<string, string>; setOpt: (typeSlug: string, v: string) => void }) {
   const groups = optionGroupsFor(p);
   const [openOpt, setOpenOpt] = useState<string | null>(null);
@@ -149,24 +189,35 @@ function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<str
       {groups.map(g => {
         const val = options[g.typeSlug];
         const open = openOpt === g.typeSlug;
+        const isColour = g.typeSlug === "colour";
+        const swatchHex = isColour ? g.choices.find(c => c.name === val)?.hex : undefined;
         return (
           <div key={g.typeSlug} className="border border-black/10">
             <button onClick={() => setOpenOpt(open ? null : g.typeSlug)} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left cursor-pointer bg-white">
               <span className="min-w-0">
                 <span className="text-[10px] uppercase tracking-widest text-[#5c5a56] block">{g.label}{g.required && !val ? <span className="text-amber-600"> · required</span> : ""}</span>
-                <span className={`text-sm font-medium truncate block ${val ? "text-[#131311]" : "text-[#9a9894]"}`}>{val || "Select…"}</span>
+                <span className={`text-sm font-medium truncate flex items-center gap-1.5 ${val ? "text-[#131311]" : "text-[#9a9894]"}`}>
+                  {isColour && val && <span className="w-3.5 h-3.5 flex-shrink-0 border border-black/25" style={{ background: swatchHex || "#ccc" }} aria-hidden="true" />}
+                  {val || "Select…"}
+                </span>
               </span>
               <ChevronDown className={`w-4 h-4 text-[#5c5a56] flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
             </button>
             <div className={`grid transition-[grid-template-rows] duration-200 ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
               <div className="overflow-hidden">
-                <div className="px-4 pb-3 pt-1 flex flex-wrap gap-1.5 border-t border-black/6">
-                  {g.choices.map(c => (
-                    <button key={c.name} onClick={() => setOpt(g.typeSlug, c.name)}
-                      className={`text-xs px-3 py-1.5 border transition-colors cursor-pointer ${val === c.name ? "border-[#131311] bg-[#131311] text-white" : "border-black/15 bg-white text-[#131311] hover:border-[#5A7A6A]"}`}>
-                      {c.name}
-                    </button>
-                  ))}
+                <div className="px-4 pb-3 pt-2 border-t border-black/6">
+                  {isColour ? (
+                    <ColourChoices choices={g.choices} value={val} onPick={v => setOpt(g.typeSlug, v)} />
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {g.choices.map(c => (
+                        <button key={c.name} onClick={() => setOpt(g.typeSlug, c.name)}
+                          className={`text-xs px-3 py-1.5 border transition-colors cursor-pointer ${val === c.name ? "border-[#131311] bg-[#131311] text-white" : "border-black/15 bg-white text-[#131311] hover:border-[#5A7A6A]"}`}>
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -192,8 +243,8 @@ function QtyLocationFields({ qty, location, setQty, setLocation }: {
           </div>
         </div>
         <div>
-          <FieldLabel>Location / room (optional)</FieldLabel>
-          <Input value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Living room, north" />
+          <FieldLabel>Note (optional)</FieldLabel>
+          <Input value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Bedroom 1, north elevation" />
         </div>
       </div>
       <p className="text-[11px] text-[#5c5a56] mt-2"><Info className="w-3 h-3 inline mr-1" />Quantity means every unit on this line is identical. For a different size, add a separate item.</p>
@@ -230,7 +281,7 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
   lockedSlug?: string;
   quote: QuoteState;
   seed?: Partial<QItem> | null;
-  onCommit: (built: Omit<QItem, "id">) => void;
+  onCommit: (built: Omit<QItem, "id" | "code">) => void;
   onCancel?: () => void;
   rail?: boolean;
   submitLabel?: string;
@@ -253,7 +304,7 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
   const inRange = !!p && inRangeFor(p, w, h);
   const priced = priceConfigured({ productSlug, width, height, options, qty });
   const canSave = priced.ok && inRange;
-  const built: Omit<QItem, "id"> = { productSlug, location, measuredBy, width, height, options, qty, status: "Ready" };
+  const built: Omit<QItem, "id" | "code"> = { productSlug, location, measuredBy, width, height, options, qty, status: "Ready" };
 
   const pickFamily = (slug: string) => { setFamilySlug(slug); setProductSlug(""); };
   const pickProduct = (slug: string) => { setProductSlug(slug); const np = getProductBySlug(slug); setOptions(np ? defaultOptions(np) : {}); };
@@ -312,7 +363,7 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
             <Section label="Options" summary={optionSummaryOf(p, options)} attention={hasIssue("options")} open={open.options} onToggle={() => setOpen(o => ({ ...o, options: !o.options }))}>
               <OptionsFields p={p} options={options} setOpt={setOpt} />
             </Section>
-            <Section label="Quantity & location" summary={qtySummary} open={open.qty} onToggle={() => setOpen(o => ({ ...o, qty: !o.qty }))}>
+            <Section label="Quantity & note" summary={qtySummary} open={open.qty} onToggle={() => setOpen(o => ({ ...o, qty: !o.qty }))}>
               <QtyLocationFields qty={qty} location={location} setQty={setQty} setLocation={setLocation} />
             </Section>
           </div>
@@ -341,81 +392,153 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
   );
 }
 
-// ═══ MyProject ITEM CARD — sections expand/edit inline (live) ══════════════════
-export function ItemSummaryCard({ item, index, added, quote, onDuplicate, onRemove, initialFocus, id, focusSignal }: {
-  item: QItem; index?: number; added?: boolean; quote: QuoteState;
+// ─── Inline editable item code (W01 / D03…) ───────────────────────────────────
+function CodeField({ code, duplicate, editSignal, onCommit }: {
+  code: string; duplicate?: boolean; editSignal?: number; onCommit: (v: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(code);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const begin = () => { setDraft(code); setEditing(true); };
+  const commit = () => { setEditing(false); const v = draft.trim(); if (v !== code) onCommit(v); };
+  const cancel = () => { setDraft(code); setEditing(false); };
+
+  // Duplication focuses the new item's code for confirmation.
+  useEffect(() => { if (editSignal) { setDraft(code); setEditing(true); } /* eslint-disable-next-line */ }, [editSignal]);
+  useEffect(() => { if (editing) inputRef.current?.focus(); inputRef.current?.select(); }, [editing]);
+
+  if (editing) {
+    return (
+      <input ref={inputRef} value={draft} maxLength={10} aria-label="Item code"
+        onChange={e => setDraft(e.target.value.toUpperCase())}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } else if (e.key === "Escape") { e.preventDefault(); cancel(); } }}
+        className="w-20 h-9 border border-[#5A7A6A] bg-white px-2 text-sm font-semibold text-[#131311] focus:outline-none focus:ring-2 focus:ring-[#5A7A6A]/40"
+        style={{ fontFamily: "'DM Mono', monospace" }} />
+    );
+  }
+  return (
+    <button onClick={begin} aria-label={`Edit item code${code ? ` ${code}` : ""}`}
+      className={`group/code inline-flex items-center gap-1 h-9 px-2 text-sm font-semibold border transition-colors cursor-pointer ${duplicate ? "border-amber-400 bg-amber-50 text-amber-800" : "border-black/15 bg-[#FAFAF9] text-[#131311] hover:border-[#5A7A6A]"}`}
+      style={{ fontFamily: "'DM Mono', monospace" }}>
+      {code || "Set code"}
+      <Pencil className="w-3 h-3 text-[#9a9894] group-hover/code:text-[#5A7A6A]" aria-hidden="true" />
+    </button>
+  );
+}
+
+// ═══ MyProject ITEM CARD — compact header + collapsible detail groups ══════════
+// Two levels of collapse: the whole item collapses to a header + one summary line;
+// expanding reveals the three detail groups (one open at a time). Item code, status
+// and line price stay visible in every state.
+export function ItemSummaryCard({
+  item, added, quote, onDuplicate, onRemove, initialFocus, id, focusSignal,
+  expanded, onToggleExpanded, duplicate, codeFocusSignal,
+}: {
+  item: QItem; added?: boolean; quote: QuoteState;
   onDuplicate?: () => void; onRemove?: () => void; initialFocus?: EditFocus;
   id?: string; focusSignal?: number;
+  expanded?: boolean; onToggleExpanded?: () => void; duplicate?: boolean; codeFocusSignal?: number;
 }) {
-  const [open, setOpen] = useState<EditFocus | null>(initialFocus ?? null);
+  const [open, setOpen] = useState<EditFocus | null>(initialFocus ?? "dims");
+  const [selfExpanded, setSelfExpanded] = useState(!!initialFocus);
+  const isExpanded = expanded ?? selfExpanded;
+  const toggleExpanded = onToggleExpanded ?? (() => setSelfExpanded(v => !v));
   const rootRef = useRef<HTMLDivElement>(null);
   const p = getProductBySlug(item.productSlug);
   const pr = priceConfigured(item);
   const w = parseInt(item.width) || 0, h = parseInt(item.height) || 0;
   const issues = p ? itemIssues(p, item) : [];
 
-  // When the sticky panel's "Review issues" targets this card, open the first
-  // offending section and move focus to its first field.
+  // "Review issues" targets this card: open the first offending group + focus it.
   useEffect(() => {
     if (!focusSignal) return;
     const section = issues[0]?.section ?? null;
     if (!section) return;
     setOpen(section);
-    requestAnimationFrame(() => {
+    // Let the expand/open commit and lay out before moving focus into the group.
+    const t = setTimeout(() => {
       const field = rootRef.current?.querySelector<HTMLElement>("input, select, textarea");
       field?.focus({ preventScroll: true });
-    });
+    }, 80);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSignal]);
+
   const hasIssue = (s: EditFocus) => issues.some(i => i.section === s);
-  const valid = !!p && issues.length === 0;
+  const attention = issues.length > 0 || !!duplicate;
   const toggle = (s: EditFocus) => setOpen(o => (o === s ? null : s));
   const update = (patch: Partial<QItem>) => quote.update(item.id, patch);
 
   const dimsSummary = w && h ? `${mm(item.width)} × ${mm(item.height)}${item.measuredBy ? ` · ${MEASURED_LABELS[item.measuredBy as Exclude<MeasuredBy, "">]}` : ""}` : "Enter the opening size";
   const qtySummary = `Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
+  const summaryLine = `${dimsSummary} · Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
+  const attentionMsg = duplicate ? "Duplicate item code — give this item a unique code." : issues.map(i => i.msg).join(" · ");
+  const priceLabel = pr.ok ? fmt(pr.total) : "Price after review";
+
+  const borderTone = attention ? "border-amber-400" : added ? "border-[#5A7A6A]/50" : "border-black/12";
 
   return (
-    <div id={id} ref={rootRef} className={`border bg-white flex scroll-mt-24 ${issues.length ? "border-amber-400" : added ? "border-[#5A7A6A]/40" : "border-black/10"}`}>
-      <div className={`w-9 flex-shrink-0 flex items-start justify-center pt-3 border-r border-black/8 ${issues.length ? "bg-amber-50" : added ? "bg-[#5A7A6A]/8" : "bg-[#FAFAF9]"}`}>
-        {issues.length ? <AlertCircle className="w-4 h-4 text-amber-600" /> : added ? <Check className="w-4 h-4 text-[#5A7A6A]" /> : <span className="text-[11px] text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>{index != null ? String(index + 1).padStart(2, "0") : ""}</span>}
-      </div>
-      <div className="flex-1 min-w-0">
-        {/* Product (fixed) */}
-        <div className="px-4 py-2.5">
-          <p className="text-sm font-semibold text-[#131311] truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{productLabel(item.productSlug)}</p>
+    <div id={id} ref={rootRef} className={`border bg-white scroll-mt-24 ${borderTone}`}>
+      {/* ── Header row (always visible): code · product+status · price · actions ── */}
+      <div className="flex items-start gap-2.5 sm:gap-3 px-3 sm:px-4 py-2.5">
+        <div className="flex-shrink-0 pt-0.5">
+          <CodeField code={item.code} duplicate={duplicate} editSignal={codeFocusSignal} onCommit={v => update({ code: v })} />
         </div>
-        {/* Attention banner — visible even when the offending section is collapsed */}
-        {issues.length > 0 && (
-          <div className="px-4 py-2 bg-amber-50 border-t border-amber-200 flex items-start gap-1.5 text-xs text-amber-800">
-            <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
-            <span><span className="font-medium">Needs attention before review:</span> {issues.map(i => i.msg).join(" · ")}.</span>
+
+        {/* Middle — product, status, and (collapsed) the one-line summary */}
+        <button onClick={toggleExpanded} aria-expanded={isExpanded}
+          className="flex-1 min-w-0 text-left cursor-pointer group/exp">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-[#131311] leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+              {productLabel(item.productSlug)}
+            </span>
+            {attention
+              ? <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800 whitespace-nowrap"><AlertCircle className="w-3 h-3" aria-hidden="true" />Needs attention</span>
+              : <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344] whitespace-nowrap"><Check className="w-3 h-3" aria-hidden="true" />Ready</span>}
           </div>
-        )}
-        <div className="border-t border-black/8">
-          {p && (
-            <>
-              <Section variant="row" label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open === "dims"} onToggle={() => toggle("dims")}>
-                <DimensionsFields p={p} width={item.width} height={item.height} measuredBy={item.measuredBy}
-                  setWidth={v => update({ width: v })} setHeight={v => update({ height: v })} setMeasuredBy={v => update({ measuredBy: v })} />
-              </Section>
-              <Section variant="row" label="Options" summary={optionSummaryOf(p, item.options)} attention={hasIssue("options")} open={open === "options"} onToggle={() => toggle("options")}>
-                <OptionsFields p={p} options={item.options} setOpt={(t, v) => update({ options: { ...item.options, [t]: v } })} />
-              </Section>
-              <Section variant="row" label="Quantity & location" summary={qtySummary} open={open === "qty"} onToggle={() => toggle("qty")}>
-                <QtyLocationFields qty={item.qty} location={item.location} setQty={v => update({ qty: v })} setLocation={v => update({ location: v })} />
-              </Section>
-            </>
+          {!isExpanded && (
+            <p className="text-xs text-[#5c5a56] mt-1 leading-snug">{summaryLine}</p>
           )}
-          <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-black/8">
-            <span className="text-sm font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{valid ? `${fmt(pr.total)} inc GST` : "—"}</span>
-            <div className="flex items-center gap-2">
-              {onDuplicate && <Btn variant="ghost" size="sm" onClick={onDuplicate}>Duplicate</Btn>}
-              {onRemove && <button onClick={onRemove} className="text-[#5c5a56] hover:text-red-600 cursor-pointer p-1" aria-label="Remove item"><Trash2 className="w-4 h-4" /></button>}
-            </div>
+          {!isExpanded && attention && attentionMsg && (
+            <p className="text-xs text-amber-700 mt-1 flex items-start gap-1 leading-snug">
+              <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true" />
+              <span>{item.code ? `${item.code} · ` : ""}{attentionMsg}</span>
+            </p>
+          )}
+        </button>
+
+        {/* Right — line price + actions */}
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          <span className={`text-sm font-semibold whitespace-nowrap ${pr.ok ? "text-[#131311]" : "text-[#5c5a56]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
+            {priceLabel}{pr.ok ? <span className="text-[10px] font-normal text-[#5c5a56]"> inc GST</span> : null}
+          </span>
+          <div className="flex items-center gap-0.5">
+            {onDuplicate && <button onClick={onDuplicate} className="p-1.5 text-[#5c5a56] hover:text-[#5A7A6A] cursor-pointer" aria-label="Duplicate item"><Copy className="w-4 h-4" /></button>}
+            {onRemove && <button onClick={onRemove} className="p-1.5 text-[#5c5a56] hover:text-red-600 cursor-pointer" aria-label="Remove item"><Trash2 className="w-4 h-4" /></button>}
+            <button onClick={toggleExpanded} aria-expanded={isExpanded} aria-label={isExpanded ? "Collapse item" : "Expand item"} className="p-1.5 text-[#5c5a56] hover:text-[#131311] cursor-pointer">
+              <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+            </button>
           </div>
         </div>
       </div>
+
+      {/* ── Expanded detail groups — one open at a time ── */}
+      {isExpanded && p && (
+        <div className="border-t border-black/8">
+          <Section variant="row" label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open === "dims"} onToggle={() => toggle("dims")}>
+            <DimensionsFields p={p} width={item.width} height={item.height} measuredBy={item.measuredBy}
+              setWidth={v => update({ width: v })} setHeight={v => update({ height: v })} setMeasuredBy={v => update({ measuredBy: v })} />
+          </Section>
+          <Section variant="row" label="Options" summary={optionSummaryOf(p, item.options)} attention={hasIssue("options")} open={open === "options"} onToggle={() => toggle("options")}>
+            <OptionsFields p={p} options={item.options} setOpt={(t, v) => update({ options: { ...item.options, [t]: v } })} />
+          </Section>
+          <Section variant="row" label="Quantity & note" summary={qtySummary} open={open === "qty"} onToggle={() => toggle("qty")}>
+            <QtyLocationFields qty={item.qty} location={item.location} setQty={v => update({ qty: v })} setLocation={v => update({ location: v })} />
+          </Section>
+        </div>
+      )}
     </div>
   );
 }

@@ -14,8 +14,8 @@ import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/Ite
 import { StickyQuotePanel } from "../components/StickyQuotePanel";
 import { getProductBySlug } from "../data/catalogue";
 import {
-  type QuoteState,
-  priceConfigured, defaultOptions, fmt, mm, productLabel,
+  type QuoteState, type QItem,
+  priceConfigured, defaultOptions, fmt, mm, productLabel, hasDuplicateCode,
 } from "../data/configurator";
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
@@ -24,7 +24,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [view, setView] = useState<"build" | "review">("build");
   const [newKey, setNewKey] = useState(0);
-  const [adding, setAdding] = useState(quote.items.length === 0);
+  const [adding, setAdding] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadNotice, setUploadNotice] = useState<null | { type: "success" | "error"; message: string }>(null);
 
@@ -35,24 +35,30 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
   const [suburb, setSuburb] = useState("");
 
   const total = quote.items.reduce((s, it) => s + priceConfigured(it).total, 0);
-  const attentionCount = quote.items.filter(itemNeedsAttention).length;
+  // An item blocks review if its fields are invalid OR its code duplicates another.
+  const itemBlocked = (it: QItem) => itemNeedsAttention(it) || hasDuplicateCode(quote.items, it.id, it.code);
+  const attentionCount = quote.items.filter(itemBlocked).length;
   const hasContent = quote.items.length > 0 || quote.files.length > 0;
 
-  // Sticky panel actions scroll directly to the work that needs attention.
+  // One item expanded at a time; sticky-panel actions drive focus to the problem.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [focusReq, setFocusReq] = useState<{ id: number; nonce: number } | null>(null);
+  const [codeFocusReq, setCodeFocusReq] = useState<{ id: number; nonce: number } | null>(null);
   const smoothScroll = (el: Element | null) => {
     if (!el) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
   };
   const reviewIssues = () => {
-    const bad = quote.items.find(itemNeedsAttention);
+    const bad = quote.items.find(itemBlocked);
     if (!bad) return;
+    setExpandedId(bad.id);
     smoothScroll(document.getElementById(`qitem-${bad.id}`));
-    setFocusReq({ id: bad.id, nonce: Date.now() }); // opens the invalid section + focuses its field
+    if (itemNeedsAttention(bad)) setFocusReq({ id: bad.id, nonce: Date.now() }); // open the invalid group
+    else setCodeFocusReq({ id: bad.id, nonce: Date.now() });                     // duplicate code — edit it
   };
   const finishItem = () => {
-    const el = document.getElementById("new-item-composer");
+    const el = document.getElementById("new-item-composer") ?? document.getElementById("quote-start-actions");
     smoothScroll(el);
     requestAnimationFrame(() => el?.querySelector<HTMLElement>("input, select")?.focus({ preventScroll: true }));
   };
@@ -63,9 +69,9 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
     setTimeout(() => {
       try {
         const imported = [
-          { productSlug: "amj80-series-sliding-window", location: "Living room", measuredBy: "opening" as const, width: "1750", height: "1200", qty: 4 },
-          { productSlug: "amj80-series-awning-window", location: "Kitchen", measuredBy: "opening" as const, width: "900", height: "1200", qty: 2 },
-          { productSlug: "amj80-series-casement-window", location: "Bedroom 1", measuredBy: "" as const, width: "700", height: "", qty: 2 },
+          { code: "W01", productSlug: "amj80-series-sliding-window", location: "Living room", measuredBy: "opening" as const, width: "1750", height: "1200", qty: 4 },
+          { code: "W02", productSlug: "amj80-series-awning-window", location: "Kitchen", measuredBy: "opening" as const, width: "900", height: "1200", qty: 2 },
+          { code: "W04", productSlug: "amj80-series-casement-window", location: "Bedroom 1", measuredBy: "" as const, width: "700", height: "", qty: 2 },
         ];
         imported.forEach(item => {
           const product = getProductBySlug(item.productSlug);
@@ -204,7 +210,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
         </div>
       </section>
 
-      <div className="w-full max-w-3xl mx-auto px-6 pt-10 pb-28 flex-1">
+      <div className="w-full max-w-3xl mx-auto px-6 pt-10 pb-48 sm:pb-32 flex-1">
         {/* ─── MyProject — page header; the estimator tool follows ───────────── */}
         <div className="mb-7">
           <SLabel>Your project</SLabel>
@@ -214,7 +220,9 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
               <span className="text-xs text-[#5c5a56] border border-black/10 px-2 py-0.5">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span>
             )}
           </div>
-          <p className="text-[#5c5a56] text-sm mt-1.5 max-w-lg">Add products or upload a schedule — we issue a reviewed quote before any deposit. Supply only.</p>
+          {quote.items.length === 0 && (
+            <p className="text-[#5c5a56] text-sm mt-1.5 max-w-lg">Add products or upload a schedule — we issue a reviewed quote before any deposit. Supply only.</p>
+          )}
         </div>
 
         {/* Items + composer */}
@@ -232,23 +240,48 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
             </div>
           )}
 
-          {/* Item cards — sections expand/edit inline */}
-          <div className="space-y-3">
-            {quote.items.map((it, i) => (
-              <ItemSummaryCard key={it.id} item={it} index={i} quote={quote}
+          {/* Item cards — compact header + collapsible groups, one item open at a time */}
+          <div className="space-y-2.5">
+            {quote.items.map((it) => (
+              <ItemSummaryCard key={it.id} item={it} quote={quote}
                 id={`qitem-${it.id}`}
+                expanded={expandedId === it.id}
+                onToggleExpanded={() => setExpandedId(cur => cur === it.id ? null : it.id)}
+                duplicate={hasDuplicateCode(quote.items, it.id, it.code)}
                 focusSignal={focusReq?.id === it.id ? focusReq.nonce : undefined}
-                onDuplicate={() => quote.copy(it.id)}
+                codeFocusSignal={codeFocusReq?.id === it.id ? codeFocusReq.nonce : undefined}
+                onDuplicate={() => { const nid = quote.copy(it.id); if (nid) { setExpandedId(nid); setCodeFocusReq({ id: nid, nonce: Date.now() }); } }}
                 onRemove={() => quote.remove(it.id)} />
             ))}
           </div>
 
-          {/* Add another item — a compact "+" link that opens the composer */}
+          {/* The empty project starts with an explicit choice of input method. */}
           {adding ? (
             <div className="mt-3" id="new-item-composer">
               <ItemForm key={`new-${newKey}`} quote={quote}
                 onCommit={(b) => { quote.add(b); setNewKey(k => k + 1); setAdding(false); }}
-                onCancel={quote.items.length > 0 ? () => setAdding(false) : undefined} />
+                onCancel={() => setAdding(false)} />
+            </div>
+          ) : quote.items.length === 0 ? (
+            <div id="quote-start-actions" className="grid grid-cols-1 sm:grid-cols-2 gap-3" aria-label="Start your quote">
+              <button onClick={fakeUpload} disabled={uploading}
+                className="group min-h-32 border border-black/12 bg-white p-5 text-left hover:border-[#5A7A6A] hover:bg-[#F7F8F6] disabled:opacity-60 disabled:cursor-wait transition-colors cursor-pointer">
+                <span className="w-9 h-9 mb-4 flex items-center justify-center bg-[#5A7A6A]/10 text-[#5A7A6A] group-hover:bg-[#5A7A6A] group-hover:text-white transition-colors">
+                  {uploading
+                    ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+                    : <UploadCloud className="w-5 h-5" aria-hidden="true" />}
+                </span>
+                <span className="block text-base font-semibold text-[#131311] mb-1">{uploading ? "Reading schedule…" : "Upload a file"}</span>
+                <span className="block text-sm leading-relaxed text-[#5c5a56]">Import products from plans or a window and door schedule.</span>
+              </button>
+              <button onClick={() => setAdding(true)}
+                className="group min-h-32 border border-black/12 bg-white p-5 text-left hover:border-[#5A7A6A] hover:bg-[#F7F8F6] transition-colors cursor-pointer">
+                <span className="w-9 h-9 mb-4 flex items-center justify-center bg-[#5A7A6A]/10 text-[#5A7A6A] group-hover:bg-[#5A7A6A] group-hover:text-white transition-colors">
+                  <Plus className="w-5 h-5" aria-hidden="true" />
+                </span>
+                <span className="block text-base font-semibold text-[#131311] mb-1">Add a product manually</span>
+                <span className="block text-sm leading-relaxed text-[#5c5a56]">Choose a product, then enter its dimensions and options.</span>
+              </button>
             </div>
           ) : (
             <button onClick={() => setAdding(true)}

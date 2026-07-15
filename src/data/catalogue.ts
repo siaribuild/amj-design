@@ -31,6 +31,7 @@ export interface ProductOption {
   typeName: string;
   name: string;
   availability: OptionAvailability;
+  hex?: string;
 }
 
 export interface SpecRow { label: string; value: string; }
@@ -62,6 +63,33 @@ export interface Product {
   featuredOrder: number;
 }
 
+export const colorbondColourOptions: ProductOption[] = [
+  { typeSlug: "colour", typeName: "Colour", name: "Dover White", availability: "standard", hex: "#E3E7E2" },
+  { typeSlug: "colour", typeName: "Colour", name: "Surfmist", availability: "optional", hex: "#D7D6CB" },
+  { typeSlug: "colour", typeName: "Colour", name: "Classic Cream", availability: "optional", hex: "#E6CFAE" },
+  { typeSlug: "colour", typeName: "Colour", name: "Southerly", availability: "optional", hex: "#BFBFBB" },
+  { typeSlug: "colour", typeName: "Colour", name: "Paperbark", availability: "optional", hex: "#C9B59B" },
+  { typeSlug: "colour", typeName: "Colour", name: "Evening Haze", availability: "optional", hex: "#BFB5A1" },
+  { typeSlug: "colour", typeName: "Colour", name: "Shale Grey", availability: "optional", hex: "#B2B4AF" },
+  { typeSlug: "colour", typeName: "Colour", name: "Dune", availability: "optional", hex: "#ADA398" },
+  { typeSlug: "colour", typeName: "Colour", name: "Bluegum", availability: "optional", hex: "#899094" },
+  { typeSlug: "colour", typeName: "Colour", name: "Windspray", availability: "optional", hex: "#80847F" },
+  { typeSlug: "colour", typeName: "Colour", name: "Pale Eucalypt", availability: "optional", hex: "#777D67" },
+  { typeSlug: "colour", typeName: "Colour", name: "Gully", availability: "optional", hex: "#776F62" },
+  { typeSlug: "colour", typeName: "Colour", name: "Wilderness", availability: "optional", hex: "#606F61" },
+  { typeSlug: "colour", typeName: "Colour", name: "Wallaby", availability: "optional", hex: "#6C6A65" },
+  { typeSlug: "colour", typeName: "Colour", name: "Mangrove", availability: "optional", hex: "#696957" },
+  { typeSlug: "colour", typeName: "Colour", name: "Jasper", availability: "optional", hex: "#675C51" },
+  { typeSlug: "colour", typeName: "Colour", name: "Basalt", availability: "optional", hex: "#5C5E5E" },
+  { typeSlug: "colour", typeName: "Colour", name: "Woodland Grey", availability: "optional", hex: "#53514D" },
+  { typeSlug: "colour", typeName: "Colour", name: "Cottage Green", availability: "optional", hex: "#3B5045" },
+  { typeSlug: "colour", typeName: "Colour", name: "Ironstone", availability: "optional", hex: "#474B50" },
+  { typeSlug: "colour", typeName: "Colour", name: "Deep Ocean", availability: "optional", hex: "#3C4B54" },
+  { typeSlug: "colour", typeName: "Colour", name: "Manor Red", availability: "optional", hex: "#673833" },
+  { typeSlug: "colour", typeName: "Colour", name: "Monument", availability: "optional", hex: "#404141" },
+  { typeSlug: "colour", typeName: "Colour", name: "Night Sky", availability: "optional", hex: "#2B2C2C" },
+];
+
 export const categories: Category[] = [
   { id: "1", slug: "windows", name: "Windows", shortDescription: `Aluminium window systems for renovation and new-build projects, from compact ventilation units to higher-performance architectural openings.`, description: `The window range covers the major residential opening types used in renovation and new-build work: sliding, awning, casement, louvre, tilt-turn, sashless double hung and single hung. The category is designed to support practical trade selection, with each product defined by size limits, glass make-up, profile thickness, hardware and performance ratings where available. Use this category when the project requires repeatable aluminium window systems with clear configuration choices and a supply-only workflow.` },
   { id: "2", slug: "doors", name: "Doors", shortDescription: `Aluminium door systems for indoor-outdoor living, entries and wide façade openings, available across sliding, hinged, folding and premium large-panel formats.`, description: `The door range is focused on aluminium-framed access and façade systems for residential projects, from practical sliding and hinged doors through to bi-fold, pivot, slim-frame and lift-slide formats. The category supports both everyday renovation openings and premium indoor-outdoor connections, with product selection driven by opening width, panel operation, glass specification, hardware and exposure rating. Use this category when the project requires configurable aluminium doors for builder-led supply, manual review and confirmed production before delivery.` },
@@ -83,7 +111,7 @@ export const families: Family[] = [
   { id: "13", slug: "lift-slide-door", categorySlug: "doors", name: "Lift-Slide Door", shortDescription: `Heavy-duty lift-slide door for large openings where smooth operation and sealing matter.`, description: `Lift-slide doors are designed for larger and heavier glazed panels, using hardware that lifts the panel slightly before sliding to improve operation and sealing. This family is suited to premium openings where large panel size, smooth movement and weather performance are priorities. The AMJ150T lift-sliding option should be positioned as a higher-performance alternative to a conventional sliding door for substantial living-area openings.` },
 ];
 
-export const products: Product[] = [
+const productDefinitions: Product[] = [
   {
     id: "1", slug: "amj80-series-sliding-window", name: "AMJ80 Series Sliding Window",
     familySlug: "sliding-window", categorySlug: "windows",
@@ -517,6 +545,14 @@ export const products: Product[] = [
     featuredOrder: 27,
   },
 ];
+
+export const products: Product[] = productDefinitions.map(product => ({
+  ...product,
+  options: [
+    ...product.options.filter(option => option.typeSlug !== "colour"),
+    ...colorbondColourOptions,
+  ],
+}));
 
 // ─── Selectors (future GROQ query boundary) ──────────────────────────────────
 export const getCategories = (): Category[] => categories;

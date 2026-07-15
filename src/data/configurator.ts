@@ -11,7 +11,7 @@
 // NOTE: there is no "configuration/panel" concept — that is not in the product
 // data yet. When it exists it will live with the dimensions, not as an invented field.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { type Product, getProductBySlug, getCategories, getFamiliesByCategory } from "./catalogue";
+import { type Product, getProductBySlug, getCategories, getFamiliesByCategory, colorbondColourOptions } from "./catalogue";
 
 // ─── Quote (MyProject) state ──────────────────────────────────────────────────
 export type MeasuredBy = "" | "frame" | "opening" | "unsure";
@@ -21,6 +21,7 @@ export const MEASURED_LABELS: Record<Exclude<MeasuredBy, "">, string> = {
 
 export interface QItem {
   id: number;
+  code: string;    // schedule/item code (W01, D03…) — primary builder reference
   productSlug: string;
   location: string;
   measuredBy: MeasuredBy; // how the customer measured — kept for technical review
@@ -34,12 +35,34 @@ export interface QFile { id: number; name: string; kind: string; status: "Upload
 export interface QuoteState {
   items: QItem[];
   files: QFile[];
-  add: (i: Omit<QItem, "id">) => number;
+  // `code` is optional on input — the store assigns a suggested one when omitted.
+  add: (i: Omit<QItem, "id" | "code"> & { code?: string }) => number;
   update: (id: number, patch: Partial<QItem>) => void;
   remove: (id: number) => void;
-  copy: (id: number) => void;
+  copy: (id: number) => number | undefined;
   addFiles: (f: QFile[]) => void;
   removeFile: (id: number) => void;
+}
+
+// ─── Item codes (schedule/builder references) ─────────────────────────────────
+export const normCode = (c: string) => (c || "").trim().toUpperCase();
+
+// Suggest the next code for a product: W## for windows, D## for doors, continuing
+// from the highest existing number under that prefix in the current project.
+export function suggestCode(items: QItem[], productSlug: string): string {
+  const prefix = getProductBySlug(productSlug)?.categorySlug === "doors" ? "D" : "W";
+  let max = 0;
+  for (const it of items) {
+    const m = /^([A-Za-z]+)\s*(\d+)$/.exec((it.code || "").trim());
+    if (m && m[1].toUpperCase() === prefix) max = Math.max(max, parseInt(m[2]));
+  }
+  return `${prefix}${String(max + 1).padStart(2, "0")}`;
+}
+
+// Does this item's code collide with another item's code in the project?
+export function hasDuplicateCode(items: QItem[], id: number, code: string): boolean {
+  const n = normCode(code);
+  return !!n && items.some(it => it.id !== id && normCode(it.code) === n);
 }
 
 // ─── Rate model ($/m perimeter, $/m² area) per family ─────────────────────────
@@ -76,7 +99,10 @@ function optionAdd(o: { typeSlug: string; name: string; availability: string }):
 }
 
 // ─── Option groups for the configurator UI ────────────────────────────────────
-export interface OptionChoice { name: string; add: number; standard: boolean }
+export interface OptionChoice { name: string; add: number; standard: boolean; hex?: string }
+
+// Most-popular colours surfaced for direct selection; the rest live under "Other".
+export const POPULAR_COLOURS = ["Dover White", "Shale Grey", "Monument", "Night Sky"];
 export interface OptionGroup { typeSlug: string; label: string; required: boolean; choices: OptionChoice[]; defaultName: string }
 
 const TYPE_ORDER = ["colour", "hardware", "flyscreen", "installation"];
@@ -85,13 +111,20 @@ const REQUIRED_TYPES = new Set(["colour", "hardware"]);
 export function optionGroupsFor(p: Product): OptionGroup[] {
   const byType = new Map<string, { label: string; choices: OptionChoice[] }>();
   for (const o of p.options) {
+    if (o.typeSlug === "colour") continue; // colour uses the shared Colorbond palette below
     if (!byType.has(o.typeSlug)) byType.set(o.typeSlug, { label: o.typeName, choices: [] });
     byType.get(o.typeSlug)!.choices.push({ name: o.name, add: optionAdd(o), standard: o.availability === "standard" });
   }
+  // Colour: the standard Colorbond range (name + swatch), all included in the base price.
+  byType.set("colour", {
+    label: "Colour",
+    choices: colorbondColourOptions.map(o => ({ name: o.name, add: 0, standard: o.availability === "standard", hex: o.hex })),
+  });
   const groups: OptionGroup[] = [];
   for (const [typeSlug, { label, choices }] of byType) {
-    choices.sort((a, b) => (a.standard === b.standard ? a.add - b.add : a.standard ? -1 : 1));
-    const def = choices.find(c => c.standard)?.name ?? "";
+    // Keep the Colorbond palette in its curated order; sort every other group as before.
+    if (typeSlug !== "colour") choices.sort((a, b) => (a.standard === b.standard ? a.add - b.add : a.standard ? -1 : 1));
+    const def = choices.find(c => c.standard)?.name ?? choices[0]?.name ?? "";
     groups.push({ typeSlug, label, required: REQUIRED_TYPES.has(typeSlug), choices, defaultName: def });
   }
   groups.sort((a, b) => {

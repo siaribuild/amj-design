@@ -13,6 +13,7 @@ import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { QuotePage } from "../pages/QuotePage";
 import { products as catalogueProducts, type CategorySlug } from "../data/catalogue";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
+import { suggestCode } from "../data/configurator";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AuthUser {
@@ -1370,10 +1371,13 @@ export default function App() {
   const quote: QuoteState = {
     items: quoteItems,
     files: quoteFiles,
-    add: (i) => { const id = Date.now() + Math.floor(Math.random() * 1000); setQuoteItems(prev => [...prev, { ...i, id }]); return id; },
+    // Assign a suggested code when none is supplied. Codes are derived from `prev`
+    // (not the render snapshot) so a batch import numbers items sequentially.
+    add: (i) => { const id = Date.now() + Math.floor(Math.random() * 1000); setQuoteItems(prev => [...prev, { ...i, id, code: i.code?.trim() ? i.code.trim() : suggestCode(prev, i.productSlug) }]); return id; },
     update: (id, patch) => setQuoteItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it)),
     remove: (id) => setQuoteItems(prev => prev.filter(it => it.id !== id)),
-    copy: (id) => setQuoteItems(prev => { const it = prev.find(x => x.id === id); return it ? [...prev, { ...it, id: Date.now() + Math.floor(Math.random() * 1000) }] : prev; }),
+    // Duplicating keeps the item but gives it a fresh suggested code to confirm.
+    copy: (id) => { const src = quoteItems.find(x => x.id === id); if (!src) return undefined; const nid = Date.now() + Math.floor(Math.random() * 1000); setQuoteItems(prev => [...prev, { ...src, id: nid, code: suggestCode(prev, src.productSlug) }]); return nid; },
     addFiles: (f) => setQuoteFiles(prev => [...prev, ...f]),
     removeFile: (id) => setQuoteFiles(prev => prev.filter(f => f.id !== id)),
   };

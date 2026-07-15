@@ -52,10 +52,10 @@ export function StickyQuotePanel({
   let panelTone: string;
   let ctaTone = "";
 
-  if (itemCount === 0) {
+  if (itemCount === 0 && !editingItem) {
     status = <span>No items added yet</span>;
     live = "No items added yet";
-    ctaLabel = "Start item";
+    ctaLabel = "Choose how to start";
     onClick = onFinishItem;
     statusTone = "border-black/10 bg-white text-[#5c5a56]";
     panelTone = "border-[#8CA99B] bg-[#F7F8F6]";
@@ -104,7 +104,7 @@ export function StickyQuotePanel({
 
   return (
     <section role="region" aria-label="Current quote summary"
-      className={`sticky inset-x-0 bottom-0 z-40 border-t-[3px] border-b border-b-black/10 ${panelTone}`}
+      className={`fixed inset-x-0 bottom-0 z-40 border-t-[3px] border-b border-b-black/10 ${panelTone}`}
       style={{
         boxShadow: "0 -10px 28px rgba(19,19,17,0.16)",
         paddingBottom: "env(safe-area-inset-bottom)",
