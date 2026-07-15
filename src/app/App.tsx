@@ -434,8 +434,6 @@ function HomePage({ setPage }: { setPage: (p: Page) => void }) {
         <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.85) 0%, rgba(12,12,10,0.5) 12%, rgba(12,12,10,0.2) 27%, rgba(12,12,10,0.12) 60%, rgba(12,12,10,0.1) 100%)" }} />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/40 via-transparent to-transparent" />
         {/* Mullion grid motif (hero frame rectangle removed) */}
-        <div className="absolute top-4 bottom-4 md:top-8 md:bottom-8 left-1/3 w-px bg-white/[0.07] pointer-events-none hidden lg:block" />
-        <div className="absolute top-4 bottom-4 md:top-8 md:bottom-8 left-2/3 w-px bg-white/[0.07] pointer-events-none hidden lg:block" />
 
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-28 pb-16 md:py-28">
           <div className="w-full max-w-2xl">
