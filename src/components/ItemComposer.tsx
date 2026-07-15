@@ -141,14 +141,19 @@ function DimensionsFields({ p, width, height, measuredBy, setWidth, setHeight, s
   );
 }
 
-// A colour swatch chip carrying both the name and the actual colour.
-function ColourSwatch({ choice, selected, onPick }: { choice: OptionChoice; selected: boolean; onPick: () => void }) {
+// Responsive option grid — fills the available width: 2 columns when narrow (e.g.
+// the PDP side rail), 3–4 as the container widens (the full-width quote card).
+const OPTION_GRID = "grid grid-cols-2 @md:grid-cols-3 @xl:grid-cols-4 gap-1.5";
+
+// A single option choice — unified across every option group. Colours pass a `hex`
+// so the swatch shows; text options (hardware, flyscreen…) omit it. Same size.
+function OptionButton({ label, hex, selected, onPick }: { label: string; hex?: string; selected: boolean; onPick: () => void }) {
   return (
-    <button onClick={onPick} aria-pressed={selected} title={choice.name}
-      className={`flex items-center gap-2 px-2 py-1.5 border text-left transition-colors cursor-pointer min-w-0 ${selected ? "border-[#131311] bg-[#131311]/[0.04] ring-1 ring-[#131311]" : "border-black/15 bg-white hover:border-[#5A7A6A]"}`}>
-      <span className="w-4 h-4 flex-shrink-0 border border-black/25" style={{ background: choice.hex || "#ccc" }} aria-hidden="true" />
-      <span className="text-xs text-[#131311] truncate flex-1">{choice.name}</span>
-      {selected && <Check className="w-3.5 h-3.5 text-[#131311] flex-shrink-0" aria-hidden="true" />}
+    <button onClick={onPick} aria-pressed={selected} title={label}
+      className={`flex items-center gap-2 px-2.5 py-2 border text-left transition-colors cursor-pointer min-w-0 ${selected ? "border-[#131311] bg-[#131311]/[0.04] ring-1 ring-[#131311]" : "border-black/15 bg-white hover:border-[#5A7A6A]"}`}>
+      {hex !== undefined && <span className="w-4 h-4 flex-shrink-0 border border-black/25" style={{ background: hex || "#ccc" }} aria-hidden="true" />}
+      <span className="text-xs text-[#131311] truncate flex-1">{label}</span>
+      {selected && <Check className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0" aria-hidden="true" />}
     </button>
   );
 }
@@ -161,8 +166,8 @@ function ColourChoices({ choices, value, onPick }: { choices: OptionChoice[]; va
   const [showAll, setShowAll] = useState(!isPopular && !!value); // reveal the full list if a non-popular colour is selected
   return (
     <div>
-      <div className="grid grid-cols-2 gap-1.5">
-        {popular.map(c => <ColourSwatch key={c.name} choice={c} selected={value === c.name} onPick={() => onPick(c.name)} />)}
+      <div className={OPTION_GRID}>
+        {popular.map(c => <OptionButton key={c.name} label={c.name} hex={c.hex} selected={value === c.name} onPick={() => onPick(c.name)} />)}
       </div>
       <button onClick={() => setShowAll(s => !s)} aria-expanded={showAll}
         className="mt-2 flex items-center gap-1 text-xs font-medium text-[#5A7A6A] hover:text-[#4a6858] cursor-pointer">
@@ -172,8 +177,8 @@ function ColourChoices({ choices, value, onPick }: { choices: OptionChoice[]; va
       <div className={`grid transition-[grid-template-rows] duration-200 ${showAll ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
         <div className="overflow-hidden">
           <p className="text-[10px] uppercase tracking-widest text-[#5c5a56] pt-2 pb-1.5">All standard colours</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-            {choices.map(c => <ColourSwatch key={c.name} choice={c} selected={value === c.name} onPick={() => onPick(c.name)} />)}
+          <div className={OPTION_GRID}>
+            {choices.map(c => <OptionButton key={c.name} label={c.name} hex={c.hex} selected={value === c.name} onPick={() => onPick(c.name)} />)}
           </div>
         </div>
       </div>
@@ -205,16 +210,13 @@ function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<str
             </button>
             <div className={`grid transition-[grid-template-rows] duration-200 ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
               <div className="overflow-hidden">
-                <div className="px-4 pb-3 pt-2 border-t border-black/6">
+                <div className="@container px-4 pb-3 pt-2 border-t border-black/6">
                   {isColour ? (
                     <ColourChoices choices={g.choices} value={val} onPick={v => setOpt(g.typeSlug, v)} />
                   ) : (
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className={OPTION_GRID}>
                       {g.choices.map(c => (
-                        <button key={c.name} onClick={() => setOpt(g.typeSlug, c.name)}
-                          className={`text-xs px-3 py-1.5 border transition-colors cursor-pointer ${val === c.name ? "border-[#131311] bg-[#131311] text-white" : "border-black/15 bg-white text-[#131311] hover:border-[#5A7A6A]"}`}>
-                          {c.name}
-                        </button>
+                        <OptionButton key={c.name} label={c.name} selected={val === c.name} onPick={() => setOpt(g.typeSlug, c.name)} />
                       ))}
                     </div>
                   )}
@@ -504,7 +506,7 @@ export function ItemSummaryCard({
           {!isExpanded && attention && attentionMsg && (
             <p className="text-xs text-amber-700 mt-1 flex items-start gap-1 leading-snug">
               <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true" />
-              <span>{item.code ? `${item.code} · ` : ""}{attentionMsg}</span>
+              <span>{attentionMsg}</span>
             </p>
           )}
         </button>

@@ -104,7 +104,7 @@ export function StickyQuotePanel({
 
   return (
     <section role="region" aria-label="Current quote summary"
-      className={`fixed inset-x-0 bottom-0 z-40 border-t-[3px] border-b border-b-black/10 ${panelTone}`}
+      className={`sticky bottom-0 z-40 border-t-[3px] border-b border-b-black/10 ${panelTone}`}
       style={{
         boxShadow: "0 -10px 28px rgba(19,19,17,0.16)",
         paddingBottom: "env(safe-area-inset-bottom)",
@@ -113,7 +113,7 @@ export function StickyQuotePanel({
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         Indicative estimate {fmt(total)}. {live}.
       </div>
-      <div className="mx-auto max-w-3xl px-4 sm:px-6 py-3 sm:py-3.5 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3 sm:py-3.5 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
         <div className="flex items-center justify-between gap-3 min-w-0 sm:contents">
           <div className="sm:order-2 flex flex-col min-w-0 flex-shrink-0">
             <span className="text-[9px] uppercase tracking-[0.16em] text-[#6f6c67] leading-none mb-1">Estimate</span>

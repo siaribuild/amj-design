@@ -148,7 +148,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
 
   // ─── Build ────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#FAFAF9] flex flex-col">
+    <div className="min-h-screen bg-[#FAFAF9]">
       {/* ─── Dark functional hero — header overlays it; upload panel is a live
              part of the hero, styled like the panels on the home hero ───────── */}
       <section className="relative bg-[#0c0c0a] overflow-hidden">
@@ -210,7 +210,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
         </div>
       </section>
 
-      <div className="w-full max-w-3xl mx-auto px-6 pt-10 pb-48 sm:pb-32 flex-1">
+      <div className="w-full max-w-6xl mx-auto px-6 pt-10 pb-10">
         {/* ─── MyProject — page header; the estimator tool follows ───────────── */}
         <div className="mb-7">
           <SLabel>Your project</SLabel>
