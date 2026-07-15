@@ -84,3 +84,24 @@ export function Btn({
     </button>
   );
 }
+
+// ─── Form primitives ──────────────────────────────────────────────────────────
+export function FieldLabel({ children }: { children: ReactNode }) {
+  return (
+    <label className="text-[10px] font-semibold text-[#3a3835] uppercase tracking-widest block mb-1.5">
+      {children}
+    </label>
+  );
+}
+
+export function Input({ value, onChange, placeholder, type = "text", className = "", defaultValue, inputMode }: {
+  value?: string; onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  placeholder?: string; type?: string; className?: string; defaultValue?: string;
+  inputMode?: "numeric" | "text" | "decimal";
+}) {
+  return (
+    <input type={type} value={value} defaultValue={defaultValue} onChange={onChange}
+      placeholder={placeholder} inputMode={inputMode}
+      className={`w-full border border-[#131311]/20 bg-white px-3 py-2.5 text-sm text-[#131311] placeholder-[#9a9894] focus:outline-none focus:border-[#5A7A6A] transition-colors ${className}`} />
+  );
+}

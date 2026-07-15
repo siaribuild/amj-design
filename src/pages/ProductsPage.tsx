@@ -206,7 +206,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
     <div className="bg-white min-h-screen">
       {/* ─── HERO — contextual to selected category, header overlays it ─────── */}
       <section className="relative h-[360px] md:h-[440px] flex items-end bg-[#0c0c0a] overflow-hidden">
-        <img src={hero.image} alt={hero.alt} className="absolute inset-0 w-full h-full object-cover opacity-70" />
+        <img src={hero.image} alt={hero.alt} className="absolute inset-0 w-full h-full object-cover opacity-70 hero-zoom" />
         <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.88) 0%, rgba(12,12,10,0.55) 20%, rgba(12,12,10,0.25) 45%, rgba(12,12,10,0.15) 100%)" }} />
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-24 pb-10 md:pt-28 md:pb-12">
           <div className="max-w-xl">

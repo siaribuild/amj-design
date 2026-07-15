@@ -173,7 +173,7 @@ const products=prodRows.map((r)=>{
   if(water) specs.push({label:'Water tightness',value:water});
   if(wind) specs.push({label:'Wind pressure',value:wind});
   if(notes) specs.push({label:'Notes',value:notes});
-  // options grouped by type from mapping
+  // options grouped by type from mapping; the first installation choice is the default.
   const opts=[];
   for(const [optId,perProd] of Object.entries(mapByOption)){
     const status=perProd[id];
@@ -182,6 +182,8 @@ const products=prodRows.map((r)=>{
     const ot=optionTypes[o.typeId];
     opts.push({typeSlug:ot?ot.slug:'', typeName:ot?ot.name:'', name:o.name, availability:status});
   }
+  const firstInstallation=opts.find(o=>o.typeSlug==='installation');
+  if(firstInstallation) firstInstallation.availability='standard';
   return {
     id, slug:slugify(name), name,
     familySlug:fam?fam.slug:'', categorySlug:cat?cat.slug:'',
