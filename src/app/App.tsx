@@ -156,7 +156,7 @@ function Nav({ page, setPage, user, setUser }: {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-  const heroPage = page === "home" || page === "products" || page === "product-detail";
+  const heroPage = page === "home" || page === "products" || page === "product-detail" || page === "quote";
   const transparent = heroPage && !scrolled;
 
   return (

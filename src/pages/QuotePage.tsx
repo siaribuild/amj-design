@@ -6,8 +6,8 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useState } from "react";
 import {
-  Upload, FileText, X, Plus, ChevronLeft, ArrowRight, Check,
-  AlertCircle, CheckCircle, Send,
+  Upload, UploadCloud, FileText, X, Plus, ChevronLeft, ArrowRight, Check,
+  AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid,
 } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
@@ -122,28 +122,69 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
 
   // ─── Build ────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#FAFAF9] pt-16">
-      <div className="max-w-3xl mx-auto px-6 py-10">
-        {/* Slim hero — upload button floats right on the heading line */}
-        <div className="relative mb-8 flex items-start justify-between gap-4">
-          <GhostMark size={220} opacity={0.05} pos="right-0 top-0" />
-          <div className="relative min-w-0">
-            <SLabel>Your quote</SLabel>
-            <h1 className="text-3xl md:text-4xl font-semibold text-[#131311] mb-2 leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Build your quote</h1>
-            <p className="text-[#5c5a56] text-sm max-w-lg">Add products for an estimate, or upload a schedule and we'll prefill the line items. A reviewed quote is issued before any deposit — supply only.</p>
-          </div>
-          <div className="relative flex-shrink-0 text-right">
-            {uploading ? (
-              <span className="flex items-center gap-2 text-sm text-[#5c5a56]"><div className="w-4 h-4 border-2 border-[#5A7A6A] border-t-transparent rounded-full animate-spin" />Reading…</span>
-            ) : (
-              <>
-                <Btn variant="outline" size="sm" onClick={fakeUpload}><Upload className="w-4 h-4" />Upload plans</Btn>
-                <p className="text-[10px] text-[#5c5a56] mt-1">PDF · DWG · XLS · CSV · JPG</p>
-              </>
-            )}
+    <div className="min-h-screen bg-[#FAFAF9]">
+      {/* ─── Dark functional hero — header overlays it; upload panel is a live
+             part of the hero, styled like the panels on the home hero ───────── */}
+      <section className="relative bg-[#0c0c0a] overflow-hidden">
+        <img
+          src="https://images.unsplash.com/photo-1774516534130-d67eb3c98798?w=1920&h=1080&fit=crop&auto=format"
+          alt="Contemporary home interior with full-height aluminium-framed glazing onto a landscaped garden at dusk"
+          className="absolute inset-0 w-full h-full object-cover opacity-70 hero-zoom" />
+        {/* Contrast overlay — stronger on the left behind the copy */}
+        <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.9) 0%, rgba(12,12,10,0.6) 22%, rgba(12,12,10,0.32) 50%, rgba(12,12,10,0.28) 100%)" }} />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/50 via-transparent to-transparent" />
+
+        <div className="relative w-full max-w-6xl mx-auto px-6 pt-20 pb-6 md:pt-24 md:pb-9">
+          <div className="grid gap-4 md:gap-10 md:grid-cols-[1fr_minmax(300px,380px)] md:items-center">
+            {/* Copy */}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-2.5 md:mb-4">
+                <LayoutGrid className="w-3.5 h-3.5 text-white/55" />
+                <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60"
+                  style={{ fontFamily: "'DM Mono', monospace" }}>Your quote</span>
+              </div>
+              <h1 className="font-semibold text-white leading-[1.03] tracking-tight mb-2 md:mb-3"
+                style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.9rem, 4.2vw, 3rem)" }}>
+                Build your quote
+              </h1>
+              <p className="text-white/80 text-[13px] leading-snug md:text-[15px] md:leading-relaxed max-w-lg">
+                Add products manually or upload your plans and schedule. We'll review the
+                specifications and issue a confirmed quote before any deposit is required.
+              </p>
+              {/* Trust row — decorative, hidden on mobile to keep the hero shallow */}
+              <div className="hidden sm:flex flex-wrap items-center gap-x-6 gap-y-2 mt-5 text-[13px] text-white/65">
+                <span className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-white/50" />Supply only</span>
+                <span className="flex items-center gap-1.5"><UserCheck className="w-4 h-4 text-white/50" />Reviewed by our team</span>
+                <span className="flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-white/50" />No account needed</span>
+              </div>
+            </div>
+
+            {/* Upload panel — functional, matches home-hero panel styling. On mobile
+                the decorative box collapses to just the button (the priority action). */}
+            <div className="sm:border sm:border-dashed sm:border-white/25 sm:bg-white/[0.06] sm:backdrop-blur-md sm:p-6 sm:text-center">
+              {uploading ? (
+                <div className="flex items-center justify-center gap-3 py-3 sm:py-4 sm:flex-col">
+                  <div className="w-5 h-5 sm:w-6 sm:h-6 border-2 border-[#8CA99B] border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm text-white/75">Reading your file…</p>
+                </div>
+              ) : (
+                <>
+                  <UploadCloud className="hidden sm:block w-8 h-8 text-white/70 mx-auto mb-3" />
+                  <p className="hidden sm:block text-sm font-semibold text-white mb-1">Upload plans or a schedule</p>
+                  <p className="text-[11px] tracking-wide text-white/55 mb-2 sm:mb-4"
+                    style={{ fontFamily: "'DM Mono', monospace" }}>PDF · DWG · XLS · CSV · JPG</p>
+                  <Btn variant="sage" size="md" onClick={fakeUpload} className="w-full justify-center">
+                    <Upload className="w-4 h-4" />Upload files
+                  </Btn>
+                  <p className="hidden sm:block text-[11px] text-white/50 mt-3">or drag and drop files here</p>
+                </>
+              )}
+            </div>
           </div>
         </div>
+      </section>
 
+      <div className="max-w-3xl mx-auto px-6 py-10">
         {/* Parsed-upload review */}
         {drafts.length > 0 && (
           <div className="border border-[#5A7A6A]/30 bg-white mb-4">
@@ -181,7 +222,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
         )}
 
         {/* MyProject — items + composer */}
-        <div className="mt-8 pt-8 border-t border-black/10">
+        <div className={drafts.length > 0 ? "mt-8 pt-8 border-t border-black/10" : ""}>
           {quote.items.length > 0 && (
             <div className="flex items-center gap-2 mb-4">
               <WindowMark size={16} color={SAGE} />
