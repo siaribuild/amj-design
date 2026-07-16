@@ -176,13 +176,23 @@ function OrderView({ order, busy, onConfirmDrawings, onConfirmQa }: {
           cta={<Btn variant="sage" size="md" onClick={onConfirmQa} className={busy ? "opacity-50 pointer-events-none" : ""}>{busy ? "…" : "Confirm for dispatch"}</Btn>} />
       )}
 
-      {/* Payments (manual bank transfer) */}
+      <OrderReadout order={order} />
+    </div>
+  );
+}
+
+// Read-only payments + stage tracker — shared by the account view and the guest
+// tracking page (no action buttons).
+export function OrderReadout({ order }: { order: ApiOrder }) {
+  const idx = order.stageIndex;
+  const deposit = order.payments.find(p => p.kind === "deposit");
+  const balance = order.payments.find(p => p.kind === "balance");
+  return (
+    <>
       <div className="grid sm:grid-cols-2 gap-3 mb-8">
         {deposit && <PaymentCard title="Deposit" orderNo={order.orderNo} p={deposit} />}
         {balance && <PaymentCard title="Balance" orderNo={order.orderNo} p={balance} />}
       </div>
-
-      {/* Stage tracker */}
       <div className="bg-white border border-black/8 p-5">
         <p className="text-[10px] tracking-[0.2em] text-[#5c5a56] uppercase mb-4">Progress</p>
         <ol className="space-y-0">
@@ -202,7 +212,7 @@ function OrderView({ order, busy, onConfirmDrawings, onConfirmQa }: {
           })}
         </ol>
       </div>
-    </div>
+    </>
   );
 }
 

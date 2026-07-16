@@ -31,7 +31,7 @@ export const userDto = (u: UserRow) => ({
 export const normEmail = (e: unknown) => String(e ?? "").trim().toLowerCase();
 export const isEmail = (e: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
 
-async function sha256hex(s: string): Promise<string> {
+export async function sha256hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }

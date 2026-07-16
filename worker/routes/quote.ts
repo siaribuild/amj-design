@@ -3,27 +3,12 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
+import { ownedProject } from "../lib/access";
 import { createOrderFromRevision, orderDto, type OrderRow } from "../lib/orders";
-import { CLAIM_COOKIE, parseCookies, uuid } from "../lib/util";
+import { uuid } from "../lib/util";
 import { getProductBySlug } from "../../src/data/catalogue";
 
 export const quote = new Hono<{ Bindings: Env }>();
-
-interface ProjectRow {
-  id: string; owner_user_id: string | null; claim_token: string | null;
-  title: string | null; status_customer: string;
-}
-
-// The requester owns a project if signed in as its owner, or holds its claim cookie.
-async function ownedProject(env: Env, req: Request, projectId: string): Promise<ProjectRow | null> {
-  const p = await env.DB.prepare("SELECT * FROM project WHERE id = ?").bind(projectId).first<ProjectRow>();
-  if (!p) return null;
-  const user = await resolveUser(env, req);
-  if (user && p.owner_user_id === user.id) return p;
-  const claim = parseCookies(req.headers.get("Cookie"))[CLAIM_COOKIE];
-  if (claim && p.claim_token === claim) return p;
-  return null;
-}
 
 // Staff-only seam. The internal ops console (Cloudflare Access) will own these;
 // until it exists, allow internal users, or any caller in non-prod for testing.

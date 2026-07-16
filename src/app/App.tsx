@@ -12,12 +12,12 @@ import { ProductsPage } from "../pages/ProductsPage";
 import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { QuotePage } from "../pages/QuotePage";
 import { HowItWorksPage } from "../pages/HowItWorksPage";
-import { OrderTrackingPage } from "../pages/OrderTrackingPage";
+import { OrderTrackingPage, OrderReadout } from "../pages/OrderTrackingPage";
 import { pathForPage, routeFromPathname } from "./routes";
 import { products as catalogueProducts, type CategorySlug } from "../data/catalogue";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
-import { suggestCode, addDemoSchedule } from "../data/configurator";
-import { getCurrentProject, saveLines, submitProject, me as fetchMe, logout as apiLogout, requestCode, verifyCode, type AuthUserDto } from "../data/api";
+import { suggestCode, addDemoSchedule, fmt } from "../data/configurator";
+import { getCurrentProject, saveLines, submitProject, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, type AuthUserDto, type ApiOrder } from "../data/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AuthUser {
@@ -1030,17 +1030,35 @@ function AccountSettingsPage({ user, setPage }: { user: AuthUser | null; setPage
 // ═══════════════════════════════════════════════════════════════════════════════
 function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const [ref, setRef] = useState(""); const [email, setEmail] = useState("");
-  const [searched, setSearched] = useState(false); const [notFound, setNotFound] = useState(false);
-  const handleSearch = () => {
-    if (ref.trim().toUpperCase() === "AMJ-58712" && email.includes("@")) { setSearched(true); setNotFound(false); }
-    else if (ref.trim()) { setNotFound(true); setSearched(false); }
+  const [step, setStep] = useState<"lookup" | "code" | "record">("lookup");
+  const [ref, setRef] = useState(""); const [email, setEmail] = useState(""); const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  const [devCode, setDevCode] = useState<string | undefined>();
+  const [order, setOrder] = useState<ApiOrder | null>(null);
+
+  const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+
+  const request = async () => {
+    if (!validEmail || !ref.trim() || busy) return;
+    setBusy(true); setError("");
+    try {
+      const r = await guestTrackRequest(email.trim(), ref.trim());
+      setDevCode(r.devCode); setStep("code");
+    } catch { setError("Something went wrong. Try again."); }
+    finally { setBusy(false); }
   };
-  const steps = [
-    {l:"Received",done:true},{l:"Technical review",done:true},{l:"Reviewed quote sent",done:true},
-    {l:"Deposit confirmed",done:true},{l:"Sent to manufacturer",done:true},{l:"In production",done:true,current:true},
-    {l:"Delivery booked",done:false},{l:"Delivered",done:false},
-  ];
+  const verify = async () => {
+    if (!/^\d{6}$/.test(code.trim()) || busy) return;
+    setBusy(true); setError("");
+    try {
+      const { token } = await guestTrackVerify(email.trim(), ref.trim(), code.trim());
+      const rec = await guestRecord(token);
+      setOrder(rec.order); setStep("record");
+    } catch { setError("That code didn't match, or the details don't match an order."); }
+    finally { setBusy(false); }
+  };
+  const reset = () => { setStep("lookup"); setCode(""); setOrder(null); setError(""); setDevCode(undefined); };
+
   return (
     <div className="relative min-h-screen bg-[#FAFAF9] pt-16 pb-24 overflow-hidden">
       <GhostMark size={280} opacity={0.05} pos="right-0 top-0" />
@@ -1048,63 +1066,45 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
         <SLabel>Order tracking</SLabel>
         <h1 className="text-3xl font-semibold text-[#131311] mb-2"
           style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Track your order</h1>
-        <p className="text-[#5c5a56] text-sm mb-8">Enter your reference number and the email address used when submitting your quote. No account required.</p>
-        {!searched ? (
+        <p className="text-[#5c5a56] text-sm mb-8">Enter your order reference and email. We'll send a one-time code to confirm it's you — no account required.</p>
+
+        {step === "lookup" && (
           <div className="group relative bg-white border border-black/8 p-6 space-y-4 overflow-hidden">
             <FrameCorners size={10} color={SAGE} show="always" />
-            <div><FieldLabel>Reference number</FieldLabel><Input value={ref} onChange={e => setRef(e.target.value.toUpperCase())} placeholder="AMJ-58712" className="font-mono tracking-wide" /></div>
-            <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email used when submitting" /></div>
-            {notFound && (
-              <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 p-3">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />No match found. Try: AMJ-58712
-              </div>
-            )}
-            <Btn variant="sage" size="md" onClick={handleSearch} className="w-full justify-center" disabled={!ref || !email}>
-              Find my order <Search className="w-4 h-4" />
+            <div><FieldLabel>Order reference</FieldLabel><Input value={ref} onChange={e => setRef(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && request()} placeholder="AMJ-58001" className="font-mono tracking-wide" /></div>
+            <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && request()} placeholder="Email used on the order" /></div>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <Btn variant="sage" size="md" onClick={request} className={`w-full justify-center ${!validEmail || !ref.trim() || busy ? "opacity-50 pointer-events-none" : ""}`}>
+              {busy ? "Sending…" : <>Send code <Search className="w-4 h-4" /></>}
             </Btn>
             <p className="text-xs text-[#5c5a56] text-center">
               Have an account? <button onClick={() => go("login")} className="text-[#5A7A6A] hover:underline cursor-pointer">Sign in for full history</button>
             </p>
           </div>
-        ) : (
+        )}
+
+        {step === "code" && (
+          <div className="group relative bg-white border border-black/8 p-6 space-y-4 overflow-hidden">
+            <FrameCorners size={10} color={SAGE} show="always" />
+            <p className="text-sm text-[#5c5a56]">If <span className="text-[#131311]">{ref.trim()}</span> matches an order for <span className="text-[#131311]">{email.trim()}</span>, we've sent a 6-digit code.</p>
+            <div><FieldLabel>6-digit code</FieldLabel><Input value={code} autoFocus inputMode="numeric" maxLength={6} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={e => e.key === "Enter" && verify()} placeholder="••••••" /></div>
+            {devCode && <p className="text-xs text-[#5A7A6A] bg-[#5A7A6A]/8 border border-[#5A7A6A]/20 px-2 py-1.5">Dev mode — your code is <span className="font-mono font-semibold">{devCode}</span></p>}
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <Btn variant="sage" size="md" onClick={verify} className={`w-full justify-center ${code.length !== 6 || busy ? "opacity-50 pointer-events-none" : ""}`}>{busy ? "Checking…" : "View order"}</Btn>
+            <button onClick={reset} className="text-sm text-[#5c5a56] hover:text-[#131311] cursor-pointer">← Start over</button>
+          </div>
+        )}
+
+        {step === "record" && order && (
           <div>
-            <button onClick={() => { setSearched(false); setRef(""); setEmail(""); }}
-              className="text-xs text-[#5c5a56] hover:text-[#131311] flex items-center gap-1 cursor-pointer mb-5">
-              <ChevronLeft className="w-3 h-3" />New search
-            </button>
-            <div className="group relative bg-white border border-black/8 p-5 mb-4 overflow-hidden">
-              <FrameCorners size={10} color={SAGE} show="always" />
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <span className="text-xs text-[#5c5a56] block">Reference</span>
-                  <span className="font-semibold text-lg text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>AMJ-58712</span>
-                </div>
-                <span className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 font-medium">In production</span>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm mb-5">
-                {[["Project","Extension — Northcote"],["Customer","Jason M."],["Items","5 products"],["Est. delivery","28 Jan – 4 Feb"]].map(([k,v]) => (
-                  <div key={k}><span className="text-[#5c5a56] text-xs block">{k}</span><span className="text-[#131311]">{v}</span></div>
-                ))}
-              </div>
-              <div className="border-t border-black/8 pt-4 space-y-0">
-                {steps.map((s, i) => (
-                  <div key={s.l} className="flex items-start gap-3 pb-2.5 last:pb-0">
-                    <div className="flex flex-col items-center">
-                      <div className={`w-5 h-5 flex items-center justify-center flex-shrink-0 mt-0.5 border ${s.current ? "border-[#5A7A6A] bg-[#5A7A6A]" : s.done ? "bg-[#5A7A6A]/15 border-[#5A7A6A]/30" : "border-[#E8E6E2]"}`}>
-                        {s.done && !s.current && <Check className="w-2.5 h-2.5 text-[#5A7A6A]" />}
-                        {s.current && <div className="w-2 h-2 bg-white" />}
-                      </div>
-                      {i < steps.length - 1 && <div className={`w-px h-3 mt-1 ${s.done ? "bg-[#5A7A6A]/25" : "bg-[#E8E6E2]"}`} />}
-                    </div>
-                    <div className={`text-sm pt-0.5 ${s.current ? "text-[#131311] font-semibold" : s.done ? "text-[#5c5a56]" : "text-[#bbb8b4]"}`}>
-                      {s.l}
-                      {s.current && <span className="ml-2 text-[10px] bg-[#5A7A6A]/10 text-[#5A7A6A] px-1.5 py-0.5 font-medium">Now</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <button onClick={reset} className="text-xs text-[#5c5a56] hover:text-[#131311] flex items-center gap-1 cursor-pointer mb-5"><ChevronLeft className="w-3 h-3" />New search</button>
+            <div className="flex items-baseline justify-between mb-1">
+              <h2 className="text-xl font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Order {order.orderNo}</h2>
+              <span className="text-sm text-[#5c5a56]" style={{ fontFamily: "'DM Mono', monospace" }}>{order.total != null ? fmt(order.total) : ""}</span>
             </div>
-            <div className="flex gap-3">
+            <p className="text-sm text-[#5A7A6A] mb-6">{order.stageLabel}</p>
+            <OrderReadout order={order} />
+            <div className="flex gap-3 mt-6">
               <Btn variant="outline" size="sm" onClick={() => go("contact")}>Contact us</Btn>
               <Btn variant="ghost" size="sm" onClick={() => go("login")}>Sign in to manage</Btn>
             </div>

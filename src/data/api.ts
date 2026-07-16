@@ -134,3 +134,38 @@ export const confirmDrawings = (orderId: string) =>
   req<{ order: ApiOrder }>(`/api/orders/${orderId}/confirm-drawings`, { method: "POST" });
 export const confirmQa = (orderId: string) =>
   req<{ order: ApiOrder }>(`/api/orders/${orderId}/confirm-qa`, { method: "POST" });
+
+// ── Guest tracking (anonymous, read-only) ────────────────────────────────────
+/** Request a tracking code. Always neutral; `devCode` only in non-prod on a match. */
+export const guestTrackRequest = (email: string, ref: string) =>
+  req<{ ok: boolean; devCode?: string }>("/api/guest/track/request", {
+    method: "POST",
+    body: JSON.stringify({ email, ref }),
+  });
+export const guestTrackVerify = (email: string, ref: string, code: string) =>
+  req<{ token: string }>("/api/guest/track/verify", {
+    method: "POST",
+    body: JSON.stringify({ email, ref, code }),
+  });
+export const guestRecord = (token: string) =>
+  req<{ order: ApiOrder }>(`/api/guest/records/${token}`);
+
+// ── Files (R2) ───────────────────────────────────────────────────────────────
+export interface ApiFile {
+  id: string;
+  filename: string;
+  kind: string;
+  size: number;
+  virus_status?: string;
+}
+/** Upload a file (multipart) — attaches to the current project. */
+export async function uploadFile(file: File, kind = "upload"): Promise<{ file: ApiFile }> {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("kind", kind);
+  const res = await fetch("/api/files/upload", { method: "POST", credentials: "same-origin", body: fd });
+  if (!res.ok) throw new Error(`upload → ${res.status}`);
+  return res.json();
+}
+export const getProjectFiles = (projectId: string) =>
+  req<{ files: ApiFile[] }>(`/api/projects/${projectId}/files`);

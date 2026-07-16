@@ -4,7 +4,7 @@
 // multi-item order from one page: upload a schedule (parsed into draft lines) and/or
 // configure items directly. Added items collapse into compact editable cards.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Upload, UploadCloud, X, Plus, ChevronLeft, ArrowRight,
   AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid,
@@ -12,6 +12,7 @@ import {
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
 import { StickyQuotePanel } from "../components/StickyQuotePanel";
+import { uploadFile } from "../data/api";
 import {
   type QuoteState, type QItem,
   priceConfigured, fmt, mm, productLabel, hasDuplicateCode, addDemoSchedule,
@@ -62,20 +63,29 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     requestAnimationFrame(() => el?.querySelector<HTMLElement>("input, select")?.focus({ preventScroll: true }));
   };
 
-  const fakeUpload = () => {
+  // Real file upload to R2 (plans/schedules attached for the reviewer). Automated
+  // schedule PARSING into line items is a separate future feature (still demoed
+  // from the home page's "Upload a schedule" card via addDemoSchedule).
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const openUpload = () => fileInputRef.current?.click();
+  const handleFiles = async (list: FileList | null) => {
+    if (!list?.length) return;
     setUploading(true);
     setUploadNotice(null);
-    setTimeout(() => {
-      try {
-        addDemoSchedule(quote);
-        setAdding(false);
-        setUploadNotice({ type: "success", message: "3 products added from window-schedule-rev-b.pdf. 1 needs attention." });
-      } catch {
-        setUploadNotice({ type: "error", message: "We couldn't read that schedule. No products were added — check the file and try again." });
-      } finally {
-        setUploading(false);
+    try {
+      const added = [];
+      for (const f of Array.from(list)) {
+        const r = await uploadFile(f, "plan");
+        added.push({ id: Date.now() + Math.floor(Math.random() * 1000), name: r.file.filename, kind: "Plan", status: "Uploaded" as const });
       }
-    }, 1400);
+      quote.addFiles(added);
+      setUploadNotice({ type: "success", message: `${added.length} file${added.length !== 1 ? "s" : ""} uploaded for review.` });
+    } catch {
+      setUploadNotice({ type: "error", message: "Upload failed — check the file and try again." });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   // ─── Submitted ──────────────────────────────────────────────────────────────
@@ -179,6 +189,9 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
             {/* Upload panel — functional, matches home-hero panel styling. On mobile
                 the decorative box collapses to just the button (the priority action). */}
             <div className="sm:border sm:border-dashed sm:border-white/25 sm:bg-white/[0.06] sm:backdrop-blur-md sm:p-6 sm:text-center">
+              <input ref={fileInputRef} type="file" multiple className="hidden"
+                accept=".pdf,.dwg,.xls,.xlsx,.csv,.jpg,.jpeg,.png"
+                onChange={e => handleFiles(e.target.files)} />
               {uploading ? (
                 <div className="flex items-center justify-center gap-3 py-3 sm:py-4 sm:flex-col">
                   <div className="w-5 h-5 sm:w-6 sm:h-6 border-2 border-[#8CA99B] border-t-transparent rounded-full animate-spin" />
@@ -190,7 +203,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                   <p className="hidden sm:block text-sm font-semibold text-white mb-1">Upload plans or a schedule</p>
                   <p className="text-[11px] tracking-wide text-white/55 mb-2 sm:mb-4"
                     style={{ fontFamily: "'DM Mono', monospace" }}>PDF · DWG · XLS · CSV · JPG</p>
-                  <Btn variant="sage" size="md" onClick={fakeUpload} className="w-full justify-center">
+                  <Btn variant="sage" size="md" onClick={openUpload} className="w-full justify-center">
                     <Upload className="w-4 h-4" />Upload files
                   </Btn>
                   <p className="hidden sm:block text-[11px] text-white/50 mt-3">or drag and drop files here</p>
@@ -255,7 +268,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
             </div>
           ) : quote.items.length === 0 ? (
             <div id="quote-start-actions" className="grid grid-cols-1 sm:grid-cols-2 gap-3" aria-label="Start your quote">
-              <button onClick={fakeUpload} disabled={uploading}
+              <button onClick={openUpload} disabled={uploading}
                 className="group min-h-32 border border-black/12 bg-white p-5 text-left hover:border-[#5A7A6A] hover:bg-[#F7F8F6] disabled:opacity-60 disabled:cursor-wait transition-colors cursor-pointer">
                 <span className="w-9 h-9 mb-4 flex items-center justify-center bg-[#5A7A6A]/10 text-[#5A7A6A] group-hover:bg-[#5A7A6A] group-hover:text-white transition-colors">
                   {uploading

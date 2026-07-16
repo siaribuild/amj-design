@@ -12,6 +12,8 @@ import { auth } from "./routes/auth";
 import { projects } from "./routes/projects";
 import { quote } from "./routes/quote";
 import { orders } from "./routes/orders";
+import { guest } from "./routes/guest";
+import { files } from "./routes/files";
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -37,6 +39,12 @@ api.route("/api", quote);
 
 // Order tracking, customer sign-off gates, and staff fulfilment seams.
 api.route("/api/orders", orders);
+
+// Anonymous read-only order tracking (email + reference, two-step).
+api.route("/api/guest", guest);
+
+// File uploads/downloads (R2): /api/files/*, /api/projects/:id/files.
+api.route("/api", files);
 
 // Any other /api/* path is a real 404 — never fall through to the SPA shell.
 api.all("/api/*", (c) => c.json({ error: "not_found" }, 404));

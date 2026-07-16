@@ -11,6 +11,7 @@ import {
   clearCookie, consumeChallenge, createSession, destroySession, findOrCreateUser,
   isEmail, normEmail, resolveUser, sessionCookie, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
+import { notify } from "../lib/email";
 
 export const auth = new Hono<{ Bindings: Env }>();
 
@@ -28,9 +29,13 @@ auth.post("/challenge", async (c) => {
   if (isEmail(email)) {
     const code = sixDigit();
     await storeChallenge(c.env, email, code);
-    // MVP: no email provider yet. Log server-side; surface in dev only so the
-    // flow is testable end to end. Real delivery lands with notifications.
-    console.log(`[auth] OTP for ${email}: ${code}`);
+    await notify(c.env, {
+      recipient: email,
+      eventType: "auth.code.requested",
+      templateKey: "signin_code",
+      email: { to: email, subject: "Your AMJ sign-in code", text: `Your sign-in code is ${code}. It expires in 10 minutes.` },
+    });
+    // Dev convenience: surface the code so the flow is testable without a provider.
     if (c.env.APP_ENV !== "production") {
       return c.json({ ok: true, devCode: code });
     }
