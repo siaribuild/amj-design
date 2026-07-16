@@ -33,4 +33,12 @@ export default defineConfig({
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
+
+  // Dev: proxy the API to the Worker running under `wrangler dev` (port 8787),
+  // so the SPA (vite) and the backend (worker) run side by side locally.
+  server: {
+    proxy: {
+      '/api': 'http://localhost:8787',
+    },
+  },
 })
