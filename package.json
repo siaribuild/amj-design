@@ -9,6 +9,7 @@
     "dev:api": "wrangler dev",
     "db:migrate:local": "wrangler d1 migrations apply amj-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply amj-db --remote",
+    "db:reset": "node scripts/reset-db.mjs",
     "cf:deploy": "vite build && wrangler deploy"
   },
   "dependencies": {
