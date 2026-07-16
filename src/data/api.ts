@@ -81,3 +81,56 @@ export const saveLines = (items: QItem[]) =>
     method: "PUT",
     body: JSON.stringify({ items }),
   });
+
+// ── Quote lifecycle & orders ─────────────────────────────────────────────────
+export interface ApiPayment {
+  kind: "deposit" | "balance";
+  amount: number;
+  percent: number;
+  status: "due" | "paid" | "waived";
+  reference: string | null;
+  invoicedAt: string | null;
+  paidAt: string | null;
+}
+export interface ApiOrder {
+  id: string;
+  orderNo: string;
+  stage: string;
+  stageLabel: string;
+  stageIndex: number;
+  total: number | null;
+  drawingsSignedOffAt: string | null;
+  qaConfirmedAt: string | null;
+  createdAt: string;
+  payments: ApiPayment[];
+  lines?: { external_ref: string | null; product_snapshot_json: string; qty: number; line_total: number }[];
+}
+export interface ApiRevision {
+  id: string;
+  revisionNo: number;
+  status: string;
+  total: number;
+  issuedAt: string;
+  acceptedAt: string | null;
+  lines: { external_ref: string | null; product_snapshot_json: string; qty: number; line_total: number }[];
+}
+
+/** Submit the draft project for review (Draft -> Submitted). */
+export const submitProject = (projectId: string) =>
+  req<{ id: string; status: string }>(`/api/projects/${projectId}/submit`, { method: "POST" });
+
+export const getRevisions = (projectId: string) =>
+  req<{ revisions: ApiRevision[] }>(`/api/projects/${projectId}/revisions`);
+
+/** Accept an issued revision -> creates the order + deposit invoice. */
+export const acceptRevision = (revisionId: string) =>
+  req<{ order: ApiOrder }>(`/api/revisions/${revisionId}/accept`, { method: "POST" });
+
+export const getOrders = () => req<{ orders: ApiOrder[] }>("/api/orders");
+export const getOrder = (orderId: string) => req<{ order: ApiOrder }>(`/api/orders/${orderId}`);
+
+/** Customer sign-off gates. */
+export const confirmDrawings = (orderId: string) =>
+  req<{ order: ApiOrder }>(`/api/orders/${orderId}/confirm-drawings`, { method: "POST" });
+export const confirmQa = (orderId: string) =>
+  req<{ order: ApiOrder }>(`/api/orders/${orderId}/confirm-qa`, { method: "POST" });

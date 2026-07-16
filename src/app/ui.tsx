@@ -9,7 +9,7 @@ export type Page =
   | "home" | "products" | "product-detail" | "quote"
   | "how-it-works" | "resources" | "contact" | "admin"
   | "approved-quote" | "trade" | "login" | "dashboard"
-  | "track-order" | "profile" | "account-settings";
+  | "track-order" | "profile" | "account-settings" | "order";
 
 // ─── Brand constants ──────────────────────────────────────────────────────────
 export const SAGE = "#5A7A6A";

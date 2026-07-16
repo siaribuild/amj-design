@@ -19,7 +19,7 @@ import {
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
 
-export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void; user: QuoteUser; quote: QuoteState }) {
+export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Page) => void; user: QuoteUser; quote: QuoteState; onSubmit?: () => Promise<void> | void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [view, setView] = useState<"build" | "review">("build");
   const [newKey, setNewKey] = useState(0);
@@ -91,7 +91,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
           <p className="text-sm text-[#5c5a56] leading-relaxed mb-8">We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote. Expect a response within 1–2 business days.</p>
           <p className="text-xs text-[#5c5a56] mb-6">No payment at this stage. Deposit only after you approve the reviewed quote.</p>
           <div className="flex gap-3 justify-center">
-            <Btn variant="sage" size="md" onClick={() => go("track-order")}>Track this order</Btn>
+            <Btn variant="sage" size="md" onClick={() => go(user ? "order" : "track-order")}>Track this order</Btn>
             <Btn variant="ghost" size="md" onClick={() => go("home")}>Back to home</Btn>
           </div>
         </div>
@@ -131,7 +131,7 @@ export function QuotePage({ setPage, user, quote }: { setPage: (p: Page) => void
             <div><FieldLabel>Delivery suburb / postcode</FieldLabel><Input value={suburb} onChange={e => setSuburb(e.target.value)} placeholder="e.g. Preston VIC 3072" /></div>
           </div>
           <div className="bg-[#F2F0EC] border border-black/8 p-4 mb-6 text-xs text-[#5c5a56]"><AlertCircle className="w-3 h-3 inline mr-1" />Estimated totals are confirmed on technical review. No deposit until you approve the reviewed quote. Supply only — installation not included.</div>
-          <div className="flex justify-end"><Btn variant="sage" size="lg" disabled={!contactName || !contactEmail} onClick={() => setSubmitted(true)}>Submit for technical review <Send className="w-4 h-4" /></Btn></div>
+          <div className="flex justify-end"><Btn variant="sage" size="lg" disabled={!contactName || !contactEmail} onClick={async () => { await onSubmit?.(); setSubmitted(true); }}>Submit for technical review <Send className="w-4 h-4" /></Btn></div>
         </div>
       </div>
     );

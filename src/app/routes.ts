@@ -16,6 +16,7 @@ export const PAGE_PATHS: Record<Page, string> = {
   "track-order": "/track-order",
   profile: "/profile",
   "account-settings": "/account-settings",
+  order: "/order",
 };
 
 const STATIC_ROUTES = new Map<string, Page>(

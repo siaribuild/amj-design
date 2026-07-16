@@ -86,21 +86,32 @@ by the customer slice — the internal-ops task owns them.
   enumeration (OWASP). Backs the existing `track-order` page.
 - Internal staff auth (Cloudflare Access SSO) is **out of scope** here — lives on `ops.*`.
 
-## 4. Customer journey & state machine
+## 4. Customer journey & state machine (the REAL 13-step process)
 Customer-facing statuses drive the UI; internal/approval statuses exist in columns but aren't surfaced.
+Payment is **two-fold** (50% deposit + 50% balance) with **two customer sign-off gates**.
 ```
-Draft ─submit─▶ Submitted ─▶ Under review ─┬─(need info)─▶ Needs information ─▶ (back to Under review)
-                                           └─issue──▶ Quote issued ─accept─▶ Accepted ─▶ [ORDER CREATED]
-                                                            └─(expire/supersede)─▶ Expired
-ORDER:  Awaiting payment ─(staff marks paid)─▶ Paid ─▶ In production ─▶ Ready ─▶ Dispatched ─▶ Delivered ─▶ Closed
+PROJECT (steps 1–3):
+Draft(1 estimate) ─submit─▶ Submitted(2) ─▶ Under review ─┬─(need info)─▶ Needs information ─▶ …
+                                                          └─issue(3)─▶ Quote issued ─accept(4)─▶ [ORDER CREATED]
+
+ORDER stage (steps 4–13):
+deposit_invoiced(4) ─staff pay─▶ deposit_paid(5) ─staff─▶ drawings_shared(6)
+  ─CUSTOMER approve─▶ drawings_signed_off(7) ─staff─▶ manufacturing(8) ─staff─▶ qa_photos_shared(9)
+  ─staff invoice─▶ balance_invoiced(10) ─staff pay─▶ balance_paid(10)
+  ─CUSTOMER confirm─▶ customer_confirmed(11) ─staff─▶ dispatched(12) ─▶ delivered(12) ─▶ after_sales(13)
 ```
-- **Issue** snapshots draft lines → `revision_line`. Customer sees immutable **Quote issued**.
-- **Accept** (`POST /api/revisions/{id}/accept`) records acceptance against the revision and
-  **creates the order** by snapshot-copying revision lines → `order_line`.
-- **Manual payment (MVP):** order born `payment_status='awaiting_payment'`; Order-detail page shows
-  **bank-transfer / invoice instructions + reference** (no gateway, no card entry). Staff flip to
-  `paid` (internal task); customer only sees status. Delivery statuses (`in_production → dispatched
-  → delivered`) are staff-advanced, customer-tracked — closes the "to completion (deliver)" requirement.
+- **Issue** (staff seam) snapshots draft lines → `revision_line`; project → **Quote issued**.
+- **Accept** (`POST /api/revisions/{id}/accept`, customer) snapshot-copies revision lines → `order_line`,
+  creates the order at `deposit_invoiced`, and writes **two `payment` rows**: deposit (50%, invoiced now)
+  and balance (50%, `invoiced_at` NULL until step 10).
+- **Two-fold manual payment (MVP):** the Order page shows each invoice's bank-transfer details + the order
+  reference (no gateway, no card entry). Staff record receipt (`POST /api/orders/{id}/pay {kind}`), which
+  advances the stage. Balance only becomes payable after `invoice-balance` (step 10).
+- **Two customer gates:** approve shop drawings (step 7, `confirm-drawings`) and confirm OK to dispatch
+  (step 11, `confirm-qa`). All staff fulfilment transitions (`issue-drawings`, `start-manufacturing`,
+  `share-qa`, `invoice-balance`, `dispatch`, `deliver`, `close`) are **seams the ops console will own**;
+  until it exists they're allowed in non-prod for testing.
+- Stage transitions are guarded by their `from` stage (out-of-order calls 409).
 
 ## 5. Customer API surface (Worker routes)
 ```

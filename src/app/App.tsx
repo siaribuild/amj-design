@@ -12,11 +12,12 @@ import { ProductsPage } from "../pages/ProductsPage";
 import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { QuotePage } from "../pages/QuotePage";
 import { HowItWorksPage } from "../pages/HowItWorksPage";
+import { OrderTrackingPage } from "../pages/OrderTrackingPage";
 import { pathForPage, routeFromPathname } from "./routes";
 import { products as catalogueProducts, type CategorySlug } from "../data/catalogue";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, addDemoSchedule } from "../data/configurator";
-import { getCurrentProject, saveLines, me as fetchMe, logout as apiLogout, requestCode, verifyCode, type AuthUserDto } from "../data/api";
+import { getCurrentProject, saveLines, submitProject, me as fetchMe, logout as apiLogout, requestCode, verifyCode, type AuthUserDto } from "../data/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AuthUser {
@@ -120,6 +121,7 @@ function AccountBar({ user, setPage, setUser }: {
             <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-black/10 shadow-lg z-10">
               {[
                 [<LayoutDashboard className="w-3.5 h-3.5" />, "My dashboard", "dashboard" as Page],
+                [<Package className="w-3.5 h-3.5" />, "My orders", "order" as Page],
                 [<User className="w-3.5 h-3.5" />, "My profile", "profile" as Page],
                 [<Settings className="w-3.5 h-3.5" />, "Account settings", "account-settings" as Page],
               ].map(([icon, label, page]) => (
@@ -1399,6 +1401,7 @@ export default function App() {
   // Shared quote state — MyProject persists across the quote builder and product pages
   const [quoteItems, setQuoteItems] = useState<QItem[]>([]);
   const [quoteFiles, setQuoteFiles] = useState<QFile[]>([]);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const quote: QuoteState = {
     items: quoteItems,
     files: quoteFiles,
@@ -1434,6 +1437,7 @@ export default function App() {
     getCurrentProject()
       .then(r => {
         if (cancelled) return;
+        if (r.project) setProjectId(r.project.id);
         if (r.items.length) {
           skipNextSaveRef.current = true; // don't echo the just-loaded data straight back
           setQuoteItems(r.items.map((it, i) => ({
@@ -1453,9 +1457,16 @@ export default function App() {
     if (!hydratedRef.current) return;                 // ignore the pre-hydrate initial state
     if (skipNextSaveRef.current) { skipNextSaveRef.current = false; return; }
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { saveLines(quoteItems).catch(() => {}); }, 600);
+    saveTimer.current = setTimeout(() => {
+      saveLines(quoteItems).then(r => { if (r.project) setProjectId(r.project.id); }).catch(() => {});
+    }, 600);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [quoteItems]);
+
+  // Submit the current draft project for review (Draft -> Submitted).
+  const submitCurrentProject = async () => {
+    if (projectId) { try { await submitProject(projectId); } catch { /* surfaced by the page's own state */ } }
+  };
 
   const uploadDemoScheduleFromHome = () => {
     addDemoSchedule(quote);
@@ -1467,7 +1478,7 @@ export default function App() {
       case "home":             return <HomePage setPage={navigateTo} onUploadSchedule={uploadDemoScheduleFromHome} />;
       case "products":         return <ProductsPage setPage={navigateTo} category={catCategory} family={catFamily} onSelectCategory={selectCategory} onSelectFamily={setCatFamily} onOpenProduct={openProduct} />;
       case "product-detail":   return <ProductDetailPage slug={productSlug} setPage={navigateTo} onOpenProduct={openProduct} onBack={backToFamily} quote={quote} />;
-      case "quote":            return <QuotePage setPage={navigateTo} user={user} quote={quote} />;
+      case "quote":            return <QuotePage setPage={navigateTo} user={user} quote={quote} onSubmit={submitCurrentProject} />;
       case "how-it-works":     return <HowItWorksPage />;
       case "resources":        return <ResourcesPage setPage={navigateTo} />;
       case "contact":          return <ContactPage setPage={navigateTo} />;
@@ -1477,6 +1488,7 @@ export default function App() {
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
       case "dashboard":        return <DashboardPage setPage={navigateTo} user={user} setUser={setUser} />;
       case "track-order":      return <TrackOrderPage setPage={navigateTo} />;
+      case "order":            return <OrderTrackingPage setPage={navigateTo} user={user} />;
       case "profile":          return <ProfilePage user={user} setPage={navigateTo} />;
       case "account-settings": return <AccountSettingsPage user={user} setPage={navigateTo} />;
       default:                 return <HomePage setPage={navigateTo} onUploadSchedule={uploadDemoScheduleFromHome} />;
