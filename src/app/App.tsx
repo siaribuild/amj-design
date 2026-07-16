@@ -16,6 +16,7 @@ import { pathForPage, routeFromPathname } from "./routes";
 import { products as catalogueProducts, type CategorySlug } from "../data/catalogue";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, addDemoSchedule } from "../data/configurator";
+import { getCurrentProject, saveLines } from "../data/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AuthUser {
@@ -1349,6 +1350,42 @@ export default function App() {
     addFiles: (f) => setQuoteFiles(prev => [...prev, ...f]),
     removeFile: (id) => setQuoteFiles(prev => prev.filter(f => f.id !== id)),
   };
+  // ── Persistence (M2): hydrate the anon project on load, snapshot-save on change ──
+  // The client store above stays the source of truth for the UI; persistence is a
+  // side-effect. Anonymous projects are keyed by an httpOnly claim cookie the Worker
+  // sets on first save (see docs/customer-backend-scaffold.md).
+  const hydratedRef = useRef(false);
+  const skipNextSaveRef = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentProject()
+      .then(r => {
+        if (cancelled) return;
+        if (r.items.length) {
+          skipNextSaveRef.current = true; // don't echo the just-loaded data straight back
+          setQuoteItems(r.items.map((it, i) => ({
+            id: Date.now() + i,
+            code: it.code, productSlug: it.productSlug, location: it.location,
+            measuredBy: it.measuredBy, width: it.width, height: it.height,
+            options: it.options, qty: it.qty, status: it.status,
+          })));
+        }
+      })
+      .catch(() => { /* offline / API down — keep working in-memory */ })
+      .finally(() => { if (!cancelled) hydratedRef.current = true; });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;                 // ignore the pre-hydrate initial state
+    if (skipNextSaveRef.current) { skipNextSaveRef.current = false; return; }
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { saveLines(quoteItems).catch(() => {}); }, 600);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, [quoteItems]);
+
   const uploadDemoScheduleFromHome = () => {
     addDemoSchedule(quote);
     navigateTo("quote");

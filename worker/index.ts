@@ -8,6 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { Hono } from "hono";
 import type { Env } from "./types";
+import { projects } from "./routes/projects";
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -27,6 +28,9 @@ api.get("/api/health", (c) =>
 api.get("/api/auth/me", (c) =>
   c.json({ authenticated: false, anonymous: true, user: null }),
 );
+
+// Customer project workspace (anon claim-cookie scoped in M2).
+api.route("/api/projects", projects);
 
 // Any other /api/* path is a real 404 — never fall through to the SPA shell.
 api.all("/api/*", (c) => c.json({ error: "not_found" }, 404));
