@@ -8,6 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { Hono } from "hono";
 import type { Env } from "./types";
+import { auth } from "./routes/auth";
 import { projects } from "./routes/projects";
 
 const api = new Hono<{ Bindings: Env }>();
@@ -23,13 +24,10 @@ api.get("/api/health", (c) =>
   }),
 );
 
-// Who am I? M1 always returns anonymous. Session resolution (cookie -> KV -> user)
-// and anon-project claiming land in M3.
-api.get("/api/auth/me", (c) =>
-  c.json({ authenticated: false, anonymous: true, user: null }),
-);
+// Passwordless email OTP + sessions (me / challenge / verify / logout).
+api.route("/api/auth", auth);
 
-// Customer project workspace (anon claim-cookie scoped in M2).
+// Customer project workspace (session- or claim-cookie scoped).
 api.route("/api/projects", projects);
 
 // Any other /api/* path is a real 404 — never fall through to the SPA shell.

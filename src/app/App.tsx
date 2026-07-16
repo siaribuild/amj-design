@@ -16,12 +16,24 @@ import { pathForPage, routeFromPathname } from "./routes";
 import { products as catalogueProducts, type CategorySlug } from "../data/catalogue";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, addDemoSchedule } from "../data/configurator";
-import { getCurrentProject, saveLines } from "../data/api";
+import { getCurrentProject, saveLines, me as fetchMe, logout as apiLogout, requestCode, verifyCode, type AuthUserDto } from "../data/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AuthUser {
   name: string; company: string; type: "builder" | "trade" | "owner-builder";
   email: string; phone: string;
+}
+
+// Map the server user onto the UI's AuthUser. company/type belong to the
+// organisation layer (not built yet), so they default until that lands.
+function toAuthUser(u: AuthUserDto): AuthUser {
+  return {
+    name: u.name || u.email.split("@")[0],
+    company: "",
+    type: "builder",
+    email: u.email,
+    phone: u.phone || "",
+  };
 }
 
 // Subtle window-grid texture — used on text-only sections
@@ -117,7 +129,7 @@ function AccountBar({ user, setPage, setUser }: {
                 </button>
               ))}
               <div className="border-t border-black/8 my-1" />
-              <button onClick={() => { setUser(null); setOpen(false); go("home"); }}
+              <button onClick={() => { apiLogout().catch(() => {}); setUser(null); setOpen(false); go("home"); }}
                 className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer">
                 <LogOut className="w-3.5 h-3.5" />Sign out
               </button>
@@ -255,7 +267,7 @@ function Nav({ page, setPage, user, setUser }: {
                   className="w-full text-left px-5 py-3.5 text-sm text-white/60 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
                   <User className="w-4 h-4" />My profile
                 </button>
-                <button onClick={() => { setUser(null); setOpen(false); go("home"); }}
+                <button onClick={() => { apiLogout().catch(() => {}); setUser(null); setOpen(false); go("home"); }}
                   className="w-full text-left px-5 py-3.5 text-sm text-red-300 hover:text-red-200 hover:bg-red-500/10 flex items-center gap-2 cursor-pointer">
                   <LogOut className="w-4 h-4" />Sign out
                 </button>
@@ -687,13 +699,36 @@ function ResourcesPage({ setPage }: { setPage: (p: Page) => void }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: (u: AuthUser) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const [mode, setMode] = useState<"signin"|"register">("signin");
+  const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const handleSubmit = () => {
-    setUser({ name: "Jason Miller", company: "Premier Build Co.", type: "builder", email: "jason@premierbuild.com.au", phone: "(03) 9100 1234" });
-    go("dashboard");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [devCode, setDevCode] = useState<string | undefined>();
+
+  const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+
+  const sendCode = async () => {
+    if (!validEmail || busy) return;
+    setBusy(true); setError("");
+    try {
+      const r = await requestCode(email.trim());
+      setDevCode(r.devCode);       // shown only in dev (no email provider yet)
+      setStep("code");
+    } catch { setError("Couldn't send a code. Try again."); }
+    finally { setBusy(false); }
   };
+
+  const verify = async () => {
+    if (!/^\d{6}$/.test(code.trim()) || busy) return;
+    setBusy(true); setError("");
+    try {
+      const r = await verifyCode(email.trim(), code.trim());
+      if (r.user) { setUser(toAuthUser(r.user)); go("dashboard"); }
+    } catch { setError("That code didn't match. Check it or resend."); }
+    finally { setBusy(false); }
+  };
+
   return (
     <div className="relative min-h-screen bg-[#FAFAF9] flex items-center justify-center pt-16 pb-24 overflow-hidden">
       <GhostMark size={320} opacity={0.05} pos="right-0 bottom-0" />
@@ -702,30 +737,57 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
           <div className="flex justify-center mb-4"><WindowMark size={32} color={SAGE} /></div>
           <h1 className="text-2xl font-semibold text-[#131311]"
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-            {mode === "signin" ? "Welcome back" : "Create account"}
+            {step === "email" ? "Sign in or register" : "Enter your code"}
           </h1>
-          <p className="text-sm text-[#5c5a56] mt-1">{mode === "signin" ? "Sign in to manage quotes and orders" : "For builders and trades"}</p>
+          <p className="text-sm text-[#5c5a56] mt-1">
+            {step === "email"
+              ? "We'll email you a one-time code — no password needed"
+              : `We sent a 6-digit code to ${email.trim()}`}
+          </p>
         </div>
         <div className="group relative bg-white border border-black/8 p-6 space-y-4 overflow-hidden">
           <FrameCorners size={10} color={SAGE} show="always" />
-          {mode === "register" && <div><FieldLabel>Full name</FieldLabel><Input placeholder="Your name" /></div>}
-          <div><FieldLabel>Email</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" /></div>
-          <div><FieldLabel>Password</FieldLabel><Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" /></div>
-          {mode === "signin" && (
-            <div className="flex justify-between items-center">
-              <label className="flex items-center gap-2 text-sm text-[#5c5a56] cursor-pointer"><input type="checkbox" className="accent-[#5A7A6A]" />Remember me</label>
-              <button className="text-sm text-[#5A7A6A] hover:underline cursor-pointer">Forgot password?</button>
-            </div>
+          {step === "email" ? (
+            <>
+              <div>
+                <FieldLabel>Email</FieldLabel>
+                <Input type="email" value={email} autoFocus
+                  onChange={e => setEmail(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && sendCode()}
+                  placeholder="your@email.com" />
+              </div>
+              <Btn variant="sage" size="md" onClick={sendCode}
+                className={`w-full justify-center ${!validEmail || busy ? "opacity-50 pointer-events-none" : ""}`}>
+                {busy ? "Sending…" : "Send code"}
+              </Btn>
+            </>
+          ) : (
+            <>
+              <div>
+                <FieldLabel>6-digit code</FieldLabel>
+                <Input value={code} autoFocus inputMode="numeric" maxLength={6}
+                  onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onKeyDown={e => e.key === "Enter" && verify()}
+                  placeholder="••••••" />
+              </div>
+              {devCode && (
+                <p className="text-xs text-[#5A7A6A] bg-[#5A7A6A]/8 border border-[#5A7A6A]/20 px-2 py-1.5">
+                  Dev mode — your code is <span className="font-mono font-semibold">{devCode}</span>
+                </p>
+              )}
+              <Btn variant="sage" size="md" onClick={verify}
+                className={`w-full justify-center ${code.length !== 6 || busy ? "opacity-50 pointer-events-none" : ""}`}>
+                {busy ? "Verifying…" : "Verify & continue"}
+              </Btn>
+              <button onClick={() => { setStep("email"); setCode(""); setError(""); }}
+                className="text-sm text-[#5c5a56] hover:text-[#131311] cursor-pointer">
+                ← Use a different email
+              </button>
+            </>
           )}
-          <Btn variant="sage" size="md" onClick={handleSubmit} className="w-full justify-center">
-            {mode === "signin" ? "Sign in" : "Create account"}
-          </Btn>
+          {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
-        <div className="mt-4 text-center space-y-3">
-          <button onClick={() => setMode(mode === "signin" ? "register" : "signin")}
-            className="text-sm text-[#5c5a56] hover:text-[#131311] cursor-pointer">
-            {mode === "signin" ? "No account? Register →" : "Already have an account? Sign in →"}
-          </button>
+        <div className="mt-4 text-center">
           <div className="border-t border-black/8 pt-4">
             <button onClick={() => go("track-order")}
               className="text-sm text-[#5c5a56] hover:text-[#131311] cursor-pointer flex items-center gap-1.5 mx-auto">
@@ -734,7 +796,7 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
           </div>
         </div>
         <div className="mt-6 bg-[#F2F0EC] border border-black/8 p-4 text-xs text-[#5c5a56]">
-          Accounts are for builders, trades and project managers. Guest quotes don't require an account.
+          Your quote is saved as you go. Sign in to keep it against your account across devices — guest quotes don't require an account.
         </div>
       </div>
     </div>
@@ -1357,6 +1419,15 @@ export default function App() {
   const hydratedRef = useRef(false);
   const skipNextSaveRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Restore the session on load (returning registered users).
+  useEffect(() => {
+    let cancelled = false;
+    fetchMe()
+      .then(r => { if (!cancelled && r.user) setUser(toAuthUser(r.user)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
