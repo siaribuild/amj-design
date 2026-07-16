@@ -12,11 +12,30 @@ import {
 import { notify } from "../lib/email";
 import { findOrCreateInternalUser, isStaffEmail, resolveStaff } from "../lib/staff";
 import { issueRevision } from "../lib/revisions";
+import { logEvent } from "../lib/activity";
 import { uuid } from "../lib/util";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { priceConfigured } from "../../src/data/configurator";
 
 export const ops = new Hono<{ Bindings: Env }>();
+
+// Internal workflow state machine (status_internal). 'issued' is reached via
+// issue-revision; 'customer_clarification_required' via request-clarification.
+const FLOW: Record<string, string[]> = {
+  submitted: ["triage_pending", "estimator_assigned", "customer_clarification_required"],
+  triage_pending: ["estimator_assigned", "customer_clarification_required"],
+  estimator_assigned: ["technical_review_required", "approved_for_issue", "customer_clarification_required"],
+  technical_review_required: ["estimator_assigned", "approved_for_issue", "customer_clarification_required"],
+  approved_for_issue: ["issued", "estimator_assigned"],
+  customer_clarification_required: ["estimator_assigned"],
+};
+
+export const STATUS_INTERNAL_LABEL: Record<string, string> = {
+  draft: "Draft", submitted: "Submitted", triage_pending: "Awaiting triage",
+  estimator_assigned: "Assigned", technical_review_required: "Technical review",
+  approval_pending: "Approval pending", approved_for_issue: "Ready to issue",
+  customer_clarification_required: "Awaiting customer", issued: "Quote issued",
+};
 
 const safeParse = (s: string): Record<string, any> => {
   try { const v = JSON.parse(s || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; }
@@ -152,11 +171,14 @@ ops.get("/projects/:id", async (c) => {
   const { results: files } = await c.env.DB.prepare("SELECT id, kind, filename, size, virus_status, created_at FROM file_asset WHERE project_id = ? ORDER BY created_at DESC").bind(id).all();
   const { results: revisions } = await c.env.DB.prepare("SELECT id, revision_no, snapshot_status, totals_json, issued_at, accepted_at FROM quote_revision WHERE project_id = ? ORDER BY revision_no DESC").bind(id).all<any>();
   const { results: comments } = await c.env.DB.prepare("SELECT cm.id, cm.line_id, cm.kind, cm.body, cm.created_at, u.name AS author FROM comment cm LEFT JOIN user u ON u.id = cm.author_id WHERE cm.project_id = ? ORDER BY cm.created_at DESC").bind(id).all();
+  const { results: activity } = await c.env.DB.prepare("SELECT a.action, a.occurred_at, COALESCE(u.name, a.actor) AS actor FROM audit_event a LEFT JOIN user u ON u.id = a.actor WHERE a.entity_type = 'project' AND a.entity_id = ? ORDER BY a.occurred_at DESC").bind(id).all();
 
   return c.json({
     project: {
       id: p.id, title: p.title ?? "Untitled project",
       statusCustomer: p.status_customer, statusInternal: p.status_internal,
+      statusInternalLabel: STATUS_INTERNAL_LABEL[p.status_internal] ?? p.status_internal,
+      nextStates: FLOW[p.status_internal] ?? [],
       org: p.org_name, customerName: p.customer_name, customerEmail: p.customer_email,
       assignee: p.assignee_name, internalOwnerId: p.internal_owner_id,
       updatedAt: p.updated_at,
@@ -165,6 +187,7 @@ ops.get("/projects/:id", async (c) => {
     files,
     revisions: revisions.map((r: any) => ({ id: r.id, revisionNo: r.revision_no, status: r.snapshot_status, total: safeParse(r.totals_json).total ?? 0, issuedAt: r.issued_at, acceptedAt: r.accepted_at })),
     comments,
+    activity,
   });
 });
 
@@ -179,7 +202,48 @@ ops.post("/projects/:id/assign", async (c) => {
   ).bind(targetId, c.req.param("id")).run();
   if (!res.meta.changes) return c.json({ error: "not_found" }, 404);
   const assignee = await c.env.DB.prepare("SELECT name FROM user WHERE id = ?").bind(targetId).first<{ name: string }>();
+  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: c.req.param("id"), action: targetId === staff.id ? "assigned to self" : `assigned to ${assignee?.name ?? "staff"}` });
   return c.json({ ok: true, assignee: assignee?.name ?? null, statusInternal: "estimator_assigned" });
+});
+
+// POST /api/ops/projects/:id/status { statusInternal } — a validated workflow move.
+ops.post("/projects/:id/status", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const target = String(body?.statusInternal ?? "");
+  const project = await c.env.DB.prepare("SELECT status_internal FROM project WHERE id = ?").bind(id).first<{ status_internal: string }>();
+  if (!project) return c.json({ error: "not_found" }, 404);
+  // 'issued' / 'customer_clarification_required' have dedicated endpoints.
+  if (target === "issued" || target === "customer_clarification_required" || !(FLOW[project.status_internal] ?? []).includes(target)) {
+    return c.json({ error: "invalid_transition", from: project.status_internal }, 409);
+  }
+  await c.env.DB.prepare("UPDATE project SET status_internal = ?, updated_at = datetime('now') WHERE id = ?").bind(target, id).run();
+  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: id, action: `moved to ${STATUS_INTERNAL_LABEL[target] ?? target}` });
+  return c.json({ statusInternal: target, statusInternalLabel: STATUS_INTERNAL_LABEL[target] ?? target, nextStates: FLOW[target] ?? [] });
+});
+
+// POST /api/ops/projects/:id/request-clarification { message } — ask the customer.
+ops.post("/projects/:id/request-clarification", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const message = String(body?.message ?? "").trim();
+  if (!message) return c.json({ error: "empty" }, 400);
+
+  const cust = await c.env.DB.prepare("SELECT u.email FROM project p JOIN user u ON u.id = p.owner_user_id WHERE p.id = ?").bind(id).first<{ email: string }>();
+  await c.env.DB.batch([
+    c.env.DB.prepare("INSERT INTO comment (id, project_id, author_id, kind, body) VALUES (?, ?, ?, 'clarification', ?)").bind(uuid(), id, staff.id, message),
+    c.env.DB.prepare("UPDATE project SET status_customer = 'needs_information', status_internal = 'customer_clarification_required', updated_at = datetime('now') WHERE id = ?").bind(id),
+  ]);
+  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: id, action: "requested clarification" });
+  if (cust?.email) {
+    await notify(c.env, { recipient: cust.email, eventType: "clarification.requested", templateKey: "needs_info",
+      email: { to: cust.email, subject: "We need a bit more info on your quote", text: message } });
+  }
+  return c.json({ ok: true, statusInternal: "customer_clarification_required", statusInternalLabel: STATUS_INTERNAL_LABEL.customer_clarification_required });
 });
 
 // PATCH /api/ops/lines/:id — estimator edits a draft line; server reprices.
@@ -225,10 +289,12 @@ ops.post("/projects/:id/note", async (c) => {
 
 // POST /api/ops/projects/:id/issue-revision — issue the reviewed quote + notify customer.
 ops.post("/projects/:id/issue-revision", async (c) => {
-  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
   const id = c.req.param("id");
   const rev = await issueRevision(c.env, id);
   if (!rev) return c.json({ error: "not_found" }, 404);
+  await logEvent(c.env, { actor: staff?.id, entityType: "project", entityId: id, action: `issued revision ${rev.revisionNo}` });
   const cust = await c.env.DB.prepare("SELECT u.email FROM project p JOIN user u ON u.id = p.owner_user_id WHERE p.id = ?").bind(id).first<{ email: string }>();
   if (cust?.email) {
     await notify(c.env, {

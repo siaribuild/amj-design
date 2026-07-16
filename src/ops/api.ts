@@ -73,9 +73,11 @@ export interface OpsLine {
 }
 export interface OpsComment { id: string; line_id: string | null; kind: string; body: string; author: string | null; created_at: string }
 export interface OpsRevision { id: string; revisionNo: number; status: string; total: number; issuedAt: string; acceptedAt: string | null }
+export interface OpsActivity { actor: string | null; action: string; occurred_at: string }
 export interface OpsWorkspace {
   project: {
     id: string; title: string; statusCustomer: string; statusInternal: string;
+    statusInternalLabel: string; nextStates: string[];
     org: string | null; customerName: string | null; customerEmail: string | null;
     assignee: string | null; internalOwnerId: string | null; updatedAt: string;
   };
@@ -83,6 +85,7 @@ export interface OpsWorkspace {
   files: { id: string; kind: string; filename: string; size: number; virus_status: string }[];
   revisions: OpsRevision[];
   comments: OpsComment[];
+  activity: OpsActivity[];
 }
 
 export const opsSubmissions = () => req<{ submissions: OpsSubmission[] }>("/api/ops/queues/submissions");
@@ -95,3 +98,7 @@ export const opsAddNote = (id: string, body: string, lineId?: string) =>
   req<{ comment: OpsComment }>(`/api/ops/projects/${id}/note`, { method: "POST", body: JSON.stringify({ body, lineId }) });
 export const opsIssueRevision = (id: string) =>
   req<{ id: string; revisionNo: number; total: number }>(`/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+export const opsSetStatus = (id: string, statusInternal: string) =>
+  req<{ statusInternal: string; statusInternalLabel: string; nextStates: string[] }>(`/api/ops/projects/${id}/status`, { method: "POST", body: JSON.stringify({ statusInternal }) });
+export const opsRequestClarification = (id: string, message: string) =>
+  req<{ ok: boolean; statusInternalLabel: string }>(`/api/ops/projects/${id}/request-clarification`, { method: "POST", body: JSON.stringify({ message }) });

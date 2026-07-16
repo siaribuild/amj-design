@@ -4,10 +4,41 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { ownedProject } from "../lib/access";
 import { isStaff } from "../lib/staff";
+import { resolveUser } from "../lib/auth";
 import { createOrderFromRevision, orderDto, type OrderRow } from "../lib/orders";
 import { issueRevision } from "../lib/revisions";
+import { logEvent } from "../lib/activity";
+import { notify } from "../lib/email";
+import { uuid } from "../lib/util";
 
 export const quote = new Hono<{ Bindings: Env }>();
+
+// GET /api/projects/:id/clarifications — clarification thread for the customer.
+quote.get("/projects/:id/clarifications", async (c) => {
+  const p = await ownedProject(c.env, c.req.raw, c.req.param("id"));
+  if (!p) return c.json({ error: "not_found" }, 404);
+  const { results } = await c.env.DB
+    .prepare("SELECT cm.body, cm.created_at, u.name AS author, u.type AS author_type FROM comment cm LEFT JOIN user u ON u.id = cm.author_id WHERE cm.project_id = ? AND cm.kind = 'clarification' ORDER BY cm.created_at ASC")
+    .bind(p.id).all();
+  return c.json({ status: p.status_customer, clarifications: results });
+});
+
+// POST /api/projects/:id/clarification-reply { message } — customer responds; back to review.
+quote.post("/projects/:id/clarification-reply", async (c) => {
+  const p = await ownedProject(c.env, c.req.raw, c.req.param("id"));
+  if (!p) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  const message = String(body?.message ?? "").trim();
+  if (!message) return c.json({ error: "empty" }, 400);
+  const user = await resolveUser(c.env, c.req.raw);
+  await c.env.DB.batch([
+    c.env.DB.prepare("INSERT INTO comment (id, project_id, author_id, kind, body) VALUES (?, ?, ?, 'clarification', ?)").bind(uuid(), p.id, user?.id ?? p.owner_user_id, message),
+    c.env.DB.prepare("UPDATE project SET status_customer = 'under_review', status_internal = 'estimator_assigned', updated_at = datetime('now') WHERE id = ?").bind(p.id),
+  ]);
+  await logEvent(c.env, { actor: user?.id ?? "customer", entityType: "project", entityId: p.id, action: "customer answered clarification" });
+  await notify(c.env, { recipient: "ops", eventType: "clarification.answered", channel: "inbox", templateKey: "clarification_answered" });
+  return c.json({ ok: true, status: "under_review" });
+});
 
 // POST /api/projects/:id/submit — customer submits the draft for review.
 quote.post("/projects/:id/submit", async (c) => {

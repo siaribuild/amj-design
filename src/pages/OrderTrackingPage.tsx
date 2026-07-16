@@ -12,7 +12,8 @@ import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
 import { fmt } from "../data/configurator";
 import {
   getOrders, getRevisions, getCurrentProject, acceptRevision, confirmDrawings, confirmQa,
-  type ApiOrder, type ApiRevision,
+  getClarifications, replyClarification,
+  type ApiOrder, type ApiRevision, type ApiClarification,
 } from "../data/api";
 
 type TrackUser = { name: string; email: string } | null;
@@ -44,6 +45,8 @@ export function OrderTrackingPage({ setPage, user }: { setPage: (p: Page) => voi
   const [order, setOrder] = useState<ApiOrder | null>(null);
   const [pending, setPending] = useState<ApiRevision | null>(null); // issued, not yet accepted
   const [projectStatus, setProjectStatus] = useState<string>("");
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [clarifications, setClarifications] = useState<ApiClarification[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -53,15 +56,28 @@ export function OrderTrackingPage({ setPage, user }: { setPage: (p: Page) => voi
       else {
         const cp = await getCurrentProject();
         setProjectStatus(cp.project?.status ?? "");
+        setProjectId(cp.project?.id ?? null);
         if (cp.project) {
-          const { revisions } = await getRevisions(cp.project.id);
-          setPending(revisions.find(r => r.status === "issued") ?? null);
+          if (cp.project.status === "needs_information") {
+            const cl = await getClarifications(cp.project.id);
+            setClarifications(cl.clarifications);
+          } else {
+            const { revisions } = await getRevisions(cp.project.id);
+            setPending(revisions.find(r => r.status === "issued") ?? null);
+          }
         }
       }
     } catch { /* not signed in / no data */ }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
+
+  const reply = async (message: string) => {
+    if (!projectId || busy) return;
+    setBusy(true);
+    try { await replyClarification(projectId, message); await load(); }
+    finally { setBusy(false); }
+  };
 
   const accept = async () => {
     if (!pending || busy) return;
@@ -96,6 +112,8 @@ export function OrderTrackingPage({ setPage, user }: { setPage: (p: Page) => voi
             onConfirmQa={() => doConfirm(confirmQa)} />
         ) : pending ? (
           <AcceptView rev={pending} busy={busy} onAccept={accept} />
+        ) : projectStatus === "needs_information" ? (
+          <ClarificationView items={clarifications} busy={busy} onReply={reply} />
         ) : (
           <EmptyState title="No active order yet"
             body={projectStatus === "submitted" || projectStatus === "under_review"
@@ -103,6 +121,30 @@ export function OrderTrackingPage({ setPage, user }: { setPage: (p: Page) => voi
               : "Build a quote and submit it for review to get started."}
             cta={<Btn variant="sage" size="md" onClick={() => go("quote")}>Go to MyProject</Btn>} />
         )}
+      </div>
+    </div>
+  );
+}
+
+// The customer's view when staff have asked a question ("Needs information").
+function ClarificationView({ items, busy, onReply }: { items: ApiClarification[]; busy: boolean; onReply: (m: string) => void }) {
+  const [msg, setMsg] = useState("");
+  return (
+    <div>
+      <h1 className="text-2xl font-semibold text-[#131311] mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>We need a bit more information</h1>
+      <p className="text-sm text-[#5c5a56] mb-6">Answer below and we'll continue reviewing your quote.</p>
+      <div className="bg-white border border-black/8 divide-y divide-black/6 mb-4">
+        {items.map((c, i) => (
+          <div key={i} className={`px-5 py-3 ${c.author_type === "internal" ? "" : "bg-[#5A7A6A]/5"}`}>
+            <p className="text-[11px] uppercase tracking-wide text-[#8b8880] mb-0.5">{c.author_type === "internal" ? "AMJ" : "You"}</p>
+            <p className="text-sm text-[#131311]">{c.body}</p>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input value={msg} autoFocus onChange={e => setMsg(e.target.value)} onKeyDown={e => e.key === "Enter" && (onReply(msg), setMsg(""))}
+          placeholder="Type your answer…" className="flex-1 border border-black/12 px-3 py-2 text-sm outline-none focus:border-[#5A7A6A] bg-white" />
+        <Btn variant="sage" size="md" onClick={() => { if (msg.trim()) { onReply(msg); setMsg(""); } }} className={busy || !msg.trim() ? "opacity-50 pointer-events-none" : ""}>Send</Btn>
       </div>
     </div>
   );

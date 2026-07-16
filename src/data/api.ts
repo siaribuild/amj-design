@@ -129,6 +129,13 @@ export const acceptRevision = (revisionId: string) =>
 export const getOrders = () => req<{ orders: ApiOrder[] }>("/api/orders");
 export const getOrder = (orderId: string) => req<{ order: ApiOrder }>(`/api/orders/${orderId}`);
 
+// Clarification thread (when a project is "Needs information").
+export interface ApiClarification { body: string; created_at: string; author: string | null; author_type: string | null }
+export const getClarifications = (projectId: string) =>
+  req<{ status: string; clarifications: ApiClarification[] }>(`/api/projects/${projectId}/clarifications`);
+export const replyClarification = (projectId: string, message: string) =>
+  req<{ ok: boolean; status: string }>(`/api/projects/${projectId}/clarification-reply`, { method: "POST", body: JSON.stringify({ message }) });
+
 /** Customer sign-off gates. */
 export const confirmDrawings = (orderId: string) =>
   req<{ order: ApiOrder }>(`/api/orders/${orderId}/confirm-drawings`, { method: "POST" });
