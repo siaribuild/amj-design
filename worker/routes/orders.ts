@@ -3,6 +3,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
+import { isStaff } from "../lib/staff";
 import { orderDto, TRANSITIONS, type OrderRow } from "../lib/orders";
 
 export const orders = new Hono<{ Bindings: Env }>();
@@ -15,12 +16,6 @@ async function ownedOrder(env: Env, req: Request, orderId: string): Promise<Orde
     .prepare('SELECT o.* FROM "order" o JOIN project p ON p.id = o.project_id WHERE o.id = ? AND p.owner_user_id = ?')
     .bind(orderId, user.id)
     .first<OrderRow>();
-}
-
-async function isStaff(env: Env, req: Request): Promise<boolean> {
-  if (env.APP_ENV !== "production") return true;
-  const user = await resolveUser(env, req);
-  return user?.type === "internal";
 }
 
 async function applyTransition(env: Env, order: OrderRow, action: string): Promise<string | null> {

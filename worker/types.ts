@@ -10,4 +10,9 @@ export interface Env {
   ASSETS: Fetcher;
   /** 'development' | 'production' — from vars. */
   APP_ENV: string;
+  /** Comma-separated email domains allowed to sign in to the ops console. */
+  STAFF_EMAIL_DOMAINS?: string;
+  /** Cloudflare Access (prod staff auth) — team domain + application AUD. */
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
 }

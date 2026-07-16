@@ -8,7 +8,10 @@
   // client-side routes fall back to index.html (handled in worker/index.ts).
   "assets": {
     "directory": "./dist",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Run the Worker first so it can pick the SPA shell by host (customer vs
+    // ops.*). Without this the asset system serves "/" as index.html directly.
+    "run_worker_first": true
   },
 
   // ── Bindings ──────────────────────────────────────────────────────────────
@@ -33,6 +36,10 @@
   ],
 
   "vars": {
-    "APP_ENV": "development"
+    "APP_ENV": "development",
+    // Email domains allowed to sign in to the ops console (comma-separated).
+    "STAFF_EMAIL_DOMAINS": "amjtradedirect.com.au"
+    // Prod staff auth via Cloudflare Access — set when the ops.* app is deployed:
+    // "ACCESS_TEAM_DOMAIN": "<team>", "ACCESS_AUD": "<application-aud>"
   }
 }

@@ -14,6 +14,7 @@ import { quote } from "./routes/quote";
 import { orders } from "./routes/orders";
 import { guest } from "./routes/guest";
 import { files } from "./routes/files";
+import { ops } from "./routes/ops";
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -46,6 +47,9 @@ api.route("/api/guest", guest);
 // File uploads/downloads (R2): /api/files/*, /api/projects/:id/files.
 api.route("/api", files);
 
+// Internal ops console API (staff-gated).
+api.route("/api/ops", ops);
+
 // Any other /api/* path is a real 404 — never fall through to the SPA shell.
 api.all("/api/*", (c) => c.json({ error: "not_found" }, 404));
 
@@ -57,9 +61,15 @@ export default {
       return api.fetch(request, env, ctx);
     }
 
-    // Static asset, or SPA fallback to index.html for client-side routes.
-    const res = await env.ASSETS.fetch(request);
-    if (res.status !== 404) return res;
-    return env.ASSETS.fetch(new URL("/index.html", url.origin).toString());
+    // Real static assets (hashed js/css/img, etc.) are served directly. Anything
+    // else is a client-side route → serve the host's SPA shell. The ops console
+    // is a separate bundle on ops.* (guarded by Cloudflare Access in prod); we
+    // pick the shell up front because the asset system maps "/" to index.html.
+    const isAsset = /\.[a-zA-Z0-9]+$/.test(url.pathname) && !url.pathname.endsWith(".html");
+    if (isAsset) return env.ASSETS.fetch(request);
+
+    const host = request.headers.get("host") ?? url.hostname;
+    const shell = host.startsWith("ops.") ? "/ops.html" : "/index.html";
+    return env.ASSETS.fetch(new URL(shell, url.origin).toString());
   },
 };

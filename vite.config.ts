@@ -34,6 +34,17 @@ export default defineConfig({
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
 
+  // Two SPA entries: the customer site (index.html) and the ops console
+  // (ops.html), served on separate hosts by the Worker.
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        ops: path.resolve(__dirname, 'ops.html'),
+      },
+    },
+  },
+
   // Dev: proxy the API to the Worker running under `wrangler dev` (port 8787),
   // so the SPA (vite) and the backend (worker) run side by side locally.
   server: {

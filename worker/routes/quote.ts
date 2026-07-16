@@ -2,21 +2,13 @@
 // list revisions (customer), accept (customer -> creates order + deposit invoice).
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { resolveUser } from "../lib/auth";
 import { ownedProject } from "../lib/access";
+import { isStaff } from "../lib/staff";
 import { createOrderFromRevision, orderDto, type OrderRow } from "../lib/orders";
 import { uuid } from "../lib/util";
 import { getProductBySlug } from "../../src/data/catalogue";
 
 export const quote = new Hono<{ Bindings: Env }>();
-
-// Staff-only seam. The internal ops console (Cloudflare Access) will own these;
-// until it exists, allow internal users, or any caller in non-prod for testing.
-async function isStaff(env: Env, req: Request): Promise<boolean> {
-  if (env.APP_ENV !== "production") return true;
-  const user = await resolveUser(env, req);
-  return user?.type === "internal";
-}
 
 // POST /api/projects/:id/submit — customer submits the draft for review.
 quote.post("/projects/:id/submit", async (c) => {
