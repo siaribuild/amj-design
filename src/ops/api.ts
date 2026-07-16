@@ -43,3 +43,55 @@ export const opsVerify = (email: string, code: string) =>
 export const opsLogout = () => req<{ ok: boolean }>("/api/ops/auth/logout", { method: "POST" });
 
 export const opsSummary = () => req<OpsSummary>("/api/ops/summary");
+
+// ── Quotes queue + workspace (O2) ────────────────────────────────────────────
+export interface OpsSubmission {
+  id: string;
+  title: string;
+  status_customer: string;
+  status_internal: string;
+  org_name: string | null;
+  customer_name: string | null;
+  customer_email: string | null;
+  assignee_name: string | null;
+  item_count: number;
+  total: number;
+  updated_at: string;
+}
+export interface OpsLine {
+  id: string;
+  code: string;
+  room: string;
+  productSlug: string;
+  productName: string;
+  width: string;
+  height: string;
+  options: Record<string, string>;
+  qty: number;
+  lineTotal: number | null;
+  status: string;
+}
+export interface OpsComment { id: string; line_id: string | null; kind: string; body: string; author: string | null; created_at: string }
+export interface OpsRevision { id: string; revisionNo: number; status: string; total: number; issuedAt: string; acceptedAt: string | null }
+export interface OpsWorkspace {
+  project: {
+    id: string; title: string; statusCustomer: string; statusInternal: string;
+    org: string | null; customerName: string | null; customerEmail: string | null;
+    assignee: string | null; internalOwnerId: string | null; updatedAt: string;
+  };
+  lines: OpsLine[];
+  files: { id: string; kind: string; filename: string; size: number; virus_status: string }[];
+  revisions: OpsRevision[];
+  comments: OpsComment[];
+}
+
+export const opsSubmissions = () => req<{ submissions: OpsSubmission[] }>("/api/ops/queues/submissions");
+export const opsProject = (id: string) => req<OpsWorkspace>(`/api/ops/projects/${id}`);
+export const opsAssign = (id: string, userId?: string) =>
+  req<{ ok: boolean; assignee: string | null; statusInternal: string }>(`/api/ops/projects/${id}/assign`, { method: "POST", body: JSON.stringify({ userId }) });
+export const opsPatchLine = (lineId: string, patch: Partial<{ width: string; height: string; qty: number; code: string; room: string; options: Record<string, string> }>) =>
+  req<{ line: OpsLine }>(`/api/ops/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(patch) });
+export const opsAddNote = (id: string, body: string, lineId?: string) =>
+  req<{ comment: OpsComment }>(`/api/ops/projects/${id}/note`, { method: "POST", body: JSON.stringify({ body, lineId }) });
+export const opsIssueRevision = (id: string) =>
+  req<{ id: string; revisionNo: number; total: number }>(`/api/ops/projects/${id}/issue-revision`, { method: "POST" });

@@ -11,6 +11,7 @@ import {
   FolderOpen, ScrollText, Settings, LogOut, Loader2, AlertCircle,
 } from "lucide-react";
 import { opsMe, opsChallenge, opsVerify, opsLogout, opsSummary, type OpsUser, type OpsSummary } from "./api";
+import { Quotes } from "./Quotes";
 
 const SAGE = "#5A7A6A";
 
@@ -152,7 +153,9 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
           </h1>
         </header>
         <div className="p-8">
-          {tab === "dashboard" ? <Dashboard /> : <Placeholder label={TABS.find(t => t.id === tab)?.label ?? ""} />}
+          {tab === "dashboard" ? <Dashboard />
+            : tab === "quotes" ? <Quotes />
+            : <Placeholder label={TABS.find(t => t.id === tab)?.label ?? ""} />}
         </div>
       </main>
     </div>

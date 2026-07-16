@@ -54,3 +54,22 @@ INSERT INTO order_line (id, order_id, external_ref, product_snapshot_json, qty, 
 INSERT INTO payment (id, order_id, kind, amount, percent, status, reference, invoiced_at, paid_at) VALUES
   ('pay_dep', 'o_1', 'deposit', 2700, 50, 'paid', 'EFT-7001', datetime('now','-7 days'), datetime('now','-6 days')),
   ('pay_bal', 'o_1', 'balance', 2700, 50, 'due',  NULL,       NULL,                     NULL);
+
+-- ── A second builder with a SUBMITTED project (awaiting triage in the ops queue) ──
+INSERT INTO user (id, email, name, phone, type, last_verified_at) VALUES
+  ('u_sarah', 'sarah@northsidebuild.com.au', 'Sarah Nguyen', '(03) 9111 2222', 'customer', datetime('now'));
+INSERT INTO organisation (id, name, trading_name, abn) VALUES
+  ('org_north', 'Northside Build', 'Northside Build Group Pty Ltd', '98 765 432 100');
+INSERT INTO membership (id, user_id, organisation_id, role) VALUES
+  ('m_sarah', 'u_sarah', 'org_north', 'owner');
+
+INSERT INTO project (id, organisation_id, owner_user_id, title, status_customer, status_internal, created_at, updated_at) VALUES
+  ('p_submitted', 'org_north', 'u_sarah', 'Fitzroy townhouses', 'submitted', 'submitted', datetime('now','-2 days'), datetime('now','-2 days'));
+
+INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position) VALUES
+  ('ql_s1', 'p_submitted', 'W01', 'Bed 1', 'amj80-series-sliding-window',
+    '{"colour":"Monument","hardware":"AMJ Standard D Shape Handle","flyscreen":"None","installation":"Sub Sill & Head"}',
+    '{"width":"1500","height":"1200"}', 'opening', 6, 1350, 'ready', 0),
+  ('ql_s2', 'p_submitted', 'D01', 'Living', 'amj80-series-sliding-door',
+    '{"colour":"Monument","hardware":"AMJ Standard D Shape Handle","flyscreen":"None","installation":"Sub Sill & Head"}',
+    '{"width":"2400","height":"2100"}', 'opening', 3, 3200, 'ready', 1);
