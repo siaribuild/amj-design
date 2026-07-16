@@ -11,6 +11,8 @@ import { type Page, SAGE, DARK, WARM, WindowMark, GhostMark, SLabel, Btn, FieldL
 import { ProductsPage } from "../pages/ProductsPage";
 import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { QuotePage } from "../pages/QuotePage";
+import { HowItWorksPage } from "../pages/HowItWorksPage";
+import { pathForPage, routeFromPathname } from "./routes";
 import { products as catalogueProducts, type CategorySlug } from "../data/catalogue";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, addDemoSchedule } from "../data/configurator";
@@ -680,113 +682,6 @@ function ResourcesPage({ setPage }: { setPage: (p: Page) => void }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// HOW IT WORKS
-// ═══════════════════════════════════════════════════════════════════════════════
-function HowItWorksPage({ setPage }: { setPage: (p: Page) => void }) {
-  const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const steps = [
-    { n: "01", title: "Start your quote", eyebrow: "Build or upload", body: "Enter product types and dimensions step by step, or upload your window and door schedule for review. No account required.", note: "Plans and supporting files can be added at the start.", Icon: Upload },
-    { n: "02", title: "See an indicative estimate", eyebrow: "Early cost guidance", body: "We generate an indicative estimate range from the information supplied, giving you an early view before detailed review.", note: "Indicative only — not a final price or construction budget.", Icon: FileText },
-    { n: "03", title: "Technical review", eyebrow: "Checked by our team", body: "We review dimensions, specifications and manufacturing suitability, and contact you if anything needs clarification.", note: "Incomplete details are resolved before final pricing.", Icon: Search },
-    { n: "04", title: "Reviewed quote issued", eyebrow: "Price and spec confirmed", body: "You receive a reviewed quote with confirmed pricing, product specifications and the details needed to make a decision.", note: "A clear, verified quote before you commit.", Icon: CheckCircle },
-    { n: "05", title: "Approve and pay deposit", eyebrow: "You stay in control", body: "Approve the reviewed quote and pay the required deposit only when you are comfortable with the confirmed scope.", note: "No deposit is requested before the reviewed quote.", Icon: Lock },
-    { n: "06", title: "Manufacture and delivery", eyebrow: "Made for your project", body: "Your order moves into manufacturer-backed production, with lead times confirmed and delivery coordinated for your site.", note: "Door-to-door delivery across Melbourne and Victoria.", Icon: Truck },
-  ];
-  return (
-    <div className="bg-[#FAFAF9] min-h-screen">
-      <section className="relative min-h-[78vh] flex items-end bg-[#0c0c0a] overflow-hidden">
-        <img src={IMG.detail} alt="Dark aluminium window frames in a contemporary residential interior" className="absolute inset-0 w-full h-full object-cover opacity-65" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#0c0c0a]/95 via-[#0c0c0a]/65 to-[#0c0c0a]/20" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/70 via-transparent to-[#0c0c0a]/15" />
-        <div className="relative w-full max-w-6xl mx-auto px-6 pt-36 pb-14 md:pb-20">
-          <div className="max-w-2xl border border-white/15 bg-[#0c0c0a]/55 backdrop-blur-md p-6 sm:p-8 md:p-10">
-            <SLabel light>How it works</SLabel>
-            <h1 className="font-semibold text-white leading-[1.03] tracking-tight mb-5" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2.5rem, 6vw, 4.25rem)" }}>
-              From first estimate<br />to site delivery.
-            </h1>
-            <p className="text-white/75 leading-relaxed max-w-xl mb-8" style={{ fontSize: "clamp(1rem, 1.4vw, 1.125rem)" }}>
-              A clear, six-step path with technical review built in — so pricing and specifications are checked before you pay a deposit.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Btn variant="sage" size="lg" onClick={() => go("quote")}>Start a quote <ArrowRight className="w-4 h-4" /></Btn>
-              <Btn variant="white" size="lg" onClick={() => go("products")}>Browse products</Btn>
-            </div>
-          </div>
-          <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-white/55" style={{ fontFamily: "'DM Mono', monospace" }}>
-            {["No account required", "Reviewed before deposit", "Supply only"].map((item, i) => (
-              <span key={item} className="flex items-center gap-3">{i > 0 && <span className="w-px h-3 bg-white/20" aria-hidden="true" />}{item}</span>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="relative bg-white py-20 md:py-28 overflow-hidden border-b border-black/8" style={GRID_BG}>
-        <GhostMark size={340} opacity={0.025} pos="right-0 bottom-0" />
-        <div className="max-w-6xl mx-auto px-6 relative">
-          <div className="grid grid-cols-1 lg:grid-cols-[0.72fr_1fr] gap-8 lg:gap-16 items-end mb-12">
-            <div>
-              <SLabel>Quote to order</SLabel>
-              <h2 className="font-semibold text-[#131311] leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
-                Six considered steps.<br />No surprises.
-              </h2>
-            </div>
-            <p className="text-[#5c5a56] text-base leading-relaxed max-w-xl lg:justify-self-end">Begin with the information you have. We turn it into a technically reviewed, confirmed quote before production begins.</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0 border-l border-t border-black/10">
-            {steps.map((step) => (
-              <article key={step.n} className="group relative bg-white border-r border-b border-black/10 p-6 md:p-7 min-h-[300px] flex flex-col hover:bg-[#FAFAF9] transition-colors">
-                <div className="flex items-start justify-between gap-4 mb-8">
-                  <span className="text-[#5A7A6A] text-xs font-medium tracking-wider" style={{ fontFamily: "'DM Mono', monospace" }}>{step.n}</span>
-                  <span className="w-10 h-10 border border-[#5A7A6A]/35 flex items-center justify-center group-hover:bg-[#5A7A6A] transition-colors">
-                    <step.Icon className="w-4 h-4 text-[#5A7A6A] group-hover:text-white transition-colors" aria-hidden="true" />
-                  </span>
-                </div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#5A7A6A] mb-2">{step.eyebrow}</p>
-                <h3 className="font-semibold text-[#131311] text-xl leading-tight mb-3" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{step.title}</h3>
-                <p className="text-[#5c5a56] text-[15px] leading-relaxed mb-6">{step.body}</p>
-                <div className="mt-auto pt-4 border-t border-black/8 flex items-start gap-2.5">
-                  <WindowMark size={10} color={SAGE} />
-                  <p className="text-xs text-[#5c5a56] leading-relaxed -mt-0.5">{step.note}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="relative bg-[#131311] py-16 md:py-20 overflow-hidden">
-        <GhostMark size={280} opacity={0.025} color="#fff" pos="right-0 top-1/2 -translate-y-1/2" />
-        <div className="max-w-6xl mx-auto px-6 relative grid grid-cols-1 lg:grid-cols-[0.72fr_1fr] gap-8 lg:gap-16">
-          <div>
-            <SLabel light>Know before you order</SLabel>
-            <h2 className="text-white font-semibold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.75rem, 3vw, 2.35rem)" }}>Clear scope from day one.</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-white/10 border border-white/10">
-            {[
-              ["Supply only", "Installation is arranged by your builder or installer."],
-              ["Reviewed pricing", "Indicative estimates are confirmed through technical review."],
-              ["Confirmed lead times", "Production and delivery timing is set at quote stage."],
-            ].map(([title, body]) => (
-              <div key={title} className="bg-[#131311] p-5">
-                <Check className="w-4 h-4 text-[#8CA99B] mb-4" aria-hidden="true" />
-                <h3 className="text-white font-semibold text-sm mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</h3>
-                <p className="text-white/50 text-xs leading-relaxed">{body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-[#FAFAF9] py-16 md:py-20">
-        <div className="max-w-6xl mx-auto px-6">
-          <CtaBanner title="Ready to price your project?" sub="Start with dimensions, a schedule or your plans. No account required." btnLabel="Start a quote" onClick={() => go("quote")} />
-        </div>
-      </section>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // LOGIN
 // ═══════════════════════════════════════════════════════════════════════════════
 function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: (u: AuthUser) => void }) {
@@ -1401,19 +1296,39 @@ function AdminPage() {
 // ROOT
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [page, setPage] = useState<Page>("home");
+  const initialRoute = routeFromPathname(window.location.pathname);
+  const [page, setPage] = useState<Page>(initialRoute.page);
   const [user, setUser] = useState<AuthUser | null>(null);
-  const navigateTo = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
+  const navigateTo = (p: Page, pathOverride?: string) => {
+    const nextPath = pathOverride ?? pathForPage(p);
+    if (window.location.pathname !== nextPath) window.history.pushState({ page: p }, "", nextPath);
+    setPage(p);
+    window.scrollTo(0, 0);
+  };
 
   // ─── Catalogue navigation state ──────────────────────────────────────────────
   // Category/family persist so returning from a product detail restores the
   // catalogue where the user left it. productSlug drives the product detail page.
   const [catCategory, setCatCategory] = useState<CategorySlug>("windows");
   const [catFamily, setCatFamily] = useState<string>("all");
-  const [productSlug, setProductSlug] = useState<string>(catalogueProducts[0]?.slug ?? "");
+  const [productSlug, setProductSlug] = useState<string>(initialRoute.productSlug ?? catalogueProducts[0]?.slug ?? "");
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const route = routeFromPathname(window.location.pathname);
+      setPage(route.page);
+      if (route.productSlug) setProductSlug(route.productSlug);
+      window.scrollTo(0, 0);
+    };
+    window.addEventListener("popstate", syncRoute);
+    return () => window.removeEventListener("popstate", syncRoute);
+  }, []);
 
   const selectCategory = (c: CategorySlug) => { setCatCategory(c); setCatFamily("all"); };
-  const openProduct = (slug: string) => { setProductSlug(slug); navigateTo("product-detail"); };
+  const openProduct = (slug: string) => {
+    setProductSlug(slug);
+    navigateTo("product-detail", pathForPage("product-detail", slug));
+  };
   const backToFamily = (categorySlug: CategorySlug, familySlug: string) => {
     setCatCategory(categorySlug); setCatFamily(familySlug); navigateTo("products");
   };
@@ -1445,7 +1360,7 @@ export default function App() {
       case "products":         return <ProductsPage setPage={navigateTo} category={catCategory} family={catFamily} onSelectCategory={selectCategory} onSelectFamily={setCatFamily} onOpenProduct={openProduct} />;
       case "product-detail":   return <ProductDetailPage slug={productSlug} setPage={navigateTo} onOpenProduct={openProduct} onBack={backToFamily} quote={quote} />;
       case "quote":            return <QuotePage setPage={navigateTo} user={user} quote={quote} />;
-      case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;
+      case "how-it-works":     return <HowItWorksPage />;
       case "resources":        return <ResourcesPage setPage={navigateTo} />;
       case "contact":          return <ContactPage setPage={navigateTo} />;
       case "approved-quote":   return <ApprovedQuotePage />;
