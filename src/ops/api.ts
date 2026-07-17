@@ -119,3 +119,34 @@ export const opsApprove = (stepId: string, comment?: string) =>
   req<{ ok: boolean; stepState: string; instanceState: string }>(`/api/ops/approvals/${stepId}/approve`, { method: "POST", body: JSON.stringify({ comment }) });
 export const opsReject = (stepId: string, comment?: string) =>
   req<{ ok: boolean; stepState: string; instanceState: string }>(`/api/ops/approvals/${stepId}/reject`, { method: "POST", body: JSON.stringify({ comment }) });
+
+// ── Orders ops (O5) ──────────────────────────────────────────────────────────
+export interface OpsPayment { kind: string; amount: number; percent: number; status: string; reference: string | null; invoicedAt: string | null; paidAt: string | null }
+export interface OpsOrder {
+  id: string; orderNo: string; stage: string; stageLabel: string; stageIndex: number;
+  total: number | null; payments: OpsPayment[];
+  title?: string; customerName?: string | null; customerEmail?: string | null; orgName?: string | null;
+  lines?: { external_ref: string | null; product_snapshot_json: string; qty: number; line_total: number }[];
+}
+export interface OpsAction { action: string; label: string }
+
+export const opsOrders = () => req<{ orders: OpsOrder[] }>("/api/ops/orders");
+export const opsOrder = (id: string) => req<{ order: OpsOrder; actions: OpsAction[] }>(`/api/ops/orders/${id}`);
+export const opsAdvanceOrder = (id: string, action: string) =>
+  req<{ order: OpsOrder; actions: OpsAction[] }>(`/api/ops/orders/${id}/advance`, { method: "POST", body: JSON.stringify({ action }) });
+export const opsPayOrder = (id: string, kind: string, reference?: string) =>
+  req<{ order: OpsOrder; actions: OpsAction[] }>(`/api/ops/orders/${id}/pay`, { method: "POST", body: JSON.stringify({ kind, reference }) });
+
+// ── Customers 360 (O5) ───────────────────────────────────────────────────────
+export interface OpsCustomer {
+  id: string; name: string; trading_name: string | null; abn: string | null; account_status: string;
+  projects: number; orders: number; contact_name: string | null; contact_email: string | null;
+}
+export interface OpsCustomerDetail {
+  org: { id: string; name: string; tradingName: string | null; abn: string | null; accountStatus: string };
+  members: { id: string; name: string | null; email: string; phone: string | null; role: string }[];
+  projects: { id: string; title: string | null; status_customer: string; status_internal: string; updated_at: string }[];
+  orders: { id: string; order_no: string; stage: string; total: number | null }[];
+}
+export const opsCustomers = () => req<{ customers: OpsCustomer[] }>("/api/ops/customers");
+export const opsCustomer = (orgId: string) => req<OpsCustomerDetail>(`/api/ops/customers/${orgId}`);

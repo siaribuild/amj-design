@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
 import { isStaff } from "../lib/staff";
-import { orderDto, TRANSITIONS, type OrderRow } from "../lib/orders";
+import { orderDto, applyTransition, markPaid, TRANSITIONS, type OrderRow } from "../lib/orders";
 
 export const orders = new Hono<{ Bindings: Env }>();
 
@@ -16,18 +16,6 @@ async function ownedOrder(env: Env, req: Request, orderId: string): Promise<Orde
     .prepare('SELECT o.* FROM "order" o JOIN project p ON p.id = o.project_id WHERE o.id = ? AND p.owner_user_id = ?')
     .bind(orderId, user.id)
     .first<OrderRow>();
-}
-
-async function applyTransition(env: Env, order: OrderRow, action: string): Promise<string | null> {
-  const t = TRANSITIONS[action];
-  if (!t) return "unknown_action";
-  if (order.stage !== t.from) return "stage_conflict";
-  const stampSql = t.stamp ? `, ${t.stamp} = datetime('now')` : "";
-  await env.DB.prepare(`UPDATE "order" SET stage = ?${stampSql}, updated_at = datetime('now') WHERE id = ?`).bind(t.to, order.id).run();
-  if (t.invoiceBalance) {
-    await env.DB.prepare("UPDATE payment SET invoiced_at = datetime('now') WHERE order_id = ? AND kind = 'balance'").bind(order.id).run();
-  }
-  return null;
 }
 
 // GET /api/orders — the signed-in customer's orders (summary).
@@ -93,14 +81,8 @@ orders.post("/:id/pay", async (c) => {
   if (!order) return c.json({ error: "not_found" }, 404);
   const body = await c.req.json().catch(() => ({}));
   const kind = body?.kind === "balance" ? "balance" : "deposit";
-  const expectFrom = kind === "deposit" ? "deposit_invoiced" : "balance_invoiced";
-  const to = kind === "deposit" ? "deposit_paid" : "balance_paid";
-  if (order.stage !== expectFrom) return c.json({ error: "stage_conflict", stage: order.stage }, 409);
-  await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE payment SET status = 'paid', paid_at = datetime('now'), reference = ? WHERE order_id = ? AND kind = ?")
-      .bind(typeof body?.reference === "string" ? body.reference : null, order.id, kind),
-    c.env.DB.prepare('UPDATE "order" SET stage = ?, updated_at = datetime(\'now\') WHERE id = ?').bind(to, order.id),
-  ]);
+  const err = await markPaid(c.env, order, kind, typeof body?.reference === "string" ? body.reference : null);
+  if (err) return c.json({ error: err, stage: order.stage }, 409);
   const fresh = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(order.id).first<OrderRow>();
   return c.json({ order: await orderDto(c.env, fresh!) });
 });

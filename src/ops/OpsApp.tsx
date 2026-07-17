@@ -13,6 +13,8 @@ import {
 import { opsMe, opsChallenge, opsVerify, opsLogout, opsSummary, type OpsUser, type OpsSummary } from "./api";
 import { Quotes } from "./Quotes";
 import { Approvals } from "./Approvals";
+import { Orders } from "./Orders";
+import { Customers } from "./Customers";
 
 const SAGE = "#5A7A6A";
 
@@ -157,6 +159,8 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
           {tab === "dashboard" ? <Dashboard />
             : tab === "quotes" ? <Quotes />
             : tab === "approvals" ? <Approvals />
+            : tab === "orders" ? <Orders />
+            : tab === "customers" ? <Customers />
             : <Placeholder label={TABS.find(t => t.id === tab)?.label ?? ""} />}
         </div>
       </main>

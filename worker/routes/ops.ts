@@ -14,6 +14,7 @@ import { findOrCreateInternalUser, isStaffEmail, resolveStaff } from "../lib/sta
 import { issueRevision } from "../lib/revisions";
 import { logEvent } from "../lib/activity";
 import { evaluateApprovals, createApprovalInstance, resolveInstance, canApprove } from "../lib/approvals";
+import { orderDto, applyTransition, markPaid, availableActions, type OrderRow } from "../lib/orders";
 import { uuid } from "../lib/util";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { priceConfigured } from "../../src/data/configurator";
@@ -393,4 +394,106 @@ ops.post("/projects/:id/issue-revision", async (c) => {
     });
   }
   return c.json(rev);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// O5 — Orders operations
+// ═══════════════════════════════════════════════════════════════════════════
+
+// GET /api/ops/orders — all orders with customer + stage + payments.
+ops.get("/orders", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const { results } = await c.env.DB.prepare(`
+    SELECT o.*, p.title, u.name AS customer_name, org.name AS org_name
+      FROM "order" o
+      JOIN project p ON p.id = o.project_id
+      LEFT JOIN user u ON u.id = p.owner_user_id
+      LEFT JOIN organisation org ON org.id = p.organisation_id
+     ORDER BY o.created_at DESC`).all<any>();
+  const list = await Promise.all(results.map(async (o) => ({
+    ...(await orderDto(c.env, o as OrderRow)),
+    title: o.title, customerName: o.customer_name, orgName: o.org_name,
+  })));
+  return c.json({ orders: list });
+});
+
+// GET /api/ops/orders/:id — order detail + lines + the actions staff can take.
+ops.get("/orders/:id", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const o = await c.env.DB.prepare(`
+    SELECT o.*, p.title, u.name AS customer_name, u.email AS customer_email, org.name AS org_name
+      FROM "order" o
+      JOIN project p ON p.id = o.project_id
+      LEFT JOIN user u ON u.id = p.owner_user_id
+      LEFT JOIN organisation org ON org.id = p.organisation_id
+     WHERE o.id = ?`).bind(c.req.param("id")).first<any>();
+  if (!o) return c.json({ error: "not_found" }, 404);
+  const { results: lines } = await c.env.DB.prepare("SELECT external_ref, product_snapshot_json, qty, line_total FROM order_line WHERE order_id = ?").bind(o.id).all();
+  return c.json({
+    order: { ...(await orderDto(c.env, o as OrderRow)), title: o.title, customerName: o.customer_name, customerEmail: o.customer_email, orgName: o.org_name, lines },
+    actions: availableActions(o as OrderRow),
+  });
+});
+
+// POST /api/ops/orders/:id/advance { action } — any fulfilment transition (the
+// internal console can also record customer-side confirmations by phone).
+ops.post("/orders/:id/advance", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const order = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(c.req.param("id")).first<OrderRow>();
+  if (!order) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  const err = await applyTransition(c.env, order, String(body?.action ?? ""));
+  if (err) return c.json({ error: err }, 409);
+  await logEvent(c.env, { actor: staff.id, entityType: "order", entityId: order.id, action: `advanced: ${body?.action}` });
+  const fresh = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(order.id).first<OrderRow>();
+  return c.json({ order: await orderDto(c.env, fresh!), actions: availableActions(fresh!) });
+});
+
+// POST /api/ops/orders/:id/pay { kind, reference } — record a manual payment.
+ops.post("/orders/:id/pay", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const order = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(c.req.param("id")).first<OrderRow>();
+  if (!order) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  const kind = body?.kind === "balance" ? "balance" : "deposit";
+  const err = await markPaid(c.env, order, kind, typeof body?.reference === "string" ? body.reference : null);
+  if (err) return c.json({ error: err, stage: order.stage }, 409);
+  await logEvent(c.env, { actor: staff.id, entityType: "order", entityId: order.id, action: `recorded ${kind} payment` });
+  const fresh = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(order.id).first<OrderRow>();
+  return c.json({ order: await orderDto(c.env, fresh!), actions: availableActions(fresh!) });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// O5 — Customers 360
+// ═══════════════════════════════════════════════════════════════════════════
+
+// GET /api/ops/customers — organisations with contact + project/order counts.
+ops.get("/customers", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const { results } = await c.env.DB.prepare(`
+    SELECT org.id, org.name, org.trading_name, org.abn, org.account_status,
+           (SELECT count(*) FROM project WHERE organisation_id = org.id) AS projects,
+           (SELECT count(*) FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.organisation_id = org.id) AS orders,
+           (SELECT u.name FROM membership m JOIN user u ON u.id = m.user_id WHERE m.organisation_id = org.id ORDER BY (m.role = 'owner') DESC LIMIT 1) AS contact_name,
+           (SELECT u.email FROM membership m JOIN user u ON u.id = m.user_id WHERE m.organisation_id = org.id ORDER BY (m.role = 'owner') DESC LIMIT 1) AS contact_email
+      FROM organisation org
+     ORDER BY org.name`).all();
+  return c.json({ customers: results });
+});
+
+// GET /api/ops/customers/:orgId — 360: org, members, projects, orders.
+ops.get("/customers/:orgId", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const orgId = c.req.param("orgId");
+  const org = await c.env.DB.prepare("SELECT * FROM organisation WHERE id = ?").bind(orgId).first<any>();
+  if (!org) return c.json({ error: "not_found" }, 404);
+  const { results: members } = await c.env.DB.prepare("SELECT u.id, u.name, u.email, u.phone, m.role FROM membership m JOIN user u ON u.id = m.user_id WHERE m.organisation_id = ?").bind(orgId).all();
+  const { results: projects } = await c.env.DB.prepare("SELECT id, title, status_customer, status_internal, updated_at FROM project WHERE organisation_id = ? ORDER BY updated_at DESC").bind(orgId).all();
+  const { results: ordersRows } = await c.env.DB.prepare('SELECT o.id, o.order_no, o.stage, o.total FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.organisation_id = ? ORDER BY o.created_at DESC').bind(orgId).all();
+  return c.json({
+    org: { id: org.id, name: org.name, tradingName: org.trading_name, abn: org.abn, accountStatus: org.account_status },
+    members, projects, orders: ordersRows,
+  });
 });

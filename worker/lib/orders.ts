@@ -30,6 +30,21 @@ export const STAGE_LABEL: Record<Stage, string> = {
 
 export const DEPOSIT_PERCENT = 50;
 
+// Human labels for the transition actions (shown as ops buttons).
+export const ACTION_LABEL: Record<string, string> = {
+  "issue-drawings": "Issue shop drawings",
+  "confirm-drawings": "Mark drawings approved",
+  "start-manufacturing": "Start manufacturing",
+  "share-qa": "Share QA photos",
+  "invoice-balance": "Issue balance invoice",
+  "confirm-qa": "Confirm for dispatch",
+  "dispatch": "Mark dispatched",
+  "deliver": "Mark delivered",
+  "close": "Close (after-sales)",
+  "pay:deposit": "Record deposit payment",
+  "pay:balance": "Record balance payment",
+};
+
 interface TransitionDef {
   from: Stage;
   to: Stage;
@@ -132,4 +147,41 @@ export async function createOrderFromRevision(
   ];
   await env.DB.batch(stmts);
   return orderId;
+}
+
+// Apply a named fulfilment transition. Returns an error code or null on success.
+export async function applyTransition(env: Env, order: OrderRow, action: string): Promise<string | null> {
+  const t = TRANSITIONS[action];
+  if (!t) return "unknown_action";
+  if (order.stage !== t.from) return "stage_conflict";
+  const stampSql = t.stamp ? `, ${t.stamp} = datetime('now')` : "";
+  await env.DB.prepare(`UPDATE "order" SET stage = ?${stampSql}, updated_at = datetime('now') WHERE id = ?`).bind(t.to, order.id).run();
+  if (t.invoiceBalance) {
+    await env.DB.prepare("UPDATE payment SET invoiced_at = datetime('now') WHERE order_id = ? AND kind = 'balance'").bind(order.id).run();
+  }
+  return null;
+}
+
+// Record a manual payment (deposit/balance) and advance the matching stage.
+export async function markPaid(env: Env, order: OrderRow, kind: "deposit" | "balance", reference?: string | null): Promise<string | null> {
+  const expectFrom = kind === "deposit" ? "deposit_invoiced" : "balance_invoiced";
+  const to = kind === "deposit" ? "deposit_paid" : "balance_paid";
+  if (order.stage !== expectFrom) return "stage_conflict";
+  await env.DB.batch([
+    env.DB.prepare("UPDATE payment SET status = 'paid', paid_at = datetime('now'), reference = ? WHERE order_id = ? AND kind = ?")
+      .bind(reference ?? null, order.id, kind),
+    env.DB.prepare('UPDATE "order" SET stage = ?, updated_at = datetime(\'now\') WHERE id = ?').bind(to, order.id),
+  ]);
+  return null;
+}
+
+// Actions a staff member can take from the current stage (transitions + payments).
+export function availableActions(order: OrderRow): { action: string; label: string }[] {
+  const out: { action: string; label: string }[] = [];
+  if (order.stage === "deposit_invoiced") out.push({ action: "pay:deposit", label: ACTION_LABEL["pay:deposit"] });
+  if (order.stage === "balance_invoiced") out.push({ action: "pay:balance", label: ACTION_LABEL["pay:balance"] });
+  for (const [key, t] of Object.entries(TRANSITIONS)) {
+    if (t.from === order.stage) out.push({ action: key, label: ACTION_LABEL[key] ?? key });
+  }
+  return out;
 }
