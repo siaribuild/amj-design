@@ -65,7 +65,9 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
       const r = a.action.startsWith("pay:")
         ? await opsPayOrder(id, a.action.split(":")[1], `EFT-${Math.floor(Math.random() * 9000 + 1000)}`)
         : await opsAdvanceOrder(id, a.action);
-      setOrder(r.order); setActions(r.actions);
+      // advance/pay return the bare order (no joined title/customer) — keep the header.
+      setOrder(prev => ({ ...r.order, title: prev?.title, customerName: prev?.customerName, orgName: prev?.orgName }));
+      setActions(r.actions);
     } finally { setBusy(false); }
   };
 
