@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { opsMe, opsChallenge, opsVerify, opsLogout, opsSummary, type OpsUser, type OpsSummary } from "./api";
 import { Quotes } from "./Quotes";
+import { Approvals } from "./Approvals";
 
 const SAGE = "#5A7A6A";
 
@@ -155,6 +156,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
         <div className="p-8">
           {tab === "dashboard" ? <Dashboard />
             : tab === "quotes" ? <Quotes />
+            : tab === "approvals" ? <Approvals />
             : <Placeholder label={TABS.find(t => t.id === tab)?.label ?? ""} />}
         </div>
       </main>

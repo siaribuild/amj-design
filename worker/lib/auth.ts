@@ -17,6 +17,7 @@ export interface UserRow {
   name: string | null;
   phone: string | null;
   type: string;
+  role: string | null;
   session_epoch: number;
 }
 
@@ -26,6 +27,7 @@ export const userDto = (u: UserRow) => ({
   name: u.name,
   phone: u.phone,
   type: u.type,
+  role: u.role ?? null,
 });
 
 export const normEmail = (e: unknown) => String(e ?? "").trim().toLowerCase();

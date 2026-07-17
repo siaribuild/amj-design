@@ -4,6 +4,7 @@ export interface OpsUser {
   email: string;
   name: string | null;
   type: string;
+  role: string | null;
 }
 
 export interface OpsSummary {
@@ -74,10 +75,12 @@ export interface OpsLine {
 export interface OpsComment { id: string; line_id: string | null; kind: string; body: string; author: string | null; created_at: string }
 export interface OpsRevision { id: string; revisionNo: number; status: string; total: number; issuedAt: string; acceptedAt: string | null }
 export interface OpsActivity { actor: string | null; action: string; occurred_at: string }
+export interface OpsApprovalStep { trigger_family: string; reason: string | null; approver_role: string; state: string; comment: string | null; acted_at: string | null; acted_by: string | null }
+export interface OpsApprovals { state: string; steps: OpsApprovalStep[] }
 export interface OpsWorkspace {
   project: {
     id: string; title: string; statusCustomer: string; statusInternal: string;
-    statusInternalLabel: string; nextStates: string[];
+    statusInternalLabel: string; nextStates: string[]; canSubmitForApproval: boolean;
     org: string | null; customerName: string | null; customerEmail: string | null;
     assignee: string | null; internalOwnerId: string | null; updatedAt: string;
   };
@@ -86,6 +89,12 @@ export interface OpsWorkspace {
   revisions: OpsRevision[];
   comments: OpsComment[];
   activity: OpsActivity[];
+  approvals: OpsApprovals | null;
+}
+
+export interface OpsApprovalTask {
+  id: string; trigger_family: string; reason: string | null; approver_role: string;
+  project_id: string; title: string; customer_name: string | null; org_name: string | null;
 }
 
 export const opsSubmissions = () => req<{ submissions: OpsSubmission[] }>("/api/ops/queues/submissions");
@@ -102,3 +111,11 @@ export const opsSetStatus = (id: string, statusInternal: string) =>
   req<{ statusInternal: string; statusInternalLabel: string; nextStates: string[] }>(`/api/ops/projects/${id}/status`, { method: "POST", body: JSON.stringify({ statusInternal }) });
 export const opsRequestClarification = (id: string, message: string) =>
   req<{ ok: boolean; statusInternalLabel: string }>(`/api/ops/projects/${id}/request-clarification`, { method: "POST", body: JSON.stringify({ message }) });
+export const opsSubmitForApproval = (id: string) =>
+  req<{ statusInternal: string; steps: { family: string; role: string; reason: string }[] }>(`/api/ops/projects/${id}/submit-for-approval`, { method: "POST" });
+
+export const opsApprovals = () => req<{ approvals: OpsApprovalTask[]; canActRoles: string | null }>("/api/ops/approvals");
+export const opsApprove = (stepId: string, comment?: string) =>
+  req<{ ok: boolean; stepState: string; instanceState: string }>(`/api/ops/approvals/${stepId}/approve`, { method: "POST", body: JSON.stringify({ comment }) });
+export const opsReject = (stepId: string, comment?: string) =>
+  req<{ ok: boolean; stepState: string; instanceState: string }>(`/api/ops/approvals/${stepId}/reject`, { method: "POST", body: JSON.stringify({ comment }) });

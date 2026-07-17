@@ -1,24 +1,25 @@
 // Ops → Quotes: submissions queue + the internal quote workspace (O2).
 import { useEffect, useState } from "react";
-import { ChevronLeft, Loader2, UserPlus, FileCheck2, StickyNote, Save, MessageCircleQuestion, ClipboardCheck, FlaskConical, Clock } from "lucide-react";
+import { ChevronLeft, Loader2, UserPlus, FileCheck2, StickyNote, Save, MessageCircleQuestion, ShieldCheck, FlaskConical, Clock, Check, X, CircleDot } from "lucide-react";
 import {
   opsSubmissions, opsProject, opsAssign, opsPatchLine, opsAddNote, opsIssueRevision,
-  opsSetStatus, opsRequestClarification,
+  opsSetStatus, opsRequestClarification, opsSubmitForApproval,
   type OpsSubmission, type OpsWorkspace, type OpsLine,
 } from "./api";
 
 const SAGE = "#5A7A6A";
 const money = (n: number | null) => (n == null ? "—" : `$${Math.round(n).toLocaleString("en-AU")}`);
 const STATUS_LABEL: Record<string, string> = {
-  submitted: "Submitted", estimator_assigned: "Assigned", technical_review_required: "Technical review",
+  submitted: "Submitted", triage_pending: "Awaiting triage", estimator_assigned: "Assigned",
+  technical_review_required: "Technical review", approval_pending: "Approval pending",
+  approved_for_issue: "Ready to issue", customer_clarification_required: "Awaiting customer",
   quote_issued: "Quote issued", under_review: "Under review", needs_information: "Needs info",
 };
-// Workflow transitions surfaced as buttons (excludes clarification / issued,
-// which have dedicated actions).
+// Workflow transitions surfaced as buttons (clarification / approval / issued
+// have dedicated actions).
 const NEXT: Record<string, { label: string; icon: React.ReactNode }> = {
   estimator_assigned: { label: "Resume review", icon: <UserPlus className="w-4 h-4" /> },
   technical_review_required: { label: "Start technical review", icon: <FlaskConical className="w-4 h-4" /> },
-  approved_for_issue: { label: "Mark ready to issue", icon: <ClipboardCheck className="w-4 h-4" /> },
 };
 
 export function Quotes() {
@@ -92,6 +93,7 @@ function Workspace({ id, onBack }: { id: string; onBack: () => void }) {
     const msg = clarify.trim(); if (!msg) return;
     await run(() => opsRequestClarification(id, msg)); setClarify(""); setClarifyOpen(false);
   };
+  const submitForApproval = () => run(() => opsSubmitForApproval(id));
 
   return (
     <div className="max-w-4xl">
@@ -129,6 +131,11 @@ function Workspace({ id, onBack }: { id: string; onBack: () => void }) {
               <MessageCircleQuestion className="w-4 h-4" />Request clarification
             </button>
           )}
+          {p.canSubmitForApproval && (
+            <button onClick={submitForApproval} disabled={busy} className="flex items-center gap-1.5 text-sm px-3 py-1.5 border border-[#5A7A6A]/40 text-[#355344] hover:bg-[#5A7A6A]/8 disabled:opacity-50">
+              <ShieldCheck className="w-4 h-4" />Submit for approval
+            </button>
+          )}
           {next.includes("issued") && (
             <button onClick={() => run(() => opsIssueRevision(id))} disabled={busy} className="flex items-center gap-1.5 text-sm px-3 py-1.5 text-white disabled:opacity-50" style={{ background: SAGE }}>
               <FileCheck2 className="w-4 h-4" />Issue reviewed quote
@@ -143,6 +150,30 @@ function Workspace({ id, onBack }: { id: string; onBack: () => void }) {
           </div>
         )}
       </div>
+
+      {/* Approval trace */}
+      {ws.approvals && (
+        <div className="bg-white border border-black/8 p-4 mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-[11px] uppercase tracking-wide text-[#8b8880]">Approvals</h3>
+            <span className="text-xs text-[#5c5a56]">Instance: {ws.approvals.state}</span>
+          </div>
+          <ul className="space-y-2">
+            {ws.approvals.steps.map((s, i) => (
+              <li key={i} className="flex items-center gap-3 text-sm">
+                {s.state === "approved" ? <Check className="w-4 h-4 text-[#5A7A6A]" />
+                  : s.state === "rejected" ? <X className="w-4 h-4 text-red-500" />
+                  : <CircleDot className="w-4 h-4 text-[#b5b2ac]" />}
+                <span className="text-[#14150f] capitalize">{s.trigger_family}</span>
+                <span className="text-xs text-[#8b8880] flex-1">{s.reason} · needs {s.approver_role}</span>
+                <span className={`text-xs ${s.state === "approved" ? "text-[#5A7A6A]" : s.state === "rejected" ? "text-red-500" : "text-[#b5b2ac]"}`}>
+                  {s.state}{s.acted_by ? ` · ${s.acted_by}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Line list (editable) */}
       <h3 className="text-[11px] uppercase tracking-wide text-[#8b8880] mb-2">Lines</h3>

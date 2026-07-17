@@ -10,10 +10,15 @@
 -- staff seams are open in non-prod today regardless).
 -- ═══════════════════════════════════════════════════════════════════════════
 
--- Users
-INSERT INTO user (id, email, name, phone, type, last_verified_at) VALUES
-  ('u_demo',  'demo@amjtradedirect.com.au',  'Demo Builder', '(03) 9000 1234', 'customer', datetime('now')),
-  ('u_staff', 'staff@amjtradedirect.com.au', 'AMJ Staff',    NULL,             'internal', datetime('now'));
+-- Users (u_staff is an admin — can clear any approval step)
+INSERT INTO user (id, email, name, phone, type, role, last_verified_at) VALUES
+  ('u_demo',  'demo@amjtradedirect.com.au',  'Demo Builder', '(03) 9000 1234', 'customer', NULL,    datetime('now')),
+  ('u_staff', 'staff@amjtradedirect.com.au', 'AMJ Staff',    NULL,             'internal', 'admin', datetime('now'));
+
+-- Approval rules (demo thresholds; commercial fires on the seeded Fitzroy quote)
+INSERT INTO approval_rule (id, name, trigger_family, condition_json, approver_role) VALUES
+  ('rule_comm', 'Large order value',        'commercial', '{"type":"total_gt","value":4000}', 'manager'),
+  ('rule_tech', 'Technical review required', 'technical',  '{"type":"status_technical"}',      'technical_reviewer');
 
 -- Organisation + membership
 INSERT INTO organisation (id, name, trading_name, abn) VALUES

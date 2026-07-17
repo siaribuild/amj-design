@@ -13,6 +13,7 @@ import { notify } from "../lib/email";
 import { findOrCreateInternalUser, isStaffEmail, resolveStaff } from "../lib/staff";
 import { issueRevision } from "../lib/revisions";
 import { logEvent } from "../lib/activity";
+import { evaluateApprovals, createApprovalInstance, resolveInstance, canApprove } from "../lib/approvals";
 import { uuid } from "../lib/util";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { priceConfigured } from "../../src/data/configurator";
@@ -21,14 +22,20 @@ export const ops = new Hono<{ Bindings: Env }>();
 
 // Internal workflow state machine (status_internal). 'issued' is reached via
 // issue-revision; 'customer_clarification_required' via request-clarification.
+// approved_for_issue is reached ONLY via submit-for-approval (which evaluates
+// approval rules), never as a direct /status move.
 const FLOW: Record<string, string[]> = {
   submitted: ["triage_pending", "estimator_assigned", "customer_clarification_required"],
   triage_pending: ["estimator_assigned", "customer_clarification_required"],
-  estimator_assigned: ["technical_review_required", "approved_for_issue", "customer_clarification_required"],
-  technical_review_required: ["estimator_assigned", "approved_for_issue", "customer_clarification_required"],
+  estimator_assigned: ["technical_review_required", "customer_clarification_required"],
+  technical_review_required: ["estimator_assigned", "customer_clarification_required"],
+  approval_pending: [],
   approved_for_issue: ["issued", "estimator_assigned"],
   customer_clarification_required: ["estimator_assigned"],
 };
+
+// Statuses from which an estimator can submit the quote for approval.
+export const CAN_SUBMIT_FOR_APPROVAL = new Set(["estimator_assigned", "technical_review_required"]);
 
 export const STATUS_INTERNAL_LABEL: Record<string, string> = {
   draft: "Draft", submitted: "Submitted", triage_pending: "Awaiting triage",
@@ -122,7 +129,8 @@ ops.get("/summary", async (c) => {
       (SELECT count(*) FROM "order" WHERE stage NOT IN ('after_sales','cancelled'))            AS active_orders,
       (SELECT count(*) FROM "order" WHERE stage IN ('deposit_invoiced','balance_invoiced'))    AS awaiting_payment,
       (SELECT count(*) FROM organisation)                                                       AS organisations,
-      (SELECT count(*) FROM user WHERE type = 'customer')                                       AS customers
+      (SELECT count(*) FROM user WHERE type = 'customer')                                       AS customers,
+      (SELECT count(*) FROM approval_step WHERE state = 'pending')                              AS approvals_pending
   `).first<Record<string, number>>();
 
   return c.json({
@@ -132,7 +140,7 @@ ops.get("/summary", async (c) => {
     awaitingPayment: row?.awaiting_payment ?? 0,
     organisations: row?.organisations ?? 0,
     customers: row?.customers ?? 0,
-    approvalsPending: 0, // approvals engine lands in O4
+    approvalsPending: row?.approvals_pending ?? 0,
   });
 });
 
@@ -173,12 +181,20 @@ ops.get("/projects/:id", async (c) => {
   const { results: comments } = await c.env.DB.prepare("SELECT cm.id, cm.line_id, cm.kind, cm.body, cm.created_at, u.name AS author FROM comment cm LEFT JOIN user u ON u.id = cm.author_id WHERE cm.project_id = ? ORDER BY cm.created_at DESC").bind(id).all();
   const { results: activity } = await c.env.DB.prepare("SELECT a.action, a.occurred_at, COALESCE(u.name, a.actor) AS actor FROM audit_event a LEFT JOIN user u ON u.id = a.actor WHERE a.entity_type = 'project' AND a.entity_id = ? ORDER BY a.occurred_at DESC").bind(id).all();
 
+  const instance = await c.env.DB.prepare("SELECT id, state FROM approval_instance WHERE project_id = ? ORDER BY created_at DESC LIMIT 1").bind(id).first<{ id: string; state: string }>();
+  let approvals: any = null;
+  if (instance) {
+    const { results: steps } = await c.env.DB.prepare("SELECT s.trigger_family, s.reason, s.approver_role, s.state, s.comment, s.acted_at, u.name AS acted_by FROM approval_step s LEFT JOIN user u ON u.id = s.acted_by WHERE s.instance_id = ?").bind(instance.id).all();
+    approvals = { state: instance.state, steps };
+  }
+
   return c.json({
     project: {
       id: p.id, title: p.title ?? "Untitled project",
       statusCustomer: p.status_customer, statusInternal: p.status_internal,
       statusInternalLabel: STATUS_INTERNAL_LABEL[p.status_internal] ?? p.status_internal,
       nextStates: FLOW[p.status_internal] ?? [],
+      canSubmitForApproval: CAN_SUBMIT_FOR_APPROVAL.has(p.status_internal),
       org: p.org_name, customerName: p.customer_name, customerEmail: p.customer_email,
       assignee: p.assignee_name, internalOwnerId: p.internal_owner_id,
       updatedAt: p.updated_at,
@@ -188,6 +204,7 @@ ops.get("/projects/:id", async (c) => {
     revisions: revisions.map((r: any) => ({ id: r.id, revisionNo: r.revision_no, status: r.snapshot_status, total: safeParse(r.totals_json).total ?? 0, issuedAt: r.issued_at, acceptedAt: r.accepted_at })),
     comments,
     activity,
+    approvals,
   });
 });
 
@@ -244,6 +261,79 @@ ops.post("/projects/:id/request-clarification", async (c) => {
       email: { to: cust.email, subject: "We need a bit more info on your quote", text: message } });
   }
   return c.json({ ok: true, statusInternal: "customer_clarification_required", statusInternalLabel: STATUS_INTERNAL_LABEL.customer_clarification_required });
+});
+
+// POST /api/ops/projects/:id/submit-for-approval — evaluate rules; gate or auto-clear.
+ops.post("/projects/:id/submit-for-approval", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const id = c.req.param("id");
+  const project = await c.env.DB.prepare("SELECT status_internal FROM project WHERE id = ?").bind(id).first<{ status_internal: string }>();
+  if (!project) return c.json({ error: "not_found" }, 404);
+  if (!["estimator_assigned", "technical_review_required"].includes(project.status_internal)) {
+    return c.json({ error: "invalid_transition", from: project.status_internal }, 409);
+  }
+  const steps = await evaluateApprovals(c.env, id);
+  if (steps.length === 0) {
+    await c.env.DB.prepare("UPDATE project SET status_internal = 'approved_for_issue', updated_at = datetime('now') WHERE id = ?").bind(id).run();
+    await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: id, action: "no approval required — ready to issue" });
+    return c.json({ statusInternal: "approved_for_issue", steps: [] });
+  }
+  await createApprovalInstance(c.env, id, steps);
+  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: id, action: `submitted for approval (${steps.length} step${steps.length !== 1 ? "s" : ""})` });
+  return c.json({ statusInternal: "approval_pending", steps: steps.map((s) => ({ family: s.family, role: s.role, reason: s.reason })) });
+});
+
+// GET /api/ops/approvals — pending steps the acting staff can clear (admin sees all).
+ops.get("/approvals", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const { results } = await c.env.DB.prepare(`
+    SELECT s.id, s.trigger_family, s.reason, s.approver_role, s.state,
+           ai.project_id, p.title, u.name AS customer_name, o.name AS org_name
+      FROM approval_step s
+      JOIN approval_instance ai ON ai.id = s.instance_id AND ai.state = 'pending'
+      JOIN project p ON p.id = ai.project_id
+      LEFT JOIN user u ON u.id = p.owner_user_id
+      LEFT JOIN organisation o ON o.id = p.organisation_id
+     WHERE s.state = 'pending'
+     ORDER BY s.id`).all<any>();
+  const approvals = results.filter((s) => canApprove(staff, s.approver_role));
+  return c.json({ approvals, canActRoles: staff.role });
+});
+
+async function actOnStep(c: any, action: "approved" | "rejected") {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const stepId = c.req.param("stepId");
+  const step = await c.env.DB.prepare(
+    "SELECT s.*, ai.project_id FROM approval_step s JOIN approval_instance ai ON ai.id = s.instance_id WHERE s.id = ?",
+  ).bind(stepId).first<any>();
+  if (!step) return c.json({ error: "not_found" }, 404);
+  if (step.state !== "pending") return c.json({ error: "already_acted" }, 409);
+  if (!canApprove(staff, step.approver_role)) return c.json({ error: "wrong_role" }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  await c.env.DB.prepare("UPDATE approval_step SET state = ?, acted_by = ?, acted_at = datetime('now'), comment = ? WHERE id = ?")
+    .bind(action, staff.id, typeof body?.comment === "string" ? body.comment : null, stepId).run();
+  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: step.project_id, action: `${action === "approved" ? "approved" : "rejected"} ${step.trigger_family} approval` });
+  const instanceState = await resolveInstance(c.env, step.instance_id);
+  return c.json({ ok: true, stepState: action, instanceState });
+}
+
+// POST /api/ops/approvals/:stepId/approve | /reject
+ops.post("/approvals/:stepId/approve", (c) => actOnStep(c, "approved"));
+ops.post("/approvals/:stepId/reject", (c) => actOnStep(c, "rejected"));
+
+// POST /api/ops/approvals/:stepId/delegate { role } — re-route to another role.
+ops.post("/approvals/:stepId/delegate", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const role = String(body?.role ?? "").trim();
+  if (!role) return c.json({ error: "no_role" }, 400);
+  const res = await c.env.DB.prepare("UPDATE approval_step SET approver_role = ? WHERE id = ? AND state = 'pending'").bind(role, c.req.param("stepId")).run();
+  if (!res.meta.changes) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true, approverRole: role });
 });
 
 // PATCH /api/ops/lines/:id — estimator edits a draft line; server reprices.

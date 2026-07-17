@@ -1,6 +1,10 @@
 -- Wipe all transactional data (FK-safe order: children before parents).
 -- Schema is left intact (managed by migrations). KV (sessions/OTP) is not D1 and
 -- is cleared separately by the reset script when running locally.
+DELETE FROM approval_step;
+DELETE FROM approval_instance;
+DELETE FROM approval_rule;
+DELETE FROM comment;
 DELETE FROM payment;
 DELETE FROM order_line;
 DELETE FROM file_asset;
