@@ -7,8 +7,23 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { itemToInsert, rowToApiLine, type LineRow } from "../lib/lines";
 import { resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
+import { resolveUser } from "../lib/auth";
 
 export const projects = new Hono<{ Bindings: Env }>();
+
+// GET /api/projects — the signed-in customer's projects (for the dashboard).
+projects.get("/", async (c) => {
+  const user = await resolveUser(c.env, c.req.raw);
+  if (!user) return c.json({ projects: [] });
+  const { results } = await c.env.DB.prepare(`
+    SELECT p.id, p.title, p.status_customer, p.updated_at,
+           (SELECT count(*) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL) AS item_count,
+           (SELECT id FROM quote_revision WHERE project_id = p.id AND snapshot_status = 'issued' ORDER BY revision_no DESC LIMIT 1) AS issued_revision_id
+      FROM project p
+     WHERE p.owner_user_id = ?
+     ORDER BY p.updated_at DESC`).bind(user.id).all();
+  return c.json({ projects: results });
+});
 
 const projectDto = (p: ProjectRow) => ({
   id: p.id,

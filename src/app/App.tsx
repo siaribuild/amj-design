@@ -17,7 +17,7 @@ import { pathForPage, routeFromPathname } from "./routes";
 import { products as catalogueProducts, type CategorySlug } from "../data/catalogue";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, addDemoSchedule, fmt } from "../data/configurator";
-import { getCurrentProject, saveLines, submitProject, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, type AuthUserDto, type ApiOrder } from "../data/api";
+import { getCurrentProject, saveLines, submitProject, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary } from "../data/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AuthUser {
@@ -808,34 +808,56 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════════
-function DashboardPage({ setPage, user, setUser }: {
-  setPage: (p: Page) => void; user: AuthUser | null; setUser: (u: AuthUser | null) => void;
+function DashboardPage({ setPage, user, setUser, authLoading }: {
+  setPage: (p: Page) => void; user: AuthUser | null; setUser: (u: AuthUser | null) => void; authLoading?: boolean;
 }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  if (!user) { go("login"); return null; }
-  const allQuotes = [
-    { ref: "AMJ-58901", date: "Today",  project: "New build — Coburg",       items: 3, status: "Under review",         sc: "text-amber-700 bg-amber-50 border-amber-200",         closed: false },
-    { ref: "AMJ-58712", date: "Jan 12", project: "Extension — Northcote",    items: 5, status: "Reviewed quote ready", sc: "text-[#5A7A6A] bg-[#5A7A6A]/8 border-[#5A7A6A]/20", closed: false },
-    { ref: "AMJ-58201", date: "Dec 18", project: "Renovation — St Kilda",    items: 2, status: "In production",        sc: "text-blue-700 bg-blue-50 border-blue-200",            closed: false },
-    { ref: "AMJ-57880", date: "Nov 22", project: "Replacement — Brunswick",  items: 1, status: "Delivered",            sc: "text-[#5c5a56] bg-[#F2F0EC] border-black/10",        closed: true  },
-  ];
-  const active = allQuotes.filter(q => !q.closed);
-  const closed  = allQuotes.filter(q => q.closed);
-  const QuoteRow = ({ q }: { q: typeof allQuotes[0] }) => (
+  const [projects, setProjects] = useState<ApiProjectSummary[] | null>(null);
+  const [orders, setOrders] = useState<ApiOrder[]>([]);
+  useEffect(() => {
+    let off = false;
+    Promise.all([getProjects().catch(() => ({ projects: [] })), getOrders().catch(() => ({ orders: [] }))])
+      .then(([p, o]) => { if (!off) { setProjects(p.projects); setOrders(o.orders); } });
+    return () => { off = true; };
+  }, []);
+  if (!user) { if (!authLoading) go("login"); return null; }
+
+  const PSTATUS: Record<string, { label: string; sc: string; action: string }> = {
+    draft:             { label: "Draft",                sc: "text-[#5c5a56] bg-[#F2F0EC] border-black/10",        action: "Continue →" },
+    submitted:         { label: "Submitted",            sc: "text-amber-700 bg-amber-50 border-amber-200",        action: "View →" },
+    under_review:      { label: "Under review",         sc: "text-amber-700 bg-amber-50 border-amber-200",        action: "View →" },
+    needs_information: { label: "Needs information",     sc: "text-red-700 bg-red-50 border-red-200",              action: "Respond →" },
+    quote_issued:      { label: "Reviewed quote ready", sc: "text-[#5A7A6A] bg-[#5A7A6A]/8 border-[#5A7A6A]/20", action: "View & approve →" },
+    accepted:          { label: "Accepted",             sc: "text-[#5A7A6A] bg-[#5A7A6A]/8 border-[#5A7A6A]/20", action: "Track →" },
+    expired:           { label: "Expired",              sc: "text-[#5c5a56] bg-[#F2F0EC] border-black/10",        action: "View →" },
+    closed:            { label: "Order placed",         sc: "text-blue-700 bg-blue-50 border-blue-200",           action: "Track →" },
+  };
+  const STAGE_LABEL: Record<string, string> = {
+    deposit_invoiced: "Awaiting deposit", deposit_paid: "Deposit received", drawings_shared: "Shop drawings",
+    drawings_signed_off: "Drawings approved", manufacturing: "In manufacturing", qa_photos_shared: "Quality check",
+    balance_invoiced: "Awaiting balance", balance_paid: "Balance received", customer_confirmed: "Confirmed",
+    dispatched: "Dispatched", delivered: "Delivered", after_sales: "Completed",
+  };
+
+  const activeProjects = (projects ?? []).filter(p => p.status_customer !== "closed" && p.status_customer !== "expired");
+  const activeOrders = orders.filter(o => o.stage !== "delivered" && o.stage !== "after_sales");
+  const closedOrders = orders.filter(o => o.stage === "delivered" || o.stage === "after_sales");
+  const awaitingPayment = orders.filter(o => o.stage === "deposit_invoiced" || o.stage === "balance_invoiced").length;
+
+  const Row = ({ ref_, status, sc, sub, action, onClick }: { ref_: string; status: string; sc: string; sub: string; action: string; onClick: () => void }) => (
     <div className="px-5 py-4 flex items-center justify-between gap-4 hover:bg-[#FAFAF9] transition-colors">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-3 mb-0.5 flex-wrap">
-          <span className="font-medium text-sm text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{q.ref}</span>
-          <span className={`text-[11px] px-2 py-0.5 font-medium border ${q.sc}`}>{q.status}</span>
+          <span className="font-medium text-sm text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{ref_}</span>
+          <span className={`text-[11px] px-2 py-0.5 font-medium border ${sc}`}>{status}</span>
         </div>
-        <div className="text-xs text-[#5c5a56] truncate">{q.project} · {q.items} items · {q.date}</div>
+        <div className="text-xs text-[#5c5a56] truncate">{sub}</div>
       </div>
-      <button onClick={() => q.status === "Reviewed quote ready" ? go("approved-quote") : go("track-order")}
-        className="text-xs text-[#5A7A6A] hover:underline cursor-pointer flex-shrink-0">
-        {q.status === "Reviewed quote ready" ? "View & approve →" : "Track →"}
-      </button>
+      <button onClick={onClick} className="text-xs text-[#5A7A6A] hover:underline cursor-pointer flex-shrink-0">{action}</button>
     </div>
   );
+  const fmtDate = (s: string) => { const d = new Date(s.replace(" ", "T") + "Z"); return isNaN(+d) ? "" : d.toLocaleDateString("en-AU", { day: "numeric", month: "short" }); };
+
   return (
     <div className="relative min-h-screen bg-[#FAFAF9] pt-16 overflow-hidden">
       <GhostMark size={340} opacity={0.04} pos="right-0 top-0" />
@@ -844,10 +866,10 @@ function DashboardPage({ setPage, user, setUser }: {
           <SLabel>Dashboard</SLabel>
           <h1 className="text-3xl font-semibold text-[#131311]"
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}>G'day, {user.name.split(" ")[0]}</h1>
-          <p className="text-[#5c5a56] text-sm mt-1">{user.company}</p>
+          <p className="text-[#5c5a56] text-sm mt-1">{user.company || user.email}</p>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-          {[["Active quotes","2"],["Awaiting deposit","1"],["In production","1"],["Delivered all-time","8"]].map(([l,v]) => (
+          {[["Active quotes", String(activeProjects.length)], ["Awaiting payment", String(awaitingPayment)], ["Active orders", String(activeOrders.length)], ["Delivered", String(closedOrders.length)]].map(([l, v]) => (
             <div key={l} className="group relative bg-white border border-black/8 p-4 overflow-hidden">
               <FrameCorners size={8} color={SAGE} />
               <div className="text-2xl font-semibold text-[#131311] mb-1" style={{ fontFamily: "'DM Mono', monospace" }}>{v}</div>
@@ -855,21 +877,50 @@ function DashboardPage({ setPage, user, setUser }: {
             </div>
           ))}
         </div>
-        {/* Active */}
-        <div className="bg-white border border-black/8 mb-3">
-          <div className="px-5 py-3.5 border-b border-black/8 flex items-center justify-between">
-            <h2 className="font-semibold text-sm text-[#131311]">Active</h2>
-            <span className="text-xs text-[#5A7A6A] bg-[#5A7A6A]/8 border border-[#5A7A6A]/20 px-2 py-0.5 font-medium">{active.length}</span>
-          </div>
-          <div className="divide-y divide-black/6">{active.map(q => <QuoteRow key={q.ref} q={q} />)}</div>
-        </div>
-        {/* Closed */}
-        <div className="bg-white border border-black/8 mb-5">
-          <div className="px-5 py-3.5 border-b border-black/8">
-            <h2 className="font-semibold text-sm text-[#5c5a56]">Closed &amp; delivered</h2>
-          </div>
-          <div className="divide-y divide-black/6">{closed.map(q => <QuoteRow key={q.ref} q={q} />)}</div>
-        </div>
+
+        {projects === null ? (
+          <div className="bg-white border border-black/8 p-8 text-sm text-[#5c5a56] mb-5">Loading your projects…</div>
+        ) : (
+          <>
+            {/* Active quotes + orders */}
+            <div className="bg-white border border-black/8 mb-3">
+              <div className="px-5 py-3.5 border-b border-black/8 flex items-center justify-between">
+                <h2 className="font-semibold text-sm text-[#131311]">Active</h2>
+                <span className="text-xs text-[#5A7A6A] bg-[#5A7A6A]/8 border border-[#5A7A6A]/20 px-2 py-0.5 font-medium">{activeProjects.length + activeOrders.length}</span>
+              </div>
+              <div className="divide-y divide-black/6">
+                {activeProjects.length + activeOrders.length === 0 && (
+                  <div className="px-5 py-6 text-sm text-[#5c5a56] flex items-center justify-between">
+                    <span>No active quotes yet.</span>
+                    <Btn variant="sage" size="sm" onClick={() => go("quote")}>Start a quote</Btn>
+                  </div>
+                )}
+                {activeProjects.map(p => {
+                  const st = PSTATUS[p.status_customer] ?? { label: p.status_customer, sc: "text-[#5c5a56] bg-[#F2F0EC] border-black/10", action: "View →" };
+                  return <Row key={p.id} ref_={(p.title || "Project")} status={st.label} sc={st.sc}
+                    sub={`${p.item_count} item${p.item_count !== 1 ? "s" : ""} · updated ${fmtDate(p.updated_at)}`}
+                    action={st.action} onClick={() => go(p.status_customer === "draft" ? "quote" : "order")} />;
+                })}
+                {activeOrders.map(o => (
+                  <Row key={o.id} ref_={o.orderNo} status={STAGE_LABEL[o.stage] ?? o.stage} sc="text-blue-700 bg-blue-50 border-blue-200"
+                    sub={`Order · ${o.total != null ? fmt(o.total) : ""}`} action="Track →" onClick={() => go("order")} />
+                ))}
+              </div>
+            </div>
+            {/* Closed */}
+            {closedOrders.length > 0 && (
+              <div className="bg-white border border-black/8 mb-5">
+                <div className="px-5 py-3.5 border-b border-black/8"><h2 className="font-semibold text-sm text-[#5c5a56]">Closed &amp; delivered</h2></div>
+                <div className="divide-y divide-black/6">
+                  {closedOrders.map(o => (
+                    <Row key={o.id} ref_={o.orderNo} status={STAGE_LABEL[o.stage] ?? o.stage} sc="text-[#5c5a56] bg-[#F2F0EC] border-black/10"
+                      sub={`Order · ${o.total != null ? fmt(o.total) : ""}`} action="View →" onClick={() => go("order")} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {[
             { l: "Track an order", s: "Check production and delivery status", p: "track-order" as Page },
@@ -1423,12 +1474,15 @@ export default function App() {
   const skipNextSaveRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Restore the session on load (returning registered users).
+  // Restore the session on load (returning registered users). `authLoading`
+  // guards account pages from bouncing to login before the session resolves.
+  const [authLoading, setAuthLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
     fetchMe()
       .then(r => { if (!cancelled && r.user) setUser(toAuthUser(r.user)); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setAuthLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -1486,7 +1540,7 @@ export default function App() {
       case "trade":            return <TradePage setPage={navigateTo} />;
       case "admin":            return <AdminPage />;
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
-      case "dashboard":        return <DashboardPage setPage={navigateTo} user={user} setUser={setUser} />;
+      case "dashboard":        return <DashboardPage setPage={navigateTo} user={user} setUser={setUser} authLoading={authLoading} />;
       case "track-order":      return <TrackOrderPage setPage={navigateTo} />;
       case "order":            return <OrderTrackingPage setPage={navigateTo} user={user} />;
       case "profile":          return <ProfilePage user={user} setPage={navigateTo} />;

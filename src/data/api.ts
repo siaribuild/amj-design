@@ -129,6 +129,17 @@ export const acceptRevision = (revisionId: string) =>
 export const getOrders = () => req<{ orders: ApiOrder[] }>("/api/orders");
 export const getOrder = (orderId: string) => req<{ order: ApiOrder }>(`/api/orders/${orderId}`);
 
+// The signed-in customer's projects (dashboard list).
+export interface ApiProjectSummary {
+  id: string;
+  title: string | null;
+  status_customer: string;
+  updated_at: string;
+  item_count: number;
+  issued_revision_id: string | null;
+}
+export const getProjects = () => req<{ projects: ApiProjectSummary[] }>("/api/projects");
+
 // Clarification thread (when a project is "Needs information").
 export interface ApiClarification { body: string; created_at: string; author: string | null; author_type: string | null }
 export const getClarifications = (projectId: string) =>
