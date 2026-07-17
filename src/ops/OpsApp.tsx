@@ -10,11 +10,14 @@ import {
   LayoutDashboard, FileText, CheckSquare, Package, Users, Boxes, SlidersHorizontal,
   FolderOpen, ScrollText, Settings, LogOut, Loader2, AlertCircle,
 } from "lucide-react";
-import { opsMe, opsChallenge, opsVerify, opsLogout, opsSummary, type OpsUser, type OpsSummary } from "./api";
+import { Search } from "lucide-react";
+import { opsMe, opsChallenge, opsVerify, opsLogout, opsSummary, opsSearch, type OpsUser, type OpsSummary, type OpsSearchResult } from "./api";
 import { Quotes } from "./Quotes";
 import { Approvals } from "./Approvals";
 import { Orders } from "./Orders";
 import { Customers } from "./Customers";
+import { Catalogue } from "./Catalogue";
+import { Rules, Files, Audit, Admin } from "./AdminTabs";
 
 const SAGE = "#5A7A6A";
 
@@ -150,10 +153,11 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
 
       {/* Content */}
       <main className="flex-1 ml-56">
-        <header className="h-14 bg-white border-b border-black/8 flex items-center px-8">
+        <header className="h-14 bg-white border-b border-black/8 flex items-center justify-between px-8">
           <h1 className="text-[15px] font-semibold text-[#14150f] capitalize" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
             {TABS.find(t => t.id === tab)?.label}
           </h1>
+          <SearchBox onNavigate={setTab} />
         </header>
         <div className="p-8">
           {tab === "dashboard" ? <Dashboard />
@@ -161,6 +165,11 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
             : tab === "approvals" ? <Approvals />
             : tab === "orders" ? <Orders />
             : tab === "customers" ? <Customers />
+            : tab === "catalogue" ? <Catalogue />
+            : tab === "rules" ? <Rules />
+            : tab === "files" ? <Files />
+            : tab === "audit" ? <Audit />
+            : tab === "admin" ? <Admin />
             : <Placeholder label={TABS.find(t => t.id === tab)?.label ?? ""} />}
         </div>
       </main>
@@ -197,6 +206,37 @@ function Dashboard() {
         ))}
       </div>
       <p className="text-xs text-[#8b8880] mt-6">Queues, the quote workspace, approvals and order operations arrive in the next milestones.</p>
+    </div>
+  );
+}
+
+// Omnibox — searches projects/orders/orgs/customers; selecting jumps to the tab.
+const TYPE_TAB: Record<string, Tab> = { project: "quotes", order: "orders", organisation: "customers", customer: "customers" };
+function SearchBox({ onNavigate }: { onNavigate: (t: Tab) => void }) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<OpsSearchResult[]>([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (q.trim().length < 2) { setResults([]); return; }
+    const t = setTimeout(() => { opsSearch(q.trim()).then(r => { setResults(r.results); setOpen(true); }).catch(() => {}); }, 250);
+    return () => clearTimeout(t);
+  }, [q]);
+  return (
+    <div className="relative w-72">
+      <Search className="w-4 h-4 text-[#b5b2ac] absolute left-2.5 top-2.5" />
+      <input value={q} onChange={e => setQ(e.target.value)} onFocus={() => results.length && setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Search projects, orders, customers…" className="w-full border border-black/12 pl-8 pr-3 py-1.5 text-sm outline-none focus:border-[#5A7A6A]" />
+      {open && results.length > 0 && (
+        <div className="absolute right-0 top-full mt-1 w-full bg-white border border-black/10 shadow-lg z-20 max-h-80 overflow-y-auto">
+          {results.map((r, i) => (
+            <button key={i} onMouseDown={() => { onNavigate(TYPE_TAB[r.type] ?? "dashboard"); setOpen(false); setQ(""); }}
+              className="w-full text-left px-3 py-2 hover:bg-[#faf9f6] flex items-center justify-between">
+              <span className="text-sm text-[#14150f]">{r.label}<span className="ml-2 text-[10px] uppercase tracking-wide text-[#b5b2ac]">{r.type}</span></span>
+              <span className="text-xs text-[#8b8880]">{r.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

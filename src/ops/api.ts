@@ -150,3 +150,20 @@ export interface OpsCustomerDetail {
 }
 export const opsCustomers = () => req<{ customers: OpsCustomer[] }>("/api/ops/customers");
 export const opsCustomer = (orgId: string) => req<OpsCustomerDetail>(`/api/ops/customers/${orgId}`);
+
+// ── Admin (O6) ───────────────────────────────────────────────────────────────
+export interface OpsRule { id: string; name: string; trigger_family: string; condition_json: string; approver_role: string; active: number }
+export interface OpsFile { id: string; kind: string; filename: string; size: number; virus_status: string; created_at: string; project_title: string | null; customer_name: string | null }
+export interface OpsAudit { entity_type: string; entity_id: string; action: string; occurred_at: string; actor: string | null }
+export interface OpsStaff { id: string; email: string; name: string | null; role: string | null; last_verified_at: string | null }
+export interface OpsSearchResult { type: string; id: string; label: string; hint: string }
+
+export const opsRules = () => req<{ rules: OpsRule[] }>("/api/ops/rules");
+export const opsPatchRule = (id: string, patch: { active?: boolean; value?: number }) =>
+  req<{ ok: boolean }>(`/api/ops/rules/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+export const opsFiles = () => req<{ files: OpsFile[] }>("/api/ops/files");
+export const opsAudit = (entity?: string) => req<{ events: OpsAudit[] }>(`/api/ops/audit${entity ? `?entity=${entity}` : ""}`);
+export const opsStaff = () => req<{ staff: OpsStaff[]; roles: string[] }>("/api/ops/staff");
+export const opsSetRole = (id: string, role: string) =>
+  req<{ ok: boolean; role: string }>(`/api/ops/staff/${id}`, { method: "PATCH", body: JSON.stringify({ role }) });
+export const opsSearch = (q: string) => req<{ results: OpsSearchResult[] }>(`/api/ops/search?q=${encodeURIComponent(q)}`);

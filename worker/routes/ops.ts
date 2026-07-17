@@ -497,3 +497,112 @@ ops.get("/customers/:orgId", async (c) => {
     members, projects, orders: ordersRows,
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// O6 — Admin (rules, files, audit, staff/roles, search)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const isAdmin = (staff: { role: string | null }) => staff.role === "admin";
+
+// GET /api/ops/rules — approval rules.
+ops.get("/rules", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const { results } = await c.env.DB.prepare("SELECT id, name, trigger_family, condition_json, approver_role, active FROM approval_rule ORDER BY trigger_family").all();
+  return c.json({ rules: results });
+});
+
+// PATCH /api/ops/rules/:id { active?, value? } — toggle / retune a rule (admin only).
+ops.patch("/rules/:id", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!isAdmin(staff)) return c.json({ error: "admin_only" }, 403);
+  const rule = await c.env.DB.prepare("SELECT * FROM approval_rule WHERE id = ?").bind(c.req.param("id")).first<any>();
+  if (!rule) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  let condition = rule.condition_json;
+  if (body?.value !== undefined) {
+    const cond = safeParse(rule.condition_json);
+    cond.value = Number(body.value) || 0;
+    condition = JSON.stringify(cond);
+  }
+  const active = body?.active !== undefined ? (body.active ? 1 : 0) : rule.active;
+  await c.env.DB.prepare("UPDATE approval_rule SET active = ?, condition_json = ? WHERE id = ?").bind(active, condition, rule.id).run();
+  await logEvent(c.env, { actor: staff.id, entityType: "rule", entityId: rule.id, action: "updated approval rule" });
+  return c.json({ ok: true });
+});
+
+// GET /api/ops/files — all uploaded files across projects.
+ops.get("/files", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const { results } = await c.env.DB.prepare(`
+    SELECT fa.id, fa.kind, fa.filename, fa.size, fa.virus_status, fa.created_at,
+           p.title AS project_title, u.name AS customer_name
+      FROM file_asset fa
+      LEFT JOIN project p ON p.id = fa.project_id
+      LEFT JOIN user u ON u.id = p.owner_user_id
+     ORDER BY fa.created_at DESC`).all();
+  return c.json({ files: results });
+});
+
+// GET /api/ops/files/:id/download — staff download (any file).
+ops.get("/files/:id/download", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const fa = await c.env.DB.prepare("SELECT r2_key, filename FROM file_asset WHERE id = ?").bind(c.req.param("id")).first<{ r2_key: string; filename: string }>();
+  if (!fa) return c.json({ error: "not_found" }, 404);
+  const obj = await c.env.FILES.get(fa.r2_key);
+  if (!obj) return c.json({ error: "gone" }, 404);
+  return new Response(obj.body, { headers: { "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream", "Content-Disposition": `attachment; filename="${fa.filename}"` } });
+});
+
+// GET /api/ops/audit — recent audit events (optionally ?entity=project|order).
+ops.get("/audit", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const entity = c.req.query("entity");
+  const base = "SELECT a.entity_type, a.entity_id, a.action, a.occurred_at, COALESCE(u.name, a.actor) AS actor FROM audit_event a LEFT JOIN user u ON u.id = a.actor";
+  const q = entity ? `${base} WHERE a.entity_type = ? ORDER BY a.occurred_at DESC LIMIT 200` : `${base} ORDER BY a.occurred_at DESC LIMIT 200`;
+  const stmt = entity ? c.env.DB.prepare(q).bind(entity) : c.env.DB.prepare(q);
+  const { results } = await stmt.all();
+  return c.json({ events: results });
+});
+
+// GET /api/ops/staff — internal users + roles.
+ops.get("/staff", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const { results } = await c.env.DB.prepare("SELECT id, email, name, role, last_verified_at FROM user WHERE type = 'internal' ORDER BY name").all();
+  return c.json({ staff: results, roles: ["estimator", "technical_reviewer", "manager", "admin"] });
+});
+
+// PATCH /api/ops/staff/:id { role } — change a staff member's role (admin only).
+ops.patch("/staff/:id", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!isAdmin(staff)) return c.json({ error: "admin_only" }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const role = String(body?.role ?? "").trim();
+  const valid = ["estimator", "technical_reviewer", "manager", "admin"];
+  if (!valid.includes(role)) return c.json({ error: "invalid_role" }, 400);
+  const res = await c.env.DB.prepare("UPDATE user SET role = ? WHERE id = ? AND type = 'internal'").bind(role, c.req.param("id")).run();
+  if (!res.meta.changes) return c.json({ error: "not_found" }, 404);
+  await logEvent(c.env, { actor: staff.id, entityType: "user", entityId: c.req.param("id"), action: `set role ${role}` });
+  return c.json({ ok: true, role });
+});
+
+// GET /api/ops/search?q= — omnibox across projects, orders, orgs, customers.
+ops.get("/search", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const q = (c.req.query("q") ?? "").trim();
+  if (q.length < 2) return c.json({ results: [] });
+  const like = `%${q}%`;
+  const projects = (await c.env.DB.prepare("SELECT id, title, status_customer FROM project WHERE title LIKE ? LIMIT 8").bind(like).all()).results;
+  const orders = (await c.env.DB.prepare('SELECT id, order_no, stage FROM "order" WHERE order_no LIKE ? LIMIT 8').bind(like).all()).results;
+  const orgs = (await c.env.DB.prepare("SELECT id, name FROM organisation WHERE name LIKE ? LIMIT 8").bind(like).all()).results;
+  const customers = (await c.env.DB.prepare("SELECT id, name, email FROM user WHERE type = 'customer' AND (name LIKE ? OR email LIKE ?) LIMIT 8").bind(like, like).all()).results;
+  return c.json({
+    results: [
+      ...projects.map((p: any) => ({ type: "project", id: p.id, label: p.title ?? "Untitled", hint: p.status_customer })),
+      ...orders.map((o: any) => ({ type: "order", id: o.id, label: o.order_no, hint: o.stage })),
+      ...orgs.map((o: any) => ({ type: "organisation", id: o.id, label: o.name, hint: "organisation" })),
+      ...customers.map((u: any) => ({ type: "customer", id: u.id, label: u.name ?? u.email, hint: u.email })),
+    ],
+  });
+});
