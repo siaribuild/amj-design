@@ -32,3 +32,7 @@ Thumbs.db
 # Wrangler / Cloudflare local state (local D1, KV, R2, caches)
 .wrangler/
 .codex-tmp/
+
+# Playwright E2E artifacts
+playwright-report/
+test-results/
