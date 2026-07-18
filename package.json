@@ -12,10 +12,11 @@
     "db:reset": "node scripts/reset-db.mjs",
     "sanity:ndjson": "node scripts/sanity-export-ndjson.mjs",
     "cf:deploy": "vite build && wrangler deploy",
-    "test": "npm run test:catalogue && npm run test:build && npm run test:api",
+    "test": "npm run test:unit && npm run test:catalogue && npm run test:build && npm run test:api",
+    "test:unit": "node --test scripts/tests/unit.test.mjs",
     "test:catalogue": "node --test --test-concurrency=1 scripts/tests/catalogue.test.mjs scripts/tests/sanity-export.test.mjs",
     "test:build": "node --test scripts/tests/build.test.mjs",
-    "test:api": "node --test scripts/tests/api.test.mjs"
+    "test:api": "node --test --test-concurrency=1 scripts/tests/api.test.mjs scripts/tests/api-edge.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
