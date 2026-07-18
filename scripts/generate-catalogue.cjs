@@ -266,21 +266,22 @@ L.push(`  featuredOrder: number;`);
 L.push(`}`);
 L.push(``);
 // categories
-L.push(`export const categories: Category[] = [`);
+// `let` (not const) so the runtime can hydrate from a CMS (see hydrateCatalogue).
+L.push(`export let categories: Category[] = [`);
 for(const c of categories){
   L.push(`  { id: ${j(c.id)}, slug: ${j(c.slug)}, name: ${j(c.name)}, shortDescription: \`${esc(c.shortDescription)}\`, description: \`${esc(c.description)}\` },`);
 }
 L.push(`];`);
 L.push(``);
 // families
-L.push(`export const families: Family[] = [`);
+L.push(`export let families: Family[] = [`);
 for(const f of families){
   L.push(`  { id: ${j(f.id)}, slug: ${j(f.slug)}, categorySlug: ${j(f.categorySlug)}, name: ${j(f.name)}, shortDescription: \`${esc(f.shortDescription)}\`, description: \`${esc(f.description)}\` },`);
 }
 L.push(`];`);
 L.push(``);
 // products
-L.push(`export const products: Product[] = [`);
+L.push(`export let products: Product[] = [`);
 for(const p of products){
   L.push(`  {`);
   L.push(`    id: ${j(p.id)}, slug: ${j(p.slug)}, name: ${j(p.name)},`);

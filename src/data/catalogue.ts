@@ -63,7 +63,7 @@ export interface Product {
   featuredOrder: number;
 }
 
-export const colorbondColourOptions: ProductOption[] = [
+export let colorbondColourOptions: ProductOption[] = [
   { typeSlug: "colour", typeName: "Colour", name: "Dover White", availability: "standard", hex: "#E3E7E2" },
   { typeSlug: "colour", typeName: "Colour", name: "Surfmist", availability: "optional", hex: "#D7D6CB" },
   { typeSlug: "colour", typeName: "Colour", name: "Classic Cream", availability: "optional", hex: "#E6CFAE" },
@@ -90,12 +90,12 @@ export const colorbondColourOptions: ProductOption[] = [
   { typeSlug: "colour", typeName: "Colour", name: "Night Sky", availability: "optional", hex: "#2B2C2C" },
 ];
 
-export const categories: Category[] = [
+export let categories: Category[] = [
   { id: "1", slug: "windows", name: "Windows", shortDescription: `Aluminium window systems for renovation and new-build projects, from compact ventilation units to higher-performance architectural openings.`, description: `The window range covers the major residential opening types used in renovation and new-build work: sliding, awning, casement, louvre, tilt-turn, sashless double hung and single hung. The category is designed to support practical trade selection, with each product defined by size limits, glass make-up, profile thickness, hardware and performance ratings where available. Use this category when the project requires repeatable aluminium window systems with clear configuration choices and a supply-only workflow.` },
   { id: "2", slug: "doors", name: "Doors", shortDescription: `Aluminium door systems for indoor-outdoor living, entries and wide façade openings, available across sliding, hinged, folding and premium large-panel formats.`, description: `The door range is focused on aluminium-framed access and façade systems for residential projects, from practical sliding and hinged doors through to bi-fold, pivot, slim-frame and lift-slide formats. The category supports both everyday renovation openings and premium indoor-outdoor connections, with product selection driven by opening width, panel operation, glass specification, hardware and exposure rating. Use this category when the project requires configurable aluminium doors for builder-led supply, manual review and confirmed production before delivery.` },
 ];
 
-export const families: Family[] = [
+export let families: Family[] = [
   { id: "1", slug: "sliding-window", categorySlug: "windows", name: "Sliding Window", shortDescription: `Compact aluminium sliding windows for efficient ventilation and everyday residential openings.`, description: `Sliding windows suit projects where airflow, space efficiency and simple day-to-day operation are priorities. The sash moves horizontally within the frame, avoiding projection into paths, decks or internal rooms. Within this catalogue, the sliding window range is best positioned for bedrooms, laundries, kitchens and compact renovation openings where a durable aluminium system and practical double-glazed glass package are required.` },
   { id: "2", slug: "awning-window", categorySlug: "windows", name: "Awning Window", shortDescription: `Top-hinged aluminium windows for weather-protected ventilation and flexible room placement.`, description: `Awning windows are a reliable choice for controlled ventilation because the sash projects outward from the top, helping provide airflow even in light weather. This family spans several AMJ series with different maximum sizes, profile thicknesses and hardware options, making it suitable for bathrooms, bedrooms, laundries and upper-level openings. The range is particularly useful where the design calls for repeatable window modules, consistent frame colours and straightforward flyscreen or installation selections.` },
   { id: "3", slug: "casement-window", categorySlug: "windows", name: "Casement Window", shortDescription: `Side-hinged aluminium windows for strong ventilation, clear openings and higher sealing performance.`, description: `Casement windows are side-hinged outward-opening units that provide a wide clear opening and strong ventilation performance. They are suited to projects where improved sealing, directional airflow and a more traditional window operation are desired. In this catalogue, casement options include compact and higher-performing systems with Low-E or double-glazed glass options, making the family appropriate for bedrooms, studies and façade windows where performance and operation are more important than maximum width.` },
@@ -546,7 +546,7 @@ const productDefinitions: Product[] = [
   },
 ];
 
-export const products: Product[] = productDefinitions.map(product => ({
+export let products: Product[] = productDefinitions.map(product => ({
   ...product,
   options: [
     ...product.options.filter(option => option.typeSlug !== "colour"),
@@ -571,3 +571,22 @@ export const getRelatedProducts = (slug: string, limit = 3): Product[] => {
 };
 export const familyProductCount = (familySlug: string): number =>
   products.filter(p => p.familySlug === familySlug).length;
+
+// ─── Runtime hydration (Sanity) ───────────────────────────────────────────────
+// The arrays above are the build-time default (from products.xlsx). When a CMS
+// source is configured, call hydrateCatalogue() ONCE at bootstrap — before the
+// first render / first priced request — to swap in the live data. The selectors
+// read these `let` bindings, so everything downstream picks up the new content
+// with no other changes. Partial payloads only replace the arrays supplied.
+export interface CatalogueData {
+  categories?: Category[];
+  families?: Family[];
+  products?: Product[];
+  colours?: ProductOption[];
+}
+export function hydrateCatalogue(data: CatalogueData): void {
+  if (data.categories?.length) categories = data.categories;
+  if (data.families?.length) families = data.families;
+  if (data.products?.length) products = data.products;
+  if (data.colours?.length) colorbondColourOptions = data.colours;
+}

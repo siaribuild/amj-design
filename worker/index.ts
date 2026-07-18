@@ -15,6 +15,7 @@ import { orders } from "./routes/orders";
 import { guest } from "./routes/guest";
 import { files } from "./routes/files";
 import { ops } from "./routes/ops";
+import { ensureCatalogue } from "./lib/catalogue";
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -56,6 +57,10 @@ api.all("/api/*", (c) => c.json({ error: "not_found" }, 404));
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    // Load the catalogue from Sanity once per isolate (no-op unless configured),
+    // so pricing + snapshots use live content. Cheap after the first request.
+    await ensureCatalogue(env);
 
     if (url.pathname.startsWith("/api/")) {
       return api.fetch(request, env, ctx);

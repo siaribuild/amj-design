@@ -18,4 +18,7 @@ export interface Env {
   /** Resend email — API key (secret) + verified From address (var). */
   RESEND_API_KEY?: string;
   EMAIL_FROM?: string;
+  /** Sanity catalogue source (Worker-side). Client uses VITE_SANITY_* instead. */
+  SANITY_PROJECT_ID?: string;
+  SANITY_DATASET?: string;
 }
