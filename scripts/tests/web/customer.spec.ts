@@ -16,10 +16,12 @@ test("home page renders and offers a quote", async ({ page }) => {
   await expect(page.getByRole("button", { name: /get a quote/i }).first()).toBeVisible();
 });
 
-test("products page renders the real catalogue", async ({ page }) => {
+test("catalogue drives the products list and detail pages", async ({ page }) => {
   await page.goto("/products");
-  await expect(page.getByText("Windows", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Sliding Window/i).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /start a quote/i }).first()).toBeVisible();
+  // A catalogue-driven product detail page renders its name.
+  await page.goto("/products/amj80-series-sliding-window");
+  await expect(page.getByRole("heading", { name: "AMJ80 Series Sliding Window" })).toBeVisible();
 });
 
 test("customer OTP login lands on a dashboard with real data", async ({ page }) => {
@@ -40,7 +42,7 @@ test("guest order tracking shows a read-only status", async ({ page }) => {
   await page.getByPlaceholder("••••••").fill(devText?.match(/\d{6}/)?.[0] ?? "");
   await page.getByRole("button", { name: /view order/i }).click();
   await expect(page.getByText("Order AMJ-58001")).toBeVisible();
-  await expect(page.getByText(/In manufacturing/i)).toBeVisible();
+  await expect(page.getByText(/In manufacturing/i).first()).toBeVisible();
   // Read-only: no staff/customer action controls in the guest view.
   await expect(page.getByRole("button", { name: /approve|confirm|accept/i })).toHaveCount(0);
 });

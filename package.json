@@ -16,6 +16,7 @@
     "test:all": "npm run test && npm run test:web",
     "test:unit": "node --test scripts/tests/unit.test.mjs",
     "test:web": "playwright test",
+    "test:coverage": "c8 --reporter=text --reporter=html --src src --src worker node --test scripts/tests/unit.test.mjs scripts/tests/catalogue.test.mjs",
     "test:catalogue": "node --test --test-concurrency=1 scripts/tests/catalogue.test.mjs scripts/tests/sanity-export.test.mjs",
     "test:build": "node --test scripts/tests/build.test.mjs",
     "test:api": "node --test --test-concurrency=1 scripts/tests/api.test.mjs scripts/tests/api-edge.test.mjs"
@@ -84,6 +85,7 @@
     "@playwright/test": "^1.49.1",
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
+    "c8": "^10.1.3",
     "esbuild": "0.25.12",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5",

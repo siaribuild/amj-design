@@ -13,6 +13,7 @@ The automated suite uses Node's built-in test runner and isolated local Cloudfla
 - `npm run test:build` builds both Vite entry points and performs a Wrangler deployment dry run.
 - `npm run test:api` creates a fresh D1 database, applies every migration, seeds it, starts a local Worker, and exercises API, KV, R2, authentication, approval, quote, order, guest-tracking, and SPA-routing flows — happy paths (`api.test.mjs`) and edge/negative paths (`api-edge.test.mjs`: OTP caps, guest anti-enumeration + rate limit, file limits/ownership, clarification round-trip, approval reject/wrong-role/no-rule, admin RBAC, audit, customers 360, search, order stage-conflicts).
 - `npm run test:web` — Playwright E2E against a real built Worker (customer site + `ops.*` console): OTP login, real dashboard data, products catalogue, guest tracking, and the ops queue/workspace/tabs.
+- `npm run test:coverage` — c8 line/branch/function coverage for the in-process logic layer (pure functions in `src/data/**` + `worker/lib/**`), via esbuild inline source maps. HTML report in `coverage/`. Integration/Worker-route and E2E code run in separate processes (wrangler/workerd, the browser) so they are covered behaviourally, not line-instrumented, by design.
 
 ## Browser E2E prerequisites
 
@@ -20,9 +21,16 @@ The automated suite uses Node's built-in test runner and isolated local Cloudfla
 
 ```
 npm install            # brings in @playwright/test
-npx playwright install # downloads the chromium headless shell
-npm run test:web
+npm run test:web       # uses the system Chrome/Edge by default (no download)
+# or, to use Playwright's bundled chromium instead:
+#   npx playwright install
+#   PLAYWRIGHT_CHANNEL= npm run test:web
 ```
+
+By default the config drives the **system Chrome** (`channel: "chrome"`), so no
+browser download is needed on a machine that has Chrome or Edge. Set
+`PLAYWRIGHT_CHANNEL=msedge` to use Edge, or clear it (after `npx playwright
+install`) to use the bundled chromium.
 
 The E2E web server (`scripts/tests/web-server.mjs`) builds + seeds isolated local
 resources under `.codex-tmp/` and serves them on a fixed port; specs live in

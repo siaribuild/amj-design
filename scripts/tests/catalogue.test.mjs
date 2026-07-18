@@ -24,6 +24,7 @@ test("catalogue query normalization and runtime hydration", async () => {
       platform: "node",
       outfile,
       logLevel: "silent",
+      sourcemap: "inline",
     });
     const catalogue = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 
@@ -55,6 +56,6 @@ test("catalogue query normalization and runtime hydration", async () => {
     assert.equal(catalogue.products.length, 1);
     assert.equal(catalogue.colorbondColourOptions[0].name, "Test");
   } finally {
-    await removeRunDir(runDir);
+    if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir);
   }
 });

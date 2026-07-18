@@ -23,5 +23,11 @@ export default defineConfig({
     reuseExistingServer: false,
     env: { WEB_PORT: String(PORT) },
   },
-  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
+  // Use the system Chrome/Edge by default (PLAYWRIGHT_CHANNEL, defaults to
+  // "chrome") so no browser download is required; unset it to use Playwright's
+  // bundled chromium after `npx playwright install`.
+  projects: [{
+    name: "chromium",
+    use: { browserName: "chromium", channel: process.env.PLAYWRIGHT_CHANNEL ?? "chrome" },
+  }],
 });

@@ -29,9 +29,11 @@ await build({
     loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+  sourcemap: "inline", // let c8 map coverage back to the TS sources
 });
 const M = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
-test.after(async () => removeRunDir(runDir));
+// Keep the sourcemapped bundle when collecting coverage so c8 can remap to TS.
+test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
 
 // A real, fully-specified window line for pricing.
 const slug = "amj80-series-sliding-window";
