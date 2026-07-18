@@ -1,5 +1,7 @@
 # AMJ Worker (API tier)
 
+Internal Worker/infrastructure codename: **apertly**.
+
 Cloudflare Worker (Hono) that serves `/api/*` and falls back to the built Vite
 SPA for everything else. Backend for the customer CPQ journey — see
 [../docs/customer-backend-scaffold.md](../docs/customer-backend-scaffold.md).
@@ -16,9 +18,9 @@ create the resources and paste the returned ids into `wrangler.jsonc`:
 
 ```bash
 npx wrangler login
-npx wrangler d1 create amj-db          # -> database_id
-npx wrangler kv namespace create amj-kv # -> id
-npx wrangler r2 bucket create amj-files
+npx wrangler d1 create apertly-db          # -> database_id
+npx wrangler kv namespace create apertly-kv # -> id
+npx wrangler r2 bucket create apertly-files
 ```
 
 ## Local development

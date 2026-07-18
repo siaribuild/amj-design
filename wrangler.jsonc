@@ -1,5 +1,5 @@
 {
-  "name": "amj-trade-direct",
+  "name": "apertly",
   "compatibility_date": "2026-07-16",
   "compatibility_flags": ["nodejs_compat"],
   "main": "worker/index.ts",
@@ -17,13 +17,13 @@
   // ── Bindings ──────────────────────────────────────────────────────────────
   // Local dev (`wrangler dev`, `--local` D1/KV/R2) works with the placeholder
   // ids below. Before deploying, create the real resources and paste the ids:
-  //   wrangler d1 create amj-db
-  //   wrangler kv namespace create amj-kv
-  //   wrangler r2 bucket create amj-files
+  //   wrangler d1 create apertly-db
+  //   wrangler kv namespace create apertly-kv
+  //   wrangler r2 bucket create apertly-files
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "amj-db",
+      "database_name": "apertly-db",
       "database_id": "REPLACE_WITH_D1_DATABASE_ID",
       "migrations_dir": "migrations"
     }
@@ -32,7 +32,7 @@
     { "binding": "KV", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
   ],
   "r2_buckets": [
-    { "binding": "FILES", "bucket_name": "amj-files" }
+    { "binding": "FILES", "bucket_name": "apertly-files" }
   ],
 
   "vars": {

@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // Bundle catalogue.ts (TS) to a temp ESM file we can import.
-const outfile = join(tmpdir(), `amj-catalogue-${Date.now()}.mjs`);
+const outfile = join(tmpdir(), `apertly-catalogue-${Date.now()}.mjs`);
 await build({
   entryPoints: ["src/data/catalogue.ts"],
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "error",

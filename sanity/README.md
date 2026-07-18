@@ -1,5 +1,7 @@
 # AMJ Catalogue — Sanity
 
+Internal Studio/infrastructure codename: **apertly-catalogue**.
+
 The catalogue content model + a one-shot import of the current hardcoded
 catalogue. This lets the product catalogue move from `src/data/catalogue.ts` to
 Sanity **without touching pages or types** — the selectors just fetch via GROQ

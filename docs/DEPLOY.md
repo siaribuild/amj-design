@@ -1,5 +1,8 @@
 # Deploy runbook — AMJ Trade Direct (Cloudflare)
 
+Internal infrastructure codename: **apertly**. Public branding remains AMJ
+Trade Direct.
+
 Everything here runs against **your** Cloudflare account, so you run the
 authenticated commands. The app is deploy-ready; this is the checklist to stand
 it up. Run from the repo root.
@@ -12,22 +15,22 @@ npx wrangler whoami         # confirm the right account
 
 ## 1. Create the resources
 ```bash
-npx wrangler d1 create amj-db            # -> copy "database_id"
-npx wrangler kv namespace create amj-kv  # -> copy "id"
-npx wrangler r2 bucket create amj-files
+npx wrangler d1 create apertly-db            # -> copy "database_id"
+npx wrangler kv namespace create apertly-kv  # -> copy "id"
+npx wrangler r2 bucket create apertly-files
 ```
 Paste the returned ids into `wrangler.jsonc`:
 - `d1_databases[0].database_id`  ← D1 id
 - `kv_namespaces[0].id`          ← KV id
-- (R2 needs only the bucket name, already set to `amj-files`)
+- (R2 needs only the bucket name, already set to `apertly-files`)
 
 ## 2. Apply migrations to the remote DB
 ```bash
-npm run db:migrate:remote   # wrangler d1 migrations apply amj-db --remote
+npm run db:migrate:remote   # wrangler d1 migrations apply apertly-db --remote
 ```
 Optionally seed demo data remotely (skip for a clean prod DB):
 ```bash
-npx wrangler d1 execute amj-db --remote --file scripts/db/seed.sql
+npx wrangler d1 execute apertly-db --remote --file scripts/db/seed.sql
 ```
 
 ## 3. Secrets & vars

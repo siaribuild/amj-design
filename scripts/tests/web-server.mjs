@@ -14,8 +14,8 @@ const state = join(runDir, "state");
 const env = { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
 
 await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
-await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "amj-db", "--local", "--persist-to", state], { env });
-await run(process.execPath, [wranglerCli, "d1", "execute", "amj-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env });
+await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env });
+await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env });
 
 const wrangler = spawn(process.execPath, [
   wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", PORT,

@@ -1,5 +1,5 @@
 {
-  "name": "@figma/my-make-file",
+  "name": "apertly",
   "private": true,
   "version": "0.0.1",
   "type": "module",
@@ -7,8 +7,8 @@
     "build": "vite build",
     "dev": "vite",
     "dev:api": "wrangler dev",
-    "db:migrate:local": "wrangler d1 migrations apply amj-db --local",
-    "db:migrate:remote": "wrangler d1 migrations apply amj-db --remote",
+    "db:migrate:local": "wrangler d1 migrations apply apertly-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply apertly-db --remote",
     "db:reset": "node scripts/reset-db.mjs",
     "sanity:ndjson": "node scripts/sanity-export-ndjson.mjs",
     "cf:deploy": "vite build && wrangler deploy",

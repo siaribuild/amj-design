@@ -17,11 +17,11 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
   try {
     const wranglerEnv = { WRANGLER_LOG_PATH: wranglerLog, XDG_CONFIG_HOME: join(runDir, "config") };
     await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
-    await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "amj-db", "--local", "--persist-to", state], { env: wranglerEnv });
-    const migrationRerun = await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "amj-db", "--local", "--persist-to", state], { env: wranglerEnv });
+    await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env: wranglerEnv });
+    const migrationRerun = await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env: wranglerEnv });
     assert.match(migrationRerun.stdout + migrationRerun.stderr, /No migrations to apply/i);
-    await run(process.execPath, [wranglerCli, "d1", "execute", "amj-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env: wranglerEnv });
-    const dbCheck = await run(process.execPath, [wranglerCli, "d1", "execute", "amj-db", "--local", "--persist-to", state, "--json", "--command", "SELECT (SELECT count(*) FROM user) AS users, (SELECT count(*) FROM project) AS projects, (SELECT count(*) FROM quote_line) AS quote_lines, (SELECT count(*) FROM quote_revision) AS revisions, (SELECT count(*) FROM [order]) AS orders, (SELECT count(*) FROM payment) AS payments, (SELECT count(*) FROM approval_rule) AS approval_rules; PRAGMA foreign_key_check;"], { env: wranglerEnv });
+    await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env: wranglerEnv });
+    const dbCheck = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", "SELECT (SELECT count(*) FROM user) AS users, (SELECT count(*) FROM project) AS projects, (SELECT count(*) FROM quote_line) AS quote_lines, (SELECT count(*) FROM quote_revision) AS revisions, (SELECT count(*) FROM [order]) AS orders, (SELECT count(*) FROM payment) AS payments, (SELECT count(*) FROM approval_rule) AS approval_rules; PRAGMA foreign_key_check;"], { env: wranglerEnv });
     const statements = JSON.parse(dbCheck.stdout);
     assert.deepEqual(statements[0].results[0], {
       users: 3, projects: 3, quote_lines: 4, revisions: 1,

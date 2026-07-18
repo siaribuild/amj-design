@@ -5,7 +5,7 @@ import { structureTool } from "sanity/structure";
 import { schemaTypes } from "./schemaTypes";
 
 export default defineConfig({
-  name: "amj-catalogue",
+  name: "apertly-catalogue",
   title: "AMJ Catalogue",
   projectId: process.env.SANITY_STUDIO_PROJECT_ID || "REPLACE_WITH_PROJECT_ID",
   dataset: process.env.SANITY_STUDIO_DATASET || "production",

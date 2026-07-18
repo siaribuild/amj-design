@@ -19,8 +19,8 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
   let server;
   try {
     await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
-    await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "amj-db", "--local", "--persist-to", state], { env: wranglerEnv });
-    await run(process.execPath, [wranglerCli, "d1", "execute", "amj-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env: wranglerEnv });
+    await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env: wranglerEnv });
+    await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env: wranglerEnv });
     const port = await freePort();
     const baseUrl = `http://127.0.0.1:${port}`;
     server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn"], { env: wranglerEnv });

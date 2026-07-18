@@ -15,7 +15,7 @@ import { rmSync } from "node:fs";
 const remote = process.argv.includes("--remote");
 const hard = process.argv.includes("--hard") && !remote;
 const flag = remote ? "--remote" : "--local";
-const DB = "amj-db";
+const DB = "apertly-db";
 
 const run = (cmd) => {
   console.log(`\n$ ${cmd}`);

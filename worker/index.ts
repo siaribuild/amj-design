@@ -23,7 +23,7 @@ const api = new Hono<{ Bindings: Env }>();
 api.get("/api/health", (c) =>
   c.json({
     ok: true,
-    service: "amj-trade-direct",
+    service: "apertly",
     env: c.env.APP_ENV ?? "unknown",
     bindings: { db: !!c.env.DB, files: !!c.env.FILES, kv: !!c.env.KV },
     time: new Date().toISOString(),
