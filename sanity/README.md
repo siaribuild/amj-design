@@ -36,16 +36,22 @@ VITE_SANITY_DATASET=production
 ```
 `src/data/sanity.ts` exposes `sanityConfigured` + `fetchCatalogueFromSanity()`.
 
-## 4. Wire the runtime swap (the remaining integration step)
+## 4. Runtime swap — already wired ✅
 The catalogue selectors (`getProductBySlug`, `getCategories`, …) are **synchronous**
-and used across pages + the Worker pricing engine, so the clean swap is
-*load-once-then-serve-sync*:
-1. At app bootstrap (before first render), call `fetchCatalogueFromSanity()`.
-2. If it returns data, hydrate the catalogue arrays; otherwise keep the hardcoded
-   defaults. (Requires making the `categories`/`families`/`products` arrays in
-   `catalogue.ts` swappable via a small `hydrateCatalogue()` setter — a mechanical
-   change to the generated file + its generator.)
-3. The Worker does the same on first request (cache the result).
+and used across pages + the Worker pricing engine, so the swap is
+*load-once-then-serve-sync*, and it's already in place:
+- `catalogue.ts` arrays are `let` bindings with a `hydrateCatalogue()` setter.
+- Client (`src/main.tsx`, `src/ops/main.tsx`) call `hydrateFromSanity()` before
+  first render; the Worker (`worker/index.ts`) awaits `ensureCatalogue(env)` once
+  per isolate. Both no-op until the env vars are set.
+- `src/data/catalogueQuery.ts` normalizes the GROQ result so every field is typed.
 
-This step is intentionally left until a live dataset exists, so it can be verified
-end to end rather than wired blind.
+So once you complete steps 1–3 (create project, import, set env vars), the app
+serves the catalogue from Sanity with **no further code changes**. Until then it
+uses the built-in `catalogue.ts`.
+
+### Fields
+The model covers the full Product type (dimensions, glass, hardware, ratings,
+key/full spec rows, options, hero/gallery image paths, featured order). Images
+are string paths for parity with the current data; switch them to Sanity `image`
+assets later if you want managed uploads (would also update the GROQ + pages).
