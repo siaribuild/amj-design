@@ -15,4 +15,7 @@ export interface Env {
   /** Cloudflare Access (prod staff auth) — team domain + application AUD. */
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
+  /** Resend email — API key (secret) + verified From address (var). */
+  RESEND_API_KEY?: string;
+  EMAIL_FROM?: string;
 }

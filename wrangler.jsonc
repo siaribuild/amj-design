@@ -39,6 +39,9 @@
     "APP_ENV": "development",
     // Email domains allowed to sign in to the ops console (comma-separated).
     "STAFF_EMAIL_DOMAINS": "amjtradedirect.com.au"
+    // Email: set a verified From once Resend is configured (API key is a SECRET,
+    // set via `wrangler secret put RESEND_API_KEY` — never commit it here):
+    // "EMAIL_FROM": "AMJ Trade Direct <quotes@amjtradedirect.com.au>"
     // Prod staff auth via Cloudflare Access — set when the ops.* app is deployed:
     // "ACCESS_TEAM_DOMAIN": "<team>", "ACCESS_AUD": "<application-aud>"
   }

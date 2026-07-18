@@ -943,14 +943,17 @@ function DashboardPage({ setPage, user, setUser, authLoading }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROFILE
 // ═══════════════════════════════════════════════════════════════════════════════
-function ProfilePage({ user, setPage }: { user: AuthUser | null; setPage: (p: Page) => void }) {
+function ProfilePage({ user, setPage, authLoading }: { user: AuthUser | null; setPage: (p: Page) => void; authLoading?: boolean }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  if (!user) { go("login"); return null; }
-  const [name, setName] = useState(user.name);
-  const [email, setEmail] = useState(user.email);
-  const [phone, setPhone] = useState(user.phone);
-  const [company, setCompany] = useState(user.company);
+  const [name, setName] = useState(user?.name ?? "");
+  const [email, setEmail] = useState(user?.email ?? "");
+  const [phone, setPhone] = useState(user?.phone ?? "");
+  const [company, setCompany] = useState(user?.company ?? "");
   const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    if (user) { setName(user.name); setEmail(user.email); setPhone(user.phone); setCompany(user.company); }
+  }, [user]);
+  if (!user) { if (!authLoading) go("login"); return null; }
   return (
     <div className="relative min-h-screen bg-[#FAFAF9] pt-16 overflow-hidden">
       <GhostMark size={280} opacity={0.05} pos="right-0 bottom-0" />
@@ -1021,11 +1024,11 @@ function ProfilePage({ user, setPage }: { user: AuthUser | null; setPage: (p: Pa
 // ═══════════════════════════════════════════════════════════════════════════════
 // ACCOUNT SETTINGS
 // ═══════════════════════════════════════════════════════════════════════════════
-function AccountSettingsPage({ user, setPage }: { user: AuthUser | null; setPage: (p: Page) => void }) {
+function AccountSettingsPage({ user, setPage, authLoading }: { user: AuthUser | null; setPage: (p: Page) => void; authLoading?: boolean }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  if (!user) { go("login"); return null; }
   const [cur, setCur] = useState(""); const [nw, setNw] = useState(""); const [conf, setConf] = useState("");
   const [saved, setSaved] = useState(false);
+  if (!user) { if (!authLoading) go("login"); return null; }
   return (
     <div className="relative min-h-screen bg-[#FAFAF9] pt-16 overflow-hidden">
       <GhostMark size={260} opacity={0.05} pos="right-0 bottom-0" />
@@ -1543,8 +1546,8 @@ export default function App() {
       case "dashboard":        return <DashboardPage setPage={navigateTo} user={user} setUser={setUser} authLoading={authLoading} />;
       case "track-order":      return <TrackOrderPage setPage={navigateTo} />;
       case "order":            return <OrderTrackingPage setPage={navigateTo} user={user} />;
-      case "profile":          return <ProfilePage user={user} setPage={navigateTo} />;
-      case "account-settings": return <AccountSettingsPage user={user} setPage={navigateTo} />;
+      case "profile":          return <ProfilePage user={user} setPage={navigateTo} authLoading={authLoading} />;
+      case "account-settings": return <AccountSettingsPage user={user} setPage={navigateTo} authLoading={authLoading} />;
       default:                 return <HomePage setPage={navigateTo} onUploadSchedule={uploadDemoScheduleFromHome} />;
     }
   };
