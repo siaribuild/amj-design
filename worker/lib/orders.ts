@@ -142,7 +142,7 @@ export async function createOrderFromRevision(
         "INSERT INTO order_line (id, order_id, external_ref, product_snapshot_json, qty, line_total) VALUES (?, ?, ?, ?, ?, ?)",
       ).bind(uuid(), orderId, l.external_ref, l.product_snapshot_json, l.qty, l.line_total),
     ),
-    env.DB.prepare("UPDATE quote_revision SET snapshot_status = 'accepted', accepted_at = datetime('now') WHERE id = ?").bind(revisionId),
+    // (snapshot_status was already atomically flipped to 'accepted' by the caller)
     env.DB.prepare("UPDATE project SET status_customer = 'closed', updated_at = datetime('now') WHERE id = ?").bind(projectId),
   ];
   await env.DB.batch(stmts);

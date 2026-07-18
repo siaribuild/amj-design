@@ -55,11 +55,10 @@ export async function resolveStaff(env: Env, req: Request): Promise<UserRow | nu
   return user && user.type === "internal" ? user : null;
 }
 
-// Staff gate for the legacy seams (issue-revision / order advance / pay). Real
-// staff always pass; non-prod stays open so existing dev/test flows keep working.
+// Staff gate for the legacy seams (issue-revision / order advance / pay). A real
+// staff identity is always required — never open, in any environment.
 export async function isStaff(env: Env, req: Request): Promise<boolean> {
-  if ((await resolveStaff(env, req)) !== null) return true;
-  return env.APP_ENV !== "production";
+  return (await resolveStaff(env, req)) !== null;
 }
 
 // ── Cloudflare Access JWT verification (prod only; not exercised locally) ─────

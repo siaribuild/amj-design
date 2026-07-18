@@ -9,9 +9,16 @@ function safeParse(s: string): Record<string, unknown> {
   try { const v = JSON.parse(s || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; }
 }
 
-export async function issueRevision(env: Env, projectId: string): Promise<{ id: string; revisionNo: number; total: number } | null> {
-  const project = await env.DB.prepare("SELECT id FROM project WHERE id = ?").bind(projectId).first<{ id: string }>();
-  if (!project) return null;
+export type IssueResult =
+  | { ok: true; id: string; revisionNo: number; total: number }
+  | { ok: false; error: "not_found" | "not_ready" };
+
+// Only a project that has cleared approvals ("approved_for_issue") may be issued —
+// this is the enforcement point regardless of which endpoint calls it.
+export async function issueRevision(env: Env, projectId: string): Promise<IssueResult> {
+  const project = await env.DB.prepare("SELECT id, status_internal FROM project WHERE id = ?").bind(projectId).first<{ id: string; status_internal: string }>();
+  if (!project) return { ok: false, error: "not_found" };
+  if (project.status_internal !== "approved_for_issue") return { ok: false, error: "not_ready" };
 
   const { results: lines } = await env.DB
     .prepare("SELECT external_ref, room_label, product_slug, options_json, dims_json, qty, line_total FROM quote_line WHERE project_id = ? AND revision_id IS NULL ORDER BY position")
@@ -41,5 +48,5 @@ export async function issueRevision(env: Env, projectId: string): Promise<{ id: 
     env.DB.prepare("UPDATE project SET status_customer = 'quote_issued', status_internal = 'issued', updated_at = datetime('now') WHERE id = ?").bind(projectId),
   ];
   await env.DB.batch(stmts);
-  return { id: revisionId, revisionNo, total };
+  return { ok: true, id: revisionId, revisionNo, total };
 }

@@ -54,8 +54,8 @@ quote.post("/projects/:id/submit", async (c) => {
 quote.post("/projects/:id/issue-revision", async (c) => {
   if (!(await isStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
   const rev = await issueRevision(c.env, c.req.param("id"));
-  if (!rev) return c.json({ error: "not_found" }, 404);
-  return c.json(rev);
+  if (!rev.ok) return c.json({ error: rev.error }, rev.error === "not_found" ? 404 : 409);
+  return c.json({ id: rev.id, revisionNo: rev.revisionNo, total: rev.total });
 });
 
 // GET /api/projects/:id/revisions — customer view of issued revisions.
@@ -84,7 +84,14 @@ quote.post("/revisions/:id/accept", async (c) => {
   const rev = await c.env.DB.prepare("SELECT id, project_id, snapshot_status FROM quote_revision WHERE id = ?").bind(revisionId).first<{ id: string; project_id: string; snapshot_status: string }>();
   if (!rev) return c.json({ error: "not_found" }, 404);
   if (!(await ownedProject(c.env, c.req.raw, rev.project_id))) return c.json({ error: "not_found" }, 404);
-  if (rev.snapshot_status !== "issued") return c.json({ error: "not_acceptable" }, 409);
+
+  // Atomically claim the revision: only the request that flips issued->accepted
+  // proceeds; concurrent duplicates see 0 rows changed and get 409. Combined with
+  // the UNIQUE index on order.accepted_revision_id, this prevents duplicate orders.
+  const claim = await c.env.DB
+    .prepare("UPDATE quote_revision SET snapshot_status = 'accepted', accepted_at = datetime('now') WHERE id = ? AND snapshot_status = 'issued'")
+    .bind(revisionId).run();
+  if (!claim.meta.changes) return c.json({ error: "not_acceptable" }, 409);
 
   const orderId = await createOrderFromRevision(c.env, revisionId, rev.project_id);
   const order = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(orderId).first<OrderRow>();

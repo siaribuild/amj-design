@@ -38,9 +38,10 @@ for (const p of cat.products) {
     minWidth: p.minWidth, minHeight: p.minHeight, maxWidth: p.maxWidth, maxHeight: p.maxHeight,
     profileThickness: p.profileThickness, airTightness: p.airTightness, waterTightness: p.waterTightness,
     windPressure: p.windPressure, notes: p.notes, heroImage: p.heroImage, gallery: p.gallery,
-    keySpecs: (p.keySpecs || []).map((s) => ({ _type: "specRow", ...s })),
-    specs: (p.specs || []).map((s) => ({ _type: "specRow", ...s })),
-    options: (p.options || []).map((o) => ({ _type: "productOption", ...o })),
+    // Sanity requires a stable, unique _key on every array-of-object member.
+    keySpecs: (p.keySpecs || []).map((s, i) => ({ _key: `ks${i}`, _type: "specRow", ...s })),
+    specs: (p.specs || []).map((s, i) => ({ _key: `sp${i}`, _type: "specRow", ...s })),
+    options: (p.options || []).map((o, i) => ({ _key: `op${i}`, _type: "productOption", ...o })),
     featuredOrder: p.featuredOrder,
   });
 }

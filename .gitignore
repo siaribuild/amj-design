@@ -31,3 +31,4 @@ Thumbs.db
 
 # Wrangler / Cloudflare local state (local D1, KV, R2, caches)
 .wrangler/
+.codex-tmp/

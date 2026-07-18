@@ -326,14 +326,22 @@ ops.post("/approvals/:stepId/approve", (c) => actOnStep(c, "approved"));
 ops.post("/approvals/:stepId/reject", (c) => actOnStep(c, "rejected"));
 
 // POST /api/ops/approvals/:stepId/delegate { role } — re-route to another role.
+// Only someone who could act on the step (its required role, or an admin) may
+// delegate it — otherwise an estimator could reroute a manager step to itself.
 ops.post("/approvals/:stepId/delegate", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
   const body = await c.req.json().catch(() => ({}));
   const role = String(body?.role ?? "").trim();
-  if (!role) return c.json({ error: "no_role" }, 400);
-  const res = await c.env.DB.prepare("UPDATE approval_step SET approver_role = ? WHERE id = ? AND state = 'pending'").bind(role, c.req.param("stepId")).run();
-  if (!res.meta.changes) return c.json({ error: "not_found" }, 404);
+  const valid = ["estimator", "technical_reviewer", "manager", "admin"];
+  if (!valid.includes(role)) return c.json({ error: "invalid_role" }, 400);
+  const step = await c.env.DB.prepare(
+    "SELECT s.approver_role, s.state, ai.project_id FROM approval_step s JOIN approval_instance ai ON ai.id = s.instance_id WHERE s.id = ?",
+  ).bind(c.req.param("stepId")).first<{ approver_role: string; state: string; project_id: string }>();
+  if (!step || step.state !== "pending") return c.json({ error: "not_found" }, 404);
+  if (!canApprove(staff, step.approver_role)) return c.json({ error: "wrong_role" }, 403);
+  await c.env.DB.prepare("UPDATE approval_step SET approver_role = ? WHERE id = ? AND state = 'pending'").bind(role, c.req.param("stepId")).run();
+  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: step.project_id, action: `delegated ${step.approver_role} approval → ${role}` });
   return c.json({ ok: true, approverRole: role });
 });
 
@@ -384,7 +392,7 @@ ops.post("/projects/:id/issue-revision", async (c) => {
   if (!staff) return c.json({ error: "forbidden" }, 403);
   const id = c.req.param("id");
   const rev = await issueRevision(c.env, id);
-  if (!rev) return c.json({ error: "not_found" }, 404);
+  if (!rev.ok) return c.json({ error: rev.error }, rev.error === "not_found" ? 404 : 409);
   await logEvent(c.env, { actor: staff?.id, entityType: "project", entityId: id, action: `issued revision ${rev.revisionNo}` });
   const cust = await c.env.DB.prepare("SELECT u.email FROM project p JOIN user u ON u.id = p.owner_user_id WHERE p.id = ?").bind(id).first<{ email: string }>();
   if (cust?.email) {
@@ -393,7 +401,7 @@ ops.post("/projects/:id/issue-revision", async (c) => {
       email: { to: cust.email, subject: "Your AMJ quote is ready", text: `Your reviewed quote (revision ${rev.revisionNo}) is ready to review and accept.` },
     });
   }
-  return c.json(rev);
+  return c.json({ id: rev.id, revisionNo: rev.revisionNo, total: rev.total });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

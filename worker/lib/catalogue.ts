@@ -8,15 +8,25 @@ import type { Env } from "../types";
 import { hydrateCatalogue } from "../../src/data/catalogue";
 import { CATALOGUE_QUERY, toCatalogueData, type RawCataloguePayload } from "../../src/data/catalogueQuery";
 
-let loaded: Promise<void> | null = null;
+const CATALOGUE_TTL_MS = 5 * 60 * 1000; // refresh published content every 5 min
+let cache: { at: number; promise: Promise<void> } | null = null;
 
-// Idempotent per isolate: the first call fetches + hydrates; later calls await
-// the same promise. Failures fall back to the built-in catalogue and are not
-// retried within the isolate's lifetime.
+// Loads + hydrates at most once per TTL. A successful load is reused until it
+// goes stale; a failed load is NOT cached — the next request retries — and the
+// built-in catalogue serves in the meantime.
 export function ensureCatalogue(env: Env): Promise<void> {
   if (!env.SANITY_PROJECT_ID) return Promise.resolve();
-  if (!loaded) loaded = load(env).catch((e) => { console.log(`[sanity] load failed: ${String(e)}`); });
-  return loaded;
+  const now = Date.now();
+  if (cache && now - cache.at < CATALOGUE_TTL_MS) return cache.promise;
+  const entry = {
+    at: now,
+    promise: load(env).catch((e) => {
+      console.log(`[sanity] load failed: ${String(e)}`);
+      if (cache === entry) cache = null; // drop so the next request retries
+    }),
+  };
+  cache = entry;
+  return entry.promise;
 }
 
 async function load(env: Env): Promise<void> {

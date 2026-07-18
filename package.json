@@ -11,7 +11,11 @@
     "db:migrate:remote": "wrangler d1 migrations apply amj-db --remote",
     "db:reset": "node scripts/reset-db.mjs",
     "sanity:ndjson": "node scripts/sanity-export-ndjson.mjs",
-    "cf:deploy": "vite build && wrangler deploy"
+    "cf:deploy": "vite build && wrangler deploy",
+    "test": "npm run test:catalogue && npm run test:build && npm run test:api",
+    "test:catalogue": "node --test --test-concurrency=1 scripts/tests/catalogue.test.mjs scripts/tests/sanity-export.test.mjs",
+    "test:build": "node --test scripts/tests/build.test.mjs",
+    "test:api": "node --test scripts/tests/api.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -76,6 +80,7 @@
     "@cloudflare/workers-types": "^5.20260710.1",
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
+    "esbuild": "0.25.12",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5",
     "wrangler": "4.111.0"
