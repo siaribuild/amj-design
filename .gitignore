@@ -7,6 +7,9 @@ node_modules/
 dist/
 dist-ssr/
 
+# Generated Sanity import (regenerate with `npm run sanity:ndjson`)
+sanity/catalogue.ndjson
+
 # Logs
 *.log
 npm-debug.log*

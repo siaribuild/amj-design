@@ -10,6 +10,7 @@
     "db:migrate:local": "wrangler d1 migrations apply amj-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply amj-db --remote",
     "db:reset": "node scripts/reset-db.mjs",
+    "sanity:ndjson": "node scripts/sanity-export-ndjson.mjs",
     "cf:deploy": "vite build && wrangler deploy"
   },
   "dependencies": {
@@ -50,6 +51,7 @@
     "cmdk": "1.1.1",
     "date-fns": "3.6.0",
     "embla-carousel-react": "8.6.0",
+    "@sanity/client": "6.22.5",
     "hono": "4.6.14",
     "input-otp": "1.4.2",
     "lucide-react": "0.487.0",
