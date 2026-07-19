@@ -1,0 +1,25 @@
+{
+  "name": "apertly-sanity-studio",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Sanity Studio for the AMJ catalogue. Standalone workspace so `sanity` and its toolchain are declared and installable independently of the web app.",
+  "type": "module",
+  "scripts": {
+    "dev": "sanity dev",
+    "build": "sanity build",
+    "deploy": "sanity deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "sanity": "^6.5.0",
+    "styled-components": "^6.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.6.3"
+  }
+}

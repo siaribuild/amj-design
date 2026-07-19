@@ -22,11 +22,16 @@ export async function fetchCatalogueFromSanity() {
 }
 
 // Bootstrap: load from Sanity and hydrate the catalogue before first render.
-// Never throws — on any failure the app falls back to the hardcoded default.
+// Never throws AND never hangs — the load races a short timeout so a slow or
+// unreachable CMS can't block React from mounting; the app then renders on the
+// built-in catalogue (and picks up live content if the fetch resolves in time).
+const HYDRATE_TIMEOUT_MS = 2500;
+
 export async function hydrateFromSanity(): Promise<void> {
   if (!client) return;
+  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), HYDRATE_TIMEOUT_MS));
   try {
-    const data = await fetchCatalogueFromSanity();
+    const data = await Promise.race([fetchCatalogueFromSanity(), timeout]);
     if (data) hydrateCatalogue(data);
   } catch (e) {
     console.warn("[sanity] catalogue load failed; using built-in catalogue", e);

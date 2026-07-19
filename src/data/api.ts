@@ -115,9 +115,21 @@ export interface ApiRevision {
   lines: { external_ref: string | null; product_snapshot_json: string; qty: number; line_total: number }[];
 }
 
-/** Submit the draft project for review (Draft -> Submitted). */
-export const submitProject = (projectId: string) =>
-  req<{ id: string; status: string }>(`/api/projects/${projectId}/submit`, { method: "POST" });
+export interface SubmitContact { name: string; email: string; phone?: string; suburb?: string }
+/** Outcome of a submission — callers gate their success UI on `ok`. */
+export type SubmitResult = { ok: true; status: string } | { ok: false; error: string };
+
+/** Submit the draft project for review (Draft -> Submitted). The server
+ * re-validates state/lines/contact and persists the contact; throws on rejection. */
+export const submitProject = (projectId: string, contact: SubmitContact) =>
+  req<{ id: string; status: string }>(`/api/projects/${projectId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({ contact }),
+  });
+
+/** Update the signed-in customer's profile (name / phone). */
+export const updateProfile = (patch: { name?: string; phone?: string }) =>
+  req<{ user: AuthUserDto }>("/api/auth/profile", { method: "POST", body: JSON.stringify(patch) });
 
 export const getRevisions = (projectId: string) =>
   req<{ revisions: ApiRevision[] }>(`/api/projects/${projectId}/revisions`);
@@ -187,3 +199,13 @@ export async function uploadFile(file: File, kind = "upload"): Promise<{ file: A
 }
 export const getProjectFiles = (projectId: string) =>
   req<{ files: ApiFile[] }>(`/api/projects/${projectId}/files`);
+
+// ── Contact form ──────────────────────────────────────────────────────────────
+export interface ContactPayload {
+  name: string; email: string; phone?: string; company?: string; message: string;
+  token?: string;    // Turnstile token (when captcha is configured)
+  website?: string;  // honeypot — must stay empty
+}
+/** Submit a "Contact us" enquiry. Throws on validation/captcha/rate-limit errors. */
+export const sendContactMessage = (payload: ContactPayload) =>
+  req<{ ok: boolean }>("/api/contact", { method: "POST", body: JSON.stringify(payload) });

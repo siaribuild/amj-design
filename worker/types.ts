@@ -18,6 +18,10 @@ export interface Env {
   /** Resend email — API key (secret) + verified From address (var). */
   RESEND_API_KEY?: string;
   EMAIL_FROM?: string;
+  /** Contact form: where enquiries are emailed (falls back to EMAIL_FROM). */
+  CONTACT_TO?: string;
+  /** Cloudflare Turnstile secret (captcha) — set to enable server verification. */
+  TURNSTILE_SECRET?: string;
   /** Sanity catalogue source (Worker-side). Client uses VITE_SANITY_* instead. */
   SANITY_PROJECT_ID?: string;
   SANITY_DATASET?: string;

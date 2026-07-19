@@ -8,8 +8,8 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { CLAIM_COOKIE, parseCookies } from "../lib/util";
 import {
-  clearCookie, consumeChallenge, createSession, destroySession, findOrCreateUser,
-  isEmail, normEmail, resolveUser, sessionCookie, sixDigit, storeChallenge, userDto,
+  challengeAllowed, clearCookie, consumeChallenge, createSession, destroySession, findOrCreateUser,
+  isDevEnv, isEmail, normEmail, resolveUser, sessionCookie, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
 import { notify } from "../lib/email";
 
@@ -26,7 +26,7 @@ auth.get("/me", async (c) => {
 auth.post("/challenge", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const email = normEmail(body?.email);
-  if (isEmail(email)) {
+  if (isEmail(email) && (await challengeAllowed(c.env, email))) {
     const code = sixDigit();
     await storeChallenge(c.env, email, code);
     await notify(c.env, {
@@ -36,7 +36,8 @@ auth.post("/challenge", async (c) => {
       email: { to: email, subject: "Your AMJ sign-in code", text: `Your sign-in code is ${code}. It expires in 10 minutes.` },
     });
     // Dev convenience: surface the code so the flow is testable without a provider.
-    if (c.env.APP_ENV !== "production") {
+    // Fail closed — only an explicit development env ever returns the code.
+    if (isDevEnv(c.env)) {
       return c.json({ ok: true, devCode: code });
     }
   }
@@ -69,6 +70,20 @@ auth.post("/verify", async (c) => {
   c.header("Set-Cookie", sessionCookie(token, c.env), { append: true });
   if (claim) c.header("Set-Cookie", clearCookie(CLAIM_COOKIE, c.env), { append: true });
   return c.json({ authenticated: true, anonymous: false, user: userDto(user) });
+});
+
+// POST /api/auth/profile { name?, phone? } — persist the signed-in user's
+// editable profile fields (the account page mutates the server, not just React).
+auth.post("/profile", async (c) => {
+  const user = await resolveUser(c.env, c.req.raw);
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const name = body?.name !== undefined ? String(body.name).trim() : user.name;
+  const phone = body?.phone !== undefined ? String(body.phone).trim() : user.phone;
+  await c.env.DB.prepare("UPDATE user SET name = ?, phone = ? WHERE id = ?")
+    .bind(name || null, phone || null, user.id).run();
+  const fresh = (await c.env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(user.id).first<typeof user>())!;
+  return c.json({ user: userDto(fresh) });
 });
 
 // POST /api/auth/logout — drop the session and clear the cookie.

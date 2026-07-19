@@ -167,3 +167,12 @@ export const opsStaff = () => req<{ staff: OpsStaff[]; roles: string[] }>("/api/
 export const opsSetRole = (id: string, role: string) =>
   req<{ ok: boolean; role: string }>(`/api/ops/staff/${id}`, { method: "PATCH", body: JSON.stringify({ role }) });
 export const opsSearch = (q: string) => req<{ results: OpsSearchResult[] }>(`/api/ops/search?q=${encodeURIComponent(q)}`);
+
+// ── Contact enquiries ────────────────────────────────────────────────────────
+export interface OpsContactMessage {
+  id: string; name: string; email: string; phone: string | null; company: string | null;
+  message: string; status: string; created_at: string;
+}
+export const opsContactMessages = () => req<{ messages: OpsContactMessage[] }>("/api/ops/contact");
+export const opsDeleteContactMessage = (id: string) =>
+  req<{ ok: boolean }>(`/api/ops/contact/${id}`, { method: "DELETE" });

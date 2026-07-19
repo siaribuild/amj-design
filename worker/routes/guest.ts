@@ -6,7 +6,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { newToken, uuid } from "../lib/util";
-import { isEmail, normEmail, sha256hex, sixDigit } from "../lib/auth";
+import { isDevEnv, isEmail, normEmail, sha256hex, sixDigit } from "../lib/auth";
 import { notify } from "../lib/email";
 import { orderDto, type OrderRow } from "../lib/orders";
 
@@ -48,7 +48,7 @@ guest.post("/track/request", async (c) => {
       templateKey: "guest_track_code",
       email: { to: email, subject: `Tracking code for ${ref}`, text: `Your tracking code for order ${ref} is ${code}. It expires in 10 minutes.` },
     });
-    if (c.env.APP_ENV !== "production") devCode = code;
+    if (isDevEnv(c.env)) devCode = code;
   }
   return c.json(devCode ? { ok: true, devCode } : neutral);
 });

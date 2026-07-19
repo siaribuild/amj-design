@@ -42,11 +42,18 @@ export async function findOrCreateInternalUser(env: Env, email: string): Promise
   return (await env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(id).first<UserRow>())!;
 }
 
-// Resolve the acting staff member, or null. Prefers the Cloudflare Access JWT
-// (prod); falls back to an internal session cookie (dev).
+// Resolve the acting staff member, or null.
+//
+// Fail closed: once Cloudflare Access is configured (both team domain + AUD set),
+// a valid Access assertion is the ONLY accepted identity — the internal-session
+// fallback is disabled so a request that reaches the Worker without passing Access
+// (e.g. the ops host mis-configured, or a direct hit) cannot authenticate as staff.
+// The session fallback exists solely for local/staging where Access isn't wired up.
 export async function resolveStaff(env: Env, req: Request): Promise<UserRow | null> {
-  const jwt = req.headers.get("Cf-Access-Jwt-Assertion");
-  if (jwt && env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD) {
+  const accessConfigured = !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD);
+  if (accessConfigured) {
+    const jwt = req.headers.get("Cf-Access-Jwt-Assertion");
+    if (!jwt) return null;
     const email = await verifyAccessEmail(env, jwt);
     if (email && isStaffEmail(env, email)) return findOrCreateInternalUser(env, email);
     return null;
@@ -70,8 +77,19 @@ async function verifyAccessEmail(env: Env, token: string): Promise<string | null
     if (!h || !p || !s) return null;
     const header = JSON.parse(atob(h.replace(/-/g, "+").replace(/_/g, "/")));
     const payload = JSON.parse(atob(p.replace(/-/g, "+").replace(/_/g, "/")));
-    if (payload.aud && !(Array.isArray(payload.aud) ? payload.aud : [payload.aud]).includes(env.ACCESS_AUD)) return null;
-    if (payload.exp && Date.now() / 1000 > payload.exp) return null;
+    const now = Date.now() / 1000;
+    const skew = 60; // seconds of allowed clock skew
+
+    // Required claims — enforced whether or not present (a missing claim is a
+    // rejection, not a pass). Access always issues RS256 assertions.
+    if (header.alg !== "RS256") return null;
+    const auds = payload.aud == null ? [] : (Array.isArray(payload.aud) ? payload.aud : [payload.aud]);
+    if (!auds.includes(env.ACCESS_AUD)) return null;
+    if (typeof payload.exp !== "number" || now > payload.exp + skew) return null;
+    if (typeof payload.iat === "number" && payload.iat > now + skew) return null;
+    if (typeof payload.nbf === "number" && now < payload.nbf - skew) return null;
+    const expectedIss = `https://${env.ACCESS_TEAM_DOMAIN}.cloudflareaccess.com`;
+    if (payload.iss !== expectedIss) return null;
 
     const jwks = await getJwks(env);
     const jwk = jwks.find((k: any) => k.kid === header.kid);

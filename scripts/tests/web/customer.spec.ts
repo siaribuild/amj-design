@@ -33,6 +33,16 @@ test("customer OTP login lands on a dashboard with real data", async ({ page }) 
   await expect(page.getByText("AMJ-58001")).toBeVisible();
 });
 
+test("contact form submits an enquiry", async ({ page }) => {
+  await page.goto("/contact");
+  await expect(page.getByRole("heading", { name: /get in touch/i })).toBeVisible();
+  await page.getByPlaceholder("Your name").fill("Test Person");
+  await page.getByPlaceholder("your@email.com").fill("test.person@example.com");
+  await page.getByPlaceholder(/describe your project/i).fill("Hi, do you deliver to Bendigo?");
+  await page.getByRole("button", { name: /send message/i }).click();
+  await expect(page.getByRole("heading", { name: /message sent/i })).toBeVisible();
+});
+
 test("guest order tracking shows a read-only status", async ({ page }) => {
   await page.goto("/track-order");
   await page.getByPlaceholder("AMJ-58001").fill("AMJ-58001");

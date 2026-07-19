@@ -35,13 +35,20 @@ export async function resolveCurrentProject(env: Env, req: Request): Promise<{
   return { project, token };
 }
 
-// Resolve the current project, creating one if none exists. Returns a Set-Cookie
-// header string when a fresh anonymous claim cookie was minted.
+// Resolve the current DRAFT project for editing, creating a fresh one if none
+// exists. Returns a Set-Cookie header string when a new anonymous claim cookie
+// was minted.
+//
+// A project is only reused while it is still a 'draft'. Once it has progressed
+// (submitted / quote_issued / closed / …) it is immutable from the customer's
+// side, so a new draft is started instead — this is the create-a-new-quote path,
+// and it prevents a save (autosave or upload) from overwriting the live lines of
+// a submitted or closed project (e.g. starting another quote after an order).
 export async function resolveOrCreateCurrentProject(env: Env, req: Request, title = "My project"): Promise<{
   project: ProjectRow; cookie?: string;
 }> {
   const { project, userId } = await resolveCurrentProject(env, req);
-  if (project) return { project };
+  if (project && project.status_customer === "draft") return { project };
 
   const id = uuid();
   if (userId) {

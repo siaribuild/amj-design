@@ -6,8 +6,8 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import {
-  clearCookie, consumeChallenge, createSession, destroySession, isEmail,
-  normEmail, sessionCookie, sixDigit, storeChallenge, userDto,
+  challengeAllowed, clearCookie, consumeChallenge, createSession, destroySession, isDevEnv,
+  isEmail, normEmail, sessionCookie, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
 import { notify } from "../lib/email";
 import { findOrCreateInternalUser, isStaffEmail, resolveStaff } from "../lib/staff";
@@ -49,6 +49,16 @@ const safeParse = (s: string): Record<string, any> => {
   try { const v = JSON.parse(s || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; }
 };
 
+// ── Persona RBAC ─────────────────────────────────────────────────────────────
+// Being `type='internal'` (past Cloudflare Access in prod) is the perimeter, but
+// it is NOT sufficient for money movements or bulk customer PII. A freshly
+// provisioned staffer starts with role=null and must be assigned a role by an
+// admin before they can act on sensitive surfaces. (Broader per-endpoint personas
+// remain an O-series roadmap item; these gates cover the highest-risk operations.)
+const ROLES = ["estimator", "technical_reviewer", "manager", "admin"];
+const hasAssignedRole = (staff: { role: string | null }) => !!staff.role && ROLES.includes(staff.role);
+const canRecordPayment = (staff: { role: string | null }) => staff.role === "manager" || staff.role === "admin";
+
 interface LineRow {
   id: string; external_ref: string | null; room_label: string | null; product_slug: string;
   options_json: string; dims_json: string; measured_by: string; qty: number; line_total: number | null; status: string;
@@ -75,7 +85,7 @@ const opsLineDto = (r: LineRow) => {
 ops.post("/auth/challenge", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const email = normEmail(body?.email);
-  if (isEmail(email) && isStaffEmail(c.env, email)) {
+  if (isEmail(email) && isStaffEmail(c.env, email) && (await challengeAllowed(c.env, email))) {
     const code = sixDigit();
     await storeChallenge(c.env, email, code);
     await notify(c.env, {
@@ -84,7 +94,7 @@ ops.post("/auth/challenge", async (c) => {
       templateKey: "ops_signin_code",
       email: { to: email, subject: "Your AMJ ops sign-in code", text: `Your ops console code is ${code}. It expires in 10 minutes.` },
     });
-    if (c.env.APP_ENV !== "production") return c.json({ ok: true, devCode: code });
+    if (isDevEnv(c.env)) return c.json({ ok: true, devCode: code });
   }
   return c.json({ ok: true });
 });
@@ -197,6 +207,9 @@ ops.get("/projects/:id", async (c) => {
       nextStates: FLOW[p.status_internal] ?? [],
       canSubmitForApproval: CAN_SUBMIT_FOR_APPROVAL.has(p.status_internal),
       org: p.org_name, customerName: p.customer_name, customerEmail: p.customer_email,
+      // Submission contact captured at submit time (persisted even for anon submitters).
+      contactName: p.contact_name ?? null, contactEmail: p.contact_email ?? null,
+      contactPhone: p.contact_phone ?? null, deliverySuburb: p.delivery_suburb ?? null,
       assignee: p.assignee_name, internalOwnerId: p.internal_owner_id,
       updatedAt: p.updated_at,
     },
@@ -448,6 +461,7 @@ ops.get("/orders/:id", async (c) => {
 ops.post("/orders/:id/advance", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const order = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(c.req.param("id")).first<OrderRow>();
   if (!order) return c.json({ error: "not_found" }, 404);
   const body = await c.req.json().catch(() => ({}));
@@ -462,6 +476,7 @@ ops.post("/orders/:id/advance", async (c) => {
 ops.post("/orders/:id/pay", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!canRecordPayment(staff)) return c.json({ error: "forbidden_role" }, 403);
   const order = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(c.req.param("id")).first<OrderRow>();
   if (!order) return c.json({ error: "not_found" }, 404);
   const body = await c.req.json().catch(() => ({}));
@@ -479,7 +494,9 @@ ops.post("/orders/:id/pay", async (c) => {
 
 // GET /api/ops/customers — organisations with contact + project/order counts.
 ops.get("/customers", async (c) => {
-  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const { results } = await c.env.DB.prepare(`
     SELECT org.id, org.name, org.trading_name, org.abn, org.account_status,
            (SELECT count(*) FROM project WHERE organisation_id = org.id) AS projects,
@@ -493,7 +510,9 @@ ops.get("/customers", async (c) => {
 
 // GET /api/ops/customers/:orgId — 360: org, members, projects, orders.
 ops.get("/customers/:orgId", async (c) => {
-  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const orgId = c.req.param("orgId");
   const org = await c.env.DB.prepare("SELECT * FROM organisation WHERE id = ?").bind(orgId).first<any>();
   if (!org) return c.json({ error: "not_found" }, 404);
@@ -541,7 +560,9 @@ ops.patch("/rules/:id", async (c) => {
 
 // GET /api/ops/files — all uploaded files across projects.
 ops.get("/files", async (c) => {
-  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const { results } = await c.env.DB.prepare(`
     SELECT fa.id, fa.kind, fa.filename, fa.size, fa.virus_status, fa.created_at,
            p.title AS project_title, u.name AS customer_name
@@ -554,12 +575,15 @@ ops.get("/files", async (c) => {
 
 // GET /api/ops/files/:id/download — staff download (any file).
 ops.get("/files/:id/download", async (c) => {
-  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
-  const fa = await c.env.DB.prepare("SELECT r2_key, filename FROM file_asset WHERE id = ?").bind(c.req.param("id")).first<{ r2_key: string; filename: string }>();
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const fa = await c.env.DB.prepare("SELECT r2_key, filename, virus_status FROM file_asset WHERE id = ?").bind(c.req.param("id")).first<{ r2_key: string; filename: string; virus_status: string }>();
   if (!fa) return c.json({ error: "not_found" }, 404);
+  if (fa.virus_status === "infected") return c.json({ error: "quarantined" }, 403);
   const obj = await c.env.FILES.get(fa.r2_key);
   if (!obj) return c.json({ error: "gone" }, 404);
-  return new Response(obj.body, { headers: { "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream", "Content-Disposition": `attachment; filename="${fa.filename}"` } });
+  return new Response(obj.body, { headers: { "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream", "Content-Disposition": `attachment; filename="${fa.filename}"`, "X-Content-Type-Options": "nosniff" } });
 });
 
 // GET /api/ops/audit — recent audit events (optionally ?entity=project|order).
@@ -593,6 +617,30 @@ ops.patch("/staff/:id", async (c) => {
   if (!res.meta.changes) return c.json({ error: "not_found" }, 404);
   await logEvent(c.env, { actor: staff.id, entityType: "user", entityId: c.req.param("id"), action: `set role ${role}` });
   return c.json({ ok: true, role });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Contact enquiries — view + triage inbound "Contact us" submissions.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// GET /api/ops/contact — inbound enquiries, newest first (staff-gated).
+ops.get("/contact", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, name, email, phone, company, message, status, created_at FROM contact_message ORDER BY created_at DESC LIMIT 200",
+  ).all();
+  return c.json({ messages: results });
+});
+
+// DELETE /api/ops/contact/:id — remove an enquiry (assigned-role staff only).
+ops.delete("/contact/:id", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const res = await c.env.DB.prepare("DELETE FROM contact_message WHERE id = ?").bind(c.req.param("id")).run();
+  if (!res.meta.changes) return c.json({ error: "not_found" }, 404);
+  await logEvent(c.env, { actor: staff.id, entityType: "contact_message", entityId: c.req.param("id"), action: "deleted contact enquiry" });
+  return c.json({ ok: true });
 });
 
 // GET /api/ops/search?q= — omnibox across projects, orders, orgs, customers.

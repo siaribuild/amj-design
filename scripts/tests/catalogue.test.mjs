@@ -30,8 +30,10 @@ test("catalogue query normalization and runtime hydration", async () => {
 
     assert.match(catalogue.CATALOGUE_QUERY, /category->slug\.current/);
     assert.match(catalogue.CATALOGUE_QUERY, /family->slug\.current/);
-    assert.match(catalogue.CATALOGUE_QUERY, /keySpecs\[\]\{label,value\}/);
-    assert.match(catalogue.CATALOGUE_QUERY, /options\[\]\{typeSlug,typeName,name,availability,hex\}/);
+    // Object-array projections carry _key so Sanity array items (and React lists)
+    // have stable identity.
+    assert.match(catalogue.CATALOGUE_QUERY, /keySpecs\[\]\{_key,label,value\}/);
+    assert.match(catalogue.CATALOGUE_QUERY, /options\[\]\{_key,typeSlug,typeName,name,availability,hex\}/);
 
     const normalized = catalogue.toCatalogueData({
       categories: [], families: [], colours: [{ name: "Test", hex: null, availability: "standard" }],

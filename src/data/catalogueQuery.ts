@@ -17,8 +17,8 @@ export const CATALOGUE_QUERY = `{
     shortDescription, descriptionParagraphs, standardGlass, hardware,
     minWidth, minHeight, maxWidth, maxHeight, profileThickness, airTightness,
     waterTightness, windPressure, notes, heroImage, gallery,
-    keySpecs[]{label,value}, specs[]{label,value},
-    options[]{typeSlug,typeName,name,availability,hex}, featuredOrder
+    keySpecs[]{_key,label,value}, specs[]{_key,label,value},
+    options[]{_key,typeSlug,typeName,name,availability,hex}, featuredOrder
   },
   "colours": *[_type=="colour"]{ name, hex, availability }
 }`;

@@ -40,3 +40,11 @@ test("ops tabs render (approvals, orders, customers, catalogue, audit)", async (
   await page.getByRole("button", { name: "Audit" }).click();
   await expect(page.getByRole("heading", { name: "Audit" })).toBeVisible();
 });
+
+test("ops messages tab shows the enquiry submitted from the contact form", async ({ page }) => {
+  await staffLogin(page);
+  await page.getByRole("button", { name: "Messages" }).click();
+  // The customer contact-form test submits "Test Person" earlier in the run.
+  await expect(page.getByText("Test Person").first()).toBeVisible();
+  await expect(page.getByText("Hi, do you deliver to Bendigo?").first()).toBeVisible();
+});

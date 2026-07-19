@@ -12,12 +12,14 @@ import { ProductsPage } from "../pages/ProductsPage";
 import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { QuotePage } from "../pages/QuotePage";
 import { HowItWorksPage } from "../pages/HowItWorksPage";
-import { OrderTrackingPage, OrderReadout } from "../pages/OrderTrackingPage";
+import { OrderTrackingPage, OrderReadout, type TrackFocus } from "../pages/OrderTrackingPage";
+import { ContactPage } from "../pages/ContactPage";
+import { PrivacyPolicyPage } from "../pages/PrivacyPolicyPage";
 import { pathForPage, routeFromPathname } from "./routes";
 import { products as catalogueProducts, type CategorySlug } from "../data/catalogue";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, addDemoSchedule, fmt } from "../data/configurator";
-import { getCurrentProject, saveLines, submitProject, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary } from "../data/api";
+import { getCurrentProject, saveLines, submitProject, updateProfile, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AuthUser {
@@ -333,7 +335,7 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-8 text-sm">
             {[
               { h: "Products", ls: [["Windows", "products"], ["Doors", "products"], ["Product detail", "product-detail"]] },
-              { h: "Service",  ls: [["Get a quote", "quote"], ["Trade account", "trade"], ["How it works", "how-it-works"]] },
+              { h: "Service",  ls: [["Get a quote", "quote"], ["Trade account", "trade"], ["How it works", "how-it-works"], ["Privacy Policy", "privacy"]] },
               { h: "Account", ls: [["Sign in", "login"], ["Track order", "track-order"], ["Resources", "resources"], ["Contact", "contact"]] },
             ].map(col => (
               <div key={col.h}>
@@ -808,8 +810,9 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════════
-function DashboardPage({ setPage, user, setUser, authLoading }: {
+function DashboardPage({ setPage, user, setUser, authLoading, onOpenRecord }: {
   setPage: (p: Page) => void; user: AuthUser | null; setUser: (u: AuthUser | null) => void; authLoading?: boolean;
+  onOpenRecord: (rec: { orderId?: string; projectId?: string; status?: string }) => void;
 }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [projects, setProjects] = useState<ApiProjectSummary[] | null>(null);
@@ -899,11 +902,11 @@ function DashboardPage({ setPage, user, setUser, authLoading }: {
                   const st = PSTATUS[p.status_customer] ?? { label: p.status_customer, sc: "text-[#5c5a56] bg-[#F2F0EC] border-black/10", action: "View →" };
                   return <Row key={p.id} ref_={(p.title || "Project")} status={st.label} sc={st.sc}
                     sub={`${p.item_count} item${p.item_count !== 1 ? "s" : ""} · updated ${fmtDate(p.updated_at)}`}
-                    action={st.action} onClick={() => go(p.status_customer === "draft" ? "quote" : "order")} />;
+                    action={st.action} onClick={() => p.status_customer === "draft" ? go("quote") : onOpenRecord({ projectId: p.id, status: p.status_customer })} />;
                 })}
                 {activeOrders.map(o => (
                   <Row key={o.id} ref_={o.orderNo} status={STAGE_LABEL[o.stage] ?? o.stage} sc="text-blue-700 bg-blue-50 border-blue-200"
-                    sub={`Order · ${o.total != null ? fmt(o.total) : ""}`} action="Track →" onClick={() => go("order")} />
+                    sub={`Order · ${o.total != null ? fmt(o.total) : ""}`} action="Track →" onClick={() => onOpenRecord({ orderId: o.id })} />
                 ))}
               </div>
             </div>
@@ -914,7 +917,7 @@ function DashboardPage({ setPage, user, setUser, authLoading }: {
                 <div className="divide-y divide-black/6">
                   {closedOrders.map(o => (
                     <Row key={o.id} ref_={o.orderNo} status={STAGE_LABEL[o.stage] ?? o.stage} sc="text-[#5c5a56] bg-[#F2F0EC] border-black/10"
-                      sub={`Order · ${o.total != null ? fmt(o.total) : ""}`} action="View →" onClick={() => go("order")} />
+                      sub={`Order · ${o.total != null ? fmt(o.total) : ""}`} action="View →" onClick={() => onOpenRecord({ orderId: o.id })} />
                   ))}
                 </div>
               </div>
@@ -943,17 +946,35 @@ function DashboardPage({ setPage, user, setUser, authLoading }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROFILE
 // ═══════════════════════════════════════════════════════════════════════════════
-function ProfilePage({ user, setPage, authLoading }: { user: AuthUser | null; setPage: (p: Page) => void; authLoading?: boolean }) {
+function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser | null; setPage: (p: Page) => void; setUser: (u: AuthUser) => void; authLoading?: boolean }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [name, setName] = useState(user?.name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
   const [company, setCompany] = useState(user?.company ?? "");
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   useEffect(() => {
     if (user) { setName(user.name); setEmail(user.email); setPhone(user.phone); setCompany(user.company); }
   }, [user]);
   if (!user) { if (!authLoading) go("login"); return null; }
+
+  // Persist name/phone to the server (email is the login identity — changing it
+  // needs re-verification, out of scope; company/type belong to the org layer).
+  const saveProfile = async () => {
+    if (saving) return;
+    setSaving(true); setSaveError("");
+    try {
+      const r = await updateProfile({ name: name.trim(), phone: phone.trim() });
+      setUser({ ...user, name: r.user.name || user.name, phone: r.user.phone || "" });
+      setSaved(true); setTimeout(() => setSaved(false), 2500);
+    } catch {
+      setSaveError("Couldn't save your changes. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <div className="relative min-h-screen bg-[#FAFAF9] pt-16 overflow-hidden">
       <GhostMark size={280} opacity={0.05} pos="right-0 bottom-0" />
@@ -975,23 +996,20 @@ function ProfilePage({ user, setPage, authLoading }: { user: AuthUser | null; se
                 <div><FieldLabel>Phone number</FieldLabel><Input value={phone} onChange={e => setPhone(e.target.value)} /></div>
                 <div><FieldLabel>Company / trade name</FieldLabel><Input value={company} onChange={e => setCompany(e.target.value)} /></div>
               </div>
+              {saveError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5 mt-4"><AlertCircle className="w-4 h-4" />{saveError}</p>}
               <div className="mt-5">
-                <Btn variant="sage" size="md" onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2500); }}>
-                  {saved ? <><Check className="w-4 h-4" />Saved</> : "Save changes"}
+                <Btn variant="sage" size="md" disabled={saving} onClick={saveProfile}>
+                  {saved ? <><Check className="w-4 h-4" />Saved</> : saving ? "Saving…" : "Save changes"}
                 </Btn>
               </div>
             </div>
             <div className="group relative bg-white border border-black/8 p-5 overflow-hidden">
               <FrameCorners size={10} color={SAGE} show="always" />
-              <h3 className="font-semibold text-sm text-[#131311] mb-1">Delivery addresses</h3>
-              <p className="text-xs text-[#5c5a56] mb-3">Saved for faster quote submissions.</p>
-              <div className="border border-black/8 p-3 text-sm text-[#5c5a56] flex justify-between items-center">
-                <span>34 Example St, Coburg VIC 3058</span>
-                <button className="text-xs text-[#5c5a56] hover:text-red-600 cursor-pointer">Remove</button>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-semibold text-sm text-[#131311]">Delivery addresses</h3>
+                <span className="text-[10px] uppercase tracking-wide text-[#5c5a56] border border-black/10 px-1.5 py-0.5">Coming soon</span>
               </div>
-              <button className="mt-2 text-xs text-[#5A7A6A] hover:underline cursor-pointer flex items-center gap-1">
-                <Plus className="w-3 h-3" />Add address
-              </button>
+              <p className="text-xs text-[#5c5a56]">Saved delivery addresses for faster quote submissions are on the way — you can enter a delivery suburb on each quote in the meantime.</p>
             </div>
           </div>
           <div className="space-y-4">
@@ -1007,7 +1025,7 @@ function ProfilePage({ user, setPage, authLoading }: { user: AuthUser | null; se
             <div className="group relative bg-white border border-black/8 p-5 overflow-hidden">
               <FrameCorners size={10} color={SAGE} show="always" />
               <p className="font-semibold text-xs text-[#131311] uppercase tracking-wide mb-3">Account links</p>
-              {[[<Key className="w-3.5 h-3.5" />,"Change password","account-settings" as Page],[<Bell className="w-3.5 h-3.5" />,"Notifications","account-settings" as Page],[<LayoutDashboard className="w-3.5 h-3.5" />,"My dashboard","dashboard" as Page]].map(([icon,label,page]) => (
+              {[[<Bell className="w-3.5 h-3.5" />,"Notifications","account-settings" as Page],[<LayoutDashboard className="w-3.5 h-3.5" />,"My dashboard","dashboard" as Page]].map(([icon,label,page]) => (
                 <button key={label as string} onClick={() => go(page as Page)}
                   className="w-full text-left text-sm text-[#5c5a56] hover:text-[#131311] flex items-center gap-2.5 py-1.5 cursor-pointer transition-colors">
                   <span className="text-[#5A7A6A]">{icon as React.ReactNode}</span>{label as string}
@@ -1026,8 +1044,6 @@ function ProfilePage({ user, setPage, authLoading }: { user: AuthUser | null; se
 // ═══════════════════════════════════════════════════════════════════════════════
 function AccountSettingsPage({ user, setPage, authLoading }: { user: AuthUser | null; setPage: (p: Page) => void; authLoading?: boolean }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const [cur, setCur] = useState(""); const [nw, setNw] = useState(""); const [conf, setConf] = useState("");
-  const [saved, setSaved] = useState(false);
   if (!user) { if (!authLoading) go("login"); return null; }
   return (
     <div className="relative min-h-screen bg-[#FAFAF9] pt-16 overflow-hidden">
@@ -1040,32 +1056,24 @@ function AccountSettingsPage({ user, setPage, authLoading }: { user: AuthUser | 
         <div className="space-y-5">
           <div className="group relative bg-white border border-black/8 p-5 overflow-hidden">
             <FrameCorners size={10} color={SAGE} show="always" />
-            <h3 className="font-semibold text-sm text-[#131311] mb-4">Change password</h3>
-            <div className="space-y-3">
-              <div><FieldLabel>Current password</FieldLabel><Input type="password" value={cur} onChange={e => setCur(e.target.value)} placeholder="••••••••" /></div>
-              <div><FieldLabel>New password</FieldLabel><Input type="password" value={nw} onChange={e => setNw(e.target.value)} placeholder="Min. 8 characters" /></div>
-              <div><FieldLabel>Confirm new password</FieldLabel><Input type="password" value={conf} onChange={e => setConf(e.target.value)} placeholder="Repeat new password" /></div>
-              {nw && conf && nw !== conf && <p className="text-xs text-red-700 flex items-center gap-1"><AlertCircle className="w-3 h-3" />Passwords don't match.</p>}
-            </div>
-            <div className="mt-4">
-              <Btn variant="sage" size="md" disabled={!cur || !nw || nw !== conf}
-                onClick={() => { setSaved(true); setCur(""); setNw(""); setConf(""); setTimeout(() => setSaved(false), 2500); }}>
-                {saved ? <><Check className="w-4 h-4" />Password updated</> : "Update password"}
-              </Btn>
-            </div>
+            <div className="flex items-center gap-2 mb-2"><Key className="w-4 h-4 text-[#5A7A6A]" /><h3 className="font-semibold text-sm text-[#131311]">Sign-in &amp; security</h3></div>
+            <p className="text-sm text-[#5c5a56] leading-relaxed">Your account is passwordless — you sign in with a one-time code emailed to <span className="text-[#131311]">{user.email}</span>. There's no password to set or change.</p>
           </div>
           <div className="group relative bg-white border border-black/8 p-5 overflow-hidden">
             <FrameCorners size={10} color={SAGE} show="always" />
-            <h3 className="font-semibold text-sm text-[#131311] mb-4">Notification preferences</h3>
-            <div className="space-y-3">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-sm text-[#131311]">Notification preferences</h3>
+              <span className="text-[10px] uppercase tracking-wide text-[#5c5a56] border border-black/10 px-1.5 py-0.5">Coming soon</span>
+            </div>
+            <div className="space-y-3 opacity-60 pointer-events-none">
               {[["Quote status updates",true],["Deposit reminders",true],["Delivery notifications",true],["Product and resource updates",false]].map(([l,d]) => (
-                <label key={l as string} className="flex items-center justify-between cursor-pointer">
+                <label key={l as string} className="flex items-center justify-between">
                   <span className="text-sm text-[#131311]">{l as string}</span>
-                  <input type="checkbox" defaultChecked={d as boolean} className="accent-[#5A7A6A] w-4 h-4" />
+                  <input type="checkbox" defaultChecked={d as boolean} disabled className="accent-[#5A7A6A] w-4 h-4" />
                 </label>
               ))}
             </div>
-            <Btn variant="outline" size="sm" className="mt-4">Save preferences</Btn>
+            <p className="text-xs text-[#5c5a56] mt-3">Preference controls aren't saved yet. For now, transactional emails (quote status, invoices, delivery) are always sent.</p>
           </div>
           <div className="group relative bg-white border border-red-200 p-5 overflow-hidden">
             <FrameCorners size={10} color="#dc2626" show="always" />
@@ -1164,76 +1172,6 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
             </div>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// CONTACT
-// ═══════════════════════════════════════════════════════════════════════════════
-function ContactPage({ setPage }: { setPage: (p: Page) => void }) {
-  const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  return (
-    <div className="relative min-h-screen bg-[#FAFAF9] pt-24 pb-24 overflow-hidden">
-      <GhostMark size={280} opacity={0.05} pos="right-0 top-0" />
-      <div className="max-w-5xl mx-auto px-6 relative">
-        <SLabel>Contact</SLabel>
-        <h1 className="text-4xl font-semibold text-[#131311] mb-10"
-          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Get in touch</h1>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="md:col-span-2 group relative bg-white border border-black/8 p-6 overflow-hidden">
-            <FrameCorners size={10} color={SAGE} show="always" />
-            <h3 className="font-semibold text-[#131311] mb-5">Send a message</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              {[["Name","Your name"],["Email","your@email.com"],["Phone (optional)","(03) 9000 0000"],["Company","Optional"]].map(([l,p]) => (
-                <div key={l}><FieldLabel>{l}</FieldLabel><Input placeholder={p} /></div>
-              ))}
-            </div>
-            <div className="mb-4">
-              <FieldLabel>Message</FieldLabel>
-              <textarea rows={4} placeholder="Describe your project or question…"
-                className="w-full border border-[#131311]/20 px-3 py-2.5 text-sm text-[#131311] placeholder-[#9a9894] focus:outline-none focus:border-[#5A7A6A] bg-white resize-none transition-colors" />
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Btn variant="sage" size="md">Send <Send className="w-4 h-4" /></Btn>
-              <Btn variant="outline" size="md" onClick={() => go("quote")}>Get a quote instead</Btn>
-            </div>
-          </div>
-          <div className="space-y-4">
-            {[
-              { title: "Contact us", sub: "Melbourne & Victoria · Supply only", content: (
-                <div className="space-y-3 text-sm text-[#5c5a56]">
-                  <a href="tel:0390000000" className="flex items-center gap-2.5 hover:text-[#131311] transition-colors"><Phone className="w-4 h-4 text-[#5A7A6A] flex-shrink-0" />(03) 9000 0000</a>
-                  <a href="mailto:quotes@amjtradedirect.com.au" className="flex items-center gap-2.5 hover:text-[#131311] transition-colors"><Mail className="w-4 h-4 text-[#5A7A6A] flex-shrink-0" />quotes@amjtradedirect.com.au</a>
-                  <div className="flex items-start gap-2.5"><MapPin className="w-4 h-4 text-[#5A7A6A] mt-0.5 flex-shrink-0" /><span>Melbourne &amp; Victoria<br /><span className="text-xs">No trade counter — delivery only</span></span></div>
-                </div>
-              )},
-              { title: "Office hours", sub: null, content: (
-                <div className="text-sm text-[#5c5a56] space-y-2">
-                  {[["Mon – Fri","8am – 5pm"],["Saturday","By appointment"],["Sunday","Closed"]].map(([d,h]) => (
-                    <div key={d} className="flex justify-between"><span>{d}</span><span className={d === "Mon – Fri" ? "font-semibold text-[#131311]" : ""}>{h}</span></div>
-                  ))}
-                </div>
-              )},
-              { title: "Supply only", sub: null, content: (
-                <p className="text-sm text-[#5c5a56] leading-relaxed">We do not provide installation. Please work with your builder or installer for installation of products supplied by AMJ Trade Direct.</p>
-              )},
-            ].map(w => (
-              <div key={w.title} className="border border-black/10 bg-white overflow-hidden">
-                <div className="bg-[#131311] px-5 py-3.5 flex items-center gap-2">
-                  <WindowMark size={12} color={SAGE} />
-                  <div>
-                    <h4 className="font-semibold text-white text-sm"
-                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{w.title}</h4>
-                    {w.sub && <p className="text-white/50 text-xs">{w.sub}</p>}
-                  </div>
-                </div>
-                <div className="p-5">{w.content}</div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -1418,12 +1356,18 @@ export default function App() {
   const initialRoute = routeFromPathname(window.location.pathname);
   const [page, setPage] = useState<Page>(initialRoute.page);
   const [user, setUser] = useState<AuthUser | null>(null);
+  // Which order/project the tracking page should open (set from the dashboard).
+  // Cleared on any ordinary navigation so unrelated entry points show the default.
+  const [focusRecord, setFocusRecord] = useState<TrackFocus>(null);
   const navigateTo = (p: Page, pathOverride?: string) => {
     const nextPath = pathOverride ?? pathForPage(p);
     if (window.location.pathname !== nextPath) window.history.pushState({ page: p }, "", nextPath);
+    setFocusRecord(null);
     setPage(p);
     window.scrollTo(0, 0);
   };
+  // Open a specific dashboard row on the tracking page (navigate, then focus it).
+  const openRecord = (rec: TrackFocus) => { navigateTo("order"); setFocusRecord(rec); };
 
   // ─── Catalogue navigation state ──────────────────────────────────────────────
   // Category/family persist so returning from a product detail restores the
@@ -1494,7 +1438,12 @@ export default function App() {
     getCurrentProject()
       .then(r => {
         if (cancelled) return;
-        if (r.project) setProjectId(r.project.id);
+        // Only a DRAFT project is the editable "current" quote. A submitted/closed
+        // project must not populate the builder (nor become the submit target) — the
+        // customer starts a fresh draft instead. The tracking page reads such
+        // projects through its own call.
+        if (!r.project || r.project.status !== "draft") return;
+        setProjectId(r.project.id);
         if (r.items.length) {
           skipNextSaveRef.current = true; // don't echo the just-loaded data straight back
           setQuoteItems(r.items.map((it, i) => ({
@@ -1521,8 +1470,23 @@ export default function App() {
   }, [quoteItems]);
 
   // Submit the current draft project for review (Draft -> Submitted).
-  const submitCurrentProject = async () => {
-    if (projectId) { try { await submitProject(projectId); } catch { /* surfaced by the page's own state */ } }
+  // Flush any pending autosave first so the server validates + submits the latest
+  // lines (and we hold a real project id), then only report success when the
+  // server actually accepted the submission — the caller gates its success UI on it.
+  const submitCurrentProject = async (contact: SubmitContact): Promise<SubmitResult> => {
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+    let id = projectId;
+    try {
+      const saved = await saveLines(quoteItems);
+      if (saved.project) { id = saved.project.id; setProjectId(saved.project.id); }
+    } catch { return { ok: false, error: "network" }; }
+    if (!id) return { ok: false, error: "no_project" };
+    try {
+      const r = await submitProject(id, contact);
+      return { ok: true, status: r.status };
+    } catch {
+      return { ok: false, error: "rejected" };
+    }
   };
 
   const uploadDemoScheduleFromHome = () => {
@@ -1539,14 +1503,15 @@ export default function App() {
       case "how-it-works":     return <HowItWorksPage />;
       case "resources":        return <ResourcesPage setPage={navigateTo} />;
       case "contact":          return <ContactPage setPage={navigateTo} />;
+      case "privacy":          return <PrivacyPolicyPage setPage={navigateTo} />;
       case "approved-quote":   return <ApprovedQuotePage />;
       case "trade":            return <TradePage setPage={navigateTo} />;
       case "admin":            return <AdminPage />;
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
-      case "dashboard":        return <DashboardPage setPage={navigateTo} user={user} setUser={setUser} authLoading={authLoading} />;
+      case "dashboard":        return <DashboardPage setPage={navigateTo} user={user} setUser={setUser} authLoading={authLoading} onOpenRecord={openRecord} />;
       case "track-order":      return <TrackOrderPage setPage={navigateTo} />;
-      case "order":            return <OrderTrackingPage setPage={navigateTo} user={user} />;
-      case "profile":          return <ProfilePage user={user} setPage={navigateTo} authLoading={authLoading} />;
+      case "order":            return <OrderTrackingPage setPage={navigateTo} user={user} focus={focusRecord} />;
+      case "profile":          return <ProfilePage user={user} setPage={navigateTo} setUser={setUser} authLoading={authLoading} />;
       case "account-settings": return <AccountSettingsPage user={user} setPage={navigateTo} authLoading={authLoading} />;
       default:                 return <HomePage setPage={navigateTo} onUploadSchedule={uploadDemoScheduleFromHome} />;
     }

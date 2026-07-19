@@ -25,6 +25,11 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
     .bind(projectId)
     .all<{ external_ref: string | null; room_label: string | null; product_slug: string; options_json: string; dims_json: string; qty: number; line_total: number | null }>();
 
+  // Never issue an empty or partially-priced quote: a NULL line_total means the
+  // line couldn't be priced, and issuing it would silently coerce it to $0 (and
+  // let a zero-value order be created downstream). Refuse until it's resolved.
+  if (lines.length === 0 || lines.some((l) => l.line_total == null)) return { ok: false, error: "not_ready" };
+
   const maxRow = await env.DB.prepare("SELECT COALESCE(MAX(revision_no), 0) AS n FROM quote_revision WHERE project_id = ?").bind(projectId).first<{ n: number }>();
   const revisionNo = (maxRow?.n ?? 0) + 1;
   const revisionId = uuid();

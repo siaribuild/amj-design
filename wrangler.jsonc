@@ -24,27 +24,31 @@
     {
       "binding": "DB",
       "database_name": "apertly-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "fb104839-cbb5-402c-a48f-be2696483bef",
       "migrations_dir": "migrations"
     }
   ],
   "kv_namespaces": [
-    { "binding": "KV", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
+    { "binding": "KV", "id": "f7433a11f02f46639053d919dd9b488a" }
   ],
   "r2_buckets": [
     { "binding": "FILES", "bucket_name": "apertly-files" }
   ],
 
   "vars": {
-    "APP_ENV": "development",
+    // Local/dev default only. `npm run cf:deploy` overrides this to "production"
+    // (`wrangler deploy --var APP_ENV:production`), which gates dev-only OTP codes
+    // and sets Secure cookies. A raw `wrangler deploy` would ship development — use
+    // cf:deploy, or pass --var APP_ENV:production yourself.
+    "APP_ENV": "production",
     // Email domains allowed to sign in to the ops console (comma-separated).
-    "STAFF_EMAIL_DOMAINS": "amjtradedirect.com.au"
+    "STAFF_EMAIL_DOMAINS": "openframe.com.au",
     // Email: set a verified From once Resend is configured (API key is a SECRET,
     // set via `wrangler secret put RESEND_API_KEY` — never commit it here):
-    // "EMAIL_FROM": "AMJ Trade Direct <quotes@amjtradedirect.com.au>"
+    "EMAIL_FROM": "OpenFrame <quotes@openframe.com.au>",
     // Sanity catalogue source (Worker). Client uses VITE_SANITY_* in a .env:
-    // "SANITY_PROJECT_ID": "<project-id>", "SANITY_DATASET": "production"
+    "SANITY_PROJECT_ID": "xjtrm1ex", "SANITY_DATASET": "production",
     // Prod staff auth via Cloudflare Access — set when the ops.* app is deployed:
-    // "ACCESS_TEAM_DOMAIN": "<team>", "ACCESS_AUD": "<application-aud>"
+    "ACCESS_TEAM_DOMAIN": "siari-build-team", "ACCESS_AUD": "89cb7205063857ae100e0d0a33d8f39f29e7f66c680b4370a177217c591edf77"
   }
 }

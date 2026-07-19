@@ -7,6 +7,7 @@
 //   # wrangler.jsonc vars: "EMAIL_FROM": "AMJ Trade Direct <quotes@yourdomain>"
 // Every send is also recorded as a `notification` row for auditability.
 import type { Env } from "../types";
+import { isDevEnv } from "./auth";
 import { uuid } from "./util";
 
 export interface EmailMessage {
@@ -20,8 +21,15 @@ const DEFAULT_FROM = "AMJ Trade Direct <onboarding@resend.dev>";
 
 export async function sendEmail(env: Env, msg: EmailMessage): Promise<"sent" | "logged" | "failed"> {
   if (!env.RESEND_API_KEY) {
-    console.log(`[email:log] to=${msg.to} subject="${msg.subject}"\n${msg.text}`);
-    return "logged";
+    // Dev: print the body so the OTP flow is testable without a provider.
+    // Anywhere else this is a real misconfiguration — never print the body (it
+    // contains the OTP) and never report it as delivered.
+    if (isDevEnv(env)) {
+      console.log(`[email:log] to=${msg.to} subject="${msg.subject}"\n${msg.text}`);
+      return "logged";
+    }
+    console.warn(`[email] RESEND_API_KEY unset — dropping "${msg.subject}" to ${msg.to}`);
+    return "failed";
   }
   try {
     const res = await fetch("https://api.resend.com/emails", {

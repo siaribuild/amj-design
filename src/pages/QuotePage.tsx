@@ -12,7 +12,7 @@ import {
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
 import { StickyQuotePanel } from "../components/StickyQuotePanel";
-import { uploadFile } from "../data/api";
+import { uploadFile, type SubmitContact, type SubmitResult } from "../data/api";
 import {
   type QuoteState, type QItem,
   priceConfigured, fmt, mm, productLabel, hasDuplicateCode, addDemoSchedule,
@@ -20,7 +20,7 @@ import {
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
 
-export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Page) => void; user: QuoteUser; quote: QuoteState; onSubmit?: () => Promise<void> | void }) {
+export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Page) => void; user: QuoteUser; quote: QuoteState; onSubmit?: (contact: SubmitContact) => Promise<SubmitResult> }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [view, setView] = useState<"build" | "review">("build");
   const [newKey, setNewKey] = useState(0);
@@ -29,6 +29,8 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   const [uploadNotice, setUploadNotice] = useState<null | { type: "success" | "error"; message: string }>(null);
 
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const [contactName, setContactName] = useState(user?.name || "");
   const [contactEmail, setContactEmail] = useState(user?.email || "");
   const [contactPhone, setContactPhone] = useState(user?.phone || "");
@@ -61,6 +63,29 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     const el = document.getElementById("new-item-composer") ?? document.getElementById("quote-start-actions");
     smoothScroll(el);
     requestAnimationFrame(() => el?.querySelector<HTMLElement>("input, select")?.focus({ preventScroll: true }));
+  };
+
+  // Submit only when the server confirms it. The success screen is shown ONLY on
+  // a confirmed submission — never optimistically — so a failed or lost request
+  // surfaces an error instead of a false confirmation.
+  const handleSubmit = async () => {
+    if (submitting) return;
+    if (attentionCount > 0) { setView("build"); reviewIssues(); return; }
+    if (!contactName.trim() || !contactEmail.trim()) { setSubmitError("Add your name and email to submit."); return; }
+    setSubmitting(true); setSubmitError("");
+    try {
+      const result = await onSubmit?.({ name: contactName.trim(), email: contactEmail.trim(), phone: contactPhone.trim(), suburb: suburb.trim() });
+      if (!result || result.ok) { setSubmitted(true); return; } // no handler = design preview
+      setSubmitError(
+        result.error === "rejected"
+          ? "We couldn't submit this quote — check that every line is priced and your item codes are unique."
+          : result.error === "no_project"
+            ? "Add at least one item before submitting."
+            : "Something went wrong submitting. Please try again.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // Real file upload to R2 (plans/schedules attached for the reviewer). Automated
@@ -96,12 +121,10 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         <div className="max-w-md w-full mx-auto px-6 text-center relative">
           <div className="w-14 h-14 border border-[#5A7A6A]/30 bg-[#5A7A6A]/8 flex items-center justify-center mx-auto mb-6"><WindowMark size={24} color={SAGE} /></div>
           <h2 className="text-2xl font-semibold text-[#131311] mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Quote submitted</h2>
-          <p className="text-[#5c5a56] text-sm mb-1">Reference</p>
-          <p className="font-semibold text-lg mb-6 text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>AMJ-58901</p>
-          <p className="text-sm text-[#5c5a56] leading-relaxed mb-8">We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote. Expect a response within 1–2 business days.</p>
+          <p className="text-sm text-[#5c5a56] leading-relaxed mb-8 mt-2">We've received your project and emailed a confirmation to <span className="text-[#131311]">{contactEmail || "your email"}</span>. We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote with its reference. Expect a response within 1–2 business days.</p>
           <p className="text-xs text-[#5c5a56] mb-6">No payment at this stage. Deposit only after you approve the reviewed quote.</p>
           <div className="flex gap-3 justify-center">
-            <Btn variant="sage" size="md" onClick={() => go(user ? "order" : "track-order")}>Track this order</Btn>
+            <Btn variant="sage" size="md" onClick={() => go(user ? "order" : "track-order")}>{user ? "View status" : "Track an order"}</Btn>
             <Btn variant="ghost" size="md" onClick={() => go("home")}>Back to home</Btn>
           </div>
         </div>
@@ -141,7 +164,8 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
             <div><FieldLabel>Delivery suburb / postcode</FieldLabel><Input value={suburb} onChange={e => setSuburb(e.target.value)} placeholder="e.g. Preston VIC 3072" /></div>
           </div>
           <div className="bg-[#F2F0EC] border border-black/8 p-4 mb-6 text-xs text-[#5c5a56]"><AlertCircle className="w-3 h-3 inline mr-1" />Estimated totals are confirmed on technical review. No deposit until you approve the reviewed quote. Supply only — installation not included.</div>
-          <div className="flex justify-end"><Btn variant="sage" size="lg" disabled={!contactName || !contactEmail} onClick={async () => { await onSubmit?.(); setSubmitted(true); }}>Submit for technical review <Send className="w-4 h-4" /></Btn></div>
+          {submitError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5 mb-3 justify-end"><AlertCircle className="w-4 h-4" />{submitError}</p>}
+          <div className="flex justify-end"><Btn variant="sage" size="lg" disabled={!contactName || !contactEmail || submitting} onClick={handleSubmit}>{submitting ? "Submitting…" : <>Submit for technical review <Send className="w-4 h-4" /></>}</Btn></div>
         </div>
       </div>
     );

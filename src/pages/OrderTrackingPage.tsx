@@ -17,6 +17,9 @@ import {
 } from "../data/api";
 
 type TrackUser = { name: string; email: string } | null;
+// Which record the customer chose to open (from the dashboard). When absent the
+// page falls back to the most relevant record (an active order, else the draft).
+export type TrackFocus = { orderId?: string; projectId?: string; status?: string } | null;
 
 // The 12 order stages, in order, with customer-facing labels.
 const STAGES: [string, string][] = [
@@ -38,7 +41,7 @@ const snapshotName = (json: string) => {
   try { return JSON.parse(json).productName ?? "Product"; } catch { return "Product"; }
 };
 
-export function OrderTrackingPage({ setPage, user }: { setPage: (p: Page) => void; user: TrackUser }) {
+export function OrderTrackingPage({ setPage, user, focus }: { setPage: (p: Page) => void; user: TrackUser; focus?: TrackFocus }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -48,29 +51,41 @@ export function OrderTrackingPage({ setPage, user }: { setPage: (p: Page) => voi
   const [projectId, setProjectId] = useState<string | null>(null);
   const [clarifications, setClarifications] = useState<ApiClarification[]>([]);
 
+  // Load a specific project's quote state (issued revision to accept, or the
+  // clarification thread). Shared by the focused-project path and the fallback.
+  const loadProject = async (id: string, status: string) => {
+    setProjectStatus(status); setProjectId(id);
+    if (status === "needs_information") {
+      setClarifications((await getClarifications(id)).clarifications);
+    } else {
+      const { revisions } = await getRevisions(id);
+      setPending(revisions.find(r => r.status === "issued") ?? null);
+    }
+  };
+
   const load = async () => {
     setLoading(true);
     try {
-      const { orders } = await getOrders();
-      if (orders.length) { setOrder(orders[0]); setPending(null); }
-      else {
-        const cp = await getCurrentProject();
-        setProjectStatus(cp.project?.status ?? "");
-        setProjectId(cp.project?.id ?? null);
-        if (cp.project) {
-          if (cp.project.status === "needs_information") {
-            const cl = await getClarifications(cp.project.id);
-            setClarifications(cl.clarifications);
-          } else {
-            const { revisions } = await getRevisions(cp.project.id);
-            setPending(revisions.find(r => r.status === "issued") ?? null);
-          }
+      // Open exactly the record the customer selected on the dashboard.
+      if (focus?.orderId) {
+        const { orders } = await getOrders();
+        setOrder(orders.find(o => o.id === focus.orderId) ?? null);
+        setPending(null);
+      } else if (focus?.projectId) {
+        await loadProject(focus.projectId, focus.status ?? "");
+      } else {
+        // No selection: prefer an active order, else the current draft/quote.
+        const { orders } = await getOrders();
+        if (orders.length) { setOrder(orders[0]); setPending(null); }
+        else {
+          const cp = await getCurrentProject();
+          if (cp.project) await loadProject(cp.project.id, cp.project.status);
         }
       }
     } catch { /* not signed in / no data */ }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [focus?.orderId, focus?.projectId]);
 
   const reply = async (message: string) => {
     if (!projectId || busy) return;

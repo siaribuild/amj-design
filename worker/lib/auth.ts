@@ -10,6 +10,10 @@ export const SESSION_COOKIE = "amj_session";
 const OTP_TTL = 60 * 10; // 10 minutes
 const SESSION_TTL = 60 * 60 * 24 * 30; // 30 days
 const MAX_OTP_ATTEMPTS = 5;
+// Abuse controls for email-code issuance (shared by customer + ops challenge).
+const RESEND_COOLDOWN_MS = 60 * 1000;   // don't re-issue while a fresh code is outstanding
+const CHALLENGE_WINDOW = 60 * 15;       // rolling window for the per-address hard cap (seconds)
+const MAX_CHALLENGES_PER_WINDOW = 5;    // max codes emailed to one address per window
 
 export interface UserRow {
   id: string;
@@ -33,6 +37,11 @@ export const userDto = (u: UserRow) => ({
 export const normEmail = (e: unknown) => String(e ?? "").trim().toLowerCase();
 export const isEmail = (e: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
 
+// Dev-only affordances (surfacing OTP `devCode`, verbose email logging) are gated
+// on this. Fail closed: ONLY an explicit "development" env qualifies, so a missing
+// or unexpected APP_ENV never leaks codes on a deployed Worker.
+export const isDevEnv = (env: Env) => env.APP_ENV === "development";
+
 export async function sha256hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -42,11 +51,29 @@ const codeHash = (email: string, code: string) => sha256hex(`${email}:${code}`);
 export const sixDigit = () =>
   String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, "0");
 
-interface OtpRecord { hash: string; attempts: number }
+interface OtpRecord { hash: string; attempts: number; at: number }
 
 export async function storeChallenge(env: Env, email: string, code: string) {
-  const rec: OtpRecord = { hash: await codeHash(email, code), attempts: 0 };
+  const rec: OtpRecord = { hash: await codeHash(email, code), attempts: 0, at: Date.now() };
   await env.KV.put(`otp:${email}`, JSON.stringify(rec), { expirationTtl: OTP_TTL });
+}
+
+// Gate email-code issuance to stop enumeration/spam and prevent overwriting a
+// still-valid outstanding code. Returns false (→ caller responds neutrally and
+// sends nothing) when the address is in cooldown or over its per-window cap.
+// Applied identically to the customer and ops challenge routes.
+export async function challengeAllowed(env: Env, email: string): Promise<boolean> {
+  const raw = await env.KV.get(`otp:${email}`);
+  if (raw) {
+    // A code is still live: only allow a resend after the cooldown, and never
+    // silently overwrite one inside it (that would invalidate the real user's code).
+    try { const rec = JSON.parse(raw) as OtpRecord; if (rec.at && Date.now() - rec.at < RESEND_COOLDOWN_MS) return false; } catch { /* reissue on corrupt record */ }
+  }
+  const countKey = `otpc:${email}`;
+  const count = parseInt((await env.KV.get(countKey)) ?? "0", 10) || 0;
+  if (count >= MAX_CHALLENGES_PER_WINDOW) return false;
+  await env.KV.put(countKey, String(count + 1), { expirationTtl: CHALLENGE_WINDOW });
+  return true;
 }
 
 // Returns true on a correct code (and consumes it). Counts attempts; burns the

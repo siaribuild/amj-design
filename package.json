@@ -11,7 +11,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply apertly-db --remote",
     "db:reset": "node scripts/reset-db.mjs",
     "sanity:ndjson": "node scripts/sanity-export-ndjson.mjs",
-    "cf:deploy": "vite build && wrangler deploy",
+    "cf:deploy": "vite build && wrangler deploy --var APP_ENV:production",
     "test": "npm run test:unit && npm run test:catalogue && npm run test:build && npm run test:api",
     "test:all": "npm run test && npm run test:web",
     "test:unit": "node --test scripts/tests/unit.test.mjs",

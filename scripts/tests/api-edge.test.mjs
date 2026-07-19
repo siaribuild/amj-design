@@ -175,6 +175,78 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(staff, "/api/ops/orders/o_1/advance", { method: "POST", json: { action: "dispatch" } }, 409);
       await requestJson(staff, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 409);
     });
+
+    await t.test("customer submit: server validates state/lines/contact and persists the contact", async () => {
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "submitter@example.com");
+      // Empty draft cannot be submitted, even with a contact.
+      const empty = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [] } });
+      const pid = empty.body.project.id;
+      await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "Sam", email: "sam@example.com" } } }, 400);
+
+      // A fully-priced line makes the quote submittable.
+      const line = { code: "W01", location: "Living", productSlug: "amj80-series-sliding-window", measuredBy: "frame", width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" } };
+      const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
+      assert.equal(saved.body.items[0].status, "Ready");
+
+      // Contact is required by the server, not just the SPA.
+      await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "", email: "" } } }, 400);
+      const ok = await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST",
+        json: { contact: { name: "Sam Builder", email: "sam@example.com", phone: "0400 000 000", suburb: "Preston VIC 3072" } } });
+      assert.equal(ok.body.status, "submitted");
+      // A submitted project is no longer a draft — resubmission is rejected.
+      await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "Sam", email: "sam@example.com" } } }, 409);
+      // The contact was persisted and is visible to staff.
+      const opsView = await requestJson(staff, `/api/ops/projects/${pid}`);
+      assert.equal(opsView.body.project.contactEmail, "sam@example.com");
+      assert.equal(opsView.body.project.deliverySuburb, "Preston VIC 3072");
+    });
+
+    await t.test("RBAC: role-less internal staff is blocked from payments + customer PII", async () => {
+      const rookie = new Session(baseUrl);
+      await login(rookie, "/api/ops/auth", "rookie@amjtradedirect.com.au"); // internal, role = null
+      const who = await requestJson(rookie, "/api/ops/me");
+      // No assigned role → no money movement, no order advance, no customer PII / files.
+      await requestJson(rookie, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 403);
+      await requestJson(rookie, "/api/ops/orders/o_1/advance", { method: "POST", json: { action: "share-qa" } }, 403);
+      await requestJson(rookie, "/api/ops/customers", {}, 403);
+      await requestJson(rookie, "/api/ops/files", {}, 403);
+      // Admin assigns estimator → PII opens, but payments stay manager/admin-only.
+      await requestJson(staff, `/api/ops/staff/${who.body.user.id}`, { method: "PATCH", json: { role: "estimator" } });
+      await requestJson(rookie, "/api/ops/customers");
+      await requestJson(rookie, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 403);
+      // Promote to manager → the payment now reaches domain logic (o_1 stage conflict).
+      await requestJson(staff, `/api/ops/staff/${who.body.user.id}`, { method: "PATCH", json: { role: "manager" } });
+      await requestJson(rookie, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 409);
+    });
+
+    await t.test("contact form: validates, honeypots, throttles, records, and lists/deletes via ops", async () => {
+      const visitor = new Session(baseUrl);
+      // Missing message → rejected before anything is recorded.
+      await requestJson(visitor, "/api/contact", { method: "POST", json: { name: "A", email: "a@b.com" } }, 400);
+      // Honeypot filled → neutral success, nothing recorded.
+      const trap = await requestJson(visitor, "/api/contact", { method: "POST", json: { name: "Bot", email: "bot@spam.test", message: "spam", website: "http://spam" } });
+      assert.equal(trap.body.ok, true);
+      // A genuine enquiry is accepted...
+      const ok = await requestJson(visitor, "/api/contact", { method: "POST",
+        json: { name: "Jane Doe", email: "jane@example.com", phone: "0400 000 000", company: "Acme", message: "Do you deliver to Geelong?" } });
+      assert.equal(ok.body.ok, true);
+      // ...and an immediate repeat from the same source is throttled.
+      await requestJson(visitor, "/api/contact", { method: "POST", json: { name: "Jane", email: "jane@example.com", message: "again" } }, 429);
+
+      // Staff see the enquiry; the honeypot spam never landed.
+      const list = await requestJson(staff, "/api/ops/contact");
+      const mine = list.body.messages.find((m) => m.email === "jane@example.com");
+      assert.ok(mine, "enquiry was recorded");
+      assert.equal(mine.message, "Do you deliver to Geelong?");
+      assert.equal(list.body.messages.some((m) => m.email === "bot@spam.test"), false, "honeypot submission dropped");
+
+      // Delete it (admin has an assigned role).
+      await requestJson(staff, `/api/ops/contact/${mine.id}`, { method: "DELETE" });
+      const after = await requestJson(staff, "/api/ops/contact");
+      assert.equal(after.body.messages.some((m) => m.id === mine.id), false, "enquiry deleted");
+    });
   } finally {
     await stop(server);
     await removeRunDir(runDir);

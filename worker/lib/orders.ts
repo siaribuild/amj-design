@@ -108,11 +108,19 @@ export async function orderDto(env: Env, o: OrderRow) {
   };
 }
 
-// Create an order from an accepted revision: snapshot lines, split payments 50/50,
-// invoice the deposit now (balance invoiced later, at the QA stage).
+// Accept an issued revision AND create its order as one atomic unit. The revision
+// claim (issued -> accepted) is the FIRST statement in the same D1 batch that
+// creates the order, so the two can never diverge:
+//   * D1 runs a batch as a single transaction — either all writes land or none do.
+//   * The claim's `WHERE snapshot_status = 'issued'` means only the first caller
+//     flips it; a concurrent duplicate matches 0 rows, its order INSERT collides
+//     on the UNIQUE(accepted_revision_id) index, and the WHOLE batch rolls back
+//     (including any no-op) → the loser gets a clean conflict, the winner's order
+//     stands, and a genuine failure leaves the revision re-acceptable (no strand).
+// Returns the new order id, or null when the revision could not be claimed.
 export async function createOrderFromRevision(
   env: Env, revisionId: string, projectId: string,
-): Promise<string> {
+): Promise<string | null> {
   const { results: revLines } = await env.DB
     .prepare("SELECT external_ref, product_snapshot_json, qty, line_total FROM revision_line WHERE revision_id = ?")
     .bind(revisionId).all<{ external_ref: string | null; product_snapshot_json: string; qty: number; line_total: number }>();
@@ -122,10 +130,18 @@ export async function createOrderFromRevision(
   const balance = Math.round((total - deposit) * 100) / 100;
 
   const orderId = uuid();
-  const countRow = await env.DB.prepare('SELECT count(*) AS n FROM "order"').first<{ n: number }>();
-  const orderNo = `AMJ-${58000 + ((countRow?.n ?? 0) + 1)}`;
+  // Derive the next number from the max existing suffix (gap-tolerant); a rare
+  // collision just fails this batch, and the caller's retry re-derives it.
+  const maxRow = await env.DB
+    .prepare(`SELECT COALESCE(MAX(CAST(substr(order_no, 5) AS INTEGER)), 58000) AS n FROM "order" WHERE order_no LIKE 'AMJ-%'`)
+    .first<{ n: number }>();
+  const orderNo = `AMJ-${(maxRow?.n ?? 58000) + 1}`;
 
   const stmts = [
+    // Claim the revision inside the transaction — gates the whole order creation.
+    env.DB.prepare(
+      "UPDATE quote_revision SET snapshot_status = 'accepted', accepted_at = datetime('now') WHERE id = ? AND snapshot_status = 'issued'",
+    ).bind(revisionId),
     env.DB.prepare(
       `INSERT INTO "order" (id, project_id, accepted_revision_id, order_no, total, stage)
        VALUES (?, ?, ?, ?, ?, 'deposit_invoiced')`,
@@ -142,11 +158,19 @@ export async function createOrderFromRevision(
         "INSERT INTO order_line (id, order_id, external_ref, product_snapshot_json, qty, line_total) VALUES (?, ?, ?, ?, ?, ?)",
       ).bind(uuid(), orderId, l.external_ref, l.product_snapshot_json, l.qty, l.line_total),
     ),
-    // (snapshot_status was already atomically flipped to 'accepted' by the caller)
     env.DB.prepare("UPDATE project SET status_customer = 'closed', updated_at = datetime('now') WHERE id = ?").bind(projectId),
   ];
-  await env.DB.batch(stmts);
-  return orderId;
+  try {
+    // A committed batch means the order rows landed. Either the claim flipped the
+    // revision (normal path) or it was already 'accepted' but orderless and we've
+    // now healed it — both leave exactly one order for this revision.
+    await env.DB.batch(stmts);
+    return orderId;
+  } catch {
+    // Rolled back — lost the race (duplicate order / number collision). The
+    // revision is untouched and stays re-acceptable, so the caller returns 409.
+    return null;
+  }
 }
 
 // Apply a named fulfilment transition. Returns an error code or null on success.

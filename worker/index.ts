@@ -14,6 +14,7 @@ import { quote } from "./routes/quote";
 import { orders } from "./routes/orders";
 import { guest } from "./routes/guest";
 import { files } from "./routes/files";
+import { contact } from "./routes/contact";
 import { ops } from "./routes/ops";
 import { ensureCatalogue } from "./lib/catalogue";
 
@@ -48,6 +49,9 @@ api.route("/api/guest", guest);
 // File uploads/downloads (R2): /api/files/*, /api/projects/:id/files.
 api.route("/api", files);
 
+// Public "Contact us" form intake.
+api.route("/api", contact);
+
 // Internal ops console API (staff-gated).
 api.route("/api/ops", ops);
 
@@ -58,20 +62,25 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    // Real static assets (hashed js/css/img, etc.) are served directly, and never
+    // wait on the catalogue. Anything else is a client-side route → serve the
+    // host's SPA shell. The ops console is a separate bundle on ops.* (guarded by
+    // Cloudflare Access in prod); we pick the shell up front because the asset
+    // system maps "/" to index.html.
+    const isAsset = /\.[a-zA-Z0-9]+$/.test(url.pathname) && !url.pathname.endsWith(".html");
+    if (isAsset) return env.ASSETS.fetch(request);
+
+    // The liveness probe must stay cheap — it also never waits on Sanity.
+    if (url.pathname === "/api/health") return api.fetch(request, env, ctx);
+
     // Load the catalogue from Sanity once per isolate (no-op unless configured),
-    // so pricing + snapshots use live content. Cheap after the first request.
+    // so pricing + snapshots use live content. Cheap after the first request, and
+    // time-bounded so a slow CMS can't stall the response (see ensureCatalogue).
     await ensureCatalogue(env);
 
     if (url.pathname.startsWith("/api/")) {
       return api.fetch(request, env, ctx);
     }
-
-    // Real static assets (hashed js/css/img, etc.) are served directly. Anything
-    // else is a client-side route → serve the host's SPA shell. The ops console
-    // is a separate bundle on ops.* (guarded by Cloudflare Access in prod); we
-    // pick the shell up front because the asset system maps "/" to index.html.
-    const isAsset = /\.[a-zA-Z0-9]+$/.test(url.pathname) && !url.pathname.endsWith(".html");
-    if (isAsset) return env.ASSETS.fetch(request);
 
     const host = request.headers.get("host") ?? url.hostname;
     const shell = host.startsWith("ops.") ? "/ops.html" : "/index.html";

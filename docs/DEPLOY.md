@@ -39,10 +39,13 @@ npx wrangler d1 execute apertly-db --remote --file scripts/db/seed.sql
 npx wrangler secret put RESEND_API_KEY
 # then in wrangler.jsonc vars, set the verified From address:
 #   "EMAIL_FROM": "AMJ Trade Direct <quotes@amjtradedirect.com.au>"
-
-# Flip the runtime env to production (gates dev-only OTP codes, sets Secure cookies):
-#   wrangler.jsonc vars: "APP_ENV": "production"
 ```
+Runtime env: `npm run cf:deploy` deploys with `APP_ENV=production` automatically
+(`wrangler deploy --var APP_ENV:production`), which gates the dev-only OTP `devCode`
+and sets `Secure` cookies. No manual flip is required — but a bare `wrangler deploy`
+would ship the development default, so always deploy via `cf:deploy` (or pass the
+`--var APP_ENV:production` yourself). Without a `RESEND_API_KEY`, sign-in emails are
+dropped (never logged) outside development, so configure Resend before going live.
 
 ## 4. Custom domains
 Point the app + ops console at your domain (Cloudflare dashboard → Workers → the
@@ -80,8 +83,21 @@ curl https://www.amjtradedirect.com/api/health
 # on the console. Customer OTP emails should arrive via Resend.
 ```
 
+## Staff roles (RBAC)
+Internal users are created with **no role** on first sign-in. A role
+(`estimator` / `technical_reviewer` / `manager` / `admin`) is required to record
+payments (manager/admin only), advance orders, or read customer PII/files; admins
+assign roles from the ops **Admin → Staff** screen. On a clean prod DB (no seed),
+bootstrap by seeding one admin, e.g.:
+```bash
+npx wrangler d1 execute apertly-db --remote --command \
+  "UPDATE user SET type='internal', role='admin' WHERE email='you@amjtradedirect.com.au'"
+```
+(The user row appears after that person signs in once via Access.)
+
 ## Notes
-- `APP_ENV=production` disables the dev OTP `devCode` in responses and adds
-  `Secure` to cookies — set it before going live.
+- `npm run cf:deploy` sets `APP_ENV=production`, which disables the dev OTP
+  `devCode` in responses and adds `Secure` to cookies. A raw `wrangler deploy`
+  ships the development default — prefer `cf:deploy`.
 - Rollback: `wrangler deployments list` / `wrangler rollback`.
 - Migrations are append-only; never edit an applied migration — add a new one.

@@ -9,6 +9,7 @@ import { hydrateCatalogue } from "../../src/data/catalogue";
 import { CATALOGUE_QUERY, toCatalogueData, type RawCataloguePayload } from "../../src/data/catalogueQuery";
 
 const CATALOGUE_TTL_MS = 5 * 60 * 1000; // refresh published content every 5 min
+const CATALOGUE_FETCH_TIMEOUT_MS = 3000; // never let a slow CMS stall a request
 let cache: { at: number; promise: Promise<void> } | null = null;
 
 // Loads + hydrates at most once per TTL. A successful load is reused until it
@@ -32,7 +33,9 @@ export function ensureCatalogue(env: Env): Promise<void> {
 async function load(env: Env): Promise<void> {
   const dataset = env.SANITY_DATASET || "production";
   const url = `https://${env.SANITY_PROJECT_ID}.apicdn.sanity.io/v2024-01-01/data/query/${dataset}?query=${encodeURIComponent(CATALOGUE_QUERY)}`;
-  const res = await fetch(url);
+  // Bound the request so a slow/hung CMS can't pin the isolate; the built-in
+  // catalogue keeps serving and the next request retries (failed load isn't cached).
+  const res = await fetch(url, { signal: AbortSignal.timeout(CATALOGUE_FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`sanity ${res.status}`);
   const body = await res.json<{ result: RawCataloguePayload }>();
   if (body?.result) hydrateCatalogue(toCatalogueData(body.result));

@@ -1,5 +1,6 @@
 packages:
   - '.'
+  - 'sanity'
 supportedArchitectures:
   os:
     - linux
