@@ -2,7 +2,7 @@
   "name": "apertly-sanity-studio",
   "version": "0.0.1",
   "private": true,
-  "description": "Sanity Studio for the AMJ catalogue. Standalone workspace so `sanity` and its toolchain are declared and installable independently of the web app.",
+  "description": "Sanity Studio for the OpenFrame catalogue. Standalone workspace so `sanity` and its toolchain are declared and installable independently of the web app.",
   "type": "module",
   "scripts": {
     "dev": "sanity dev",

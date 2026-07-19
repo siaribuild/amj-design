@@ -1,4 +1,4 @@
-// Sanity content model for the AMJ catalogue. Mirrors src/data/catalogue.ts so
+// Sanity content model for the OpenFrame catalogue. Mirrors src/data/catalogue.ts so
 // migrating is a data import + swapping the selectors to GROQ (see docs).
 import { defineType, defineField, defineArrayMember } from "sanity";
 

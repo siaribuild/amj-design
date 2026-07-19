@@ -1,10 +1,10 @@
 
-  # AMJ Trade Direct Website
+  # OpenFrame Website
 
   Internal project and infrastructure codename: **apertly**. Customer-facing
-  branding remains **AMJ Trade Direct**.
+  branding remains **OpenFrame**.
 
-  This is a code bundle for AMJ Trade Direct Website. The original project is available at https://www.figma.com/design/faLQcDOCh1z4pLTIqOfuWb/AMJ-Trade-Direct-Website.
+  This is a code bundle for OpenFrame Website. The original project is available at https://www.figma.com/design/faLQcDOCh1z4pLTIqOfuWb/OF-Trade-Direct-Website.
 
   ## Running the code
 

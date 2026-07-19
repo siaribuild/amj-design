@@ -55,7 +55,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
             Privacy Policy
           </h1>
           <p className="text-white/70 max-w-xl text-[15px] leading-relaxed">
-            How AMJ Trade Direct collects, uses, stores and protects your information when
+            How OpenFrame collects, uses, stores and protects your information when
             you use this website to build quotes, place and track orders, or contact us.
           </p>
           <p className="text-white/45 text-xs mt-4" style={{ fontFamily: "'DM Mono', monospace" }}>Last updated {UPDATED}</p>
@@ -83,7 +83,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
           <div className="max-w-2xl space-y-10">
             <Section id="who-we-are" title="1. Who we are">
               <p>
-                AMJ Trade Direct ("we", "us", "our") supplies aluminium windows and doors to trade
+                OpenFrame ("we", "us", "our") supplies aluminium windows and doors to trade
                 and residential customers across Melbourne and Victoria, on a supply-only basis. This
                 policy explains how we handle personal information collected through this website and
                 is intended to be consistent with the Australian Privacy Principles (APPs) under the
@@ -203,9 +203,9 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
               <div className="bg-white border border-black/10 p-5 mt-2">
                 <p className="flex items-center gap-2.5 text-sm text-[#131311]">
                   <Mail className="w-4 h-4" style={{ color: SAGE }} />
-                  <a href="mailto:quotes@amjtradedirect.com.au" className="hover:underline">quotes@amjtradedirect.com.au</a>
+                  <a href="mailto:quotes@openframe.com.au" className="hover:underline">quotes@openframe.com.au</a>
                 </p>
-                <p className="text-sm text-[#5c5a56] mt-1.5">AMJ Trade Direct · Melbourne, Victoria · Supply only</p>
+                <p className="text-sm text-[#5c5a56] mt-1.5">OpenFrame · Melbourne, Victoria · Supply only</p>
                 <div className="mt-4">
                   <Btn variant="outline" size="sm" onClick={() => go("contact")}>Go to contact page <ArrowRight className="w-4 h-4" /></Btn>
                 </div>
@@ -213,7 +213,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
             </Section>
 
             <p className="text-xs text-[#8b8880] border-t border-black/8 pt-6 italic">
-              This policy is a draft prepared for the AMJ Trade Direct prototype and should be reviewed by a
+              This policy is a draft prepared for the OpenFrame prototype and should be reviewed by a
               qualified legal professional before the site goes live.
             </p>
           </div>

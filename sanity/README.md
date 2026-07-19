@@ -1,4 +1,4 @@
-# AMJ Catalogue — Sanity
+# OpenFrame Catalogue — Sanity
 
 Internal Studio/infrastructure codename: **apertly-catalogue**.
 

@@ -7,12 +7,12 @@ model + Workers API — mostly a new auth layer + frontend + a few new tables/en
 
 ## Locked decisions
 - **Hosting: separate `ops.*` subdomain.** A distinct frontend bundle served on
-  `ops.amjtradedirect.com`; the Worker routes by `Host`. Clean security boundary
+  `ops.openframe.com.au`; the Worker routes by `Host`. Clean security boundary
   (separate cookies), and Cloudflare Access guards the whole subdomain. Local dev uses
   `ops.localhost:8787` (browsers resolve `*.localhost` → 127.0.0.1) vs `localhost:8787`
   for the customer site.
 - **Staff dev auth: internal email-OTP, domain-allowlisted.** Reuse the OTP flow but
-  restrict to an allowlist (e.g. `@amjtradedirect.com.au`) and only issue sessions for
+  restrict to an allowlist (e.g. `@openframe.com.au`) and only issue sessions for
   `type='internal'` users. In prod, verify the Cloudflare Access JWT
   (`Cf-Access-Jwt-Assertion`) → map email → internal user. Real identity + audit
   attribution locally without an Access tunnel.

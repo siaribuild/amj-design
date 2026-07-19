@@ -1,19 +1,19 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Default test fixtures (loaded by `npm run db:reset`).
 --
--- Sign in as demo@amjtradedirect.com.au (passwordless — request an OTP; the dev
+-- Sign in as demo@openframe.com.au (passwordless — request an OTP; the dev
 -- code is printed by the auth challenge). You then get:
 --   • MyProject  → "Coburg new build" draft with 2 lines (quote-building tests)
---   • My orders  → order AMJ-58001 mid-journey (deposit paid, in manufacturing)
+--   • My orders  → order OF-58001 mid-journey (deposit paid, in manufacturing)
 --
--- staff@amjtradedirect.com.au is an internal user (for when ops auth exists;
+-- staff@openframe.com.au is an internal user (for when ops auth exists;
 -- staff seams are open in non-prod today regardless).
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- Users (u_staff is an admin — can clear any approval step)
 INSERT INTO user (id, email, name, phone, type, role, last_verified_at) VALUES
-  ('u_demo',  'demo@amjtradedirect.com.au',  'Demo Builder', '(03) 9000 1234', 'customer', NULL,    datetime('now')),
-  ('u_staff', 'staff@amjtradedirect.com.au', 'AMJ Staff',    NULL,             'internal', 'admin', datetime('now'));
+  ('u_demo',  'demo@openframe.com.au',  'Demo Builder', '(03) 9000 1234', 'customer', NULL,    datetime('now')),
+  ('u_staff', 'staff@openframe.com.au', 'OpenFrame Staff',    NULL,             'internal', 'admin', datetime('now'));
 
 -- Approval rules (demo thresholds; commercial fires on the seeded Fitzroy quote)
 INSERT INTO approval_rule (id, name, trigger_family, condition_json, approver_role) VALUES
@@ -50,7 +50,7 @@ INSERT INTO revision_line (id, revision_id, external_ref, room_label, product_sn
   ('rl_2', 'rev_1', 'W01', 'Study',  '{"productSlug":"amj80-series-awning-window","productName":"AMJ80 Series Awning Window","options":{},"dims":{"width":"1200","height":"900"}}', '{"width":"1200","height":"900"}', '{}', 2, 2000);
 
 INSERT INTO "order" (id, project_id, accepted_revision_id, order_no, total, stage, drawings_signed_off_at, created_at) VALUES
-  ('o_1', 'p_order', 'rev_1', 'AMJ-58001', 5400, 'manufacturing', datetime('now','-5 days'), datetime('now','-7 days'));
+  ('o_1', 'p_order', 'rev_1', 'OF-58001', 5400, 'manufacturing', datetime('now','-5 days'), datetime('now','-7 days'));
 
 INSERT INTO order_line (id, order_id, external_ref, product_snapshot_json, qty, line_total) VALUES
   ('ol_1', 'o_1', 'D01', '{"productSlug":"amj80-series-sliding-door","productName":"AMJ80 Series Sliding Door"}', 1, 3400),

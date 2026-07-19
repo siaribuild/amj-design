@@ -1,4 +1,4 @@
-// Typed client for the AMJ backend Worker (/api/*). Same-origin: in prod the
+// Typed client for the OpenFrame backend Worker (/api/*). Same-origin: in prod the
 // Worker serves both the SPA and the API; in dev Vite proxies /api to :8787.
 import type { QItem } from "./configurator";
 

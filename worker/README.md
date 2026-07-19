@@ -1,4 +1,4 @@
-# AMJ Worker (API tier)
+# OpenFrame Worker (API tier)
 
 Internal Worker/infrastructure codename: **apertly**.
 

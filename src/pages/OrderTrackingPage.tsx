@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // ORDER TRACKING — the customer view of the quote-to-delivery journey.
 //
-// Reflects AMJ's real process: accept the reviewed quote (deposit invoice issued),
+// Reflects OpenFrame's real process: accept the reviewed quote (deposit invoice issued),
 // pay the 50% deposit, approve shop drawings, manufacturing, QA photos, pay the
 // 50% balance, confirm OK to dispatch, delivery, after-sales. Payment is manual
 // (bank transfer) for MVP — no card entry here.
@@ -151,7 +151,7 @@ function ClarificationView({ items, busy, onReply }: { items: ApiClarification[]
       <div className="bg-white border border-black/8 divide-y divide-black/6 mb-4">
         {items.map((c, i) => (
           <div key={i} className={`px-5 py-3 ${c.author_type === "internal" ? "" : "bg-[#5A7A6A]/5"}`}>
-            <p className="text-[11px] uppercase tracking-wide text-[#8b8880] mb-0.5">{c.author_type === "internal" ? "AMJ" : "You"}</p>
+            <p className="text-[11px] uppercase tracking-wide text-[#8b8880] mb-0.5">{c.author_type === "internal" ? "OpenFrame" : "You"}</p>
             <p className="text-sm text-[#131311]">{c.body}</p>
           </div>
         ))}

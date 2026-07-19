@@ -52,7 +52,7 @@ const INFO: { title: string; sub: string | null; rows: React.ReactNode }[] = [
     rows: (
       <div className="space-y-3 text-sm text-[#5c5a56]">
         <a href="tel:0390000000" className="flex items-center gap-2.5 hover:text-[#131311] transition-colors"><Phone className="w-4 h-4 text-[#5A7A6A] flex-shrink-0" />(03) 9000 0000</a>
-        <a href="mailto:quotes@amjtradedirect.com.au" className="flex items-center gap-2.5 hover:text-[#131311] transition-colors"><Mail className="w-4 h-4 text-[#5A7A6A] flex-shrink-0" />quotes@amjtradedirect.com.au</a>
+        <a href="mailto:quotes@openframe.com.au" className="flex items-center gap-2.5 hover:text-[#131311] transition-colors"><Mail className="w-4 h-4 text-[#5A7A6A] flex-shrink-0" />quotes@openframe.com.au</a>
         <div className="flex items-start gap-2.5"><MapPin className="w-4 h-4 text-[#5A7A6A] mt-0.5 flex-shrink-0" /><span>Melbourne &amp; Victoria<br /><span className="text-xs">No trade counter — delivery only</span></span></div>
       </div>
     ),
@@ -191,7 +191,7 @@ export function ContactPage({ setPage }: { setPage: (p: Page) => void }) {
               </div>
             ))}
             <div className="border border-black/10 bg-[#F2F0EC] p-5">
-              <p className="text-sm text-[#5c5a56] leading-relaxed"><span className="font-semibold text-[#131311]">Supply only.</span> We don't provide installation — please work with your builder or installer for products supplied by AMJ Trade Direct.</p>
+              <p className="text-sm text-[#5c5a56] leading-relaxed"><span className="font-semibold text-[#131311]">Supply only.</span> We don't provide installation — please work with your builder or installer for products supplied by OpenFrame.</p>
             </div>
           </div>
         </div>

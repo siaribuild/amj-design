@@ -27,10 +27,10 @@ test("catalogue drives the products list and detail pages", async ({ page }) => 
 test("customer OTP login lands on a dashboard with real data", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByText(/Sign in or register/i)).toBeVisible();
-  await otpLogin(page, /your@email\.com/, "demo@amjtradedirect.com.au", /verify & continue/i);
+  await otpLogin(page, /your@email\.com/, "demo@openframe.com.au", /verify & continue/i);
   await expect(page.getByText(/G'day, Demo/)).toBeVisible();
   await expect(page.getByText("Coburg new build")).toBeVisible();
-  await expect(page.getByText("AMJ-58001")).toBeVisible();
+  await expect(page.getByText("OF-58001")).toBeVisible();
 });
 
 test("contact form submits an enquiry", async ({ page }) => {
@@ -45,13 +45,13 @@ test("contact form submits an enquiry", async ({ page }) => {
 
 test("guest order tracking shows a read-only status", async ({ page }) => {
   await page.goto("/track-order");
-  await page.getByPlaceholder("AMJ-58001").fill("AMJ-58001");
-  await page.getByPlaceholder("Email used on the order").fill("demo@amjtradedirect.com.au");
+  await page.getByPlaceholder("OF-58001").fill("OF-58001");
+  await page.getByPlaceholder("Email used on the order").fill("demo@openframe.com.au");
   await page.getByRole("button", { name: /send code/i }).click();
   const devText = await page.getByText(/Dev mode/i).textContent();
   await page.getByPlaceholder("••••••").fill(devText?.match(/\d{6}/)?.[0] ?? "");
   await page.getByRole("button", { name: /view order/i }).click();
-  await expect(page.getByText("Order AMJ-58001")).toBeVisible();
+  await expect(page.getByText("Order OF-58001")).toBeVisible();
   await expect(page.getByText(/In manufacturing/i).first()).toBeVisible();
   // Read-only: no staff/customer action controls in the guest view.
   await expect(page.getByRole("button", { name: /approve|confirm|accept/i })).toHaveCount(0);

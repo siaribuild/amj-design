@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "dev:api": "wrangler dev",
+    "dev:api": "wrangler dev --var APP_ENV:development --var ACCESS_TEAM_DOMAIN: --var ACCESS_AUD:",
     "db:migrate:local": "wrangler d1 migrations apply apertly-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply apertly-db --remote",
     "db:reset": "node scripts/reset-db.mjs",

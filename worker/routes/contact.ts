@@ -67,7 +67,7 @@ contact.post("/contact", async (c) => {
   ).bind(id, name, email, phone || null, company || null, message).run();
 
   // Email the designated inbox (records the notification regardless of delivery).
-  const to = c.env.CONTACT_TO || c.env.EMAIL_FROM || "quotes@amjtradedirect.com.au";
+  const to = c.env.CONTACT_TO || c.env.EMAIL_FROM || "quotes@openframe.com.au";
   await notify(c.env, {
     recipient: to,
     eventType: "contact.received",

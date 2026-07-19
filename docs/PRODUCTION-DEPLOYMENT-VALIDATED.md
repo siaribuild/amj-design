@@ -7,8 +7,7 @@ This remains the detailed, separately maintained production runbook;
 `docs/DEPLOY.md` is the shorter legacy checklist.
 
 The internal project and infrastructure codename is **apertly**. Infrastructure
-resource names use that namespace; customer-facing branding remains AMJ Trade
-Direct.
+resource names use that namespace; customer-facing branding is **OpenFrame**.
 
 This runbook assumes PowerShell on Windows and that commands are run from the
 repository root unless a step says otherwise. Replace every value in angle
@@ -48,7 +47,7 @@ Agree and record these values in the release ticket/change record:
 | D1 database | `apertly-db` |
 | KV namespace | `apertly-kv` |
 | R2 bucket | `apertly-files` or an approved `apertly-*` variant if unavailable |
-| Resend From address | `AMJ Trade Direct <quotes@<VERIFIED_SENDING_DOMAIN>>` |
+| Resend From address | `OpenFrame <quotes@<VERIFIED_SENDING_DOMAIN>>` |
 | Cloudflare Access team name | `<ACCESS_TEAM_NAME>` only, without `.cloudflareaccess.com` |
 | Cloudflare Access application AUD | `<ACCESS_APPLICATION_AUD>` |
 | Sanity project ID | `<SANITY_PROJECT_ID>` or `disabled` |
@@ -289,7 +288,7 @@ Preserve the existing `main`, compatibility, asset, and migration settings.
   "vars": {
     "APP_ENV": "production",
     "STAFF_EMAIL_DOMAINS": "<STAFF_DOMAIN>",
-    "EMAIL_FROM": "AMJ Trade Direct <quotes@<VERIFIED_SENDING_DOMAIN>>",
+    "EMAIL_FROM": "OpenFrame <quotes@<VERIFIED_SENDING_DOMAIN>>",
     "ACCESS_TEAM_DOMAIN": "<ACCESS_TEAM_NAME>",
     "ACCESS_AUD": "<ACCESS_APPLICATION_AUD>",
     "SANITY_PROJECT_ID": "<SANITY_PROJECT_ID>",

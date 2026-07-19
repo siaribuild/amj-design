@@ -5,7 +5,7 @@ const OPS = "http://ops.localhost:8788/";
 
 async function staffLogin(page: Page) {
   await page.goto(OPS);
-  await page.getByPlaceholder(/you@amjtradedirect\.com\.au/i).fill("staff@amjtradedirect.com.au");
+  await page.getByPlaceholder(/you@openframe.com.au/i).fill("staff@openframe.com.au");
   await page.getByRole("button", { name: /send code/i }).click();
   const devText = await page.getByText(/Dev mode/i).textContent();
   await page.getByPlaceholder("••••••").fill(devText?.match(/\d{6}/)?.[0] ?? "");
@@ -32,7 +32,7 @@ test("ops quotes queue lists a submission and opens the workspace", async ({ pag
 test("ops tabs render (approvals, orders, customers, catalogue, audit)", async ({ page }) => {
   await staffLogin(page);
   await page.getByRole("button", { name: "Orders" }).click();
-  await expect(page.getByText("AMJ-58001")).toBeVisible();
+  await expect(page.getByText("OF-58001")).toBeVisible();
   await page.getByRole("button", { name: "Customers" }).click();
   await expect(page.getByText("Northside Build")).toBeVisible();
   await page.getByRole("button", { name: "Catalogue" }).click();

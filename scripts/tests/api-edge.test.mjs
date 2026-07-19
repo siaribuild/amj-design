@@ -23,12 +23,13 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
     await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env: wranglerEnv });
     const port = await freePort();
     const baseUrl = `http://127.0.0.1:${port}`;
-    server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn"], { env: wranglerEnv });
+    // Local/test env: dev OTP codes on, Cloudflare Access off (staff session fallback). Prod values live in wrangler.jsonc.
+    server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn", "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:"], { env: wranglerEnv });
     await waitForUrl(`${baseUrl}/api/health`, server);
 
     const anon = new Session(baseUrl);
     const staff = new Session(baseUrl);
-    await login(staff, "/api/ops/auth", "staff@amjtradedirect.com.au"); // admin
+    await login(staff, "/api/ops/auth", "staff@openframe.com.au"); // admin
 
     await t.test("customer OTP: wrong code rejected; 5 wrong attempts burn the code", async () => {
       const s = new Session(baseUrl);
@@ -55,14 +56,14 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
 
     await t.test("guest tracking: anti-enumeration, rate limit, bad code, invalid token", async () => {
       // Wrong email for a real order → neutral, no code.
-      const wrong = await requestJson(anon, "/api/guest/track/request", { method: "POST", json: { email: "nobody@example.com", ref: "AMJ-58001" } });
+      const wrong = await requestJson(anon, "/api/guest/track/request", { method: "POST", json: { email: "nobody@example.com", ref: "OF-58001" } });
       assert.deepEqual(wrong.body, { ok: true });
       // Correct match → code; immediate repeat is rate-limited (neutral, no code).
-      const first = await requestJson(anon, "/api/guest/track/request", { method: "POST", json: { email: "demo@amjtradedirect.com.au", ref: "AMJ-58001" } });
+      const first = await requestJson(anon, "/api/guest/track/request", { method: "POST", json: { email: "demo@openframe.com.au", ref: "OF-58001" } });
       assert.match(first.body.devCode, /^\d{6}$/);
-      const second = await requestJson(anon, "/api/guest/track/request", { method: "POST", json: { email: "demo@amjtradedirect.com.au", ref: "AMJ-58001" } });
+      const second = await requestJson(anon, "/api/guest/track/request", { method: "POST", json: { email: "demo@openframe.com.au", ref: "OF-58001" } });
       assert.equal(second.body.devCode, undefined, "rate limited within the window");
-      await requestJson(anon, "/api/guest/track/verify", { method: "POST", json: { email: "demo@amjtradedirect.com.au", ref: "AMJ-58001", code: "000000" } }, 400);
+      await requestJson(anon, "/api/guest/track/verify", { method: "POST", json: { email: "demo@openframe.com.au", ref: "OF-58001", code: "000000" } }, 400);
       await requestJson(anon, "/api/guest/records/not-a-real-token", {}, 404);
     });
 
@@ -91,7 +92,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
 
     await t.test("dashboard project list + submit; accept guards ownership and state", async () => {
       const demo = new Session(baseUrl);
-      await login(demo, "/api/auth", "demo@amjtradedirect.com.au");
+      await login(demo, "/api/auth", "demo@openframe.com.au");
       const projects = await requestJson(demo, "/api/projects");
       assert.ok(projects.body.projects.some((p) => p.id === "p_draft"));
       // An already-accepted revision cannot be accepted again (seed rev_1 is accepted).
@@ -128,7 +129,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
 
       // A pure estimator cannot approve a manager step.
       const estimator = new Session(baseUrl);
-      const est = await login(estimator, "/api/ops/auth", "estimator@amjtradedirect.com.au");
+      const est = await login(estimator, "/api/ops/auth", "estimator@openframe.com.au");
       await requestJson(staff, `/api/ops/staff/${est.body.user.id}`, { method: "PATCH", json: { role: "estimator" } });
       await requestJson(estimator, `/api/ops/approvals/${step.id}/approve`, { method: "POST", json: {} }, 403);
 
@@ -140,7 +141,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
 
     await t.test("admin RBAC: rules + staff role changes require admin", async () => {
       const estimator = new Session(baseUrl);
-      const est = await login(estimator, "/api/ops/auth", "estimator@amjtradedirect.com.au");
+      const est = await login(estimator, "/api/ops/auth", "estimator@openframe.com.au");
       // (already estimator from previous subtest) — non-admin is blocked.
       const rule = (await requestJson(staff, "/api/ops/rules")).body.rules[0];
       await requestJson(estimator, `/api/ops/rules/${rule.id}`, { method: "PATCH", json: { active: false } }, 403);
@@ -205,7 +206,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
 
     await t.test("RBAC: role-less internal staff is blocked from payments + customer PII", async () => {
       const rookie = new Session(baseUrl);
-      await login(rookie, "/api/ops/auth", "rookie@amjtradedirect.com.au"); // internal, role = null
+      await login(rookie, "/api/ops/auth", "rookie@openframe.com.au"); // internal, role = null
       const who = await requestJson(rookie, "/api/ops/me");
       // No assigned role → no money movement, no order advance, no customer PII / files.
       await requestJson(rookie, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 403);

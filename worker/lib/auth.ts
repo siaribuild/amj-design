@@ -6,7 +6,7 @@
 import type { Env } from "../types";
 import { newToken, parseCookies, uuid } from "./util";
 
-export const SESSION_COOKIE = "amj_session";
+export const SESSION_COOKIE = "apertly_session";
 const OTP_TTL = 60 * 10; // 10 minutes
 const SESSION_TTL = 60 * 60 * 24 * 30; // 30 days
 const MAX_OTP_ATTEMPTS = 5;

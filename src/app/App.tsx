@@ -187,7 +187,7 @@ function Nav({ page, setPage, user, setUser }: {
           <button onClick={() => go("home")} className="flex items-center gap-2.5 cursor-pointer flex-shrink-0">
             <WindowMark size={18} color="#f5f3ef" />
             <span className="font-semibold text-[15px] tracking-tight text-white"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}>AMJ Trade Direct</span>
+              style={{ fontFamily: "'Space Grotesk', sans-serif" }}>OpenFrame</span>
           </button>
           <nav className="hidden xl:flex items-center gap-6 flex-1 justify-center">
             {links.map(([label, p]) => (
@@ -294,8 +294,8 @@ function Nav({ page, setPage, user, setUser }: {
           <a href="tel:0390000000" className="flex items-center gap-2 text-sm text-white font-medium mb-1.5 hover:text-[#8CA99B] transition-colors">
             <Phone className="w-4 h-4 text-[#8CA99B]" />(03) 9000 0000
           </a>
-          <a href="mailto:quotes@amjtradedirect.com.au" className="flex items-center gap-2 text-sm text-white/65 hover:text-[#8CA99B] transition-colors">
-            <Mail className="w-4 h-4 text-[#8CA99B]" />quotes@amjtradedirect.com.au
+          <a href="mailto:quotes@openframe.com.au" className="flex items-center gap-2 text-sm text-white/65 hover:text-[#8CA99B] transition-colors">
+            <Mail className="w-4 h-4 text-[#8CA99B]" />quotes@openframe.com.au
           </a>
         </div>
       </div>
@@ -315,7 +315,7 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
             <div className="flex items-center gap-2.5 mb-4">
               <WindowMark size={18} color={SAGE} />
               <span className="font-semibold text-sm text-white"
-                style={{ fontFamily: "'Space Grotesk', sans-serif" }}>AMJ Trade Direct</span>
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}>OpenFrame</span>
             </div>
             <p className="text-sm leading-relaxed mb-5">
               Aluminium windows and doors supplied direct for Melbourne projects. Supply only — installation not included.
@@ -324,8 +324,8 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
               <a href="tel:0390000000" className="flex items-center gap-2 hover:text-white transition-colors">
                 <Phone className="w-3.5 h-3.5 text-[#5A7A6A]" />(03) 9000 0000
               </a>
-              <a href="mailto:quotes@amjtradedirect.com.au" className="flex items-center gap-2 hover:text-white transition-colors">
-                <Mail className="w-3.5 h-3.5 text-[#5A7A6A]" />quotes@amjtradedirect.com.au
+              <a href="mailto:quotes@openframe.com.au" className="flex items-center gap-2 hover:text-white transition-colors">
+                <Mail className="w-3.5 h-3.5 text-[#5A7A6A]" />quotes@openframe.com.au
               </a>
               <span className="flex items-center gap-2">
                 <MapPin className="w-3.5 h-3.5 text-[#5A7A6A]" />Melbourne &amp; Victoria
@@ -350,7 +350,7 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
           </div>
         </div>
         <div className="border-t border-white/10 pt-6 flex flex-col md:flex-row justify-between gap-2 text-xs text-white/25">
-          <span>© 2025 AMJ Trade Direct · Melbourne, Victoria · ABN 00 000 000 000</span>
+          <span>© 2025 OpenFrame · Melbourne, Victoria · ABN 00 000 000 000</span>
           <span>Supply only · Prototype — sample content</span>
         </div>
       </div>
@@ -1133,7 +1133,7 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
         {step === "lookup" && (
           <div className="group relative bg-white border border-black/8 p-6 space-y-4 overflow-hidden">
             <FrameCorners size={10} color={SAGE} show="always" />
-            <div><FieldLabel>Order reference</FieldLabel><Input value={ref} onChange={e => setRef(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && request()} placeholder="AMJ-58001" className="font-mono tracking-wide" /></div>
+            <div><FieldLabel>Order reference</FieldLabel><Input value={ref} onChange={e => setRef(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && request()} placeholder="OF-58001" className="font-mono tracking-wide" /></div>
             <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && request()} placeholder="Email used on the order" /></div>
             {error && <p className="text-xs text-red-600">{error}</p>}
             <Btn variant="sage" size="md" onClick={request} className={`w-full justify-center ${!validEmail || !ref.trim() || busy ? "opacity-50 pointer-events-none" : ""}`}>
@@ -1188,7 +1188,7 @@ function ApprovedQuotePage() {
       <div className="max-w-2xl mx-auto px-6 relative">
         <div className="flex items-center gap-2 mb-2"><CheckCircle className="w-4 h-4 text-[#5A7A6A]" /><span className="text-xs text-[#5A7A6A] font-medium uppercase tracking-wide">Human verified</span></div>
         <h1 className="text-3xl font-semibold text-[#131311] mb-1"
-          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Reviewed quote — AMJ-58712</h1>
+          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Reviewed quote — OF-58712</h1>
         <p className="text-[#5c5a56] text-sm mb-8">Issued after manual technical review · 12 Jan 2025</p>
         <div className="group relative bg-white border border-black/8 p-5 mb-4 overflow-hidden">
           <FrameCorners size={10} color={SAGE} show="always" />
@@ -1273,9 +1273,9 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
 function AdminPage() {
   const [sel, setSel] = useState(0);
   const quotes = [
-    { ref: "AMJ-58901", name: "Premier Build Co.", type: "Builder", project: "New build — Coburg",      items: 3, status: "Review required", conf: 85, age: "2h" },
-    { ref: "AMJ-58698", name: "Sarah T.",           type: "Homeowner", project: "Renovation — Northcote",items: 1, status: "More info needed", conf: 52, age: "1d" },
-    { ref: "AMJ-58671", name: "Metro Reno Group",   type: "Trade",     project: "Extension — St Kilda",  items: 6, status: "Ready",           conf: 94, age: "2d" },
+    { ref: "OF-58901", name: "Premier Build Co.", type: "Builder", project: "New build — Coburg",      items: 3, status: "Review required", conf: 85, age: "2h" },
+    { ref: "OF-58698", name: "Sarah T.",           type: "Homeowner", project: "Renovation — Northcote",items: 1, status: "More info needed", conf: 52, age: "1d" },
+    { ref: "OF-58671", name: "Metro Reno Group",   type: "Trade",     project: "Extension — St Kilda",  items: 6, status: "Ready",           conf: 94, age: "2d" },
   ];
   const q = quotes[sel];
   const sc: Record<string,string> = { "Review required":"text-amber-400 bg-amber-400/10","More info needed":"text-red-400 bg-red-400/10","Ready":"text-[#5A7A6A] bg-[#5A7A6A]/10" };

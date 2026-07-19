@@ -34,6 +34,9 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
     server = start(process.execPath, [
       wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port),
       "--persist-to", state, "--assets", assets, "--log-level", "warn",
+      // Local/test env: dev OTP codes on, Cloudflare Access off — so the staff
+      // session fallback works. Production values live in wrangler.jsonc (cf:deploy).
+      "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:",
     ], { env: wranglerEnv });
     await waitForUrl(`${baseUrl}/api/health`, server);
 
@@ -46,7 +49,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       await requestJson(anonymous, "/api/ops/summary", {}, 403);
       await requestJson(anonymous, "/api/orders/o_1", {}, 404);
       await requestJson(anonymous, "/api/auth/verify", { method: "POST", json: { email: "bad", code: "1" } }, 400);
-      const neutral = await requestJson(anonymous, "/api/guest/track/request", { method: "POST", json: { email: "nobody@example.com", ref: "AMJ-00000" } });
+      const neutral = await requestJson(anonymous, "/api/guest/track/request", { method: "POST", json: { email: "nobody@example.com", ref: "OF-00000" } });
       assert.deepEqual(neutral.body, { ok: true });
     });
 
@@ -92,7 +95,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
 
     const ops = new Session(baseUrl);
     await t.test("staff OTP, dashboard, queue, assignment, approvals, and revision issue", async () => {
-      await login(ops, "/api/ops/auth", "staff@amjtradedirect.com.au");
+      await login(ops, "/api/ops/auth", "staff@openframe.com.au");
       const summary = await requestJson(ops, "/api/ops/summary");
       assert.ok(summary.body.submissions >= 1);
       const queue = await requestJson(ops, "/api/ops/queues/submissions");
@@ -180,7 +183,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
         request.end();
       });
       assert.equal(opsShell.status, 200);
-      assert.match(opsShell.body, /<title>AMJ Ops Console<\/title>/);
+      assert.match(opsShell.body, /<title>OpenFrame Ops Console<\/title>/);
     });
 
     await t.test("estimator cannot delegate an approval to self", async () => {
@@ -191,7 +194,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       const step = pending.body.approvals.find((item) => item.project_id === "p_draft");
       assert.ok(step);
       const estimator = new Session(baseUrl);
-      const estimatorLogin = await login(estimator, "/api/ops/auth", "estimator@amjtradedirect.com.au");
+      const estimatorLogin = await login(estimator, "/api/ops/auth", "estimator@openframe.com.au");
       await requestJson(ops, `/api/ops/staff/${estimatorLogin.body.user.id}`, { method: "PATCH", json: { role: "estimator" } });
       const delegated = await estimator.request(`/api/ops/approvals/${step.id}/delegate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: "estimator" }) });
       const approved = await estimator.request(`/api/ops/approvals/${step.id}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });

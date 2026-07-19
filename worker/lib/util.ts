@@ -17,7 +17,7 @@ export function parseCookies(header: string | null | undefined): Record<string, 
   return out;
 }
 
-export const CLAIM_COOKIE = "amj_claim";
+export const CLAIM_COOKIE = "apertly_claim";
 
 // httpOnly claim cookie — 1 year. Secure only in production (localhost is http).
 export function claimCookie(token: string, env: Env): string {

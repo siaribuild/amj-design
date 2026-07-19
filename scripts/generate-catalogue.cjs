@@ -201,7 +201,7 @@ const products=prodRows.map((r)=>{
 // ---- emit TS ----
 function j(o){return JSON.stringify(o);}
 const L=[];
-L.push(`// AUTO-GENERATED from products.xlsx — AMJ Trade Direct catalogue.`);
+L.push(`// AUTO-GENERATED from products.xlsx — OpenFrame catalogue.`);
 L.push(`// This module is the single hardcoded source of truth for catalogue + product-detail pages.`);
 L.push(`// It is deliberately shaped to mirror future Sanity documents (category / family / product,`);
 L.push(`// referenced by slug), so migration is a matter of swapping the arrays below for GROQ queries`);

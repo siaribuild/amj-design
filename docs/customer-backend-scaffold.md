@@ -74,11 +74,11 @@ by the customer slice — the internal-ops task owns them.
 
 ## 3. Identity & the anon ↔ registered bridge
 - **Anonymous:** first `POST /api/projects` (or first line add) with no session mints a `project`
-  with a random `claim_token`, set as httpOnly cookie `amj_claim`. Anon can build, upload plans,
+  with a random `claim_token`, set as httpOnly cookie `apertly_claim`. Anon can build, upload plans,
   and **submit** without an account. Server-persisted, survives refresh.
 - **Registered (passwordless email OTP):** `POST /api/auth/challenge {email}` → 6-digit code hashed
   into KV (TTL 10 min), neutral response always, email sent (stub sender in MVP) →
-  `POST /api/auth/verify {email,code}` → session cookie. **On verify, if `amj_claim` present, claim
+  `POST /api/auth/verify {email,code}` → session cookie. **On verify, if `apertly_claim` present, claim
   that anonymous project into the user** (owner_user_id set, claim_token cleared).
 - **Guest order checker:** `POST /api/guest/track/request {email,ref}` → always-neutral response,
   short-lived code emailed only on match; `POST /api/guest/track/verify` → scoped `guest_grant`

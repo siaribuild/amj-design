@@ -1,7 +1,6 @@
-# Deploy runbook — AMJ Trade Direct (Cloudflare)
+# Deploy runbook — OpenFrame (Cloudflare)
 
-Internal infrastructure codename: **apertly**. Public branding remains AMJ
-Trade Direct.
+Internal infrastructure codename: **apertly**. Public branding is **OpenFrame**.
 
 Everything here runs against **your** Cloudflare account, so you run the
 authenticated commands. The app is deploy-ready; this is the checklist to stand
@@ -38,7 +37,7 @@ npx wrangler d1 execute apertly-db --remote --file scripts/db/seed.sql
 # Email (Resend) — key is a SECRET, never committed:
 npx wrangler secret put RESEND_API_KEY
 # then in wrangler.jsonc vars, set the verified From address:
-#   "EMAIL_FROM": "AMJ Trade Direct <quotes@amjtradedirect.com.au>"
+#   "EMAIL_FROM": "OpenFrame <quotes@openframe.com.au>"
 ```
 Runtime env: `npm run cf:deploy` deploys with `APP_ENV=production` automatically
 (`wrangler deploy --var APP_ENV:production`), which gates the dev-only OTP `devCode`
@@ -50,17 +49,17 @@ dropped (never logged) outside development, so configure Resend before going liv
 ## 4. Custom domains
 Point the app + ops console at your domain (Cloudflare dashboard → Workers → the
 Worker → Settings → Domains & Routes, or `wrangler.jsonc` `routes`):
-- `www.amjtradedirect.com`  (or apex) → customer site
-- `ops.amjtradedirect.com`  → ops console (the Worker routes by Host: `ops.*`)
+- `www.openframe.com.au`  (or apex) → customer site
+- `ops.openframe.com.au`  → ops console (the Worker routes by Host: `ops.*`)
 
 ## 5. Cloudflare Access on ops.* (staff auth in prod)
 The Worker already verifies Access JWTs when `ACCESS_TEAM_DOMAIN`/`ACCESS_AUD`
 are set (see `worker/lib/staff.ts`). Configure Access:
 1. Zero Trust dashboard → **Access → Applications → Add** → *Self-hosted*.
-2. Application domain: `ops.amjtradedirect.com`.
+2. Application domain: `ops.openframe.com.au`.
 3. Identity provider: your workforce IdP (Google Workspace, Entra, Okta…), with
    **MFA/passkey** enforced; add device-posture rules if desired.
-4. Policy: allow your staff (e.g. emails ending `@amjtradedirect.com.au`), plus a
+4. Policy: allow your staff (e.g. emails ending `@openframe.com.au`), plus a
    break-glass rule for a named admin.
 5. Copy the application **AUD** tag and your **team domain**, then set in
    `wrangler.jsonc` vars:
@@ -78,7 +77,7 @@ npm run cf:deploy           # vite build (customer + ops bundles) + wrangler dep
 
 ## 7. Smoke test
 ```bash
-curl https://www.amjtradedirect.com/api/health
+curl https://www.openframe.com.au/api/health
 # ops.* should now be gated by Access; signing in with a staff IdP account lands
 # on the console. Customer OTP emails should arrive via Resend.
 ```
@@ -91,7 +90,7 @@ assign roles from the ops **Admin → Staff** screen. On a clean prod DB (no see
 bootstrap by seeding one admin, e.g.:
 ```bash
 npx wrangler d1 execute apertly-db --remote --command \
-  "UPDATE user SET type='internal', role='admin' WHERE email='you@amjtradedirect.com.au'"
+  "UPDATE user SET type='internal', role='admin' WHERE email='you@openframe.com.au'"
 ```
 (The user row appears after that person signs in once via Access.)
 

@@ -133,7 +133,7 @@ test("util.claimCookie: httpOnly SameSite Max-Age; Secure only in production", (
 });
 
 test("auth: normEmail, isEmail, sixDigit, sha256hex, userDto", async () => {
-  assert.equal(M.normEmail("  Jason@AMJ.com "), "jason@amj.com");
+  assert.equal(M.normEmail("  Jason@Example.com "), "jason@example.com");
   for (const ok of ["a@b.co", "x.y@z.com.au"]) assert.equal(M.isEmail(ok), true, ok);
   for (const bad of ["a@b", "no-at.com", "a b@c.com", "@b.com", ""]) assert.equal(M.isEmail(bad), false, bad);
   assert.match(M.sixDigit(), /^\d{6}$/);
@@ -172,11 +172,11 @@ test("approvals.canApprove: admin wildcard, exact role, mismatch", () => {
 });
 
 test("staff.staffDomains + isStaffEmail allowlist", () => {
-  assert.deepEqual(M.staffDomains({}), ["amjtradedirect.com.au"]);
+  assert.deepEqual(M.staffDomains({}), ["openframe.com.au"]);
   assert.deepEqual(M.staffDomains({ STAFF_EMAIL_DOMAINS: "a.com, B.COM " }), ["a.com", "b.com"]);
   const env = {};
-  assert.equal(M.isStaffEmail(env, "sam@amjtradedirect.com.au"), true);
-  assert.equal(M.isStaffEmail(env, "SAM@AMJTRADEDIRECT.COM.AU".toLowerCase()), true);
+  assert.equal(M.isStaffEmail(env, "sam@openframe.com.au"), true);
+  assert.equal(M.isStaffEmail(env, "SAM@openframe.com.au".toLowerCase()), true);
   assert.equal(M.isStaffEmail(env, "sam@gmail.com"), false);
   assert.equal(M.isStaffEmail(env, "no-domain"), false);
 });

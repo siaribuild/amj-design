@@ -1,7 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 0002_order_journey — the real 12-stage fulfilment journey + two-fold payment
 --
--- Reflects AMJ's actual quote-to-delivery process (steps 4–13 live on the order):
+-- Reflects OpenFrame's actual quote-to-delivery process (steps 4–13 live on the order):
 --   4  deposit_invoiced     invoice issued for 50% deposit on quote acceptance
 --   5  deposit_paid         deposit received (manual/out-of-band for MVP)
 --   6  drawings_shared      shop drawings issued to the customer

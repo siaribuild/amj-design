@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// AMJ Trade Direct — API Worker (Hono)
+// OpenFrame — API Worker (Hono)
 //
 // Serves /api/* from route handlers; everything else is the built Vite SPA via
 // the ASSETS binding (with SPA fallback to index.html). Routes: health, auth

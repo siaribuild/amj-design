@@ -92,7 +92,7 @@ ops.post("/auth/challenge", async (c) => {
       recipient: email,
       eventType: "ops.code.requested",
       templateKey: "ops_signin_code",
-      email: { to: email, subject: "Your AMJ ops sign-in code", text: `Your ops console code is ${code}. It expires in 10 minutes.` },
+      email: { to: email, subject: "Your OpenFrame ops sign-in code", text: `Your ops console code is ${code}. It expires in 10 minutes.` },
     });
     if (isDevEnv(c.env)) return c.json({ ok: true, devCode: code });
   }
@@ -117,7 +117,7 @@ ops.post("/auth/verify", async (c) => {
 
 ops.post("/auth/logout", async (c) => {
   await destroySession(c.env, c.req.raw);
-  c.header("Set-Cookie", clearCookie("amj_session", c.env));
+  c.header("Set-Cookie", clearCookie("apertly_session", c.env));
   return c.json({ ok: true });
 });
 
@@ -411,7 +411,7 @@ ops.post("/projects/:id/issue-revision", async (c) => {
   if (cust?.email) {
     await notify(c.env, {
       recipient: cust.email, eventType: "revision.issued", templateKey: "quote_issued",
-      email: { to: cust.email, subject: "Your AMJ quote is ready", text: `Your reviewed quote (revision ${rev.revisionNo}) is ready to review and accept.` },
+      email: { to: cust.email, subject: "Your OpenFrame quote is ready", text: `Your reviewed quote (revision ${rev.revisionNo}) is ready to review and accept.` },
     });
   }
   return c.json({ id: rev.id, revisionNo: rev.revisionNo, total: rev.total });

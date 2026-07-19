@@ -4,7 +4,7 @@
 // ("logged") so dev works with no provider. Set the key as a Worker secret and
 // EMAIL_FROM as a var:
 //   wrangler secret put RESEND_API_KEY
-//   # wrangler.jsonc vars: "EMAIL_FROM": "AMJ Trade Direct <quotes@yourdomain>"
+//   # wrangler.jsonc vars: "EMAIL_FROM": "OpenFrame <quotes@yourdomain>"
 // Every send is also recorded as a `notification` row for auditability.
 import type { Env } from "../types";
 import { isDevEnv } from "./auth";
@@ -17,7 +17,7 @@ export interface EmailMessage {
   templateKey?: string;
 }
 
-const DEFAULT_FROM = "AMJ Trade Direct <onboarding@resend.dev>";
+const DEFAULT_FROM = "OpenFrame <onboarding@resend.dev>";
 
 export async function sendEmail(env: Env, msg: EmailMessage): Promise<"sent" | "logged" | "failed"> {
   if (!env.RESEND_API_KEY) {

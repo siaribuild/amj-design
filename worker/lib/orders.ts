@@ -133,9 +133,9 @@ export async function createOrderFromRevision(
   // Derive the next number from the max existing suffix (gap-tolerant); a rare
   // collision just fails this batch, and the caller's retry re-derives it.
   const maxRow = await env.DB
-    .prepare(`SELECT COALESCE(MAX(CAST(substr(order_no, 5) AS INTEGER)), 58000) AS n FROM "order" WHERE order_no LIKE 'AMJ-%'`)
+    .prepare(`SELECT COALESCE(MAX(CAST(substr(order_no, 5) AS INTEGER)), 58000) AS n FROM "order" WHERE order_no LIKE 'OF-%'`)
     .first<{ n: number }>();
-  const orderNo = `AMJ-${(maxRow?.n ?? 58000) + 1}`;
+  const orderNo = `OF-${(maxRow?.n ?? 58000) + 1}`;
 
   const stmts = [
     // Claim the revision inside the transaction — gates the whole order creation.

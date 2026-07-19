@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Reset the AMJ database to a known test state: ensure schema, clear all data,
+// Reset the OpenFrame database to a known test state: ensure schema, clear all data,
 // load default fixtures. Local by default; pass --remote to target Cloudflare.
 //
 //   npm run db:reset              # local, lock-safe (DELETE rows + reseed)
@@ -39,11 +39,11 @@ try {
   console.log(`
 ✓ Database reset complete.
 
-  Sign in as   demo@amjtradedirect.com.au   (passwordless — request an OTP;
+  Sign in as   demo@openframe.com.au   (passwordless — request an OTP;
   the dev code prints from the challenge / server log).
 
     • MyProject → "Coburg new build" draft (2 lines)
-    • My orders → AMJ-58001, in manufacturing (deposit paid, balance due)
+    • My orders → OF-58001, in manufacturing (deposit paid, balance due)
 ${hard ? "" : "\n  (KV sessions were kept — run with --hard to clear them too.)\n"}`);
 } catch (err) {
   console.error("\n✗ Reset failed.");

@@ -1,7 +1,7 @@
 # Catalogue data (`catalogue.ts`)
 
 Single hardcoded source of truth for the **Products catalogue** and **Product detail**
-pages. Generated from `products.xlsx` (the AMJ product database) and deliberately shaped
+pages. Generated from `products.xlsx` (the OpenFrame product database) and deliberately shaped
 to mirror the future Sanity content model, so migration is a swap of the data source —
 not a rewrite of the pages.
 

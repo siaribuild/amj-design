@@ -1,6 +1,6 @@
 // Staff identity for the ops console.
 //
-// Dev / local: a normal session (amj_session cookie) that belongs to an
+// Dev / local: a normal session (apertly_session cookie) that belongs to an
 // internal user — created via the domain-allowlisted internal OTP flow.
 // Prod: Cloudflare Access sits in front of ops.* and injects a signed JWT
 // (Cf-Access-Jwt-Assertion); we verify it and map the email to an internal user.
@@ -11,7 +11,7 @@ import type { Env } from "../types";
 import { resolveUser, type UserRow } from "./auth";
 import { uuid } from "./util";
 
-export const DEFAULT_STAFF_DOMAINS = ["amjtradedirect.com.au"];
+export const DEFAULT_STAFF_DOMAINS = ["openframe.com.au"];
 
 export function staffDomains(env: Env): string[] {
   return (env.STAFF_EMAIL_DOMAINS ?? DEFAULT_STAFF_DOMAINS.join(","))

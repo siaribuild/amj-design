@@ -33,7 +33,7 @@ auth.post("/challenge", async (c) => {
       recipient: email,
       eventType: "auth.code.requested",
       templateKey: "signin_code",
-      email: { to: email, subject: "Your AMJ sign-in code", text: `Your sign-in code is ${code}. It expires in 10 minutes.` },
+      email: { to: email, subject: "Your OpenFrame sign-in code", text: `Your sign-in code is ${code}. It expires in 10 minutes.` },
     });
     // Dev convenience: surface the code so the flow is testable without a provider.
     // Fail closed — only an explicit development env ever returns the code.
@@ -89,6 +89,6 @@ auth.post("/profile", async (c) => {
 // POST /api/auth/logout — drop the session and clear the cookie.
 auth.post("/logout", async (c) => {
   await destroySession(c.env, c.req.raw);
-  c.header("Set-Cookie", clearCookie("amj_session", c.env));
+  c.header("Set-Cookie", clearCookie("apertly_session", c.env));
   return c.json({ ok: true });
 });

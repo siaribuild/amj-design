@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// AMJ OPS CONSOLE — internal admin (served on ops.* behind Cloudflare Access).
+// OPENFRAME OPS CONSOLE — internal admin (served on ops.* behind Cloudflare Access).
 //
 // O1 (staff rails): domain-allowlisted staff sign-in, the console shell, and a
 // dashboard summary. Quotes queue + workspace, approvals, orders ops etc. land
@@ -81,7 +81,7 @@ function OpsLogin({ onAuthed }: { onAuthed: (u: OpsUser) => void }) {
         <div className="mb-8 text-center">
           <div className="inline-flex items-center gap-2 text-white font-semibold tracking-tight text-lg" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
             <span className="w-6 h-6 border-2 grid place-items-center" style={{ borderColor: SAGE }}><span className="w-2 h-2" style={{ background: SAGE }} /></span>
-            AMJ Ops
+            OpenFrame Ops
           </div>
           <p className="text-white/40 text-sm mt-2">Internal console — staff sign-in</p>
         </div>
@@ -91,7 +91,7 @@ function OpsLogin({ onAuthed }: { onAuthed: (u: OpsUser) => void }) {
               <label className="block">
                 <span className="text-[11px] uppercase tracking-wide text-white/40">Work email</span>
                 <input type="email" value={email} autoFocus onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && send()}
-                  placeholder="you@amjtradedirect.com.au"
+                  placeholder="you@openframe.com.au"
                   className="mt-1 w-full bg-[#14150f] border border-white/15 px-3 py-2 text-sm text-white outline-none focus:border-[#5A7A6A]" />
               </label>
               <button onClick={send} disabled={busy}
@@ -131,7 +131,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
       <aside className="w-56 bg-[#14150f] text-white flex flex-col fixed inset-y-0 left-0">
         <div className="px-5 h-14 flex items-center gap-2 border-b border-white/10 font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
           <span className="w-5 h-5 border-2 grid place-items-center" style={{ borderColor: SAGE }}><span className="w-1.5 h-1.5" style={{ background: SAGE }} /></span>
-          AMJ Ops
+          OpenFrame Ops
         </div>
         <nav className="flex-1 py-3 overflow-y-auto">
           {TABS.map(t => (
