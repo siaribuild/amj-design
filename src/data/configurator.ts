@@ -92,8 +92,13 @@ const OPTION_ADD: Record<string, number> = {
 };
 const TYPE_DEFAULT_ADD: Record<string, number> = { hardware: 60, colour: 200, flyscreen: 100, installation: 60 };
 
-function optionAdd(o: { typeSlug: string; name: string; availability: string }): number {
+// Standard options are included; optional ones cost the shared price from the
+// option itself (single source of truth — edit it once in Sanity, every product
+// updates). The hardcoded tables below are only a fallback for the built-in
+// catalogue.ts, which carries no per-option prices.
+function optionAdd(o: { typeSlug: string; name: string; availability: string; price?: number }): number {
   if (o.availability === "standard") return 0;
+  if (typeof o.price === "number") return o.price;
   if (o.name in OPTION_ADD) return OPTION_ADD[o.name];
   return TYPE_DEFAULT_ADD[o.typeSlug] ?? 80;
 }
@@ -118,7 +123,7 @@ export function optionGroupsFor(p: Product): OptionGroup[] {
   // Colour: the standard Colorbond range (name + swatch), all included in the base price.
   byType.set("colour", {
     label: "Colour",
-    choices: colorbondColourOptions.map(o => ({ name: o.name, add: 0, standard: o.availability === "standard", hex: o.hex })),
+    choices: colorbondColourOptions.map(o => ({ name: o.name, add: o.price ?? 0, standard: o.availability === "standard", hex: o.hex })),
   });
   const groups: OptionGroup[] = [];
   for (const [typeSlug, { label, choices }] of byType) {
