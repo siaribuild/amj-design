@@ -138,8 +138,8 @@ test("auth: normEmail, isEmail, sixDigit, sha256hex, userDto", async () => {
   for (const bad of ["a@b", "no-at.com", "a b@c.com", "@b.com", ""]) assert.equal(M.isEmail(bad), false, bad);
   assert.match(M.sixDigit(), /^\d{6}$/);
   assert.equal(await M.sha256hex("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-  assert.deepEqual(M.userDto({ id: "u1", email: "e@x.com", name: "N", phone: null, type: "internal", role: "admin", session_epoch: 0 }),
-    { id: "u1", email: "e@x.com", name: "N", phone: null, type: "internal", role: "admin" });
+  assert.deepEqual(M.userDto({ id: "u1", email: "e@x.com", name: "N", phone: null, company: "Acme", type: "internal", role: "admin", session_epoch: 0 }),
+    { id: "u1", email: "e@x.com", name: "N", phone: null, company: "Acme", type: "internal", role: "admin" });
 });
 
 test("orders.availableActions: correct staff options per stage", () => {

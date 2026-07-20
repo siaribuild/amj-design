@@ -45,6 +45,7 @@ export interface AuthUserDto {
   email: string;
   name: string | null;
   phone: string | null;
+  company: string | null;
   type: string;
 }
 export interface MeResponse {
@@ -128,7 +129,7 @@ export const submitProject = (projectId: string, contact: SubmitContact) =>
   });
 
 /** Update the signed-in customer's profile (name / phone). */
-export const updateProfile = (patch: { name?: string; phone?: string }) =>
+export const updateProfile = (patch: { name?: string; phone?: string; company?: string }) =>
   req<{ user: AuthUserDto }>("/api/auth/profile", { method: "POST", body: JSON.stringify(patch) });
 
 export const getRevisions = (projectId: string) =>

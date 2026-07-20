@@ -20,6 +20,7 @@ export interface UserRow {
   email: string;
   name: string | null;
   phone: string | null;
+  company: string | null;
   type: string;
   role: string | null;
   session_epoch: number;
@@ -30,6 +31,7 @@ export const userDto = (u: UserRow) => ({
   email: u.email,
   name: u.name,
   phone: u.phone,
+  company: u.company ?? null,
   type: u.type,
   role: u.role ?? null,
 });

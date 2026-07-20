@@ -28,12 +28,13 @@ interface AuthUser {
   email: string; phone: string;
 }
 
-// Map the server user onto the UI's AuthUser. company/type belong to the
-// organisation layer (not built yet), so they default until that lands.
+// Map the server user onto the UI's AuthUser. `type` belongs to the organisation
+// layer (not built yet) and defaults until that lands; `company` is a real,
+// editable field on the user's profile.
 function toAuthUser(u: AuthUserDto): AuthUser {
   return {
     name: u.name || u.email.split("@")[0],
-    company: "",
+    company: u.company || "",
     type: "builder",
     email: u.email,
     phone: u.phone || "",
@@ -113,7 +114,7 @@ function AccountBar({ user, setPage, setUser }: {
   return (
     <div className="fixed top-0 left-0 right-0 z-[60] bg-[#0e0e0c] h-8 flex items-center px-6">
       <div className="max-w-6xl mx-auto w-full flex items-center justify-between">
-        <span className="text-xs text-white/40">{user.company} · {user.type}</span>
+        <span className="text-xs text-white/40">{user.company}</span>
         <div className="relative" ref={ref}>
           <button onClick={() => setOpen(!open)}
             className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white cursor-pointer transition-colors">
@@ -123,7 +124,7 @@ function AccountBar({ user, setPage, setUser }: {
           {open && (
             <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-black/10 shadow-lg z-10">
               {[
-                [<LayoutDashboard className="w-3.5 h-3.5" />, "My dashboard", "dashboard" as Page],
+                [<LayoutDashboard className="w-3.5 h-3.5" />, "My Project (quote)", "dashboard" as Page],
                 [<Package className="w-3.5 h-3.5" />, "My orders", "order" as Page],
                 [<User className="w-3.5 h-3.5" />, "My profile", "profile" as Page],
                 [<Settings className="w-3.5 h-3.5" />, "Account settings", "account-settings" as Page],
@@ -214,7 +215,7 @@ function Nav({ page, setPage, user, setUser }: {
             {user && (
               <button onClick={() => go("dashboard")}
                 className="text-sm text-[#8CA99B] hover:text-white font-medium cursor-pointer flex items-center gap-1.5 transition-colors ml-2">
-                <LayoutDashboard className="w-4 h-4" />My dashboard
+                <LayoutDashboard className="w-4 h-4" />My Project (quote)
               </button>
             )}
             <Btn variant="sage" size="sm" onClick={() => go("quote")}>Get a quote</Btn>
@@ -266,7 +267,7 @@ function Nav({ page, setPage, user, setUser }: {
               <>
                 <button onClick={() => go("dashboard")}
                   className="w-full text-left px-5 py-3.5 text-sm text-[#8CA99B] hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
-                  <LayoutDashboard className="w-4 h-4" />My dashboard
+                  <LayoutDashboard className="w-4 h-4" />My Project (quote)
                 </button>
                 <button onClick={() => go("profile")}
                   className="w-full text-left px-5 py-3.5 text-sm text-white/60 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
@@ -843,7 +844,10 @@ function DashboardPage({ setPage, user, setUser, authLoading, onOpenRecord }: {
     dispatched: "Dispatched", delivered: "Delivered", after_sales: "Completed",
   };
 
-  const activeProjects = (projects ?? []).filter(p => p.status_customer !== "closed" && p.status_customer !== "expired");
+  // The list shows everything in flight (incl. the single draft, so it can be
+  // continued); the "Active quotes" stat counts only those submitted for review.
+  const activeProjects = (projects ?? []).filter(p => !["closed", "expired"].includes(p.status_customer));
+  const activeQuoteCount = activeProjects.filter(p => p.status_customer !== "draft").length;
   const activeOrders = orders.filter(o => o.stage !== "delivered" && o.stage !== "after_sales");
   const closedOrders = orders.filter(o => o.stage === "delivered" || o.stage === "after_sales");
   const awaitingPayment = orders.filter(o => o.stage === "deposit_invoiced" || o.stage === "balance_invoiced").length;
@@ -873,7 +877,7 @@ function DashboardPage({ setPage, user, setUser, authLoading, onOpenRecord }: {
           <p className="text-[#5c5a56] text-sm mt-1">{user.company || user.email}</p>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-          {[["Active quotes", String(activeProjects.length)], ["Awaiting payment", String(awaitingPayment)], ["Active orders", String(activeOrders.length)], ["Delivered", String(closedOrders.length)]].map(([l, v]) => (
+          {[["Active quotes", String(activeQuoteCount)], ["Awaiting payment", String(awaitingPayment)], ["Active orders", String(activeOrders.length)], ["Delivered", String(closedOrders.length)]].map(([l, v]) => (
             <div key={l} className="group relative bg-white border border-black/8 p-4 overflow-hidden">
               <FrameCorners size={8} color={SAGE} />
               <div className="text-2xl font-semibold text-[#131311] mb-1" style={{ fontFamily: "'DM Mono', monospace" }}>{v}</div>
@@ -961,14 +965,14 @@ function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser |
   }, [user]);
   if (!user) { if (!authLoading) go("login"); return null; }
 
-  // Persist name/phone to the server (email is the login identity — changing it
-  // needs re-verification, out of scope; company/type belong to the org layer).
+  // Persist name/phone/company to the server (email is the login identity —
+  // changing it needs re-verification, out of scope).
   const saveProfile = async () => {
     if (saving) return;
     setSaving(true); setSaveError("");
     try {
-      const r = await updateProfile({ name: name.trim(), phone: phone.trim() });
-      setUser({ ...user, name: r.user.name || user.name, phone: r.user.phone || "" });
+      const r = await updateProfile({ name: name.trim(), phone: phone.trim(), company: company.trim() });
+      setUser({ ...user, name: r.user.name || user.name, phone: r.user.phone || "", company: r.user.company || "" });
       setSaved(true); setTimeout(() => setSaved(false), 2500);
     } catch {
       setSaveError("Couldn't save your changes. Please try again.");
@@ -1004,14 +1008,6 @@ function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser |
                 </Btn>
               </div>
             </div>
-            <div className="group relative bg-white border border-black/8 p-5 overflow-hidden">
-              <FrameCorners size={10} color={SAGE} show="always" />
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="font-semibold text-sm text-[#131311]">Delivery addresses</h3>
-                <span className="text-[10px] uppercase tracking-wide text-[#5c5a56] border border-black/10 px-1.5 py-0.5">Coming soon</span>
-              </div>
-              <p className="text-xs text-[#5c5a56]">Saved delivery addresses for faster quote submissions are on the way — you can enter a delivery suburb on each quote in the meantime.</p>
-            </div>
           </div>
           <div className="space-y-4">
             <div className="group relative bg-white border border-black/8 p-5 text-center overflow-hidden">
@@ -1026,7 +1022,7 @@ function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser |
             <div className="group relative bg-white border border-black/8 p-5 overflow-hidden">
               <FrameCorners size={10} color={SAGE} show="always" />
               <p className="font-semibold text-xs text-[#131311] uppercase tracking-wide mb-3">Account links</p>
-              {[[<Bell className="w-3.5 h-3.5" />,"Notifications","account-settings" as Page],[<LayoutDashboard className="w-3.5 h-3.5" />,"My dashboard","dashboard" as Page]].map(([icon,label,page]) => (
+              {[[<Bell className="w-3.5 h-3.5" />,"Notifications","account-settings" as Page],[<LayoutDashboard className="w-3.5 h-3.5" />,"My Project (quote)","dashboard" as Page]].map(([icon,label,page]) => (
                 <button key={label as string} onClick={() => go(page as Page)}
                   className="w-full text-left text-sm text-[#5c5a56] hover:text-[#131311] flex items-center gap-2.5 py-1.5 cursor-pointer transition-colors">
                   <span className="text-[#5A7A6A]">{icon as React.ReactNode}</span>{label as string}

@@ -72,16 +72,17 @@ auth.post("/verify", async (c) => {
   return c.json({ authenticated: true, anonymous: false, user: userDto(user) });
 });
 
-// POST /api/auth/profile { name?, phone? } — persist the signed-in user's
-// editable profile fields (the account page mutates the server, not just React).
+// POST /api/auth/profile { name?, phone?, company? } — persist the signed-in
+// user's editable profile fields (the account page mutates the server, not just React).
 auth.post("/profile", async (c) => {
   const user = await resolveUser(c.env, c.req.raw);
   if (!user) return c.json({ error: "unauthorized" }, 401);
   const body = await c.req.json().catch(() => ({}));
   const name = body?.name !== undefined ? String(body.name).trim() : user.name;
   const phone = body?.phone !== undefined ? String(body.phone).trim() : user.phone;
-  await c.env.DB.prepare("UPDATE user SET name = ?, phone = ? WHERE id = ?")
-    .bind(name || null, phone || null, user.id).run();
+  const company = body?.company !== undefined ? String(body.company).trim() : user.company;
+  await c.env.DB.prepare("UPDATE user SET name = ?, phone = ?, company = ? WHERE id = ?")
+    .bind(name || null, phone || null, company || null, user.id).run();
   const fresh = (await c.env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(user.id).first<typeof user>())!;
   return c.json({ user: userDto(fresh) });
 });
