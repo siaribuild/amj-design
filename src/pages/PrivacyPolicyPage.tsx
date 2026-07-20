@@ -21,21 +21,6 @@ function Section({ id, title, children }: { id: string; title: string; children:
   );
 }
 
-const SECTIONS: { id: string; title: string }[] = [
-  { id: "who-we-are", title: "1. Who we are" },
-  { id: "what-we-collect", title: "2. Information we collect" },
-  { id: "how-we-use", title: "3. How we use your information" },
-  { id: "infrastructure", title: "4. Where your data is stored" },
-  { id: "third-parties", title: "5. Service providers we share data with" },
-  { id: "cookies", title: "6. Cookies and sign-in" },
-  { id: "payments", title: "7. Payments" },
-  { id: "retention", title: "8. How long we keep your data" },
-  { id: "security", title: "9. Security" },
-  { id: "your-rights", title: "10. Your rights" },
-  { id: "changes", title: "11. Changes to this policy" },
-  { id: "contact", title: "12. Contact us" },
-];
-
 export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const li = "flex gap-2.5 before:content-['—'] before:text-[#5A7A6A] before:flex-shrink-0";
@@ -63,24 +48,9 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
       </section>
 
       {/* ─── Content ─────────────────────────────────────────────────────────── */}
-      <section className="max-w-5xl mx-auto px-6 py-12 md:py-16">
-        <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-10">
-          {/* On-page contents (desktop) */}
-          <nav aria-label="Contents" className="hidden md:block">
-            <div className="sticky top-24">
-              <p className="text-[11px] uppercase tracking-wide text-[#8b8880] mb-3">On this page</p>
-              <ol className="space-y-1.5">
-                {SECTIONS.map(s => (
-                  <li key={s.id}>
-                    <a href={`#${s.id}`} className="text-[13px] text-[#5c5a56] hover:text-[#5A7A6A] transition-colors block leading-snug">{s.title}</a>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </nav>
-
+      <section className="max-w-3xl mx-auto px-6 py-12 md:py-16">
           {/* Policy body */}
-          <div className="max-w-2xl space-y-10">
+          <div className="space-y-10">
             <Section id="who-we-are" title="1. Who we are">
               <p>
                 OpenFrame ("we", "us", "our") supplies aluminium windows and doors to trade
@@ -217,7 +187,6 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
               qualified legal professional before the site goes live.
             </p>
           </div>
-        </div>
       </section>
     </div>
   );
