@@ -35,9 +35,11 @@ test("catalogue query normalization and runtime hydration", async () => {
     // truth): name/price/type live on the option, not copied onto the product.
     assert.match(catalogue.CATALOGUE_QUERY, /option->optionType->slug\.current/);
     assert.match(catalogue.CATALOGUE_QUERY, /"price": option->pricingComponent/);
-    // Colours come from the "applies to all" option type; images resolve to asset URLs.
+    // Colours come from the "applies to all" option type; images resolve to asset
+    // url + focal point for on-demand sizing.
     assert.match(catalogue.CATALOGUE_QUERY, /optionType->appliesToAll==true/);
-    assert.match(catalogue.CATALOGUE_QUERY, /heroImage\.asset->url/);
+    assert.match(catalogue.CATALOGUE_QUERY, /"heroImage": heroImage\{/);
+    assert.match(catalogue.CATALOGUE_QUERY, /"url": asset->url/);
 
     const normalized = catalogue.toCatalogueData({
       categories: [], families: [], colours: [{ name: "Test", hex: null, availability: "standard" }],
@@ -49,12 +51,11 @@ test("catalogue query normalization and runtime hydration", async () => {
     assert.equal(normalized.colours[0].typeSlug, "colour");
     assert.equal(normalized.colours[0].hex, undefined);
 
-    // Dereferenced options carry their shared price; dangling refs are dropped and
-    // null gallery members are filtered out.
+    // Dereferenced options carry their shared price; dangling refs are dropped.
     const withOpts = catalogue.toCatalogueData({
       categories: [], families: [], colours: [],
       products: [{
-        id: "q", slug: "q", name: "Q", gallery: ["u1", null],
+        id: "q", slug: "q", name: "Q",
         options: [
           { typeSlug: "hardware", typeName: "Hardware", name: "Handle A", availability: "standard", price: 120 },
           { typeSlug: null, name: null, availability: "optional" },
@@ -63,7 +64,24 @@ test("catalogue query normalization and runtime hydration", async () => {
     });
     assert.equal(withOpts.products[0].options.length, 1);
     assert.equal(withOpts.products[0].options[0].price, 120);
-    assert.deepEqual(withOpts.products[0].gallery, ["u1"]);
+
+    // Sanity image projections normalize to {url, hotspot}; missing assets drop out.
+    const withImg = catalogue.toCatalogueData({
+      categories: [], families: [], colours: [],
+      products: [{
+        id: "i", slug: "i", name: "I",
+        heroImage: { url: "https://cdn/x.jpg", hotspot: { x: 0.25, y: 0.75 } },
+        gallery: [{ url: "https://cdn/g.jpg" }, { url: null }],
+      }],
+    });
+    assert.deepEqual(withImg.products[0].heroImage, { url: "https://cdn/x.jpg", hotspot: { x: 0.25, y: 0.75 } });
+    assert.equal(withImg.products[0].gallery.length, 1);
+    // imageUrl: strings pass through; Sanity images get sizing + focal point.
+    assert.equal(catalogue.imageUrl("https://plain/u.jpg", { w: 100 }), "https://plain/u.jpg");
+    const built = catalogue.imageUrl(withImg.products[0].heroImage, { w: 800, h: 600 });
+    assert.match(built, /^https:\/\/cdn\/x\.jpg\?/);
+    assert.match(built, /w=800/); assert.match(built, /fit=crop/);
+    assert.match(built, /crop=focalpoint/); assert.match(built, /fp-x=0\.25/);
 
     const replacement = {
       id: "regression-product", slug: "regression-product", name: "Regression Product",

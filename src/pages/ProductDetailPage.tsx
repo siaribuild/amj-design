@@ -13,7 +13,7 @@ import {
 import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
 import {
   type CategorySlug, type Product, type ProductOption,
-  getProductBySlug, getFamily, getCategory, getRelatedProducts, products,
+  getProductBySlug, getFamily, getCategory, getRelatedProducts, products, imageUrl,
 } from "../data/catalogue";
 import { ItemForm, ItemSummaryCard } from "../components/ItemComposer";
 import { type QItem, type QuoteState, priceConfigured, fmt } from "../data/configurator";
@@ -223,7 +223,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
     <div className="bg-white min-h-screen">
       {/* ─── PRODUCT HERO — one image, header overlays it ────────────────────── */}
       <section className="relative min-h-[440px] md:min-h-[520px] flex items-end bg-[#0c0c0a] overflow-hidden">
-        <img src={product.heroImage}
+        <img src={imageUrl(product.heroImage, { w: 1600, h: 900 })}
           alt={`${product.name} — aluminium ${isWindow ? "window" : "door"} system installed in a contemporary home`}
           className="absolute inset-0 w-full h-full object-cover opacity-70 hero-zoom" />
         <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.9) 0%, rgba(12,12,10,0.6) 24%, rgba(12,12,10,0.25) 55%, rgba(12,12,10,0.12) 100%)" }} />
@@ -320,7 +320,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
                 <button key={i} onClick={() => setLightbox(i)}
                   className="relative bg-[#0c0c0a] aspect-[4/3] overflow-hidden group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2"
                   aria-label={`Enlarge ${product.name} view ${i + 1}`}>
-                  <img src={src} alt={`${product.name} — view ${i + 1}`}
+                  <img src={imageUrl(src, { w: 800, h: 600 })} alt={`${product.name} — view ${i + 1}`}
                     className="w-full h-full object-cover opacity-70 group-hover:opacity-85 group-hover:scale-[1.03] transition-all duration-500" />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/55 via-[#0c0c0a]/10 to-transparent pointer-events-none" />
                   <div className="absolute inset-2 border border-white/12 group-hover:border-white/30 transition-colors pointer-events-none" />
@@ -353,7 +353,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
                 <button key={r.id} onClick={() => onOpenProduct(r.slug)}
                   className="group relative bg-white border border-black/8 hover:border-[#5A7A6A] hover:shadow-sm transition-all text-left overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
                   <div className="relative bg-[#0c0c0a] aspect-[4/3] overflow-hidden">
-                    <img src={r.heroImage} alt={`${r.name} aluminium ${isWindow ? "window" : "door"} system`}
+                    <img src={imageUrl(r.heroImage, { w: 640, h: 480 })} alt={`${r.name} aluminium ${isWindow ? "window" : "door"} system`}
                       className="w-full h-full object-cover opacity-70 group-hover:opacity-80 group-hover:scale-105 transition-all duration-500" />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/55 via-[#0c0c0a]/10 to-transparent pointer-events-none" />
                     <div className="absolute inset-2 border border-white/10 group-hover:border-white/28 transition-all pointer-events-none" />
@@ -386,7 +386,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
               className="absolute left-3 sm:left-6 w-10 h-10 border border-white/30 flex items-center justify-center text-white hover:bg-white/10 cursor-pointer" aria-label="Previous image"><ChevronLeft className="w-5 h-5" /></button>
           )}
           <figure className="max-w-5xl max-h-full flex flex-col items-center" onClick={e => e.stopPropagation()}>
-            <img src={product.gallery[lightbox]} alt={`${product.name} — view ${lightbox + 1}`} className="max-w-full max-h-[80vh] object-contain" />
+            <img src={imageUrl(product.gallery[lightbox], { w: 1600 })} alt={`${product.name} — view ${lightbox + 1}`} className="max-w-full max-h-[80vh] object-contain" />
             <figcaption className="text-white/70 text-xs mt-3" style={{ fontFamily: "'DM Mono', monospace" }}>{product.name} · {lightbox + 1} / {galleryLen}</figcaption>
           </figure>
           {galleryLen > 1 && (

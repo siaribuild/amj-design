@@ -37,6 +37,30 @@ export interface ProductOption {
 
 export interface SpecRow { label: string; value: string; }
 
+// A catalogue image is either a plain URL (built-in catalogue.ts) or a Sanity
+// asset with an optional focal point. imageUrl() turns it into a display URL,
+// requesting on-demand sizes + focal-point cropping for Sanity assets.
+export interface CatalogueImage { url: string; hotspot?: { x: number; y: number }; lqip?: string; aspect?: number }
+export type ImageRef = string | CatalogueImage;
+
+// Build a display URL. Plain-string images (built-in catalogue) pass through as-is;
+// Sanity assets get on-demand sizing (w/h) and focal-point cropping via the CDN.
+export function imageUrl(img: ImageRef | null | undefined, opts?: { w?: number; h?: number }): string {
+  if (!img) return "";
+  if (typeof img === "string") return img;
+  const p = new URLSearchParams();
+  const { w, h } = opts ?? {};
+  if (w) p.set("w", String(w));
+  if (h) p.set("h", String(h));
+  if (w || h) {
+    p.set("fit", "crop");
+    if (img.hotspot) { p.set("crop", "focalpoint"); p.set("fp-x", img.hotspot.x.toFixed(4)); p.set("fp-y", img.hotspot.y.toFixed(4)); }
+  }
+  p.set("auto", "format");
+  const q = p.toString();
+  return q ? `${img.url}?${q}` : img.url;
+}
+
 export interface Product {
   id: string;
   slug: string;
@@ -56,8 +80,8 @@ export interface Product {
   waterTightness: string;
   windPressure: string;
   notes: string;
-  heroImage: string;
-  gallery: string[];
+  heroImage: ImageRef;
+  gallery: ImageRef[];
   keySpecs: SpecRow[];
   specs: SpecRow[];
   options: ProductOption[];

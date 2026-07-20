@@ -19,8 +19,8 @@ export const CATALOGUE_QUERY = `{
     shortDescription, descriptionParagraphs, standardGlass, hardware,
     minWidth, minHeight, maxWidth, maxHeight, profileThickness, airTightness,
     waterTightness, windPressure, notes,
-    "heroImage": heroImage.asset->url,
-    "gallery": gallery[].asset->url,
+    "heroImage": heroImage{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip, "aspect": asset->metadata.dimensions.aspectRatio },
+    "gallery": gallery[]{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip },
     keySpecs[]{_key,label,value}, specs[]{_key,label,value},
     "options": options[]{
       availability,
@@ -55,6 +55,17 @@ function normalizeOption(o: any): ProductOption {
   };
 }
 
+// A Sanity image projection -> CatalogueImage (url + focal point), or null if the
+// asset is missing. imageUrl() consumes this on the frontend for sized URLs.
+function normalizeImage(img: any) {
+  if (!img?.url) return null;
+  const out: any = { url: img.url };
+  if (img.hotspot && typeof img.hotspot.x === "number") out.hotspot = { x: img.hotspot.x, y: img.hotspot.y };
+  if (img.lqip) out.lqip = img.lqip;
+  if (img.aspect) out.aspect = img.aspect;
+  return out;
+}
+
 // Coerce a raw Sanity product (nullable fields, dereferenced options) into a full
 // Product — every field present with the right type, so pages/pricing never see
 // undefined. Options with a missing/dangling reference are dropped.
@@ -69,8 +80,8 @@ function normalizeProduct(p: any): Product {
     maxWidth: p.maxWidth ?? null, maxHeight: p.maxHeight ?? null,
     profileThickness: p.profileThickness ?? "", airTightness: p.airTightness ?? "",
     waterTightness: p.waterTightness ?? "", windPressure: p.windPressure ?? "",
-    notes: p.notes ?? "", heroImage: p.heroImage ?? "",
-    gallery: (p.gallery ?? []).filter(Boolean),
+    notes: p.notes ?? "", heroImage: normalizeImage(p.heroImage) ?? "",
+    gallery: (p.gallery ?? []).map(normalizeImage).filter(Boolean),
     keySpecs: p.keySpecs ?? [], specs: p.specs ?? [],
     options: (p.options ?? []).filter((o: any) => o?.name && o?.typeSlug).map(normalizeOption),
     featuredOrder: p.featuredOrder ?? 0,

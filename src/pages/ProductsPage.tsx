@@ -11,7 +11,7 @@ import {
 import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
 import {
   type CategorySlug, type Product, type Family,
-  getCategory, getFamiliesByCategory, getProductsByCategory, getProductsByFamily, familyProductCount,
+  getCategory, getFamiliesByCategory, getProductsByCategory, getProductsByFamily, familyProductCount, imageUrl,
 } from "../data/catalogue";
 
 // ─── Per-category presentation copy (marketing text, not product data) ─────────
@@ -98,7 +98,7 @@ function ProductCard({ product, category, onView }: { product: Product; category
     <button onClick={onView}
       className="group relative bg-white border border-black/8 hover:border-[#5A7A6A] hover:shadow-sm transition-all text-left overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
       <div className="relative bg-[#0c0c0a] aspect-[4/3] overflow-hidden">
-        <img src={product.heroImage} alt={`${product.name} aluminium ${category === "windows" ? "window" : "door"} system`}
+        <img src={imageUrl(product.heroImage, { w: 640, h: 480 })} alt={`${product.name} aluminium ${category === "windows" ? "window" : "door"} system`}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-70 group-hover:opacity-80" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/55 via-[#0c0c0a]/10 to-transparent pointer-events-none" />
         <div className="absolute inset-2 border border-white/10 group-hover:border-white/28 transition-all duration-300 pointer-events-none" />
