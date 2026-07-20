@@ -9,6 +9,7 @@ export type Page =
   | "home" | "products" | "product-detail" | "quote"
   | "how-it-works" | "resources" | "contact" | "admin"
   | "approved-quote" | "trade" | "login" | "dashboard"
+  | "quotes" | "orders"
   | "track-order" | "profile" | "account-settings" | "order"
   | "privacy";
 

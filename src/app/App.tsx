@@ -10,6 +10,7 @@ import {
 import { type Page, SAGE, DARK, WARM, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "./ui";
 import { ProductsPage } from "../pages/ProductsPage";
 import { ProductDetailPage } from "../pages/ProductDetailPage";
+import { AccountPage, AccountLayout, ACCOUNT_NAV, isAccountActive } from "../pages/AccountArea";
 import { QuotePage } from "../pages/QuotePage";
 import { HowItWorksPage } from "../pages/HowItWorksPage";
 import { OrderTrackingPage, OrderReadout, type TrackFocus } from "../pages/OrderTrackingPage";
@@ -154,7 +155,7 @@ function Nav({ page, setPage, user, setUser }: {
 }) {
   const [open, setOpen] = useState(false);
   const go = (p: Page) => { setPage(p); setOpen(false); window.scrollTo(0, 0); };
-  const topOffset = user ? 32 : 0;
+  const topOffset = 0; // the account top-bar was removed; header sits at the top
 
   const links: [string, Page][] = [
     ["Home", "home"], ["Products", "products"], ["How it works", "how-it-works"],
@@ -218,7 +219,7 @@ function Nav({ page, setPage, user, setUser }: {
                 <LayoutDashboard className="w-4 h-4" />My dashboard
               </button>
             )}
-            <Btn variant="sage" size="sm" onClick={() => go("quote")}>Get a quote</Btn>
+            {!user && <Btn variant="sage" size="sm" onClick={() => go("quote")}>Get a quote</Btn>}
           </div>
           <button className="xl:hidden p-2 text-white hover:bg-white/10 transition-colors cursor-pointer" onClick={() => setOpen(true)} aria-label="Open menu">
             <Menu className="w-5 h-5" />
@@ -255,24 +256,29 @@ function Nav({ page, setPage, user, setUser }: {
             </button>
           ))}
 
-          {/* CTA right after nav links */}
-          <div className="px-5 pt-4 pb-2">
-            <Btn variant="sage" size="md" onClick={() => go("quote")} className="w-full justify-center">
-              Get a quote <ArrowRight className="w-4 h-4" />
-            </Btn>
-          </div>
+          {/* Primary CTA — hidden for signed-in users (they start quotes from Overview). */}
+          {!user && (
+            <div className="px-5 pt-4 pb-2">
+              <Btn variant="sage" size="md" onClick={() => go("quote")} className="w-full justify-center">
+                Get a quote <ArrowRight className="w-4 h-4" />
+              </Btn>
+            </div>
+          )}
 
           <div className="border-t border-white/10 mt-2 pt-2">
             {user ? (
               <>
-                <button onClick={() => go("dashboard")}
-                  className="w-full text-left px-5 py-3.5 text-sm text-[#8CA99B] hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
-                  <LayoutDashboard className="w-4 h-4" />My dashboard
-                </button>
-                <button onClick={() => go("profile")}
-                  className="w-full text-left px-5 py-3.5 text-sm text-white/60 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
-                  <User className="w-4 h-4" />My profile
-                </button>
+                <p className="px-5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-white/35">My account</p>
+                {ACCOUNT_NAV.map(({ label, page: p }) => {
+                  const active = isAccountActive(page, p);
+                  return (
+                    <button key={p} onClick={() => go(p)} aria-current={active ? "page" : undefined}
+                      className={`w-full text-left px-5 py-3.5 text-sm flex items-center justify-between cursor-pointer border-l-2 ${active ? "text-white font-semibold bg-[#5A7A6A]/25 border-l-[#8CA99B]" : "text-white/70 hover:text-white hover:bg-white/[0.06] border-l-transparent"}`}>
+                      {label}
+                      {active && <span className="w-1.5 h-1.5 bg-[#8CA99B] rounded-full" aria-hidden="true" />}
+                    </button>
+                  );
+                })}
                 <button onClick={() => { apiLogout().catch(() => {}); setUser(null); setOpen(false); go("home"); }}
                   className="w-full text-left px-5 py-3.5 text-sm text-red-300 hover:text-red-200 hover:bg-red-500/10 flex items-center gap-2 cursor-pointer">
                   <LogOut className="w-4 h-4" />Sign out
@@ -981,58 +987,27 @@ function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser |
     }
   };
   return (
-    <div className="relative min-h-screen bg-[#FAFAF9] pt-16 overflow-hidden">
-      <GhostMark size={280} opacity={0.05} pos="right-0 bottom-0" />
-      <div className="max-w-3xl mx-auto px-6 py-12 relative">
-        <button onClick={() => go("dashboard")} className="text-xs text-[#5c5a56] hover:text-[#131311] flex items-center gap-1 cursor-pointer mb-6">
-          <ChevronLeft className="w-3 h-3" />Dashboard
-        </button>
-        <SLabel>Account</SLabel>
-        <h1 className="text-3xl font-semibold text-[#131311] mb-8"
-          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>My profile</h1>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <div className="md:col-span-2 space-y-4">
-            <div className="group relative bg-white border border-black/8 p-5 overflow-hidden">
-              <FrameCorners size={10} color={SAGE} show="always" />
-              <h3 className="font-semibold text-sm text-[#131311] mb-4">Personal details</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><FieldLabel>Full name</FieldLabel><Input value={name} onChange={e => setName(e.target.value)} /></div>
-                <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} /></div>
-                <div><FieldLabel>Phone number</FieldLabel><Input value={phone} onChange={e => setPhone(e.target.value)} /></div>
-                <div><FieldLabel>Company / trade name</FieldLabel><Input value={company} onChange={e => setCompany(e.target.value)} /></div>
-              </div>
-              {saveError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5 mt-4"><AlertCircle className="w-4 h-4" />{saveError}</p>}
-              <div className="mt-5">
-                <Btn variant="sage" size="md" disabled={saving} onClick={saveProfile}>
-                  {saved ? <><Check className="w-4 h-4" />Saved</> : saving ? "Saving…" : "Save changes"}
-                </Btn>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="group relative bg-white border border-black/8 p-5 text-center overflow-hidden">
-              <FrameCorners size={10} color={SAGE} show="always" />
-              <div className="w-12 h-12 bg-[#5A7A6A]/10 border border-[#5A7A6A]/20 flex items-center justify-center mx-auto mb-3">
-                <WindowMark size={20} color={SAGE} />
-              </div>
-              <p className="font-semibold text-[#131311] text-sm">{user.name}</p>
-              <p className="text-xs text-[#5c5a56]">{user.company}</p>
-              <p className="text-xs text-[#5A7A6A] mt-1 capitalize">{user.type}</p>
-            </div>
-            <div className="group relative bg-white border border-black/8 p-5 overflow-hidden">
-              <FrameCorners size={10} color={SAGE} show="always" />
-              <p className="font-semibold text-xs text-[#131311] uppercase tracking-wide mb-3">Account links</p>
-              {[[<Bell className="w-3.5 h-3.5" />,"Notifications","account-settings" as Page],[<LayoutDashboard className="w-3.5 h-3.5" />,"My dashboard","dashboard" as Page]].map(([icon,label,page]) => (
-                <button key={label as string} onClick={() => go(page as Page)}
-                  className="w-full text-left text-sm text-[#5c5a56] hover:text-[#131311] flex items-center gap-2.5 py-1.5 cursor-pointer transition-colors">
-                  <span className="text-[#5A7A6A]">{icon as React.ReactNode}</span>{label as string}
-                </button>
-              ))}
-            </div>
-          </div>
+    <>
+      <header className="mb-8">
+        <SLabel>Customer account</SLabel>
+        <h1 className="text-3xl md:text-4xl font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Profile settings</h1>
+      </header>
+      <div className="max-w-xl bg-white border border-black/8 p-5">
+        <h3 className="font-semibold text-sm text-[#131311] mb-4">Personal details</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><FieldLabel>Full name</FieldLabel><Input value={name} onChange={e => setName(e.target.value)} /></div>
+          <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} /></div>
+          <div><FieldLabel>Phone number</FieldLabel><Input value={phone} onChange={e => setPhone(e.target.value)} /></div>
+          <div><FieldLabel>Company / trade name</FieldLabel><Input value={company} onChange={e => setCompany(e.target.value)} /></div>
+        </div>
+        {saveError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5 mt-4"><AlertCircle className="w-4 h-4" />{saveError}</p>}
+        <div className="mt-5">
+          <Btn variant="sage" size="md" disabled={saving} onClick={saveProfile}>
+            {saved ? <><Check className="w-4 h-4" />Saved</> : saving ? "Saving…" : "Save changes"}
+          </Btn>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1043,44 +1018,23 @@ function AccountSettingsPage({ user, setPage, authLoading }: { user: AuthUser | 
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   if (!user) { if (!authLoading) go("login"); return null; }
   return (
-    <div className="relative min-h-screen bg-[#FAFAF9] pt-16 overflow-hidden">
-      <GhostMark size={260} opacity={0.05} pos="right-0 bottom-0" />
-      <div className="max-w-2xl mx-auto px-6 py-12 relative">
-        <button onClick={() => go("profile")} className="text-xs text-[#5c5a56] hover:text-[#131311] flex items-center gap-1 mb-6 cursor-pointer"><ChevronLeft className="w-3 h-3" />My profile</button>
-        <SLabel>Account</SLabel>
-        <h1 className="text-3xl font-semibold text-[#131311] mb-8"
-          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Account settings</h1>
-        <div className="space-y-5">
-          <div className="group relative bg-white border border-black/8 p-5 overflow-hidden">
-            <FrameCorners size={10} color={SAGE} show="always" />
-            <div className="flex items-center gap-2 mb-2"><Key className="w-4 h-4 text-[#5A7A6A]" /><h3 className="font-semibold text-sm text-[#131311]">Sign-in &amp; security</h3></div>
-            <p className="text-sm text-[#5c5a56] leading-relaxed">Your account is passwordless — you sign in with a one-time code emailed to <span className="text-[#131311]">{user.email}</span>. There's no password to set or change.</p>
-          </div>
-          <div className="group relative bg-white border border-black/8 p-5 overflow-hidden">
-            <FrameCorners size={10} color={SAGE} show="always" />
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-sm text-[#131311]">Notification preferences</h3>
-              <span className="text-[10px] uppercase tracking-wide text-[#5c5a56] border border-black/10 px-1.5 py-0.5">Coming soon</span>
-            </div>
-            <div className="space-y-3 opacity-60 pointer-events-none">
-              {[["Quote status updates",true],["Deposit reminders",true],["Delivery notifications",true],["Product and resource updates",false]].map(([l,d]) => (
-                <label key={l as string} className="flex items-center justify-between">
-                  <span className="text-sm text-[#131311]">{l as string}</span>
-                  <input type="checkbox" defaultChecked={d as boolean} disabled className="accent-[#5A7A6A] w-4 h-4" />
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-[#5c5a56] mt-3">Preference controls aren't saved yet. For now, transactional emails (quote status, invoices, delivery) are always sent.</p>
-          </div>
-          <div className="group relative bg-white border border-red-200 p-5 overflow-hidden">
-            <FrameCorners size={10} color="#dc2626" show="always" />
-            <h3 className="font-semibold text-sm text-red-700 mb-2">Danger zone</h3>
-            <p className="text-xs text-[#5c5a56] mb-4">Permanently delete your account and all associated data. This cannot be undone.</p>
-            <Btn variant="danger" size="sm">Delete account</Btn>
-          </div>
+    <>
+      <header className="mb-8">
+        <SLabel>Customer account</SLabel>
+        <h1 className="text-3xl md:text-4xl font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Account settings</h1>
+      </header>
+      <div className="max-w-xl space-y-4">
+        <div className="bg-white border border-black/8 p-5">
+          <div className="flex items-center gap-2 mb-2"><Key className="w-4 h-4 text-[#5A7A6A]" /><h3 className="font-semibold text-sm text-[#131311]">Sign-in &amp; security</h3></div>
+          <p className="text-sm text-[#5c5a56] leading-relaxed">Your account is passwordless — you sign in with a one-time code emailed to <span className="text-[#131311]">{user.email}</span>. There's no password to set or change.</p>
+        </div>
+        <div className="bg-white border border-red-200 p-5">
+          <h3 className="font-semibold text-sm text-red-700 mb-2">Danger zone</h3>
+          <p className="text-xs text-[#5c5a56] mb-4">Permanently delete your account and all associated data. This cannot be undone.</p>
+          <Btn variant="danger" size="sm">Delete account</Btn>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1509,11 +1463,13 @@ export default function App() {
       case "trade":            return <TradePage setPage={navigateTo} />;
       case "admin":            return <AdminPage />;
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
-      case "dashboard":        return <DashboardPage setPage={navigateTo} user={user} setUser={setUser} authLoading={authLoading} onOpenRecord={openRecord} />;
+      case "dashboard":
+      case "quotes":
+      case "orders":           return <AccountPage page={page} setPage={navigateTo} setUser={setUser} user={user} authLoading={authLoading} onOpenRecord={openRecord} />;
       case "track-order":      return <TrackOrderPage setPage={navigateTo} />;
       case "order":            return <OrderTrackingPage setPage={navigateTo} user={user} focus={focusRecord} />;
-      case "profile":          return <ProfilePage user={user} setPage={navigateTo} setUser={setUser} authLoading={authLoading} />;
-      case "account-settings": return <AccountSettingsPage user={user} setPage={navigateTo} authLoading={authLoading} />;
+      case "profile":          return <AccountLayout page="profile" setPage={navigateTo} setUser={setUser}><ProfilePage user={user} setPage={navigateTo} setUser={setUser} authLoading={authLoading} /></AccountLayout>;
+      case "account-settings": return <AccountLayout page="account-settings" setPage={navigateTo} setUser={setUser}><AccountSettingsPage user={user} setPage={navigateTo} authLoading={authLoading} /></AccountLayout>;
       default:                 return <HomePage setPage={navigateTo} onUploadSchedule={uploadDemoScheduleFromHome} />;
     }
   };
@@ -1559,11 +1515,10 @@ export default function App() {
         .hero-zoom { animation: heroZoom 2.5s ease-out both; }
         @media (prefers-reduced-motion: reduce) { .hero-zoom { animation: none; } }
       `}</style>
-      {user && <AccountBar user={user} setPage={navigateTo} setUser={setUser} />}
       <Nav page={page} setPage={navigateTo} user={user} setUser={setUser} />
       <main>{renderPage()}</main>
       {page !== "admin" && <Footer setPage={navigateTo} />}
-      {page !== "home" && page !== "quote" && page !== "admin" && page !== "product-detail" && (
+      {!["home", "quote", "admin", "product-detail", "dashboard", "quotes", "orders", "profile", "account-settings"].includes(page) && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-4 py-3 bg-white border-t border-black/8"
           style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
           <Btn variant="sage" size="md" onClick={() => navigateTo("quote")} className="w-full justify-center">Get a quote →</Btn>
