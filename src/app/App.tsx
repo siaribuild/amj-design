@@ -129,7 +129,7 @@ function Nav({ page, setPage, user, setUser }: {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-  const heroPage = page === "home" || page === "products" || page === "product-detail" || page === "quote";
+  const heroPage = page === "home" || page === "products" || page === "product-detail" || page === "quote" || page === "trade" || page === "how-it-works";
   const transparent = heroPage && !scrolled;
 
   return (
@@ -991,14 +991,27 @@ function ApprovedQuotePage() {
 function TradePage({ setPage }: { setPage: (p: Page) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   return (
-    <div className="relative min-h-screen bg-[#FAFAF9] pt-24 pb-0 overflow-hidden">
-      <GhostMark size={280} opacity={0.05} pos="right-0 top-0" />
-      <div className="max-w-4xl mx-auto px-6 pb-12 relative">
-        <SLabel>Trade account</SLabel>
-        <h1 className="text-4xl font-semibold text-[#131311] mb-4"
-          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>For builders and trades</h1>
-        <p className="text-[#5c5a56] max-w-lg mb-10">Faster turnaround, saved contacts, dedicated support and bulk schedule upload.</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <div className="bg-[#FAFAF9] min-h-screen">
+      {/* ─── Hero — dark architectural, consistent with the other pages ───────── */}
+      <section className="relative bg-[#0c0c0a] overflow-hidden min-h-[340px] md:min-h-[420px] flex items-end pt-16">
+        <img src={IMG.hero} alt="Aluminium-framed façade on a contemporary Melbourne build at dusk"
+          className="absolute inset-0 w-full h-full object-cover opacity-60 hero-zoom" />
+        <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.92) 0%, rgba(12,12,10,0.6) 34%, rgba(12,12,10,0.25) 100%)" }} />
+        <GhostMark size={300} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
+        <div className="relative max-w-6xl mx-auto px-6 pb-10 w-full">
+          <div className="flex items-center gap-2 mb-3">
+            <WindowMark size={11} color="rgba(255,255,255,0.55)" />
+            <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60" style={{ fontFamily: "'DM Mono', monospace" }}>Trade account</span>
+          </div>
+          <h1 className="font-semibold text-white leading-[1.05] tracking-tight mb-3"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2rem, 4.5vw, 3rem)" }}>For builders and trades</h1>
+          <p className="text-white/70 max-w-xl text-[15px] leading-relaxed">Faster turnaround, saved contacts, dedicated support and bulk schedule upload.</p>
+        </div>
+      </section>
+
+      {/* ─── Content ──────────────────────────────────────────────────────────── */}
+      <section className="max-w-6xl mx-auto px-6 py-12 md:py-16">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
           <div className="space-y-4">
             {[["Faster quote turnaround","Priority review for trade accounts."],["Saved project details","Reuse contacts, addresses and product specs."],["Repeat orders","Re-order previous products with updated dimensions."],["Dedicated contact","Named account manager for ongoing projects."],["Bulk schedule upload","Submit multiple schedules in one request."]].map(([t,b]) => (
               <div key={t} className="flex gap-3">
@@ -1011,7 +1024,7 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
             <FrameCorners size={10} color={SAGE} show="always" />
             <h3 className="font-semibold text-[#131311] mb-4">Apply for a trade account</h3>
             <div className="space-y-3">
-              {[["Business name","ABC Constructions"],["ABN","00 000 000 000"],["Contact name","Full name"],["Email","trade@business.com.au"],["Phone","(03) 9000 0000"],["Suburbs served","e.g. Inner north, Coburg"],["Yearly project volume","e.g. 10 new homes"]].map(([l,p]) => (
+              {[["Business name","ABC Constructions"],["ABN","00 000 000 000"],["Contact name","Full name"],["Email","trade@business.com.au"],["Phone","(03) 9000 0000"]].map(([l,p]) => (
                 <div key={l}><FieldLabel>{l}</FieldLabel><Input placeholder={p} /></div>
               ))}
               <Btn variant="sage" size="md" className="w-full justify-center">Apply <ArrowRight className="w-4 h-4" /></Btn>
@@ -1019,7 +1032,7 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
             <p className="text-xs text-[#5c5a56] mt-3">Reviewed within 2 business days.</p>
           </div>
         </div>
-      </div>
+      </section>
       <CtaBanner
         title="Ready to get a quote?"
         sub="Start online — enter dimensions or bring your window schedule."
