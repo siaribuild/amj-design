@@ -1,7 +1,9 @@
 // Shared Sanity GROQ for the catalogue — one round-trip returning everything in
-// the exact shape hydrateCatalogue() expects (references dereferenced to slugs).
-// Imported by both the client (src/data/sanity.ts) and the Worker
-// (worker/lib/catalogue.ts) so the query + normalization stay in one place.
+// the exact shape hydrateCatalogue() expects. Options are dereferenced from the
+// shared `option` documents (so name/price/type live in ONE place), and colours
+// come from the "applies to all" option type. Imported by both the client
+// (src/data/sanity.ts) and the Worker (worker/lib/catalogue.ts) so the query +
+// normalization stay in one place.
 import type { Category, Family, Product, ProductOption, CatalogueData } from "./catalogue";
 
 export const CATALOGUE_QUERY = `{
@@ -16,22 +18,46 @@ export const CATALOGUE_QUERY = `{
     "familySlug":family->slug.current, "categorySlug":category->slug.current,
     shortDescription, descriptionParagraphs, standardGlass, hardware,
     minWidth, minHeight, maxWidth, maxHeight, profileThickness, airTightness,
-    waterTightness, windPressure, notes, heroImage, gallery,
+    waterTightness, windPressure, notes,
+    "heroImage": heroImage.asset->url,
+    "gallery": gallery[].asset->url,
     keySpecs[]{_key,label,value}, specs[]{_key,label,value},
-    options[]{_key,typeSlug,typeName,name,availability,hex}, featuredOrder
+    "options": options[]{
+      availability,
+      "typeSlug": option->optionType->slug.current,
+      "typeName": option->optionType->name,
+      "name": option->name,
+      "price": option->pricingComponent,
+      "hex": option->hex
+    },
+    featuredOrder
   },
-  "colours": *[_type=="colour"]{ name, hex, availability }
+  "colours": *[_type=="option" && optionType->appliesToAll==true]|order(isDefault desc, name asc){
+    "name": name,
+    "availability": select(isDefault == true => "standard", "optional"),
+    "hex": hex,
+    "price": pricingComponent
+  }
 }`;
 
 export interface RawCataloguePayload {
   categories: Category[];
   families: Family[];
   products: any[];
-  colours: { name: string; hex?: string | null; availability: string }[];
+  colours: { name: string; hex?: string | null; availability: string; price?: number | null }[];
 }
 
-// Coerce a raw Sanity product (nullable fields) into a full Product — every
-// field present with the right type, so pages/pricing never see undefined.
+function normalizeOption(o: any): ProductOption {
+  return {
+    typeSlug: o.typeSlug ?? "", typeName: o.typeName ?? "", name: o.name ?? "",
+    availability: (o.availability as any) ?? "optional",
+    hex: o.hex ?? undefined, price: o.price ?? undefined,
+  };
+}
+
+// Coerce a raw Sanity product (nullable fields, dereferenced options) into a full
+// Product — every field present with the right type, so pages/pricing never see
+// undefined. Options with a missing/dangling reference are dropped.
 function normalizeProduct(p: any): Product {
   return {
     id: p.id, slug: p.slug, name: p.name ?? "",
@@ -43,9 +69,11 @@ function normalizeProduct(p: any): Product {
     maxWidth: p.maxWidth ?? null, maxHeight: p.maxHeight ?? null,
     profileThickness: p.profileThickness ?? "", airTightness: p.airTightness ?? "",
     waterTightness: p.waterTightness ?? "", windPressure: p.windPressure ?? "",
-    notes: p.notes ?? "", heroImage: p.heroImage ?? "", gallery: p.gallery ?? [],
+    notes: p.notes ?? "", heroImage: p.heroImage ?? "",
+    gallery: (p.gallery ?? []).filter(Boolean),
     keySpecs: p.keySpecs ?? [], specs: p.specs ?? [],
-    options: (p.options ?? []) as ProductOption[], featuredOrder: p.featuredOrder ?? 0,
+    options: (p.options ?? []).filter((o: any) => o?.name && o?.typeSlug).map(normalizeOption),
+    featuredOrder: p.featuredOrder ?? 0,
   };
 }
 
@@ -56,7 +84,8 @@ export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
     products: (raw.products ?? []).map(normalizeProduct),
     colours: (raw.colours ?? []).map((c) => ({
       typeSlug: "colour", typeName: "Colour", name: c.name,
-      availability: (c.availability as any) ?? "optional", hex: c.hex ?? undefined,
+      availability: (c.availability as any) ?? "optional",
+      hex: c.hex ?? undefined, price: c.price ?? undefined,
     })),
   };
 }

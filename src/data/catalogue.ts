@@ -32,6 +32,7 @@ export interface ProductOption {
   name: string;
   availability: OptionAvailability;
   hex?: string;
+  price?: number; // shared surcharge from the option (single source of truth)
 }
 
 export interface SpecRow { label: string; value: string; }

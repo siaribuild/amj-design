@@ -30,10 +30,14 @@ test("catalogue query normalization and runtime hydration", async () => {
 
     assert.match(catalogue.CATALOGUE_QUERY, /category->slug\.current/);
     assert.match(catalogue.CATALOGUE_QUERY, /family->slug\.current/);
-    // Object-array projections carry _key so Sanity array items (and React lists)
-    // have stable identity.
     assert.match(catalogue.CATALOGUE_QUERY, /keySpecs\[\]\{_key,label,value\}/);
-    assert.match(catalogue.CATALOGUE_QUERY, /options\[\]\{_key,typeSlug,typeName,name,availability,hex\}/);
+    // Options are dereferenced from the shared `option` documents (single source of
+    // truth): name/price/type live on the option, not copied onto the product.
+    assert.match(catalogue.CATALOGUE_QUERY, /option->optionType->slug\.current/);
+    assert.match(catalogue.CATALOGUE_QUERY, /"price": option->pricingComponent/);
+    // Colours come from the "applies to all" option type; images resolve to asset URLs.
+    assert.match(catalogue.CATALOGUE_QUERY, /optionType->appliesToAll==true/);
+    assert.match(catalogue.CATALOGUE_QUERY, /heroImage\.asset->url/);
 
     const normalized = catalogue.toCatalogueData({
       categories: [], families: [], colours: [{ name: "Test", hex: null, availability: "standard" }],
@@ -44,6 +48,22 @@ test("catalogue query normalization and runtime hydration", async () => {
     assert.deepEqual(normalized.products[0].gallery, []);
     assert.equal(normalized.colours[0].typeSlug, "colour");
     assert.equal(normalized.colours[0].hex, undefined);
+
+    // Dereferenced options carry their shared price; dangling refs are dropped and
+    // null gallery members are filtered out.
+    const withOpts = catalogue.toCatalogueData({
+      categories: [], families: [], colours: [],
+      products: [{
+        id: "q", slug: "q", name: "Q", gallery: ["u1", null],
+        options: [
+          { typeSlug: "hardware", typeName: "Hardware", name: "Handle A", availability: "standard", price: 120 },
+          { typeSlug: null, name: null, availability: "optional" },
+        ],
+      }],
+    });
+    assert.equal(withOpts.products[0].options.length, 1);
+    assert.equal(withOpts.products[0].options[0].price, 120);
+    assert.deepEqual(withOpts.products[0].gallery, ["u1"]);
 
     const replacement = {
       id: "regression-product", slug: "regression-product", name: "Regression Product",
