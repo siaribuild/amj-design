@@ -1,5 +1,14 @@
-// Sanity content model for the OpenFrame catalogue. Mirrors src/data/catalogue.ts so
-// migrating is a data import + swapping the selectors to GROQ (see docs).
+// Sanity content model for the OpenFrame catalogue.
+//
+// Normalized so options are a SINGLE SOURCE OF TRUTH: an `option` (e.g. a specific
+// handle, flyscreen, finish or colour) is its own document, belongs to an
+// `optionType`, and carries its own price. A product does NOT copy option text —
+// it references the shared option and records only whether it is standard or
+// optional for that product. Change an option's name or price once → every product
+// that offers it updates.
+//
+// Images are real Sanity image assets (hotspot/crop enabled) so the frontend can
+// request on-demand sizes and honour focal points.
 import { defineType, defineField, defineArrayMember } from "sanity";
 
 const specRow = defineArrayMember({
@@ -36,16 +45,93 @@ export const family = defineType({
   ],
 });
 
-export const productOption = defineArrayMember({
+// ── Options as first-class, shared, reusable documents ───────────────────────
+export const optionType = defineType({
+  name: "optionType",
+  title: "Option type",
+  type: "document",
+  description: "A category of options shared across products, e.g. Hardware, Flyscreen, Installation, Finish, Colour.",
+  fields: [
+    defineField({ name: "name", type: "string", validation: (r) => r.required() }),
+    defineField({ name: "slug", type: "slug", options: { source: "name" }, validation: (r) => r.required() }),
+    defineField({ name: "sortOrder", title: "Sort order", type: "number", description: "Display order of this type in the configurator." }),
+    defineField({
+      name: "appliesToAll",
+      title: "Applies to all products",
+      type: "boolean",
+      description: "When on, every product offers all options of this type (e.g. Colour) without listing them per product.",
+      initialValue: false,
+    }),
+  ],
+  preview: { select: { title: "name" } },
+});
+
+export const option = defineType({
+  name: "option",
+  title: "Option",
+  type: "document",
+  description: "A single shared option value (one handle, flyscreen, finish, colour…). Edit its name/price here once; every product that references it updates.",
+  fields: [
+    defineField({ name: "name", type: "string", validation: (r) => r.required() }),
+    defineField({ name: "slug", type: "slug", options: { source: "name" }, validation: (r) => r.required() }),
+    defineField({ name: "optionType", type: "reference", to: [{ type: "optionType" }], validation: (r) => r.required() }),
+    defineField({
+      name: "pricingComponent",
+      title: "Price",
+      type: "number",
+      description: "Shared surcharge for this option. Changing it reflects on every product that offers the option.",
+    }),
+    defineField({
+      name: "hex",
+      title: "Swatch (hex)",
+      type: "string",
+      description: "Optional colour swatch, e.g. #404141 — used for colour/finish options.",
+    }),
+    defineField({
+      name: "isDefault",
+      title: "Default choice",
+      type: "boolean",
+      description: "Preselected option for its type (used by 'applies to all' types like Colour).",
+      initialValue: false,
+    }),
+  ],
+  preview: {
+    select: { title: "name", subtitle: "optionType.name", price: "pricingComponent" },
+    prepare: ({ title, subtitle, price }) => ({
+      title,
+      subtitle: [subtitle, price != null ? `$${price}` : null].filter(Boolean).join(" · "),
+    }),
+  },
+});
+
+// Per-product link to a shared option + whether it is standard or optional here.
+const productOption = defineArrayMember({
   type: "object",
   name: "productOption",
+  title: "Option",
   fields: [
-    defineField({ name: "typeSlug", type: "string" }),
-    defineField({ name: "typeName", type: "string" }),
-    defineField({ name: "name", type: "string" }),
-    defineField({ name: "availability", type: "string", options: { list: ["standard", "optional"] } }),
-    defineField({ name: "hex", type: "string" }),
+    defineField({ name: "option", type: "reference", to: [{ type: "option" }], validation: (r) => r.required() }),
+    defineField({
+      name: "availability",
+      type: "string",
+      options: { list: ["standard", "optional"], layout: "radio" },
+      initialValue: "optional",
+      validation: (r) => r.required(),
+    }),
   ],
+  preview: {
+    select: { title: "option.name", type: "option.optionType.name", availability: "availability" },
+    prepare: ({ title, type, availability }) => ({
+      title: title ?? "(missing option)",
+      subtitle: [type, availability].filter(Boolean).join(" · "),
+    }),
+  },
+});
+
+const galleryImage = defineArrayMember({
+  type: "image",
+  name: "galleryImage",
+  options: { hotspot: true },
 });
 
 export const product = defineType({
@@ -70,24 +156,20 @@ export const product = defineType({
     defineField({ name: "waterTightness", type: "string" }),
     defineField({ name: "windPressure", type: "string" }),
     defineField({ name: "notes", type: "text", rows: 2 }),
-    defineField({ name: "heroImage", type: "string" }),
-    defineField({ name: "gallery", type: "array", of: [{ type: "string" }] }),
+    defineField({ name: "heroImage", title: "Hero image", type: "image", options: { hotspot: true } }),
+    defineField({ name: "gallery", type: "array", of: [galleryImage] }),
     defineField({ name: "keySpecs", type: "array", of: [specRow] }),
     defineField({ name: "specs", type: "array", of: [specRow] }),
-    defineField({ name: "options", type: "array", of: [productOption] }),
+    defineField({
+      name: "options",
+      title: "Options",
+      type: "array",
+      of: [productOption],
+      description: "Shared options offered on this product, each marked standard or optional.",
+    }),
     defineField({ name: "featuredOrder", type: "number" }),
   ],
+  preview: { select: { title: "name", subtitle: "family.name", media: "heroImage" } },
 });
 
-export const colour = defineType({
-  name: "colour",
-  title: "Colorbond colour",
-  type: "document",
-  fields: [
-    defineField({ name: "name", type: "string", validation: (r) => r.required() }),
-    defineField({ name: "hex", type: "string" }),
-    defineField({ name: "availability", type: "string", options: { list: ["standard", "optional"] } }),
-  ],
-});
-
-export const schemaTypes = [category, family, product, colour];
+export const schemaTypes = [category, family, optionType, option, product];

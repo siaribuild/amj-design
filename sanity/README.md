@@ -7,11 +7,32 @@ catalogue. This lets the product catalogue move from `src/data/catalogue.ts` to
 Sanity **without touching pages or types** — the selectors just fetch via GROQ
 (`src/data/sanity.ts`) instead of reading the in-repo arrays.
 
+## Content model (single source of truth)
+- `category` → `family` → `product` (references by slug).
+- **`optionType`** — a shared category of options (Hardware, Flyscreen, Installation,
+  Finish, Colour). `appliesToAll` types (Colour) are offered on every product.
+- **`option`** — one shared option value. Carries its **own price** (`pricingComponent`)
+  and optional `hex` swatch. Edit a name/price here **once** → every product that
+  references it updates.
+- **`product.options`** — an array of `{ option → reference, availability }`. Products
+  reference shared options; they never copy option text.
+- **Images** — `heroImage` + `gallery` are real Sanity image assets (hotspot/crop),
+  so the frontend requests on-demand sizes and honours focal points.
+
 ## What's here
-- `schemaTypes.ts` — the content model (category, family, product, colour),
-  mirroring the interfaces in `src/data/catalogue.ts`.
+- `schemaTypes.ts` — the content model above.
 - `sanity.config.ts` — Studio config skeleton.
-- `catalogue.ndjson` — generated from the current catalogue (`npm run sanity:ndjson`).
+- `catalogue.ndjson` — normalized import data, built from `products.xlsx`.
+
+## Regenerate the import data (from the spreadsheet)
+```bash
+# unzip the workbook, then build the NDJSON:
+mkdir -p /tmp/xlsx && unzip -o products.xlsx -d /tmp/xlsx
+node scripts/build-catalogue-ndjson.cjs /tmp/xlsx sanity/catalogue.ndjson
+```
+Image fields use `_sanityAsset: "image@<url>"`, so `sanity dataset import` uploads
+the placeholder images into your project on import (swap for real photos in Studio
+afterwards). Document ids are deterministic, so re-imports upsert.
 
 ## 1. Create the project (your Sanity account)
 ```bash
@@ -23,12 +44,13 @@ Set `projectId`/`dataset` in `sanity.config.ts` (or via SANITY_STUDIO_PROJECT_ID
 
 ## 2. Import the catalogue
 ```bash
-# from repo root — regenerate the NDJSON from the current catalogue:
-npm run sanity:ndjson
-# then import it:
+# the committed sanity/catalogue.ndjson already holds the normalized data;
+# import it (uploads placeholder images too — needs network):
 cd sanity && npx sanity dataset import catalogue.ndjson production
 ```
-Document ids are deterministic (`product-<slug>`, `family-<slug>`, …) so re-imports upsert.
+Re-generate it from an updated spreadsheet with `scripts/build-catalogue-ndjson.cjs`
+(see above). Document ids are deterministic (`product-<slug>`, `option-<type>-<slug>`,
+`optiontype-<slug>`, …) so re-imports upsert.
 
 ## 3. Point the app at Sanity
 Set Vite env (e.g. `.env`):
