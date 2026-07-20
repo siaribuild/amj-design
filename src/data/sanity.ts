@@ -5,7 +5,10 @@ import { createClient } from "@sanity/client";
 import { hydrateCatalogue } from "./catalogue";
 import { CATALOGUE_QUERY, toCatalogueData, type RawCataloguePayload } from "./catalogueQuery";
 
-const projectId = (import.meta as any).env?.VITE_SANITY_PROJECT_ID as string | undefined;
+// Defaults to the committed project (the same one the Worker uses in wrangler.jsonc);
+// a Sanity projectId is not secret — it ships in the client bundle. Override per
+// environment with VITE_SANITY_PROJECT_ID (set it empty to force the built-in catalogue).
+const projectId = ((import.meta as any).env?.VITE_SANITY_PROJECT_ID as string | undefined) ?? "xjtrm1ex";
 const dataset = ((import.meta as any).env?.VITE_SANITY_DATASET as string | undefined) || "production";
 
 export const sanityConfigured = !!projectId;
