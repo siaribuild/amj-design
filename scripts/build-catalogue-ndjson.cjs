@@ -150,6 +150,7 @@ for(const r of prodRows){
     keySpecs:keySpecs.map((s,i)=>({_key:`ks${i}`,_type:"specRow",...s})),
     specs:specs.map((s,i)=>({_key:`sp${i}`,_type:"specRow",...s})),
     options:prodOptions,featuredOrder:Number(id)||0,
+    seo:{_type:"seoMeta",metaTitle:`${name} | OpenFrame`,metaDescription:(r[3]||"").replace(/\s+/g," ").trim().slice(0,160)},
   });
 }
 

@@ -6,7 +6,6 @@ const GRID_BG = {
   backgroundImage: "linear-gradient(to right,rgba(90,122,106,0.045) 1px,transparent 1px),linear-gradient(to bottom,rgba(90,122,106,0.045) 1px,transparent 1px)",
   backgroundSize: "64px 64px",
 };
-const HERO_IMAGE = "https://images.unsplash.com/photo-1580687104004-8e9b3d462526?w=1600&h=900&fit=crop&auto=format";
 const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 const MONO = { fontFamily: "'DM Mono', monospace" } as const;
 
@@ -59,7 +58,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
     <div className="bg-[#FAFAF9] min-h-screen">
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="relative bg-[#0c0c0a] overflow-hidden">
-        <img src={imageUrl(getPage("how-it-works")?.heroImage, { w: 1600, h: 900 }) || HERO_IMAGE} alt="Dark aluminium window frames in a contemporary residential interior"
+        <img src={imageUrl(getPage("how-it-works")?.heroImage, { w: 1600, h: 900 })} alt="Dark aluminium window frames in a contemporary residential interior"
           className="absolute inset-0 w-full h-full object-cover object-center opacity-40" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0c0c0a]/95 via-[#0c0c0a]/80 to-[#0c0c0a]/35" />
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-32 pb-14 md:pt-36 md:pb-16">

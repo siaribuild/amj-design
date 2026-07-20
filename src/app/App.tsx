@@ -447,7 +447,7 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
     <div>
       {/* ─── HERO — integrated architectural image + framed entry block ─────── */}
       <section className="relative min-h-screen flex items-center bg-[#0c0c0a] overflow-hidden">
-        <img src={imageUrl(getPage("home")?.heroImage, { w: 1920, h: 1080 }) || IMG.hero}
+        <img src={imageUrl(getPage("home")?.heroImage, { w: 1920, h: 1080 })}
           alt="Aluminium-framed sliding doors on a modern Melbourne home at dusk, warm interior light behind dark cladding"
           className="absolute inset-0 w-full h-full object-cover opacity-80 hero-zoom" />
         {/* Contrast overlay — concentrated on the left behind the content frame,
