@@ -4,10 +4,10 @@
 // multi-item order from one page: upload a schedule (parsed into draft lines) and/or
 // configure items directly. Added items collapse into compact editable cards.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Upload, UploadCloud, X, Plus, ChevronLeft, ArrowRight,
-  AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid,
+  AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil,
 } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
@@ -19,6 +19,40 @@ import {
 } from "../data/configurator";
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
+
+// Inline-editable project name — same interaction as the item code (CodeField):
+// a framed value + pencil, click to edit into a framed field, Enter/blur commits,
+// Escape cancels. Empty falls back to the default title.
+function ProjectNameField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const begin = () => { setDraft(value); setEditing(true); };
+  const commit = () => { setEditing(false); const v = draft.trim() || DEFAULT_PROJECT_TITLE; if (v !== value) onCommit(v); };
+  const cancel = () => { setDraft(value); setEditing(false); };
+  useEffect(() => { if (editing) { inputRef.current?.focus(); inputRef.current?.select(); } }, [editing]);
+
+  if (editing) {
+    return (
+      <input ref={inputRef} value={draft} maxLength={120} aria-label="Project name"
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } else if (e.key === "Escape") { e.preventDefault(); cancel(); } }}
+        size={Math.max(draft.length, 12)}
+        className="text-2xl md:text-3xl font-semibold text-[#131311] leading-tight bg-white border border-[#5A7A6A] px-2 py-0.5 max-w-full focus:outline-none focus:ring-2 focus:ring-[#5A7A6A]/40"
+        style={{ fontFamily: "'Space Grotesk', sans-serif" }} />
+    );
+  }
+  return (
+    <button onClick={begin} aria-label={`Rename project${value ? ` (${value})` : ""}`}
+      className="group/name inline-flex items-center gap-2 text-2xl md:text-3xl font-semibold text-[#131311] leading-tight border border-black/12 hover:border-[#5A7A6A] bg-white px-2 py-0.5 max-w-full transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A]"
+      style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+      <span className="truncate">{value}</span>
+      <Pencil className="w-4 h-4 text-[#9a9894] group-hover/name:text-[#5A7A6A] flex-shrink-0" aria-hidden="true" />
+    </button>
+  );
+}
 
 export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Page) => void; user: QuoteUser; quote: QuoteState; onSubmit?: (contact: SubmitContact) => Promise<SubmitResult> }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
@@ -242,20 +276,11 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         {/* ─── MyProject — page header; the estimator tool follows ───────────── */}
         <div className="mb-7">
           <SLabel>Your project</SLabel>
-          <div className="flex items-center gap-2.5">
-            {/* Editable project name — persists with the draft and shows in the
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Editable project name — same edit pattern as the item code (pencil →
+                framed field → Enter). Persists with the draft and shows in the
                 project list, submission and reviewed quote. */}
-            <input
-              value={quote.title}
-              onChange={e => quote.setTitle(e.target.value.slice(0, 120))}
-              onBlur={e => { if (!e.target.value.trim()) quote.setTitle(DEFAULT_PROJECT_TITLE); }}
-              aria-label="Project name"
-              title="Rename your project"
-              placeholder={DEFAULT_PROJECT_TITLE}
-              size={Math.max((quote.title || "").length, 8)}
-              className="text-2xl md:text-3xl font-semibold text-[#131311] leading-tight bg-transparent px-0 max-w-full border-b border-dashed border-black/25 hover:border-black/50 focus:border-solid focus:border-[#5A7A6A] focus:outline-none transition-colors"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-            />
+            <ProjectNameField value={quote.title} onCommit={quote.setTitle} />
             {quote.items.length > 0 && (
               <span className="text-xs text-[#5c5a56] border border-black/10 px-2 py-0.5 flex-shrink-0">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span>
             )}
