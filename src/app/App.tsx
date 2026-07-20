@@ -16,7 +16,8 @@ import { OrderTrackingPage, OrderReadout, type TrackFocus } from "../pages/Order
 import { ContactPage } from "../pages/ContactPage";
 import { PrivacyPolicyPage } from "../pages/PrivacyPolicyPage";
 import { pathForPage, routeFromPathname } from "./routes";
-import { products as catalogueProducts, type CategorySlug, getPage, imageUrl } from "../data/catalogue";
+import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug } from "../data/catalogue";
+import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, addDemoSchedule, fmt } from "../data/configurator";
 import { getCurrentProject, saveLines, submitProject, updateProfile, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
@@ -1517,8 +1518,35 @@ export default function App() {
     }
   };
 
+  // Per-page SEO (title, meta, Open Graph, X/Twitter) → <head>. Marketing pages
+  // pull their record from Sanity; product detail uses the product's SEO;
+  // app/transactional pages stay out of the index.
+  const seoProps = (() => {
+    if (page === "product-detail") {
+      const p = getProductBySlug(productSlug);
+      return {
+        seo: p?.seo, title: p ? `${p.name} — OpenFrame` : "OpenFrame",
+        description: p?.shortDescription, image: imageUrl(p?.heroImage, { w: 1200, h: 630 }),
+      };
+    }
+    const marketing: Record<string, { pageId: string; title: string; noIndex?: boolean }> = {
+      home: { pageId: "home", title: "OpenFrame — Aluminium Windows & Doors" },
+      products: { pageId: "products", title: "Aluminium Windows & Doors — OpenFrame" },
+      "how-it-works": { pageId: "how-it-works", title: "How It Works — OpenFrame" },
+      contact: { pageId: "contact", title: "Contact — OpenFrame" },
+      privacy: { pageId: "privacy", title: "Privacy Policy — OpenFrame", noIndex: true },
+    };
+    const m = marketing[page];
+    if (m) {
+      const pg = getPage(m.pageId);
+      return { seo: pg?.seo, title: m.title, image: imageUrl(pg?.heroImage, { w: 1200, h: 630 }), noIndex: m.noIndex };
+    }
+    return { title: "OpenFrame", noIndex: true }; // app/transactional pages
+  })();
+
   return (
     <div className="min-h-screen bg-[#FAFAF9]" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <Seo {...seoProps} />
       <style>{`
         * { -webkit-font-smoothing: antialiased; }
         ::-webkit-scrollbar { width: 5px; }

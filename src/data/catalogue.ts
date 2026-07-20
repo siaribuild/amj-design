@@ -86,6 +86,7 @@ export interface Product {
   specs: SpecRow[];
   options: ProductOption[];
   featuredOrder: number;
+  seo?: SeoMeta;
 }
 
 export let colorbondColourOptions: ProductOption[] = [

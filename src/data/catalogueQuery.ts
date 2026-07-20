@@ -30,7 +30,12 @@ export const CATALOGUE_QUERY = `{
       "price": option->pricingComponent,
       "hex": option->hex
     },
-    featuredOrder
+    featuredOrder,
+    "seo": seo{
+      metaTitle, metaDescription, keywords, canonicalUrl, noIndex, noFollow,
+      "openGraph": openGraph{ title, description, "image": image{ "url": asset->url, hotspot } },
+      "twitter": twitter{ card, title, description, "image": image{ "url": asset->url, hotspot } }
+    }
   },
   "colours": *[_type=="option" && optionType->appliesToAll==true]|order(isDefault desc, name asc){
     "name": name,
@@ -95,6 +100,7 @@ function normalizeProduct(p: any): Product {
     keySpecs: p.keySpecs ?? [], specs: p.specs ?? [],
     options: (p.options ?? []).filter((o: any) => o?.name && o?.typeSlug).map(normalizeOption),
     featuredOrder: p.featuredOrder ?? 0,
+    seo: normalizeSeo(p.seo),
   };
 }
 
