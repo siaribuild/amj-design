@@ -16,7 +16,7 @@ import { OrderTrackingPage, OrderReadout, type TrackFocus } from "../pages/Order
 import { ContactPage } from "../pages/ContactPage";
 import { PrivacyPolicyPage } from "../pages/PrivacyPolicyPage";
 import { pathForPage, routeFromPathname } from "./routes";
-import { products as catalogueProducts, type CategorySlug } from "../data/catalogue";
+import { products as catalogueProducts, type CategorySlug, getPage, imageUrl } from "../data/catalogue";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, addDemoSchedule, fmt } from "../data/configurator";
 import { getCurrentProject, saveLines, submitProject, updateProfile, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
@@ -446,7 +446,7 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
     <div>
       {/* ─── HERO — integrated architectural image + framed entry block ─────── */}
       <section className="relative min-h-screen flex items-center bg-[#0c0c0a] overflow-hidden">
-        <img src={IMG.hero}
+        <img src={imageUrl(getPage("home")?.heroImage, { w: 1920, h: 1080 }) || IMG.hero}
           alt="Aluminium-framed sliding doors on a modern Melbourne home at dusk, warm interior light behind dark cladding"
           className="absolute inset-0 w-full h-full object-cover opacity-80 hero-zoom" />
         {/* Contrast overlay — concentrated on the left behind the content frame,

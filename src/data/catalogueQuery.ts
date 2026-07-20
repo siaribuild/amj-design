@@ -4,7 +4,7 @@
 // come from the "applies to all" option type. Imported by both the client
 // (src/data/sanity.ts) and the Worker (worker/lib/catalogue.ts) so the query +
 // normalization stay in one place.
-import type { Category, Family, Product, ProductOption, CatalogueData } from "./catalogue";
+import type { Category, Family, Product, ProductOption, CatalogueData, SitePage, SeoMeta } from "./catalogue";
 
 export const CATALOGUE_QUERY = `{
   "categories": *[_type=="category"]|order(name asc){
@@ -37,6 +37,15 @@ export const CATALOGUE_QUERY = `{
     "availability": select(isDefault == true => "standard", "optional"),
     "hex": hex,
     "price": pricingComponent
+  },
+  "pages": *[_type=="page"]{
+    pageId,
+    "heroImage": heroImage{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip, "aspect": asset->metadata.dimensions.aspectRatio },
+    "seo": seo{
+      metaTitle, metaDescription, keywords, canonicalUrl, noIndex, noFollow,
+      "openGraph": openGraph{ title, description, "image": image{ "url": asset->url, hotspot } },
+      "twitter": twitter{ card, title, description, "image": image{ "url": asset->url, hotspot } }
+    }
   }
 }`;
 
@@ -45,6 +54,7 @@ export interface RawCataloguePayload {
   families: Family[];
   products: any[];
   colours: { name: string; hex?: string | null; availability: string; price?: number | null }[];
+  pages: any[];
 }
 
 function normalizeOption(o: any): ProductOption {
@@ -88,6 +98,29 @@ function normalizeProduct(p: any): Product {
   };
 }
 
+function normalizeSeo(s: any): SeoMeta | undefined {
+  if (!s) return undefined;
+  const img = (i: any) => normalizeImage(i) ?? undefined;
+  return {
+    metaTitle: s.metaTitle ?? undefined,
+    metaDescription: s.metaDescription ?? undefined,
+    keywords: s.keywords ?? undefined,
+    canonicalUrl: s.canonicalUrl ?? undefined,
+    noIndex: s.noIndex ?? undefined,
+    noFollow: s.noFollow ?? undefined,
+    openGraph: s.openGraph
+      ? { title: s.openGraph.title ?? undefined, description: s.openGraph.description ?? undefined, image: img(s.openGraph.image) }
+      : undefined,
+    twitter: s.twitter
+      ? { card: s.twitter.card ?? undefined, title: s.twitter.title ?? undefined, description: s.twitter.description ?? undefined, image: img(s.twitter.image) }
+      : undefined,
+  };
+}
+
+function normalizePage(p: any): SitePage {
+  return { pageId: p.pageId, heroImage: normalizeImage(p.heroImage) ?? undefined, seo: normalizeSeo(p.seo) };
+}
+
 export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
   return {
     categories: raw.categories ?? [],
@@ -98,5 +131,6 @@ export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
       availability: (c.availability as any) ?? "optional",
       hex: c.hex ?? undefined, price: c.price ?? undefined,
     })),
+    pages: (raw.pages ?? []).filter((p) => p?.pageId).map(normalizePage),
   };
 }

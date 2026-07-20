@@ -1,5 +1,6 @@
 import { ArrowRight, Camera, Check, ClipboardCheck, Info, Upload } from "lucide-react";
 import { GhostMark, SAGE, SLabel, WindowMark, Btn, type Page } from "../app/ui";
+import { getPage, imageUrl } from "../data/catalogue";
 
 const GRID_BG = {
   backgroundImage: "linear-gradient(to right,rgba(90,122,106,0.045) 1px,transparent 1px),linear-gradient(to bottom,rgba(90,122,106,0.045) 1px,transparent 1px)",
@@ -58,7 +59,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
     <div className="bg-[#FAFAF9] min-h-screen">
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="relative bg-[#0c0c0a] overflow-hidden">
-        <img src={HERO_IMAGE} alt="Dark aluminium window frames in a contemporary residential interior"
+        <img src={imageUrl(getPage("how-it-works")?.heroImage, { w: 1600, h: 900 }) || HERO_IMAGE} alt="Dark aluminium window frames in a contemporary residential interior"
           className="absolute inset-0 w-full h-full object-cover object-center opacity-40" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0c0c0a]/95 via-[#0c0c0a]/80 to-[#0c0c0a]/35" />
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-32 pb-14 md:pt-36 md:pb-16">

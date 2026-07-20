@@ -603,15 +603,37 @@ export const familyProductCount = (familySlug: string): number =>
 // first render / first priced request — to swap in the live data. The selectors
 // read these `let` bindings, so everything downstream picks up the new content
 // with no other changes. Partial payloads only replace the arrays supplied.
+// ─── Site pages (Sanity-managed hero + SEO) ───────────────────────────────────
+// The page BODY stays in the app; only the hero image (with focal point) and the
+// SEO/social meta are editable in Sanity. There is no built-in fallback — pages
+// come from Sanity only, so getPage() is undefined until hydrated (each page then
+// falls back to its existing static hero).
+export interface SeoMeta {
+  metaTitle?: string;
+  metaDescription?: string;
+  keywords?: string[];
+  canonicalUrl?: string;
+  noIndex?: boolean;
+  noFollow?: boolean;
+  openGraph?: { title?: string; description?: string; image?: CatalogueImage };
+  twitter?: { card?: string; title?: string; description?: string; image?: CatalogueImage };
+}
+export interface SitePage { pageId: string; heroImage?: CatalogueImage; seo?: SeoMeta }
+
+export let pages: SitePage[] = [];
+export const getPage = (pageId: string): SitePage | undefined => pages.find((p) => p.pageId === pageId);
+
 export interface CatalogueData {
   categories?: Category[];
   families?: Family[];
   products?: Product[];
   colours?: ProductOption[];
+  pages?: SitePage[];
 }
 export function hydrateCatalogue(data: CatalogueData): void {
   if (data.categories?.length) categories = data.categories;
   if (data.families?.length) families = data.families;
   if (data.products?.length) products = data.products;
   if (data.colours?.length) colorbondColourOptions = data.colours;
+  if (data.pages?.length) pages = data.pages;
 }

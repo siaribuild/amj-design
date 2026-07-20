@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Phone, Mail, MapPin, Send, CheckCircle, AlertCircle, ArrowRight } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, Btn, FieldLabel, Input } from "../app/ui";
+import { getPage, imageUrl } from "../data/catalogue";
 import { sendContactMessage } from "../data/api";
 
 const TURNSTILE_SITE_KEY = (import.meta as any).env?.VITE_TURNSTILE_SITE_KEY as string | undefined;
@@ -108,6 +109,10 @@ export function ContactPage({ setPage }: { setPage: (p: Page) => void }) {
     <div className="bg-[#FAFAF9] min-h-screen">
       {/* ─── Slim dark hero ──────────────────────────────────────────────────── */}
       <section className="relative bg-[#0c0c0a] overflow-hidden pt-28 pb-12">
+        {imageUrl(getPage("contact")?.heroImage, { w: 1920, h: 600 }) && (
+          <img src={imageUrl(getPage("contact")?.heroImage, { w: 1920, h: 600 })} alt="" aria-hidden="true"
+            className="absolute inset-0 w-full h-full object-cover opacity-40" />
+        )}
         <GhostMark size={280} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
         <div className="relative max-w-5xl mx-auto px-6">
           <div className="flex items-center gap-2 mb-3">

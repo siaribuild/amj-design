@@ -8,6 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { Mail, ArrowRight } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, Btn } from "../app/ui";
+import { getPage, imageUrl } from "../data/catalogue";
 
 const UPDATED = "19 July 2026";
 
@@ -29,6 +30,10 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
     <div className="bg-[#FAFAF9] min-h-screen">
       {/* ─── Slim dark hero ──────────────────────────────────────────────────── */}
       <section className="relative bg-[#0c0c0a] overflow-hidden pt-28 pb-12">
+        {imageUrl(getPage("privacy")?.heroImage, { w: 1920, h: 600 }) && (
+          <img src={imageUrl(getPage("privacy")?.heroImage, { w: 1920, h: 600 })} alt="" aria-hidden="true"
+            className="absolute inset-0 w-full h-full object-cover opacity-40" />
+        )}
         <GhostMark size={280} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
         <div className="relative max-w-5xl mx-auto px-6">
           <div className="flex items-center gap-2 mb-3">
