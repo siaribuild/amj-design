@@ -23,8 +23,8 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
     await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env: wranglerEnv });
     const port = await freePort();
     const baseUrl = `http://127.0.0.1:${port}`;
-    // Local/test env: dev OTP codes on, Cloudflare Access off (staff session fallback). Prod values live in wrangler.jsonc.
-    server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn", "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:"], { env: wranglerEnv });
+    // Local/test env: dev OTP on, Access off (staff session fallback), Sanity off (deterministic built-in catalogue). Prod values live in wrangler.jsonc.
+    server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn", "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:"], { env: wranglerEnv });
     await waitForUrl(`${baseUrl}/api/health`, server);
 
     const anon = new Session(baseUrl);

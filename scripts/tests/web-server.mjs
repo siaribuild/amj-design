@@ -20,9 +20,10 @@ await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--loca
 const wrangler = spawn(process.execPath, [
   wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", PORT,
   "--persist-to", state, "--assets", assets, "--log-level", "warn",
-  // Local/E2E env: dev OTP codes on, Cloudflare Access off — so the staff session
-  // fallback works. Production values live in wrangler.jsonc (used by cf:deploy).
-  "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:",
+  // Local/E2E env: dev OTP codes on, Cloudflare Access off (staff session fallback),
+  // and Sanity off so the catalogue is the deterministic built-in data. Production
+  // values live in wrangler.jsonc (used by cf:deploy).
+  "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:",
 ], { cwd: projectRoot, env: { ...process.env, ...env }, stdio: "inherit" });
 
 wrangler.on("exit", (code) => process.exit(code ?? 0));
