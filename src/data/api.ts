@@ -76,11 +76,12 @@ export const logout = () => req<{ ok: boolean }>("/api/auth/logout", { method: "
 /** The current project (session- or claim-cookie scoped) + its draft lines. */
 export const getCurrentProject = () => req<CurrentProject>("/api/projects/current");
 
-/** Snapshot-save the whole draft line set. Creates the project on first call. */
-export const saveLines = (items: QItem[]) =>
+/** Snapshot-save the whole draft line set (+ the project name). Creates the
+ *  project on first call. */
+export const saveLines = (items: QItem[], title?: string) =>
   req<CurrentProject>("/api/projects/current/lines", {
     method: "PUT",
-    body: JSON.stringify({ items }),
+    body: JSON.stringify(title === undefined ? { items } : { items, title }),
   });
 
 // ── Quote lifecycle & orders ─────────────────────────────────────────────────

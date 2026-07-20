@@ -32,9 +32,13 @@ export interface QItem {
   status: "Ready" | "Needs review";
 }
 export interface QFile { id: number; name: string; kind: string; status: "Uploaded" | "Processing" | "Needs attention" }
+export const DEFAULT_PROJECT_TITLE = "My Project";
+
 export interface QuoteState {
   items: QItem[];
   files: QFile[];
+  title: string;                    // editable project name (defaults to DEFAULT_PROJECT_TITLE)
+  setTitle: (t: string) => void;
   // `code` is optional on input — the store assigns a suggested one when omitted.
   add: (i: Omit<QItem, "id" | "code"> & { code?: string }) => number;
   update: (id: number, patch: Partial<QItem>) => void;

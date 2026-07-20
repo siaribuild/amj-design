@@ -15,7 +15,7 @@ import { StickyQuotePanel } from "../components/StickyQuotePanel";
 import { uploadFile, type SubmitContact, type SubmitResult } from "../data/api";
 import {
   type QuoteState, type QItem,
-  priceConfigured, fmt, mm, productLabel, hasDuplicateCode, addDemoSchedule,
+  priceConfigured, fmt, mm, productLabel, hasDuplicateCode, addDemoSchedule, DEFAULT_PROJECT_TITLE,
 } from "../data/configurator";
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
@@ -243,9 +243,21 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         <div className="mb-7">
           <SLabel>Your project</SLabel>
           <div className="flex items-center gap-2.5">
-            <h2 className="text-2xl md:text-3xl font-semibold text-[#131311] leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>MyProject</h2>
+            {/* Editable project name — persists with the draft and shows in the
+                project list, submission and reviewed quote. */}
+            <input
+              value={quote.title}
+              onChange={e => quote.setTitle(e.target.value.slice(0, 120))}
+              onBlur={e => { if (!e.target.value.trim()) quote.setTitle(DEFAULT_PROJECT_TITLE); }}
+              aria-label="Project name"
+              title="Rename your project"
+              placeholder={DEFAULT_PROJECT_TITLE}
+              size={Math.max((quote.title || "").length, 8)}
+              className="text-2xl md:text-3xl font-semibold text-[#131311] leading-tight bg-transparent px-0 max-w-full border-b border-dashed border-black/25 hover:border-black/50 focus:border-solid focus:border-[#5A7A6A] focus:outline-none transition-colors"
+              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+            />
             {quote.items.length > 0 && (
-              <span className="text-xs text-[#5c5a56] border border-black/10 px-2 py-0.5">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span>
+              <span className="text-xs text-[#5c5a56] border border-black/10 px-2 py-0.5 flex-shrink-0">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span>
             )}
           </div>
           {quote.items.length === 0 && (

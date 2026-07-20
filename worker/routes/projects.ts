@@ -51,7 +51,10 @@ projects.get("/current", async (c) => {
 projects.put("/current/lines", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const items: unknown[] = Array.isArray(body?.items) ? body.items : [];
-  const title = typeof body?.title === "string" ? body.title : "My project";
+  // A title is optional per-save: sent when the user (re)names the project. When
+  // omitted (a line-only save), the existing title is left untouched.
+  const hasTitle = typeof body?.title === "string";
+  const title = hasTitle ? (body.title.trim().slice(0, 120) || "My project") : "My project";
 
   const { project, cookie } = await resolveOrCreateCurrentProject(c.env, c.req.raw, title);
 
@@ -68,7 +71,9 @@ projects.put("/current/lines", async (c) => {
         r.options_json, r.dims_json, r.measured_by, r.qty, r.line_total, r.status, r.position,
       ),
     ),
-    c.env.DB.prepare("UPDATE project SET updated_at = datetime('now') WHERE id = ?").bind(project.id),
+    hasTitle
+      ? c.env.DB.prepare("UPDATE project SET title = ?, updated_at = datetime('now') WHERE id = ?").bind(title, project.id)
+      : c.env.DB.prepare("UPDATE project SET updated_at = datetime('now') WHERE id = ?").bind(project.id),
   ];
   await c.env.DB.batch(stmts);
 

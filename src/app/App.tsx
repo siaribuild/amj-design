@@ -19,7 +19,7 @@ import { pathForPage, routeFromPathname } from "./routes";
 import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug } from "../data/catalogue";
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
-import { suggestCode, addDemoSchedule, fmt } from "../data/configurator";
+import { suggestCode, addDemoSchedule, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
 import { getCurrentProject, saveLines, submitProject, updateProfile, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ function AccountBar({ user, setPage, setUser }: {
           {open && (
             <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-black/10 shadow-lg z-10">
               {[
-                [<LayoutDashboard className="w-3.5 h-3.5" />, "My Project (quote)", "dashboard" as Page],
+                [<LayoutDashboard className="w-3.5 h-3.5" />, "My dashboard", "dashboard" as Page],
                 [<Package className="w-3.5 h-3.5" />, "My orders", "order" as Page],
                 [<User className="w-3.5 h-3.5" />, "My profile", "profile" as Page],
                 [<Settings className="w-3.5 h-3.5" />, "Account settings", "account-settings" as Page],
@@ -215,7 +215,7 @@ function Nav({ page, setPage, user, setUser }: {
             {user && (
               <button onClick={() => go("dashboard")}
                 className="text-sm text-[#8CA99B] hover:text-white font-medium cursor-pointer flex items-center gap-1.5 transition-colors ml-2">
-                <LayoutDashboard className="w-4 h-4" />My Project (quote)
+                <LayoutDashboard className="w-4 h-4" />My dashboard
               </button>
             )}
             <Btn variant="sage" size="sm" onClick={() => go("quote")}>Get a quote</Btn>
@@ -267,7 +267,7 @@ function Nav({ page, setPage, user, setUser }: {
               <>
                 <button onClick={() => go("dashboard")}
                   className="w-full text-left px-5 py-3.5 text-sm text-[#8CA99B] hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
-                  <LayoutDashboard className="w-4 h-4" />My Project (quote)
+                  <LayoutDashboard className="w-4 h-4" />My dashboard
                 </button>
                 <button onClick={() => go("profile")}
                   className="w-full text-left px-5 py-3.5 text-sm text-white/60 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
@@ -1022,7 +1022,7 @@ function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser |
             <div className="group relative bg-white border border-black/8 p-5 overflow-hidden">
               <FrameCorners size={10} color={SAGE} show="always" />
               <p className="font-semibold text-xs text-[#131311] uppercase tracking-wide mb-3">Account links</p>
-              {[[<Bell className="w-3.5 h-3.5" />,"Notifications","account-settings" as Page],[<LayoutDashboard className="w-3.5 h-3.5" />,"My Project (quote)","dashboard" as Page]].map(([icon,label,page]) => (
+              {[[<Bell className="w-3.5 h-3.5" />,"Notifications","account-settings" as Page],[<LayoutDashboard className="w-3.5 h-3.5" />,"My dashboard","dashboard" as Page]].map(([icon,label,page]) => (
                 <button key={label as string} onClick={() => go(page as Page)}
                   className="w-full text-left text-sm text-[#5c5a56] hover:text-[#131311] flex items-center gap-2.5 py-1.5 cursor-pointer transition-colors">
                   <span className="text-[#5A7A6A]">{icon as React.ReactNode}</span>{label as string}
@@ -1396,10 +1396,13 @@ export default function App() {
   // Shared quote state — MyProject persists across the quote builder and product pages
   const [quoteItems, setQuoteItems] = useState<QItem[]>([]);
   const [quoteFiles, setQuoteFiles] = useState<QFile[]>([]);
+  const [projectTitle, setProjectTitle] = useState(DEFAULT_PROJECT_TITLE);
   const [projectId, setProjectId] = useState<string | null>(null);
   const quote: QuoteState = {
     items: quoteItems,
     files: quoteFiles,
+    title: projectTitle,
+    setTitle: setProjectTitle,
     // Assign a suggested code when none is supplied. Codes are derived from `prev`
     // (not the render snapshot) so a batch import numbers items sequentially.
     add: (i) => { const id = Date.now() + Math.floor(Math.random() * 1000); setQuoteItems(prev => [...prev, { ...i, id, code: i.code?.trim() ? i.code.trim() : suggestCode(prev, i.productSlug) }]); return id; },
@@ -1440,9 +1443,10 @@ export default function App() {
         // customer starts a fresh draft instead. The tracking page reads such
         // projects through its own call.
         if (!r.project || r.project.status !== "draft") return;
+        skipNextSaveRef.current = true; // don't echo the just-loaded data straight back
         setProjectId(r.project.id);
+        if (r.project.title) setProjectTitle(r.project.title);
         if (r.items.length) {
-          skipNextSaveRef.current = true; // don't echo the just-loaded data straight back
           setQuoteItems(r.items.map((it, i) => ({
             id: Date.now() + i,
             code: it.code, productSlug: it.productSlug, location: it.location,
@@ -1461,10 +1465,10 @@ export default function App() {
     if (skipNextSaveRef.current) { skipNextSaveRef.current = false; return; }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      saveLines(quoteItems).then(r => { if (r.project) setProjectId(r.project.id); }).catch(() => {});
+      saveLines(quoteItems, projectTitle).then(r => { if (r.project) setProjectId(r.project.id); }).catch(() => {});
     }, 600);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [quoteItems]);
+  }, [quoteItems, projectTitle]);
 
   // Submit the current draft project for review (Draft -> Submitted).
   // Flush any pending autosave first so the server validates + submits the latest
@@ -1474,7 +1478,7 @@ export default function App() {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     let id = projectId;
     try {
-      const saved = await saveLines(quoteItems);
+      const saved = await saveLines(quoteItems, projectTitle);
       if (saved.project) { id = saved.project.id; setProjectId(saved.project.id); }
     } catch { return { ok: false, error: "network" }; }
     if (!id) return { ok: false, error: "no_project" };
