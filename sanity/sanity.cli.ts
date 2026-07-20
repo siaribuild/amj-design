@@ -12,4 +12,7 @@ export default defineCliConfig({
     dataset: process.env.SANITY_STUDIO_DATASET || "production",
   },
   studioHost: "apertly-catalogue",
+  deployment: {
+    appId: "xyrlgigkhs51x7bzax5am0nf",
+  },
 });
