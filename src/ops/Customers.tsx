@@ -1,10 +1,17 @@
-// Ops → Customers: organisation list + 360 view (contacts, projects, orders).
+// Ops → Customers: registered customer list + 360 view (profile, projects, orders).
+// Customers are user accounts (the organisation layer isn't wired); business name
+// and ABN come from each customer's own profile.
 import { useEffect, useState } from "react";
-import { ChevronLeft, Loader2, Building2, User } from "lucide-react";
+import { ChevronLeft, Loader2, User, Mail, Phone, Building2 } from "lucide-react";
 import { opsCustomers, opsCustomer, type OpsCustomer, type OpsCustomerDetail } from "./api";
 
 const SAGE = "#5A7A6A";
 const money = (n: number | null) => (n == null ? "—" : `$${Math.round(n).toLocaleString("en-AU")}`);
+const fmtDate = (s: string | null) => {
+  if (!s) return "—";
+  const d = new Date(s.replace(" ", "T") + "Z");
+  return isNaN(+d) ? "—" : d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+};
 
 export function Customers() {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -13,25 +20,29 @@ export function Customers() {
 
 function List({ onOpen }: { onOpen: (id: string) => void }) {
   const [rows, setRows] = useState<OpsCustomer[] | null>(null);
-  useEffect(() => { opsCustomers().then(r => setRows(r.customers)).catch(() => setRows([])); }, []);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { opsCustomers().then(r => setRows(r.customers)).catch(e => setError(String(e?.message ?? e))); }, []);
+  if (error) return <div className="bg-white border border-red-200 p-6 text-sm text-red-600">Couldn't load customers. {error}</div>;
   if (!rows) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
-  if (!rows.length) return <div className="bg-white border border-dashed border-black/15 p-12 text-center text-sm text-[#5c5a56]">No organisations yet.</div>;
+  if (!rows.length) return <div className="bg-white border border-dashed border-black/15 p-12 text-center text-sm text-[#5c5a56]">No registered customers yet.</div>;
   return (
     <div className="bg-white border border-black/8">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-[11px] uppercase tracking-wide text-[#8b8880] border-b border-black/8">
-            <th className="px-4 py-2.5 font-medium">Organisation</th><th className="px-4 py-2.5 font-medium">Contact</th>
-            <th className="px-4 py-2.5 font-medium">Projects</th><th className="px-4 py-2.5 font-medium">Orders</th><th className="px-4 py-2.5" />
+            <th className="px-4 py-2.5 font-medium">Customer</th><th className="px-4 py-2.5 font-medium">Business</th>
+            <th className="px-4 py-2.5 font-medium">Projects</th><th className="px-4 py-2.5 font-medium">Orders</th>
+            <th className="px-4 py-2.5 font-medium">Registered</th><th className="px-4 py-2.5" />
           </tr>
         </thead>
         <tbody>
           {rows.map(c => (
             <tr key={c.id} className="border-b border-black/5 last:border-0 hover:bg-[#faf9f6]">
-              <td className="px-4 py-3 font-medium text-[#14150f]">{c.name}<span className="block text-xs text-[#8b8880]">{c.abn ? `ABN ${c.abn}` : ""}</span></td>
-              <td className="px-4 py-3 text-[#5c5a56]">{c.contact_name}<span className="block text-xs text-[#8b8880]">{c.contact_email}</span></td>
+              <td className="px-4 py-3 font-medium text-[#14150f]">{c.name || c.email.split("@")[0]}<span className="block text-xs text-[#8b8880] font-normal">{c.email}</span></td>
+              <td className="px-4 py-3 text-[#5c5a56]">{c.company || <span className="text-[#b5b2ac]">—</span>}<span className="block text-xs text-[#8b8880]">{c.abn ? `ABN ${c.abn}` : ""}</span></td>
               <td className="px-4 py-3 text-[#5c5a56]">{c.projects}</td>
               <td className="px-4 py-3 text-[#5c5a56]">{c.orders}</td>
+              <td className="px-4 py-3 text-[#5c5a56]">{fmtDate(c.created_at)}</td>
               <td className="px-4 py-3 text-right"><button onClick={() => onOpen(c.id)} className="text-sm font-medium hover:underline" style={{ color: SAGE }}>Open →</button></td>
             </tr>
           ))}
@@ -43,26 +54,24 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
 
 function Detail({ id, onBack }: { id: string; onBack: () => void }) {
   const [d, setD] = useState<OpsCustomerDetail | null>(null);
-  useEffect(() => { opsCustomer(id).then(setD).catch(() => setD(null)); }, [id]);
+  const [error, setError] = useState(false);
+  useEffect(() => { opsCustomer(id).then(setD).catch(() => setError(true)); }, [id]);
+  if (error) return <div className="bg-white border border-red-200 p-6 text-sm text-red-600">Couldn't load this customer.</div>;
   if (!d) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
+  const cu = d.customer;
 
   return (
     <div className="max-w-3xl">
       <button onClick={onBack} className="text-xs text-[#5c5a56] hover:text-[#14150f] flex items-center gap-1 mb-4"><ChevronLeft className="w-3.5 h-3.5" />Back to customers</button>
       <div className="bg-white border border-black/8 p-5 mb-5">
-        <h2 className="text-lg font-semibold text-[#14150f] flex items-center gap-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Building2 className="w-5 h-5" style={{ color: SAGE }} />{d.org.name}</h2>
-        <p className="text-sm text-[#5c5a56] mt-1">{d.org.tradingName} · {d.org.abn ? `ABN ${d.org.abn}` : "No ABN"} · {d.org.accountStatus}</p>
+        <h2 className="text-lg font-semibold text-[#14150f] flex items-center gap-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><User className="w-5 h-5" style={{ color: SAGE }} />{cu.name || cu.email.split("@")[0]}</h2>
+        <div className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-[#5c5a56]">
+          <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-[#b5b2ac]" />{cu.email}</span>
+          {cu.phone && <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-[#b5b2ac]" />{cu.phone}</span>}
+          <span className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5 text-[#b5b2ac]" />{cu.company || "No business name"}{cu.abn ? ` · ABN ${cu.abn}` : ""}</span>
+          <span className="text-[#8b8880]">Registered {fmtDate(cu.createdAt)}</span>
+        </div>
       </div>
-
-      <Section title="Contacts">
-        {d.members.map(m => (
-          <div key={m.id} className="flex items-center gap-3 px-4 py-2.5 text-sm border-b border-black/5 last:border-0">
-            <User className="w-4 h-4 text-[#b5b2ac]" />
-            <span className="text-[#14150f]">{m.name}<span className="text-[#8b8880]"> · {m.role}</span></span>
-            <span className="text-[#8b8880] ml-auto">{m.email}{m.phone ? ` · ${m.phone}` : ""}</span>
-          </div>
-        ))}
-      </Section>
 
       <Section title="Projects">
         {d.projects.length === 0 && <p className="px-4 py-3 text-xs text-[#b5b2ac]">No projects.</p>}

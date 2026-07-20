@@ -79,6 +79,10 @@ export const logout = () => req<{ ok: boolean }>("/api/auth/logout", { method: "
 /** The current project (session- or claim-cookie scoped) + its draft lines. */
 export const getCurrentProject = () => req<CurrentProject>("/api/projects/current");
 
+/** A specific owned project + its lines (read-only) — e.g. to review a submission. */
+export const getProject = (projectId: string) =>
+  req<CurrentProject>(`/api/projects/${projectId}`);
+
 /** Snapshot-save the whole draft line set (+ the project name). Creates the
  *  project on first call. */
 export const saveLines = (items: QItem[], title?: string) =>

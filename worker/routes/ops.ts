@@ -128,31 +128,34 @@ ops.get("/me", async (c) => {
   return c.json({ authenticated: true, user: userDto(staff) });
 });
 
-// GET /api/ops/summary — dashboard counts (staff-gated).
+// GET /api/ops/summary — dashboard counts (staff-gated). Resilient: a query
+// failure degrades to zeros rather than 500-ing the whole dashboard.
 ops.get("/summary", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
 
-  const row = await c.env.DB.prepare(`
-    SELECT
-      (SELECT count(*) FROM project WHERE status_customer = 'submitted')                       AS submissions,
-      (SELECT count(*) FROM project WHERE status_customer = 'under_review')                    AS in_review,
-      (SELECT count(*) FROM "order" WHERE stage NOT IN ('after_sales','cancelled'))            AS active_orders,
-      (SELECT count(*) FROM "order" WHERE stage IN ('deposit_invoiced','balance_invoiced'))    AS awaiting_payment,
-      (SELECT count(*) FROM organisation)                                                       AS organisations,
-      (SELECT count(*) FROM user WHERE type = 'customer')                                       AS customers,
-      (SELECT count(*) FROM approval_step WHERE state = 'pending')                              AS approvals_pending
-  `).first<Record<string, number>>();
+  try {
+    const row = await c.env.DB.prepare(`
+      SELECT
+        (SELECT count(*) FROM project WHERE status_customer = 'submitted')                       AS submissions,
+        (SELECT count(*) FROM project WHERE status_customer = 'under_review')                    AS in_review,
+        (SELECT count(*) FROM "order" WHERE stage NOT IN ('after_sales','cancelled'))            AS active_orders,
+        (SELECT count(*) FROM "order" WHERE stage IN ('deposit_invoiced','balance_invoiced'))    AS awaiting_payment,
+        (SELECT count(*) FROM user WHERE type = 'customer')                                       AS customers,
+        (SELECT count(*) FROM approval_step WHERE state = 'pending')                              AS approvals_pending
+    `).first<Record<string, number>>();
 
-  return c.json({
-    submissions: row?.submissions ?? 0,
-    inReview: row?.in_review ?? 0,
-    activeOrders: row?.active_orders ?? 0,
-    awaitingPayment: row?.awaiting_payment ?? 0,
-    organisations: row?.organisations ?? 0,
-    customers: row?.customers ?? 0,
-    approvalsPending: row?.approvals_pending ?? 0,
-  });
+    return c.json({
+      submissions: row?.submissions ?? 0,
+      inReview: row?.in_review ?? 0,
+      activeOrders: row?.active_orders ?? 0,
+      awaitingPayment: row?.awaiting_payment ?? 0,
+      customers: row?.customers ?? 0,
+      approvalsPending: row?.approvals_pending ?? 0,
+    });
+  } catch {
+    return c.json({ submissions: 0, inReview: 0, activeOrders: 0, awaitingPayment: 0, customers: 0, approvalsPending: 0, degraded: true });
+  }
 });
 
 // GET /api/ops/queues/submissions — projects awaiting triage / review.
@@ -492,36 +495,39 @@ ops.post("/orders/:id/pay", async (c) => {
 // O5 — Customers 360
 // ═══════════════════════════════════════════════════════════════════════════
 
-// GET /api/ops/customers — organisations with contact + project/order counts.
+// GET /api/ops/customers — registered customers (real accounts are user rows;
+// the organisation layer isn't wired, so this is user-centric). Business name +
+// ABN come from the customer's own profile (see /auth/profile).
 ops.get("/customers", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
   if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const { results } = await c.env.DB.prepare(`
-    SELECT org.id, org.name, org.trading_name, org.abn, org.account_status,
-           (SELECT count(*) FROM project WHERE organisation_id = org.id) AS projects,
-           (SELECT count(*) FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.organisation_id = org.id) AS orders,
-           (SELECT u.name FROM membership m JOIN user u ON u.id = m.user_id WHERE m.organisation_id = org.id ORDER BY (m.role = 'owner') DESC LIMIT 1) AS contact_name,
-           (SELECT u.email FROM membership m JOIN user u ON u.id = m.user_id WHERE m.organisation_id = org.id ORDER BY (m.role = 'owner') DESC LIMIT 1) AS contact_email
-      FROM organisation org
-     ORDER BY org.name`).all();
+    SELECT u.id, u.name, u.email, u.phone, u.company, u.abn, u.created_at,
+           (SELECT count(*) FROM project WHERE owner_user_id = u.id) AS projects,
+           (SELECT count(*) FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.owner_user_id = u.id) AS orders
+      FROM user u
+     WHERE u.type = 'customer'
+     ORDER BY u.created_at DESC`).all();
   return c.json({ customers: results });
 });
 
-// GET /api/ops/customers/:orgId — 360: org, members, projects, orders.
-ops.get("/customers/:orgId", async (c) => {
+// GET /api/ops/customers/:id — 360: the customer, their projects, and orders.
+ops.get("/customers/:id", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
   if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
-  const orgId = c.req.param("orgId");
-  const org = await c.env.DB.prepare("SELECT * FROM organisation WHERE id = ?").bind(orgId).first<any>();
-  if (!org) return c.json({ error: "not_found" }, 404);
-  const { results: members } = await c.env.DB.prepare("SELECT u.id, u.name, u.email, u.phone, m.role FROM membership m JOIN user u ON u.id = m.user_id WHERE m.organisation_id = ?").bind(orgId).all();
-  const { results: projects } = await c.env.DB.prepare("SELECT id, title, status_customer, status_internal, updated_at FROM project WHERE organisation_id = ? ORDER BY updated_at DESC").bind(orgId).all();
-  const { results: ordersRows } = await c.env.DB.prepare('SELECT o.id, o.order_no, o.stage, o.total FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.organisation_id = ? ORDER BY o.created_at DESC').bind(orgId).all();
+  const id = c.req.param("id");
+  const u = await c.env.DB.prepare("SELECT * FROM user WHERE id = ? AND type = 'customer'").bind(id).first<any>();
+  if (!u) return c.json({ error: "not_found" }, 404);
+  const { results: projects } = await c.env.DB.prepare("SELECT id, title, status_customer, status_internal, updated_at FROM project WHERE owner_user_id = ? ORDER BY updated_at DESC").bind(id).all();
+  const { results: ordersRows } = await c.env.DB.prepare('SELECT o.id, o.order_no, o.stage, o.total FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.owner_user_id = ? ORDER BY o.created_at DESC').bind(id).all();
   return c.json({
-    org: { id: org.id, name: org.name, tradingName: org.trading_name, abn: org.abn, accountStatus: org.account_status },
-    members, projects, orders: ordersRows,
+    customer: {
+      id: u.id, name: u.name, email: u.email, phone: u.phone,
+      company: u.company, abn: u.abn, createdAt: u.created_at,
+    },
+    projects, orders: ordersRows,
   });
 });
 

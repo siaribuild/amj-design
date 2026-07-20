@@ -46,6 +46,19 @@ projects.get("/current", async (c) => {
   return c.json({ project: projectDto(project), items: await loadLines(c.env, project.id) });
 });
 
+// GET /api/projects/:id — a specific owned project + its draft lines (read-only).
+// Scoped to the signed-in owner so a customer can review exactly what they
+// submitted (e.g. while it's under review, before any revision is issued).
+projects.get("/:id", async (c) => {
+  const user = await resolveUser(c.env, c.req.raw);
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  const project = await c.env.DB.prepare(
+    "SELECT * FROM project WHERE id = ? AND owner_user_id = ?",
+  ).bind(c.req.param("id"), user.id).first<ProjectRow>();
+  if (!project) return c.json({ error: "not_found" }, 404);
+  return c.json({ project: projectDto(project), items: await loadLines(c.env, project.id) });
+});
+
 // PUT /api/projects/current/lines — replace the draft line set (snapshot save).
 // Creates the project (and sets the claim cookie) on first save.
 projects.put("/current/lines", async (c) => {

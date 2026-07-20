@@ -12,9 +12,9 @@ export interface OpsSummary {
   inReview: number;
   activeOrders: number;
   awaitingPayment: number;
-  organisations: number;
   customers: number;
   approvalsPending: number;
+  degraded?: boolean;
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -137,19 +137,19 @@ export const opsAdvanceOrder = (id: string, action: string) =>
 export const opsPayOrder = (id: string, kind: string, reference?: string) =>
   req<{ order: OpsOrder; actions: OpsAction[] }>(`/api/ops/orders/${id}/pay`, { method: "POST", body: JSON.stringify({ kind, reference }) });
 
-// ── Customers 360 (O5) ───────────────────────────────────────────────────────
+// ── Customers 360 (O5) — user-centric (real accounts are users, not orgs) ──────
 export interface OpsCustomer {
-  id: string; name: string; trading_name: string | null; abn: string | null; account_status: string;
-  projects: number; orders: number; contact_name: string | null; contact_email: string | null;
+  id: string; name: string | null; email: string; phone: string | null;
+  company: string | null; abn: string | null; created_at: string | null;
+  projects: number; orders: number;
 }
 export interface OpsCustomerDetail {
-  org: { id: string; name: string; tradingName: string | null; abn: string | null; accountStatus: string };
-  members: { id: string; name: string | null; email: string; phone: string | null; role: string }[];
+  customer: { id: string; name: string | null; email: string; phone: string | null; company: string | null; abn: string | null; createdAt: string | null };
   projects: { id: string; title: string | null; status_customer: string; status_internal: string; updated_at: string }[];
   orders: { id: string; order_no: string; stage: string; total: number | null }[];
 }
 export const opsCustomers = () => req<{ customers: OpsCustomer[] }>("/api/ops/customers");
-export const opsCustomer = (orgId: string) => req<OpsCustomerDetail>(`/api/ops/customers/${orgId}`);
+export const opsCustomer = (id: string) => req<OpsCustomerDetail>(`/api/ops/customers/${id}`);
 
 // ── Admin (O6) ───────────────────────────────────────────────────────────────
 export interface OpsRule { id: string; name: string; trigger_family: string; condition_json: string; approver_role: string; active: number }

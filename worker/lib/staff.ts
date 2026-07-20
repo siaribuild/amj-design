@@ -23,22 +23,43 @@ export function isStaffEmail(env: Env, email: string): boolean {
   return !!domain && staffDomains(env).includes(domain);
 }
 
+// Whether any admin exists. Used to bootstrap the first staffer (see below).
+const anyAdminExists = (env: Env) =>
+  env.DB.prepare("SELECT 1 FROM user WHERE type = 'internal' AND role = 'admin' LIMIT 1").first();
+
+// Bootstrap: while NO admin exists, the acting staff member is promoted to admin.
+// Without this a fresh deployment is locked out of every role-gated surface
+// (customer PII, files, payments, role assignment) — role-less staff can't act and
+// there's no admin to promote them. Applies to a freshly created staffer AND to an
+// existing role-less one (e.g. someone who signed in before this shipped), so the
+// lockout self-heals on the next sign-in. Once any admin exists it is a no-op, and
+// later staff start role-less until an admin assigns them a role.
+async function bootstrapAdmin(env: Env, user: UserRow): Promise<UserRow> {
+  if (user.role === "admin") return user;
+  if (await anyAdminExists(env)) return user;
+  await env.DB.prepare("UPDATE user SET role = 'admin' WHERE id = ?").bind(user.id).run();
+  return { ...user, role: "admin" };
+}
+
 // Find or create an internal user for an allowlisted email. Promotes an existing
 // customer row to internal (e.g. a staffer who once used the customer portal).
 export async function findOrCreateInternalUser(env: Env, email: string): Promise<UserRow> {
   const existing = await env.DB.prepare("SELECT * FROM user WHERE email = ?").bind(email).first<UserRow>();
   if (existing) {
+    let user = existing;
     if (existing.type !== "internal") {
       await env.DB.prepare("UPDATE user SET type = 'internal', last_verified_at = datetime('now') WHERE id = ?").bind(existing.id).run();
-      return { ...existing, type: "internal" };
+      user = { ...existing, type: "internal" };
+    } else {
+      await env.DB.prepare("UPDATE user SET last_verified_at = datetime('now') WHERE id = ?").bind(existing.id).run();
     }
-    await env.DB.prepare("UPDATE user SET last_verified_at = datetime('now') WHERE id = ?").bind(existing.id).run();
-    return existing;
+    return bootstrapAdmin(env, user);
   }
+  const role = (await anyAdminExists(env)) ? null : "admin";
   const id = uuid();
   await env.DB.prepare(
-    "INSERT INTO user (id, email, name, type, last_verified_at) VALUES (?, ?, ?, 'internal', datetime('now'))",
-  ).bind(id, email, email.split("@")[0]).run();
+    "INSERT INTO user (id, email, name, type, role, last_verified_at) VALUES (?, ?, ?, 'internal', ?, datetime('now'))",
+  ).bind(id, email, email.split("@")[0], role).run();
   return (await env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(id).first<UserRow>())!;
 }
 

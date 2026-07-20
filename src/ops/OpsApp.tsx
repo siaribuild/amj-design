@@ -182,10 +182,18 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
 
 function Dashboard() {
   const [s, setS] = useState<OpsSummary | null>(null);
-  const [err, setErr] = useState(false);
-  useEffect(() => { opsSummary().then(setS).catch(() => setErr(true)); }, []);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { opsSummary().then(setS).catch(e => setErr(String(e?.message ?? e))); }, []);
 
-  if (err) return <p className="text-sm text-red-600">Couldn't load the summary.</p>;
+  // Surface the underlying status so production failures are diagnosable at a
+  // glance (403 → auth/Access; 500 → server). The summary itself degrades to
+  // zeros server-side, so this branch means the request never completed.
+  if (err) return (
+    <div className="bg-white border border-red-200 p-6">
+      <p className="text-sm text-red-600 font-medium">Couldn't load the summary.</p>
+      <p className="text-xs text-[#8b8880] mt-1">{err}</p>
+    </div>
+  );
   if (!s) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
 
   const cards: { label: string; value: number; hint: string; accent?: boolean }[] = [
@@ -194,8 +202,7 @@ function Dashboard() {
     { label: "Approvals pending", value: s.approvalsPending, hint: "need sign-off" },
     { label: "Active orders", value: s.activeOrders, hint: "in fulfilment" },
     { label: "Awaiting payment", value: s.awaitingPayment, hint: "deposit / balance", accent: s.awaitingPayment > 0 },
-    { label: "Organisations", value: s.organisations, hint: "builder accounts" },
-    { label: "Customers", value: s.customers, hint: "registered users" },
+    { label: "Customers", value: s.customers, hint: "registered accounts" },
   ];
   return (
     <div>

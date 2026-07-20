@@ -156,11 +156,13 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.ok(audit.body.events.length >= 1);
       const filtered = await requestJson(staff, "/api/ops/audit?entity=project");
       assert.ok(filtered.body.events.every((e) => e.entity_type === "project"));
+      // Customers are user accounts (org layer isn't wired) — real registered users.
       const customers = await requestJson(staff, "/api/ops/customers");
-      const north = customers.body.customers.find((c) => c.name === "Northside Build");
-      assert.ok(north && north.projects >= 1);
-      const detail = await requestJson(staff, `/api/ops/customers/${north.id}`);
-      assert.ok(detail.body.members.length >= 1);
+      const sarah = customers.body.customers.find((c) => c.name === "Sarah Nguyen");
+      assert.ok(sarah && sarah.projects >= 1, "customer listed with their project count");
+      const detail = await requestJson(staff, `/api/ops/customers/${sarah.id}`);
+      assert.equal(detail.body.customer.email, "sarah@northsidebuild.com.au");
+      assert.ok(detail.body.projects.length >= 1, "customer 360 shows their projects");
       await requestJson(staff, "/api/ops/customers/nope", {}, 404);
       const search = await requestJson(staff, "/api/ops/search?q=Fitzroy");
       assert.ok(search.body.results.some((r) => r.type === "project"));
@@ -202,6 +204,17 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       const opsView = await requestJson(staff, `/api/ops/projects/${pid}`);
       assert.equal(opsView.body.project.contactEmail, "sam@example.com");
       assert.equal(opsView.body.project.deliverySuburb, "Preston VIC 3072");
+
+      // The submitter can review exactly what they sent (read-only), owner-scoped.
+      const readback = await requestJson(buyer, `/api/projects/${pid}`);
+      assert.equal(readback.body.project.status, "submitted");
+      assert.equal(readback.body.items.length, 1);
+      // Another signed-in user cannot read someone else's project.
+      const nosey = new Session(baseUrl);
+      await login(nosey, "/api/auth", "nosey@example.com");
+      await requestJson(nosey, `/api/projects/${pid}`, {}, 404);
+      // Anonymous access is rejected outright.
+      await requestJson(new Session(baseUrl), `/api/projects/${pid}`, {}, 401);
     });
 
     await t.test("RBAC: role-less internal staff is blocked from payments + customer PII", async () => {

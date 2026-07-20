@@ -9,11 +9,12 @@
 import { useEffect, useState } from "react";
 import { Check, ChevronLeft, Clock, FileText, Landmark, PenLine, Truck } from "lucide-react";
 import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
-import { fmt } from "../data/configurator";
+import { fmt, mm, productLabel } from "../data/configurator";
+import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 import {
-  getOrders, getRevisions, getCurrentProject, acceptRevision, confirmDrawings, confirmQa,
+  getOrders, getRevisions, getProject, getCurrentProject, acceptRevision, confirmDrawings, confirmQa,
   getClarifications, replyClarification,
-  type ApiOrder, type ApiRevision, type ApiClarification,
+  type ApiOrder, type ApiRevision, type ApiClarification, type ApiItem,
 } from "../data/api";
 
 type TrackUser = { name: string; email: string } | null;
@@ -50,11 +51,17 @@ export function OrderTrackingPage({ setPage, user, focus }: { setPage: (p: Page)
   const [projectStatus, setProjectStatus] = useState<string>("");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [clarifications, setClarifications] = useState<ApiClarification[]>([]);
+  // The submitted project as the customer sent it — so there's always a read-only
+  // record to look at, even before any revision is issued.
+  const [submitted, setSubmitted] = useState<{ title: string; items: ApiItem[] } | null>(null);
 
   // Load a specific project's quote state (issued revision to accept, or the
   // clarification thread). Shared by the focused-project path and the fallback.
   const loadProject = async (id: string, status: string) => {
     setProjectStatus(status); setProjectId(id);
+    // Always pull the submitted lines so we can show what was sent for review.
+    try { const { project, items } = await getProject(id); setSubmitted({ title: project.title, items }); }
+    catch { setSubmitted(null); }
     if (status === "needs_information") {
       setClarifications((await getClarifications(id)).clarifications);
     } else {
@@ -128,7 +135,12 @@ export function OrderTrackingPage({ setPage, user, focus }: { setPage: (p: Page)
         ) : pending ? (
           <AcceptView rev={pending} busy={busy} onAccept={accept} />
         ) : projectStatus === "needs_information" ? (
-          <ClarificationView items={clarifications} busy={busy} onReply={reply} />
+          <>
+            <ClarificationView items={clarifications} busy={busy} onReply={reply} />
+            {submitted && <div className="mt-8"><SubmittedQuoteView title={submitted.title} items={submitted.items} status={projectStatus} /></div>}
+          </>
+        ) : submitted && submitted.items.length > 0 ? (
+          <SubmittedQuoteView title={submitted.title} items={submitted.items} status={projectStatus} />
         ) : (
           <EmptyState title="No active order yet"
             body={projectStatus === "submitted" || projectStatus === "under_review"
@@ -161,6 +173,47 @@ function ClarificationView({ items, busy, onReply }: { items: ApiClarification[]
           placeholder="Type your answer…" className="flex-1 border border-black/12 px-3 py-2 text-sm outline-none focus:border-[#5A7A6A] bg-white" />
         <Btn variant="sage" size="md" onClick={() => { if (msg.trim()) { onReply(msg); setMsg(""); } }} className={busy || !msg.trim() ? "opacity-50 pointer-events-none" : ""}>Send</Btn>
       </div>
+    </div>
+  );
+}
+
+// Read-only view of the quote the customer submitted — visible while it's with
+// the team for review, before any reviewed revision is issued.
+const SUBMITTED_STATUS: Record<string, { label: string; note: string }> = {
+  submitted:         { label: "Submitted for review", note: "Your project is with our team. We'll check the specifications and issue a reviewed quote — no deposit is required until you accept it." },
+  under_review:      { label: "In review",            note: "Our team is reviewing your specifications and preparing a confirmed quote. We'll email you when it's ready to accept." },
+  needs_information: { label: "More info requested",  note: "We've asked a question above. Here's the quote you submitted for reference." },
+};
+
+function SubmittedQuoteView({ title, items, status }: { title: string; items: ApiItem[]; status: string }) {
+  const gstMode = useGstMode();
+  const meta = SUBMITTED_STATUS[status] ?? SUBMITTED_STATUS.submitted;
+  const total = items.reduce((s, it) => s + (it.lineTotal ?? 0), 0);
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1 gap-3">
+        <h1 className="text-2xl font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title || "Your quote"}</h1>
+        <span className="text-[11px] px-2 py-0.5 border border-amber-300 bg-amber-50 text-amber-800 whitespace-nowrap">{meta.label}</span>
+      </div>
+      <p className="text-sm text-[#5c5a56] mb-6 max-w-xl leading-relaxed">{meta.note}</p>
+      <div className="bg-white border border-black/8 divide-y divide-black/6">
+        {items.map((it, i) => (
+          <div key={i} className="flex justify-between gap-3 px-5 py-3 text-sm">
+            <span className="text-[#131311] min-w-0">
+              <span className="font-mono text-[#5c5a56] mr-2">{it.code || String(i + 1).padStart(2, "0")}</span>
+              {productLabel(it.productSlug)} · {mm(it.width)} × {mm(it.height)} ×{it.qty}
+            </span>
+            <span className="text-[#131311] flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>
+              {it.lineTotal != null ? fmt(gstAdjust(it.lineTotal, gstMode)) : "—"}
+            </span>
+          </div>
+        ))}
+        <div className="flex justify-between px-5 py-3 text-sm font-semibold">
+          <span>Estimated total</span>
+          <span style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span>
+        </div>
+      </div>
+      <p className="text-xs text-[#8b8880] mt-3">This is the estimate you submitted. Your confirmed quote may differ after our technical review.</p>
     </div>
   );
 }
