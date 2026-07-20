@@ -134,42 +134,128 @@ const galleryImage = defineArrayMember({
   options: { hotspot: true },
 });
 
+// Content + SEO tabs on every editable record (product + page). The SEO tab is
+// the `seoMeta` object below (native — no plugin, since no SEO plugin builds on
+// Studio v6.5 yet). Rendered into <head> by the frontend.
+const RECORD_GROUPS = [
+  { name: "content", title: "Content", default: true },
+  { name: "seo", title: "SEO" },
+];
+
+// Full SEO/social meta for a record: search meta + robots/canonical, Open Graph
+// (Facebook/LinkedIn) and X/Twitter cards. Every field is optional and falls back
+// gracefully (OG/Twitter title/description/image inherit from the base meta).
+export const seoMeta = defineType({
+  name: "seoMeta",
+  title: "SEO",
+  type: "object",
+  fields: [
+    defineField({
+      name: "metaTitle", title: "Meta title", type: "string",
+      description: "≤ 60 characters recommended. Falls back to the page/product name.",
+      validation: (r) => r.max(70).warning("Keep the meta title under ~60 characters."),
+    }),
+    defineField({
+      name: "metaDescription", title: "Meta description", type: "text", rows: 3,
+      description: "≤ 160 characters recommended.",
+      validation: (r) => r.max(180).warning("Keep the meta description under ~160 characters."),
+    }),
+    defineField({ name: "keywords", title: "Keywords", type: "array", of: [{ type: "string" }], options: { layout: "tags" } }),
+    defineField({ name: "canonicalUrl", title: "Canonical URL", type: "url" }),
+    defineField({ name: "noIndex", title: "Hide from search engines (noindex)", type: "boolean", initialValue: false }),
+    defineField({ name: "noFollow", title: "Don't follow links (nofollow)", type: "boolean", initialValue: false }),
+    defineField({
+      name: "openGraph", title: "Open Graph (Facebook, LinkedIn…)", type: "object",
+      options: { collapsible: true, collapsed: true },
+      fields: [
+        defineField({ name: "title", type: "string", description: "Falls back to the meta title." }),
+        defineField({ name: "description", type: "text", rows: 2, description: "Falls back to the meta description." }),
+        defineField({ name: "image", title: "Share image", type: "image", options: { hotspot: true }, description: "Recommended 1200×630." }),
+      ],
+    }),
+    defineField({
+      name: "twitter", title: "X / Twitter card", type: "object",
+      options: { collapsible: true, collapsed: true },
+      fields: [
+        defineField({
+          name: "card", title: "Card type", type: "string", initialValue: "summary_large_image",
+          options: { list: [{ title: "Summary", value: "summary" }, { title: "Summary large image", value: "summary_large_image" }] },
+        }),
+        defineField({ name: "title", type: "string", description: "Falls back to the Open Graph / meta title." }),
+        defineField({ name: "description", type: "text", rows: 2, description: "Falls back to the Open Graph / meta description." }),
+        defineField({ name: "image", title: "Card image", type: "image", options: { hotspot: true }, description: "Falls back to the Open Graph image." }),
+      ],
+    }),
+  ],
+});
+
 export const product = defineType({
   name: "product",
   title: "Product",
   type: "document",
+  groups: RECORD_GROUPS,
   fields: [
-    defineField({ name: "name", type: "string", validation: (r) => r.required() }),
-    defineField({ name: "slug", type: "slug", options: { source: "name" }, validation: (r) => r.required() }),
-    defineField({ name: "family", type: "reference", to: [{ type: "family" }], validation: (r) => r.required() }),
-    defineField({ name: "category", type: "reference", to: [{ type: "category" }], validation: (r) => r.required() }),
-    defineField({ name: "shortDescription", type: "text", rows: 2 }),
-    defineField({ name: "descriptionParagraphs", type: "array", of: [{ type: "text" }] }),
-    defineField({ name: "standardGlass", type: "string" }),
-    defineField({ name: "hardware", type: "string" }),
-    defineField({ name: "minWidth", type: "number" }),
-    defineField({ name: "minHeight", type: "number" }),
-    defineField({ name: "maxWidth", type: "number" }),
-    defineField({ name: "maxHeight", type: "number" }),
-    defineField({ name: "profileThickness", type: "string" }),
-    defineField({ name: "airTightness", type: "string" }),
-    defineField({ name: "waterTightness", type: "string" }),
-    defineField({ name: "windPressure", type: "string" }),
-    defineField({ name: "notes", type: "text", rows: 2 }),
-    defineField({ name: "heroImage", title: "Hero image", type: "image", options: { hotspot: true } }),
-    defineField({ name: "gallery", type: "array", of: [galleryImage] }),
-    defineField({ name: "keySpecs", type: "array", of: [specRow] }),
-    defineField({ name: "specs", type: "array", of: [specRow] }),
+    defineField({ name: "name", type: "string", group: "content", validation: (r) => r.required() }),
+    defineField({ name: "slug", type: "slug", options: { source: "name" }, group: "content", validation: (r) => r.required() }),
+    defineField({ name: "family", type: "reference", to: [{ type: "family" }], group: "content", validation: (r) => r.required() }),
+    defineField({ name: "category", type: "reference", to: [{ type: "category" }], group: "content", validation: (r) => r.required() }),
+    defineField({ name: "shortDescription", type: "text", rows: 2, group: "content" }),
+    defineField({ name: "descriptionParagraphs", type: "array", of: [{ type: "text" }], group: "content" }),
+    defineField({ name: "standardGlass", type: "string", group: "content" }),
+    defineField({ name: "hardware", type: "string", group: "content" }),
+    defineField({ name: "minWidth", type: "number", group: "content" }),
+    defineField({ name: "minHeight", type: "number", group: "content" }),
+    defineField({ name: "maxWidth", type: "number", group: "content" }),
+    defineField({ name: "maxHeight", type: "number", group: "content" }),
+    defineField({ name: "profileThickness", type: "string", group: "content" }),
+    defineField({ name: "airTightness", type: "string", group: "content" }),
+    defineField({ name: "waterTightness", type: "string", group: "content" }),
+    defineField({ name: "windPressure", type: "string", group: "content" }),
+    defineField({ name: "notes", type: "text", rows: 2, group: "content" }),
+    defineField({ name: "heroImage", title: "Hero image", type: "image", options: { hotspot: true }, group: "content" }),
+    defineField({ name: "gallery", type: "array", of: [galleryImage], group: "content" }),
+    defineField({ name: "keySpecs", type: "array", of: [specRow], group: "content" }),
+    defineField({ name: "specs", type: "array", of: [specRow], group: "content" }),
     defineField({
-      name: "options",
-      title: "Options",
-      type: "array",
-      of: [productOption],
+      name: "options", title: "Options", type: "array", of: [productOption], group: "content",
       description: "Shared options offered on this product, each marked standard or optional.",
     }),
-    defineField({ name: "featuredOrder", type: "number" }),
+    defineField({ name: "featuredOrder", type: "number", group: "content" }),
+    defineField({ name: "seo", title: "SEO", type: "seoMeta", group: "seo" }),
   ],
   preview: { select: { title: "name", subtitle: "family.name", media: "heroImage" } },
 });
 
-export const schemaTypes = [category, family, optionType, option, product];
+// Static site pages — a Sanity-managed hero image (with focal point) + SEO. The
+// page body stays in the app; only the hero and meta are editable here.
+export const page = defineType({
+  name: "page",
+  title: "Page",
+  type: "document",
+  groups: RECORD_GROUPS,
+  fields: [
+    defineField({ name: "title", title: "Page name", type: "string", group: "content", validation: (r) => r.required() }),
+    defineField({
+      name: "pageId", title: "Page", type: "string", group: "content",
+      description: "Which site page this record drives.",
+      options: {
+        list: [
+          { title: "Home", value: "home" },
+          { title: "Products (listing)", value: "products" },
+          { title: "How it works", value: "how-it-works" },
+          { title: "Contact", value: "contact" },
+          { title: "Privacy", value: "privacy" },
+        ],
+      },
+      validation: (r) => r.required(),
+    }),
+    defineField({
+      name: "heroImage", title: "Hero image", type: "image", options: { hotspot: true }, group: "content",
+      description: "Served by Sanity; drag the hotspot to set the focal point.",
+    }),
+    defineField({ name: "seo", title: "SEO", type: "seoMeta", group: "seo" }),
+  ],
+  preview: { select: { title: "title", subtitle: "pageId", media: "heroImage" } },
+});
+
+export const schemaTypes = [category, family, optionType, option, product, page, seoMeta];
