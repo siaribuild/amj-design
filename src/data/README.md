@@ -1,18 +1,20 @@
 # Catalogue data (`catalogue.ts`)
 
-Single hardcoded source of truth for the **Products catalogue** and **Product detail**
-pages. Generated from `products.xlsx` (the OpenFrame product database) and deliberately shaped
-to mirror the future Sanity content model, so migration is a swap of the data source —
-not a rewrite of the pages.
+**Offline fallback** for the **Products catalogue** and **Product detail** pages. The live
+source of truth is now **Sanity** — the app hydrates from it at bootstrap (`hydrateCatalogue`,
+via `src/data/sanity.ts` on the client and `worker/lib/catalogue.ts` in the Worker) and only
+falls back to the arrays in this file when Sanity is unconfigured or unreachable. The arrays
+mirror the Sanity shape exactly, so the pages/selectors are identical either way. Safe to
+delete once you're happy with the content in Sanity.
 
 ## Shape
 
-| Export | Sanity equivalent (planned) | Notes |
+| Export | Sanity source (live) | Notes |
 |---|---|---|
 | `categories: Category[]` | `category` document | `slug` is `windows` / `doors` |
 | `families: Family[]` | `family` document | references category by `categorySlug` |
 | `products: Product[]` | `product` document | references family by `familySlug`; carries specs, options, images |
-| `ProductOption` (inline on product) | reference to `option` + `optionType` | `availability: "standard" | "optional"` came from the xlsx Mapping matrix |
+| `ProductOption` (flattened) | `option` + `optionType` documents | GROQ dereferences the shared option → `{typeSlug,typeName,name,availability,price,hex}`; `availability` came from the xlsx Mapping matrix |
 
 Relationships are expressed by **slug strings** (`categorySlug`, `familySlug`) rather than
 object nesting, matching how Sanity references resolve in GROQ.
@@ -28,12 +30,18 @@ Pages never touch the arrays directly; they call selectors:
 - `getRelatedProducts(slug, limit)`
 - `familyProductCount(familySlug)`
 
-When moving to Sanity, reimplement **only these functions** as GROQ queries (ideally
-async). The page components in `src/pages/` and the types in this file stay unchanged.
+This selector boundary is why the Sanity swap needed no page changes: the GROQ result
+(`src/data/catalogueQuery.ts`) is normalized into these same arrays and hydrated once at
+bootstrap. The page components in `src/pages/` and the types in this file are unchanged.
 
 ## Regenerating from the spreadsheet
 
-The data was produced from `products.xlsx` by `scripts/generate-catalogue.cjs`:
+> The **live** catalogue is in Sanity. To rebuild the Sanity import from an updated
+> spreadsheet use `scripts/build-catalogue-ndjson.cjs` (see `sanity/README.md`). The
+> generator below only rebuilds this **fallback** file, and can be retired once
+> `catalogue.ts` is deleted.
+
+This fallback was produced from `products.xlsx` by `scripts/generate-catalogue.cjs`:
 
 ```bash
 # 1. unzip products.xlsx into a folder (xlsx is a zip of XML)
@@ -51,9 +59,9 @@ It:
 
 ## Placeholder data — replace before launch
 
-- **Images** (`heroImage`, `gallery`) are generic Unsplash architectural photos assigned per
-  family. The spreadsheet ships no images yet. Replace with real product photography (or
-  Sanity image assets) when available.
+- **Images** (`heroImage`, `gallery`) in this fallback are generic Unsplash architectural
+  photos. In Sanity they are real image assets (uploaded on import) — replace them with real
+  product photography in Studio and set focal points; the frontend requests sized/cropped URLs.
 - **Specifications** are taken verbatim from the spreadsheet. A few source rows are flagged in
   their own `notes`/description (e.g. a tilt-turn dimension the source says to verify). Do not
   invent missing values.
