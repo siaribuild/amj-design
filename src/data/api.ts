@@ -46,7 +46,10 @@ export interface AuthUserDto {
   name: string | null;
   phone: string | null;
   company: string | null;
+  abn: string | null;
+  priceGstMode: "inc" | "ex";
   type: string;
+  createdAt: string | null;
 }
 export interface MeResponse {
   authenticated: boolean;
@@ -129,8 +132,8 @@ export const submitProject = (projectId: string, contact: SubmitContact) =>
     body: JSON.stringify({ contact }),
   });
 
-/** Update the signed-in customer's profile (name / phone). */
-export const updateProfile = (patch: { name?: string; phone?: string; company?: string }) =>
+/** Update the signed-in customer's profile / business details / price preference. */
+export const updateProfile = (patch: { name?: string; phone?: string; company?: string; abn?: string; priceGstMode?: "inc" | "ex" }) =>
   req<{ user: AuthUserDto }>("/api/auth/profile", { method: "POST", body: JSON.stringify(patch) });
 
 export const getRevisions = (projectId: string) =>

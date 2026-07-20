@@ -17,6 +17,7 @@ import {
   optionGroupsFor, defaultOptions, priceConfigured, familyGroups,
   fmt, mm, productLabel, POPULAR_COLOURS, normCode, suggestCode,
 } from "../data/configurator";
+import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
 export type EditFocus = "dims" | "options" | "qty";
 
@@ -307,6 +308,7 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
   const dimsEntered = w > 0 && h > 0;
   const inRange = !!p && inRangeFor(p, w, h);
   const priced = priceConfigured({ productSlug, width, height, options, qty });
+  const gstMode = useGstMode();
   const finalCode = normCode(code) || (productSlug ? suggestCode(quote.items, productSlug) : "");
   const duplicateCode = !!finalCode && quote.items.some(item => normCode(item.code) === finalCode);
   const canSave = priced.ok && inRange && !duplicateCode;
@@ -401,7 +403,7 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[10px] uppercase tracking-widest text-[#5c5a56]">Estimated price</p>
-              <p className="text-lg font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{canSave ? fmt(priced.total) : "—"} <span className="text-xs font-normal text-[#5c5a56]">inc GST{canSave && qty > 1 ? ` · ${fmt(priced.unit)} ea` : ""}</span></p>
+              <p className="text-lg font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{canSave ? fmt(gstAdjust(priced.total, gstMode)) : "—"} <span className="text-xs font-normal text-[#5c5a56]">{gstSuffix(gstMode)}{canSave && qty > 1 ? ` · ${fmt(gstAdjust(priced.unit, gstMode))} ea` : ""}</span></p>
             </div>
             <div className="flex items-center gap-2">
               {onCancel && <Btn variant="ghost" size="md" onClick={onCancel}>Cancel</Btn>}
@@ -471,6 +473,7 @@ export function ItemSummaryCard({
   const rootRef = useRef<HTMLDivElement>(null);
   const p = getProductBySlug(item.productSlug);
   const pr = priceConfigured(item);
+  const gstMode = useGstMode();
   const w = parseInt(item.width) || 0, h = parseInt(item.height) || 0;
   const issues = p ? itemIssues(p, item) : [];
 
@@ -499,7 +502,7 @@ export function ItemSummaryCard({
   const summaryLine = `${dimsSummary} · Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
   const selectedOptionsSummary = optionSummaryOf(p, item.options);
   const attentionMsg = duplicate ? "Item ID already exist" : issues.map(i => i.msg).join(" · ");
-  const priceLabel = pr.ok ? fmt(pr.total) : "$-,--";
+  const priceLabel = pr.ok ? fmt(gstAdjust(pr.total, gstMode)) : "$-,--";
 
   const borderTone = attention ? "border-amber-400" : added ? "border-[#5A7A6A]/50" : "border-black/12";
 
@@ -521,7 +524,7 @@ export function ItemSummaryCard({
             : <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344]"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
         </span>
         <span className={`flex-shrink-0 text-sm font-semibold ${pr.ok ? "text-[#131311]" : "text-[#5c5a56]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
-          {priceLabel}{pr.ok ? <span className="hidden sm:inline text-[10px] font-normal text-[#5c5a56]"> inc GST</span> : null}
+          {priceLabel}{pr.ok ? <span className="hidden sm:inline text-[10px] font-normal text-[#5c5a56]"> {gstSuffix(gstMode)}</span> : null}
         </span>
 
         <div className="flex items-center gap-0.5 flex-shrink-0" aria-label="Item actions">

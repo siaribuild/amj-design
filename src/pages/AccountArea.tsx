@@ -146,8 +146,13 @@ function Section({ title, viewAll, children }: { title: string; viewAll?: () => 
   );
 }
 
+export type AccountUser = {
+  id: string; name: string; company: string; email: string;
+  type: string; abn: string; createdAt: string | null;
+};
+
 type SectionProps = {
-  user: { name: string; company: string; email: string };
+  user: AccountUser;
   go: (p: Page) => void;
   onOpenRecord: (rec: { orderId?: string; projectId?: string; status?: string }) => void;
 };
@@ -161,7 +166,7 @@ const openProject = (p: ApiProjectSummary, go: SectionProps["go"], onOpenRecord:
 // data-driven section (Overview / Quotes / Orders) inside the shared layout.
 export function AccountPage({ page, setPage, setUser, user, authLoading, onOpenRecord }: {
   page: Page; setPage: (p: Page) => void; setUser: (u: null) => void;
-  user: { name: string; company: string; email: string } | null; authLoading?: boolean;
+  user: AccountUser | null; authLoading?: boolean;
   onOpenRecord: SectionProps["onOpenRecord"];
 }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
@@ -240,7 +245,48 @@ export function AccountOverview({ user, go, onOpenRecord, projects, orders }: Se
           )}
         </>
       )}
+
+      <RegistrationInfo user={user} go={go} />
     </>
+  );
+}
+
+// Read-only registration record — business + account identity as captured/held on
+// file. Editable business fields live in Profile settings; this panel only displays.
+const ACCOUNT_TYPE_LABEL: Record<string, string> = { builder: "Builder", trade: "Trade", "owner-builder": "Owner-builder" };
+const fmtLongDate = (s: string | null) => {
+  if (!s) return "—";
+  const d = new Date(s.replace(" ", "T") + "Z");
+  return isNaN(+d) ? "—" : d.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" });
+};
+
+function RegRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-4 py-2.5 border-b border-black/6 last:border-0">
+      <dt className="text-[10px] font-semibold text-[#3a3835] uppercase tracking-widest sm:w-40 sm:flex-shrink-0">{label}</dt>
+      <dd className="text-sm text-[#131311]">{value || "—"}</dd>
+    </div>
+  );
+}
+
+function RegistrationInfo({ user, go }: { user: AccountUser; go: (p: Page) => void }) {
+  const reference = user.id ? user.id.replace(/-/g, "").slice(0, 8).toUpperCase() : "—";
+  return (
+    <section className="mt-10">
+      <div className="flex items-baseline justify-between mb-3">
+        <h2 className="text-sm font-semibold text-[#131311] uppercase tracking-wider">Registration information</h2>
+        <button onClick={() => go("profile")} className="text-xs text-[#5A7A6A] hover:underline cursor-pointer">Update business details →</button>
+      </div>
+      <dl className="bg-white border border-black/8 px-5 py-1">
+        <RegRow label="Business name" value={user.company} />
+        <RegRow label="ABN" value={user.abn} />
+        <RegRow label="Account type" value={ACCOUNT_TYPE_LABEL[user.type] ?? user.type} />
+        <RegRow label="Account reference" value={reference} />
+        <RegRow label="Sign-in email" value={user.email} />
+        <RegRow label="Registered" value={fmtLongDate(user.createdAt)} />
+      </dl>
+      <p className="text-[11px] text-[#5c5a56] mt-2">These details appear on your quotes and orders and can't be changed here.</p>
+    </section>
   );
 }
 

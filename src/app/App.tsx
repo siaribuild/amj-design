@@ -22,23 +22,30 @@ import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, addDemoSchedule, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
 import { getCurrentProject, saveLines, submitProject, updateProfile, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
+import { GstContext, type GstMode } from "../data/gst";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AuthUser {
+  id: string;
   name: string; company: string; type: "builder" | "trade" | "owner-builder";
   email: string; phone: string;
+  abn: string; priceGstMode: GstMode; createdAt: string | null;
 }
 
 // Map the server user onto the UI's AuthUser. `type` belongs to the organisation
-// layer (not built yet) and defaults until that lands; `company` is a real,
-// editable field on the user's profile.
+// layer (not built yet) and defaults until that lands; `company` (business name),
+// `abn` and `priceGstMode` are real, editable fields on the user's profile.
 function toAuthUser(u: AuthUserDto): AuthUser {
   return {
+    id: u.id,
     name: u.name || u.email.split("@")[0],
     company: u.company || "",
     type: "builder",
     email: u.email,
     phone: u.phone || "",
+    abn: u.abn || "",
+    priceGstMode: u.priceGstMode === "ex" ? "ex" : "inc",
+    createdAt: u.createdAt || null,
   };
 }
 
@@ -774,22 +781,23 @@ function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser |
   const [email, setEmail] = useState(user?.email ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
   const [company, setCompany] = useState(user?.company ?? "");
+  const [abn, setAbn] = useState(user?.abn ?? "");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   useEffect(() => {
-    if (user) { setName(user.name); setEmail(user.email); setPhone(user.phone); setCompany(user.company); }
+    if (user) { setName(user.name); setEmail(user.email); setPhone(user.phone); setCompany(user.company); setAbn(user.abn); }
   }, [user]);
   if (!user) { if (!authLoading) go("login"); return null; }
 
-  // Persist name/phone/company to the server (email is the login identity —
+  // Persist personal + business details to the server (email is the login identity —
   // changing it needs re-verification, out of scope).
   const saveProfile = async () => {
     if (saving) return;
     setSaving(true); setSaveError("");
     try {
-      const r = await updateProfile({ name: name.trim(), phone: phone.trim(), company: company.trim() });
-      setUser({ ...user, name: r.user.name || user.name, phone: r.user.phone || "", company: r.user.company || "" });
+      const r = await updateProfile({ name: name.trim(), phone: phone.trim(), company: company.trim(), abn: abn.trim() });
+      setUser({ ...user, name: r.user.name || user.name, phone: r.user.phone || "", company: r.user.company || "", abn: r.user.abn || "" });
       setSaved(true); setTimeout(() => setSaved(false), 2500);
     } catch {
       setSaveError("Couldn't save your changes. Please try again.");
@@ -803,16 +811,25 @@ function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser |
         <SLabel>Customer account</SLabel>
         <h1 className="text-3xl md:text-4xl font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Profile settings</h1>
       </header>
-      <div className="max-w-xl bg-white border border-black/8 p-5">
-        <h3 className="font-semibold text-sm text-[#131311] mb-4">Personal details</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div><FieldLabel>Full name</FieldLabel><Input value={name} onChange={e => setName(e.target.value)} /></div>
-          <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} /></div>
-          <div><FieldLabel>Phone number</FieldLabel><Input value={phone} onChange={e => setPhone(e.target.value)} /></div>
-          <div><FieldLabel>Company / trade name</FieldLabel><Input value={company} onChange={e => setCompany(e.target.value)} /></div>
+      <div className="max-w-xl space-y-4">
+        <div className="bg-white border border-black/8 p-5">
+          <h3 className="font-semibold text-sm text-[#131311] mb-4">Personal details</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div><FieldLabel>Full name</FieldLabel><Input value={name} onChange={e => setName(e.target.value)} /></div>
+            <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} /></div>
+            <div><FieldLabel>Phone number</FieldLabel><Input value={phone} onChange={e => setPhone(e.target.value)} /></div>
+          </div>
         </div>
-        {saveError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5 mt-4"><AlertCircle className="w-4 h-4" />{saveError}</p>}
-        <div className="mt-5">
+        <div className="bg-white border border-black/8 p-5">
+          <h3 className="font-semibold text-sm text-[#131311] mb-1">Business details</h3>
+          <p className="text-xs text-[#5c5a56] mb-4">Used on your quotes and orders, and shown as your registration information.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div><FieldLabel>Business name</FieldLabel><Input value={company} onChange={e => setCompany(e.target.value)} placeholder="ABC Constructions" /></div>
+            <div><FieldLabel>ABN</FieldLabel><Input value={abn} onChange={e => setAbn(e.target.value)} placeholder="00 000 000 000" inputMode="numeric" /></div>
+          </div>
+        </div>
+        {saveError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5"><AlertCircle className="w-4 h-4" />{saveError}</p>}
+        <div>
           <Btn variant="sage" size="md" disabled={saving} onClick={saveProfile}>
             {saved ? <><Check className="w-4 h-4" />Saved</> : saving ? "Saving…" : "Save changes"}
           </Btn>
@@ -825,9 +842,31 @@ function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser |
 // ═══════════════════════════════════════════════════════════════════════════════
 // ACCOUNT SETTINGS
 // ═══════════════════════════════════════════════════════════════════════════════
-function AccountSettingsPage({ user, setPage, authLoading }: { user: AuthUser | null; setPage: (p: Page) => void; authLoading?: boolean }) {
+function AccountSettingsPage({ user, setPage, setUser, authLoading }: { user: AuthUser | null; setPage: (p: Page) => void; setUser: (u: AuthUser) => void; authLoading?: boolean }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
+  const [gstSaving, setGstSaving] = useState<GstMode | null>(null);
   if (!user) { if (!authLoading) go("login"); return null; }
+
+  const setGst = async (mode: GstMode) => {
+    if (mode === user.priceGstMode || gstSaving) return;
+    setGstSaving(mode);
+    // Optimistic: the estimator preference should feel instant. Reconcile from
+    // the server's echo, and revert on failure.
+    const prev = user.priceGstMode;
+    setUser({ ...user, priceGstMode: mode });
+    try {
+      const r = await updateProfile({ priceGstMode: mode });
+      setUser({ ...user, priceGstMode: r.user.priceGstMode === "ex" ? "ex" : "inc" });
+    } catch {
+      setUser({ ...user, priceGstMode: prev });
+    } finally { setGstSaving(null); }
+  };
+
+  const gstOptions: { mode: GstMode; label: string; note: string }[] = [
+    { mode: "inc", label: "Including GST", note: "Prices shown with 10% GST added" },
+    { mode: "ex",  label: "Excluding GST", note: "Prices shown before GST" },
+  ];
+
   return (
     <>
       <header className="mb-8">
@@ -835,6 +874,24 @@ function AccountSettingsPage({ user, setPage, authLoading }: { user: AuthUser | 
         <h1 className="text-3xl md:text-4xl font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Account settings</h1>
       </header>
       <div className="max-w-xl space-y-4">
+        <div className="bg-white border border-black/8 p-5">
+          <div className="flex items-center gap-2 mb-2"><Settings className="w-4 h-4 text-[#5A7A6A]" /><h3 className="font-semibold text-sm text-[#131311]">Price display</h3></div>
+          <p className="text-sm text-[#5c5a56] leading-relaxed mb-4">Choose how estimates show pricing across the site. This changes the display only — quoted and invoiced totals are always GST-inclusive.</p>
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Price display">
+            {gstOptions.map(o => {
+              const active = user.priceGstMode === o.mode;
+              return (
+                <button key={o.mode} role="radio" aria-checked={active} onClick={() => setGst(o.mode)}
+                  className={`text-left border px-3 py-3 transition-colors cursor-pointer ${active ? "border-[#5A7A6A] bg-[#5A7A6A]/8" : "border-black/12 bg-white hover:border-[#5A7A6A]/50"}`}>
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-[#131311]">
+                    {active && <Check className="w-3.5 h-3.5 text-[#5A7A6A]" />}{o.label}
+                  </span>
+                  <span className="block text-[11px] text-[#5c5a56] mt-0.5">{o.note}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className="bg-white border border-black/8 p-5">
           <div className="flex items-center gap-2 mb-2"><Key className="w-4 h-4 text-[#5A7A6A]" /><h3 className="font-semibold text-sm text-[#131311]">Sign-in &amp; security</h3></div>
           <p className="text-sm text-[#5c5a56] leading-relaxed">Your account is passwordless — you sign in with a one-time code emailed to <span className="text-[#131311]">{user.email}</span>. There's no password to set or change.</p>
@@ -1293,7 +1350,7 @@ export default function App() {
       case "track-order":      return <TrackOrderPage setPage={navigateTo} />;
       case "order":            return <OrderTrackingPage setPage={navigateTo} user={user} focus={focusRecord} />;
       case "profile":          return <AccountLayout page="profile" setPage={navigateTo} setUser={setUser}><ProfilePage user={user} setPage={navigateTo} setUser={setUser} authLoading={authLoading} /></AccountLayout>;
-      case "account-settings": return <AccountLayout page="account-settings" setPage={navigateTo} setUser={setUser}><AccountSettingsPage user={user} setPage={navigateTo} authLoading={authLoading} /></AccountLayout>;
+      case "account-settings": return <AccountLayout page="account-settings" setPage={navigateTo} setUser={setUser}><AccountSettingsPage user={user} setPage={navigateTo} setUser={setUser} authLoading={authLoading} /></AccountLayout>;
       default:                 return <HomePage setPage={navigateTo} onUploadSchedule={uploadDemoScheduleFromHome} />;
     }
   };
@@ -1325,6 +1382,7 @@ export default function App() {
   })();
 
   return (
+    <GstContext.Provider value={user?.priceGstMode ?? "inc"}>
     <div className="min-h-screen bg-[#FAFAF9]" style={{ fontFamily: "'Inter', sans-serif" }}>
       <Seo {...seoProps} />
       <style>{`
@@ -1349,5 +1407,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </GstContext.Provider>
   );
 }

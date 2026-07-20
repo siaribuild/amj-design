@@ -17,6 +17,7 @@ import {
 } from "../data/catalogue";
 import { ItemForm, ItemSummaryCard } from "../components/ItemComposer";
 import { type QItem, type QuoteState, priceConfigured, fmt } from "../data/configurator";
+import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
 const OPTION_TYPE_ORDER = ["Glass", "Frame colour", "Colour", "Hardware", "Flyscreen", "Installation"];
 
@@ -192,6 +193,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
     document.getElementById("configure")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
   const projectTotal = quote.items.reduce((s, it) => s + priceConfigured(it).total, 0);
+  const gstMode = useGstMode();
   const liveJustAdded = justAdded ? (quote.items.find(x => x.id === justAdded.id) ?? justAdded) : null;
 
   const ConfiguratorWidget = (
@@ -204,7 +206,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
         <div className="space-y-3">
           <ItemSummaryCard item={liveJustAdded} added quote={quote} />
           <div className="border border-black/10 bg-[#FAFAF9] px-4 py-4">
-            <p className="text-sm text-[#5c5a56] mb-3">MyProject now has <span className="font-medium text-[#131311]">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span> · estimated {fmt(projectTotal)}.</p>
+            <p className="text-sm text-[#5c5a56] mb-3">MyProject now has <span className="font-medium text-[#131311]">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span> · estimated {fmt(gstAdjust(projectTotal, gstMode))} {gstSuffix(gstMode)}.</p>
             <Btn variant="sage" size="md" onClick={() => remount({ options: liveJustAdded.options, location: liveJustAdded.location, measuredBy: liveJustAdded.measuredBy })} className="w-full justify-center"><Plus className="w-4 h-4" />Add another like this</Btn>
             <div className="grid grid-cols-2 gap-2 mt-2">
               <Btn variant="outline" size="md" onClick={() => onBack(categorySlug, product.familySlug)} className="justify-center">Another product</Btn>

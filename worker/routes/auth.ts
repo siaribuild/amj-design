@@ -72,8 +72,9 @@ auth.post("/verify", async (c) => {
   return c.json({ authenticated: true, anonymous: false, user: userDto(user) });
 });
 
-// POST /api/auth/profile { name?, phone?, company? } — persist the signed-in
-// user's editable profile fields (the account page mutates the server, not just React).
+// POST /api/auth/profile { name?, phone?, company?, abn?, priceGstMode? } — persist
+// the signed-in user's editable profile fields + business registration details +
+// price-display preference (the account page mutates the server, not just React).
 auth.post("/profile", async (c) => {
   const user = await resolveUser(c.env, c.req.raw);
   if (!user) return c.json({ error: "unauthorized" }, 401);
@@ -81,8 +82,13 @@ auth.post("/profile", async (c) => {
   const name = body?.name !== undefined ? String(body.name).trim() : user.name;
   const phone = body?.phone !== undefined ? String(body.phone).trim() : user.phone;
   const company = body?.company !== undefined ? String(body.company).trim() : user.company;
-  await c.env.DB.prepare("UPDATE user SET name = ?, phone = ?, company = ? WHERE id = ?")
-    .bind(name || null, phone || null, company || null, user.id).run();
+  const abn = body?.abn !== undefined ? String(body.abn).trim() : user.abn;
+  // Only 'ex' opts out; anything else (incl. unset/invalid) means inclusive.
+  const priceGstMode = body?.priceGstMode !== undefined
+    ? (String(body.priceGstMode) === "ex" ? "ex" : "inc")
+    : user.price_gst_mode;
+  await c.env.DB.prepare("UPDATE user SET name = ?, phone = ?, company = ?, abn = ?, price_gst_mode = ? WHERE id = ?")
+    .bind(name || null, phone || null, company || null, abn || null, priceGstMode || null, user.id).run();
   const fresh = (await c.env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(user.id).first<typeof user>())!;
   return c.json({ user: userDto(fresh) });
 });

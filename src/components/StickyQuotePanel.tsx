@@ -10,6 +10,7 @@
 import { ArrowRight, AlertCircle, Check } from "lucide-react";
 import { Btn } from "../app/ui";
 import { fmt } from "../data/configurator";
+import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
 export type StickyQuotePanelProps = {
   itemCount: number;
@@ -27,6 +28,8 @@ export function StickyQuotePanel({
 }: StickyQuotePanelProps) {
   const readyCount = Math.max(0, itemCount - attentionCount);
   const items = (c: number) => `${c} item${c !== 1 ? "s" : ""}`;
+  const gstMode = useGstMode();
+  const shownTotal = gstAdjust(total, gstMode);
 
   let status: React.ReactNode;
   let live: string;
@@ -95,7 +98,7 @@ export function StickyQuotePanel({
       }}>
       {/* Polite, atomic summary for assistive tech — not the whole panel. */}
       <div className="sr-only" aria-live="polite" aria-atomic="true">
-        Indicative estimate {fmt(total)}. {live}.
+        Indicative estimate {fmt(shownTotal)} {gstSuffix(gstMode)}. {live}.
       </div>
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3 sm:py-3.5 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
         <div className="flex items-center justify-between gap-3 min-w-0 sm:contents">
@@ -103,8 +106,8 @@ export function StickyQuotePanel({
             <span className="text-[9px] uppercase tracking-[0.16em] text-[#6f6c67] leading-none mb-1">Estimate</span>
             <span className="flex items-baseline gap-1.5">
             <span className="text-[#131311] text-lg sm:text-[17px] font-semibold leading-none tabular-nums"
-              style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(total)}</span>
-            <span className="text-[#6f6c67] text-xs whitespace-nowrap">inc GST</span>
+              style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(shownTotal)}</span>
+            <span className="text-[#6f6c67] text-xs whitespace-nowrap">{gstSuffix(gstMode)}</span>
             </span>
           </div>
           <div className={`sm:order-1 sm:flex-1 flex items-center gap-1.5 min-w-0 border px-2.5 py-2 text-[13px] font-medium ${statusTone}`}>{status}</div>

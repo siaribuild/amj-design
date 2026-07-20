@@ -17,6 +17,7 @@ import {
   type QuoteState, type QItem,
   priceConfigured, fmt, mm, productLabel, hasDuplicateCode, addDemoSchedule, DEFAULT_PROJECT_TITLE,
 } from "../data/configurator";
+import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
 
@@ -71,6 +72,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   const [suburb, setSuburb] = useState("");
 
   const total = quote.items.reduce((s, it) => s + priceConfigured(it).total, 0);
+  const gstMode = useGstMode();
   // An item blocks review if its fields are invalid OR its code duplicates another.
   const itemBlocked = (it: QItem) => itemNeedsAttention(it) || hasDuplicateCode(quote.items, it.id, it.code);
   const attentionCount = quote.items.filter(itemBlocked).length;
@@ -181,12 +183,12 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
               {quote.items.map((it, i) => (
                 <div key={it.id} className="flex justify-between gap-3 text-sm border-b border-black/6 last:border-0 py-1.5">
                   <span className="text-[#131311] min-w-0 truncate">{String(i + 1).padStart(2, "0")} · {productLabel(it.productSlug)} — {mm(it.width)} × {mm(it.height)} ×{it.qty}</span>
-                  <span className="text-[#5c5a56] flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>{it.status === "Needs review" ? "Review" : fmt(priceConfigured(it).total)}</span>
+                  <span className="text-[#5c5a56] flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>{it.status === "Needs review" ? "Review" : fmt(gstAdjust(priceConfigured(it).total, gstMode))}</span>
                 </div>
               ))}
               {quote.files.length > 0 && <p className="text-xs text-[#5c5a56] pt-1">+ {quote.files.length} uploaded file{quote.files.length !== 1 ? "s" : ""} for review</p>}
             </div>
-            <div className="flex justify-between border-t border-black/8 pt-3 text-sm"><span className="text-[#5c5a56]">Estimated total</span><span className="font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(total)} inc GST</span></div>
+            <div className="flex justify-between border-t border-black/8 pt-3 text-sm"><span className="text-[#5c5a56]">Estimated total</span><span className="font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
           </div>
           <div className="border border-black/10 bg-white p-5 space-y-4 mb-4">
             {user && <p className="text-sm text-[#5A7A6A] flex items-center gap-1.5"><CheckCircle className="w-4 h-4" />Pre-filled from your account — edit if needed.</p>}

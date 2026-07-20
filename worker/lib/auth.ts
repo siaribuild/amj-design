@@ -21,8 +21,11 @@ export interface UserRow {
   name: string | null;
   phone: string | null;
   company: string | null;
+  abn: string | null;
+  price_gst_mode: string | null;
   type: string;
   role: string | null;
+  created_at: string | null;
   session_epoch: number;
 }
 
@@ -32,8 +35,12 @@ export const userDto = (u: UserRow) => ({
   name: u.name,
   phone: u.phone,
   company: u.company ?? null,
+  abn: u.abn ?? null,
+  // Price-display preference; 'inc' is the default when unset (guests + legacy rows).
+  priceGstMode: u.price_gst_mode === "ex" ? "ex" : "inc",
   type: u.type,
   role: u.role ?? null,
+  createdAt: u.created_at ?? null,
 });
 
 export const normEmail = (e: unknown) => String(e ?? "").trim().toLowerCase();
