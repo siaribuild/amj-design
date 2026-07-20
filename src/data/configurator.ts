@@ -111,7 +111,8 @@ export const POPULAR_COLOURS = ["Dover White", "Shale Grey", "Monument", "Night 
 export interface OptionGroup { typeSlug: string; label: string; required: boolean; choices: OptionChoice[]; defaultName: string }
 
 const TYPE_ORDER = ["colour", "hardware", "flyscreen", "installation"];
-const REQUIRED_TYPES = new Set(["colour", "hardware"]);
+// Every option a product offers must be chosen before the item can be saved or
+// submitted — each group is required and starts with a default (see defaultOptions).
 
 export function optionGroupsFor(p: Product): OptionGroup[] {
   const byType = new Map<string, { label: string; choices: OptionChoice[] }>();
@@ -130,7 +131,7 @@ export function optionGroupsFor(p: Product): OptionGroup[] {
     // Keep the Colorbond palette in its curated order; sort every other group as before.
     if (typeSlug !== "colour") choices.sort((a, b) => (a.standard === b.standard ? a.add - b.add : a.standard ? -1 : 1));
     const def = choices.find(c => c.standard)?.name ?? choices[0]?.name ?? "";
-    groups.push({ typeSlug, label, required: REQUIRED_TYPES.has(typeSlug), choices, defaultName: def });
+    groups.push({ typeSlug, label, required: true, choices, defaultName: def });
   }
   groups.sort((a, b) => {
     const ia = TYPE_ORDER.indexOf(a.typeSlug), ib = TYPE_ORDER.indexOf(b.typeSlug);
@@ -139,13 +140,13 @@ export function optionGroupsFor(p: Product): OptionGroup[] {
   return groups;
 }
 
-// Standards preselected; optional groups without a standard start unset.
+// Preselect a default for EVERY group — the standard choice, else the first
+// available — so an item never starts with a missing option.
 export function defaultOptions(p: Product): Record<string, string> {
   const out: Record<string, string> = {};
   for (const g of optionGroupsFor(p)) {
     const std = g.choices.find(c => c.standard);
-    if (std) out[g.typeSlug] = std.name;
-    else if (g.required) out[g.typeSlug] = g.choices[0]?.name ?? "";
+    out[g.typeSlug] = std?.name ?? g.choices[0]?.name ?? "";
   }
   return out;
 }
