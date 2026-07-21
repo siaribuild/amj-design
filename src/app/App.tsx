@@ -890,20 +890,22 @@ function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser |
         <SLabel>Customer account</SLabel>
         <h1 className="text-3xl md:text-4xl font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Profile settings</h1>
       </header>
-      <div className="max-w-xl space-y-4">
-        <div className="bg-white border border-black/8 p-5">
-          <h3 className="font-semibold text-sm text-[#131311] mb-4">Personal details</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><FieldLabel>Full name</FieldLabel><Input value={name} onChange={e => setName(e.target.value)} /></div>
-            <div><FieldLabel>Phone number</FieldLabel><Input value={phone} onChange={e => setPhone(e.target.value)} /></div>
+      <div className="space-y-4">
+        <div className="grid lg:grid-cols-2 gap-4 items-start">
+          <div className="bg-white border border-black/8 p-5">
+            <h3 className="font-semibold text-sm text-[#131311] mb-4">Personal details</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div><FieldLabel>Full name</FieldLabel><Input value={name} onChange={e => setName(e.target.value)} /></div>
+              <div><FieldLabel>Phone number</FieldLabel><Input value={phone} onChange={e => setPhone(e.target.value)} /></div>
+            </div>
           </div>
-        </div>
-        <div className="bg-white border border-black/8 p-5">
-          <h3 className="font-semibold text-sm text-[#131311] mb-1">Business details</h3>
-          <p className="text-xs text-[#5c5a56] mb-4">Shown on your quotes and orders.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><FieldLabel>Business name</FieldLabel><Input value={company} onChange={e => setCompany(e.target.value)} placeholder="ABC Constructions" /></div>
-            <div><FieldLabel>ABN</FieldLabel><Input value={abn} onChange={e => setAbn(e.target.value)} placeholder="00 000 000 000" inputMode="numeric" /></div>
+          <div className="bg-white border border-black/8 p-5">
+            <h3 className="font-semibold text-sm text-[#131311] mb-1">Business details</h3>
+            <p className="text-xs text-[#5c5a56] mb-4">Shown on your quotes and orders.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div><FieldLabel>Business name</FieldLabel><Input value={company} onChange={e => setCompany(e.target.value)} placeholder="ABC Constructions" /></div>
+              <div><FieldLabel>ABN</FieldLabel><Input value={abn} onChange={e => setAbn(e.target.value)} placeholder="00 000 000 000" inputMode="numeric" /></div>
+            </div>
           </div>
         </div>
         {saveError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5"><AlertCircle className="w-4 h-4" />{saveError}</p>}
@@ -981,28 +983,30 @@ function AccountSettingsPage({ user, setPage, setUser, authLoading }: { user: Au
         <SLabel>Customer account</SLabel>
         <h1 className="text-3xl md:text-4xl font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Account settings</h1>
       </header>
-      <div className="max-w-xl space-y-4">
-        <div className="bg-white border border-black/8 p-5">
-          <div className="flex items-center gap-2 mb-2"><Settings className="w-4 h-4 text-[#5A7A6A]" /><h3 className="font-semibold text-sm text-[#131311]">Price display</h3></div>
-          <p className="text-sm text-[#5c5a56] leading-relaxed mb-4">Choose how estimates show pricing across the site. This changes the display only — quoted and invoiced totals are always GST-inclusive.</p>
-          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Price display">
-            {gstOptions.map(o => {
-              const active = user.priceGstMode === o.mode;
-              return (
-                <button key={o.mode} role="radio" aria-checked={active} onClick={() => setGst(o.mode)}
-                  className={`text-left border px-3 py-3 transition-colors cursor-pointer ${active ? "border-[#5A7A6A] bg-[#5A7A6A]/8" : "border-black/12 bg-white hover:border-[#5A7A6A]/50"}`}>
-                  <span className="flex items-center gap-1.5 text-sm font-semibold text-[#131311]">
-                    {active && <Check className="w-3.5 h-3.5 text-[#5A7A6A]" />}{o.label}
-                  </span>
-                  <span className="block text-[11px] text-[#5c5a56] mt-0.5">{o.note}</span>
-                </button>
-              );
-            })}
+      <div className="space-y-4">
+        <div className="grid lg:grid-cols-2 gap-4 items-start">
+          <div className="bg-white border border-black/8 p-5">
+            <div className="flex items-center gap-2 mb-2"><Settings className="w-4 h-4 text-[#5A7A6A]" /><h3 className="font-semibold text-sm text-[#131311]">Price display</h3></div>
+            <p className="text-sm text-[#5c5a56] leading-relaxed mb-4">Choose how estimates show pricing across the site. This changes the display only — quoted and invoiced totals are always GST-inclusive.</p>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Price display">
+              {gstOptions.map(o => {
+                const active = user.priceGstMode === o.mode;
+                return (
+                  <button key={o.mode} role="radio" aria-checked={active} onClick={() => setGst(o.mode)}
+                    className={`text-left border px-3 py-3 transition-colors cursor-pointer ${active ? "border-[#5A7A6A] bg-[#5A7A6A]/8" : "border-black/12 bg-white hover:border-[#5A7A6A]/50"}`}>
+                    <span className="flex items-center gap-1.5 text-sm font-semibold text-[#131311]">
+                      {active && <Check className="w-3.5 h-3.5 text-[#5A7A6A]" />}{o.label}
+                    </span>
+                    <span className="block text-[11px] text-[#5c5a56] mt-0.5">{o.note}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-        <div className="bg-white border border-black/8 p-5">
-          <div className="flex items-center gap-2 mb-2"><Key className="w-4 h-4 text-[#5A7A6A]" /><h3 className="font-semibold text-sm text-[#131311]">Sign-in &amp; security</h3></div>
-          <p className="text-sm text-[#5c5a56] leading-relaxed">Your account is passwordless — you sign in with a one-time code emailed to <span className="text-[#131311]">{user.email}</span>. There's no password to set or change.</p>
+          <div className="bg-white border border-black/8 p-5">
+            <div className="flex items-center gap-2 mb-2"><Key className="w-4 h-4 text-[#5A7A6A]" /><h3 className="font-semibold text-sm text-[#131311]">Sign-in &amp; security</h3></div>
+            <p className="text-sm text-[#5c5a56] leading-relaxed">Your account is passwordless — you sign in with a one-time code emailed to <span className="text-[#131311]">{user.email}</span>. There's no password to set or change.</p>
+          </div>
         </div>
         <div className="bg-white border border-red-200 p-5">
           <h3 className="font-semibold text-sm text-red-700 mb-2">Danger zone</h3>
