@@ -142,7 +142,8 @@ ops.get("/summary", async (c) => {
         (SELECT count(*) FROM "order" WHERE stage NOT IN ('after_sales','cancelled'))            AS active_orders,
         (SELECT count(*) FROM "order" WHERE stage IN ('deposit_invoiced','balance_invoiced'))    AS awaiting_payment,
         (SELECT count(*) FROM user WHERE type = 'customer')                                       AS customers,
-        (SELECT count(*) FROM approval_step WHERE state = 'pending')                              AS approvals_pending
+        (SELECT count(*) FROM approval_step WHERE state = 'pending')                              AS approvals_pending,
+        (SELECT count(*) FROM enquiry WHERE workflow_status = 'new')                              AS new_enquiries
     `).first<Record<string, number>>();
 
     return c.json({
@@ -152,9 +153,10 @@ ops.get("/summary", async (c) => {
       awaitingPayment: row?.awaiting_payment ?? 0,
       customers: row?.customers ?? 0,
       approvalsPending: row?.approvals_pending ?? 0,
+      newEnquiries: row?.new_enquiries ?? 0,
     });
   } catch {
-    return c.json({ submissions: 0, inReview: 0, activeOrders: 0, awaitingPayment: 0, customers: 0, approvalsPending: 0, degraded: true });
+    return c.json({ submissions: 0, inReview: 0, activeOrders: 0, awaitingPayment: 0, customers: 0, approvalsPending: 0, newEnquiries: 0, degraded: true });
   }
 });
 
@@ -626,27 +628,126 @@ ops.patch("/staff/:id", async (c) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Contact enquiries — view + triage inbound "Contact us" submissions.
+// Enquiries — Contact-page leads (questions + showroom appointments). Every lead
+// carries a durable OpenFrame reference + immutable source_owner; four independent
+// status dimensions; manufacturer handoff + downstream reconciliation. Contains
+// customer PII, so gated behind an assigned role like Customers/Files.
 // ═══════════════════════════════════════════════════════════════════════════
+const ENQUIRY_DIMENSIONS: Record<string, string[]> = {
+  workflow_status: ["new", "assigned", "in_progress", "waiting_on_customer", "closed"],
+  contact_outcome: ["not_contacted", "attempted", "contacted", "no_response"],
+  appointment_status: ["not_applicable", "requested", "proposed", "confirmed", "completed", "cancelled", "no_show"],
+  commercial_outcome: ["unknown", "manufacturer_quote_created", "order_placed", "lost", "not_applicable"],
+};
 
-// GET /api/ops/contact — inbound enquiries, newest first (staff-gated).
-ops.get("/contact", async (c) => {
-  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
-  const { results } = await c.env.DB.prepare(
-    "SELECT id, name, email, phone, company, message, status, created_at FROM contact_message ORDER BY created_at DESC LIMIT 200",
-  ).all();
-  return c.json({ messages: results });
+const enquiryRowDto = (r: any) => ({
+  id: r.id, reference: r.public_reference, intent: r.intent,
+  name: r.name, company: r.company,
+  email: r.email_display || r.email, phone: r.phone_display || r.phone,
+  locationSuburb: r.location_suburb, locationState: r.location_state,
+  sourceOwner: r.source_owner, sourceEntryPoint: r.source_entry_point,
+  workflowStatus: r.workflow_status, contactOutcome: r.contact_outcome,
+  appointmentStatus: r.appointment_status, commercialOutcome: r.commercial_outcome,
+  assignedUser: r.assigned_user, assignedName: r.assigned_name,
+  createdAt: r.created_at,
 });
 
-// DELETE /api/ops/contact/:id — remove an enquiry (assigned-role staff only).
-ops.delete("/contact/:id", async (c) => {
+const enquiryDetailDto = (r: any) => ({
+  ...enquiryRowDto(r),
+  customerType: r.customer_type, topic: r.topic, message: r.message,
+  locationId: r.location_id, productsInterest: r.products_interest,
+  bestTimeToCall: r.best_time_to_call, preferredDays: safeParse(r.preferred_days_json || "[]"),
+  appointmentNotes: r.appointment_notes,
+  accountId: r.account_id, projectId: r.project_id,
+  landingPath: r.landing_path, referrer: r.referrer, utm: safeParse(r.utm_json || "{}"),
+  formVersion: r.form_version, privacyVersion: r.privacy_version, marketingOptIn: !!r.marketing_opt_in,
+  manufacturerQuoteRef: r.manufacturer_quote_ref, manufacturerOrderRef: r.manufacturer_order_ref,
+  handedOffAt: r.handed_off_at, manufacturerAckAt: r.manufacturer_ack_at,
+  updatedAt: r.updated_at,
+});
+
+// GET /api/ops/enquiries — filterable list, newest first.
+ops.get("/enquiries", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
   if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
-  const res = await c.env.DB.prepare("DELETE FROM contact_message WHERE id = ?").bind(c.req.param("id")).run();
+  const q = c.req.query();
+  const where: string[] = []; const binds: unknown[] = [];
+  const eq = (param: string, col: string) => { if (q[param]) { where.push(`e.${col} = ?`); binds.push(q[param]); } };
+  eq("intent", "intent"); eq("status", "workflow_status"); eq("state", "location_state");
+  eq("contact", "contact_outcome"); eq("appointment", "appointment_status");
+  eq("commercial", "commercial_outcome"); eq("assigned", "assigned_user");
+  if (q.from) { where.push("e.created_at >= ?"); binds.push(q.from); }
+  if (q.to) { where.push("e.created_at <= ?"); binds.push(q.to); }
+  const sql = `SELECT e.*, u.name AS assigned_name FROM enquiry e LEFT JOIN user u ON u.id = e.assigned_user
+    ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY e.created_at DESC LIMIT 300`;
+  const { results } = await c.env.DB.prepare(sql).bind(...binds).all();
+  return c.json({ enquiries: results.map(enquiryRowDto) });
+});
+
+// GET /api/ops/enquiries/:id — full lead + attribution + activity trail.
+ops.get("/enquiries/:id", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const e = await c.env.DB.prepare(
+    "SELECT e.*, u.name AS assigned_name FROM enquiry e LEFT JOIN user u ON u.id = e.assigned_user WHERE e.id = ?",
+  ).bind(c.req.param("id")).first<any>();
+  if (!e) return c.json({ error: "not_found" }, 404);
+  const { results: activity } = await c.env.DB.prepare(
+    "SELECT a.action, a.occurred_at, COALESCE(u.name, a.actor) AS actor FROM audit_event a LEFT JOIN user u ON u.id = a.actor WHERE a.entity_type = 'enquiry' AND a.entity_id = ? ORDER BY a.occurred_at DESC",
+  ).bind(c.req.param("id")).all();
+  return c.json({ enquiry: enquiryDetailDto(e), activity });
+});
+
+// PATCH /api/ops/enquiries/:id — assign, move any status dimension, reconcile with
+// a downstream AMJ quote/order, or acknowledge the handoff. source_owner is never
+// settable here (server-owned).
+ops.patch("/enquiries/:id", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const id = c.req.param("id");
+  const exists = await c.env.DB.prepare("SELECT id FROM enquiry WHERE id = ?").bind(id).first();
+  if (!exists) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+
+  const sets: string[] = []; const binds: unknown[] = [];
+  const dim = (key: string, col: string) => {
+    if (body?.[key] !== undefined && ENQUIRY_DIMENSIONS[col].includes(String(body[key]))) { sets.push(`${col} = ?`); binds.push(String(body[key])); }
+  };
+  dim("workflowStatus", "workflow_status");
+  dim("contactOutcome", "contact_outcome");
+  dim("appointmentStatus", "appointment_status");
+  dim("commercialOutcome", "commercial_outcome");
+  if (body?.assignedUser !== undefined) { sets.push("assigned_user = ?"); binds.push(body.assignedUser ? String(body.assignedUser) : null); }
+  if (body?.manufacturerQuoteRef !== undefined) { sets.push("manufacturer_quote_ref = ?"); binds.push(String(body.manufacturerQuoteRef).trim().slice(0, 120) || null); }
+  if (body?.manufacturerOrderRef !== undefined) { sets.push("manufacturer_order_ref = ?"); binds.push(String(body.manufacturerOrderRef).trim().slice(0, 120) || null); }
+  if (body?.manufacturerAck === true) sets.push("manufacturer_ack_at = datetime('now')");
+  if (!sets.length) return c.json({ error: "no_changes" }, 400);
+
+  sets.push("updated_at = datetime('now')");
+  await c.env.DB.prepare(`UPDATE enquiry SET ${sets.join(", ")} WHERE id = ?`).bind(...binds, id).run();
+  await logEvent(c.env, { actor: staff.id, entityType: "enquiry", entityId: id, action: "updated enquiry" });
+  const fresh = await c.env.DB.prepare(
+    "SELECT e.*, u.name AS assigned_name FROM enquiry e LEFT JOIN user u ON u.id = e.assigned_user WHERE e.id = ?",
+  ).bind(id).first<any>();
+  return c.json({ enquiry: enquiryDetailDto(fresh) });
+});
+
+// POST /api/ops/enquiries/:id/contact-log — record a contact attempt/outcome.
+ops.post("/enquiries/:id/contact-log", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const outcome = ENQUIRY_DIMENSIONS.contact_outcome.includes(String(body?.outcome)) ? String(body.outcome) : "attempted";
+  const note = String(body?.note ?? "").trim().slice(0, 500);
+  const res = await c.env.DB.prepare("UPDATE enquiry SET contact_outcome = ?, updated_at = datetime('now') WHERE id = ?").bind(outcome, id).run();
   if (!res.meta.changes) return c.json({ error: "not_found" }, 404);
-  await logEvent(c.env, { actor: staff.id, entityType: "contact_message", entityId: c.req.param("id"), action: "deleted contact enquiry" });
-  return c.json({ ok: true });
+  await logEvent(c.env, { actor: staff.id, entityType: "enquiry", entityId: id, action: `contact ${outcome}${note ? `: ${note}` : ""}` });
+  return c.json({ ok: true, contactOutcome: outcome });
 });
 
 // GET /api/ops/search?q= — omnibox across projects, orders, orgs, customers.

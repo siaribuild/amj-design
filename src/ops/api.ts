@@ -14,6 +14,7 @@ export interface OpsSummary {
   awaitingPayment: number;
   customers: number;
   approvalsPending: number;
+  newEnquiries: number;
   degraded?: boolean;
 }
 
@@ -168,11 +169,35 @@ export const opsSetRole = (id: string, role: string) =>
   req<{ ok: boolean; role: string }>(`/api/ops/staff/${id}`, { method: "PATCH", body: JSON.stringify({ role }) });
 export const opsSearch = (q: string) => req<{ results: OpsSearchResult[] }>(`/api/ops/search?q=${encodeURIComponent(q)}`);
 
-// ── Contact enquiries ────────────────────────────────────────────────────────
-export interface OpsContactMessage {
-  id: string; name: string; email: string; phone: string | null; company: string | null;
-  message: string; status: string; created_at: string;
+// ── Enquiries (Contact-page leads) ───────────────────────────────────────────
+export interface OpsEnquiryRow {
+  id: string; reference: string; intent: string;
+  name: string; company: string | null; email: string; phone: string | null;
+  locationSuburb: string | null; locationState: string | null;
+  sourceOwner: string; sourceEntryPoint: string;
+  workflowStatus: string; contactOutcome: string; appointmentStatus: string; commercialOutcome: string;
+  assignedUser: string | null; assignedName: string | null; createdAt: string;
 }
-export const opsContactMessages = () => req<{ messages: OpsContactMessage[] }>("/api/ops/contact");
-export const opsDeleteContactMessage = (id: string) =>
-  req<{ ok: boolean }>(`/api/ops/contact/${id}`, { method: "DELETE" });
+export interface OpsEnquiryDetail extends OpsEnquiryRow {
+  customerType: string | null; topic: string | null; message: string | null;
+  locationId: string | null; productsInterest: string | null; bestTimeToCall: string | null;
+  preferredDays: string[]; appointmentNotes: string | null;
+  accountId: string | null; projectId: string | null;
+  landingPath: string | null; referrer: string | null; utm: Record<string, string>;
+  formVersion: string | null; privacyVersion: string | null; marketingOptIn: boolean;
+  manufacturerQuoteRef: string | null; manufacturerOrderRef: string | null;
+  handedOffAt: string | null; manufacturerAckAt: string | null; updatedAt: string;
+}
+export interface OpsEnquiryActivity { action: string; occurred_at: string; actor: string | null }
+
+export const opsEnquiries = (params?: Record<string, string>) => {
+  const entries = Object.entries(params ?? {}).filter(([, v]) => v);
+  const q = entries.length ? "?" + new URLSearchParams(entries).toString() : "";
+  return req<{ enquiries: OpsEnquiryRow[] }>(`/api/ops/enquiries${q}`);
+};
+export const opsEnquiry = (id: string) =>
+  req<{ enquiry: OpsEnquiryDetail; activity: OpsEnquiryActivity[] }>(`/api/ops/enquiries/${id}`);
+export const opsUpdateEnquiry = (id: string, patch: Record<string, unknown>) =>
+  req<{ enquiry: OpsEnquiryDetail }>(`/api/ops/enquiries/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+export const opsLogContact = (id: string, outcome: string, note?: string) =>
+  req<{ ok: boolean; contactOutcome: string }>(`/api/ops/enquiries/${id}/contact-log`, { method: "POST", body: JSON.stringify({ outcome, note }) });

@@ -285,6 +285,41 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.ok(events["enquiry.confirmation"] >= 2, "customer confirmations");
       assert.ok(events["enquiry.internal"] >= 2, "internal notifications");
       assert.equal(events["enquiry.handoff"], 1, "manufacturer handoff for the appointment only");
+
+      // ── Ops Enquiries admin ────────────────────────────────────────────────
+      const staffId = (await requestJson(staff, "/api/ops/me")).body.user.id;
+      const list = await requestJson(staff, "/api/ops/enquiries");
+      assert.ok(list.body.enquiries.length >= 2, "enquiries listed");
+      const apptRow = list.body.enquiries.find((e) => e.reference === appt.body.reference);
+      assert.ok(apptRow && apptRow.intent === "appointment_request" && apptRow.sourceOwner === "OPENFRAME");
+      // Filter by intent.
+      const onlyQ = await requestJson(staff, "/api/ops/enquiries?intent=question");
+      assert.ok(onlyQ.body.enquiries.length >= 1 && onlyQ.body.enquiries.every((e) => e.intent === "question"));
+      // Detail exposes attribution + snapshot + activity.
+      const detail = await requestJson(staff, `/api/ops/enquiries/${apptRow.id}`);
+      assert.equal(detail.body.enquiry.sourceOwner, "OPENFRAME");
+      assert.equal(detail.body.enquiry.locationSuburb, "Rowville");
+      assert.ok(detail.body.activity.length >= 1, "activity trail present");
+      // Assign + move status dimensions + reconcile — source owner never changes.
+      await requestJson(staff, `/api/ops/enquiries/${apptRow.id}`, { method: "PATCH",
+        json: { assignedUser: staffId, workflowStatus: "in_progress", appointmentStatus: "confirmed", commercialOutcome: "manufacturer_quote_created", manufacturerQuoteRef: "AMJ-Q-9001" } });
+      const after = await requestJson(staff, `/api/ops/enquiries/${apptRow.id}`);
+      assert.equal(after.body.enquiry.workflowStatus, "in_progress");
+      assert.equal(after.body.enquiry.appointmentStatus, "confirmed");
+      assert.equal(after.body.enquiry.commercialOutcome, "manufacturer_quote_created");
+      assert.equal(after.body.enquiry.manufacturerQuoteRef, "AMJ-Q-9001");
+      assert.equal(after.body.enquiry.assignedName != null, true, "assignee resolved");
+      assert.equal(after.body.enquiry.sourceOwner, "OPENFRAME", "source owner immutable");
+      // A patch with no valid fields is rejected (bogus status ignored).
+      await requestJson(staff, `/api/ops/enquiries/${apptRow.id}`, { method: "PATCH", json: { workflowStatus: "bogus", sourceOwner: "AMJ" } }, 400);
+      // Contact log records the outcome.
+      await requestJson(staff, `/api/ops/enquiries/${apptRow.id}/contact-log`, { method: "POST", json: { outcome: "contacted", note: "left voicemail" } });
+      assert.equal((await requestJson(staff, `/api/ops/enquiries/${apptRow.id}`)).body.enquiry.contactOutcome, "contacted");
+      // Role-less staff are blocked from the enquiry PII surface.
+      const rookie2 = new Session(baseUrl);
+      await login(rookie2, "/api/ops/auth", "rookie2@openframe.com.au");
+      await requestJson(rookie2, "/api/ops/enquiries", {}, 403);
+      await requestJson(rookie2, `/api/ops/enquiries/${apptRow.id}`, {}, 403);
     });
   } finally {
     await stop(server);

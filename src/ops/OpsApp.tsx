@@ -17,19 +17,19 @@ import { Approvals } from "./Approvals";
 import { Orders } from "./Orders";
 import { Customers } from "./Customers";
 import { Catalogue } from "./Catalogue";
-import { Messages } from "./Messages";
+import { Enquiries } from "./Enquiries";
 import { Rules, Files, Audit, Admin } from "./AdminTabs";
 
 const SAGE = "#5A7A6A";
 
-type Tab = "dashboard" | "quotes" | "approvals" | "orders" | "customers" | "catalogue" | "messages" | "rules" | "files" | "audit" | "admin";
+type Tab = "dashboard" | "quotes" | "approvals" | "orders" | "customers" | "catalogue" | "enquiries" | "rules" | "files" | "audit" | "admin";
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
   { id: "quotes", label: "Quotes", icon: <FileText className="w-4 h-4" /> },
   { id: "approvals", label: "Approvals", icon: <CheckSquare className="w-4 h-4" /> },
   { id: "orders", label: "Orders", icon: <Package className="w-4 h-4" /> },
   { id: "customers", label: "Customers", icon: <Users className="w-4 h-4" /> },
-  { id: "messages", label: "Messages", icon: <Mail className="w-4 h-4" /> },
+  { id: "enquiries", label: "Enquiries", icon: <Mail className="w-4 h-4" /> },
   { id: "catalogue", label: "Catalogue", icon: <Boxes className="w-4 h-4" /> },
   { id: "rules", label: "Rules", icon: <SlidersHorizontal className="w-4 h-4" /> },
   { id: "files", label: "Files", icon: <FolderOpen className="w-4 h-4" /> },
@@ -167,7 +167,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
             : tab === "approvals" ? <Approvals />
             : tab === "orders" ? <Orders />
             : tab === "customers" ? <Customers />
-            : tab === "messages" ? <Messages />
+            : tab === "enquiries" ? <Enquiries user={user} />
             : tab === "catalogue" ? <Catalogue />
             : tab === "rules" ? <Rules />
             : tab === "files" ? <Files />
@@ -197,6 +197,7 @@ function Dashboard() {
   if (!s) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
 
   const cards: { label: string; value: number; hint: string; accent?: boolean }[] = [
+    { label: "New enquiries", value: s.newEnquiries, hint: "contact leads", accent: s.newEnquiries > 0 },
     { label: "New submissions", value: s.submissions, hint: "awaiting triage", accent: s.submissions > 0 },
     { label: "In review", value: s.inReview, hint: "being priced" },
     { label: "Approvals pending", value: s.approvalsPending, hint: "need sign-off" },
