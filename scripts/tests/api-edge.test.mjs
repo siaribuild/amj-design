@@ -164,6 +164,18 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(detail.body.customer.email, "sarah@northsidebuild.com.au");
       assert.ok(detail.body.projects.length >= 1, "customer 360 shows their projects");
       await requestJson(staff, "/api/ops/customers/nope", {}, 404);
+
+      // Admin-only sign-in email change (the customer's unique login ID — customers
+      // can never change it themselves; the ops console is the only place).
+      await requestJson(staff, `/api/ops/customers/${sarah.id}`, { method: "PATCH", json: { email: "not-an-email" } }, 400);
+      await requestJson(staff, `/api/ops/customers/${sarah.id}`, { method: "PATCH", json: { email: "demo@openframe.com.au" } }, 409);
+      const changed = await requestJson(staff, `/api/ops/customers/${sarah.id}`, { method: "PATCH", json: { email: "sarah.n@newbuild.com.au" } });
+      assert.equal(changed.body.email, "sarah.n@newbuild.com.au");
+      // The customer signs in with the NEW address and lands on the SAME account.
+      const sarahSession = new Session(baseUrl);
+      await login(sarahSession, "/api/auth", "sarah.n@newbuild.com.au");
+      const who = await requestJson(sarahSession, "/api/auth/me");
+      assert.equal(who.body.user.id, sarah.id, "new email resolves to the same user");
       const search = await requestJson(staff, "/api/ops/search?q=Fitzroy");
       assert.ok(search.body.results.some((r) => r.type === "project"));
       const tooShort = await requestJson(staff, "/api/ops/search?q=x");
@@ -262,6 +274,8 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       // Admin assigns estimator → PII opens, but payments stay manager/admin-only.
       await requestJson(staff, `/api/ops/staff/${who.body.user.id}`, { method: "PATCH", json: { role: "estimator" } });
       await requestJson(rookie, "/api/ops/customers");
+      // Changing a customer's sign-in email stays admin-only for every other role.
+      await requestJson(rookie, "/api/ops/customers/u_sarah", { method: "PATCH", json: { email: "hijack@example.com" } }, 403);
       await requestJson(rookie, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 403);
       // Promote to manager → the payment now reaches domain logic (o_1 stage conflict).
       await requestJson(staff, `/api/ops/staff/${who.body.user.id}`, { method: "PATCH", json: { role: "manager" } });

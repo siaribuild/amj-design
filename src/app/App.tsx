@@ -858,7 +858,6 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
 function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser | null; setPage: (p: Page) => void; setUser: (u: AuthUser) => void; authLoading?: boolean }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [name, setName] = useState(user?.name ?? "");
-  const [email, setEmail] = useState(user?.email ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
   const [company, setCompany] = useState(user?.company ?? "");
   const [abn, setAbn] = useState(user?.abn ?? "");
@@ -866,7 +865,7 @@ function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser |
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   useEffect(() => {
-    if (user) { setName(user.name); setEmail(user.email); setPhone(user.phone); setCompany(user.company); setAbn(user.abn); }
+    if (user) { setName(user.name); setPhone(user.phone); setCompany(user.company); setAbn(user.abn); }
   }, [user]);
   if (!user) { if (!authLoading) go("login"); return null; }
 
@@ -896,13 +895,12 @@ function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser |
           <h3 className="font-semibold text-sm text-[#131311] mb-4">Personal details</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><FieldLabel>Full name</FieldLabel><Input value={name} onChange={e => setName(e.target.value)} /></div>
-            <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} /></div>
             <div><FieldLabel>Phone number</FieldLabel><Input value={phone} onChange={e => setPhone(e.target.value)} /></div>
           </div>
         </div>
         <div className="bg-white border border-black/8 p-5">
           <h3 className="font-semibold text-sm text-[#131311] mb-1">Business details</h3>
-          <p className="text-xs text-[#5c5a56] mb-4">Used on your quotes and orders, and shown as your registration information.</p>
+          <p className="text-xs text-[#5c5a56] mb-4">Shown on your quotes and orders.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><FieldLabel>Business name</FieldLabel><Input value={company} onChange={e => setCompany(e.target.value)} placeholder="ABC Constructions" /></div>
             <div><FieldLabel>ABN</FieldLabel><Input value={abn} onChange={e => setAbn(e.target.value)} placeholder="00 000 000 000" inputMode="numeric" /></div>
@@ -914,41 +912,37 @@ function ProfilePage({ user, setPage, setUser, authLoading }: { user: AuthUser |
             {saved ? <><Check className="w-4 h-4" />Saved</> : saving ? "Saving…" : "Save changes"}
           </Btn>
         </div>
-        <RegistrationInfo user={user} />
+        <AccountIdentity user={user} setPage={setPage} />
       </div>
     </>
   );
 }
 
-// Read-only registration record — business + account identity as held on file.
-const ACCOUNT_TYPE_LABEL: Record<string, string> = { builder: "Builder", trade: "Trade", "owner-builder": "Owner-builder" };
+// Read-only account identity. The sign-in email is the unique login ID — customers
+// can never edit it (an accidental change is a lockout); only OpenFrame staff can,
+// from the ops console.
 const fmtLongDate = (s: string | null) => {
   if (!s) return "—";
   const d = new Date(s.replace(" ", "T") + "Z");
   return isNaN(+d) ? "—" : d.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" });
 };
-function RegRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-4 py-2.5 border-b border-black/6 last:border-0">
-      <dt className="text-[10px] font-semibold text-[#3a3835] uppercase tracking-widest sm:w-40 sm:flex-shrink-0">{label}</dt>
-      <dd className="text-sm text-[#131311]">{value || "—"}</dd>
-    </div>
-  );
-}
-function RegistrationInfo({ user }: { user: AuthUser }) {
-  const reference = user.id ? user.id.replace(/-/g, "").slice(0, 8).toUpperCase() : "—";
+function AccountIdentity({ user, setPage }: { user: AuthUser; setPage: (p: Page) => void }) {
   return (
     <section className="pt-2">
-      <h2 className="text-sm font-semibold text-[#131311] uppercase tracking-wider mb-3">Registration information</h2>
+      <h2 className="text-sm font-semibold text-[#131311] uppercase tracking-wider mb-3">Account</h2>
       <dl className="bg-white border border-black/8 px-5 py-1">
-        <RegRow label="Business name" value={user.company} />
-        <RegRow label="ABN" value={user.abn} />
-        <RegRow label="Account type" value={ACCOUNT_TYPE_LABEL[user.type] ?? user.type} />
-        <RegRow label="Account reference" value={reference} />
-        <RegRow label="Sign-in email" value={user.email} />
-        <RegRow label="Registered" value={fmtLongDate(user.createdAt)} />
+        <div className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-4 py-2.5 border-b border-black/6">
+          <dt className="text-[10px] font-semibold text-[#3a3835] uppercase tracking-widest sm:w-40 sm:flex-shrink-0 flex items-center gap-1.5"><Lock className="w-3 h-3 text-[#5A7A6A]" />Sign-in email</dt>
+          <dd className="text-sm text-[#131311]">{user.email}</dd>
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-4 py-2.5">
+          <dt className="text-[10px] font-semibold text-[#3a3835] uppercase tracking-widest sm:w-40 sm:flex-shrink-0">Registered</dt>
+          <dd className="text-sm text-[#131311]">{fmtLongDate(user.createdAt)}</dd>
+        </div>
       </dl>
-      <p className="text-[11px] text-[#5c5a56] mt-2">These details appear on your quotes and orders and can't be changed here.</p>
+      <p className="text-[11px] text-[#5c5a56] mt-2">
+        Your email is your sign-in ID and can't be changed here — <button onClick={() => { setPage("support"); window.scrollTo(0, 0); }} className="text-[#5A7A6A] underline cursor-pointer">contact us</button> and we'll update it for you.
+      </p>
     </section>
   );
 }

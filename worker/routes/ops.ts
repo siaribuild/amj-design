@@ -514,6 +514,28 @@ ops.get("/customers", async (c) => {
   return c.json({ customers: results });
 });
 
+// PATCH /api/ops/customers/:id { email } — change a customer's sign-in email.
+// The email is the unique login ID, so customers can never edit it themselves;
+// this is the ONLY place it can change, and only an admin may do it. Sessions
+// stay valid (keyed by user id); the next OTP sign-in simply uses the new address.
+ops.patch("/customers/:id", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (staff.role !== "admin") return c.json({ error: "admin_only" }, 403);
+  const id = c.req.param("id");
+  const u = await c.env.DB.prepare("SELECT id, email FROM user WHERE id = ? AND type = 'customer'").bind(id).first<{ id: string; email: string }>();
+  if (!u) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  const email = normEmail(body?.email);
+  if (!isEmail(email)) return c.json({ error: "invalid_email" }, 400);
+  if (email === u.email) return c.json({ ok: true, email });
+  const taken = await c.env.DB.prepare("SELECT 1 FROM user WHERE email = ?").bind(email).first();
+  if (taken) return c.json({ error: "email_in_use" }, 409);
+  await c.env.DB.prepare("UPDATE user SET email = ? WHERE id = ?").bind(email, id).run();
+  await logEvent(c.env, { actor: staff.id, entityType: "user", entityId: id, action: `changed sign-in email ${u.email} → ${email}` });
+  return c.json({ ok: true, email });
+});
+
 // GET /api/ops/customers/:id — 360: the customer, their projects, and orders.
 ops.get("/customers/:id", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);

@@ -1,9 +1,13 @@
 // Ops → Customers: registered customer list + 360 view (profile, projects, orders).
 // Customers are user accounts (the organisation layer isn't wired); business name
-// and ABN come from each customer's own profile.
+// and ABN come from each customer's own profile. The sign-in email is the unique
+// login ID — customers can't change it themselves, so admins can here.
 import { useEffect, useState } from "react";
-import { ChevronLeft, Loader2, User, Mail, Phone, Building2 } from "lucide-react";
-import { opsCustomers, opsCustomer, type OpsCustomer, type OpsCustomerDetail } from "./api";
+import { ChevronLeft, Loader2, User, Mail, Phone, Building2, PenLine } from "lucide-react";
+import {
+  opsCustomers, opsCustomer, opsSetCustomerEmail,
+  type OpsCustomer, type OpsCustomerDetail, type OpsUser,
+} from "./api";
 
 const SAGE = "#5A7A6A";
 const money = (n: number | null) => (n == null ? "—" : `$${Math.round(n).toLocaleString("en-AU")}`);
@@ -13,9 +17,9 @@ const fmtDate = (s: string | null) => {
   return isNaN(+d) ? "—" : d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 };
 
-export function Customers() {
+export function Customers({ user }: { user: OpsUser }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  return openId ? <Detail id={openId} onBack={() => setOpenId(null)} /> : <List onOpen={setOpenId} />;
+  return openId ? <Detail id={openId} viewer={user} onBack={() => setOpenId(null)} /> : <List onOpen={setOpenId} />;
 }
 
 function List({ onOpen }: { onOpen: (id: string) => void }) {
@@ -52,13 +56,31 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
-function Detail({ id, onBack }: { id: string; onBack: () => void }) {
+function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: () => void }) {
   const [d, setD] = useState<OpsCustomerDetail | null>(null);
   const [error, setError] = useState(false);
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [emailDraft, setEmailDraft] = useState("");
+  const [emailErr, setEmailErr] = useState("");
+  const [busy, setBusy] = useState(false);
   useEffect(() => { opsCustomer(id).then(setD).catch(() => setError(true)); }, [id]);
   if (error) return <div className="bg-white border border-red-200 p-6 text-sm text-red-600">Couldn't load this customer.</div>;
   if (!d) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
   const cu = d.customer;
+
+  const saveEmail = async () => {
+    if (busy) return;
+    setBusy(true); setEmailErr("");
+    try {
+      const r = await opsSetCustomerEmail(cu.id, emailDraft.trim());
+      setD({ ...d, customer: { ...cu, email: r.email } });
+      setEditingEmail(false);
+    } catch (e) {
+      setEmailErr(String(e).includes("409") ? "That email is already in use by another account."
+        : String(e).includes("400") ? "Enter a valid email address."
+        : "Couldn't change the email — you may not have permission.");
+    } finally { setBusy(false); }
+  };
 
   return (
     <div className="max-w-3xl">
@@ -66,11 +88,31 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
       <div className="bg-white border border-black/8 p-5 mb-5">
         <h2 className="text-lg font-semibold text-[#14150f] flex items-center gap-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><User className="w-5 h-5" style={{ color: SAGE }} />{cu.name || cu.email.split("@")[0]}</h2>
         <div className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-[#5c5a56]">
-          <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-[#b5b2ac]" />{cu.email}</span>
+          <span className="flex items-center gap-1.5">
+            <Mail className="w-3.5 h-3.5 text-[#b5b2ac]" />{cu.email}
+            {viewer.role === "admin" && !editingEmail && (
+              <button onClick={() => { setEditingEmail(true); setEmailDraft(cu.email); setEmailErr(""); }}
+                aria-label="Change sign-in email"
+                className="text-[#8b8880] hover:text-[#14150f]"><PenLine className="w-3 h-3" /></button>
+            )}
+          </span>
           {cu.phone && <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-[#b5b2ac]" />{cu.phone}</span>}
           <span className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5 text-[#b5b2ac]" />{cu.company || "No business name"}{cu.abn ? ` · ABN ${cu.abn}` : ""}</span>
           <span className="text-[#8b8880]">Registered {fmtDate(cu.createdAt)}</span>
         </div>
+        {editingEmail && (
+          <div className="mt-3 border-t border-black/[0.07] pt-3">
+            <p className="text-[11px] uppercase tracking-wide text-[#8b8880] mb-1.5">Change sign-in email — this is the customer's unique login ID</p>
+            <div className="flex flex-wrap gap-2 items-center">
+              <input type="email" value={emailDraft} onChange={(e) => setEmailDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveEmail()}
+                className="border border-black/15 px-2.5 py-1.5 text-sm outline-none focus:border-[#5A7A6A] min-w-[240px]" />
+              <button onClick={saveEmail} disabled={busy} className="text-xs px-3 py-1.5 bg-[#5A7A6A] text-white disabled:opacity-50">{busy ? "Saving…" : "Save"}</button>
+              <button onClick={() => setEditingEmail(false)} className="text-xs px-2 py-1.5 text-[#5c5a56] hover:text-[#14150f]">Cancel</button>
+            </div>
+            {emailErr && <p className="text-xs text-red-600 mt-1.5">{emailErr}</p>}
+            <p className="text-[11px] text-[#8b8880] mt-1.5">The customer signs in with the new address from their next login. Their sessions and records are unaffected.</p>
+          </div>
+        )}
       </div>
 
       <Section title="Projects">

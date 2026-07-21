@@ -151,6 +151,9 @@ export interface OpsCustomerDetail {
 }
 export const opsCustomers = () => req<{ customers: OpsCustomer[] }>("/api/ops/customers");
 export const opsCustomer = (id: string) => req<OpsCustomerDetail>(`/api/ops/customers/${id}`);
+/** Change a customer's sign-in email (their unique login ID). Admin only. */
+export const opsSetCustomerEmail = (id: string, email: string) =>
+  req<{ ok: boolean; email: string }>(`/api/ops/customers/${id}`, { method: "PATCH", body: JSON.stringify({ email }) });
 
 // ── Admin (O6) ───────────────────────────────────────────────────────────────
 export interface OpsRule { id: string; name: string; trigger_family: string; condition_json: string; approver_role: string; active: number }

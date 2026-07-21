@@ -166,7 +166,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
             : tab === "quotes" ? <Quotes />
             : tab === "approvals" ? <Approvals />
             : tab === "orders" ? <Orders />
-            : tab === "customers" ? <Customers />
+            : tab === "customers" ? <Customers user={user} />
             : tab === "enquiries" ? <Enquiries user={user} />
             : tab === "catalogue" ? <Catalogue />
             : tab === "rules" ? <Rules />
