@@ -34,3 +34,4 @@ Thumbs.db
 playwright-report/
 test-results/
 coverage/
+!.env.production
