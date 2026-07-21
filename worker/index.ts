@@ -17,6 +17,7 @@ import { files } from "./routes/files";
 import { contact } from "./routes/contact";
 import { ops } from "./routes/ops";
 import { ensureCatalogue } from "./lib/catalogue";
+import { getActiveLocations } from "../src/data/catalogue";
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -28,6 +29,18 @@ api.get("/api/health", (c) =>
     env: c.env.APP_ENV ?? "unknown",
     bindings: { db: !!c.env.DB, files: !!c.env.FILES, kv: !!c.env.KV },
     time: new Date().toISOString(),
+  }),
+);
+
+// Public showroom registry — active locations only, suburb-level (no street
+// address). One source for the Contact page list + map + appointment validation.
+api.get("/api/locations", (c) =>
+  c.json({
+    locations: getActiveLocations().map((l) => ({
+      id: l.id, stateCode: l.stateCode, suburb: l.suburb,
+      displayName: l.displayName, lat: l.lat, lng: l.lng,
+      appointmentAvailable: l.appointmentAvailable,
+    })),
   }),
 );
 

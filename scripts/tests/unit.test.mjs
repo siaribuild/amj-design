@@ -199,3 +199,18 @@ test("catalogueQuery.toCatalogueData: full null coercion + colour mapping", () =
   assert.equal(out.colours[0].typeSlug, "colour");
   assert.equal(out.colours[0].availability, "optional");
 });
+
+test("catalogueQuery.toCatalogueData: showroom locations normalise", () => {
+  const out = M.toCatalogueData({
+    locations: [
+      { id: "loc_a", stateCode: "VIC", suburb: "Rowville", lat: -37.9, lng: 145.2 },
+      { id: null }, // dropped: no id
+    ],
+  });
+  assert.equal(out.locations.length, 1);
+  const l = out.locations[0];
+  assert.equal(l.displayName, "Rowville, VIC", "displayName derived when blank");
+  assert.equal(l.appointmentAvailable, true, "defaults true");
+  assert.equal(l.status, "active", "defaults active");
+  assert.equal(l.historicalAliases, undefined);
+});

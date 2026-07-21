@@ -83,6 +83,19 @@ export const getCurrentProject = () => req<CurrentProject>("/api/projects/curren
 export const getProject = (projectId: string) =>
   req<CurrentProject>(`/api/projects/${projectId}`);
 
+// ── Showroom locations (public registry) ─────────────────────────────────────
+export interface ApiLocation {
+  id: string;
+  stateCode: string;
+  suburb: string;
+  displayName: string;
+  lat: number;
+  lng: number;
+  appointmentAvailable: boolean;
+}
+/** Active showroom locations for the Contact page (list + map + appointment). */
+export const getLocations = () => req<{ locations: ApiLocation[] }>("/api/locations");
+
 /** Snapshot-save the whole draft line set (+ the project name). Creates the
  *  project on first call. */
 export const saveLines = (items: QItem[], title?: string) =>

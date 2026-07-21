@@ -258,4 +258,41 @@ export const page = defineType({
   preview: { select: { title: "title", subtitle: "pageId", media: "heroImage" } },
 });
 
-export const schemaTypes = [category, family, optionType, option, product, page, seoMeta];
+// Australia-wide AMJ showroom the customer can request an appointment at. Drives
+// the Contact page's location list AND the map pin (suburb centroid). Suburb-level
+// only — deliberately NO street address and NO contact email (data-security:
+// manufacturer routing is configured at the env level, not per record).
+export const showroomLocation = defineType({
+  name: "showroomLocation",
+  title: "Showroom location",
+  type: "document",
+  fields: [
+    defineField({
+      name: "stateCode", title: "State", type: "string",
+      options: { list: ["VIC", "NSW", "WA", "QLD", "SA", "TAS", "NT", "ACT"] },
+      validation: (r) => r.required(),
+    }),
+    defineField({ name: "suburb", type: "string", validation: (r) => r.required() }),
+    defineField({
+      name: "displayName", title: "Display name", type: "string",
+      description: 'Shown to customers, e.g. "Rowville, VIC". Defaults to "{suburb}, {state}" if blank.',
+    }),
+    defineField({ name: "lat", title: "Latitude", type: "number", description: "Suburb centroid — for the map pin. NOT the exact street address.", validation: (r) => r.required().min(-90).max(90) }),
+    defineField({ name: "lng", title: "Longitude", type: "number", validation: (r) => r.required().min(-180).max(180) }),
+    defineField({ name: "appointmentAvailable", title: "Appointments available", type: "boolean", initialValue: true }),
+    defineField({
+      name: "status", type: "string", initialValue: "active",
+      options: { list: [
+        { title: "Active", value: "active" },
+        { title: "Inactive", value: "inactive" },
+        { title: "Pending verification", value: "pending_verification" },
+      ] },
+      description: "Only 'active' locations are offered for new appointment requests.",
+      validation: (r) => r.required(),
+    }),
+    defineField({ name: "historicalAliases", title: "Historical aliases", type: "array", of: [{ type: "string" }], description: "Former suburb names, for matching old records (e.g. Belmont for WA)." }),
+  ],
+  preview: { select: { title: "displayName", subtitle: "status", state: "stateCode", suburb: "suburb" }, prepare: ({ title, subtitle, state, suburb }: any) => ({ title: title || [suburb, state].filter(Boolean).join(", "), subtitle }) },
+});
+
+export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation];

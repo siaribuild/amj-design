@@ -1,0 +1,3 @@
+{"_id":"loc_vic_rowville","_type":"showroomLocation","stateCode":"VIC","suburb":"Rowville","displayName":"Rowville, VIC","lat":-37.9333,"lng":145.2333,"appointmentAvailable":true,"status":"active"}
+{"_id":"loc_nsw_lakemba","_type":"showroomLocation","stateCode":"NSW","suburb":"Lakemba","displayName":"Lakemba, NSW","lat":-33.9203,"lng":151.0757,"appointmentAvailable":true,"status":"active"}
+{"_id":"loc_wa_burswood","_type":"showroomLocation","stateCode":"WA","suburb":"Burswood","displayName":"Burswood, WA","lat":-31.96,"lng":115.895,"appointmentAvailable":true,"status":"active","historicalAliases":["Belmont"]}

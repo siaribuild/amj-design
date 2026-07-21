@@ -624,12 +624,39 @@ export interface SitePage { pageId: string; heroImage?: CatalogueImage; seo?: Se
 export let pages: SitePage[] = [];
 export const getPage = (pageId: string): SitePage | undefined => pages.find((p) => p.pageId === pageId);
 
+// ─── Showroom locations (Sanity-managed registry) ─────────────────────────────
+// Australia-wide AMJ showrooms the customer can request an appointment at. One
+// registry drives both the Contact page list and the map (suburb-level pins).
+// Authored in Sanity; the entries below are the versioned seed (imported into
+// Sanity + used in dev/tests). Suburb + state + centroid only — NEVER a street
+// address, and NEVER a per-location email (manufacturer routing is env-level).
+export interface ShowroomLocation {
+  id: string;
+  stateCode: string;                 // VIC | NSW | WA | QLD | SA
+  suburb: string;
+  displayName: string;               // "Rowville, VIC"
+  lat: number;                       // suburb centroid — for the map pin
+  lng: number;
+  appointmentAvailable: boolean;
+  status: "active" | "inactive" | "pending_verification";
+  historicalAliases?: string[];
+}
+export let locations: ShowroomLocation[] = [
+  { id: "loc_vic_rowville", stateCode: "VIC", suburb: "Rowville", displayName: "Rowville, VIC", lat: -37.9333, lng: 145.2333, appointmentAvailable: true, status: "active" },
+  { id: "loc_nsw_lakemba", stateCode: "NSW", suburb: "Lakemba", displayName: "Lakemba, NSW", lat: -33.9203, lng: 151.0757, appointmentAvailable: true, status: "active" },
+  { id: "loc_wa_burswood", stateCode: "WA", suburb: "Burswood", displayName: "Burswood, WA", lat: -31.9600, lng: 115.8950, appointmentAvailable: true, status: "active", historicalAliases: ["Belmont"] },
+];
+export const getLocations = (): ShowroomLocation[] => locations;
+export const getActiveLocations = (): ShowroomLocation[] => locations.filter((l) => l.status === "active");
+export const getLocationById = (id: string): ShowroomLocation | undefined => locations.find((l) => l.id === id);
+
 export interface CatalogueData {
   categories?: Category[];
   families?: Family[];
   products?: Product[];
   colours?: ProductOption[];
   pages?: SitePage[];
+  locations?: ShowroomLocation[];
 }
 export function hydrateCatalogue(data: CatalogueData): void {
   if (data.categories?.length) categories = data.categories;
@@ -637,4 +664,5 @@ export function hydrateCatalogue(data: CatalogueData): void {
   if (data.products?.length) products = data.products;
   if (data.colours?.length) colorbondColourOptions = data.colours;
   if (data.pages?.length) pages = data.pages;
+  if (data.locations?.length) locations = data.locations;
 }

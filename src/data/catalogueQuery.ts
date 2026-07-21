@@ -4,7 +4,7 @@
 // come from the "applies to all" option type. Imported by both the client
 // (src/data/sanity.ts) and the Worker (worker/lib/catalogue.ts) so the query +
 // normalization stay in one place.
-import type { Category, Family, Product, ProductOption, CatalogueData, SitePage, SeoMeta } from "./catalogue";
+import type { Category, Family, Product, ProductOption, CatalogueData, SitePage, SeoMeta, ShowroomLocation } from "./catalogue";
 
 export const CATALOGUE_QUERY = `{
   "categories": *[_type=="category"]|order(name asc){
@@ -51,6 +51,9 @@ export const CATALOGUE_QUERY = `{
       "openGraph": openGraph{ title, description, "image": image{ "url": asset->url, hotspot } },
       "twitter": twitter{ card, title, description, "image": image{ "url": asset->url, hotspot } }
     }
+  },
+  "locations": *[_type=="showroomLocation"]|order(stateCode asc, suburb asc){
+    "id":_id, stateCode, suburb, displayName, lat, lng, appointmentAvailable, status, historicalAliases
   }
 }`;
 
@@ -60,6 +63,7 @@ export interface RawCataloguePayload {
   products: any[];
   colours: { name: string; hex?: string | null; availability: string; price?: number | null }[];
   pages: any[];
+  locations?: any[];
 }
 
 function normalizeOption(o: any): ProductOption {
@@ -127,6 +131,22 @@ function normalizePage(p: any): SitePage {
   return { pageId: p.pageId, heroImage: normalizeImage(p.heroImage) ?? undefined, seo: normalizeSeo(p.seo) };
 }
 
+// Coerce a raw Sanity showroomLocation into a full ShowroomLocation. Suburb-level
+// only; never carries a street address or contact email.
+function normalizeLocation(l: any): ShowroomLocation {
+  return {
+    id: l.id,
+    stateCode: l.stateCode ?? "",
+    suburb: l.suburb ?? "",
+    displayName: l.displayName || [l.suburb, l.stateCode].filter(Boolean).join(", "),
+    lat: typeof l.lat === "number" ? l.lat : 0,
+    lng: typeof l.lng === "number" ? l.lng : 0,
+    appointmentAvailable: l.appointmentAvailable !== false,
+    status: (l.status as ShowroomLocation["status"]) ?? "active",
+    historicalAliases: Array.isArray(l.historicalAliases) && l.historicalAliases.length ? l.historicalAliases : undefined,
+  };
+}
+
 export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
   return {
     categories: raw.categories ?? [],
@@ -138,5 +158,6 @@ export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
       hex: c.hex ?? undefined, price: c.price ?? undefined,
     })),
     pages: (raw.pages ?? []).filter((p) => p?.pageId).map(normalizePage),
+    locations: (raw.locations ?? []).filter((l) => l?.id).map(normalizeLocation),
   };
 }
