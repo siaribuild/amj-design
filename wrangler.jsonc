@@ -45,13 +45,13 @@
     "STAFF_EMAIL_DOMAINS": "openframe.com.au",
     // Email: set a verified From once Resend is configured (API key is a SECRET,
     // set via `wrangler secret put RESEND_API_KEY` — never commit it here):
-    "EMAIL_FROM": "OpenFrame <quotes@openframe.com.au>",
+    "EMAIL_FROM": "OpenFrame <no-reply@openframe.com.au>",
     // Enquiries: internal OpenFrame queue address (falls back to EMAIL_FROM), and
     // the SINGLE manufacturer handoff address used for every showroom appointment
     // (never stored per location). Set MANUFACTURER_TO to the real AMJ inbox to
     // enable the handoff email:
     "ENQUIRY_INTERNAL_TO": "enquiries@openframe.com.au",
-    "MANUFACTURER_TO": "leads@openframe.com.au",
+    "MANUFACTURER_TO": "gediminas.bereznevicius@gmail.com",
     // Sanity catalogue source (Worker). Client uses VITE_SANITY_* in a .env:
     "SANITY_PROJECT_ID": "xjtrm1ex", "SANITY_DATASET": "production",
     // Prod staff auth via Cloudflare Access — set when the ops.* app is deployed:
