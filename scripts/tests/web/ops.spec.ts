@@ -34,17 +34,22 @@ test("ops tabs render (approvals, orders, customers, catalogue, audit)", async (
   await page.getByRole("button", { name: "Orders" }).click();
   await expect(page.getByText("OF-58001")).toBeVisible();
   await page.getByRole("button", { name: "Customers" }).click();
-  await expect(page.getByText("Northside Build")).toBeVisible();
+  await expect(page.getByText("Sarah Nguyen")).toBeVisible();
   await page.getByRole("button", { name: "Catalogue" }).click();
   await expect(page.getByText(/Colorbond colours/i)).toBeVisible();
   await page.getByRole("button", { name: "Audit" }).click();
   await expect(page.getByRole("heading", { name: "Audit" })).toBeVisible();
 });
 
-test("ops messages tab shows the enquiry submitted from the contact form", async ({ page }) => {
+test("ops enquiries tab shows the lead submitted from the contact page", async ({ page }) => {
   await staffLogin(page);
-  await page.getByRole("button", { name: "Messages" }).click();
-  // The customer contact-form test submits "Test Person" earlier in the run.
+  await page.getByRole("button", { name: "Enquiries" }).click();
+  // The customer contact-page tests submit "Test Person" (question) + "Mel Visitor"
+  // (appointment) earlier in the run; every lead shows the OpenFrame source.
   await expect(page.getByText("Test Person").first()).toBeVisible();
-  await expect(page.getByText("Hi, do you deliver to Bendigo?").first()).toBeVisible();
+  await expect(page.getByText("OpenFrame Website").first()).toBeVisible();
+  // Open the appointment lead and confirm its immutable attribution.
+  await page.getByText("Mel Visitor").first().click();
+  await expect(page.getByText(/Source: OpenFrame Website/i)).toBeVisible();
+  await expect(page.getByText("OPENFRAME").first()).toBeVisible();
 });
