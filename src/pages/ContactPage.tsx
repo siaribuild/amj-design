@@ -31,30 +31,39 @@ const GRID_BG = {
   backgroundSize: "72px 72px",
 };
 
-function useTurnstile(onToken: (t: string) => void) {
+// Render a Cloudflare Turnstile widget into the active tab's container. Re-runs on
+// `dep` (the current tab) so switching panels re-mounts the widget in the newly
+// shown container instead of leaving it stranded in the unmounted one. No-op when
+// no site key is configured (dev/preview/tests run without a captcha provider).
+function useTurnstile(onToken: (t: string) => void, dep: unknown) {
   const ref = useRef<HTMLDivElement>(null);
-  const rendered = useRef(false);
+  const widgetId = useRef<string | null>(null);
   useEffect(() => {
-    if (!TURNSTILE_SITE_KEY) return;
+    if (!TURNSTILE_SITE_KEY || !ref.current) return;
     let cancelled = false;
     const render = () => {
       const ts = (window as any).turnstile;
-      if (!ts || !ref.current || rendered.current) return;
-      rendered.current = true;
-      ts.render(ref.current, { sitekey: TURNSTILE_SITE_KEY, callback: (t: string) => onToken(t), "expired-callback": () => onToken(""), "error-callback": () => onToken("") });
+      if (cancelled || !ts || !ref.current) return;
+      if (widgetId.current != null) { try { ts.remove(widgetId.current); } catch { /* already gone */ } widgetId.current = null; }
+      widgetId.current = ts.render(ref.current, { sitekey: TURNSTILE_SITE_KEY, callback: (t: string) => onToken(t), "expired-callback": () => onToken(""), "error-callback": () => onToken("") });
     };
-    if ((window as any).turnstile) { render(); return; }
-    let script = document.querySelector<HTMLScriptElement>("script[data-turnstile]");
-    if (!script) {
-      script = document.createElement("script");
-      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
-      script.async = true; script.defer = true; script.setAttribute("data-turnstile", "");
-      document.head.appendChild(script);
+    if ((window as any).turnstile) render();
+    else {
+      let script = document.querySelector<HTMLScriptElement>("script[data-turnstile]");
+      if (!script) {
+        script = document.createElement("script");
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+        script.async = true; script.defer = true; script.setAttribute("data-turnstile", "");
+        document.head.appendChild(script);
+      }
+      script.addEventListener("load", render);
     }
-    const onLoad = () => { if (!cancelled) render(); };
-    script.addEventListener("load", onLoad);
-    return () => { cancelled = true; script?.removeEventListener("load", onLoad); };
-  }, [onToken]);
+    return () => {
+      cancelled = true;
+      const ts = (window as any).turnstile;
+      if (ts && widgetId.current != null) { try { ts.remove(widgetId.current); } catch { /* noop */ } widgetId.current = null; }
+    };
+  }, [onToken, dep]);
   return ref;
 }
 
@@ -92,7 +101,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
   const [formError, setFormError] = useState("");
   const [locations, setLocations] = useState<ApiLocation[]>([]);
 
-  const turnstileRef = useTurnstile(setToken);
+  const turnstileRef = useTurnstile(setToken, tab);
   useEffect(() => { getLocations().then(r => setLocations(r.locations)).catch(() => setLocations([])); }, []);
   useEffect(() => { if (user) { setName(v => v || user.name); setEmail(v => v || user.email); setPhone(v => v || user.phone); } }, [user]);
 
@@ -101,7 +110,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
   const captchaReady = !TURNSTILE_SITE_KEY || !!token;
 
   const openTab = (t: Tab) => {
-    setTab(t); setErrors({}); setFormError("");
+    setTab(t); setErrors({}); setFormError(""); setToken(""); // fresh captcha per panel
     const url = new URL(window.location.href);
     url.searchParams.set("intent", t === "visit" ? "appointment" : "question");
     window.history.replaceState({}, "", url);
