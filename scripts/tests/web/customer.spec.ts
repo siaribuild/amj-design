@@ -38,36 +38,32 @@ test("contact page: question enquiry issues an OpenFrame reference", async ({ pa
   // appointment test's submission.
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.41" });
   await page.goto("/contact");
-  await expect(page.getByRole("heading", { name: /contact openframe/i })).toBeVisible();
-  // Opens on the two-card chooser — no form until a branch is picked.
-  await expect(page.getByPlaceholder("Your name")).toHaveCount(0);
-  await page.getByRole("radio", { name: /ask a question/i }).click();
-  // Appointment-only fields stay hidden on the question branch.
-  await expect(page.getByText("Preferred showroom")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /tell us what you need/i })).toBeVisible();
+  // The router band surfaces every intent; the Ask tab is open by default.
+  await expect(page.getByRole("tab", { name: /ask a question/i })).toHaveAttribute("aria-selected", "true");
   await page.getByPlaceholder("Your name").fill("Test Person");
   await page.getByPlaceholder("you@email.com").fill("test.person@example.com");
-  await page.getByPlaceholder(/describe your project/i).fill("Hi, do you deliver to Bendigo?");
-  await page.getByRole("button", { name: /send question/i }).click();
-  await expect(page.getByRole("heading", { name: /question received/i })).toBeVisible();
+  await page.getByPlaceholder(/rough sizes/i).fill("Hi, do you deliver to Bendigo?");
+  await page.getByRole("button", { name: /send message/i }).click();
+  await expect(page.getByRole("heading", { name: /message received/i })).toBeVisible();
   await expect(page.getByText(/OF-ENQ-\d{4}-\d{6}/).first()).toBeVisible();
 });
 
-test("contact page: appointment branch + list↔form location sync", async ({ page }) => {
+test("contact page: showroom visit tab + chip↔form location sync", async ({ page }) => {
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.42" });
   await page.goto("/contact");
-  // Progressive disclosure: switch to the appointment branch.
-  await page.getByRole("radio", { name: /request a showroom appointment/i }).click();
-  await expect(page.getByText("Preferred showroom")).toBeVisible();
+  // Switch to the on-page Visit tab.
+  await page.getByRole("tab", { name: /book a showroom visit/i }).click();
+  await expect(page.getByText(/Pick the showroom nearest you/i)).toBeVisible();
 
-  // Selecting a suburb in the locations list fills the form's showroom select.
-  await page.getByRole("button", { name: "Rowville", exact: true }).click();
-  await expect(page.locator("select").filter({ hasText: "Rowville, VIC" })).toHaveValue("loc_vic_rowville");
+  // Clicking a location chip fills the form's showroom select (Sanity-driven).
+  await page.getByRole("button", { name: "Rowville VIC" }).click();
+  await expect(page.locator("select").filter({ hasText: "Pick a showroom above" })).toHaveValue("loc_vic_rowville");
 
+  // Phone-first: no email needed.
   await page.getByPlaceholder("Your name").fill("Mel Visitor");
-  await page.getByPlaceholder("you@email.com").fill("mel.visitor@example.com");
-  await page.getByPlaceholder("(03) 9000 0000").fill("0431 234 567");
-  await page.getByRole("button", { name: "Afternoon", exact: true }).click();
-  await page.getByRole("button", { name: /request appointment/i }).click();
+  await page.getByPlaceholder("Best number to call").fill("0431 234 567");
+  await page.getByRole("button", { name: /request a call to book/i }).click();
 
   await expect(page.getByRole("heading", { name: /appointment request received/i })).toBeVisible();
   await expect(page.getByText(/No appointment is confirmed yet/i)).toBeVisible();

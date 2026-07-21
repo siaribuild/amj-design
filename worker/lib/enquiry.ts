@@ -4,11 +4,11 @@ import { isEmail } from "./auth";
 
 export const ENQUIRY_INTENTS = ["question", "appointment_request"] as const;
 export type EnquiryIntent = (typeof ENQUIRY_INTENTS)[number];
-export const BEST_TIMES = ["morning", "afternoon", "evening"] as const;
+export const BEST_TIMES = ["anytime", "morning", "afternoon", "evening"] as const;
 
 // The deployed form contract version, stamped onto every submission for
 // attribution/debugging. Bump when the fields materially change.
-export const FORM_VERSION = "contact-2026-07";
+export const FORM_VERSION = "contact-2026-08";
 
 export const enquiryReference = (year: number, seq: number) =>
   `OF-ENQ-${year}-${String(seq).padStart(6, "0")}`;
@@ -41,16 +41,21 @@ export function validateEnquiry(input: EnquiryInput, locationActive: boolean): s
   const errors: string[] = [];
   if (!ENQUIRY_INTENTS.includes(input.intent as EnquiryIntent)) errors.push("intent");
   if (!String(input.name ?? "").trim()) errors.push("name");
-  if (!isEmail(String(input.email ?? "").trim().toLowerCase())) errors.push("email");
   if (!input.privacyConsent) errors.push("consent");
 
+  const emailTrimmed = String(input.email ?? "").trim().toLowerCase();
   if (input.intent === "question") {
+    // Questions need a reply address; message required.
+    if (!isEmail(emailTrimmed)) errors.push("email");
     if (!String(input.message ?? "").trim()) errors.push("message");
   } else if (input.intent === "appointment_request") {
+    // Appointments are phone-first ("we call you") — email is OPTIONAL, but must be
+    // valid if supplied. A best time is optional; a live location + phone are not.
+    if (emailTrimmed && !isEmail(emailTrimmed)) errors.push("email");
     if (!String(input.locationId ?? "").trim()) errors.push("location");
     else if (!locationActive) errors.push("location"); // inactive/unknown location
     if (!normalizePhone(input.phone)) errors.push("phone"); // phone required for appointments
-    if (!BEST_TIMES.includes(input.bestTimeToCall as (typeof BEST_TIMES)[number])) errors.push("bestTimeToCall");
+    if (input.bestTimeToCall && !BEST_TIMES.includes(input.bestTimeToCall as (typeof BEST_TIMES)[number])) errors.push("bestTimeToCall");
   }
   return errors;
 }

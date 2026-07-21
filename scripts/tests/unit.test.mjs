@@ -211,13 +211,18 @@ test("enquiry: phone normalise, reference, branch validation", () => {
   const okQ = { intent: "question", name: "A", email: "a@b.co", privacyConsent: true, message: "hi" };
   assert.deepEqual(M.validateEnquiry(okQ, false), []);
   assert.ok(M.validateEnquiry({ ...okQ, message: "" }, false).includes("message"));
+  assert.ok(M.validateEnquiry({ ...okQ, email: "" }, false).includes("email"), "questions require an email");
   assert.ok(M.validateEnquiry({ ...okQ, privacyConsent: false }, false).includes("consent"));
 
-  const okA = { intent: "appointment_request", name: "A", email: "a@b.co", privacyConsent: true, locationId: "loc_x", phone: "0400000000", bestTimeToCall: "morning" };
+  const okA = { intent: "appointment_request", name: "A", email: "a@b.co", privacyConsent: true, locationId: "loc_x", phone: "0400000000", bestTimeToCall: "anytime" };
   assert.deepEqual(M.validateEnquiry(okA, true), []);
   assert.ok(M.validateEnquiry(okA, false).includes("location"), "inactive location rejected");
   assert.ok(M.validateEnquiry({ ...okA, phone: "" }, true).includes("phone"), "phone required for appointments");
-  assert.ok(M.validateEnquiry({ ...okA, bestTimeToCall: "" }, true).includes("bestTimeToCall"));
+  // Appointments are phone-first: email is OPTIONAL, best time is optional…
+  assert.deepEqual(M.validateEnquiry({ ...okA, email: "" }, true), [], "appointment valid without email");
+  assert.deepEqual(M.validateEnquiry({ ...okA, bestTimeToCall: "" }, true), [], "best time optional");
+  // …but a provided email must still be valid.
+  assert.ok(M.validateEnquiry({ ...okA, email: "not-an-email" }, true).includes("email"), "invalid email rejected even when optional");
 });
 
 test("catalogueQuery.toCatalogueData: showroom locations normalise", () => {

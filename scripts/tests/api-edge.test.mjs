@@ -255,6 +255,11 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.match(appt.body.reference, /^OF-ENQ-\d{4}-\d{6}$/);
       assert.notEqual(appt.body.reference, q.body.reference);
 
+      // Phone-first appointment: no email is fine (customer gets a call, not an email).
+      const phoneOnly = await requestJson(s, "/api/enquiries", { method: "POST",
+        json: { intent: "appointment_request", name: "Phoneonly Visitor", phone: "0431 555 000", privacyConsent: true, locationId: "loc_nsw_lakemba", bestTimeToCall: "anytime" }, ...ip("203.0.113.25") });
+      assert.match(phoneOnly.body.reference, /^OF-ENQ-\d{4}-\d{6}$/);
+
       // Same source immediately again → throttled.
       await requestJson(s, "/api/enquiries", { method: "POST", json: { intent: "question", name: "Again", email: "again@ex.com", message: "hi", privacyConsent: true }, ...ip("203.0.113.20") }, 429);
 
@@ -273,18 +278,26 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(row.location_suburb, "Rowville");
       assert.equal(row.phone, "0431234567");
 
+      // The phone-only appointment persisted with no email.
+      const noEmailJson = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command",
+        `SELECT COALESCE(email,'') AS email, location_suburb FROM enquiry WHERE public_reference = '${phoneOnly.body.reference}'`], { env: wranglerEnv });
+      const noEmailRow = JSON.parse(noEmailJson.stdout)[0].results[0];
+      assert.equal(noEmailRow.email, "", "phone-only appointment stores no email");
+      assert.equal(noEmailRow.location_suburb, "Lakemba");
+
       // Honeypot spam never persisted.
       const spamJson = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command",
         "SELECT count(*) AS n FROM enquiry WHERE email = 'b@spam.test'"], { env: wranglerEnv });
       assert.equal(JSON.parse(spamJson.stdout)[0].results[0].n, 0);
 
-      // Customer + internal + manufacturer notifications recorded (handoff only for the appointment).
+      // Notification fan-out: q (confirm+internal), appt (confirm+internal+handoff),
+      // phoneOnly (internal+handoff, NO confirmation — no email given).
       const notesJson = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command",
         "SELECT event_type, count(*) AS n FROM notification WHERE event_type LIKE 'enquiry.%' GROUP BY event_type"], { env: wranglerEnv });
       const events = Object.fromEntries(JSON.parse(notesJson.stdout)[0].results.map((r) => [r.event_type, r.n]));
-      assert.ok(events["enquiry.confirmation"] >= 2, "customer confirmations");
-      assert.ok(events["enquiry.internal"] >= 2, "internal notifications");
-      assert.equal(events["enquiry.handoff"], 1, "manufacturer handoff for the appointment only");
+      assert.equal(events["enquiry.confirmation"], 2, "customer confirmations (phone-only sends none)");
+      assert.equal(events["enquiry.internal"], 3, "internal notification per enquiry");
+      assert.equal(events["enquiry.handoff"], 2, "manufacturer handoff per appointment");
 
       // ── Ops Enquiries admin ────────────────────────────────────────────────
       const staffId = (await requestJson(staff, "/api/ops/me")).body.user.id;

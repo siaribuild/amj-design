@@ -130,10 +130,14 @@ enquiries.post("/enquiries", async (c) => {
   const customerText = isAppt
     ? `Hi ${firstName},\n\nYour appointment request has been logged as ${reference}. A representative will call you to agree on a suitable showroom visit time. No appointment is confirmed yet.\n\nSelected showroom: ${loc?.displayName}\n\n— OpenFrame`
     : `Hi ${firstName},\n\nThanks — your question has been logged as ${reference}. We have emailed you a copy and will respond using the contact details provided.\n\n— OpenFrame`;
-  await notify(c.env, {
-    recipient: customerEmail, eventType: "enquiry.confirmation", templateKey: "enquiry_customer",
-    email: { to: customerEmail, subject: `Your OpenFrame enquiry ${reference}`, text: customerText },
-  });
+  // Appointments are phone-first: only email a confirmation when the customer
+  // actually gave an address.
+  if (customerEmail) {
+    await notify(c.env, {
+      recipient: customerEmail, eventType: "enquiry.confirmation", templateKey: "enquiry_customer",
+      email: { to: customerEmail, subject: `Your OpenFrame enquiry ${reference}`, text: customerText },
+    });
+  }
 
   const internalTo = c.env.ENQUIRY_INTERNAL_TO || c.env.CONTACT_TO || c.env.EMAIL_FROM || "quotes@openframe.com.au";
   const summary = isAppt
