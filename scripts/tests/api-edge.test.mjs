@@ -235,33 +235,6 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(rookie, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 409);
     });
 
-    await t.test("contact form: validates, honeypots, throttles, records, and lists/deletes via ops", async () => {
-      const visitor = new Session(baseUrl);
-      // Missing message → rejected before anything is recorded.
-      await requestJson(visitor, "/api/contact", { method: "POST", json: { name: "A", email: "a@b.com" } }, 400);
-      // Honeypot filled → neutral success, nothing recorded.
-      const trap = await requestJson(visitor, "/api/contact", { method: "POST", json: { name: "Bot", email: "bot@spam.test", message: "spam", website: "http://spam" } });
-      assert.equal(trap.body.ok, true);
-      // A genuine enquiry is accepted...
-      const ok = await requestJson(visitor, "/api/contact", { method: "POST",
-        json: { name: "Jane Doe", email: "jane@example.com", phone: "0400 000 000", company: "Acme", message: "Do you deliver to Geelong?" } });
-      assert.equal(ok.body.ok, true);
-      // ...and an immediate repeat from the same source is throttled.
-      await requestJson(visitor, "/api/contact", { method: "POST", json: { name: "Jane", email: "jane@example.com", message: "again" } }, 429);
-
-      // Staff see the enquiry; the honeypot spam never landed.
-      const list = await requestJson(staff, "/api/ops/contact");
-      const mine = list.body.messages.find((m) => m.email === "jane@example.com");
-      assert.ok(mine, "enquiry was recorded");
-      assert.equal(mine.message, "Do you deliver to Geelong?");
-      assert.equal(list.body.messages.some((m) => m.email === "bot@spam.test"), false, "honeypot submission dropped");
-
-      // Delete it (admin has an assigned role).
-      await requestJson(staff, `/api/ops/contact/${mine.id}`, { method: "DELETE" });
-      const after = await requestJson(staff, "/api/ops/contact");
-      assert.equal(after.body.messages.some((m) => m.id === mine.id), false, "enquiry deleted");
-    });
-
     await t.test("enquiries: question + appointment, server-owned attribution, reference, validation", async () => {
       const s = new Session(baseUrl);
       const ip = (v) => ({ headers: { "X-Forwarded-For": v } }); // distinct sources dodge the per-IP throttle

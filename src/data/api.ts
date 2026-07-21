@@ -96,6 +96,37 @@ export interface ApiLocation {
 /** Active showroom locations for the Contact page (list + map + appointment). */
 export const getLocations = () => req<{ locations: ApiLocation[] }>("/api/locations");
 
+// ── Contact enquiries (question / showroom appointment) ──────────────────────
+export interface EnquiryPayload {
+  intent: "question" | "appointment_request";
+  name: string;
+  email: string;
+  phone?: string;
+  company?: string;
+  customerType?: string;
+  privacyConsent: boolean;
+  marketingOptIn?: boolean;
+  // question branch
+  topic?: string;
+  message?: string;
+  // appointment branch
+  locationId?: string;
+  bestTimeToCall?: string;
+  preferredDays?: string[];
+  productsInterest?: string;
+  notes?: string;
+  // spam controls + attribution context (server owns the authoritative source)
+  token?: string;
+  website?: string; // honeypot
+  client_context?: {
+    landing_path?: string; referrer?: string;
+    utm_source?: string; utm_medium?: string; utm_campaign?: string; utm_term?: string; utm_content?: string;
+  };
+}
+/** Submit a Contact-page enquiry. Returns the OpenFrame reference. Throws on 4xx. */
+export const submitEnquiry = (payload: EnquiryPayload) =>
+  req<{ ok: boolean; reference: string | null }>("/api/enquiries", { method: "POST", body: JSON.stringify(payload) });
+
 /** Snapshot-save the whole draft line set (+ the project name). Creates the
  *  project on first call. */
 export const saveLines = (items: QItem[], title?: string) =>
@@ -221,13 +252,3 @@ export async function uploadFile(file: File, kind = "upload"): Promise<{ file: A
 }
 export const getProjectFiles = (projectId: string) =>
   req<{ files: ApiFile[] }>(`/api/projects/${projectId}/files`);
-
-// ── Contact form ──────────────────────────────────────────────────────────────
-export interface ContactPayload {
-  name: string; email: string; phone?: string; company?: string; message: string;
-  token?: string;    // Turnstile token (when captcha is configured)
-  website?: string;  // honeypot — must stay empty
-}
-/** Submit a "Contact us" enquiry. Throws on validation/captcha/rate-limit errors. */
-export const sendContactMessage = (payload: ContactPayload) =>
-  req<{ ok: boolean }>("/api/contact", { method: "POST", body: JSON.stringify(payload) });

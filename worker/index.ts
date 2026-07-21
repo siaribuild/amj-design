@@ -14,7 +14,6 @@ import { quote } from "./routes/quote";
 import { orders } from "./routes/orders";
 import { guest } from "./routes/guest";
 import { files } from "./routes/files";
-import { contact } from "./routes/contact";
 import { enquiries } from "./routes/enquiries";
 import { ops } from "./routes/ops";
 import { ensureCatalogue } from "./lib/catalogue";
@@ -65,10 +64,6 @@ api.route("/api", files);
 
 // Public Contact-page enquiries (question / showroom appointment).
 api.route("/api", enquiries);
-
-// Legacy public "Contact us" intake — retired once the Contact page moves to
-// /api/enquiries (kept meanwhile so the live form keeps working).
-api.route("/api", contact);
 
 // Internal ops console API (staff-gated).
 api.route("/api/ops", ops);

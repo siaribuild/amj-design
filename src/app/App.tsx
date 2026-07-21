@@ -1338,7 +1338,7 @@ export default function App() {
       case "quote":            return <QuotePage setPage={navigateTo} user={user} quote={quote} onSubmit={submitCurrentProject} />;
       case "how-it-works":     return <HowItWorksPage />;
       case "resources":        return <ResourcesPage setPage={navigateTo} />;
-      case "contact":          return <ContactPage setPage={navigateTo} />;
+      case "contact":          return <ContactPage setPage={navigateTo} user={user} />;
       case "privacy":          return <PrivacyPolicyPage setPage={navigateTo} />;
       case "approved-quote":   return <ApprovedQuotePage />;
       case "trade":            return <TradePage setPage={navigateTo} />;
