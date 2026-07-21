@@ -24,7 +24,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
     const port = await freePort();
     const baseUrl = `http://127.0.0.1:${port}`;
     // Local/test env: dev OTP on, Access off (staff session fallback), Sanity off (deterministic built-in catalogue). Prod values live in wrangler.jsonc.
-    server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn", "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:"], { env: wranglerEnv });
+    server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn", "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "ENQUIRY_INTERNAL_TO:enquiries@openframe.com.au", "--var", "MANUFACTURER_TO:leads@amj.test"], { env: wranglerEnv });
     await waitForUrl(`${baseUrl}/api/health`, server);
 
     const anon = new Session(baseUrl);
@@ -260,6 +260,58 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(staff, `/api/ops/contact/${mine.id}`, { method: "DELETE" });
       const after = await requestJson(staff, "/api/ops/contact");
       assert.equal(after.body.messages.some((m) => m.id === mine.id), false, "enquiry deleted");
+    });
+
+    await t.test("enquiries: question + appointment, server-owned attribution, reference, validation", async () => {
+      const s = new Session(baseUrl);
+      const ip = (v) => ({ headers: { "X-Forwarded-For": v } }); // distinct sources dodge the per-IP throttle
+
+      // Validation is rejected before anything is recorded (and doesn't burn throttle).
+      await requestJson(s, "/api/enquiries", { method: "POST", json: { intent: "question", name: "Q", email: "q@ex.com", message: "hi" }, ...ip("198.51.100.1") }, 400); // no consent
+      const badLoc = await requestJson(s, "/api/enquiries", { method: "POST", json: { intent: "appointment_request", name: "X", email: "x@ex.com", phone: "0400111222", privacyConsent: true, locationId: "loc_nope", bestTimeToCall: "morning" }, ...ip("198.51.100.2") }, 400);
+      assert.ok(badLoc.body.fields.includes("location"), "unknown/inactive location rejected");
+
+      // Valid question → OpenFrame reference.
+      const q = await requestJson(s, "/api/enquiries", { method: "POST",
+        json: { intent: "question", name: "Question Person", email: "qp@example.com", topic: "pricing", message: "How much for a sliding door?", privacyConsent: true, client_context: { landing_path: "/contact?intent=question", utm_source: "google" } }, ...ip("203.0.113.10") });
+      assert.match(q.body.reference, /^OF-ENQ-\d{4}-\d{6}$/);
+
+      // Valid appointment for the seeded Rowville showroom → distinct reference.
+      const appt = await requestJson(s, "/api/enquiries", { method: "POST",
+        json: { intent: "appointment_request", name: "Mel Johnson", email: "mel@example.com", phone: "0431 234 567", privacyConsent: true, locationId: "loc_vic_rowville", bestTimeToCall: "afternoon", preferredDays: ["tuesday", "thursday"], productsInterest: "both", notes: "sliding doors" }, ...ip("203.0.113.20") });
+      assert.match(appt.body.reference, /^OF-ENQ-\d{4}-\d{6}$/);
+      assert.notEqual(appt.body.reference, q.body.reference);
+
+      // Same source immediately again → throttled.
+      await requestJson(s, "/api/enquiries", { method: "POST", json: { intent: "question", name: "Again", email: "again@ex.com", message: "hi", privacyConsent: true }, ...ip("203.0.113.20") }, 429);
+
+      // Honeypot → neutral success, no reference, nothing recorded.
+      const trap = await requestJson(s, "/api/enquiries", { method: "POST", json: { intent: "question", name: "Bot", email: "b@spam.test", message: "x", privacyConsent: true, website: "http://x" }, ...ip("203.0.113.30") });
+      assert.equal(trap.body.reference, null);
+
+      // Server-owned attribution + location snapshot + normalised phone persisted.
+      const rowJson = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command",
+        `SELECT source_owner, source_entry_point, appointment_status, location_id, location_suburb, phone, form_version FROM enquiry WHERE public_reference = '${appt.body.reference}'`], { env: wranglerEnv });
+      const row = JSON.parse(rowJson.stdout)[0].results[0];
+      assert.equal(row.source_owner, "OPENFRAME");
+      assert.equal(row.source_entry_point, "CONTACT_PAGE");
+      assert.equal(row.appointment_status, "requested");
+      assert.equal(row.location_id, "loc_vic_rowville");
+      assert.equal(row.location_suburb, "Rowville");
+      assert.equal(row.phone, "0431234567");
+
+      // Honeypot spam never persisted.
+      const spamJson = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command",
+        "SELECT count(*) AS n FROM enquiry WHERE email = 'b@spam.test'"], { env: wranglerEnv });
+      assert.equal(JSON.parse(spamJson.stdout)[0].results[0].n, 0);
+
+      // Customer + internal + manufacturer notifications recorded (handoff only for the appointment).
+      const notesJson = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command",
+        "SELECT event_type, count(*) AS n FROM notification WHERE event_type LIKE 'enquiry.%' GROUP BY event_type"], { env: wranglerEnv });
+      const events = Object.fromEntries(JSON.parse(notesJson.stdout)[0].results.map((r) => [r.event_type, r.n]));
+      assert.ok(events["enquiry.confirmation"] >= 2, "customer confirmations");
+      assert.ok(events["enquiry.internal"] >= 2, "internal notifications");
+      assert.equal(events["enquiry.handoff"], 1, "manufacturer handoff for the appointment only");
     });
   } finally {
     await stop(server);

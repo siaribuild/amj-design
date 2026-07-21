@@ -20,6 +20,10 @@ export interface Env {
   EMAIL_FROM?: string;
   /** Contact form: where enquiries are emailed (falls back to EMAIL_FROM). */
   CONTACT_TO?: string;
+  /** Enquiries: internal OpenFrame queue address (falls back to CONTACT_TO/EMAIL_FROM). */
+  ENQUIRY_INTERNAL_TO?: string;
+  /** Enquiries: single manufacturer handoff address for ALL locations (appointments). */
+  MANUFACTURER_TO?: string;
   /** Cloudflare Turnstile secret (captcha) — set to enable server verification. */
   TURNSTILE_SECRET?: string;
   /** Sanity catalogue source (Worker-side). Client uses VITE_SANITY_* instead. */

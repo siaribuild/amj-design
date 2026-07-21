@@ -20,6 +20,7 @@ await build({
       export { toCatalogueData } from ${p("src/data/catalogueQuery.ts")};
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
       export { normEmail, isEmail, sixDigit, sha256hex, userDto } from ${p("worker/lib/auth.ts")};
+      export { normalizePhone, enquiryReference, validateEnquiry } from ${p("worker/lib/enquiry.ts")};
       export { availableActions, ACTION_LABEL, TRANSITIONS, STAGES, STAGE_LABEL, DEPOSIT_PERCENT } from ${p("worker/lib/orders.ts")};
       export { canApprove } from ${p("worker/lib/approvals.ts")};
       export { staffDomains, isStaffEmail } from ${p("worker/lib/staff.ts")};
@@ -198,6 +199,25 @@ test("catalogueQuery.toCatalogueData: full null coercion + colour mapping", () =
   assert.deepEqual(out.categories, []);
   assert.equal(out.colours[0].typeSlug, "colour");
   assert.equal(out.colours[0].availability, "optional");
+});
+
+test("enquiry: phone normalise, reference, branch validation", () => {
+  assert.equal(M.normalizePhone("+61 431 234 567"), "0431234567");
+  assert.equal(M.normalizePhone("(03) 9000 0000"), "0390000000");
+  assert.equal(M.normalizePhone("61390000000"), "0390000000");
+  assert.equal(M.normalizePhone(""), "");
+  assert.equal(M.enquiryReference(2026, 1023), "OF-ENQ-2026-001023");
+
+  const okQ = { intent: "question", name: "A", email: "a@b.co", privacyConsent: true, message: "hi" };
+  assert.deepEqual(M.validateEnquiry(okQ, false), []);
+  assert.ok(M.validateEnquiry({ ...okQ, message: "" }, false).includes("message"));
+  assert.ok(M.validateEnquiry({ ...okQ, privacyConsent: false }, false).includes("consent"));
+
+  const okA = { intent: "appointment_request", name: "A", email: "a@b.co", privacyConsent: true, locationId: "loc_x", phone: "0400000000", bestTimeToCall: "morning" };
+  assert.deepEqual(M.validateEnquiry(okA, true), []);
+  assert.ok(M.validateEnquiry(okA, false).includes("location"), "inactive location rejected");
+  assert.ok(M.validateEnquiry({ ...okA, phone: "" }, true).includes("phone"), "phone required for appointments");
+  assert.ok(M.validateEnquiry({ ...okA, bestTimeToCall: "" }, true).includes("bestTimeToCall"));
 });
 
 test("catalogueQuery.toCatalogueData: showroom locations normalise", () => {
