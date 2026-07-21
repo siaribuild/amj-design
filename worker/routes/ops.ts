@@ -514,26 +514,54 @@ ops.get("/customers", async (c) => {
   return c.json({ customers: results });
 });
 
-// PATCH /api/ops/customers/:id { email } — change a customer's sign-in email.
-// The email is the unique login ID, so customers can never edit it themselves;
-// this is the ONLY place it can change, and only an admin may do it. Sessions
-// stay valid (keyed by user id); the next OTP sign-in simply uses the new address.
+// PATCH /api/ops/customers/:id { name?, phone?, company?, abn?, email? } — staff
+// edit of a customer's profile. Profile fields need an assigned role (same gate as
+// seeing the PII); the sign-in EMAIL is the unique login ID — customers can never
+// edit it themselves and only an ADMIN may change it here. Sessions stay valid
+// (keyed by user id); the next OTP sign-in simply uses the new address.
 ops.patch("/customers/:id", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
-  if (staff.role !== "admin") return c.json({ error: "admin_only" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const id = c.req.param("id");
   const u = await c.env.DB.prepare("SELECT id, email FROM user WHERE id = ? AND type = 'customer'").bind(id).first<{ id: string; email: string }>();
   if (!u) return c.json({ error: "not_found" }, 404);
   const body = await c.req.json().catch(() => ({}));
-  const email = normEmail(body?.email);
-  if (!isEmail(email)) return c.json({ error: "invalid_email" }, 400);
-  if (email === u.email) return c.json({ ok: true, email });
-  const taken = await c.env.DB.prepare("SELECT 1 FROM user WHERE email = ?").bind(email).first();
-  if (taken) return c.json({ error: "email_in_use" }, 409);
-  await c.env.DB.prepare("UPDATE user SET email = ? WHERE id = ?").bind(email, id).run();
-  await logEvent(c.env, { actor: staff.id, entityType: "user", entityId: id, action: `changed sign-in email ${u.email} → ${email}` });
-  return c.json({ ok: true, email });
+
+  const sets: string[] = []; const binds: unknown[] = []; const changed: string[] = [];
+  const strField = (key: string, col: string, max: number) => {
+    if (body?.[key] !== undefined) {
+      const v = String(body[key]).trim().slice(0, max);
+      sets.push(`${col} = ?`); binds.push(v || null); changed.push(col);
+    }
+  };
+  strField("name", "name", 200);
+  strField("phone", "phone", 60);
+  strField("company", "company", 200);
+  strField("abn", "abn", 40);
+
+  let emailNote = "";
+  if (body?.email !== undefined) {
+    if (staff.role !== "admin") return c.json({ error: "admin_only" }, 403);
+    const email = normEmail(body.email);
+    if (!isEmail(email)) return c.json({ error: "invalid_email" }, 400);
+    if (email !== u.email) {
+      const taken = await c.env.DB.prepare("SELECT 1 FROM user WHERE email = ?").bind(email).first();
+      if (taken) return c.json({ error: "email_in_use" }, 409);
+      sets.push("email = ?"); binds.push(email); changed.push("email");
+      emailNote = ` (${u.email} → ${email})`;
+    }
+  }
+
+  if (sets.length) {
+    await c.env.DB.prepare(`UPDATE user SET ${sets.join(", ")} WHERE id = ?`).bind(...binds, id).run();
+    await logEvent(c.env, { actor: staff.id, entityType: "user", entityId: id, action: `updated customer profile: ${changed.join(", ")}${emailNote}` });
+  }
+  const fresh = await c.env.DB.prepare("SELECT id, name, email, phone, company, abn, created_at FROM user WHERE id = ?").bind(id).first<any>();
+  return c.json({
+    ok: true,
+    customer: { id: fresh.id, name: fresh.name, email: fresh.email, phone: fresh.phone, company: fresh.company, abn: fresh.abn, createdAt: fresh.created_at },
+  });
 });
 
 // GET /api/ops/customers/:id — 360: the customer, their projects, and orders.

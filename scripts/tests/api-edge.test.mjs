@@ -165,17 +165,24 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.ok(detail.body.projects.length >= 1, "customer 360 shows their projects");
       await requestJson(staff, "/api/ops/customers/nope", {}, 404);
 
-      // Admin-only sign-in email change (the customer's unique login ID — customers
-      // can never change it themselves; the ops console is the only place).
+      // Staff edit of the customer profile (assigned role). Admin here edits all
+      // fields; the sign-in email (unique login ID) is guarded further below.
+      const prof = await requestJson(staff, `/api/ops/customers/${sarah.id}`, { method: "PATCH",
+        json: { name: "Sarah N.", phone: "0400 111 999", company: "Northside Build Co", abn: "11 222 333 444" } });
+      assert.equal(prof.body.customer.name, "Sarah N.");
+      assert.equal(prof.body.customer.company, "Northside Build Co");
+      assert.equal(prof.body.customer.abn, "11 222 333 444");
+      // Email change: invalid 400, taken 409, then a real change.
       await requestJson(staff, `/api/ops/customers/${sarah.id}`, { method: "PATCH", json: { email: "not-an-email" } }, 400);
       await requestJson(staff, `/api/ops/customers/${sarah.id}`, { method: "PATCH", json: { email: "demo@openframe.com.au" } }, 409);
       const changed = await requestJson(staff, `/api/ops/customers/${sarah.id}`, { method: "PATCH", json: { email: "sarah.n@newbuild.com.au" } });
-      assert.equal(changed.body.email, "sarah.n@newbuild.com.au");
+      assert.equal(changed.body.customer.email, "sarah.n@newbuild.com.au");
       // The customer signs in with the NEW address and lands on the SAME account.
       const sarahSession = new Session(baseUrl);
       await login(sarahSession, "/api/auth", "sarah.n@newbuild.com.au");
       const who = await requestJson(sarahSession, "/api/auth/me");
       assert.equal(who.body.user.id, sarah.id, "new email resolves to the same user");
+      assert.equal(who.body.user.name, "Sarah N.", "ops profile edit visible to the customer");
       const search = await requestJson(staff, "/api/ops/search?q=Fitzroy");
       assert.ok(search.body.results.some((r) => r.type === "project"));
       const tooShort = await requestJson(staff, "/api/ops/search?q=x");
@@ -274,7 +281,9 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       // Admin assigns estimator → PII opens, but payments stay manager/admin-only.
       await requestJson(staff, `/api/ops/staff/${who.body.user.id}`, { method: "PATCH", json: { role: "estimator" } });
       await requestJson(rookie, "/api/ops/customers");
-      // Changing a customer's sign-in email stays admin-only for every other role.
+      // An estimator can fix profile fields, but the sign-in email stays admin-only.
+      const est = await requestJson(rookie, "/api/ops/customers/u_sarah", { method: "PATCH", json: { phone: "0400 222 111" } });
+      assert.equal(est.body.customer.phone, "0400 222 111");
       await requestJson(rookie, "/api/ops/customers/u_sarah", { method: "PATCH", json: { email: "hijack@example.com" } }, 403);
       await requestJson(rookie, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 403);
       // Promote to manager → the payment now reaches domain logic (o_1 stage conflict).
