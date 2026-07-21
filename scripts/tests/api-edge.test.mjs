@@ -215,6 +215,39 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(nosey, `/api/projects/${pid}`, {}, 404);
       // Anonymous access is rejected outright.
       await requestJson(new Session(baseUrl), `/api/projects/${pid}`, {}, 401);
+
+      // The account dashboard payload: a durable ref + draft/issued totals per project.
+      const list = await requestJson(buyer, "/api/projects");
+      const row = list.body.projects.find((x) => x.id === pid);
+      assert.match(row.public_ref, /^OF-Q-\d+$/, "server-generated project reference");
+      assert.equal(typeof row.draft_total, "number");
+
+      // Staff take it through approval → issue; then the customer requests changes.
+      await requestJson(staff, `/api/ops/projects/${pid}/assign`, { method: "POST", json: {} });
+      const sfa = await requestJson(staff, `/api/ops/projects/${pid}/submit-for-approval`, { method: "POST", json: {} });
+      if (sfa.body.statusInternal === "approval_pending") {
+        const pendingSteps = await requestJson(staff, "/api/ops/approvals");
+        for (const step of pendingSteps.body.approvals.filter((s) => s.project_id === pid)) {
+          await requestJson(staff, `/api/ops/approvals/${step.id}/approve`, { method: "POST", json: {} });
+        }
+      }
+      const issuedRev = await requestJson(staff, `/api/ops/projects/${pid}/issue-revision`, { method: "POST", json: {} });
+      const revId = issuedRev.body.id;
+      const issuedList = await requestJson(buyer, "/api/projects");
+      const issuedRow = issuedList.body.projects.find((x) => x.id === pid);
+      assert.equal(issuedRow.status_customer, "quote_issued");
+      assert.equal(issuedRow.issued_revision_no, 1);
+      assert.equal(typeof issuedRow.issued_total, "number");
+
+      // Request-changes guards: anonymous 404, empty message 400.
+      await requestJson(new Session(baseUrl), `/api/revisions/${revId}/request-changes`, { method: "POST", json: { message: "x" } }, 404);
+      await requestJson(buyer, `/api/revisions/${revId}/request-changes`, { method: "POST", json: { message: "" } }, 400);
+      // The honest state move: back to Under review; the old revision stops being acceptable.
+      const rc = await requestJson(buyer, `/api/revisions/${revId}/request-changes`, { method: "POST", json: { message: "Swap the door to a 3-panel stacker" } });
+      assert.equal(rc.body.status, "under_review");
+      await requestJson(buyer, `/api/revisions/${revId}/accept`, { method: "POST" }, 409);
+      // A second change request on the same (now stale) revision is rejected too.
+      await requestJson(buyer, `/api/revisions/${revId}/request-changes`, { method: "POST", json: { message: "again" } }, 409);
     });
 
     await t.test("RBAC: role-less internal staff is blocked from payments + customer PII", async () => {

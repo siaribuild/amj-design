@@ -127,8 +127,20 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.equal(statuses.filter((status) => status === 409).length, 9);
       const winner = attempts[statuses.indexOf(200)];
       newOrder = (await winner.json()).order;
+      // Sequential order numbering continues from the seeded OF-58001.
+      assert.equal(newOrder.orderNo, "OF-58002");
       const orders = await requestJson(sarah, "/api/orders");
+      const mine = orders.body.orders.find((order) => order.id === newOrder.id);
+      assert.ok(mine, "accepted order listed once");
       assert.equal(orders.body.orders.filter((order) => order.id === newOrder.id).length, 1);
+      // Account-area context rides on the customer order DTO.
+      assert.equal(mine.projectTitle, "Fitzroy townhouses");
+      assert.match(mine.projectRef ?? "", /^OF-Q-\d+$/);
+      assert.equal(mine.revisionNo, 1);
+      assert.equal(mine.lineCount, 2);
+      // A stale client cannot request changes on an already-accepted revision.
+      const revsAfter = await requestJson(sarah, "/api/projects/p_submitted/revisions");
+      await requestJson(sarah, `/api/revisions/${revsAfter.body.revisions[0].id}/request-changes`, { method: "POST", json: { message: "too late" } }, 409);
     });
 
     await t.test("complete payment, drawing, manufacturing, QA, dispatch, and delivery journey", async () => {

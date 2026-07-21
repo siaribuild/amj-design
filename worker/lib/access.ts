@@ -10,6 +10,18 @@ export interface ProjectRow {
   title: string | null;
   status_customer: string;
   created_at: string;
+  public_ref: string | null;
+}
+
+// Customer-facing project reference (OF-Q-NNNNN) — the durable, phone-quotable
+// anchor for a quote before an order number exists. Derived from the max existing
+// suffix (gap-tolerant); the UNIQUE index makes a rare race fail the insert, and
+// the caller's retry re-derives it.
+async function nextProjectRef(env: Env): Promise<string> {
+  const r = await env.DB
+    .prepare("SELECT COALESCE(MAX(CAST(substr(public_ref, 6) AS INTEGER)), 10000) AS n FROM project WHERE public_ref LIKE 'OF-Q-%'")
+    .first<{ n: number }>();
+  return `OF-Q-${(r?.n ?? 10000) + 1}`;
 }
 
 // The "current" project: a signed-in user's latest project wins; otherwise the
@@ -51,13 +63,14 @@ export async function resolveOrCreateCurrentProject(env: Env, req: Request, titl
   if (project && project.status_customer === "draft") return { project };
 
   const id = uuid();
+  const ref = await nextProjectRef(env);
   if (userId) {
-    await env.DB.prepare("INSERT INTO project (id, owner_user_id, title) VALUES (?, ?, ?)").bind(id, userId, title).run();
-    return { project: { id, owner_user_id: userId, claim_token: null, title, status_customer: "draft", created_at: "" } };
+    await env.DB.prepare("INSERT INTO project (id, owner_user_id, title, public_ref) VALUES (?, ?, ?, ?)").bind(id, userId, title, ref).run();
+    return { project: { id, owner_user_id: userId, claim_token: null, title, status_customer: "draft", created_at: "", public_ref: ref } };
   }
   const token = newToken();
-  await env.DB.prepare("INSERT INTO project (id, claim_token, title) VALUES (?, ?, ?)").bind(id, token, title).run();
-  return { project: { id, owner_user_id: null, claim_token: token, title, status_customer: "draft", created_at: "" }, cookie: claimCookie(token, env) };
+  await env.DB.prepare("INSERT INTO project (id, claim_token, title, public_ref) VALUES (?, ?, ?, ?)").bind(id, token, title, ref).run();
+  return { project: { id, owner_user_id: null, claim_token: token, title, status_customer: "draft", created_at: "", public_ref: ref }, cookie: claimCookie(token, env) };
 }
 
 // The requester owns a project if signed in as its owner, or holds its claim cookie.

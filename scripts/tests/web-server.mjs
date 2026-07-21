@@ -13,7 +13,10 @@ const assets = join(runDir, "assets");
 const state = join(runDir, "state");
 const env = { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
 
-await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
+// Build WITHOUT the Turnstile site key (.env.production bakes the real one in;
+// process env overrides it): the real key can't verify on localhost, which would
+// leave the contact form's submit disabled and dead-lock the e2e run.
+await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"], { env: { VITE_TURNSTILE_SITE_KEY: "" } });
 await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env });
 await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env });
 

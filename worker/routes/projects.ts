@@ -12,21 +12,33 @@ import { resolveUser } from "../lib/auth";
 export const projects = new Hono<{ Bindings: Env }>();
 
 // GET /api/projects — the signed-in customer's projects (for the dashboard).
+// Carries everything the account area needs to derive gates + list rows in one
+// call: ref, draft estimate, and the latest issued revision's number + total.
 projects.get("/", async (c) => {
   const user = await resolveUser(c.env, c.req.raw);
   if (!user) return c.json({ projects: [] });
   const { results } = await c.env.DB.prepare(`
-    SELECT p.id, p.title, p.status_customer, p.updated_at,
+    SELECT p.id, p.public_ref, p.title, p.status_customer, p.updated_at, p.created_at,
            (SELECT count(*) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL) AS item_count,
-           (SELECT id FROM quote_revision WHERE project_id = p.id AND snapshot_status = 'issued' ORDER BY revision_no DESC LIMIT 1) AS issued_revision_id
+           (SELECT COALESCE(SUM(line_total), 0) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL) AS draft_total,
+           (SELECT id FROM quote_revision WHERE project_id = p.id AND snapshot_status = 'issued' ORDER BY revision_no DESC LIMIT 1) AS issued_revision_id,
+           (SELECT revision_no FROM quote_revision WHERE project_id = p.id AND snapshot_status = 'issued' ORDER BY revision_no DESC LIMIT 1) AS issued_revision_no,
+           (SELECT totals_json FROM quote_revision WHERE project_id = p.id AND snapshot_status = 'issued' ORDER BY revision_no DESC LIMIT 1) AS issued_totals_json
       FROM project p
      WHERE p.owner_user_id = ?
-     ORDER BY p.updated_at DESC`).bind(user.id).all();
-  return c.json({ projects: results });
+     ORDER BY p.updated_at DESC`).bind(user.id).all<Record<string, unknown>>();
+  const rows = results.map((r) => {
+    let issuedTotal: number | null = null;
+    try { const t = JSON.parse(String(r.issued_totals_json ?? "")); if (typeof t?.total === "number") issuedTotal = t.total; } catch { /* unpriced */ }
+    const { issued_totals_json: _drop, ...rest } = r;
+    return { ...rest, issued_total: issuedTotal };
+  });
+  return c.json({ projects: rows });
 });
 
 const projectDto = (p: ProjectRow) => ({
   id: p.id,
+  ref: p.public_ref,
   title: p.title ?? "My project",
   status: p.status_customer,
   createdAt: p.created_at,

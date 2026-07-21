@@ -4,6 +4,7 @@ import type { QItem } from "./configurator";
 
 export interface ApiProject {
   id: string;
+  ref: string | null;
   title: string;
   status: string;
   createdAt: string;
@@ -142,6 +143,14 @@ export interface ApiPayment {
   invoicedAt: string | null;
   paidAt: string | null;
 }
+export interface ApiOrderLine {
+  external_ref: string | null;
+  room_label?: string | null;
+  product_snapshot_json: string;
+  dims_json?: string;
+  qty: number;
+  line_total: number;
+}
 export interface ApiOrder {
   id: string;
   orderNo: string;
@@ -153,7 +162,13 @@ export interface ApiOrder {
   qaConfirmedAt: string | null;
   createdAt: string;
   payments: ApiPayment[];
-  lines?: { external_ref: string | null; product_snapshot_json: string; qty: number; line_total: number }[];
+  // Project context for the account area (absent on the guest-tracking DTO).
+  projectId?: string;
+  projectTitle?: string | null;
+  projectRef?: string | null;
+  lineCount?: number;
+  revisionNo?: number | null;
+  lines?: ApiOrderLine[];
 }
 export interface ApiRevision {
   id: string;
@@ -162,7 +177,7 @@ export interface ApiRevision {
   total: number;
   issuedAt: string;
   acceptedAt: string | null;
-  lines: { external_ref: string | null; product_snapshot_json: string; qty: number; line_total: number }[];
+  lines: ApiOrderLine[];
 }
 
 export interface SubmitContact { name: string; email: string; phone?: string; suburb?: string }
@@ -188,17 +203,28 @@ export const getRevisions = (projectId: string) =>
 export const acceptRevision = (revisionId: string) =>
   req<{ order: ApiOrder }>(`/api/revisions/${revisionId}/accept`, { method: "POST" });
 
+/** Decline an issued revision and ask for changes — project returns to Under review. */
+export const requestChanges = (revisionId: string, message: string) =>
+  req<{ ok: boolean; status: string }>(`/api/revisions/${revisionId}/request-changes`, {
+    method: "POST", body: JSON.stringify({ message }),
+  });
+
 export const getOrders = () => req<{ orders: ApiOrder[] }>("/api/orders");
 export const getOrder = (orderId: string) => req<{ order: ApiOrder }>(`/api/orders/${orderId}`);
 
 // The signed-in customer's projects (dashboard list).
 export interface ApiProjectSummary {
   id: string;
+  public_ref: string | null;
   title: string | null;
   status_customer: string;
   updated_at: string;
+  created_at: string;
   item_count: number;
+  draft_total: number;
   issued_revision_id: string | null;
+  issued_revision_no: number | null;
+  issued_total: number | null;
 }
 export const getProjects = () => req<{ projects: ApiProjectSummary[] }>("/api/projects");
 

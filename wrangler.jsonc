@@ -55,6 +55,6 @@
     // Sanity catalogue source (Worker). Client uses VITE_SANITY_* in a .env:
     "SANITY_PROJECT_ID": "xjtrm1ex", "SANITY_DATASET": "production",
     // Prod staff auth via Cloudflare Access — set when the ops.* app is deployed:
-    "ACCESS_TEAM_DOMAIN": "siari-build-team", "ACCESS_AUD": "89cb7205063857ae100e0d0a33d8f39f29e7f66c680b4370a177217c591edf77"
+    "ACCESS_TEAM_DOMAIN": "drg-group", "ACCESS_AUD": "89cb7205063857ae100e0d0a33d8f39f29e7f66c680b4370a177217c591edf77"
   }
 }

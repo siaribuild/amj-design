@@ -13,12 +13,18 @@ export const PAGE_PATHS: Record<Page, string> = {
   trade: "/trade-account",
   login: "/login",
   dashboard: "/dashboard",
+  quotes: "/quotes",
+  "projects-orders": "/projects",
+  support: "/support",
   "track-order": "/track-order",
   profile: "/profile",
   "account-settings": "/account-settings",
   order: "/order",
   privacy: "/privacy",
 };
+
+// Legacy paths kept working after the account-area IA change.
+const LEGACY_ROUTES = new Map<string, Page>([["/orders", "projects-orders"]]);
 
 const STATIC_ROUTES = new Map<string, Page>(
   Object.entries(PAGE_PATHS)
@@ -33,7 +39,7 @@ function normalizePathname(pathname: string) {
 
 export function routeFromPathname(pathname: string): { page: Page; productSlug?: string } {
   const normalized = normalizePathname(pathname);
-  const staticPage = STATIC_ROUTES.get(normalized);
+  const staticPage = STATIC_ROUTES.get(normalized) ?? LEGACY_ROUTES.get(normalized);
   if (staticPage) return { page: staticPage };
 
   const productMatch = normalized.match(/^\/products\/([^/]+)$/);

@@ -132,8 +132,9 @@ export async function createOrderFromRevision(
   const orderId = uuid();
   // Derive the next number from the max existing suffix (gap-tolerant); a rare
   // collision just fails this batch, and the caller's retry re-derives it.
+  // substr is 1-based: position 4 is the first digit after the "OF-" prefix.
   const maxRow = await env.DB
-    .prepare(`SELECT COALESCE(MAX(CAST(substr(order_no, 5) AS INTEGER)), 58000) AS n FROM "order" WHERE order_no LIKE 'OF-%'`)
+    .prepare(`SELECT MAX(58000, COALESCE(MAX(CAST(substr(order_no, 4) AS INTEGER)), 58000)) AS n FROM "order" WHERE order_no LIKE 'OF-%'`)
     .first<{ n: number }>();
   const orderNo = `OF-${(maxRow?.n ?? 58000) + 1}`;
 

@@ -24,13 +24,23 @@ test("catalogue drives the products list and detail pages", async ({ page }) => 
   await expect(page.getByRole("heading", { name: "AMJ80 Series Sliding Window" })).toBeVisible();
 });
 
-test("customer OTP login lands on a dashboard with real data", async ({ page }) => {
+test("customer OTP login lands on the attention-first dashboard with real data", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByText(/Sign in or register/i)).toBeVisible();
   await otpLogin(page, /your@email\.com/, "demo@openframe.com.au", /verify & continue/i);
-  await expect(page.getByText(/G'day, Demo/)).toBeVisible();
-  await expect(page.getByText("Coburg new build")).toBeVisible();
-  await expect(page.getByText("OF-58001")).toBeVisible();
+  // Greeting + attention summary
+  await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening), Demo/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Needs your attention" })).toBeVisible();
+  // The draft gate + the unified list (draft appears in both — gate and row)
+  await expect(page.getByText("Coburg new build").first()).toBeVisible();
+  await expect(page.getByText("Finish & submit for a full quote").first()).toBeVisible();
+  await expect(page.getByText("OF-58001").first()).toBeVisible();
+
+  // Open the order → the deep workspace with the live lifecycle timeline.
+  await page.getByRole("button", { name: /OF-58001/ }).click();
+  await expect(page.getByText("Quote → order journey")).toBeVisible();
+  await expect(page.getByText("On track — nothing needed from you")).toBeVisible();
+  await expect(page.getByText("Order lines")).toBeVisible();
 });
 
 test("contact page: question enquiry issues an OpenFrame reference", async ({ page }) => {

@@ -18,24 +18,51 @@ async function ownedOrder(env: Env, req: Request, orderId: string): Promise<Orde
     .first<OrderRow>();
 }
 
+// Project context the account area shows alongside every order: title, quote ref,
+// line count and the accepted revision number ("accepted from quote R2").
+type OrderCtxRow = OrderRow & {
+  project_title: string | null; project_ref: string | null;
+  line_count: number; revision_no: number | null;
+};
+const ORDER_CTX_SELECT = `
+  SELECT o.*, p.title AS project_title, p.public_ref AS project_ref,
+         (SELECT count(*) FROM order_line ol WHERE ol.order_id = o.id) AS line_count,
+         (SELECT revision_no FROM quote_revision qr WHERE qr.id = o.accepted_revision_id) AS revision_no
+    FROM "order" o JOIN project p ON p.id = o.project_id`;
+
+async function orderCtxDto(c: { env: Env }, o: OrderCtxRow) {
+  return {
+    ...(await orderDto(c.env, o)),
+    projectId: o.project_id,
+    projectTitle: o.project_title,
+    projectRef: o.project_ref,
+    lineCount: o.line_count,
+    revisionNo: o.revision_no,
+  };
+}
+
 // GET /api/orders — the signed-in customer's orders (summary).
 orders.get("/", async (c) => {
   const user = await resolveUser(c.env, c.req.raw);
   if (!user) return c.json({ orders: [] });
   const { results } = await c.env.DB
-    .prepare('SELECT o.* FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.owner_user_id = ? ORDER BY o.created_at DESC')
-    .bind(user.id).all<OrderRow>();
-  return c.json({ orders: await Promise.all(results.map((o) => orderDto(c.env, o))) });
+    .prepare(`${ORDER_CTX_SELECT} WHERE p.owner_user_id = ? ORDER BY o.created_at DESC`)
+    .bind(user.id).all<OrderCtxRow>();
+  return c.json({ orders: await Promise.all(results.map((o) => orderCtxDto(c, o))) });
 });
 
 // GET /api/orders/:id — full order detail (stage, payments, lines).
 orders.get("/:id", async (c) => {
-  const order = await ownedOrder(c.env, c.req.raw, c.req.param("id"));
+  const user = await resolveUser(c.env, c.req.raw);
+  if (!user) return c.json({ error: "not_found" }, 404);
+  const order = await c.env.DB
+    .prepare(`${ORDER_CTX_SELECT} WHERE o.id = ? AND p.owner_user_id = ?`)
+    .bind(c.req.param("id"), user.id).first<OrderCtxRow>();
   if (!order) return c.json({ error: "not_found" }, 404);
   const { results: lines } = await c.env.DB
     .prepare("SELECT external_ref, product_snapshot_json, qty, line_total FROM order_line WHERE order_id = ?")
     .bind(order.id).all();
-  return c.json({ order: { ...(await orderDto(c.env, order)), lines } });
+  return c.json({ order: { ...(await orderCtxDto(c, order)), lines } });
 });
 
 // POST /api/orders/:id/confirm-drawings — CUSTOMER gate (step 7).
