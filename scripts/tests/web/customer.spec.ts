@@ -39,12 +39,14 @@ test("contact page: question enquiry issues an OpenFrame reference", async ({ pa
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.41" });
   await page.goto("/contact");
   await expect(page.getByRole("heading", { name: /contact openframe/i })).toBeVisible();
-  // Question is the default branch; appointment-only fields are hidden.
+  // Opens on the two-card chooser — no form until a branch is picked.
+  await expect(page.getByPlaceholder("Your name")).toHaveCount(0);
+  await page.getByRole("radio", { name: /ask a question/i }).click();
+  // Appointment-only fields stay hidden on the question branch.
   await expect(page.getByText("Preferred showroom")).toHaveCount(0);
   await page.getByPlaceholder("Your name").fill("Test Person");
   await page.getByPlaceholder("you@email.com").fill("test.person@example.com");
   await page.getByPlaceholder(/describe your project/i).fill("Hi, do you deliver to Bendigo?");
-  await page.locator("#field-consent").check();
   await page.getByRole("button", { name: /send question/i }).click();
   await expect(page.getByRole("heading", { name: /question received/i })).toBeVisible();
   await expect(page.getByText(/OF-ENQ-\d{4}-\d{6}/).first()).toBeVisible();
@@ -65,7 +67,6 @@ test("contact page: appointment branch + list↔form location sync", async ({ pa
   await page.getByPlaceholder("you@email.com").fill("mel.visitor@example.com");
   await page.getByPlaceholder("(03) 9000 0000").fill("0431 234 567");
   await page.getByRole("button", { name: "Afternoon", exact: true }).click();
-  await page.locator("#field-consent").check();
   await page.getByRole("button", { name: /request appointment/i }).click();
 
   await expect(page.getByRole("heading", { name: /appointment request received/i })).toBeVisible();

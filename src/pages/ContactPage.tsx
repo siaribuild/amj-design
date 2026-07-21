@@ -21,9 +21,7 @@ const TURNSTILE_SITE_KEY = (import.meta as any).env?.VITE_TURNSTILE_SITE_KEY as 
 type Intent = "question" | "appointment_request";
 type ContactUser = { name: string; email: string; phone: string; company: string; type?: string } | null;
 
-const TOPICS = ["Products & specifications", "Pricing & quotes", "Measurements & sizing", "An existing quote or order", "Delivery", "Something else"];
-const CUSTOMER_TYPES = ["Homeowner", "Builder or trade", "Owner-builder", "Architect or designer", "Other"];
-const PRODUCTS_INTEREST = [["windows", "Windows"], ["doors", "Doors"], ["both", "Both"], ["not_sure", "Not sure"]];
+const PRODUCTS_INTEREST = [["windows", "Windows"], ["doors", "Doors"], ["both", "Both"]];
 const BEST_TIMES = [["morning", "Morning"], ["afternoon", "Afternoon"], ["evening", "Evening"]];
 const DAYS = [["mon", "Mon"], ["tue", "Tue"], ["wed", "Wed"], ["thu", "Thu"], ["fri", "Fri"], ["sat", "Sat"]];
 const STATE_NAMES: Record<string, string> = { VIC: "Victoria", NSW: "New South Wales", WA: "Western Australia", QLD: "Queensland", SA: "South Australia", TAS: "Tasmania", NT: "Northern Territory", ACT: "Australian Capital Territory" };
@@ -56,8 +54,12 @@ function useTurnstile(onToken: (t: string) => void) {
   return ref;
 }
 
-const initialIntent = (): Intent =>
-  (new URLSearchParams(window.location.search).get("intent") === "appointment" ? "appointment_request" : "question");
+// No default: the page opens on the two-card chooser so the question/appointment
+// fork is an explicit decision. A deep-link (?intent=) skips straight to a branch.
+const initialIntent = (): Intent | null => {
+  const p = new URLSearchParams(window.location.search).get("intent");
+  return p === "appointment" ? "appointment_request" : p === "question" ? "question" : null;
+};
 
 // The client analytics/attribution context. The SERVER owns source_owner — this is
 // only landing/referrer/UTM signal.
@@ -74,17 +76,13 @@ function clientContext(): EnquiryPayload["client_context"] {
 export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; user?: ContactUser }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
 
-  const [intent, setIntent] = useState<Intent>(initialIntent);
+  const [intent, setIntent] = useState<Intent | null>(initialIntent);
   // Common
   const [name, setName] = useState(user?.name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
   const [company, setCompany] = useState(user?.company ?? "");
-  const [customerType, setCustomerType] = useState("");
-  const [privacyConsent, setPrivacyConsent] = useState(false);
-  const [marketingOptIn, setMarketingOptIn] = useState(false);
   // Question
-  const [topic, setTopic] = useState("");
   const [message, setMessage] = useState("");
   // Appointment
   const [locationId, setLocationId] = useState("");
@@ -126,7 +124,6 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = "Enter your name";
     if (!validEmail) e.email = "Enter a valid email address";
-    if (!privacyConsent) e.consent = "Please acknowledge the privacy policy";
     if (intent === "question") {
       if (!message.trim()) e.message = "Enter your question";
     } else {
@@ -138,16 +135,18 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
   };
 
   const submit = async () => {
+    if (!intent) return;
     const e = validate();
     setErrors(e);
     if (Object.keys(e).length || !captchaReady || status === "sending") { setFormError(Object.keys(e).length ? "Please fix the highlighted fields." : ""); return; }
     setStatus("sending"); setFormError("");
     const payload: EnquiryPayload = {
       intent, name: name.trim(), email: email.trim(), phone: phone.trim(), company: company.trim(),
-      customerType: customerType || undefined, privacyConsent, marketingOptIn,
+      // Consent is given by submitting (see the notice by the button); recorded server-side.
+      privacyConsent: true,
       token, website, client_context: clientContext(),
       ...(intent === "question"
-        ? { topic: topic || undefined, message: message.trim() }
+        ? { message: message.trim() }
         : { locationId, bestTimeToCall, preferredDays, productsInterest: productsInterest || undefined, notes: notes.trim() || undefined }),
     };
     try {
@@ -194,7 +193,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
 
       <section className="max-w-6xl mx-auto px-6 py-10 md:py-14">
         {status === "sent" ? (
-          <SuccessCard intent={intent} reference={reference} name={name} onQuote={() => go("quote")} />
+          <SuccessCard intent={intent ?? "question"} reference={reference} name={name} onQuote={() => go("quote")} />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Form */}
@@ -212,6 +211,12 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                 </div>
               </div>
 
+              {!intent ? (
+                <div className="bg-white border border-dashed border-black/15 p-8 text-center">
+                  <p className="text-sm text-[#5c5a56]">Choose <span className="font-medium text-[#131311]">Ask a question</span> or <span className="font-medium text-[#131311]">Request a showroom appointment</span> above to get started.</p>
+                </div>
+              ) : (
+                <>
               {/* Error summary */}
               {errorList.length > 0 && (
                 <div role="alert" className="border border-red-200 bg-red-50 p-4">
@@ -229,12 +234,6 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                   <Field id="name" label="Full name" error={errors.name}><Input value={name} onChange={e => { setName(e.target.value); clearError("name"); }} placeholder="Your name" /></Field>
                   <Field id="email" label="Email address" error={errors.email}><Input type="email" value={email} onChange={e => { setEmail(e.target.value); clearError("email"); }} placeholder="you@email.com" /></Field>
                   <Field id="phone" label={intent === "appointment_request" ? "Phone number" : "Phone number (optional)"} error={errors.phone}><Input value={phone} onChange={e => { setPhone(e.target.value); clearError("phone"); }} placeholder="(03) 9000 0000" /></Field>
-                  <Field id="customerType" label="I'm enquiring as (optional)">
-                    <Select value={customerType} onChange={e => setCustomerType(e.target.value)}>
-                      <option value="">Select…</option>
-                      {CUSTOMER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </Select>
-                  </Field>
                   <Field id="company" label="Company / trade name (optional)"><Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Business or trade name" /></Field>
                 </div>
               </div>
@@ -244,12 +243,6 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                 <div className="bg-white border border-black/8 p-6" aria-live="polite">
                   <h3 className="font-semibold text-sm text-[#131311] mb-4">Your question</h3>
                   <div className="space-y-4">
-                    <Field id="topic" label="What is your question about? (optional)">
-                      <Select value={topic} onChange={e => setTopic(e.target.value)}>
-                        <option value="">Select a topic…</option>
-                        {TOPICS.map(t => <option key={t} value={t}>{t}</option>)}
-                      </Select>
-                    </Field>
                     <Field id="message" label="Message" error={errors.message}>
                       <textarea id="field-message" rows={5} value={message} onChange={e => { setMessage(e.target.value); clearError("message"); }} placeholder="Describe your project or question…"
                         className="w-full border border-[#131311]/20 px-3 py-2.5 text-sm text-[#131311] placeholder-[#9a9894] focus:outline-none focus:border-[#5A7A6A] bg-white resize-none transition-colors" />
@@ -306,32 +299,26 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                 </div>
               )}
 
-              {/* Consent + submit */}
+              {/* Submit */}
               <div className="bg-white border border-black/8 p-6">
-                <label className="flex items-start gap-2.5 text-sm text-[#5c5a56] cursor-pointer">
-                  <input type="checkbox" checked={privacyConsent} onChange={e => { setPrivacyConsent(e.target.checked); clearError("consent"); }} className="mt-0.5 w-4 h-4 accent-[#5A7A6A]" id="field-consent" />
-                  <span>I acknowledge the <button type="button" onClick={() => go("privacy")} className="text-[#5A7A6A] underline">Privacy Policy</button> and consent to OpenFrame using these details to respond to my enquiry. <span className="text-red-600">*</span></span>
-                </label>
-                {errors.consent && <p className="text-xs text-red-600 mt-1.5 pl-6">{errors.consent}</p>}
-                <label className="flex items-start gap-2.5 text-sm text-[#5c5a56] cursor-pointer mt-3">
-                  <input type="checkbox" checked={marketingOptIn} onChange={e => setMarketingOptIn(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[#5A7A6A]" />
-                  <span>Keep me updated with occasional OpenFrame product news (optional).</span>
-                </label>
-
                 {/* Honeypot */}
                 <div aria-hidden="true" className="absolute -left-[9999px] top-0 h-0 w-0 overflow-hidden">
                   <label>Leave this field empty<input tabIndex={-1} autoComplete="off" value={website} onChange={e => setWebsite(e.target.value)} /></label>
                 </div>
-                {TURNSTILE_SITE_KEY && <div ref={turnstileRef} className="mt-4" />}
+                {TURNSTILE_SITE_KEY && <div ref={turnstileRef} className="mb-4" />}
 
-                {formError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5 mt-4"><AlertCircle className="w-4 h-4 flex-shrink-0" />{formError}</p>}
-                <div className="mt-5 flex flex-wrap items-center gap-3">
+                {formError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5 mb-4"><AlertCircle className="w-4 h-4 flex-shrink-0" />{formError}</p>}
+                <div className="flex flex-wrap items-center gap-3">
                   <Btn variant="sage" size="md" onClick={submit} className={status === "sending" || !captchaReady ? "opacity-60 pointer-events-none" : ""}>
                     {status === "sending" ? "Submitting…" : intent === "question" ? <>Send question <Send className="w-4 h-4" /></> : <>Request appointment <ArrowRight className="w-4 h-4" /></>}
                   </Btn>
-                  <span className="text-xs text-[#8b8880]">We only use your details to respond to this enquiry.</span>
                 </div>
+                <p className="text-xs text-[#8b8880] mt-3 leading-relaxed">
+                  By submitting, you agree to our <button type="button" onClick={() => go("privacy")} className="text-[#5A7A6A] underline">Privacy Policy</button> and that OpenFrame may use these details to respond to your enquiry. We only use them for that purpose.
+                </p>
               </div>
+                </>
+              )}
             </div>
 
             {/* Prefer to talk */}

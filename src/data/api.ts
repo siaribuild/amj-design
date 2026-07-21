@@ -103,11 +103,8 @@ export interface EnquiryPayload {
   email: string;
   phone?: string;
   company?: string;
-  customerType?: string;
   privacyConsent: boolean;
-  marketingOptIn?: boolean;
   // question branch
-  topic?: string;
   message?: string;
   // appointment branch
   locationId?: string;
