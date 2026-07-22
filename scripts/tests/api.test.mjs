@@ -79,6 +79,33 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.equal(claimed.body.items.length, 1);
     });
 
+    await t.test("one draft per customer: a second anon draft merges its lines on sign-in", async () => {
+      const line = (code) => ({
+        code, location: "Site", productSlug: "amj80-series-sliding-window",
+        measuredBy: "opening", width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+        lineTotal: 1,
+      });
+      // A first anonymous draft is claimed on sign-in (the plain path).
+      const a = new Session(baseUrl);
+      await requestJson(a, "/api/projects/current/lines", { method: "PUT", json: { title: "First draft", items: [line("W01")] } });
+      await login(a, "/api/auth", "onedraft@example.com");
+      assert.equal((await requestJson(a, "/api/projects/current")).body.items.length, 1);
+
+      // A SEPARATE anonymous session composes a second draft, then the SAME user
+      // signs in — the two would collide, so the new lines merge into the one draft.
+      const b = new Session(baseUrl);
+      await requestJson(b, "/api/projects/current/lines", { method: "PUT", json: { title: "Second draft", items: [line("D01")] } });
+      await login(b, "/api/auth", "onedraft@example.com");
+
+      const merged = await requestJson(b, "/api/projects/current");
+      assert.equal(merged.body.items.length, 2, "second draft's lines merged into the single draft");
+      assert.deepEqual(merged.body.items.map((i) => i.code).sort(), ["D01", "W01"]);
+      // Exactly one draft remains for the customer.
+      const drafts = (await requestJson(b, "/api/projects")).body.projects.filter((p) => p.status_customer === "draft");
+      assert.equal(drafts.length, 1, "no orphaned second draft");
+    });
+
     await t.test("R2 upload, listing, and owner download", async () => {
       const bytes = await readFile(join(process.cwd(), "README.md"));
       const form = new FormData();

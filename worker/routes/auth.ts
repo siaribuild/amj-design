@@ -7,6 +7,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { CLAIM_COOKIE, parseCookies } from "../lib/util";
+import { claimAnonProjectForUser } from "../lib/access";
 import {
   challengeAllowed, clearCookie, consumeChallenge, createSession, destroySession, findOrCreateUser,
   isDevEnv, isEmail, normEmail, resolveUser, sessionCookie, sixDigit, storeChallenge, userDto,
@@ -58,13 +59,10 @@ auth.post("/verify", async (c) => {
 
   const user = await findOrCreateUser(c.env, email);
 
-  // Merge: attach the anonymous claim project (if any, still unowned) to the user.
+  // Merge: attach the anonymous claim project (if any, still unowned) to the user,
+  // enforcing one draft per customer (merges lines if they already have a draft).
   const claim = parseCookies(c.req.header("Cookie"))[CLAIM_COOKIE];
-  if (claim) {
-    await c.env.DB.prepare(
-      "UPDATE project SET owner_user_id = ?, claim_token = NULL WHERE claim_token = ? AND owner_user_id IS NULL",
-    ).bind(user.id, claim).run();
-  }
+  if (claim) await claimAnonProjectForUser(c.env, user.id, claim);
 
   const token = await createSession(c.env, user);
   c.header("Set-Cookie", sessionCookie(token, c.env), { append: true });
