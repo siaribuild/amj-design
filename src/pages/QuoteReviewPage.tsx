@@ -106,7 +106,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
         <div>
           <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
             {p.ref && <span className="text-[13px] font-medium text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>{p.ref}</span>}
-            <StatusPill tone="attn">Quote issued · awaiting you</StatusPill>
+            <StatusPill tone="attn">Quote ready · awaiting you</StatusPill>
           </div>
           <h1 className="font-semibold text-[#131311] leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.55rem,3.4vw,2rem)" }}>{p.title}</h1>
           <div className="flex gap-x-4 gap-y-2 flex-wrap items-center text-[13.5px] text-[#5c5a56] mt-2">

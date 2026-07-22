@@ -56,7 +56,7 @@ export async function resolveCurrentProject(env: Env, req: Request): Promise<{
 // side, so a new draft is started instead — this is the create-a-new-quote path,
 // and it prevents a save (autosave or upload) from overwriting the live lines of
 // a submitted or closed project (e.g. starting another quote after an order).
-export async function resolveOrCreateCurrentProject(env: Env, req: Request, title = "My project"): Promise<{
+export async function resolveOrCreateCurrentProject(env: Env, req: Request, title = "My Project"): Promise<{
   project: ProjectRow; cookie?: string;
 }> {
   const { project, userId } = await resolveCurrentProject(env, req);

@@ -109,25 +109,32 @@ export function orderMeta(o: ApiOrder): RecordMeta {
   }
 }
 
+// One Project object end-to-end: "quote" is the price document that arrives inside
+// a project, "Ordered" is the phase a project earns at acceptance. State copy
+// follows that model — never "order" before acceptance.
 export function projectMeta(p: ApiProjectSummary): RecordMeta {
   const depositOf = (t: number | null) => (t == null ? null : Math.round(t / 2));
   switch (p.status_customer) {
     case "draft":
-      return { pill: "Draft — not submitted", tone: "draft", needsYou: true, next: <>finish {b(`${p.item_count} line${p.item_count === 1 ? "" : "s"}`)} and {b("submit for a full quote")}</> };
+      return { pill: "Draft — not submitted", tone: "draft", needsYou: true, next: <>finish {b(`${p.item_count} line${p.item_count === 1 ? "" : "s"}`)} and {b("submit for pricing")}</> };
     case "submitted":
-      return { pill: "Submitted", tone: "work", needsYou: false, next: <>AMJ is reviewing — a reviewed quote usually lands within 2 business days</> };
+      return { pill: "Being priced", tone: "work", needsYou: false, next: <>With AMJ — your reviewed quote usually lands within 2 business days</> };
     case "under_review":
-      return { pill: "Under review", tone: "work", needsYou: false, next: <>AMJ is reviewing your specification — no action needed</> };
+      return { pill: "Being priced", tone: "work", needsYou: false, next: <>AMJ is reviewing your specification — no action needed</> };
     case "needs_information":
-      return { pill: "Needs information", tone: "attn", needsYou: true, next: <>answer AMJ's question so the review can continue</> };
+      return { pill: "Needs your answer", tone: "attn", needsYou: true, next: <>answer AMJ's question so pricing can continue</> };
     case "quote_issued":
-      return { pill: `Quote issued${p.issued_revision_no ? ` · R${p.issued_revision_no}` : ""}`, tone: "attn", needsYou: true, next: <>review &amp; accept, then a {b("50% deposit")} of {b(money(depositOf(p.issued_total)))} begins the order</> };
+      return { pill: `Quote ready${p.issued_revision_no ? ` · R${p.issued_revision_no}` : ""}`, tone: "attn", needsYou: true, next: <>review &amp; accept, then a {b("50% deposit")} of {b(money(depositOf(p.issued_total)))} starts your order</> };
     case "expired":
       return { pill: "Expired", tone: "mute", needsYou: false, next: <>This quote expired — start a new one or contact AMJ</> };
-    default: // accepted / closed — represented by the order row instead
-      return { pill: "Order placed", tone: "pos", needsYou: false, next: <>See the order for progress</> };
+    default: // accepted / closed — the project is Ordered; the order row carries it
+      return { pill: "Ordered", tone: "pos", needsYou: false, next: <>See the order for progress</> };
   }
 }
+
+// The permanent anchor for a record: the project reference carries identity across
+// the whole life; the order number is acceptance-time meta for financial documents.
+export const projectAnchor = (o: ApiOrder) => o.projectRef ?? o.orderNo;
 
 // ── The six customer gates (spec §7.3), ordered by urgency ────────────────────
 export type GateTarget =
@@ -154,7 +161,7 @@ const amt = (n: number | null | undefined) => (
 export function deriveGates(projects: ApiProjectSummary[], orders: ApiOrder[]): Gate[] {
   const gates: Gate[] = [];
   const pay = (o: ApiOrder, kind: "deposit" | "balance") => o.payments.find((p) => p.kind === kind);
-  const refOf = (o: ApiOrder) => `${o.orderNo}${o.projectTitle ? ` · ${o.projectTitle}` : ""}`;
+  const refOf = (o: ApiOrder) => `${projectAnchor(o)}${o.projectTitle ? ` · ${o.projectTitle}` : ""}`;
 
   for (const o of orders.filter((x) => x.stage === "balance_invoiced")) {
     gates.push({
@@ -182,18 +189,18 @@ export function deriveGates(projects: ApiProjectSummary[], orders: ApiOrder[]): 
   }
   for (const p of projects.filter((x) => x.status_customer === "needs_information")) {
     gates.push({
-      key: `info-${p.id}`, pill: "Needs information", tone: "attn",
-      refLabel: `${p.public_ref ?? "Quote"} · ${p.title ?? "Project"}`,
-      title: "AMJ has a question about your quote",
-      desc: <>The review is paused until you answer — it takes a minute and keeps your quote moving.</>,
-      cta: "Reply now", when: "Pauses review", target: { kind: "project", id: p.id, status: p.status_customer },
+      key: `info-${p.id}`, pill: "Needs your answer", tone: "attn",
+      refLabel: `${p.public_ref ?? "Project"} · ${p.title ?? "Project"}`,
+      title: "AMJ has a question about your project",
+      desc: <>Pricing is paused until you answer — it takes a minute and keeps your quote moving.</>,
+      cta: "Reply now", when: "Pauses pricing", target: { kind: "project", id: p.id, status: p.status_customer },
     });
   }
   for (const p of projects.filter((x) => x.status_customer === "quote_issued")) {
     const dep = p.issued_total == null ? null : Math.round(p.issued_total / 2);
     gates.push({
-      key: `accept-${p.id}`, pill: "Quote issued", tone: "attn",
-      refLabel: `${p.public_ref ?? "Quote"}${p.issued_revision_no ? ` · R${p.issued_revision_no}` : ""} · ${p.title ?? "Project"}`,
+      key: `accept-${p.id}`, pill: "Quote ready", tone: "attn",
+      refLabel: `${p.public_ref ?? "Project"}${p.issued_revision_no ? ` · R${p.issued_revision_no}` : ""} · ${p.title ?? "Project"}`,
       title: "Review & accept your reviewed quote",
       desc: <>Reviewed quote total {amt(p.issued_total)}. Accept to start — we then issue a {b(`50% deposit invoice of ${money(dep)}`)}. Nothing is charged until you accept.</>,
       cta: "Review & accept", when: "Your decision", target: { kind: "project", id: p.id, status: p.status_customer },
@@ -210,9 +217,9 @@ export function deriveGates(projects: ApiProjectSummary[], orders: ApiOrder[]): 
   for (const p of projects.filter((x) => x.status_customer === "draft" && x.item_count > 0)) {
     gates.push({
       key: `draft-${p.id}`, pill: "Draft", tone: "attn",
-      refLabel: p.title ?? "My project",
+      refLabel: p.title ?? "My Project",
       title: "Finish & submit for a full quote",
-      desc: <>{b(`${p.item_count} line${p.item_count === 1 ? "" : "s"}`)} added · once you submit, AMJ reviews and issues a final quote.</>,
+      desc: <>{b(`${p.item_count} line${p.item_count === 1 ? "" : "s"}`)} added · once you submit, AMJ prices it and issues your reviewed quote.</>,
       cta: "Finish & submit", when: "Est. " + money(p.draft_total), target: { kind: "quote-builder" },
     });
   }

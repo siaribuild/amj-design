@@ -39,7 +39,7 @@ projects.get("/", async (c) => {
 const projectDto = (p: ProjectRow) => ({
   id: p.id,
   ref: p.public_ref,
-  title: p.title ?? "My project",
+  title: p.title ?? "My Project",
   status: p.status_customer,
   createdAt: p.created_at,
 });
@@ -79,7 +79,7 @@ projects.put("/current/lines", async (c) => {
   // A title is optional per-save: sent when the user (re)names the project. When
   // omitted (a line-only save), the existing title is left untouched.
   const hasTitle = typeof body?.title === "string";
-  const title = hasTitle ? (body.title.trim().slice(0, 120) || "My project") : "My project";
+  const title = hasTitle ? (body.title.trim().slice(0, 120) || "My Project") : "My Project";
 
   const { project, cookie } = await resolveOrCreateCurrentProject(c.env, c.req.raw, title);
 

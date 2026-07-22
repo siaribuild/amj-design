@@ -13,7 +13,7 @@ import {
 import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
 import type { ApiProjectSummary, ApiOrder } from "../data/api";
 import {
-  useAccount, deriveGates, orderMeta, projectMeta, quoteProjects,
+  useAccount, deriveGates, orderMeta, projectMeta, quoteProjects, projectAnchor,
   money, fmtDayDate, greeting, StatusPill, TONE, type Gate, type GateTarget,
 } from "./accountModel";
 
@@ -75,8 +75,8 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
           <div className="flex flex-wrap border border-black/10 bg-white mb-6" role="group" aria-label="Account summary">
             <SummaryCell hot={gates.length > 0} label="Need you now" value={String(gates.length)} small="open gates" />
             <SummaryCell hot={payable > 0} label="Payable now" value={money(payable)} />
-            <SummaryCell label="Active orders" value={String(activeOrders.length)} />
-            <SummaryCell label="Open quote · draft" value={String(openQuotes)} small={drafts ? `· ${drafts} draft${drafts === 1 ? "" : "s"}` : undefined} />
+            <SummaryCell label="On order" value={String(activeOrders.length)} />
+            <SummaryCell label="Active quotes" value={String(openQuotes)} small={drafts ? `· ${drafts} draft${drafts === 1 ? "" : "s"}` : undefined} />
           </div>
 
           {/* Needs your attention */}
@@ -99,10 +99,10 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
             )}
           </section>
 
-          {/* Unified projects & orders */}
+          {/* Unified project list — one object, whole life */}
           <section>
             <div className="flex items-center gap-2.5 mb-3.5">
-              <h2 className="text-[1.15rem] font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Your projects &amp; orders</h2>
+              <h2 className="text-[1.15rem] font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Your projects</h2>
               <span className="ml-auto text-[13px] text-[#5c5a56] hidden sm:inline">Each shows its status and the single next step</span>
             </div>
             <UnifiedList projects={projs} orders={ords} setPage={setPage} onOpenRecord={onOpenRecord} />
@@ -170,10 +170,12 @@ export function UnifiedList({ projects, orders, setPage, onOpenRecord, emptyNote
     rows.push({
       key: `o-${o.id}`, needsYou: m.needsYou, updated: o.createdAt,
       node: (
-        <RecordRow key={`o-${o.id}`} refText={o.orderNo} title={o.projectTitle ?? "Order"}
+        // The project ref stays the anchor across the whole life; the order number
+        // is acceptance-time meta (it lives on invoices + payment references).
+        <RecordRow key={`o-${o.id}`} refText={projectAnchor(o)} title={o.projectTitle ?? "Order"}
           pill={<StatusPill tone={m.tone}>{m.pill}</StatusPill>}
           next={<>{m.needsYou && <span className="font-semibold" style={{ color: TONE.attn.text }}>Next: you</span>}{m.needsYou ? " — " : ""}{m.next}</>}
-          value={money(o.total)} meta={`${o.lineCount ?? "—"} lines · ${paymentNote(o)}`}
+          value={money(o.total)} meta={`${o.orderNo} · ${o.lineCount ?? "—"} lines · ${paymentNote(o)}`}
           onOpen={() => onOpenRecord({ orderId: o.id })} />
       ),
     });
@@ -184,7 +186,7 @@ export function UnifiedList({ projects, orders, setPage, onOpenRecord, emptyNote
     rows.push({
       key: `p-${p.id}`, needsYou: m.needsYou, updated: p.updated_at,
       node: (
-        <RecordRow key={`p-${p.id}`} refText={draft ? "DRAFT" : (p.public_ref ?? "QUOTE")} title={p.title ?? "My project"} draft={draft}
+        <RecordRow key={`p-${p.id}`} refText={draft ? "DRAFT" : (p.public_ref ?? "PROJECT")} title={p.title ?? "My Project"} draft={draft}
           pill={<StatusPill tone={m.tone}>{m.pill}</StatusPill>}
           next={<>{m.needsYou && <span className="font-semibold" style={{ color: TONE.attn.text }}>Next: you</span>}{m.needsYou ? " — " : ""}{m.next}</>}
           value={p.issued_total != null ? money(p.issued_total) : "—"}
@@ -247,8 +249,8 @@ function EmptyHub({ go }: { go: (p: Page) => void }) {
   return (
     <div className="max-w-xl bg-white border border-black/10 p-8 flex flex-col items-center text-center gap-3">
       <span className="w-12 h-12 border border-black/10 grid place-items-center"><WindowMark size={26} color={SAGE} /></span>
-      <h2 className="text-lg font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Start your first quote</h2>
-      <p className="text-[13px] text-[#5c5a56] max-w-[36ch]">Price your windows and doors in minutes, then turn the estimate into a full quote.</p>
+      <h2 className="text-lg font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Start your first project</h2>
+      <p className="text-[13px] text-[#5c5a56] max-w-[36ch]">Price your windows and doors in minutes, then submit the project for a full reviewed quote.</p>
       <div className="flex flex-col sm:flex-row gap-2.5 w-full justify-center pt-1">
         <Btn variant="sage" size="md" onClick={() => go("quote")}>Start an instant estimate <ArrowRight className="w-4 h-4" /></Btn>
         <Btn variant="outline" size="md" onClick={() => go("quote")}><Upload className="w-4 h-4" />Upload a schedule</Btn>

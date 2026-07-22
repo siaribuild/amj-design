@@ -24,7 +24,7 @@ export const PAGE_PATHS: Record<Page, string> = {
 };
 
 // Legacy paths kept working after the account-area IA change.
-const LEGACY_ROUTES = new Map<string, Page>([["/orders", "projects-orders"]]);
+const LEGACY_ROUTES = new Map<string, Page>([["/orders", "projects-orders"], ["/quotes", "projects-orders"]]);
 
 const STATIC_ROUTES = new Map<string, Page>(
   Object.entries(PAGE_PATHS)

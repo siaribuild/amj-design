@@ -12,7 +12,7 @@ import { ProductsPage } from "../pages/ProductsPage";
 import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { AccountShell, type AccountSection } from "../pages/AccountShell";
 import { AccountDashboard } from "../pages/AccountDashboard";
-import { ProjectsOrdersPage, QuotesPage, SupportPage } from "../pages/AccountSections";
+import { ProjectsOrdersPage, SupportPage } from "../pages/AccountSections";
 import { OrderDetail, ProjectDetail } from "../pages/RecordDetailPage";
 import { QuoteReviewPage } from "../pages/QuoteReviewPage";
 import { initialsOf } from "../pages/accountModel";
@@ -116,8 +116,7 @@ function AvatarMenu({ user, go, signOut }: { user: AuthUser; go: (p: Page) => vo
   const ref = useRef<HTMLDetailsElement>(null);
   const pick = (fn: () => void) => { if (ref.current) ref.current.open = false; fn(); };
   const items: { label: string; page: Page; icon: React.ReactNode }[] = [
-    { label: "My orders", page: "projects-orders", icon: <Truck className="w-[15px] h-[15px]" /> },
-    { label: "My project (quote)", page: "quotes", icon: <FileText className="w-[15px] h-[15px]" /> },
+    { label: "My projects", page: "projects-orders", icon: <Truck className="w-[15px] h-[15px]" /> },
     { label: "My profile", page: "profile", icon: <User className="w-[15px] h-[15px]" /> },
     { label: "Account settings", page: "account-settings", icon: <Settings className="w-[15px] h-[15px]" /> },
   ];
@@ -266,8 +265,7 @@ function Nav({ page, setPage, user, setUser }: {
               </div>
               <p className="px-5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-white/35">My Dashboard</p>
               {([
-                ["Dashboard", "dashboard"], ["Projects & orders", "projects-orders"],
-                ["Quotes", "quotes"], ["Support", "support"],
+                ["Dashboard", "dashboard"], ["Projects", "projects-orders"], ["Support", "support"],
               ] as [string, Page][]).map(([l, p]) => {
                 const active = page === p || (p === "projects-orders" && page === "order");
                 return (
@@ -1445,7 +1443,7 @@ export default function App() {
   // Account-page guards: bounce to login once the session check settles with no
   // user; a hard reload on /order has no focused record → back to the dashboard.
   useEffect(() => {
-    const accountPages: Page[] = ["dashboard", "projects-orders", "quotes", "support", "profile", "account-settings", "order"];
+    const accountPages: Page[] = ["dashboard", "projects-orders", "support", "profile", "account-settings", "order"];
     if (accountPages.includes(page) && !user && !authLoading) navigateTo("login");
     if (page === "order" && !focusRecord) navigateTo("dashboard");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1467,7 +1465,6 @@ export default function App() {
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
       case "dashboard":        return inShell("dashboard", <AccountDashboard user={user!} setPage={navigateTo} onOpenRecord={openRecord} />);
       case "projects-orders":  return inShell("projects-orders", <ProjectsOrdersPage setPage={navigateTo} onOpenRecord={openRecord} />);
-      case "quotes":           return inShell("quotes", <QuotesPage setPage={navigateTo} onOpenRecord={openRecord} />);
       case "support":          return inShell("support", <SupportPage setPage={navigateTo} />);
       case "track-order":      return <TrackOrderPage setPage={navigateTo} />;
       case "order":            return inShell("projects-orders", renderRecord());
@@ -1545,7 +1542,7 @@ export default function App() {
       <Nav page={page} setPage={navigateTo} user={user} setUser={setUser} />
       <main>{renderPage()}</main>
       {page !== "admin" && <Footer setPage={navigateTo} />}
-      {!["home", "quote", "admin", "product-detail", "dashboard", "quotes", "projects-orders", "support", "order", "profile", "account-settings"].includes(page) && (
+      {!["home", "quote", "admin", "product-detail", "dashboard", "projects-orders", "support", "order", "profile", "account-settings"].includes(page) && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-4 py-3 bg-white border-t border-black/8"
           style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
           <Btn variant="sage" size="md" onClick={() => navigateTo("quote")} className="w-full justify-center">Get a quote →</Btn>

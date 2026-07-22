@@ -28,7 +28,7 @@ import type { TrackFocus } from "./OrderTrackingPage";
 export function BackLink({ onClick }: { onClick: () => void }) {
   return (
     <button onClick={onClick} className="inline-flex items-center gap-[7px] text-[12.5px] text-[#5c5a56] hover:text-[#5A7A6A] mb-[18px] cursor-pointer" style={{ fontFamily: "'DM Mono', monospace" }}>
-      <ChevronLeft className="w-3.5 h-3.5" />All projects &amp; orders
+      <ChevronLeft className="w-3.5 h-3.5" />All projects
     </button>
   );
 }
@@ -386,14 +386,16 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
       <BackLink onClick={backToList} />
       <div className="flex justify-between items-start gap-5 flex-wrap pb-[22px] border-b border-black/10 mb-[26px]">
         <div>
+          {/* One project, whole life: the project ref anchors the record; the order
+              number is acceptance-time meta (it lives on invoices + payments). */}
           <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
-            <span className="text-[13px] font-medium text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>{order.orderNo}</span>
+            <span className="text-[13px] font-medium text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>{order.projectRef ?? order.orderNo}</span>
             <StatusPill tone={m.tone}>{m.pill}</StatusPill>
           </div>
           <h1 className="font-semibold text-[#131311] leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.55rem,3.4vw,2rem)" }}>{order.projectTitle ?? "Your order"}</h1>
-          <div className="flex gap-x-4 gap-y-2 flex-wrap text-[13.5px] text-[#5c5a56] mt-2" style={{}}>
-            <span>Order · accepted from quote <span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{order.revisionNo ? `R${order.revisionNo}` : "—"}</span></span>
-            {order.projectRef && <span>Quote ref <span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{order.projectRef}</span></span>}
+          <div className="flex gap-x-4 gap-y-2 flex-wrap text-[13.5px] text-[#5c5a56] mt-2">
+            <span>Ordered · accepted from quote <span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{order.revisionNo ? `R${order.revisionNo}` : "—"}</span></span>
+            <span>Order no. <span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{order.orderNo}</span></span>
             <span>Ordered <span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDate(order.createdAt)}</span></span>
             <span><span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{order.lineCount ?? lines.length}</span> lines</span>
           </div>
@@ -523,8 +525,8 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
   const timeline: TlNode[] = [
     { key: "req", title: "Quote requested", state: "done", pill: { tone: "pos", label: "Done" }, status: <>Submitted {num(fmtDate(p.createdAt))} · {num(`${lines.length} lines`)} from your schedule</> },
     needsInfo
-      ? { key: "review", title: "AMJ review — needs your answer", state: "cur", pill: { tone: "attn", label: "You're here", pulse: true }, status: <>Review paused until you reply above</> }
-      : { key: "review", title: "Reviewed quote", state: "work", pill: { tone: "work", label: "In review" }, status: <>AMJ is checking specifications and pricing — usually within 2 business days</> },
+      ? { key: "review", title: "AMJ review — needs your answer", state: "cur", pill: { tone: "attn", label: "You're here", pulse: true }, status: <>Pricing is paused until you reply above</> }
+      : { key: "review", title: "Reviewed quote", state: "work", pill: { tone: "work", label: "Being priced" }, status: <>AMJ is checking specifications and pricing — usually within 2 business days</> },
     { key: "accept", title: "Accept quote → 50% deposit", state: "locked", pill: { tone: "mute", label: "Not started" }, status: <>Nothing is charged until you accept the reviewed quote</> },
   ];
 
@@ -535,11 +537,11 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
         <div>
           <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
             {p.ref && <span className="text-[13px] font-medium text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>{p.ref}</span>}
-            <StatusPill tone={needsInfo ? "attn" : "work"}>{needsInfo ? "Needs information" : st === "submitted" ? "Submitted" : "Under review"}</StatusPill>
+            <StatusPill tone={needsInfo ? "attn" : "work"}>{needsInfo ? "Needs your answer" : "Being priced"}</StatusPill>
           </div>
           <h1 className="font-semibold text-[#131311] leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.55rem,3.4vw,2rem)" }}>{p.title}</h1>
           <div className="flex gap-x-4 gap-y-2 flex-wrap text-[13.5px] text-[#5c5a56] mt-2">
-            <span>Quote · submitted <span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDate(p.createdAt)}</span></span>
+            <span>Project · submitted for pricing <span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDate(p.createdAt)}</span></span>
             <span><span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{lines.length}</span> lines</span>
           </div>
         </div>

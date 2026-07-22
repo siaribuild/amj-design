@@ -8,16 +8,17 @@
 // Left = "where can I go"; the right side stays free for per-record context.
 // ═══════════════════════════════════════════════════════════════════════════════
 import type { ReactNode } from "react";
-import { Truck, FileText, HelpCircle } from "lucide-react";
+import { Truck, HelpCircle } from "lucide-react";
 import { type Page, SAGE, WindowMark } from "../app/ui";
 import { AccountDataCtx, useAccountData, useAccount, initialsOf, quoteProjects } from "./accountModel";
 
-export type AccountSection = "dashboard" | "projects-orders" | "quotes" | "support" | "profile" | "account-settings";
+// One Project object end-to-end: a single Projects list (with phase filters)
+// replaces the old Projects & orders / Quotes split.
+export type AccountSection = "dashboard" | "projects-orders" | "support" | "profile" | "account-settings";
 
 export const SECTION_LABEL: Record<AccountSection, string> = {
   dashboard: "Dashboard",
-  "projects-orders": "Projects & orders",
-  quotes: "Quotes",
+  "projects-orders": "Projects",
   support: "Support",
   profile: "My profile",
   "account-settings": "Account settings",
@@ -54,13 +55,11 @@ export function AccountShell({ section, setPage, user, children }: {
 function Sidebar({ section, setPage, user }: { section: AccountSection; setPage: (p: Page) => void; user: ShellUser }) {
   const { projects, orders } = useAccount();
   const listCount = (orders?.length ?? 0) + quoteProjects(projects ?? []).filter((p) => p.status_customer !== "expired").length;
-  const quotesCount = quoteProjects(projects ?? []).length;
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
 
   const items: { key: AccountSection; page: Page; label: string; icon: ReactNode; badge?: number }[] = [
     { key: "dashboard", page: "dashboard", label: "Dashboard", icon: <WindowMark size={17} color="currentColor" /> },
-    { key: "projects-orders", page: "projects-orders", label: "Projects & orders", icon: <Truck className="w-[17px] h-[17px]" />, badge: listCount || undefined },
-    { key: "quotes", page: "quotes", label: "Quotes", icon: <FileText className="w-[17px] h-[17px]" />, badge: quotesCount || undefined },
+    { key: "projects-orders", page: "projects-orders", label: "Projects", icon: <Truck className="w-[17px] h-[17px]" />, badge: listCount || undefined },
     { key: "support", page: "support", label: "Support", icon: <HelpCircle className="w-[17px] h-[17px]" /> },
   ];
 
