@@ -5,7 +5,7 @@
 // where they drive action) → the priority-ordered gate stack → the unified
 // projects & orders list. Empty states guide, never dead-end (spec §8).
 // ═══════════════════════════════════════════════════════════════════════════════
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   ArrowRight, ChevronRight, CreditCard, PenLine, FileText, Truck, Upload,
   MessageSquare, CheckCircle,
@@ -99,17 +99,61 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
             )}
           </section>
 
-          {/* Unified project list — one object, whole life */}
-          <section>
-            <div className="flex items-center gap-2.5 mb-3.5">
-              <h2 className="text-[1.15rem] font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Your projects</h2>
-              <span className="ml-auto text-[13px] text-[#5c5a56] hidden sm:inline">Each shows its status and the single next step</span>
-            </div>
-            <UnifiedList projects={projs} orders={ords} setPage={setPage} onOpenRecord={onOpenRecord} />
-          </section>
+          {/* Unified project list — one object, whole life, with phase filters */}
+          <ProjectsSection projects={projs} orders={ords} setPage={setPage} onOpenRecord={onOpenRecord} />
         </>
       )}
     </>
+  );
+}
+
+// The merged home's list: the full project list with phase-filter tabs (pipeline
+// vs order-book survives as a VIEW, not a separate destination).
+type ProjectsTab = "all" | "quotes" | "on-order" | "completed";
+const PROJECT_TABS: { id: ProjectsTab; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "quotes", label: "Active quotes" },
+  { id: "on-order", label: "On order" },
+  { id: "completed", label: "Completed" },
+];
+
+function ProjectsSection({ projects, orders, setPage, onOpenRecord }: {
+  projects: ApiProjectSummary[]; orders: ApiOrder[]; setPage: (p: Page) => void; onOpenRecord: OpenRecord;
+}) {
+  const [tab, setTab] = useState<ProjectsTab>("all");
+  const allQuotes = quoteProjects(projects);
+  const activeQuotes = allQuotes.filter((p) => p.status_customer !== "expired");
+  const onOrder = orders.filter((o) => !["delivered", "after_sales"].includes(o.stage));
+  const completed = orders.filter((o) => ["delivered", "after_sales"].includes(o.stage));
+  const counts: Record<ProjectsTab, number> = {
+    all: allQuotes.length + orders.length, quotes: activeQuotes.length,
+    "on-order": onOrder.length, completed: completed.length,
+  };
+  const view = tab === "quotes" ? { p: activeQuotes, o: [] as ApiOrder[] }
+    : tab === "on-order" ? { p: [] as ApiProjectSummary[], o: onOrder }
+    : tab === "completed" ? { p: [] as ApiProjectSummary[], o: completed }
+    : { p: allQuotes, o: orders };
+  const emptyNote = tab === "on-order" ? <>Nothing on order yet — your order opens the moment you accept a quote.</>
+    : tab === "completed" ? <>No completed orders yet.</>
+    : tab === "quotes" ? <>No active quotes. Start a project from the estimator.</>
+    : undefined;
+
+  return (
+    <section>
+      <div className="flex items-center gap-2.5 mb-3">
+        <h2 className="text-[1.15rem] font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Your projects</h2>
+        <span className="ml-auto text-[13px] text-[#5c5a56] hidden sm:inline">Each shows its status and the single next step</span>
+      </div>
+      <div className="flex items-center gap-1 border-b border-black/10 mb-4 overflow-x-auto" role="tablist" aria-label="Filter projects">
+        {PROJECT_TABS.map((t) => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
+            className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors cursor-pointer ${tab === t.id ? "border-[#5A7A6A] text-[#131311] font-medium" : "border-transparent text-[#8b8880] hover:text-[#131311]"}`}>
+            {t.label}{counts[t.id] > 0 && <span className="ml-1.5 text-[11px] text-[#8b8880]" style={{ fontFamily: "'DM Mono', monospace" }}>{counts[t.id]}</span>}
+          </button>
+        ))}
+      </div>
+      <UnifiedList projects={view.p} orders={view.o} setPage={setPage} onOpenRecord={onOpenRecord} emptyNote={emptyNote} />
+    </section>
   );
 }
 

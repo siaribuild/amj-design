@@ -1,70 +1,91 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// ACCOUNT SHELL — the in-area navigation (level 2).
+// ACCOUNT SHELL — the in-area navigation, collapsed to a single RIGHT rail.
 //
-// Desktop: a ~236px left sidebar (company context + section links) beside the main
-// content column, directly under the global site menu (level 1 — the only
-// horizontal nav). Below the breakpoint the sidebar disappears: its links live in
-// the site drawer (see Nav in App.tsx) and the content shows a compact breadcrumb.
-// Left = "where can I go"; the right side stays free for per-record context.
+// The old three surfaces (top "My Dashboard" button, avatar dropdown, left
+// sidebar) merge into one right-hand rail that carries BOTH content nav (My
+// Projects) and account/session actions (Account · Help · Sign out) under the
+// company identity header. Content owns the left; the right edge is the identity/
+// nav column — mirroring the mobile drawer (which already slides from the right).
+// Below the breakpoint the rail folds into the site drawer (see Nav in App.tsx)
+// and the content shows a compact breadcrumb.
 // ═══════════════════════════════════════════════════════════════════════════════
 import type { ReactNode } from "react";
-import { Truck, HelpCircle } from "lucide-react";
-import { type Page, SAGE, WindowMark } from "../app/ui";
+import { User, HelpCircle, LogOut } from "lucide-react";
+import { type Page, SAGE, WindowMark as Mark } from "../app/ui";
 import { AccountDataCtx, useAccountData, useAccount, initialsOf, quoteProjects } from "./accountModel";
 
-// One Project object end-to-end: a single Projects list (with phase filters)
-// replaces the old Projects & orders / Quotes split.
-export type AccountSection = "dashboard" | "projects-orders" | "support" | "profile" | "account-settings";
+// Three destinations after the object-model + IA collapse.
+export type AccountSection = "projects" | "account" | "help";
 
 export const SECTION_LABEL: Record<AccountSection, string> = {
-  dashboard: "Dashboard",
-  "projects-orders": "Projects",
-  support: "Support",
-  profile: "My profile",
-  "account-settings": "Account settings",
+  projects: "My Projects",
+  account: "Account",
+  help: "Help",
 };
 
 type ShellUser = { name: string; company: string; email: string; type?: string };
 
-export function AccountShell({ section, setPage, user, children }: {
+export function AccountShell({ section, setPage, user, onSignOut, children }: {
   section: AccountSection;
   setPage: (p: Page) => void;
   user: ShellUser;
+  onSignOut: () => void;
   children: ReactNode;
 }) {
   const data = useAccountData();
   return (
     <AccountDataCtx.Provider value={data}>
       <div className="min-h-screen bg-[#FAFAF9] pt-16">
-        <div className="max-w-6xl mx-auto px-6 pt-[26px] pb-[60px] grid lg:grid-cols-[236px_1fr] gap-0 lg:gap-[34px] items-start">
-          <Sidebar section={section} setPage={setPage} user={user} />
-          <main className="min-w-0">
-            {/* Mobile breadcrumb — orients without the sidebar (spec §3.3). */}
+        {/* Content LEFT, identity/nav rail RIGHT. */}
+        <div className="max-w-6xl mx-auto px-6 pt-[26px] pb-[60px] grid lg:grid-cols-[1fr_236px] gap-0 lg:gap-[34px] items-start">
+          <main className="min-w-0 lg:order-1 order-2">
+            {/* Mobile breadcrumb — orients without the rail. */}
             <div className="flex lg:hidden items-center gap-2 pb-4 text-[11px] uppercase tracking-[0.05em] text-[#5c5a56]" style={{ fontFamily: "'DM Mono', monospace" }}>
-              <WindowMark size={14} color={SAGE} />
-              My Dashboard <span className="opacity-45">/</span> <b className="text-[#131311] font-medium">{SECTION_LABEL[section]}</b>
+              <Mark size={14} color={SAGE} />
+              My Projects <span className="opacity-45">/</span> <b className="text-[#131311] font-medium">{SECTION_LABEL[section]}</b>
             </div>
             {children}
           </main>
+          <Rail section={section} setPage={setPage} user={user} onSignOut={onSignOut} />
         </div>
       </div>
     </AccountDataCtx.Provider>
   );
 }
 
-function Sidebar({ section, setPage, user }: { section: AccountSection; setPage: (p: Page) => void; user: ShellUser }) {
+function Rail({ section, setPage, user, onSignOut }: {
+  section: AccountSection; setPage: (p: Page) => void; user: ShellUser; onSignOut: () => void;
+}) {
   const { projects, orders } = useAccount();
   const listCount = (orders?.length ?? 0) + quoteProjects(projects ?? []).filter((p) => p.status_customer !== "expired").length;
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
 
-  const items: { key: AccountSection; page: Page; label: string; icon: ReactNode; badge?: number }[] = [
-    { key: "dashboard", page: "dashboard", label: "Dashboard", icon: <WindowMark size={17} color="currentColor" /> },
-    { key: "projects-orders", page: "projects-orders", label: "Projects", icon: <Truck className="w-[17px] h-[17px]" />, badge: listCount || undefined },
-    { key: "support", page: "support", label: "Support", icon: <HelpCircle className="w-[17px] h-[17px]" /> },
+  const nav: { key: AccountSection; page: Page; label: string; icon: ReactNode; badge?: number }[] = [
+    { key: "projects", page: "dashboard", label: "My Projects", icon: <Mark size={17} color="currentColor" />, badge: listCount || undefined },
+  ];
+  const account: { key: AccountSection; page: Page; label: string; icon: ReactNode }[] = [
+    { key: "account", page: "account", label: "Account", icon: <User className="w-[17px] h-[17px]" /> },
+    { key: "help", page: "help", label: "Help & contact", icon: <HelpCircle className="w-[17px] h-[17px]" /> },
   ];
 
+  const Item = ({ it }: { it: { key: AccountSection; page: Page; label: string; icon: ReactNode; badge?: number } }) => {
+    const on = section === it.key;
+    return (
+      <button onClick={() => go(it.page)} aria-current={on ? "page" : undefined}
+        className={`flex items-center gap-[11px] px-3 py-2.5 text-sm text-left border-l-2 transition-colors cursor-pointer ${
+          on ? "text-[#131311] font-semibold bg-[#5A7A6A]/[0.07] border-l-[#5A7A6A]" : "text-[#5c5a56] border-l-transparent hover:text-[#131311] hover:bg-[#5A7A6A]/[0.07]"}`}>
+        <span className={on ? "text-[#5A7A6A]" : "text-[#5c5a56]"}>{it.icon}</span>
+        {it.label}
+        {it.badge != null && (
+          <span className="ml-auto text-[11px] text-[#5c5a56] bg-black/[0.045] px-[7px] py-px" style={{ fontFamily: "'DM Mono', monospace" }}>{it.badge}</span>
+        )}
+      </button>
+    );
+  };
+
   return (
-    <aside className="hidden lg:flex flex-col sticky top-[82px]" aria-label="Account navigation">
+    <aside className="hidden lg:flex flex-col sticky top-[82px] lg:order-2" aria-label="Account navigation">
+      {/* Identity header — the always-on "which account / am I trade" glance. */}
       <div className="flex items-center gap-[11px] px-2.5 pb-[15px] border-b border-black/10 mb-2">
         <span className="w-[38px] h-[38px] bg-[#5A7A6A] text-white grid place-items-center text-sm flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>
           {initialsOf(user.company || user.name)}
@@ -76,22 +97,18 @@ function Sidebar({ section, setPage, user }: { section: AccountSection; setPage:
           </div>
         </div>
       </div>
-      <nav className="flex flex-col gap-px">
-        {items.map((it) => {
-          const on = section === it.key;
-          return (
-            <button key={it.key} onClick={() => go(it.page)} aria-current={on ? "page" : undefined}
-              className={`flex items-center gap-[11px] px-3 py-2.5 text-sm text-left border-l-2 transition-colors cursor-pointer ${
-                on ? "text-[#131311] font-semibold bg-[#5A7A6A]/[0.07] border-l-[#5A7A6A]" : "text-[#5c5a56] border-l-transparent hover:text-[#131311] hover:bg-[#5A7A6A]/[0.07]"}`}>
-              <span className={on ? "text-[#5A7A6A]" : "text-[#5c5a56]"}>{it.icon}</span>
-              {it.label}
-              {it.badge != null && (
-                <span className="ml-auto text-[11px] text-[#5c5a56] bg-black/[0.045] px-[7px] py-px" style={{ fontFamily: "'DM Mono', monospace" }}>{it.badge}</span>
-              )}
-            </button>
-          );
-        })}
+      {/* Content nav */}
+      <nav className="flex flex-col gap-px" aria-label="Content">
+        {nav.map((it) => <Item key={it.key} it={it} />)}
       </nav>
+      {/* Account / session */}
+      <div className="border-t border-black/10 mt-3 pt-3 flex flex-col gap-px">
+        {account.map((it) => <Item key={it.key} it={it} />)}
+        <button onClick={onSignOut}
+          className="flex items-center gap-[11px] px-3 py-2.5 text-sm text-left border-l-2 border-l-transparent text-[#5c5a56] hover:text-[#131311] hover:bg-[#5A7A6A]/[0.07] transition-colors cursor-pointer">
+          <LogOut className="w-[17px] h-[17px]" />Sign out
+        </button>
+      </div>
     </aside>
   );
 }

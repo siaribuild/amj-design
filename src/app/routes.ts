@@ -12,19 +12,24 @@ export const PAGE_PATHS: Record<Page, string> = {
   "approved-quote": "/quote/approved",
   trade: "/trade-account",
   login: "/login",
-  dashboard: "/dashboard",
-  quotes: "/quotes",
-  "projects-orders": "/projects",
-  support: "/support",
+  dashboard: "/projects", // the merged account home ("My Projects")
+  account: "/account",
+  help: "/help",
   "track-order": "/track-order",
-  profile: "/profile",
-  "account-settings": "/account-settings",
   order: "/order",
   privacy: "/privacy",
 };
 
-// Legacy paths kept working after the account-area IA change.
-const LEGACY_ROUTES = new Map<string, Page>([["/orders", "projects-orders"], ["/quotes", "projects-orders"]]);
+// Legacy paths kept working after the account-area IA collapse (Dashboard+Projects
+// → one "My Projects" home; Profile+Settings → Account; Support → Help).
+const LEGACY_ROUTES = new Map<string, Page>([
+  ["/dashboard", "dashboard"],
+  ["/orders", "dashboard"],
+  ["/quotes", "dashboard"],
+  ["/support", "help"],
+  ["/profile", "account"],
+  ["/account-settings", "account"],
+]);
 
 const STATIC_ROUTES = new Map<string, Page>(
   Object.entries(PAGE_PATHS)
