@@ -1,19 +1,22 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Default test fixtures (loaded by `npm run db:reset`).
 --
--- Sign in as demo@openframe.com.au (passwordless — request an OTP; the dev
+-- Sign in as the u_demo address below (passwordless — request an OTP; the dev
 -- code is printed by the auth challenge). You then get:
 --   • MyProject  → "Coburg new build" draft with 2 lines (quote-building tests)
 --   • My orders  → order OF-58001 mid-journey (deposit paid, in manufacturing)
 --
--- staff@openframe.com.au is an internal user (for when ops auth exists;
--- staff seams are open in non-prod today regardless).
+-- u_staff is an internal user (for when ops auth exists; staff seams are open
+-- in non-prod today regardless). The API tests read these addresses and the
+-- user count straight out of this file (scripts/tests/helpers.mjs), so you can
+-- edit the fixtures here without breaking the suite.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- Users (u_staff is an admin — can clear any approval step)
 INSERT INTO user (id, email, name, phone, type, role, last_verified_at) VALUES
-  ('u_demo',  'demo@openframe.com.au',  'Demo Builder', '(03) 9000 1234', 'customer', NULL,    datetime('now')),
-  ('u_staff', 'staff@openframe.com.au', 'OpenFrame Staff',    NULL,             'internal', 'admin', datetime('now'));
+  ('u_demo',  'gediminas.bereznevicius@gmail.com',  'Demo Builder', '(03) 9000 1234', 'customer', NULL,    datetime('now')),
+  ('u_demo2',  'doni@siaribuild.com.au',  'Siari Build', '(03) 0000 1234', 'customer', NULL,    datetime('now')),
+  ('u_staff', 'admin@openframe.com.au', 'AMJ Staff',    NULL,             'internal', 'admin', datetime('now'));
 
 -- Approval rules (demo thresholds; commercial fires on the seeded Fitzroy quote)
 INSERT INTO approval_rule (id, name, trigger_family, condition_json, approver_role) VALUES

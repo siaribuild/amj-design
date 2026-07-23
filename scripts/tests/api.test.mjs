@@ -5,7 +5,7 @@ import { request as httpRequest } from "node:http";
 import { join } from "node:path";
 import {
   Session, freePort, login, makeRunDir, removeRunDir, requestJson,
-  run, start, stop, viteCli, waitForUrl, wranglerCli,
+  run, seedUserCount, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
 test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180_000 }, async (t) => {
@@ -24,7 +24,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
     const dbCheck = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", "SELECT (SELECT count(*) FROM user) AS users, (SELECT count(*) FROM project) AS projects, (SELECT count(*) FROM quote_line) AS quote_lines, (SELECT count(*) FROM quote_revision) AS revisions, (SELECT count(*) FROM [order]) AS orders, (SELECT count(*) FROM payment) AS payments, (SELECT count(*) FROM approval_rule) AS approval_rules; PRAGMA foreign_key_check;"], { env: wranglerEnv });
     const statements = JSON.parse(dbCheck.stdout);
     assert.deepEqual(statements[0].results[0], {
-      users: 3, projects: 3, quote_lines: 4, revisions: 1,
+      users: seedUserCount, projects: 3, quote_lines: 4, revisions: 1,
       orders: 1, payments: 2, approval_rules: 2,
     });
     assert.deepEqual(statements[1].results, []);
@@ -123,7 +123,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
 
     const ops = new Session(baseUrl);
     await t.test("staff OTP, dashboard, queue, assignment, approvals, and revision issue", async () => {
-      await login(ops, "/api/ops/auth", "staff@openframe.com.au");
+      await login(ops, "/api/ops/auth", staffEmail);
       const summary = await requestJson(ops, "/api/ops/summary");
       assert.ok(summary.body.submissions >= 1);
       const queue = await requestJson(ops, "/api/ops/queues/submissions");

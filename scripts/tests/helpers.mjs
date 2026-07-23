@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +9,19 @@ import { fileURLToPath } from "node:url";
 export const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export const viteCli = join(projectRoot, "node_modules", "vite", "bin", "vite.js");
 export const wranglerCli = join(projectRoot, "node_modules", "wrangler", "bin", "wrangler.js");
+
+// Seed identities are read from the seed itself so local fixture edits (extra
+// test users, different sign-in addresses) don't break the suite.
+const seedSql = readFileSync(join(projectRoot, "scripts", "db", "seed.sql"), "utf8");
+const seedUserRows = [...seedSql.matchAll(/\(\s*'(u_[\w]+)'\s*,\s*'([^']+)'/g)];
+const seedEmail = (id) => {
+  const row = seedUserRows.find(([, userId]) => userId === id);
+  if (!row) throw new Error(`seed.sql: no user row for ${id}`);
+  return row[2];
+};
+export const seedUserCount = seedUserRows.length;
+export const demoEmail = seedEmail("u_demo");
+export const staffEmail = seedEmail("u_staff");
 const needsShell = (command) => process.platform === "win32" && /\.(?:cmd|bat)$/i.test(command);
 
 export async function makeRunDir(label) {

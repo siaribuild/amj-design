@@ -7,8 +7,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import {
-  Session, freePort, login, makeRunDir, removeRunDir,
-  requestJson, run, start, stop, viteCli, waitForUrl, wranglerCli,
+  Session, demoEmail, freePort, login, makeRunDir, removeRunDir,
+  requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
 test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
@@ -29,7 +29,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
 
     const anon = new Session(baseUrl);
     const staff = new Session(baseUrl);
-    await login(staff, "/api/ops/auth", "staff@openframe.com.au"); // admin
+    await login(staff, "/api/ops/auth", staffEmail); // admin
 
     await t.test("customer OTP: wrong code rejected; 5 wrong attempts burn the code", async () => {
       const s = new Session(baseUrl);
@@ -59,11 +59,11 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       const wrong = await requestJson(anon, "/api/guest/track/request", { method: "POST", json: { email: "nobody@example.com", ref: "OF-58001" } });
       assert.deepEqual(wrong.body, { ok: true });
       // Correct match → code; immediate repeat is rate-limited (neutral, no code).
-      const first = await requestJson(anon, "/api/guest/track/request", { method: "POST", json: { email: "demo@openframe.com.au", ref: "OF-58001" } });
+      const first = await requestJson(anon, "/api/guest/track/request", { method: "POST", json: { email: demoEmail, ref: "OF-58001" } });
       assert.match(first.body.devCode, /^\d{6}$/);
-      const second = await requestJson(anon, "/api/guest/track/request", { method: "POST", json: { email: "demo@openframe.com.au", ref: "OF-58001" } });
+      const second = await requestJson(anon, "/api/guest/track/request", { method: "POST", json: { email: demoEmail, ref: "OF-58001" } });
       assert.equal(second.body.devCode, undefined, "rate limited within the window");
-      await requestJson(anon, "/api/guest/track/verify", { method: "POST", json: { email: "demo@openframe.com.au", ref: "OF-58001", code: "000000" } }, 400);
+      await requestJson(anon, "/api/guest/track/verify", { method: "POST", json: { email: demoEmail, ref: "OF-58001", code: "000000" } }, 400);
       await requestJson(anon, "/api/guest/records/not-a-real-token", {}, 404);
     });
 
@@ -92,7 +92,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
 
     await t.test("dashboard project list + submit; accept guards ownership and state", async () => {
       const demo = new Session(baseUrl);
-      await login(demo, "/api/auth", "demo@openframe.com.au");
+      await login(demo, "/api/auth", demoEmail);
       const projects = await requestJson(demo, "/api/projects");
       assert.ok(projects.body.projects.some((p) => p.id === "p_draft"));
       // An already-accepted revision cannot be accepted again (seed rev_1 is accepted).
@@ -174,7 +174,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(prof.body.customer.abn, "11 222 333 444");
       // Email change: invalid 400, taken 409, then a real change.
       await requestJson(staff, `/api/ops/customers/${sarah.id}`, { method: "PATCH", json: { email: "not-an-email" } }, 400);
-      await requestJson(staff, `/api/ops/customers/${sarah.id}`, { method: "PATCH", json: { email: "demo@openframe.com.au" } }, 409);
+      await requestJson(staff, `/api/ops/customers/${sarah.id}`, { method: "PATCH", json: { email: demoEmail } }, 409);
       const changed = await requestJson(staff, `/api/ops/customers/${sarah.id}`, { method: "PATCH", json: { email: "sarah.n@newbuild.com.au" } });
       assert.equal(changed.body.customer.email, "sarah.n@newbuild.com.au");
       // The customer signs in with the NEW address and lands on the SAME account.
