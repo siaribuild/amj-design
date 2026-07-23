@@ -25,8 +25,8 @@ import { pathForPage, routeFromPathname } from "./routes";
 import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug } from "../data/catalogue";
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
-import { suggestCode, addDemoSchedule, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
-import { getCurrentProject, saveLines, submitProject, updateProfile, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
+import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
+import { getCurrentProject, saveLines, submitProject, updateProfile, clearDraft, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
 import { GstContext, type GstMode } from "../data/gst";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1345,6 +1345,28 @@ export default function App() {
     copy: (id) => { const src = quoteItems.find(x => x.id === id); if (!src) return undefined; const nid = Date.now() + Math.floor(Math.random() * 1000); setQuoteItems(prev => [...prev, { ...src, id: nid, code: suggestCode(prev, src.productSlug) }]); return nid; },
     addFiles: (f) => setQuoteFiles(prev => [...prev, ...f]),
     removeFile: (id) => setQuoteFiles(prev => prev.filter(f => f.id !== id)),
+    // Replace the whole line set (after a schedule parse re-hydrates from server).
+    setItems: (items) => setQuoteItems(items.map((it, i) => ({ ...it, id: Date.now() + i }))),
+    // Reset the whole project to zero — lines AND the attached schedule file — on
+    // both sides. Skip the echo save so the just-cleared state isn't re-sent.
+    clearAll: async () => {
+      try { await clearDraft(); } catch { /* offline — local clear still applies */ }
+      skipNextSaveRef.current = true;
+      setQuoteItems([]); setQuoteFiles([]);
+    },
+    // Re-hydrate lines + the attached file from the server (after a parse).
+    reload: async () => {
+      const r = await getCurrentProject();
+      skipNextSaveRef.current = true;
+      setQuoteItems((r.items ?? []).map((it, i) => ({
+        id: Date.now() + i,
+        code: it.code, productSlug: it.productSlug, location: it.location,
+        measuredBy: it.measuredBy, width: it.width, height: it.height,
+        options: it.options, qty: it.qty, status: it.status,
+        origin: it.origin, review: it.review ?? null,
+      })));
+      setQuoteFiles((r.files ?? []).map((f) => ({ id: f.id, name: f.filename, kind: f.kind, status: "Uploaded" as const })));
+    },
   };
   // ── Persistence (M2): hydrate the anon project on load, snapshot-save on change ──
   // The client store above stays the source of truth for the UI; persistence is a
@@ -1385,7 +1407,12 @@ export default function App() {
             code: it.code, productSlug: it.productSlug, location: it.location,
             measuredBy: it.measuredBy, width: it.width, height: it.height,
             options: it.options, qty: it.qty, status: it.status,
+            origin: it.origin, review: it.review ?? null,
           })));
+        }
+        // Surface the attached schedule file (integral to the quote/order).
+        if (r.files?.length) {
+          setQuoteFiles(r.files.map((f) => ({ id: f.id, name: f.filename, kind: f.kind, status: "Uploaded" as const })));
         }
       })
       .catch(() => { /* offline / API down — keep working in-memory */ })
@@ -1423,9 +1450,11 @@ export default function App() {
     }
   };
 
+  // Home "Upload a schedule" → the quote builder, where the real upload + parse
+  // happens (the builder auto-opens the file picker via ?upload=1).
   const uploadDemoScheduleFromHome = () => {
-    addDemoSchedule(quote);
     navigateTo("quote");
+    if (typeof window !== "undefined") { try { window.history.replaceState(null, "", "?upload=1"); } catch { /* noop */ } };
   };
 
   // Account-page guards: bounce to login once the session check settles with no

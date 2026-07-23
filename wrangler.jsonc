@@ -35,7 +35,18 @@
     { "binding": "FILES", "bucket_name": "apertly-files" }
   ],
 
+  // Workers AI — the schedule-parse ACCURACY tier (toMarkdown + LLM / vision).
+  // Optional: the default on-stack deterministic extractor runs without it. Bind
+  // the account's Workers AI and, if desired, route it through an AI Gateway for
+  // caching + cost controls. No further provisioning needed to enable this binding.
+  "ai": { "binding": "AI" },
+
   "vars": {
+    // Schedule extraction engine: 'deterministic' (default, on-stack, no model
+    // spend), 'auto' (deterministic, escalate to Workers AI when weak — needs the
+    // AI binding), or 'ai' (force Workers AI). Leave as deterministic until AI is
+    // provisioned; then switch to 'auto' for messy/scanned schedules.
+    "PARSE_ENGINE": "deterministic",
     // Local/dev default only. `npm run cf:deploy` overrides this to "production"
     // (`wrangler deploy --var APP_ENV:production`), which gates dev-only OTP codes
     // and sets Secure cookies. A raw `wrangler deploy` would ship development — use

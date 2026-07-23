@@ -16,6 +16,10 @@ export interface ApiLine {
   qty: number;
   status: "Ready" | "Needs review";
   lineTotal: number | null;
+  /** 'manual' | 'schedule' — how the line entered the project. */
+  origin?: string;
+  /** Per-field {field: reason} for parsed lines that need confirmation. */
+  review?: Record<string, string> | null;
 }
 
 const MEASURED = new Set(["", "frame", "opening", "unsure"]);
@@ -31,10 +35,13 @@ export interface LineRow {
   qty: number;
   line_total: number | null;
   status: string;
+  origin?: string | null;
+  review_json?: string | null;
 }
 
 export function rowToApiLine(r: LineRow): ApiLine {
   const dims = safeParse(r.dims_json);
+  const review = r.review_json ? safeParse(r.review_json) : null;
   return {
     code: r.external_ref ?? "",
     productSlug: r.product_slug,
@@ -42,10 +49,13 @@ export function rowToApiLine(r: LineRow): ApiLine {
     measuredBy: (MEASURED.has(r.measured_by) ? r.measured_by : "") as MeasuredBy,
     width: String(dims.width ?? ""),
     height: String(dims.height ?? ""),
-    options: safeParse(r.options_json),
+    options: safeParse(r.options_json) as Record<string, string>,
     qty: r.qty || 1,
+    // 'ready' ⇒ Ready; incomplete/technical_review/… ⇒ Needs review.
     status: r.status === "ready" ? "Ready" : "Needs review",
     lineTotal: r.line_total,
+    origin: r.origin ?? "manual",
+    review: review && Object.keys(review).length ? (review as Record<string, string>) : null,
   };
 }
 
@@ -61,7 +71,19 @@ export function itemToInsert(projectId: string, raw: unknown, position: number) 
 
   const priced = priceConfigured({ productSlug, width, height, options, qty });
   const lineTotal = priced.ok ? priced.total : null;
-  const status = priced.ok ? "ready" : "incomplete";
+
+  // Preserve parse provenance + unresolved review flags across autosaves. A line
+  // still carrying review reasons stays 'technical_review' (Needs review) even if
+  // it happens to price; clearing the last flag (client drops resolved keys) lets
+  // it fall back to the normal ready/incomplete status.
+  const origin = String(it.origin ?? "manual") === "schedule" ? "schedule" : "manual";
+  const review = it.review && typeof it.review === "object" && Object.keys(it.review as object).length
+    ? (it.review as Record<string, string>)
+    : null;
+  // Unpriceable ⇒ 'incomplete' (customer must resolve, blocks submission), even if
+  // it also carries review flags. Priced + flagged ⇒ 'technical_review' (an AMJ
+  // technician resolves it — SUBMITTABLE). Priced + clean ⇒ 'ready'.
+  const status = !priced.ok ? "incomplete" : review ? "technical_review" : "ready";
 
   return {
     id: uuid(),
@@ -76,6 +98,8 @@ export function itemToInsert(projectId: string, raw: unknown, position: number) 
     line_total: lineTotal,
     status,
     position,
+    origin,
+    review_json: review ? JSON.stringify(review) : null,
   };
 }
 

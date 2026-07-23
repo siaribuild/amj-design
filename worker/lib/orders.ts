@@ -105,7 +105,20 @@ export async function orderDto(env: Env, o: OrderRow) {
       kind: p.kind, amount: p.amount, percent: p.percent, status: p.status,
       reference: p.reference, invoicedAt: p.invoiced_at, paidAt: p.paid_at,
     })),
+    // Source files carried onto the order (the uploaded schedule) — surfaced in
+    // the account order view, the ops panel, and the order emails.
+    files: await orderFiles(env, o.id, o.project_id),
   };
+}
+
+// Files attached to an order: those linked to the order plus the project's
+// schedule (deduped) — so the source travels with the order for technical review.
+export async function orderFiles(env: Env, orderId: string, projectId: string) {
+  const { results } = await env.DB
+    .prepare("SELECT id, filename, kind, size FROM file_asset WHERE order_id = ? OR (project_id = ? AND kind = 'schedule') ORDER BY created_at DESC")
+    .bind(orderId, projectId).all<{ id: string; filename: string; kind: string; size: number | null }>();
+  const seen = new Set<string>();
+  return (results ?? []).filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)));
 }
 
 // Accept an issued revision AND create its order as one atomic unit. The revision
@@ -159,6 +172,9 @@ export async function createOrderFromRevision(
         "INSERT INTO order_line (id, order_id, external_ref, product_snapshot_json, qty, line_total) VALUES (?, ?, ?, ?, ?, ?)",
       ).bind(uuid(), orderId, l.external_ref, l.product_snapshot_json, l.qty, l.line_total),
     ),
+    // Carry the uploaded schedule onto the order so it stays with the record for
+    // the manufacturer / technical review (the file bytes remain in R2).
+    env.DB.prepare("UPDATE file_asset SET order_id = ? WHERE project_id = ? AND kind = 'schedule'").bind(orderId, projectId),
     env.DB.prepare("UPDATE project SET status_customer = 'closed', updated_at = datetime('now') WHERE id = ?").bind(projectId),
   ];
   try {

@@ -38,6 +38,20 @@ export function OrderReadout({ order }: { order: ApiOrder }) {
         {deposit && <PaymentCard title="Deposit" orderNo={order.orderNo} p={deposit} />}
         {balance && <PaymentCard title="Balance" orderNo={order.orderNo} p={balance} />}
       </div>
+      {order.files && order.files.length > 0 && (
+        <div className="bg-white border border-black/8 p-5 mb-3">
+          <p className="text-[10px] tracking-[0.2em] text-[#5c5a56] uppercase mb-3">Attached schedule</p>
+          <ul className="space-y-2">
+            {order.files.map(f => (
+              <li key={f.id} className="flex items-center gap-2.5 text-sm text-[#131311]">
+                <FileText className="w-4 h-4 text-[#5A7A6A] flex-shrink-0" />
+                <span className="truncate">{f.filename}</span>
+                <a href={`/api/files/${f.id}/download`} className="ml-auto text-xs text-[#5c5a56] hover:text-[#5A7A6A] whitespace-nowrap" download>Download</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="bg-white border border-black/8 p-5">
         <p className="text-[10px] tracking-[0.2em] text-[#5c5a56] uppercase mb-4">Progress</p>
         <ol className="space-y-0">

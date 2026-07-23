@@ -11,9 +11,10 @@
     "db:migrate:remote": "wrangler d1 migrations apply apertly-db --remote",
     "db:reset": "node scripts/reset-db.mjs",
     "cf:deploy": "vite build && wrangler deploy --var APP_ENV:production",
-    "test": "npm run test:unit && npm run test:catalogue && npm run test:build && npm run test:api",
+    "test": "npm run test:unit && npm run test:catalogue && npm run test:schedule && npm run test:build && npm run test:api",
     "test:all": "npm run test && npm run test:web",
     "test:unit": "node --test scripts/tests/unit.test.mjs",
+    "test:schedule": "node --test scripts/tests/schedule.test.mjs",
     "test:web": "playwright test",
     "test:coverage": "c8 --reporter=text --reporter=html --src src --src worker node --test scripts/tests/unit.test.mjs scripts/tests/catalogue.test.mjs",
     "test:catalogue": "node --test --test-concurrency=1 scripts/tests/catalogue.test.mjs scripts/tests/catalogue-ndjson.test.mjs",
@@ -79,6 +80,7 @@
     "sonner": "2.0.3",
     "tailwind-merge": "3.2.0",
     "tw-animate-css": "1.3.8",
+    "unpdf": "1.6.2",
     "vaul": "1.1.2"
   },
   "devDependencies": {

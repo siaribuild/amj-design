@@ -15,7 +15,7 @@ import { type Page, Btn } from "../app/ui";
 import {
   getOrder, getProject, getRevisions, getProjectFiles, getClarifications, replyClarification,
   confirmDrawings, confirmQa,
-  type ApiOrder, type ApiFile, type ApiClarification, type ApiItem, type CurrentProject,
+  type ApiOrder, type ApiFile, type ApiScheduleFile, type ApiClarification, type ApiItem, type CurrentProject,
 } from "../data/api";
 import { productLabel } from "../data/configurator";
 import {
@@ -281,6 +281,26 @@ export function FilesBlock({ files, note }: { files: ApiFile[]; note?: string })
   );
 }
 
+// ── Source schedule (the file the quote/order was built from) ─────────────────
+export function SourceSchedule({ files }: { files: ApiScheduleFile[] }) {
+  if (!files.length) return null;
+  return (
+    <Blk eyebrow="Source" title="Source schedule" right="The file this was built from" id="rec-source">
+      {files.map((f) => (
+        <div key={f.id} className="flex items-center gap-3.5 px-5 py-[13px] border-b border-black/[0.07] last:border-b-0">
+          <span className="w-[34px] h-[34px] border border-black/10 grid place-items-center text-[#5A7A6A] flex-shrink-0"><FileText className="w-4 h-4" /></span>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-[#131311] truncate">{f.filename}</div>
+            <div className="text-[11.5px] text-[#5c5a56] mt-0.5 uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>{f.kind}{f.size != null ? ` · ${(f.size / 1024).toFixed(0)} KB` : ""}</div>
+          </div>
+          <a className="ml-auto text-[#5A7A6A] text-xs inline-flex items-center gap-1.5 hover:underline whitespace-nowrap" style={{ fontFamily: "'DM Mono', monospace" }}
+            href={`/api/files/${f.id}/download`} download>Download</a>
+        </div>
+      ))}
+    </Blk>
+  );
+}
+
 // ── Summary band (payment 50/50 · contact · quick links) ─────────────────────
 export function SummaryBand({ order, children }: { order?: ApiOrder; children?: ReactNode }) {
   const dep = order?.payments.find((p) => p.kind === "deposit");
@@ -473,6 +493,9 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
             statusPill={() => <StatusPill tone={m.tone}>{m.pill}</StatusPill>} />
         </Blk>
 
+        {/* Source schedule (the uploaded file this order was built from) */}
+        {order.files && order.files.length > 0 && <SourceSchedule files={order.files} />}
+
         {/* Files */}
         <FilesBlock files={files} note={order.stageIndex >= 5 ? undefined : "Quality & pre-despatch photos appear here after manufacturing."} />
 
@@ -582,6 +605,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
             statusPill={() => <StatusPill tone="work">In review</StatusPill>} />
         </Blk>
 
+        {data.files && data.files.length > 0 && <SourceSchedule files={data.files} />}
         <FilesBlock files={files} />
         <SummaryBand><ContactCard setPage={setPage} /></SummaryBand>
       </div>

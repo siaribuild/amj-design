@@ -7,7 +7,7 @@
 // It stays present throughout the build flow so estimate, status and next action
 // always have a stable home. Positioning is handled entirely by CSS sticky layout.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { ArrowRight, AlertCircle, Check } from "lucide-react";
+import { ArrowRight, AlertCircle, Check, Trash2 } from "lucide-react";
 import { Btn } from "../app/ui";
 import { fmt } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
@@ -20,11 +20,12 @@ export type StickyQuotePanelProps = {
   onReviewQuote: () => void;
   onReviewIssues: () => void;
   onFinishItem: () => void;
+  onClearAll?: () => void;       // destructive reset — clears all items and the schedule
 };
 
 export function StickyQuotePanel({
   itemCount, attentionCount, total, editingItem,
-  onReviewQuote, onReviewIssues, onFinishItem,
+  onReviewQuote, onReviewIssues, onFinishItem, onClearAll,
 }: StickyQuotePanelProps) {
   const readyCount = Math.max(0, itemCount - attentionCount);
   const items = (c: number) => `${c} item${c !== 1 ? "s" : ""}`;
@@ -112,6 +113,13 @@ export function StickyQuotePanel({
           </div>
           <div className={`sm:order-1 sm:flex-1 flex items-center gap-1.5 min-w-0 border px-2.5 py-2 text-[13px] font-medium ${statusTone}`}>{status}</div>
         </div>
+        {/* Destructive reset — kept visually secondary (subtle text button, far left). */}
+        {onClearAll && (
+          <button onClick={onClearAll} type="button"
+            className="sm:order-first inline-flex items-center gap-1.5 self-start sm:self-auto text-xs font-medium text-[#6f6c67] hover:text-red-600 transition-colors cursor-pointer whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A]">
+            <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />Start over
+          </button>
+        )}
         <div className="sm:order-3">
           <Btn variant="sage" size="md" onClick={onClick}
             className={`w-full sm:w-auto justify-center min-h-[44px] whitespace-nowrap shadow-sm ${ctaTone}`}>

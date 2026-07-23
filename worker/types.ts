@@ -29,4 +29,13 @@ export interface Env {
   /** Sanity catalogue source (Worker-side). Client uses VITE_SANITY_* instead. */
   SANITY_PROJECT_ID?: string;
   SANITY_DATASET?: string;
+  /** Workers AI (schedule extraction accuracy tier). Optional — deterministic
+   *  on-stack extraction runs without it. Bound in wrangler.jsonc as "AI". */
+  AI?: unknown;
+  /** Extraction engine selector: 'deterministic' (default/on-stack), 'ai'
+   *  (force Workers AI), or 'auto' (deterministic, escalate to AI when weak). */
+  PARSE_ENGINE?: string;
+  /** Secret for HMAC-deriving the quota subject from the anon claim token, so the
+   *  bearer cookie is never stored. Optional — falls back to a salted SHA-256. */
+  PARSE_SUBJECT_SECRET?: string;
 }

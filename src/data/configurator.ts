@@ -30,8 +30,13 @@ export interface QItem {
   options: Record<string, string>; // optionTypeSlug -> chosen option name
   qty: number;
   status: "Ready" | "Needs review";
+  origin?: "manual" | "schedule"; // how the line entered the project
+  // Per-field {field: reason} set when the line was auto-parsed from a schedule and
+  // a value needs a human look. Drives the amber highlight; keys are dropped as the
+  // customer resolves each field (see clearReviewKey).
+  review?: Record<string, string> | null;
 }
-export interface QFile { id: number; name: string; kind: string; status: "Uploaded" | "Processing" | "Needs attention" }
+export interface QFile { id: string | number; name: string; kind: string; status: "Uploaded" | "Processing" | "Needs attention" }
 export const DEFAULT_PROJECT_TITLE = "My Project";
 
 export interface QuoteState {
@@ -46,6 +51,52 @@ export interface QuoteState {
   copy: (id: number) => number | undefined;
   addFiles: (f: QFile[]) => void;
   removeFile: (id: number) => void;
+  // Replace the whole line set (used after a schedule parse re-hydrates from the
+  // server). Assigns fresh local ids.
+  setItems: (items: Omit<QItem, "id">[]) => void;
+  // Clear the whole project back to zero — lines AND the attached schedule file —
+  // both locally and on the server. The single source-file per quote is integral
+  // to an order, so it is only removable via this whole-project reset.
+  clearAll: () => void | Promise<void>;
+  // Re-hydrate lines + the attached file from the server (after a parse).
+  reload: () => Promise<void>;
+}
+
+// Review fields that a plain edit resolves, so the estimator can drop the flag once
+// the customer has touched the corresponding field.
+export function clearReviewKey(review: Record<string, string> | null | undefined, key: string): Record<string, string> | null {
+  if (!review) return null;
+  const { [key]: _drop, ...rest } = review;
+  return Object.keys(rest).length ? rest : null;
+}
+
+// ─── Review categories (submission lifecycle) ─────────────────────────────────
+// CUSTOMER_REVIEW_KEYS are things the customer must resolve before submitting
+// (pick a product, enter a readable size). TECHNICAL_REVIEW_KEYS are engineering
+// decisions only an AMJ technician can make (aluminium substitution for a timber
+// door, a composite unit for an out-of-range opening, obscure glazing, a
+// multi-unit note). Technical-only lines MUST remain submittable — submission is
+// exactly how they reach the technician — while final quotation stays blocked
+// until resolved downstream.
+export const CUSTOMER_REVIEW_KEYS = new Set(["dims", "product", "options"]);
+export const TECHNICAL_REVIEW_KEYS = new Set(["fit", "material", "type", "note", "glazing"]);
+
+export function reviewClass(review: Record<string, string> | null | undefined): "customer" | "technical" | null {
+  if (!review) return null;
+  const keys = Object.keys(review);
+  if (keys.some((k) => CUSTOMER_REVIEW_KEYS.has(k))) return "customer";
+  if (keys.some((k) => TECHNICAL_REVIEW_KEYS.has(k))) return "technical";
+  return null;
+}
+
+// Does this line block submission? True only for customer-fixable gaps — an item
+// that can't be priced (no product / missing dims / missing required option) or a
+// duplicate code. Priced lines with only technical flags do NOT block. This is the
+// single source of truth shared by the client submit gate and the server.
+export function lineBlocksSubmission(it: {
+  productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;
+}): boolean {
+  return !priceConfigured(it).ok;
 }
 
 // ─── Item codes (schedule/builder references) ─────────────────────────────────

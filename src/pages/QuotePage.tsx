@@ -7,15 +7,15 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Upload, UploadCloud, X, Plus, ChevronLeft, ArrowRight,
-  AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil,
+  AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil, Paperclip,
 } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
 import { StickyQuotePanel } from "../components/StickyQuotePanel";
-import { uploadFile, type SubmitContact, type SubmitResult } from "../data/api";
+import { uploadFile, startParse, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
 import {
   type QuoteState, type QItem,
-  priceConfigured, fmt, mm, productLabel, hasDuplicateCode, addDemoSchedule, DEFAULT_PROJECT_TITLE,
+  priceConfigured, fmt, mm, productLabel, hasDuplicateCode, lineBlocksSubmission, reviewClass, DEFAULT_PROJECT_TITLE,
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
@@ -62,6 +62,9 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   const [adding, setAdding] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadNotice, setUploadNotice] = useState<null | { type: "success" | "error"; message: string }>(null);
+  // Replace/Add prompt when parsing into a project that already has content.
+  const [choice, setChoice] = useState<null | { fileId: string; existingItems: number; existingFile: string | null; many: boolean }>(null);
+  const [clearConfirm, setClearConfirm] = useState(false);
 
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -73,9 +76,15 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
 
   const total = quote.items.reduce((s, it) => s + priceConfigured(it).total, 0);
   const gstMode = useGstMode();
-  // An item blocks review if its fields are invalid OR its code duplicates another.
-  const itemBlocked = (it: QItem) => itemNeedsAttention(it) || hasDuplicateCode(quote.items, it.id, it.code);
+  // Only CUSTOMER-fixable gaps block submission: an unpriceable line (no product /
+  // missing size / missing option) or a duplicate code. Lines carrying only
+  // TECHNICAL flags (timber→aluminium, composite sizing, obscure glazing) are
+  // priced and stay submittable — submission is how they reach an AMJ technician.
+  const itemBlocked = (it: QItem) => lineBlocksSubmission(it) || hasDuplicateCode(quote.items, it.id, it.code);
   const attentionCount = quote.items.filter(itemBlocked).length;
+  // Lines that will be confirmed by AMJ at technical review (informational; never
+  // block the customer's submission).
+  const technicalCount = quote.items.filter((it) => !itemBlocked(it) && reviewClass(it.review) === "technical").length;
   const hasContent = quote.items.length > 0 || quote.files.length > 0;
 
   // One item expanded at a time; sticky-panel actions drive focus to the problem.
@@ -124,29 +133,108 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     }
   };
 
-  // Real file upload to R2 (plans/schedules attached for the reviewer). Automated
-  // schedule PARSING into line items is a separate future feature (still demoed
-  // from the home page's "Upload a schedule" card via addDemoSchedule).
+  // Upload → parse flow (one schedule per quote). The file goes to R2, then the
+  // server parses it into draft lines; we re-hydrate from the server on success.
   const fileInputRef = useRef<HTMLInputElement>(null);
   const openUpload = () => fileInputRef.current?.click();
+
+  // Friendly copy for every non-choice parse failure.
+  const parseErrorMessage = (r: Extract<ParseResult, { ok: false }>): string => {
+    switch (r.reason) {
+      case "no_schedule_found":
+        return "We couldn't find a window or door schedule in that file. Check it's the right PDF, or add items manually.";
+      case "no_text_layer":
+        return "This looks like a scanned PDF — we couldn't read its text. Please upload a digital (text) PDF, or add items manually.";
+      case "quota":
+        return `You've reached your monthly upload limit (${r.quota.limit}). It resets on ${r.quota.resetsOn}. You can still add items manually.`;
+      case "rate_limited":
+        return "Too many uploads in a short time — please wait a moment and try again.";
+      case "busy":
+        return "This project is already processing an upload — please wait for it to finish.";
+      case "too_large":
+        return "That file is too large. Please upload a schedule under 12 MB.";
+      case "not_a_pdf":
+        return "That doesn't look like a PDF. Please upload a PDF schedule, or add items manually.";
+      case "encrypted_pdf":
+        return "That PDF is password-protected — we can't read it. Please upload an unprotected PDF.";
+      case "too_many_pages":
+        return "That PDF has too many pages to process. Please upload the schedule pages only.";
+      default: // file_missing | parse_failed | network
+        return "We couldn't process that file. Please try again, or add items manually.";
+    }
+  };
+
+  // Apply a resolved parse result (never a needs_choice — that is handled inline).
+  const applyParseResult = async (result: ParseResult, many: boolean) => {
+    if (result.ok) {
+      await quote.reload();
+      const { itemCount, needsReviewCount } = result.job;
+      let message = `${itemCount} items imported${needsReviewCount ? `, ${needsReviewCount} need review` : ""}`;
+      if (many) message += ". Only the first file was used — one schedule per quote.";
+      setUploadNotice({ type: "success", message });
+    } else {
+      setUploadNotice({ type: "error", message: parseErrorMessage(result) });
+    }
+  };
+
   const handleFiles = async (list: FileList | null) => {
     if (!list?.length) return;
+    const file = list[0];                 // one schedule per quote
+    const many = list.length > 1;
     setUploading(true);
     setUploadNotice(null);
+    setChoice(null);
     try {
-      const added = [];
-      for (const f of Array.from(list)) {
-        const r = await uploadFile(f, "plan");
-        added.push({ id: Date.now() + Math.floor(Math.random() * 1000), name: r.file.filename, kind: "Plan", status: "Uploaded" as const });
+      const up = await uploadFile(file, "schedule");
+      const result = await startParse(up.file.id);
+      if (!result.ok && result.reason === "needs_choice") {
+        setChoice({ fileId: up.file.id, existingItems: result.existingItems, existingFile: result.existingFile, many });
+        return; // wait for the customer to pick Replace or Add
       }
-      quote.addFiles(added);
-      setUploadNotice({ type: "success", message: `${added.length} file${added.length !== 1 ? "s" : ""} uploaded for review.` });
+      await applyParseResult(result, many);
     } catch {
-      setUploadNotice({ type: "error", message: "Upload failed — check the file and try again." });
+      setUploadNotice({ type: "error", message: "We couldn't process that file. Please try again, or add items manually." });
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  // Resolve the Replace/Add prompt: re-run the parse with an explicit mode.
+  const resolveChoice = async (mode: "replace" | "append") => {
+    if (!choice) return;
+    const { fileId, many } = choice;
+    setChoice(null);
+    setUploading(true);
+    setUploadNotice(null);
+    try {
+      const result = await startParse(fileId, mode);
+      await applyParseResult(result, many);
+    } catch {
+      setUploadNotice({ type: "error", message: "We couldn't process that file. Please try again, or add items manually." });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Home-page deep link (?upload=1) opens the picker on first mount, then cleans the URL.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("upload") === "1") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("upload");
+      window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+      openUpload();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Whole-project reset — clears every line and the attached schedule (server + local).
+  const handleClearAll = async () => {
+    setClearConfirm(false);
+    setChoice(null);
+    setUploadNotice(null);
+    await quote.clearAll();
   };
 
   // ─── Submitted ──────────────────────────────────────────────────────────────
@@ -287,6 +375,15 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
               <span className="text-xs text-[#5c5a56] border border-black/10 px-2 py-0.5 flex-shrink-0">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span>
             )}
           </div>
+          {/* The uploaded schedule is integral to the order — shown as a non-removable
+              chip (only Clear all removes it). */}
+          {quote.files[0] && (
+            <div className="mt-3 inline-flex items-center gap-2 border border-black/12 bg-white px-3 py-1.5 text-xs max-w-full">
+              <Paperclip className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0" aria-hidden="true" />
+              <span className="text-[#131311] font-medium truncate max-w-[16rem]">{quote.files[0].name}</span>
+              <span className="text-[#8a8782] flex-shrink-0">· Attached for review</span>
+            </div>
+          )}
           {quote.items.length === 0 && (
             <p className="text-[#5c5a56] text-sm mt-1.5 max-w-lg">Add products or upload a schedule — we issue a reviewed quote before any deposit. Supply only.</p>
           )}
@@ -294,6 +391,24 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
 
         {/* Items + composer */}
         <div>
+          {/* Replace / Add prompt — the schedule parsed but the project already has content. */}
+          {choice && (
+            <div role="alertdialog" aria-label="Import options"
+              className="mb-4 border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium">This project already has {choice.existingItems} item{choice.existingItems !== 1 ? "s" : ""}{choice.existingFile ? ` and "${choice.existingFile}"` : ""}.</p>
+                  <p className="mt-0.5 text-amber-800">Replace them with the new schedule, or add the new items to what you already have?</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Btn variant="sage" size="sm" onClick={() => resolveChoice("append")}>Add to project</Btn>
+                    <Btn variant="ghost" size="sm" onClick={() => resolveChoice("replace")}>Replace everything</Btn>
+                    <button onClick={() => setChoice(null)} className="ml-1 text-xs font-medium text-amber-800 hover:text-amber-900 underline cursor-pointer">Cancel</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {uploadNotice && (
             <div role={uploadNotice.type === "error" ? "alert" : "status"} aria-live="polite"
               className={`mb-4 flex items-start gap-2.5 border px-4 py-3 text-sm ${uploadNotice.type === "success" ? "border-[#5A7A6A]/30 bg-[#5A7A6A]/8 text-[#355344]" : "border-red-300 bg-red-50 text-red-800"}`}>
@@ -369,7 +484,22 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         onReviewQuote={() => { setView("review"); window.scrollTo(0, 0); }}
         onReviewIssues={reviewIssues}
         onFinishItem={finishItem}
+        onClearAll={hasContent ? () => setClearConfirm(true) : undefined}
       />
+
+      {/* Clear-all confirmation — destructive whole-project reset. */}
+      {clearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" role="dialog" aria-modal="true" aria-label="Clear everything">
+          <div className="w-full max-w-sm bg-white border border-black/10 p-5" style={{ boxShadow: "0 20px 50px rgba(19,19,17,0.28)" }}>
+            <h3 className="text-base font-semibold text-[#131311] mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Clear everything?</h3>
+            <p className="text-sm text-[#5c5a56] leading-relaxed mb-4">This removes all {quote.items.length} item{quote.items.length !== 1 ? "s" : ""} and the uploaded schedule and can't be undone.</p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" size="md" onClick={() => setClearConfirm(false)}>Cancel</Btn>
+              <Btn variant="danger" size="md" onClick={handleClearAll}>Clear all</Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -76,11 +76,16 @@ files.get("/files/:id/download", async (c) => {
   if (fa.virus_status === "infected") return c.json({ error: "quarantined" }, 403);
   const obj = await c.env.FILES.get(fa.r2_key);
   if (!obj) return c.json({ error: "gone" }, 404);
+  // Sanitised filename (strip quotes/control chars → no header injection) + a safe
+  // RFC 5987 fallback. Private/no-store so a shared cache never retains PII bytes.
+  const safe = fa.filename.replace(/[\r\n"\\]/g, "_").replace(/[\x00-\x1f]/g, "");
   return new Response(obj.body, {
     headers: {
       "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream",
-      "Content-Disposition": `attachment; filename="${fa.filename}"`,
+      "Content-Disposition": `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(fa.filename)}`,
       "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, no-store",
+      "Referrer-Policy": "no-referrer",
     },
   });
 });

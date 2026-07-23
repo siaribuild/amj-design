@@ -15,7 +15,7 @@ import { type Product, getProductBySlug, getProductsByFamily } from "../data/cat
 import {
   type QItem, type QuoteState, type MeasuredBy, type OptionChoice, MEASURED_LABELS,
   optionGroupsFor, defaultOptions, priceConfigured, familyGroups,
-  fmt, mm, productLabel, POPULAR_COLOURS, normCode, suggestCode,
+  fmt, mm, productLabel, POPULAR_COLOURS, normCode, suggestCode, clearReviewKey, reviewClass,
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
@@ -77,7 +77,9 @@ function itemIssues(p: Product, it: { width: string; height: string; options: Re
 // Does a saved item still need attention before it can be submitted?
 export function itemNeedsAttention(item: QItem): boolean {
   const p = getProductBySlug(item.productSlug);
-  return !p || itemIssues(p, item).length > 0;
+  if (!p || itemIssues(p, item).length > 0) return true;
+  // Auto-parsed lines carry per-field review flags until the customer resolves them.
+  return !!item.review && Object.keys(item.review).length > 0;
 }
 
 // ─── Field blocks (shared by the new-item form and the MyProject card) ────────
@@ -492,8 +494,22 @@ export function ItemSummaryCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSignal]);
 
-  const hasIssue = (s: EditFocus) => issues.some(i => i.section === s);
-  const attention = issues.length > 0 || !!duplicate;
+  // Per-field review reasons from an auto-parse (field -> human reason). Keys map to
+  // sections so the offending group is highlighted amber; every reason is also shown.
+  const reviewEntries = item.review ? Object.entries(item.review) : [];
+  const reviewKeys = new Set(reviewEntries.map(([k]) => k));
+  const reviewReasons = reviewEntries.map(([, reason]) => reason);
+  const hasIssue = (s: EditFocus) =>
+    issues.some(i => i.section === s)
+    || (s === "dims" && (reviewKeys.has("dims") || reviewKeys.has("product")))
+    || (s === "options" && reviewKeys.has("options"));
+  // Customer-blocking (must fix to submit) vs technical-only (AMJ confirms; the
+  // customer can still submit). Product/dims live-issues and 'customer' review keys
+  // block; a priced line with only 'technical' flags does not.
+  const rClass = reviewClass(item.review);
+  const customerBlocking = issues.length > 0 || !!duplicate || rClass === "customer";
+  const technicalOnly = !customerBlocking && rClass === "technical";
+  const attention = customerBlocking || technicalOnly;
   const toggle = (s: EditFocus) => setOpen(o => (o === s ? null : s));
   const update = (patch: Partial<QItem>) => quote.update(item.id, patch);
 
@@ -501,10 +517,14 @@ export function ItemSummaryCard({
   const qtySummary = `Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
   const summaryLine = `${dimsSummary} · Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
   const selectedOptionsSummary = optionSummaryOf(p, item.options);
-  const attentionMsg = duplicate ? "Item ID already exist" : issues.map(i => i.msg).join(" · ");
+  const attentionMsg = [
+    ...(duplicate ? ["Item ID already exist"] : []),
+    ...issues.map(i => i.msg),
+    ...reviewReasons,
+  ].join(" · ");
   const priceLabel = pr.ok ? fmt(gstAdjust(pr.total, gstMode)) : "$-,--";
 
-  const borderTone = attention ? "border-amber-400" : added ? "border-[#5A7A6A]/50" : "border-black/12";
+  const borderTone = customerBlocking ? "border-amber-400" : technicalOnly ? "border-sky-300" : added ? "border-[#5A7A6A]/50" : "border-black/12";
 
   return (
     <div id={id} ref={rootRef} className={`border bg-white scroll-mt-24 ${borderTone}`}>
@@ -519,9 +539,11 @@ export function ItemSummaryCard({
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
             {productLabel(item.productSlug)}
           </button>
-          {attention
+          {customerBlocking
             ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">Needs </span>attention</span>
-            : <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344]"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
+            : technicalOnly
+              ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-sky-300 bg-sky-50 text-sky-800" title="An AMJ technician will confirm this at review — you can still submit."><Info className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">AMJ </span>review</span>
+              : <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344]"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
         </span>
         <span className={`flex-shrink-0 text-sm font-semibold ${pr.ok ? "text-[#131311]" : "text-[#5c5a56]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
           {priceLabel}{pr.ok ? <span className="hidden sm:inline text-[10px] font-normal text-[#5c5a56]"> {gstSuffix(gstMode)}</span> : null}
@@ -546,9 +568,11 @@ export function ItemSummaryCard({
             <span className="block text-xs text-[#5c5a56] leading-snug mt-1 truncate group-hover/summary:text-[#131311]"><span className="text-[#8a8782]">Options:</span> {selectedOptionsSummary}</span>
           </button>
           {attention && attentionMsg && (
-            <p className="text-xs text-amber-700 mt-2.5 pt-2.5 border-t border-amber-200 flex items-start gap-1.5 leading-snug">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
-              <span>{attentionMsg}</span>
+            <p className={`text-xs mt-2.5 pt-2.5 border-t flex items-start gap-1.5 leading-snug ${technicalOnly ? "text-sky-800 border-sky-200" : "text-amber-700 border-amber-200"}`}>
+              {technicalOnly
+                ? <Info className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
+                : <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />}
+              <span>{technicalOnly ? "AMJ will confirm at technical review — you can still submit. " : ""}{attentionMsg}</span>
             </p>
           )}
         </div>
@@ -559,10 +583,12 @@ export function ItemSummaryCard({
         <div className="border-t border-black/8">
           <Section variant="row" label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open === "dims"} onToggle={() => toggle("dims")}>
             <DimensionsFields p={p} width={item.width} height={item.height} measuredBy={item.measuredBy}
-              setWidth={v => update({ width: v })} setHeight={v => update({ height: v })} setMeasuredBy={v => update({ measuredBy: v })} />
+              setWidth={v => update({ width: v, review: clearReviewKey(item.review, "dims") })}
+              setHeight={v => update({ height: v, review: clearReviewKey(item.review, "dims") })}
+              setMeasuredBy={v => update({ measuredBy: v })} />
           </Section>
           <Section variant="row" label="Options" summary={optionSummaryOf(p, item.options)} attention={hasIssue("options")} open={open === "options"} onToggle={() => toggle("options")}>
-            <OptionsFields p={p} options={item.options} setOpt={(t, v) => update({ options: { ...item.options, [t]: v } })} />
+            <OptionsFields p={p} options={item.options} setOpt={(t, v) => update({ options: { ...item.options, [t]: v }, review: clearReviewKey(item.review, "options") })} />
           </Section>
           <Section variant="row" label="Quantity & note" summary={qtySummary} open={open === "qty"} onToggle={() => toggle("qty")}>
             <QtyLocationFields qty={item.qty} location={item.location} setQty={v => update({ qty: v })} setLocation={v => update({ location: v })} />

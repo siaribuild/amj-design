@@ -15,6 +15,7 @@ import { orders } from "./routes/orders";
 import { guest } from "./routes/guest";
 import { files } from "./routes/files";
 import { enquiries } from "./routes/enquiries";
+import { parse } from "./routes/parse";
 import { ops } from "./routes/ops";
 import { ensureCatalogue } from "./lib/catalogue";
 import { getActiveLocations } from "../src/data/catalogue";
@@ -64,6 +65,9 @@ api.route("/api", files);
 
 // Public Contact-page enquiries (question / showroom appointment).
 api.route("/api", enquiries);
+
+// Schedule upload → parse into estimator draft lines (quota-limited).
+api.route("/api", parse);
 
 // Internal ops console API (staff-gated).
 api.route("/api/ops", ops);

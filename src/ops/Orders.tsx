@@ -1,6 +1,6 @@
 // Ops → Orders: order list + fulfilment detail (drive the 12-stage journey).
 import { useEffect, useState } from "react";
-import { ChevronLeft, Loader2, Check, Truck, Landmark } from "lucide-react";
+import { ChevronLeft, Loader2, Check, Truck, Landmark, FileText } from "lucide-react";
 import { opsOrders, opsOrder, opsAdvanceOrder, opsPayOrder, type OpsOrder, type OpsAction } from "./api";
 
 const SAGE = "#5A7A6A";
@@ -13,6 +13,8 @@ const STAGES: [string, string][] = [
   ["customer_confirmed", "Confirmed for dispatch"], ["dispatched", "Dispatched"],
   ["delivered", "Delivered"], ["after_sales", "Completed"],
 ];
+
+interface OpsScheduleFile { id: string; filename: string; kind: string; size: number | null }
 
 export function Orders() {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -58,6 +60,9 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
   useEffect(() => { load(); }, [id]);
   if (!order) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
   const idx = order.stageIndex;
+  // The ops order DTO carries the source schedule + any attached files (typed loosely
+  // here — the shared OpsOrder interface doesn't declare them yet).
+  const files = ((order as unknown as { files?: OpsScheduleFile[] }).files) ?? [];
 
   const act = async (a: OpsAction) => {
     setBusy(true);
@@ -111,6 +116,23 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
           </div>
         ))}
       </div>
+
+      {/* Attached files (source schedule + uploads) */}
+      {files.length > 0 && (
+        <div className="bg-white border border-black/8 p-5 mb-5">
+          <p className="text-[11px] uppercase tracking-wide text-[#8b8880] mb-3">Attached files</p>
+          <ul className="space-y-2">
+            {files.map(f => (
+              <li key={f.id} className="flex items-center gap-2.5 text-sm">
+                <FileText className="w-4 h-4 text-[#5A7A6A] flex-shrink-0" />
+                <span className="text-[#14150f] truncate">{f.filename}</span>
+                <span className="text-[10px] uppercase tracking-wide text-[#8b8880]">{f.kind}</span>
+                <a href={`/api/ops/files/${f.id}/download`} className="ml-auto text-sm font-medium hover:underline whitespace-nowrap" style={{ color: SAGE }} download>Download</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Stage tracker */}
       <div className="bg-white border border-black/8 p-5">

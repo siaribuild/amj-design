@@ -35,3 +35,9 @@ playwright-report/
 test-results/
 coverage/
 !.env.production
+
+# Feature handoff artifacts (delivery notes + patches, not source)
+/CODE_AGENT_HANDOFF.md
+/SCHEDULE_UPLOAD_IMPLEMENTATION.md
+/Verdict-Response.md
+/*.patch

@@ -51,11 +51,20 @@ async function loadLines(env: Env, projectId: string) {
   return results.map(rowToApiLine);
 }
 
-// GET /api/projects/current — the current project + its draft lines (no writes).
+// Source files attached to a project (the uploaded schedule). The bytes stay in
+// R2; this surfaces the metadata the estimator + account/ops views render.
+export async function loadProjectFiles(env: Env, projectId: string) {
+  const { results } = await env.DB.prepare(
+    "SELECT id, filename, kind, size FROM file_asset WHERE project_id = ? ORDER BY created_at DESC",
+  ).bind(projectId).all<{ id: string; filename: string; kind: string; size: number | null }>();
+  return results ?? [];
+}
+
+// GET /api/projects/current — the current project + its draft lines + files (no writes).
 projects.get("/current", async (c) => {
   const { project } = await resolveCurrentProject(c.env, c.req.raw);
-  if (!project) return c.json({ project: null, items: [] });
-  return c.json({ project: projectDto(project), items: await loadLines(c.env, project.id) });
+  if (!project) return c.json({ project: null, items: [], files: [] });
+  return c.json({ project: projectDto(project), items: await loadLines(c.env, project.id), files: await loadProjectFiles(c.env, project.id) });
 });
 
 // GET /api/projects/:id — a specific owned project + its draft lines (read-only).
@@ -68,7 +77,7 @@ projects.get("/:id", async (c) => {
     "SELECT * FROM project WHERE id = ? AND owner_user_id = ?",
   ).bind(c.req.param("id"), user.id).first<ProjectRow>();
   if (!project) return c.json({ error: "not_found" }, 404);
-  return c.json({ project: projectDto(project), items: await loadLines(c.env, project.id) });
+  return c.json({ project: projectDto(project), items: await loadLines(c.env, project.id), files: await loadProjectFiles(c.env, project.id) });
 });
 
 // PUT /api/projects/current/lines — replace the draft line set (snapshot save).
@@ -89,11 +98,11 @@ projects.put("/current/lines", async (c) => {
     ...rows.map((r) =>
       c.env.DB.prepare(
         `INSERT INTO quote_line
-           (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position, origin, review_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         r.id, r.project_id, r.external_ref, r.room_label, r.product_slug,
-        r.options_json, r.dims_json, r.measured_by, r.qty, r.line_total, r.status, r.position,
+        r.options_json, r.dims_json, r.measured_by, r.qty, r.line_total, r.status, r.position, r.origin, r.review_json,
       ),
     ),
     hasTitle

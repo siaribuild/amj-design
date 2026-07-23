@@ -23,11 +23,22 @@ export interface ApiItem {
   qty: number;
   status: QItem["status"];
   lineTotal: number | null;
+  origin?: "manual" | "schedule";
+  review?: Record<string, string> | null;
+}
+
+// A source file attached to a project/order (e.g. the uploaded schedule).
+export interface ApiScheduleFile {
+  id: string;
+  filename: string;
+  kind: string;
+  size: number | null;
 }
 
 export interface CurrentProject {
   project: ApiProject | null;
   items: ApiItem[];
+  files?: ApiScheduleFile[];
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -77,7 +88,7 @@ export const verifyCode = (email: string, code: string) =>
 
 export const logout = () => req<{ ok: boolean }>("/api/auth/logout", { method: "POST" });
 
-/** The current project (session- or claim-cookie scoped) + its draft lines. */
+/** The current project (session- or claim-cookie scoped) + its draft lines + files. */
 export const getCurrentProject = () => req<CurrentProject>("/api/projects/current");
 
 /** A specific owned project + its lines (read-only) — e.g. to review a submission. */
@@ -169,6 +180,8 @@ export interface ApiOrder {
   lineCount?: number;
   revisionNo?: number | null;
   lines?: ApiOrderLine[];
+  // Source files carried onto the order (the uploaded schedule).
+  files?: ApiScheduleFile[];
 }
 export interface ApiRevision {
   id: string;
@@ -275,3 +288,53 @@ export async function uploadFile(file: File, kind = "upload"): Promise<{ file: A
 }
 export const getProjectFiles = (projectId: string) =>
   req<{ files: ApiFile[] }>(`/api/projects/${projectId}/files`);
+
+// ── Schedule parsing ─────────────────────────────────────────────────────────
+export interface ParseQuota { used: number; limit: number; remaining: number; resetsOn: string }
+export interface ParseJob {
+  jobId: string;
+  status: "completed" | "needs_review" | "failed";
+  engine: string;
+  itemCount: number;
+  needsReviewCount: number;
+  error?: string;
+}
+/** Outcome of a parse request. `needs_choice` ⇒ prompt Replace/Add; `quota` ⇒ over limit. */
+export type ParseFailReason =
+  | "rate_limited" | "busy" | "quota" | "too_large"
+  | "no_schedule_found" | "no_text_layer" | "not_a_pdf" | "encrypted_pdf" | "too_many_pages"
+  | "file_missing" | "parse_failed" | "network";
+export type ParseResult =
+  | { ok: true; job: ParseJob; quota: ParseQuota }
+  | { ok: false; reason: "needs_choice"; existingItems: number; existingFile: string | null }
+  | { ok: false; reason: "quota"; quota: ParseQuota }
+  | { ok: false; reason: Exclude<ParseFailReason, "quota"> };
+
+/** Parse an uploaded schedule file into estimator draft lines. mode is required
+ *  only when the project already has lines (server returns needs_choice otherwise). */
+export async function startParse(fileId: string, mode?: "replace" | "append"): Promise<ParseResult> {
+  const res = await fetch("/api/projects/current/parse", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fileId, ...(mode ? { mode } : {}) }),
+  });
+  const body = await res.json().catch(() => ({} as any));
+  if (res.ok) return { ok: true, job: body.job, quota: body.quota };
+  if (res.status === 409 && body?.error === "needs_choice") {
+    return { ok: false, reason: "needs_choice", existingItems: body.existingItems ?? 0, existingFile: body.existingFile ?? null };
+  }
+  if (res.status === 409 && body?.error === "busy") return { ok: false, reason: "busy" };
+  if (res.status === 429 && body?.error === "quota_exceeded") return { ok: false, reason: "quota", quota: body.quota };
+  if (res.status === 429) return { ok: false, reason: "rate_limited" };
+  if (res.status === 413) return { ok: false, reason: "too_large" };
+  const known = ["no_schedule_found", "no_text_layer", "not_a_pdf", "encrypted_pdf", "too_many_pages", "file_missing", "parse_failed"] as const;
+  const reason = known.find((k) => k === body?.error) ?? "parse_failed";
+  return { ok: false, reason };
+}
+
+export const getParseQuota = () => req<{ quota: ParseQuota }>("/api/projects/current/parse-quota");
+export const getParseJob = (jobId: string) => req<{ job: { id: string; status: string; itemCount: number | null; error: string | null } }>(`/api/projects/current/parse-jobs/${jobId}`);
+
+/** Clear the whole current draft — all lines AND the attached schedule file. */
+export const clearDraft = () => req<{ ok: boolean }>("/api/projects/current/clear", { method: "POST" });
