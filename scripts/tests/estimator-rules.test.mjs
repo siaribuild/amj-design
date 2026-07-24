@@ -16,13 +16,17 @@ await build({
     contents: `
       export { toCandidate, fixtureCatalogueRepository, createCatalogueRepository } from ${p("worker/lib/estimator/catalogue.ts")};
       export { checkHardRules, RULE_VERSION } from ${p("worker/lib/estimator/rules.ts")};
+      export { computePrice } from ${p("worker/lib/estimator/pricing.ts")};
       export { SUPPORTED_SCHEMA_VERSION } from ${p("worker/lib/estimator/types.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { toCandidate, fixtureCatalogueRepository, checkHardRules, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
+const { toCandidate, fixtureCatalogueRepository, checkHardRules, computePrice, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
+
+const RATE = { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" };
+const POLICY = { depositPercent: 40, gstMode: "inc", version: "v1" };
 
 // A realistic candidate mirroring the enriched Sanity shape (estimated perf).
 const awning = {
@@ -95,6 +99,32 @@ test("fixture CatalogueRepository filters by family + operation and stamps a ver
   assert.equal(windows.length, 1);
   assert.equal(windows[0].sanityProductId, "product-amj80-series-awning-window");
   assert.match(repo.catalogueVersion(windows), /^cat:1:/);
+});
+
+test("pricing: perimeter+area model, ×qty, 40% deposit, snapshot versions", () => {
+  const s = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 2 });
+  // perimeter = 2*(1+1.2)=4.4m ×55 = 242; area = 1.2m² ×340 = 408; unit ≈ 650 (round10)
+  assert.equal(s.ok, true);
+  assert.equal(s.unit, 650);
+  assert.equal(s.total, 1300);
+  assert.equal(s.depositAmount, 520);        // 40% of 1300
+  assert.equal(s.depositPercent, 40);        // spec: real deposit is 40%, not 50%
+  assert.equal(s.rateCardVersion, "v1");
+  assert.equal(s.pricingPolicyVersion, "v1");
+});
+
+test("pricing: option surcharges add to the unit; missing dims ⇒ not ok", () => {
+  const withOpt = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 1, optionSurcharges: [130, 40] });
+  const base = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 1 });
+  assert.ok(withOpt.unit > base.unit);
+  const bad = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 0, heightMm: 1200, qty: 1 });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.total, 0);
+});
+
+test("pricing: snapshot exposes a TOTAL, never a per-option breakdown", () => {
+  const s = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 1, optionSurcharges: [130] });
+  assert.ok(!("optionSurcharges" in s) && !("options" in s), "no per-option breakdown leaks into the snapshot");
 });
 
 test.after(() => removeRunDir(runDir));
