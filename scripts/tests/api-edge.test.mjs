@@ -216,6 +216,27 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.ok(ok.body.id, "feedback recorded with a valid category");
     });
 
+    await t.test("estimator: bridges delivered parse_line rows into openings (extraction source #1)", async () => {
+      // Seed the delivered extraction chain (file → job → parse_line) on a project
+      // with no openings, then estimate — the bridge should create openings from it.
+      const sql = [
+        `INSERT INTO project (id, owner_user_id, title, public_ref, status_customer) VALUES ('p_bridge', 'u_demo', 'Bridge test', 'OF-Q-99001', 'submitted')`,
+        `INSERT INTO file_asset (id, project_id, kind, r2_key, filename, virus_status) VALUES ('fa_bridge','p_bridge','schedule','k/b','b.pdf','clean')`,
+        `INSERT INTO schedule_parse_job (id, project_id, file_asset_id, subject, status) VALUES ('job_bridge','p_bridge','fa_bridge','s','needs_review')`,
+        `INSERT INTO parse_line (id, job_id, source_index, raw_json, mapped_dims_json, external_ref) VALUES ('pl_b1','job_bridge',0,'{"section":"window","typeText":"AWNING","widthMm":800,"heightMm":1200}','{"width":800,"height":1200}','W01')`,
+      ].join("; ");
+      await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--command", sql], { env: wranglerEnv });
+
+      const est = await requestJson(staff, "/api/ops/projects/p_bridge/estimate", { method: "POST", json: {} });
+      assert.equal(est.body.openings, 1, "one opening bridged from the parsed line");
+      const op = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", "SELECT external_ref, family, operation_type, width_mm FROM opening_instance WHERE project_id='p_bridge'"], { env: wranglerEnv });
+      const row = JSON.parse(op.stdout)[0].results[0];
+      assert.equal(row.external_ref, "W01");
+      assert.equal(row.family, "windows");
+      assert.equal(row.operation_type, "awning");
+      assert.equal(row.width_mm, 800);
+    });
+
     await t.test("staff line edit does not silently clear a technical-review flag", async () => {
       // Simulate a parsed line that reached technical review (material substitution).
       const detail = await requestJson(staff, "/api/ops/projects/p_submitted");
