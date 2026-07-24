@@ -20,13 +20,14 @@ await build({
       export { rankCandidates, selectWithConfidence } from ${p("worker/lib/estimator/rank.ts")};
       export { selectForOpening } from ${p("worker/lib/estimator/select.ts")};
       export { r2Keys } from ${p("worker/lib/estimator/storage.ts")};
+      export { energyReportExtractor } from ${p("worker/lib/estimator/skills/energy.ts")};
       export { SUPPORTED_SCHEMA_VERSION } from ${p("worker/lib/estimator/types.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { toCandidate, fixtureCatalogueRepository, checkHardRules, computePrice, rankCandidates, selectForOpening, r2Keys, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
+const { toCandidate, fixtureCatalogueRepository, checkHardRules, computePrice, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
 
 const RATE = { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" };
 const POLICY = { depositPercent: 40, gstMode: "inc", version: "v1" };
@@ -189,6 +190,28 @@ test("r2Keys: layout is consistent and path-traversal-safe", () => {
   const evil = r2Keys.source("p1", "../../etc", "a b/../c.pdf");
   assert.ok(!evil.includes(".."));
   assert.ok(!evil.includes("/etc/"));
+});
+
+test("energy skill validate: clamps untrusted model output, never guesses", () => {
+  const good = energyReportExtractor.validate(JSON.stringify({ constraints: [
+    { ref: "W04", maxUValue: 2.27, minShgc: 0.37, maxShgc: 0.41, glazingNote: "obscure" },
+  ] }));
+  assert.equal(good.length, 1);
+  assert.equal(good[0].maxUValue, 2.27);
+  assert.equal(good[0].ref, "W04");
+
+  // Out-of-range numbers are dropped to null (not clamped to a fake value).
+  const oor = energyReportExtractor.validate({ constraints: [{ ref: "W1", maxUValue: 999, minShgc: 5 }] });
+  assert.equal(oor[0].maxUValue, null);
+  assert.equal(oor[0].minShgc, null);
+
+  // Non-conforming payloads ⇒ null (nothing trusted).
+  assert.equal(energyReportExtractor.validate({ nope: true }), null);
+  assert.equal(energyReportExtractor.validate("not json"), null);
+
+  // A row with no usable data is filtered out.
+  const empty = energyReportExtractor.validate({ constraints: [{ ref: null, maxUValue: null }] });
+  assert.equal(empty.length, 0);
 });
 
 test.after(() => removeRunDir(runDir));
