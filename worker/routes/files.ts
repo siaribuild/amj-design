@@ -69,13 +69,20 @@ files.post("/files/upload", async (c) => {
     "INSERT INTO file_asset (id, project_id, kind, source, r2_key, filename, size, virus_status, scan_engine, scanned_at, uploaded_by) VALUES (?, ?, ?, 'customer', ?, ?, ?, 'clean', ?, datetime('now'), ?)",
   ).bind(id, project.id, kind, r2Key, file.name, file.size, verdict.engine, user?.id ?? null).run();
 
-  // LLM strategy §6 (owner decision 2026-07-25): extraction runs AUTOMATICALLY on
+  // LLM strategy §6 (owner decisions 2026-07-25): extraction runs AUTOMATICALLY on
   // every clean upload — the deterministic layer above only GATES (type, malware,
   // size, quota); the AI tier interprets. Fire-and-forget after the response so
   // the customer never waits on a model; stage idempotency makes re-processing
   // unchanged documents free, and any failure degrades to the deterministic
   // parse + manual review. AI_EXTRACTION_MODE='manual' is the kill-switch.
-  if (autoExtractionEnabled(c.env)) {
+  //
+  // REGISTERED USERS ONLY: anonymous uploads stay deterministic-only. This bounds
+  // model spend to identifiable accounts (an anonymous loop can't drain the
+  // gateway cap and deny AI to real users), keeps unconsented documents away
+  // from the external model, and makes AI interpretation the registration
+  // incentive. Anonymous users keep the instant free parse — no capability loss
+  // on clean digital schedules.
+  if (autoExtractionEnabled(c.env) && user) {
     c.executionCtx.waitUntil(runAiExtraction(c.env, project.id).catch(() => { /* degradation, never a blocker */ }));
   }
 
