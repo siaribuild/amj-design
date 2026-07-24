@@ -5,6 +5,7 @@
 // 360, search, and order stage-conflicts.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { join } from "node:path";
 import {
   Session, demoEmail, freePort, login, makeRunDir, removeRunDir,
@@ -24,7 +25,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
     const port = await freePort();
     const baseUrl = `http://127.0.0.1:${port}`;
     // Local/test env: dev OTP on, Access off (staff session fallback), Sanity off (deterministic built-in catalogue). Prod values live in wrangler.jsonc.
-    server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn", "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "ENQUIRY_INTERNAL_TO:enquiries@openframe.com.au", "--var", "MANUFACTURER_TO:leads@amj.test"], { env: wranglerEnv });
+    server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn", "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "ENQUIRY_INTERNAL_TO:enquiries@openframe.com.au", "--var", "MANUFACTURER_TO:leads@amj.test", "--var", "SANITY_WEBHOOK_SECRET:test-webhook-secret"], { env: wranglerEnv });
     await waitForUrl(`${baseUrl}/api/health`, server);
 
     const anon = new Session(baseUrl);
@@ -235,6 +236,26 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(row.family, "windows");
       assert.equal(row.operation_type, "awning");
       assert.equal(row.width_mm, 800);
+    });
+
+    await t.test("Sanity publish webhook: verifies the signature, fails closed on a bad one", async () => {
+      const body = JSON.stringify({ ids: ["product-amj80-series-awning-window"] });
+      const sign = (raw, secret) => {
+        const ts = String(Date.now());
+        const b64u = createHmac("sha256", secret).update(`${ts}.${raw}`).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+        return `t=${ts},v1=${b64u}`;
+      };
+      // No signature → rejected.
+      await requestJson(anon, "/api/integrations/sanity/published", { method: "POST", json: { ids: [] } }, 401);
+      // Wrong secret → rejected (fail closed).
+      const bad = await anon.request("/api/integrations/sanity/published", { method: "POST", headers: { "content-type": "application/json", "sanity-webhook-signature": sign(body, "wrong-secret") }, body });
+      assert.equal(bad.status, 401);
+      // Correct signature → accepted, cache invalidated.
+      const good = await anon.request("/api/integrations/sanity/published", { method: "POST", headers: { "content-type": "application/json", "sanity-webhook-signature": sign(body, "test-webhook-secret") }, body });
+      assert.equal(good.status, 200);
+      const gj = await good.json();
+      assert.equal(gj.invalidated, true);
+      assert.equal(gj.documents, 1);
     });
 
     await t.test("staff line edit does not silently clear a technical-review flag", async () => {

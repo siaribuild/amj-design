@@ -48,4 +48,6 @@ export interface Env {
   SCAN_ENDPOINT?: string;
   /** Bearer token for SCAN_ENDPOINT (secret). */
   SCAN_AUTH?: string;
+  /** Sanity publish-webhook signing secret (secret). Verifies §11.3 callbacks. */
+  SANITY_WEBHOOK_SECRET?: string;
 }

@@ -30,6 +30,14 @@ export function ensureCatalogue(env: Env): Promise<void> {
   return entry.promise;
 }
 
+// Drop the cached catalogue so the next request reloads from Sanity. Called by the
+// Sanity publish webhook (spec §11.3) so a publish is reflected without waiting out
+// the TTL. The per-request estimator CatalogueRepository cache is short-lived and
+// needs no explicit invalidation.
+export function invalidateCatalogue(): void {
+  cache = null;
+}
+
 async function load(env: Env): Promise<void> {
   const dataset = env.SANITY_DATASET || "production";
   const url = `https://${env.SANITY_PROJECT_ID}.apicdn.sanity.io/v2024-01-01/data/query/${dataset}?query=${encodeURIComponent(CATALOGUE_QUERY)}`;

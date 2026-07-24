@@ -17,6 +17,7 @@ import { files } from "./routes/files";
 import { enquiries } from "./routes/enquiries";
 import { parse } from "./routes/parse";
 import { ops } from "./routes/ops";
+import { integrations } from "./routes/integrations";
 import { ensureCatalogue } from "./lib/catalogue";
 import { getActiveLocations } from "../src/data/catalogue";
 
@@ -71,6 +72,9 @@ api.route("/api", parse);
 
 // Internal ops console API (staff-gated).
 api.route("/api/ops", ops);
+
+// Inbound webhooks (Sanity publish → catalogue cache invalidation).
+api.route("/api/integrations", integrations);
 
 // Any other /api/* path is a real 404 — never fall through to the SPA shell.
 api.all("/api/*", (c) => c.json({ error: "not_found" }, 404));

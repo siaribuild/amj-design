@@ -19,13 +19,14 @@ await build({
       export { computePrice } from ${p("worker/lib/estimator/pricing.ts")};
       export { rankCandidates, selectWithConfidence } from ${p("worker/lib/estimator/rank.ts")};
       export { selectForOpening } from ${p("worker/lib/estimator/select.ts")};
+      export { r2Keys } from ${p("worker/lib/estimator/storage.ts")};
       export { SUPPORTED_SCHEMA_VERSION } from ${p("worker/lib/estimator/types.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { toCandidate, fixtureCatalogueRepository, checkHardRules, computePrice, rankCandidates, selectForOpening, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
+const { toCandidate, fixtureCatalogueRepository, checkHardRules, computePrice, rankCandidates, selectForOpening, r2Keys, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
 
 const RATE = { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" };
 const POLICY = { depositPercent: 40, gstMode: "inc", version: "v1" };
@@ -178,6 +179,16 @@ test("ranker: prefers the snugger fit at equal price", () => {
   const ranked = rankCandidates({ operationType: "awning", widthMm: 700, heightMm: 1400 }, [snug, loose]);
   assert.equal(ranked[0].rank, 1);
   assert.equal(ranked.length, 2);
+});
+
+test("r2Keys: layout is consistent and path-traversal-safe", () => {
+  assert.equal(r2Keys.source("p1", "d1", "plan.pdf"), "projects/p1/source/d1/plan.pdf");
+  assert.equal(r2Keys.page("p1", "d1", 7), "projects/p1/pages/d1/page-0007.png");
+  assert.equal(r2Keys.extraction("p1", "r1", "openings"), "projects/p1/extractions/r1/openings.json");
+  // Traversal / odd characters are neutralised.
+  const evil = r2Keys.source("p1", "../../etc", "a b/../c.pdf");
+  assert.ok(!evil.includes(".."));
+  assert.ok(!evil.includes("/etc/"));
 });
 
 test.after(() => removeRunDir(runDir));
