@@ -94,6 +94,25 @@ export const option = defineType({
       description: "Preselected option for its type (used by 'applies to all' types like Colour).",
       initialValue: false,
     }),
+    // ── Estimator technical contract (spec §4) ──
+    defineField({ name: "technicalValue", title: "Technical value", type: "string",
+      description: "Machine value the rules engine reads (e.g. 'toughened', 'restrictor_125mm'), distinct from the display name." }),
+    defineField({ name: "reviewRequired", title: "Requires review", type: "boolean", initialValue: false,
+      description: "When set, selecting this option always routes the line to manual technical review." }),
+    defineField({
+      name: "compatibility", title: "Compatibility rules", type: "array",
+      description: "Machine-readable predicates connecting product/config/dimensions/options. Hard-stop or manual-review.",
+      of: [defineArrayMember({
+        type: "object", name: "compatibilityRule",
+        fields: [
+          defineField({ name: "condition", title: "Condition", type: "string", description: "e.g. width>1800, family==sliding-door, requires:safety_glass." }),
+          defineField({ name: "severity", title: "Severity", type: "string", initialValue: "manual_review",
+            options: { list: [{ title: "Hard stop (reject)", value: "hard_stop" }, { title: "Manual review", value: "manual_review" }] } }),
+          defineField({ name: "note", title: "Note", type: "string" }),
+        ],
+        preview: { select: { title: "condition", subtitle: "severity" } },
+      })],
+    }),
   ],
   preview: {
     select: { title: "name", subtitle: "optionType.name", price: "pricingComponent" },
@@ -134,11 +153,94 @@ const galleryImage = defineArrayMember({
   options: { hotspot: true },
 });
 
+// ── Estimator technical contract (CPQ Estimator spec §4) ─────────────────────
+// Machine-readable fields the estimator's deterministic rules read. Kept OUT of
+// prose so hard rules never depend on descriptions. Every performance value
+// carries an explicit provenance flag — an ESTIMATED value must never be treated
+// as a certified compliance figure (spec §13, addendum §1).
+
+// Structured operation/panel/composite model — replaces inferring operation from
+// the family name. Maps schedule terms (fixed, awning, sliding, stacker, hinged…).
+const configuration = defineField({
+  name: "configuration",
+  title: "Configuration (operation / panel / composite)",
+  type: "object",
+  group: "technical",
+  options: { collapsible: true, collapsed: false },
+  fields: [
+    defineField({ name: "operationTypes", title: "Operation types", type: "array", of: [{ type: "string" }],
+      options: { list: ["fixed", "awning", "casement", "sliding", "stacker", "bi-fold", "hinged", "pivot", "louvre", "double-hung", "tilt-turn", "lift-slide"] },
+      description: "One or more operations this product supports." }),
+    defineField({ name: "panelPattern", title: "Panel / leaf pattern", type: "string", description: "e.g. OX, XO, OXXO — O fixed, X operable." }),
+    defineField({ name: "openingDirection", title: "Opening direction", type: "string", options: { list: ["inward", "outward", "sliding", "n/a"] } }),
+    defineField({ name: "isCompositeMember", title: "Can be a composite member", type: "boolean", initialValue: false,
+      description: "True when this product can be one leaf of a larger composite frame (e.g. awning+fixed+awning)." }),
+    defineField({ name: "compositePattern", title: "Composite pattern", type: "string", description: "e.g. awning_fixed_awning. Blank for standalone units." }),
+    defineField({ name: "dataSource", title: "Data source", type: "string", initialValue: "estimated",
+      options: { list: [{ title: "Certified / verified", value: "certified" }, { title: "Estimated (unverified)", value: "estimated" }] } }),
+  ],
+});
+
+// Deterministic dimensional eligibility beyond flat min/max: area, aspect and a
+// versioned rule id so rule changes are auditable.
+const dimensionRule = defineField({
+  name: "dimensionRule",
+  title: "Dimension rule (deterministic eligibility)",
+  type: "object",
+  group: "technical",
+  options: { collapsible: true, collapsed: true },
+  fields: [
+    defineField({ name: "minWidthMm", type: "number" }),
+    defineField({ name: "maxWidthMm", type: "number" }),
+    defineField({ name: "minHeightMm", type: "number" }),
+    defineField({ name: "maxHeightMm", type: "number" }),
+    defineField({ name: "maxAreaM2", title: "Max area (m²)", type: "number", description: "Whole-unit area cap; blank = derive from W×H limits." }),
+    defineField({ name: "maxAspectRatio", title: "Max aspect ratio", type: "number", description: "Longest/shortest side; blank = unbounded." }),
+    defineField({ name: "ruleVersion", title: "Rule version", type: "string", initialValue: "v1" }),
+    defineField({ name: "dataSource", title: "Data source", type: "string", initialValue: "estimated",
+      options: { list: [{ title: "Certified / verified", value: "certified" }, { title: "Estimated (unverified)", value: "estimated" }] } }),
+  ],
+});
+
+// Whole-window energy performance. NO value here is a certified compliance figure
+// unless `dataSource: certified` AND `published: true`. An ESTIMATED variant lets
+// the estimator compute an assumption-based (non-compliance-certified) result.
+const performanceVariant = defineArrayMember({
+  type: "object",
+  name: "performanceVariant",
+  title: "Performance variant",
+  fields: [
+    defineField({ name: "variantId", title: "Variant ID", type: "string", validation: (r) => r.required() }),
+    defineField({ name: "glassBuildUp", title: "Glass build-up", type: "string", description: "e.g. 5+12A+5mm Double Tempered, 6mm Low-e+25Ar+6mm." }),
+    defineField({ name: "uValue", title: "Uw (whole-window U-value)", type: "number" }),
+    defineField({ name: "shgc", title: "SHGC (whole-window)", type: "number" }),
+    defineField({ name: "frameType", title: "Frame type", type: "string", initialValue: "aluminium" }),
+    defineField({ name: "dataSource", title: "Data source", type: "string", initialValue: "estimated", validation: (r) => r.required(),
+      options: { list: [{ title: "Certified (AFRC/WERS/NatHERS)", value: "certified" }, { title: "Estimated from glass build-up (unverified)", value: "estimated" }] } }),
+    defineField({ name: "certified", title: "Certified", type: "boolean", initialValue: false,
+      description: "TRUE only for a verified AFRC/WERS/certificate figure. Estimated values MUST be false." }),
+    defineField({ name: "certificationRef", title: "Certification reference", type: "string" }),
+    defineField({ name: "published", title: "Published (eligible for selection)", type: "boolean", initialValue: true }),
+    defineField({ name: "effectiveFrom", title: "Effective from", type: "date" }),
+  ],
+  preview: {
+    select: { title: "glassBuildUp", u: "uValue", shgc: "shgc", src: "dataSource" },
+    prepare: ({ title, u, shgc, src }) => ({ title: title || "variant", subtitle: `Uw ${u ?? "?"} · SHGC ${shgc ?? "?"} · ${src}` }),
+  },
+});
+
 // Content + SEO tabs on every editable record (product + page). The SEO tab is
 // the `seoMeta` object below (native — no plugin, since no SEO plugin builds on
 // Studio v6.5 yet). Rendered into <head> by the frontend.
 const RECORD_GROUPS = [
   { name: "content", title: "Content", default: true },
+  { name: "seo", title: "SEO" },
+];
+
+// Product adds a Technical tab for the estimator's machine-readable contract.
+const PRODUCT_GROUPS = [
+  { name: "content", title: "Content", default: true },
+  { name: "technical", title: "Technical (estimator)" },
   { name: "seo", title: "SEO" },
 ];
 
@@ -193,7 +295,7 @@ export const product = defineType({
   name: "product",
   title: "Product",
   type: "document",
-  groups: RECORD_GROUPS,
+  groups: PRODUCT_GROUPS,
   fields: [
     defineField({ name: "name", type: "string", group: "content", validation: (r) => r.required() }),
     defineField({ name: "slug", type: "slug", options: { source: "name" }, group: "content", validation: (r) => r.required() }),
@@ -221,6 +323,15 @@ export const product = defineType({
       description: "Shared options offered on this product, each marked standard or optional.",
     }),
     defineField({ name: "featuredOrder", type: "number", group: "content" }),
+    // ── Estimator technical contract (spec §4) ──
+    configuration,
+    dimensionRule,
+    defineField({ name: "performanceVariants", title: "Performance variants", type: "array", of: [performanceVariant], group: "technical",
+      description: "Whole-window Uw/SHGC per glass build-up. Estimated values must be dataSource:estimated / certified:false." }),
+    defineField({ name: "pricingRef", title: "Pricing ref", type: "string", group: "technical",
+      description: "Key into the PRIVATE D1 rate card. Pricing itself is never stored in Sanity." }),
+    defineField({ name: "schemaVersion", title: "Estimator schema version", type: "number", group: "technical", initialValue: 1,
+      description: "Bump when the technical contract shape changes so the Worker can reject unsupported shapes." }),
     defineField({ name: "seo", title: "SEO", type: "seoMeta", group: "seo" }),
   ],
   preview: { select: { title: "name", subtitle: "family.name", media: "heroImage" } },
