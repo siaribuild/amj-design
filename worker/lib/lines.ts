@@ -4,8 +4,11 @@
 import { priceConfigured, type MeasuredBy } from "../../src/data/configurator";
 import { uuid } from "./util";
 
-// The line shape exchanged with the client (QItem minus its local numeric id).
+// The line shape exchanged with the client. `id` is the STABLE server line id —
+// the client round-trips it as `serverId` so a save upserts (never delete+recreate)
+// and the parse_line → quote_line provenance link survives autosave and submit.
 export interface ApiLine {
+  id: string;
   code: string;
   productSlug: string;
   location: string;
@@ -26,6 +29,7 @@ const MEASURED = new Set(["", "frame", "opening", "unsure"]);
 
 // A D1 quote_line row (columns we read back).
 export interface LineRow {
+  id: string;
   external_ref: string | null;
   room_label: string | null;
   product_slug: string;
@@ -43,6 +47,7 @@ export function rowToApiLine(r: LineRow): ApiLine {
   const dims = safeParse(r.dims_json);
   const review = r.review_json ? safeParse(r.review_json) : null;
   return {
+    id: r.id,
     code: r.external_ref ?? "",
     productSlug: r.product_slug,
     location: r.room_label ?? "",
@@ -59,8 +64,11 @@ export function rowToApiLine(r: LineRow): ApiLine {
   };
 }
 
-// Normalize + price one incoming client item into an insertable row (bound params).
-export function itemToInsert(projectId: string, raw: unknown, position: number) {
+// The mutable columns of a quote_line, normalized + server-priced from one client
+// item. Shared by the INSERT (new line) and UPDATE (existing line) paths so the
+// pricing/status rules can't diverge between them. `origin` is included but treated
+// as server-owned by the caller: set on INSERT, never overwritten on UPDATE.
+export function itemFields(raw: unknown) {
   const it = (raw ?? {}) as Record<string, unknown>;
   const width = String(it.width ?? "");
   const height = String(it.height ?? "");
@@ -72,10 +80,9 @@ export function itemToInsert(projectId: string, raw: unknown, position: number) 
   const priced = priceConfigured({ productSlug, width, height, options, qty });
   const lineTotal = priced.ok ? priced.total : null;
 
-  // Preserve parse provenance + unresolved review flags across autosaves. A line
-  // still carrying review reasons stays 'technical_review' (Needs review) even if
-  // it happens to price; clearing the last flag (client drops resolved keys) lets
-  // it fall back to the normal ready/incomplete status.
+  // A line still carrying review reasons stays 'technical_review' (Needs review)
+  // even if it happens to price; clearing the last flag (client drops resolved
+  // keys) lets it fall back to ready/incomplete.
   const origin = String(it.origin ?? "manual") === "schedule" ? "schedule" : "manual";
   const review = it.review && typeof it.review === "object" && Object.keys(it.review as object).length
     ? (it.review as Record<string, string>)
@@ -86,8 +93,6 @@ export function itemToInsert(projectId: string, raw: unknown, position: number) 
   const status = !priced.ok ? "incomplete" : review ? "technical_review" : "ready";
 
   return {
-    id: uuid(),
-    project_id: projectId,
     external_ref: String(it.code ?? "") || null,
     room_label: String(it.location ?? "") || null,
     product_slug: productSlug,
@@ -97,10 +102,21 @@ export function itemToInsert(projectId: string, raw: unknown, position: number) 
     qty,
     line_total: lineTotal,
     status,
-    position,
     origin,
     review_json: review ? JSON.stringify(review) : null,
   };
+}
+
+// A brand-new line: the shared fields plus a fresh server id and position.
+export function itemToInsert(projectId: string, raw: unknown, position: number) {
+  return { id: uuid(), project_id: projectId, position, ...itemFields(raw) };
+}
+
+// The client round-trips the server line id as `serverId`. Returns it only when it
+// is a non-empty string, so an unknown/absent value falls through to INSERT.
+export function incomingServerId(raw: unknown): string | null {
+  const v = (raw as Record<string, unknown>)?.serverId;
+  return typeof v === "string" && v.length ? v : null;
 }
 
 function safeParse(s: string): Record<string, unknown> {

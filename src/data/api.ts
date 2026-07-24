@@ -13,6 +13,7 @@ export interface ApiProject {
 // One saved quote line as the server returns it (QItem minus its local id,
 // plus the server-computed line total).
 export interface ApiItem {
+  id: string;      // stable server line id (client stores it as QItem.serverId)
   code: string;
   productSlug: string;
   location: string;

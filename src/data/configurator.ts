@@ -20,7 +20,8 @@ export const MEASURED_LABELS: Record<Exclude<MeasuredBy, "">, string> = {
 };
 
 export interface QItem {
-  id: number;
+  id: number;      // LOCAL ephemeral id for React keys / store operations
+  serverId?: string; // STABLE server line id, round-tripped so saves upsert (P1-03)
   code: string;    // schedule/item code (W01, D03…) — primary builder reference
   productSlug: string;
   location: string;

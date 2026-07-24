@@ -5,7 +5,7 @@
 // first save, not on every visit, so idle traffic leaves no junk.
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { itemToInsert, rowToApiLine, type LineRow } from "../lib/lines";
+import { itemToInsert, itemFields, incomingServerId, rowToApiLine, type LineRow } from "../lib/lines";
 import { resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 
@@ -92,23 +92,45 @@ projects.put("/current/lines", async (c) => {
 
   const { project, cookie } = await resolveOrCreateCurrentProject(c.env, c.req.raw, title);
 
-  const rows = items.map((raw, i) => itemToInsert(project.id, raw, i));
-  const stmts = [
-    c.env.DB.prepare("DELETE FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id),
-    ...rows.map((r) =>
-      c.env.DB.prepare(
+  // Upsert by stable server id rather than delete-all + insert-all. A line the
+  // client already knows (serverId) is UPDATEd in place, so its id — and the
+  // parse_line.quote_line_id provenance link pointing at it — survives every
+  // autosave and the pre-submit save. Only genuinely removed lines are deleted.
+  const existing = new Set(
+    ((await c.env.DB.prepare("SELECT id FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id).all<{ id: string }>()).results ?? [])
+      .map((r) => r.id),
+  );
+  const resolved = items.map((raw, i) => {
+    const sid = incomingServerId(raw);
+    return { raw, i, id: sid && existing.has(sid) ? sid : null };
+  });
+  const keptIds = new Set(resolved.filter((r) => r.id).map((r) => r.id as string));
+
+  const stmts: D1PreparedStatement[] = [];
+  // Delete only the draft lines the client dropped (origin is never resurrected).
+  for (const id of existing) {
+    if (!keptIds.has(id)) stmts.push(c.env.DB.prepare("DELETE FROM quote_line WHERE id = ?").bind(id));
+  }
+  for (const { raw, i, id } of resolved) {
+    const f = itemFields(raw);
+    if (id) {
+      // UPDATE preserves the row's id AND its server-owned origin (not from client).
+      stmts.push(c.env.DB.prepare(
+        `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?, options_json=?, dims_json=?, measured_by=?, qty=?, line_total=?, status=?, position=?, review_json=?, updated_at=datetime('now')
+         WHERE id=? AND project_id=? AND revision_id IS NULL`,
+      ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.measured_by, f.qty, f.line_total, f.status, i, f.review_json, id, project.id));
+    } else {
+      const r = itemToInsert(project.id, raw, i);
+      stmts.push(c.env.DB.prepare(
         `INSERT INTO quote_line
            (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position, origin, review_json)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        r.id, r.project_id, r.external_ref, r.room_label, r.product_slug,
-        r.options_json, r.dims_json, r.measured_by, r.qty, r.line_total, r.status, r.position, r.origin, r.review_json,
-      ),
-    ),
-    hasTitle
-      ? c.env.DB.prepare("UPDATE project SET title = ?, updated_at = datetime('now') WHERE id = ?").bind(title, project.id)
-      : c.env.DB.prepare("UPDATE project SET updated_at = datetime('now') WHERE id = ?").bind(project.id),
-  ];
+      ).bind(r.id, r.project_id, r.external_ref, r.room_label, r.product_slug, r.options_json, r.dims_json, r.measured_by, r.qty, r.line_total, r.status, r.position, r.origin, r.review_json));
+    }
+  }
+  stmts.push(hasTitle
+    ? c.env.DB.prepare("UPDATE project SET title = ?, updated_at = datetime('now') WHERE id = ?").bind(title, project.id)
+    : c.env.DB.prepare("UPDATE project SET updated_at = datetime('now') WHERE id = ?").bind(project.id));
   await c.env.DB.batch(stmts);
 
   if (cookie) c.header("Set-Cookie", cookie);

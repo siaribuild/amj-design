@@ -147,6 +147,38 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(demo, "/api/revisions/rev_1/accept", { method: "POST" }, 409);
     });
 
+    await t.test("autosave upserts by stable id, preserving parse-line provenance (P1-03)", async () => {
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "provenance@example.com");
+      const base = { productSlug: "amj80-series-sliding-window", measuredBy: "frame", width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" } };
+      const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [{ ...base, code: "W01" }, { ...base, code: "W02" }] } });
+      const pid = saved.body.project.id;
+      const id1 = saved.body.items[0].id, id2 = saved.body.items[1].id;
+      assert.ok(id1 && id2 && id1 !== id2, "server returns stable line ids");
+
+      // A parse-evidence chain (file → job → parse_line) linking to line 1.
+      const sql = [
+        `INSERT INTO file_asset (id, project_id, kind, r2_key, filename, virus_status) VALUES ('fa_prov','${pid}','schedule','k/prov','prov.pdf','clean')`,
+        `INSERT INTO schedule_parse_job (id, project_id, file_asset_id, subject, status) VALUES ('job_prov','${pid}','fa_prov','s','completed')`,
+        `INSERT INTO parse_line (id, job_id, source_index, raw_json, quote_line_id) VALUES ('pl_prov','job_prov',0,'{}','${id1}')`,
+      ].join("; ");
+      await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--command", sql], { env: wranglerEnv });
+
+      // Autosave: echo both serverIds back, edit qty on line 1. Old delete+insert
+      // would mint new ids and NULL the parse_line link; the upsert must not.
+      const resave = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [{ ...base, code: "W01", serverId: id1, qty: 3 }, { ...base, code: "W02", serverId: id2 }] } });
+      assert.equal(resave.body.items[0].id, id1, "line id survives autosave");
+      assert.equal(resave.body.items[0].qty, 3, "edit applied in place");
+      const link = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", "SELECT quote_line_id FROM parse_line WHERE id='pl_prov'"], { env: wranglerEnv });
+      assert.equal(JSON.parse(link.stdout)[0].results[0].quote_line_id, id1, "provenance link survives autosave");
+
+      // Removing line 2 deletes exactly that row; line 1 (with evidence) persists.
+      const resave2 = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [{ ...base, code: "W01", serverId: id1, qty: 3 }] } });
+      assert.equal(resave2.body.items.length, 1);
+      assert.equal(resave2.body.items[0].id, id1);
+    });
+
     await t.test("workflow transitions: valid move, invalid move 409, clarification round-trip", async () => {
       await requestJson(staff, "/api/ops/projects/p_submitted/assign", { method: "POST", json: {} });
       const moved = await requestJson(staff, "/api/ops/projects/p_submitted/status", { method: "POST", json: { statusInternal: "technical_review_required" } });

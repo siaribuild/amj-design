@@ -1335,7 +1335,7 @@ export default function App() {
     update: (id, patch) => setQuoteItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it)),
     remove: (id) => setQuoteItems(prev => prev.filter(it => it.id !== id)),
     // Duplicating keeps the item but gives it a fresh suggested code to confirm.
-    copy: (id) => { const src = quoteItems.find(x => x.id === id); if (!src) return undefined; const nid = Date.now() + Math.floor(Math.random() * 1000); setQuoteItems(prev => [...prev, { ...src, id: nid, code: suggestCode(prev, src.productSlug) }]); return nid; },
+    copy: (id) => { const src = quoteItems.find(x => x.id === id); if (!src) return undefined; const nid = Date.now() + Math.floor(Math.random() * 1000); setQuoteItems(prev => [...prev, { ...src, id: nid, serverId: undefined, code: suggestCode(prev, src.productSlug) }]); return nid; },
     addFiles: (f) => setQuoteFiles(prev => [...prev, ...f]),
     removeFile: (id) => setQuoteFiles(prev => prev.filter(f => f.id !== id)),
     // Replace the whole line set (after a schedule parse re-hydrates from server).
@@ -1352,7 +1352,7 @@ export default function App() {
       const r = await getCurrentProject();
       skipNextSaveRef.current = true;
       setQuoteItems((r.items ?? []).map((it, i) => ({
-        id: Date.now() + i,
+        id: Date.now() + i, serverId: it.id,
         code: it.code, productSlug: it.productSlug, location: it.location,
         measuredBy: it.measuredBy, width: it.width, height: it.height,
         options: it.options, qty: it.qty, status: it.status,
@@ -1396,7 +1396,7 @@ export default function App() {
         if (r.project.title) setProjectTitle(r.project.title);
         if (r.items.length) {
           setQuoteItems(r.items.map((it, i) => ({
-            id: Date.now() + i,
+            id: Date.now() + i, serverId: it.id,
             code: it.code, productSlug: it.productSlug, location: it.location,
             measuredBy: it.measuredBy, width: it.width, height: it.height,
             options: it.options, qty: it.qty, status: it.status,
@@ -1418,7 +1418,27 @@ export default function App() {
     if (skipNextSaveRef.current) { skipNextSaveRef.current = false; return; }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      saveLines(quoteItems, projectTitle).then(r => { if (r.project) setProjectId(r.project.id); }).catch(() => {});
+      const sentIds = quoteItems.map(it => it.id); // local ids captured at send time
+      saveLines(quoteItems, projectTitle).then(r => {
+        if (r.project) setProjectId(r.project.id);
+        // Attach the stable server ids the save just assigned, so a follow-up edit
+        // UPDATEs the same rows instead of delete+reinserting them (keeps provenance
+        // and ids stable for manual lines too). Matched by the local id, not index,
+        // so an edit landing mid-flight can't misassign. Guarded to not re-save.
+        if (Array.isArray(r.items) && r.items.length === sentIds.length) {
+          setQuoteItems(prev => {
+            let changed = false;
+            const next = prev.map(it => {
+              const idx = sentIds.indexOf(it.id);
+              const sid = idx >= 0 ? r.items[idx]?.id : undefined;
+              if (sid && it.serverId !== sid) { changed = true; return { ...it, serverId: sid }; }
+              return it;
+            });
+            if (changed) skipNextSaveRef.current = true;
+            return changed ? next : prev;
+          });
+        }
+      }).catch(() => {});
     }, 600);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [quoteItems, projectTitle]);
