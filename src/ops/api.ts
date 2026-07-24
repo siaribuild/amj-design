@@ -107,6 +107,28 @@ export const opsAssign = (id: string, userId?: string) =>
   req<{ ok: boolean; assignee: string | null; statusInternal: string }>(`/api/ops/projects/${id}/assign`, { method: "POST", body: JSON.stringify({ userId }) });
 export const opsPatchLine = (lineId: string, patch: Partial<{ width: string; height: string; qty: number; code: string; room: string; options: Record<string, string>; resolveReview: boolean | string[] }>) =>
   req<{ line: OpsLine }>(`/api/ops/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(patch) });
+
+// ── Estimator (CPQ) review workspace ─────────────────────────────────────────
+export interface EstimatorProject { id: string; title: string; statusCustomer: string; openings: number; attention: number }
+export interface EstimatorCandidate {
+  productId: string; productName: string; catalogueRev: string; passed: boolean;
+  filters: { filter: string; passed: boolean; severity?: string; reason?: string }[];
+  score: number | null; rank: number | null; selected: boolean; failReasons: string[];
+}
+export interface EstimatorOpening {
+  id: string; externalRef: string | null; room: string | null; family: string | null;
+  operation: string | null; width: number | null; height: number | null; status: string;
+  selectionRunId: string | null;
+  candidates: EstimatorCandidate[];
+  draft: { id: string; status: string; confidence: number | null; catalogue: any; price: any; warnings: string[] } | null;
+}
+export const opsEstimatorProjects = () => req<{ projects: EstimatorProject[] }>("/api/ops/estimator/projects");
+export const opsEstimatorWorkspace = (projectId: string) =>
+  req<{ openings: EstimatorOpening[]; categories: string[] }>(`/api/ops/projects/${projectId}/estimator`);
+export const opsRunEstimate = (projectId: string) =>
+  req<{ openings: number; selected: number; lines: any[] }>(`/api/ops/projects/${projectId}/estimate`, { method: "POST", body: "{}" });
+export const opsEstimatorFeedback = (projectId: string, body: { openingId?: string; selectionRunId?: string; field: string; category: string; reasonCode: string; initialValue?: any; finalValue?: any; note?: string }) =>
+  req<{ ok: boolean; id: string }>(`/api/ops/projects/${projectId}/feedback`, { method: "POST", body: JSON.stringify(body) });
 export const opsAddNote = (id: string, body: string, lineId?: string) =>
   req<{ comment: OpsComment }>(`/api/ops/projects/${id}/note`, { method: "POST", body: JSON.stringify({ body, lineId }) });
 export const opsIssueRevision = (id: string) =>

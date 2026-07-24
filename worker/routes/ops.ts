@@ -758,6 +758,67 @@ ops.post("/projects/:id/feedback", async (c) => {
   return c.json({ ok: true, id: res.id });
 });
 
+// GET /api/ops/estimator/projects — projects that have estimator openings, with a
+// status breakdown, so the review workspace can list them.
+ops.get("/estimator/projects", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const { results } = await c.env.DB.prepare(`
+    SELECT o.project_id AS id, p.title, p.status_customer,
+           count(*) AS openings,
+           SUM(CASE WHEN o.status IN ('needs_manual_review','catalogue_data_incomplete') THEN 1 ELSE 0 END) AS attention
+      FROM opening_instance o LEFT JOIN project p ON p.id = o.project_id
+     GROUP BY o.project_id ORDER BY attention DESC, p.title`).all<any>();
+  return c.json({ projects: (results ?? []).map((r) => ({
+    id: r.id, title: r.title ?? "Untitled project", statusCustomer: r.status_customer,
+    openings: r.openings, attention: r.attention,
+  })) });
+});
+
+// GET /api/ops/projects/:id/estimator — the review workspace payload: each opening
+// with its full candidate_result set (pass/fail + score), the selected candidate,
+// the draft line + price snapshot, and evidence refs.
+ops.get("/projects/:id/estimator", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const projectId = c.req.param("id");
+
+  const { results: openings } = await c.env.DB.prepare(
+    "SELECT id, external_ref, room, family, operation_type, width_mm, height_mm, status FROM opening_instance WHERE project_id = ? ORDER BY created_at",
+  ).bind(projectId).all<any>();
+
+  const out = [];
+  for (const o of openings ?? []) {
+    const run = await c.env.DB.prepare("SELECT id FROM selection_run WHERE opening_id = ? ORDER BY created_at DESC LIMIT 1").bind(o.id).first<{ id: string }>();
+    let candidates: any[] = [];
+    if (run) {
+      const { results } = await c.env.DB.prepare(
+        "SELECT sanity_product_id, catalogue_rev, hard_rule_passed, hard_rule_outcome_json, score, reason_codes, rank, selected FROM candidate_result WHERE selection_run_id = ? ORDER BY selected DESC, rank",
+      ).bind(run.id).all<any>();
+      candidates = (results ?? []).map((r) => ({
+        productId: r.sanity_product_id, catalogueRev: r.catalogue_rev,
+        passed: !!r.hard_rule_passed, filters: safeParse(r.hard_rule_outcome_json ?? "[]"),
+        score: r.score, rank: r.rank, selected: !!r.selected,
+        failReasons: safeParse(r.reason_codes ?? "[]"),
+        productName: getProductBySlug(String(r.sanity_product_id).replace(/^product-/, ""))?.name ?? r.sanity_product_id,
+      }));
+    }
+    const draft = await c.env.DB.prepare("SELECT id, status, confidence, catalogue_snapshot_json, price_snapshot_json, warnings_json FROM draft_order_line WHERE opening_id = ? ORDER BY created_at DESC LIMIT 1").bind(o.id).first<any>();
+    out.push({
+      id: o.id, externalRef: o.external_ref, room: o.room, family: o.family,
+      operation: o.operation_type, width: o.width_mm, height: o.height_mm, status: o.status,
+      selectionRunId: run?.id ?? null,
+      candidates,
+      draft: draft ? { id: draft.id, status: draft.status, confidence: draft.confidence,
+        catalogue: safeParse(draft.catalogue_snapshot_json ?? "{}"), price: safeParse(draft.price_snapshot_json ?? "{}"),
+        warnings: safeParse(draft.warnings_json ?? "[]") } : null,
+    });
+  }
+  return c.json({ openings: out, categories: FEEDBACK_CATEGORIES });
+});
+
 // GET /api/ops/files/:id/download — staff download (any file).
 ops.get("/files/:id/download", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
