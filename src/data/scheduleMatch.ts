@@ -163,8 +163,24 @@ export function matchSchedule(rows: RawScheduleRow[]): ParsedLine[] {
     }
 
     // ── glazing ────────────────────────────────────────────────────────────────
+    // Glazing is a baked per-product attribute (each product ships a fixed glass
+    // package), not a selectable option. So a schedule's double-glazing REQUIREMENT
+    // can't be mapped to a catalogue choice — but it must not be silently satisfied
+    // OR contradicted by the product's default glass. Flag a technical issue only
+    // when the requirement genuinely conflicts with the matched product's glass.
+    const glazingReasons: string[] = [];
     if (r.glazing && /TRANSLUCENT|OBSCURE|FROST/i.test(r.glazing)) {
-      review.glazing = `Schedule glazing "${r.glazing}" — confirm obscure/translucent glass at review.`;
+      glazingReasons.push(`obscure/translucent glass ("${r.glazing}")`);
+    }
+    // Double-glazed products carry an insulated-glass unit spec like "5+8A+5".
+    const productIsDoubleGlazed = product ? /\d\s*\+\s*\d+\s*A?\s*\+\s*\d/i.test(product.standardGlass || "") : null;
+    if (product && r.doubleGlaze === true && productIsDoubleGlazed === false) {
+      glazingReasons.push(`double glazing (D.GLAZE REQ. YES) but ${product.name} ships single-glazed glass`);
+    } else if (product && r.doubleGlaze === false && productIsDoubleGlazed === true) {
+      glazingReasons.push(`single glazing (D.GLAZE REQ. NO) but ${product.name} ships double-glazed glass`);
+    }
+    if (glazingReasons.length) {
+      review.glazing = `Schedule specifies ${glazingReasons.join("; and ")} — confirm the glass package at review.`;
     }
 
     // ── code (preserve schedule numbering; dedupe within the set) ──────────────

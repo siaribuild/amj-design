@@ -21,14 +21,18 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
   if (project.status_internal !== "approved_for_issue") return { ok: false, error: "not_ready" };
 
   const { results: lines } = await env.DB
-    .prepare("SELECT external_ref, room_label, product_slug, options_json, dims_json, qty, line_total FROM quote_line WHERE project_id = ? AND revision_id IS NULL ORDER BY position")
+    .prepare("SELECT external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status FROM quote_line WHERE project_id = ? AND revision_id IS NULL ORDER BY position")
     .bind(projectId)
-    .all<{ external_ref: string | null; room_label: string | null; product_slug: string; options_json: string; dims_json: string; qty: number; line_total: number | null }>();
+    .all<{ external_ref: string | null; room_label: string | null; product_slug: string; options_json: string; dims_json: string; qty: number; line_total: number | null; status: string }>();
 
   // Never issue an empty or partially-priced quote: a NULL line_total means the
   // line couldn't be priced, and issuing it would silently coerce it to $0 (and
   // let a zero-value order be created downstream). Refuse until it's resolved.
   if (lines.length === 0 || lines.some((l) => l.line_total == null)) return { ok: false, error: "not_ready" };
+  // Nor issue while a line still carries an unresolved technical-review flag — a
+  // material substitution, out-of-range unit, or glazing conflict must be cleared
+  // by staff before the quote goes out. Readiness is enforced here, at the gate.
+  if (lines.some((l) => l.status === "technical_review" || l.status === "incomplete")) return { ok: false, error: "not_ready" };
 
   const maxRow = await env.DB.prepare("SELECT COALESCE(MAX(revision_no), 0) AS n FROM quote_revision WHERE project_id = ?").bind(projectId).first<{ n: number }>();
   const revisionNo = (maxRow?.n ?? 0) + 1;

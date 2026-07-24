@@ -7,7 +7,7 @@ import type { Env } from "../types";
 import { resolveOrCreateCurrentProject, resolveCurrentProject } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 import {
-  runScheduleParse, parseQuota, draftScheduleState, getJob, sha256hex, deriveSubject,
+  runScheduleParse, parseQuota, draftScheduleState, getJob, deriveSubject,
   type ParseMode, type ParseFile,
 } from "../lib/parse";
 
@@ -70,40 +70,40 @@ parse.post("/projects/current/parse", async (c) => {
   }
   const effectiveMode: ParseMode = mode || "replace";
 
-  // 1-file-per-quote: drop any other schedule files (swap to the newest upload).
-  for (const f of state.scheduleFiles) {
-    if (f.id === fileId) continue;
-    await c.env.FILES.delete(f.r2_key).catch(() => {});
-    await c.env.DB.prepare("DELETE FROM file_asset WHERE id = ?").bind(f.id).run();
-  }
-  // Make sure the active file is tagged as the schedule.
-  await c.env.DB.prepare("UPDATE file_asset SET kind = 'schedule' WHERE id = ?").bind(fileId).run();
-
-  await c.env.KV.put(rlKey, String(used + 1), { expirationTtl: RATE_WINDOW });
-
-  // Content hash for dedupe/observability.
-  let contentHash: string | undefined;
-  try {
-    const obj = await c.env.FILES.get(file.r2_key);
-    if (obj) contentHash = await sha256hex(new Uint8Array(await obj.arrayBuffer()));
-  } catch { /* non-fatal */ }
-
-  // Per-project lock: a second concurrent parse for the same project would double-
-  // import (each request is its own atomic batch). Serialise them.
+  // Per-project lock acquired BEFORE any mutation, so a concurrent parse cannot
+  // delete this request's files or double-import. The lease carries a unique owner
+  // token and is released only if we still hold it — so an expiring older request
+  // can't wipe a newer lease. NOTE: KV is eventually consistent and offers no
+  // atomic compare-and-set, so this narrows but does not fully eliminate the race;
+  // a Durable Object / D1 reservation is the durable fix (tracked as a follow-up).
   const lockKey = `parselock:${project.id}`;
+  const lease = crypto.randomUUID();
   if (await c.env.KV.get(lockKey)) {
     if (cookie) c.header("Set-Cookie", cookie);
     return c.json({ error: "busy" }, 409);
   }
-  await c.env.KV.put(lockKey, "1", { expirationTtl: LOCK_TTL });
+  await c.env.KV.put(lockKey, lease, { expirationTtl: LOCK_TTL });
 
   let outcome;
   try {
+    // 1-file-per-quote: drop any other schedule files (swap to the newest upload).
+    // Now inside the lock, after the busy check.
+    for (const f of state.scheduleFiles) {
+      if (f.id === fileId) continue;
+      await c.env.FILES.delete(f.r2_key).catch(() => {});
+      await c.env.DB.prepare("DELETE FROM file_asset WHERE id = ?").bind(f.id).run();
+    }
+    // Make sure the active file is tagged as the schedule.
+    await c.env.DB.prepare("UPDATE file_asset SET kind = 'schedule' WHERE id = ?").bind(fileId).run();
+    await c.env.KV.put(rlKey, String(used + 1), { expirationTtl: RATE_WINDOW });
+
+    // The pipeline reads the bytes once and hashes them there — no extra R2 GET.
     outcome = await runScheduleParse(c.env, {
-      project, file, subject, userId: user?.id ?? null, mode: effectiveMode, contentHash,
+      project, file, subject, userId: user?.id ?? null, mode: effectiveMode,
     });
   } finally {
-    await c.env.KV.delete(lockKey).catch(() => {});
+    // Token-checked release: only delete the lease if it is still ours.
+    if ((await c.env.KV.get(lockKey)) === lease) await c.env.KV.delete(lockKey).catch(() => {});
   }
 
   const quotaAfter = await parseQuota(c.env, subject, user?.id ?? null);
@@ -120,6 +120,11 @@ parse.post("/projects/current/parse", async (c) => {
 parse.post("/projects/current/clear", async (c) => {
   const { project } = await resolveCurrentProject(c.env, c.req.raw);
   if (!project) return c.json({ ok: true }); // nothing to clear
+  // Only a live draft may be cleared. resolveCurrentProject returns the customer's
+  // most-recent project, which — after submission, issuance, or an order — is no
+  // longer a draft; clearing it would destroy the source schedule and parse
+  // evidence that staff and any order still rely on. Refuse.
+  if (project.status_customer !== "draft") return c.json({ error: "not_draft" }, 409);
   const state = await draftScheduleState(c.env, project.id);
   for (const f of state.scheduleFiles) await c.env.FILES.delete(f.r2_key).catch(() => {});
   await c.env.DB.batch([
@@ -156,6 +161,7 @@ function parseFailCode(err?: string): string {
   if (err.startsWith("not_a_pdf")) return "not_a_pdf";
   if (err.startsWith("encrypted_pdf")) return "encrypted_pdf";
   if (err.startsWith("too_many_pages")) return "too_many_pages";
+  if (err.startsWith("too_many_items")) return "too_many_items";
   if (err.startsWith("file_missing")) return "file_missing";
   return "parse_failed";
 }

@@ -102,15 +102,22 @@ export async function draftScheduleState(env: Env, projectId: string): Promise<{
 }
 
 // ── The pipeline ─────────────────────────────────────────────────────────────
+// Cloudflare bills up to 1,000 D1 queries per Worker invocation, and every
+// statement in a batch counts individually. Each imported row emits two inserts
+// (quote_line + parse_line); with the replace-delete and the two trailing job/
+// project updates that is 2·N + 3. Cap N well under the ceiling so a large parse
+// fails cleanly instead of exceeding the budget mid-apply.
+const MAX_IMPORT_ROWS = 480;
+
 export async function runScheduleParse(
   env: Env,
-  opts: { project: ProjectRow; file: ParseFile; subject: string; userId: string | null; mode: ParseMode; contentHash?: string },
+  opts: { project: ProjectRow; file: ParseFile; subject: string; userId: string | null; mode: ParseMode },
 ): Promise<ParseOutcome> {
   const { project, file, subject, mode } = opts;
   const jobId = uuid();
   await env.DB.prepare(
-    "INSERT INTO schedule_parse_job (id, project_id, file_asset_id, subject, status, content_hash) VALUES (?,?,?,?,'extracting',?)",
-  ).bind(jobId, project.id, file.id, subject, opts.contentHash ?? null).run();
+    "INSERT INTO schedule_parse_job (id, project_id, file_asset_id, subject, status) VALUES (?,?,?,?,'extracting')",
+  ).bind(jobId, project.id, file.id, subject).run();
 
   const fail = async (code: string): Promise<ParseOutcome> => {
     await env.DB.prepare("UPDATE schedule_parse_job SET status='failed', error=?, completed_at=datetime('now') WHERE id=?").bind(code, jobId).run();
@@ -121,10 +128,15 @@ export async function runScheduleParse(
   // inline before they persist, so this guards the legacy/rescan paths.
   if (file.virus_status && file.virus_status !== "clean") return fail("file_not_scanned");
 
-  // Load bytes from R2.
+  // Load bytes from R2 once — hashed here (dedupe/observability) and reused for
+  // extraction, so the route no longer needs a second GET.
   const obj = await env.FILES.get(file.r2_key);
   if (!obj) return fail("file_missing");
   const bytes = new Uint8Array(await obj.arrayBuffer());
+  const contentHash = await sha256hex(bytes).catch(() => null);
+  if (contentHash) {
+    await env.DB.prepare("UPDATE schedule_parse_job SET content_hash=? WHERE id=?").bind(contentHash, jobId).run();
+  }
 
   // Extract.
   let extract;
@@ -149,6 +161,10 @@ export async function runScheduleParse(
 
   // Match → estimator lines (faithful + flagged).
   const lines: ParsedLine[] = matchSchedule(extract.rows);
+
+  // Hard row cap: a single apply must stay within the D1 per-invocation budget.
+  // Fail cleanly rather than exceed it mid-batch after paying for extraction.
+  if (lines.length > MAX_IMPORT_ROWS) return fail("too_many_items");
 
   // Apply mode: replace clears prior draft lines; append keeps them.
   const stmts: D1PreparedStatement[] = [];

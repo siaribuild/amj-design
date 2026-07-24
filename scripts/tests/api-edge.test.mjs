@@ -163,6 +163,28 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(reply.body.status, "under_review");
     });
 
+    await t.test("staff line edit does not silently clear a technical-review flag", async () => {
+      // Simulate a parsed line that reached technical review (material substitution).
+      const detail = await requestJson(staff, "/api/ops/projects/p_submitted");
+      const lineId = detail.body.lines[0].id;
+      await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `UPDATE quote_line SET status='technical_review', review_json='{"material":"Schedule specifies TIMBER; confirm substitution."}' WHERE id='${lineId}'`], { env: wranglerEnv });
+
+      // An unrelated qty edit must NOT drop it to ready or drop the flag.
+      const edited = await requestJson(staff, `/api/ops/lines/${lineId}`, { method: "PATCH", json: { qty: 2 } });
+      assert.equal(edited.body.line.status, "technical_review", "unrelated edit keeps technical_review");
+      assert.ok(edited.body.line.review?.material, "review reason preserved");
+      assert.equal(edited.body.line.qty, 2);
+
+      // The line blocks issuance while the flag stands.
+      assert.ok(detail.body.lines[0].review === null || detail.body.lines[0].review !== undefined); // DTO carries review
+
+      // Explicit resolution clears it and lets the line become ready.
+      const resolved = await requestJson(staff, `/api/ops/lines/${lineId}`, { method: "PATCH", json: { resolveReview: true } });
+      assert.equal(resolved.body.line.review, null, "flag cleared on explicit resolve");
+      assert.equal(resolved.body.line.status, "ready", "priced + no flags ⇒ ready");
+    });
+
     await t.test("approvals: no-rule auto-clears, reject returns to estimator, wrong role blocked", async () => {
       // p_draft ($1,740, no technical) has no matching rule -> straight to ready.
       await requestJson(staff, "/api/ops/projects/p_draft/assign", { method: "POST", json: {} });
@@ -267,6 +289,8 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(ok.body.status, "submitted");
       // A submitted project is no longer a draft — resubmission is rejected.
       await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "Sam", email: "sam@example.com" } } }, 409);
+      // P1-01: nor can its source/evidence be wiped via the draft-only clear endpoint.
+      await requestJson(buyer, "/api/projects/current/clear", { method: "POST" }, 409);
       // The contact was persisted and is visible to staff.
       const opsView = await requestJson(staff, `/api/ops/projects/${pid}`);
       assert.equal(opsView.body.project.contactEmail, "sam@example.com");

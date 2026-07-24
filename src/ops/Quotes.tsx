@@ -251,26 +251,54 @@ function LineRow({ line, onSaved }: { line: OpsLine; onSaved: () => void }) {
   const [h, setH] = useState(line.height);
   const [qty, setQty] = useState(String(line.qty));
   const [saving, setSaving] = useState(false);
+  const [resolving, setResolving] = useState(false);
   const dirty = w !== line.width || h !== line.height || qty !== String(line.qty);
+  const reviewReasons = line.review ? Object.entries(line.review) : [];
 
   const save = async () => {
     setSaving(true);
     try { await opsPatchLine(line.id, { width: w, height: h, qty: Math.max(1, parseInt(qty) || 1) }); onSaved(); }
     finally { setSaving(false); }
   };
+  const resolveAll = async () => {
+    setResolving(true);
+    try { await opsPatchLine(line.id, { resolveReview: true }); onSaved(); }
+    finally { setResolving(false); }
+  };
 
   return (
-    <div className="bg-white border border-black/8 p-3 flex items-center gap-3 flex-wrap">
-      <span className="font-mono text-xs text-[#5c5a56] w-10">{line.code || "—"}</span>
-      <span className="text-sm text-[#14150f] flex-1 min-w-[160px]">{line.productName}<span className="block text-xs text-[#8b8880]">{line.room}</span></span>
-      <label className="text-xs text-[#8b8880] flex items-center gap-1">W<input value={w} onChange={e => setW(e.target.value.replace(/\D/g, ""))} className="w-16 border border-black/15 px-1.5 py-1 text-sm text-[#14150f]" /></label>
-      <label className="text-xs text-[#8b8880] flex items-center gap-1">H<input value={h} onChange={e => setH(e.target.value.replace(/\D/g, ""))} className="w-16 border border-black/15 px-1.5 py-1 text-sm text-[#14150f]" /></label>
-      <label className="text-xs text-[#8b8880] flex items-center gap-1">Qty<input value={qty} onChange={e => setQty(e.target.value.replace(/\D/g, ""))} className="w-12 border border-black/15 px-1.5 py-1 text-sm text-[#14150f]" /></label>
-      <span className="text-sm w-20 text-right" style={{ fontFamily: "'DM Mono', monospace" }}>{money(line.lineTotal)}</span>
-      {dirty && (
-        <button onClick={save} disabled={saving} className="flex items-center gap-1 text-xs px-2 py-1 text-white disabled:opacity-50" style={{ background: SAGE }}>
-          <Save className="w-3.5 h-3.5" />{saving ? "…" : "Save"}
-        </button>
+    <div className="bg-white border border-black/8 p-3">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="font-mono text-xs text-[#5c5a56] w-10">{line.code || "—"}</span>
+        <span className="text-sm text-[#14150f] flex-1 min-w-[160px]">{line.productName}<span className="block text-xs text-[#8b8880]">{line.room}</span></span>
+        {line.status === "technical_review" && <span className="text-[10px] font-medium px-1.5 py-0.5 border border-sky-300 bg-sky-50 text-sky-800">Technical review</span>}
+        {line.status === "incomplete" && <span className="text-[10px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800">Incomplete</span>}
+        <label className="text-xs text-[#8b8880] flex items-center gap-1">W<input value={w} onChange={e => setW(e.target.value.replace(/\D/g, ""))} className="w-16 border border-black/15 px-1.5 py-1 text-sm text-[#14150f]" /></label>
+        <label className="text-xs text-[#8b8880] flex items-center gap-1">H<input value={h} onChange={e => setH(e.target.value.replace(/\D/g, ""))} className="w-16 border border-black/15 px-1.5 py-1 text-sm text-[#14150f]" /></label>
+        <label className="text-xs text-[#8b8880] flex items-center gap-1">Qty<input value={qty} onChange={e => setQty(e.target.value.replace(/\D/g, ""))} className="w-12 border border-black/15 px-1.5 py-1 text-sm text-[#14150f]" /></label>
+        <span className="text-sm w-20 text-right" style={{ fontFamily: "'DM Mono', monospace" }}>{money(line.lineTotal)}</span>
+        {dirty && (
+          <button onClick={save} disabled={saving} className="flex items-center gap-1 text-xs px-2 py-1 text-white disabled:opacity-50" style={{ background: SAGE }}>
+            <Save className="w-3.5 h-3.5" />{saving ? "…" : "Save"}
+          </button>
+        )}
+      </div>
+      {/* Technical-review reasons the parser raised — visible to staff, with an
+          explicit resolution (edit above to fix, then mark resolved). */}
+      {reviewReasons.length > 0 && (
+        <div className="mt-2.5 pt-2.5 border-t border-black/6">
+          <ul className="space-y-1">
+            {reviewReasons.map(([k, reason]) => (
+              <li key={k} className="text-xs text-sky-900 flex items-start gap-1.5">
+                <FlaskConical className="w-3.5 h-3.5 flex-shrink-0 mt-px text-sky-500" aria-hidden="true" />
+                <span><span className="uppercase tracking-wide text-[10px] text-sky-700">{k}</span> · {reason}</span>
+              </li>
+            ))}
+          </ul>
+          <button onClick={resolveAll} disabled={resolving} className="mt-2 flex items-center gap-1 text-xs px-2 py-1 border border-sky-300 text-sky-800 hover:bg-sky-50 disabled:opacity-50">
+            <Check className="w-3.5 h-3.5" />{resolving ? "…" : "Mark technical review resolved"}
+          </button>
+        </div>
       )}
     </div>
   );

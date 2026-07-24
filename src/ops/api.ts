@@ -72,6 +72,9 @@ export interface OpsLine {
   qty: number;
   lineTotal: number | null;
   status: string;
+  origin: string;
+  /** Unresolved technical-review reasons (field → reason) from an auto-parse. */
+  review: Record<string, string> | null;
 }
 export interface OpsComment { id: string; line_id: string | null; kind: string; body: string; author: string | null; created_at: string }
 export interface OpsRevision { id: string; revisionNo: number; status: string; total: number; issuedAt: string; acceptedAt: string | null }
@@ -102,7 +105,7 @@ export const opsSubmissions = () => req<{ submissions: OpsSubmission[] }>("/api/
 export const opsProject = (id: string) => req<OpsWorkspace>(`/api/ops/projects/${id}`);
 export const opsAssign = (id: string, userId?: string) =>
   req<{ ok: boolean; assignee: string | null; statusInternal: string }>(`/api/ops/projects/${id}/assign`, { method: "POST", body: JSON.stringify({ userId }) });
-export const opsPatchLine = (lineId: string, patch: Partial<{ width: string; height: string; qty: number; code: string; room: string; options: Record<string, string> }>) =>
+export const opsPatchLine = (lineId: string, patch: Partial<{ width: string; height: string; qty: number; code: string; room: string; options: Record<string, string>; resolveReview: boolean | string[] }>) =>
   req<{ line: OpsLine }>(`/api/ops/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(patch) });
 export const opsAddNote = (id: string, body: string, lineId?: string) =>
   req<{ comment: OpsComment }>(`/api/ops/projects/${id}/note`, { method: "POST", body: JSON.stringify({ body, lineId }) });

@@ -63,10 +63,12 @@ const canRecordPayment = (staff: { role: string | null }) => staff.role === "man
 interface LineRow {
   id: string; external_ref: string | null; room_label: string | null; product_slug: string;
   options_json: string; dims_json: string; measured_by: string; qty: number; line_total: number | null; status: string;
+  origin?: string | null; review_json?: string | null;
 }
 
 const opsLineDto = (r: LineRow) => {
   const dims = safeParse(r.dims_json);
+  const review = r.review_json ? safeParse(r.review_json) : null;
   return {
     id: r.id,
     code: r.external_ref ?? "",
@@ -79,6 +81,10 @@ const opsLineDto = (r: LineRow) => {
     qty: r.qty,
     lineTotal: r.line_total,
     status: r.status,
+    // Provenance + unresolved technical-review reasons, so staff can see and act
+    // on the flags the parser raised (material substitution, out-of-range, glazing…).
+    origin: r.origin ?? "manual",
+    review: review && Object.keys(review).length ? (review as Record<string, string>) : null,
   };
 };
 
@@ -379,13 +385,33 @@ ops.patch("/lines/:id", async (c) => {
   const code = body?.code !== undefined ? String(body.code) : line.external_ref;
   const room = body?.room !== undefined ? String(body.room) : line.room_label;
 
+  // Technical-review reasons are NOT cleared as a side effect of an edit — an
+  // estimator changing qty must not silently mark a substitution/out-of-range line
+  // ready. They are resolved only by an explicit request: resolveReview === true
+  // clears them all, or an array clears the named keys.
+  const existingReview = safeParse(line.review_json ?? "") as Record<string, string>;
+  let review: Record<string, string> = { ...existingReview };
+  const rr = body?.resolveReview;
+  if (rr === true) review = {};
+  else if (Array.isArray(rr)) for (const k of rr) delete review[String(k)];
+  const hasReview = Object.keys(review).length > 0;
+  const resolvedKeys = Object.keys(existingReview).filter((k) => !(k in review));
+
   const priced = priceConfigured({ productSlug: line.product_slug, width, height, options, qty });
   const lineTotal = priced.ok ? priced.total : null;
-  const status = priced.ok ? "ready" : "incomplete";
+  // Readiness is derived, never forced: unpriced ⇒ incomplete; priced but still
+  // carrying review flags ⇒ technical_review (submittable, staff must resolve);
+  // priced + no flags ⇒ ready.
+  const status = !priced.ok ? "incomplete" : hasReview ? "technical_review" : "ready";
 
   await c.env.DB.prepare(
-    "UPDATE quote_line SET dims_json = ?, options_json = ?, qty = ?, external_ref = ?, room_label = ?, line_total = ?, status = ?, updated_at = datetime('now') WHERE id = ?",
-  ).bind(JSON.stringify({ width, height }), JSON.stringify(options), qty, code || null, room || null, lineTotal, status, line.id).run();
+    "UPDATE quote_line SET dims_json = ?, options_json = ?, qty = ?, external_ref = ?, room_label = ?, line_total = ?, status = ?, review_json = ?, updated_at = datetime('now') WHERE id = ?",
+  ).bind(JSON.stringify({ width, height }), JSON.stringify(options), qty, code || null, room || null, lineTotal, status, hasReview ? JSON.stringify(review) : null, line.id).run();
+
+  if (resolvedKeys.length) {
+    const staff = await resolveStaff(c.env, c.req.raw);
+    await logEvent(c.env, { actor: staff?.id ?? "staff", entityType: "quote_line", entityId: line.id, action: `resolved technical review: ${resolvedKeys.join(", ")}` });
+  }
 
   const fresh = await c.env.DB.prepare("SELECT * FROM quote_line WHERE id = ?").bind(line.id).first<LineRow>();
   return c.json({ line: opsLineDto(fresh!) });

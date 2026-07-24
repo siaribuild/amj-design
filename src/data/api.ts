@@ -315,7 +315,7 @@ export interface ParseJob {
 /** Outcome of a parse request. `needs_choice` ⇒ prompt Replace/Add; `quota` ⇒ over limit. */
 export type ParseFailReason =
   | "rate_limited" | "busy" | "quota" | "too_large"
-  | "no_schedule_found" | "no_text_layer" | "not_a_pdf" | "encrypted_pdf" | "too_many_pages"
+  | "no_schedule_found" | "no_text_layer" | "not_a_pdf" | "encrypted_pdf" | "too_many_pages" | "too_many_items"
   | "file_missing" | "scan_pending" | "file_not_scanned" | "parse_failed" | "network";
 export type ParseResult =
   | { ok: true; job: ParseJob; quota: ParseQuota }
@@ -342,7 +342,7 @@ export async function startParse(fileId: string, mode?: "replace" | "append"): P
   if (res.status === 429 && body?.error === "quota_exceeded") return { ok: false, reason: "quota", quota: body.quota };
   if (res.status === 429) return { ok: false, reason: "rate_limited" };
   if (res.status === 413) return { ok: false, reason: "too_large" };
-  const known = ["no_schedule_found", "no_text_layer", "not_a_pdf", "encrypted_pdf", "too_many_pages", "file_missing", "file_not_scanned", "parse_failed"] as const;
+  const known = ["no_schedule_found", "no_text_layer", "not_a_pdf", "encrypted_pdf", "too_many_pages", "too_many_items", "file_missing", "file_not_scanned", "parse_failed"] as const;
   const reason = known.find((k) => k === body?.error) ?? "parse_failed";
   return { ok: false, reason };
 }

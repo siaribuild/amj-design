@@ -178,6 +178,8 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         return "That PDF is password-protected — we can't read it. Please upload an unprotected PDF.";
       case "too_many_pages":
         return "That PDF has too many pages to process. Please upload the schedule pages only.";
+      case "too_many_items":
+        return "That schedule has too many items to import at once. Please split it and upload in parts.";
       case "scan_pending":
       case "file_not_scanned":
         return "That file hasn't finished its security check yet. Please try uploading it again.";
