@@ -21,7 +21,10 @@ import { sha256hex } from "../../ai/hash";
 import { primaryModel, EXTRACTION_TEMPERATURE, EXTRACTION_MAX_TOKENS } from "../../ai/versions";
 import type { Skill, SkillRun } from "./types";
 
-const gatewayOpts = (env: Env) => (env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID } } : undefined);
+// collectLog:false enforces §21.1 payload privacy PER-REQUEST — bodies are never
+// stored gateway-side even if the dashboard logging toggle is ever re-enabled.
+const gatewayOpts = (env: Env) =>
+  env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID, collectLog: false } } : undefined;
 
 async function callModel(env: Env, model: string, skill: Skill<unknown, unknown>, messages: { role: string; content: unknown }[]) {
   return await (env.AI as any).run(model, {

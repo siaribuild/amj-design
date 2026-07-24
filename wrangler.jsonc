@@ -47,6 +47,12 @@
     // AI binding), or 'ai' (force Workers AI). Leave as deterministic until AI is
     // provisioned; then switch to 'auto' for messy/scanned schedules.
     "PARSE_ENGINE": "deterministic",
+    // AI Gateway (owner-provisioned 2026-07-25): routes every model call through
+    // the gateway's spend cap ($20/mo), rate limit (10/min) and unified billing.
+    // Payload logging is off in the gateway AND enforced per-request in code
+    // (collectLog:false). Model selection lives in code: google/gemini-3.6-flash
+    // by default; override with AI_PRIMARY_MODEL without a code change.
+    "AI_GATEWAY_ID": "openframe-estimator",
     // Upload scanning: 'structural' (default, on-stack — sniffed-type allowlist
     // plus PDF active-content detection, no external dependency), 'remote' (an
     // external AV service at SCAN_ENDPOINT), or 'both'. Every engine fails CLOSED:

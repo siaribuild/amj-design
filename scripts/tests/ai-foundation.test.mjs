@@ -167,7 +167,7 @@ test("runner: uses the env-resolved primary model with determinism settings and 
   assert.equal(aiCalls[0].model, DEFAULT_PRIMARY_MODEL, "defaults to Gemini 3.6 Flash");
   assert.equal(aiCalls[0].params.temperature, EXTRACTION_TEMPERATURE, "§13.4 near-zero temperature");
   assert.equal(aiCalls[0].params.response_format.type, "json_schema", "strict JSON schema");
-  assert.deepEqual(aiCalls[0].opts, { gateway: { id: "gw-test" } }, "routed through the gateway");
+  assert.deepEqual(aiCalls[0].opts, { gateway: { id: "gw-test", collectLog: false } }, "routed through the gateway with payload logging enforced OFF (§21.1)");
   assert.equal(run.promptVersion, "v1");
   assert.equal(run.repaired, false);
 });
