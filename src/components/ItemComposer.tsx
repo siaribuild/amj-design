@@ -9,7 +9,7 @@
 //  • Product-first; picker = two dependent fields (Type → Product).
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useState, useEffect, useRef } from "react";
-import { Check, AlertCircle, Info, ChevronDown, Plus, Minus, Pencil, Trash2, Copy } from "lucide-react";
+import { Check, AlertCircle, Info, ChevronDown, Plus, Minus, Pencil, Trash2, Copy, X } from "lucide-react";
 import { SAGE, WindowMark, Btn, FieldLabel, Input } from "../app/ui";
 import { type Product, getProductBySlug, getProductsByFamily } from "../data/catalogue";
 import {
@@ -343,6 +343,7 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
   const [qty, setQty] = useState(seed?.qty || 1);
   const [location, setLocation] = useState(seed?.location || "");
   const [open, setOpen] = useState<{ dims: boolean; options: boolean; qty: boolean }>({ dims: true, options: false, qty: false });
+  const [confirmClose, setConfirmClose] = useState(false);
 
   const w = parseInt(width) || 0, h = parseInt(height) || 0;
   const dimsEntered = w > 0 && h > 0;
@@ -370,8 +371,32 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
   const issues = p ? itemIssues(p, { width, height, options }) : [];
   const hasIssue = (s: EditFocus) => issues.some(i => i.section === s);
 
+  // Dismissing the draft: silent for an empty/product-only form, but a real
+  // in-progress item asks first (inline — no modal, matching the page).
+  const dirty = !!productSlug && (dimsEntered || !!location.trim() || measuredBy !== "" || codeEdited);
+  const requestCancel = () => { if (dirty && !confirmClose) { setConfirmClose(true); return; } onCancel?.(); };
+
   return (
     <div className="border border-black/10 bg-white">
+      {/* Persistent header — the dismiss affordance is here from the first render,
+          so an empty form (no product yet) can still be backed out of. */}
+      {onCancel && (
+        <div className="flex items-center justify-between gap-3 border-b border-black/10 bg-[#FAFAF9] px-4 md:px-5 py-2.5">
+          <p className="text-[10px] uppercase tracking-widest text-[#5c5a56]">New item</p>
+          {confirmClose ? (
+            <span className="flex items-center gap-2 text-xs text-[#5c5a56]">
+              Discard this item?
+              <button type="button" onClick={() => onCancel?.()} className="font-medium text-red-600 hover:text-red-700 cursor-pointer">Discard</button>
+              <button type="button" onClick={() => setConfirmClose(false)} className="font-medium text-[#131311] hover:text-[#5A7A6A] cursor-pointer">Keep editing</button>
+            </span>
+          ) : (
+            <button type="button" onClick={requestCancel} aria-label="Cancel new item"
+              className="inline-flex items-center gap-1 -mr-1 px-2 py-1 text-xs font-medium text-[#6f6c67] hover:text-[#131311] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A]">
+              Cancel <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      )}
       <div className="px-4 md:px-5 py-5 space-y-3">
         {lockedSlug ? (
           p && (
@@ -446,7 +471,7 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
               <p className="text-lg font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{canSave ? fmt(gstAdjust(priced.total, gstMode)) : "—"} <span className="text-xs font-normal text-[#5c5a56]">{gstSuffix(gstMode)}{canSave && qty > 1 ? ` · ${fmt(gstAdjust(priced.unit, gstMode))} ea` : ""}</span></p>
             </div>
             <div className="flex items-center gap-2">
-              {onCancel && <Btn variant="ghost" size="md" onClick={onCancel}>Cancel</Btn>}
+              {onCancel && <Btn variant="ghost" size="md" onClick={requestCancel}>Cancel</Btn>}
               <Btn variant="sage" size="md" onClick={() => canSave && onCommit(built)} disabled={!canSave}><Check className="w-4 h-4" />{submitLabel}</Btn>
             </div>
           </div>

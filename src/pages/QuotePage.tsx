@@ -190,6 +190,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   const applyParseResult = async (result: ParseResult, many: boolean) => {
     if (result.ok) {
       await quote.reload();
+      setAdding(false);   // a stray in-progress add-form is stale once imported lines land
       const { itemCount, needsReviewCount } = result.job;
       let message = `${itemCount} items imported${needsReviewCount ? `, ${needsReviewCount} need review` : ""}`;
       if (many) message += ". Only the first file was used — one schedule per quote.";
@@ -524,6 +525,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         attentionCount={attentionCount}
         total={total}
         editingItem={adding}
+        uploading={uploading}
         onReviewQuote={() => { setView("review"); window.scrollTo(0, 0); }}
         onReviewIssues={reviewIssues}
         onFinishItem={finishItem}
