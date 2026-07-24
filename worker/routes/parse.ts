@@ -60,15 +60,11 @@ parse.post("/projects/current/parse", async (c) => {
 
   // Existing draft → require an explicit replace/append choice.
   const state = await draftScheduleState(c.env, project.id);
-  if (state.lineCount > 0 && !mode) {
-    if (cookie) c.header("Set-Cookie", cookie);
-    return c.json({
-      error: "needs_choice",
-      existingItems: state.lineCount,
-      existingFile: state.scheduleFiles.find((f) => f.id !== fileId)?.filename ?? null,
-    }, 409);
-  }
-  const effectiveMode: ParseMode = mode || "replace";
+  // The Replace/Add prompt is DEAD (multi-file UX spec §1): the default mode is
+  // tag-upsert — known tags refresh (respecting human edits), new tags add,
+  // vanished tags reconcile. Explicit replace/append remain accepted for legacy
+  // callers, but the route never asks the customer to choose.
+  const effectiveMode: ParseMode = mode || "upsert";
 
   // Per-project lock acquired BEFORE any mutation, so a concurrent parse cannot
   // delete this request's files or double-import. The lease carries a unique owner

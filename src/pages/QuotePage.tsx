@@ -63,7 +63,6 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   const [uploading, setUploading] = useState(false);
   const [uploadNotice, setUploadNotice] = useState<null | { type: "success" | "error"; message: string }>(null);
   // Replace/Add prompt when parsing into a project that already has content.
-  const [choice, setChoice] = useState<null | { fileId: string; existingItems: number; existingFile: string | null; many: boolean }>(null);
   const [clearConfirm, setClearConfirm] = useState(false);
 
   const [submitted, setSubmitted] = useState(false);
@@ -188,20 +187,6 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     }
   };
 
-  // Apply a resolved parse result (never a needs_choice — that is handled inline).
-  const applyParseResult = async (result: ParseResult, many: boolean) => {
-    if (result.ok) {
-      await quote.reload();
-      setAdding(false);   // a stray in-progress add-form is stale once imported lines land
-      const { itemCount, needsReviewCount } = result.job;
-      const message = `${itemCount} items imported${needsReviewCount ? `, ${needsReviewCount} need review` : ""}`;
-      void many; // multi-file uploads are looped now; no first-file truncation
-      setUploadNotice({ type: "success", message });
-    } else {
-      setUploadNotice({ type: "error", message: parseErrorMessage(result) });
-    }
-  };
-
   // Multi-file upload (UX spec: docs/estimator/multifile-ux-spec.md). SEQUENTIAL
   // for…of — the rate limit is per-source (parallel bursts risk spurious 429s)
   // and chips stay order-stable. One bad file never aborts the rest. kind is
@@ -213,7 +198,6 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     if (!list?.length) return;
     setUploading(true);
     setUploadNotice(null);
-    setChoice(null);
     const failures: string[] = [];
     let imported = 0, needsReview = 0, attached = 0;
     try {
@@ -222,12 +206,6 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
           const up = await uploadFile(file, "upload");
           const result = await startParse(up.file.id);
           if (result.ok) { imported += result.job.itemCount; needsReview += result.job.needsReviewCount; continue; }
-          if (result.reason === "needs_choice") {
-            // Legacy prompt — survives ONLY until the deterministic importer gains
-            // tag-upsert semantics (spec kills it); reached on a 2nd schedule only.
-            setChoice({ fileId: up.file.id, existingItems: result.existingItems, existingFile: result.existingFile, many: false });
-            continue;
-          }
           if (NOT_A_SCHEDULE.has(result.reason)) { attached++; continue; } // contribution, not a failure
           failures.push(`${file.name}: ${parseErrorMessage(result)}`);
         } catch (e) {
@@ -251,23 +229,6 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     }
   };
 
-  // Resolve the Replace/Add prompt: re-run the parse with an explicit mode.
-  const resolveChoice = async (mode: "replace" | "append") => {
-    if (!choice) return;
-    const { fileId, many } = choice;
-    setChoice(null);
-    setUploading(true);
-    setUploadNotice(null);
-    try {
-      const result = await startParse(fileId, mode);
-      await applyParseResult(result, many);
-    } catch (e) {
-      setUploadNotice({ type: "error", message: uploadErrorMessage(e) });
-    } finally {
-      setUploading(false);
-    }
-  };
-
   // Home-page deep link (?upload=1) opens the picker on first mount, then cleans the URL.
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -283,7 +244,6 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // Whole-project reset — clears every line and the attached schedule (server + local).
   const handleClearAll = async () => {
     setClearConfirm(false);
-    setChoice(null);
     setUploadNotice(null);
     await quote.clearAll();
   };
@@ -483,24 +443,6 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
 
         {/* Items + composer */}
         <div>
-          {/* Replace / Add prompt — the schedule parsed but the project already has content. */}
-          {choice && (
-            <div role="alertdialog" aria-label="Import options"
-              className="mb-4 border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              <div className="flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium">This project already has {choice.existingItems} item{choice.existingItems !== 1 ? "s" : ""}{choice.existingFile ? ` and "${choice.existingFile}"` : ""}.</p>
-                  <p className="mt-0.5 text-amber-800">Replace them with the new schedule, or add the new items to what you already have?</p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Btn variant="sage" size="sm" onClick={() => resolveChoice("append")}>Add to project</Btn>
-                    <Btn variant="ghost" size="sm" onClick={() => resolveChoice("replace")}>Replace everything</Btn>
-                    <button onClick={() => setChoice(null)} className="ml-1 text-xs font-medium text-amber-800 hover:text-amber-900 underline cursor-pointer">Cancel</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
           {uploadNotice && (
             <div role={uploadNotice.type === "error" ? "alert" : "status"} aria-live="polite"
               className={`mb-4 flex items-start gap-2.5 border px-4 py-3 text-sm ${uploadNotice.type === "success" ? "border-[#5A7A6A]/30 bg-[#5A7A6A]/8 text-[#355344]" : "border-red-300 bg-red-50 text-red-800"}`}>

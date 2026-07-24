@@ -15,7 +15,11 @@ import type { ProjectRow } from "./access";
 
 export interface ParseFile { id: string; r2_key: string; filename: string; size: number | null; content_type?: string; virus_status?: string }
 
-export type ParseMode = "replace" | "append";
+// "upsert" (default since the multi-file UX rework) matches parsed lines to
+// existing draft lines by schedule tag: known tags refresh, new tags add,
+// vanished tags reconcile — the Replace/Add prompt is dead (spec §1).
+// "replace"/"append" survive only as explicit legacy modes.
+export type ParseMode = "replace" | "append" | "upsert";
 
 export interface ParseOutcome {
   jobId: string;
@@ -166,36 +170,92 @@ export async function runScheduleParse(
   // Fail cleanly rather than exceed it mid-batch after paying for extraction.
   if (lines.length > MAX_IMPORT_ROWS) return fail("too_many_items");
 
-  // Apply mode: replace clears prior draft lines; append keeps them.
+  // Apply mode (multi-file UX spec §1): "upsert" (default) matches by schedule
+  // tag; "replace" clears prior draft lines; "append" keeps them (legacy modes).
   const stmts: D1PreparedStatement[] = [];
   if (mode === "replace") {
     stmts.push(env.DB.prepare("DELETE FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id));
   }
-  const posRow = mode === "append"
-    ? await env.DB.prepare("SELECT COALESCE(MAX(position),-1)+1 AS n FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id).first<{ n: number }>()
-    : { n: 0 };
+
+  // Existing draft state for the upsert: schedule-origin rows are matchable by
+  // tag; MANUAL rows are untouchable (a document run never creates, deletes or
+  // writes a manual line — spec §1b). A manual line whose code collides with a
+  // parsed tag stands as-is; the parsed row is skipped (the Link/Keep-separate
+  // card arrives with the digest UI).
+  interface DraftRow { id: string; external_ref: string | null; origin: string | null; edited_fields: string | null; position: number }
+  const draftRows = mode === "upsert"
+    ? ((await env.DB.prepare("SELECT id, external_ref, origin, edited_fields, position FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id).all<DraftRow>()).results ?? [])
+    : [];
+  const byTag = new Map<string, DraftRow>();
+  const manualTags = new Set<string>();
+  for (const r of draftRows) {
+    if (!r.external_ref) continue;
+    if ((r.origin ?? "manual") === "schedule") { if (!byTag.has(r.external_ref)) byTag.set(r.external_ref, r); }
+    else manualTags.add(r.external_ref);
+  }
+
+  const posRow = mode === "replace"
+    ? { n: 0 }
+    : await env.DB.prepare("SELECT COALESCE(MAX(position),-1)+1 AS n FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id).first<{ n: number }>();
   let position = posRow?.n ?? 0;
 
   let needsReview = 0;
+  const seenTags = new Set<string>();
   const created: { line: ParsedLine; qlId: string; plId: string; idx: number }[] = [];
   lines.forEach((l, idx) => {
     const priced = priceConfigured({ productSlug: l.productSlug, width: l.width, height: l.height, options: l.options, qty: l.qty });
     const hasReview = !!l.review && Object.keys(l.review).length > 0;
-    if (hasReview) needsReview++;
     // Unpriceable ⇒ 'incomplete' (customer-blocking); priced+flagged ⇒
     // 'technical_review' (AMJ resolves, submittable); priced+clean ⇒ 'ready'.
     const status = !priced.ok ? "incomplete" : hasReview ? "technical_review" : "ready";
     const lineTotal = priced.ok ? priced.total : null;
-    const qlId = uuid();
     const plId = uuid();
-    stmts.push(env.DB.prepare(
-      `INSERT INTO quote_line (id, project_id, revision_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position, origin, review_json)
-       VALUES (?,?,NULL,?,?,?,?,?,?,?,?,?,?, 'schedule', ?)`,
-    ).bind(
-      qlId, project.id, l.code || null, l.location || null, l.productSlug,
-      JSON.stringify(l.options), JSON.stringify({ width: l.width, height: l.height }), l.measuredBy || "",
-      l.qty, lineTotal, status, position++, l.review ? JSON.stringify(l.review) : null,
-    ));
+    let qlId: string;
+
+    const match = mode === "upsert" && l.code ? byTag.get(l.code) : undefined;
+    if (mode === "upsert" && l.code && manualTags.has(l.code) && !match) {
+      // Manual-line collision: the customer's line stands; skip the parsed row.
+      return;
+    }
+    if (l.code) seenTags.add(l.code);
+
+    if (match) {
+      qlId = match.id;
+      // HUMAN-EDIT GUARD (0019): fields a customer changed are never overwritten
+      // by a re-parse — and when any priced-relevant field is locked, the row's
+      // price/status stand too (repricing from parsed values would betray the guard).
+      let locked: string[] = [];
+      try { const v = JSON.parse(match.edited_fields || "[]"); if (Array.isArray(v)) locked = v; } catch { /* no locks */ }
+      const keep = (f: string, v: unknown) => (locked.includes(f) ? null : v);
+      if (locked.length === 0) {
+        if (hasReview) needsReview++;
+        stmts.push(env.DB.prepare(
+          `UPDATE quote_line SET room_label=?, product_slug=?, options_json=?, dims_json=?, qty=?, line_total=?, status=?, review_json=? WHERE id=?`,
+        ).bind(l.location || null, l.productSlug, JSON.stringify(l.options),
+          JSON.stringify({ width: l.width, height: l.height }), l.qty, lineTotal, status,
+          l.review ? JSON.stringify(l.review) : null, qlId));
+      } else {
+        stmts.push(env.DB.prepare(
+          `UPDATE quote_line SET room_label = COALESCE(?, room_label),
+             product_slug = COALESCE(?, product_slug), options_json = COALESCE(?, options_json),
+             dims_json = COALESCE(?, dims_json), qty = COALESCE(?, qty) WHERE id = ?`,
+        ).bind(l.location || null, keep("product_slug", l.productSlug),
+          keep("options_json", JSON.stringify(l.options)),
+          keep("dims_json", JSON.stringify({ width: l.width, height: l.height })),
+          keep("qty", l.qty), qlId));
+      }
+    } else {
+      if (hasReview) needsReview++;
+      qlId = uuid();
+      stmts.push(env.DB.prepare(
+        `INSERT INTO quote_line (id, project_id, revision_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position, origin, review_json)
+         VALUES (?,?,NULL,?,?,?,?,?,?,?,?,?,?, 'schedule', ?)`,
+      ).bind(
+        qlId, project.id, l.code || null, l.location || null, l.productSlug,
+        JSON.stringify(l.options), JSON.stringify({ width: l.width, height: l.height }), l.measuredBy || "",
+        l.qty, lineTotal, status, position++, l.review ? JSON.stringify(l.review) : null,
+      ));
+    }
     stmts.push(env.DB.prepare(
       `INSERT INTO parse_line (id, job_id, page, source_index, raw_json, mapped_product_slug, mapped_dims_json, mapped_options_json, mapped_qty, external_ref, issues_json, quote_line_id)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -206,6 +266,25 @@ export async function runScheduleParse(
     ));
     created.push({ line: l, qlId, plId, idx });
   });
+
+  // Reconciliation (spec §1, "revision supersede"): a schedule-origin line whose
+  // tag no longer appears in the new parse is stale. Unedited ⇒ removed;
+  // customer-edited ⇒ kept but flagged for review — never silently deleted.
+  if (mode === "upsert") {
+    for (const r of draftRows) {
+      if ((r.origin ?? "manual") !== "schedule" || !r.external_ref || seenTags.has(r.external_ref)) continue;
+      const edited = (() => { try { const v = JSON.parse(r.edited_fields || "[]"); return Array.isArray(v) && v.length > 0; } catch { return false; } })();
+      if (edited) {
+        stmts.push(env.DB.prepare(
+          `UPDATE quote_line SET status='technical_review',
+             review_json = json_patch(COALESCE(review_json,'{}'), '{"noLongerInDocuments":true}') WHERE id = ?`,
+        ).bind(r.id));
+        needsReview++;
+      } else {
+        stmts.push(env.DB.prepare("DELETE FROM quote_line WHERE id = ?").bind(r.id));
+      }
+    }
+  }
 
   stmts.push(env.DB.prepare("UPDATE project SET updated_at = datetime('now') WHERE id = ?").bind(project.id));
   stmts.push(env.DB.prepare(

@@ -23,6 +23,7 @@ await build({
       export { normalizePhone, enquiryReference, validateEnquiry } from ${p("worker/lib/enquiry.ts")};
       export { availableActions, ACTION_LABEL, TRANSITIONS, STAGES, STAGE_LABEL, DEPOSIT_PERCENT } from ${p("worker/lib/orders.ts")};
       export { canApprove } from ${p("worker/lib/approvals.ts")};
+      export { itemFields, editedFieldsAfterSave } from ${p("worker/lib/lines.ts")};
       export { staffDomains, isStaffEmail } from ${p("worker/lib/staff.ts")};
     `,
     resolveDir: projectRoot,
@@ -238,4 +239,19 @@ test("catalogueQuery.toCatalogueData: showroom locations normalise", () => {
   assert.equal(l.appointmentAvailable, true, "defaults true");
   assert.equal(l.status, "active", "defaults active");
   assert.equal(l.historicalAliases, undefined);
+});
+
+// ── Human-edit provenance (0019, multi-file UX spec §1b) ─────────────────────
+test("editedFieldsAfterSave: an unchanged autosave round-trip marks NOTHING as edited", () => {
+  const incoming = M.itemFields({ productSlug: "amj80-series-awning-window", width: "900", height: "1200", options: { colour: "black" }, qty: 2, origin: "schedule" });
+  const stored = { product_slug: incoming.product_slug, options_json: '{"colour":"black"}', dims_json: '{"height":"1200","width":"900"}', qty: 2, edited_fields: null };
+  // Note the stored JSON has DIFFERENT key order — must still compare equal.
+  assert.equal(M.editedFieldsAfterSave(stored, incoming), null, "key-order differences never false-flag an edit");
+});
+
+test("editedFieldsAfterSave: a real change flags exactly its field group and unions with prior edits", () => {
+  const incoming = M.itemFields({ productSlug: "amj80-series-awning-window", width: "950", height: "1200", options: { colour: "black" }, qty: 2, origin: "schedule" });
+  const stored = { product_slug: incoming.product_slug, options_json: '{"colour":"black"}', dims_json: '{"width":"900","height":"1200"}', qty: 2, edited_fields: '["qty"]' };
+  const out = JSON.parse(M.editedFieldsAfterSave(stored, incoming));
+  assert.deepEqual(out.sort(), ["dims_json", "qty"].sort(), "width change adds dims_json; prior qty edit survives");
 });

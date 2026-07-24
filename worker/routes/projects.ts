@@ -5,7 +5,7 @@
 // first save, not on every visit, so idle traffic leaves no junk.
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { itemToInsert, itemFields, incomingServerId, rowToApiLine, type LineRow } from "../lib/lines";
+import { itemToInsert, itemFields, incomingServerId, editedFieldsAfterSave, rowToApiLine, type LineRow, type EditableSnapshot } from "../lib/lines";
 import { resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 
@@ -96,10 +96,11 @@ projects.put("/current/lines", async (c) => {
   // client already knows (serverId) is UPDATEd in place, so its id — and the
   // parse_line.quote_line_id provenance link pointing at it — survives every
   // autosave and the pre-submit save. Only genuinely removed lines are deleted.
-  const existing = new Set(
-    ((await c.env.DB.prepare("SELECT id FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id).all<{ id: string }>()).results ?? [])
-      .map((r) => r.id),
-  );
+  type StoredRow = EditableSnapshot & { id: string; origin: string | null };
+  const storedRows = ((await c.env.DB.prepare(
+    "SELECT id, origin, edited_fields, product_slug, options_json, dims_json, qty FROM quote_line WHERE project_id = ? AND revision_id IS NULL",
+  ).bind(project.id).all<StoredRow>()).results ?? []);
+  const existing = new Map(storedRows.map((r) => [r.id, r]));
   const resolved = items.map((raw, i) => {
     const sid = incomingServerId(raw);
     return { raw, i, id: sid && existing.has(sid) ? sid : null };
@@ -108,17 +109,21 @@ projects.put("/current/lines", async (c) => {
 
   const stmts: D1PreparedStatement[] = [];
   // Delete only the draft lines the client dropped (origin is never resurrected).
-  for (const id of existing) {
+  for (const id of existing.keys()) {
     if (!keptIds.has(id)) stmts.push(c.env.DB.prepare("DELETE FROM quote_line WHERE id = ?").bind(id));
   }
   for (const { raw, i, id } of resolved) {
     const f = itemFields(raw);
     if (id) {
       // UPDATE preserves the row's id AND its server-owned origin (not from client).
+      // Schedule-origin rows also record WHICH field groups the human changed
+      // (0019) — the tag-upsert importer never overwrites an edited field.
+      const stored = existing.get(id)!;
+      const edited = (stored.origin ?? "manual") === "schedule" ? editedFieldsAfterSave(stored, f) : stored.edited_fields;
       stmts.push(c.env.DB.prepare(
-        `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?, options_json=?, dims_json=?, measured_by=?, qty=?, line_total=?, status=?, position=?, review_json=?, updated_at=datetime('now')
+        `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?, options_json=?, dims_json=?, measured_by=?, qty=?, line_total=?, status=?, position=?, review_json=?, edited_fields=?, updated_at=datetime('now')
          WHERE id=? AND project_id=? AND revision_id IS NULL`,
-      ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.measured_by, f.qty, f.line_total, f.status, i, f.review_json, id, project.id));
+      ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.measured_by, f.qty, f.line_total, f.status, i, f.review_json, edited, id, project.id));
     } else {
       const r = itemToInsert(project.id, raw, i);
       stmts.push(c.env.DB.prepare(
