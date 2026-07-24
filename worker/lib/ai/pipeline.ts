@@ -179,8 +179,9 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
   const docs = await ingestProjectFiles(env, projectId);
   const usable = docs.filter((d) => !d.rejected && (d.markdown || d.imageDataUrl));
   if (!usable.length) {
-    await completeAiRun(env, run.id, { status: "failed", errorCode: docs.length ? "IMAGE_UNREADABLE" : "FILE_UNSUPPORTED" });
-    return { runId: run.id, status: "failed", documents: docs.length, extractedLines: 0, conflicts: 0, energyApplied: 0, buildingModelId: null, estimate: null, stageWarnings: docs.flatMap((d) => d.qualityIssues) };
+    const summary: AiExtractionSummary = { runId: run.id, status: "failed", documents: docs.length, extractedLines: 0, conflicts: 0, energyApplied: 0, buildingModelId: null, estimate: null, stageWarnings: docs.flatMap((d) => d.qualityIssues) };
+    await completeAiRun(env, run.id, { status: "failed", errorCode: docs.length ? "IMAGE_UNREADABLE" : "FILE_UNSUPPORTED", summary });
+    return summary;
   }
 
   // Route documents by classification (§7.4): energy reports feed the energy
@@ -224,8 +225,9 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
   }
 
   if (!perDoc.length) {
-    await completeAiRun(env, run.id, { status: "failed", errorCode: "SCHEMA_VALIDATION_FAILED" });
-    return { runId: run.id, status: "failed", documents: docs.length, extractedLines: 0, conflicts: 0, energyApplied: 0, buildingModelId: null, estimate: null, stageWarnings: warnings };
+    const summary: AiExtractionSummary = { runId: run.id, status: "failed", documents: docs.length, extractedLines: 0, conflicts: 0, energyApplied: 0, buildingModelId: null, estimate: null, stageWarnings: warnings };
+    await completeAiRun(env, run.id, { status: "failed", errorCode: "SCHEMA_VALIDATION_FAILED", summary });
+    return summary;
   }
 
   // Merge, model, persist the canonical records.
@@ -358,13 +360,14 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
   const estimate = await runProjectEstimate(env, projectId).catch(() => null);
 
   const status = anyFailed ? "partial" : "completed";
-  await completeAiRun(env, run.id, { status, inputMode: model.inputMode });
-  return {
+  const summary: AiExtractionSummary = {
     runId: run.id, status, documents: docs.length,
     extractedLines: merged.lines.length, conflicts: model.conflicts.length, energyApplied,
     buildingModelId, estimate: estimate ? { openings: estimate.openings, selected: estimate.selected } : null,
     stageWarnings: warnings,
   };
+  await completeAiRun(env, run.id, { status, inputMode: model.inputMode, summary });
+  return summary;
 }
 
 function avgConfidence(openings: OpeningV1[]): number | null {

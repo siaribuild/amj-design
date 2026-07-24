@@ -18,13 +18,17 @@ export type StickyQuotePanelProps = {
   total: number;
   editingItem: boolean;          // a new item is being composed but not yet saved
   uploading?: boolean;           // a schedule is being read/parsed right now
+  /** Documents the AI pipeline is still reading (multi-file UX spec §2). While
+   *  >0 the bar suppresses the "N ready" claim — it would assert a total that is
+   *  about to change — but the CTA stays live (processing never blocks). */
+  readingDocs?: number;
   onReviewQuote: () => void;
   onReviewIssues: () => void;
   onFinishItem: () => void;
 };
 
 export function StickyQuotePanel({
-  itemCount, attentionCount, total, editingItem, uploading = false,
+  itemCount, attentionCount, total, editingItem, uploading = false, readingDocs = 0,
   onReviewQuote, onReviewIssues, onFinishItem,
 }: StickyQuotePanelProps) {
   const readyCount = Math.max(0, itemCount - attentionCount);
@@ -57,6 +61,17 @@ export function StickyQuotePanel({
     ctaLabel = "Please wait";
     onClick = () => {};
     ctaDisabled = true;
+    statusTone = "border-black/10 bg-white text-[#5c5a56]";
+    panelTone = "border-[#8CA99B] bg-[#F7F8F6]";
+  } else if (readingDocs > 0) {
+    // Project-level processing (bar = project state; rail chips = which file).
+    // The "N ready" claim is suppressed — it would assert a total about to
+    // change — but the CTA stays live: reading never blocks the customer.
+    const docs = `${readingDocs} document${readingDocs !== 1 ? "s" : ""}`;
+    status = <><Loader2 className="w-4 h-4 flex-shrink-0 animate-spin" aria-hidden="true" /><span>Reading {docs}…</span></>;
+    live = `Reading ${docs}`;
+    ctaLabel = itemCount > 0 ? "Review quote" : "Choose how to start";
+    onClick = itemCount > 0 ? onReviewQuote : onFinishItem;
     statusTone = "border-black/10 bg-white text-[#5c5a56]";
     panelTone = "border-[#8CA99B] bg-[#F7F8F6]";
   } else if (itemCount === 0 && !editingItem) {

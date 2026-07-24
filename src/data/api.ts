@@ -313,8 +313,24 @@ export interface ParseJob {
   engine: string;
   itemCount: number;
   needsReviewCount: number;
+  /** Upsert digest (multi-file UX spec §3): what this parse did to the draft. */
+  added?: number;
+  updated?: number;
+  removed?: number;
+  keptForReview?: number;
   error?: string;
 }
+
+// ── AI extraction status (multi-file UX spec §2) ─────────────────────────────
+export interface ExtractionRun {
+  id: string;
+  status: "queued" | "running" | "partial" | "completed" | "failed" | "cancelled";
+  startedAt: string;
+  completedAt: string | null;
+  summary: { extractedLines: number; conflicts: number; energyApplied: number; documents: number } | null;
+}
+export const extractionStatus = () =>
+  req<{ run: ExtractionRun | null }>("/api/projects/current/extraction-status");
 /** Outcome of a parse request. `needs_choice` ⇒ prompt Replace/Add; `quota` ⇒ over limit. */
 export type ParseFailReason =
   | "rate_limited" | "busy" | "quota" | "too_large"

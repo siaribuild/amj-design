@@ -33,13 +33,16 @@ export async function completeAiRun(
     errorCode?: FailureClass | null;
     inputMode?: InputMode | null;
     tokenUsage?: { inputTokens: number; outputTokens: number } | null;
+    /** Customer-safe run summary (0020) — read by the extraction-status poll. */
+    summary?: unknown;
   },
 ): Promise<void> {
   await env.DB.prepare(
     `UPDATE ai_runs SET status = ?, error_code = ?, input_mode = COALESCE(?, input_mode),
-            token_usage_json = ?, completed_at = datetime('now') WHERE id = ?`,
+            token_usage_json = ?, summary_json = ?, completed_at = datetime('now') WHERE id = ?`,
   ).bind(
     outcome.status, outcome.errorCode ?? null, outcome.inputMode ?? null,
-    outcome.tokenUsage ? JSON.stringify(outcome.tokenUsage) : null, runId,
+    outcome.tokenUsage ? JSON.stringify(outcome.tokenUsage) : null,
+    outcome.summary !== undefined ? JSON.stringify(outcome.summary) : null, runId,
   ).run();
 }

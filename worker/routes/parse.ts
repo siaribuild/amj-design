@@ -138,6 +138,24 @@ parse.post("/projects/current/clear", async (c) => {
 });
 
 // GET /api/projects/current/parse-quota
+// GET /api/projects/current/extraction-status — the customer's poll while the AI
+// pipeline reads their documents (multi-file UX spec §2/§3). Returns the latest
+// run's state + customer-safe summary; the client polls only while a run is in
+// flight (2s→5s, stop at 2 min). Anonymous projects simply never have a run.
+parse.get("/projects/current/extraction-status", async (c) => {
+  const { project, cookie } = await resolveCurrentProject(c.env, c.req.raw);
+  if (cookie) c.header("Set-Cookie", cookie);
+  if (!project) return c.json({ run: null });
+  const r = await c.env.DB.prepare(
+    `SELECT id, status, started_at, completed_at, summary_json FROM ai_runs
+      WHERE project_id = ? ORDER BY started_at DESC LIMIT 1`,
+  ).bind(project.id).first<{ id: string; status: string; started_at: string; completed_at: string | null; summary_json: string | null }>();
+  if (!r) return c.json({ run: null });
+  let summary: unknown = null;
+  try { summary = r.summary_json ? JSON.parse(r.summary_json) : null; } catch { /* unreadable summary is absent, not an error */ }
+  return c.json({ run: { id: r.id, status: r.status, startedAt: r.started_at, completedAt: r.completed_at, summary } });
+});
+
 parse.get("/projects/current/parse-quota", async (c) => {
   const user = await resolveUser(c.env, c.req.raw);
   const { project, token } = await resolveCurrentProject(c.env, c.req.raw);

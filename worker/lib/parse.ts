@@ -27,6 +27,13 @@ export interface ParseOutcome {
   engine: string;
   itemCount: number;
   needsReviewCount: number;
+  /** Upsert digest (multi-file UX spec §3): what this parse actually did to the
+   *  draft — feeds the change-digest banner. All zero for legacy modes. */
+  added: number;
+  updated: number;
+  removed: number;
+  /** Edited lines whose tag vanished — kept + flagged, never silently deleted. */
+  keptForReview: number;
   error?: string;
 }
 
@@ -125,7 +132,7 @@ export async function runScheduleParse(
 
   const fail = async (code: string): Promise<ParseOutcome> => {
     await env.DB.prepare("UPDATE schedule_parse_job SET status='failed', error=?, completed_at=datetime('now') WHERE id=?").bind(code, jobId).run();
-    return { jobId, status: "failed", engine: "cf-deterministic", itemCount: 0, needsReviewCount: 0, error: code };
+    return { jobId, status: "failed", engine: "cf-deterministic", itemCount: 0, needsReviewCount: 0, added: 0, updated: 0, removed: 0, keptForReview: 0, error: code };
   };
 
   // Only a scanner-cleared file is ever fed to the extractor. Uploads are scanned
@@ -200,6 +207,7 @@ export async function runScheduleParse(
   let position = posRow?.n ?? 0;
 
   let needsReview = 0;
+  let added = 0, updated = 0, removed = 0, keptForReview = 0;
   const seenTags = new Set<string>();
   const created: { line: ParsedLine; qlId: string; plId: string; idx: number }[] = [];
   lines.forEach((l, idx) => {
@@ -221,6 +229,7 @@ export async function runScheduleParse(
 
     if (match) {
       qlId = match.id;
+      updated++;
       // HUMAN-EDIT GUARD (0019): fields a customer changed are never overwritten
       // by a re-parse — and when any priced-relevant field is locked, the row's
       // price/status stand too (repricing from parsed values would betray the guard).
@@ -246,6 +255,7 @@ export async function runScheduleParse(
       }
     } else {
       if (hasReview) needsReview++;
+      added++;
       qlId = uuid();
       stmts.push(env.DB.prepare(
         `INSERT INTO quote_line (id, project_id, revision_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position, origin, review_json)
@@ -280,8 +290,10 @@ export async function runScheduleParse(
              review_json = json_patch(COALESCE(review_json,'{}'), '{"noLongerInDocuments":true}') WHERE id = ?`,
         ).bind(r.id));
         needsReview++;
+        keptForReview++;
       } else {
         stmts.push(env.DB.prepare("DELETE FROM quote_line WHERE id = ?").bind(r.id));
+        removed++;
       }
     }
   }
@@ -300,6 +312,7 @@ export async function runScheduleParse(
     engine: extract.engine,
     itemCount: lines.length,
     needsReviewCount: needsReview,
+    added, updated, removed, keptForReview,
   };
 }
 

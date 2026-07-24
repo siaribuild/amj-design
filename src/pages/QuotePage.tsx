@@ -7,12 +7,12 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Upload, UploadCloud, X, Plus, ChevronLeft, ArrowRight,
-  AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil, Paperclip, Trash2,
+  AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil, Paperclip, Trash2, Loader2,
 } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
 import { StickyQuotePanel } from "../components/StickyQuotePanel";
-import { uploadFile, startParse, UploadError, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
+import { uploadFile, startParse, extractionStatus, UploadError, type ParseJob, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
 import {
   type QuoteState, type QItem,
   priceConfigured, fmt, mm, productLabel, hasDuplicateCode, lineBlocksSubmission, reviewClass, DEFAULT_PROJECT_TITLE,
@@ -194,18 +194,68 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // the file rail. Parse outcomes that just mean "not a schedule" are quiet —
   // those files are contributions (energy/plans), not failures.
   const NOT_A_SCHEDULE = new Set(["no_schedule_found", "not_a_pdf", "no_text_layer"]);
+
+  // Per-file change digest (UX spec §3): the banner must sum to every line the
+  // parse touched — updates, adds, removals and edited-kept lines all counted.
+  const digestOf = (job: ParseJob): string => {
+    const parts: string[] = [];
+    if (job.updated) parts.push(`${job.updated} updated`);
+    if (job.added) parts.push(`${job.added} added`);
+    if (job.removed) parts.push(`${job.removed} removed — no longer in your schedule`);
+    if (job.keptForReview) parts.push(`${job.keptForReview} kept — needs your review`);
+    if (!parts.length) parts.push(`${job.itemCount} item${job.itemCount !== 1 ? "s" : ""} imported`);
+    if (job.needsReviewCount && !job.keptForReview) parts.push(`${job.needsReviewCount} need review`);
+    return parts.join(" · ");
+  };
+
+  // AI-run tail (UX spec §2, one banner updating in place): polls only while a
+  // run is in flight; 2s×7 then 5s, hard stop at 2 min. Anonymous users never
+  // have a run, so the first poll returns null and no future-tense copy ever
+  // renders for them.
+  const [aiPhase, setAiPhase] = useState<null | { kind: "reading"; docs: number } | { kind: "done"; energyApplied: number }>(null);
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopPolling = () => { if (pollTimer.current) { clearTimeout(pollTimer.current); pollTimer.current = null; } };
+  useEffect(() => () => stopPolling(), []);
+  const pollExtraction = (docs: number) => {
+    stopPolling();
+    const t0 = Date.now();
+    let sawRun = false;
+    const tick = async (n: number) => {
+      if (Date.now() - t0 > 120_000) { setAiPhase(null); return; } // degrade quietly; next load reconciles
+      let inFlight = false;
+      try {
+        const { run } = await extractionStatus();
+        if (run && (run.status === "queued" || run.status === "running")) {
+          sawRun = true;
+          inFlight = true;
+          setAiPhase({ kind: "reading", docs });
+        } else if (run && sawRun) {
+          // The run we watched finished — swap the tail for its outcome.
+          setAiPhase(run.summary && run.summary.energyApplied > 0 ? { kind: "done", energyApplied: run.summary.energyApplied } : null);
+          return;
+        } else if (!run && n >= 1) {
+          return; // anonymous (or no run) — stop silently, never promise reading
+        }
+      } catch { /* transient poll failure — keep trying within the window */ }
+      pollTimer.current = setTimeout(() => void tick(n + 1), inFlight || n >= 7 ? 5000 : 2000);
+    };
+    void tick(0);
+  };
+
   const handleFiles = async (list: FileList | null) => {
     if (!list?.length) return;
     setUploading(true);
     setUploadNotice(null);
+    setAiPhase(null);
     const failures: string[] = [];
-    let imported = 0, needsReview = 0, attached = 0;
+    const digests: string[] = [];
+    let imported = 0, attached = 0;
     try {
       for (const file of Array.from(list)) {
         try {
           const up = await uploadFile(file, "upload");
           const result = await startParse(up.file.id);
-          if (result.ok) { imported += result.job.itemCount; needsReview += result.job.needsReviewCount; continue; }
+          if (result.ok) { imported += result.job.itemCount; digests.push(`${file.name}: ${digestOf(result.job)}`); continue; }
           if (NOT_A_SCHEDULE.has(result.reason)) { attached++; continue; } // contribution, not a failure
           failures.push(`${file.name}: ${parseErrorMessage(result)}`);
         } catch (e) {
@@ -217,12 +267,13 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
       if (failures.length) {
         const okCount = list.length - failures.length;
         setUploadNotice({ type: "error", message: `${okCount} of ${list.length} file${list.length !== 1 ? "s" : ""} uploaded. ${failures.join(" ")}` });
-      } else if (imported || attached) {
-        const parts = [];
-        if (imported) parts.push(`${imported} items imported${needsReview ? ` (${needsReview} need review)` : ""}`);
+      } else if (digests.length || attached) {
+        const parts = [...digests];
         if (attached) parts.push(`${attached} document${attached !== 1 ? "s" : ""} attached for review`);
         setUploadNotice({ type: "success", message: parts.join(" · ") });
       }
+      // Registered users get an automatic AI run per upload — watch it.
+      pollExtraction(list.length);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -365,14 +416,14 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
               {uploading ? (
                 <div className="flex items-center justify-center gap-3 py-3 sm:py-4 sm:flex-col">
                   <div className="w-5 h-5 sm:w-6 sm:h-6 border-2 border-[#8CA99B] border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-white/75">Reading your file…</p>
+                  <p className="text-sm text-white/75">Reading your document{quote.files.length > 1 ? "s" : ""}{quote.title ? <> for <strong className="font-semibold">{quote.title}</strong></> : ""}…</p>
                 </div>
               ) : (
                 <>
                   <UploadCloud className="hidden sm:block w-8 h-8 text-white/70 mx-auto mb-3" />
                   <p className="hidden sm:block text-sm font-semibold text-white mb-1">Upload plans or a schedule</p>
                   <p className="text-[11px] tracking-wide text-white/55 mb-2 sm:mb-4"
-                    style={{ fontFamily: "'DM Mono', monospace" }}>PDF · DWG · XLS · CSV · JPG</p>
+                    style={{ fontFamily: "'DM Mono', monospace" }}>{quote.files.length > 0 && quote.title ? <>Adding to <strong className="font-semibold text-white/70">{quote.title}</strong></> : "PDF · DWG · XLS · CSV · JPG"}</p>
                   <Btn variant="sage" size="md" onClick={openUpload} className="w-full justify-center">
                     <Upload className="w-4 h-4" />Upload files
                   </Btn>
@@ -449,7 +500,17 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
               {uploadNotice.type === "success"
                 ? <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
                 : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />}
-              <span className="flex-1">{uploadNotice.message}</span>
+              <span className="flex-1">
+                {uploadNotice.message}
+                {uploadNotice.type === "success" && aiPhase?.kind === "reading" && (
+                  <span className="inline-flex items-center gap-1.5 ml-1.5 text-[#355344]/80">
+                    · <Loader2 className="w-3.5 h-3.5 animate-spin inline" aria-hidden="true" /> still reading for performance data…
+                  </span>
+                )}
+                {uploadNotice.type === "success" && aiPhase?.kind === "done" && (
+                  <span className="ml-1.5">· performance requirements applied to {aiPhase.energyApplied} line{aiPhase.energyApplied !== 1 ? "s" : ""}</span>
+                )}
+              </span>
               <button onClick={() => setUploadNotice(null)} className="p-1 -m-1 text-current opacity-60 hover:opacity-100 cursor-pointer" aria-label="Dismiss upload result">
                 <X className="w-4 h-4" />
               </button>
@@ -516,6 +577,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         total={total}
         editingItem={adding}
         uploading={uploading}
+        readingDocs={aiPhase?.kind === "reading" ? aiPhase.docs : 0}
         onReviewQuote={() => { setView("review"); window.scrollTo(0, 0); }}
         onReviewIssues={reviewIssues}
         onFinishItem={finishItem}
