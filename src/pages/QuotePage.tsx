@@ -7,7 +7,7 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Upload, UploadCloud, X, Plus, ChevronLeft, ArrowRight,
-  AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil, Paperclip,
+  AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil, Paperclip, Trash2,
 } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
@@ -259,6 +259,17 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     await quote.clearAll();
   };
 
+  // Destructive-dialog focus: trap initial focus on Cancel (safer default), and
+  // return focus to the trigger when the dialog is dismissed without acting.
+  const clearBtnRef = useRef<HTMLButtonElement>(null);
+  const clearDialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!clearConfirm) return;
+    const t = setTimeout(() => clearDialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus(), 0);
+    return () => clearTimeout(t);
+  }, [clearConfirm]);
+  const cancelClear = () => { setClearConfirm(false); clearBtnRef.current?.focus(); };
+
   // ─── Submitted ──────────────────────────────────────────────────────────────
   if (submitted) {
     return (
@@ -396,6 +407,16 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
             {quote.items.length > 0 && (
               <span className="text-xs text-[#5c5a56] border border-black/10 px-2 py-0.5 flex-shrink-0">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span>
             )}
+            {/* Whole-project reset. Lives here — beside the scope it wipes (items +
+                schedule) — rather than on the sticky action bar, so it is findable
+                without competing with the primary CTA or inviting an accidental tap. */}
+            {hasContent && (
+              <button ref={clearBtnRef} type="button" onClick={() => setClearConfirm(true)}
+                aria-label="Clear all items and the uploaded schedule"
+                className="ml-auto inline-flex items-center gap-1.5 border border-black/12 bg-white px-2.5 py-1 text-xs font-medium text-[#6f6c67] hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A]">
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />Clear all
+              </button>
+            )}
           </div>
           {/* The uploaded schedule is integral to the order — shown as a non-removable
               chip (only Clear all removes it). */}
@@ -506,17 +527,18 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         onReviewQuote={() => { setView("review"); window.scrollTo(0, 0); }}
         onReviewIssues={reviewIssues}
         onFinishItem={finishItem}
-        onClearAll={hasContent ? () => setClearConfirm(true) : undefined}
       />
 
       {/* Clear-all confirmation — destructive whole-project reset. */}
       {clearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" role="dialog" aria-modal="true" aria-label="Clear everything">
-          <div className="w-full max-w-sm bg-white border border-black/10 p-5" style={{ boxShadow: "0 20px 50px rgba(19,19,17,0.28)" }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" role="dialog" aria-modal="true" aria-label="Clear everything"
+          onClick={cancelClear} onKeyDown={e => { if (e.key === "Escape") cancelClear(); }}>
+          <div ref={clearDialogRef} onClick={e => e.stopPropagation()}
+            className="w-full max-w-sm bg-white border border-black/10 p-5" style={{ boxShadow: "0 20px 50px rgba(19,19,17,0.28)" }}>
             <h3 className="text-base font-semibold text-[#131311] mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Clear everything?</h3>
             <p className="text-sm text-[#5c5a56] leading-relaxed mb-4">This removes all {quote.items.length} item{quote.items.length !== 1 ? "s" : ""} and the uploaded schedule and can't be undone.</p>
             <div className="flex justify-end gap-2">
-              <Btn variant="ghost" size="md" onClick={() => setClearConfirm(false)}>Cancel</Btn>
+              <Btn variant="ghost" size="md" onClick={cancelClear}>Cancel</Btn>
               <Btn variant="danger" size="md" onClick={handleClearAll}>Clear all</Btn>
             </div>
           </div>
