@@ -153,26 +153,26 @@ function Nav({ page, setPage, user, setUser }: {
       <header className={`fixed left-0 right-0 z-50 ${transparent ? "bg-transparent border-b border-transparent" : "bg-[#0c0c0a] border-b border-white/10 shadow-sm shadow-black/20"}`}
         style={{ top: topOffset }}>
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
-          {/* Left logo — signed-out always; signed-in only on mobile (desktop moves
-              the logo to the far right as the ID anchor, per the app-mode bar). */}
-          <button onClick={() => go(user ? "dashboard" : "home")} className={`flex items-center gap-2.5 cursor-pointer flex-shrink-0 ${user ? "xl:hidden" : ""}`}>
+          {/* Left logo — always. It is the home anchor in both states; signing in
+              must not move it, or the bar reads as a different site. */}
+          <button onClick={() => go(user ? "dashboard" : "home")} className="flex items-center gap-2.5 cursor-pointer flex-shrink-0">
             <WindowMark size={18} color="#f5f3ef" />
             <span className="font-semibold text-[15px] tracking-tight text-white"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}>OpenFrame</span>
           </button>
-          {/* Marketing nav — signed-out only; the signed-in bar is app-mode. */}
-          {!user && (
-            <nav className="hidden xl:flex items-center gap-6 flex-1 justify-center">
-              {links.map(([label, p]) => (
-                <button key={p} onClick={() => go(p)}
-                  aria-current={isActive(p) ? "page" : undefined}
-                  className={`text-sm transition-colors relative ${isActive(p) ? "text-white font-semibold" : "text-white/70 hover:text-white"}`}>
-                  {label}
-                  {isActive(p) && <div className="absolute -bottom-0.5 left-0 right-0 h-px bg-[#5A7A6A]" />}
-                </button>
-              ))}
-            </nav>
-          )}
+          {/* Site nav — shown in both states. Signed-in customers still need to
+              reach Products/Resources/Contact; the account area has its own rail
+              on top of this, it does not replace the site. */}
+          <nav className="hidden xl:flex items-center gap-6 flex-1 justify-center">
+            {links.map(([label, p]) => (
+              <button key={p} onClick={() => go(p)}
+                aria-current={isActive(p) ? "page" : undefined}
+                className={`text-sm transition-colors relative ${isActive(p) ? "text-white font-semibold" : "text-white/70 hover:text-white"}`}>
+                {label}
+                {isActive(p) && <div className="absolute -bottom-0.5 left-0 right-0 h-px bg-[#5A7A6A]" />}
+              </button>
+            ))}
+          </nav>
           <div className="hidden xl:flex items-center gap-3 flex-shrink-0 xl:ml-auto">
             <a href="tel:0390000000"
               className="text-sm text-white/75 hover:text-white flex items-center gap-1.5 transition-colors">
@@ -186,20 +186,13 @@ function Nav({ page, setPage, user, setUser }: {
             )}
             {!user && <Btn variant="sage" size="sm" onClick={() => go("quote")}>Get a quote</Btn>}
             {user && (
-              <>
-                {/* App-mode cluster: My Projects CTA, then the logo as the right-most
-                    ID anchor (→ the account home). No avatar — account actions live
-                    in the right rail. */}
-                <button onClick={() => go("dashboard")}
-                  aria-current={isAccountPage(page) ? "page" : undefined}
-                  className="text-sm text-white font-medium cursor-pointer flex items-center gap-1.5 transition-colors border border-[#8CA99B]/50 bg-[#5A7A6A]/30 hover:bg-[#5A7A6A]/45 px-3 py-[7px]">
-                  <WindowMark size={14} color="#8CA99B" />My Projects
-                </button>
-                <button onClick={() => go("dashboard")} aria-label="OpenFrame home" className="flex items-center gap-2.5 cursor-pointer flex-shrink-0 ml-1">
-                  <span className="font-semibold text-[15px] tracking-tight text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>OpenFrame</span>
-                  <WindowMark size={18} color="#f5f3ef" />
-                </button>
-              </>
+              /* Account entry point. The logo on the left is already the home
+                 anchor, so this is the only right-hand control needed. */
+              <button onClick={() => go("dashboard")}
+                aria-current={isAccountPage(page) ? "page" : undefined}
+                className="text-sm text-white font-medium cursor-pointer flex items-center gap-1.5 transition-colors border border-[#8CA99B]/50 bg-[#5A7A6A]/30 hover:bg-[#5A7A6A]/45 px-3 py-[7px]">
+                <WindowMark size={14} color="#8CA99B" />My Projects
+              </button>
             )}
           </div>
           <button className="xl:hidden p-2 text-white hover:bg-white/10 transition-colors cursor-pointer" onClick={() => setOpen(true)} aria-label="Open menu">
