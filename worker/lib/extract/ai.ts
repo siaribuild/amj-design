@@ -47,10 +47,18 @@ const EXTRACT_VERSION = "cf-ai/llama-3.3-70b/v1";
 const MAX_ROWS = 500;          // hard cap on model output size
 const MIN_MM = 50, MAX_MM = 20000; // plausible opening dimensions
 
+// Route model calls through an AI Gateway when one is configured (AI_GATEWAY_ID),
+// so caching, rate limits and per-gateway spend visibility apply. Without it the
+// binding calls Workers AI directly and none of those controls exist — which is
+// why the gateway is a prerequisite for turning the AI tier on.
+const gatewayOpts = (env: Env) =>
+  env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID } } : undefined;
+
 export const aiExtractor: ScheduleExtractor = {
   id: "cf-ai",
   async extract(input: ExtractInput, env: Env): Promise<ExtractResult> {
     if (!env.AI) throw new Error("ai_unavailable");
+    const gw = gatewayOpts(env);
     const warnings: string[] = [];
     let inputTokens = 0, outputTokens = 0;
 
@@ -58,7 +66,7 @@ export const aiExtractor: ScheduleExtractor = {
     let md = "";
     try {
       const blob = new Blob([input.bytes], { type: input.contentType || "application/pdf" });
-      const res: any = await (env.AI as any).toMarkdown([{ name: input.filename, blob }]);
+      const res: any = await (env.AI as any).toMarkdown([{ name: input.filename, blob }], gw);
       const doc = Array.isArray(res) ? res[0] : res;
       md = doc?.data ?? doc?.markdown ?? "";
       inputTokens += Number(doc?.tokens ?? 0);
@@ -85,7 +93,7 @@ export const aiExtractor: ScheduleExtractor = {
       const out: any = await (env.AI as any).run(EXTRACT_MODEL, {
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_schema", json_schema: ROW_SCHEMA },
-      });
+      }, gw);
       inputTokens += Number(out?.usage?.prompt_tokens ?? 0);
       outputTokens += Number(out?.usage?.completion_tokens ?? 0);
       const payload = typeof out?.response === "string" ? JSON.parse(out.response) : out?.response ?? out;

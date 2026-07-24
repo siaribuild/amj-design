@@ -38,4 +38,14 @@ export interface Env {
   /** Secret for HMAC-deriving the quota subject from the anon claim token, so the
    *  bearer cookie is never stored. Optional — falls back to a salted SHA-256. */
   PARSE_SUBJECT_SECRET?: string;
+  /** AI Gateway slug. When set, Workers AI calls are routed through it for
+   *  caching, rate limiting and spend visibility. Optional. */
+  AI_GATEWAY_ID?: string;
+  /** Upload scanning engine: 'structural' (default, on-stack type + PDF
+   *  active-content checks), 'remote' (external AV), or 'both'. */
+  SCAN_ENGINE?: string;
+  /** External AV endpoint (multipart POST) — required when SCAN_ENGINE uses it. */
+  SCAN_ENDPOINT?: string;
+  /** Bearer token for SCAN_ENDPOINT (secret). */
+  SCAN_AUTH?: string;
 }

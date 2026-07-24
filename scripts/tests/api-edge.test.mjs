@@ -86,8 +86,56 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal((await intruder.request(`/api/files/${uploaded.file.id}/download`)).status, 404);
       // Staff can list + download any file.
       const staffFiles = await requestJson(staff, "/api/ops/files");
-      assert.ok(staffFiles.body.files.some((f) => f.id === uploaded.file.id));
+      const listed = staffFiles.body.files.find((f) => f.id === uploaded.file.id);
+      assert.ok(listed);
+      assert.equal(listed.virus_status, "clean", "an accepted upload is scanned, not left pending");
       assert.equal((await staff.request(`/api/ops/files/${uploaded.file.id}/download`)).status, 200);
+    });
+
+    await t.test("upload scanning: dangerous files are refused and never stored", async () => {
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "scan@example.com");
+      const send = async (bytes, name, type) => {
+        const fd = new FormData();
+        fd.append("file", new Blob([bytes], { type }), name);
+        return buyer.request("/api/files/upload", { method: "POST", body: fd });
+      };
+      const before = (await requestJson(staff, "/api/ops/files")).body.files.length;
+
+      // A Windows executable wearing a .pdf name — sniffed by bytes, not by label.
+      const exe = await send(new Uint8Array([0x4d, 0x5a, 0x90, 0x00, 0x03]), "schedule.pdf", "application/pdf");
+      assert.equal(exe.status, 422);
+      assert.equal((await exe.json()).error, "file_rejected");
+
+      // A PDF carrying embedded JavaScript.
+      const jsPdf = Buffer.from("%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Names << /JavaScript 2 0 R >> >>\nendobj\n%%EOF\n", "latin1");
+      const js = await send(jsPdf, "plan.pdf", "application/pdf");
+      assert.equal(js.status, 422);
+
+      // Nothing rejected was persisted — no row, and therefore nothing to serve.
+      const after = (await requestJson(staff, "/api/ops/files")).body.files.length;
+      assert.equal(after, before, "rejected uploads must not create file rows");
+    });
+
+    await t.test("unscanned files are withheld until staff rescan them", async () => {
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "legacy@example.com");
+      const fd = new FormData();
+      fd.append("file", new Blob([Buffer.from("schedule text")], { type: "text/plain" }), "legacy.txt");
+      const up = await (await buyer.request("/api/files/upload", { method: "POST", body: fd })).json();
+
+      // Simulate a pre-scanning row (what migration 0013 relabels as 'skipped').
+      await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `UPDATE file_asset SET virus_status='skipped' WHERE id='${up.file.id}'`], { env: wranglerEnv });
+
+      // Neither the owner nor staff can pull the bytes while it is unscanned.
+      assert.equal((await buyer.request(`/api/files/${up.file.id}/download`)).status, 409);
+      assert.equal((await staff.request(`/api/ops/files/${up.file.id}/download`)).status, 409);
+
+      // A staff rescan clears it, and the file becomes downloadable again.
+      const rescan = await requestJson(staff, `/api/ops/files/${up.file.id}/rescan`, { method: "POST" });
+      assert.equal(rescan.body.status, "clean");
+      assert.equal((await buyer.request(`/api/files/${up.file.id}/download`)).status, 200);
     });
 
     await t.test("dashboard project list + submit; accept guards ownership and state", async () => {

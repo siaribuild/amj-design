@@ -23,7 +23,9 @@ export const deterministicExtractor: ScheduleExtractor = {
     let pages: string[] = [];
     let pageCount = 0;
     try {
-      const pdf = await getDocumentProxy(input.bytes);
+      // Copy: pdf.js detaches the buffer it is handed, and the AI tier may still
+      // need input.bytes after this extractor has run (PARSE_ENGINE='auto').
+      const pdf = await getDocumentProxy(new Uint8Array(input.bytes));
       pageCount = pdf.numPages;
       if (pageCount > MAX_PAGES) {
         return { engine: this.id, rows: [], pageCount, overallConfidence: 0, warnings: ["too_many_pages"] };

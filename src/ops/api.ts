@@ -157,7 +157,7 @@ export const opsUpdateCustomer = (id: string, patch: { name?: string; phone?: st
 
 // ── Admin (O6) ───────────────────────────────────────────────────────────────
 export interface OpsRule { id: string; name: string; trigger_family: string; condition_json: string; approver_role: string; active: number }
-export interface OpsFile { id: string; kind: string; filename: string; size: number; virus_status: string; created_at: string; project_title: string | null; customer_name: string | null }
+export interface OpsFile { id: string; kind: string; filename: string; size: number; virus_status: string; scan_engine: string | null; scanned_at: string | null; created_at: string; project_title: string | null; customer_name: string | null }
 export interface OpsAudit { entity_type: string; entity_id: string; action: string; occurred_at: string; actor: string | null }
 export interface OpsStaff { id: string; email: string; name: string | null; role: string | null; last_verified_at: string | null }
 export interface OpsSearchResult { type: string; id: string; label: string; hint: string }
@@ -166,6 +166,10 @@ export const opsRules = () => req<{ rules: OpsRule[] }>("/api/ops/rules");
 export const opsPatchRule = (id: string, patch: { active?: boolean; value?: number }) =>
   req<{ ok: boolean }>(`/api/ops/rules/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 export const opsFiles = () => req<{ files: OpsFile[] }>("/api/ops/files");
+/** Re-run the scanner over a stored file (clears 'skipped'/'pending' so it can be
+ *  downloaded again; an infected verdict purges the bytes). */
+export const opsRescanFile = (id: string) =>
+  req<{ ok: boolean; status: string; engine: string; reason: string | null }>(`/api/ops/files/${id}/rescan`, { method: "POST" });
 export const opsAudit = (entity?: string) => req<{ events: OpsAudit[] }>(`/api/ops/audit${entity ? `?entity=${entity}` : ""}`);
 export const opsStaff = () => req<{ staff: OpsStaff[]; roles: string[] }>("/api/ops/staff");
 export const opsSetRole = (id: string, role: string) =>

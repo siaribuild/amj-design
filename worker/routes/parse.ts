@@ -39,9 +39,13 @@ parse.post("/projects/current/parse", async (c) => {
 
   // File must belong to this project.
   const file = await c.env.DB
-    .prepare("SELECT id, r2_key, filename, size FROM file_asset WHERE id = ? AND project_id = ?")
+    .prepare("SELECT id, r2_key, filename, size, virus_status FROM file_asset WHERE id = ? AND project_id = ?")
     .bind(fileId, project.id).first<ParseFile>();
   if (!file) return c.json({ error: "file_not_found" }, 404);
+  if (file.virus_status && file.virus_status !== "clean") {
+    if (cookie) c.header("Set-Cookie", cookie);
+    return c.json({ error: "scan_pending" }, 409);
+  }
   if ((file.size ?? 0) > MAX_SCHEDULE_BYTES) {
     if (cookie) c.header("Set-Cookie", cookie);
     return c.json({ error: "too_large" }, 413);

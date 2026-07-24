@@ -16,6 +16,7 @@ import { logEvent } from "../lib/activity";
 import { evaluateApprovals, createApprovalInstance, resolveInstance, canApprove } from "../lib/approvals";
 import { orderDto, applyTransition, markPaid, availableActions, type OrderRow } from "../lib/orders";
 import { uuid } from "../lib/util";
+import { scanFile } from "../lib/scan";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { priceConfigured } from "../../src/data/configurator";
 
@@ -622,13 +623,44 @@ ops.get("/files", async (c) => {
   if (!staff) return c.json({ error: "forbidden" }, 403);
   if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const { results } = await c.env.DB.prepare(`
-    SELECT fa.id, fa.kind, fa.filename, fa.size, fa.virus_status, fa.created_at,
+    SELECT fa.id, fa.kind, fa.filename, fa.size, fa.virus_status, fa.scan_engine, fa.scanned_at, fa.created_at,
            p.title AS project_title, u.name AS customer_name
       FROM file_asset fa
       LEFT JOIN project p ON p.id = fa.project_id
       LEFT JOIN user u ON u.id = p.owner_user_id
      ORDER BY fa.created_at DESC`).all();
   return c.json({ files: results });
+});
+
+// POST /api/ops/files/:id/rescan — run the scanner over a stored file and record
+// the verdict. This is how the pre-scanning backlog ('skipped') and any file whose
+// inline scan failed ('pending') get cleared for download; an infected verdict
+// purges the bytes from R2 rather than leaving them parked in the bucket.
+ops.post("/files/:id/rescan", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const id = c.req.param("id");
+  const fa = await c.env.DB.prepare("SELECT id, r2_key, filename FROM file_asset WHERE id = ?").bind(id)
+    .first<{ id: string; r2_key: string; filename: string }>();
+  if (!fa) return c.json({ error: "not_found" }, 404);
+
+  const obj = await c.env.FILES.get(fa.r2_key);
+  if (!obj) return c.json({ error: "gone" }, 404);
+  const contentType = obj.httpMetadata?.contentType ?? "application/octet-stream";
+  const result = await scanFile(c.env, {
+    bytes: new Uint8Array(await obj.arrayBuffer()), filename: fa.filename, contentType,
+  });
+
+  const status = result.verdict === "clean" ? "clean" : result.verdict === "infected" ? "infected" : "pending";
+  if (result.verdict === "infected") await c.env.FILES.delete(fa.r2_key).catch(() => {});
+  await c.env.DB.prepare("UPDATE file_asset SET virus_status = ?, scan_engine = ?, scanned_at = datetime('now') WHERE id = ?")
+    .bind(status, result.engine, id).run();
+  await logEvent(c.env, {
+    actor: staff.id, entityType: "file", entityId: id,
+    action: `rescanned file → ${status}${result.reason ? ` (${result.reason})` : ""}`,
+  });
+  return c.json({ ok: true, status, engine: result.engine, reason: result.reason ?? null });
 });
 
 // GET /api/ops/files/:id/download — staff download (any file).
@@ -638,7 +670,10 @@ ops.get("/files/:id/download", async (c) => {
   if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const fa = await c.env.DB.prepare("SELECT r2_key, filename, virus_status FROM file_asset WHERE id = ?").bind(c.req.param("id")).first<{ r2_key: string; filename: string; virus_status: string }>();
   if (!fa) return c.json({ error: "not_found" }, 404);
+  // Same gate as the customer path — staff are the likelier malware target, since
+  // they open customer uploads on managed desktops. Unscanned files need a rescan.
   if (fa.virus_status === "infected") return c.json({ error: "quarantined" }, 403);
+  if (fa.virus_status !== "clean") return c.json({ error: "scan_pending" }, 409);
   const obj = await c.env.FILES.get(fa.r2_key);
   if (!obj) return c.json({ error: "gone" }, 404);
   return new Response(obj.body, { headers: { "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream", "Content-Disposition": `attachment; filename="${fa.filename}"`, "X-Content-Type-Options": "nosniff" } });

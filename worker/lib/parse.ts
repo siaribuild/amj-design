@@ -13,7 +13,7 @@ import { matchSchedule, type ParsedLine } from "../../src/data/scheduleMatch";
 import { priceConfigured } from "../../src/data/configurator";
 import type { ProjectRow } from "./access";
 
-export interface ParseFile { id: string; r2_key: string; filename: string; size: number | null; content_type?: string }
+export interface ParseFile { id: string; r2_key: string; filename: string; size: number | null; content_type?: string; virus_status?: string }
 
 export type ParseMode = "replace" | "append";
 
@@ -116,6 +116,10 @@ export async function runScheduleParse(
     await env.DB.prepare("UPDATE schedule_parse_job SET status='failed', error=?, completed_at=datetime('now') WHERE id=?").bind(code, jobId).run();
     return { jobId, status: "failed", engine: "cf-deterministic", itemCount: 0, needsReviewCount: 0, error: code };
   };
+
+  // Only a scanner-cleared file is ever fed to the extractor. Uploads are scanned
+  // inline before they persist, so this guards the legacy/rescan paths.
+  if (file.virus_status && file.virus_status !== "clean") return fail("file_not_scanned");
 
   // Load bytes from R2.
   const obj = await env.FILES.get(file.r2_key);

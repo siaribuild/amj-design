@@ -12,7 +12,7 @@ import {
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
 import { StickyQuotePanel } from "../components/StickyQuotePanel";
-import { uploadFile, startParse, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
+import { uploadFile, startParse, UploadError, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
 import {
   type QuoteState, type QItem,
   priceConfigured, fmt, mm, productLabel, hasDuplicateCode, lineBlocksSubmission, reviewClass, DEFAULT_PROJECT_TITLE,
@@ -138,6 +138,25 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   const fileInputRef = useRef<HTMLInputElement>(null);
   const openUpload = () => fileInputRef.current?.click();
 
+  // Friendly copy for an upload the server refused outright (before parsing).
+  const uploadErrorMessage = (e: unknown): string => {
+    const reason = e instanceof UploadError ? e.reason : "";
+    switch (reason) {
+      case "file_rejected":
+        return "That file was blocked by our security check — it isn't a plain PDF, image, or text document, or the PDF contains embedded scripts. Please re-export it as a standard PDF and try again.";
+      case "scan_unavailable":
+        return "Our security check is temporarily unavailable, so we couldn't accept that file. Please try again shortly, or add items manually.";
+      case "too_large":
+        return "That file is too large. Please upload a schedule under 12 MB.";
+      case "quota_exceeded":
+        return "This project has reached its file limit. Remove a file, or add items manually.";
+      case "rate_limited":
+        return "Too many uploads in a short time — please wait a moment and try again.";
+      default:
+        return "We couldn't process that file. Please try again, or add items manually.";
+    }
+  };
+
   // Friendly copy for every non-choice parse failure.
   const parseErrorMessage = (r: Extract<ParseResult, { ok: false }>): string => {
     switch (r.reason) {
@@ -159,6 +178,9 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         return "That PDF is password-protected — we can't read it. Please upload an unprotected PDF.";
       case "too_many_pages":
         return "That PDF has too many pages to process. Please upload the schedule pages only.";
+      case "scan_pending":
+      case "file_not_scanned":
+        return "That file hasn't finished its security check yet. Please try uploading it again.";
       default: // file_missing | parse_failed | network
         return "We couldn't process that file. Please try again, or add items manually.";
     }
@@ -192,8 +214,8 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         return; // wait for the customer to pick Replace or Add
       }
       await applyParseResult(result, many);
-    } catch {
-      setUploadNotice({ type: "error", message: "We couldn't process that file. Please try again, or add items manually." });
+    } catch (e) {
+      setUploadNotice({ type: "error", message: uploadErrorMessage(e) });
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -210,8 +232,8 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     try {
       const result = await startParse(fileId, mode);
       await applyParseResult(result, many);
-    } catch {
-      setUploadNotice({ type: "error", message: "We couldn't process that file. Please try again, or add items manually." });
+    } catch (e) {
+      setUploadNotice({ type: "error", message: uploadErrorMessage(e) });
     } finally {
       setUploading(false);
     }

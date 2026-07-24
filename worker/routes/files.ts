@@ -5,6 +5,7 @@ import type { Env } from "../types";
 import { ownedProject, resolveOrCreateCurrentProject } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 import { uuid } from "../lib/util";
+import { scanFile } from "../lib/scan";
 
 export const files = new Hono<{ Bindings: Env }>();
 
@@ -41,18 +42,32 @@ files.post("/files/upload", async (c) => {
 
   await c.env.KV.put(rlKey, String(used + 1), { expirationTtl: UPLOAD_RATE_WINDOW });
 
+  // Scan BEFORE anything is persisted: bytes only reach R2 once a scanner has
+  // returned 'clean', so a rejected upload leaves nothing behind to serve or
+  // parse. 'unknown' (scanner down, unreadable, timeout) fails closed.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const verdict = await scanFile(c.env, {
+    bytes, filename: file.name, contentType: file.type || "application/octet-stream",
+  });
+  if (cookie) c.header("Set-Cookie", cookie);
+  if (verdict.verdict === "infected") {
+    return c.json({ error: "file_rejected", reason: verdict.reason ?? "rejected", detail: verdict.detail ?? null }, 422);
+  }
+  if (verdict.verdict !== "clean") {
+    return c.json({ error: "scan_unavailable", reason: verdict.reason ?? "unknown" }, 503);
+  }
+
   const id = uuid();
   const safeName = file.name.replace(/[^\w.\- ]+/g, "_");
   const r2Key = `project/${project.id}/${id}-${safeName}`;
-  await c.env.FILES.put(r2Key, file.stream(), {
+  await c.env.FILES.put(r2Key, bytes, {
     httpMetadata: { contentType: file.type || "application/octet-stream" },
   });
   await c.env.DB.prepare(
-    "INSERT INTO file_asset (id, project_id, kind, source, r2_key, filename, size, virus_status, uploaded_by) VALUES (?, ?, ?, 'customer', ?, ?, ?, 'pending', ?)",
-  ).bind(id, project.id, kind, r2Key, file.name, file.size, user?.id ?? null).run();
+    "INSERT INTO file_asset (id, project_id, kind, source, r2_key, filename, size, virus_status, scan_engine, scanned_at, uploaded_by) VALUES (?, ?, ?, 'customer', ?, ?, ?, 'clean', ?, datetime('now'), ?)",
+  ).bind(id, project.id, kind, r2Key, file.name, file.size, verdict.engine, user?.id ?? null).run();
 
-  if (cookie) c.header("Set-Cookie", cookie);
-  return c.json({ file: { id, filename: file.name, kind, size: file.size, status: "pending" } });
+  return c.json({ file: { id, filename: file.name, kind, size: file.size, status: "clean" } });
 });
 
 // GET /api/projects/:id/files — list a project's files (owner only).
@@ -71,9 +86,11 @@ files.get("/files/:id/download", async (c) => {
     .first<{ project_id: string; r2_key: string; filename: string; virus_status: string }>();
   if (!fa) return c.json({ error: "not_found" }, 404);
   if (!(await ownedProject(c.env, c.req.raw, fa.project_id))) return c.json({ error: "not_found" }, 404);
-  // Never serve a file a scanner has flagged. ('pending' stays downloadable — AV
-  // integration is a follow-up; this is the enforcement point once it lands.)
+  // Only ever serve bytes a scanner cleared. 'infected' is refused outright;
+  // 'pending'/'skipped' means unscanned (a legacy row, or a scan that never
+  // completed) and is withheld until staff re-scan it.
   if (fa.virus_status === "infected") return c.json({ error: "quarantined" }, 403);
+  if (fa.virus_status !== "clean") return c.json({ error: "scan_pending" }, 409);
   const obj = await c.env.FILES.get(fa.r2_key);
   if (!obj) return c.json({ error: "gone" }, 404);
   // Sanitised filename (strip quotes/control chars → no header injection) + a safe

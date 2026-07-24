@@ -277,13 +277,26 @@ export interface ApiFile {
   size: number;
   virus_status?: string;
 }
-/** Upload a file (multipart) — attaches to the current project. */
+/** Thrown when the server refuses an upload for a reason worth showing the user
+ *  (rejected by the scanner, scanner unavailable, too large, over quota). */
+export class UploadError extends Error {
+  constructor(readonly reason: string, readonly status: number) {
+    super(reason);
+    this.name = "UploadError";
+  }
+}
+
+/** Upload a file (multipart) — attaches to the current project. Bytes are scanned
+ *  server-side before they are stored, so this can reject. */
 export async function uploadFile(file: File, kind = "upload"): Promise<{ file: ApiFile }> {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("kind", kind);
   const res = await fetch("/api/files/upload", { method: "POST", credentials: "same-origin", body: fd });
-  if (!res.ok) throw new Error(`upload → ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({} as any));
+    throw new UploadError(String(body?.error ?? `http_${res.status}`), res.status);
+  }
   return res.json();
 }
 export const getProjectFiles = (projectId: string) =>
@@ -303,7 +316,7 @@ export interface ParseJob {
 export type ParseFailReason =
   | "rate_limited" | "busy" | "quota" | "too_large"
   | "no_schedule_found" | "no_text_layer" | "not_a_pdf" | "encrypted_pdf" | "too_many_pages"
-  | "file_missing" | "parse_failed" | "network";
+  | "file_missing" | "scan_pending" | "file_not_scanned" | "parse_failed" | "network";
 export type ParseResult =
   | { ok: true; job: ParseJob; quota: ParseQuota }
   | { ok: false; reason: "needs_choice"; existingItems: number; existingFile: string | null }
@@ -325,10 +338,11 @@ export async function startParse(fileId: string, mode?: "replace" | "append"): P
     return { ok: false, reason: "needs_choice", existingItems: body.existingItems ?? 0, existingFile: body.existingFile ?? null };
   }
   if (res.status === 409 && body?.error === "busy") return { ok: false, reason: "busy" };
+  if (res.status === 409 && body?.error === "scan_pending") return { ok: false, reason: "scan_pending" };
   if (res.status === 429 && body?.error === "quota_exceeded") return { ok: false, reason: "quota", quota: body.quota };
   if (res.status === 429) return { ok: false, reason: "rate_limited" };
   if (res.status === 413) return { ok: false, reason: "too_large" };
-  const known = ["no_schedule_found", "no_text_layer", "not_a_pdf", "encrypted_pdf", "too_many_pages", "file_missing", "parse_failed"] as const;
+  const known = ["no_schedule_found", "no_text_layer", "not_a_pdf", "encrypted_pdf", "too_many_pages", "file_missing", "file_not_scanned", "parse_failed"] as const;
   const reason = known.find((k) => k === body?.error) ?? "parse_failed";
   return { ok: false, reason };
 }

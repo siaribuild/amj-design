@@ -47,6 +47,12 @@
     // AI binding), or 'ai' (force Workers AI). Leave as deterministic until AI is
     // provisioned; then switch to 'auto' for messy/scanned schedules.
     "PARSE_ENGINE": "deterministic",
+    // Upload scanning: 'structural' (default, on-stack — sniffed-type allowlist
+    // plus PDF active-content detection, no external dependency), 'remote' (an
+    // external AV service at SCAN_ENDPOINT), or 'both'. Every engine fails CLOSED:
+    // bytes are only stored after a 'clean' verdict. Set SCAN_ENDPOINT (+ the
+    // SCAN_AUTH secret) before selecting 'remote'/'both'.
+    "SCAN_ENGINE": "structural",
     // Local/dev default only. `npm run cf:deploy` overrides this to "production"
     // (`wrangler deploy --var APP_ENV:production`), which gates dev-only OTP codes
     // and sets Secure cookies. A raw `wrangler deploy` would ship development — use

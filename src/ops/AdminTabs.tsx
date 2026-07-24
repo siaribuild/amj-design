@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, Download, Power, ShieldCheck } from "lucide-react";
 import {
-  opsRules, opsPatchRule, opsFiles, opsAudit, opsStaff, opsSetRole,
+  opsRules, opsPatchRule, opsFiles, opsRescanFile, opsAudit, opsStaff, opsSetRole,
   type OpsRule, type OpsFile, type OpsAudit, type OpsStaff,
 } from "./api";
 
@@ -50,7 +50,18 @@ export function Rules() {
 // ── Files (all uploads) ──────────────────────────────────────────────────────
 export function Files() {
   const [files, setFiles] = useState<OpsFile[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   useEffect(() => { opsFiles().then(r => setFiles(r.files)).catch(() => setFiles([])); }, []);
+
+  // Unscanned files are withheld from download until a scanner clears them.
+  const rescan = async (id: string) => {
+    setBusy(id);
+    try {
+      await opsRescanFile(id);
+      setFiles((await opsFiles()).files);
+    } catch { /* status stays as-is; the row still shows why it is blocked */ }
+    finally { setBusy(null); }
+  };
   if (!files) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
   if (!files.length) return <div className="bg-white border border-dashed border-black/15 p-12 text-center text-sm text-[#5c5a56]">No files uploaded yet.</div>;
   return (
@@ -66,9 +77,30 @@ export function Files() {
               <td className="px-4 py-3 text-[#14150f]">{f.filename}<span className="block text-xs text-[#8b8880]">{f.kind}</span></td>
               <td className="px-4 py-3 text-[#5c5a56]">{f.project_title ?? "—"}<span className="block text-xs text-[#8b8880]">{f.customer_name}</span></td>
               <td className="px-4 py-3 text-[#5c5a56]">{kb(f.size)}</td>
-              <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 border border-black/12 text-[#5c5a56]">{f.virus_status}</span></td>
+              <td className="px-4 py-3">
+                <span
+                  className="text-xs px-2 py-0.5 border"
+                  style={f.virus_status === "clean" ? { borderColor: "rgba(0,0,0,.12)", color: "#5c5a56" }
+                    : f.virus_status === "infected" ? { borderColor: "#b4433622", background: "#b443361a", color: "#8c2f24" }
+                    : { borderColor: "#b8860022", background: "#b886001a", color: "#7a5c00" }}
+                >{f.virus_status}</span>
+              </td>
               <td className="px-4 py-3 text-right">
-                <a href={`/api/ops/files/${f.id}/download`} className="inline-flex items-center gap-1 text-sm hover:underline" style={{ color: SAGE }}><Download className="w-3.5 h-3.5" />Download</a>
+                {f.virus_status === "clean" ? (
+                  <a href={`/api/ops/files/${f.id}/download`} className="inline-flex items-center gap-1 text-sm hover:underline" style={{ color: SAGE }}><Download className="w-3.5 h-3.5" />Download</a>
+                ) : f.virus_status === "infected" ? (
+                  <span className="text-sm text-[#8b8880]">Blocked</span>
+                ) : (
+                  <button
+                    onClick={() => rescan(f.id)}
+                    disabled={busy === f.id}
+                    className="inline-flex items-center gap-1 text-sm hover:underline disabled:opacity-50"
+                    style={{ color: SAGE }}
+                  >
+                    {busy === f.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                    Scan to unlock
+                  </button>
+                )}
               </td>
             </tr>
           ))}
