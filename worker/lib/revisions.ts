@@ -4,6 +4,7 @@
 import type { Env } from "../types";
 import { uuid } from "./util";
 import { getProductBySlug } from "../../src/data/catalogue";
+import { createLearningExample } from "./ai/examples";
 
 function safeParse(s: string): Record<string, unknown> {
   try { const v = JSON.parse(s || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; }
@@ -57,5 +58,9 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
     env.DB.prepare("UPDATE project SET status_customer = 'quote_issued', status_internal = 'issued', updated_at = datetime('now') WHERE id = ?").bind(projectId),
   ];
   await env.DB.batch(stmts);
+  // Finalization creates the learning example (LLM strategy §16.3/§17.2): the AI
+  // proposal vs the human-approved outcome, retrieval-eligible immediately,
+  // training-gated. Best-effort — issuing must never fail because capture did.
+  await createLearningExample(env, projectId, revisionId);
   return { ok: true, id: revisionId, revisionNo, total };
 }

@@ -18,6 +18,9 @@ await build({
       export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
       export { parentTagOf, mergeScheduleLines, linesToBuildingModel } from ${p("worker/lib/ai/pipeline.ts")};
       export { mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1 } from ${p("worker/lib/ai/energyMap.ts")};
+      export { applyDefaultEnvelope } from ${p("worker/lib/ai/pipeline.ts")};
+      export { resolveDefaultEnvelope, defaultRequirement, ARCHETYPES } from ${p("worker/lib/ai/archetypes.ts")};
+      export { buildExampleRecord } from ${p("worker/lib/ai/examples.ts")};
       export { scheduleExtractor } from ${p("worker/lib/estimator/skills/schedule.ts")};
       export { validateBuildingModelShape } from ${p("worker/lib/ai/schema.ts")};
     `,
@@ -29,6 +32,7 @@ const {
   sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, MIN_IMAGE_DIM,
   parentTagOf, mergeScheduleLines, linesToBuildingModel, scheduleExtractor, validateBuildingModelShape,
   mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1,
+  applyDefaultEnvelope, resolveDefaultEnvelope, defaultRequirement, ARCHETYPES, buildExampleRecord,
 } = await import(pathToFileURL(outfile).href);
 
 // ── Byte-crafting helpers ────────────────────────────────────────────────────
@@ -239,6 +243,58 @@ test("precedence policy: energy report outranks schedule outranks plans (§9.1, 
   assert.ok(rank.energy_report > rank.architectural_schedule);
   assert.ok(rank.architectural_schedule > rank.dimensioned_plans);
   assert.ok(rank.dimensioned_plans > rank.inferred_default);
+});
+
+// ── Phase 4: default envelopes (§10.3, Path 3) + learning examples (§17.2) ───
+test("archetype registry: VIC resolves; an uncovered region gets NO archetype (never a guess)", () => {
+  const vic = resolveDefaultEnvelope({ jurisdiction: { state: "VIC" } });
+  assert.equal(vic.id, ARCHETYPES[0].id);
+  assert.equal(resolveDefaultEnvelope({ jurisdiction: { state: "NT" } }), null);
+  assert.equal(resolveDefaultEnvelope({ jurisdiction: { state: null } }), null);
+});
+
+test("default band: default_envelope basis, Uw cap only — SHGC stays null in Mode A (§11.3)", () => {
+  const req = defaultRequirement(ARCHETYPES[0]);
+  assert.equal(req.basis, "default_envelope");
+  assert.ok(req.maxUValue > 0);
+  assert.equal(req.shgcMin, null, "no SHGC default without orientation evidence");
+  assert.equal(req.shgcMax, null);
+});
+
+test("applyDefaultEnvelope: fills only bare openings, never overrides an explicit report value", () => {
+  const merged = mergeScheduleLines([{ fileId: "f1", lines: [line("W01", 1810, 1200), line("W02", 900, 600)] }]);
+  const model = linesToBuildingModel("prj_1", merged, []);
+  // W01 got an explicit report requirement first (Path 1).
+  const explicit = { basis: "explicit_energy_report", maxUValue: 2.3, shgcTarget: null, shgcMin: 0.37, shgcMax: 0.41, zoneType: null, operablePercent: null, notes: null };
+  model.openings.find((o) => o.externalRef === "W01").thermalRequirement = explicit;
+  const archetype = applyDefaultEnvelope(model);
+  assert.ok(archetype, "VIC default context resolves the archetype");
+  assert.equal(model.openings.find((o) => o.externalRef === "W01").thermalRequirement.maxUValue, 2.3, "explicit value untouched");
+  const w02 = model.openings.find((o) => o.externalRef === "W02").thermalRequirement;
+  assert.equal(w02.basis, "default_envelope");
+  assert.equal(w02.maxUValue, archetype.defaultOpeningBand.maxUValue);
+  assert.equal(model.envelope.defaultArchetypeId, archetype.id);
+  const assumption = model.assumptions.find((a) => a.fact.startsWith("default_envelope:"));
+  assert.equal(assumption.origin, "envelope_default", "application recorded as an §8.2 assumption");
+});
+
+test("learning example: retrieval-eligible immediately, training GATED off, deltas + reasons captured (§17)", () => {
+  const rec = buildExampleRecord({
+    projectId: "prj_1", quoteRevisionId: "rev_1", inputMode: "schedule_only",
+    sourceChecksums: ["abc123"],
+    buildingModel: { openings: [] }, draftLines: [{ status: "ready" }], revisionLines: [{ externalRef: "W01" }],
+    feedback: [
+      { field: "product", category: "preference_correction", reason_code: "CUSTOMER_PREFERENCE", initial_value_json: '{"productId":"a"}', final_value_json: '{"productId":"b"}' },
+      { field: "width", category: "extraction_correction", reason_code: "WRONG_DIMENSION", initial_value_json: "1810", final_value_json: "1210" },
+      { field: "height", category: "extraction_correction", reason_code: "WRONG_DIMENSION", initial_value_json: null, final_value_json: "2100" },
+    ],
+  });
+  assert.equal(rec.eligibleForRetrieval, true, "§17.4: a finalized quote is retrieval evidence immediately");
+  assert.equal(rec.eligibleForTraining, false, "§17.5: training only via governed dataset releases");
+  assert.equal(rec.deltas.length, 3);
+  assert.deepEqual(rec.deltas[0].aiValue, { productId: "a" });
+  assert.deepEqual(rec.overrideReasons.sort(), ["CUSTOMER_PREFERENCE", "WRONG_DIMENSION"].sort(), "reason codes deduped");
+  assert.ok(rec.pipelineVersion, "reproducibility: pipeline version pinned (§21.3)");
 });
 
 test("schedule skill: text-only input builds a string prompt; a photo builds multimodal parts", () => {

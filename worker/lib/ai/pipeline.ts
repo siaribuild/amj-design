@@ -18,6 +18,7 @@ import { ingestProjectFiles, type IngestedDoc } from "./ingest";
 import { scheduleExtractor, type ScheduleLineV1 } from "../estimator/skills/schedule";
 import { energyReportExtractor, type EnergyExtraction } from "../estimator/skills/energy";
 import { mapEnergyToOpenings } from "./energyMap";
+import { resolveDefaultEnvelope, defaultRequirement, ARCHETYPE_REGISTRY_VERSION, type EnvelopeArchetype } from "./archetypes";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
 import { runProjectEstimate } from "../estimator/estimate";
@@ -130,6 +131,31 @@ export function linesToBuildingModel(projectId: string, merged: MergeResult, doc
     ],
     conflicts: merged.conflicts,
   };
+}
+
+// ── Pure: Path 3 default-envelope application (§10.1, Phase 4) ───────────────
+// Openings still lacking an explicit requirement get the archetype's conservative
+// band, recorded as an envelope_default ASSUMPTION — the §10.5 default-basis
+// language flows from requirement_basis, never silently. Returns the archetype
+// used (for the immutable per-run snapshot) or null when none covers the region.
+export function applyDefaultEnvelope(model: BuildingModelV1): EnvelopeArchetype | null {
+  const archetype = resolveDefaultEnvelope(model);
+  if (!archetype) return null;
+  let applied = 0;
+  for (const o of model.openings) {
+    if (o.thermalRequirement) continue; // explicit report values stay authoritative
+    o.thermalRequirement = defaultRequirement(archetype);
+    applied++;
+  }
+  if (applied) {
+    model.envelope.defaultArchetypeId = archetype.id;
+    model.assumptions.push({
+      fact: `default_envelope:${archetype.id}`,
+      origin: "envelope_default",
+      note: `${archetype.defaultOpeningBand.note} — registry ${ARCHETYPE_REGISTRY_VERSION}, applied to ${applied} opening(s)`,
+    });
+  }
+  return applied ? archetype : null;
 }
 
 // ── Orchestration ────────────────────────────────────────────────────────────
@@ -245,6 +271,10 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
     }
   }
 
+  // Path 3 (Phase 4): conservative default band for openings with no explicit
+  // requirement; snapshotted immutably into requirement_json below.
+  const archetype = applyDefaultEnvelope(model);
+
   const buildingModelId = uuid();
   const stmts: D1PreparedStatement[] = [
     env.DB.prepare(
@@ -268,7 +298,12 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'unreviewed')`,
     ).bind(uuid(), projectId, buildingModelId, o.externalRef, null, tr?.basis ?? "default_envelope",
       tr?.maxUValue ?? null, tr?.shgcTarget ?? null, tr?.shgcMin ?? null, tr?.shgcMax ?? null,
-      JSON.stringify(o.confidence), JSON.stringify({ opening: o.externalRef, thermal: tr ?? null })),
+      JSON.stringify(o.confidence),
+      JSON.stringify({
+        opening: o.externalRef, thermal: tr ?? null,
+        // Immutable archetype snapshot (§10.3): a registry change never mutates history.
+        archetype: tr?.basis === "default_envelope" && archetype ? archetype : undefined,
+      })),
     );
   }
   await env.DB.batch(stmts);
