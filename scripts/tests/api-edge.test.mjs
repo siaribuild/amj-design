@@ -195,6 +195,27 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(reply.body.status, "under_review");
     });
 
+    await t.test("estimator: run over openings persists a selection run; feedback needs a reason category", async () => {
+      // Seed one opening_instance (the extraction bridge normally creates these).
+      await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `INSERT INTO opening_instance (id, project_id, external_ref, family, operation_type, width_mm, height_mm, status) VALUES ('op_est1','p_submitted','W01','windows','awning',800,1200,'extracted')`], { env: wranglerEnv });
+
+      // Run the estimator (test env has no Sanity, so 0 candidates — the persistence
+      // + orchestration path is what's under test here; candidate selection is unit-tested).
+      const est = await requestJson(staff, "/api/ops/projects/p_submitted/estimate", { method: "POST", json: {} });
+      assert.equal(est.body.openings, 1);
+      assert.ok(Array.isArray(est.body.lines));
+      const selRuns = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", "SELECT count(*) AS n FROM selection_run WHERE opening_id='op_est1'"], { env: wranglerEnv });
+      assert.equal(JSON.parse(selRuns.stdout)[0].results[0].n, 1, "a selection_run was persisted");
+
+      // Feedback: a reason-code CATEGORY is mandatory (free-text-only is rejected).
+      await requestJson(staff, "/api/ops/projects/p_submitted/feedback", { method: "POST", json: { field: "product", note: "just wrong" } }, 400);
+      await requestJson(staff, "/api/ops/projects/p_submitted/feedback", { method: "POST", json: { field: "product", category: "not_a_category", reasonCode: "X" } }, 400);
+      const ok = await requestJson(staff, "/api/ops/projects/p_submitted/feedback", { method: "POST",
+        json: { field: "product", openingId: "op_est1", category: "preference_correction", reasonCode: "LOWER_TOTAL_COST_SAME_COMPLIANCE", finalValue: { productSlug: "amj80" } } });
+      assert.ok(ok.body.id, "feedback recorded with a valid category");
+    });
+
     await t.test("staff line edit does not silently clear a technical-review flag", async () => {
       // Simulate a parsed line that reached technical review (material substitution).
       const detail = await requestJson(staff, "/api/ops/projects/p_submitted");

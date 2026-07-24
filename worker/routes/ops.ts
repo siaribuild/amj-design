@@ -17,6 +17,8 @@ import { evaluateApprovals, createApprovalInstance, resolveInstance, canApprove 
 import { orderDto, applyTransition, markPaid, availableActions, type OrderRow } from "../lib/orders";
 import { uuid } from "../lib/util";
 import { scanFile } from "../lib/scan";
+import { runProjectEstimate } from "../lib/estimator/estimate";
+import { recordFeedback, FEEDBACK_CATEGORIES } from "../lib/estimator/persist";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { priceConfigured } from "../../src/data/configurator";
 
@@ -687,6 +689,73 @@ ops.post("/files/:id/rescan", async (c) => {
     action: `rescanned file → ${status}${result.reason ? ` (${result.reason})` : ""}`,
   });
   return c.json({ ok: true, status, engine: result.engine, reason: result.reason ?? null });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Estimator (CPQ) — run the deterministic engine over a project's openings and
+// capture review feedback. Internal, role-gated. The selection is deterministic
+// and versioned; the AI extraction tier is a separate (flagged) path.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// POST /api/ops/projects/:id/estimate — select + price every opening_instance.
+ops.post("/projects/:id/estimate", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const projectId = c.req.param("id");
+  const project = await c.env.DB.prepare("SELECT id FROM project WHERE id = ?").bind(projectId).first();
+  if (!project) return c.json({ error: "not_found" }, 404);
+  const summary = await runProjectEstimate(c.env, projectId);
+  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: projectId, action: `estimator run — ${summary.selected}/${summary.openings} openings selected` });
+  return c.json(summary);
+});
+
+// GET /api/ops/projects/:id/draft-lines — the estimator's current draft lines.
+ops.get("/projects/:id/draft-lines", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const { results } = await c.env.DB.prepare(
+    `SELECT d.id, d.opening_id, d.status, d.confidence, d.catalogue_snapshot_json, d.price_snapshot_json, d.warnings_json,
+            o.external_ref, o.room
+       FROM draft_order_line d LEFT JOIN opening_instance o ON o.id = d.opening_id
+      WHERE d.project_id = ? ORDER BY d.created_at`,
+  ).bind(c.req.param("id")).all<any>();
+  return c.json({ lines: (results ?? []).map((r) => ({
+    id: r.id, openingId: r.opening_id, externalRef: r.external_ref, room: r.room,
+    status: r.status, confidence: r.confidence,
+    catalogue: safeParse(r.catalogue_snapshot_json ?? "{}"),
+    price: safeParse(r.price_snapshot_json ?? "{}"),
+    warnings: safeParse(r.warnings_json ?? "[]"),
+  })) });
+});
+
+// POST /api/ops/projects/:id/feedback — record ONE reviewer correction. A
+// reason-code CATEGORY is mandatory (free-text-only is rejected) so the correction
+// routes to the right layer (spec §12, §6a).
+ops.post("/projects/:id/feedback", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const projectId = c.req.param("id");
+  const body = await c.req.json().catch(() => ({} as any));
+  const res = await recordFeedback(c.env, {
+    projectId,
+    openingId: body?.openingId ?? null,
+    selectionRunId: body?.selectionRunId ?? null,
+    field: String(body?.field ?? "").slice(0, 60),
+    initialValue: body?.initialValue,
+    finalValue: body?.finalValue,
+    category: String(body?.category ?? ""),
+    reasonCode: String(body?.reasonCode ?? ""),
+    reviewerId: staff.id,
+    note: body?.note ? String(body.note).slice(0, 500) : null,
+  });
+  if (!res.ok) {
+    const status = res.error === "invalid_category" || res.error === "missing_reason_code" ? 400 : 500;
+    return c.json({ error: res.error, categories: FEEDBACK_CATEGORIES }, status);
+  }
+  return c.json({ ok: true, id: res.id });
 });
 
 // GET /api/ops/files/:id/download — staff download (any file).
