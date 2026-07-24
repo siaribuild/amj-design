@@ -86,11 +86,14 @@ export interface CatalogueRepository {
   catalogueVersion(candidates: CatalogueCandidate[]): string;
 }
 
-// Per-isolate cache keyed by (family, operation), short TTL, failed loads not cached.
+// Cache keyed by (family, operation), short TTL, failed loads not cached. Held
+// PER repository instance (not module-level) so distinct executors/datasets don't
+// collide — in the Worker, create the repository once per isolate to keep the
+// cross-request cache (see the route wiring).
 const CACHE_TTL_MS = 5 * 60 * 1000;
-const cache = new Map<string, { at: number; rows: CatalogueCandidate[] }>();
 
 export function createCatalogueRepository(exec: QueryExecutor): CatalogueRepository {
+  const cache = new Map<string, { at: number; rows: CatalogueCandidate[] }>();
   return {
     async queryCandidates(family, operation) {
       const key = `${family ?? ""}::${operation ?? ""}`;

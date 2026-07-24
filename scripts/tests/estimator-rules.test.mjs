@@ -17,13 +17,15 @@ await build({
       export { toCandidate, fixtureCatalogueRepository, createCatalogueRepository } from ${p("worker/lib/estimator/catalogue.ts")};
       export { checkHardRules, RULE_VERSION } from ${p("worker/lib/estimator/rules.ts")};
       export { computePrice } from ${p("worker/lib/estimator/pricing.ts")};
+      export { rankCandidates, selectWithConfidence } from ${p("worker/lib/estimator/rank.ts")};
+      export { selectForOpening } from ${p("worker/lib/estimator/select.ts")};
       export { SUPPORTED_SCHEMA_VERSION } from ${p("worker/lib/estimator/types.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { toCandidate, fixtureCatalogueRepository, checkHardRules, computePrice, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
+const { toCandidate, fixtureCatalogueRepository, checkHardRules, computePrice, rankCandidates, selectForOpening, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
 
 const RATE = { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" };
 const POLICY = { depositPercent: 40, gstMode: "inc", version: "v1" };
@@ -125,6 +127,57 @@ test("pricing: option surcharges add to the unit; missing dims ⇒ not ok", () =
 test("pricing: snapshot exposes a TOTAL, never a per-option breakdown", () => {
   const s = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 1, optionSurcharges: [130] });
   assert.ok(!("optionSurcharges" in s) && !("options" in s), "no per-option breakdown leaks into the snapshot");
+});
+
+// ─── Ranker + selection orchestration ───────────────────────────────────────
+const smallAwning = { ...awning, category: { slug: { current: "windows" } } };
+const bigAwning = {
+  ...awning, sanityProductId: "product-amj100t-awning-window", slug: "amj100t-awning-window",
+  category: { slug: { current: "windows" } },
+  dimensionRule: { minWidthMm: 500, maxWidthMm: 1300, minHeightMm: 500, maxHeightMm: 2400, maxAreaM2: 3.12, maxAspectRatio: 4, ruleVersion: "v1" },
+};
+const priceFn = async (c) => computePrice(
+  { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" },
+  { depositPercent: 40, gstMode: "inc", version: "v1" },
+  { family: "awning-window", widthMm: 800, heightMm: 1200, qty: 1 },
+);
+
+test("selection: picks a passing candidate, ranks it, never selects a rejected one", async () => {
+  const repo = fixtureCatalogueRepository([smallAwning, bigAwning]);
+  const res = await selectForOpening({ family: "windows", operationType: "awning", widthMm: 800, heightMm: 1200, externalRef: "W01" }, repo, priceFn);
+  assert.equal(res.evaluated.length, 2);
+  assert.ok(res.selected, "a candidate was selected");
+  assert.equal(res.selected.outcome.passed, true, "selected candidate passed the hard rules");
+  assert.equal(res.status, "ready");
+  assert.equal(res.selected.rank, 1);
+  assert.match(res.catalogueVersion, /^cat:/);
+});
+
+test("selection: an opening too big for the small unit selects the big one only", async () => {
+  const repo = fixtureCatalogueRepository([smallAwning, bigAwning]);
+  // 1200 wide exceeds smallAwning (max 1000) but fits bigAwning (max 1300).
+  const res = await selectForOpening({ family: "windows", operationType: "awning", widthMm: 1200, heightMm: 1200, externalRef: "W02" }, repo, priceFn);
+  assert.equal(res.selected.candidate.sanityProductId, "product-amj100t-awning-window");
+  // The small unit is present but rejected (never selected).
+  const small = res.evaluated.find((e) => e.candidate.sanityProductId === "product-amj80-series-awning-window");
+  assert.equal(small.outcome.passed, false);
+  assert.equal(small.selected, false);
+});
+
+test("selection: no candidate for an unknown operation ⇒ no_candidate", async () => {
+  const repo = fixtureCatalogueRepository([smallAwning]);
+  const res = await selectForOpening({ family: "windows", operationType: "louvre", widthMm: 800, heightMm: 1200 }, repo, priceFn);
+  assert.equal(res.selected, null);
+  assert.equal(res.status, "no_candidate");
+});
+
+test("ranker: prefers the snugger fit at equal price", () => {
+  const mk = (id, r) => ({ candidate: toCandidate({ ...awning, sanityProductId: id, dimensionRule: r }), outcome: { passed: true, status: "ready" }, price: { total: 1000 } });
+  const snug = mk("snug", { minWidthMm: 400, maxWidthMm: 1000, minHeightMm: 400, maxHeightMm: 2400, maxAreaM2: 2.4, maxAspectRatio: 4, ruleVersion: "v1" });
+  const loose = mk("loose", { minWidthMm: 700, maxWidthMm: 5000, minHeightMm: 700, maxHeightMm: 5000, maxAreaM2: 25, maxAspectRatio: 4, ruleVersion: "v1" });
+  const ranked = rankCandidates({ operationType: "awning", widthMm: 700, heightMm: 1400 }, [snug, loose]);
+  assert.equal(ranked[0].rank, 1);
+  assert.equal(ranked.length, 2);
 });
 
 test.after(() => removeRunDir(runDir));
