@@ -7,8 +7,9 @@
 import type { CatalogueRepository } from "./catalogue";
 import type { CatalogueCandidate, OpeningInput } from "./types";
 import { checkHardRules, RULE_VERSION, type RuleOutcome, type OutcomeStatus } from "./rules";
-import { rankCandidates, selectWithConfidence, RANKER_VERSION, type RankedCandidate } from "./rank";
+import { rankCandidates, selectWithConfidence, RANKER_VERSION, type RankedCandidate, type ScoreComponents } from "./rank";
 import type { PriceSnapshot } from "./pricing";
+import type { HistoricalModel } from "./learning";
 
 export type PriceFn = (candidate: CatalogueCandidate, opening: OpeningInput) => Promise<PriceSnapshot | null>;
 
@@ -17,6 +18,8 @@ export interface EvaluatedCandidate {
   outcome: RuleOutcome;
   price: PriceSnapshot | null;
   score: number | null;
+  /** Transparent per-component breakdown (incl. the learned historical nudge). */
+  components: ScoreComponents | null;
   rank: number | null;
   selected: boolean;
 }
@@ -42,6 +45,7 @@ export async function selectForOpening(
   opening: OpeningInput & { externalRef?: string | null },
   repo: CatalogueRepository,
   priceFn: PriceFn,
+  historical?: HistoricalModel,
 ): Promise<SelectionResult> {
   const candidates = await repo.queryCandidates(opening.family ?? null, opening.operationType ?? null);
   const catalogueVersion = repo.catalogueVersion(candidates);
@@ -51,16 +55,20 @@ export async function selectForOpening(
   for (const candidate of candidates) {
     const outcome = checkHardRules(opening, candidate, RULE_VERSION);
     const price = outcome.passed ? await priceFn(candidate, opening) : null;
-    evaluated.push({ candidate, outcome, price, score: null, rank: null, selected: false });
+    evaluated.push({ candidate, outcome, price, score: null, components: null, rank: null, selected: false });
   }
 
   const passing = evaluated.filter((e) => e.outcome.passed);
-  const ranked = rankCandidates(opening, passing.map((e) => ({ candidate: e.candidate, outcome: e.outcome, price: e.price })));
-  // Attach scores/ranks back onto the passing candidates.
+  const ranked = rankCandidates(opening, passing.map((e) => ({
+    candidate: e.candidate, outcome: e.outcome, price: e.price,
+    // Learned preference (Phase 6); omitted ⇒ ranker treats it as neutral.
+    historicalAcceptance: historical ? historical.scoreFor(e.candidate, opening) : undefined,
+  })));
+  // Attach scores/ranks/components back onto the passing candidates.
   const byId = new Map(ranked.map((r) => [r.candidateId, r]));
   for (const e of passing) {
     const r = byId.get(e.candidate.sanityProductId);
-    if (r) { e.score = r.score; e.rank = r.rank; }
+    if (r) { e.score = r.score; e.rank = r.rank; e.components = r.components; }
   }
 
   const { selected: topRanked, dominant, alternatives } = selectWithConfidence(ranked);

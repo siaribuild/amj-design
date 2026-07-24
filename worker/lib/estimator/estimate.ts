@@ -1,10 +1,11 @@
 // Project estimate orchestration (spec §18): run the deterministic engine over
 // every opening_instance in a project and persist the selection. Ties the
 // CatalogueRepository, hard rules, pricing, ranker and persistence together.
-import type { Env } from "../types";
+import type { Env } from "../../types";
 import { createCatalogueRepository, sanityExecutor } from "./catalogue";
 import { selectForOpening } from "./select";
 import { persistSelection } from "./persist";
+import { buildHistoricalModel } from "./learning";
 import { priceLine } from "./pricing";
 import { uuid } from "../util";
 import type { CatalogueCandidate, OpeningInput } from "./types";
@@ -95,6 +96,9 @@ export async function runProjectEstimate(env: Env, projectId: string): Promise<E
   const openings = results ?? [];
 
   const repo = createCatalogueRepository(sanityExecutor(env));
+  // The learned preference model (Phase 6): built once from the reviewer-correction
+  // corpus and reused across every opening in this run. Empty corpus ⇒ neutral.
+  const historical = await buildHistoricalModel(env);
   // Price a candidate for an opening via the private D1 rate card (family = the
   // product's series slug, e.g. awning-window; falls back to 'default').
   const priceFn = async (candidate: CatalogueCandidate, opening: OpeningInput) =>
@@ -109,7 +113,7 @@ export async function runProjectEstimate(env: Env, projectId: string): Promise<E
   let selectedCount = 0;
   for (const row of openings) {
     const opening = toOpeningInput(row);
-    const result = await selectForOpening(opening, repo, priceFn);
+    const result = await selectForOpening(opening, repo, priceFn, historical);
     await persistSelection(env, { projectId, openingId: row.id, result });
     if (result.selected) selectedCount++;
     lines.push({

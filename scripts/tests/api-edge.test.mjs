@@ -212,9 +212,24 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       // Feedback: a reason-code CATEGORY is mandatory (free-text-only is rejected).
       await requestJson(staff, "/api/ops/projects/p_submitted/feedback", { method: "POST", json: { field: "product", note: "just wrong" } }, 400);
       await requestJson(staff, "/api/ops/projects/p_submitted/feedback", { method: "POST", json: { field: "product", category: "not_a_category", reasonCode: "X" } }, 400);
+      // A preference_correction carries initial (system pick) → final (reviewer's
+      // choice); this is the exact substrate the learning loop reads back.
       const ok = await requestJson(staff, "/api/ops/projects/p_submitted/feedback", { method: "POST",
-        json: { field: "product", openingId: "op_est1", category: "preference_correction", reasonCode: "LOWER_TOTAL_COST_SAME_COMPLIANCE", finalValue: { productSlug: "amj80" } } });
+        json: { field: "product", openingId: "op_est1", category: "preference_correction", reasonCode: "LOWER_TOTAL_COST_SAME_COMPLIANCE",
+                initialValue: { productId: "product-amj100l" }, finalValue: { productId: "product-amj80" } } });
       assert.ok(ok.body.id, "feedback recorded with a valid category");
+
+      // Capture side of the learning loop: the row the ranker trains on must persist
+      // initial + final product ids joined to the opening's context (family/operation).
+      const fb = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json",
+        "--command", `SELECT f.category, f.field, f.initial_value_json, f.final_value_json, o.family, o.operation_type
+                        FROM review_feedback f JOIN opening_instance o ON o.id = f.opening_id WHERE f.opening_id='op_est1'`], { env: wranglerEnv });
+      const rows = JSON.parse(fb.stdout)[0].results;
+      assert.equal(rows.length, 1, "one trainable correction persisted");
+      assert.equal(rows[0].category, "preference_correction");
+      assert.match(rows[0].final_value_json, /product-amj80/, "reviewer's chosen product stored (accept signal)");
+      assert.match(rows[0].initial_value_json, /product-amj100l/, "system's overridden pick stored (reject signal)");
+      assert.equal(rows[0].operation_type, "awning", "context joins to the opening for per-context learning");
     });
 
     await t.test("estimator: bridges delivered parse_line rows into openings (extraction source #1)", async () => {

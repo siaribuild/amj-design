@@ -117,8 +117,19 @@ function OpeningCard({ projectId, opening, categories, onChanged }: { projectId:
               <div key={c.productId} className={`flex items-center gap-2 text-xs px-2 py-1.5 border ${c.selected ? "border-[#5A7A6A]/40 bg-[#5A7A6A]/5" : "border-black/8"}`}>
                 {c.passed ? <Check className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0" /> : <X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />}
                 <span className="text-[#14150f] flex-1 min-w-0 truncate">{c.productName}{c.selected && <span className="ml-1.5 text-[10px] px-1 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344]">selected</span>}</span>
-                {c.passed ? <span className="text-[#8b8880] tabular-nums">score {c.score?.toFixed(2)}</span>
-                  : <span className="text-red-600 truncate max-w-[240px]" title={c.failReasons.join("; ")}>{c.failReasons[0] ?? "rejected"}</span>}
+                {c.passed ? (
+                  <span className="flex items-center gap-1.5 flex-shrink-0">
+                    {c.components && Math.abs(c.components.historical - 0.5) > 0.01 && (
+                      <span
+                        title={`Learned preference ${(c.components.historical * 100).toFixed(0)}% — from reviewer corrections (capped 10% of score)`}
+                        className={c.components.historical > 0.5 ? "text-[#5A7A6A] font-medium" : "text-amber-600 font-medium"}
+                      >
+                        {c.components.historical > 0.5 ? "▲" : "▼"} learned
+                      </span>
+                    )}
+                    <span className="text-[#8b8880] tabular-nums">score {c.score?.toFixed(2)}</span>
+                  </span>
+                ) : <span className="text-red-600 truncate max-w-[240px]" title={c.failReasons.join("; ")}>{c.failReasons[0] ?? "rejected"}</span>}
               </div>
             ))}
           </div>
@@ -136,17 +147,32 @@ function OpeningCard({ projectId, opening, categories, onChanged }: { projectId:
 }
 
 function FeedbackForm({ projectId, opening, categories, onDone, onCancel }: { projectId: string; opening: EstimatorOpening; categories: string[]; onDone: () => void; onCancel: () => void }) {
+  const systemPick = opening.candidates.find(c => c.selected)?.productId ?? "";
+  const passedCandidates = opening.candidates.filter(c => c.passed);
   const [field, setField] = useState("product");
   const [category, setCategory] = useState("");
   const [reasonCode, setReasonCode] = useState("");
+  const [preferred, setPreferred] = useState(systemPick);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
-  const canSave = !!category && !!reasonCode.trim();
+
+  // A product correction is the learning signal: it must name the product the
+  // reviewer would actually pick, so the ranker can learn the preference.
+  const isProduct = field === "product";
+  const canSave = !!category && !!reasonCode.trim() && (!isProduct || !!preferred);
 
   const save = async () => {
     setSaving(true);
     try {
-      await opsEstimatorFeedback(projectId, { openingId: opening.id, selectionRunId: opening.selectionRunId ?? undefined, field, category, reasonCode: reasonCode.trim(), note: note.trim() || undefined });
+      // Capture initial (system pick) → final (reviewer's choice) for product
+      // corrections so the learning loop can train on the preference.
+      const values = isProduct
+        ? { initialValue: systemPick ? { productId: systemPick } : undefined, finalValue: { productId: preferred } }
+        : {};
+      await opsEstimatorFeedback(projectId, {
+        openingId: opening.id, selectionRunId: opening.selectionRunId ?? undefined,
+        field, category, reasonCode: reasonCode.trim(), note: note.trim() || undefined, ...values,
+      });
       onDone();
     } finally { setSaving(false); }
   };
@@ -165,6 +191,20 @@ function FeedbackForm({ projectId, opening, categories, onDone, onCancel }: { pr
         </select>
         <input value={reasonCode} onChange={e => setReasonCode(e.target.value.toUpperCase())} placeholder="REASON_CODE" className={`${inp} w-44 font-mono`} />
       </div>
+      {isProduct && (
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-[10px] uppercase tracking-widest text-[#8a8782]">Preferred product</label>
+          <select value={preferred} onChange={e => setPreferred(e.target.value)} className={`${inp} ${preferred ? "" : "text-[#9a9894]"} min-w-[200px]`}>
+            <option value="">Which product should win?…</option>
+            {passedCandidates.map(c => (
+              <option key={c.productId} value={c.productId}>{c.productName}{c.productId === systemPick ? " (system pick)" : ""}</option>
+            ))}
+          </select>
+          {preferred && category === "preference_correction" && preferred !== systemPick && (
+            <span className="text-[10px] text-[#5A7A6A]">trains the ranker ▲</span>
+          )}
+        </div>
+      )}
       <input value={note} onChange={e => setNote(e.target.value)} placeholder="Optional note" className={`${inp} w-full`} />
       <div className="flex items-center gap-2">
         <button onClick={save} disabled={!canSave || saving} className="text-xs px-3 py-1 text-white disabled:opacity-50" style={{ background: SAGE }}>{saving ? "…" : "Record correction"}</button>

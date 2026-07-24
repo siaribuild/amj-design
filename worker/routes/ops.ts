@@ -795,12 +795,12 @@ ops.get("/projects/:id/estimator", async (c) => {
     let candidates: any[] = [];
     if (run) {
       const { results } = await c.env.DB.prepare(
-        "SELECT sanity_product_id, catalogue_rev, hard_rule_passed, hard_rule_outcome_json, score, reason_codes, rank, selected FROM candidate_result WHERE selection_run_id = ? ORDER BY selected DESC, rank",
+        "SELECT sanity_product_id, catalogue_rev, hard_rule_passed, hard_rule_outcome_json, score, score_components_json, reason_codes, rank, selected FROM candidate_result WHERE selection_run_id = ? ORDER BY selected DESC, rank",
       ).bind(run.id).all<any>();
       candidates = (results ?? []).map((r) => ({
         productId: r.sanity_product_id, catalogueRev: r.catalogue_rev,
         passed: !!r.hard_rule_passed, filters: safeParse(r.hard_rule_outcome_json ?? "[]"),
-        score: r.score, rank: r.rank, selected: !!r.selected,
+        score: r.score, components: safeParse(r.score_components_json ?? "null"), rank: r.rank, selected: !!r.selected,
         failReasons: safeParse(r.reason_codes ?? "[]"),
         productName: getProductBySlug(String(r.sanity_product_id).replace(/^product-/, ""))?.name ?? r.sanity_product_id,
       }));

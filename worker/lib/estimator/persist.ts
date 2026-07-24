@@ -6,7 +6,7 @@
 // learning substrate: every human correction records a MANDATORY reason-code
 // category so the right layer learns — and it is best-effort (never blocks the
 // quote, per §6a).
-import type { Env } from "../types";
+import type { Env } from "../../types";
 import { uuid } from "../util";
 import type { SelectionResult } from "./select";
 
@@ -55,7 +55,8 @@ export async function persistSelection(
     ).bind(
       candRowId, selectionRunId, e.candidate.sanityProductId, e.candidate.catalogueRevision,
       e.outcome.passed ? 1 : 0, JSON.stringify(e.outcome.filters), e.score,
-      null, JSON.stringify(e.outcome.filters.filter((f) => !f.passed).map((f) => f.reason).filter(Boolean)),
+      e.components ? JSON.stringify(e.components) : null,
+      JSON.stringify(e.outcome.filters.filter((f) => !f.passed).map((f) => f.reason).filter(Boolean)),
       e.rank, e.selected ? 1 : 0,
     ));
   }

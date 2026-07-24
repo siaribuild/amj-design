@@ -110,10 +110,14 @@ export const opsPatchLine = (lineId: string, patch: Partial<{ width: string; hei
 
 // ── Estimator (CPQ) review workspace ─────────────────────────────────────────
 export interface EstimatorProject { id: string; title: string; statusCustomer: string; openings: number; attention: number }
+export interface ScoreComponents {
+  compliance: number; geometry: number; configuration: number;
+  commercial: number; historical: number; dataCompleteness: number;
+}
 export interface EstimatorCandidate {
   productId: string; productName: string; catalogueRev: string; passed: boolean;
   filters: { filter: string; passed: boolean; severity?: string; reason?: string }[];
-  score: number | null; rank: number | null; selected: boolean; failReasons: string[];
+  score: number | null; components: ScoreComponents | null; rank: number | null; selected: boolean; failReasons: string[];
 }
 export interface EstimatorOpening {
   id: string; externalRef: string | null; room: string | null; family: string | null;
