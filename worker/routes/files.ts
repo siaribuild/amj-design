@@ -94,7 +94,7 @@ files.get("/projects/:id/files", async (c) => {
   const p = await ownedProject(c.env, c.req.raw, c.req.param("id"));
   if (!p) return c.json({ error: "not_found" }, 404);
   const { results } = await c.env.DB
-    .prepare("SELECT id, kind, filename, size, virus_status, created_at FROM file_asset WHERE project_id = ? ORDER BY created_at DESC")
+    .prepare("SELECT id, kind, filename, size, virus_status, doc_type, doc_type_source, created_at FROM file_asset WHERE project_id = ? ORDER BY created_at DESC")
     .bind(p.id).all();
   return c.json({ files: results });
 });

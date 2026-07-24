@@ -1358,7 +1358,7 @@ export default function App() {
         options: it.options, qty: it.qty, status: it.status,
         origin: it.origin, review: it.review ?? null,
       })));
-      setQuoteFiles((r.files ?? []).map((f) => ({ id: f.id, name: f.filename, kind: f.kind, status: "Uploaded" as const })));
+      setQuoteFiles((r.files ?? []).map((f) => ({ id: f.id, name: f.filename, kind: f.kind, status: "Uploaded" as const, docType: f.doc_type ?? null })));
     },
   };
   // ── Persistence (M2): hydrate the anon project on load, snapshot-save on change ──
@@ -1405,7 +1405,7 @@ export default function App() {
         }
         // Surface the attached schedule file (integral to the quote/order).
         if (r.files?.length) {
-          setQuoteFiles(r.files.map((f) => ({ id: f.id, name: f.filename, kind: f.kind, status: "Uploaded" as const })));
+          setQuoteFiles(r.files.map((f) => ({ id: f.id, name: f.filename, kind: f.kind, status: "Uploaded" as const, docType: f.doc_type ?? null })));
         }
       })
       .catch(() => { /* offline / API down — keep working in-memory */ })

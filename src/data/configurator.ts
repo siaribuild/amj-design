@@ -37,7 +37,13 @@ export interface QItem {
   // customer resolves each field (see clearReviewKey).
   review?: Record<string, string> | null;
 }
-export interface QFile { id: string | number; name: string; kind: string; status: "Uploaded" | "Processing" | "Needs attention" }
+export interface QFile {
+  id: string | number; name: string; kind: string;
+  status: "Uploaded" | "Processing" | "Needs attention";
+  /** Server-detected document type (schedule | energy_report | plans | supporting);
+   *  null until classification lands — the rail shows "SORTING…". */
+  docType?: string | null;
+}
 export const DEFAULT_PROJECT_TITLE = "My Project";
 
 export interface QuoteState {

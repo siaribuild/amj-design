@@ -86,21 +86,27 @@ parse.post("/projects/current/parse", async (c) => {
 
   let outcome;
   try {
-    // 1-file-per-quote: drop any other schedule files (swap to the newest upload).
-    // Now inside the lock, after the busy check.
-    for (const f of state.scheduleFiles) {
-      if (f.id === fileId) continue;
-      await c.env.FILES.delete(f.r2_key).catch(() => {});
-      await c.env.DB.prepare("DELETE FROM file_asset WHERE id = ?").bind(f.id).run();
-    }
-    // Make sure the active file is tagged as the schedule.
-    await c.env.DB.prepare("UPDATE file_asset SET kind = 'schedule' WHERE id = ?").bind(fileId).run();
     await c.env.KV.put(rlKey, String(used + 1), { expirationTtl: RATE_WINDOW });
 
     // The pipeline reads the bytes once and hashes them there — no extra R2 GET.
     outcome = await runScheduleParse(c.env, {
       project, file, subject, userId: user?.id ?? null, mode: effectiveMode,
     });
+
+    // 1-schedule-per-quote swap — ONLY after a SUCCESSFUL parse (still inside the
+    // lock). Running it before the parse was a data-loss bug in multi-file
+    // uploads: a non-schedule file (energy report) reaching this route deleted
+    // the just-parsed schedule from R2/D1 (starving the AI pipeline too) and
+    // mislabeled itself 'schedule' — then failed no_schedule_found anyway. A file
+    // that doesn't parse as a schedule must never displace one that did.
+    if (outcome.status !== "failed") {
+      for (const f of state.scheduleFiles) {
+        if (f.id === fileId) continue;
+        await c.env.FILES.delete(f.r2_key).catch(() => {});
+        await c.env.DB.prepare("DELETE FROM file_asset WHERE id = ?").bind(f.id).run();
+      }
+      await c.env.DB.prepare("UPDATE file_asset SET kind = 'schedule' WHERE id = ?").bind(fileId).run();
+    }
   } finally {
     // Token-checked release: only delete the lease if it is still ours.
     if ((await c.env.KV.get(lockKey)) === lease) await c.env.KV.delete(lockKey).catch(() => {});

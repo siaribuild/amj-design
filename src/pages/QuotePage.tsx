@@ -194,31 +194,57 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
       await quote.reload();
       setAdding(false);   // a stray in-progress add-form is stale once imported lines land
       const { itemCount, needsReviewCount } = result.job;
-      let message = `${itemCount} items imported${needsReviewCount ? `, ${needsReviewCount} need review` : ""}`;
-      if (many) message += ". Only the first file was used — one schedule per quote.";
+      const message = `${itemCount} items imported${needsReviewCount ? `, ${needsReviewCount} need review` : ""}`;
+      void many; // multi-file uploads are looped now; no first-file truncation
       setUploadNotice({ type: "success", message });
     } else {
       setUploadNotice({ type: "error", message: parseErrorMessage(result) });
     }
   };
 
+  // Multi-file upload (UX spec: docs/estimator/multifile-ux-spec.md). SEQUENTIAL
+  // for…of — the rate limit is per-source (parallel bursts risk spurious 429s)
+  // and chips stay order-stable. One bad file never aborts the rest. kind is
+  // "upload": the SERVER classifies (schedule / energy report / plans), shown on
+  // the file rail. Parse outcomes that just mean "not a schedule" are quiet —
+  // those files are contributions (energy/plans), not failures.
+  const NOT_A_SCHEDULE = new Set(["no_schedule_found", "not_a_pdf", "no_text_layer"]);
   const handleFiles = async (list: FileList | null) => {
     if (!list?.length) return;
-    const file = list[0];                 // one schedule per quote
-    const many = list.length > 1;
     setUploading(true);
     setUploadNotice(null);
     setChoice(null);
+    const failures: string[] = [];
+    let imported = 0, needsReview = 0, attached = 0;
     try {
-      const up = await uploadFile(file, "schedule");
-      const result = await startParse(up.file.id);
-      if (!result.ok && result.reason === "needs_choice") {
-        setChoice({ fileId: up.file.id, existingItems: result.existingItems, existingFile: result.existingFile, many });
-        return; // wait for the customer to pick Replace or Add
+      for (const file of Array.from(list)) {
+        try {
+          const up = await uploadFile(file, "upload");
+          const result = await startParse(up.file.id);
+          if (result.ok) { imported += result.job.itemCount; needsReview += result.job.needsReviewCount; continue; }
+          if (result.reason === "needs_choice") {
+            // Legacy prompt — survives ONLY until the deterministic importer gains
+            // tag-upsert semantics (spec kills it); reached on a 2nd schedule only.
+            setChoice({ fileId: up.file.id, existingItems: result.existingItems, existingFile: result.existingFile, many: false });
+            continue;
+          }
+          if (NOT_A_SCHEDULE.has(result.reason)) { attached++; continue; } // contribution, not a failure
+          failures.push(`${file.name}: ${parseErrorMessage(result)}`);
+        } catch (e) {
+          failures.push(`${file.name}: ${uploadErrorMessage(e)}`);
+        }
       }
-      await applyParseResult(result, many);
-    } catch (e) {
-      setUploadNotice({ type: "error", message: uploadErrorMessage(e) });
+      await quote.reload();
+      if (imported) setAdding(false); // a stray in-progress add-form is stale once imported lines land
+      if (failures.length) {
+        const okCount = list.length - failures.length;
+        setUploadNotice({ type: "error", message: `${okCount} of ${list.length} file${list.length !== 1 ? "s" : ""} uploaded. ${failures.join(" ")}` });
+      } else if (imported || attached) {
+        const parts = [];
+        if (imported) parts.push(`${imported} items imported${needsReview ? ` (${needsReview} need review)` : ""}`);
+        if (attached) parts.push(`${attached} document${attached !== 1 ? "s" : ""} attached for review`);
+        setUploadNotice({ type: "success", message: parts.join(" · ") });
+      }
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -421,13 +447,33 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
               </button>
             )}
           </div>
-          {/* The uploaded schedule is integral to the order — shown as a non-removable
-              chip (only Clear all removes it). */}
-          {quote.files[0] && (
-            <div className="mt-3 inline-flex items-center gap-2 border border-black/12 bg-white px-3 py-1.5 text-xs max-w-full">
-              <Paperclip className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0" aria-hidden="true" />
-              <span className="text-[#131311] font-medium truncate max-w-[16rem]">{quote.files[0].name}</span>
-              <span className="text-[#8a8782] flex-shrink-0">· Attached for review</span>
+          {/* File rail (UX spec: multifile-ux-spec.md) — one chip per uploaded
+              document, showing what the system DETECTED each file as. Files are
+              integral to the order (only Clear all removes them, for now). */}
+          {quote.files.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {quote.files.map((f) => {
+                const type = (f.docType ?? null) as string | null;
+                const label = type === "schedule" ? "SCHEDULE"
+                  : type === "energy_report" ? "ENERGY REPORT"
+                  : type === "plans" ? "PLANS"
+                  : type === "supporting" ? "SUPPORTING" : "SORTING…";
+                const tint = type === "schedule" ? "border-[#5A7A6A]/30 bg-[#5A7A6A]/8 text-[#355344]"
+                  : type === "energy_report" ? "border-[#4C6A88]/30 bg-[#4C6A88]/10 text-[#4C6A88]" // TONE.work — amber is reserved for attention
+                  : type == null ? "border-dashed border-black/20 text-[#8a8782]"
+                  : `border-black/15 bg-black/[0.03] text-[#6f6c67]${type === "supporting" ? " border-dashed" : ""}`;
+                return (
+                  <div key={f.id} className="inline-flex items-center gap-2 border border-black/12 bg-white px-3 py-1.5 text-xs max-w-full">
+                    <Paperclip className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0" aria-hidden="true" />
+                    <span className="text-[#131311] font-medium truncate max-w-[14rem]">{f.name}</span>
+                    <span className={`text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 border leading-none flex-shrink-0 ${tint}`}
+                      style={{ fontFamily: "'DM Mono', monospace" }}>{label}</span>
+                    <span className="text-[#8a8782] flex-shrink-0">
+                      {type === "supporting" ? "· Not used for pricing" : "· Attached for review"}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
           {quote.items.length === 0 && (

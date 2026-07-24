@@ -321,14 +321,20 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
   // REFRESH known ones — never skip, and never clobber a known value with null
   // (COALESCE keeps the best evidence seen so far).
   const { results: existingRows } = await env.DB
-    .prepare("SELECT id, external_ref FROM opening_instance WHERE project_id = ? AND external_ref IS NOT NULL")
-    .bind(projectId).all<{ id: string; external_ref: string }>();
-  const byRef = new Map((existingRows ?? []).map((r) => [r.external_ref, r.id]));
+    .prepare("SELECT id, external_ref, edited_fields FROM opening_instance WHERE project_id = ? AND external_ref IS NOT NULL")
+    .bind(projectId).all<{ id: string; external_ref: string; edited_fields: string | null }>();
+  const byRef = new Map((existingRows ?? []).map((r) => [r.external_ref, r]));
   const upserts: D1PreparedStatement[] = [];
   for (const o of model.openings) {
     if (o.externalRef.startsWith("UNTAGGED")) continue;
-    const existingId = byRef.get(o.externalRef);
-    if (existingId) {
+    const existing = byRef.get(o.externalRef);
+    if (existing) {
+      // HUMAN-EDIT GUARD: a field a human set is never overwritten by a document
+      // re-run — the human is the highest-precedence source. Locked fields have
+      // their incoming value nulled so COALESCE keeps the human's value.
+      let locked: string[] = [];
+      try { const v = JSON.parse(existing.edited_fields || "[]"); if (Array.isArray(v)) locked = v; } catch { /* unreadable ⇒ no locks */ }
+      const unless = (field: string, value: unknown) => (locked.includes(field) ? null : value);
       upserts.push(env.DB.prepare(
         `UPDATE opening_instance SET
            group_code = COALESCE(?, group_code), family = COALESCE(?, family),
@@ -336,8 +342,10 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
            width_mm = COALESCE(?, width_mm), height_mm = COALESCE(?, height_mm),
            requirements_json = COALESCE(?, requirements_json)
          WHERE id = ?`,
-      ).bind(o.parentRef, o.elementType === "door" ? "doors" : "windows",
-        operationFrom(o.configuration.familyRequested), o.widthMm, o.heightMm, reqJson(o), existingId));
+      ).bind(unless("group_code", o.parentRef), unless("family", o.elementType === "door" ? "doors" : "windows"),
+        unless("operation_type", operationFrom(o.configuration.familyRequested)),
+        unless("width_mm", o.widthMm), unless("height_mm", o.heightMm),
+        unless("requirements_json", reqJson(o)), existing.id));
     } else {
       upserts.push(env.DB.prepare(
         `INSERT INTO opening_instance (id, project_id, external_ref, group_code, family, operation_type, width_mm, height_mm, requirements_json, status)

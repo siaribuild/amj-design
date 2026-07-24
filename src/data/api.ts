@@ -277,6 +277,8 @@ export interface ApiFile {
   kind: string;
   size: number;
   virus_status?: string;
+  doc_type?: string | null;
+  doc_type_source?: string;
 }
 /** Thrown when the server refuses an upload for a reason worth showing the user
  *  (rejected by the scanner, scanner unavailable, too large, over quota). */

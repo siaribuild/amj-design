@@ -119,12 +119,12 @@ export interface IngestedDoc {
 
 const MAX_IMAGE_BYTES = 6_000_000; // keep the data-URL within request budgets
 
-interface FileRow { id: string; r2_key: string; filename: string; checksum: string | null; size: number | null; virus_status: string }
+interface FileRow { id: string; r2_key: string; filename: string; checksum: string | null; size: number | null; virus_status: string; doc_type: string | null; doc_type_source: string }
 
 // Ingest every scan-clean project upload; archives the markdown derivative.
 export async function ingestProjectFiles(env: Env, projectId: string): Promise<IngestedDoc[]> {
   const { results } = await env.DB.prepare(
-    `SELECT id, r2_key, filename, checksum, size, virus_status FROM file_asset
+    `SELECT id, r2_key, filename, checksum, size, virus_status, doc_type, doc_type_source FROM file_asset
       WHERE project_id = ? AND kind IN ('upload','plan','schedule') AND virus_status IN ('clean','skipped')
       ORDER BY created_at`,
   ).bind(projectId).all<FileRow>();
@@ -161,7 +161,16 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
     if (doc.markdown) {
       await env.FILES.put(derivedKeys(projectId, f.id).markdown, doc.markdown).catch(() => { /* derivative archive is best-effort */ });
     }
-    doc.docType = classifyDocument(doc.markdown, f.filename);
+    // A user's explicit type correction is AUTHORITATIVE (doc_type_source='user');
+    // the classifier only decides for 'auto' rows, and writes its verdict back so
+    // the customer file rail can show what the system detected.
+    if (f.doc_type_source === "user" && f.doc_type) {
+      doc.docType = f.doc_type as DocType;
+    } else {
+      doc.docType = classifyDocument(doc.markdown, f.filename);
+      await env.DB.prepare("UPDATE file_asset SET doc_type = ? WHERE id = ? AND doc_type_source = 'auto'")
+        .bind(doc.docType, f.id).run().catch(() => { /* display metadata, never a blocker */ });
+    }
     docs.push(doc);
   }
   return docs;
