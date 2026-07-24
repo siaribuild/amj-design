@@ -5,7 +5,7 @@
 // then AV for known-malware coverage).
 //
 // Every path fails CLOSED: an 'unknown' verdict is never treated as clean.
-import type { Env } from "../types";
+import type { Env } from "../../types";
 import type { ScanInput, ScanResult } from "./types";
 import { structuralScanner } from "./structural";
 import { remoteScanner } from "./remote";

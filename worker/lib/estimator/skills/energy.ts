@@ -36,7 +36,7 @@ const MAX_ROWS = 300;
 
 export const energyReportExtractor: Skill<{ text: string }, EnergyConstraint[]> = {
   id: "energy_report_extractor",
-  model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  promptVersion: "v2", // v2: model moved to env-resolved primary (Gemini), single-model policy
   responseSchema: ROW_SCHEMA,
   buildPrompt: ({ text }) =>
     "Extract the per-opening or per-type ENERGY performance constraints from this " +

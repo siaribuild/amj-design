@@ -1,13 +1,21 @@
-// Narrow-skill framework for the AI extraction tier (spec §9). One skill = one
-// strict JSON schema + a prompt + a RUNTIME VALIDATOR. Model output is untrusted
-// (JSON mode does not guarantee schema conformance), so every field is validated
-// and clamped by `validate` before it can become data — the same discipline as
-// the delivered worker/lib/extract/ai.ts. Skills are inert until run through the
-// gateway; the deterministic path never touches them.
+// Narrow-skill framework for the AI extraction tier (LLM strategy §8.1, §14.2).
+// One skill = one narrow task + a strict JSON schema + a versioned prompt + a
+// RUNTIME VALIDATOR. Model output is untrusted (JSON mode does not guarantee
+// schema conformance), so every field is validated and clamped by `validate`
+// before it can become data — the same discipline as the delivered
+// worker/lib/extract/ai.ts. Skills are inert until run through the gateway; the
+// deterministic path never touches them.
+//
+// Skills do NOT choose their own model (single-model policy §13): the runner
+// resolves the primary model from env, and the stage layer supplies an override
+// only when real escalation is enabled.
 
 export interface Skill<TInput, TOutput> {
   id: string;
-  model: string;
+  /** Versioned prompt identity (§21.3) — folded into the stage idempotency hash,
+   *  so editing a prompt re-runs the stage instead of serving a stale hit. Bump
+   *  on ANY change to buildPrompt or responseSchema. */
+  promptVersion: string;
   /** JSON schema handed to the model (response_format). Advisory, not trusted. */
   responseSchema: Record<string, unknown>;
   buildPrompt(input: TInput): string;
@@ -20,8 +28,11 @@ export interface SkillRun<TOutput> {
   data: TOutput | null;
   warnings: string[];
   modelId: string;
-  /** sha-256 of the raw model output (audit — spec §14), not the content itself. */
+  promptVersion: string;
+  /** sha-256 of the raw model output (audit — §21.1), not the content itself. */
   outputHash: string | null;
+  /** True when the §22.3 single repair pass produced the accepted output. */
+  repaired: boolean;
   inputTokens: number;
   outputTokens: number;
 }

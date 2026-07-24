@@ -41,6 +41,17 @@ export interface Env {
   /** AI Gateway slug. When set, Workers AI calls are routed through it for
    *  caching, rate limiting and spend visibility. Optional. */
   AI_GATEWAY_ID?: string;
+  /** Primary multimodal model for the LLM building-modelling tier (LLM strategy
+   *  §13.1). Defaults in code to google/gemini-3.6-flash; override without a code
+   *  change once the model is enabled in the gateway. */
+  AI_PRIMARY_MODEL?: string;
+  /** Escalation model (LLM strategy §13.2). Currently SHADOW-ONLY: escalation
+   *  triggers are logged for frequency analysis but Pro is NOT called until this
+   *  is explicitly turned on. Defaults in code to google/gemini-3.1-pro. */
+  AI_ESCALATION_MODEL?: string;
+  /** When 'on', the shadow escalation actually calls the escalation model.
+   *  Anything else (default) keeps escalation shadow-only (log, don't spend). */
+  AI_ESCALATION_MODE?: string;
   /** Upload scanning engine: 'structural' (default, on-stack type + PDF
    *  active-content checks), 'remote' (external AV), or 'both'. */
   SCAN_ENGINE?: string;

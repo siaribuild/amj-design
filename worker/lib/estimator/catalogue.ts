@@ -7,7 +7,7 @@
 //
 // The query executor is injectable so the rules/selection engine can be tested
 // against a fixture with no live CMS (spec §16.1 "catalogue test fixture export").
-import type { Env } from "../types";
+import type { Env } from "../../types";
 import { SUPPORTED_SCHEMA_VERSION, type CatalogueCandidate } from "./types";
 
 // GROQ: published products for a family (category slug) that support an operation.
