@@ -19,7 +19,7 @@ import {
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
-export type EditFocus = "dims" | "options" | "qty";
+export type EditFocus = "product" | "dims" | "options" | "qty";
 
 // ─── Product-frame diagram — responds to entered aspect ratio ─────────────────
 export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; tone?: "sage" | "light" }) {
@@ -229,6 +229,44 @@ function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<str
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Product picker for a SAVED item (Type → Product, same two dependent fields as
+// the new-item form). Family is local state so switching type just re-lists the
+// products; the item's product only changes when a concrete product is chosen.
+function ProductPicker({ productSlug, onPick }: { productSlug: string; onPick: (slug: string) => void }) {
+  const current = getProductBySlug(productSlug);
+  const [familySlug, setFamilySlug] = useState(current?.familySlug || "");
+  const famGroups = familyGroups();
+  const familyProducts = familySlug ? getProductsByFamily(familySlug) : [];
+  // Only show the saved product in the Product select if it belongs to the type
+  // currently chosen — otherwise the select reads "Choose a product…".
+  const selValue = current && current.familySlug === familySlug ? productSlug : "";
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div>
+        <FieldLabel>Product type</FieldLabel>
+        <div className="relative">
+          <select value={familySlug} onChange={e => setFamilySlug(e.target.value)} className={selectClass}>
+            <option value="">Choose a type…</option>
+            {famGroups.map(g => <optgroup key={g.category} label={g.category}>{g.families.map(f => <option key={f.slug} value={f.slug}>{f.name}</option>)}</optgroup>)}
+          </select>
+          <ChevronDown className="w-4 h-4 text-[#5c5a56] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        </div>
+      </div>
+      <div>
+        <FieldLabel>Product</FieldLabel>
+        <div className="relative">
+          <select value={selValue} onChange={e => { if (e.target.value) onPick(e.target.value); }} disabled={!familySlug}
+            className={`${selectClass} disabled:bg-[#FAFAF9] disabled:text-[#9a9894] disabled:cursor-not-allowed`}>
+            <option value="">{familySlug ? "Choose a product…" : "Select a type first"}</option>
+            {familyProducts.map(pr => <option key={pr.slug} value={pr.slug}>{pr.name}</option>)}
+          </select>
+          <ChevronDown className="w-4 h-4 text-[#5c5a56] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -479,12 +517,25 @@ export function ItemSummaryCard({
   const w = parseInt(item.width) || 0, h = parseInt(item.height) || 0;
   const issues = p ? itemIssues(p, item) : [];
 
+  // Per-field review reasons from an auto-parse (field -> human reason). Keys map to
+  // sections so the offending group is highlighted amber; every reason is also shown.
+  const reviewEntries = item.review ? Object.entries(item.review) : [];
+  const reviewKeys = new Set(reviewEntries.map(([k]) => k));
+  const reviewReasons = reviewEntries.map(([, reason]) => reason);
+
+  // The first group needing attention — a live validation issue, else a parse
+  // review flag. Drives the "Review issues" jump. "product" comes first so a line
+  // the parser couldn't match opens straight on the product picker.
+  const firstAttentionSection: EditFocus | null =
+    issues[0]?.section
+    ?? (reviewKeys.has("product") ? "product"
+      : reviewKeys.has("dims") ? "dims"
+      : reviewKeys.has("options") ? "options" : null);
+
   // "Review issues" targets this card: open the first offending group + focus it.
   useEffect(() => {
-    if (!focusSignal) return;
-    const section = issues[0]?.section ?? null;
-    if (!section) return;
-    setOpen(section);
+    if (!focusSignal || !firstAttentionSection) return;
+    setOpen(firstAttentionSection);
     // Let the expand/open commit and lay out before moving focus into the group.
     const t = setTimeout(() => {
       const field = rootRef.current?.querySelector<HTMLElement>("input, select, textarea");
@@ -493,15 +544,10 @@ export function ItemSummaryCard({
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSignal]);
-
-  // Per-field review reasons from an auto-parse (field -> human reason). Keys map to
-  // sections so the offending group is highlighted amber; every reason is also shown.
-  const reviewEntries = item.review ? Object.entries(item.review) : [];
-  const reviewKeys = new Set(reviewEntries.map(([k]) => k));
-  const reviewReasons = reviewEntries.map(([, reason]) => reason);
   const hasIssue = (s: EditFocus) =>
     issues.some(i => i.section === s)
-    || (s === "dims" && (reviewKeys.has("dims") || reviewKeys.has("product")))
+    || (s === "product" && reviewKeys.has("product"))
+    || (s === "dims" && reviewKeys.has("dims"))
     || (s === "options" && reviewKeys.has("options"));
   // Customer-blocking (must fix to submit) vs technical-only (AMJ confirms; the
   // customer can still submit). Product/dims live-issues and 'customer' review keys
@@ -535,9 +581,9 @@ export function ItemSummaryCard({
         </span>
         <span className="flex-1 min-w-0 flex items-center gap-1.5">
           <button onClick={toggleExpanded} aria-expanded={isExpanded}
-            className="min-w-0 truncate text-left text-sm font-semibold text-[#131311] leading-tight cursor-pointer hover:text-[#5A7A6A]"
+            className={`min-w-0 truncate text-left text-sm font-semibold leading-tight cursor-pointer hover:text-[#5A7A6A] ${item.productSlug ? "text-[#131311]" : "text-[#9a7a1a] italic"}`}
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-            {productLabel(item.productSlug)}
+            {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
           </button>
           {customerBlocking
             ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">Needs </span>attention</span>
@@ -579,20 +625,39 @@ export function ItemSummaryCard({
       )}
 
       {/* ── Expanded detail groups — one open at a time ── */}
-      {isExpanded && p && (
+      {isExpanded && (
         <div className="border-t border-black/8">
-          <Section variant="row" label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open === "dims"} onToggle={() => toggle("dims")}>
-            <DimensionsFields p={p} width={item.width} height={item.height} measuredBy={item.measuredBy}
-              setWidth={v => update({ width: v, review: clearReviewKey(item.review, "dims") })}
-              setHeight={v => update({ height: v, review: clearReviewKey(item.review, "dims") })}
-              setMeasuredBy={v => update({ measuredBy: v })} />
+          {/* Product is editable — a schedule line the parser couldn't match (or
+              flagged for substitution) is re-pointed here. Changing product resets
+              options to the new product's defaults and clears the product flag. */}
+          <Section variant="row" label="Product" summary={p ? p.name : "No product selected — choose one"} attention={hasIssue("product")} open={open === "product"} onToggle={() => toggle("product")}>
+            <ProductPicker productSlug={item.productSlug} onPick={slug => {
+              const np = getProductBySlug(slug);
+              update({ productSlug: slug, options: np ? defaultOptions(np) : {}, review: clearReviewKey(item.review, "product") });
+            }} />
+            {p && <p className="text-[11px] text-[#5c5a56] mt-2"><Info className="w-3 h-3 inline mr-1" />Changing the product resets its options to the standard selections.</p>}
           </Section>
-          <Section variant="row" label="Options" summary={optionSummaryOf(p, item.options)} attention={hasIssue("options")} open={open === "options"} onToggle={() => toggle("options")}>
-            <OptionsFields p={p} options={item.options} setOpt={(t, v) => update({ options: { ...item.options, [t]: v }, review: clearReviewKey(item.review, "options") })} />
-          </Section>
-          <Section variant="row" label="Quantity & note" summary={qtySummary} open={open === "qty"} onToggle={() => toggle("qty")}>
-            <QtyLocationFields qty={item.qty} location={item.location} setQty={v => update({ qty: v })} setLocation={v => update({ location: v })} />
-          </Section>
+          {p ? (
+            <>
+              <Section variant="row" label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open === "dims"} onToggle={() => toggle("dims")}>
+                <DimensionsFields p={p} width={item.width} height={item.height} measuredBy={item.measuredBy}
+                  setWidth={v => update({ width: v, review: clearReviewKey(item.review, "dims") })}
+                  setHeight={v => update({ height: v, review: clearReviewKey(item.review, "dims") })}
+                  setMeasuredBy={v => update({ measuredBy: v })} />
+              </Section>
+              <Section variant="row" label="Options" summary={optionSummaryOf(p, item.options)} attention={hasIssue("options")} open={open === "options"} onToggle={() => toggle("options")}>
+                <OptionsFields p={p} options={item.options} setOpt={(t, v) => update({ options: { ...item.options, [t]: v }, review: clearReviewKey(item.review, "options") })} />
+              </Section>
+              <Section variant="row" label="Quantity & note" summary={qtySummary} open={open === "qty"} onToggle={() => toggle("qty")}>
+                <QtyLocationFields qty={item.qty} location={item.location} setQty={v => update({ qty: v })} setLocation={v => update({ location: v })} />
+              </Section>
+            </>
+          ) : (
+            <div className="px-4 py-3 bg-amber-50/60 border-t border-black/6 text-xs text-amber-800 flex items-start gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
+              <span>Choose a product above to set its dimensions, options and quantity.</span>
+            </div>
+          )}
         </div>
       )}
     </div>
