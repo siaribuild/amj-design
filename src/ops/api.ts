@@ -137,7 +137,7 @@ export const opsEstimatorFeedback = (projectId: string, body: { openingId?: stri
 // ── LLM building-modelling pipeline (strategy §19) ───────────────────────────
 export interface AiRunSummary {
   runId: string; status: "completed" | "partial" | "failed";
-  documents: number; extractedLines: number; conflicts: number;
+  documents: number; extractedLines: number; conflicts: number; energyApplied: number;
   buildingModelId: string | null;
   estimate: { openings: number; selected: number } | null;
   stageWarnings: string[];

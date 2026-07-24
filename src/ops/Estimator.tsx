@@ -97,6 +97,7 @@ function Workspace({ projectId, onBack }: { projectId: string; onBack: () => voi
           {"error" in aiResult
             ? `AI extraction failed: ${aiResult.error}`
             : `AI extraction ${aiResult.status}: ${aiResult.extractedLines} lines from ${aiResult.documents} document(s)` +
+              (aiResult.energyApplied ? `, energy-report requirements applied to ${aiResult.energyApplied}` : "") +
               (aiResult.conflicts ? `, ${aiResult.conflicts} conflict(s) need review` : "") +
               (aiResult.estimate ? ` — ${aiResult.estimate.selected}/${aiResult.estimate.openings} openings selected` : "")}
         </div>

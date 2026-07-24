@@ -16,6 +16,8 @@ import { createAiRun, completeAiRun } from "./runs";
 import { runStage } from "./stage";
 import { ingestProjectFiles, type IngestedDoc } from "./ingest";
 import { scheduleExtractor, type ScheduleLineV1 } from "../estimator/skills/schedule";
+import { energyReportExtractor, type EnergyExtraction } from "../estimator/skills/energy";
+import { mapEnergyToOpenings } from "./energyMap";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
 import { runProjectEstimate } from "../estimator/estimate";
@@ -137,6 +139,8 @@ export interface AiExtractionSummary {
   documents: number;
   extractedLines: number;
   conflicts: number;
+  /** Path-1 outcome: openings that received an explicit report requirement. */
+  energyApplied: number;
   buildingModelId: string | null;
   estimate: { openings: number; selected: number } | null;
   stageWarnings: string[];
@@ -150,13 +154,18 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
   const usable = docs.filter((d) => !d.rejected && (d.markdown || d.imageDataUrl));
   if (!usable.length) {
     await completeAiRun(env, run.id, { status: "failed", errorCode: docs.length ? "IMAGE_UNREADABLE" : "FILE_UNSUPPORTED" });
-    return { runId: run.id, status: "failed", documents: docs.length, extractedLines: 0, conflicts: 0, buildingModelId: null, estimate: null, stageWarnings: docs.flatMap((d) => d.qualityIssues) };
+    return { runId: run.id, status: "failed", documents: docs.length, extractedLines: 0, conflicts: 0, energyApplied: 0, buildingModelId: null, estimate: null, stageWarnings: docs.flatMap((d) => d.qualityIssues) };
   }
 
-  // Extraction stage per usable document (idempotent per content+prompt+model).
+  // Route documents by classification (§7.4): energy reports feed the energy
+  // skill (Path 1, authoritative); everything else feeds schedule extraction.
+  const energyDocs = usable.filter((d) => d.docType === "energy_report");
+  const scheduleDocs = usable.filter((d) => d.docType !== "energy_report");
+
+  // Schedule extraction per document (idempotent per content+prompt+model).
   const perDoc: { fileId: string; lines: ScheduleLineV1[] }[] = [];
   let anyFailed = false;
-  for (const doc of usable) {
+  for (const doc of scheduleDocs) {
     const res = await runStage(env, {
       aiRunId: run.id, projectId, skill: scheduleExtractor,
       input: { text: doc.markdown, imageDataUrl: doc.imageDataUrl, docName: doc.filename, checksum: doc.checksum },
@@ -171,14 +180,71 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
     else anyFailed = true;
   }
 
+  // Energy-report extraction (Path 1). Text-only for now: a scanned-image-only
+  // report is flagged for review rather than mis-read. First successful
+  // extraction wins; additional reports are surfaced, not silently merged.
+  let energy: { fileId: string; extraction: EnergyExtraction } | null = null;
+  for (const doc of energyDocs) {
+    if (!doc.markdown) { warnings.push(`energy_report_image_only:${doc.filename}`); continue; }
+    const res = await runStage(env, {
+      aiRunId: run.id, projectId, skill: energyReportExtractor,
+      input: { text: doc.markdown, checksum: doc.checksum },
+    });
+    warnings.push(...res.warnings);
+    if (res.ok && res.data) {
+      if (!energy) energy = { fileId: doc.fileId, extraction: res.data };
+      else warnings.push(`multiple_energy_reports:${doc.filename}`);
+    } else anyFailed = true;
+  }
+
   if (!perDoc.length) {
     await completeAiRun(env, run.id, { status: "failed", errorCode: "SCHEMA_VALIDATION_FAILED" });
-    return { runId: run.id, status: "failed", documents: docs.length, extractedLines: 0, conflicts: 0, buildingModelId: null, estimate: null, stageWarnings: warnings };
+    return { runId: run.id, status: "failed", documents: docs.length, extractedLines: 0, conflicts: 0, energyApplied: 0, buildingModelId: null, estimate: null, stageWarnings: warnings };
   }
 
   // Merge, model, persist the canonical records.
   const merged = mergeScheduleLines(perDoc);
   const model = linesToBuildingModel(projectId, merged, docs);
+
+  // Path 1 (§10.1): explicit report requirements are AUTHORITATIVE. Map them
+  // onto the opening graph; represent mismatches, surface unmatched constraints.
+  let energyApplied = 0;
+  if (energy) {
+    const mapped = mapEnergyToOpenings(energy.extraction, model.openings);
+    for (const o of model.openings) {
+      const req = mapped.requirements.get(o.externalRef);
+      if (!req) continue;
+      energyApplied++;
+      o.thermalRequirement = {
+        basis: req.basis, maxUValue: req.maxUValue, shgcTarget: req.shgcTarget,
+        shgcMin: req.shgcMin, shgcMax: req.shgcMax, zoneType: req.zoneType,
+        operablePercent: req.operablePercent, notes: req.notes,
+      };
+      o.evidence.push({
+        entityPath: `/openings/${o.externalRef}/thermal_requirement`,
+        fileId: energy.fileId, pageNo: null, sheetRef: null, region: null,
+        extractedText: [
+          req.sourceRef ? `report ref ${req.sourceRef} (${req.matchKind})` : `type rule (${req.matchKind})`,
+          req.maxUValue != null ? `Uw<=${req.maxUValue}` : null,
+          req.shgcMin != null || req.shgcMax != null ? `SHGC ${req.shgcMin ?? "-"}..${req.shgcMax ?? "-"}` : null,
+        ].filter(Boolean).join(" · "),
+        origin: "explicit", confidence: null,
+      });
+    }
+    model.conflicts.push(...mapped.conflicts);
+    model.inputMode = "plans_plus_energy_report";
+    model.energyAssessment = {
+      certificateRef: energy.extraction.certificateRef, starRating: energy.extraction.starRating,
+      heatingLoad: null, coolingLoad: null, precedenceStatement: energy.extraction.precedenceStatement,
+    };
+    for (const u of mapped.unmatched) {
+      model.assumptions.push({
+        fact: `unmatched_energy_constraint:${u.ref ?? u.elementHint ?? "?"}`,
+        origin: "unknown", note: "energy-report constraint matched no schedule opening — review required",
+      });
+    }
+  }
+
   const buildingModelId = uuid();
   const stmts: D1PreparedStatement[] = [
     env.DB.prepare(
@@ -195,36 +261,51 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
       ).bind(uuid(), projectId, run.id, ev.entityPath, ev.fileId, ev.pageNo, ev.sheetRef,
         ev.region ? JSON.stringify(ev.region) : null, ev.extractedText, ev.origin, ev.confidence));
     }
+    const tr = o.thermalRequirement;
     stmts.push(env.DB.prepare(
       `INSERT INTO opening_requirements (id, project_id, building_model_id, external_ref, parent_opening_id, requirement_basis,
          max_u_value, shgc_target, shgc_min, shgc_max, confidence_json, requirement_json, review_state)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'unreviewed')`,
-    ).bind(uuid(), projectId, buildingModelId, o.externalRef, null, "default_envelope",
-      null, null, null, null, JSON.stringify(o.confidence), JSON.stringify({ opening: o.externalRef, thermal: null })),
+    ).bind(uuid(), projectId, buildingModelId, o.externalRef, null, tr?.basis ?? "default_envelope",
+      tr?.maxUValue ?? null, tr?.shgcTarget ?? null, tr?.shgcMin ?? null, tr?.shgcMax ?? null,
+      JSON.stringify(o.confidence), JSON.stringify({ opening: o.externalRef, thermal: tr ?? null })),
     );
   }
   await env.DB.batch(stmts);
 
   // Bridge into the deterministic selection substrate (only when the project has
   // no openings yet — same idempotence convention as the parse-line bridge).
+  // requirements_json feeds the deterministic HARD RULES (rules.ts energy filter):
+  // an explicit Uw/SHGC requirement is enforced by the same engine as before —
+  // the LLM supplies the target, never the pass/fail decision.
+  const reqJson = (o: OpeningV1) => o.thermalRequirement
+    ? JSON.stringify({ maxUValue: o.thermalRequirement.maxUValue, minShgc: o.thermalRequirement.shgcMin, maxShgc: o.thermalRequirement.shgcMax })
+    : null;
   const existing = await env.DB.prepare("SELECT count(*) AS n FROM opening_instance WHERE project_id = ?").bind(projectId).first<{ n: number }>();
   if ((existing?.n ?? 0) === 0) {
     const bridge = model.openings.filter((o) => !o.externalRef.startsWith("UNTAGGED")).map((o) =>
       env.DB.prepare(
-        `INSERT INTO opening_instance (id, project_id, external_ref, group_code, family, operation_type, width_mm, height_mm, status)
-         VALUES (?,?,?,?,?,?,?,?, 'extracted')`,
+        `INSERT INTO opening_instance (id, project_id, external_ref, group_code, family, operation_type, width_mm, height_mm, requirements_json, status)
+         VALUES (?,?,?,?,?,?,?,?,?, 'extracted')`,
       ).bind(uuid(), projectId, o.externalRef, o.parentRef, o.elementType === "door" ? "doors" : "windows",
-        operationFrom(o.configuration.familyRequested), o.widthMm, o.heightMm),
+        operationFrom(o.configuration.familyRequested), o.widthMm, o.heightMm, reqJson(o)),
     );
     if (bridge.length) await env.DB.batch(bridge);
+  } else if (model.openings.some((o) => o.thermalRequirement)) {
+    // Openings already bridged on an earlier run: refresh their energy targets so
+    // a newly-uploaded report re-gates the next estimate.
+    const updates = model.openings.filter((o) => o.thermalRequirement).map((o) =>
+      env.DB.prepare("UPDATE opening_instance SET requirements_json = ? WHERE project_id = ? AND external_ref = ?")
+        .bind(reqJson(o), projectId, o.externalRef));
+    await env.DB.batch(updates);
   }
   const estimate = await runProjectEstimate(env, projectId).catch(() => null);
 
   const status = anyFailed ? "partial" : "completed";
-  await completeAiRun(env, run.id, { status });
+  await completeAiRun(env, run.id, { status, inputMode: model.inputMode });
   return {
     runId: run.id, status, documents: docs.length,
-    extractedLines: merged.lines.length, conflicts: merged.conflicts.length,
+    extractedLines: merged.lines.length, conflicts: model.conflicts.length, energyApplied,
     buildingModelId, estimate: estimate ? { openings: estimate.openings, selected: estimate.selected } : null,
     stageWarnings: warnings,
   };

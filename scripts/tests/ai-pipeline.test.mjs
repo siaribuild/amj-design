@@ -17,6 +17,7 @@ await build({
     contents: `
       export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
       export { parentTagOf, mergeScheduleLines, linesToBuildingModel } from ${p("worker/lib/ai/pipeline.ts")};
+      export { mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1 } from ${p("worker/lib/ai/energyMap.ts")};
       export { scheduleExtractor } from ${p("worker/lib/estimator/skills/schedule.ts")};
       export { validateBuildingModelShape } from ${p("worker/lib/ai/schema.ts")};
     `,
@@ -27,6 +28,7 @@ await build({
 const {
   sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, MIN_IMAGE_DIM,
   parentTagOf, mergeScheduleLines, linesToBuildingModel, scheduleExtractor, validateBuildingModelShape,
+  mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1,
 } = await import(pathToFileURL(outfile).href);
 
 // ── Byte-crafting helpers ────────────────────────────────────────────────────
@@ -155,6 +157,88 @@ test("schedule skill: preserves tags exactly, clamps dims/qty, drops empty lines
   assert.deepEqual(out.docIssues, ["photo slightly skewed"]);
   assert.equal(scheduleExtractor.validate("no json here"), null);
   assert.equal(scheduleExtractor.validate(JSON.stringify({ lines: [] })), null, "zero usable lines is a failed extraction");
+});
+
+// ── Phase 3: energy-report mapping (§9, §10.1 Path 1) ────────────────────────
+const opening = (ref, overrides = {}) => ({
+  openingId: `op_${ref}`, externalRef: ref, parentRef: parentTagOf(ref),
+  level: null, roomId: null, wallOrientation: null, elementType: "window",
+  widthMm: 1810, heightMm: 1200, areaM2: 2.17,
+  configuration: { familyRequested: "AWNING", panelCount: null, operablePanelCount: null, layoutCode: null, viewBasis: null },
+  scheduleRequirements: { doubleGlazed: null, glassDescription: null, colour: null, flyscreen: null },
+  shading: null, thermalRequirement: null, evidence: [], confidence: { tag: 0.9, dimensions: 0.9, configuration: 0.9 },
+  ...overrides,
+});
+const constraint = (over = {}) => ({
+  ref: null, elementHint: null, maxUValue: null, minShgc: null, maxShgc: null, shgcTarget: null,
+  room: null, orientation: null, openablePercent: null, widthMm: null, heightMm: null, glazingNote: null, ...over,
+});
+const extraction = (constraints, precedenceStatement = null) =>
+  ({ constraints, certificateRef: null, starRating: null, precedenceStatement });
+
+test("energy map: exact ref match wins over a type rule", () => {
+  const r = mapEnergyToOpenings(extraction([
+    constraint({ ref: "W01", maxUValue: 2.3 }),
+    constraint({ elementHint: "awning", maxUValue: 4.0 }),
+  ]), [opening("W01")]);
+  const req = r.requirements.get("W01");
+  assert.equal(req.maxUValue, 2.3, "exact ref requirement applied");
+  assert.equal(req.matchKind, "exact");
+  assert.equal(req.basis, "explicit_energy_report", "Path 1 basis — drives the §10.5 compliance language");
+});
+
+test("energy map: child component constraints govern the parent frame with the STRICTEST values (§9.3)", () => {
+  const r = mapEnergyToOpenings(extraction([
+    constraint({ ref: "W04A", maxUValue: 2.5, minShgc: 0.30, maxShgc: 0.45 }),
+    constraint({ ref: "W04B", maxUValue: 2.2, minShgc: 0.37, maxShgc: 0.41 }),
+  ]), [opening("W04")]);
+  const req = r.requirements.get("W04");
+  assert.equal(req.matchKind, "parent_child");
+  assert.equal(req.maxUValue, 2.2, "lowest U cap governs");
+  assert.equal(req.shgcMin, 0.37, "tightest SHGC floor governs");
+  assert.equal(req.shgcMax, 0.41, "tightest SHGC ceiling governs");
+  assert.equal(r.unmatched.length, 0, "child refs that matched a parent are not 'unmatched'");
+});
+
+test("energy map: a parent-ref constraint applies to its child openings", () => {
+  const r = mapEnergyToOpenings(extraction([constraint({ ref: "W04", maxUValue: 2.9 })]), [opening("W04A")]);
+  assert.equal(r.requirements.get("W04A").maxUValue, 2.9);
+  assert.equal(r.requirements.get("W04A").matchKind, "parent_child");
+});
+
+test("energy map: type rules catch openings with no ref-specific row; mismatched types stay bare", () => {
+  const r = mapEnergyToOpenings(extraction([constraint({ elementHint: "awning", maxUValue: 3.1 })]), [
+    opening("W01"),
+    opening("W02", { configuration: { familyRequested: "SLIDING", panelCount: null, operablePanelCount: null, layoutCode: null, viewBasis: null } }),
+  ]);
+  assert.equal(r.requirements.get("W01").maxUValue, 3.1, "awning opening matched the awning type rule");
+  assert.equal(r.requirements.get("W01").matchKind, "type");
+  assert.equal(r.requirements.get("W02"), undefined, "sliding opening untouched by the awning rule");
+});
+
+test("energy map: report-vs-schedule dimension mismatch is FLAGGED, never silently resolved (§9.2)", () => {
+  const r = mapEnergyToOpenings(
+    extraction([constraint({ ref: "W01", maxUValue: 2.3, widthMm: 1810 + DIM_TOLERANCE_MM + 10 })]),
+    [opening("W01")]);
+  assert.equal(r.conflicts.length, 1);
+  assert.equal(r.conflicts[0].entity, "W01");
+  assert.ok(r.conflicts[0].reviewRequired);
+  assert.equal(r.conflicts[0].values[0].source, "energy_report");
+  assert.ok(r.requirements.get("W01"), "the requirement STILL applies — only the dims are disputed");
+});
+
+test("energy map: constraints matching nothing are surfaced for review, not dropped", () => {
+  const r = mapEnergyToOpenings(extraction([constraint({ ref: "W99", maxUValue: 2.0 })]), [opening("W01")]);
+  assert.equal(r.requirements.size, 0);
+  assert.equal(r.unmatched.length, 1);
+  assert.equal(r.unmatched[0].ref, "W99");
+});
+
+test("precedence policy: energy report outranks schedule outranks plans (§9.1, versioned rules)", () => {
+  const rank = Object.fromEntries(PRECEDENCE_POLICY_V1.map((r) => [r.source, r.precedence]));
+  assert.ok(rank.energy_report > rank.architectural_schedule);
+  assert.ok(rank.architectural_schedule > rank.dimensioned_plans);
+  assert.ok(rank.dimensioned_plans > rank.inferred_default);
 });
 
 test("schedule skill: text-only input builds a string prompt; a photo builds multimodal parts", () => {
