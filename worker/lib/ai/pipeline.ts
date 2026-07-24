@@ -316,24 +316,37 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
   const reqJson = (o: OpeningV1) => o.thermalRequirement
     ? JSON.stringify({ maxUValue: o.thermalRequirement.maxUValue, minShgc: o.thermalRequirement.shgcMin, maxShgc: o.thermalRequirement.shgcMax })
     : null;
-  const existing = await env.DB.prepare("SELECT count(*) AS n FROM opening_instance WHERE project_id = ?").bind(projectId).first<{ n: number }>();
-  if ((existing?.n ?? 0) === 0) {
-    const bridge = model.openings.filter((o) => !o.externalRef.startsWith("UNTAGGED")).map((o) =>
-      env.DB.prepare(
+  // UPSERT by external_ref: runs fire automatically per upload (owner decision),
+  // so a schedule-then-plan-then-report sequence must ADD new openings and
+  // REFRESH known ones — never skip, and never clobber a known value with null
+  // (COALESCE keeps the best evidence seen so far).
+  const { results: existingRows } = await env.DB
+    .prepare("SELECT id, external_ref FROM opening_instance WHERE project_id = ? AND external_ref IS NOT NULL")
+    .bind(projectId).all<{ id: string; external_ref: string }>();
+  const byRef = new Map((existingRows ?? []).map((r) => [r.external_ref, r.id]));
+  const upserts: D1PreparedStatement[] = [];
+  for (const o of model.openings) {
+    if (o.externalRef.startsWith("UNTAGGED")) continue;
+    const existingId = byRef.get(o.externalRef);
+    if (existingId) {
+      upserts.push(env.DB.prepare(
+        `UPDATE opening_instance SET
+           group_code = COALESCE(?, group_code), family = COALESCE(?, family),
+           operation_type = COALESCE(?, operation_type),
+           width_mm = COALESCE(?, width_mm), height_mm = COALESCE(?, height_mm),
+           requirements_json = COALESCE(?, requirements_json)
+         WHERE id = ?`,
+      ).bind(o.parentRef, o.elementType === "door" ? "doors" : "windows",
+        operationFrom(o.configuration.familyRequested), o.widthMm, o.heightMm, reqJson(o), existingId));
+    } else {
+      upserts.push(env.DB.prepare(
         `INSERT INTO opening_instance (id, project_id, external_ref, group_code, family, operation_type, width_mm, height_mm, requirements_json, status)
          VALUES (?,?,?,?,?,?,?,?,?, 'extracted')`,
       ).bind(uuid(), projectId, o.externalRef, o.parentRef, o.elementType === "door" ? "doors" : "windows",
-        operationFrom(o.configuration.familyRequested), o.widthMm, o.heightMm, reqJson(o)),
-    );
-    if (bridge.length) await env.DB.batch(bridge);
-  } else if (model.openings.some((o) => o.thermalRequirement)) {
-    // Openings already bridged on an earlier run: refresh their energy targets so
-    // a newly-uploaded report re-gates the next estimate.
-    const updates = model.openings.filter((o) => o.thermalRequirement).map((o) =>
-      env.DB.prepare("UPDATE opening_instance SET requirements_json = ? WHERE project_id = ? AND external_ref = ?")
-        .bind(reqJson(o), projectId, o.externalRef));
-    await env.DB.batch(updates);
+        operationFrom(o.configuration.familyRequested), o.widthMm, o.heightMm, reqJson(o)));
+    }
   }
+  if (upserts.length) await env.DB.batch(upserts);
   const estimate = await runProjectEstimate(env, projectId).catch(() => null);
 
   const status = anyFailed ? "partial" : "completed";

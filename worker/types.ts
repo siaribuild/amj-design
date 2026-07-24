@@ -52,6 +52,11 @@ export interface Env {
   /** When 'on', the shadow escalation actually calls the escalation model.
    *  Anything else (default) keeps escalation shadow-only (log, don't spend). */
   AI_ESCALATION_MODE?: string;
+  /** 'auto' (default): AI extraction fires automatically on every clean upload
+   *  (owner decision 2026-07-25 — no ops button-clicking; deterministic checks
+   *  only GATE, the AI tier interprets). 'manual': ops-triggered only (tests,
+   *  or an emergency spend kill-switch). */
+  AI_EXTRACTION_MODE?: string;
   /** Upload scanning engine: 'structural' (default, on-stack type + PDF
    *  active-content checks), 'remote' (external AV), or 'both'. */
   SCAN_ENGINE?: string;

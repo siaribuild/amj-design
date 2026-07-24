@@ -26,7 +26,7 @@ const wrangler = spawn(process.execPath, [
   // Local/E2E env: dev OTP codes on, Cloudflare Access off (staff session fallback),
   // and Sanity off so the catalogue is the deterministic built-in data. Production
   // values live in wrangler.jsonc (used by cf:deploy).
-  "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:",
+  "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "AI_EXTRACTION_MODE:manual",
 ], { cwd: projectRoot, env: { ...process.env, ...env }, stdio: "inherit" });
 
 wrangler.on("exit", (code) => process.exit(code ?? 0));

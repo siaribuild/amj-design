@@ -135,15 +135,9 @@ export const opsEstimatorFeedback = (projectId: string, body: { openingId?: stri
   req<{ ok: boolean; id: string }>(`/api/ops/projects/${projectId}/feedback`, { method: "POST", body: JSON.stringify(body) });
 
 // ── LLM building-modelling pipeline (strategy §19) ───────────────────────────
-export interface AiRunSummary {
-  runId: string; status: "completed" | "partial" | "failed";
-  documents: number; extractedLines: number; conflicts: number; energyApplied: number;
-  buildingModelId: string | null;
-  estimate: { openings: number; selected: number } | null;
-  stageWarnings: string[];
-}
-export const opsRunAiExtraction = (projectId: string) =>
-  req<AiRunSummary>(`/api/ops/projects/${projectId}/ai-runs`, { method: "POST", body: "{}" });
+// The pipeline runs automatically on upload; ops is a review-only surface, so
+// there is no client-side run trigger. (POST /ai-runs remains server-side as the
+// support lever for AI_EXTRACTION_MODE='manual'.)
 export const opsBuildingModel = (projectId: string) =>
   req<{ id: string; status: string; run: { status: string; pipelineVersion: string; primaryModel: string }; model: any; evidence: any[] }>(
     `/api/ops/projects/${projectId}/building-model`);

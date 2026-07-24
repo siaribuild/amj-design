@@ -37,7 +37,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       // Local/test env: dev OTP codes on, Cloudflare Access off (staff session
       // fallback), and Sanity off so pricing/catalogue are the deterministic
       // built-in data. Production values live in wrangler.jsonc (cf:deploy).
-      "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:",
+      "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "AI_EXTRACTION_MODE:manual",
     ], { env: wranglerEnv });
     await waitForUrl(`${baseUrl}/api/health`, server);
 

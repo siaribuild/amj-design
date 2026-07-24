@@ -699,6 +699,8 @@ ops.post("/files/:id/rescan", async (c) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // POST /api/ops/projects/:id/estimate — select + price every opening_instance.
+// SUPPORT LEVER ONLY (not in the ops UI): the pipeline estimates automatically on
+// upload and after each logged correction; this remains for support/debugging.
 ops.post("/projects/:id/estimate", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
@@ -756,12 +758,18 @@ ops.post("/projects/:id/feedback", async (c) => {
     const status = res.error === "invalid_category" || res.error === "missing_reason_code" ? 400 : 500;
     return c.json({ error: res.error, categories: FEEDBACK_CATEGORIES }, status);
   }
+  // Ops is review-only (owner decision 2026-07-25): a logged correction re-runs
+  // the DETERMINISTIC selection automatically (no AI spend) so the learned
+  // preference is reflected without anyone clicking a run button. Best-effort.
+  await runProjectEstimate(c.env, projectId).catch(() => { /* review stays valid even if re-rank fails */ });
   return c.json({ ok: true, id: res.id });
 });
 
 // POST /api/ops/projects/:id/ai-runs — run the LLM building-modelling pipeline
 // (strategy §19.1): ingest documents, extract via the single primary model,
 // persist the evidence-linked building model, then deterministic selection.
+// SUPPORT LEVER ONLY (not in the ops UI): extraction fires automatically on
+// upload; this is the manual trigger for AI_EXTRACTION_MODE='manual' incidents.
 ops.post("/projects/:id/ai-runs", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);

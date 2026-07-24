@@ -26,6 +26,12 @@ export const escalationModel = (env: Env): string =>
 export const escalationEnabled = (env: Env): boolean =>
   (env.AI_ESCALATION_MODE || "").trim().toLowerCase() === "on";
 
+/** Auto-extraction on upload (owner decision 2026-07-25): ON unless explicitly
+ *  set to 'manual' (tests / emergency kill-switch) or the AI binding is absent.
+ *  The gateway's spend cap + rate limit bound the worst case. */
+export const autoExtractionEnabled = (env: Env): boolean =>
+  !!env.AI && (env.AI_EXTRACTION_MODE || "auto").trim().toLowerCase() !== "manual";
+
 // §13.4 determinism settings for extraction calls: near-zero temperature, strict
 // JSON schema, bounded output. Applied by the skill runner to every call.
 export const EXTRACTION_TEMPERATURE = 0.1;

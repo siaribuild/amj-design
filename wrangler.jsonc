@@ -53,6 +53,9 @@
     // (collectLog:false). Model selection lives in code: google/gemini-3.6-flash
     // by default; override with AI_PRIMARY_MODEL without a code change.
     "AI_GATEWAY_ID": "openframe-estimator",
+    // AI extraction fires automatically on every clean upload ('auto'); set to
+    // 'manual' only as an emergency kill-switch (ops button still works).
+    "AI_EXTRACTION_MODE": "auto",
     // Upload scanning: 'structural' (default, on-stack — sniffed-type allowlist
     // plus PDF active-content detection, no external dependency), 'remote' (an
     // external AV service at SCAN_ENDPOINT), or 'both'. Every engine fails CLOSED:
