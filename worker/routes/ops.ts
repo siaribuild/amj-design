@@ -19,6 +19,7 @@ import { uuid } from "../lib/util";
 import { scanFile } from "../lib/scan";
 import { runProjectEstimate } from "../lib/estimator/estimate";
 import { recordFeedback, FEEDBACK_CATEGORIES } from "../lib/estimator/persist";
+import { runAiExtraction } from "../lib/ai/pipeline";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { priceConfigured } from "../../src/data/configurator";
 
@@ -756,6 +757,48 @@ ops.post("/projects/:id/feedback", async (c) => {
     return c.json({ error: res.error, categories: FEEDBACK_CATEGORIES }, status);
   }
   return c.json({ ok: true, id: res.id });
+});
+
+// POST /api/ops/projects/:id/ai-runs — run the LLM building-modelling pipeline
+// (strategy §19.1): ingest documents, extract via the single primary model,
+// persist the evidence-linked building model, then deterministic selection.
+ops.post("/projects/:id/ai-runs", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const projectId = c.req.param("id");
+  const project = await c.env.DB.prepare("SELECT id FROM project WHERE id = ?").bind(projectId).first();
+  if (!project) return c.json({ error: "not_found" }, 404);
+  if (!c.env.AI) return c.json({ error: "ai_unavailable" }, 409);
+  const summary = await runAiExtraction(c.env, projectId);
+  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: projectId, action: `ai extraction ${summary.status} — ${summary.extractedLines} lines, ${summary.conflicts} conflicts` });
+  return c.json(summary);
+});
+
+// GET /api/ops/projects/:id/building-model — the latest evidence-linked building
+// model + its run status (strategy §19.2 review surface).
+ops.get("/projects/:id/building-model", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const projectId = c.req.param("id");
+  const row = await c.env.DB.prepare(
+    `SELECT b.id, b.schema_version, b.status, b.model_json, b.confidence_json, b.created_at,
+            r.status AS run_status, r.pipeline_version, r.primary_model, r.input_mode
+       FROM building_models b JOIN ai_runs r ON r.id = b.ai_run_id
+      WHERE b.project_id = ? ORDER BY b.created_at DESC LIMIT 1`,
+  ).bind(projectId).first<any>();
+  if (!row) return c.json({ error: "not_found" }, 404);
+  const { results: evidence } = await c.env.DB.prepare(
+    "SELECT entity_path, file_id, page_no, extracted_text, origin, confidence, review_state FROM evidence_items WHERE project_id = ? ORDER BY entity_path",
+  ).bind(projectId).all<any>();
+  return c.json({
+    id: row.id, schemaVersion: row.schema_version, status: row.status, createdAt: row.created_at,
+    run: { status: row.run_status, pipelineVersion: row.pipeline_version, primaryModel: row.primary_model, inputMode: row.input_mode },
+    model: safeParse(row.model_json ?? "{}"),
+    confidence: safeParse(row.confidence_json ?? "{}"),
+    evidence: evidence ?? [],
+  });
 });
 
 // GET /api/ops/estimator/projects — projects that have estimator openings, with a

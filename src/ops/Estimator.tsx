@@ -4,10 +4,10 @@
 // warnings and status; runs the deterministic estimate; and captures a reviewer
 // correction with a MANDATORY reason-code category (the learning surface, §12).
 import { useEffect, useState } from "react";
-import { Loader2, ChevronLeft, Play, Check, X, AlertCircle, FlaskConical, Info } from "lucide-react";
+import { Loader2, ChevronLeft, Play, Check, X, AlertCircle, FlaskConical, Info, Sparkles } from "lucide-react";
 import {
-  opsEstimatorProjects, opsEstimatorWorkspace, opsRunEstimate, opsEstimatorFeedback,
-  type EstimatorProject, type EstimatorOpening,
+  opsEstimatorProjects, opsEstimatorWorkspace, opsRunEstimate, opsEstimatorFeedback, opsRunAiExtraction,
+  type EstimatorProject, type EstimatorOpening, type AiRunSummary,
 } from "./api";
 
 const SAGE = "#5A7A6A";
@@ -63,22 +63,44 @@ export function Estimator() {
 function Workspace({ projectId, onBack }: { projectId: string; onBack: () => void }) {
   const [data, setData] = useState<{ openings: EstimatorOpening[]; categories: string[] } | null>(null);
   const [running, setRunning] = useState(false);
+  const [aiRunning, setAiRunning] = useState(false);
+  const [aiResult, setAiResult] = useState<AiRunSummary | { error: string } | null>(null);
 
   const load = () => opsEstimatorWorkspace(projectId).then(setData).catch(() => setData({ openings: [], categories: [] }));
   useEffect(() => { load(); }, [projectId]);
 
   const run = async () => { setRunning(true); try { await opsRunEstimate(projectId); await load(); } finally { setRunning(false); } };
+  const runAi = async () => {
+    setAiRunning(true); setAiResult(null);
+    try { setAiResult(await opsRunAiExtraction(projectId)); await load(); }
+    catch (e: any) { setAiResult({ error: e?.message ?? "AI run failed" }); }
+    finally { setAiRunning(false); }
+  };
 
   if (!data) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <button onClick={onBack} className="flex items-center gap-1 text-sm text-[#5c5a56] hover:text-[#14150f]"><ChevronLeft className="w-4 h-4" />Back to projects</button>
-        <button onClick={run} disabled={running} className="flex items-center gap-1.5 text-sm px-3 py-1.5 text-white disabled:opacity-50" style={{ background: SAGE }}>
-          {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}{running ? "Running…" : "Run estimate"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={runAi} disabled={aiRunning || running} className="flex items-center gap-1.5 text-sm px-3 py-1.5 border border-[#5A7A6A]/40 text-[#355344] disabled:opacity-50">
+            {aiRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}{aiRunning ? "Extracting…" : "AI extraction"}
+          </button>
+          <button onClick={run} disabled={running || aiRunning} className="flex items-center gap-1.5 text-sm px-3 py-1.5 text-white disabled:opacity-50" style={{ background: SAGE }}>
+            {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}{running ? "Running…" : "Run estimate"}
+          </button>
+        </div>
       </div>
+      {aiResult && (
+        <div className={`mb-3 text-xs px-3 py-2 border ${"error" in aiResult || aiResult.status === "failed" ? "border-red-300 bg-red-50 text-red-700" : "border-[#5A7A6A]/30 bg-[#5A7A6A]/5 text-[#355344]"}`}>
+          {"error" in aiResult
+            ? `AI extraction failed: ${aiResult.error}`
+            : `AI extraction ${aiResult.status}: ${aiResult.extractedLines} lines from ${aiResult.documents} document(s)` +
+              (aiResult.conflicts ? `, ${aiResult.conflicts} conflict(s) need review` : "") +
+              (aiResult.estimate ? ` — ${aiResult.estimate.selected}/${aiResult.estimate.openings} openings selected` : "")}
+        </div>
+      )}
       {!data.openings.length && <div className="bg-white border border-dashed border-black/15 p-12 text-center text-sm text-[#5c5a56]">No openings. Run the estimator to bridge parsed schedule lines into openings.</div>}
       <div className="space-y-3">
         {data.openings.map(o => <OpeningCard key={o.id} projectId={projectId} opening={o} categories={data.categories} onChanged={load} />)}

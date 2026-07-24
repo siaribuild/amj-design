@@ -23,7 +23,7 @@ import type { Skill, SkillRun } from "./types";
 
 const gatewayOpts = (env: Env) => (env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID } } : undefined);
 
-async function callModel(env: Env, model: string, skill: Skill<unknown, unknown>, messages: { role: string; content: string }[]) {
+async function callModel(env: Env, model: string, skill: Skill<unknown, unknown>, messages: { role: string; content: unknown }[]) {
   return await (env.AI as any).run(model, {
     messages,
     temperature: EXTRACTION_TEMPERATURE,
@@ -48,7 +48,8 @@ export async function runSkill<I, O>(
   let rawText = "";
   let repaired = false;
 
-  const prompt = skill.buildPrompt(input);
+  // Multimodal skills supply content parts (text + images); text skills a string.
+  const prompt: unknown = skill.buildContent ? skill.buildContent(input) : skill.buildPrompt(input);
   try {
     const out: any = await callModel(env, model, skill as Skill<unknown, unknown>, [{ role: "user", content: prompt }]);
     inputTokens += Number(out?.usage?.prompt_tokens ?? 0);

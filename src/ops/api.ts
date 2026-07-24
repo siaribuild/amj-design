@@ -133,6 +133,20 @@ export const opsRunEstimate = (projectId: string) =>
   req<{ openings: number; selected: number; lines: any[] }>(`/api/ops/projects/${projectId}/estimate`, { method: "POST", body: "{}" });
 export const opsEstimatorFeedback = (projectId: string, body: { openingId?: string; selectionRunId?: string; field: string; category: string; reasonCode: string; initialValue?: any; finalValue?: any; note?: string }) =>
   req<{ ok: boolean; id: string }>(`/api/ops/projects/${projectId}/feedback`, { method: "POST", body: JSON.stringify(body) });
+
+// ── LLM building-modelling pipeline (strategy §19) ───────────────────────────
+export interface AiRunSummary {
+  runId: string; status: "completed" | "partial" | "failed";
+  documents: number; extractedLines: number; conflicts: number;
+  buildingModelId: string | null;
+  estimate: { openings: number; selected: number } | null;
+  stageWarnings: string[];
+}
+export const opsRunAiExtraction = (projectId: string) =>
+  req<AiRunSummary>(`/api/ops/projects/${projectId}/ai-runs`, { method: "POST", body: "{}" });
+export const opsBuildingModel = (projectId: string) =>
+  req<{ id: string; status: string; run: { status: string; pipelineVersion: string; primaryModel: string }; model: any; evidence: any[] }>(
+    `/api/ops/projects/${projectId}/building-model`);
 export const opsAddNote = (id: string, body: string, lineId?: string) =>
   req<{ comment: OpsComment }>(`/api/ops/projects/${id}/note`, { method: "POST", body: JSON.stringify({ body, lineId }) });
 export const opsIssueRevision = (id: string) =>

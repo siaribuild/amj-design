@@ -19,6 +19,11 @@ export interface Skill<TInput, TOutput> {
   /** JSON schema handed to the model (response_format). Advisory, not trusted. */
   responseSchema: Record<string, unknown>;
   buildPrompt(input: TInput): string;
+  /** Optional multimodal content builder (§7.2: schedule photos go to the model
+   *  as images). Returns message-content parts (text + image parts); when absent
+   *  the runner sends buildPrompt's string. The gateway normalizes part shape for
+   *  the provider. */
+  buildContent?(input: TInput): unknown;
   /** Validate + clamp raw model JSON into trusted output, or null if unusable. */
   validate(raw: unknown): TOutput | null;
 }
