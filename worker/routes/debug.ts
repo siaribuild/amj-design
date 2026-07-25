@@ -30,6 +30,35 @@ const arr = (s: string | null | undefined): unknown[] => {
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 
+// GET /api/debug/thermal?key=... — recent AI parses (most recent first) so a
+// draft can be found by its quote number BEFORE it is ever submitted. Registered
+// drafts appear as soon as their AI run starts; anonymous quotes never parse and
+// so never appear.
+debug.get("/thermal", async (c) => {
+  const expected = (c.env.THERMAL_DEBUG_KEY ?? "").trim();
+  if (!expected || !safeEqual((c.req.query("key") ?? "").trim(), expected)) return c.json({ error: "not_found" }, 404);
+  const limit = Math.min(100, Math.max(1, Number.parseInt(c.req.query("limit") ?? "50", 10) || 50));
+  const { results } = await c.env.DB.prepare(
+    `SELECT r.status AS run_status, r.source_generation, r.started_at, r.completed_at,
+            p.public_ref, p.title, p.status_customer,
+            (SELECT count(*) FROM opening_instance o WHERE o.project_id = p.id) AS openings
+       FROM ai_runs r JOIN project p ON p.id = r.project_id
+      ORDER BY r.started_at DESC LIMIT ?`,
+  ).bind(limit).all<any>();
+  return c.json({
+    parses: (results ?? []).map((r) => ({
+      quote: r.public_ref,               // ← use this with /api/debug/thermal/<quote>
+      title: str(r.title),
+      projectStatus: str(r.status_customer),   // draft = not yet submitted
+      runStatus: str(r.run_status),            // running | completed | partial | failed
+      generation: num(r.source_generation),
+      openings: num(r.openings) ?? 0,
+      startedAt: str(r.started_at),
+      completedAt: str(r.completed_at),
+    })),
+  });
+});
+
 // GET /api/debug/thermal/:ref?key=... — the per-opening thermal resolution log.
 debug.get("/thermal/:ref", async (c) => {
   const expected = (c.env.THERMAL_DEBUG_KEY ?? "").trim();

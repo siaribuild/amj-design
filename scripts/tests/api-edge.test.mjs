@@ -209,8 +209,15 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
     await t.test("debug thermal endpoint: key-gated, per-opening resolved values, no PII", async () => {
       // Isolated project so the seeded opening doesn't perturb shared-project tests.
       await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--command",
-        `INSERT INTO project (id, owner_user_id, title, public_ref, status_customer) VALUES ('p_dbg','u_demo','Debug thermal','OF-Q-DBG01','draft'); INSERT INTO opening_instance (id, project_id, external_ref, room, family, operation_type, width_mm, height_mm, requirements_json, requirement_basis, status) VALUES ('op_dbg1','p_dbg','W07','Bed 2','windows','awning',900,1200,'{"maxUValue":2.4,"maxShgc":0.41}','energy_report','commercial_only_estimate')`], { env: wranglerEnv });
+        `INSERT INTO project (id, owner_user_id, title, public_ref, status_customer) VALUES ('p_dbg','u_demo','Debug thermal','OF-Q-DBG01','draft'); INSERT INTO opening_instance (id, project_id, external_ref, room, family, operation_type, width_mm, height_mm, requirements_json, requirement_basis, status) VALUES ('op_dbg1','p_dbg','W07','Bed 2','windows','awning',900,1200,'{"maxUValue":2.4,"maxShgc":0.41}','energy_report','commercial_only_estimate'); INSERT INTO ai_runs (id, project_id, pipeline_version, status, source_generation) VALUES ('run_dbg1','p_dbg','test','completed',1)`], { env: wranglerEnv });
       const guest = new Session(baseUrl);
+      // Recent-parses index: find a DRAFT quote by its number before submission.
+      await requestJson(guest, "/api/debug/thermal", {}, 404);
+      const list = await requestJson(guest, "/api/debug/thermal?key=test-debug-key");
+      const entry = list.body.parses.find((p) => p.quote === "OF-Q-DBG01");
+      assert.ok(entry, "draft parse listed in the index");
+      assert.equal(entry.projectStatus, "draft");
+      assert.equal(entry.openings, 1);
       // Missing/wrong key ⇒ 404, indistinguishable from a missing route (no enumeration).
       await requestJson(guest, "/api/debug/thermal/OF-Q-DBG01", {}, 404);
       await requestJson(guest, "/api/debug/thermal/OF-Q-DBG01?key=nope", {}, 404);
