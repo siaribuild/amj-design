@@ -524,7 +524,7 @@ function CodeField({ code, duplicate, editSignal, onCommit }: {
 // and line price stay visible in every state.
 export function ItemSummaryCard({
   item, added, quote, onDuplicate, onRemove, initialFocus, id, focusSignal,
-  expanded, onToggleExpanded, duplicate, codeFocusSignal, basis,
+  expanded, onToggleExpanded, duplicate, codeFocusSignal, basis, changes,
 }: {
   item: QItem; added?: boolean; quote: QuoteState;
   onDuplicate?: () => void; onRemove?: () => void; initialFocus?: EditFocus;
@@ -534,6 +534,9 @@ export function ItemSummaryCard({
    *  needed?") and basis ("how solid is this number?") are separate questions.
    *  'explicit_energy_report' | 'default_envelope' | null (no chip). */
   basis?: string | null;
+  /** This session's document-driven changes to the line (spec §3 provenance):
+   *  renders the Updated pill + old→new rows. Session-scoped; decays on reload. */
+  changes?: { field: string; from: string; to: string }[] | null;
 }) {
   const [open, setOpen] = useState<EditFocus | null>(initialFocus ?? null);
   const [selfExpanded, setSelfExpanded] = useState(!!initialFocus);
@@ -634,6 +637,14 @@ export function ItemSummaryCard({
               Performance assumed
             </span>
           )}
+          {/* Updated pill (spec §3): information, not a demand — work-slate tone,
+              session-scoped (decays on reload). Expanding shows the old→new rows. */}
+          {!!changes?.length && (
+            <span className="flex-shrink-0 inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 border border-[#4C6A88]/30 bg-[#4C6A88]/10 text-[#4C6A88]"
+              title="This line was updated by a document you uploaded — expand to see what changed.">
+              Updated
+            </span>
+          )}
         </span>
         <span className={`flex-shrink-0 text-sm font-semibold ${pr.ok ? "text-[#131311]" : "text-[#5c5a56]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
           {priceLabel}{pr.ok ? <span className="hidden sm:inline text-[10px] font-normal text-[#5c5a56]"> {gstSuffix(gstMode)}</span> : null}
@@ -684,6 +695,22 @@ export function ItemSummaryCard({
             <p className="md:hidden px-3 sm:px-4 py-2 text-[11px] leading-snug text-[#6f6c67] bg-black/[0.02] border-b border-black/[0.06]">
               Performance assumed from typical Melbourne new-build requirements. Indicative only — not an energy compliance certificate. Upload your energy report to firm this up.
             </p>
+          )}
+          {/* Change provenance (spec §3): strike-through old → current, same
+              grammar as superseded revision values. What changed and to what —
+              the WHY (which document) lives in the digest banner. */}
+          {!!changes?.length && (
+            <div className="px-3 sm:px-4 py-2 bg-[#4C6A88]/5 border-b border-black/[0.06]">
+              <span className="block text-[10px] uppercase tracking-widest text-[#4C6A88] mb-1">Updated from your documents</span>
+              {changes.map((ch, i) => (
+                <p key={i} className="text-xs text-[#31485f] leading-snug">
+                  <span className="capitalize">{ch.field === "qty" ? "Quantity" : ch.field}</span>:{" "}
+                  <span className="line-through text-[#8a8782]">{ch.from}</span>
+                  {" → "}
+                  <span className="font-medium">{ch.to}</span>
+                </p>
+              ))}
+            </div>
           )}
           {/* Product is editable — a schedule line the parser couldn't match (or
               flagged for substitution) is re-pointed here. Changing product resets

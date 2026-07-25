@@ -38,6 +38,10 @@ export interface ParseOutcome {
    *  customer hasn't decided Link/Keep-separate yet (spec §1b). The customer's
    *  line stands; the card asks once. */
   collisions: string[];
+  /** Per-line field changes this parse made (spec §3 provenance): feeds the
+   *  Updated pill + strike-through old→new rows. Session-scoped by design —
+   *  the pill decays on next visit; the values themselves are the durable record. */
+  changes: { tag: string; field: "size" | "qty" | "product"; from: string; to: string }[];
   error?: string;
 }
 
@@ -136,7 +140,7 @@ export async function runScheduleParse(
 
   const fail = async (code: string): Promise<ParseOutcome> => {
     await env.DB.prepare("UPDATE schedule_parse_job SET status='failed', error=?, completed_at=datetime('now') WHERE id=?").bind(code, jobId).run();
-    return { jobId, status: "failed", engine: "cf-deterministic", itemCount: 0, needsReviewCount: 0, added: 0, updated: 0, removed: 0, keptForReview: 0, collisions: [], error: code };
+    return { jobId, status: "failed", engine: "cf-deterministic", itemCount: 0, needsReviewCount: 0, added: 0, updated: 0, removed: 0, keptForReview: 0, collisions: [], changes: [], error: code };
   };
 
   // Only a scanner-cleared file is ever fed to the extractor. Uploads are scanned
@@ -193,9 +197,9 @@ export async function runScheduleParse(
   // writes a manual line — spec §1b). A manual line whose code collides with a
   // parsed tag stands as-is; the parsed row is skipped (the Link/Keep-separate
   // card arrives with the digest UI).
-  interface DraftRow { id: string; external_ref: string | null; origin: string | null; edited_fields: string | null; position: number; collision_choice: string | null }
+  interface DraftRow { id: string; external_ref: string | null; origin: string | null; edited_fields: string | null; position: number; collision_choice: string | null; product_slug: string | null; dims_json: string | null; qty: number | null }
   const draftRows = mode === "upsert"
-    ? ((await env.DB.prepare("SELECT id, external_ref, origin, edited_fields, position, collision_choice FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id).all<DraftRow>()).results ?? [])
+    ? ((await env.DB.prepare("SELECT id, external_ref, origin, edited_fields, position, collision_choice, product_slug, dims_json, qty FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id).all<DraftRow>()).results ?? [])
     : [];
   const byTag = new Map<string, DraftRow>();
   const manualTags = new Map<string, DraftRow>();
@@ -213,6 +217,25 @@ export async function runScheduleParse(
   let needsReview = 0;
   let added = 0, updated = 0, removed = 0, keptForReview = 0;
   const collisions: string[] = [];
+  const changes: ParseOutcome["changes"] = [];
+  const MAX_CHANGES = 100; // provenance display, not an audit log
+  // Record what an update ACTUALLY changed on a matched line (spec §3: the
+  // digest and pills must reflect real differences, not mere row touches).
+  const recordChanges = (tag: string, old: DraftRow, l: ParsedLine, locked: string[]) => {
+    if (changes.length >= MAX_CHANGES) return;
+    let oldDims: { width?: unknown; height?: unknown } = {};
+    try { oldDims = JSON.parse(old.dims_json || "{}"); } catch { /* unreadable ⇒ no dim diff */ }
+    const dim = (v: unknown) => String(v ?? "").trim();
+    if (!locked.includes("dims_json") && (dim(oldDims.width) !== dim(l.width) || dim(oldDims.height) !== dim(l.height))) {
+      changes.push({ tag, field: "size", from: `${dim(oldDims.width) || "?"}×${dim(oldDims.height) || "?"}mm`, to: `${dim(l.width) || "?"}×${dim(l.height) || "?"}mm` });
+    }
+    if (!locked.includes("qty") && (old.qty ?? 1) !== l.qty) {
+      changes.push({ tag, field: "qty", from: String(old.qty ?? 1), to: String(l.qty) });
+    }
+    if (!locked.includes("product_slug") && (old.product_slug ?? "") !== l.productSlug && l.productSlug) {
+      changes.push({ tag, field: "product", from: old.product_slug ?? "—", to: l.productSlug });
+    }
+  };
   const seenTags = new Set<string>();
   const created: { line: ParsedLine; qlId: string; plId: string; idx: number }[] = [];
   lines.forEach((l, idx) => {
@@ -239,13 +262,18 @@ export async function runScheduleParse(
 
     if (match) {
       qlId = match.id;
-      updated++;
+      const changesBefore = changes.length;
       // HUMAN-EDIT GUARD (0019): fields a customer changed are never overwritten
       // by a re-parse — and when any priced-relevant field is locked, the row's
       // price/status stand too (repricing from parsed values would betray the guard).
       let locked: string[] = [];
       try { const v = JSON.parse(match.edited_fields || "[]"); if (Array.isArray(v)) locked = v; } catch { /* no locks */ }
       const keep = (f: string, v: unknown) => (locked.includes(f) ? null : v);
+      recordChanges(l.code as string, match, l, locked);
+      // An identical re-upload must read as "no changes", not "N updated" — a
+      // matched row counts as updated ONLY when a real difference was recorded
+      // (this also keeps the wrong-project Remove offer from false-firing).
+      if (changes.length > changesBefore) updated++;
       if (locked.length === 0) {
         if (hasReview) needsReview++;
         stmts.push(env.DB.prepare(
@@ -322,7 +350,7 @@ export async function runScheduleParse(
     engine: extract.engine,
     itemCount: lines.length,
     needsReviewCount: needsReview,
-    added, updated, removed, keptForReview, collisions,
+    added, updated, removed, keptForReview, collisions, changes,
   };
 }
 

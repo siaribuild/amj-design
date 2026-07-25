@@ -203,7 +203,9 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     if (job.added) parts.push(`${job.added} added`);
     if (job.removed) parts.push(`${job.removed} removed — no longer in your schedule`);
     if (job.keptForReview) parts.push(`${job.keptForReview} kept — needs your review`);
-    if (!parts.length) parts.push(`${job.itemCount} item${job.itemCount !== 1 ? "s" : ""} imported`);
+    // No counted changes: distinguish a first import (nothing pre-existed) from
+    // an identical re-upload — "already up to date" must never read as churn.
+    if (!parts.length) parts.push(job.itemCount ? "no changes — already up to date" : "nothing imported");
     if (job.needsReviewCount && !job.keptForReview) parts.push(`${job.needsReviewCount} need review`);
     return parts.join(" · ");
   };
@@ -225,6 +227,10 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   const [collisionTags, setCollisionTags] = useState<string[]>([]);
   // Per-file Remove on the rail: id pending inline confirmation.
   const [removingFile, setRemovingFile] = useState<string | null>(null);
+  // Per-line changes from this session's parses (spec §3 provenance): drives the
+  // Updated pill + old→new rows. Session-scoped by design — decays on reload;
+  // the line's values are the durable record.
+  const [lineChanges, setLineChanges] = useState<Record<string, { field: string; from: string; to: string }[]>>({});
 
   const handleRemoveFile = async (fileId: string, name: string) => {
     setRemovingFile(null);
@@ -303,6 +309,13 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
             imported += result.job.itemCount;
             digests.push(`${file.name}: ${digestOf(result.job)}`);
             newCollisions.push(...(result.job.collisions ?? []));
+            if (result.job.changes?.length) {
+              setLineChanges((prev) => {
+                const next = { ...prev };
+                for (const ch of result.job.changes!) (next[ch.tag] ??= []).push(ch);
+                return next;
+              });
+            }
             // Wrong-project signature: more existing lines changed than added.
             if ((result.job.updated ?? 0) > (result.job.added ?? 0)) setRemoveOffer({ fileId: up.file.id, name: file.name });
             continue;
@@ -617,6 +630,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
               <ItemSummaryCard key={it.id} item={it} quote={quote}
                 id={`qitem-${it.id}`}
                 basis={it.code ? basisMap[it.code] ?? null : null}
+                changes={it.code ? lineChanges[it.code] ?? null : null}
                 expanded={expandedId === it.id}
                 onToggleExpanded={() => setExpandedId(cur => cur === it.id ? null : it.id)}
                 duplicate={hasDuplicateCode(quote.items, it.id, it.code)}

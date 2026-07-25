@@ -320,6 +320,8 @@ export interface ParseJob {
   keptForReview?: number;
   /** Manual-vs-schedule tag collisions awaiting a Link/Keep-separate decision. */
   collisions?: string[];
+  /** Per-line field changes (Updated pills + old→new rows). Session-scoped. */
+  changes?: { tag: string; field: "size" | "qty" | "product"; from: string; to: string }[];
   error?: string;
 }
 

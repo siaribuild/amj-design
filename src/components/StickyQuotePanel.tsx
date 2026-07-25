@@ -56,11 +56,12 @@ export function StickyQuotePanel({
   if (uploading) {
     // Live state wins: the aggregate ("N need attention") reappears on its own the
     // moment parsing finishes, so nothing here needs to describe the outcome.
-    status = <><Loader2 className="w-4 h-4 flex-shrink-0 animate-spin" aria-hidden="true" /><span>Reading your schedule…</span></>;
-    live = "Reading your schedule";
-    ctaLabel = "Please wait";
-    onClick = () => {};
-    ctaDisabled = true;
+    // Same rule as readingDocs: processing never blocks — the CTA stays live
+    // against whatever items already exist (UX backlog item, now aligned).
+    status = <><Loader2 className="w-4 h-4 flex-shrink-0 animate-spin" aria-hidden="true" /><span>Reading your documents…</span></>;
+    live = "Reading your documents";
+    ctaLabel = itemCount > 0 ? "Review quote" : "Choose how to start";
+    onClick = itemCount > 0 ? onReviewQuote : onFinishItem;
     statusTone = "border-black/10 bg-white text-[#5c5a56]";
     panelTone = "border-[#8CA99B] bg-[#F7F8F6]";
   } else if (readingDocs > 0) {
