@@ -62,6 +62,9 @@ export interface Env {
   AI_EXTRACTION_MODE?: string;
   /** Maximum paid AI extraction runs per registered account per UTC day. */
   AI_DAILY_RUN_LIMIT?: string;
+  /** Shared secret for the admin/debug thermal-log endpoint (/api/debug/thermal).
+   *  Unset ⇒ the endpoint is disabled (404). Set via `wrangler secret put`. */
+  THERMAL_DEBUG_KEY?: string;
   /** Upload scanning engine: 'structural' (default, on-stack type + PDF
    *  active-content checks), 'remote' (external AV), or 'both'. */
   SCAN_ENGINE?: string;

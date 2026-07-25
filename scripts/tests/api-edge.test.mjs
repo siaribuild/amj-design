@@ -25,7 +25,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
     const port = await freePort();
     const baseUrl = `http://127.0.0.1:${port}`;
     // Local/test env: dev OTP on, Access off (staff session fallback), Sanity off (deterministic built-in catalogue). Prod values live in wrangler.jsonc.
-    server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn", "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "ENQUIRY_INTERNAL_TO:enquiries@openframe.com.au", "--var", "MANUFACTURER_TO:leads@amj.test", "--var", "SANITY_WEBHOOK_SECRET:test-webhook-secret", "--var", "AI_EXTRACTION_MODE:manual"], { env: wranglerEnv });
+    server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn", "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "ENQUIRY_INTERNAL_TO:enquiries@openframe.com.au", "--var", "MANUFACTURER_TO:leads@amj.test", "--var", "SANITY_WEBHOOK_SECRET:test-webhook-secret", "--var", "AI_EXTRACTION_MODE:manual", "--var", "THERMAL_DEBUG_KEY:test-debug-key"], { env: wranglerEnv });
     await waitForUrl(`${baseUrl}/api/health`, server);
 
     const anon = new Session(baseUrl);
@@ -204,6 +204,27 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       });
       assert.equal(resave2.body.items.length, 1);
       assert.equal(resave2.body.items[0].id, id1);
+    });
+
+    await t.test("debug thermal endpoint: key-gated, per-opening resolved values, no PII", async () => {
+      // Isolated project so the seeded opening doesn't perturb shared-project tests.
+      await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--command",
+        `INSERT INTO project (id, owner_user_id, title, public_ref, status_customer) VALUES ('p_dbg','u_demo','Debug thermal','OF-Q-DBG01','draft'); INSERT INTO opening_instance (id, project_id, external_ref, room, family, operation_type, width_mm, height_mm, requirements_json, requirement_basis, status) VALUES ('op_dbg1','p_dbg','W07','Bed 2','windows','awning',900,1200,'{"maxUValue":2.4,"maxShgc":0.41}','energy_report','commercial_only_estimate')`], { env: wranglerEnv });
+      const guest = new Session(baseUrl);
+      // Missing/wrong key ⇒ 404, indistinguishable from a missing route (no enumeration).
+      await requestJson(guest, "/api/debug/thermal/OF-Q-DBG01", {}, 404);
+      await requestJson(guest, "/api/debug/thermal/OF-Q-DBG01?key=nope", {}, 404);
+      // Correct key ⇒ the resolved per-opening thermal log.
+      const dbg = await requestJson(guest, "/api/debug/thermal/OF-Q-DBG01?key=test-debug-key");
+      assert.equal(dbg.body.quote, "OF-Q-DBG01");
+      const w07 = dbg.body.openings.find((o) => o.opening === "W07");
+      assert.ok(w07, "seeded opening present in the log");
+      assert.equal(w07.room, "Bed 2");
+      assert.equal(w07.required.maxUValue, 2.4);
+      assert.equal(w07.required.basis, "energy_report");
+      assert.ok(!/email|phone|"@|\bmailto\b/i.test(JSON.stringify(dbg.body)), "no PII leaks into the debug payload");
+      // Unknown quote ⇒ 404.
+      await requestJson(guest, "/api/debug/thermal/OF-Q-99999?key=test-debug-key", {}, 404);
     });
 
     await t.test("workflow transitions: valid move, invalid move 409, clarification round-trip", async () => {

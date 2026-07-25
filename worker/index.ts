@@ -19,6 +19,7 @@ import { enquiries } from "./routes/enquiries";
 import { parse } from "./routes/parse";
 import { ops } from "./routes/ops";
 import { integrations } from "./routes/integrations";
+import { debug } from "./routes/debug";
 import { ensureCatalogue } from "./lib/catalogue";
 import { getActiveLocations } from "../src/data/catalogue";
 import { drainLearningOutbox } from "./lib/revisions";
@@ -77,6 +78,9 @@ api.route("/api/ops", ops);
 
 // Inbound webhooks (Sanity publish → catalogue cache invalidation).
 api.route("/api/integrations", integrations);
+
+// Admin/debug-only, secret-key-gated (disabled unless THERMAL_DEBUG_KEY is set).
+api.route("/api/debug", debug);
 
 // Any other /api/* path is a real 404 — never fall through to the SPA shell.
 api.all("/api/*", (c) => c.json({ error: "not_found" }, 404));
