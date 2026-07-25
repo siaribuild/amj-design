@@ -138,6 +138,33 @@ parse.post("/projects/current/clear", async (c) => {
 });
 
 // GET /api/projects/current/parse-quota
+// POST /api/projects/current/lines/:id/collision — resolve a manual-vs-schedule
+// tag collision ONCE (multi-file UX spec §1b). 'linked': the manual line becomes
+// schedule-origin with ALL field groups marked human-edited — future re-parses
+// match it by tag but can never overwrite what the customer built. 'separate':
+// the parsed row for that tag is permanently skipped, quietly.
+parse.post("/projects/current/lines/:id/collision", async (c) => {
+  const { project, cookie } = await resolveCurrentProject(c.env, c.req.raw);
+  if (cookie) c.header("Set-Cookie", cookie);
+  if (!project) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const choice = body?.choice === "linked" || body?.choice === "separate" ? body.choice : null;
+  if (!choice) return c.json({ error: "bad_choice" }, 400);
+  const line = await c.env.DB.prepare(
+    "SELECT id, origin, external_ref FROM quote_line WHERE id = ? AND project_id = ? AND revision_id IS NULL",
+  ).bind(c.req.param("id"), project.id).first<{ id: string; origin: string | null; external_ref: string | null }>();
+  if (!line || (line.origin ?? "manual") !== "manual" || !line.external_ref) return c.json({ error: "not_found" }, 404);
+  if (choice === "linked") {
+    await c.env.DB.prepare(
+      `UPDATE quote_line SET origin='schedule', collision_choice='linked',
+         edited_fields='["product_slug","options_json","dims_json","qty"]' WHERE id = ?`,
+    ).bind(line.id).run();
+  } else {
+    await c.env.DB.prepare("UPDATE quote_line SET collision_choice='separate' WHERE id = ?").bind(line.id).run();
+  }
+  return c.json({ ok: true, choice });
+});
+
 // GET /api/projects/current/extraction-status — the customer's poll while the AI
 // pipeline reads their documents (multi-file UX spec §2/§3). Returns the latest
 // run's state + customer-safe summary; the client polls only while a run is in
@@ -153,7 +180,15 @@ parse.get("/projects/current/extraction-status", async (c) => {
   if (!r) return c.json({ run: null });
   let summary: unknown = null;
   try { summary = r.summary_json ? JSON.parse(r.summary_json) : null; } catch { /* unreadable summary is absent, not an error */ }
-  return c.json({ run: { id: r.id, status: r.status, startedAt: r.started_at, completedAt: r.completed_at, summary } });
+  // Per-line basis for the trust chips (UX spec §5): explicit_energy_report vs
+  // default_envelope, keyed by schedule tag. Latest building model wins.
+  const { results: reqs } = await c.env.DB.prepare(
+    `SELECT o.external_ref, o.requirement_basis FROM opening_requirements o
+      WHERE o.building_model_id = (SELECT id FROM building_models WHERE project_id = ? ORDER BY created_at DESC LIMIT 1)`,
+  ).bind(project.id).all<{ external_ref: string; requirement_basis: string }>().catch(() => ({ results: [] as { external_ref: string; requirement_basis: string }[] }));
+  const basis: Record<string, string> = {};
+  for (const q of reqs ?? []) basis[q.external_ref] = q.requirement_basis;
+  return c.json({ run: { id: r.id, status: r.status, startedAt: r.started_at, completedAt: r.completed_at, summary }, basis });
 });
 
 parse.get("/projects/current/parse-quota", async (c) => {

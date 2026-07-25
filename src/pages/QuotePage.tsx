@@ -12,7 +12,7 @@ import {
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
 import { StickyQuotePanel } from "../components/StickyQuotePanel";
-import { uploadFile, startParse, extractionStatus, UploadError, type ParseJob, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
+import { uploadFile, startParse, extractionStatus, deleteFile, resolveCollision, UploadError, type ParseJob, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
 import {
   type QuoteState, type QItem,
   priceConfigured, fmt, mm, productLabel, hasDuplicateCode, lineBlocksSubmission, reviewClass, DEFAULT_PROJECT_TITLE,
@@ -213,6 +213,44 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // have a run, so the first poll returns null and no future-tense copy ever
   // renders for them.
   const [aiPhase, setAiPhase] = useState<null | { kind: "reading"; docs: number } | { kind: "done"; energyApplied: number }>(null);
+  // Per-line requirement basis for the trust chips (UX spec §5); refreshed on
+  // mount and whenever the poll returns it.
+  const [basisMap, setBasisMap] = useState<Record<string, string>>({});
+  useEffect(() => { extractionStatus().then((r) => setBasisMap(r.basis ?? {})).catch(() => {}); }, []);
+  // Wrong-project early exit (UX ratification): offered only when a file CHANGED
+  // more lines than it added — the signature of a document landing in the wrong
+  // project. One offer, for the qualifying file.
+  const [removeOffer, setRemoveOffer] = useState<null | { fileId: string; name: string }>(null);
+  // Manual-vs-schedule tag collisions awaiting the customer's one-time decision.
+  const [collisionTags, setCollisionTags] = useState<string[]>([]);
+  // Per-file Remove on the rail: id pending inline confirmation.
+  const [removingFile, setRemovingFile] = useState<string | null>(null);
+
+  const handleRemoveFile = async (fileId: string, name: string) => {
+    setRemovingFile(null);
+    setRemoveOffer(null);
+    try {
+      const res = await deleteFile(fileId);
+      await quote.reload();
+      const parts = [`${name} removed`];
+      if (res.removedLines) parts.push(`${res.removedLines} line${res.removedLines !== 1 ? "s" : ""} removed with it`);
+      if (res.keptForReview) parts.push(`${res.keptForReview} kept — needs your review`);
+      setUploadNotice({ type: "success", message: parts.join(" · ") });
+    } catch {
+      setUploadNotice({ type: "error", message: `We couldn't remove ${name}. Please try again.` });
+    }
+  };
+
+  const handleCollision = async (tag: string, choice: "linked" | "separate") => {
+    const line = quote.items.find((it) => it.code === tag);
+    const serverId = (line as unknown as { serverId?: string })?.serverId;
+    if (!serverId) { setCollisionTags((t) => t.filter((x) => x !== tag)); return; }
+    try {
+      await resolveCollision(serverId, choice);
+      setCollisionTags((t) => t.filter((x) => x !== tag));
+      if (choice === "linked") await quote.reload();
+    } catch { /* leave the card up — resolving again is safe */ }
+  };
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopPolling = () => { if (pollTimer.current) { clearTimeout(pollTimer.current); pollTimer.current = null; } };
   useEffect(() => () => stopPolling(), []);
@@ -224,7 +262,8 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
       if (Date.now() - t0 > 120_000) { setAiPhase(null); return; } // degrade quietly; next load reconciles
       let inFlight = false;
       try {
-        const { run } = await extractionStatus();
+        const { run, basis } = await extractionStatus();
+        if (basis) setBasisMap(basis);
         if (run && (run.status === "queued" || run.status === "running")) {
           sawRun = true;
           inFlight = true;
@@ -233,8 +272,11 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
           // The run we watched finished — swap the tail for its outcome.
           setAiPhase(run.summary && run.summary.energyApplied > 0 ? { kind: "done", energyApplied: run.summary.energyApplied } : null);
           return;
-        } else if (!run && n >= 1) {
-          return; // anonymous (or no run) — stop silently, never promise reading
+        } else if (!run || (!sawRun && run.completedAt)) {
+          // No run yet — the server coalesces uploads behind a ~10s debounce, so
+          // absence is inconclusive early. Only after 25s of nothing (anonymous,
+          // or the kill-switch) do we stop; a stale completed run never counts.
+          if (Date.now() - t0 > 25_000) return;
         }
       } catch { /* transient poll failure — keep trying within the window */ }
       pollTimer.current = setTimeout(() => void tick(n + 1), inFlight || n >= 7 ? 5000 : 2000);
@@ -247,15 +289,24 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     setUploading(true);
     setUploadNotice(null);
     setAiPhase(null);
+    setRemoveOffer(null);
     const failures: string[] = [];
     const digests: string[] = [];
+    const newCollisions: string[] = [];
     let imported = 0, attached = 0;
     try {
       for (const file of Array.from(list)) {
         try {
           const up = await uploadFile(file, "upload");
           const result = await startParse(up.file.id);
-          if (result.ok) { imported += result.job.itemCount; digests.push(`${file.name}: ${digestOf(result.job)}`); continue; }
+          if (result.ok) {
+            imported += result.job.itemCount;
+            digests.push(`${file.name}: ${digestOf(result.job)}`);
+            newCollisions.push(...(result.job.collisions ?? []));
+            // Wrong-project signature: more existing lines changed than added.
+            if ((result.job.updated ?? 0) > (result.job.added ?? 0)) setRemoveOffer({ fileId: up.file.id, name: file.name });
+            continue;
+          }
           if (NOT_A_SCHEDULE.has(result.reason)) { attached++; continue; } // contribution, not a failure
           failures.push(`${file.name}: ${parseErrorMessage(result)}`);
         } catch (e) {
@@ -263,6 +314,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         }
       }
       await quote.reload();
+      if (newCollisions.length) setCollisionTags((t) => [...new Set([...t, ...newCollisions])]);
       if (imported) setAdding(false); // a stray in-progress add-form is stale once imported lines land
       if (failures.length) {
         const okCount = list.length - failures.length;
@@ -479,9 +531,26 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                     <span className="text-[#131311] font-medium truncate max-w-[14rem]">{f.name}</span>
                     <span className={`text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 border leading-none flex-shrink-0 ${tint}`}
                       style={{ fontFamily: "'DM Mono', monospace" }}>{label}</span>
-                    <span className="text-[#8a8782] flex-shrink-0">
-                      {type === "supporting" ? "· Not used for pricing" : "· Attached for review"}
-                    </span>
+                    {removingFile === String(f.id) ? (
+                      <span className="flex items-center gap-1.5 flex-shrink-0 text-[#131311]">
+                        Remove{type !== "supporting" ? " (its lines go too)" : ""}?
+                        <button onClick={() => void handleRemoveFile(String(f.id), f.name)} className="font-medium text-red-600 hover:text-red-700 underline cursor-pointer">Yes</button>
+                        <button onClick={() => setRemovingFile(null)} className="text-[#5c5a56] hover:text-[#131311] underline cursor-pointer">No</button>
+                      </span>
+                    ) : (
+                      <>
+                        <span className="text-[#8a8782] flex-shrink-0">
+                          {type === "supporting" ? "· Not used for pricing" : "· Attached for review"}
+                        </span>
+                        {/* Per-file Remove (spec §1c) — the "start over" affordance
+                            that replaced the Replace/Add prompt. Drafts only; this
+                            page IS the draft builder. */}
+                        <button onClick={() => setRemovingFile(String(f.id))} aria-label={`Remove ${f.name}`}
+                          className="flex-shrink-0 -mr-1 w-5 h-5 inline-flex items-center justify-center text-[#9a9894] hover:text-red-600 cursor-pointer">
+                          <X className="w-3 h-3" aria-hidden="true" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 );
               })}
@@ -494,6 +563,24 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
 
         {/* Items + composer */}
         <div>
+          {/* Manual-vs-schedule tag collision (spec §1b): asked ONCE per tag —
+              the customer's line stands either way; Link converts it to a
+              schedule line that future re-parses may refresh (edits protected). */}
+          {collisionTags.map((tag) => (
+            <div key={tag} role="status" className="mb-4 border border-[#4C6A88]/30 bg-[#4C6A88]/10 px-4 py-3 text-sm text-[#31485f]">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium">Your schedule also lists {tag} — you already added an item with that code.</p>
+                  <p className="mt-0.5">Your item stays as you built it. Link it to the schedule line, or keep them separate?</p>
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                    <Btn variant="sage" size="sm" onClick={() => void handleCollision(tag, "linked")}>Link to schedule {tag}</Btn>
+                    <Btn variant="ghost" size="sm" onClick={() => void handleCollision(tag, "separate")}>Keep separate</Btn>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
           {uploadNotice && (
             <div role={uploadNotice.type === "error" ? "alert" : "status"} aria-live="polite"
               className={`mb-4 flex items-start gap-2.5 border px-4 py-3 text-sm ${uploadNotice.type === "success" ? "border-[#5A7A6A]/30 bg-[#5A7A6A]/8 text-[#355344]" : "border-red-300 bg-red-50 text-red-800"}`}>
@@ -510,6 +597,13 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                 {uploadNotice.type === "success" && aiPhase?.kind === "done" && (
                   <span className="ml-1.5">· performance requirements applied to {aiPhase.energyApplied} line{aiPhase.energyApplied !== 1 ? "s" : ""}</span>
                 )}
+                {uploadNotice.type === "success" && removeOffer && (
+                  <span className="ml-1.5 whitespace-nowrap">
+                    · not for this project?{" "}
+                    <button onClick={() => void handleRemoveFile(removeOffer.fileId, removeOffer.name)}
+                      className="underline font-medium hover:text-[#131311] cursor-pointer">Remove file</button>
+                  </span>
+                )}
               </span>
               <button onClick={() => setUploadNotice(null)} className="p-1 -m-1 text-current opacity-60 hover:opacity-100 cursor-pointer" aria-label="Dismiss upload result">
                 <X className="w-4 h-4" />
@@ -522,6 +616,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
             {quote.items.map((it) => (
               <ItemSummaryCard key={it.id} item={it} quote={quote}
                 id={`qitem-${it.id}`}
+                basis={it.code ? basisMap[it.code] ?? null : null}
                 expanded={expandedId === it.id}
                 onToggleExpanded={() => setExpandedId(cur => cur === it.id ? null : it.id)}
                 duplicate={hasDuplicateCode(quote.items, it.id, it.code)}

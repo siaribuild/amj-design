@@ -524,12 +524,16 @@ function CodeField({ code, duplicate, editSignal, onCommit }: {
 // and line price stay visible in every state.
 export function ItemSummaryCard({
   item, added, quote, onDuplicate, onRemove, initialFocus, id, focusSignal,
-  expanded, onToggleExpanded, duplicate, codeFocusSignal,
+  expanded, onToggleExpanded, duplicate, codeFocusSignal, basis,
 }: {
   item: QItem; added?: boolean; quote: QuoteState;
   onDuplicate?: () => void; onRemove?: () => void; initialFocus?: EditFocus;
   id?: string; focusSignal?: number;
   expanded?: boolean; onToggleExpanded?: () => void; duplicate?: boolean; codeFocusSignal?: number;
+  /** Requirement basis for the trust chip (UX spec §5) — status ("is anything
+   *  needed?") and basis ("how solid is this number?") are separate questions.
+   *  'explicit_energy_report' | 'default_envelope' | null (no chip). */
+  basis?: string | null;
 }) {
   const [open, setOpen] = useState<EditFocus | null>(initialFocus ?? null);
   const [selfExpanded, setSelfExpanded] = useState(!!initialFocus);
@@ -615,6 +619,21 @@ export function ItemSummaryCard({
             : technicalOnly
               ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-sky-300 bg-sky-50 text-sky-800" title="An AMJ technician will confirm this at review — you can still submit."><Info className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">AMJ </span>review</span>
               : <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344]"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
+          {/* Basis chip (UX spec §5): orthogonal to status — report-backed vs
+              assumption-based. Hidden on small screens; the tooltip carries the
+              compliance sentence once, and doubles as the upload upsell. */}
+          {basis === "explicit_energy_report" && (
+            <span className="hidden md:inline-flex flex-shrink-0 items-center text-[10px] font-medium px-1.5 py-0.5 border border-[#2C7A54]/30 bg-[#2C7A54]/10 text-[#2C7A54]"
+              title="Performance selected to match your submitted energy report, subject to human review.">
+              From your energy report
+            </span>
+          )}
+          {basis === "default_envelope" && (
+            <span className="hidden md:inline-flex flex-shrink-0 items-center text-[10px] font-medium px-1.5 py-0.5 border border-dashed border-black/20 bg-black/[0.03] text-[#6f6c67]"
+              title="Estimated using typical requirements for Melbourne new builds. Indicative only — not an energy compliance certificate. Upload your energy report to firm this up.">
+              Performance assumed
+            </span>
+          )}
         </span>
         <span className={`flex-shrink-0 text-sm font-semibold ${pr.ok ? "text-[#131311]" : "text-[#5c5a56]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
           {priceLabel}{pr.ok ? <span className="hidden sm:inline text-[10px] font-normal text-[#5c5a56]"> {gstSuffix(gstMode)}</span> : null}
@@ -652,6 +671,20 @@ export function ItemSummaryCard({
       {/* ── Expanded detail groups — one open at a time ── */}
       {isExpanded && (
         <div className="border-t border-black/8">
+          {/* Mobile basis disclosure (UX review, blocking): the header chip is
+              hidden below md, but "assumed / not a certificate" is compliance
+              language and must stay reachable on phones — so the expanded body
+              carries it inline where the chip's tooltip can't be hovered. */}
+          {basis === "explicit_energy_report" && (
+            <p className="md:hidden px-3 sm:px-4 py-2 text-[11px] leading-snug text-[#2C7A54] bg-[#2C7A54]/5 border-b border-black/[0.06]">
+              Performance selected to match your submitted energy report, subject to human review.
+            </p>
+          )}
+          {basis === "default_envelope" && (
+            <p className="md:hidden px-3 sm:px-4 py-2 text-[11px] leading-snug text-[#6f6c67] bg-black/[0.02] border-b border-black/[0.06]">
+              Performance assumed from typical Melbourne new-build requirements. Indicative only — not an energy compliance certificate. Upload your energy report to firm this up.
+            </p>
+          )}
           {/* Product is editable — a schedule line the parser couldn't match (or
               flagged for substitution) is re-pointed here. Changing product resets
               options to the new product's defaults and clears the product flag. */}

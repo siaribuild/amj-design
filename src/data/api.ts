@@ -318,6 +318,8 @@ export interface ParseJob {
   updated?: number;
   removed?: number;
   keptForReview?: number;
+  /** Manual-vs-schedule tag collisions awaiting a Link/Keep-separate decision. */
+  collisions?: string[];
   error?: string;
 }
 
@@ -330,7 +332,20 @@ export interface ExtractionRun {
   summary: { extractedLines: number; conflicts: number; energyApplied: number; documents: number } | null;
 }
 export const extractionStatus = () =>
-  req<{ run: ExtractionRun | null }>("/api/projects/current/extraction-status");
+  req<{ run: ExtractionRun | null; basis?: Record<string, string> }>("/api/projects/current/extraction-status");
+
+/** Remove one document from a draft project (per-file Remove — spec §1c). */
+export async function deleteFile(fileId: string): Promise<{ ok: boolean; removedLines: number; keptForReview: number }> {
+  const res = await fetch(`/api/files/${fileId}`, { method: "DELETE", credentials: "same-origin" });
+  if (!res.ok) throw new UploadError(String((await res.json().catch(() => ({})) as any)?.error ?? `http_${res.status}`), res.status);
+  return res.json();
+}
+
+/** Resolve a manual-vs-schedule tag collision once (spec §1b). */
+export const resolveCollision = (lineId: string, choice: "linked" | "separate") =>
+  req<{ ok: boolean; choice: string }>(`/api/projects/current/lines/${lineId}/collision`, {
+    method: "POST", body: JSON.stringify({ choice }),
+  });
 /** Outcome of a parse request. `needs_choice` ⇒ prompt Replace/Add; `quota` ⇒ over limit. */
 export type ParseFailReason =
   | "rate_limited" | "busy" | "quota" | "too_large"

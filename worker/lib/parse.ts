@@ -34,6 +34,10 @@ export interface ParseOutcome {
   removed: number;
   /** Edited lines whose tag vanished — kept + flagged, never silently deleted. */
   keptForReview: number;
+  /** Tags where a MANUAL line collides with a parsed schedule row and the
+   *  customer hasn't decided Link/Keep-separate yet (spec §1b). The customer's
+   *  line stands; the card asks once. */
+  collisions: string[];
   error?: string;
 }
 
@@ -132,7 +136,7 @@ export async function runScheduleParse(
 
   const fail = async (code: string): Promise<ParseOutcome> => {
     await env.DB.prepare("UPDATE schedule_parse_job SET status='failed', error=?, completed_at=datetime('now') WHERE id=?").bind(code, jobId).run();
-    return { jobId, status: "failed", engine: "cf-deterministic", itemCount: 0, needsReviewCount: 0, added: 0, updated: 0, removed: 0, keptForReview: 0, error: code };
+    return { jobId, status: "failed", engine: "cf-deterministic", itemCount: 0, needsReviewCount: 0, added: 0, updated: 0, removed: 0, keptForReview: 0, collisions: [], error: code };
   };
 
   // Only a scanner-cleared file is ever fed to the extractor. Uploads are scanned
@@ -189,16 +193,16 @@ export async function runScheduleParse(
   // writes a manual line — spec §1b). A manual line whose code collides with a
   // parsed tag stands as-is; the parsed row is skipped (the Link/Keep-separate
   // card arrives with the digest UI).
-  interface DraftRow { id: string; external_ref: string | null; origin: string | null; edited_fields: string | null; position: number }
+  interface DraftRow { id: string; external_ref: string | null; origin: string | null; edited_fields: string | null; position: number; collision_choice: string | null }
   const draftRows = mode === "upsert"
-    ? ((await env.DB.prepare("SELECT id, external_ref, origin, edited_fields, position FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id).all<DraftRow>()).results ?? [])
+    ? ((await env.DB.prepare("SELECT id, external_ref, origin, edited_fields, position, collision_choice FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id).all<DraftRow>()).results ?? [])
     : [];
   const byTag = new Map<string, DraftRow>();
-  const manualTags = new Set<string>();
+  const manualTags = new Map<string, DraftRow>();
   for (const r of draftRows) {
     if (!r.external_ref) continue;
     if ((r.origin ?? "manual") === "schedule") { if (!byTag.has(r.external_ref)) byTag.set(r.external_ref, r); }
-    else manualTags.add(r.external_ref);
+    else if (!manualTags.has(r.external_ref)) manualTags.set(r.external_ref, r);
   }
 
   const posRow = mode === "replace"
@@ -208,6 +212,7 @@ export async function runScheduleParse(
 
   let needsReview = 0;
   let added = 0, updated = 0, removed = 0, keptForReview = 0;
+  const collisions: string[] = [];
   const seenTags = new Set<string>();
   const created: { line: ParsedLine; qlId: string; plId: string; idx: number }[] = [];
   lines.forEach((l, idx) => {
@@ -221,8 +226,13 @@ export async function runScheduleParse(
     let qlId: string;
 
     const match = mode === "upsert" && l.code ? byTag.get(l.code) : undefined;
-    if (mode === "upsert" && l.code && manualTags.has(l.code) && !match) {
-      // Manual-line collision: the customer's line stands; skip the parsed row.
+    const manualClash = mode === "upsert" && l.code && !match ? manualTags.get(l.code) : undefined;
+    if (manualClash) {
+      // Manual-line collision: the customer's line stands; the parsed row is
+      // skipped. Undecided ⇒ surface the Link/Keep-separate card ONCE;
+      // 'separate' ⇒ permanently quiet; 'linked' never reaches here (the line
+      // becomes schedule-origin on linking, so it matches above).
+      if (!manualClash.collision_choice) collisions.push(l.code as string);
       return;
     }
     if (l.code) seenTags.add(l.code);
@@ -312,7 +322,7 @@ export async function runScheduleParse(
     engine: extract.engine,
     itemCount: lines.length,
     needsReviewCount: needsReview,
-    added, updated, removed, keptForReview,
+    added, updated, removed, keptForReview, collisions,
   };
 }
 

@@ -82,8 +82,22 @@ files.post("/files/upload", async (c) => {
   // from the external model, and makes AI interpretation the registration
   // incentive. Anonymous users keep the instant free parse — no capability loss
   // on clean digital schedules.
+  //
+  // RUN COALESCING (UX spec §4, ~10s trailing debounce): schedule + energy
+  // uploaded together must produce ONE run — otherwise the customer watches
+  // assumption-based prices appear and mutate seconds later. Each upload stamps
+  // a fresh token; only the sleeper still holding the LATEST token runs, so a
+  // burst of N files costs one extraction pass and lines are born report-backed.
   if (autoExtractionEnabled(c.env) && user) {
-    c.executionCtx.waitUntil(runAiExtraction(c.env, project.id).catch(() => { /* degradation, never a blocker */ }));
+    const debounceKey = `aidebounce:${project.id}`;
+    const token = uuid();
+    await c.env.KV.put(debounceKey, token, { expirationTtl: 60 });
+    c.executionCtx.waitUntil((async () => {
+      await new Promise((r) => setTimeout(r, 10_000));
+      if ((await c.env.KV.get(debounceKey)) !== token) return; // a later upload owns the run
+      await c.env.KV.delete(debounceKey).catch(() => {});
+      await runAiExtraction(c.env, project.id);
+    })().catch(() => { /* degradation, never a blocker */ }));
   }
 
   return c.json({ file: { id, filename: file.name, kind, size: file.size, status: "clean" } });
@@ -97,6 +111,59 @@ files.get("/projects/:id/files", async (c) => {
     .prepare("SELECT id, kind, filename, size, virus_status, doc_type, doc_type_source, created_at FROM file_asset WHERE project_id = ? ORDER BY created_at DESC")
     .bind(p.id).all();
   return c.json({ files: results });
+});
+
+// DELETE /api/files/:id — remove one document from a DRAFT project (multi-file
+// UX spec §1c: the per-file Remove is the "start over" affordance and the
+// wrong-project early exit that replaced the Replace/Add prompt). Post-draft
+// files stay locked: they are integral to a submitted/issued record.
+//
+// Reconciliation mirrors the importer's rules: draft lines SOLELY sourced by
+// this file (via its parse jobs) are removed when unedited, kept + flagged
+// noLongerInDocuments when a human edited them — never silently deleted.
+files.delete("/files/:id", async (c) => {
+  const fa = await c.env.DB.prepare("SELECT id, project_id, r2_key, kind FROM file_asset WHERE id = ?").bind(c.req.param("id"))
+    .first<{ id: string; project_id: string; r2_key: string; kind: string }>();
+  if (!fa) return c.json({ error: "not_found" }, 404);
+  const p = await ownedProject(c.env, c.req.raw, fa.project_id);
+  if (!p) return c.json({ error: "not_found" }, 404);
+  if ((p as { status_customer?: string }).status_customer !== "draft") return c.json({ error: "locked" }, 409);
+
+  // Lines this file sourced: schedule-origin draft lines reached through the
+  // file's parse jobs. Manual lines are never touched.
+  const { results: sourced } = await c.env.DB.prepare(
+    `SELECT DISTINCT q.id, q.edited_fields FROM quote_line q
+       JOIN parse_line pl ON pl.quote_line_id = q.id
+       JOIN schedule_parse_job j ON j.id = pl.job_id
+      WHERE j.file_asset_id = ? AND q.project_id = ? AND q.revision_id IS NULL AND q.origin = 'schedule'`,
+  ).bind(fa.id, fa.project_id).all<{ id: string; edited_fields: string | null }>();
+
+  let removedLines = 0, keptForReview = 0;
+  const stmts: D1PreparedStatement[] = [];
+  for (const r of sourced ?? []) {
+    const edited = (() => { try { const v = JSON.parse(r.edited_fields || "[]"); return Array.isArray(v) && v.length > 0; } catch { return false; } })();
+    if (edited) {
+      stmts.push(c.env.DB.prepare(
+        `UPDATE quote_line SET status='technical_review',
+           review_json = json_patch(COALESCE(review_json,'{}'), '{"noLongerInDocuments":true}') WHERE id = ?`,
+      ).bind(r.id));
+      keptForReview++;
+    } else {
+      stmts.push(c.env.DB.prepare("DELETE FROM quote_line WHERE id = ?").bind(r.id));
+      removedLines++;
+    }
+  }
+  stmts.push(c.env.DB.prepare("DELETE FROM file_asset WHERE id = ?").bind(fa.id));
+  await c.env.DB.batch(stmts);
+  await c.env.FILES.delete(fa.r2_key).catch(() => { /* row is the source of truth; orphaned bytes are unreachable */ });
+
+  // The remaining documents re-establish the project's evidence (registered
+  // users; same auto path as upload).
+  const user = await resolveUser(c.env, c.req.raw);
+  if (autoExtractionEnabled(c.env) && user) {
+    c.executionCtx.waitUntil(runAiExtraction(c.env, fa.project_id).catch(() => { /* degradation, never a blocker */ }));
+  }
+  return c.json({ ok: true, removedLines, keptForReview });
 });
 
 // GET /api/files/:id/download — stream bytes from R2 (owner only).
