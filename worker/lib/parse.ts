@@ -43,6 +43,9 @@ export interface ParseOutcome {
    *  the pill decays on next visit; the values themselves are the durable record. */
   changes: { tag: string; field: "size" | "qty" | "product"; from: string; to: string }[];
   error?: string;
+  /** Internal cleanup hand-off. Routes remove these R2 objects only after the
+   * corresponding D1 file rows were atomically removed with the parsed lines. */
+  deletedScheduleKeys?: string[];
 }
 
 // ── Quota ──────────────────────────────────────────────────────────────────
@@ -130,7 +133,10 @@ const MAX_IMPORT_ROWS = 480;
 
 export async function runScheduleParse(
   env: Env,
-  opts: { project: ProjectRow; file: ParseFile; subject: string; userId: string | null; mode: ParseMode },
+  opts: {
+    project: ProjectRow; file: ParseFile; subject: string; userId: string | null;
+    mode: ParseMode; previousScheduleFiles?: ParseFile[];
+  },
 ): Promise<ParseOutcome> {
   const { project, file, subject, mode } = opts;
   const jobId = uuid();
@@ -185,11 +191,46 @@ export async function runScheduleParse(
   // Fail cleanly rather than exceed it mid-batch after paying for extraction.
   if (lines.length > MAX_IMPORT_ROWS) return fail("too_many_items");
 
+  // Extraction is deliberately outside the write transaction. Re-read the cart
+  // epoch immediately before applying the result, then claim it with a
+  // request-unique token in the same batch as every line mutation. If submission,
+  // clear, autosave, or another parse wins first, all guarded statements are
+  // no-ops and the stale extraction is recorded as failed rather than applied.
+  const mutationState = await env.DB.prepare(
+    `SELECT quote_edit_version FROM project
+      WHERE id=? AND status_customer='draft' AND quote_mutation_token IS NULL`,
+  ).bind(project.id).first<{ quote_edit_version: number }>();
+  if (!mutationState) return fail("project_changed");
+  const nextQuoteVersion = mutationState.quote_edit_version + 1;
+  const mutationToken = uuid();
+  const mutationGuard = `EXISTS (
+    SELECT 1 FROM project
+     WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+       AND quote_mutation_token=?
+  )`;
+
   // Apply mode (multi-file UX spec §1): "upsert" (default) matches by schedule
   // tag; "replace" clears prior draft lines; "append" keeps them (legacy modes).
-  const stmts: D1PreparedStatement[] = [];
+  const stmts: D1PreparedStatement[] = [
+    env.DB.prepare(
+      `UPDATE project SET quote_edit_version=?, quote_mutation_token=?,
+          updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+          AND quote_mutation_token IS NULL
+          AND EXISTS (
+            SELECT 1 FROM file_asset
+             WHERE id=? AND project_id=?
+          )`,
+    ).bind(
+      nextQuoteVersion, mutationToken, project.id,
+      mutationState.quote_edit_version, file.id, project.id,
+    ),
+  ];
   if (mode === "replace") {
-    stmts.push(env.DB.prepare("DELETE FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id));
+    stmts.push(env.DB.prepare(
+      `DELETE FROM quote_line
+        WHERE project_id=? AND revision_id IS NULL AND ${mutationGuard}`,
+    ).bind(project.id, project.id, nextQuoteVersion, mutationToken));
   }
 
   // Existing draft state for the upsert: schedule-origin rows are matchable by
@@ -277,19 +318,23 @@ export async function runScheduleParse(
       if (locked.length === 0) {
         if (hasReview) needsReview++;
         stmts.push(env.DB.prepare(
-          `UPDATE quote_line SET room_label=?, product_slug=?, options_json=?, dims_json=?, qty=?, line_total=?, status=?, review_json=? WHERE id=?`,
+          `UPDATE quote_line SET room_label=?, product_slug=?, options_json=?,
+             dims_json=?, qty=?, line_total=?, status=?, review_json=?
+            WHERE id=? AND ${mutationGuard}`,
         ).bind(l.location || null, l.productSlug, JSON.stringify(l.options),
           JSON.stringify({ width: l.width, height: l.height }), l.qty, lineTotal, status,
-          l.review ? JSON.stringify(l.review) : null, qlId));
+          l.review ? JSON.stringify(l.review) : null, qlId,
+          project.id, nextQuoteVersion, mutationToken));
       } else {
         stmts.push(env.DB.prepare(
           `UPDATE quote_line SET room_label = COALESCE(?, room_label),
              product_slug = COALESCE(?, product_slug), options_json = COALESCE(?, options_json),
-             dims_json = COALESCE(?, dims_json), qty = COALESCE(?, qty) WHERE id = ?`,
+             dims_json = COALESCE(?, dims_json), qty = COALESCE(?, qty)
+            WHERE id=? AND ${mutationGuard}`,
         ).bind(l.location || null, keep("product_slug", l.productSlug),
           keep("options_json", JSON.stringify(l.options)),
           keep("dims_json", JSON.stringify({ width: l.width, height: l.height })),
-          keep("qty", l.qty), qlId));
+          keep("qty", l.qty), qlId, project.id, nextQuoteVersion, mutationToken));
       }
     } else {
       if (hasReview) needsReview++;
@@ -297,20 +342,24 @@ export async function runScheduleParse(
       qlId = uuid();
       stmts.push(env.DB.prepare(
         `INSERT INTO quote_line (id, project_id, revision_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position, origin, review_json)
-         VALUES (?,?,NULL,?,?,?,?,?,?,?,?,?,?, 'schedule', ?)`,
+         SELECT ?,?,NULL,?,?,?,?,?,?,?,?,?,?, 'schedule', ?
+          WHERE ${mutationGuard}`,
       ).bind(
         qlId, project.id, l.code || null, l.location || null, l.productSlug,
         JSON.stringify(l.options), JSON.stringify({ width: l.width, height: l.height }), l.measuredBy || "",
         l.qty, lineTotal, status, position++, l.review ? JSON.stringify(l.review) : null,
+        project.id, nextQuoteVersion, mutationToken,
       ));
     }
     stmts.push(env.DB.prepare(
       `INSERT INTO parse_line (id, job_id, page, source_index, raw_json, mapped_product_slug, mapped_dims_json, mapped_options_json, mapped_qty, external_ref, issues_json, quote_line_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+       SELECT ?,?,?,?,?,?,?,?,?,?,?,?
+        WHERE ${mutationGuard}`,
     ).bind(
       plId, jobId, null, idx, JSON.stringify(extract.rows[idx] ?? {}), l.productSlug || null,
       JSON.stringify({ width: l.width, height: l.height }), JSON.stringify(l.options), l.qty, l.code || null,
       l.review ? JSON.stringify(l.review) : null, qlId,
+      project.id, nextQuoteVersion, mutationToken,
     ));
     created.push({ line: l, qlId, plId, idx });
   });
@@ -325,23 +374,59 @@ export async function runScheduleParse(
       if (edited) {
         stmts.push(env.DB.prepare(
           `UPDATE quote_line SET status='technical_review',
-             review_json = json_patch(COALESCE(review_json,'{}'), '{"noLongerInDocuments":true}') WHERE id = ?`,
-        ).bind(r.id));
+             review_json = json_patch(COALESCE(review_json,'{}'), '{"noLongerInDocuments":true}')
+            WHERE id=? AND ${mutationGuard}`,
+        ).bind(r.id, project.id, nextQuoteVersion, mutationToken));
         needsReview++;
         keptForReview++;
       } else {
-        stmts.push(env.DB.prepare("DELETE FROM quote_line WHERE id = ?").bind(r.id));
+        stmts.push(env.DB.prepare(
+          `DELETE FROM quote_line WHERE id=? AND ${mutationGuard}`,
+        ).bind(r.id, project.id, nextQuoteVersion, mutationToken));
         removed++;
       }
     }
   }
 
-  stmts.push(env.DB.prepare("UPDATE project SET updated_at = datetime('now') WHERE id = ?").bind(project.id));
+  const replacedScheduleFiles = (opts.previousScheduleFiles ?? [])
+    .filter((existingFile) => existingFile.id !== file.id);
+  for (const existingFile of replacedScheduleFiles) {
+    stmts.push(env.DB.prepare(
+      `DELETE FROM file_asset
+        WHERE id=? AND project_id=? AND kind='schedule' AND ${mutationGuard}`,
+    ).bind(
+      existingFile.id, project.id, project.id, nextQuoteVersion, mutationToken,
+    ));
+  }
   stmts.push(env.DB.prepare(
-    "UPDATE schedule_parse_job SET status=?, item_count=?, confidence=?, completed_at=datetime('now') WHERE id=?",
-  ).bind(needsReview ? "needs_review" : "completed", lines.length, extract.overallConfidence, jobId));
+    `UPDATE file_asset SET kind='schedule'
+      WHERE id=? AND project_id=? AND ${mutationGuard}`,
+  ).bind(file.id, project.id, project.id, nextQuoteVersion, mutationToken));
 
-  await env.DB.batch(stmts);
+  const releaseIndex = stmts.length;
+  stmts.push(env.DB.prepare(
+    `UPDATE project SET quote_mutation_token=NULL, updated_at=datetime('now')
+      WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+        AND quote_mutation_token=?`,
+  ).bind(project.id, nextQuoteVersion, mutationToken));
+  stmts.push(env.DB.prepare(
+    `UPDATE schedule_parse_job
+        SET status=?, item_count=?, confidence=?, completed_at=datetime('now')
+      WHERE id=? AND EXISTS (
+        SELECT 1 FROM project
+         WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+           AND quote_mutation_token IS NULL
+      )`,
+  ).bind(
+    needsReview ? "needs_review" : "completed", lines.length,
+    extract.overallConfidence, jobId, project.id, nextQuoteVersion,
+  ));
+
+  const committed = await env.DB.batch(stmts);
+  if (Number(committed[0]?.meta?.changes ?? 0) !== 1 ||
+      Number(committed[releaseIndex]?.meta?.changes ?? 0) !== 1) {
+    return fail("project_changed");
+  }
   await logEvent(env, { actor: opts.userId ?? "customer", entityType: "project", entityId: project.id, action: `schedule parsed (${lines.length} items, ${needsReview} to review) via ${extract.engine}` });
 
   return {
@@ -351,6 +436,7 @@ export async function runScheduleParse(
     itemCount: lines.length,
     needsReviewCount: needsReview,
     added, updated, removed, keptForReview, collisions, changes,
+    deletedScheduleKeys: replacedScheduleFiles.map((existingFile) => existingFile.r2_key),
   };
 }
 

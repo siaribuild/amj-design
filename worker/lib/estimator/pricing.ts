@@ -75,11 +75,13 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
 }
 
 // Load the family rate card (falling back to 'default') from private D1.
-export async function loadRateCard(env: Env, family: string): Promise<RateCard> {
-  const row = await env.DB
+export async function loadRateCard(env: Env, family: string, allowFallback = true): Promise<RateCard> {
+  const exact = await env.DB
     .prepare("SELECT id, perim_rate, area_rate, min_charge, version FROM pricing_rate_card WHERE id = ? AND active = 1")
-    .bind(family).first<any>()
-    ?? await env.DB.prepare("SELECT id, perim_rate, area_rate, min_charge, version FROM pricing_rate_card WHERE id = 'default' AND active = 1").first<any>();
+    .bind(family).first<any>();
+  const row = exact ?? (allowFallback
+    ? await env.DB.prepare("SELECT id, perim_rate, area_rate, min_charge, version FROM pricing_rate_card WHERE id = 'default' AND active = 1").first<any>()
+    : null);
   if (!row) throw new Error("no_rate_card");
   return { id: row.id, perimRate: row.perim_rate, areaRate: row.area_rate, minCharge: row.min_charge ?? 0, version: row.version };
 }
@@ -94,22 +96,31 @@ export async function loadPolicy(env: Env): Promise<PricingPolicy> {
 }
 
 // Resolve option surcharges by slug from the private table (server-side only).
-export async function loadOptionSurcharges(env: Env, optionSlugs: string[]): Promise<number[]> {
+export async function loadOptionSurcharges(env: Env, optionSlugs: string[], requireAll = false): Promise<number[]> {
   if (!optionSlugs.length) return [];
   const out: number[] = [];
-  for (const slug of optionSlugs) {
+  const unique = [...new Set(optionSlugs)];
+  let resolved = 0;
+  for (const slug of unique) {
     const r = await env.DB.prepare("SELECT surcharge FROM pricing_option_surcharge WHERE id = ? AND active = 1").bind(slug).first<{ surcharge: number }>();
-    if (r?.surcharge) out.push(r.surcharge);
+    if (r && Number.isFinite(r.surcharge)) {
+      resolved++;
+      out.push(r.surcharge);
+    }
   }
+  if (requireAll && resolved !== unique.length) throw new Error("missing_option_surcharge");
   return out;
 }
 
 // End-to-end: price one line from private D1 and return the snapshot.
-export async function priceLine(env: Env, args: { family: string; widthMm: number; heightMm: number; qty: number; optionSlugs?: string[] }): Promise<PriceSnapshot> {
+export async function priceLine(env: Env, args: {
+  family: string; widthMm: number; heightMm: number; qty: number;
+  optionSlugs?: string[]; requireExactRate?: boolean; requireAllOptions?: boolean;
+}): Promise<PriceSnapshot> {
   const [rate, policy, surcharges] = await Promise.all([
-    loadRateCard(env, args.family),
+    loadRateCard(env, args.family, !args.requireExactRate),
     loadPolicy(env),
-    loadOptionSurcharges(env, args.optionSlugs ?? []),
+    loadOptionSurcharges(env, args.optionSlugs ?? [], args.requireAllOptions),
   ]);
   return computePrice(rate, policy, { family: args.family, widthMm: args.widthMm, heightMm: args.heightMm, qty: args.qty, optionSurcharges: surcharges });
 }

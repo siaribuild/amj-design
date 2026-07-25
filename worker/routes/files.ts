@@ -6,8 +6,11 @@ import { ownedProject, resolveOrCreateCurrentProject } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 import { uuid } from "../lib/util";
 import { scanFile } from "../lib/scan";
-import { runAiExtraction } from "../lib/ai/pipeline";
 import { autoExtractionEnabled } from "../lib/ai/versions";
+import { dispatchAiExtractionJob, type AiExtractionJob } from "../lib/ai/jobs";
+import { sha256hex } from "../lib/ai/hash";
+import { derivedKeys } from "../lib/ai/ingest";
+import { deriveSubject } from "../lib/parse";
 
 export const files = new Hono<{ Bindings: Env }>();
 
@@ -16,6 +19,30 @@ const KINDS = new Set(["upload", "plan", "schedule", "other"]);
 const MAX_FILES_PER_PROJECT = 25;   // quota per project
 const UPLOAD_RATE_WINDOW = 60;      // seconds
 const UPLOAD_RATE_MAX = 15;         // uploads per source per window (bounds anon abuse)
+const ANON_UPLOAD_BYTES_PER_DAY = 150 * 1024 * 1024;
+const USER_UPLOAD_BYTES_PER_DAY = 1024 * 1024 * 1024;
+const GLOBAL_UPLOAD_BYTES_PER_HOUR = 5 * 1024 * 1024 * 1024;
+
+async function rejectUploadReservation(env: Env, id: string, projectId: string): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare(
+      "DELETE FROM file_asset WHERE id=? AND project_id=? AND virus_status='pending'",
+    ).bind(id, projectId),
+    env.DB.prepare(
+      `UPDATE upload_reservation SET status='rejected', completed_at=datetime('now')
+        WHERE id=? AND project_id=? AND status='reserved'`,
+    ).bind(id, projectId),
+  ]).catch(() => { /* pending row remains fail-closed and customer-removable */ });
+}
+
+async function purgeR2Prefix(bucket: R2Bucket, prefix: string): Promise<void> {
+  let cursor: string | undefined;
+  do {
+    const page = await bucket.list({ prefix, cursor, limit: 500 });
+    await Promise.all(page.objects.map((object) => bucket.delete(object.key)));
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+}
 
 // POST /api/files/upload — multipart (file, [kind]); attaches to the current
 // project (created + claim-cookie minted if the anon user has none yet).
@@ -37,37 +64,236 @@ files.post("/files/upload", async (c) => {
 
   const { project, cookie } = await resolveOrCreateCurrentProject(c.env, c.req.raw);
   const user = await resolveUser(c.env, c.req.raw);
-
-  // Per-project quota — a single project can't be used as unbounded storage.
-  const countRow = await c.env.DB.prepare("SELECT count(*) AS n FROM file_asset WHERE project_id = ?").bind(project.id).first<{ n: number }>();
-  if ((countRow?.n ?? 0) >= MAX_FILES_PER_PROJECT) return c.json({ error: "quota_exceeded" }, 413);
-
-  await c.env.KV.put(rlKey, String(used + 1), { expirationTtl: UPLOAD_RATE_WINDOW });
-
-  // Scan BEFORE anything is persisted: bytes only reach R2 once a scanner has
-  // returned 'clean', so a rejected upload leaves nothing behind to serve or
-  // parse. 'unknown' (scanner down, unreadable, timeout) fails closed.
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const verdict = await scanFile(c.env, {
-    bytes, filename: file.name, contentType: file.type || "application/octet-stream",
-  });
   if (cookie) c.header("Set-Cookie", cookie);
-  if (verdict.verdict === "infected") {
-    return c.json({ error: "file_rejected", reason: verdict.reason ?? "rejected", detail: verdict.detail ?? null }, 422);
-  }
-  if (verdict.verdict !== "clean") {
-    return c.json({ error: "scan_unavailable", reason: verdict.reason ?? "unknown" }, 503);
-  }
+
+  const projectState = await c.env.DB.prepare(
+    `SELECT quote_edit_version FROM project
+      WHERE id=? AND status_customer='draft' AND quote_mutation_token IS NULL`,
+  ).bind(project.id).first<{ quote_edit_version: number }>();
+  if (!projectState) return c.json({ error: "locked" }, 409);
 
   const id = uuid();
   const safeName = file.name.replace(/[^\w.\- ]+/g, "_");
   const r2Key = `project/${project.id}/${id}-${safeName}`;
-  await c.env.FILES.put(r2Key, bytes, {
-    httpMetadata: { contentType: file.type || "application/octet-stream" },
+  const subject = await deriveSubject(c.env, {
+    userId: user?.id ?? null, claimToken: null, ip,
   });
-  await c.env.DB.prepare(
-    "INSERT INTO file_asset (id, project_id, kind, source, r2_key, filename, size, virus_status, scan_engine, scanned_at, uploaded_by) VALUES (?, ?, ?, 'customer', ?, ?, ?, 'clean', ?, datetime('now'), ?)",
-  ).bind(id, project.id, kind, r2Key, file.name, file.size, verdict.engine, user?.id ?? null).run();
+  const ipSubject = await deriveSubject(c.env, {
+    userId: null, claimToken: null, ip,
+  });
+  const subjectDailyBytes = user ? USER_UPLOAD_BYTES_PER_DAY : ANON_UPLOAD_BYTES_PER_DAY;
+  const nextQuoteVersion = projectState.quote_edit_version + 1;
+  const mutationToken = uuid();
+
+  // D1 is the authoritative capacity reservation. Unlike the KV fast-path, this
+  // INSERT is serialized and cannot be bypassed by parallel requests. It also
+  // caps account/IP churn and total hourly storage exposure across projects.
+  const reserved = await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO upload_reservation
+         (id, project_id, subject, ip_subject, size, status)
+       SELECT ?, ?, ?, ?, ?, 'reserved'
+        WHERE (
+          SELECT count(*) FROM upload_reservation
+           WHERE ip_subject=? AND status<>'rejected'
+             AND created_at>=datetime('now','-1 minute')
+        ) < ?
+          AND COALESCE((
+            SELECT sum(size) FROM upload_reservation
+             WHERE subject=? AND status<>'rejected'
+               AND created_at>=datetime('now','-1 day')
+          ),0) + ? <= ?
+          AND COALESCE((
+            SELECT sum(size) FROM upload_reservation
+             WHERE status<>'rejected'
+               AND created_at>=datetime('now','-1 hour')
+          ),0) + ? <= ?`,
+    ).bind(
+      id, project.id, subject, ipSubject, file.size,
+      ipSubject, UPLOAD_RATE_MAX,
+      subject, file.size, subjectDailyBytes,
+      file.size, GLOBAL_UPLOAD_BYTES_PER_HOUR,
+    ),
+    c.env.DB.prepare(
+      `UPDATE project SET quote_edit_version=?, quote_mutation_token=?,
+          updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+          AND quote_mutation_token IS NULL
+          AND (SELECT count(*) FROM file_asset WHERE project_id=?) < ?
+          AND EXISTS (
+            SELECT 1 FROM upload_reservation
+             WHERE id=? AND project_id=? AND status='reserved'
+          )`,
+    ).bind(
+      nextQuoteVersion, mutationToken, project.id,
+      projectState.quote_edit_version, project.id, MAX_FILES_PER_PROJECT,
+      id, project.id,
+    ),
+    c.env.DB.prepare(
+      `INSERT INTO file_asset
+         (id, project_id, kind, source, r2_key, filename, size, virus_status,
+          uploaded_by)
+       SELECT ?, ?, ?, 'customer', ?, ?, ?, 'pending', ?
+        WHERE EXISTS (
+          SELECT 1 FROM project
+           WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+             AND quote_mutation_token=?
+        )`,
+    ).bind(
+      id, project.id, kind, r2Key, file.name, file.size, user?.id ?? null,
+      project.id, nextQuoteVersion, mutationToken,
+    ),
+    c.env.DB.prepare(
+      `UPDATE project SET quote_mutation_token=NULL, updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+          AND quote_mutation_token=?`,
+    ).bind(project.id, nextQuoteVersion, mutationToken),
+  ]);
+  if (Number(reserved[0]?.meta?.changes ?? 0) !== 1) {
+    return c.json({ error: "rate_limited" }, 429);
+  }
+  if (Number(reserved[1]?.meta?.changes ?? 0) !== 1 ||
+      Number(reserved[2]?.meta?.changes ?? 0) !== 1 ||
+      Number(reserved[3]?.meta?.changes ?? 0) !== 1) {
+    await c.env.DB.prepare(
+      `UPDATE upload_reservation SET status='rejected', completed_at=datetime('now')
+        WHERE id=? AND status='reserved'`,
+    ).bind(id).run();
+    return c.json({ error: "project_changed_retry" }, 409);
+  }
+
+  await c.env.KV.put(rlKey, String(used + 1), { expirationTtl: UPLOAD_RATE_WINDOW });
+
+  // Bytes only reach R2 once a scanner has returned 'clean'. D1 holds a pending
+  // metadata reservation meanwhile, which blocks submission and atomically owns
+  // the per-project/global capacity.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const checksum = await sha256hex(bytes);
+  let verdict;
+  try {
+    verdict = await scanFile(c.env, {
+      bytes, filename: file.name, contentType: file.type || "application/octet-stream",
+    });
+  } catch {
+    await rejectUploadReservation(c.env, id, project.id);
+    return c.json({ error: "scan_unavailable", reason: "scanner_error" }, 503);
+  }
+  if (verdict.verdict === "infected") {
+    await rejectUploadReservation(c.env, id, project.id);
+    return c.json({ error: "file_rejected", reason: verdict.reason ?? "rejected", detail: verdict.detail ?? null }, 422);
+  }
+  if (verdict.verdict !== "clean") {
+    await rejectUploadReservation(c.env, id, project.id);
+    return c.json({ error: "scan_unavailable", reason: verdict.reason ?? "unknown" }, 503);
+  }
+
+  try {
+    await c.env.FILES.put(r2Key, bytes, {
+      httpMetadata: { contentType: file.type || "application/octet-stream" },
+    });
+  } catch {
+    await rejectUploadReservation(c.env, id, project.id);
+    return c.json({ error: "storage_unavailable" }, 503);
+  }
+
+  const shouldScheduleAi = autoExtractionEnabled(c.env) && !!user;
+  const finalizeState = await c.env.DB.prepare(
+    `SELECT quote_edit_version, ai_generation FROM project
+      WHERE id=? AND status_customer='draft' AND quote_mutation_token IS NULL`,
+  ).bind(project.id).first<{ quote_edit_version: number; ai_generation: number }>();
+  if (!finalizeState) {
+    await c.env.FILES.delete(r2Key).catch(() => {});
+    await rejectUploadReservation(c.env, id, project.id);
+    return c.json({ error: "project_changed_retry" }, 409);
+  }
+  const finalizedVersion = finalizeState.quote_edit_version + 1;
+  const finalizeToken = uuid();
+  const aiJob: AiExtractionJob | null = shouldScheduleAi ? {
+    projectId: project.id,
+    generation: finalizeState.ai_generation + 1,
+    debounceToken: uuid(),
+  } : null;
+  const finalizedStatements: D1PreparedStatement[] = [
+    c.env.DB.prepare(
+      `UPDATE project SET quote_edit_version=?, ai_generation=?,
+          quote_mutation_token=?,
+          updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+          AND ai_generation=?
+          AND quote_mutation_token IS NULL
+          AND EXISTS (
+            SELECT 1 FROM file_asset
+             WHERE id=? AND project_id=? AND virus_status='pending'
+          )`,
+    ).bind(
+      finalizedVersion, aiJob?.generation ?? finalizeState.ai_generation,
+      finalizeToken, project.id, finalizeState.quote_edit_version,
+      finalizeState.ai_generation, id, project.id,
+    ),
+    c.env.DB.prepare(
+      `UPDATE file_asset SET checksum=?, virus_status='clean', scan_engine=?,
+          scanned_at=datetime('now')
+        WHERE id=? AND project_id=? AND virus_status='pending'
+          AND EXISTS (
+            SELECT 1 FROM project
+             WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+               AND quote_mutation_token=?
+          )`,
+    ).bind(
+      checksum, verdict.engine, id, project.id,
+      project.id, finalizedVersion, finalizeToken,
+    ),
+    c.env.DB.prepare(
+      `UPDATE upload_reservation SET status='clean', completed_at=datetime('now')
+        WHERE id=? AND project_id=? AND status='reserved'
+          AND EXISTS (
+            SELECT 1 FROM file_asset
+             WHERE id=? AND project_id=? AND virus_status='clean'
+          )`,
+    ).bind(id, project.id, id, project.id),
+  ];
+  let aiJobIndex = -1;
+  if (aiJob) {
+    aiJobIndex = finalizedStatements.length;
+    finalizedStatements.push(c.env.DB.prepare(
+      `INSERT INTO ai_job_claim
+         (project_id, source_generation, debounce_token, status, attempts)
+       SELECT ?, ?, ?, 'scheduled', 0
+        WHERE EXISTS (
+          SELECT 1 FROM project
+           WHERE id=? AND status_customer='draft' AND ai_generation=?
+             AND quote_edit_version=? AND quote_mutation_token=?
+        )
+          AND EXISTS (
+            SELECT 1 FROM file_asset
+             WHERE id=? AND project_id=? AND virus_status='clean'
+          )`,
+    ).bind(
+      project.id, aiJob.generation, aiJob.debounceToken,
+      project.id, aiJob.generation, finalizedVersion, finalizeToken,
+      id, project.id,
+    ));
+  }
+  const finalizeReleaseIndex = finalizedStatements.length;
+  finalizedStatements.push(c.env.DB.prepare(
+      `UPDATE project SET quote_mutation_token=NULL, updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND ai_generation=?
+          AND quote_edit_version=?
+          AND quote_mutation_token=?`,
+    ).bind(
+      project.id, aiJob?.generation ?? finalizeState.ai_generation,
+      finalizedVersion, finalizeToken,
+    ));
+  const finalized = await c.env.DB.batch(finalizedStatements);
+  if (Number(finalized[0]?.meta?.changes ?? 0) !== 1 ||
+      Number(finalized[1]?.meta?.changes ?? 0) !== 1 ||
+      Number(finalized[2]?.meta?.changes ?? 0) !== 1 ||
+      (aiJobIndex >= 0 && Number(finalized[aiJobIndex]?.meta?.changes ?? 0) !== 1) ||
+      Number(finalized[finalizeReleaseIndex]?.meta?.changes ?? 0) !== 1) {
+    await c.env.FILES.delete(r2Key).catch(() => {});
+    await rejectUploadReservation(c.env, id, project.id);
+    return c.json({ error: "project_changed_retry" }, 409);
+  }
 
   // LLM strategy §6 (owner decisions 2026-07-25): extraction runs AUTOMATICALLY on
   // every clean upload — the deterministic layer above only GATES (type, malware,
@@ -88,17 +314,7 @@ files.post("/files/upload", async (c) => {
   // assumption-based prices appear and mutate seconds later. Each upload stamps
   // a fresh token; only the sleeper still holding the LATEST token runs, so a
   // burst of N files costs one extraction pass and lines are born report-backed.
-  if (autoExtractionEnabled(c.env) && user) {
-    const debounceKey = `aidebounce:${project.id}`;
-    const token = uuid();
-    await c.env.KV.put(debounceKey, token, { expirationTtl: 60 });
-    c.executionCtx.waitUntil((async () => {
-      await new Promise((r) => setTimeout(r, 10_000));
-      if ((await c.env.KV.get(debounceKey)) !== token) return; // a later upload owns the run
-      await c.env.KV.delete(debounceKey).catch(() => {});
-      await runAiExtraction(c.env, project.id);
-    })().catch(() => { /* degradation, never a blocker */ }));
-  }
+  if (aiJob) await dispatchAiExtractionJob(c.env, c.executionCtx, aiJob, 10);
 
   return c.json({ file: { id, filename: file.name, kind, size: file.size, status: "clean" } });
 });
@@ -128,6 +344,21 @@ files.delete("/files/:id", async (c) => {
   const p = await ownedProject(c.env, c.req.raw, fa.project_id);
   if (!p) return c.json({ error: "not_found" }, 404);
   if ((p as { status_customer?: string }).status_customer !== "draft") return c.json({ error: "locked" }, 409);
+  const user = await resolveUser(c.env, c.req.raw);
+  const shouldRecompute = autoExtractionEnabled(c.env) && !!user;
+  const generationRow = await c.env.DB.prepare(
+    `SELECT ai_generation, quote_edit_version FROM project
+      WHERE id=? AND status_customer='draft' AND quote_mutation_token IS NULL`,
+  ).bind(fa.project_id).first<{ ai_generation: number; quote_edit_version: number }>();
+  if (!generationRow) return c.json({ error: "locked" }, 409);
+  const job: AiExtractionJob | null = shouldRecompute ? {
+    projectId: fa.project_id,
+    generation: generationRow.ai_generation + 1,
+    debounceToken: uuid(),
+  } : null;
+  const expectedGeneration = job?.generation ?? generationRow.ai_generation;
+  const nextQuoteVersion = generationRow.quote_edit_version + 1;
+  const mutationToken = uuid();
 
   // Lines this file sourced: schedule-origin draft lines reached through the
   // file's parse jobs. Manual lines are never touched.
@@ -137,32 +368,116 @@ files.delete("/files/:id", async (c) => {
        JOIN schedule_parse_job j ON j.id = pl.job_id
       WHERE j.file_asset_id = ? AND q.project_id = ? AND q.revision_id IS NULL AND q.origin = 'schedule'`,
   ).bind(fa.id, fa.project_id).all<{ id: string; edited_fields: string | null }>();
+  const affected = new Map<string, { id: string; edited_fields: string | null }>();
+  for (const row of sourced ?? []) affected.set(row.id, row);
 
   let removedLines = 0, keptForReview = 0;
-  const stmts: D1PreparedStatement[] = [];
-  for (const r of sourced ?? []) {
+  const mutationGuard = `EXISTS (
+    SELECT 1 FROM project
+     WHERE id=? AND status_customer='draft' AND ai_generation=?
+       AND quote_edit_version=? AND quote_mutation_token=?
+  )`;
+  const stmts: D1PreparedStatement[] = [
+    c.env.DB.prepare(
+      `UPDATE project SET ai_generation=?, quote_edit_version=?,
+          quote_mutation_token=?, updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND ai_generation=?
+          AND quote_edit_version=? AND quote_mutation_token IS NULL
+          AND EXISTS (
+            SELECT 1 FROM file_asset WHERE id=? AND project_id=?
+          )`,
+    ).bind(
+      expectedGeneration, nextQuoteVersion, mutationToken, fa.project_id,
+      generationRow.ai_generation, generationRow.quote_edit_version,
+      fa.id, fa.project_id,
+    ),
+  ];
+  let jobInsertIndex = -1;
+  if (job) {
+    jobInsertIndex = stmts.length;
+    stmts.push(c.env.DB.prepare(
+      `INSERT INTO ai_job_claim
+         (project_id, source_generation, debounce_token, status, attempts)
+       SELECT ?, ?, ?, 'scheduled', 0
+        WHERE ${mutationGuard}`,
+    ).bind(
+      fa.project_id, job.generation, job.debounceToken,
+      fa.project_id, expectedGeneration, nextQuoteVersion, mutationToken,
+    ));
+  }
+  for (const r of affected.values()) {
     const edited = (() => { try { const v = JSON.parse(r.edited_fields || "[]"); return Array.isArray(v) && v.length > 0; } catch { return false; } })();
     if (edited) {
       stmts.push(c.env.DB.prepare(
         `UPDATE quote_line SET status='technical_review',
-           review_json = json_patch(COALESCE(review_json,'{}'), '{"noLongerInDocuments":true}') WHERE id = ?`,
-      ).bind(r.id));
+           review_json = json_patch(COALESCE(review_json,'{}'), ?)
+         WHERE id = ? AND EXISTS (
+            SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+              AND ai_generation=? AND quote_edit_version=?
+              AND quote_mutation_token=?
+          )`,
+      ).bind(JSON.stringify({
+        noLongerInDocuments: "The source documents no longer contain this edited item; AMJ will review it.",
+      }), r.id, fa.project_id, expectedGeneration, nextQuoteVersion, mutationToken));
       keptForReview++;
     } else {
-      stmts.push(c.env.DB.prepare("DELETE FROM quote_line WHERE id = ?").bind(r.id));
+      stmts.push(c.env.DB.prepare(
+         `DELETE FROM quote_line WHERE id = ? AND EXISTS (
+           SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+             AND ai_generation=? AND quote_edit_version=?
+             AND quote_mutation_token=?
+          )`,
+      ).bind(r.id, fa.project_id, expectedGeneration, nextQuoteVersion, mutationToken));
       removedLines++;
     }
   }
-  stmts.push(c.env.DB.prepare("DELETE FROM file_asset WHERE id = ?").bind(fa.id));
-  await c.env.DB.batch(stmts);
+  // Keep the currently published AI cart/model until a replacement generation
+  // succeeds. Its generation-aware publisher atomically reconciles removed and
+  // retained openings; a queue/provider failure therefore cannot erase the cart.
+  const fileDeleteIndex = stmts.length;
+  stmts.push(c.env.DB.prepare(
+    `DELETE FROM file_asset WHERE id=? AND project_id=? AND ${mutationGuard}`,
+  ).bind(
+    fa.id, fa.project_id, fa.project_id, expectedGeneration,
+    nextQuoteVersion, mutationToken,
+  ));
+  stmts.push(c.env.DB.prepare(
+    `UPDATE upload_reservation
+        SET status=CASE WHEN status='reserved' THEN 'rejected' ELSE status END,
+            completed_at=COALESCE(completed_at, datetime('now'))
+      WHERE id=? AND project_id=? AND ${mutationGuard}`,
+  ).bind(
+    fa.id, fa.project_id, fa.project_id, expectedGeneration,
+    nextQuoteVersion, mutationToken,
+  ));
+  const releaseIndex = stmts.length;
+  stmts.push(c.env.DB.prepare(
+    `UPDATE project SET quote_mutation_token=NULL, updated_at=datetime('now')
+      WHERE id=? AND status_customer='draft' AND ai_generation=?
+        AND quote_edit_version=? AND quote_mutation_token=?`,
+  ).bind(
+    fa.project_id, expectedGeneration, nextQuoteVersion, mutationToken,
+  ));
+  const committed = await c.env.DB.batch(stmts);
+  if (Number(committed[0]?.meta?.changes ?? 0) !== 1 ||
+      (jobInsertIndex >= 0 && Number(committed[jobInsertIndex]?.meta?.changes ?? 0) !== 1)) {
+    return c.json({ error: "project_changed_retry" }, 409);
+  }
+  if (Number(committed[fileDeleteIndex]?.meta?.changes ?? 0) !== 1) {
+    return c.json({ error: "project_changed_retry" }, 409);
+  }
+  if (Number(committed[releaseIndex]?.meta?.changes ?? 0) !== 1) {
+    return c.json({ error: "project_changed_retry" }, 409);
+  }
   await c.env.FILES.delete(fa.r2_key).catch(() => { /* row is the source of truth; orphaned bytes are unreachable */ });
+  await Promise.all([
+    c.env.FILES.delete(derivedKeys(fa.project_id, fa.id).markdown),
+    purgeR2Prefix(c.env.FILES, `projects/${fa.project_id.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80)}/runs/`),
+  ]).catch(() => { /* DB is authoritative; lifecycle cleanup can retry orphaned derivatives */ });
 
   // The remaining documents re-establish the project's evidence (registered
   // users; same auto path as upload).
-  const user = await resolveUser(c.env, c.req.raw);
-  if (autoExtractionEnabled(c.env) && user) {
-    c.executionCtx.waitUntil(runAiExtraction(c.env, fa.project_id).catch(() => { /* degradation, never a blocker */ }));
-  }
+  if (job) await dispatchAiExtractionJob(c.env, c.executionCtx, job, 0);
   return c.json({ ok: true, removedLines, keptForReview });
 });
 

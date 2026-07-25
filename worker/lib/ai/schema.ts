@@ -147,6 +147,7 @@ export interface OpeningV1 {
   elementType: "window" | "door";
   widthMm: number | null;
   heightMm: number | null;
+  quantity: number;
   areaM2: number | null;
   configuration: {
     familyRequested: string | null;

@@ -17,11 +17,13 @@ import { runStage } from "./stage";
 import { ingestProjectFiles, type IngestedDoc } from "./ingest";
 import { scheduleExtractor, type ScheduleLineV1 } from "../estimator/skills/schedule";
 import { energyReportExtractor, type EnergyExtraction } from "../estimator/skills/energy";
+import { planContextExtractor, type PlanContextV1 } from "../estimator/skills/plan";
 import { mapEnergyToOpenings } from "./energyMap";
 import { resolveDefaultEnvelope, defaultRequirement, ARCHETYPE_REGISTRY_VERSION, type EnvelopeArchetype } from "./archetypes";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
 import { runProjectEstimate } from "../estimator/estimate";
+import { sha256hex } from "./hash";
 
 // ── Pure: §9.3 parent/child tag decomposition ────────────────────────────────
 // W04A/W04B are thermal children of architectural parent W04; a bare W04 or W12
@@ -85,6 +87,7 @@ export function linesToBuildingModel(projectId: string, merged: MergeResult, doc
     level: null, roomId: null, wallOrientation: null,
     elementType: l.elementType ?? (l.tag.toUpperCase().startsWith("D") ? "door" : "window"),
     widthMm: l.widthMm, heightMm: l.heightMm,
+    quantity: Math.max(1, Math.floor(l.qty ?? 1)),
     areaM2: l.widthMm != null && l.heightMm != null ? Math.round((l.widthMm * l.heightMm) / 1e4) / 100 : null,
     configuration: {
       familyRequested: l.typeText, panelCount: null, operablePanelCount: null,
@@ -114,8 +117,8 @@ export function linesToBuildingModel(projectId: string, merged: MergeResult, doc
     inputMode: "schedule_only",
     jurisdiction: {
       // §3.1 minimum context — a DEFAULT, recorded as such below, never observed.
-      country: "AU", state: "VIC", postcode: null, nccProfile: null,
-      nathersClimateZone: null, buildingClass: "1a", confidence: null,
+      country: "AU", state: null, postcode: null, nccProfile: null,
+      nathersClimateZone: null, buildingClass: null, confidence: null,
     },
     building: { storeys: null, conditionedFloorAreaM2: null, totalFloorAreaM2: null, exposure: null, northRotationDeg: null, balRating: null },
     envelope: { walls: [], floors: [], ceilings: [], roofs: [], airTightness: null, defaultArchetypeId: null },
@@ -128,9 +131,90 @@ export function linesToBuildingModel(projectId: string, merged: MergeResult, doc
       ...docs.filter((d) => d.qualityIssues.length).map((d) => ({
         fact: `document_quality:${d.filename}`, origin: "unknown" as const, note: d.qualityIssues.join(","),
       })),
-    ],
+    ].filter((a) => !a.fact.startsWith("location=Melbourne") && a.fact !== "new_build_current_energy_requirements"),
     conflicts: merged.conflicts,
   };
+}
+
+export function applyPlanContext(
+  model: BuildingModelV1,
+  sources: { fileId: string; context: PlanContextV1 }[],
+): void {
+  if (!sources.length) return;
+  model.inputMode = "plans_no_report";
+  const roomIds = new Set(model.rooms.map((r) => r.roomId));
+  for (const { fileId, context } of sources) {
+    model.jurisdiction.state ??= context.jurisdiction.state;
+    model.jurisdiction.postcode ??= context.jurisdiction.postcode;
+    model.jurisdiction.buildingClass ??= context.jurisdiction.buildingClass;
+    model.building.storeys ??= context.storeys;
+    model.building.totalFloorAreaM2 ??= context.totalFloorAreaM2;
+    model.building.conditionedFloorAreaM2 ??= context.conditionedFloorAreaM2;
+    model.building.northRotationDeg ??= context.northRotationDeg;
+    for (const room of context.rooms) {
+      if (roomIds.has(room.id)) continue;
+      roomIds.add(room.id);
+      model.rooms.push({ roomId: room.id, name: room.name, level: room.level, areaM2: room.areaM2, zoneType: room.zoneType });
+    }
+    const byRef = new Map(context.openings.map((opening) => [opening.ref, opening]));
+    for (const opening of model.openings) {
+      const mapped = byRef.get(opening.externalRef);
+      if (!mapped) continue;
+      opening.roomId ??= mapped.roomId;
+      opening.wallOrientation ??= mapped.orientation as OpeningV1["wallOrientation"];
+      if (mapped.horizontalProjectionMm != null) {
+        opening.shading = {
+          horizontalProjectionMm: mapped.horizontalProjectionMm,
+          verticalFeature: null,
+          source: fileId,
+        };
+      }
+      opening.evidence.push({
+        entityPath: `/openings/${opening.externalRef}/building_context`,
+        fileId,
+        pageNo: null,
+        sheetRef: null,
+        region: null,
+        extractedText: [
+          mapped.roomId ? `room ${mapped.roomId}` : null,
+          mapped.orientation ? `orientation ${mapped.orientation}` : null,
+          mapped.horizontalProjectionMm != null ? `projection ${mapped.horizontalProjectionMm}mm` : null,
+        ].filter(Boolean).join(" · "),
+        origin: "geometry_derived",
+        confidence: null,
+      });
+    }
+    for (const issue of context.issues) {
+      model.assumptions.push({ fact: `plan_context_issue:${issue}`, origin: "unknown", note: fileId });
+    }
+  }
+}
+
+function thermalContextFor(model: BuildingModelV1, opening: OpeningV1) {
+  const room = model.rooms.find((r) => r.roomId === opening.roomId);
+  const openingAreaM2 = opening.areaM2;
+  const glazingToRoomFloorRatio = openingAreaM2 != null && room?.areaM2
+    ? Math.round((openingAreaM2 / room.areaM2) * 1000) / 1000
+    : null;
+  let risk = 0;
+  if (openingAreaM2 != null && openingAreaM2 >= 4) risk += 1;
+  if (glazingToRoomFloorRatio != null && glazingToRoomFloorRatio >= 0.3) risk += 2;
+  if (opening.wallOrientation === "E" || opening.wallOrientation === "W") risk += 1;
+  if (opening.shading?.horizontalProjectionMm === 0) risk += 1;
+  if (opening.scheduleRequirements.doubleGlazed === true) risk += 2;
+  const glass = (opening.scheduleRequirements.glassDescription || "").toLowerCase();
+  if (glass.includes("low-e") || glass.includes("low e")) risk += 2;
+  return {
+    inputMode: model.inputMode,
+    requirementBasis: opening.thermalRequirement?.basis ?? (model.inputMode === "plans_no_report" ? "plan_derived" : null),
+    roomAreaM2: room?.areaM2 ?? null,
+    totalFloorAreaM2: model.building.totalFloorAreaM2,
+    openingAreaM2,
+    glazingToRoomFloorRatio,
+    orientation: opening.wallOrientation,
+    shadingKnown: opening.shading != null,
+    riskBand: risk >= 4 ? "high" : risk >= 2 ? "medium" : "low",
+  } as const;
 }
 
 // ── Pure: Path 3 default-envelope application (§10.1, Phase 4) ───────────────
@@ -169,12 +253,32 @@ export interface AiExtractionSummary {
   energyApplied: number;
   buildingModelId: string | null;
   estimate: { openings: number; selected: number } | null;
+  cartApplied?: number;
   stageWarnings: string[];
 }
 
-export async function runAiExtraction(env: Env, projectId: string): Promise<AiExtractionSummary> {
-  const run = await createAiRun(env, { projectId, inputMode: "schedule_only" });
+export async function runAiExtraction(
+  env: Env,
+  projectId: string,
+  opts: { sourceGeneration?: number } = {},
+): Promise<AiExtractionSummary> {
+  const manifest = await env.DB.prepare(
+    "SELECT id, checksum, filename FROM file_asset WHERE project_id = ? AND virus_status = 'clean' ORDER BY id",
+  ).bind(projectId).all<{ id: string; checksum: string | null; filename: string }>();
+  const sourceManifestHash = await sha256hex(
+    new TextEncoder().encode(JSON.stringify(manifest.results ?? [])),
+  );
+  const generationRow = await env.DB.prepare("SELECT ai_generation FROM project WHERE id = ?")
+    .bind(projectId).first<{ ai_generation: number }>();
+  const sourceGeneration = opts.sourceGeneration ?? generationRow?.ai_generation ?? 0;
+  const run = await createAiRun(env, {
+    projectId,
+    inputMode: "schedule_only",
+    sourceGeneration,
+    sourceManifestHash,
+  });
   const warnings: string[] = [];
+  try {
 
   const docs = await ingestProjectFiles(env, projectId);
   const usable = docs.filter((d) => !d.rejected && (d.markdown || d.imageDataUrl));
@@ -186,8 +290,11 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
 
   // Route documents by classification (§7.4): energy reports feed the energy
   // skill (Path 1, authoritative); everything else feeds schedule extraction.
-  const energyDocs = usable.filter((d) => d.docType === "energy_report");
-  const scheduleDocs = usable.filter((d) => d.docType !== "energy_report");
+  // ingestProjectFiles is oldest-first. Treat the newest successful report as
+  // the active revision; older reports remain evidence and are called out.
+  const energyDocs = usable.filter((d) => d.docType === "energy_report").reverse();
+  const planDocs = usable.filter((d) => d.docType === "plans");
+  const scheduleDocs = usable.filter((d) => d.docType === "schedule" || d.docType === "supporting");
 
   // Schedule extraction per document (idempotent per content+prompt+model).
   const perDoc: { fileId: string; lines: ScheduleLineV1[] }[] = [];
@@ -204,6 +311,17 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
     });
     warnings.push(...res.warnings);
     if (res.ok && res.data) perDoc.push({ fileId: doc.fileId, lines: res.data.lines });
+    else anyFailed = true;
+  }
+
+  const planContexts: { fileId: string; context: PlanContextV1 }[] = [];
+  for (const doc of planDocs) {
+    const res = await runStage(env, {
+      aiRunId: run.id, projectId, skill: planContextExtractor,
+      input: { text: doc.markdown, imageDataUrl: doc.imageDataUrl, docName: doc.filename, checksum: doc.checksum },
+    });
+    warnings.push(...res.warnings);
+    if (res.ok && res.data) planContexts.push({ fileId: doc.fileId, context: res.data });
     else anyFailed = true;
   }
 
@@ -233,6 +351,7 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
   // Merge, model, persist the canonical records.
   const merged = mergeScheduleLines(perDoc);
   const model = linesToBuildingModel(projectId, merged, docs);
+  applyPlanContext(model, planContexts);
 
   // Path 1 (§10.1): explicit report requirements are AUTHORITATIVE. Map them
   // onto the opening graph; represent mismatches, surface unmatched constraints.
@@ -260,7 +379,7 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
       });
     }
     model.conflicts.push(...mapped.conflicts);
-    model.inputMode = "plans_plus_energy_report";
+    model.inputMode = planContexts.length ? "plans_plus_energy_report" : "schedule_only";
     model.energyAssessment = {
       certificateRef: energy.extraction.certificateRef, starRating: energy.extraction.starRating,
       heatingLoad: null, coolingLoad: null, precedenceStatement: energy.extraction.precedenceStatement,
@@ -275,7 +394,7 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
 
   // Path 3 (Phase 4): conservative default band for openings with no explicit
   // requirement; snapshotted immutably into requirement_json below.
-  const archetype = applyDefaultEnvelope(model);
+  const archetype = null;
 
   const buildingModelId = uuid();
   const stmts: D1PreparedStatement[] = [
@@ -323,13 +442,30 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
   // REFRESH known ones — never skip, and never clobber a known value with null
   // (COALESCE keeps the best evidence seen so far).
   const { results: existingRows } = await env.DB
-    .prepare("SELECT id, external_ref, edited_fields FROM opening_instance WHERE project_id = ? AND external_ref IS NOT NULL")
-    .bind(projectId).all<{ id: string; external_ref: string; edited_fields: string | null }>();
+    .prepare("SELECT id, external_ref, edited_fields, requirements_json FROM opening_instance WHERE project_id = ? AND external_ref IS NOT NULL")
+    .bind(projectId).all<{ id: string; external_ref: string; edited_fields: string | null; requirements_json: string | null }>();
   const byRef = new Map((existingRows ?? []).map((r) => [r.external_ref, r]));
+  const { results: quoteRows } = await env.DB.prepare(
+    `SELECT id, external_ref, qty, options_json
+       FROM quote_line
+      WHERE project_id = ? AND revision_id IS NULL AND external_ref IS NOT NULL`,
+  ).bind(projectId).all<{ id: string; external_ref: string; qty: number; options_json: string | null }>();
+  const quoteByRef = new Map((quoteRows ?? []).map((row) => [row.external_ref, row]));
   const upserts: D1PreparedStatement[] = [];
   for (const o of model.openings) {
     if (o.externalRef.startsWith("UNTAGGED")) continue;
     const existing = byRef.get(o.externalRef);
+    const quoteLine = quoteByRef.get(o.externalRef);
+    const scheduleOptions = {
+      ...safeObject(quoteLine?.options_json),
+      glassDescription: o.scheduleRequirements.glassDescription,
+      doubleGlazed: o.scheduleRequirements.doubleGlazed,
+      colour: o.scheduleRequirements.colour,
+      flyscreen: o.scheduleRequirements.flyscreen,
+    };
+    const context = thermalContextFor(model, o);
+    const requirementBasis = o.thermalRequirement?.basis ??
+      (model.inputMode === "plans_no_report" ? "plan_derived" : "default_envelope");
     if (existing) {
       // HUMAN-EDIT GUARD: a field a human set is never overwritten by a document
       // re-run — the human is the highest-precedence source. Locked fields have
@@ -342,37 +478,90 @@ export async function runAiExtraction(env: Env, projectId: string): Promise<AiEx
            group_code = COALESCE(?, group_code), family = COALESCE(?, family),
            operation_type = COALESCE(?, operation_type),
            width_mm = COALESCE(?, width_mm), height_mm = COALESCE(?, height_mm),
-           requirements_json = COALESCE(?, requirements_json)
-         WHERE id = ?`,
+           requirements_json = ?,
+           quote_line_id = COALESCE(?, quote_line_id), qty = COALESCE(?, qty),
+           options_json = COALESCE(?, options_json), context_json = ?,
+           requirement_basis = ?, source_generation = ?
+         WHERE id = ?
+           AND EXISTS (
+             SELECT 1 FROM project p
+              WHERE p.id=opening_instance.project_id AND p.ai_generation=?
+                AND p.status_customer='draft'
+           )`,
       ).bind(unless("group_code", o.parentRef), unless("family", o.elementType === "door" ? "doors" : "windows"),
         unless("operation_type", operationFrom(o.configuration.familyRequested)),
         unless("width_mm", o.widthMm), unless("height_mm", o.heightMm),
-        unless("requirements_json", reqJson(o)), existing.id));
+        locked.includes("requirements_json") ? existing.requirements_json : reqJson(o), quoteLine?.id ?? null,
+        unless("qty", quoteLine?.qty ?? o.quantity), unless("options_json", JSON.stringify(scheduleOptions)),
+        JSON.stringify(context), requirementBasis, sourceGeneration, existing.id, sourceGeneration));
     } else {
       upserts.push(env.DB.prepare(
-        `INSERT INTO opening_instance (id, project_id, external_ref, group_code, family, operation_type, width_mm, height_mm, requirements_json, status)
-         VALUES (?,?,?,?,?,?,?,?,?, 'extracted')`,
+        `INSERT INTO opening_instance
+           (id, project_id, external_ref, group_code, family, operation_type, width_mm, height_mm,
+            requirements_json, quote_line_id, qty, options_json, context_json, requirement_basis,
+            source_generation, status)
+         SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'extracted'
+           WHERE EXISTS (
+             SELECT 1 FROM project
+              WHERE id=? AND ai_generation=? AND status_customer='draft'
+           )`,
       ).bind(uuid(), projectId, o.externalRef, o.parentRef, o.elementType === "door" ? "doors" : "windows",
-        operationFrom(o.configuration.familyRequested), o.widthMm, o.heightMm, reqJson(o)));
+        operationFrom(o.configuration.familyRequested), o.widthMm, o.heightMm, reqJson(o),
+        quoteLine?.id ?? null, quoteLine?.qty ?? o.quantity, JSON.stringify(scheduleOptions),
+        JSON.stringify(context), requirementBasis, sourceGeneration, projectId, sourceGeneration));
     }
   }
   if (upserts.length) await env.DB.batch(upserts);
-  const estimate = await runProjectEstimate(env, projectId).catch(() => null);
+  const estimate = await runProjectEstimate(env, projectId, {
+    aiRunId: run.id,
+    buildingModelId,
+    sourceGeneration,
+    sourceManifestHash,
+  });
 
   const status = anyFailed ? "partial" : "completed";
   const summary: AiExtractionSummary = {
     runId: run.id, status, documents: docs.length,
     extractedLines: merged.lines.length, conflicts: model.conflicts.length, energyApplied,
-    buildingModelId, estimate: estimate ? { openings: estimate.openings, selected: estimate.selected } : null,
+    buildingModelId, estimate: { openings: estimate.openings, selected: estimate.selected },
+    cartApplied: estimate.appliedToCart,
     stageWarnings: warnings,
   };
   await completeAiRun(env, run.id, { status, inputMode: model.inputMode, summary });
   return summary;
+  } catch {
+    const summary: AiExtractionSummary = {
+      runId: run.id,
+      status: "failed",
+      documents: 0,
+      extractedLines: 0,
+      conflicts: 0,
+      energyApplied: 0,
+      buildingModelId: null,
+      estimate: null,
+      stageWarnings: [...warnings, "pipeline_failed"],
+    };
+    await completeAiRun(env, run.id, {
+      status: "failed",
+      errorCode: "MODEL_OUTPUT_INCONSISTENT",
+      summary,
+    }).catch(() => {});
+    return summary;
+  }
 }
 
 function avgConfidence(openings: OpeningV1[]): number | null {
   const vals = openings.map((o) => o.confidence.dimensions).filter((v) => typeof v === "number");
   return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
+}
+
+function safeObject(value: string | null | undefined): Record<string, unknown> {
+  try {
+    const parsed = value ? JSON.parse(value) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 // Raw schedule type text → the catalogue operation vocabulary (same mapping the

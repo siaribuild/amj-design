@@ -1332,10 +1332,34 @@ export default function App() {
     // Assign a suggested code when none is supplied. Codes are derived from `prev`
     // (not the render snapshot) so a batch import numbers items sequentially.
     add: (i) => { const id = Date.now() + Math.floor(Math.random() * 1000); setQuoteItems(prev => [...prev, { ...i, id, code: i.code?.trim() ? i.code.trim() : suggestCode(prev, i.productSlug) }]); return id; },
-    update: (id, patch) => setQuoteItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it)),
-    remove: (id) => setQuoteItems(prev => prev.filter(it => it.id !== id)),
-    // Duplicating keeps the item but gives it a fresh suggested code to confirm.
-    copy: (id) => { const src = quoteItems.find(x => x.id === id); if (!src) return undefined; const nid = Date.now() + Math.floor(Math.random() * 1000); setQuoteItems(prev => [...prev, { ...src, id: nid, serverId: undefined, code: suggestCode(prev, src.productSlug) }]); return nid; },
+    update: (id, patch) => setQuoteItems(prev => prev.map((it) => {
+      if (it.id !== id) return it;
+      const priceSensitive = ["productSlug", "options", "width", "height", "qty"]
+        .some((key) => Object.prototype.hasOwnProperty.call(patch, key));
+      return {
+        ...it,
+        ...patch,
+        lineTotal: (it.origin === "ai" || it.aiPriced) && priceSensitive ? null : it.lineTotal,
+      };
+    })),
+    remove: (id) => setQuoteItems(prev => {
+      const removed = prev.find(it => it.id === id);
+      if (removed?.serverId) removedLineIdsRef.current.add(removed.serverId);
+      return prev.filter(it => it.id !== id);
+    }),
+    // A duplicate is a new manual cart line. It must never inherit the source
+    // line's immutable AI provenance or private authoritative price.
+    copy: (id) => {
+      const src = quoteItems.find(x => x.id === id);
+      if (!src) return undefined;
+      const nid = Date.now() + Math.floor(Math.random() * 1000);
+      setQuoteItems(prev => [...prev, {
+        ...src, id: nid, serverId: undefined, code: suggestCode(prev, src.productSlug),
+        origin: "manual", aiPriced: false, lineTotal: undefined, status: "Needs review",
+        review: { options: "Confirm the copied item's configuration before pricing." },
+      }]);
+      return nid;
+    },
     addFiles: (f) => setQuoteFiles(prev => [...prev, ...f]),
     removeFile: (id) => setQuoteFiles(prev => prev.filter(f => f.id !== id)),
     // Replace the whole line set (after a schedule parse re-hydrates from server).
@@ -1356,7 +1380,7 @@ export default function App() {
         code: it.code, productSlug: it.productSlug, location: it.location,
         measuredBy: it.measuredBy, width: it.width, height: it.height,
         options: it.options, qty: it.qty, status: it.status,
-        origin: it.origin, review: it.review ?? null,
+        origin: it.origin, aiPriced: it.aiPriced, review: it.review ?? null, lineTotal: it.lineTotal,
       })));
       setQuoteFiles((r.files ?? []).map((f) => ({ id: f.id, name: f.filename, kind: f.kind, status: "Uploaded" as const, docType: f.doc_type ?? null })));
     },
@@ -1367,6 +1391,7 @@ export default function App() {
   // sets on first save (see docs/customer-backend-scaffold.md).
   const hydratedRef = useRef(false);
   const skipNextSaveRef = useRef(false);
+  const removedLineIdsRef = useRef(new Set<string>());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Restore the session on load (returning registered users). `authLoading`
@@ -1400,7 +1425,7 @@ export default function App() {
             code: it.code, productSlug: it.productSlug, location: it.location,
             measuredBy: it.measuredBy, width: it.width, height: it.height,
             options: it.options, qty: it.qty, status: it.status,
-            origin: it.origin, review: it.review ?? null,
+            origin: it.origin, aiPriced: it.aiPriced, review: it.review ?? null, lineTotal: it.lineTotal,
           })));
         }
         // Surface the attached schedule file (integral to the quote/order).
@@ -1418,21 +1443,36 @@ export default function App() {
     if (skipNextSaveRef.current) { skipNextSaveRef.current = false; return; }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
+      const sentItems = quoteItems;
       const sentIds = quoteItems.map(it => it.id); // local ids captured at send time
-      saveLines(quoteItems, projectTitle).then(r => {
+      const removedIds = [...removedLineIdsRef.current];
+      saveLines(quoteItems, projectTitle, removedIds).then(r => {
+        removedIds.forEach((id) => removedLineIdsRef.current.delete(id));
         if (r.project) setProjectId(r.project.id);
-        // Attach the stable server ids the save just assigned, so a follow-up edit
-        // UPDATEs the same rows instead of delete+reinserting them (keeps provenance
-        // and ids stable for manual lines too). Matched by the local id, not index,
-        // so an edit landing mid-flight can't misassign. Guarded to not re-save.
+        // Hydrate server-owned provenance, exact AI total and review state. Do not
+        // overwrite an edit that landed while the request was in flight.
         if (Array.isArray(r.items) && r.items.length === sentIds.length) {
           setQuoteItems(prev => {
             let changed = false;
             const next = prev.map(it => {
               const idx = sentIds.indexOf(it.id);
-              const sid = idx >= 0 ? r.items[idx]?.id : undefined;
-              if (sid && it.serverId !== sid) { changed = true; return { ...it, serverId: sid }; }
-              return it;
+              const server = idx >= 0 ? r.items[idx] : undefined;
+              const sent = idx >= 0 ? sentItems[idx] : undefined;
+              if (!server || !sent) return it;
+              const unchanged = JSON.stringify([
+                it.code, it.productSlug, it.location, it.measuredBy, it.width,
+                it.height, it.options, it.qty,
+              ]) === JSON.stringify([
+                sent.code, sent.productSlug, sent.location, sent.measuredBy,
+                sent.width, sent.height, sent.options, sent.qty,
+              ]);
+              if (!unchanged) return it;
+              changed = true;
+              return {
+                ...it, serverId: server.id, origin: server.origin, aiPriced: server.aiPriced,
+                lineTotal: server.lineTotal, status: server.status,
+                review: server.review ?? null,
+              };
             });
             if (changed) skipNextSaveRef.current = true;
             return changed ? next : prev;
@@ -1451,7 +1491,9 @@ export default function App() {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     let id = projectId;
     try {
-      const saved = await saveLines(quoteItems, projectTitle);
+      const removedIds = [...removedLineIdsRef.current];
+      const saved = await saveLines(quoteItems, projectTitle, removedIds);
+      removedIds.forEach((removedId) => removedLineIdsRef.current.delete(removedId));
       if (saved.project) { id = saved.project.id; setProjectId(saved.project.id); }
     } catch { return { ok: false, error: "network" }; }
     if (!id) return { ok: false, error: "no_project" };

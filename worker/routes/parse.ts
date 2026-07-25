@@ -10,6 +10,7 @@ import {
   runScheduleParse, parseQuota, draftScheduleState, getJob, deriveSubject,
   type ParseMode, type ParseFile,
 } from "../lib/parse";
+import { uuid } from "../lib/util";
 
 export const parse = new Hono<{ Bindings: Env }>();
 
@@ -32,6 +33,12 @@ parse.post("/projects/current/parse", async (c) => {
   if (!fileId) return c.json({ error: "no_file" }, 400);
 
   const user = await resolveUser(c.env, c.req.raw);
+  if (user) {
+    // Registered projects are handled by the durable AI proposal workflow.
+    // Keeping this endpoint anonymous-only prevents the two estimators from
+    // racing to write different configurations into the same cart.
+    return c.json({ error: "ai_managed" }, 409);
+  }
   const { project, cookie } = await resolveOrCreateCurrentProject(c.env, c.req.raw);
   const { token } = await resolveCurrentProject(c.env, c.req.raw);
   // Quota subject is a keyed hash of the identity — never the raw claim cookie.
@@ -87,6 +94,7 @@ parse.post("/projects/current/parse", async (c) => {
     // The pipeline reads the bytes once and hashes them there — no extra R2 GET.
     outcome = await runScheduleParse(c.env, {
       project, file, subject, userId: user?.id ?? null, mode: effectiveMode,
+      previousScheduleFiles: state.scheduleFiles,
     });
 
     // 1-schedule-per-quote swap — ONLY after a SUCCESSFUL parse (still inside the
@@ -96,12 +104,9 @@ parse.post("/projects/current/parse", async (c) => {
     // mislabeled itself 'schedule' — then failed no_schedule_found anyway. A file
     // that doesn't parse as a schedule must never displace one that did.
     if (outcome.status !== "failed") {
-      for (const f of state.scheduleFiles) {
-        if (f.id === fileId) continue;
-        await c.env.FILES.delete(f.r2_key).catch(() => {});
-        await c.env.DB.prepare("DELETE FROM file_asset WHERE id = ?").bind(f.id).run();
+      for (const r2Key of outcome.deletedScheduleKeys ?? []) {
+        await c.env.FILES.delete(r2Key).catch(() => {});
       }
-      await c.env.DB.prepare("UPDATE file_asset SET kind = 'schedule' WHERE id = ?").bind(fileId).run();
     }
   } finally {
     // Token-checked release: only delete the lease if it is still ours.
@@ -111,9 +116,11 @@ parse.post("/projects/current/parse", async (c) => {
   const quotaAfter = await parseQuota(c.env, subject, user?.id ?? null);
   if (cookie) c.header("Set-Cookie", cookie);
   if (outcome.status === "failed") {
-    return c.json({ error: parseFailCode(outcome.error), job: { id: outcome.jobId, status: "failed" } }, 422);
+    const status = outcome.error === "project_changed" ? 409 : 422;
+    return c.json({ error: parseFailCode(outcome.error), job: { id: outcome.jobId, status: "failed" } }, status);
   }
-  return c.json({ job: outcome, quota: quotaAfter });
+  const { deletedScheduleKeys: _internalCleanup, ...job } = outcome;
+  return c.json({ job, quota: quotaAfter });
 });
 
 // POST /api/projects/current/clear — reset the draft to zero: delete all draft
@@ -128,12 +135,45 @@ parse.post("/projects/current/clear", async (c) => {
   // evidence that staff and any order still rely on. Refuse.
   if (project.status_customer !== "draft") return c.json({ error: "not_draft" }, 409);
   const state = await draftScheduleState(c.env, project.id);
-  for (const f of state.scheduleFiles) await c.env.FILES.delete(f.r2_key).catch(() => {});
-  await c.env.DB.batch([
-    c.env.DB.prepare("DELETE FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(project.id),
-    c.env.DB.prepare("DELETE FROM file_asset WHERE project_id = ? AND kind = 'schedule'").bind(project.id),
-    c.env.DB.prepare("UPDATE project SET updated_at = datetime('now') WHERE id = ?").bind(project.id),
+  const mutationState = await c.env.DB.prepare(
+    `SELECT quote_edit_version FROM project
+      WHERE id=? AND status_customer='draft' AND quote_mutation_token IS NULL`,
+  ).bind(project.id).first<{ quote_edit_version: number }>();
+  if (!mutationState) return c.json({ error: "project_changed_reload_required" }, 409);
+  const nextQuoteVersion = mutationState.quote_edit_version + 1;
+  const mutationToken = uuid();
+  const committed = await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE project SET quote_edit_version=?, quote_mutation_token=?,
+          updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+          AND quote_mutation_token IS NULL`,
+    ).bind(nextQuoteVersion, mutationToken, project.id, mutationState.quote_edit_version),
+    c.env.DB.prepare(
+      `DELETE FROM quote_line
+        WHERE project_id=? AND revision_id IS NULL AND EXISTS (
+          SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+            AND quote_edit_version=? AND quote_mutation_token=?
+        )`,
+    ).bind(project.id, project.id, nextQuoteVersion, mutationToken),
+    c.env.DB.prepare(
+      `DELETE FROM file_asset
+        WHERE project_id=? AND kind='schedule' AND EXISTS (
+          SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+            AND quote_edit_version=? AND quote_mutation_token=?
+        )`,
+    ).bind(project.id, project.id, nextQuoteVersion, mutationToken),
+    c.env.DB.prepare(
+      `UPDATE project SET quote_mutation_token=NULL, updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+          AND quote_mutation_token=?`,
+    ).bind(project.id, nextQuoteVersion, mutationToken),
   ]);
+  if (Number(committed[0]?.meta?.changes ?? 0) !== 1 ||
+      Number(committed[3]?.meta?.changes ?? 0) !== 1) {
+    return c.json({ error: "project_changed_reload_required" }, 409);
+  }
+  for (const f of state.scheduleFiles) await c.env.FILES.delete(f.r2_key).catch(() => {});
   return c.json({ ok: true });
 });
 
@@ -147,6 +187,7 @@ parse.post("/projects/current/lines/:id/collision", async (c) => {
   const { project, cookie } = await resolveCurrentProject(c.env, c.req.raw);
   if (cookie) c.header("Set-Cookie", cookie);
   if (!project) return c.json({ error: "not_found" }, 404);
+  if (project.status_customer !== "draft") return c.json({ error: "not_draft" }, 409);
   const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
   const choice = body?.choice === "linked" || body?.choice === "separate" ? body.choice : null;
   if (!choice) return c.json({ error: "bad_choice" }, 400);
@@ -154,13 +195,51 @@ parse.post("/projects/current/lines/:id/collision", async (c) => {
     "SELECT id, origin, external_ref FROM quote_line WHERE id = ? AND project_id = ? AND revision_id IS NULL",
   ).bind(c.req.param("id"), project.id).first<{ id: string; origin: string | null; external_ref: string | null }>();
   if (!line || (line.origin ?? "manual") !== "manual" || !line.external_ref) return c.json({ error: "not_found" }, 404);
-  if (choice === "linked") {
-    await c.env.DB.prepare(
+  const mutationState = await c.env.DB.prepare(
+    `SELECT quote_edit_version FROM project
+      WHERE id=? AND status_customer='draft' AND quote_mutation_token IS NULL`,
+  ).bind(project.id).first<{ quote_edit_version: number }>();
+  if (!mutationState) return c.json({ error: "project_changed_reload_required" }, 409);
+  const nextQuoteVersion = mutationState.quote_edit_version + 1;
+  const mutationToken = uuid();
+  const lineUpdate = choice === "linked"
+    ? c.env.DB.prepare(
       `UPDATE quote_line SET origin='schedule', collision_choice='linked',
-         edited_fields='["product_slug","options_json","dims_json","qty"]' WHERE id = ?`,
-    ).bind(line.id).run();
-  } else {
-    await c.env.DB.prepare("UPDATE quote_line SET collision_choice='separate' WHERE id = ?").bind(line.id).run();
+          edited_fields='["product_slug","options_json","dims_json","qty"]'
+        WHERE id=? AND project_id=? AND revision_id IS NULL
+          AND COALESCE(origin,'manual')='manual' AND external_ref IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+              AND quote_edit_version=? AND quote_mutation_token=?
+          )`,
+    ).bind(line.id, project.id, project.id, nextQuoteVersion, mutationToken)
+    : c.env.DB.prepare(
+      `UPDATE quote_line SET collision_choice='separate'
+        WHERE id=? AND project_id=? AND revision_id IS NULL
+          AND COALESCE(origin,'manual')='manual' AND external_ref IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+              AND quote_edit_version=? AND quote_mutation_token=?
+          )`,
+    ).bind(line.id, project.id, project.id, nextQuoteVersion, mutationToken);
+  const committed = await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE project SET quote_edit_version=?, quote_mutation_token=?,
+          updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+          AND quote_mutation_token IS NULL`,
+    ).bind(nextQuoteVersion, mutationToken, project.id, mutationState.quote_edit_version),
+    lineUpdate,
+    c.env.DB.prepare(
+      `UPDATE project SET quote_mutation_token=NULL, updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+          AND quote_mutation_token=?`,
+    ).bind(project.id, nextQuoteVersion, mutationToken),
+  ]);
+  if (Number(committed[0]?.meta?.changes ?? 0) !== 1 ||
+      Number(committed[1]?.meta?.changes ?? 0) !== 1 ||
+      Number(committed[2]?.meta?.changes ?? 0) !== 1) {
+    return c.json({ error: "project_changed_reload_required" }, 409);
   }
   return c.json({ ok: true, choice });
 });
@@ -173,6 +252,27 @@ parse.get("/projects/current/extraction-status", async (c) => {
   const { project, cookie } = await resolveCurrentProject(c.env, c.req.raw);
   if (cookie) c.header("Set-Cookie", cookie);
   if (!project) return c.json({ run: null });
+  const pending = await c.env.DB.prepare(
+    `SELECT j.source_generation, j.status, j.created_at
+       FROM ai_job_claim j JOIN project p ON p.id=j.project_id
+      WHERE j.project_id=? AND j.source_generation=p.ai_generation
+        AND j.status IN ('scheduled','processing','failed')
+      LIMIT 1`,
+  ).bind(project.id).first<{
+    source_generation: number; status: "scheduled" | "processing" | "failed"; created_at: string;
+  }>().catch(() => null);
+  if (pending) {
+    return c.json({
+      run: {
+        id: `generation-${pending.source_generation}`,
+        status: pending.status === "scheduled" ? "queued" : pending.status === "processing" ? "running" : "failed",
+        startedAt: pending.created_at,
+        completedAt: null,
+        summary: null,
+      },
+      basis: {},
+    });
+  }
   const r = await c.env.DB.prepare(
     `SELECT id, status, started_at, completed_at, summary_json FROM ai_runs
       WHERE project_id = ? ORDER BY started_at DESC LIMIT 1`,
@@ -183,11 +283,18 @@ parse.get("/projects/current/extraction-status", async (c) => {
   // Per-line basis for the trust chips (UX spec §5): explicit_energy_report vs
   // default_envelope, keyed by schedule tag. Latest building model wins.
   const { results: reqs } = await c.env.DB.prepare(
-    `SELECT o.external_ref, o.requirement_basis FROM opening_requirements o
-      WHERE o.building_model_id = (SELECT id FROM building_models WHERE project_id = ? ORDER BY created_at DESC LIMIT 1)`,
-  ).bind(project.id).all<{ external_ref: string; requirement_basis: string }>().catch(() => ({ results: [] as { external_ref: string; requirement_basis: string }[] }));
+    `SELECT q.id, q.recommendation_basis
+       FROM quote_line q
+      WHERE q.project_id=? AND q.revision_id IS NULL
+        AND q.ai_proposal_line_id IS NOT NULL AND q.recommendation_basis IS NOT NULL`,
+  ).bind(project.id).all<{ id: string; recommendation_basis: string }>()
+    .catch(() => ({ results: [] as { id: string; recommendation_basis: string }[] }));
   const basis: Record<string, string> = {};
-  for (const q of reqs ?? []) basis[q.external_ref] = q.requirement_basis;
+  for (const q of reqs ?? []) {
+    basis[q.id] = q.recommendation_basis === "energy_report"
+      ? "explicit_energy_report"
+      : q.recommendation_basis;
+  }
   return c.json({ run: { id: r.id, status: r.status, startedAt: r.started_at, completedAt: r.completed_at, summary }, basis });
 });
 
@@ -218,5 +325,6 @@ function parseFailCode(err?: string): string {
   if (err.startsWith("too_many_pages")) return "too_many_pages";
   if (err.startsWith("too_many_items")) return "too_many_items";
   if (err.startsWith("file_missing")) return "file_missing";
+  if (err.startsWith("project_changed")) return "project_changed_reload_required";
   return "parse_failed";
 }

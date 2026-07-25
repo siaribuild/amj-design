@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { Loader2, ChevronLeft, Check, X, AlertCircle, FlaskConical, Info } from "lucide-react";
 import {
   opsEstimatorProjects, opsEstimatorWorkspace, opsEstimatorFeedback,
-  type EstimatorProject, type EstimatorOpening,
+  type EstimatorProject, type EstimatorOpening, type EstimatorCandidate,
 } from "./api";
 
 const SAGE = "#5A7A6A";
@@ -112,9 +112,9 @@ function OpeningCard({ projectId, opening, categories, onChanged }: { projectId:
           <p className="text-[10px] uppercase tracking-widest text-[#8a8782] mb-1.5">Candidates ({opening.candidates.length})</p>
           <div className="space-y-1">
             {opening.candidates.map(c => (
-              <div key={c.productId} className={`flex items-center gap-2 text-xs px-2 py-1.5 border ${c.selected ? "border-[#5A7A6A]/40 bg-[#5A7A6A]/5" : "border-black/8"}`}>
+              <div key={`${c.productId}:${c.variantId ?? "none"}`} className={`flex items-center gap-2 text-xs px-2 py-1.5 border ${c.selected ? "border-[#5A7A6A]/40 bg-[#5A7A6A]/5" : "border-black/8"}`}>
                 {c.passed ? <Check className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0" /> : <X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />}
-                <span className="text-[#14150f] flex-1 min-w-0 truncate">{c.productName}{c.selected && <span className="ml-1.5 text-[10px] px-1 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344]">selected</span>}</span>
+                <span className="text-[#14150f] flex-1 min-w-0 truncate">{c.productName}{c.variantId ? ` · ${c.variantId}` : ""}{c.selected && <span className="ml-1.5 text-[10px] px-1 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344]">selected</span>}</span>
                 {c.passed ? (
                   <span className="flex items-center gap-1.5 flex-shrink-0">
                     {c.components && Math.abs(c.components.historical - 0.5) > 0.01 && (
@@ -145,7 +145,10 @@ function OpeningCard({ projectId, opening, categories, onChanged }: { projectId:
 }
 
 function FeedbackForm({ projectId, opening, categories, onDone, onCancel }: { projectId: string; opening: EstimatorOpening; categories: string[]; onDone: () => void; onCancel: () => void }) {
-  const systemPick = opening.candidates.find(c => c.selected)?.productId ?? "";
+  const selectedCandidate = opening.candidates.find(c => c.selected);
+  const candidateKey = (candidate: EstimatorCandidate) =>
+    `${candidate.productId}::${candidate.variantId ?? ""}`;
+  const systemPick = selectedCandidate ? candidateKey(selectedCandidate) : "";
   const passedCandidates = opening.candidates.filter(c => c.passed);
   const [field, setField] = useState("product");
   const [category, setCategory] = useState("");
@@ -165,7 +168,15 @@ function FeedbackForm({ projectId, opening, categories, onDone, onCancel }: { pr
       // Capture initial (system pick) → final (reviewer's choice) for product
       // corrections so the learning loop can train on the preference.
       const values = isProduct
-        ? { initialValue: systemPick ? { productId: systemPick } : undefined, finalValue: { productId: preferred } }
+        ? {
+          initialValue: selectedCandidate
+            ? { productId: selectedCandidate.productId, variantId: selectedCandidate.variantId }
+            : undefined,
+          finalValue: (() => {
+            const match = passedCandidates.find(candidate => candidateKey(candidate) === preferred);
+            return match ? { productId: match.productId, variantId: match.variantId } : undefined;
+          })(),
+        }
         : {};
       await opsEstimatorFeedback(projectId, {
         openingId: opening.id, selectionRunId: opening.selectionRunId ?? undefined,
@@ -195,7 +206,7 @@ function FeedbackForm({ projectId, opening, categories, onDone, onCancel }: { pr
           <select value={preferred} onChange={e => setPreferred(e.target.value)} className={`${inp} ${preferred ? "" : "text-[#9a9894]"} min-w-[200px]`}>
             <option value="">Which product should win?…</option>
             {passedCandidates.map(c => (
-              <option key={c.productId} value={c.productId}>{c.productName}{c.productId === systemPick ? " (system pick)" : ""}</option>
+              <option key={candidateKey(c)} value={candidateKey(c)}>{c.productName}{c.variantId ? ` · ${c.variantId}` : ""}{candidateKey(c) === systemPick ? " (system pick)" : ""}</option>
             ))}
           </select>
           {preferred && category === "preference_correction" && preferred !== systemPick && (

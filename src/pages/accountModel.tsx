@@ -234,7 +234,7 @@ export interface ParsedLine {
   optionsSummary: string;
   width: string; height: string;
   qty: number;
-  lineTotal: number;
+  lineTotal: number | null;
 }
 
 const safe = (s: string | undefined): Record<string, any> => {

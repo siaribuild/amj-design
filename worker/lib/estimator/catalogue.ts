@@ -9,10 +9,11 @@
 // against a fixture with no live CMS (spec §16.1 "catalogue test fixture export").
 import type { Env } from "../../types";
 import { SUPPORTED_SCHEMA_VERSION, type CatalogueCandidate } from "./types";
+import { defineQuery } from "groq";
 
 // GROQ: published products for a family (category slug) that support an operation.
 // $operation is optional — when empty, match the family only.
-const CANDIDATE_QUERY = `*[_type == "product" && defined(name) && defined(schemaVersion)
+const CANDIDATE_QUERY = defineQuery(`*[_type == "product" && defined(name) && defined(schemaVersion)
   && ($family == "" || category->slug.current == $family)
   && ($operation == "" || $operation in configuration.operationTypes)]{
   "sanityProductId": _id,
@@ -24,10 +25,13 @@ const CANDIDATE_QUERY = `*[_type == "product" && defined(name) && defined(schema
   "series": family->slug.current,
   configuration,
   dimensionRule,
-  "performanceVariants": performanceVariants[]{ variantId, glassBuildUp, uValue, shgc, frameType, dataSource, certified, published },
+  "performanceVariants": performanceVariants[]{
+    variantId, glassBuildUp, uValue, shgc, frameType, frameTechnology, coating,
+    pricingOptionSlugs, dataSource, certified, certificationRef, published
+  },
   "optionGroups": options[].option->optionType->slug.current,
   pricingRef
-}`;
+}`);
 
 export type QueryExecutor = (query: string, params: Record<string, unknown>) => Promise<any[]>;
 
@@ -54,6 +58,32 @@ export function toCandidate(row: any): CatalogueCandidate | null {
   const schemaVersion = typeof row.schemaVersion === "number" ? row.schemaVersion : null;
   if (schemaVersion == null || schemaVersion > SUPPORTED_SCHEMA_VERSION) return null; // reject unsupported
   const perf = Array.isArray(row.performanceVariants) ? row.performanceVariants : [];
+  const seenVariants = new Set<string>();
+  const variants = perf.flatMap((v: any) => {
+    const variantId = String(v?.variantId ?? "").trim();
+    const uValue = typeof v?.uValue === "number" && v.uValue >= 0.5 && v.uValue <= 10 ? v.uValue : null;
+    const shgc = typeof v?.shgc === "number" && v.shgc >= 0 && v.shgc <= 1 ? v.shgc : null;
+    if (!variantId || seenVariants.has(variantId)) return [];
+    if (v?.certified === true && (!v?.certificationRef || v?.dataSource !== "certified")) return [];
+    seenVariants.add(variantId);
+    return [{
+      variantId,
+      glassBuildUp: v?.glassBuildUp ?? null,
+      uValue,
+      shgc,
+      frameType: v?.frameType ?? null,
+      frameTechnology: v?.frameTechnology === "conventional" || v?.frameTechnology === "thermally_broken"
+        ? v.frameTechnology : "unknown" as const,
+      coating: v?.coating ?? null,
+      certificationRef: v?.certificationRef ?? null,
+      pricingOptionSlugs: Array.isArray(v?.pricingOptionSlugs)
+        ? v.pricingOptionSlugs.filter((s: unknown): s is string => typeof s === "string" && !!s).slice(0, 20)
+        : [],
+      dataSource: String(v?.dataSource ?? "estimated"),
+      certified: v?.certified === true,
+      published: v?.published !== false,
+    }];
+  });
   return {
     sanityProductId: String(row.sanityProductId),
     catalogueRevision: String(row.catalogueRevision ?? ""),
@@ -64,16 +94,7 @@ export function toCandidate(row: any): CatalogueCandidate | null {
     series: row.series ?? null,
     configuration: row.configuration ?? null,
     dimensionRule: row.dimensionRule ?? null,
-    performanceVariants: perf.map((v: any) => ({
-      variantId: String(v?.variantId ?? "std"),
-      glassBuildUp: v?.glassBuildUp ?? null,
-      uValue: typeof v?.uValue === "number" ? v.uValue : null,
-      shgc: typeof v?.shgc === "number" ? v.shgc : null,
-      frameType: v?.frameType ?? null,
-      dataSource: String(v?.dataSource ?? "estimated"),
-      certified: v?.certified === true,
-      published: v?.published !== false,
-    })),
+    performanceVariants: variants,
     optionGroups: Array.isArray(row.optionGroups) ? [...new Set(row.optionGroups.filter(Boolean))] as string[] : [],
     pricingRef: row.pricingRef ?? null,
   };
@@ -84,6 +105,23 @@ export interface CatalogueRepository {
   queryCandidates(family: string | null, operation: string | null): Promise<CatalogueCandidate[]>;
   /** A version token for the whole result set (max revision seen), for audit. */
   catalogueVersion(candidates: CatalogueCandidate[]): string;
+}
+
+/** Cheap production preflight used before model spend. It does not promise that
+ * every future opening is priceable; it prevents spending when the published
+ * catalogue and private rate card have no overlap at all. */
+export async function hasAnyExactPricingCoverage(env: Env): Promise<boolean> {
+  if (!env.SANITY_PROJECT_ID) return true;
+  const repo = createCatalogueRepository(sanityExecutor(env));
+  const candidates = await repo.queryCandidates(null, null);
+  const refs = [...new Set(candidates.map((candidate) => candidate.pricingRef).filter((ref): ref is string => !!ref))];
+  if (!refs.length) return false;
+  const placeholders = refs.map(() => "?").join(",");
+  const row = await env.DB.prepare(
+    `SELECT count(*) AS n FROM pricing_rate_card
+      WHERE active=1 AND id IN (${placeholders})`,
+  ).bind(...refs).first<{ n: number }>();
+  return Number(row?.n ?? 0) > 0;
 }
 
 // Cache keyed by (family, operation), short TTL, failed loads not cached. Held
@@ -105,9 +143,16 @@ export function createCatalogueRepository(exec: QueryExecutor): CatalogueReposit
       return rows;
     },
     catalogueVersion(candidates) {
-      // A deterministic token: the sorted set of product@rev pairs, hashed short.
+      // A deterministic token over the complete revision set (not merely the
+      // first row, which previously made distinct catalogues collide).
       const parts = candidates.map((c) => `${c.sanityProductId}@${c.catalogueRevision}`).sort();
-      return parts.length ? `cat:${parts.length}:${parts[0]}` : "cat:empty";
+      if (!parts.length) return "cat:empty";
+      let hash = 2166136261;
+      for (const ch of parts.join("|")) {
+        hash ^= ch.charCodeAt(0);
+        hash = Math.imul(hash, 16777619);
+      }
+      return `cat:${parts.length}:${(hash >>> 0).toString(16)}`;
     },
   };
 }

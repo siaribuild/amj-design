@@ -1,119 +1,156 @@
-// Phase 6 — the learning loop (spec §12). Reviewer corrections are the training
-// substrate, but ONLY 'preference_correction' rows on the 'product' field may ever
-// train the ranker (every other category routes to extraction / catalogue-data /
-// rule layers instead). This module reads those rows, aggregates a per-(context,
-// product) acceptance signal, and exposes a bounded 0..1 score the ranker consumes
-// through its CAPPED 0.10 'historical' weight — so learned preference can only
-// nudge, never override, a hard fact.
-//
-// Deterministic + inspectable: the same corpus always yields the same model, and
-// every candidate's historical component is persisted in score_components_json.
-// It improves with every issued quote, because every reviewer correction adds a
-// row that shifts the next estimate.
 import type { Env } from "../../types";
-import type { CatalogueCandidate, OpeningInput } from "./types";
+import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./types";
 
-export const LEARNING_VERSION = "v1";
+export const LEARNING_VERSION = "v2-finalized-contextual";
 
-// A coarse context key so sparse early data still generalises: family + operation
-// (e.g. "windows|awning"). Finer buckets (size/energy) would fragment the corpus
-// before it has signal; the ranker's other components already carry geometry.
-export function contextKey(family: string | null | undefined, operation: string | null | undefined): string {
-  return `${(family || "any").toLowerCase()}|${(operation || "any").toLowerCase()}`;
-}
+const bucket = (value: number | null | undefined, cuts: number[]) => {
+  if (value == null || !Number.isFinite(value)) return "unknown";
+  const idx = cuts.findIndex((cut) => value < cut);
+  return idx < 0 ? `g${cuts.length}` : `g${idx}`;
+};
 
-interface Counts { accepts: number; rejects: number }
-const empty = (): Counts => ({ accepts: 0, rejects: 0 });
-
-// Laplace-smoothed acceptance in 0..1; no evidence ⇒ 0.5 (neutral midpoint) so an
-// un-seen product sits between reviewer-preferred (>0.5) and reviewer-rejected
-// (<0.5) products, never advantaged or penalised by absence of data.
-function smoothed(c: Counts): number {
-  return (c.accepts + 1) / (c.accepts + c.rejects + 2);
-}
-
-// A product id may be stored as a bare string or wrapped in the value payload the
-// UI sends ({ productId } / { candidateId } / …). Accept any of those shapes.
-function productIdOf(json: string | null | undefined): string | null {
-  if (!json) return null;
-  try {
-    const v = JSON.parse(json);
-    if (typeof v === "string") return v || null;
-    if (v && typeof v === "object") return v.productId ?? v.sanityProductId ?? v.candidateId ?? v.id ?? null;
-  } catch { /* ignore malformed payloads */ }
-  return null;
+/** A deliberately coarse but thermally relevant retrieval key. It avoids the old
+ * global family|operation popularity signal while retaining enough density for
+ * early datasets. */
+export function contextKey(opening: OpeningInput): string {
+  const t = opening.thermalContext;
+  return [
+    (opening.family || "any").toLowerCase(),
+    (opening.operationType || "any").toLowerCase(),
+    t?.requirementBasis || "none",
+    t?.orientation || "unknown",
+    t?.riskBand || "unknown",
+    t?.climateZone || "unknown",
+    t?.jurisdiction || "unknown",
+    t?.buildingClass || "unknown",
+    t?.envelopeClass || "unknown",
+    bucket(opening.widthMm, [900, 1800, 3000]),
+    bucket(opening.heightMm, [900, 1800, 2400]),
+    bucket(t?.glazingToRoomFloorRatio, [0.15, 0.3, 0.5]),
+  ].join("|");
 }
 
 export interface HistoricalRow {
-  opening_family: string | null;
-  opening_operation: string | null;
-  initial_value_json: string | null; // system proposal (overridden ⇒ a reject signal)
-  final_value_json: string | null;   // reviewer's choice (⇒ an accept signal)
+  context_key: string;
+  final_product_slug: string;
+  final_variant_id: string | null;
+  decision: "accepted" | "adjusted" | "no_ai_proposal";
+  reason_code: string;
 }
+
+interface Counts { accepts: number }
+const smooth = (n: number, total: number) => (n + 1) / (total + 2);
 
 export interface HistoricalModel {
   version: string;
-  /** How many accept signals informed this model (0 ⇒ fully neutral). */
   observations: number;
-  /** Learned acceptance for a candidate in an opening's context, 0..1. */
-  scoreFor(candidate: CatalogueCandidate, opening: OpeningInput): number;
+  scoreFor(
+    candidate: CatalogueCandidate,
+    opening: OpeningInput,
+    variant?: PerformanceVariant | null,
+  ): number;
 }
 
-// Pure aggregation — no I/O, so it is deterministically unit-testable. Blends a
-// context-specific rate with a product-global rate (hierarchical back-off): with
-// little context evidence the global rate dominates; as context evidence grows it
-// takes over. K is the context-evidence count at which the two weigh equally.
-export function aggregateHistorical(rows: HistoricalRow[], K = 4): HistoricalModel {
-  const ctx = new Map<string, Counts>();     // "family|op::product" → counts
-  const global = new Map<string, Counts>();  // "product" → counts
+export function aggregateHistorical(rows: HistoricalRow[]): HistoricalModel {
+  const exact = new Map<string, number>();
+  const contextTotals = new Map<string, number>();
   let observations = 0;
-
-  const bump = (map: Map<string, Counts>, key: string, which: "accepts" | "rejects") => {
-    const c = map.get(key) ?? empty();
-    c[which] += 1;
-    map.set(key, c);
-  };
-
-  for (const r of rows ?? []) {
-    const k = contextKey(r.opening_family, r.opening_operation);
-    const chosen = productIdOf(r.final_value_json);     // reviewer preferred this
-    const rejected = productIdOf(r.initial_value_json); // system proposed this, reviewer overrode
-    if (chosen) {
-      observations++;
-      bump(ctx, `${k}::${chosen}`, "accepts");
-      bump(global, chosen, "accepts");
-    }
-    if (rejected && rejected !== chosen) {
-      bump(ctx, `${k}::${rejected}`, "rejects");
-      bump(global, rejected, "rejects");
-    }
+  for (const row of rows ?? []) {
+    if (!row.context_key || !row.final_product_slug) continue;
+    observations++;
+    const variant = row.final_variant_id || "any";
+    const exactKey = `${row.context_key}::${row.final_product_slug}::${variant}`;
+    exact.set(exactKey, (exact.get(exactKey) ?? 0) + 1);
+    contextTotals.set(row.context_key, (contextTotals.get(row.context_key) ?? 0) + 1);
   }
-
   return {
     version: LEARNING_VERSION,
     observations,
-    scoreFor(candidate, opening) {
-      const pid = candidate.sanityProductId;
-      const k = contextKey(opening.family, opening.operationType);
-      const cCtx = ctx.get(`${k}::${pid}`) ?? empty();
-      const cGlobal = global.get(pid) ?? empty();
-      const nCtx = cCtx.accepts + cCtx.rejects;
-      if (nCtx + cGlobal.accepts + cGlobal.rejects === 0) return 0.5; // no evidence ⇒ neutral
-      const wCtx = nCtx / (nCtx + K);
-      return wCtx * smoothed(cCtx) + (1 - wCtx) * smoothed(cGlobal);
+    scoreFor(candidate, opening, variant) {
+      if (!observations) return 0.5;
+      const ctx = contextKey(opening);
+      const ctxTotal = contextTotals.get(ctx) ?? 0;
+      if (ctxTotal < 2) return 0.5;
+      const exactCount = exact.get(`${ctx}::${candidate.slug}::${variant?.variantId || "any"}`) ?? 0;
+      return smooth(exactCount, ctxTotal);
     },
   };
 }
 
-// Load the learned model from D1. Reads ONLY the feedback that may train the
-// ranker (preference_correction on 'product'); joins the opening for its context.
 export async function buildHistoricalModel(env: Env): Promise<HistoricalModel> {
   const { results } = await env.DB.prepare(
-    `SELECT o.family AS opening_family, o.operation_type AS opening_operation,
-            f.initial_value_json, f.final_value_json
-       FROM review_feedback f
-       LEFT JOIN opening_instance o ON o.id = f.opening_id
-      WHERE f.category = 'preference_correction' AND f.field = 'product'`,
+    `SELECT context_key, final_product_slug, final_variant_id, decision, reason_code
+       FROM recommendation_outcome
+      WHERE recommendation_eligible = 1
+        AND thermal_eligible = 0
+        AND quality_state = 'approved'`,
   ).all<HistoricalRow>();
   return aggregateHistorical(results ?? []);
+}
+
+interface ThermalCorrectionRow {
+  context_key: string;
+  reviewed_thermal_json: string;
+}
+
+export interface ApprovedThermalModel {
+  observations: number;
+  apply(opening: OpeningInput): OpeningInput;
+}
+
+const median = (values: number[]): number | null => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
+
+/** Physical learning is isolated from commercial ranking. Only explicitly
+ * adjudicated thermal targets are read, and an exact context needs at least
+ * three examples before it can supply an inferred requirement. Explicit energy
+ * reports always win. */
+export function aggregateApprovedThermal(rows: ThermalCorrectionRow[]): ApprovedThermalModel {
+  const groups = new Map<string, { maxU: number[]; minShgc: number[]; maxShgc: number[] }>();
+  for (const row of rows ?? []) {
+    try {
+      const value = JSON.parse(row.reviewed_thermal_json || "{}");
+      if (typeof value.maxUValue !== "number") continue;
+      const group = groups.get(row.context_key) ?? { maxU: [], minShgc: [], maxShgc: [] };
+      group.maxU.push(value.maxUValue);
+      if (typeof value.minShgc === "number") group.minShgc.push(value.minShgc);
+      if (typeof value.maxShgc === "number") group.maxShgc.push(value.maxShgc);
+      groups.set(row.context_key, group);
+    } catch { /* malformed historical row is excluded */ }
+  }
+  const observations = [...groups.values()].reduce((sum, group) => sum + group.maxU.length, 0);
+  return {
+    observations,
+    apply(opening) {
+      if (opening.thermalContext?.requirementBasis === "explicit_energy_report") return opening;
+      const group = groups.get(contextKey(opening));
+      if (!group || group.maxU.length < 3) return opening;
+      return {
+        ...opening,
+        advisoryRequirements: {
+          maxUValue: median(group.maxU),
+          minShgc: group.minShgc.length >= 3 ? median(group.minShgc) : null,
+          maxShgc: group.maxShgc.length >= 3 ? median(group.maxShgc) : null,
+        },
+        thermalContext: {
+          ...(opening.thermalContext ?? {}),
+          requirementBasis: "human_override",
+        },
+      };
+    },
+  };
+}
+
+export async function buildApprovedThermalModel(env: Env): Promise<ApprovedThermalModel> {
+  const { results } = await env.DB.prepare(
+    `SELECT context_key, reviewed_thermal_json
+       FROM recommendation_outcome
+      WHERE thermal_eligible=1 AND recommendation_eligible=0
+        AND quality_state='approved' AND reviewed_thermal_json IS NOT NULL`,
+  ).all<ThermalCorrectionRow>();
+  return aggregateApprovedThermal(results ?? []);
 }

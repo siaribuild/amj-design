@@ -190,10 +190,10 @@ const dimensionRule = defineField({
   group: "technical",
   options: { collapsible: true, collapsed: true },
   fields: [
-    defineField({ name: "minWidthMm", type: "number" }),
-    defineField({ name: "maxWidthMm", type: "number" }),
-    defineField({ name: "minHeightMm", type: "number" }),
-    defineField({ name: "maxHeightMm", type: "number" }),
+    defineField({ name: "minWidthMm", type: "number", validation: (r) => r.min(100).max(20000) }),
+    defineField({ name: "maxWidthMm", type: "number", validation: (r) => r.min(100).max(20000) }),
+    defineField({ name: "minHeightMm", type: "number", validation: (r) => r.min(100).max(20000) }),
+    defineField({ name: "maxHeightMm", type: "number", validation: (r) => r.min(100).max(20000) }),
     defineField({ name: "maxAreaM2", title: "Max area (m²)", type: "number", description: "Whole-unit area cap; blank = derive from W×H limits." }),
     defineField({ name: "maxAspectRatio", title: "Max aspect ratio", type: "number", description: "Longest/shortest side; blank = unbounded." }),
     defineField({ name: "ruleVersion", title: "Rule version", type: "string", initialValue: "v1" }),
@@ -212,14 +212,35 @@ const performanceVariant = defineArrayMember({
   fields: [
     defineField({ name: "variantId", title: "Variant ID", type: "string", validation: (r) => r.required() }),
     defineField({ name: "glassBuildUp", title: "Glass build-up", type: "string", description: "e.g. 5+12A+5mm Double Tempered, 6mm Low-e+25Ar+6mm." }),
-    defineField({ name: "uValue", title: "Uw (whole-window U-value)", type: "number" }),
-    defineField({ name: "shgc", title: "SHGC (whole-window)", type: "number" }),
+    defineField({ name: "uValue", title: "Uw (whole-window U-value)", type: "number", validation: (r) => r.min(0.5).max(10) }),
+    defineField({ name: "shgc", title: "SHGC (whole-window)", type: "number", validation: (r) => r.min(0).max(1) }),
     defineField({ name: "frameType", title: "Frame type", type: "string", initialValue: "aluminium" }),
+    defineField({
+      name: "frameTechnology", title: "Frame technology", type: "string", initialValue: "unknown",
+      options: { list: [
+        { title: "Conventional", value: "conventional" },
+        { title: "Thermally broken", value: "thermally_broken" },
+        { title: "Unknown / not verified", value: "unknown" },
+      ] },
+      validation: (r) => r.required(),
+    }),
+    defineField({ name: "coating", title: "Coating", type: "string" }),
+    defineField({
+      name: "pricingOptionSlugs", title: "Private pricing option references", type: "array",
+      of: [{ type: "string" }], options: { layout: "tags" },
+      validation: (r) => r.unique(),
+    }),
     defineField({ name: "dataSource", title: "Data source", type: "string", initialValue: "estimated", validation: (r) => r.required(),
       options: { list: [{ title: "Certified (AFRC/WERS/NatHERS)", value: "certified" }, { title: "Estimated from glass build-up (unverified)", value: "estimated" }] } }),
     defineField({ name: "certified", title: "Certified", type: "boolean", initialValue: false,
       description: "TRUE only for a verified AFRC/WERS/certificate figure. Estimated values MUST be false." }),
-    defineField({ name: "certificationRef", title: "Certification reference", type: "string" }),
+    defineField({
+      name: "certificationRef", title: "Certification reference", type: "string",
+      validation: (r) => r.custom((value, context) => {
+        const parent = context.parent as { certified?: boolean } | undefined;
+        return parent?.certified && !value ? "A certified variant requires a certification reference." : true;
+      }),
+    }),
     defineField({ name: "published", title: "Published (eligible for selection)", type: "boolean", initialValue: true }),
     defineField({ name: "effectiveFrom", title: "Effective from", type: "date" }),
   ],
@@ -327,6 +348,7 @@ export const product = defineType({
     configuration,
     dimensionRule,
     defineField({ name: "performanceVariants", title: "Performance variants", type: "array", of: [performanceVariant], group: "technical",
+      validation: (r) => r.unique(),
       description: "Whole-window Uw/SHGC per glass build-up. Estimated values must be dataSource:estimated / certified:false." }),
     defineField({ name: "pricingRef", title: "Pricing ref", type: "string", group: "technical",
       description: "Key into the PRIVATE D1 rate card. Pricing itself is never stored in Sanity." }),

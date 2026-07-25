@@ -11,17 +11,24 @@ import {
 } from "../lib/auth";
 import { notify } from "../lib/email";
 import { findOrCreateInternalUser, isStaffEmail, resolveStaff } from "../lib/staff";
-import { issueRevision } from "../lib/revisions";
+import { drainLearningOutbox, issueRevision } from "../lib/revisions";
 import { logEvent } from "../lib/activity";
 import { evaluateApprovals, createApprovalInstance, resolveInstance, canApprove } from "../lib/approvals";
 import { orderDto, applyTransition, markPaid, availableActions, type OrderRow } from "../lib/orders";
 import { uuid } from "../lib/util";
 import { scanFile } from "../lib/scan";
-import { runProjectEstimate } from "../lib/estimator/estimate";
+import {
+  pricingOptionSlugsFromOptions, runProjectEstimate, toOpeningInput, type OpeningRow,
+} from "../lib/estimator/estimate";
+import { createCatalogueRepository, hasAnyExactPricingCoverage, sanityExecutor } from "../lib/estimator/catalogue";
+import { checkHardRules } from "../lib/estimator/rules";
 import { recordFeedback, FEEDBACK_CATEGORIES } from "../lib/estimator/persist";
 import { runAiExtraction } from "../lib/ai/pipeline";
+import { reserveAiRunBudget } from "../lib/ai/jobs";
+import { isOverrideReason, OVERRIDE_REASONS } from "../lib/ai/schema";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { priceConfigured } from "../../src/data/configurator";
+import { priceLine } from "../lib/estimator/pricing";
 
 export const ops = new Hono<{ Bindings: Env }>();
 
@@ -62,11 +69,29 @@ const safeParse = (s: string): Record<string, any> => {
 const ROLES = ["estimator", "technical_reviewer", "manager", "admin"];
 const hasAssignedRole = (staff: { role: string | null }) => !!staff.role && ROLES.includes(staff.role);
 const canRecordPayment = (staff: { role: string | null }) => staff.role === "manager" || staff.role === "admin";
+const canManageLearning = (staff: { role: string | null }) => staff.role === "manager" || staff.role === "admin";
+const canIssueQuote = (staff: { role: string | null }) =>
+  staff.role === "estimator" || staff.role === "manager" || staff.role === "admin";
+const canAdjudicateThermal = (staff: { role: string | null }) =>
+  staff.role === "technical_reviewer" || staff.role === "manager" || staff.role === "admin";
+
+async function unresolvedLineCount(env: Env, projectId: string): Promise<number> {
+  const row = await env.DB.prepare(
+    `SELECT count(*) AS count FROM quote_line
+      WHERE project_id=? AND revision_id IS NULL
+        AND (status <> 'ready' OR line_total IS NULL)`,
+  ).bind(projectId).first<{ count: number }>();
+  return Number(row?.count ?? 0);
+}
 
 interface LineRow {
-  id: string; external_ref: string | null; room_label: string | null; product_slug: string;
+  id: string; project_id: string; external_ref: string | null; room_label: string | null; product_slug: string;
   options_json: string; dims_json: string; measured_by: string; qty: number; line_total: number | null; status: string;
   origin?: string | null; review_json?: string | null;
+  ai_proposal_line_id?: string | null; selected_variant_id?: string | null;
+  configuration_snapshot_json?: string | null; pricing_snapshot_json?: string | null;
+  edited_fields?: string | null; edit_version: number;
+  quote_edit_version?: number;
 }
 
 const opsLineDto = (r: LineRow) => {
@@ -84,6 +109,7 @@ const opsLineDto = (r: LineRow) => {
     qty: r.qty,
     lineTotal: r.line_total,
     status: r.status,
+    selectedVariantId: r.selected_variant_id ?? null,
     // Provenance + unresolved technical-review reasons, so staff can see and act
     // on the flags the parser raised (material substitution, out-of-range, glazing…).
     origin: r.origin ?? "manual",
@@ -220,7 +246,9 @@ ops.get("/projects/:id", async (c) => {
       statusCustomer: p.status_customer, statusInternal: p.status_internal,
       statusInternalLabel: STATUS_INTERNAL_LABEL[p.status_internal] ?? p.status_internal,
       nextStates: FLOW[p.status_internal] ?? [],
-      canSubmitForApproval: CAN_SUBMIT_FOR_APPROVAL.has(p.status_internal),
+      canSubmitForApproval: CAN_SUBMIT_FOR_APPROVAL.has(p.status_internal) &&
+        lines.every((line) => line.status === "ready" && line.line_total != null),
+      unresolvedLineCount: lines.filter((line) => line.status !== "ready" || line.line_total == null).length,
       org: p.org_name, customerName: p.customer_name, customerEmail: p.customer_email,
       // Submission contact captured at submit time (persisted even for anon submitters).
       contactName: p.contact_name ?? null, contactEmail: p.contact_email ?? null,
@@ -244,7 +272,11 @@ ops.post("/projects/:id/assign", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const targetId = typeof body?.userId === "string" && body.userId ? body.userId : staff.id;
   const res = await c.env.DB.prepare(
-    "UPDATE project SET internal_owner_id = ?, status_internal = 'estimator_assigned', updated_at = datetime('now') WHERE id = ?",
+    `UPDATE project SET internal_owner_id=?, status_internal='estimator_assigned', updated_at=datetime('now')
+      WHERE id=? AND status_internal IN (
+        'draft','submitted','triage_pending','estimator_assigned',
+        'technical_review_required','customer_clarification_required'
+      )`,
   ).bind(targetId, c.req.param("id")).run();
   if (!res.meta.changes) return c.json({ error: "not_found" }, 404);
   const assignee = await c.env.DB.prepare("SELECT name FROM user WHERE id = ?").bind(targetId).first<{ name: string }>();
@@ -259,13 +291,21 @@ ops.post("/projects/:id/status", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
   const target = String(body?.statusInternal ?? "");
-  const project = await c.env.DB.prepare("SELECT status_internal FROM project WHERE id = ?").bind(id).first<{ status_internal: string }>();
+  const project = await c.env.DB.prepare(
+    "SELECT status_internal, quote_edit_version FROM project WHERE id = ?",
+  ).bind(id).first<{ status_internal: string; quote_edit_version: number }>();
   if (!project) return c.json({ error: "not_found" }, 404);
   // 'issued' / 'customer_clarification_required' have dedicated endpoints.
   if (target === "issued" || target === "customer_clarification_required" || !(FLOW[project.status_internal] ?? []).includes(target)) {
     return c.json({ error: "invalid_transition", from: project.status_internal }, 409);
   }
-  await c.env.DB.prepare("UPDATE project SET status_internal = ?, updated_at = datetime('now') WHERE id = ?").bind(target, id).run();
+  const moved = await c.env.DB.prepare(
+    `UPDATE project SET status_internal=?, updated_at=datetime('now')
+      WHERE id=? AND status_internal=?`,
+  ).bind(target, id, project.status_internal).run();
+  if (!moved.meta.changes) {
+    return c.json({ error: "workflow_changed_retry" }, 409);
+  }
   await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: id, action: `moved to ${STATUS_INTERNAL_LABEL[target] ?? target}` });
   return c.json({ statusInternal: target, statusInternalLabel: STATUS_INTERNAL_LABEL[target] ?? target, nextStates: FLOW[target] ?? [] });
 });
@@ -279,11 +319,32 @@ ops.post("/projects/:id/request-clarification", async (c) => {
   const message = String(body?.message ?? "").trim();
   if (!message) return c.json({ error: "empty" }, 400);
 
+  const project = await c.env.DB.prepare(
+    "SELECT status_internal FROM project WHERE id=?",
+  ).bind(id).first<{ status_internal: string }>();
+  if (!project) return c.json({ error: "not_found" }, 404);
+  if (!(FLOW[project.status_internal] ?? []).includes("customer_clarification_required")) {
+    return c.json({ error: "invalid_transition", from: project.status_internal }, 409);
+  }
   const cust = await c.env.DB.prepare("SELECT u.email FROM project p JOIN user u ON u.id = p.owner_user_id WHERE p.id = ?").bind(id).first<{ email: string }>();
-  await c.env.DB.batch([
-    c.env.DB.prepare("INSERT INTO comment (id, project_id, author_id, kind, body) VALUES (?, ?, ?, 'clarification', ?)").bind(uuid(), id, staff.id, message),
-    c.env.DB.prepare("UPDATE project SET status_customer = 'needs_information', status_internal = 'customer_clarification_required', updated_at = datetime('now') WHERE id = ?").bind(id),
+  const committed = await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO comment (id, project_id, author_id, kind, body)
+       SELECT ?, ?, ?, 'clarification', ?
+        WHERE EXISTS (
+          SELECT 1 FROM project WHERE id=? AND status_internal=?
+        )`,
+    ).bind(uuid(), id, staff.id, message, id, project.status_internal),
+    c.env.DB.prepare(
+      `UPDATE project SET status_customer='needs_information',
+          status_internal='customer_clarification_required',
+          updated_at=datetime('now')
+        WHERE id=? AND status_internal=?`,
+    ).bind(id, project.status_internal),
   ]);
+  if (Number(committed[1]?.meta?.changes ?? 0) !== 1) {
+    return c.json({ error: "workflow_changed_retry" }, 409);
+  }
   await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: id, action: "requested clarification" });
   if (cust?.email) {
     await notify(c.env, { recipient: cust.email, eventType: "clarification.requested", templateKey: "needs_info",
@@ -296,19 +357,37 @@ ops.post("/projects/:id/request-clarification", async (c) => {
 ops.post("/projects/:id/submit-for-approval", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const id = c.req.param("id");
-  const project = await c.env.DB.prepare("SELECT status_internal FROM project WHERE id = ?").bind(id).first<{ status_internal: string }>();
+  const project = await c.env.DB.prepare(
+    "SELECT status_internal, quote_edit_version FROM project WHERE id = ?",
+  ).bind(id).first<{ status_internal: string; quote_edit_version: number }>();
   if (!project) return c.json({ error: "not_found" }, 404);
   if (!["estimator_assigned", "technical_review_required"].includes(project.status_internal)) {
     return c.json({ error: "invalid_transition", from: project.status_internal }, 409);
   }
+  const unresolved = await unresolvedLineCount(c.env, id);
+  if (unresolved > 0) return c.json({ error: "unresolved_lines", count: unresolved }, 409);
   const steps = await evaluateApprovals(c.env, id);
   if (steps.length === 0) {
-    await c.env.DB.prepare("UPDATE project SET status_internal = 'approved_for_issue', updated_at = datetime('now') WHERE id = ?").bind(id).run();
+    const approved = await c.env.DB.prepare(
+      `UPDATE project SET status_internal='approved_for_issue', updated_at=datetime('now')
+        WHERE id=? AND status_internal=? AND quote_edit_version=?
+          AND NOT EXISTS (
+            SELECT 1 FROM quote_line
+             WHERE project_id=? AND revision_id IS NULL
+               AND (status <> 'ready' OR line_total IS NULL)
+          )
+        RETURNING id`,
+    ).bind(id, project.status_internal, project.quote_edit_version, id).first<{ id: string }>();
+    if (!approved) return c.json({ error: "quote_changed_retry" }, 409);
     await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: id, action: "no approval required — ready to issue" });
     return c.json({ statusInternal: "approved_for_issue", steps: [] });
   }
-  await createApprovalInstance(c.env, id, steps);
+  const instanceId = await createApprovalInstance(
+    c.env, id, steps, project.status_internal, project.quote_edit_version,
+  );
+  if (!instanceId) return c.json({ error: "quote_changed_retry" }, 409);
   await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: id, action: `submitted for approval (${steps.length} step${steps.length !== 1 ? "s" : ""})` });
   return c.json({ statusInternal: "approval_pending", steps: steps.map((s) => ({ family: s.family, role: s.role, reason: s.reason })) });
 });
@@ -342,8 +421,13 @@ async function actOnStep(c: any, action: "approved" | "rejected") {
   if (step.state !== "pending") return c.json({ error: "already_acted" }, 409);
   if (!canApprove(staff, step.approver_role)) return c.json({ error: "wrong_role" }, 403);
   const body = await c.req.json().catch(() => ({}));
-  await c.env.DB.prepare("UPDATE approval_step SET state = ?, acted_by = ?, acted_at = datetime('now'), comment = ? WHERE id = ?")
-    .bind(action, staff.id, typeof body?.comment === "string" ? body.comment : null, stepId).run();
+  const acted = await c.env.DB.prepare(
+    `UPDATE approval_step SET state = ?, acted_by = ?, acted_at = datetime('now'), comment = ?
+      WHERE id = ? AND state='pending' AND approver_role=?
+      RETURNING id`,
+  ).bind(action, staff.id, typeof body?.comment === "string" ? body.comment : null, stepId, step.approver_role)
+    .first<{ id: string }>();
+  if (!acted) return c.json({ error: "already_acted" }, 409);
   await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: step.project_id, action: `${action === "approved" ? "approved" : "rejected"} ${step.trigger_family} approval` });
   const instanceState = await resolveInstance(c.env, step.instance_id);
   return c.json({ ok: true, stepState: action, instanceState });
@@ -375,16 +459,28 @@ ops.post("/approvals/:stepId/delegate", async (c) => {
 
 // PATCH /api/ops/lines/:id — estimator edits a draft line; server reprices.
 ops.patch("/lines/:id", async (c) => {
-  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
-  const line = await c.env.DB.prepare("SELECT * FROM quote_line WHERE id = ? AND revision_id IS NULL").bind(c.req.param("id")).first<LineRow>();
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const line = await c.env.DB.prepare(
+    `SELECT q.*, p.quote_edit_version FROM quote_line q JOIN project p ON p.id=q.project_id
+      WHERE q.id=? AND q.revision_id IS NULL
+        AND p.status_internal IN (
+          'submitted','triage_pending','estimator_assigned',
+          'technical_review_required','customer_clarification_required'
+        )`,
+  ).bind(c.req.param("id")).first<LineRow>();
   if (!line) return c.json({ error: "not_found" }, 404);
   const body = await c.req.json().catch(() => ({}));
 
   const dims = safeParse(line.dims_json);
   const width = body?.width !== undefined ? String(body.width) : String(dims.width ?? "");
   const height = body?.height !== undefined ? String(body.height) : String(dims.height ?? "");
-  const options = body?.options && typeof body.options === "object" ? body.options : safeParse(line.options_json);
+  const options = body?.options && typeof body.options === "object" && !Array.isArray(body.options)
+    ? body.options as Record<string, unknown>
+    : safeParse(line.options_json);
   const qty = body?.qty !== undefined ? Math.max(1, Math.floor(Number(body.qty) || 1)) : line.qty;
+  const productSlug = body?.productSlug !== undefined ? String(body.productSlug) : line.product_slug;
   const code = body?.code !== undefined ? String(body.code) : line.external_ref;
   const room = body?.room !== undefined ? String(body.room) : line.room_label;
 
@@ -400,20 +496,114 @@ ops.patch("/lines/:id", async (c) => {
   const hasReview = Object.keys(review).length > 0;
   const resolvedKeys = Object.keys(existingReview).filter((k) => !(k in review));
 
-  const priced = priceConfigured({ productSlug: line.product_slug, width, height, options, qty });
-  const lineTotal = priced.ok ? priced.total : null;
+  let lineTotal: number | null;
+  let nextPricingSnapshot: string | null = line.pricing_snapshot_json ?? null;
+  let nextConfigurationSnapshot: string | null = line.configuration_snapshot_json ?? null;
+  let nextVariantId = line.selected_variant_id ?? null;
+  const aiManaged = line.origin === "ai" || !!line.ai_proposal_line_id;
+  const requestedVariantId = body?.selectedVariantId !== undefined ? String(body.selectedVariantId) : null;
+  if (aiManaged) {
+    if (productSlug !== line.product_slug && !requestedVariantId) {
+      return c.json({ error: "selected_variant_required" }, 400);
+    }
+    const effectiveVariantId = requestedVariantId || line.selected_variant_id;
+    if (!effectiveVariantId) return c.json({ error: "selected_variant_required" }, 409);
+    const opening = await c.env.DB.prepare(
+      `SELECT o.* FROM opening_instance o
+        WHERE o.quote_line_id=?
+           OR o.id=(SELECT opening_id FROM ai_proposal_line WHERE id=?)
+        ORDER BY o.created_at DESC LIMIT 1`,
+    ).bind(line.id, line.ai_proposal_line_id ?? "").first<OpeningRow>();
+    if (!opening) return c.json({ error: "opening_not_found" }, 409);
+    const openingInput = {
+      ...toOpeningInput(opening),
+      widthMm: Number(width) || null, heightMm: Number(height) || null, qty,
+    };
+    const repo = createCatalogueRepository(sanityExecutor(c.env));
+    const candidate = (await repo.queryCandidates(opening.family, opening.operation_type))
+      .find((row) => row.slug === productSlug);
+    if (!candidate?.pricingRef) return c.json({ error: "exact_pricing_unavailable" }, 409);
+    const rule = checkHardRules(openingInput, candidate);
+    const variant = candidate.performanceVariants.find((v) =>
+      v.variantId === effectiveVariantId && v.published &&
+      (!rule.eligibleVariantIds?.length || rule.eligibleVariantIds.includes(v.variantId)));
+    if (!rule.passed || !variant) return c.json({ error: "configuration_not_eligible" }, 409);
+    // Pricing identifiers are derived from the effective quote options and the
+    // validated catalogue variant. The browser never supplies private surcharge
+    // identifiers and cannot omit a chargeable selection.
+    const pricingOptionSlugs = [...new Set([
+      ...pricingOptionSlugsFromOptions(options),
+      ...(variant.pricingOptionSlugs ?? []),
+    ])];
+    const exact = await priceLine(c.env, {
+      family: candidate.pricingRef, widthMm: Number(width), heightMm: Number(height), qty,
+      optionSlugs: pricingOptionSlugs, requireExactRate: true, requireAllOptions: true,
+    }).catch(() => null);
+    if (!exact?.ok) return c.json({ error: "exact_pricing_unavailable" }, 409);
+    lineTotal = exact.total;
+    nextVariantId = variant.variantId;
+    nextPricingSnapshot = JSON.stringify(exact);
+    nextConfigurationSnapshot = JSON.stringify({
+      productId: candidate.sanityProductId, productSlug: candidate.slug,
+      performanceVariantId: variant.variantId, frameType: variant.frameType,
+      frameTechnology: variant.frameTechnology, glazing: variant.glassBuildUp,
+      coating: variant.coating, options, pricingOptionSlugs,
+      dimensions: { widthMm: Number(width), heightMm: Number(height) }, quantity: qty,
+    });
+  } else {
+    const priced = priceConfigured({ productSlug, width, height, options, qty });
+    lineTotal = priced.ok ? priced.total : null;
+  }
   // Readiness is derived, never forced: unpriced ⇒ incomplete; priced but still
   // carrying review flags ⇒ technical_review (submittable, staff must resolve);
   // priced + no flags ⇒ ready.
-  const status = !priced.ok ? "incomplete" : hasReview ? "technical_review" : "ready";
+  const status = lineTotal == null ? "incomplete" : hasReview ? "technical_review" : "ready";
 
-  await c.env.DB.prepare(
-    "UPDATE quote_line SET dims_json = ?, options_json = ?, qty = ?, external_ref = ?, room_label = ?, line_total = ?, status = ?, review_json = ?, updated_at = datetime('now') WHERE id = ?",
-  ).bind(JSON.stringify({ width, height }), JSON.stringify(options), qty, code || null, room || null, lineTotal, status, hasReview ? JSON.stringify(review) : null, line.id).run();
+  const locks = new Set<string>();
+  try {
+    const parsed = JSON.parse(line.edited_fields ?? "[]");
+    if (Array.isArray(parsed)) for (const value of parsed) if (typeof value === "string") locks.add(value);
+  } catch { /* malformed legacy locks become an empty set */ }
+  if (body?.productSlug !== undefined && productSlug !== line.product_slug) locks.add("product_slug");
+  if (body?.options !== undefined && JSON.stringify(options) !== JSON.stringify(safeParse(line.options_json))) locks.add("options_json");
+  if ((body?.width !== undefined && width !== String(dims.width ?? "")) ||
+      (body?.height !== undefined && height !== String(dims.height ?? ""))) locks.add("dims_json");
+  if (body?.qty !== undefined && qty !== line.qty) locks.add("qty");
+
+  const mutableStates = [
+    "submitted", "triage_pending", "estimator_assigned",
+    "technical_review_required", "customer_clarification_required",
+  ];
+  const updated = await c.env.DB.batch([
+    c.env.DB.prepare(
+    `UPDATE quote_line SET product_slug=?, dims_json=?, options_json=?, qty=?, external_ref=?, room_label=?,
+       line_total=?, status=?, review_json=?, pricing_snapshot_json=?,
+       configuration_snapshot_json=?, selected_variant_id=?, edited_fields=?,
+       edit_version=edit_version+1, updated_at=datetime('now')
+       WHERE id=? AND edit_version=?
+         AND EXISTS (
+           SELECT 1 FROM project WHERE id=? AND quote_edit_version=?
+             AND status_internal IN (${mutableStates.map(() => "?").join(",")})
+         )`,
+    ).bind(
+    productSlug, JSON.stringify({ width, height }), JSON.stringify(options), qty, code || null, room || null,
+    lineTotal, status, hasReview ? JSON.stringify(review) : null,
+    nextPricingSnapshot, nextConfigurationSnapshot, nextVariantId, JSON.stringify([...locks]),
+    line.id, line.edit_version, line.project_id, line.quote_edit_version ?? 0, ...mutableStates,
+    ),
+    c.env.DB.prepare(
+      `UPDATE project SET quote_edit_version=quote_edit_version+1, updated_at=datetime('now')
+        WHERE id=? AND quote_edit_version=?
+          AND status_internal IN (${mutableStates.map(() => "?").join(",")})`,
+    ).bind(line.project_id, line.quote_edit_version ?? 0, ...mutableStates),
+  ]);
+  if (Number(updated[0]?.meta?.changes ?? 0) !== 1 ||
+      Number(updated[1]?.meta?.changes ?? 0) !== 1) {
+    return c.json({ error: "line_changed_reload_required" }, 409);
+  }
 
   if (resolvedKeys.length) {
-    const staff = await resolveStaff(c.env, c.req.raw);
-    await logEvent(c.env, { actor: staff?.id ?? "staff", entityType: "quote_line", entityId: line.id, action: `resolved technical review: ${resolvedKeys.join(", ")}` });
+    await logEvent(c.env, { actor: staff.id, entityType: "quote_line", entityId: line.id, action: `resolved technical review: ${resolvedKeys.join(", ")}` });
   }
 
   const fresh = await c.env.DB.prepare("SELECT * FROM quote_line WHERE id = ?").bind(line.id).first<LineRow>();
@@ -438,6 +628,7 @@ ops.post("/projects/:id/note", async (c) => {
 ops.post("/projects/:id/issue-revision", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!canIssueQuote(staff)) return c.json({ error: "forbidden_role" }, 403);
   const id = c.req.param("id");
   const rev = await issueRevision(c.env, id);
   if (!rev.ok) return c.json({ error: rev.error }, rev.error === "not_found" ? 404 : 409);
@@ -755,8 +946,7 @@ ops.post("/projects/:id/feedback", async (c) => {
     note: body?.note ? String(body.note).slice(0, 500) : null,
   });
   if (!res.ok) {
-    const status = res.error === "invalid_category" || res.error === "missing_reason_code" ? 400 : 500;
-    return c.json({ error: res.error, categories: FEEDBACK_CATEGORIES }, status);
+    return c.json({ error: res.error, categories: FEEDBACK_CATEGORIES }, 400);
   }
   // Ops is review-only (owner decision 2026-07-25): a logged correction re-runs
   // the DETERMINISTIC selection automatically (no AI spend) so the learned
@@ -765,11 +955,153 @@ ops.post("/projects/:id/feedback", async (c) => {
   return c.json({ ok: true, id: res.id });
 });
 
+// GET /api/ops/lines/:id/configurations — exact, currently eligible catalogue
+// configurations for a review line. Loaded on demand to avoid a Sanity request
+// per row when opening the quote workspace.
+ops.get("/lines/:id/configurations", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const line = await c.env.DB.prepare(
+    "SELECT * FROM quote_line WHERE id=? AND revision_id IS NULL",
+  ).bind(c.req.param("id")).first<LineRow>();
+  if (!line) return c.json({ error: "not_found" }, 404);
+  const opening = await c.env.DB.prepare(
+    `SELECT o.* FROM opening_instance o
+      WHERE o.quote_line_id=?
+         OR o.id=(SELECT opening_id FROM ai_proposal_line WHERE id=?)
+      ORDER BY o.created_at DESC LIMIT 1`,
+  ).bind(line.id, line.ai_proposal_line_id ?? "").first<OpeningRow>();
+  if (!opening) return c.json({ error: "opening_not_found" }, 409);
+  const dims = safeParse(line.dims_json);
+  const input = {
+    ...toOpeningInput(opening),
+    widthMm: Number(dims.width) || null,
+    heightMm: Number(dims.height) || null,
+    qty: Math.max(1, Math.floor(line.qty || 1)),
+  };
+  const repo = createCatalogueRepository(sanityExecutor(c.env));
+  const candidates = await repo.queryCandidates(opening.family, opening.operation_type);
+  const configurations = candidates.flatMap((candidate) => {
+    if (!candidate.pricingRef) return [];
+    const rule = checkHardRules(input, candidate);
+    if (!rule.passed) return [];
+    return candidate.performanceVariants
+      .filter((variant) => variant.published &&
+        (!rule.eligibleVariantIds?.length || rule.eligibleVariantIds.includes(variant.variantId)))
+      .map((variant) => ({
+        productSlug: candidate.slug,
+        productName: candidate.name,
+        variantId: variant.variantId,
+        frameTechnology: variant.frameTechnology,
+        glassBuildUp: variant.glassBuildUp,
+        coating: variant.coating,
+        uValue: variant.uValue,
+        shgc: variant.shgc,
+      }));
+  });
+  return c.json({ configurations });
+});
+
+// PATCH /api/ops/recommendation-outcomes/:id — explicitly adjudicate a
+// finalized human adjustment before it can influence future recommendations.
+// Physical/thermal corrections remain a separate signal from commercial
+// preference learning.
+ops.patch("/recommendation-outcomes/:id", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const action = String(body?.action ?? "");
+  if (action === "reject") {
+    const changed = await c.env.DB.prepare(
+      `UPDATE recommendation_outcome
+          SET quality_state='rejected', recommendation_eligible=0, thermal_eligible=0,
+              reviewed_by=?, reviewed_at=datetime('now')
+        WHERE id=? AND quality_state='pending' RETURNING id`,
+    ).bind(staff.id, c.req.param("id")).first<{ id: string }>();
+    if (!changed) return c.json({ error: "not_found_or_final" }, 409);
+    return c.json({ ok: true, qualityState: "rejected" });
+  }
+  const reasonCode = String(body?.reasonCode ?? "").trim();
+  if (action !== "approve" || !isOverrideReason(reasonCode)) {
+    return c.json({ error: "invalid_reason_code" }, 400);
+  }
+  const policy = OVERRIDE_REASONS[reasonCode];
+  if (policy.thermal && !canAdjudicateThermal(staff)) {
+    return c.json({ error: "thermal_review_role_required" }, 403);
+  }
+  let reviewedThermal: string | null = null;
+  if (policy.thermal) {
+    const raw = body?.thermalTarget && typeof body.thermalTarget === "object" ? body.thermalTarget : {};
+    const maxUValue = Number(raw.maxUValue);
+    const minShgc = raw.minShgc == null ? null : Number(raw.minShgc);
+    const maxShgc = raw.maxShgc == null ? null : Number(raw.maxShgc);
+    if (!Number.isFinite(maxUValue) || maxUValue < 0.5 || maxUValue > 10 ||
+        (minShgc != null && (!Number.isFinite(minShgc) || minShgc < 0 || minShgc > 1)) ||
+        (maxShgc != null && (!Number.isFinite(maxShgc) || maxShgc < 0 || maxShgc > 1)) ||
+        (minShgc != null && maxShgc != null && minShgc > maxShgc)) {
+      return c.json({ error: "valid_thermal_target_required" }, 400);
+    }
+    reviewedThermal = JSON.stringify({ maxUValue, minShgc, maxShgc });
+  }
+  const changed = await c.env.DB.prepare(
+    `UPDATE recommendation_outcome
+        SET reason_code=?, quality_state='approved',
+            recommendation_eligible=?, thermal_eligible=?,
+            reviewed_thermal_json=?, reviewed_by=?, reviewed_at=datetime('now')
+      WHERE id=? AND decision='adjusted' AND quality_state='pending'
+      RETURNING id`,
+  ).bind(
+    reasonCode, policy.ranker ? 1 : 0, policy.thermal ? 1 : 0,
+    reviewedThermal, staff.id, c.req.param("id"),
+  ).first<{ id: string }>();
+  if (!changed) return c.json({ error: "not_found_or_final" }, 409);
+  await logEvent(c.env, {
+    actor: staff.id, entityType: "recommendation_outcome", entityId: changed.id,
+    action: `adjudicated recommendation outcome: ${reasonCode}`,
+  });
+  return c.json({
+    ok: true, qualityState: "approved",
+    recommendationEligible: policy.ranker, thermalEligible: policy.thermal,
+  });
+});
+
+ops.get("/projects/:id/recommendation-outcomes", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, quote_revision_id, quote_line_id, ai_proposal_line_id, external_ref,
+            context_key, context_json, proposed_config_json, final_config_json,
+            proposed_product_slug, proposed_variant_id, proposed_line_total,
+            final_product_slug, final_variant_id, final_line_total, price_delta,
+            decision, reason_code, recommendation_eligible, thermal_eligible,
+            quality_state, reviewed_by, reviewed_at, created_at
+       FROM recommendation_outcome
+      WHERE project_id=? ORDER BY created_at DESC`,
+  ).bind(c.req.param("id")).all();
+  return c.json({ outcomes: results ?? [] });
+});
+
 // POST /api/ops/projects/:id/ai-runs — run the LLM building-modelling pipeline
 // (strategy §19.1): ingest documents, extract via the single primary model,
 // persist the evidence-linked building model, then deterministic selection.
 // SUPPORT LEVER ONLY (not in the ops UI): extraction fires automatically on
 // upload; this is the manual trigger for AI_EXTRACTION_MODE='manual' incidents.
+// Retry durable finalized-quote learning delivery after transient D1/R2 errors.
+ops.post("/learning-outbox/drain", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!canManageLearning(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const result = await drainLearningOutbox(c.env);
+  await logEvent(c.env, {
+    actor: staff.id, entityType: "learning_outbox", entityId: "batch",
+    action: `retried learning delivery: ${result.completed}/${result.attempted} completed`,
+  });
+  return c.json(result);
+});
+
 ops.post("/projects/:id/ai-runs", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
@@ -778,6 +1110,10 @@ ops.post("/projects/:id/ai-runs", async (c) => {
   const project = await c.env.DB.prepare("SELECT id FROM project WHERE id = ?").bind(projectId).first();
   if (!project) return c.json({ error: "not_found" }, 404);
   if (!c.env.AI) return c.json({ error: "ai_unavailable" }, 409);
+  if (!(await hasAnyExactPricingCoverage(c.env))) {
+    return c.json({ error: "pricing_catalogue_not_ready" }, 409);
+  }
+  if (!(await reserveAiRunBudget(c.env, projectId))) return c.json({ error: "ai_budget_exhausted" }, 429);
   const summary = await runAiExtraction(c.env, projectId);
   await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: projectId, action: `ai extraction ${summary.status} — ${summary.extractedLines} lines, ${summary.conflicts} conflicts` });
   return c.json(summary);
@@ -846,10 +1182,10 @@ ops.get("/projects/:id/estimator", async (c) => {
     let candidates: any[] = [];
     if (run) {
       const { results } = await c.env.DB.prepare(
-        "SELECT sanity_product_id, catalogue_rev, hard_rule_passed, hard_rule_outcome_json, score, score_components_json, reason_codes, rank, selected FROM candidate_result WHERE selection_run_id = ? ORDER BY selected DESC, rank",
+        "SELECT sanity_product_id, selected_variant_id, catalogue_rev, hard_rule_passed, hard_rule_outcome_json, score, score_components_json, reason_codes, rank, selected FROM candidate_result WHERE selection_run_id = ? ORDER BY selected DESC, rank",
       ).bind(run.id).all<any>();
       candidates = (results ?? []).map((r) => ({
-        productId: r.sanity_product_id, catalogueRev: r.catalogue_rev,
+        productId: r.sanity_product_id, variantId: r.selected_variant_id, catalogueRev: r.catalogue_rev,
         passed: !!r.hard_rule_passed, filters: safeParse(r.hard_rule_outcome_json ?? "[]"),
         score: r.score, components: safeParse(r.score_components_json ?? "null"), rank: r.rank, selected: !!r.selected,
         failReasons: safeParse(r.reason_codes ?? "[]"),

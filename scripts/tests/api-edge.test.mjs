@@ -91,6 +91,29 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.ok(listed);
       assert.equal(listed.virus_status, "clean", "an accepted upload is scanned, not left pending");
       assert.equal((await staff.request(`/api/ops/files/${uploaded.file.id}/download`)).status, 200);
+
+      const reservation = await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--json", "--command",
+        `SELECT status FROM upload_reservation WHERE id='${uploaded.file.id}'`,
+      ], { env: wranglerEnv });
+      assert.equal(JSON.parse(reservation.stdout)[0].results[0].status, "clean");
+
+      // Submission is fail-closed while any authoritative upload reservation is
+      // still pending, even if the draft itself would otherwise be mutable.
+      const current = await requestJson(buyer, "/api/projects/current");
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `UPDATE file_asset SET virus_status='pending' WHERE id='${uploaded.file.id}'`,
+      ], { env: wranglerEnv });
+      await requestJson(buyer, `/api/projects/${current.body.project.id}/submit`, {
+        method: "POST",
+        json: { contact: { name: "Upload Test", email: "upload@example.com" } },
+      }, 409);
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `UPDATE file_asset SET virus_status='clean' WHERE id='${uploaded.file.id}'`,
+      ], { env: wranglerEnv });
     });
 
     await t.test("upload scanning: dangerous files are refused and never stored", async () => {
@@ -175,7 +198,10 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(JSON.parse(link.stdout)[0].results[0].quote_line_id, id1, "provenance link survives autosave");
 
       // Removing line 2 deletes exactly that row; line 1 (with evidence) persists.
-      const resave2 = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [{ ...base, code: "W01", serverId: id1, qty: 3 }] } });
+      const resave2 = await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { items: [{ ...base, code: "W01", serverId: id1, qty: 3 }], removedIds: [id2] },
+      });
       assert.equal(resave2.body.items.length, 1);
       assert.equal(resave2.body.items[0].id, id1);
     });
@@ -215,7 +241,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       // A preference_correction carries initial (system pick) → final (reviewer's
       // choice); this is the exact substrate the learning loop reads back.
       const ok = await requestJson(staff, "/api/ops/projects/p_submitted/feedback", { method: "POST",
-        json: { field: "product", openingId: "op_est1", category: "preference_correction", reasonCode: "LOWER_TOTAL_COST_SAME_COMPLIANCE",
+        json: { field: "product", openingId: "op_est1", category: "preference_correction", reasonCode: "CUSTOMER_PREFERENCE",
                 initialValue: { productId: "product-amj100l" }, finalValue: { productId: "product-amj80" } } });
       assert.ok(ok.body.id, "feedback recorded with a valid category");
 
@@ -411,6 +437,42 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
       assert.equal(saved.body.items[0].status, "Ready");
 
+      // A request-scoped mutation owner is fail-closed: neither another cart save
+      // nor submission may observe the epoch and then write through someone
+      // else's in-flight mutation.
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `UPDATE project SET quote_mutation_token='test-held' WHERE id='${pid}'`,
+      ], { env: wranglerEnv });
+      await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT", json: { items: [line] },
+      }, 409);
+      await requestJson(buyer, `/api/projects/${pid}/submit`, {
+        method: "POST", json: { contact: { name: "Sam", email: "sam@example.com" } },
+      }, 409);
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `UPDATE project SET quote_mutation_token=NULL WHERE id='${pid}'`,
+      ], { env: wranglerEnv });
+
+      // A registered-user AI generation is part of the estimate. Submission is
+      // blocked while that durable job is scheduled, then released at terminal
+      // completion; this closes the delayed-cart-mutation race.
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `UPDATE project SET ai_generation=1 WHERE id='${pid}';
+         INSERT INTO ai_job_claim
+           (project_id,source_generation,debounce_token,status,attempts)
+         VALUES ('${pid}',1,'test-pending','scheduled',0);`,
+      ], { env: wranglerEnv });
+      await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST",
+        json: { contact: { name: "Sam", email: "sam@example.com" } } }, 409);
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `UPDATE ai_job_claim SET status='completed' WHERE project_id='${pid}' AND source_generation=1;`,
+      ], { env: wranglerEnv });
+
       // Contact is required by the server, not just the SPA.
       await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "", email: "" } } }, 400);
       const ok = await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST",
@@ -468,6 +530,56 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(buyer, `/api/revisions/${revId}/accept`, { method: "POST" }, 409);
       // A second change request on the same (now stale) revision is rejected too.
       await requestJson(buyer, `/api/revisions/${revId}/request-changes`, { method: "POST", json: { message: "again" } }, 409);
+
+      // Re-approval and a replacement issue must not make revision 1 live again.
+      const replacementApproval = await requestJson(
+        staff, `/api/ops/projects/${pid}/submit-for-approval`,
+        { method: "POST", json: {} },
+      );
+      if (replacementApproval.body.statusInternal === "approval_pending") {
+        const replacementSteps = await requestJson(staff, "/api/ops/approvals");
+        for (const step of replacementSteps.body.approvals.filter((s) => s.project_id === pid)) {
+          await requestJson(staff, `/api/ops/approvals/${step.id}/approve`, {
+            method: "POST", json: {},
+          });
+        }
+      }
+      const replacement = await requestJson(
+        staff, `/api/ops/projects/${pid}/issue-revision`,
+        { method: "POST", json: {} },
+      );
+      assert.equal(replacement.body.revisionNo, 2);
+      await requestJson(buyer, `/api/revisions/${revId}/accept`, { method: "POST" }, 409);
+      const afterReplacement = await requestJson(buyer, `/api/projects/${pid}/revisions`);
+      const original = afterReplacement.body.revisions.find((r) => r.id === revId);
+      const current = afterReplacement.body.revisions.find((r) => r.id === replacement.body.id);
+      assert.equal(original.status, "superseded");
+      assert.equal(current.status, "issued");
+    });
+
+    await t.test("registered customer AI edits reach staff repricing but cannot pass approval unpriced", async () => {
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "ai-edit@example.com");
+      const line = { code: "W09", location: "Study", productSlug: "amj80-series-awning-window", measuredBy: "frame", width: "900", height: "1200", qty: 1,
+        options: { colour: "Monument", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" } };
+      const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
+      const pid = saved.body.project.id;
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `UPDATE quote_line SET origin='ai', line_total=NULL, status='technical_review',
+           review_json='{"customerConfigurationChanged":"AMJ will confirm and price this selection."}'
+         WHERE project_id='${pid}' AND revision_id IS NULL;`,
+      ], { env: wranglerEnv });
+      const submitted = await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST",
+        json: { contact: { name: "AI Edit", email: "ai-edit@example.com" } } });
+      assert.equal(submitted.body.status, "submitted");
+
+      await requestJson(staff, `/api/ops/projects/${pid}/assign`, { method: "POST", json: {} });
+      const workspace = await requestJson(staff, `/api/ops/projects/${pid}`);
+      assert.equal(workspace.body.project.canSubmitForApproval, false);
+      assert.equal(workspace.body.project.unresolvedLineCount, 1);
+      await requestJson(staff, `/api/ops/projects/${pid}/submit-for-approval`, { method: "POST", json: {} }, 409);
     });
 
     await t.test("RBAC: role-less internal staff is blocked from payments + customer PII", async () => {

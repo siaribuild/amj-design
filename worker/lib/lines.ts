@@ -21,6 +21,7 @@ export interface ApiLine {
   lineTotal: number | null;
   /** 'manual' | 'schedule' — how the line entered the project. */
   origin?: string;
+  aiPriced?: boolean;
   /** Per-field {field: reason} for parsed lines that need confirmation. */
   review?: Record<string, string> | null;
 }
@@ -41,6 +42,12 @@ export interface LineRow {
   status: string;
   origin?: string | null;
   review_json?: string | null;
+  ai_proposal_line_id?: string | null;
+  selected_variant_id?: string | null;
+  configuration_snapshot_json?: string | null;
+  pricing_snapshot_json?: string | null;
+  recommendation_basis?: string | null;
+  recommendation_confidence?: string | null;
 }
 
 export function rowToApiLine(r: LineRow): ApiLine {
@@ -60,6 +67,7 @@ export function rowToApiLine(r: LineRow): ApiLine {
     status: r.status === "ready" ? "Ready" : "Needs review",
     lineTotal: r.line_total,
     origin: r.origin ?? "manual",
+    aiPriced: !!r.ai_proposal_line_id,
     review: review && Object.keys(review).length ? (review as Record<string, string>) : null,
   };
 }

@@ -215,6 +215,8 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit }: {
   lines: ParsedLine[]; footerLabel: string; total: number | null;
   statusPill?: (l: ParsedLine) => ReactNode; showUnit?: boolean;
 }) {
+  const hasPendingPrice = lines.some((line) => line.lineTotal == null);
+  const price = (value: number | null) => value == null ? "Pending AMJ price" : money(value);
   return (
     <>
       <div className="hidden md:grid grid-cols-[118px_1fr_110px_44px_104px_116px] gap-3.5 px-5 py-[11px] bg-[#5A7A6A]/[0.07] border-b border-black/10 text-[10.5px] tracking-[0.08em] uppercase text-[#5c5a56]" style={{ fontFamily: "'DM Mono', monospace" }} aria-hidden="true">
@@ -238,22 +240,22 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit }: {
           <span className="hidden md:block text-[12.5px] text-[#5c5a56]" style={{ fontFamily: "'DM Mono', monospace" }}>{dimsLabel(l)}</span>
           <span className="hidden md:block text-[13px]" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{l.qty}</span>
           <span className="hidden md:block text-right text-[13.5px] font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>
-            {showUnit ? money(l.qty ? l.lineTotal / l.qty : l.lineTotal) : money(l.lineTotal)}
+            {showUnit ? price(l.lineTotal == null ? null : (l.qty ? l.lineTotal / l.qty : l.lineTotal)) : price(l.lineTotal)}
           </span>
           <span className="justify-self-end md:text-right">
             {showUnit
-              ? <span className="text-[13.5px] font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{money(l.lineTotal)}</span>
+              ? <span className="text-[13.5px] font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{price(l.lineTotal)}</span>
               : statusPill?.(l)}
           </span>
           <span className="md:hidden col-span-2 order-4 flex items-center gap-4 text-[12.5px] text-[#5c5a56] pt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>
-            {dimsLabel(l)} <span>×{l.qty}</span> <span className="font-medium text-[#131311]">{money(l.lineTotal)}</span>
+            {dimsLabel(l)} <span>×{l.qty}</span> <span className="font-medium text-[#131311]">{price(l.lineTotal)}</span>
           </span>
         </div>
       ))}
       {total != null && (
         <div className="flex justify-between items-center px-5 py-[15px] bg-[#5A7A6A]/[0.07] border-t border-black/10 text-[13.5px]">
           <small className="text-[#5c5a56]">{footerLabel}</small>
-          <div><small className="text-[#5c5a56]">Order total </small><span className="text-[17px] font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{money(total)}</span></div>
+          <div><small className="text-[#5c5a56]">{hasPendingPrice ? "Priced-lines subtotal " : "Order total "}</small><span className="text-[17px] font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{money(total)}</span></div>
         </div>
       )}
     </>
@@ -621,6 +623,6 @@ function itemToParsed(it: ApiItem): ParsedLine {
     productName: productLabel(it.productSlug),
     optionsSummary: Object.values(opts).filter(Boolean).slice(0, 2).join(" · "),
     width: it.width, height: it.height,
-    qty: it.qty, lineTotal: it.lineTotal ?? 0,
+    qty: it.qty, lineTotal: it.lineTotal,
   };
 }

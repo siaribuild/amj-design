@@ -40,6 +40,23 @@
   // the account's Workers AI and, if desired, route it through an AI Gateway for
   // caching + cost controls. No further provisioning needed to enable this binding.
   "ai": { "binding": "AI" },
+  "queues": {
+    "producers": [
+      { "binding": "AI_JOBS", "queue": "apertly-ai-jobs" }
+    ],
+    "consumers": [
+      {
+        "queue": "apertly-ai-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "apertly-ai-jobs-dlq"
+      }
+    ]
+  },
+  "triggers": {
+    "crons": ["*/10 * * * *"]
+  },
 
   "vars": {
     // Schedule extraction engine: 'deterministic' (default, on-stack, no model

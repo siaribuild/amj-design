@@ -73,6 +73,7 @@ export interface OpsLine {
   lineTotal: number | null;
   status: string;
   origin: string;
+  selectedVariantId: string | null;
   /** Unresolved technical-review reasons (field → reason) from an auto-parse. */
   review: Record<string, string> | null;
 }
@@ -85,6 +86,7 @@ export interface OpsWorkspace {
   project: {
     id: string; title: string; statusCustomer: string; statusInternal: string;
     statusInternalLabel: string; nextStates: string[]; canSubmitForApproval: boolean;
+    unresolvedLineCount: number;
     org: string | null; customerName: string | null; customerEmail: string | null;
     assignee: string | null; internalOwnerId: string | null; updatedAt: string;
   };
@@ -105,8 +107,19 @@ export const opsSubmissions = () => req<{ submissions: OpsSubmission[] }>("/api/
 export const opsProject = (id: string) => req<OpsWorkspace>(`/api/ops/projects/${id}`);
 export const opsAssign = (id: string, userId?: string) =>
   req<{ ok: boolean; assignee: string | null; statusInternal: string }>(`/api/ops/projects/${id}/assign`, { method: "POST", body: JSON.stringify({ userId }) });
-export const opsPatchLine = (lineId: string, patch: Partial<{ width: string; height: string; qty: number; code: string; room: string; options: Record<string, string>; resolveReview: boolean | string[] }>) =>
+export interface OpsExactConfiguration {
+  productSlug: string; productName: string; variantId: string;
+  frameTechnology: string; glassBuildUp: string | null; coating: string | null;
+  uValue: number | null; shgc: number | null;
+}
+export const opsPatchLine = (lineId: string, patch: Partial<{
+  width: string; height: string; qty: number; code: string; room: string;
+  productSlug: string; selectedVariantId: string; options: Record<string, string>;
+  resolveReview: boolean | string[];
+}>) =>
   req<{ line: OpsLine }>(`/api/ops/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(patch) });
+export const opsLineConfigurations = (lineId: string) =>
+  req<{ configurations: OpsExactConfiguration[] }>(`/api/ops/lines/${lineId}/configurations`);
 
 // ── Estimator (CPQ) review workspace ─────────────────────────────────────────
 export interface EstimatorProject { id: string; title: string; statusCustomer: string; openings: number; attention: number }
@@ -115,7 +128,7 @@ export interface ScoreComponents {
   commercial: number; historical: number; dataCompleteness: number;
 }
 export interface EstimatorCandidate {
-  productId: string; productName: string; catalogueRev: string; passed: boolean;
+  productId: string; productName: string; variantId: string | null; catalogueRev: string; passed: boolean;
   filters: { filter: string; passed: boolean; severity?: string; reason?: string }[];
   score: number | null; components: ScoreComponents | null; rank: number | null; selected: boolean; failReasons: string[];
 }

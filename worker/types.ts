@@ -32,6 +32,9 @@ export interface Env {
   /** Workers AI (schedule extraction accuracy tier). Optional — deterministic
    *  on-stack extraction runs without it. Bound in wrangler.jsonc as "AI". */
   AI?: unknown;
+  /** Durable registered-user AI extraction jobs. Anonymous requests never write
+   * to this queue. Optional only for local tests/development. */
+  AI_JOBS?: Queue<{ projectId: string; generation: number; debounceToken: string }>;
   /** Extraction engine selector: 'deterministic' (default/on-stack), 'ai'
    *  (force Workers AI), or 'auto' (deterministic, escalate to AI when weak). */
   PARSE_ENGINE?: string;
@@ -57,6 +60,8 @@ export interface Env {
    *  only GATE, the AI tier interprets). 'manual': ops-triggered only (tests,
    *  or an emergency spend kill-switch). */
   AI_EXTRACTION_MODE?: string;
+  /** Maximum paid AI extraction runs per registered account per UTC day. */
+  AI_DAILY_RUN_LIMIT?: string;
   /** Upload scanning engine: 'structural' (default, on-stack type + PDF
    *  active-content checks), 'remote' (external AV), or 'both'. */
   SCAN_ENGINE?: string;

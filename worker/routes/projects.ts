@@ -8,8 +8,18 @@ import type { Env } from "../types";
 import { itemToInsert, itemFields, incomingServerId, editedFieldsAfterSave, rowToApiLine, type LineRow, type EditableSnapshot } from "../lib/lines";
 import { resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
+import { uuid } from "../lib/util";
 
 export const projects = new Hono<{ Bindings: Env }>();
+
+const safeParse = (value: string): Record<string, unknown> => {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
 
 // GET /api/projects — the signed-in customer's projects (for the dashboard).
 // Carries everything the account area needs to derive gates + list rows in one
@@ -55,8 +65,11 @@ async function loadLines(env: Env, projectId: string) {
 // R2; this surfaces the metadata the estimator + account/ops views render.
 export async function loadProjectFiles(env: Env, projectId: string) {
   const { results } = await env.DB.prepare(
-    "SELECT id, filename, kind, size FROM file_asset WHERE project_id = ? ORDER BY created_at DESC",
-  ).bind(projectId).all<{ id: string; filename: string; kind: string; size: number | null }>();
+    "SELECT id, filename, kind, size, doc_type, doc_type_source FROM file_asset WHERE project_id = ? ORDER BY created_at DESC",
+  ).bind(projectId).all<{
+    id: string; filename: string; kind: string; size: number | null;
+    doc_type: string | null; doc_type_source: string | null;
+  }>();
   return results ?? [];
 }
 
@@ -85,20 +98,40 @@ projects.get("/:id", async (c) => {
 projects.put("/current/lines", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const items: unknown[] = Array.isArray(body?.items) ? body.items : [];
+  const removedIds = new Set(
+    Array.isArray(body?.removedIds)
+      ? body.removedIds.filter((id: unknown): id is string => typeof id === "string" && id.length <= 100)
+      : [],
+  );
   // A title is optional per-save: sent when the user (re)names the project. When
   // omitted (a line-only save), the existing title is left untouched.
   const hasTitle = typeof body?.title === "string";
   const title = hasTitle ? (body.title.trim().slice(0, 120) || "My Project") : "My Project";
 
   const { project, cookie } = await resolveOrCreateCurrentProject(c.env, c.req.raw, title);
+  const projectState = await c.env.DB.prepare(
+    "SELECT status_customer, quote_edit_version FROM project WHERE id=?",
+  ).bind(project.id).first<{ status_customer: string; quote_edit_version: number }>();
+  if (!projectState || projectState.status_customer !== "draft") {
+    return c.json({ error: "project_changed_reload_required" }, 409);
+  }
+  const nextQuoteVersion = projectState.quote_edit_version + 1;
+  const mutationToken = uuid();
 
   // Upsert by stable server id rather than delete-all + insert-all. A line the
   // client already knows (serverId) is UPDATEd in place, so its id — and the
   // parse_line.quote_line_id provenance link pointing at it — survives every
   // autosave and the pre-submit save. Only genuinely removed lines are deleted.
-  type StoredRow = EditableSnapshot & { id: string; origin: string | null };
+  type StoredRow = EditableSnapshot & {
+    id: string; origin: string | null; ai_proposal_line_id: string | null;
+    pricing_snapshot_json: string | null; configuration_snapshot_json: string | null;
+    selected_variant_id: string | null;
+  };
   const storedRows = ((await c.env.DB.prepare(
-    "SELECT id, origin, edited_fields, product_slug, options_json, dims_json, qty FROM quote_line WHERE project_id = ? AND revision_id IS NULL",
+    `SELECT id, origin, edited_fields, product_slug, options_json, dims_json, qty,
+            ai_proposal_line_id, pricing_snapshot_json, configuration_snapshot_json,
+            selected_variant_id
+       FROM quote_line WHERE project_id = ? AND revision_id IS NULL`,
   ).bind(project.id).all<StoredRow>()).results ?? []);
   const existing = new Map(storedRows.map((r) => [r.id, r]));
   const resolved = items.map((raw, i) => {
@@ -107,10 +140,24 @@ projects.put("/current/lines", async (c) => {
   });
   const keptIds = new Set(resolved.filter((r) => r.id).map((r) => r.id as string));
 
-  const stmts: D1PreparedStatement[] = [];
+  const stmts: D1PreparedStatement[] = [
+    c.env.DB.prepare(
+      `UPDATE project SET quote_edit_version=?, quote_mutation_token=?,
+          updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+          AND quote_mutation_token IS NULL`,
+    ).bind(nextQuoteVersion, mutationToken, project.id, projectState.quote_edit_version),
+  ];
   // Delete only the draft lines the client dropped (origin is never resurrected).
   for (const id of existing.keys()) {
-    if (!keptIds.has(id)) stmts.push(c.env.DB.prepare("DELETE FROM quote_line WHERE id = ?").bind(id));
+    if (!keptIds.has(id) && removedIds.has(id)) {
+      stmts.push(c.env.DB.prepare(
+        `DELETE FROM quote_line WHERE id=? AND project_id=? AND EXISTS (
+           SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+             AND quote_edit_version=? AND quote_mutation_token=?
+         )`,
+      ).bind(id, project.id, project.id, nextQuoteVersion, mutationToken));
+    }
   }
   for (const { raw, i, id } of resolved) {
     const f = itemFields(raw);
@@ -119,25 +166,192 @@ projects.put("/current/lines", async (c) => {
       // Schedule-origin rows also record WHICH field groups the human changed
       // (0019) — the tag-upsert importer never overwrites an edited field.
       const stored = existing.get(id)!;
-      const edited = (stored.origin ?? "manual") === "schedule" ? editedFieldsAfterSave(stored, f) : stored.edited_fields;
+      const edited = stored.origin === "schedule" || stored.origin === "ai"
+        ? editedFieldsAfterSave(stored, f)
+        : stored.edited_fields;
+      const aiManaged = stored.origin === "ai" || !!stored.ai_proposal_line_id;
+      if (aiManaged && edited === stored.edited_fields) {
+        // A reload followed by autosave must not replace the AI configuration's
+        // private server price with the browser's legacy deterministic estimate.
+        stmts.push(c.env.DB.prepare(
+          `UPDATE quote_line SET external_ref=?, room_label=?, measured_by=?,
+             position=?, edit_version=edit_version+1, updated_at=datetime('now')
+           WHERE id=? AND project_id=? AND revision_id IS NULL
+             AND EXISTS (
+               SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+                 AND quote_edit_version=? AND quote_mutation_token=?
+             )`,
+        ).bind(f.external_ref, f.room_label, f.measured_by, i, id, project.id, project.id, nextQuoteVersion, mutationToken));
+        continue;
+      }
+      if (aiManaged) {
+        // A customer may change an AI suggestion, but cannot replace its private
+        // CPQ price or clear server-owned technical review state from the browser.
+        // Material edits invalidate the exact configuration snapshot and remain
+        // explicitly unpriced until staff confirms/reprices them.
+        stmts.push(c.env.DB.prepare(
+          `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?,
+             options_json=?, dims_json=?, measured_by=?, qty=?, line_total=NULL,
+             status='technical_review', position=?,
+             review_json=json_patch(COALESCE(review_json,'{}'), ?),
+             edited_fields=?,
+             recommendation_basis=NULL, recommendation_confidence=NULL,
+             pricing_snapshot_json=NULL, configuration_snapshot_json=NULL,
+             selected_variant_id=?,
+             edit_version=edit_version+1, updated_at=datetime('now')
+           WHERE id=? AND project_id=? AND revision_id IS NULL
+             AND EXISTS (
+               SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+                 AND quote_edit_version=? AND quote_mutation_token=?
+             )`,
+        ).bind(
+          f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json,
+          f.measured_by, f.qty, i,
+          JSON.stringify({
+            customerConfigurationChanged: "You changed an AI-priced configuration; AMJ will confirm its thermal suitability and price.",
+          }),
+          edited,
+          stored.product_slug === f.product_slug ? stored.selected_variant_id : null,
+          id, project.id, project.id, nextQuoteVersion, mutationToken,
+        ));
+        continue;
+      }
       stmts.push(c.env.DB.prepare(
-        `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?, options_json=?, dims_json=?, measured_by=?, qty=?, line_total=?, status=?, position=?, review_json=?, edited_fields=?, updated_at=datetime('now')
-         WHERE id=? AND project_id=? AND revision_id IS NULL`,
-      ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.measured_by, f.qty, f.line_total, f.status, i, f.review_json, edited, id, project.id));
+        `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?, options_json=?, dims_json=?, measured_by=?, qty=?, line_total=?, status=?, position=?, review_json=?, edited_fields=?, edit_version=edit_version+1, updated_at=datetime('now')
+         WHERE id=? AND project_id=? AND revision_id IS NULL
+           AND EXISTS (
+             SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+               AND quote_edit_version=? AND quote_mutation_token=?
+           )`,
+      ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.measured_by, f.qty, f.line_total, f.status, i, f.review_json, edited, id, project.id, project.id, nextQuoteVersion, mutationToken));
     } else {
       const r = itemToInsert(project.id, raw, i);
       stmts.push(c.env.DB.prepare(
         `INSERT INTO quote_line
            (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position, origin, review_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(r.id, r.project_id, r.external_ref, r.room_label, r.product_slug, r.options_json, r.dims_json, r.measured_by, r.qty, r.line_total, r.status, r.position, r.origin, r.review_json));
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+           WHERE EXISTS (
+             SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+               AND quote_edit_version=? AND quote_mutation_token=?
+           )`,
+      ).bind(r.id, r.project_id, r.external_ref, r.room_label, r.product_slug, r.options_json, r.dims_json, r.measured_by, r.qty, r.line_total, r.status, r.position, r.origin, r.review_json, project.id, nextQuoteVersion, mutationToken));
     }
   }
   stmts.push(hasTitle
-    ? c.env.DB.prepare("UPDATE project SET title = ?, updated_at = datetime('now') WHERE id = ?").bind(title, project.id)
-    : c.env.DB.prepare("UPDATE project SET updated_at = datetime('now') WHERE id = ?").bind(project.id));
-  await c.env.DB.batch(stmts);
+    ? c.env.DB.prepare(
+      `UPDATE project SET title=?, quote_mutation_token=NULL, updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+          AND quote_mutation_token=?`,
+    ).bind(title, project.id, nextQuoteVersion, mutationToken)
+    : c.env.DB.prepare(
+      `UPDATE project SET quote_mutation_token=NULL, updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+          AND quote_mutation_token=?`,
+    ).bind(project.id, nextQuoteVersion, mutationToken));
+  const committed = await c.env.DB.batch(stmts);
+  if (Number(committed[0]?.meta?.changes ?? 0) !== 1 ||
+      Number(committed[committed.length - 1]?.meta?.changes ?? 0) !== 1) {
+    return c.json({ error: "project_changed_reload_required" }, 409);
+  }
 
   if (cookie) c.header("Set-Cookie", cookie);
+  return c.json({ project: projectDto(project), items: await loadLines(c.env, project.id) });
+});
+
+// Restore the current published AI proposal after a customer experiments with a
+// material configuration change. The immutable proposal is the only trusted
+// source for its private exact price and performance configuration.
+projects.post("/current/lines/:id/restore-ai", async (c) => {
+  const { project } = await resolveCurrentProject(c.env, c.req.raw);
+  if (!project || project.status_customer !== "draft") {
+    return c.json({ error: "not_found" }, 404);
+  }
+  const restoreState = await c.env.DB.prepare(
+    "SELECT quote_edit_version FROM project WHERE id=? AND status_customer='draft'",
+  ).bind(project.id).first<{ quote_edit_version: number }>();
+  if (!restoreState) return c.json({ error: "project_changed_reload_required" }, 409);
+  const proposal = await c.env.DB.prepare(
+    `SELECT pl.product_slug, pl.performance_variant_id, pl.configuration_json,
+            pl.price_snapshot_json, pl.recommendation_basis, pl.confidence_band,
+            pl.review_required, pl.id AS proposal_line_id, q.edit_version
+       FROM quote_line q
+       JOIN ai_proposal_line pl ON pl.quote_line_id=q.id
+       JOIN ai_proposal p ON p.id=pl.proposal_id
+       JOIN project project_state ON project_state.id=q.project_id
+      WHERE q.id=? AND q.project_id=? AND q.revision_id IS NULL
+        AND p.status='published'
+        AND p.source_generation=project_state.ai_generation
+        AND EXISTS (
+          SELECT 1 FROM ai_job_claim j
+           WHERE j.project_id=project_state.id
+             AND j.source_generation=project_state.ai_generation
+             AND j.status='completed'
+        )
+        AND pl.product_slug IS NOT NULL AND pl.price_snapshot_json IS NOT NULL`,
+  ).bind(c.req.param("id"), project.id).first<{
+    product_slug: string; performance_variant_id: string | null;
+    configuration_json: string; price_snapshot_json: string;
+    recommendation_basis: string; confidence_band: string;
+    review_required: number; proposal_line_id: string; edit_version: number;
+  }>();
+  if (!proposal) return c.json({ error: "restorable_ai_proposal_not_found" }, 409);
+  const configuration = safeParse(proposal.configuration_json);
+  const price = safeParse(proposal.price_snapshot_json);
+  const dimensions = configuration.dimensions && typeof configuration.dimensions === "object"
+    ? configuration.dimensions as Record<string, unknown> : {};
+  const options = configuration.options && typeof configuration.options === "object" &&
+    !Array.isArray(configuration.options)
+    ? configuration.options as Record<string, unknown> : {};
+  const total = Number(price.total);
+  if (!Number.isFinite(total)) return c.json({ error: "invalid_ai_price_snapshot" }, 409);
+  const review = proposal.review_required
+    ? { thermalRecommendation: "AMJ will confirm this AI-recommended thermal configuration during technical review." }
+    : null;
+  const restored = await c.env.DB.batch([
+    c.env.DB.prepare(
+    `UPDATE quote_line SET product_slug=?, options_json=?, dims_json=?, qty=?,
+       line_total=?, status=?, review_json=?, edited_fields=NULL,
+       ai_proposal_line_id=?,
+       selected_variant_id=?, configuration_snapshot_json=?,
+       pricing_snapshot_json=?, recommendation_basis=?,
+       recommendation_confidence=?, edit_version=edit_version+1,
+       updated_at=datetime('now')
+     WHERE id=? AND project_id=? AND revision_id IS NULL
+       AND edit_version=?
+       AND EXISTS (
+         SELECT 1 FROM project restore_project
+          WHERE restore_project.id=quote_line.project_id
+            AND restore_project.status_customer='draft'
+            AND restore_project.quote_edit_version=?
+       )
+       AND EXISTS (
+         SELECT 1 FROM ai_proposal_line current_line
+         JOIN ai_proposal current_proposal ON current_proposal.id=current_line.proposal_id
+         JOIN project current_project ON current_project.id=quote_line.project_id
+        WHERE current_line.id=?
+          AND current_proposal.status='published'
+          AND current_proposal.source_generation=current_project.ai_generation
+       )`,
+    ).bind(
+    proposal.product_slug, JSON.stringify(options),
+    JSON.stringify({ width: dimensions.widthMm ?? "", height: dimensions.heightMm ?? "" }),
+    Math.max(1, Math.floor(Number(configuration.quantity) || 1)),
+    total, proposal.review_required ? "technical_review" : "ready",
+    review ? JSON.stringify(review) : null,
+    proposal.proposal_line_id,
+    proposal.performance_variant_id, proposal.configuration_json,
+    proposal.price_snapshot_json, proposal.recommendation_basis,
+    proposal.confidence_band, c.req.param("id"), project.id,
+    proposal.edit_version, restoreState.quote_edit_version, proposal.proposal_line_id,
+    ),
+    c.env.DB.prepare(
+      `UPDATE project SET quote_edit_version=quote_edit_version+1, updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=?`,
+    ).bind(project.id, restoreState.quote_edit_version),
+  ]);
+  if (Number(restored[0]?.meta?.changes ?? 0) !== 1 ||
+      Number(restored[1]?.meta?.changes ?? 0) !== 1) {
+    return c.json({ error: "ai_proposal_changed" }, 409);
+  }
   return c.json({ project: projectDto(project), items: await loadLines(c.env, project.id) });
 });

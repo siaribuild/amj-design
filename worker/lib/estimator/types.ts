@@ -7,6 +7,11 @@ export interface PerformanceVariant {
   uValue: number | null;
   shgc: number | null;
   frameType: string | null;
+  frameTechnology: "conventional" | "thermally_broken" | "unknown";
+  coating: string | null;
+  certificationRef: string | null;
+  /** Private D1 surcharge identifiers required to price this exact variant. */
+  pricingOptionSlugs: string[];
   /** 'certified' | 'estimated' — an estimated value is NEVER a compliance pass. */
   dataSource: string;
   certified: boolean;
@@ -51,7 +56,36 @@ export interface OpeningInput {
   operationType?: string | null;  // awning | sliding | fixed | …
   widthMm?: number | null;
   heightMm?: number | null;
+  qty?: number | null;
+  optionSlugs?: string[];
+  scheduleRequirements?: {
+    doubleGlazed?: boolean | null;
+    glassDescription?: string | null;
+    colour?: string | null;
+    flyscreen?: boolean | null;
+  } | null;
+  thermalContext?: {
+    inputMode?: "schedule_only" | "plans_no_report" | "plans_plus_energy_report";
+    requirementBasis?: "explicit_energy_report" | "plan_derived" | "default_envelope" | "human_override" | null;
+    roomAreaM2?: number | null;
+    totalFloorAreaM2?: number | null;
+    openingAreaM2?: number | null;
+    glazingToRoomFloorRatio?: number | null;
+    orientation?: string | null;
+    shadingKnown?: boolean | null;
+    riskBand?: "low" | "medium" | "high" | null;
+    climateZone?: string | null;
+    jurisdiction?: string | null;
+    buildingClass?: string | null;
+    envelopeClass?: string | null;
+  } | null;
   requirements?: {
+    maxUValue?: number | null;
+    minShgc?: number | null;
+    maxShgc?: number | null;
+  } | null;
+  /** Governed human precedent used to rank, never as a compliance hard rule. */
+  advisoryRequirements?: {
     maxUValue?: number | null;
     minShgc?: number | null;
     maxShgc?: number | null;

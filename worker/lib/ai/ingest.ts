@@ -125,7 +125,7 @@ interface FileRow { id: string; r2_key: string; filename: string; checksum: stri
 export async function ingestProjectFiles(env: Env, projectId: string): Promise<IngestedDoc[]> {
   const { results } = await env.DB.prepare(
     `SELECT id, r2_key, filename, checksum, size, virus_status, doc_type, doc_type_source FROM file_asset
-      WHERE project_id = ? AND kind IN ('upload','plan','schedule') AND virus_status IN ('clean','skipped')
+      WHERE project_id = ? AND kind IN ('upload','plan','schedule') AND virus_status = 'clean'
       ORDER BY created_at`,
   ).bind(projectId).all<FileRow>();
 

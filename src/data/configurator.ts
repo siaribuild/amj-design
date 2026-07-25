@@ -31,7 +31,10 @@ export interface QItem {
   options: Record<string, string>; // optionTypeSlug -> chosen option name
   qty: number;
   status: "Ready" | "Needs review";
-  origin?: "manual" | "schedule"; // how the line entered the project
+  origin?: "manual" | "schedule" | "ai"; // how the line entered the project
+  aiPriced?: boolean;
+  /** Authoritative server total for an AI-selected exact configuration. */
+  lineTotal?: number | null;
   // Per-field {field: reason} set when the line was auto-parsed from a schedule and
   // a value needs a human look. Drives the amber highlight; keys are dropped as the
   // customer resolves each field (see clearReviewKey).
@@ -86,7 +89,10 @@ export function clearReviewKey(review: Record<string, string> | null | undefined
 // exactly how they reach the technician — while final quotation stays blocked
 // until resolved downstream.
 export const CUSTOMER_REVIEW_KEYS = new Set(["dims", "product", "options"]);
-export const TECHNICAL_REVIEW_KEYS = new Set(["fit", "material", "type", "note", "glazing"]);
+export const TECHNICAL_REVIEW_KEYS = new Set([
+  "fit", "material", "type", "note", "glazing", "thermalRecommendation",
+  "customerConfigurationChanged", "noLongerInDocuments",
+]);
 
 export function reviewClass(review: Record<string, string> | null | undefined): "customer" | "technical" | null {
   if (!review) return null;
@@ -102,8 +108,27 @@ export function reviewClass(review: Record<string, string> | null | undefined): 
 // single source of truth shared by the client submit gate and the server.
 export function lineBlocksSubmission(it: {
   productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;
+  origin?: string; aiPriced?: boolean; lineTotal?: number | null;
+  review?: Record<string, string> | null;
 }): boolean {
+  if (it.origin === "ai" || it.aiPriced) {
+    const priced = typeof it.lineTotal === "number" && Number.isFinite(it.lineTotal);
+    // A registered customer may intentionally change an AI recommendation. Its
+    // exact price is invalidated and must reach staff review; other unpriced AI
+    // failures remain customer-blocking.
+    return !priced && !it.review?.customerConfigurationChanged;
+  }
   return !priceConfigured(it).ok;
+}
+
+/** Customer-visible total. AI prices are private CPQ outputs and must never be
+ * silently recomputed by the browser's legacy indicative formula. */
+export function linePriceTotal(it: {
+  productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;
+  origin?: string; aiPriced?: boolean; lineTotal?: number | null;
+}): number {
+  if (it.origin === "ai" || it.aiPriced) return typeof it.lineTotal === "number" && Number.isFinite(it.lineTotal) ? it.lineTotal : 0;
+  return priceConfigured(it).total;
 }
 
 // ─── Item codes (schedule/builder references) ─────────────────────────────────

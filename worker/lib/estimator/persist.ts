@@ -9,6 +9,7 @@
 import type { Env } from "../../types";
 import { uuid } from "../util";
 import type { SelectionResult } from "./select";
+import { isOverrideReason, OVERRIDE_REASONS } from "../ai/schema";
 
 // The reason-code taxonomy (mirrors the migration 0014 CHECK). Only
 // preference_correction may ever train the ranker (enforced downstream).
@@ -50,14 +51,18 @@ export async function persistSelection(
     if (e.selected) selectedCandidateRowId = candRowId;
     stmts.push(env.DB.prepare(
       `INSERT INTO candidate_result
-         (id, selection_run_id, sanity_product_id, catalogue_rev, hard_rule_passed, hard_rule_outcome_json, score, score_components_json, reason_codes, rank, selected)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+         (id, selection_run_id, sanity_product_id, catalogue_rev, hard_rule_passed,
+          hard_rule_outcome_json, score, score_components_json, reason_codes, rank,
+          selected, sanity_config_id, selected_variant_id, performance_snapshot_json, price_snapshot_json)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
       candRowId, selectionRunId, e.candidate.sanityProductId, e.candidate.catalogueRevision,
       e.outcome.passed ? 1 : 0, JSON.stringify(e.outcome.filters), e.score,
       e.components ? JSON.stringify(e.components) : null,
       JSON.stringify(e.outcome.filters.filter((f) => !f.passed).map((f) => f.reason).filter(Boolean)),
-      e.rank, e.selected ? 1 : 0,
+      e.rank, e.selected ? 1 : 0, e.selectedVariant?.variantId ?? null, e.selectedVariant?.variantId ?? null,
+      e.selectedVariant ? JSON.stringify(e.selectedVariant) : null,
+      e.price ? JSON.stringify(e.price) : null,
     ));
   }
 
@@ -70,7 +75,7 @@ export async function persistSelection(
       catalogueRevision: s.candidate.catalogueRevision,
       name: s.candidate.name,
       configuration: s.candidate.configuration,
-      performanceVariants: s.candidate.performanceVariants,
+      performanceVariant: s.selectedVariant,
       energyCertified: s.outcome.energyCertified,
     };
     stmts.push(env.DB.prepare(
@@ -111,7 +116,7 @@ export interface FeedbackInput {
 
 export type FeedbackResult =
   | { ok: true; id: string }
-  | { ok: false; error: "invalid_category" | "missing_reason_code" | "write_failed" };
+  | { ok: false; error: "invalid_category" | "missing_reason_code" | "invalid_reason_code" | "reason_category_mismatch" | "write_failed" };
 
 // Record one correction. A category is MANDATORY (free-text-only is rejected) so
 // the correction routes to the right layer. Best-effort at the call site: a
@@ -119,6 +124,11 @@ export type FeedbackResult =
 export async function recordFeedback(env: Env, input: FeedbackInput): Promise<FeedbackResult> {
   if (!isFeedbackCategory(input.category)) return { ok: false, error: "invalid_category" };
   if (!input.reasonCode || !input.reasonCode.trim()) return { ok: false, error: "missing_reason_code" };
+  const reasonCode = input.reasonCode.trim();
+  if (!isOverrideReason(reasonCode)) return { ok: false, error: "invalid_reason_code" };
+  if (OVERRIDE_REASONS[reasonCode].layer !== input.category) {
+    return { ok: false, error: "reason_category_mismatch" };
+  }
   const id = uuid();
   try {
     await env.DB.prepare(
@@ -130,7 +140,7 @@ export async function recordFeedback(env: Env, input: FeedbackInput): Promise<Fe
       id, input.projectId, input.openingId ?? null, input.selectionRunId ?? null, input.field,
       input.initialValue !== undefined ? JSON.stringify(input.initialValue) : null,
       input.finalValue !== undefined ? JSON.stringify(input.finalValue) : null,
-      input.category, input.reasonCode.trim(), input.reviewerId ?? null, input.note ?? null,
+      input.category, reasonCode, input.reviewerId ?? null, input.note ?? null,
       input.versions?.catalogueRev ?? null, input.versions?.ruleVersion ?? null,
       input.versions?.rankerVersion ?? null, input.versions?.pricingVersion ?? null,
     ).run();

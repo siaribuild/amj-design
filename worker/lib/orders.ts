@@ -154,34 +154,82 @@ export async function createOrderFromRevision(
   const stmts = [
     // Claim the revision inside the transaction — gates the whole order creation.
     env.DB.prepare(
-      "UPDATE quote_revision SET snapshot_status = 'accepted', accepted_at = datetime('now') WHERE id = ? AND snapshot_status = 'issued'",
-    ).bind(revisionId),
+      `UPDATE quote_revision SET snapshot_status='accepted',
+          accepted_at=datetime('now')
+        WHERE id=? AND project_id=? AND snapshot_status='issued'
+          AND EXISTS (
+            SELECT 1 FROM project
+             WHERE id=? AND status_customer='quote_issued'
+               AND status_internal='issued'
+               AND current_revision_id=?
+          )`,
+    ).bind(revisionId, projectId, projectId, revisionId),
     env.DB.prepare(
       `INSERT INTO "order" (id, project_id, accepted_revision_id, order_no, total, stage)
-       VALUES (?, ?, ?, ?, ?, 'deposit_invoiced')`,
-    ).bind(orderId, projectId, revisionId, orderNo, total),
+       SELECT ?, ?, ?, ?, ?, 'deposit_invoiced'
+        WHERE EXISTS (
+          SELECT 1 FROM quote_revision
+           WHERE id=? AND project_id=? AND snapshot_status='accepted'
+        )
+          AND EXISTS (
+            SELECT 1 FROM project
+             WHERE id=? AND status_customer='quote_issued'
+               AND status_internal='issued'
+               AND current_revision_id=?
+          )`,
+    ).bind(
+      orderId, projectId, revisionId, orderNo, total,
+      revisionId, projectId, projectId, revisionId,
+    ),
     // deposit invoiced now; balance created but not yet invoiced (invoiced_at NULL)
     env.DB.prepare(
-      "INSERT INTO payment (id, order_id, kind, amount, percent, status, invoiced_at) VALUES (?, ?, 'deposit', ?, ?, 'due', datetime('now'))",
-    ).bind(uuid(), orderId, deposit, DEPOSIT_PERCENT),
+      `INSERT INTO payment (id, order_id, kind, amount, percent, status, invoiced_at)
+       SELECT ?, ?, 'deposit', ?, ?, 'due', datetime('now')
+        WHERE EXISTS (SELECT 1 FROM "order" WHERE id=?)`,
+    ).bind(uuid(), orderId, deposit, DEPOSIT_PERCENT, orderId),
     env.DB.prepare(
-      "INSERT INTO payment (id, order_id, kind, amount, percent, status) VALUES (?, ?, 'balance', ?, ?, 'due')",
-    ).bind(uuid(), orderId, balance, 100 - DEPOSIT_PERCENT),
+      `INSERT INTO payment (id, order_id, kind, amount, percent, status)
+       SELECT ?, ?, 'balance', ?, ?, 'due'
+        WHERE EXISTS (SELECT 1 FROM "order" WHERE id=?)`,
+    ).bind(uuid(), orderId, balance, 100 - DEPOSIT_PERCENT, orderId),
     ...revLines.map((l) =>
       env.DB.prepare(
-        "INSERT INTO order_line (id, order_id, external_ref, product_snapshot_json, qty, line_total) VALUES (?, ?, ?, ?, ?, ?)",
-      ).bind(uuid(), orderId, l.external_ref, l.product_snapshot_json, l.qty, l.line_total),
+        `INSERT INTO order_line
+           (id, order_id, external_ref, product_snapshot_json, qty, line_total)
+         SELECT ?, ?, ?, ?, ?, ?
+          WHERE EXISTS (SELECT 1 FROM "order" WHERE id=?)`,
+      ).bind(
+        uuid(), orderId, l.external_ref, l.product_snapshot_json, l.qty,
+        l.line_total, orderId,
+      ),
     ),
     // Carry the uploaded schedule onto the order so it stays with the record for
     // the manufacturer / technical review (the file bytes remain in R2).
-    env.DB.prepare("UPDATE file_asset SET order_id = ? WHERE project_id = ? AND kind = 'schedule'").bind(orderId, projectId),
-    env.DB.prepare("UPDATE project SET status_customer = 'closed', updated_at = datetime('now') WHERE id = ?").bind(projectId),
+    env.DB.prepare(
+      `UPDATE file_asset SET order_id=?
+        WHERE project_id=? AND kind='schedule'
+          AND EXISTS (SELECT 1 FROM "order" WHERE id=?)`,
+    ).bind(orderId, projectId, orderId),
+    env.DB.prepare(
+      `UPDATE project SET status_customer='closed', updated_at=datetime('now')
+        WHERE id=? AND status_customer='quote_issued' AND status_internal='issued'
+          AND current_revision_id=?
+          AND EXISTS (SELECT 1 FROM "order" WHERE id=?)`,
+    ).bind(projectId, revisionId, orderId),
   ];
   try {
     // A committed batch means the order rows landed. Either the claim flipped the
     // revision (normal path) or it was already 'accepted' but orderless and we've
     // now healed it — both leave exactly one order for this revision.
-    await env.DB.batch(stmts);
+    const committed = await env.DB.batch(stmts);
+    // The order insert + final project transition are the commit proof. The
+    // revision claim may legitimately be a no-op only for the documented
+    // accepted-but-orderless recovery case; request-changes still blocks the
+    // insert because it atomically moves the project out of quote_issued.
+    if (Number(committed[1]?.meta?.changes ?? 0) !== 1 ||
+        Number(committed[committed.length - 1]?.meta?.changes ?? 0) !== 1) {
+      return null;
+    }
     return orderId;
   } catch {
     // Rolled back — lost the race (duplicate order / number collision). The

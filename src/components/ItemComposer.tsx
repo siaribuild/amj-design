@@ -14,12 +14,36 @@ import { SAGE, WindowMark, Btn, FieldLabel, Input } from "../app/ui";
 import { type Product, getProductBySlug, getProductsByFamily } from "../data/catalogue";
 import {
   type QItem, type QuoteState, type MeasuredBy, type OptionChoice, MEASURED_LABELS,
-  optionGroupsFor, defaultOptions, priceConfigured, familyGroups,
+  optionGroupsFor, defaultOptions, priceConfigured, linePriceTotal, familyGroups,
   fmt, mm, productLabel, POPULAR_COLOURS, normCode, suggestCode, clearReviewKey, reviewClass,
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
 export type EditFocus = "product" | "dims" | "options" | "qty";
+
+const BASIS_COPY: Record<string, { label: string; detail: string; strong?: boolean }> = {
+  explicit_energy_report: {
+    label: "Energy-report allowance",
+    detail: "Priced using requirements extracted from your energy report. AMJ will confirm the final product and glazing configuration.",
+    strong: true,
+  },
+  schedule_specification: {
+    label: "Schedule-based allowance",
+    detail: "Priced using the glazing and performance information in your uploaded schedule. AMJ will confirm the final configuration.",
+  },
+  building_context: {
+    label: "Building-context allowance",
+    detail: "Priced using the available room, opening and building context. AMJ will confirm the final thermal configuration.",
+  },
+  default_allowance: {
+    label: "Default thermal allowance",
+    detail: "Priced using a conservative default where the documents did not establish a specific thermal requirement. AMJ will confirm it.",
+  },
+  default_envelope: {
+    label: "Thermal allowance inferred",
+    detail: "Price includes a likely frame and glazing configuration based on the building information available. AMJ will confirm it during technical review.",
+  },
+};
 
 // ─── Product-frame diagram — responds to entered aspect ratio ─────────────────
 export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; tone?: "sage" | "light" }) {
@@ -524,7 +548,7 @@ function CodeField({ code, duplicate, editSignal, onCommit }: {
 // and line price stay visible in every state.
 export function ItemSummaryCard({
   item, added, quote, onDuplicate, onRemove, initialFocus, id, focusSignal,
-  expanded, onToggleExpanded, duplicate, codeFocusSignal, basis, changes,
+  expanded, onToggleExpanded, duplicate, codeFocusSignal, basis, changes, onRestoreAi,
 }: {
   item: QItem; added?: boolean; quote: QuoteState;
   onDuplicate?: () => void; onRemove?: () => void; initialFocus?: EditFocus;
@@ -534,20 +558,26 @@ export function ItemSummaryCard({
    *  needed?") and basis ("how solid is this number?") are separate questions.
    *  'explicit_energy_report' | 'default_envelope' | null (no chip). */
   basis?: string | null;
+  onRestoreAi?: () => void | Promise<void>;
   /** This session's document-driven changes to the line (spec §3 provenance):
    *  renders the Updated pill + old→new rows. Session-scoped; decays on reload. */
   changes?: { field: string; from: string; to: string }[] | null;
 }) {
   const [open, setOpen] = useState<EditFocus | null>(initialFocus ?? null);
   const [selfExpanded, setSelfExpanded] = useState(!!initialFocus);
+  const [restoringAi, setRestoringAi] = useState(false);
   const isExpanded = expanded ?? selfExpanded;
   const toggleExpanded = onToggleExpanded ?? (() => setSelfExpanded(v => !v));
   const rootRef = useRef<HTMLDivElement>(null);
   const p = getProductBySlug(item.productSlug);
+  const basisCopy = basis ? BASIS_COPY[basis] : null;
   const pr = priceConfigured(item);
+  const displayTotal = linePriceTotal(item);
+  const aiPriced = item.origin === "ai" || !!item.aiPriced;
+  const priceReady = aiPriced ? typeof item.lineTotal === "number" : pr.ok;
   const gstMode = useGstMode();
   const w = parseInt(item.width) || 0, h = parseInt(item.height) || 0;
-  const issues = p ? itemIssues(p, item) : [];
+  const issues = p && !aiPriced ? itemIssues(p, item) : [];
 
   // Per-field review reasons from an auto-parse (field -> human reason). Keys map to
   // sections so the offending group is highlighted amber; every reason is also shown.
@@ -600,7 +630,7 @@ export function ItemSummaryCard({
     ...issues.map(i => i.msg),
     ...reviewReasons,
   ].join(" · ");
-  const priceLabel = pr.ok ? fmt(gstAdjust(pr.total, gstMode)) : "$-,--";
+  const priceLabel = priceReady ? fmt(gstAdjust(displayTotal, gstMode)) : "$-,--";
 
   const borderTone = customerBlocking ? "border-amber-400" : technicalOnly ? "border-sky-300" : added ? "border-[#5A7A6A]/50" : "border-black/12";
 
@@ -625,16 +655,13 @@ export function ItemSummaryCard({
           {/* Basis chip (UX spec §5): orthogonal to status — report-backed vs
               assumption-based. Hidden on small screens; the tooltip carries the
               compliance sentence once, and doubles as the upload upsell. */}
-          {basis === "explicit_energy_report" && (
-            <span className="hidden md:inline-flex flex-shrink-0 items-center text-[10px] font-medium px-1.5 py-0.5 border border-[#2C7A54]/30 bg-[#2C7A54]/10 text-[#2C7A54]"
-              title="Performance selected to match your submitted energy report, subject to human review.">
-              From your energy report
-            </span>
-          )}
-          {basis === "default_envelope" && (
-            <span className="hidden md:inline-flex flex-shrink-0 items-center text-[10px] font-medium px-1.5 py-0.5 border border-dashed border-black/20 bg-black/[0.03] text-[#6f6c67]"
-              title="Estimated using typical requirements for Melbourne new builds. Indicative only — not an energy compliance certificate. Upload your energy report to firm this up.">
-              Performance assumed
+          {basisCopy && (
+            <span className={`hidden md:inline-flex flex-shrink-0 items-center text-[10px] font-medium px-1.5 py-0.5 border ${
+              basisCopy.strong
+                ? "border-[#2C7A54]/30 bg-[#2C7A54]/10 text-[#2C7A54]"
+                : "border-dashed border-black/20 bg-black/[0.03] text-[#6f6c67]"
+            }`} title={basisCopy.detail}>
+              {basisCopy.label}
             </span>
           )}
           {/* Updated pill (spec §3): information, not a demand — work-slate tone,
@@ -646,8 +673,8 @@ export function ItemSummaryCard({
             </span>
           )}
         </span>
-        <span className={`flex-shrink-0 text-sm font-semibold ${pr.ok ? "text-[#131311]" : "text-[#5c5a56]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
-          {priceLabel}{pr.ok ? <span className="hidden sm:inline text-[10px] font-normal text-[#5c5a56]"> {gstSuffix(gstMode)}</span> : null}
+        <span className={`flex-shrink-0 text-sm font-semibold ${priceReady ? "text-[#131311]" : "text-[#5c5a56]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
+          {priceLabel}{priceReady ? <span className="hidden sm:inline text-[10px] font-normal text-[#5c5a56]"> {gstSuffix(gstMode)}</span> : null}
         </span>
 
         <div className="flex items-center gap-0.5 flex-shrink-0" aria-label="Item actions">
@@ -658,6 +685,25 @@ export function ItemSummaryCard({
           </button>
         </div>
       </div>
+
+      {item.review?.customerConfigurationChanged && onRestoreAi && (
+        <div className="px-3 sm:px-4 py-2 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-3">
+          <p className="text-[11px] leading-snug text-amber-800">
+            This edit needs a new exact price. You can restore the previous AI-priced configuration.
+          </p>
+          <button
+            type="button"
+            disabled={restoringAi}
+            onClick={() => {
+              setRestoringAi(true);
+              Promise.resolve(onRestoreAi()).finally(() => setRestoringAi(false));
+            }}
+            className="flex-shrink-0 text-[11px] font-semibold underline text-amber-900 disabled:opacity-50 cursor-pointer"
+          >
+            {restoringAi ? "Restoring…" : "Restore AI selection"}
+          </button>
+        </div>
+      )}
 
       {/* The compact summary is useful only while the detail groups are collapsed. */}
       {!isExpanded && (
@@ -686,14 +732,11 @@ export function ItemSummaryCard({
               hidden below md, but "assumed / not a certificate" is compliance
               language and must stay reachable on phones — so the expanded body
               carries it inline where the chip's tooltip can't be hovered. */}
-          {basis === "explicit_energy_report" && (
-            <p className="md:hidden px-3 sm:px-4 py-2 text-[11px] leading-snug text-[#2C7A54] bg-[#2C7A54]/5 border-b border-black/[0.06]">
-              Performance selected to match your submitted energy report, subject to human review.
-            </p>
-          )}
-          {basis === "default_envelope" && (
-            <p className="md:hidden px-3 sm:px-4 py-2 text-[11px] leading-snug text-[#6f6c67] bg-black/[0.02] border-b border-black/[0.06]">
-              Performance assumed from typical Melbourne new-build requirements. Indicative only — not an energy compliance certificate. Upload your energy report to firm this up.
+          {basisCopy && (
+            <p className={`md:hidden px-3 sm:px-4 py-2 text-[11px] leading-snug border-b border-black/[0.06] ${
+              basisCopy.strong ? "text-[#2C7A54] bg-[#2C7A54]/5" : "text-[#6f6c67] bg-black/[0.02]"
+            }`}>
+              {basisCopy.detail}
             </p>
           )}
           {/* Change provenance (spec §3): strike-through old → current, same

@@ -170,6 +170,63 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       await requestJson(sarah, `/api/revisions/${revsAfter.body.revisions[0].id}/request-changes`, { method: "POST", json: { message: "too late" } }, 409);
     });
 
+    await t.test("accept and request-changes race has exactly one workflow winner", async () => {
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `INSERT INTO project
+           (id, owner_user_id, title, public_ref, status_customer, status_internal)
+         VALUES
+           ('p_accept_change_race','u_sarah','Race quote','OF-Q-19991','quote_issued','issued');
+         INSERT INTO quote_revision
+           (id, project_id, revision_no, snapshot_status, totals_json)
+         VALUES
+           ('rev_accept_change_race','p_accept_change_race',1,'issued','{"total":1250}');
+         INSERT INTO revision_line
+           (id, revision_id, external_ref, product_snapshot_json, dims_json,
+            options_json, qty, line_total)
+         VALUES
+           ('rl_accept_change_race','rev_accept_change_race','W01',
+            '{"slug":"amj80-series-awning-window"}','{"width":900,"height":1200}',
+            '{}',1,1250);
+         UPDATE project SET current_revision_id='rev_accept_change_race'
+          WHERE id='p_accept_change_race';`,
+      ], { env: wranglerEnv });
+
+      const [accept, changes] = await Promise.all([
+        sarah.request("/api/revisions/rev_accept_change_race/accept", { method: "POST" }),
+        sarah.request("/api/revisions/rev_accept_change_race/request-changes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: "Please reconsider the glass specification" }),
+        }),
+      ]);
+      assert.deepEqual([accept.status, changes.status].sort(), [200, 409]);
+
+      const check = await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--json", "--command",
+        `SELECT p.status_customer, p.status_internal, r.snapshot_status,
+                (SELECT count(*) FROM "order"
+                  WHERE accepted_revision_id=r.id) AS orders
+           FROM project p
+           JOIN quote_revision r ON r.project_id=p.id
+          WHERE p.id='p_accept_change_race';`,
+      ], { env: wranglerEnv });
+      const row = JSON.parse(check.stdout)[0].results[0];
+      if (accept.status === 200) {
+        assert.deepEqual(row, {
+          status_customer: "closed", status_internal: "issued",
+          snapshot_status: "accepted", orders: 1,
+        });
+      } else {
+        assert.deepEqual(row, {
+          status_customer: "under_review", status_internal: "estimator_assigned",
+          snapshot_status: "issued", orders: 0,
+        });
+      }
+    });
+
     await t.test("complete payment, drawing, manufacturing, QA, dispatch, and delivery journey", async () => {
       const id = newOrder.id;
       let result = await requestJson(ops, `/api/ops/orders/${id}/pay`, { method: "POST", json: { kind: "deposit", reference: "REG-DEP" } });
@@ -227,8 +284,8 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
     });
 
     await t.test("estimator cannot delegate an approval to self", async () => {
-      await requestJson(ops, "/api/ops/lines/ql_1", { method: "PATCH", json: { qty: 10 } });
       await requestJson(ops, "/api/ops/projects/p_draft/assign", { method: "POST", json: {} });
+      await requestJson(ops, "/api/ops/lines/ql_1", { method: "PATCH", json: { qty: 10 } });
       await requestJson(ops, "/api/ops/projects/p_draft/submit-for-approval", { method: "POST", json: {} });
       const pending = await requestJson(ops, "/api/ops/approvals");
       const step = pending.body.approvals.find((item) => item.project_id === "p_draft");

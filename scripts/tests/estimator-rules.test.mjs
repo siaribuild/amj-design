@@ -16,7 +16,7 @@ await build({
     contents: `
       export { toCandidate, fixtureCatalogueRepository, createCatalogueRepository } from ${p("worker/lib/estimator/catalogue.ts")};
       export { checkHardRules, RULE_VERSION } from ${p("worker/lib/estimator/rules.ts")};
-      export { computePrice } from ${p("worker/lib/estimator/pricing.ts")};
+      export { computePrice, loadOptionSurcharges } from ${p("worker/lib/estimator/pricing.ts")};
       export { rankCandidates, selectWithConfidence } from ${p("worker/lib/estimator/rank.ts")};
       export { selectForOpening } from ${p("worker/lib/estimator/select.ts")};
       export { r2Keys } from ${p("worker/lib/estimator/storage.ts")};
@@ -27,7 +27,7 @@ await build({
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { toCandidate, fixtureCatalogueRepository, checkHardRules, computePrice, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
+const { toCandidate, fixtureCatalogueRepository, checkHardRules, computePrice, loadOptionSurcharges, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
 
 const RATE = { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" };
 const POLICY = { depositPercent: 40, gstMode: "inc", version: "v1" };
@@ -88,10 +88,89 @@ test("energy requirement with NO performance data ⇒ catalogue_data_incomplete 
 });
 
 test("energy met by CERTIFIED data ⇒ ready + energyCertified", () => {
-  const certified = toCandidate({ ...awning, performanceVariants: [{ ...awning.performanceVariants[0], certified: true, dataSource: "certified" }] });
+  const certified = toCandidate({ ...awning, performanceVariants: [{
+    ...awning.performanceVariants[0],
+    certified: true,
+    dataSource: "certified",
+    certificationRef: "WERS-TEST-1",
+  }] });
   const r = checkHardRules({ family: "window", operationType: "awning", widthMm: 800, heightMm: 1200, requirements: { maxUValue: 4.5 } }, certified);
   assert.equal(r.status, "ready");
   assert.equal(r.energyCertified, true);
+});
+
+test("explicit report limits are exact: the old hidden tolerance cannot turn a miss into a match", () => {
+  const r = checkHardRules({
+    family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
+    requirements: { maxUValue: 3.85 },
+  }, cand());
+  assert.equal(r.passed, false);
+  assert.equal(r.status, "unavailable");
+});
+
+test("Uw and SHGC must be satisfied jointly by the same exact variant", () => {
+  const split = toCandidate({
+    ...awning,
+    performanceVariants: [
+      { ...awning.performanceVariants[0], variantId: "u-only", uValue: 2.5, shgc: 0.7 },
+      { ...awning.performanceVariants[0], variantId: "shgc-only", uValue: 4.5, shgc: 0.4 },
+    ],
+  });
+  const r = checkHardRules({
+    family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
+    requirements: { maxUValue: 3, maxShgc: 0.5 },
+  }, split);
+  assert.equal(r.passed, false);
+  assert.deepEqual(r.eligibleVariantIds, []);
+});
+
+test("selection prices the exact variant that met the report, with extracted quantity", async () => {
+  const repo = fixtureCatalogueRepository([{
+    ...awning,
+    category: { slug: { current: "windows" } },
+    performanceVariants: [
+      { ...awning.performanceVariants[0], variantId: "standard", uValue: 3.9, shgc: 0.62 },
+      { ...awning.performanceVariants[0], variantId: "low-e", uValue: 2.7, shgc: 0.42, pricingOptionSlugs: ["glass-low-e"] },
+    ],
+  }]);
+  let pricedVariant = null;
+  let pricedQty = null;
+  const result = await selectForOpening({
+    family: "windows", operationType: "awning", widthMm: 800, heightMm: 1200,
+    qty: 3, requirements: { maxUValue: 3, maxShgc: 0.5 },
+    thermalContext: { requirementBasis: "explicit_energy_report" },
+  }, repo, async (_candidate, opening, selectedVariant) => {
+    pricedVariant = selectedVariant?.variantId;
+    pricedQty = opening.qty;
+    return { ok: true, total: 3000, unit: 1000 };
+  });
+  assert.equal(result.selected.selectedVariant.variantId, "low-e");
+  assert.equal(pricedVariant, "low-e");
+  assert.equal(pricedQty, 3);
+});
+
+test("selection ranks every eligible exact variant so finalized precedent can change the choice", async () => {
+  const repo = fixtureCatalogueRepository([{
+    ...awning,
+    category: { slug: { current: "windows" } },
+    performanceVariants: [
+      { ...awning.performanceVariants[0], variantId: "standard", uValue: 3.9, shgc: 0.62 },
+      { ...awning.performanceVariants[0], variantId: "thermally-broken", uValue: 2.7, shgc: 0.42, frameTechnology: "thermally_broken" },
+    ],
+  }]);
+  const result = await selectForOpening(
+    { family: "windows", operationType: "awning", widthMm: 800, heightMm: 1200 },
+    repo,
+    async () => ({ ok: true, total: 1000, unit: 1000 }),
+    {
+      observations: 20,
+      version: "test",
+      scoreFor: (_candidate, _opening, exactVariant) =>
+        exactVariant?.variantId === "thermally-broken" ? 1 : 0,
+    },
+  );
+  assert.equal(result.evaluated.length, 2);
+  assert.equal(result.selected.selectedVariant.variantId, "thermally-broken");
 });
 
 test("fixture CatalogueRepository filters by family + operation and stamps a version", async () => {
@@ -129,6 +208,32 @@ test("pricing: option surcharges add to the unit; missing dims ⇒ not ok", () =
 test("pricing: snapshot exposes a TOTAL, never a per-option breakdown", () => {
   const s = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 1, optionSurcharges: [130] });
   assert.ok(!("optionSurcharges" in s) && !("options" in s), "no per-option breakdown leaks into the snapshot");
+});
+
+test("pricing: exact configuration fails closed when any option surcharge is missing", async () => {
+  const values = new Map([["included-option", 0], ["paid-option", 125]]);
+  const env = {
+    DB: {
+      prepare() {
+        let slug;
+        return {
+          bind(value) { slug = value; return this; },
+          async first() {
+            return values.has(slug) ? { surcharge: values.get(slug) } : null;
+          },
+        };
+      },
+    },
+  };
+  assert.deepEqual(
+    await loadOptionSurcharges(env, ["included-option", "paid-option"], true),
+    [0, 125],
+    "zero-dollar included options still count as resolved",
+  );
+  await assert.rejects(
+    loadOptionSurcharges(env, ["included-option", "unknown-option"], true),
+    /missing_option_surcharge/,
+  );
 });
 
 // ─── Ranker + selection orchestration ───────────────────────────────────────

@@ -12,10 +12,10 @@ import {
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
 import { StickyQuotePanel } from "../components/StickyQuotePanel";
-import { uploadFile, startParse, extractionStatus, deleteFile, resolveCollision, UploadError, type ParseJob, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
+import { uploadFile, startParse, extractionStatus, deleteFile, resolveCollision, restoreAiLine, UploadError, type ParseJob, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
 import {
   type QuoteState, type QItem,
-  priceConfigured, fmt, mm, productLabel, hasDuplicateCode, lineBlocksSubmission, reviewClass, DEFAULT_PROJECT_TITLE,
+  linePriceTotal, fmt, mm, productLabel, hasDuplicateCode, lineBlocksSubmission, reviewClass, DEFAULT_PROJECT_TITLE,
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
@@ -72,8 +72,11 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   const [contactEmail, setContactEmail] = useState(user?.email || "");
   const [contactPhone, setContactPhone] = useState(user?.phone || "");
   const [suburb, setSuburb] = useState("");
+  const [aiPhase, setAiPhase] = useState<
+    null | { kind: "reading"; docs: number } | { kind: "done"; refined: number } | { kind: "failed" }
+  >(null);
 
-  const total = quote.items.reduce((s, it) => s + priceConfigured(it).total, 0);
+  const total = quote.items.reduce((s, it) => s + linePriceTotal(it), 0);
   const gstMode = useGstMode();
   // Only CUSTOMER-fixable gaps block submission: an unpriceable line (no product /
   // missing size / missing option) or a duplicate code. Lines carrying only
@@ -81,6 +84,10 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // priced and stay submittable — submission is how they reach an AMJ technician.
   const itemBlocked = (it: QItem) => lineBlocksSubmission(it) || hasDuplicateCode(quote.items, it.id, it.code);
   const attentionCount = quote.items.filter(itemBlocked).length;
+  const pendingPriceCount = quote.items.filter((it) =>
+    (it.origin === "ai" || it.aiPriced) &&
+    (typeof it.lineTotal !== "number" || !Number.isFinite(it.lineTotal)) &&
+    !!it.review?.customerConfigurationChanged).length;
   // Lines that will be confirmed by AMJ at technical review (informational; never
   // block the customer's submission).
   const technicalCount = quote.items.filter((it) => !itemBlocked(it) && reviewClass(it.review) === "technical").length;
@@ -114,6 +121,10 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // surfaces an error instead of a false confirmation.
   const handleSubmit = async () => {
     if (submitting) return;
+    if (aiPhase?.kind === "reading") {
+      setSubmitError("Please wait while we finish refining this estimate from your documents.");
+      return;
+    }
     if (attentionCount > 0) { setView("build"); reviewIssues(); return; }
     if (!contactName.trim() || !contactEmail.trim()) { setSubmitError("Add your name and email to submit."); return; }
     setSubmitting(true); setSubmitError("");
@@ -214,7 +225,6 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // run is in flight; 2s×7 then 5s, hard stop at 2 min. Anonymous users never
   // have a run, so the first poll returns null and no future-tense copy ever
   // renders for them.
-  const [aiPhase, setAiPhase] = useState<null | { kind: "reading"; docs: number } | { kind: "done"; energyApplied: number }>(null);
   // Per-line requirement basis for the trust chips (UX spec §5); refreshed on
   // mount and whenever the poll returns it.
   const [basisMap, setBasisMap] = useState<Record<string, string>>({});
@@ -227,6 +237,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   const [collisionTags, setCollisionTags] = useState<string[]>([]);
   // Per-file Remove on the rail: id pending inline confirmation.
   const [removingFile, setRemovingFile] = useState<string | null>(null);
+  const pollExtractionRef = useRef<(docs: number) => void>(() => {});
   // Per-line changes from this session's parses (spec §3 provenance): drives the
   // Updated pill + old→new rows. Session-scoped by design — decays on reload;
   // the line's values are the durable record.
@@ -238,6 +249,11 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     try {
       const res = await deleteFile(fileId);
       await quote.reload();
+      if (user) {
+        const docs = Math.max(1, quote.files.length - 1);
+        setAiPhase({ kind: "reading", docs });
+        pollExtractionRef.current(docs);
+      }
       const parts = [`${name} removed`];
       if (res.removedLines) parts.push(`${res.removedLines} line${res.removedLines !== 1 ? "s" : ""} removed with it`);
       if (res.keptForReview) parts.push(`${res.keptForReview} kept — needs your review`);
@@ -265,7 +281,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     const t0 = Date.now();
     let sawRun = false;
     const tick = async (n: number) => {
-      if (Date.now() - t0 > 120_000) { setAiPhase(null); return; } // degrade quietly; next load reconciles
+      if (Date.now() - t0 > 120_000) { setAiPhase({ kind: "failed" }); return; }
       let inFlight = false;
       try {
         const { run, basis } = await extractionStatus();
@@ -276,25 +292,42 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
           setAiPhase({ kind: "reading", docs });
         } else if (run && sawRun) {
           // The run we watched finished — swap the tail for its outcome.
-          setAiPhase(run.summary && run.summary.energyApplied > 0 ? { kind: "done", energyApplied: run.summary.energyApplied } : null);
+          if (run.status === "failed" || (run.status === "partial" && (run.summary?.cartApplied ?? 0) === 0)) {
+            setAiPhase({ kind: "failed" });
+          } else {
+            await quote.reload();
+            setAiPhase({ kind: "done", refined: run.summary?.cartApplied ?? 0 });
+          }
           return;
         } else if (!run || (!sawRun && run.completedAt)) {
           // No run yet — the server coalesces uploads behind a ~10s debounce, so
           // absence is inconclusive early. Only after 25s of nothing (anonymous,
           // or the kill-switch) do we stop; a stale completed run never counts.
-          if (Date.now() - t0 > 25_000) return;
+          if (Date.now() - t0 > 25_000) { setAiPhase({ kind: "failed" }); return; }
         }
       } catch { /* transient poll failure — keep trying within the window */ }
       pollTimer.current = setTimeout(() => void tick(n + 1), inFlight || n >= 7 ? 5000 : 2000);
     };
     void tick(0);
   };
+  pollExtractionRef.current = pollExtraction;
+  useEffect(() => {
+    if (!user) return;
+    extractionStatus().then(({ run }) => {
+      if (run && (run.status === "queued" || run.status === "running")) {
+        const docs = quote.files.length || 1;
+        setAiPhase({ kind: "reading", docs });
+        pollExtraction(docs);
+      }
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.email]);
 
   const handleFiles = async (list: FileList | null) => {
     if (!list?.length) return;
     setUploading(true);
     setUploadNotice(null);
-    setAiPhase(null);
+    setAiPhase(user ? { kind: "reading", docs: list.length } : null);
     setRemoveOffer(null);
     const failures: string[] = [];
     const digests: string[] = [];
@@ -304,6 +337,13 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
       for (const file of Array.from(list)) {
         try {
           const up = await uploadFile(file, "upload");
+          if (user) {
+            // Registered projects use the first-class AI proposal path. The
+            // durable Worker job creates/refines the real cart; the deterministic
+            // schedule estimator remains the anonymous service.
+            attached++;
+            continue;
+          }
           const result = await startParse(up.file.id);
           if (result.ok) {
             imported += result.job.itemCount;
@@ -338,7 +378,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         setUploadNotice({ type: "success", message: parts.join(" · ") });
       }
       // Registered users get an automatic AI run per upload — watch it.
-      pollExtraction(list.length);
+      if (user) pollExtraction(list.length);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -409,12 +449,17 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
               {quote.items.map((it, i) => (
                 <div key={it.id} className="flex justify-between gap-3 text-sm border-b border-black/6 last:border-0 py-1.5">
                   <span className="text-[#131311] min-w-0 truncate">{String(i + 1).padStart(2, "0")} · {productLabel(it.productSlug)} — {mm(it.width)} × {mm(it.height)} ×{it.qty}</span>
-                  <span className="text-[#5c5a56] flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>{it.status === "Needs review" ? "Review" : fmt(gstAdjust(priceConfigured(it).total, gstMode))}</span>
+                  <span className="text-[#5c5a56] flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>
+                    {it.review?.customerConfigurationChanged && (typeof it.lineTotal !== "number" || !Number.isFinite(it.lineTotal))
+                      ? "Pending AMJ price"
+                      : lineBlocksSubmission(it) ? "Review" : fmt(gstAdjust(linePriceTotal(it), gstMode))}
+                  </span>
                 </div>
               ))}
               {quote.files.length > 0 && <p className="text-xs text-[#5c5a56] pt-1">+ {quote.files.length} uploaded file{quote.files.length !== 1 ? "s" : ""} for review</p>}
             </div>
-            <div className="flex justify-between border-t border-black/8 pt-3 text-sm"><span className="text-[#5c5a56]">Estimated total</span><span className="font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
+            <div className="flex justify-between border-t border-black/8 pt-3 text-sm"><span className="text-[#5c5a56]">{pendingPriceCount ? "Priced-items subtotal" : "Estimated total"}</span><span className="font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
+            {pendingPriceCount > 0 && <p className="mt-2 text-xs text-amber-800">{pendingPriceCount} customer-changed configuration{pendingPriceCount === 1 ? "" : "s"} will be added after AMJ confirms the exact product and price.</p>}
           </div>
           <div className="border border-black/10 bg-white p-5 space-y-4 mb-4">
             {user && <p className="text-sm text-[#5A7A6A] flex items-center gap-1.5"><CheckCircle className="w-4 h-4" />Pre-filled from your account — edit if needed.</p>}
@@ -427,7 +472,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
           </div>
           <div className="bg-[#F2F0EC] border border-black/8 p-4 mb-6 text-xs text-[#5c5a56]"><AlertCircle className="w-3 h-3 inline mr-1" />Estimated totals are confirmed on technical review. No deposit until you approve the reviewed quote. Supply only — installation not included.</div>
           {submitError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5 mb-3 justify-end"><AlertCircle className="w-4 h-4" />{submitError}</p>}
-          <div className="flex justify-end"><Btn variant="sage" size="lg" disabled={!contactName || !contactEmail || submitting} onClick={handleSubmit}>{submitting ? "Submitting…" : <>Submit for technical review <Send className="w-4 h-4" /></>}</Btn></div>
+          <div className="flex justify-end"><Btn variant="sage" size="lg" disabled={!contactName || !contactEmail || submitting || aiPhase?.kind === "reading"} onClick={handleSubmit}>{submitting ? "Submitting…" : aiPhase?.kind === "reading" ? "Refining estimate…" : <>Submit for technical review <Send className="w-4 h-4" /></>}</Btn></div>
         </div>
       </div>
     );
@@ -604,11 +649,16 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                 {uploadNotice.message}
                 {uploadNotice.type === "success" && aiPhase?.kind === "reading" && (
                   <span className="inline-flex items-center gap-1.5 ml-1.5 text-[#355344]/80">
-                    · <Loader2 className="w-3.5 h-3.5 animate-spin inline" aria-hidden="true" /> still reading for performance data…
+                    · <Loader2 className="w-3.5 h-3.5 animate-spin inline" aria-hidden="true" /> refining product and glazing allowances…
                   </span>
                 )}
                 {uploadNotice.type === "success" && aiPhase?.kind === "done" && (
-                  <span className="ml-1.5">· performance requirements applied to {aiPhase.energyApplied} line{aiPhase.energyApplied !== 1 ? "s" : ""}</span>
+                  <span className="ml-1.5">· estimate refined for {aiPhase.refined} item{aiPhase.refined !== 1 ? "s" : ""}</span>
+                )}
+                {uploadNotice.type === "success" && aiPhase?.kind === "failed" && (
+                  <span className="ml-1.5 text-amber-800">· {quote.items.length
+                    ? "we couldn't refine this estimate; AMJ will confirm it"
+                    : "we couldn't create priced items from these documents; add items manually or contact AMJ"}</span>
                 )}
                 {uploadNotice.type === "success" && removeOffer && (
                   <span className="ml-1.5 whitespace-nowrap">
@@ -629,7 +679,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
             {quote.items.map((it) => (
               <ItemSummaryCard key={it.id} item={it} quote={quote}
                 id={`qitem-${it.id}`}
-                basis={it.code ? basisMap[it.code] ?? null : null}
+                basis={it.serverId ? basisMap[it.serverId] ?? null : null}
                 changes={it.code ? lineChanges[it.code] ?? null : null}
                 expanded={expandedId === it.id}
                 onToggleExpanded={() => setExpandedId(cur => cur === it.id ? null : it.id)}
@@ -637,6 +687,10 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                 focusSignal={focusReq?.id === it.id ? focusReq.nonce : undefined}
                 codeFocusSignal={codeFocusReq?.id === it.id ? codeFocusReq.nonce : undefined}
                 onDuplicate={() => { const nid = quote.copy(it.id); if (nid) { setExpandedId(nid); setCodeFocusReq({ id: nid, nonce: Date.now() }); } }}
+                onRestoreAi={it.serverId ? async () => {
+                  await restoreAiLine(it.serverId!);
+                  await quote.reload();
+                } : undefined}
                 onRemove={() => quote.remove(it.id)} />
             ))}
           </div>
@@ -683,6 +737,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
       <StickyQuotePanel
         itemCount={quote.items.length}
         attentionCount={attentionCount}
+        pendingPriceCount={pendingPriceCount}
         total={total}
         editingItem={adding}
         uploading={uploading}

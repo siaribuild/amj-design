@@ -8,7 +8,7 @@
 // rather than a false pass. An energy match made against ESTIMATED (uncertified)
 // performance data passes only as an assumption-based commercial estimate —
 // never as a certified compliance pass (spec §13, safety invariant).
-import type { CatalogueCandidate, OpeningInput } from "./types";
+import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./types";
 
 export const RULE_VERSION = "v1";
 
@@ -37,10 +37,10 @@ export interface RuleOutcome {
   status: OutcomeStatus;
   /** True only when an energy requirement was satisfied by a CERTIFIED variant. */
   energyCertified: boolean;
+  /** Variants that jointly satisfy every explicit Uw/SHGC constraint. */
+  eligibleVariantIds: string[];
   filters: FilterOutcome[];
 }
-
-const ENERGY_TOLERANCE = 0.05; // small margin on Uw/SHGC comparisons
 
 function checkDimensions(opening: OpeningInput, c: CatalogueCandidate): FilterOutcome {
   const rule = c.dimensionRule;
@@ -65,26 +65,36 @@ function checkDimensions(opening: OpeningInput, c: CatalogueCandidate): FilterOu
 // requirement ⇒ pass (no energy constraint to meet). Requirement but no perf
 // data ⇒ incomplete. Requirement met only by an estimated variant ⇒ passes but
 // NOT certified (caller downgrades the line to commercial_only_estimate).
-function checkEnergy(opening: OpeningInput, c: CatalogueCandidate): { outcome: FilterOutcome; certified: boolean } {
+function checkEnergy(opening: OpeningInput, c: CatalogueCandidate): {
+  outcome: FilterOutcome; certified: boolean; matching: PerformanceVariant[];
+} {
   const req = opening.requirements;
   const maxU = req?.maxUValue ?? null, minShgc = req?.minShgc ?? null, maxShgc = req?.maxShgc ?? null;
   if (maxU == null && minShgc == null && maxShgc == null) {
-    return { outcome: { filter: "energy", passed: true }, certified: false };
+    return {
+      outcome: { filter: "energy", passed: true },
+      certified: false,
+      matching: c.performanceVariants.filter((v) => v.published),
+    };
   }
   const variants = c.performanceVariants.filter((v) => v.published);
   if (!variants.length) {
-    return { outcome: { filter: "energy", passed: false, severity: "incomplete", reason: "no published performance variant" }, certified: false };
+    return { outcome: { filter: "energy", passed: false, severity: "incomplete", reason: "no published performance variant" }, certified: false, matching: [] };
   }
   const satisfies = (v) =>
-    (maxU == null || (v.uValue != null && v.uValue <= maxU + ENERGY_TOLERANCE)) &&
-    (minShgc == null || (v.shgc != null && v.shgc >= minShgc - ENERGY_TOLERANCE)) &&
-    (maxShgc == null || (v.shgc != null && v.shgc <= maxShgc + ENERGY_TOLERANCE));
+    (maxU == null || (v.uValue != null && v.uValue <= maxU)) &&
+    (minShgc == null || (v.shgc != null && v.shgc >= minShgc)) &&
+    (maxShgc == null || (v.shgc != null && v.shgc <= maxShgc));
   const match = variants.filter(satisfies);
   if (!match.length) {
-    return { outcome: { filter: "energy", passed: false, severity: "reject", reason: "no variant meets the energy requirement" }, certified: false };
+    return { outcome: { filter: "energy", passed: false, severity: "reject", reason: "no single variant jointly meets the energy requirement" }, certified: false, matching: [] };
   }
   const certified = match.some((v) => v.certified && v.dataSource === "certified");
-  return { outcome: { filter: "energy", passed: true, reason: certified ? undefined : "met by estimated (uncertified) performance data" }, certified };
+  return {
+    outcome: { filter: "energy", passed: true, reason: certified ? undefined : "met by estimated (uncertified) performance data" },
+    certified,
+    matching: match,
+  };
 }
 
 export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, ruleVersion = RULE_VERSION): RuleOutcome {
@@ -127,7 +137,15 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
   else if (energyHadRequirement(opening) && !energy.certified) { status = "commercial_only_estimate"; passed = true; }
   else { status = "ready"; passed = true; }
 
-  return { candidateId: c.sanityProductId, ruleVersion, passed, status, energyCertified: energy.certified, filters };
+  return {
+    candidateId: c.sanityProductId,
+    ruleVersion,
+    passed,
+    status,
+    energyCertified: energy.certified,
+    eligibleVariantIds: energy.matching.map((v) => v.variantId),
+    filters,
+  };
 }
 
 function energyHadRequirement(opening: OpeningInput): boolean {

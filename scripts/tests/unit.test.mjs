@@ -15,7 +15,7 @@ const outfile = join(runDir, "unit-bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { priceConfigured, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel } from ${p("src/data/configurator.ts")};
+      export { priceConfigured, lineBlocksSubmission, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel } from ${p("src/data/configurator.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData } from ${p("src/data/catalogueQuery.ts")};
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
@@ -24,6 +24,7 @@ await build({
       export { availableActions, ACTION_LABEL, TRANSITIONS, STAGES, STAGE_LABEL, DEPOSIT_PERCENT } from ${p("worker/lib/orders.ts")};
       export { canApprove } from ${p("worker/lib/approvals.ts")};
       export { itemFields, editedFieldsAfterSave } from ${p("worker/lib/lines.ts")};
+      export { pricingOptionSlugsFromOptions } from ${p("worker/lib/estimator/estimate.ts")};
       export { staffDomains, isStaffEmail } from ${p("worker/lib/staff.ts")};
     `,
     resolveDir: projectRoot,
@@ -40,6 +41,25 @@ test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(r
 // A real, fully-specified window line for pricing.
 const slug = "amj80-series-sliding-window";
 const fullOptions = { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" };
+
+test("exact pricing option IDs are canonical, complete, and exclude technical metadata", () => {
+  assert.deepEqual(M.pricingOptionSlugsFromOptions({
+    colour: "Dover White",
+    flyscreen: true,
+    glazing: "Low-E double glazing",
+    performanceVariantId: "thermal-low-e",
+    pricingOptionSlugs: ["schedule:special"],
+  }), ["schedule:special", "colour:dover-white", "flyscreen"]);
+});
+
+test("only an explicit customer edit can submit an unpriced AI line for human repricing", () => {
+  const base = { productSlug: slug, width: "1200", height: "900", options: fullOptions, qty: 1, origin: "ai", lineTotal: null };
+  assert.equal(M.lineBlocksSubmission(base), true);
+  assert.equal(M.lineBlocksSubmission({
+    ...base,
+    review: { customerConfigurationChanged: "AMJ will confirm and price this selection." },
+  }), false);
+});
 
 test("priceConfigured: complete line prices, rounds to $10, multiplies by qty", () => {
   const one = M.priceConfigured({ productSlug: slug, width: "1200", height: "900", options: fullOptions, qty: 1 });

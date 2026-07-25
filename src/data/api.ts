@@ -24,7 +24,8 @@ export interface ApiItem {
   qty: number;
   status: QItem["status"];
   lineTotal: number | null;
-  origin?: "manual" | "schedule";
+  origin?: "manual" | "schedule" | "ai";
+  aiPriced?: boolean;
   review?: Record<string, string> | null;
 }
 
@@ -34,6 +35,8 @@ export interface ApiScheduleFile {
   filename: string;
   kind: string;
   size: number | null;
+  doc_type?: string | null;
+  doc_type_source?: string | null;
 }
 
 export interface CurrentProject {
@@ -139,10 +142,16 @@ export const submitEnquiry = (payload: EnquiryPayload) =>
 
 /** Snapshot-save the whole draft line set (+ the project name). Creates the
  *  project on first call. */
-export const saveLines = (items: QItem[], title?: string) =>
+export const saveLines = (items: QItem[], title?: string, removedIds: string[] = []) =>
   req<CurrentProject>("/api/projects/current/lines", {
     method: "PUT",
-    body: JSON.stringify(title === undefined ? { items } : { items, title }),
+    body: JSON.stringify(title === undefined ? { items, removedIds } : { items, title, removedIds }),
+  });
+
+/** Restore the immutable, exactly-priced AI proposal for one draft line. */
+export const restoreAiLine = (lineId: string) =>
+  req<CurrentProject>(`/api/projects/current/lines/${lineId}/restore-ai`, {
+    method: "POST",
   });
 
 // ── Quote lifecycle & orders ─────────────────────────────────────────────────
@@ -331,7 +340,7 @@ export interface ExtractionRun {
   status: "queued" | "running" | "partial" | "completed" | "failed" | "cancelled";
   startedAt: string;
   completedAt: string | null;
-  summary: { extractedLines: number; conflicts: number; energyApplied: number; documents: number } | null;
+  summary: { extractedLines: number; conflicts: number; energyApplied: number; cartApplied?: number; documents: number } | null;
 }
 export const extractionStatus = () =>
   req<{ run: ExtractionRun | null; basis?: Record<string, string> }>("/api/projects/current/extraction-status");

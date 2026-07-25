@@ -153,8 +153,16 @@ test("stageInputHash: stable for identical parts; changes with prompt, model, pi
 });
 
 test("stageRawKey: §7.1 layout, traversal-safe", () => {
-  assert.equal(stageRawKey("prj_1", "run_1", "schedule_parser"), "projects/prj_1/runs/run_1/raw/schedule_parser.json");
-  assert.ok(!stageRawKey("../../etc", "run/../x", "s").includes(".."), "no traversal segments survive");
+  assert.equal(
+    stageRawKey("prj_1", "run_1", "schedule_parser", "abc123"),
+    "projects/prj_1/runs/run_1/raw/schedule_parser-abc123.json",
+  );
+  assert.notEqual(
+    stageRawKey("prj_1", "run_1", "schedule_parser", "doc-a"),
+    stageRawKey("prj_1", "run_1", "schedule_parser", "doc-b"),
+    "same-stage multi-document results cannot overwrite each other",
+  );
+  assert.ok(!stageRawKey("../../etc", "run/../x", "s", "../hash").includes(".."), "no traversal segments survive");
 });
 
 // ── Skill runner: single-model policy + §13.4 determinism + §22.3 repair ─────

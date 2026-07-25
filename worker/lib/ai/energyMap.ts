@@ -105,6 +105,20 @@ export function mapEnergyToOpenings(extraction: EnergyExtraction, openings: Open
         reviewRequired: true,
       });
     }
+    if (match.ref && match.heightMm != null && o.heightMm != null && Math.abs(match.heightMm - o.heightMm) > DIM_TOLERANCE_MM) {
+      conflicts.push({
+        conflictId: `conf_energy_${conflicts.length + 1}`,
+        entity: o.externalRef,
+        field: "heightMm",
+        values: [
+          { value: match.heightMm, source: "energy_report", precedence: 100 },
+          { value: o.heightMm, source: "architectural_schedule", precedence: 80 },
+        ],
+        resolution: "use_higher_precedence_and_flag",
+        selectedValue: o.heightMm,
+        reviewRequired: true,
+      });
+    }
   }
 
   // Track child-refs that matched a parent opening so they don't read as unmatched.

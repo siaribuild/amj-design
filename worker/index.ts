@@ -8,6 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { Hono } from "hono";
 import type { Env } from "./types";
+import { consumeAiJobs, type AiExtractionJob } from "./lib/ai/jobs";
 import { auth } from "./routes/auth";
 import { projects } from "./routes/projects";
 import { quote } from "./routes/quote";
@@ -20,6 +21,7 @@ import { ops } from "./routes/ops";
 import { integrations } from "./routes/integrations";
 import { ensureCatalogue } from "./lib/catalogue";
 import { getActiveLocations } from "../src/data/catalogue";
+import { drainLearningOutbox } from "./lib/revisions";
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -106,5 +108,11 @@ export default {
     const host = request.headers.get("host") ?? url.hostname;
     const shell = host.startsWith("ops.") ? "/ops.html" : "/index.html";
     return env.ASSETS.fetch(new URL(shell, url.origin).toString());
+  },
+  async queue(batch: MessageBatch<AiExtractionJob>, env: Env): Promise<void> {
+    await consumeAiJobs(batch, env);
+  },
+  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    await drainLearningOutbox(env, 50);
   },
 };

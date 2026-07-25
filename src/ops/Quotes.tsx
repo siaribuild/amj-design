@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { ChevronLeft, Loader2, UserPlus, FileCheck2, StickyNote, Save, MessageCircleQuestion, ShieldCheck, FlaskConical, Clock, Check, X, CircleDot } from "lucide-react";
 import {
   opsSubmissions, opsProject, opsAssign, opsPatchLine, opsAddNote, opsIssueRevision,
-  opsSetStatus, opsRequestClarification, opsSubmitForApproval,
-  type OpsSubmission, type OpsWorkspace, type OpsLine,
+  opsSetStatus, opsRequestClarification, opsSubmitForApproval, opsLineConfigurations,
+  type OpsSubmission, type OpsWorkspace, type OpsLine, type OpsExactConfiguration,
 } from "./api";
 
 const SAGE = "#5A7A6A";
@@ -75,6 +75,7 @@ function Workspace({ id, onBack }: { id: string; onBack: () => void }) {
   const [note, setNote] = useState("");
   const [clarifyOpen, setClarifyOpen] = useState(false);
   const [clarify, setClarify] = useState("");
+  const [actionError, setActionError] = useState("");
 
   const load = () => opsProject(id).then(setWs).catch(() => setWs(null));
   useEffect(() => { load(); }, [id]);
@@ -83,7 +84,12 @@ function Workspace({ id, onBack }: { id: string; onBack: () => void }) {
   const p = ws.project;
   const total = ws.lines.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
   const next = p.nextStates ?? [];
-  const run = async (fn: () => Promise<unknown>) => { setBusy(true); try { await fn(); await load(); } finally { setBusy(false); } };
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true); setActionError("");
+    try { await fn(); await load(); }
+    catch { setActionError("That action could not be completed. Resolve and exactly price every line, then try again."); }
+    finally { setBusy(false); }
+  };
 
   const addNote = async () => {
     const body = note.trim(); if (!body) return;
@@ -137,11 +143,15 @@ function Workspace({ id, onBack }: { id: string; onBack: () => void }) {
             </button>
           )}
           {next.includes("issued") && (
-            <button onClick={() => run(() => opsIssueRevision(id))} disabled={busy} className="flex items-center gap-1.5 text-sm px-3 py-1.5 text-white disabled:opacity-50" style={{ background: SAGE }}>
+            <button onClick={() => run(() => opsIssueRevision(id))} disabled={busy || p.unresolvedLineCount > 0} className="flex items-center gap-1.5 text-sm px-3 py-1.5 text-white disabled:opacity-50" style={{ background: SAGE }}>
               <FileCheck2 className="w-4 h-4" />Issue reviewed quote
             </button>
           )}
         </div>
+        {p.unresolvedLineCount > 0 && (
+          <p className="mt-3 text-xs text-amber-800">{p.unresolvedLineCount} line{p.unresolvedLineCount === 1 ? "" : "s"} must be exactly priced and resolved before approval or issue.</p>
+        )}
+        {actionError && <p role="alert" className="mt-3 text-xs text-red-700">{actionError}</p>}
         {clarifyOpen && (
           <div className="mt-3 flex gap-2">
             <input value={clarify} autoFocus onChange={e => setClarify(e.target.value)} onKeyDown={e => e.key === "Enter" && sendClarify()}
@@ -252,6 +262,12 @@ function LineRow({ line, onSaved }: { line: OpsLine; onSaved: () => void }) {
   const [qty, setQty] = useState(String(line.qty));
   const [saving, setSaving] = useState(false);
   const [resolving, setResolving] = useState(false);
+  const [configurations, setConfigurations] = useState<OpsExactConfiguration[] | null>(null);
+  const [configurationKey, setConfigurationKey] = useState("");
+  const [configurationError, setConfigurationError] = useState("");
+  useEffect(() => {
+    setW(line.width); setH(line.height); setQty(String(line.qty));
+  }, [line.width, line.height, line.qty]);
   const dirty = w !== line.width || h !== line.height || qty !== String(line.qty);
   const reviewReasons = line.review ? Object.entries(line.review) : [];
 
@@ -262,15 +278,58 @@ function LineRow({ line, onSaved }: { line: OpsLine; onSaved: () => void }) {
   };
   const resolveAll = async () => {
     setResolving(true);
+    setConfigurationError("");
     try { await opsPatchLine(line.id, { resolveReview: true }); onSaved(); }
+    catch { setConfigurationError("Select an exact configuration before resolving this line."); }
     finally { setResolving(false); }
+  };
+  const loadConfigurations = async () => {
+    setResolving(true); setConfigurationError("");
+    try {
+      const result = await opsLineConfigurations(line.id);
+      setConfigurations(result.configurations);
+      if (result.configurations.length === 1) {
+        const only = result.configurations[0];
+        setConfigurationKey(`${only.productSlug}::${only.variantId}`);
+      }
+    } catch {
+      setConfigurationError("Eligible configurations could not be loaded. Check the product catalogue and try again.");
+    } finally { setResolving(false); }
+  };
+  const applyConfiguration = async () => {
+    const selected = configurations?.find((configuration) =>
+      `${configuration.productSlug}::${configuration.variantId}` === configurationKey);
+    if (!selected) return;
+    setResolving(true); setConfigurationError("");
+    try {
+      await opsPatchLine(line.id, {
+        productSlug: selected.productSlug,
+        selectedVariantId: selected.variantId,
+        options: line.options,
+        width: w,
+        height: h,
+        qty: Math.max(1, parseInt(qty) || 1),
+        resolveReview: true,
+      });
+      onSaved();
+    } catch {
+      setConfigurationError("This configuration could not be exactly priced. Confirm its private rate and option surcharge rows.");
+    } finally { setResolving(false); }
   };
 
   return (
     <div className="bg-white border border-black/8 p-3">
       <div className="flex items-center gap-3 flex-wrap">
         <span className="font-mono text-xs text-[#5c5a56] w-10">{line.code || "—"}</span>
-        <span className="text-sm text-[#14150f] flex-1 min-w-[160px]">{line.productName}<span className="block text-xs text-[#8b8880]">{line.room}</span></span>
+        <span className="text-sm text-[#14150f] flex-1 min-w-[160px]">{line.productName}<span className="block text-xs text-[#8b8880]">{line.room}</span>
+          {Object.keys(line.options).length > 0 && (
+            <span className="block text-[11px] text-[#5c5a56] mt-0.5">
+              Options: {Object.entries(line.options)
+                .filter(([key, value]) => value && !["performanceVariantId", "frameTechnology"].includes(key))
+                .map(([key, value]) => `${key}: ${value}`).join(" · ")}
+            </span>
+          )}
+        </span>
         {line.status === "technical_review" && <span className="text-[10px] font-medium px-1.5 py-0.5 border border-sky-300 bg-sky-50 text-sky-800">Technical review</span>}
         {line.status === "incomplete" && <span className="text-[10px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800">Incomplete</span>}
         <label className="text-xs text-[#8b8880] flex items-center gap-1">W<input value={w} onChange={e => setW(e.target.value.replace(/\D/g, ""))} className="w-16 border border-black/15 px-1.5 py-1 text-sm text-[#14150f]" /></label>
@@ -295,9 +354,41 @@ function LineRow({ line, onSaved }: { line: OpsLine; onSaved: () => void }) {
               </li>
             ))}
           </ul>
-          <button onClick={resolveAll} disabled={resolving} className="mt-2 flex items-center gap-1 text-xs px-2 py-1 border border-sky-300 text-sky-800 hover:bg-sky-50 disabled:opacity-50">
-            <Check className="w-3.5 h-3.5" />{resolving ? "…" : "Mark technical review resolved"}
-          </button>
+          {(line.origin === "ai" || line.selectedVariantId) && (line.lineTotal == null || !line.selectedVariantId) ? (
+            <div className="mt-2">
+              {configurations == null ? (
+                <button onClick={loadConfigurations} disabled={resolving} className="flex items-center gap-1 text-xs px-2 py-1 border border-sky-300 text-sky-800 hover:bg-sky-50 disabled:opacity-50">
+                  <FlaskConical className="w-3.5 h-3.5" />{resolving ? "Loading…" : "Choose exact configuration"}
+                </button>
+              ) : configurations.length === 0 ? (
+                <p className="text-xs text-amber-800">No eligible exact configuration is published for this opening.</p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <select value={configurationKey} onChange={e => setConfigurationKey(e.target.value)}
+                    className="min-w-[280px] border border-black/15 px-2 py-1 text-xs text-[#14150f]">
+                    <option value="">Select product and performance variant</option>
+                    {configurations.map(configuration => (
+                      <option key={`${configuration.productSlug}::${configuration.variantId}`} value={`${configuration.productSlug}::${configuration.variantId}`}>
+                        {configuration.productName} · {configuration.frameTechnology.replaceAll("_", " ")}
+                        {configuration.glassBuildUp ? ` · ${configuration.glassBuildUp}` : ""}
+                        {configuration.uValue != null ? ` · Uw ${configuration.uValue}` : ""}
+                        {configuration.shgc != null ? ` / SHGC ${configuration.shgc}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <button onClick={applyConfiguration} disabled={resolving || !configurationKey}
+                    className="flex items-center gap-1 text-xs px-2 py-1 text-white disabled:opacity-50" style={{ background: SAGE }}>
+                    <Check className="w-3.5 h-3.5" />{resolving ? "Applying…" : "Apply, price and resolve"}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <button onClick={resolveAll} disabled={resolving} className="mt-2 flex items-center gap-1 text-xs px-2 py-1 border border-sky-300 text-sky-800 hover:bg-sky-50 disabled:opacity-50">
+              <Check className="w-3.5 h-3.5" />{resolving ? "…" : "Mark technical review resolved"}
+            </button>
+          )}
+          {configurationError && <p role="alert" className="mt-2 text-xs text-red-700">{configurationError}</p>}
         </div>
       )}
     </div>

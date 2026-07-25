@@ -24,8 +24,8 @@ const enc = new TextEncoder();
 const safeSeg = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
 
 /** §7.1 R2 key for a stage's archived raw result. Traversal-safe. */
-export const stageRawKey = (projectId: string, runId: string, stage: string): string =>
-  `projects/${safeSeg(projectId)}/runs/${safeSeg(runId)}/raw/${safeSeg(stage)}.json`;
+export const stageRawKey = (projectId: string, runId: string, stage: string, inputHash: string): string =>
+  `projects/${safeSeg(projectId)}/runs/${safeSeg(runId)}/raw/${safeSeg(stage)}-${safeSeg(inputHash)}.json`;
 
 /** The §6.1-corrected idempotency key. Pure + exported so tests can prove that a
  *  prompt, model or pipeline change produces a DIFFERENT hash (i.e. a re-run). */
@@ -103,7 +103,7 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
   // ── Archive the accepted raw output to R2 (§7.1) — only when usable ──────────
   let r2Key: string | null = null;
   if (run.ok && run.data != null) {
-    r2Key = stageRawKey(projectId, aiRunId, skill.id);
+    r2Key = stageRawKey(projectId, aiRunId, skill.id, inputHash);
     // Archive exactly what the validator accepted, re-serialized (canonical form).
     await env.FILES.put(r2Key, JSON.stringify(run.data)).catch(() => { r2Key = null; });
   }

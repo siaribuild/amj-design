@@ -90,6 +90,11 @@ export function derivePerformanceVariant(product) {
     uValue,
     shgc,
     frameType: "aluminium",
+    // Glass text cannot establish whether the complete frame system is
+    // thermally broken. Keep this unknown until verified catalogue data exists.
+    frameTechnology: "unknown",
+    coating: /low-?e/i.test(product.standardGlass || "") ? "low-e (description-derived)" : null,
+    pricingOptionSlugs: [],
     dataSource: "estimated",
     certified: false,
     published: true,

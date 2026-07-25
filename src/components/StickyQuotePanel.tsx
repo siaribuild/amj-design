@@ -15,6 +15,7 @@ import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 export type StickyQuotePanelProps = {
   itemCount: number;
   attentionCount: number;        // blocking items the customer must fix
+  pendingPriceCount?: number;    // submitted for staff exact pricing
   total: number;
   editingItem: boolean;          // a new item is being composed but not yet saved
   uploading?: boolean;           // a schedule is being read/parsed right now
@@ -28,10 +29,10 @@ export type StickyQuotePanelProps = {
 };
 
 export function StickyQuotePanel({
-  itemCount, attentionCount, total, editingItem, uploading = false, readingDocs = 0,
+  itemCount, attentionCount, pendingPriceCount = 0, total, editingItem, uploading = false, readingDocs = 0,
   onReviewQuote, onReviewIssues, onFinishItem,
 }: StickyQuotePanelProps) {
-  const readyCount = Math.max(0, itemCount - attentionCount);
+  const readyCount = Math.max(0, itemCount - attentionCount - pendingPriceCount);
   const items = (c: number) => `${c} item${c !== 1 ? "s" : ""}`;
   const gstMode = useGstMode();
   const shownTotal = gstAdjust(total, gstMode);
@@ -64,6 +65,7 @@ export function StickyQuotePanel({
     onClick = itemCount > 0 ? onReviewQuote : onFinishItem;
     statusTone = "border-black/10 bg-white text-[#5c5a56]";
     panelTone = "border-[#8CA99B] bg-[#F7F8F6]";
+    ctaDisabled = true;
   } else if (readingDocs > 0) {
     // Project-level processing (bar = project state; rail chips = which file).
     // The "N ready" claim is suppressed — it would assert a total about to
@@ -75,6 +77,7 @@ export function StickyQuotePanel({
     onClick = itemCount > 0 ? onReviewQuote : onFinishItem;
     statusTone = "border-black/10 bg-white text-[#5c5a56]";
     panelTone = "border-[#8CA99B] bg-[#F7F8F6]";
+    ctaDisabled = true;
   } else if (itemCount === 0 && !editingItem) {
     status = <span>No items added yet</span>;
     live = "No items added yet";
@@ -113,6 +116,23 @@ export function StickyQuotePanel({
     statusTone = "border-transparent bg-transparent text-[#131311] p-0 flex-wrap";
     panelTone = "border-amber-400 bg-[#F7F8F6]";
     ctaTone = "bg-amber-700 hover:bg-amber-800 focus-visible:ring-amber-600";
+  } else if (pendingPriceCount > 0) {
+    status = (
+      <>
+        <span className="flex items-center gap-1 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 px-2 py-1 text-[#355344] whitespace-nowrap">
+          <Check className="w-3.5 h-3.5" aria-hidden="true" />{readyCount} priced
+        </span>
+        <span className="flex items-center gap-1 border border-amber-300 bg-amber-100 px-2 py-1 text-amber-900 whitespace-nowrap">
+          <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />{pendingPriceCount} pending AMJ price
+        </span>
+        {addingChip}
+      </>
+    );
+    live = `${pendingPriceCount} of ${items(itemCount)} pending AMJ pricing`;
+    ctaLabel = "Review quote";
+    onClick = onReviewQuote;
+    statusTone = "border-transparent bg-transparent text-[#131311] p-0 flex-wrap";
+    panelTone = "border-amber-400 bg-[#F7F8F6]";
   } else {
     status = (
       <>
@@ -138,12 +158,12 @@ export function StickyQuotePanel({
       }}>
       {/* Polite, atomic summary for assistive tech — not the whole panel. */}
       <div className="sr-only" aria-live="polite" aria-atomic="true">
-        Indicative estimate {fmt(shownTotal)} {gstSuffix(gstMode)}. {live}.
+        {pendingPriceCount ? "Priced-items subtotal" : "Indicative estimate"} {fmt(shownTotal)} {gstSuffix(gstMode)}. {live}.
       </div>
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3 sm:py-3.5 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
         <div className="flex items-center justify-between gap-3 min-w-0 sm:contents">
           <div className="sm:order-2 flex flex-col min-w-0 flex-shrink-0">
-            <span className="text-[9px] uppercase tracking-[0.16em] text-[#6f6c67] leading-none mb-1">Estimate</span>
+            <span className="text-[9px] uppercase tracking-[0.16em] text-[#6f6c67] leading-none mb-1">{pendingPriceCount ? "Priced subtotal" : "Estimate"}</span>
             <span className="flex items-baseline gap-1.5">
             <span className="text-[#131311] text-lg sm:text-[17px] font-semibold leading-none tabular-nums"
               style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(shownTotal)}</span>

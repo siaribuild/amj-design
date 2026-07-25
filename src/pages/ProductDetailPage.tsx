@@ -16,7 +16,7 @@ import {
   getProductBySlug, getFamily, getCategory, getRelatedProducts, products, imageUrl,
 } from "../data/catalogue";
 import { ItemForm, ItemSummaryCard } from "../components/ItemComposer";
-import { type QItem, type QuoteState, priceConfigured, fmt } from "../data/configurator";
+import { type QItem, type QuoteState, linePriceTotal, fmt } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
 const OPTION_TYPE_ORDER = ["Glass", "Frame colour", "Colour", "Hardware", "Flyscreen", "Installation"];
@@ -192,7 +192,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
     setJustAdded({ ...built, id });
     document.getElementById("configure")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
-  const projectTotal = quote.items.reduce((s, it) => s + priceConfigured(it).total, 0);
+  const projectTotal = quote.items.reduce((s, it) => s + linePriceTotal(it), 0);
   const gstMode = useGstMode();
   const liveJustAdded = justAdded ? (quote.items.find(x => x.id === justAdded.id) ?? justAdded) : null;
 

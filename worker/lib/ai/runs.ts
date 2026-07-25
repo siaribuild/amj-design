@@ -15,13 +15,24 @@ export interface AiRunHandle {
   primaryModel: string;
 }
 
-export async function createAiRun(env: Env, args: { projectId: string; inputMode?: InputMode | null }): Promise<AiRunHandle> {
+export async function createAiRun(env: Env, args: {
+  projectId: string;
+  inputMode?: InputMode | null;
+  sourceGeneration?: number | null;
+  sourceManifestHash?: string | null;
+}): Promise<AiRunHandle> {
   const id = uuid();
   const correlationId = uuid();
   await env.DB.prepare(
-    `INSERT INTO ai_runs (id, project_id, pipeline_version, status, input_mode, primary_model, escalation_model, correlation_id)
-     VALUES (?,?,?, 'running', ?,?,?,?)`,
-  ).bind(id, args.projectId, PIPELINE_VERSION, args.inputMode ?? null, primaryModel(env), escalationModel(env), correlationId).run();
+    `INSERT INTO ai_runs
+       (id, project_id, pipeline_version, status, input_mode, primary_model, escalation_model,
+        correlation_id, source_generation, source_manifest_hash)
+     VALUES (?,?,?, 'running', ?,?,?,?,?,?)`,
+  ).bind(
+    id, args.projectId, PIPELINE_VERSION, args.inputMode ?? null,
+    primaryModel(env), escalationModel(env), correlationId,
+    args.sourceGeneration ?? null, args.sourceManifestHash ?? null,
+  ).run();
   return { id, correlationId, pipelineVersion: PIPELINE_VERSION, primaryModel: primaryModel(env) };
 }
 
