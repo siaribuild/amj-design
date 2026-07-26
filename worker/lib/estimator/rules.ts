@@ -16,7 +16,9 @@ export type FilterName =
   | "publication" | "operation" | "dimensions" | "energy"
   | "composite" | "option_compatibility" | "data_completeness";
 
-export type Severity = "reject" | "manual_review" | "incomplete";
+// "warning" keeps a candidate selectable and priceable (indicative), the other
+// three eliminate it. Mirrors the customer-facing error|warning model.
+export type Severity = "reject" | "manual_review" | "incomplete" | "warning";
 
 export interface FilterOutcome {
   filter: FilterName;
@@ -47,16 +49,21 @@ function checkDimensions(opening: OpeningInput, c: CatalogueCandidate): FilterOu
   const w = opening.widthMm ?? 0, h = opening.heightMm ?? 0;
   if (!rule) return { filter: "dimensions", passed: false, severity: "incomplete", reason: "no dimension rule" };
   if (!w || !h) return { filter: "dimensions", passed: false, severity: "manual_review", reason: "opening size unknown" };
+  // An opening outside the published range is a WARNING, not a rejection: AMJ
+  // builds a composite/custom unit, so the candidate stays selectable and is
+  // priced at the REAL opening size (indicative). The aggregate below downgrades
+  // any such line to commercial_only_estimate — it can never read as "ready".
+  // Same contract as the deterministic matcher, so both paths agree.
   const within = (v, min, max) => (min == null || v >= min) && (max == null || v <= max);
   if (!within(w, rule.minWidthMm, rule.maxWidthMm) || !within(h, rule.minHeightMm, rule.maxHeightMm)) {
-    return { filter: "dimensions", passed: false, severity: "reject", reason: `size ${w}×${h} outside ${rule.minWidthMm ?? "?"}–${rule.maxWidthMm ?? "?"} × ${rule.minHeightMm ?? "?"}–${rule.maxHeightMm ?? "?"} mm` };
+    return { filter: "dimensions", passed: false, severity: "warning", reason: `size ${w}×${h} outside ${rule.minWidthMm ?? "?"}–${rule.maxWidthMm ?? "?"} × ${rule.minHeightMm ?? "?"}–${rule.maxHeightMm ?? "?"} mm — composite/custom unit, indicative price` };
   }
   if (rule.maxAreaM2 != null && (w * h) / 1_000_000 > rule.maxAreaM2 + 0.001) {
-    return { filter: "dimensions", passed: false, severity: "reject", reason: `area ${((w * h) / 1e6).toFixed(2)} m² exceeds ${rule.maxAreaM2} m²` };
+    return { filter: "dimensions", passed: false, severity: "warning", reason: `area ${((w * h) / 1e6).toFixed(2)} m² exceeds ${rule.maxAreaM2} m² — composite/custom unit, indicative price` };
   }
   if (rule.maxAspectRatio != null) {
     const ar = Math.max(w, h) / Math.max(1, Math.min(w, h));
-    if (ar > rule.maxAspectRatio + 0.01) return { filter: "dimensions", passed: false, severity: "reject", reason: `aspect ${ar.toFixed(1)} exceeds ${rule.maxAspectRatio}` };
+    if (ar > rule.maxAspectRatio + 0.01) return { filter: "dimensions", passed: false, severity: "warning", reason: `aspect ${ar.toFixed(1)} exceeds ${rule.maxAspectRatio} — composite/custom unit, indicative price` };
   }
   return { filter: "dimensions", passed: true };
 }
@@ -128,12 +135,16 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
   const rejected = filters.some((f) => !f.passed && f.severity === "reject");
   const incomplete = filters.some((f) => !f.passed && f.severity === "incomplete");
   const review = filters.some((f) => !f.passed && f.severity === "manual_review");
+  // A warning keeps the candidate selectable + priceable, but the line is only
+  // ever an indicative commercial estimate — never "ready", never certified.
+  const warned = filters.some((f) => !f.passed && f.severity === "warning");
 
   let status: OutcomeStatus;
   let passed: boolean;
   if (rejected) { status = "unavailable"; passed = false; }
   else if (incomplete) { status = "catalogue_data_incomplete"; passed = false; }
   else if (review) { status = "needs_manual_review"; passed = false; }
+  else if (warned) { status = "commercial_only_estimate"; passed = true; }
   else if (energyHadRequirement(opening) && !energy.certified) { status = "commercial_only_estimate"; passed = true; }
   else { status = "ready"; passed = true; }
 

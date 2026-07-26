@@ -50,15 +50,21 @@ test("toCandidate rejects an unsupported (future) schema version", () => {
   assert.equal(toCandidate({ ...awning, schemaVersion: undefined }), null);
 });
 
-test("operation + dimensions: in-range awning is READY, out-of-range is rejected", () => {
+test("operation + dimensions: in-range awning is READY, out-of-range is WARNED (indicative, never ready)", () => {
   const ok = checkHardRules({ family: "window", operationType: "awning", widthMm: 800, heightMm: 1200 }, cand());
   assert.equal(ok.status, "ready");
   assert.equal(ok.passed, true);
 
+  // Same contract as the deterministic matcher: an oversized opening is a
+  // composite/custom job — the candidate stays selectable and priceable, but the
+  // line can only ever be an indicative commercial estimate.
   const tooWide = checkHardRules({ family: "window", operationType: "awning", widthMm: 1400, heightMm: 1200 }, cand());
-  assert.equal(tooWide.passed, false);
-  assert.equal(tooWide.status, "unavailable");
-  assert.ok(tooWide.filters.find((f) => f.filter === "dimensions" && f.severity === "reject"));
+  assert.equal(tooWide.passed, true, "out-of-range stays selectable so it can be priced");
+  assert.equal(tooWide.status, "commercial_only_estimate", "…but never 'ready'");
+  assert.equal(tooWide.energyCertified, false);
+  const dim = tooWide.filters.find((f) => f.filter === "dimensions");
+  assert.equal(dim.severity, "warning");
+  assert.match(dim.reason, /composite\/custom/i);
 });
 
 test("wrong operation is rejected", () => {
@@ -304,15 +310,28 @@ test("selection: picks a passing candidate, ranks it, never selects a rejected o
   assert.match(res.catalogueVersion, /^cat:/);
 });
 
-test("selection: an opening too big for the small unit selects the big one only", async () => {
+test("selection: an opening too big for the small unit selects the one that actually fits", async () => {
   const repo = fixtureCatalogueRepository([smallAwning, bigAwning]);
   // 1200 wide exceeds smallAwning (max 1000) but fits bigAwning (max 1300).
   const res = await selectForOpening({ family: "windows", operationType: "awning", widthMm: 1200, heightMm: 1200, externalRef: "W02" }, repo, priceFn);
   assert.equal(res.selected.candidate.sanityProductId, "product-amj100t-awning-window");
-  // The small unit is present but rejected (never selected).
+  assert.equal(res.selected.outcome.status, "ready", "the fitting unit is a genuine fit, not an estimate");
+  // The small unit is still evaluated (warned, indicative) but must NOT win when
+  // a genuinely fitting product exists.
   const small = res.evaluated.find((e) => e.candidate.sanityProductId === "product-amj80-series-awning-window");
-  assert.equal(small.outcome.passed, false);
   assert.equal(small.selected, false);
+  assert.equal(small.outcome.status, "commercial_only_estimate");
+});
+
+test("selection: when NOTHING fits, the largest best-fit wins and the line is indicative", async () => {
+  const repo = fixtureCatalogueRepository([smallAwning, bigAwning]);
+  // 2050 wide exceeds BOTH (max 1000 / 1300) — a composite job. The biggest unit
+  // must win: picking the cheaper small one would systematically under-quote.
+  const res = await selectForOpening({ family: "windows", operationType: "awning", widthMm: 2050, heightMm: 2000, externalRef: "W01" }, repo, priceFn);
+  assert.ok(res.selected, "an oversized opening is still priced (indicative), not dropped");
+  assert.equal(res.selected.candidate.sanityProductId, "product-amj100t-awning-window", "largest coverage wins");
+  assert.equal(res.selected.outcome.status, "commercial_only_estimate");
+  assert.ok(res.selected.price?.ok, "priced at the real opening size");
 });
 
 test("selection: no candidate for an unknown operation ⇒ no_candidate", async () => {

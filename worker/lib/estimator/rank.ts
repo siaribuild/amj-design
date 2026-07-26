@@ -42,6 +42,15 @@ function geometryScore(opening: OpeningInput, c: CatalogueCandidate): number {
     if (min == null || max == null || max <= min) return 0.5;
     return clamp01((v - min) / (max - min));
   };
+  // Out of range (a composite/custom opening): every candidate scores 0 on the
+  // snug-fit curve, so rank by COVERAGE instead — how much of the opening the
+  // product's envelope spans. Without this the commercial component would pick
+  // the cheapest small unit and systematically under-quote a large opening.
+  const over = (r.maxWidthMm != null && w > r.maxWidthMm) || (r.maxHeightMm != null && h > r.maxHeightMm);
+  if (over) {
+    const cover = (v: number, max: number | null) => (max == null ? 1 : clamp01(max / Math.max(1, v)));
+    return clamp01(((cover(w, r.maxWidthMm) + cover(h, r.maxHeightMm)) / 2) * 0.5); // capped: never beats a true fit
+  }
   const wf = 1 - Math.abs(frac(w, r.minWidthMm, r.maxWidthMm) - 0.5) * 2;
   const hf = 1 - Math.abs(frac(h, r.minHeightMm, r.maxHeightMm) - 0.5) * 2;
   return clamp01((wf + hf) / 2);
