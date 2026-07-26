@@ -217,7 +217,9 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     // No counted changes: distinguish a first import (nothing pre-existed) from
     // an identical re-upload — "already up to date" must never read as churn.
     if (!parts.length) parts.push(job.itemCount ? "no changes — already up to date" : "nothing imported");
-    if (job.needsReviewCount && !job.keptForReview) parts.push(`${job.needsReviewCount} need review`);
+    // NB: no live "N need review" here — that count mutates as the customer
+    // reviews, so it would go stale in a fixed event digest. The sticky panel
+    // owns the LIVE attention count (UX review 2026-07-26).
     return parts.join(" · ");
   };
 
@@ -574,41 +576,49 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
           {quote.files.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
               {quote.files.map((f) => {
+                // Type chip renders ONLY once a real classification exists. null is
+                // permanent for anonymous/deterministic uploads and transient for
+                // registered ones pre-AI-run — never show an unresolvable "SORTING…"
+                // promise (UX review 2026-07-26). Known types only:
                 const type = (f.docType ?? null) as string | null;
-                const label = type === "schedule" ? "SCHEDULE"
-                  : type === "energy_report" ? "ENERGY REPORT"
-                  : type === "plans" ? "PLANS"
-                  : type === "supporting" ? "SUPPORTING" : "SORTING…";
-                const tint = type === "schedule" ? "border-[#5A7A6A]/30 bg-[#5A7A6A]/8 text-[#355344]"
-                  : type === "energy_report" ? "border-[#4C6A88]/30 bg-[#4C6A88]/10 text-[#4C6A88]" // TONE.work — amber is reserved for attention
-                  : type == null ? "border-dashed border-black/20 text-[#8a8782]"
-                  : `border-black/15 bg-black/[0.03] text-[#6f6c67]${type === "supporting" ? " border-dashed" : ""}`;
+                const known: Record<string, { label: string; tint: string }> = {
+                  schedule: { label: "SCHEDULE", tint: "border-[#5A7A6A]/30 bg-[#5A7A6A]/8 text-[#355344]" },
+                  energy_report: { label: "ENERGY REPORT", tint: "border-[#4C6A88]/30 bg-[#4C6A88]/10 text-[#4C6A88]" }, // TONE.work
+                  plans: { label: "PLANS", tint: "border-black/15 bg-black/[0.03] text-[#6f6c67]" },
+                  supporting: { label: "SUPPORTING", tint: "border-dashed border-black/15 bg-black/[0.03] text-[#6f6c67]" },
+                };
+                const chip = type ? known[type] : undefined;
+                const confirming = removingFile === String(f.id);
+                if (confirming) {
+                  // Destructive confirm replaces the whole chip — real buttons, red
+                  // framing, "Keep" is the safe default (UX review 2026-07-26).
+                  return (
+                    <div key={f.id} className="inline-flex items-center gap-2.5 border border-red-300 bg-red-50 px-3 py-1.5 text-xs max-w-full">
+                      <span className="text-red-800 font-medium truncate max-w-[12rem]">Remove {f.name}? Its lines go too.</span>
+                      <button onClick={() => void handleRemoveFile(String(f.id), f.name)}
+                        className="border border-red-600 bg-red-600 text-white px-2 py-0.5 font-medium hover:bg-red-700 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600">Remove</button>
+                      <button onClick={() => setRemovingFile(null)} autoFocus
+                        className="border border-black/12 bg-white px-2 py-0.5 font-medium text-[#5c5a56] hover:border-black/25 cursor-pointer">Keep</button>
+                    </div>
+                  );
+                }
                 return (
                   <div key={f.id} className="inline-flex items-center gap-2 border border-black/12 bg-white px-3 py-1.5 text-xs max-w-full">
                     <Paperclip className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0" aria-hidden="true" />
                     <span className="text-[#131311] font-medium truncate max-w-[14rem]">{f.name}</span>
-                    <span className={`text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 border leading-none flex-shrink-0 ${tint}`}
-                      style={{ fontFamily: "'DM Mono', monospace" }}>{label}</span>
-                    {removingFile === String(f.id) ? (
-                      <span className="flex items-center gap-1.5 flex-shrink-0 text-[#131311]">
-                        Remove{type !== "supporting" ? " (its lines go too)" : ""}?
-                        <button onClick={() => void handleRemoveFile(String(f.id), f.name)} className="font-medium text-red-600 hover:text-red-700 underline cursor-pointer">Yes</button>
-                        <button onClick={() => setRemovingFile(null)} className="text-[#5c5a56] hover:text-[#131311] underline cursor-pointer">No</button>
-                      </span>
-                    ) : (
-                      <>
-                        <span className="text-[#8a8782] flex-shrink-0">
-                          {type === "supporting" ? "· Not used for pricing" : "· Attached for review"}
-                        </span>
-                        {/* Per-file Remove (spec §1c) — the "start over" affordance
-                            that replaced the Replace/Add prompt. Drafts only; this
-                            page IS the draft builder. */}
-                        <button onClick={() => setRemovingFile(String(f.id))} aria-label={`Remove ${f.name}`}
-                          className="flex-shrink-0 -mr-1 w-5 h-5 inline-flex items-center justify-center text-[#9a9894] hover:text-red-600 cursor-pointer">
-                          <X className="w-3 h-3" aria-hidden="true" />
-                        </button>
-                      </>
+                    {chip && (
+                      <span className={`text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 border leading-none flex-shrink-0 ${chip.tint}`}
+                        style={{ fontFamily: "'DM Mono', monospace" }}>{chip.label}</span>
                     )}
+                    <span className="text-[#8a8782] flex-shrink-0">
+                      {type === "supporting" ? "· Not used for pricing" : "· Attached for review"}
+                    </span>
+                    {/* Per-file Remove (spec §1c). Trash2 (not X) — X reads as
+                        "dismiss", Trash2 as "delete"; matches Clear-all's icon. */}
+                    <button onClick={() => setRemovingFile(String(f.id))} aria-label={`Remove ${f.name}`}
+                      className="flex-shrink-0 -mr-1 w-5 h-5 inline-flex items-center justify-center text-[#8a8782] hover:text-red-600 transition-colors cursor-pointer">
+                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
                   </div>
                 );
               })}
