@@ -92,12 +92,34 @@ test("flags FIXED windows (no catalogue product) without inventing one", () => {
   }
 });
 
-test("flags wide awnings as out-of-range (the composites in the invoice)", () => {
-  // Out-of-range is keyed 'fit' (technical), NOT 'dims' (customer) — the customer
-  // can't resize a standard awning into a composite; AMJ decides that.
-  assert.ok(byCode.W01.review?.fit);
-  assert.ok(!byCode.W01.review?.dims);
+test("size is a HARD constraint: never offers a product that can't be built at the opening size", () => {
+  // W01 = 2050mm-wide awning; no awning product's range reaches that width, so
+  // NO product may be offered — offering an incompatible unit at a meaningless
+  // price is the bug this guards. The line carries no product/price and is flagged
+  // for AMJ to design a composite (technical, submittable, NOT customer-blocking).
+  assert.equal(byCode.W01.productSlug, "", "oversized opening must NOT be quoted an incompatible product");
+  assert.ok(byCode.W01.review?.fit, "oversized opening flagged for AMJ composite/custom design");
+  assert.match(byCode.W01.review.fit, /No standard/i);
+  assert.ok(!byCode.W01.review?.dims, "'fit' is technical (AMJ), not 'dims' (customer)");
+  assert.equal(reviewClass(byCode.W01.review), "technical");
+  assert.equal(lineBlocksSubmission(byCode.W01), false, "AMJ-composite line stays submittable");
   assert.ok(byCode.W04.review?.fit || byCode.W04.review?.note);
+
+  // A FITTING opening still gets a real, in-range product.
+  assert.ok(byCode.W05.productSlug, "an in-range opening gets a real product");
+  assert.equal(byCode.W05.status, "Ready");
+
+  // The invariant across EVERY line: any product offered must actually fit its
+  // opening (min AND max, W AND H). This is the basic manufacturing validation.
+  for (const l of lines) {
+    if (!l.productSlug) continue;
+    const p = getProductBySlug(l.productSlug);
+    const w = parseInt(l.width, 10) || 0, h = parseInt(l.height, 10) || 0;
+    if (!(w > 0 && h > 0)) continue;
+    const fits = (p.minWidth == null || w >= p.minWidth) && (p.maxWidth == null || w <= p.maxWidth)
+      && (p.minHeight == null || h >= p.minHeight) && (p.maxHeight == null || h <= p.maxHeight);
+    assert.ok(fits, `${l.code}: ${w}×${h}mm was offered ${p.name} (range ${p.minWidth}–${p.maxWidth} W, ${p.minHeight}–${p.maxHeight} H) — incompatible product`);
+  }
 });
 
 test("submission lifecycle: technical-only lines are submittable; customer gaps block", () => {
@@ -105,7 +127,8 @@ test("submission lifecycle: technical-only lines are submittable; customer gaps 
   // must NOT block submission (submission is how it reaches an AMJ technician).
   assert.equal(lineBlocksSubmission(byCode.D01), false);
   assert.equal(reviewClass(byCode.D01.review), "technical");
-  // Out-of-range awning: priced, technical → submittable.
+  // Oversized awning: no standard product (unpriced), technical 'fit' flag → AMJ
+  // designs a composite → still submittable (the customer can't resize a building).
   assert.equal(lineBlocksSubmission(byCode.W01), false);
   assert.equal(reviewClass(byCode.W01.review), "technical");
   // FIXED window: no catalogue product → unpriceable → customer must resolve → blocks.

@@ -118,7 +118,12 @@ export function lineBlocksSubmission(it: {
     // failures remain customer-blocking.
     return !priced && !it.review?.customerConfigurationChanged;
   }
-  return !priceConfigured(it).ok;
+  // A deterministic line with no priceable product blocks — UNLESS it is an
+  // oversized 'fit' line: no standard product is manufactured at that size, so
+  // AMJ designs a composite/custom unit at review. The customer can't resolve it
+  // (they can't resize their building), so it must stay submittable (the
+  // deterministic analog of the AI customerConfigurationChanged case above).
+  return !priceConfigured(it).ok && !it.review?.fit;
 }
 
 /** Customer-visible total. AI prices are private CPQ outputs and must never be

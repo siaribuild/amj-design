@@ -89,20 +89,29 @@ function biasIndex(slug: string, bias: string[]): number {
   return i === -1 ? bias.length : i;
 }
 
-// Choose the best product in a family for the given size: prefer one whose range
-// contains the size (series-biased); otherwise the largest-capacity product, so the
-// line is still usable — the out-of-range flag tells the reviewer to confirm.
-function pickProduct(familySlug: string, section: ScheduleSection, w: number, h: number): { product?: Product; fits: boolean } {
+// Choose a product in a family for the given size. SIZE IS A HARD MANUFACTURING
+// CONSTRAINT: only a product whose dimensional range actually contains the opening
+// may be offered. When NONE fits, we offer NO product (oversized) rather than a
+// size-incompatible unit at a meaningless price — AMJ designs a composite/custom
+// solution at review. When the size isn't yet known we can't range-check, so we
+// offer the series default and let the separate 'dims' flag prompt for the size.
+function pickProduct(familySlug: string, section: ScheduleSection, w: number, h: number): { product?: Product; fits: boolean; oversized: boolean } {
   const products = getProductsByFamily(familySlug);
-  if (!products.length) return { fits: false };
+  if (!products.length) return { fits: false, oversized: false };
   const bias = section === "window" ? WINDOW_SERIES_BIAS : DOOR_SERIES_BIAS;
-  const fitting = products.filter((p) => w > 0 && h > 0 && inRange(p, w, h));
-  if (fitting.length) {
-    fitting.sort((a, b) => biasIndex(a.slug, bias) - biasIndex(b.slug, bias));
-    return { product: fitting[0], fits: true };
+  const byBias = (list: Product[]) => [...list].sort((a, b) => biasIndex(a.slug, bias) - biasIndex(b.slug, bias));
+  if (w > 0 && h > 0) {
+    const fitting = products.filter((p) => inRange(p, w, h));
+    if (fitting.length) return { product: byBias(fitting)[0], fits: true, oversized: false };
+    return { fits: false, oversized: true }; // no standard product can be built at this size
   }
-  const byCap = [...products].sort((a, b) => areaCap(b) - areaCap(a));
-  return { product: byCap[0], fits: false };
+  return { product: byBias(products)[0], fits: false, oversized: false };
+}
+
+// The largest-capacity product in a family — used only to make the oversized
+// message informative ("largest available is …"), never offered as the line.
+function largestProduct(familySlug: string): Product | undefined {
+  return [...getProductsByFamily(familySlug)].sort((a, b) => areaCap(b) - areaCap(a))[0];
 }
 
 const pad2 = (s: string) => {
@@ -128,13 +137,15 @@ export function matchSchedule(rows: RawScheduleRow[]): ParsedLine[] {
       const picked = pickProduct(familySlug, r.section, w, h);
       product = picked.product;
       productSlug = product?.slug ?? "";
-      if (product && !picked.fits && w > 0 && h > 0) {
-        // Out-of-range is a TECHNICAL decision (e.g. a wide opening AMJ builds as a
-        // composite awning+fixed) — the customer can't resolve it, so it must NOT
-        // block submission. Keyed 'fit' (technical), never 'dims' (customer).
-        review.fit = `${w}×${h} mm is outside the standard range for ${product.name} ` +
-          `(${product.minWidth ?? "?"}–${product.maxWidth ?? "?"} W, ${product.minHeight ?? "?"}–${product.maxHeight ?? "?"} H mm). ` +
-          `AMJ will confirm the configuration (e.g. a composite unit) at technical review.`;
+      if (picked.oversized) {
+        // SIZE is a hard manufacturing constraint. No standard product can be
+        // built at this opening, so NONE is offered — the line carries no product
+        // and no (fake) price. It's AMJ's design problem (a composite/custom
+        // unit), not customer-fixable: keyed 'fit' (technical), submittable.
+        const largest = largestProduct(familySlug);
+        review.fit = `No standard ${r.section} product is manufactured at ${w}×${h} mm` +
+          (largest ? ` (largest available is ${largest.name}, up to ${largest.maxWidth ?? "?"}×${largest.maxHeight ?? "?"} mm)` : "") +
+          `. AMJ will design a composite or custom unit at technical review.`;
       }
     } else if (known) {
       // Recognised type with no catalogue family (e.g. FIXED window).
