@@ -205,6 +205,50 @@ test("pricing: option surcharges add to the unit; missing dims ⇒ not ok", () =
   assert.equal(bad.total, 0);
 });
 
+// ── Per-product conditional pricing modifiers (private D1, migration 0026) ────
+const WIDE = {
+  id: "wide-frame-awning-window", seq: 10, label: "Wide frame surcharge (width > 1200mm)",
+  whenField: "width", whenOp: ">", whenValue: 1200, thenType: "percent", thenValue: 10,
+};
+
+test("modifier: width > 1200mm adds exactly 10%; at or below is untouched", () => {
+  // 1400×1200: perimeter 5.2m×55 = 286; area 1.68m²×340 = 571.2; base = 857.2
+  const base = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1400, heightMm: 1200, qty: 1 });
+  const wide = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1400, heightMm: 1200, qty: 1, modifiers: [WIDE] });
+  assert.equal(base.unit, 860, "base rounds to the $10 grid");
+  assert.equal(wide.unit, 940, "857.2 × 1.10 = 942.9 → 940 on the $10 grid");
+  assert.deepEqual(wide.appliedModifiers, [WIDE.id], "applied rule recorded for audit");
+
+  // Exactly 1200 must NOT trigger a strictly-greater-than rule.
+  const at = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1200, heightMm: 1200, qty: 1, modifiers: [WIDE] });
+  const atNoMod = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1200, heightMm: 1200, qty: 1 });
+  assert.equal(at.unit, atNoMod.unit);
+  assert.deepEqual(at.appliedModifiers, []);
+});
+
+test("modifier: applies per unit so qty multiplies the surcharged price", () => {
+  const one = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1400, heightMm: 1200, qty: 1, modifiers: [WIDE] });
+  const three = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1400, heightMm: 1200, qty: 3, modifiers: [WIDE] });
+  assert.equal(three.total, one.unit * 3);
+});
+
+test("modifier: seq order is deterministic and percent compounds on the running subtotal", () => {
+  const pct = { ...WIDE, id: "pct", seq: 1, thenType: "percent", thenValue: 10 };
+  const flat = { ...WIDE, id: "flat", seq: 2, thenType: "fixed", thenValue: 100 };
+  // seq 1 then 2: (base × 1.1) + 100 — different from the reverse order.
+  const a = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1400, heightMm: 1200, qty: 1, modifiers: [flat, pct] });
+  const b = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1400, heightMm: 1200, qty: 1, modifiers: [{ ...pct, seq: 2 }, { ...flat, seq: 1 }] });
+  assert.deepEqual(a.appliedModifiers, ["pct", "flat"], "input array order is irrelevant — seq decides");
+  assert.equal(a.unit, 1040, "857.2 ×1.1 = 942.9 + 100 = 1042.9 → 1040");
+  assert.equal(b.unit, 1050, "(857.2 + 100) ×1.1 = 1052.9 → 1050");
+});
+
+test("modifier: non-matching field conditions never fire", () => {
+  const tallOnly = { ...WIDE, id: "tall", whenField: "height", whenValue: 3000 };
+  const s = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1400, heightMm: 1200, qty: 1, modifiers: [tallOnly] });
+  assert.deepEqual(s.appliedModifiers, []);
+});
+
 test("pricing: snapshot exposes a TOTAL, never a per-option breakdown", () => {
   const s = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 1, optionSurcharges: [130] });
   assert.ok(!("optionSurcharges" in s) && !("options" in s), "no per-option breakdown leaks into the snapshot");

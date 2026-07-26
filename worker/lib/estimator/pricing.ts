@@ -22,12 +22,26 @@ export interface PricingPolicy {
   version: string;
 }
 
+// A per-product conditional pricing rule (private D1, table `pricing_modifier`).
+// The manufacturer's model is universal in shape but owned per rate card.
+export interface PricingModifier {
+  id: string;
+  seq: number;
+  label: string | null;
+  whenField: "width" | "height" | "area" | "qty";
+  whenOp: ">" | ">=" | "<" | "<=" | "==";
+  whenValue: number;
+  thenType: "percent" | "fixed";
+  thenValue: number;
+}
+
 export interface PriceInput {
   family: string;                     // family slug (rate-card key)
   widthMm: number;
   heightMm: number;
   qty: number;
   optionSurcharges?: number[];        // resolved surcharges (server-side only)
+  modifiers?: PricingModifier[];      // per-product conditional rules (private)
 }
 
 // The snapshot persisted on a line. Deliberately carries the total and the
@@ -42,11 +56,28 @@ export interface PriceSnapshot {
   rateCardVersion: string;
   pricingPolicyVersion: string;
   depositPercent: number;
+  /** Modifier ids applied, in order — audit trail, server-side only. */
+  appliedModifiers: string[];
   computedAt: string;
 }
 
 // Round to the nearest $10 (matches the existing configurator convention).
 const round10 = (n: number) => Math.round(n / 10) * 10;
+
+// Does a rule's condition hold for this line? Dimensions are millimetres, area is
+// m² (the unit the rules are authored in).
+function modifierMatches(m: PricingModifier, dims: { width: number; height: number; area: number; qty: number }): boolean {
+  const actual = dims[m.whenField];
+  if (!Number.isFinite(actual) || !Number.isFinite(m.whenValue)) return false;
+  switch (m.whenOp) {
+    case ">": return actual > m.whenValue;
+    case ">=": return actual >= m.whenValue;
+    case "<": return actual < m.whenValue;
+    case "<=": return actual <= m.whenValue;
+    case "==": return actual === m.whenValue;
+    default: return false;
+  }
+}
 
 export function computePrice(rate: RateCard, policy: PricingPolicy, input: PriceInput): PriceSnapshot {
   const w = Math.max(0, input.widthMm), h = Math.max(0, input.heightMm);
@@ -57,6 +88,17 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
   const surcharges = (input.optionSurcharges ?? []).reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0);
   let unit = perimeterM * rate.perimRate + areaM2 * rate.areaRate + surcharges;
   unit = Math.max(unit, rate.minCharge);
+  // Per-product conditional rules, in seq order: `percent` compounds on the
+  // running subtotal, `fixed` adds a flat amount. Applied AFTER the base +
+  // surcharges and the minimum charge, BEFORE rounding — so the customer-visible
+  // total stays on the $10 grid.
+  const appliedModifiers: string[] = [];
+  const dims = { width: w, height: h, area: areaM2, qty };
+  for (const m of [...(input.modifiers ?? [])].sort((a, b) => a.seq - b.seq)) {
+    if (!modifierMatches(m, dims)) continue;
+    unit = m.thenType === "percent" ? unit * (1 + m.thenValue / 100) : unit + m.thenValue;
+    appliedModifiers.push(m.id);
+  }
   unit = round10(unit);
   const total = ok ? unit * qty : 0;
   const depositAmount = round10((total * policy.depositPercent) / 100);
@@ -70,6 +112,7 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
     rateCardVersion: rate.version,
     pricingPolicyVersion: policy.version,
     depositPercent: policy.depositPercent,
+    appliedModifiers,
     computedAt: new Date().toISOString(),
   };
 }
@@ -84,6 +127,19 @@ export async function loadRateCard(env: Env, family: string, allowFallback = tru
     : null);
   if (!row) throw new Error("no_rate_card");
   return { id: row.id, perimRate: row.perim_rate, areaRate: row.area_rate, minCharge: row.min_charge ?? 0, version: row.version };
+}
+
+// Per-product conditional rules for a rate card (private, server-side only).
+export async function loadModifiers(env: Env, rateCardId: string): Promise<PricingModifier[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, seq, label, when_field, when_op, when_value, then_type, then_value
+       FROM pricing_modifier WHERE rate_card_id = ? AND active = 1 ORDER BY seq`,
+  ).bind(rateCardId).all<any>();
+  return (results ?? []).map((r) => ({
+    id: r.id, seq: r.seq ?? 0, label: r.label ?? null,
+    whenField: r.when_field, whenOp: r.when_op, whenValue: r.when_value,
+    thenType: r.then_type, thenValue: r.then_value,
+  }));
 }
 
 export async function loadPolicy(env: Env): Promise<PricingPolicy> {
@@ -122,5 +178,10 @@ export async function priceLine(env: Env, args: {
     loadPolicy(env),
     loadOptionSurcharges(env, args.optionSlugs ?? [], args.requireAllOptions),
   ]);
-  return computePrice(rate, policy, { family: args.family, widthMm: args.widthMm, heightMm: args.heightMm, qty: args.qty, optionSurcharges: surcharges });
+  // Modifiers hang off the rate card actually resolved (which may be 'default').
+  const modifiers = await loadModifiers(env, rate.id);
+  return computePrice(rate, policy, {
+    family: args.family, widthMm: args.widthMm, heightMm: args.heightMm,
+    qty: args.qty, optionSurcharges: surcharges, modifiers,
+  });
 }
