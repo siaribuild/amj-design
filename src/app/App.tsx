@@ -1340,6 +1340,12 @@ export default function App() {
   const [quoteFiles, setQuoteFiles] = useState<QFile[]>([]);
   const [projectTitle, setProjectTitle] = useState(DEFAULT_PROJECT_TITLE);
   const [projectId, setProjectId] = useState<string | null>(null);
+  // Latest-value refs so reload()'s pre-flush saves what the customer has RIGHT
+  // NOW, not a stale closure captured when the quote object was built.
+  const quoteItemsRef = useRef<QItem[]>([]);
+  const projectTitleRef = useRef(DEFAULT_PROJECT_TITLE);
+  quoteItemsRef.current = quoteItems;
+  projectTitleRef.current = projectTitle;
   const quote: QuoteState = {
     items: quoteItems,
     files: quoteFiles,
@@ -1389,6 +1395,21 @@ export default function App() {
     },
     // Re-hydrate lines + the attached file from the server (after a parse).
     reload: async () => {
+      // FLUSH FIRST. reload() overwrites local lines with server state, so any
+      // edit still sitting in the debounced autosave would be silently lost —
+      // exactly what happened when a manually added line vanished as parse
+      // results landed. Flushing at the source protects EVERY reload path (AI
+      // run completion, file removal, post-parse) rather than one call site.
+      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+      if (hydratedRef.current) {
+        try {
+          const removedIds = [...removedLineIdsRef.current];
+          await saveLines(quoteItemsRef.current, projectTitleRef.current, removedIds);
+          removedIds.forEach((id) => removedLineIdsRef.current.delete(id));
+        } catch { /* offline: keep local state and skip the overwrite below */
+          return;
+        }
+      }
       const r = await getCurrentProject();
       skipNextSaveRef.current = true;
       setQuoteItems((r.items ?? []).map((it, i) => ({

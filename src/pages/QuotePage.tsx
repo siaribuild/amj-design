@@ -94,6 +94,12 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // sticky panel can show both without the gate ever depending on warnings.
   const technicalCount = quote.items.filter((it) => !itemBlocked(it) && reviewSeverity(it.review) === "warning").length;
   const hasContent = quote.items.length > 0 || quote.files.length > 0;
+  // Manual-first, stable ordering: the line the customer authored themselves is
+  // never below fifteen machine-authored rows. Display-only — server positions
+  // are untouched, and the sort is deterministic so it survives a reload.
+  const isManual = (it: QItem) => (it.origin ?? "manual") === "manual";
+  const orderedItems = [...quote.items].sort((a, b) => Number(isManual(b)) - Number(isManual(a)));
+  const firstDocumentIndex = orderedItems.findIndex((it) => !isManual(it));
 
   // One item expanded at a time; sticky-panel actions drive focus to the problem.
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -229,6 +235,34 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // run is in flight; 2s×7 then 5s, hard stop at 2 min. Anonymous users never
   // have a run, so the first poll returns null and no future-tense copy ever
   // renders for them.
+  // Deferred reveal (UX review 2026-07-27): document results are HELD while the
+  // customer is mid-entry and applied only when they ask, so the list never
+  // rearranges under them and their own line is never lost in the shuffle.
+  const [pendingReveal, setPendingReveal] = useState<null | { refined: number }>(null);
+  const lastCommitAt = useRef(0);
+  // Manual lines revealed alongside a bulk insert get a brief ring so the item
+  // the customer authored is findable among fifteen machine-authored rows.
+  const [highlightManual, setHighlightManual] = useState(false);
+
+  const revealResults = async (refined: number) => {
+    setPendingReveal(null);
+    await quote.reload();               // flushes pending saves first (App.tsx)
+    setAiPhase({ kind: "done", refined });
+    setHighlightManual(true);           // the effect below scrolls once items re-render
+  };
+
+  // Scroll to the customer's own line AFTER the reveal has re-rendered: reload()
+  // assigns fresh local ids, so resolving the target inside revealResults would
+  // chase an element that no longer exists.
+  useEffect(() => {
+    if (!highlightManual) return;
+    const own = quote.items.find(isManual);
+    if (own) requestAnimationFrame(() => smoothScroll(document.getElementById(`qitem-${own.id}`)));
+    const t = setTimeout(() => setHighlightManual(false), 2500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightManual]);
+
   // Per-line requirement basis for the trust chips (UX spec §5); refreshed on
   // mount and whenever the poll returns it.
   const [basisMap, setBasisMap] = useState<Record<string, string>>({});
@@ -299,8 +333,12 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
           if (run.status === "failed" || (run.status === "partial" && (run.summary?.cartApplied ?? 0) === 0)) {
             setAiPhase({ kind: "failed" });
           } else {
-            await quote.reload();
-            setAiPhase({ kind: "done", refined: run.summary?.cartApplied ?? 0 });
+            // NEVER rearrange the list under someone who is mid-entry. If a form
+            // is open, or they committed an item moments ago, hold the results
+            // and let THEM choose when the page changes (UX review 2026-07-27).
+            const busy = adding || Date.now() - lastCommitAt.current < 5000;
+            if (busy) setPendingReveal({ refined: run.summary?.cartApplied ?? 0 });
+            else await revealResults(run.summary?.cartApplied ?? 0);
           }
           return;
         } else if (!run || (!sawRun && run.completedAt)) {
@@ -688,9 +726,24 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
             </div>
           )}
 
-          {/* Item cards — compact header + collapsible groups, one item open at a time */}
+          {/* Results are ready but held: the customer decides when the list
+              changes, so nothing rearranges under an open form. */}
+          {pendingReveal && (
+            <div role="status" className="mb-4 flex items-center justify-between gap-3 border border-[#5A7A6A]/40 bg-[#5A7A6A]/[0.06] px-4 py-3 text-sm text-[#355344]">
+              <span>Your documents are ready — {pendingReveal.refined} item{pendingReveal.refined !== 1 ? "s" : ""} to add.</span>
+              <Btn variant="sage" size="sm" onClick={() => void revealResults(pendingReveal.refined)}>Review</Btn>
+            </div>
+          )}
+
+          {/* Item cards — compact header + collapsible groups, one item open at a time.
+              The customer own manual lines sort FIRST: what they authored is never
+              buried under fifteen machine-authored rows. */}
           <div className="space-y-2.5">
-            {quote.items.map((it) => (
+            {orderedItems.map((it, idx) => (
+              <div key={it.id} className={highlightManual && isManual(it) ? "ring-2 ring-[#5A7A6A]/40 transition-shadow" : undefined}>
+              {idx === firstDocumentIndex && firstDocumentIndex > 0 && (
+                <p className="text-[10px] uppercase tracking-widest text-[#8a8782] pt-3 pb-1.5">From your documents · {orderedItems.length - firstDocumentIndex}</p>
+              )}
               <ItemSummaryCard key={it.id} item={it} quote={quote}
                 id={`qitem-${it.id}`}
                 basis={it.serverId ? basisMap[it.serverId] ?? null : null}
@@ -706,6 +759,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                   await quote.reload();
                 } : undefined}
                 onRemove={() => quote.remove(it.id)} />
+              </div>
             ))}
           </div>
 
@@ -713,7 +767,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
           {adding ? (
             <div className="mt-3" id="new-item-composer">
               <ItemForm key={`new-${newKey}`} quote={quote}
-                onCommit={(b) => { quote.add(b); setNewKey(k => k + 1); setAdding(false); }}
+                onCommit={(b) => { quote.add(b); lastCommitAt.current = Date.now(); setNewKey(k => k + 1); setAdding(false); }}
                 onCancel={() => setAdding(false)} />
             </div>
           ) : quote.items.length === 0 ? (
