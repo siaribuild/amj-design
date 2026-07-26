@@ -24,7 +24,7 @@ import { OrderReadout, type TrackFocus } from "../pages/OrderTrackingPage";
 import { ContactPage } from "../pages/ContactPage";
 import { PrivacyPolicyPage } from "../pages/PrivacyPolicyPage";
 import { pathForPage, routeFromPathname } from "./routes";
-import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug } from "../data/catalogue";
+import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug, getFamily, getCategory } from "../data/catalogue";
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
@@ -1612,11 +1612,32 @@ export default function App() {
     // it isn't set the page title is just the page's own name (no invented brand).
     const co = brandName();
     const suffix = co ? ` — ${co}` : "";
+    // Absolute URLs — schema.org @id and breadcrumb items must be resolvable,
+    // and a relative path is not.
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const abs = (path: string) => `${origin}${path}`;
+
     if (page === "product-detail") {
       const p = getProductBySlug(productSlug);
+      const img = imageUrl(p?.heroImage, { w: 1200, h: 630 });
+      const fam = p ? getFamily(p.familySlug) : undefined;
+      const cat = p ? getCategory(p.categorySlug) : undefined;
       return {
         seo: p?.seo, title: p ? `${p.name}${suffix}` : co ?? "Product",
-        description: p?.shortDescription, image: imageUrl(p?.heroImage, { w: 1200, h: 630 }),
+        description: p?.shortDescription, image: img,
+        facts: p ? {
+          kind: "product" as const, url: abs(`/products/${p.slug}`), name: p.name,
+          description: p.shortDescription || undefined, image: img || undefined,
+          sku: p.slug, brand: co ?? undefined,
+        } : null,
+        // Products, listing, then the product itself — from the catalogue's own
+        // category → family → product path, so it can't drift from the nav.
+        breadcrumbs: p ? [
+          { name: "Products", url: abs("/products") },
+          ...(cat ? [{ name: cat.name, url: abs(`/products?category=${cat.slug}`) }] : []),
+          ...(fam ? [{ name: fam.name, url: abs(`/products?family=${fam.slug}`) }] : []),
+          { name: p.name, url: abs(`/products/${p.slug}`) },
+        ] : undefined,
       };
     }
     const marketing: Record<string, { pageId: string; title: string; noIndex?: boolean }> = {
@@ -1629,9 +1650,21 @@ export default function App() {
     const m = marketing[page];
     if (m) {
       const pg = getPage(m.pageId);
-      return { seo: pg?.seo, title: m.title, image: imageUrl(pg?.heroImage, { w: 1200, h: 630 }), noIndex: m.noIndex };
+      const img = imageUrl(pg?.heroImage, { w: 1200, h: 630 });
+      return {
+        seo: pg?.seo, title: m.title, image: img, noIndex: m.noIndex,
+        // Every marketing page declares itself. The Schema.org tab on the record
+        // can narrow "WebPage" to ContactPage/AboutPage/FAQPage without code.
+        facts: {
+          kind: "page" as const,
+          url: abs(m.pageId === "home" ? "/" : `/${m.pageId}`),
+          name: m.title, image: img || undefined,
+        },
+      };
     }
-    return { title: co ?? "My Project", noIndex: true }; // app/transactional pages
+    // App/transactional pages: no record node, so only the site-wide
+    // organisation graph renders — and noindex suppresses even that.
+    return { title: co ?? "My Project", noIndex: true };
   })();
 
   return (

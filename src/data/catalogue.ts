@@ -621,8 +621,16 @@ export interface SeoMeta {
   canonicalUrl?: string;
   noIndex?: boolean;
   noFollow?: boolean;
-  openGraph?: { title?: string; description?: string; image?: CatalogueImage };
-  twitter?: { card?: string; title?: string; description?: string; image?: CatalogueImage };
+  openGraph?: { title?: string; description?: string; image?: CatalogueImage; type?: string };
+  twitter?: { card?: string; title?: string; description?: string; image?: CatalogueImage; creator?: string };
+  /** Robots directives beyond index/follow, plus arbitrary head tags. */
+  advanced?: {
+    noArchive?: boolean; noSnippet?: boolean; noImageIndex?: boolean;
+    maxSnippet?: number; maxImagePreview?: string; maxVideoPreview?: number;
+    additionalMeta?: { name?: string; content?: string }[];
+  };
+  /** schema.org: what this record IS. "auto" derives it from the record kind. */
+  schema?: { schemaType?: string; exclude?: boolean };
 }
 export interface SitePage { pageId: string; heroImage?: CatalogueImage; seo?: SeoMeta }
 

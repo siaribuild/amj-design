@@ -10,8 +10,13 @@ import type { Category, Family, Product, ProductOption, CatalogueData, SitePage,
 // request it; three hand-copies would drift the first time a field is added.
 export const SEO_PROJECTION = `seo{
       metaTitle, metaDescription, keywords, canonicalUrl, noIndex, noFollow,
-      "openGraph": openGraph{ title, description, "image": image{ "url": asset->url, hotspot } },
-      "twitter": twitter{ card, title, description, "image": image{ "url": asset->url, hotspot } }
+      "openGraph": openGraph{ title, description, type, "image": image{ "url": asset->url, hotspot } },
+      "twitter": twitter{ card, title, description, creator, "image": image{ "url": asset->url, hotspot } },
+      "advanced": advanced{
+        noArchive, noSnippet, noImageIndex, maxSnippet, maxImagePreview, maxVideoPreview,
+        "additionalMeta": additionalMeta[]{ name, content }
+      },
+      "schema": schema{ schemaType, exclude }
     }`;
 
 export const CATALOGUE_QUERY = `{
@@ -119,10 +124,27 @@ export function normalizeSeo(s: any): SeoMeta | undefined {
     noIndex: s.noIndex ?? undefined,
     noFollow: s.noFollow ?? undefined,
     openGraph: s.openGraph
-      ? { title: s.openGraph.title ?? undefined, description: s.openGraph.description ?? undefined, image: img(s.openGraph.image) }
+      ? { title: s.openGraph.title ?? undefined, description: s.openGraph.description ?? undefined, image: img(s.openGraph.image), type: s.openGraph.type ?? undefined }
       : undefined,
     twitter: s.twitter
-      ? { card: s.twitter.card ?? undefined, title: s.twitter.title ?? undefined, description: s.twitter.description ?? undefined, image: img(s.twitter.image) }
+      ? { card: s.twitter.card ?? undefined, title: s.twitter.title ?? undefined, description: s.twitter.description ?? undefined, image: img(s.twitter.image), creator: s.twitter.creator ?? undefined }
+      : undefined,
+    advanced: s.advanced
+      ? {
+          noArchive: s.advanced.noArchive ?? undefined,
+          noSnippet: s.advanced.noSnippet ?? undefined,
+          noImageIndex: s.advanced.noImageIndex ?? undefined,
+          maxSnippet: typeof s.advanced.maxSnippet === "number" ? s.advanced.maxSnippet : undefined,
+          maxImagePreview: s.advanced.maxImagePreview ?? undefined,
+          maxVideoPreview: typeof s.advanced.maxVideoPreview === "number" ? s.advanced.maxVideoPreview : undefined,
+          // Incomplete rows would render an empty <meta>, so drop them here.
+          additionalMeta: (s.advanced.additionalMeta ?? [])
+            .filter((m: any) => m?.name && m?.content)
+            .map((m: any) => ({ name: m.name, content: m.content })),
+        }
+      : undefined,
+    schema: s.schema
+      ? { schemaType: s.schema.schemaType ?? undefined, exclude: s.schema.exclude ?? undefined }
       : undefined,
   };
 }

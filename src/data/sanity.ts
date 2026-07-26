@@ -55,6 +55,10 @@ export interface SiteBrand {
   email: string | null; phone: string | null; workingHours: string | null;
   /** Site-wide SEO defaults, filled in per field wherever a page leaves a gap. */
   seo: SeoMeta | null;
+  /** Site-wide identity with no per-record equivalent (og:site_name, the brand
+   *  handle, the social profiles published as schema.org sameAs). */
+  ogSiteName: string | null; twitterSite: string | null;
+  socialProfiles: string[] | null; organizationType: string | null;
 }
 let brand: SiteBrand | null = null;
 export const getSiteBrand = (): SiteBrand | null => brand;
@@ -62,6 +66,26 @@ export const getSiteBrand = (): SiteBrand | null => brand;
 /** Site-wide SEO defaults from Site Settings, or null when unset/unhydrated.
  *  Consumed by <Seo>, which merges them UNDER the page's own values. */
 export const getSiteSeo = (): SeoMeta | null => brand?.seo ?? null;
+
+/** og:site_name and the brand @handle — site-wide, no per-record equivalent.
+ *  The site name falls back to Business Name rather than being set twice. */
+export const getSiteIdentity = (): { siteName: string | null; twitterSite: string | null } => ({
+  siteName: brand?.ogSiteName?.trim() || brandName(),
+  twitterSite: brand?.twitterSite?.trim() || null,
+});
+
+/** The business as schema.org sees it. Search-results logo preferred, since that
+ *  is exactly what it is for. Returns name-less when Site Settings is unset, and
+ *  buildOrganization then emits nothing rather than invent an identity. */
+export const getOrgIdentity = () => ({
+  name: brandName(),
+  url: typeof window !== "undefined" ? window.location.origin : null,
+  logoUrl: (brand as any)?.searchLogoUrl ?? brand?.logoUrl ?? null,
+  email: brand?.email ?? null,
+  phone: brand?.phone ?? null,
+  sameAs: brand?.socialProfiles ?? null,
+  type: brand?.organizationType ?? null,
+});
 
 /** The company name for customer-facing copy, from Site Settings → Business Name.
  *  Returns null when unset — callers use brand-neutral wording ("we will confirm")
@@ -77,6 +101,8 @@ const SITE_SETTINGS_QUERY = `*[_type == "siteSettings"][0]{
   businessName, tagline, copyrightText, legalLine, email, phone, workingHours,
   "logoUrl": logo.asset->url,
   "faviconUrl": favicon.asset->url,
+  ogSiteName, twitterSite, socialProfiles, organizationType,
+  "searchLogoUrl": coalesce(searchLogo.asset->url, logo.asset->url),
   "seo": ${SEO_PROJECTION}
 }`;
 

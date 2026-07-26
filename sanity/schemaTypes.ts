@@ -278,39 +278,66 @@ const PRODUCT_GROUPS = [
 ];
 
 // Full SEO/social meta for a record: search meta + robots/canonical, Open Graph
-// (Facebook/LinkedIn) and X/Twitter cards. Every field is optional and falls back
-// gracefully (OG/Twitter title/description/image inherit from the base meta).
+// (Facebook/LinkedIn), X/Twitter cards, advanced robots directives and the
+// schema.org declaration. Every field is optional and falls back gracefully —
+// OG/Twitter inherit the base meta, and anything still blank inherits Site
+// Settings → Default SEO (see resolveSeo in src/data/seo.ts).
+//
+// Site-WIDE identity (og:site_name, the @site handle, social profiles) is
+// deliberately NOT here: it would be an inert field on every page. Those live
+// directly on siteSettings, next to the defaults.
+const SEO_GROUPS = [
+  { name: "basic", title: "Basic SEO", default: true },
+  { name: "og", title: "Open Graph" },
+  { name: "twitter", title: "Twitter / X" },
+  { name: "advanced", title: "Advanced" },
+  { name: "schema", title: "Schema.org" },
+];
+
 export const seoMeta = defineType({
   name: "seoMeta",
   title: "SEO",
   type: "object",
+  groups: SEO_GROUPS,
   fields: [
+    // ── Basic ────────────────────────────────────────────────────────────────
     defineField({
-      name: "metaTitle", title: "Meta title", type: "string",
+      name: "metaTitle", title: "Meta title", type: "string", group: "basic",
       description: "≤ 60 characters recommended. Falls back to the page/product name.",
       validation: (r) => r.max(70).warning("Keep the meta title under ~60 characters."),
     }),
     defineField({
-      name: "metaDescription", title: "Meta description", type: "text", rows: 3,
+      name: "metaDescription", title: "Meta description", type: "text", rows: 3, group: "basic",
       description: "≤ 160 characters recommended.",
       validation: (r) => r.max(180).warning("Keep the meta description under ~160 characters."),
     }),
-    defineField({ name: "keywords", title: "Keywords", type: "array", of: [{ type: "string" }], options: { layout: "tags" } }),
-    defineField({ name: "canonicalUrl", title: "Canonical URL", type: "url" }),
-    defineField({ name: "noIndex", title: "Hide from search engines (noindex)", type: "boolean", initialValue: false }),
-    defineField({ name: "noFollow", title: "Don't follow links (nofollow)", type: "boolean", initialValue: false }),
+    defineField({ name: "keywords", title: "Keywords", type: "array", of: [{ type: "string" }], options: { layout: "tags" }, group: "basic" }),
     defineField({
-      name: "openGraph", title: "Open Graph (Facebook, LinkedIn…)", type: "object",
-      options: { collapsible: true, collapsed: true },
+      name: "canonicalUrl", title: "Canonical URL", type: "url", group: "basic",
+      description: "Must be unique to this record. Ignored in Site Settings — one canonical across the site would de-index every page but one.",
+    }),
+    // ── Open Graph ───────────────────────────────────────────────────────────
+    defineField({
+      name: "openGraph", title: "Open Graph (Facebook, LinkedIn…)", type: "object", group: "og",
       fields: [
         defineField({ name: "title", type: "string", description: "Falls back to the meta title." }),
         defineField({ name: "description", type: "text", rows: 2, description: "Falls back to the meta description." }),
         defineField({ name: "image", title: "Share image", type: "image", options: { hotspot: true }, description: "Recommended 1200×630." }),
+        defineField({
+          name: "type", title: "Object type", type: "string",
+          description: "og:type. Leave blank for the sensible default (article for posts, product for products, website elsewhere).",
+          options: { list: [
+            { title: "Website", value: "website" },
+            { title: "Article", value: "article" },
+            { title: "Product", value: "product" },
+            { title: "Profile", value: "profile" },
+          ] },
+        }),
       ],
     }),
+    // ── Twitter / X ──────────────────────────────────────────────────────────
     defineField({
-      name: "twitter", title: "X / Twitter card", type: "object",
-      options: { collapsible: true, collapsed: true },
+      name: "twitter", title: "X / Twitter card", type: "object", group: "twitter",
       fields: [
         defineField({
           name: "card", title: "Card type", type: "string", initialValue: "summary_large_image",
@@ -319,6 +346,80 @@ export const seoMeta = defineType({
         defineField({ name: "title", type: "string", description: "Falls back to the Open Graph / meta title." }),
         defineField({ name: "description", type: "text", rows: 2, description: "Falls back to the Open Graph / meta description." }),
         defineField({ name: "image", title: "Card image", type: "image", options: { hotspot: true }, description: "Falls back to the Open Graph image." }),
+        defineField({
+          name: "creator", title: "Author handle (twitter:creator)", type: "string",
+          description: 'The author of THIS record, e.g. @jane. The brand handle is set once in Site Settings.',
+          validation: (r) => r.regex(/^@[A-Za-z0-9_]{1,15}$/, { name: "handle" }).warning("Use the @handle form, e.g. @openframe."),
+        }),
+      ],
+    }),
+    // ── Advanced ─────────────────────────────────────────────────────────────
+    // Every robots switch here is MONOTONIC at render: a page or Site Settings
+    // can ADD a restriction, neither can lift one (see resolveSeo). The schema
+    // stores false by default, and a plain fallback would let an untouched
+    // record expose pages the app marks private.
+    defineField({ name: "noIndex", title: "Hide from search engines (noindex)", type: "boolean", initialValue: false, group: "advanced" }),
+    defineField({ name: "noFollow", title: "Don't follow links (nofollow)", type: "boolean", initialValue: false, group: "advanced" }),
+    defineField({
+      name: "advanced", title: "More robots directives", type: "object", group: "advanced",
+      fields: [
+        defineField({ name: "noArchive", title: "No cached copy (noarchive)", type: "boolean", initialValue: false }),
+        defineField({ name: "noSnippet", title: "No text snippet (nosnippet)", type: "boolean", initialValue: false }),
+        defineField({ name: "noImageIndex", title: "Don't index images (noimageindex)", type: "boolean", initialValue: false }),
+        defineField({
+          name: "maxSnippet", title: "Max snippet length", type: "number",
+          description: "Characters. -1 for no limit. Leave blank to say nothing.",
+          validation: (r) => r.min(-1),
+        }),
+        defineField({
+          name: "maxImagePreview", title: "Max image preview", type: "string",
+          options: { list: ["none", "standard", "large"] },
+        }),
+        defineField({
+          name: "maxVideoPreview", title: "Max video preview", type: "number",
+          description: "Seconds. -1 for no limit. Leave blank to say nothing.",
+          validation: (r) => r.min(-1),
+        }),
+        defineField({
+          name: "additionalMeta", title: "Additional meta tags", type: "array",
+          description: "Verification tokens and one-off tags. Rendered as <meta name content>. Page entries override Site Settings entries with the same name.",
+          of: [defineArrayMember({
+            type: "object",
+            fields: [
+              defineField({ name: "name", type: "string", validation: (r) => r.required() }),
+              defineField({ name: "content", type: "string", validation: (r) => r.required() }),
+            ],
+            preview: { select: { title: "name", subtitle: "content" } },
+          })],
+        }),
+      ],
+    }),
+    // ── Schema.org ───────────────────────────────────────────────────────────
+    // The JSON-LD itself is GENERATED from the record's own data (see
+    // src/data/schemaOrg.ts) — editors declare what the record is, they don't
+    // hand-write structured data that would drift from the content.
+    defineField({
+      name: "schema", title: "Structured data (schema.org)", type: "object", group: "schema",
+      description: "Emitted as JSON-LD, built from this record's own fields plus the organisation details in Site Settings.",
+      fields: [
+        defineField({
+          name: "schemaType", title: "This record is a…", type: "string", initialValue: "auto",
+          description: "Leave on Automatic unless the page is a special case — products become Product, posts become Article, everything else WebPage.",
+          options: { list: [
+            { title: "Automatic (from record type)", value: "auto" },
+            { title: "Web page", value: "WebPage" },
+            { title: "Article", value: "Article" },
+            { title: "Product", value: "Product" },
+            { title: "About page", value: "AboutPage" },
+            { title: "Contact page", value: "ContactPage" },
+            { title: "FAQ page", value: "FAQPage" },
+            { title: "Collection page", value: "CollectionPage" },
+          ] },
+        }),
+        defineField({
+          name: "exclude", title: "Emit no structured data for this record", type: "boolean", initialValue: false,
+          description: "The site-wide organisation details still render.",
+        }),
       ],
     }),
   ],
@@ -493,7 +594,31 @@ export const siteSettings = defineType({
     //     stored `false` can't expose the pages the app marks as private.
     defineField({
       name: "seo", title: "Default SEO", type: "seoMeta", group: "seo",
-      description: "Used for any page that leaves a field blank, field by field. Canonical URL is ignored here — it must be unique per page. Ticking noindex/nofollow applies site-wide; leaving them unticked lets each page decide.",
+      description: "Used for any page that leaves a field blank, field by field. Canonical URL is ignored here — it must be unique per page. Ticking any robots switch applies site-wide; leaving them unticked lets each page decide.",
+    }),
+    // Site-WIDE identity. These are one-per-site by nature, so they sit here
+    // rather than on seoMeta where they would be inert on every page.
+    defineField({
+      name: "ogSiteName", title: "Site name (og:site_name)", type: "string", group: "seo",
+      description: "Shown by Facebook/LinkedIn above the share title. Defaults to Business Name.",
+    }),
+    defineField({
+      name: "twitterSite", title: "Brand handle (twitter:site)", type: "string", group: "seo",
+      description: "The company account, e.g. @openframe. Per-record author handles are set on the record itself.",
+      validation: (r) => r.regex(/^@[A-Za-z0-9_]{1,15}$/, { name: "handle" }).warning("Use the @handle form, e.g. @openframe."),
+    }),
+    defineField({
+      name: "socialProfiles", title: "Social profiles", type: "array", of: [{ type: "url" }], group: "seo",
+      description: "Full profile URLs. Published as schema.org sameAs, which is how search engines tie these accounts to the business.",
+    }),
+    defineField({
+      name: "organizationType", title: "Organisation type", type: "string", group: "seo", initialValue: "Organization",
+      description: "The schema.org type published for the business itself.",
+      options: { list: [
+        { title: "Organization", value: "Organization" },
+        { title: "Local business", value: "LocalBusiness" },
+        { title: "Corporation", value: "Corporation" },
+      ] },
     }),
     // Maintenance Mode
     defineField({ name: "maintenanceEnabled", title: "Enable Maintenance Mode", type: "boolean", group: "maintenanceMode", initialValue: false }),
