@@ -14,10 +14,18 @@ export const wranglerCli = join(projectRoot, "node_modules", "wrangler", "bin", 
 // test users, different sign-in addresses) don't break the suite.
 const seedSql = readFileSync(join(projectRoot, "scripts", "db", "seed.sql"), "utf8");
 const seedUserRows = [...seedSql.matchAll(/\(\s*'(u_[\w]+)'\s*,\s*'([^']+)'/g)];
+// Exact id first, then id-prefix — the seed may carry one staff fixture
+// (u_staff) or several (u_staff1, u_staff2…), and adding or renaming demo
+// people should not break the suite. Lowest matching id wins so the choice is
+// stable regardless of row order.
 const seedEmail = (id) => {
-  const row = seedUserRows.find(([, userId]) => userId === id);
-  if (!row) throw new Error(`seed.sql: no user row for ${id}`);
-  return row[2];
+  const exact = seedUserRows.find(([, userId]) => userId === id);
+  if (exact) return exact[2];
+  const prefixed = seedUserRows
+    .filter(([, userId]) => userId.startsWith(id))
+    .sort((a, b) => a[1].localeCompare(b[1]))[0];
+  if (!prefixed) throw new Error(`seed.sql: no user row for ${id} (or ${id}*)`);
+  return prefixed[2];
 };
 export const seedUserCount = seedUserRows.length;
 export const demoEmail = seedEmail("u_demo");
