@@ -648,20 +648,18 @@ export function ItemSummaryCard({
           <CodeField code={item.code} duplicate={duplicate} editSignal={codeFocusSignal} onCommit={v => update({ code: v })} />
         </span>
         <span className="flex-1 min-w-0 flex items-center gap-1.5">
-          {/* Header name: check the oversized 'fit' flag FIRST (UX review
-              2026-07-26) — a no-standard-product line reads "Custom unit — AMJ
-              design" in slate (AMJ acts), never the italic amber "Choose a
-              product" (which means the CUSTOMER must act). */}
+          {/* A warned line still names its (best-fit / substituted) product — the
+              warning explains the caveat. Only a line with NO product at all
+              shows the italic amber "Choose a product" customer action. */}
           <button onClick={toggleExpanded} aria-expanded={isExpanded}
-            className={`min-w-0 truncate text-left text-sm font-semibold leading-tight cursor-pointer hover:text-[#5A7A6A] ${
-              item.review?.fit ? "text-[#4C6A88]" : item.productSlug ? "text-[#131311]" : "text-[#9a7a1a] italic"}`}
+            className={`min-w-0 truncate text-left text-sm font-semibold leading-tight cursor-pointer hover:text-[#5A7A6A] ${item.productSlug ? "text-[#131311]" : "text-[#9a7a1a] italic"}`}
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-            {item.review?.fit ? "Custom unit — AMJ design" : item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
+            {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
           </button>
           {customerBlocking
             ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">Needs </span>attention</span>
             : technicalOnly
-              ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-sky-300 bg-sky-50 text-sky-800" title={item.review?.fit ? "No standard product is made at this size — AMJ will design a composite/custom unit at review. You can still submit." : "An AMJ technician will confirm this at review — you can still submit."}><Info className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">AMJ </span>review</span>
+              ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-sky-300 bg-sky-50 text-sky-800" title={item.review?.fit ? "Indicative price — no standard product is made at this size; AMJ will design a composite/custom unit and confirm the price at review. You can still submit." : "An AMJ technician will confirm this at review — you can still submit."}><Info className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">AMJ </span>review</span>
               : <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344]"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
           {/* Basis chip (UX spec §5): orthogonal to status — report-backed vs
               assumption-based. Hidden on small screens; the tooltip carries the
@@ -791,12 +789,6 @@ export function ItemSummaryCard({
                 <QtyLocationFields qty={item.qty} location={item.location} setQty={v => update({ qty: v })} setLocation={v => update({ location: v })} />
               </Section>
             </>
-          ) : item.review?.fit ? (
-            // Oversized: no standard product to configure — AMJ designs it.
-            <div className="px-4 py-3 bg-sky-50/60 border-t border-black/6 text-xs text-sky-800 flex items-start gap-1.5">
-              <Info className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
-              <span>No standard product is made at this size. AMJ will design and price a composite or custom unit at technical review — you can still submit.</span>
-            </div>
           ) : (
             <div className="px-4 py-3 bg-amber-50/60 border-t border-black/6 text-xs text-amber-800 flex items-start gap-1.5">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />

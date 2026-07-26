@@ -89,30 +89,34 @@ function biasIndex(slug: string, bias: string[]): number {
   return i === -1 ? bias.length : i;
 }
 
-// Choose a product in a family for the given size. SIZE IS A HARD MANUFACTURING
-// CONSTRAINT: only a product whose dimensional range actually contains the opening
-// may be offered. When NONE fits, we offer NO product (oversized) rather than a
-// size-incompatible unit at a meaningless price — AMJ designs a composite/custom
-// solution at review. When the size isn't yet known we can't range-check, so we
-// offer the series default and let the separate 'dims' flag prompt for the size.
-function pickProduct(familySlug: string, section: ScheduleSection, w: number, h: number): { product?: Product; fits: boolean; oversized: boolean } {
+// Choose a product in a family for the given size. Prefer one whose range actually
+// contains the opening (series-biased). When NONE fits, still return the BEST FIT
+// (largest capacity) so the line carries an indicative price — but mark it
+// `fits:false` so the caller raises a WARNING: no standard unit is made at this
+// size, AMJ designs a composite/custom one and confirms the final price. Pricing
+// uses the REAL opening dimensions, never the product's max, so the estimate
+// reflects the true size instead of silently under-quoting.
+function pickProduct(familySlug: string, section: ScheduleSection, w: number, h: number): { product?: Product; fits: boolean } {
   const products = getProductsByFamily(familySlug);
-  if (!products.length) return { fits: false, oversized: false };
+  if (!products.length) return { fits: false };
   const bias = section === "window" ? WINDOW_SERIES_BIAS : DOOR_SERIES_BIAS;
   const byBias = (list: Product[]) => [...list].sort((a, b) => biasIndex(a.slug, bias) - biasIndex(b.slug, bias));
   if (w > 0 && h > 0) {
     const fitting = products.filter((p) => inRange(p, w, h));
-    if (fitting.length) return { product: byBias(fitting)[0], fits: true, oversized: false };
-    return { fits: false, oversized: true }; // no standard product can be built at this size
+    if (fitting.length) return { product: byBias(fitting)[0], fits: true };
+    // Nothing fits: best fit = the largest-capacity unit in the family.
+    return { product: [...products].sort((a, b) => areaCap(b) - areaCap(a))[0], fits: false };
   }
-  return { product: byBias(products)[0], fits: false, oversized: false };
+  return { product: byBias(products)[0], fits: false };
 }
 
-// The largest-capacity product in a family — used only to make the oversized
-// message informative ("largest available is …"), never offered as the line.
-function largestProduct(familySlug: string): Product | undefined {
-  return [...getProductsByFamily(familySlug)].sort((a, b) => areaCap(b) - areaCap(a))[0];
-}
+// Nearest catalogue family for a recognised type that has no family of its own
+// (e.g. a FIXED window is priced as the equivalent awning until FIXED exists as
+// its own family). Substitution is always WARNED, never silent.
+const SUBSTITUTE_FAMILY: Record<string, string> = {
+  window: "awning-window",
+  door: "casement-door",
+};
 
 const pad2 = (s: string) => {
   const n = parseInt(s, 10);
@@ -137,19 +141,33 @@ export function matchSchedule(rows: RawScheduleRow[]): ParsedLine[] {
       const picked = pickProduct(familySlug, r.section, w, h);
       product = picked.product;
       productSlug = product?.slug ?? "";
-      if (picked.oversized) {
-        // SIZE is a hard manufacturing constraint. No standard product can be
-        // built at this opening, so NONE is offered — the line carries no product
-        // and no (fake) price. It's AMJ's design problem (a composite/custom
-        // unit), not customer-fixable: keyed 'fit' (technical), submittable.
-        const largest = largestProduct(familySlug);
-        review.fit = `No standard ${r.section} product is manufactured at ${w}×${h} mm` +
-          (largest ? ` (largest available is ${largest.name}, up to ${largest.maxWidth ?? "?"}×${largest.maxHeight ?? "?"} mm)` : "") +
-          `. AMJ will design a composite or custom unit at technical review.`;
+      if (product && !picked.fits && w > 0 && h > 0) {
+        // No standard unit is made at this size. We still price the BEST FIT at
+        // the REAL opening dimensions so the customer gets an indicative number,
+        // and WARN that AMJ will design the composite/custom unit and confirm the
+        // final price. Not customer-fixable (they can't resize the building), so
+        // it never blocks submission.
+        review.fit = `Indicative price only — no standard ${r.section} is manufactured at ${w}×${h} mm ` +
+          `(${product.name} covers ${product.minWidth ?? "?"}–${product.maxWidth ?? "?"} W, ${product.minHeight ?? "?"}–${product.maxHeight ?? "?"} H mm). ` +
+          `AMJ will design a composite or custom unit and confirm the price at technical review.`;
       }
     } else if (known) {
-      // Recognised type with no catalogue family (e.g. FIXED window).
-      review.product = `Schedule type “${r.typeText}” has no matching catalogue product — please select one.`;
+      // Recognised type with no catalogue family of its own (e.g. FIXED). Price
+      // the nearest family as a SUBSTITUTE so the line still carries an indicative
+      // number, and warn — AMJ confirms the real configuration.
+      const subFamily = SUBSTITUTE_FAMILY[r.section];
+      const picked = subFamily ? pickProduct(subFamily, r.section, w, h) : { product: undefined, fits: false };
+      product = picked.product;
+      productSlug = product?.slug ?? "";
+      if (product) {
+        review.substitute = `Indicative price only — “${r.typeText}” has no catalogue product of its own, ` +
+          `so it is priced as ${product.name}. AMJ will confirm the correct configuration at technical review.`;
+        if (!picked.fits && w > 0 && h > 0) {
+          review.fit = `${w}×${h} mm is also outside the standard range — AMJ will confirm a composite or custom unit.`;
+        }
+      } else {
+        review.product = `Schedule type “${r.typeText}” has no matching catalogue product — please select one.`;
+      }
     } else {
       review.product = `Could not match schedule type “${r.typeText ?? "?"}” to a product — please select one.`;
     }

@@ -84,33 +84,36 @@ test("produces 19 line items in schedule order", () => {
   assert.equal(lines[18].code, "D04");
 });
 
-test("flags FIXED windows (no catalogue product) without inventing one", () => {
+test("FIXED windows are never silently invented — substitution is always disclosed", () => {
+  // Superseded intent: these used to be left product-less and blocking. They are
+  // now priced via the nearest family, but the substitution must NEVER be silent.
   for (const code of ["W02", "W08", "W15"]) {
-    assert.equal(byCode[code].productSlug, "", `${code} should have no product`);
-    assert.ok(byCode[code].review?.product, `${code} should flag product`);
+    assert.ok(byCode[code].review?.substitute, `${code} must disclose the substitution`);
     assert.equal(byCode[code].status, "Needs review");
   }
 });
 
-test("size is a HARD constraint: never offers a product that can't be built at the opening size", () => {
-  // W01 = 2050mm-wide awning; no awning product's range reaches that width, so
-  // NO product may be offered — offering an incompatible unit at a meaningless
-  // price is the bug this guards. The line carries no product/price and is flagged
-  // for AMJ to design a composite (technical, submittable, NOT customer-blocking).
-  assert.equal(byCode.W01.productSlug, "", "oversized opening must NOT be quoted an incompatible product");
-  assert.ok(byCode.W01.review?.fit, "oversized opening flagged for AMJ composite/custom design");
-  assert.match(byCode.W01.review.fit, /No standard/i);
-  assert.ok(!byCode.W01.review?.dims, "'fit' is technical (AMJ), not 'dims' (customer)");
+test("oversized opening: best-fit is PRICED but always WARNED, never presented as Ready", () => {
+  // W01 = 2050mm wide; no awning's range reaches that width. We still offer the
+  // best fit so the customer gets an indicative number — but it must carry a
+  // warning, must not claim to be Ready, and must not block submission (AMJ
+  // designs the composite; the customer can't resize their building).
+  assert.ok(byCode.W01.productSlug, "best-fit product is offered so the line can be priced");
+  assert.ok(byCode.W01.review?.fit, "…but the size mismatch is always warned");
+  assert.match(byCode.W01.review.fit, /Indicative price only/i);
+  assert.notEqual(byCode.W01.status, "Ready", "an out-of-range line is never presented as Ready");
+  assert.ok(!byCode.W01.review?.dims, "'fit' is an AMJ warning, not a customer 'dims' error");
   assert.equal(reviewClass(byCode.W01.review), "technical");
-  assert.equal(lineBlocksSubmission(byCode.W01), false, "AMJ-composite line stays submittable");
+  assert.equal(lineBlocksSubmission(byCode.W01), false, "warnings never block submission");
   assert.ok(byCode.W04.review?.fit || byCode.W04.review?.note);
 
-  // A FITTING opening still gets a real, in-range product.
+  // A FITTING opening still gets a real, in-range product with no fit warning.
   assert.ok(byCode.W05.productSlug, "an in-range opening gets a real product");
+  assert.ok(!byCode.W05.review?.fit);
   assert.equal(byCode.W05.status, "Ready");
 
-  // The invariant across EVERY line: any product offered must actually fit its
-  // opening (min AND max, W AND H). This is the basic manufacturing validation.
+  // THE INVARIANT: a product may be offered outside its range ONLY as a warned,
+  // indicative line — never silently, and never as a confirmed/Ready one.
   for (const l of lines) {
     if (!l.productSlug) continue;
     const p = getProductBySlug(l.productSlug);
@@ -118,7 +121,24 @@ test("size is a HARD constraint: never offers a product that can't be built at t
     if (!(w > 0 && h > 0)) continue;
     const fits = (p.minWidth == null || w >= p.minWidth) && (p.maxWidth == null || w <= p.maxWidth)
       && (p.minHeight == null || h >= p.minHeight) && (p.maxHeight == null || h <= p.maxHeight);
-    assert.ok(fits, `${l.code}: ${w}×${h}mm was offered ${p.name} (range ${p.minWidth}–${p.maxWidth} W, ${p.minHeight}–${p.maxHeight} H) — incompatible product`);
+    if (fits) continue;
+    assert.ok(l.review?.fit, `${l.code}: ${w}×${h}mm offered ${p.name} (range ${p.minWidth}–${p.maxWidth} W, ${p.minHeight}–${p.maxHeight} H) with NO fit warning`);
+    assert.notEqual(l.status, "Ready", `${l.code}: out-of-range line must not read as Ready`);
+  }
+});
+
+test("recognised type with no catalogue family is substituted + warned, not left unpriced", () => {
+  // FIXED windows have no family of their own; they are priced as the nearest
+  // family (awning) with an explicit substitution warning, so the customer still
+  // gets an indicative number instead of a blocking "choose a product".
+  for (const code of ["W02", "W08", "W15"]) {
+    const l = byCode[code];
+    assert.ok(l.productSlug, `${code}: substituted product offered`);
+    assert.ok(l.review?.substitute, `${code}: substitution warned`);
+    assert.match(l.review.substitute, /Indicative price only/i);
+    assert.ok(!l.review?.product, `${code}: not a customer 'choose a product' error`);
+    assert.equal(lineBlocksSubmission(l), false, `${code}: substitution never blocks`);
+    assert.notEqual(l.status, "Ready");
   }
 });
 
@@ -127,15 +147,17 @@ test("submission lifecycle: technical-only lines are submittable; customer gaps 
   // must NOT block submission (submission is how it reaches an AMJ technician).
   assert.equal(lineBlocksSubmission(byCode.D01), false);
   assert.equal(reviewClass(byCode.D01.review), "technical");
-  // Oversized awning: no standard product (unpriced), technical 'fit' flag → AMJ
-  // designs a composite → still submittable (the customer can't resize a building).
+  // Oversized awning: best-fit priced + 'fit' warning → AMJ designs a composite →
+  // still submittable (the customer can't resize a building).
   assert.equal(lineBlocksSubmission(byCode.W01), false);
   assert.equal(reviewClass(byCode.W01.review), "technical");
-  // FIXED window: no catalogue product → unpriceable → customer must resolve → blocks.
-  assert.equal(lineBlocksSubmission(byCode.W02), true);
-  assert.equal(reviewClass(byCode.W02.review), "customer");
+  // FIXED window: substituted + warned → indicative price → also submittable.
+  assert.equal(lineBlocksSubmission(byCode.W02), false);
+  assert.equal(reviewClass(byCode.W02.review), "technical");
   // A clean, fitting awning blocks nothing.
   assert.equal(lineBlocksSubmission(byCode.W05), false);
+  // Only a genuine customer gap blocks: an unreadable size is an ERROR.
+  assert.equal(lineBlocksSubmission({ ...byCode.W05, review: { dims: "Size could not be read" } }), true);
 });
 
 test("fitting awnings map cleanly and are ready", () => {
