@@ -1,16 +1,24 @@
 // ─── Scraper-resistant email link ─────────────────────────────────────────────
-// Public pages must not hand harvesters a plain address. Two layers:
+// Public pages must not hand harvesters a usable address. Three layers:
 //
 //  1. The address comes from Sanity at RUNTIME (Site Settings → Email), so it is
 //     never in the shipped JS bundle or the static HTML a crawler fetches.
-//  2. No `mailto:` href exists in the DOM until the visitor actually interacts
-//     (hover / focus / tap), and the visible text is split across elements so a
-//     regex over innerHTML finds no `user@domain` pattern.
+//  2. The `href` is ALWAYS a bare "mailto:" — the real address is never written
+//     into the DOM, not on hover, not after a click. Activation is handled in JS:
+//     the click is cancelled and navigation happens via window.location, so the
+//     address exists only for the instant it is used.
+//  3. The visible text is split across spans AND interleaved with display:none
+//     decoys. A scraper reading innerHTML/textContent gets a corrupted address;
+//     what humans see, copy, and what screen readers announce is unaffected
+//     (hidden text is excluded from both rendering and selection).
 //
-// Humans and assistive tech are unaffected: it stays a real anchor, keyboard
-// focusable, the rendered text reads normally, and copy-paste yields the full
-// address (textContent is intact — only the markup is broken up).
-import { useState } from "react";
+// Accessibility is deliberately preserved: the bare href keeps this a genuine,
+// keyboard-focusable link that assistive tech announces as a link (an href-less
+// anchor is neither), and Enter activates it through the same click path.
+import type React from "react";
+
+// Junk that only a naive DOM-text scraper will ever "read".
+const DECOY = ["REMOVE", "no-spam", "null"];
 
 export function ObfuscatedEmail({ address, className, children }: {
   address?: string | null;
@@ -18,10 +26,6 @@ export function ObfuscatedEmail({ address, className, children }: {
   /** Custom label (e.g. "Email us"). Omit to render the address itself. */
   children?: React.ReactNode;
 }) {
-  // Starts as a BARE "mailto:" — enough to keep this a genuine, keyboard-focusable
-  // link that assistive tech announces correctly, while carrying no address for a
-  // harvester to read. Real interaction swaps in the full address.
-  const [href, setHref] = useState("mailto:");
   const clean = (address ?? "").trim();
   // Nothing configured in Sanity ⇒ render nothing rather than invent an address.
   if (!clean.includes("@")) return null;
@@ -29,29 +33,28 @@ export function ObfuscatedEmail({ address, className, children }: {
   const at = clean.lastIndexOf("@");
   const user = clean.slice(0, at);
   const domain = clean.slice(at + 1);
-  const armed = href !== "mailto:";
-  const arm = () => setHref(`mailto:${user}@${domain}`);
+  const hidden = { display: "none" } as const;
 
   return (
     <a
-      href={href}
-      // Arm on any real intent; the first click also navigates, so a visitor
-      // never has to click twice.
-      onMouseEnter={arm}
-      onFocus={arm}
-      onTouchStart={arm}
-      // Click/Enter always works first time, armed or not — never a double-click.
-      onClick={(e) => {
-        if (!armed) {
-          e.preventDefault();
-          arm();
-          window.location.href = `mailto:${user}@${domain}`;
-        }
-      }}
+      href="mailto:"
       rel="nofollow"
       className={className}
+      onClick={(e) => {
+        e.preventDefault();
+        window.location.href = `mailto:${user}@${domain}`;
+      }}
     >
-      {children ?? <><span>{user}</span><span>{"@"}</span><span>{domain}</span></>}
+      {children ?? (
+        <>
+          <span>{user}</span>
+          <span style={hidden}>{DECOY[0]}</span>
+          <span>{"@"}</span>
+          <span style={hidden}>{DECOY[1]}</span>
+          <span>{domain}</span>
+          <span style={hidden}>{DECOY[2]}</span>
+        </>
+      )}
     </a>
   );
 }
