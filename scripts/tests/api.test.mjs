@@ -299,8 +299,12 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.equal(rec.body.order, undefined);
       assert.equal(rec.body.quote.ref, ref);
       assert.equal(rec.body.quote.status, "submitted");
-      assert.equal(rec.body.quote.lineCount, 1);
-      assert.equal(rec.body.quote.total, undefined);
+      // The guest record carries the same substance as the signed-in view: the
+      // submitted lines and their documents, not just a status word.
+      assert.equal(rec.body.items.length, 1);
+      assert.equal(rec.body.items[0].code, "W01");
+      assert.ok(rec.body.items[0].lineTotal > 0, "line prices must travel with the guest record");
+      assert.ok(Array.isArray(rec.body.files));
 
       // A wrong email must still not resolve the reference.
       const wrong = await requestJson(guest, "/api/guest/track/request", { method: "POST", json: { email: "someone.else@example.com", ref } });

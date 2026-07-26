@@ -276,22 +276,23 @@ export const guestTrackVerify = (email: string, ref: string, code: string) =>
     method: "POST",
     body: JSON.stringify({ email, ref, code }),
   });
-/** A quote still in review — there is no order yet, so status is all that
- *  exists. Carries NO prices: an estimate that hasn't been through technical
- *  review must not be shown as a figure to rely on. */
+/** A quote still in review — there is no order yet. Line items and their
+ *  indicative prices travel with it, under the same "may differ after technical
+ *  review" caveat the signed-in account view uses. */
 export interface ApiGuestQuote {
   ref: string;
-  title: string | null;
+  title: string;
   status: string;
   contactName: string | null;
   submittedAt: string;
-  lineCount: number;
-  fileCount: number;
+  createdAt?: string;
 }
-/** Exactly one of `order` / `quote` is present, depending on how far the
- *  project has progressed. */
+/** Exactly one of `order` / `quote` is present, depending on how far the project
+ *  has progressed; `items` and `files` accompany a quote. */
 export const guestRecord = (token: string) =>
-  req<{ order?: ApiOrder; quote?: ApiGuestQuote }>(`/api/guest/records/${token}`);
+  req<{ order?: ApiOrder; quote?: ApiGuestQuote; items?: ApiItem[]; files?: ApiScheduleFile[] }>(
+    `/api/guest/records/${token}`,
+  );
 
 // ── Files (R2) ───────────────────────────────────────────────────────────────
 export interface ApiFile {

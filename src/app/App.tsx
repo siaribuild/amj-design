@@ -15,12 +15,12 @@ import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { AccountShell, type AccountSection } from "../pages/AccountShell";
 import { AccountDashboard } from "../pages/AccountDashboard";
 import { HelpPage } from "../pages/AccountSections";
-import { OrderDetail, ProjectDetail } from "../pages/RecordDetailPage";
+import { OrderDetail, ProjectDetail, GuestRecordView } from "../pages/RecordDetailPage";
 import { QuoteReviewPage } from "../pages/QuoteReviewPage";
 import { initialsOf } from "../pages/accountModel";
 import { QuotePage } from "../pages/QuotePage";
 import { HowItWorksPage } from "../pages/HowItWorksPage";
-import { OrderReadout, type TrackFocus } from "../pages/OrderTrackingPage";
+import { type TrackFocus } from "../pages/OrderTrackingPage";
 import { ContactPage } from "../pages/ContactPage";
 import { PrivacyPolicyPage } from "../pages/PrivacyPolicyPage";
 import { pathForPage, routeFromPathname } from "./routes";
@@ -28,7 +28,7 @@ import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, ge
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
-import { getCurrentProject, saveLines, submitProject, updateProfile, clearDraft, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiGuestQuote, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
+import { getCurrentProject, saveLines, submitProject, updateProfile, clearDraft, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiGuestQuote, type ApiItem, type ApiScheduleFile, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
 import { GstContext, type GstMode } from "../data/gst";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1016,19 +1016,6 @@ function AccountPage({ user, setPage, setUser, authLoading }: { user: AuthUser |
 // ═══════════════════════════════════════════════════════════════════════════════
 // TRACK ORDER
 // ═══════════════════════════════════════════════════════════════════════════════
-// Customer-facing wording for a project that has no order yet. Only the statuses
-// a guest can actually land on — anything else falls back to "In progress"
-// rather than leaking an internal status string.
-const GUEST_QUOTE_STATUS: Record<string, string> = {
-  submitted: "Received — waiting for technical review",
-  under_review: "With our team for technical review",
-  needs_information: "We need a little more information — check your email",
-  quote_issued: "Your reviewed quote is ready — check your email to approve it",
-  accepted: "Approved — your order is being set up",
-  expired: "This quote has expired",
-  closed: "Closed",
-};
-
 function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [step, setStep] = useState<"lookup" | "code" | "record">("lookup");
@@ -1039,6 +1026,8 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
   // order, and its quote reference is what the submission email told them to use.
   const [order, setOrder] = useState<ApiOrder | null>(null);
   const [quote, setQuote] = useState<ApiGuestQuote | null>(null);
+  const [items, setItems] = useState<ApiItem[]>([]);
+  const [files, setFiles] = useState<ApiScheduleFile[]>([]);
 
   const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
 
@@ -1057,11 +1046,12 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
     try {
       const { token } = await guestTrackVerify(email.trim(), ref.trim(), code.trim());
       const rec = await guestRecord(token);
-      setOrder(rec.order ?? null); setQuote(rec.quote ?? null); setStep("record");
+      setOrder(rec.order ?? null); setQuote(rec.quote ?? null);
+      setItems(rec.items ?? []); setFiles(rec.files ?? []); setStep("record");
     } catch { setError("That code didn't match, or the details don't match a quote or order."); }
     finally { setBusy(false); }
   };
-  const reset = () => { setStep("lookup"); setCode(""); setOrder(null); setQuote(null); setError(""); setDevCode(undefined); };
+  const reset = () => { setStep("lookup"); setCode(""); setOrder(null); setQuote(null); setItems([]); setFiles([]); setError(""); setDevCode(undefined); };
 
   return (
     <div className="relative min-h-screen bg-[#FAFAF9] pt-16 pb-24 overflow-hidden">
@@ -1099,42 +1089,10 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
           </div>
         )}
 
-        {/* Pre-order: the quote is with a reviewer. Status only, deliberately no
-            figure — the estimate hasn't been through technical review yet. */}
-        {step === "record" && quote && (
+        {step === "record" && (order || quote) && (
           <div>
             <button onClick={reset} className="text-xs text-[#5c5a56] hover:text-[#131311] flex items-center gap-1 cursor-pointer mb-5"><ChevronLeft className="w-3 h-3" />New search</button>
-            <h2 className="text-xl font-semibold text-[#131311] mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Quote {quote.ref}</h2>
-            <p className="text-sm text-[#5A7A6A] mb-6">{GUEST_QUOTE_STATUS[quote.status] ?? "In progress"}</p>
-            <div className="bg-white border border-black/8 p-6 space-y-3 text-sm">
-              {quote.title && <div className="flex justify-between gap-4"><span className="text-[#5c5a56]">Project</span><span className="text-[#131311] text-right">{quote.title}</span></div>}
-              <div className="flex justify-between gap-4"><span className="text-[#5c5a56]">Submitted</span><span className="text-[#131311]">{new Date(quote.submittedAt).toLocaleDateString()}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-[#5c5a56]">Items</span><span className="text-[#131311]">{quote.lineCount}</span></div>
-              {quote.fileCount > 0 && <div className="flex justify-between gap-4"><span className="text-[#5c5a56]">Documents</span><span className="text-[#131311]">{quote.fileCount}</span></div>}
-            </div>
-            <p className="text-xs text-[#5c5a56] mt-4 leading-relaxed">
-              Pricing is confirmed on technical review — we'll email you when your quote is ready. Nothing is payable until you approve it.
-            </p>
-            <div className="flex gap-3 mt-6">
-              <Btn variant="outline" size="sm" onClick={() => go("contact")}>Contact us</Btn>
-              <Btn variant="ghost" size="sm" onClick={() => go("login")}>Sign in to manage</Btn>
-            </div>
-          </div>
-        )}
-
-        {step === "record" && order && (
-          <div>
-            <button onClick={reset} className="text-xs text-[#5c5a56] hover:text-[#131311] flex items-center gap-1 cursor-pointer mb-5"><ChevronLeft className="w-3 h-3" />New search</button>
-            <div className="flex items-baseline justify-between mb-1">
-              <h2 className="text-xl font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Order {order.orderNo}</h2>
-              <span className="text-sm text-[#5c5a56]" style={{ fontFamily: "'DM Mono', monospace" }}>{order.total != null ? fmt(order.total) : ""}</span>
-            </div>
-            <p className="text-sm text-[#5A7A6A] mb-6">{order.stageLabel}</p>
-            <OrderReadout order={order} />
-            <div className="flex gap-3 mt-6">
-              <Btn variant="outline" size="sm" onClick={() => go("contact")}>Contact us</Btn>
-              <Btn variant="ghost" size="sm" onClick={() => go("login")}>Sign in to manage</Btn>
-            </div>
+            <GuestRecordView record={{ order: order ?? undefined, quote: quote ?? undefined, items, files }} setPage={go} />
           </div>
         )}
       </div>

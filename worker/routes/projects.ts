@@ -54,7 +54,7 @@ const projectDto = (p: ProjectRow) => ({
   createdAt: p.created_at,
 });
 
-async function loadLines(env: Env, projectId: string) {
+export async function loadLines(env: Env, projectId: string) {
   const { results } = await env.DB.prepare(
     "SELECT * FROM quote_line WHERE project_id = ? AND revision_id IS NULL ORDER BY position",
   ).bind(projectId).all<LineRow>();

@@ -9,6 +9,7 @@ import { newToken, uuid } from "../lib/util";
 import { isDevEnv, isEmail, normEmail, sha256hex, sixDigit } from "../lib/auth";
 import { notify } from "../lib/email";
 import { orderDto, type OrderRow } from "../lib/orders";
+import { loadLines, loadProjectFiles } from "./projects";
 
 export const guest = new Hono<{ Bindings: Env }>();
 
@@ -113,12 +114,37 @@ guest.get("/records/:token", async (c) => {
   if (grant.record_type === "order") {
     const order = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(grant.record_id).first<OrderRow>();
     if (!order) return c.json({ error: "not_found" }, 404);
-    return c.json({ order: await orderDto(c.env, order) });
+    // Same context the signed-in order view gets — line items and the project
+    // title, not just stage and payments — so a guest sees the whole record.
+    const ctx = await c.env.DB.prepare(
+      `SELECT p.title AS project_title, p.public_ref AS project_ref,
+              (SELECT revision_no FROM quote_revision qr WHERE qr.id = o.accepted_revision_id) AS revision_no
+         FROM "order" o JOIN project p ON p.id = o.project_id WHERE o.id = ?`,
+    ).bind(order.id).first<{ project_title: string | null; project_ref: string | null; revision_no: number | null }>();
+    // order_line carries only these five columns — no position, room_label or
+    // dims_json (room labels live on the revision snapshot). Matches the query
+    // the signed-in order view uses.
+    const { results: lines } = await c.env.DB.prepare(
+      "SELECT external_ref, product_snapshot_json, qty, line_total FROM order_line WHERE order_id = ?",
+    ).bind(order.id).all();
+    return c.json({
+      order: {
+        ...(await orderDto(c.env, order)),
+        projectTitle: ctx?.project_title ?? null,
+        projectRef: ctx?.project_ref ?? null,
+        revisionNo: ctx?.revision_no ?? null,
+        lineCount: lines.length,
+        lines,
+      },
+    });
   }
 
-  // Pre-order: status only. NO prices — an estimate that has not been through
-  // technical review must not be presented to the customer as a figure to rely
-  // on, and this view has no way to caveat it.
+  // Pre-order: the same record the signed-in account area renders for a project
+  // — journey, submitted lines, documents. Indicative prices ARE included: the
+  // customer saw them while building and again on submit, and the account view
+  // shows them under the same "may differ after technical review" caveat.
+  // Withholding them from a guest would be an inconsistency, not caution.
+  //
   // NOTE: project has no submitted_at column — updated_at is the closest thing,
   // and it is what moved when the status became "submitted".
   const p = await c.env.DB.prepare(
@@ -130,20 +156,17 @@ guest.get("/records/:token", async (c) => {
   }>();
   if (!p) return c.json({ error: "not_found" }, 404);
 
-  const counts = await c.env.DB.prepare(
-    `SELECT (SELECT COUNT(*) FROM quote_line WHERE project_id = ?) AS lines,
-            (SELECT COUNT(*) FROM file_asset WHERE project_id = ?) AS files`,
-  ).bind(p.id, p.id).first<{ lines: number; files: number }>();
-
+  const items = await loadLines(c.env, p.id);
   return c.json({
     quote: {
       ref: p.public_ref ?? p.id,
-      title: p.title,
+      title: p.title ?? "My Project",
       status: p.status_customer,
       contactName: p.contact_name,
       submittedAt: p.updated_at ?? p.created_at,
-      lineCount: counts?.lines ?? 0,
-      fileCount: counts?.files ?? 0,
+      createdAt: p.created_at,
     },
+    items,
+    files: await loadProjectFiles(c.env, p.id),
   });
 });
