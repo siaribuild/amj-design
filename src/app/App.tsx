@@ -28,7 +28,7 @@ import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, ge
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
-import { getCurrentProject, saveLines, submitProject, updateProfile, clearDraft, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
+import { getCurrentProject, saveLines, submitProject, updateProfile, clearDraft, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiGuestQuote, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
 import { GstContext, type GstMode } from "../data/gst";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1016,13 +1016,29 @@ function AccountPage({ user, setPage, setUser, authLoading }: { user: AuthUser |
 // ═══════════════════════════════════════════════════════════════════════════════
 // TRACK ORDER
 // ═══════════════════════════════════════════════════════════════════════════════
+// Customer-facing wording for a project that has no order yet. Only the statuses
+// a guest can actually land on — anything else falls back to "In progress"
+// rather than leaking an internal status string.
+const GUEST_QUOTE_STATUS: Record<string, string> = {
+  submitted: "Received — waiting for technical review",
+  under_review: "With our team for technical review",
+  needs_information: "We need a little more information — check your email",
+  quote_issued: "Your reviewed quote is ready — check your email to approve it",
+  accepted: "Approved — your order is being set up",
+  expired: "This quote has expired",
+  closed: "Closed",
+};
+
 function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [step, setStep] = useState<"lookup" | "code" | "record">("lookup");
   const [ref, setRef] = useState(""); const [email, setEmail] = useState(""); const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const [devCode, setDevCode] = useState<string | undefined>();
+  // Exactly one of these is set: a project that hasn't been accepted yet has no
+  // order, and its quote reference is what the submission email told them to use.
   const [order, setOrder] = useState<ApiOrder | null>(null);
+  const [quote, setQuote] = useState<ApiGuestQuote | null>(null);
 
   const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
 
@@ -1041,26 +1057,26 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
     try {
       const { token } = await guestTrackVerify(email.trim(), ref.trim(), code.trim());
       const rec = await guestRecord(token);
-      setOrder(rec.order); setStep("record");
-    } catch { setError("That code didn't match, or the details don't match an order."); }
+      setOrder(rec.order ?? null); setQuote(rec.quote ?? null); setStep("record");
+    } catch { setError("That code didn't match, or the details don't match a quote or order."); }
     finally { setBusy(false); }
   };
-  const reset = () => { setStep("lookup"); setCode(""); setOrder(null); setError(""); setDevCode(undefined); };
+  const reset = () => { setStep("lookup"); setCode(""); setOrder(null); setQuote(null); setError(""); setDevCode(undefined); };
 
   return (
     <div className="relative min-h-screen bg-[#FAFAF9] pt-16 pb-24 overflow-hidden">
       <GhostMark size={280} opacity={0.05} pos="right-0 top-0" />
       <div className="max-w-xl mx-auto px-6 py-12 relative">
-        <SLabel>Order tracking</SLabel>
+        <SLabel>Quote &amp; order tracking</SLabel>
         <h1 className="text-3xl font-semibold text-[#131311] mb-2"
-          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Track your order</h1>
-        <p className="text-[#5c5a56] text-sm mb-8">Enter your order reference and email. We'll send a one-time code to confirm it's you — no account required.</p>
+          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Track your quote or order</h1>
+        <p className="text-[#5c5a56] text-sm mb-8">Enter the reference from your confirmation email — a quote (OF-Q-) or an order (OF-) — with the email address you used. We'll send a one-time code to confirm it's you; no account required.</p>
 
         {step === "lookup" && (
           <div className="group relative bg-white border border-black/8 p-6 space-y-4 overflow-hidden">
             <FrameCorners size={10} color={SAGE} show="always" />
-            <div><FieldLabel>Order reference</FieldLabel><Input value={ref} onChange={e => setRef(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && request()} placeholder="OF-58001" className="font-mono tracking-wide" /></div>
-            <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && request()} placeholder="Email used on the order" /></div>
+            <div><FieldLabel>Quote or order reference</FieldLabel><Input value={ref} onChange={e => setRef(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && request()} placeholder="OF-Q-10001 or OF-58001" className="font-mono tracking-wide" /></div>
+            <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && request()} placeholder="Email used on the quote" /></div>
             {error && <p className="text-xs text-red-600">{error}</p>}
             <Btn variant="sage" size="md" onClick={request} className={`w-full justify-center ${!validEmail || !ref.trim() || busy ? "opacity-50 pointer-events-none" : ""}`}>
               {busy ? "Sending…" : <>Send code <Search className="w-4 h-4" /></>}
@@ -1074,12 +1090,35 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
         {step === "code" && (
           <div className="group relative bg-white border border-black/8 p-6 space-y-4 overflow-hidden">
             <FrameCorners size={10} color={SAGE} show="always" />
-            <p className="text-sm text-[#5c5a56]">If <span className="text-[#131311]">{ref.trim()}</span> matches an order for <span className="text-[#131311]">{email.trim()}</span>, we've sent a 6-digit code.</p>
+            <p className="text-sm text-[#5c5a56]">If <span className="text-[#131311]">{ref.trim()}</span> matches a quote or order for <span className="text-[#131311]">{email.trim()}</span>, we've sent a 6-digit code.</p>
             <div><FieldLabel>6-digit code</FieldLabel><Input value={code} autoFocus inputMode="numeric" maxLength={6} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={e => e.key === "Enter" && verify()} placeholder="••••••" /></div>
             {devCode && <p className="text-xs text-[#5A7A6A] bg-[#5A7A6A]/8 border border-[#5A7A6A]/20 px-2 py-1.5">Dev mode — your code is <span className="font-mono font-semibold">{devCode}</span></p>}
             {error && <p className="text-xs text-red-600">{error}</p>}
-            <Btn variant="sage" size="md" onClick={verify} className={`w-full justify-center ${code.length !== 6 || busy ? "opacity-50 pointer-events-none" : ""}`}>{busy ? "Checking…" : "View order"}</Btn>
+            <Btn variant="sage" size="md" onClick={verify} className={`w-full justify-center ${code.length !== 6 || busy ? "opacity-50 pointer-events-none" : ""}`}>{busy ? "Checking…" : "View status"}</Btn>
             <button onClick={reset} className="text-sm text-[#5c5a56] hover:text-[#131311] cursor-pointer">← Start over</button>
+          </div>
+        )}
+
+        {/* Pre-order: the quote is with a reviewer. Status only, deliberately no
+            figure — the estimate hasn't been through technical review yet. */}
+        {step === "record" && quote && (
+          <div>
+            <button onClick={reset} className="text-xs text-[#5c5a56] hover:text-[#131311] flex items-center gap-1 cursor-pointer mb-5"><ChevronLeft className="w-3 h-3" />New search</button>
+            <h2 className="text-xl font-semibold text-[#131311] mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Quote {quote.ref}</h2>
+            <p className="text-sm text-[#5A7A6A] mb-6">{GUEST_QUOTE_STATUS[quote.status] ?? "In progress"}</p>
+            <div className="bg-white border border-black/8 p-6 space-y-3 text-sm">
+              {quote.title && <div className="flex justify-between gap-4"><span className="text-[#5c5a56]">Project</span><span className="text-[#131311] text-right">{quote.title}</span></div>}
+              <div className="flex justify-between gap-4"><span className="text-[#5c5a56]">Submitted</span><span className="text-[#131311]">{new Date(quote.submittedAt).toLocaleDateString()}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-[#5c5a56]">Items</span><span className="text-[#131311]">{quote.lineCount}</span></div>
+              {quote.fileCount > 0 && <div className="flex justify-between gap-4"><span className="text-[#5c5a56]">Documents</span><span className="text-[#131311]">{quote.fileCount}</span></div>}
+            </div>
+            <p className="text-xs text-[#5c5a56] mt-4 leading-relaxed">
+              Pricing is confirmed on technical review — we'll email you when your quote is ready. Nothing is payable until you approve it.
+            </p>
+            <div className="flex gap-3 mt-6">
+              <Btn variant="outline" size="sm" onClick={() => go("contact")}>Contact us</Btn>
+              <Btn variant="ghost" size="sm" onClick={() => go("login")}>Sign in to manage</Btn>
+            </div>
           </div>
         )}
 

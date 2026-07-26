@@ -257,6 +257,56 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.equal(record.body.order.id, newOrder.id);
     });
 
+    // Regression: the submission email hands the customer their QUOTE reference
+    // (OF-Q-) and tells them to track with it, but tracking only ever looked up
+    // "order".order_no — which does not exist until an issued quote is accepted
+    // — and matched the email against user.email, which is NULL for an anonymous
+    // submitter. Both failures were silent: the lookup found nothing, the
+    // anti-enumeration response still advanced the UI to the code screen, and no
+    // email was ever sent.
+    await t.test("anonymous quote is trackable by its OF-Q reference", async () => {
+      const guest = new Session(baseUrl);
+      const email = "anon.tracker@example.com";
+      const saved = await requestJson(guest, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Guest tracking project",
+          items: [{
+            code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+            measuredBy: "opening", width: "1200", height: "900", qty: 1,
+            options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+            lineTotal: 1,
+          }],
+        },
+      });
+      const projectId = saved.body.project.id;
+      const ref = saved.body.project.ref;
+      assert.match(ref, /^OF-Q-\d+$/);
+
+      await requestJson(guest, `/api/projects/${projectId}/submit`, {
+        method: "POST",
+        json: { contact: { name: "Anon Tester", email, phone: "0400 000 000", suburb: "Rowville" } },
+      });
+
+      // A code must actually be issued — the reported symptom was silence here.
+      const req = await requestJson(guest, "/api/guest/track/request", { method: "POST", json: { email, ref } });
+      assert.match(req.body.devCode, /^\d{6}$/, "no tracking code issued for a submitted quote");
+
+      const g = await requestJson(guest, "/api/guest/track/verify", { method: "POST", json: { email, ref, code: req.body.devCode } });
+      const rec = await requestJson(guest, `/api/guest/records/${g.body.token}`);
+      // No order exists yet, so the quote view is returned — and it carries NO
+      // price, because the estimate has not been through technical review.
+      assert.equal(rec.body.order, undefined);
+      assert.equal(rec.body.quote.ref, ref);
+      assert.equal(rec.body.quote.status, "submitted");
+      assert.equal(rec.body.quote.lineCount, 1);
+      assert.equal(rec.body.quote.total, undefined);
+
+      // A wrong email must still not resolve the reference.
+      const wrong = await requestJson(guest, "/api/guest/track/request", { method: "POST", json: { email: "someone.else@example.com", ref } });
+      assert.equal(wrong.body.devCode, undefined);
+    });
+
     await t.test("customer and ops SPA fallback plus real static assets", async () => {
       const customerShell = await customer.request("/catalogue/deep-link");
       assert.equal(customerShell.status, 200);
