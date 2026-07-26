@@ -300,7 +300,7 @@ function EmptyHub({ go }: { go: (p: Page) => void }) {
         <Btn variant="outline" size="md" onClick={() => go("quote")}><Upload className="w-4 h-4" />Upload a schedule</Btn>
       </div>
       <p className="w-full text-[11px] text-[#5c5a56] leading-relaxed border-t border-black/[0.07] pt-3.5 mt-1" style={{ fontFamily: "'DM Mono', monospace" }}>
-        After you submit, AMJ reviews it and issues a final quote — usually within 2 business days. We'll email you and it'll appear here.
+        After you submit, we review it and issue a final quote — usually within 2 business days. We'll email you and it'll appear here.
       </p>
     </div>
   );

@@ -89,7 +89,7 @@ export function clearReviewKey(review: Record<string, string> | null | undefined
 //  • error   — critical input only the CUSTOMER can supply, and without it the
 //              line cannot be priced at all. BLOCKS submission.
 //  • warning — the opening is valid but a product/constraint mismatch needs an
-//              AMJ technical decision (composite unit, substitution, glazing).
+//              technical decision (composite unit, substitution, glazing).
 //              The line is PRICED best-fit (indicative) and NEVER blocks —
 //              submission is exactly how it reaches the technician.
 export type ReviewSeverity = "error" | "warning";
@@ -101,7 +101,7 @@ export const REVIEW_SEVERITY: Record<string, ReviewSeverity> = {
   measuredBy: "error",        // frame vs opening unknown — changes the size
   options: "error",           // a required option is unset
   product: "error",           // no product at all and none can be substituted
-  // AMJ technical decisions — priced best-fit, flagged, submittable.
+  // technical decisions — priced best-fit, flagged, submittable.
   fit: "warning",             // outside standard range ⇒ composite/custom unit
   substitute: "warning",      // no exact family ⇒ nearest product priced instead
   material: "warning",        // e.g. timber schedule → aluminium catalogue
@@ -141,7 +141,7 @@ export function reviewClass(review: Record<string, string> | null | undefined): 
 //         ∨ the line cannot be priced and no WARNING explains why
 //
 // A warning-flagged line is priced best-fit (indicative) and stays submittable —
-// submission is exactly how an AMJ technical decision gets made. This is the
+// submission is exactly how a technical decision gets made. This is the
 // single source of truth shared by the client submit gate and the server.
 export function lineBlocksSubmission(it: {
   productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;

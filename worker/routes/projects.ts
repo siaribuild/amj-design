@@ -208,7 +208,7 @@ projects.put("/current/lines", async (c) => {
           f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json,
           f.measured_by, f.qty, i,
           JSON.stringify({
-            customerConfigurationChanged: "You changed an AI-priced configuration; AMJ will confirm its thermal suitability and price.",
+            customerConfigurationChanged: "You changed an AI-priced configuration; we will confirm its thermal suitability and price.",
           }),
           edited,
           stored.product_slug === f.product_slug ? stored.selected_variant_id : null,
@@ -305,7 +305,7 @@ projects.post("/current/lines/:id/restore-ai", async (c) => {
   const total = Number(price.total);
   if (!Number.isFinite(total)) return c.json({ error: "invalid_ai_price_snapshot" }, 409);
   const review = proposal.review_required
-    ? { thermalRecommendation: "AMJ will confirm this AI-recommended thermal configuration during technical review." }
+    ? { thermalRecommendation: "We will confirm this AI-recommended thermal configuration during technical review." }
     : null;
   const restored = await c.env.DB.batch([
     c.env.DB.prepare(

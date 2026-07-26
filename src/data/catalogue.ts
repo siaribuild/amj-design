@@ -630,7 +630,7 @@ export let pages: SitePage[] = [];
 export const getPage = (pageId: string): SitePage | undefined => pages.find((p) => p.pageId === pageId);
 
 // ─── Showroom locations (Sanity-managed registry) ─────────────────────────────
-// Australia-wide AMJ showrooms the customer can request an appointment at. One
+// Australia-wide showrooms the customer can request an appointment at. One
 // registry drives both the Contact page list and the map (suburb-level pins).
 // Authored in Sanity; the entries below are the versioned seed (imported into
 // Sanity + used in dev/tests). Suburb + state + centroid only — NEVER a street

@@ -18,30 +18,31 @@ import {
   fmt, mm, productLabel, POPULAR_COLOURS, normCode, suggestCode, clearReviewKey, lineBlocksSubmission,
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
+import { brandSubject } from "../data/sanity";
 
 export type EditFocus = "product" | "dims" | "options" | "qty";
 
 const BASIS_COPY: Record<string, { label: string; detail: string; strong?: boolean }> = {
   explicit_energy_report: {
     label: "Energy-report allowance",
-    detail: "Priced using requirements extracted from your energy report. AMJ will confirm the final product and glazing configuration.",
+    detail: "Priced using requirements extracted from your energy report. {brand} will confirm the final product and glazing configuration.",
     strong: true,
   },
   schedule_specification: {
     label: "Schedule-based allowance",
-    detail: "Priced using the glazing and performance information in your uploaded schedule. AMJ will confirm the final configuration.",
+    detail: "Priced using the glazing and performance information in your uploaded schedule. {brand} will confirm the final configuration.",
   },
   building_context: {
     label: "Building-context allowance",
-    detail: "Priced using the available room, opening and building context. AMJ will confirm the final thermal configuration.",
+    detail: "Priced using the available room, opening and building context. {brand} will confirm the final thermal configuration.",
   },
   default_allowance: {
     label: "Default thermal allowance",
-    detail: "Priced using a conservative default where the documents did not establish a specific thermal requirement. AMJ will confirm it.",
+    detail: "Priced using a conservative default where the documents did not establish a specific thermal requirement. {brand} will confirm it.",
   },
   default_envelope: {
     label: "Thermal allowance inferred",
-    detail: "Price includes a likely frame and glazing configuration based on the building information available. AMJ will confirm it during technical review.",
+    detail: "Price includes a likely frame and glazing configuration based on the building information available. {brand} will confirm it during technical review.",
   },
 };
 
@@ -611,13 +612,13 @@ export function ItemSummaryCard({
     || (s === "product" && reviewKeys.has("product"))
     || (s === "dims" && reviewKeys.has("dims"))
     || (s === "options" && reviewKeys.has("options"));
-  // Customer-blocking (must fix to submit) vs technical-only (AMJ confirms; the
+  // Customer-blocking (must fix to submit) vs technical-only (we confirm; the
   // customer can still submit). Product/dims live-issues and 'customer' review keys
   // block; a priced line with only 'technical' flags does not.
   // ONE predicate for Tier 1 — the RED border, the "Needs attention" pill AND the
   // sticky "N need attention" count all derive from lineBlocksSubmission (the
   // client+server single source of truth), so they can never diverge again (UX
-  // review 2026-07-26). A PRICED line carrying a review flag is Tier 2 (sky, "AMJ
+  // review 2026-07-26). A PRICED line carrying a review flag is Tier 2 (sky, "we
   // confirms — you can still submit"), never red. Out-of-range live issues (which
   // still price, so don't block) also fall to Tier 2 so they stay visible.
   const customerBlocking = lineBlocksSubmission(item) || !!duplicate;
@@ -659,7 +660,7 @@ export function ItemSummaryCard({
           {customerBlocking
             ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">Needs </span>attention</span>
             : technicalOnly
-              ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-sky-300 bg-sky-50 text-sky-800" title={item.review?.fit ? "Indicative price — no standard product is made at this size; AMJ will design a composite/custom unit and confirm the price at review. You can still submit." : "An AMJ technician will confirm this at review — you can still submit."}><Info className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">AMJ </span>review</span>
+              ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-sky-300 bg-sky-50 text-sky-800" title={item.review?.fit ? `Indicative price — no standard product is made at this size; ${brandSubject()} will design a composite/custom unit and confirm the price at review. You can still submit.` : `${brandSubject()} will confirm this at review — you can still submit.`}><Info className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">In </span>review</span>
               : <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344]"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
           {/* Basis chip (UX spec §5): orthogonal to status — report-backed vs
               assumption-based. Hidden on small screens; the tooltip carries the
@@ -669,7 +670,7 @@ export function ItemSummaryCard({
               basisCopy.strong
                 ? "border-[#2C7A54]/30 bg-[#2C7A54]/10 text-[#2C7A54]"
                 : "border-dashed border-black/20 bg-black/[0.03] text-[#6f6c67]"
-            }`} title={basisCopy.detail}>
+            }`} title={basisCopy.detail.replace("{brand}", brandSubject())}>
               {basisCopy.label}
             </span>
           )}
@@ -728,7 +729,7 @@ export function ItemSummaryCard({
               {technicalOnly
                 ? <Info className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
                 : <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />}
-              <span>{technicalOnly ? "AMJ will confirm at technical review — you can still submit. " : ""}{attentionMsg}</span>
+              <span>{technicalOnly ? `${brandSubject()} will confirm at technical review — you can still submit. ` : ""}{attentionMsg}</span>
             </p>
           )}
         </div>
@@ -745,7 +746,7 @@ export function ItemSummaryCard({
             <p className={`md:hidden px-3 sm:px-4 py-2 text-[11px] leading-snug border-b border-black/[0.06] ${
               basisCopy.strong ? "text-[#2C7A54] bg-[#2C7A54]/5" : "text-[#6f6c67] bg-black/[0.02]"
             }`}>
-              {basisCopy.detail}
+              {basisCopy.detail.replace("{brand}", brandSubject())}
             </p>
           )}
           {/* Change provenance (spec §3): strike-through old → current, same

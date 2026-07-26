@@ -49,8 +49,8 @@ function checkDimensions(opening: OpeningInput, c: CatalogueCandidate): FilterOu
   const w = opening.widthMm ?? 0, h = opening.heightMm ?? 0;
   if (!rule) return { filter: "dimensions", passed: false, severity: "incomplete", reason: "no dimension rule" };
   if (!w || !h) return { filter: "dimensions", passed: false, severity: "manual_review", reason: "opening size unknown" };
-  // An opening outside the published range is a WARNING, not a rejection: AMJ
-  // builds a composite/custom unit, so the candidate stays selectable and is
+  // An opening outside the published range is a WARNING, not a rejection: we
+  // build a composite/custom unit, so the candidate stays selectable and is
   // priced at the REAL opening size (indicative). The aggregate below downgrades
   // any such line to commercial_only_estimate — it can never read as "ready".
   // Same contract as the deterministic matcher, so both paths agree.

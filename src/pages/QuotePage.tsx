@@ -81,7 +81,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // Only CUSTOMER-fixable gaps block submission: an unpriceable line (no product /
   // missing size / missing option) or a duplicate code. Lines carrying only
   // TECHNICAL flags (timber→aluminium, composite sizing, obscure glazing) are
-  // priced and stay submittable — submission is how they reach an AMJ technician.
+  // priced and stay submittable — submission is how they reach a technician.
   const itemBlocked = (it: QItem) => lineBlocksSubmission(it) || hasDuplicateCode(quote.items, it.id, it.code);
   const attentionCount = quote.items.filter(itemBlocked).length;
   const pendingPriceCount = quote.items.filter((it) =>
@@ -89,7 +89,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     (typeof it.lineTotal !== "number" || !Number.isFinite(it.lineTotal)) &&
     !!it.review?.customerConfigurationChanged).length;
   // WARNING-severity lines: priced (indicative) and submittable, but carrying an
-  // AMJ technical decision — a composite for an oversized opening, a substituted
+  // technical decision — a composite for an oversized opening, a substituted
   // product, a material/glazing caveat. Counted separately from errors so the
   // sticky panel can show both without the gate ever depending on warnings.
   const technicalCount = quote.items.filter((it) => !itemBlocked(it) && reviewSeverity(it.review) === "warning").length;
@@ -455,7 +455,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                   <span className="text-[#131311] min-w-0 truncate">{String(i + 1).padStart(2, "0")} · {productLabel(it.productSlug)} — {mm(it.width)} × {mm(it.height)} ×{it.qty}</span>
                   <span className="text-[#5c5a56] flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>
                     {it.review?.customerConfigurationChanged && (typeof it.lineTotal !== "number" || !Number.isFinite(it.lineTotal))
-                      ? "Pending AMJ price"
+                      ? "Pending final price"
                       : lineBlocksSubmission(it) ? "Review" : fmt(gstAdjust(linePriceTotal(it), gstMode))}
                   </span>
                 </div>
@@ -463,7 +463,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
               {quote.files.length > 0 && <p className="text-xs text-[#5c5a56] pt-1">+ {quote.files.length} uploaded file{quote.files.length !== 1 ? "s" : ""} for review</p>}
             </div>
             <div className="flex justify-between border-t border-black/8 pt-3 text-sm"><span className="text-[#5c5a56]">{pendingPriceCount ? "Priced-items subtotal" : "Estimated total"}</span><span className="font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
-            {pendingPriceCount > 0 && <p className="mt-2 text-xs text-amber-800">{pendingPriceCount} customer-changed configuration{pendingPriceCount === 1 ? "" : "s"} will be added after AMJ confirms the exact product and price.</p>}
+            {pendingPriceCount > 0 && <p className="mt-2 text-xs text-amber-800">{pendingPriceCount} customer-changed configuration{pendingPriceCount === 1 ? "" : "s"} will be added after we confirm the exact product and price.</p>}
           </div>
           <div className="border border-black/10 bg-white p-5 space-y-4 mb-4">
             {user && <p className="text-sm text-[#5A7A6A] flex items-center gap-1.5"><CheckCircle className="w-4 h-4" />Pre-filled from your account — edit if needed.</p>}
@@ -671,8 +671,8 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                 )}
                 {uploadNotice.type === "success" && aiPhase?.kind === "failed" && (
                   <span className="ml-1.5 text-amber-800">· {quote.items.length
-                    ? "we couldn't refine this estimate; AMJ will confirm it"
-                    : "we couldn't create priced items from these documents; add items manually or contact AMJ"}</span>
+                    ? "we couldn't refine this estimate; we will confirm it"
+                    : "we couldn't create priced items from these documents; add items manually or contact us"}</span>
                 )}
                 {uploadNotice.type === "success" && removeOffer && (
                   <span className="ml-1.5 whitespace-nowrap">

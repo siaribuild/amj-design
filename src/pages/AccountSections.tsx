@@ -24,7 +24,7 @@ export function HelpPage({ setPage }: { setPage: (p: Page) => void }) {
         <div className="bg-white border border-black/10 p-5">
           <h3 className="text-[13px] uppercase tracking-[0.1em] text-[#5c5a56] font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>Send a message</h3>
           <p className="text-[13px] text-[#5c5a56] leading-relaxed mb-4">Product, sizing or pricing questions — a real person replies within one business day. Include your project reference (OF-…) so we open the right record.</p>
-          <Btn variant="sage" size="sm" onClick={() => go("contact")}><MessageSquare className="w-4 h-4" />Message AMJ</Btn>
+          <Btn variant="sage" size="sm" onClick={() => go("contact")}><MessageSquare className="w-4 h-4" />Message us</Btn>
         </div>
         <div className="bg-white border border-black/10 p-5 sm:col-span-2">
           <h3 className="text-[13px] uppercase tracking-[0.1em] text-[#5c5a56] font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>Guides</h3>

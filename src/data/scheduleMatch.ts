@@ -67,7 +67,7 @@ const DOOR_FAMILY: Record<string, string | null> = {
   "SLIM FRAME SLIDING": "slim-frame-sliding-door",
 };
 
-// Preferred series when several products fit — matches AMJ's own default choices.
+// Preferred series when several products fit — matches our own default choices.
 const WINDOW_SERIES_BIAS = ["amj80", "amj100l", "amj100t", "amj150"];
 const DOOR_SERIES_BIAS = ["amj100l", "amj100t", "amj80", "amj150", "amj65"];
 
@@ -97,7 +97,7 @@ function biasIndex(slug: string, bias: string[]): number {
 // contains the opening (series-biased). When NONE fits, still return the BEST FIT
 // (largest capacity) so the line carries an indicative price — but mark it
 // `fits:false` so the caller raises a WARNING: no standard unit is made at this
-// size, AMJ designs a composite/custom one and confirms the final price. Pricing
+// size, we design a composite/custom one and confirm the final price. Pricing
 // uses the REAL opening dimensions, never the product's max, so the estimate
 // reflects the true size instead of silently under-quoting.
 function pickProduct(familySlug: string, section: ScheduleSection, w: number, h: number): { product?: Product; fits: boolean } {
@@ -190,12 +190,12 @@ export function matchSchedule(rows: RawScheduleRow[]): ParsedLine[] {
       if (product && !picked.fits && w > 0 && h > 0) {
         // No standard unit is made at this size. We still price the BEST FIT at
         // the REAL opening dimensions so the customer gets an indicative number,
-        // and WARN that AMJ will design the composite/custom unit and confirm the
+        // and WARN that we will design the composite/custom unit and confirm the
         // final price. Not customer-fixable (they can't resize the building), so
         // it never blocks submission.
         review.fit = `Indicative price only — no standard ${r.section} is manufactured at ${w}×${h} mm ` +
           `(${product.name} covers ${product.minWidth ?? "?"}–${product.maxWidth ?? "?"} W, ${product.minHeight ?? "?"}–${product.maxHeight ?? "?"} H mm). ` +
-          `AMJ will design a composite or custom unit and confirm the price at technical review.`;
+          `we will design a composite or custom unit and confirm the price at technical review.`;
       }
     } else {
       // No family maps to this type — via the built-in table OR the catalogue's
@@ -212,9 +212,9 @@ export function matchSchedule(rows: RawScheduleRow[]): ParsedLine[] {
       review.dims = "Size could not be read from the schedule — enter width and height.";
     }
 
-    // ── material (doors) — AMJ catalogue is aluminium only ─────────────────────
+    // ── material (doors) — catalogue is aluminium only ─────────────────────
     if (r.section === "door" && r.material && !/ALUM/i.test(r.material)) {
-      review.material = `Schedule specifies ${r.material}; AMJ products are aluminium — confirm substitution at review.`;
+      review.material = `Schedule specifies ${r.material}; our products are aluminium — confirm substitution at review.`;
     }
 
     // ── type nuances that a human must confirm ─────────────────────────────────

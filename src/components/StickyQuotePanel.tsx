@@ -16,7 +16,7 @@ import { TONE } from "../pages/accountModel";
 export type StickyQuotePanelProps = {
   itemCount: number;
   attentionCount: number;        // ERROR-severity: blocking items the customer must fix
-  /** WARNING-severity: priced (indicative) lines carrying an AMJ technical
+  /** WARNING-severity: priced (indicative) lines carrying a technical
    *  decision. Shown alongside errors but NEVER part of the submit gate. */
   technicalCount?: number;
   pendingPriceCount?: number;    // submitted for staff exact pricing
@@ -41,7 +41,7 @@ export function StickyQuotePanel({
   const confirmChip = technicalCount > 0 ? (
     <span className="flex items-center gap-1 border px-2 py-1 whitespace-nowrap"
       style={{ borderColor: TONE.work.bd, background: TONE.work.bg, color: TONE.work.text }}
-      title="Priced as an indicative estimate — an AMJ technician confirms these at review. You can still submit.">
+      title="Priced as an indicative estimate — our team confirms these at review. You can still submit.">
       <Info className="w-3.5 h-3.5" aria-hidden="true" />{technicalCount} we'll confirm
     </span>
   ) : null;
@@ -140,12 +140,12 @@ export function StickyQuotePanel({
           <Check className="w-3.5 h-3.5" aria-hidden="true" />{readyCount} priced
         </span>
         <span className="flex items-center gap-1 border border-amber-300 bg-amber-100 px-2 py-1 text-amber-900 whitespace-nowrap">
-          <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />{pendingPriceCount} pending AMJ price
+          <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />{pendingPriceCount} pending final price
         </span>
         {addingChip}
       </>
     );
-    live = `${pendingPriceCount} of ${items(itemCount)} pending AMJ pricing`;
+    live = `${pendingPriceCount} of ${items(itemCount)} pending final pricing`;
     ctaLabel = "Review quote";
     onClick = onReviewQuote;
     statusTone = "border-transparent bg-transparent text-[#131311] p-0 flex-wrap";

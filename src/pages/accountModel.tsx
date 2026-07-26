@@ -85,13 +85,13 @@ export function orderMeta(o: ApiOrder): RecordMeta {
     case "deposit_invoiced":
       return { pill: "Deposit due", tone: "attn", needsYou: true, next: <>pay the {b("50% deposit")} of {b(money(pay("deposit")?.amount))} to begin</> };
     case "deposit_paid":
-      return { pill: "Preparing drawings", tone: "work", needsYou: false, next: <>AMJ is preparing your shop drawings — no action needed</> };
+      return { pill: "Preparing drawings", tone: "work", needsYou: false, next: <>We are preparing your shop drawings — no action needed</> };
     case "drawings_shared":
       return { pill: "Awaiting your sign-off", tone: "attn", needsYou: true, next: <>sign off {b(`${o.lineCount ?? "your"} shop drawings`)} to release manufacturing</> };
     case "drawings_signed_off":
-      return { pill: "Drawings approved", tone: "work", needsYou: false, next: <>AMJ is scheduling manufacturing — no action needed</> };
+      return { pill: "Drawings approved", tone: "work", needsYou: false, next: <>We are scheduling manufacturing — no action needed</> };
     case "manufacturing":
-      return { pill: "In manufacturing", tone: "work", needsYou: false, next: <>On track · AMJ is building — no action needed</> };
+      return { pill: "In manufacturing", tone: "work", needsYou: false, next: <>On track · We are building — no action needed</> };
     case "qa_photos_shared":
       return { pill: "Quality check", tone: "work", needsYou: false, next: <>Quality photos shared — the balance invoice follows</> };
     case "balance_invoiced":
@@ -99,7 +99,7 @@ export function orderMeta(o: ApiOrder): RecordMeta {
     case "balance_paid":
       return { pill: "Confirm for despatch", tone: "attn", needsYou: true, next: <>confirm you're ready — despatch is booked on your OK</> };
     case "customer_confirmed":
-      return { pill: "Booking delivery", tone: "work", needsYou: false, next: <>Confirmed — AMJ is booking your delivery (~2 weeks)</> };
+      return { pill: "Booking delivery", tone: "work", needsYou: false, next: <>Confirmed — We are booking your delivery (~2 weeks)</> };
     case "dispatched":
       return { pill: "Dispatched", tone: "work", needsYou: false, next: <>On its way — delivery is scheduled</> };
     case "delivered":
@@ -118,15 +118,15 @@ export function projectMeta(p: ApiProjectSummary): RecordMeta {
     case "draft":
       return { pill: "Draft — not submitted", tone: "draft", needsYou: true, next: <>finish {b(`${p.item_count} line${p.item_count === 1 ? "" : "s"}`)} and {b("submit for pricing")}</> };
     case "submitted":
-      return { pill: "Being priced", tone: "work", needsYou: false, next: <>With AMJ — your reviewed quote usually lands within 2 business days</> };
+      return { pill: "Being priced", tone: "work", needsYou: false, next: <>With Being priced — your reviewed quote usually lands within 2 business days</> };
     case "under_review":
-      return { pill: "Being priced", tone: "work", needsYou: false, next: <>AMJ is reviewing your specification — no action needed</> };
+      return { pill: "Being priced", tone: "work", needsYou: false, next: <>We are reviewing your specification — no action needed</> };
     case "needs_information":
-      return { pill: "Needs your answer", tone: "attn", needsYou: true, next: <>answer AMJ's question so pricing can continue</> };
+      return { pill: "Needs your answer", tone: "attn", needsYou: true, next: <>answer our question so pricing can continue</> };
     case "quote_issued":
       return { pill: `Quote ready${p.issued_revision_no ? ` · R${p.issued_revision_no}` : ""}`, tone: "attn", needsYou: true, next: <>review &amp; accept, then a {b("50% deposit")} of {b(money(depositOf(p.issued_total)))} starts your order</> };
     case "expired":
-      return { pill: "Expired", tone: "mute", needsYou: false, next: <>This quote expired — start a new one or contact AMJ</> };
+      return { pill: "Expired", tone: "mute", needsYou: false, next: <>This quote expired — start a new one or contact us</> };
     default: // accepted / closed — the project is Ordered; the order row carries it
       return { pill: "Ordered", tone: "pos", needsYou: false, next: <>See the order for progress</> };
   }
@@ -191,7 +191,7 @@ export function deriveGates(projects: ApiProjectSummary[], orders: ApiOrder[]): 
     gates.push({
       key: `info-${p.id}`, pill: "Needs your answer", tone: "attn",
       refLabel: `${p.public_ref ?? "Project"} · ${p.title ?? "Project"}`,
-      title: "AMJ has a question about your project",
+      title: "We have a question about your project",
       desc: <>Pricing is paused until you answer — it takes a minute and keeps your quote moving.</>,
       cta: "Reply now", when: "Pauses pricing", target: { kind: "project", id: p.id, status: p.status_customer },
     });
@@ -219,7 +219,7 @@ export function deriveGates(projects: ApiProjectSummary[], orders: ApiOrder[]): 
       key: `draft-${p.id}`, pill: "Draft", tone: "attn",
       refLabel: p.title ?? "My Project",
       title: "Finish & submit for a full quote",
-      desc: <>{b(`${p.item_count} line${p.item_count === 1 ? "" : "s"}`)} added · once you submit, AMJ prices it and issues your reviewed quote.</>,
+      desc: <>{b(`${p.item_count} line${p.item_count === 1 ? "" : "s"}`)} added · once you submit, we price it and issue your reviewed quote.</>,
       cta: "Finish & submit", when: "Est. " + money(p.draft_total), target: { kind: "quote-builder" },
     });
   }

@@ -417,7 +417,7 @@ files.delete("/files/:id", async (c) => {
               AND quote_mutation_token=?
           )`,
       ).bind(JSON.stringify({
-        noLongerInDocuments: "The source documents no longer contain this edited item; AMJ will review it.",
+        noLongerInDocuments: "The source documents no longer contain this edited item; we will review it.",
       }), r.id, fa.project_id, expectedGeneration, nextQuoteVersion, mutationToken));
       keptForReview++;
     } else {

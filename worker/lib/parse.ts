@@ -283,7 +283,7 @@ export async function runScheduleParse(
     const priced = priceConfigured({ productSlug: l.productSlug, width: l.width, height: l.height, options: l.options, qty: l.qty });
     const hasReview = !!l.review && Object.keys(l.review).length > 0;
     // Unpriceable ⇒ 'incomplete' (customer-blocking); priced+flagged ⇒
-    // 'technical_review' (AMJ resolves, submittable); priced+clean ⇒ 'ready'.
+    // 'technical_review' (we resolve, submittable); priced+clean ⇒ 'ready'.
     const status = !priced.ok ? "incomplete" : hasReview ? "technical_review" : "ready";
     const lineTotal = priced.ok ? priced.total : null;
     const plId = uuid();

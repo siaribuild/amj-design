@@ -96,7 +96,7 @@ export function itemFields(raw: unknown) {
     ? (it.review as Record<string, string>)
     : null;
   // Unpriceable ⇒ 'incomplete' (customer must resolve, blocks submission), even if
-  // it also carries review flags. Priced + flagged ⇒ 'technical_review' (an AMJ
+  // it also carries review flags. Priced + flagged ⇒ 'technical_review' (we
   // technician resolves it — SUBMITTABLE). Priced + clean ⇒ 'ready'.
   const status = !priced.ok ? "incomplete" : review ? "technical_review" : "ready";
 

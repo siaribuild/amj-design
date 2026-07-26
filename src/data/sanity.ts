@@ -53,6 +53,16 @@ export interface SiteBrand {
 let brand: SiteBrand | null = null;
 export const getSiteBrand = (): SiteBrand | null => brand;
 
+/** The company name for customer-facing copy, from Site Settings → Business Name.
+ *  Returns null when unset — callers use brand-neutral wording ("we will confirm")
+ *  rather than a hardcoded placeholder, so nothing invents a company name. */
+export const brandName = (): string | null => brand?.businessName?.trim() || null;
+
+/** "<Business Name> will confirm…" when the name is set, otherwise "We will
+ *  confirm…". Keeps sentences grammatical either way without faking a brand. */
+export const brandSubject = (): string => brandName() ?? "We";
+export const brandPossessive = (): string => (brandName() ? `${brandName()}'s` : "our");
+
 const SITE_SETTINGS_QUERY = `*[_type == "siteSettings"][0]{
   businessName, tagline, copyrightText, legalLine,
   "logoUrl": logo.asset->url,

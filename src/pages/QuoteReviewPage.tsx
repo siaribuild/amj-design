@@ -117,7 +117,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
             <span>Valid until <span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDate(validUntil.toISOString())}</span> · <span style={{ fontFamily: "'DM Mono', monospace", color: TONE.attn.text }}>{daysLeft} days left</span></span>
           </div>
         </div>
-        <Btn variant="ghost" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }}>Message AMJ</Btn>
+        <Btn variant="ghost" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }}>Message us</Btn>
       </div>
 
       <div className="flex flex-col gap-[26px]">
@@ -167,7 +167,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
                 className="w-full border border-black/10 bg-white px-3 py-[11px] text-sm text-[#131311] outline-none focus:border-[#5A7A6A] resize-y min-h-[76px] my-2" />
               <p className="flex items-start gap-2 text-[12.5px] text-[#5c5a56] leading-normal">
                 <Clock className="w-[15px] h-[15px] flex-shrink-0 mt-px" style={{ color: TONE.work.text }} />
-                <span>Sending this moves the quote back to <b className="text-[#131311]">Under review</b>. {R} stays on file, unchanged — AMJ will issue a new revision with your changes for you to accept. No cost to request changes.</span>
+                <span>Sending this moves the quote back to <b className="text-[#131311]">Under review</b>. {R} stays on file, unchanged — We will issue a new revision with your changes for you to accept. No cost to request changes.</span>
               </p>
               <Btn variant="outline" size="md" onClick={sendChanges} disabled={busy || !reason.trim()} className="w-full justify-center mt-3">Send change request</Btn>
             </div>
@@ -213,7 +213,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
           <ContactCard setPage={setPage} />
           <div className="flex-1 basis-[250px] bg-white border border-black/10 p-[18px]">
             <h3 className="text-[13px] tracking-[0.1em] uppercase text-[#5c5a56] font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>Good to know</h3>
-            <p className="text-[13px] text-[#5c5a56] leading-relaxed">Issued revisions can't be edited — accepting is always against a specific revision. Requesting changes returns the quote to <b className="text-[#131311]">Under review</b> and AMJ issues a fresh revision. Nothing is charged until you accept.</p>
+            <p className="text-[13px] text-[#5c5a56] leading-relaxed">Issued revisions can't be edited — accepting is always against a specific revision. Requesting changes returns the quote to <b className="text-[#131311]">Under review</b> and we issue a fresh revision. Nothing is charged until you accept.</p>
           </div>
         </SummaryBand>
       </div>

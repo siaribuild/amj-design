@@ -118,7 +118,7 @@ quote.post("/projects/:id/submit", async (c) => {
     }>();
   if (lines.length === 0) return c.json({ error: "empty_quote" }, 400);
   // 'ready' and 'technical_review' may both be submitted: a technical_review line
-  // is priced and is exactly what submission escalates to an AMJ technician (e.g.
+  // is priced and is exactly what submission escalates to an technician (e.g.
   // timber→aluminium substitution, a composite unit for an out-of-range opening).
   // Only customer-fixable gaps ('incomplete' / unpriced) block submission.
   const reviewableCustomerAiEdit = (line: typeof lines[number]) => {
@@ -239,7 +239,7 @@ quote.get("/projects/:id/revisions", async (c) => {
 
 // POST /api/revisions/:id/request-changes { message } — the customer declines the
 // issued revision and asks for changes. Honest state move: the project returns to
-// "Under review" (the revision itself stays on file, immutable) and AMJ issues a
+// "Under review" (the revision itself stays on file, immutable) and we issue a
 // fresh revision. The accept guard below stops a stale client accepting afterwards.
 quote.post("/revisions/:id/request-changes", async (c) => {
   const revisionId = c.req.param("id");

@@ -6,6 +6,7 @@
 // lifecycle timeline → the schedule-code line list → files → the payment /
 // contact / quick-links summary band. Codes (DM Mono bold) anchor every line.
 // ═══════════════════════════════════════════════════════════════════════════════
+import { brandSubject } from "../data/sanity";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ChevronLeft, ChevronDown, Check, PenLine, FileText,
@@ -160,7 +161,7 @@ function orderTimeline(o: ApiOrder): TlNode[] {
   const R = o.revisionNo ? `R${o.revisionNo}` : "the reviewed quote";
   return [
     { key: "req", title: "Quote requested", state: "done", pill: { tone: "pos", label: "Done" }, status: <>Submitted from your schedule · {num(`${o.lineCount ?? "—"} lines`)}</> },
-    { key: "issued", title: "Reviewed quote issued", state: "done", pill: { tone: "pos", label: "Done" }, status: <>AMJ issued {num(R)} · {num(money(o.total))} · immutable</> },
+    { key: "issued", title: "Reviewed quote issued", state: "done", pill: { tone: "pos", label: "Done" }, status: <>Issued {num(R)} · {num(money(o.total))} · immutable</> },
     { key: "accepted", title: "Quote accepted", state: "done", pill: { tone: "pos", label: "Done" }, status: <>You accepted {num(R)} on {num(fmtDate(o.createdAt))} · deposit invoice issued</> },
     {
       key: "deposit", title: "Deposit — 50%",
@@ -216,7 +217,7 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit }: {
   statusPill?: (l: ParsedLine) => ReactNode; showUnit?: boolean;
 }) {
   const hasPendingPrice = lines.some((line) => line.lineTotal == null);
-  const price = (value: number | null) => value == null ? "Pending AMJ price" : money(value);
+  const price = (value: number | null) => value == null ? "Pending final price" : money(value);
   return (
     <>
       <div className="hidden md:grid grid-cols-[118px_1fr_110px_44px_104px_116px] gap-3.5 px-5 py-[11px] bg-[#5A7A6A]/[0.07] border-b border-black/10 text-[10.5px] tracking-[0.08em] uppercase text-[#5c5a56]" style={{ fontFamily: "'DM Mono', monospace" }} aria-hidden="true">
@@ -346,7 +347,7 @@ function PayRow({ label, amount, state }: {
 export function ContactCard({ setPage }: { setPage: (p: Page) => void }) {
   return (
     <div className="flex-1 basis-[250px] bg-white border border-black/10 p-[18px]">
-      <h3 className="text-[13px] tracking-[0.1em] uppercase text-[#5c5a56] font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>Your AMJ contact</h3>
+      <h3 className="text-[13px] tracking-[0.1em] uppercase text-[#5c5a56] font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>Your contact</h3>
       <div className="flex items-center gap-3">
         <span className="w-10 h-10 bg-[#5A7A6A]/[0.07] border border-black/10 grid place-items-center text-[#5A7A6A] text-sm flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>OF</span>
         <div><div className="text-sm font-semibold text-[#131311]">OpenFrame team</div><div className="text-xs text-[#5c5a56]" style={{ fontFamily: "'DM Mono', monospace" }}>Project coordination</div></div>
@@ -423,7 +424,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <Btn variant="ghost" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }}>Message AMJ</Btn>
+          <Btn variant="ghost" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }}>Message us</Btn>
         </div>
       </div>
 
@@ -550,8 +551,8 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
   const timeline: TlNode[] = [
     { key: "req", title: "Quote requested", state: "done", pill: { tone: "pos", label: "Done" }, status: <>Submitted {num(fmtDate(p.createdAt))} · {num(`${lines.length} lines`)} from your schedule</> },
     needsInfo
-      ? { key: "review", title: "AMJ review — needs your answer", state: "cur", pill: { tone: "attn", label: "You're here", pulse: true }, status: <>Pricing is paused until you reply above</> }
-      : { key: "review", title: "Reviewed quote", state: "work", pill: { tone: "work", label: "Being priced" }, status: <>AMJ is checking specifications and pricing — usually within 2 business days</> },
+      ? { key: "review", title: "Review — needs your answer", state: "cur", pill: { tone: "attn", label: "You're here", pulse: true }, status: <>Pricing is paused until you reply above</> }
+      : { key: "review", title: "Reviewed quote", state: "work", pill: { tone: "work", label: "Being priced" }, status: <>We are checking specifications and pricing — usually within 2 business days</> },
     { key: "accept", title: "Accept quote → 50% deposit", state: "locked", pill: { tone: "mute", label: "Not started" }, status: <>Nothing is charged until you accept the reviewed quote</> },
   ];
 
@@ -570,16 +571,16 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
             <span><span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{lines.length}</span> lines</span>
           </div>
         </div>
-        <Btn variant="ghost" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }}>Message AMJ</Btn>
+        <Btn variant="ghost" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }}>Message us</Btn>
       </div>
 
       <div className="flex flex-col gap-[26px]">
         {needsInfo ? (
-          <ActionGate pill="Action needed from you" step="Step 2 of 9" title="AMJ needs a bit more information">
+          <ActionGate pill="Action needed from you" step="Step 2 of 9" title="We need a bit more information">
             <div className="bg-white border border-black/10 divide-y divide-black/[0.07] mt-2 mb-3">
               {thread.map((cm, i) => (
                 <div key={i} className={`px-4 py-2.5 ${cm.author_type === "internal" ? "" : "bg-[#5A7A6A]/[0.05]"}`}>
-                  <p className="text-[10.5px] uppercase tracking-wide text-[#8b8880] mb-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>{cm.author_type === "internal" ? "AMJ" : "You"}</p>
+                  <p className="text-[10.5px] uppercase tracking-wide text-[#8b8880] mb-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>{cm.author_type === "internal" ? brandSubject() : "You"}</p>
                   <p className="text-sm text-[#131311]">{cm.body}</p>
                 </div>
               ))}
@@ -595,7 +596,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
             <span className="w-[34px] h-[34px] grid place-items-center border flex-shrink-0" style={{ color: TONE.work.text, borderColor: TONE.work.bd, background: TONE.work.bg }}><Loader2 className="w-[18px] h-[18px]" /></span>
             <div>
               <h2 className="text-[15px] font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>With our team — nothing needed from you</h2>
-              <p className="text-[12.5px] text-[#5c5a56]">AMJ is reviewing your specification and will issue a reviewed quote, usually within 2 business days. We'll email you and it appears here.</p>
+              <p className="text-[12.5px] text-[#5c5a56]">We are reviewing your specification and will issue a reviewed quote, usually within 2 business days. We'll email you and it appears here.</p>
             </div>
           </section>
         )}

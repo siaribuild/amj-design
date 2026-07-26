@@ -308,7 +308,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
         hasScheduleCommercialOption;
       const review = JSON.stringify({
         thermalRecommendation: reviewRequired
-          ? "AMJ will confirm this AI-recommended configuration and any schedule-specific options during technical review."
+          ? "We will confirm this AI-recommended configuration and any schedule-specific options during technical review."
           : null,
       });
       stmts.push(env.DB.prepare(
@@ -363,7 +363,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
         )
         AND EXISTS (SELECT 1 FROM project WHERE id=? AND ai_generation=? AND status_customer='draft')`,
   ).bind(
-    JSON.stringify({ noLongerInDocuments: "The source documents no longer contain this human-edited item; AMJ will review it." }),
+    JSON.stringify({ noLongerInDocuments: "The source documents no longer contain this human-edited item; we will review it." }),
     input.projectId, proposalId, input.projectId, input.sourceGeneration,
   ));
   stmts.push(env.DB.prepare(
