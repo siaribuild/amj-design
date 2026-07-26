@@ -8,6 +8,7 @@ import {
   Search, Lock, Key, Bell, Settings, ExternalLink
 } from "lucide-react";
 import { type Page, SAGE, DARK, WARM, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "./ui";
+import { getSiteBrand } from "../data/sanity";
 import { ProductsPage } from "../pages/ProductsPage";
 import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { AccountShell, type AccountSection } from "../pages/AccountShell";
@@ -122,6 +123,7 @@ function Nav({ page, setPage, user, setUser }: {
   const [open, setOpen] = useState(false);
   const go = (p: Page) => { setPage(p); setOpen(false); window.scrollTo(0, 0); };
   const topOffset = 0; // the account top-bar was removed; header sits at the top
+  const brand = getSiteBrand(); // Sanity logo/name; null ⇒ built-in wordmark
 
   const links: [string, Page][] = [
     ["Home", "home"], ["Products", "products"], ["How it works", "how-it-works"],
@@ -155,10 +157,15 @@ function Nav({ page, setPage, user, setUser }: {
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           {/* Left logo — always. It is the home anchor in both states; signing in
               must not move it, or the bar reads as a different site. */}
-          <button onClick={() => go(user ? "dashboard" : "home")} className="flex items-center gap-2.5 cursor-pointer flex-shrink-0">
-            <WindowMark size={18} color="#f5f3ef" />
-            <span className="font-semibold text-[15px] tracking-tight text-white"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}>OpenFrame</span>
+          <button onClick={() => go(user ? "dashboard" : "home")} className="flex items-center gap-2.5 cursor-pointer flex-shrink-0" aria-label={`${brand?.businessName ?? "OpenFrame"} — home`}>
+            {brand?.logoUrl
+              // The Sanity logo carries its own wordmark, so no adjacent text.
+              ? <img src={brand.logoUrl} alt={brand.businessName ?? "OpenFrame"} className="h-7 w-auto max-w-[180px] object-contain" />
+              : <>
+                  <WindowMark size={18} color="#f5f3ef" />
+                  <span className="font-semibold text-[15px] tracking-tight text-white"
+                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}>OpenFrame</span>
+                </>}
           </button>
           {/* Site nav — shown in both states. Signed-in customers still need to
               reach Products/Resources/Contact; the account area has its own rail

@@ -40,3 +40,39 @@ export async function hydrateFromSanity(): Promise<void> {
     console.warn("[sanity] catalogue load failed; using built-in catalogue", e);
   }
 }
+
+// ── Site Settings (global brand/config singleton) ────────────────────────────
+// Only logo + favicon + businessName are consumed today; the rest of the
+// document exists for future use. Hydrated once before first render (main.tsx),
+// so the header can read it synchronously; a slow/absent CMS falls back to the
+// built-in wordmark and the static favicon.
+export interface SiteBrand { businessName: string | null; logoUrl: string | null; faviconUrl: string | null }
+let brand: SiteBrand | null = null;
+export const getSiteBrand = (): SiteBrand | null => brand;
+
+const SITE_SETTINGS_QUERY = `*[_type == "siteSettings"][0]{
+  businessName,
+  "logoUrl": logo.asset->url,
+  "faviconUrl": favicon.asset->url
+}`;
+
+function applyFavicon(url: string): void {
+  if (typeof document === "undefined") return;
+  let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
+  link.href = url;
+}
+
+export async function hydrateSiteSettings(): Promise<void> {
+  if (!client) return;
+  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), HYDRATE_TIMEOUT_MS));
+  try {
+    const data = (await Promise.race([client.fetch<SiteBrand>(SITE_SETTINGS_QUERY), timeout])) as SiteBrand | null;
+    if (data) {
+      brand = data;
+      if (data.faviconUrl) applyFavicon(data.faviconUrl);
+    }
+  } catch (e) {
+    console.warn("[sanity] site settings load failed; using built-in brand", e);
+  }
+}

@@ -428,4 +428,49 @@ export const showroomLocation = defineType({
   preview: { select: { title: "displayName", subtitle: "status", state: "stateCode", suburb: "suburb" }, prepare: ({ title, subtitle, state, suburb }: any) => ({ title: title || [suburb, state].filter(Boolean).join(", "), subtitle }) },
 });
 
-export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation];
+// ── Site Settings — a single editable document for global site config ────────
+// Tabbed groups keep the four concerns (identity, maintenance toggle, the two
+// system pages) separate. Field NAMES are unique document-wide (Sanity requires
+// it) even where TITLES repeat across tabs (Heading/Message on both pages).
+const SITE_SETTINGS_GROUPS = [
+  { name: "general", title: "General", default: true },
+  { name: "maintenanceMode", title: "Maintenance Mode" },
+  { name: "maintenancePage", title: "Maintenance Page" },
+  { name: "errorPage", title: "Error Page" },
+];
+
+export const siteSettings = defineType({
+  name: "siteSettings",
+  title: "Site Settings",
+  type: "document",
+  groups: SITE_SETTINGS_GROUPS,
+  fields: [
+    // General
+    defineField({ name: "businessName", title: "Business Name", type: "string", group: "general" }),
+    defineField({ name: "tagline", title: "Tagline", type: "string", group: "general" }),
+    defineField({ name: "phone", title: "Phone", type: "string", group: "general" }),
+    defineField({ name: "email", title: "Email", type: "string", group: "general", validation: (r) => r.email() }),
+    defineField({ name: "workingHours", title: "Working Hours", type: "text", rows: 3, group: "general" }),
+    defineField({ name: "copyrightText", title: "Copyright Text", type: "string", group: "general" }),
+    defineField({ name: "legalLine", title: "Legal Line (ABN)", type: "string", group: "general" }),
+    defineField({ name: "logo", title: "Logo", type: "image", options: { hotspot: true }, group: "general" }),
+    defineField({ name: "favicon", title: "Favicon", type: "image", group: "general" }),
+    defineField({ name: "businessImage", title: "Business Image (search results)", type: "image", group: "general" }),
+    defineField({ name: "searchLogo", title: "Logo (search results)", type: "image", group: "general" }),
+    // Maintenance Mode
+    defineField({ name: "maintenanceEnabled", title: "Enable Maintenance Mode", type: "boolean", group: "maintenanceMode", initialValue: false }),
+    // Maintenance Page
+    defineField({ name: "maintenanceHeading", title: "Heading", type: "string", group: "maintenancePage" }),
+    defineField({ name: "maintenanceMessage", title: "Message", type: "text", rows: 3, group: "maintenancePage" }),
+    defineField({ name: "maintenanceShowContact", title: "Show contact details", type: "boolean", group: "maintenancePage", initialValue: false }),
+    defineField({ name: "maintenanceBackground", title: "Background image", type: "image", group: "maintenancePage" }),
+    // Error Page
+    defineField({ name: "errorHeading", title: "Heading", type: "string", group: "errorPage" }),
+    defineField({ name: "errorMessage", title: "Message", type: "text", rows: 3, group: "errorPage" }),
+    defineField({ name: "errorButtonLabel", title: "Button label", type: "string", group: "errorPage" }),
+    defineField({ name: "errorBackground", title: "Background image", type: "image", group: "errorPage" }),
+  ],
+  preview: { prepare: () => ({ title: "Site Settings" }) },
+});
+
+export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation, siteSettings];
