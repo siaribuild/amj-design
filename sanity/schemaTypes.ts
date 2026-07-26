@@ -387,10 +387,25 @@ export const page = defineType({
     defineField({
       name: "pageId", title: "Page slug", type: "string", group: "content",
       description: "The page's URL path without the leading slash — products, how-it-works, contact. Use \"home\" for the front page. Content applies once a page with this slug is served.",
-      validation: (r) => r.required().lowercase().custom((v) =>
-        typeof v === "string" && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v)
-          ? "Use lowercase letters, numbers and hyphens only — no slashes or spaces."
-          : true),
+      validation: (r) => r.required().lowercase().custom(async (v, context) => {
+        if (typeof v !== "string" || !v) return true;
+        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v)) {
+          return "Use lowercase letters, numbers and hyphens only — no slashes or spaces.";
+        }
+        // The slug is the join key: rendering resolves it with a first-match
+        // lookup, so a second record claiming the same slug would silently win
+        // or lose depending on query order. Reject it at authoring time rather
+        // than leave an unexplained page. A record and its own draft are the
+        // same page, hence both ids are excluded.
+        const published = (context.document?._id ?? "").replace(/^drafts\./, "");
+        const taken = await context
+          .getClient({ apiVersion: "2024-01-01" })
+          .fetch<boolean>(
+            `defined(*[_type == "page" && pageId == $slug && !(_id in [$published, "drafts." + $published])][0]._id)`,
+            { slug: v, published },
+          );
+        return taken ? `Another page record already uses "${v}". Each slug drives one page.` : true;
+      }),
     }),
     defineField({ name: "title", title: "Page name", type: "string", group: "content", description: "Label for this record in the Studio only.", validation: (r) => r.required() }),
     defineField({

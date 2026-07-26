@@ -83,6 +83,32 @@ test("catalogue query normalization and runtime hydration", async () => {
     assert.match(built, /w=800/); assert.match(built, /fit=crop/);
     assert.match(built, /crop=focalpoint/); assert.match(built, /fp-x=0\.25/);
 
+    // Page slugs are the join key to a rendered page. The Studio rejects a
+    // duplicate at authoring time; this is the runtime half — records arrive
+    // newest-first, so the first record for a slug wins and the rest are
+    // dropped rather than silently shadowing it in query order.
+    assert.match(catalogue.CATALOGUE_QUERY, /\*\[_type=="page"\]\|order\(_updatedAt desc\)/);
+    const warnings = [];
+    const realWarn = console.warn;
+    console.warn = (...a) => warnings.push(a.join(" "));
+    let dupPages;
+    try {
+      dupPages = catalogue.toCatalogueData({
+        categories: [], families: [], colours: [], products: [],
+        pages: [
+          { pageId: "contact", seo: { metaTitle: "Newest" } },
+          { pageId: "contact", seo: { metaTitle: "Older" } },
+          { pageId: "home", seo: { metaTitle: "Home" } },
+          { pageId: null },
+        ],
+      });
+    } finally { console.warn = realWarn; }
+    assert.equal(dupPages.pages.length, 2);                       // "contact" collapsed, null dropped
+    assert.equal(dupPages.pages[0].pageId, "contact");
+    assert.equal(dupPages.pages[0].seo?.metaTitle, "Newest");     // most recently edited wins
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /duplicate page slug\(s\): contact/);
+
     const replacement = {
       id: "regression-product", slug: "regression-product", name: "Regression Product",
       familySlug: "regression-family", categorySlug: "regression-category",

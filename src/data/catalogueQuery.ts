@@ -43,7 +43,7 @@ export const CATALOGUE_QUERY = `{
     "hex": hex,
     "price": pricingComponent
   },
-  "pages": *[_type=="page"]{
+  "pages": *[_type=="page"]|order(_updatedAt desc){
     pageId,
     "heroImage": heroImage{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip, "aspect": asset->metadata.dimensions.aspectRatio },
     "seo": seo{
@@ -131,6 +131,29 @@ function normalizePage(p: any): SitePage {
   return { pageId: p.pageId, heroImage: normalizeImage(p.heroImage) ?? undefined, seo: normalizeSeo(p.seo) };
 }
 
+// The slug is the join key between a Sanity record and a rendered page, so two
+// records claiming one slug is a content error. The Studio rejects it at
+// authoring time; this is the runtime half, for duplicates that predate the
+// validation or arrive by direct API write. Records come back newest-first, so
+// keeping the first is "most recently edited wins" — a stated rule rather than
+// whatever the query happened to return — and the loser is named in the console
+// so the cause is findable instead of silently ignored.
+function dedupePages(list: SitePage[]): SitePage[] {
+  const bySlug = new Map<string, SitePage>();
+  const shadowed: string[] = [];
+  for (const p of list) {
+    if (bySlug.has(p.pageId)) shadowed.push(p.pageId);
+    else bySlug.set(p.pageId, p);
+  }
+  if (shadowed.length) {
+    console.warn(
+      `[sanity] duplicate page slug(s): ${[...new Set(shadowed)].join(", ")}. ` +
+      "Using the most recently edited record for each; delete or re-slug the others.",
+    );
+  }
+  return [...bySlug.values()];
+}
+
 // Coerce a raw Sanity showroomLocation into a full ShowroomLocation. Suburb-level
 // only; never carries a street address or contact email.
 function normalizeLocation(l: any): ShowroomLocation {
@@ -157,7 +180,7 @@ export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
       availability: (c.availability as any) ?? "optional",
       hex: c.hex ?? undefined, price: c.price ?? undefined,
     })),
-    pages: (raw.pages ?? []).filter((p) => p?.pageId).map(normalizePage),
+    pages: dedupePages((raw.pages ?? []).filter((p) => p?.pageId).map(normalizePage)),
     locations: (raw.locations ?? []).filter((l) => l?.id).map(normalizeLocation),
   };
 }
