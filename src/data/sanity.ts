@@ -3,7 +3,8 @@
 // When unset, the app keeps using the hardcoded catalogue.ts (hydrate is a no-op).
 import { createClient } from "@sanity/client";
 import { hydrateCatalogue } from "./catalogue";
-import { CATALOGUE_QUERY, toCatalogueData, type RawCataloguePayload } from "./catalogueQuery";
+import { CATALOGUE_QUERY, SEO_PROJECTION, normalizeSeo, toCatalogueData, type RawCataloguePayload } from "./catalogueQuery";
+import type { SeoMeta } from "./catalogue";
 
 // Defaults to the committed project (the same one the Worker uses in wrangler.jsonc);
 // a Sanity projectId is not secret — it ships in the client bundle. Override per
@@ -52,9 +53,15 @@ export interface SiteBrand {
   /** Contact details live in Sanity only — never hardcoded. The email is rendered
    *  through ObfuscatedEmail so it is not harvestable from the bundle or markup. */
   email: string | null; phone: string | null; workingHours: string | null;
+  /** Site-wide SEO defaults, filled in per field wherever a page leaves a gap. */
+  seo: SeoMeta | null;
 }
 let brand: SiteBrand | null = null;
 export const getSiteBrand = (): SiteBrand | null => brand;
+
+/** Site-wide SEO defaults from Site Settings, or null when unset/unhydrated.
+ *  Consumed by <Seo>, which merges them UNDER the page's own values. */
+export const getSiteSeo = (): SeoMeta | null => brand?.seo ?? null;
 
 /** The company name for customer-facing copy, from Site Settings → Business Name.
  *  Returns null when unset — callers use brand-neutral wording ("we will confirm")
@@ -69,7 +76,8 @@ export const brandPossessive = (): string => (brandName() ? `${brandName()}'s` :
 const SITE_SETTINGS_QUERY = `*[_type == "siteSettings"][0]{
   businessName, tagline, copyrightText, legalLine, email, phone, workingHours,
   "logoUrl": logo.asset->url,
-  "faviconUrl": favicon.asset->url
+  "faviconUrl": favicon.asset->url,
+  "seo": ${SEO_PROJECTION}
 }`;
 
 function applyFavicon(url: string): void {
@@ -83,9 +91,11 @@ export async function hydrateSiteSettings(): Promise<void> {
   if (!client) return;
   const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), HYDRATE_TIMEOUT_MS));
   try {
-    const data = (await Promise.race([client.fetch<SiteBrand>(SITE_SETTINGS_QUERY), timeout])) as SiteBrand | null;
+    const data = (await Promise.race([client.fetch<any>(SITE_SETTINGS_QUERY), timeout])) as any | null;
     if (data) {
-      brand = data;
+      // seo arrives as the raw projection; normalize it through the same helper
+      // the catalogue uses so pages and site defaults are the same shape.
+      brand = { ...data, seo: normalizeSeo(data.seo) ?? null };
       if (data.faviconUrl) applyFavicon(data.faviconUrl);
     }
   } catch (e) {

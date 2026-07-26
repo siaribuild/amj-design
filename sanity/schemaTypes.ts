@@ -460,6 +460,7 @@ export const showroomLocation = defineType({
 // it) even where TITLES repeat across tabs (Heading/Message on both pages).
 const SITE_SETTINGS_GROUPS = [
   { name: "general", title: "General", default: true },
+  { name: "seo", title: "SEO Defaults" },
   { name: "maintenanceMode", title: "Maintenance Mode" },
   { name: "maintenancePage", title: "Maintenance Page" },
   { name: "errorPage", title: "Error Page" },
@@ -483,6 +484,17 @@ export const siteSettings = defineType({
     defineField({ name: "favicon", title: "Favicon", type: "image", group: "general" }),
     defineField({ name: "businessImage", title: "Business Image (search results)", type: "image", group: "general" }),
     defineField({ name: "searchLogo", title: "Logo (search results)", type: "image", group: "general" }),
+    // SEO Defaults — the same seoMeta object the pages and products use, applied
+    // field by field wherever the page itself leaves a value blank. Two fields
+    // behave differently by design and say so in the description:
+    //   • Canonical URL is page-only. A site-wide canonical would point every
+    //     page at one URL, which de-indexes the rest of the site.
+    //   • noindex/nofollow here can only ADD a restriction, never lift one, so a
+    //     stored `false` can't expose the pages the app marks as private.
+    defineField({
+      name: "seo", title: "Default SEO", type: "seoMeta", group: "seo",
+      description: "Used for any page that leaves a field blank, field by field. Canonical URL is ignored here — it must be unique per page. Ticking noindex/nofollow applies site-wide; leaving them unticked lets each page decide.",
+    }),
     // Maintenance Mode
     defineField({ name: "maintenanceEnabled", title: "Enable Maintenance Mode", type: "boolean", group: "maintenanceMode", initialValue: false }),
     // Maintenance Page

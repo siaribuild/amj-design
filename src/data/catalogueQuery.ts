@@ -6,6 +6,14 @@
 // normalization stay in one place.
 import type { Category, Family, Product, ProductOption, CatalogueData, SitePage, SeoMeta, ShowroomLocation } from "./catalogue";
 
+// One definition of the SEO projection. Products, pages AND Site Settings all
+// request it; three hand-copies would drift the first time a field is added.
+export const SEO_PROJECTION = `seo{
+      metaTitle, metaDescription, keywords, canonicalUrl, noIndex, noFollow,
+      "openGraph": openGraph{ title, description, "image": image{ "url": asset->url, hotspot } },
+      "twitter": twitter{ card, title, description, "image": image{ "url": asset->url, hotspot } }
+    }`;
+
 export const CATALOGUE_QUERY = `{
   "categories": *[_type=="category"]|order(name asc){
     "id":_id, "slug":slug.current, name, shortDescription, description
@@ -31,11 +39,7 @@ export const CATALOGUE_QUERY = `{
       "hex": option->hex
     },
     featuredOrder,
-    "seo": seo{
-      metaTitle, metaDescription, keywords, canonicalUrl, noIndex, noFollow,
-      "openGraph": openGraph{ title, description, "image": image{ "url": asset->url, hotspot } },
-      "twitter": twitter{ card, title, description, "image": image{ "url": asset->url, hotspot } }
-    }
+    "seo": ${SEO_PROJECTION}
   },
   "colours": *[_type=="option" && optionType->appliesToAll==true]|order(isDefault desc, name asc){
     "name": name,
@@ -46,11 +50,7 @@ export const CATALOGUE_QUERY = `{
   "pages": *[_type=="page"]|order(_updatedAt desc){
     pageId,
     "heroImage": heroImage{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip, "aspect": asset->metadata.dimensions.aspectRatio },
-    "seo": seo{
-      metaTitle, metaDescription, keywords, canonicalUrl, noIndex, noFollow,
-      "openGraph": openGraph{ title, description, "image": image{ "url": asset->url, hotspot } },
-      "twitter": twitter{ card, title, description, "image": image{ "url": asset->url, hotspot } }
-    }
+    "seo": ${SEO_PROJECTION}
   },
   "locations": *[_type=="showroomLocation"]|order(stateCode asc, suburb asc){
     "id":_id, stateCode, suburb, displayName, lat, lng, appointmentAvailable, status, historicalAliases
@@ -108,7 +108,7 @@ function normalizeProduct(p: any): Product {
   };
 }
 
-function normalizeSeo(s: any): SeoMeta | undefined {
+export function normalizeSeo(s: any): SeoMeta | undefined {
   if (!s) return undefined;
   const img = (i: any) => normalizeImage(i) ?? undefined;
   return {
