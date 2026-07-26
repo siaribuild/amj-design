@@ -82,7 +82,7 @@ export function LocationMap({ locations, selectedId, onSelect }: {
       ref={elRef}
       className="h-[320px] md:h-[420px] w-full border border-black/10 bg-[#eef0ec]"
       role="application"
-      aria-label="Map of OpenFrame showroom locations"
+      aria-label="Map of showroom locations"
     />
   );
 }

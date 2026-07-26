@@ -8,7 +8,7 @@ import {
   Search, Lock, Key, Bell, Settings, ExternalLink
 } from "lucide-react";
 import { type Page, SAGE, DARK, WARM, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "./ui";
-import { getSiteBrand } from "../data/sanity";
+import { getSiteBrand, brandName } from "../data/sanity";
 import { ProductsPage } from "../pages/ProductsPage";
 import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { AccountShell, type AccountSection } from "../pages/AccountShell";
@@ -157,15 +157,13 @@ function Nav({ page, setPage, user, setUser }: {
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           {/* Left logo — always. It is the home anchor in both states; signing in
               must not move it, or the bar reads as a different site. */}
-          <button onClick={() => go(user ? "dashboard" : "home")} className="flex items-center gap-2.5 cursor-pointer flex-shrink-0" aria-label={`${brand?.businessName ?? "OpenFrame"} — home`}>
+          {/* Brand lockup: the Sanity logo image, which INCLUDES the company name —
+              so there is never name text beside it. Until a logo is uploaded, the
+              mark stands alone; the name lives in the logo, nowhere else. */}
+          <button onClick={() => go(user ? "dashboard" : "home")} className="flex items-center cursor-pointer flex-shrink-0" aria-label={brand?.businessName ? `${brand.businessName} — home` : "Home"}>
             {brand?.logoUrl
-              // The Sanity logo carries its own wordmark, so no adjacent text.
-              ? <img src={brand.logoUrl} alt={brand.businessName ?? "OpenFrame"} className="h-7 w-auto max-w-[180px] object-contain" />
-              : <>
-                  <WindowMark size={18} color="#f5f3ef" />
-                  <span className="font-semibold text-[15px] tracking-tight text-white"
-                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}>OpenFrame</span>
-                </>}
+              ? <img src={brand.logoUrl} alt={brand.businessName ?? ""} className="h-7 w-auto max-w-[180px] object-contain" />
+              : <WindowMark size={18} color="#f5f3ef" />}
           </button>
           {/* Site nav — shown in both states. Signed-in customers still need to
               reach Products/Resources/Contact; the account area has its own rail
@@ -318,18 +316,12 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
       <div className="max-w-6xl mx-auto px-6 relative">
         <div className="flex flex-col md:flex-row justify-between gap-10 mb-10">
           <div className="max-w-xs">
-            {/* Same Sanity logo asset as the header (its own wordmark ⇒ no text);
-                falls back to the built-in mark + wordmark when no logo is set. */}
+            {/* Same Sanity logo asset as the header — it INCLUDES the company
+                name, so no name text beside it. Mark alone until a logo is set. */}
             {brand?.logoUrl
-              ? <img src={brand.logoUrl} alt={brand.businessName ?? "OpenFrame"} className="h-7 w-auto max-w-[180px] object-contain mb-4" />
-              : <div className="flex items-center gap-2.5 mb-4">
-                  <WindowMark size={18} color={SAGE} />
-                  <span className="font-semibold text-sm text-white"
-                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}>OpenFrame</span>
-                </div>}
-            <p className="text-sm leading-relaxed mb-5">
-              {brand?.tagline ?? "Aluminium windows and doors supplied direct for Melbourne projects. Supply only — installation not included."}
-            </p>
+              ? <img src={brand.logoUrl} alt={brand.businessName ?? ""} className="h-7 w-auto max-w-[180px] object-contain mb-4" />
+              : <div className="mb-4"><WindowMark size={18} color={SAGE} /></div>}
+            {brand?.tagline && <p className="text-sm leading-relaxed mb-5">{brand.tagline}</p>}
             <div className="text-sm space-y-2">
               <a href="tel:0390000000" className="flex items-center gap-2 hover:text-white transition-colors">
                 <Phone className="w-3.5 h-3.5 text-[#5A7A6A]" />(03) 9000 0000
@@ -363,8 +355,8 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
             right; each falls back independently so a partial singleton never
             blanks a line. */}
         <div className="border-t border-white/10 pt-6 flex flex-col md:flex-row justify-between gap-2 text-xs text-white/25">
-          <span>{brand?.copyrightText ?? "© 2025 OpenFrame · Melbourne, Victoria"}</span>
-          <span className="md:text-right">{brand?.legalLine ?? "ABN 00 000 000 000 · Supply only"}</span>
+          <span>{brand?.copyrightText}</span>
+          <span className="md:text-right">{brand?.legalLine}</span>
         </div>
       </div>
     </footer>
@@ -891,7 +883,7 @@ function ProfilePage({ user, setPage, setUser, authLoading, embedded }: { user: 
 }
 
 // Read-only account identity. The sign-in email is the unique login ID — customers
-// can never edit it (an accidental change is a lockout); only OpenFrame staff can,
+// can never edit it (an accidental change is a lockout); only internal staff can,
 // from the ops console.
 const fmtLongDate = (s: string | null) => {
   if (!s) return "—";
@@ -1586,26 +1578,30 @@ export default function App() {
   // pull their record from Sanity; product detail uses the product's SEO;
   // app/transactional pages stay out of the index.
   const seoProps = (() => {
+    // Titles carry the Business Name from Sanity — never a hardcoded brand. When
+    // it isn't set the page title is just the page's own name (no invented brand).
+    const co = brandName();
+    const suffix = co ? ` — ${co}` : "";
     if (page === "product-detail") {
       const p = getProductBySlug(productSlug);
       return {
-        seo: p?.seo, title: p ? `${p.name} — OpenFrame` : "OpenFrame",
+        seo: p?.seo, title: p ? `${p.name}${suffix}` : co ?? "Product",
         description: p?.shortDescription, image: imageUrl(p?.heroImage, { w: 1200, h: 630 }),
       };
     }
     const marketing: Record<string, { pageId: string; title: string; noIndex?: boolean }> = {
-      home: { pageId: "home", title: "OpenFrame — Aluminium Windows & Doors" },
-      products: { pageId: "products", title: "Aluminium Windows & Doors — OpenFrame" },
-      "how-it-works": { pageId: "how-it-works", title: "How It Works — OpenFrame" },
-      contact: { pageId: "contact", title: "Contact — OpenFrame" },
-      privacy: { pageId: "privacy", title: "Privacy Policy — OpenFrame", noIndex: true },
+      home: { pageId: "home", title: co ? `${co} — Aluminium Windows & Doors` : "Aluminium Windows & Doors" },
+      products: { pageId: "products", title: `Aluminium Windows & Doors${suffix}` },
+      "how-it-works": { pageId: "how-it-works", title: `How It Works${suffix}` },
+      contact: { pageId: "contact", title: `Contact${suffix}` },
+      privacy: { pageId: "privacy", title: `Privacy Policy${suffix}`, noIndex: true },
     };
     const m = marketing[page];
     if (m) {
       const pg = getPage(m.pageId);
       return { seo: pg?.seo, title: m.title, image: imageUrl(pg?.heroImage, { w: 1200, h: 630 }), noIndex: m.noIndex };
     }
-    return { title: "OpenFrame", noIndex: true }; // app/transactional pages
+    return { title: co ?? "My Project", noIndex: true }; // app/transactional pages
   })();
 
   return (
