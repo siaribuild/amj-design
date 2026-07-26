@@ -6,7 +6,10 @@ import { schemaTypes } from "./schemaTypes";
 
 // Site Settings is a singleton: one fixed document, pinned to the top of the left
 // menu, and removed from the auto-generated document-type list so it can't be
-// duplicated.
+// duplicated. Pages sit directly beneath it — they are edited far more often than
+// the catalogue types, which otherwise pushed them to the bottom of the list.
+const PINNED = ["siteSettings", "page"];
+
 const structure = (S: StructureBuilder) =>
   S.list()
     .title("Content")
@@ -15,8 +18,9 @@ const structure = (S: StructureBuilder) =>
         .title("Site Settings")
         .id("siteSettings")
         .child(S.document().schemaType("siteSettings").documentId("siteSettings")),
+      ...S.documentTypeListItems().filter((li) => li.getId() === "page"),
       S.divider(),
-      ...S.documentTypeListItems().filter((li) => li.getId() !== "siteSettings"),
+      ...S.documentTypeListItems().filter((li) => !PINNED.includes(li.getId() ?? "")),
     ]);
 
 export default defineConfig({

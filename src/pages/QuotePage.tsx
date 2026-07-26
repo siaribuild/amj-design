@@ -75,6 +75,16 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   const [aiPhase, setAiPhase] = useState<
     null | { kind: "reading"; docs: number } | { kind: "done"; refined: number } | { kind: "failed" }
   >(null);
+  // How many documents the current upload put in flight — kept because the
+  // anonymous path has no aiPhase to read a count from.
+  const [uploadingDocs, setUploadingDocs] = useState(0);
+
+  // One flag for "the project is busy with documents", covering BOTH paths: the
+  // anonymous deterministic parse (bounded by `uploading`) and the registered AI
+  // run (which keeps going after the HTTP upload resolves — the gap that made
+  // the page look idle and invited a duplicate upload).
+  const processing = uploading || aiPhase?.kind === "reading";
+  const processingDocs = aiPhase?.kind === "reading" ? aiPhase.docs : uploadingDocs;
 
   const total = quote.items.reduce((s, it) => s + linePriceTotal(it), 0);
   const gstMode = useGstMode();
@@ -94,12 +104,11 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // sticky panel can show both without the gate ever depending on warnings.
   const technicalCount = quote.items.filter((it) => !itemBlocked(it) && reviewSeverity(it.review) === "warning").length;
   const hasContent = quote.items.length > 0 || quote.files.length > 0;
-  // Manual-first, stable ordering: the line the customer authored themselves is
-  // never below fifteen machine-authored rows. Display-only — server positions
-  // are untouched, and the sort is deterministic so it survives a reload.
-  const isManual = (it: QItem) => (it.origin ?? "manual") === "manual";
-  const orderedItems = [...quote.items].sort((a, b) => Number(isManual(b)) - Number(isManual(a)));
-  const firstDocumentIndex = orderedItems.findIndex((it) => !isManual(it));
+  // Lines render in the order they were added, manual and document-derived
+  // alike — a manual line at #1 stays at #1 when five parsed lines append to
+  // #2–6, and a later manual line at #7 stays at #7. No re-sorting, no
+  // grouping: the list only ever grows downwards, so nothing moves under the
+  // customer and position is a stable thing to refer to.
 
   // One item expanded at a time; sticky-panel actions drive focus to the problem.
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -187,7 +196,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
       case "rate_limited":
         return "Too many uploads in a short time — please wait a moment and try again.";
       case "busy":
-        return "This project is already processing an upload — please wait for it to finish.";
+        return "We're still reading an earlier document for this project. It will be ready shortly — then add this one.";
       case "too_large":
         return "That file is too large. Please upload a schedule under 12 MB.";
       case "not_a_pdf":
@@ -235,34 +244,6 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // run is in flight; 2s×7 then 5s, hard stop at 2 min. Anonymous users never
   // have a run, so the first poll returns null and no future-tense copy ever
   // renders for them.
-  // Deferred reveal (UX review 2026-07-27): document results are HELD while the
-  // customer is mid-entry and applied only when they ask, so the list never
-  // rearranges under them and their own line is never lost in the shuffle.
-  const [pendingReveal, setPendingReveal] = useState<null | { refined: number }>(null);
-  const lastCommitAt = useRef(0);
-  // Manual lines revealed alongside a bulk insert get a brief ring so the item
-  // the customer authored is findable among fifteen machine-authored rows.
-  const [highlightManual, setHighlightManual] = useState(false);
-
-  const revealResults = async (refined: number) => {
-    setPendingReveal(null);
-    await quote.reload();               // flushes pending saves first (App.tsx)
-    setAiPhase({ kind: "done", refined });
-    setHighlightManual(true);           // the effect below scrolls once items re-render
-  };
-
-  // Scroll to the customer's own line AFTER the reveal has re-rendered: reload()
-  // assigns fresh local ids, so resolving the target inside revealResults would
-  // chase an element that no longer exists.
-  useEffect(() => {
-    if (!highlightManual) return;
-    const own = quote.items.find(isManual);
-    if (own) requestAnimationFrame(() => smoothScroll(document.getElementById(`qitem-${own.id}`)));
-    const t = setTimeout(() => setHighlightManual(false), 2500);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [highlightManual]);
-
   // Per-line requirement basis for the trust chips (UX spec §5); refreshed on
   // mount and whenever the poll returns it.
   const [basisMap, setBasisMap] = useState<Record<string, string>>({});
@@ -333,12 +314,11 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
           if (run.status === "failed" || (run.status === "partial" && (run.summary?.cartApplied ?? 0) === 0)) {
             setAiPhase({ kind: "failed" });
           } else {
-            // NEVER rearrange the list under someone who is mid-entry. If a form
-            // is open, or they committed an item moments ago, hold the results
-            // and let THEM choose when the page changes (UX review 2026-07-27).
-            const busy = adding || Date.now() - lastCommitAt.current < 5000;
-            if (busy) setPendingReveal({ refined: run.summary?.cartApplied ?? 0 });
-            else await revealResults(run.summary?.cartApplied ?? 0);
+            // Results append to the bottom of the list, where the placeholder
+            // has been standing — so the page grows rather than rearranges and
+            // there is nothing for the customer to dismiss.
+            await quote.reload();       // flushes pending saves first (App.tsx)
+            setAiPhase({ kind: "done", refined: run.summary?.cartApplied ?? 0 });
           }
           return;
         } else if (!run || (!sawRun && run.completedAt)) {
@@ -367,16 +347,40 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
 
   const handleFiles = async (list: FileList | null) => {
     if (!list?.length) return;
+    // Adding a document while one is being read is legitimate and expected —
+    // the server coalesces uploads behind a ~10s debounce precisely so a
+    // schedule and an energy report become ONE run. Re-adding the SAME file is
+    // not: it is what people do when the screen looks idle. Name it plainly and
+    // spend no extraction on identical bytes. (Match on name+size: the server's
+    // content checksum isn't exposed on the project's file list.)
+    const seen = new Set(quote.files.map((f) => `${f.filename}|${f.size ?? ""}`));
+    const key = (f: File) => `${f.name}|${f.size}`;
+    const chosen = Array.from(list);
+    const dupes = chosen.filter((f) => seen.has(key(f)));
+    const files = chosen.filter((f) => !seen.has(key(f)));
+    const dupeNames = dupes.map((f) => f.name).join(", ");
+    if (!files.length) {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      const many = dupes.length > 1;
+      setUploadNotice({
+        type: "error",
+        message: `${dupeNames} ${many ? "are" : "is"} already on this project` +
+          (processing ? ` — we're still reading ${many ? "them" : "it"}.` : "."),
+      });
+      return;
+    }
+
     setUploading(true);
+    setUploadingDocs(files.length);
     setUploadNotice(null);
-    setAiPhase(user ? { kind: "reading", docs: list.length } : null);
+    setAiPhase(user ? { kind: "reading", docs: files.length } : null);
     setRemoveOffer(null);
     const failures: string[] = [];
     const digests: string[] = [];
     const newCollisions: string[] = [];
     let imported = 0, attached = 0;
     try {
-      for (const file of Array.from(list)) {
+      for (const file of files) {
         try {
           const up = await uploadFile(file, "upload");
           if (user) {
@@ -411,18 +415,21 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
       await quote.reload();
       if (newCollisions.length) setCollisionTags((t) => [...new Set([...t, ...newCollisions])]);
       if (imported) setAdding(false); // a stray in-progress add-form is stale once imported lines land
+      const dupNote = dupes.length ? `${dupeNames} already added — skipped` : null;
       if (failures.length) {
-        const okCount = list.length - failures.length;
-        setUploadNotice({ type: "error", message: `${okCount} of ${list.length} file${list.length !== 1 ? "s" : ""} uploaded. ${failures.join(" ")}` });
+        const okCount = files.length - failures.length;
+        setUploadNotice({ type: "error", message: `${okCount} of ${files.length} file${files.length !== 1 ? "s" : ""} uploaded. ${failures.join(" ")}${dupNote ? ` ${dupNote}.` : ""}` });
       } else if (digests.length || attached) {
         const parts = [...digests];
         if (attached) parts.push(`${attached} document${attached !== 1 ? "s" : ""} attached for review`);
+        if (dupNote) parts.push(dupNote);
         setUploadNotice({ type: "success", message: parts.join(" · ") });
       }
       // Registered users get an automatic AI run per upload — watch it.
-      if (user) pollExtraction(list.length);
+      if (user) pollExtraction(files.length);
     } finally {
       setUploading(false);
+      setUploadingDocs(0);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -568,7 +575,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
               {uploading ? (
                 <div className="flex items-center justify-center gap-3 py-3 sm:py-4 sm:flex-col">
                   <div className="w-5 h-5 sm:w-6 sm:h-6 border-2 border-[#8CA99B] border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-white/75">Reading your document{quote.files.length > 1 ? "s" : ""}{quote.title ? <> for <strong className="font-semibold">{quote.title}</strong></> : ""}…</p>
+                  <p className="text-sm text-white/75">Reading your document{processingDocs !== 1 ? "s" : ""}{quote.title ? <> for <strong className="font-semibold">{quote.title}</strong></> : ""}…</p>
                 </div>
               ) : (
                 <>
@@ -726,24 +733,10 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
             </div>
           )}
 
-          {/* Results are ready but held: the customer decides when the list
-              changes, so nothing rearranges under an open form. */}
-          {pendingReveal && (
-            <div role="status" className="mb-4 flex items-center justify-between gap-3 border border-[#5A7A6A]/40 bg-[#5A7A6A]/[0.06] px-4 py-3 text-sm text-[#355344]">
-              <span>Your documents are ready — {pendingReveal.refined} item{pendingReveal.refined !== 1 ? "s" : ""} to add.</span>
-              <Btn variant="sage" size="sm" onClick={() => void revealResults(pendingReveal.refined)}>Review</Btn>
-            </div>
-          )}
-
-          {/* Item cards — compact header + collapsible groups, one item open at a time.
-              The customer own manual lines sort FIRST: what they authored is never
-              buried under fifteen machine-authored rows. */}
+          {/* Item cards — compact header + collapsible groups, one item open at
+              a time, in the order they were added. */}
           <div className="space-y-2.5">
-            {orderedItems.map((it, idx) => (
-              <div key={it.id} className={highlightManual && isManual(it) ? "ring-2 ring-[#5A7A6A]/40 transition-shadow" : undefined}>
-              {idx === firstDocumentIndex && firstDocumentIndex > 0 && (
-                <p className="text-[10px] uppercase tracking-widest text-[#8a8782] pt-3 pb-1.5">From your documents · {orderedItems.length - firstDocumentIndex}</p>
-              )}
+            {quote.items.map((it) => (
               <ItemSummaryCard key={it.id} item={it} quote={quote}
                 id={`qitem-${it.id}`}
                 basis={it.serverId ? basisMap[it.serverId] ?? null : null}
@@ -759,17 +752,43 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                   await quote.reload();
                 } : undefined}
                 onRemove={() => quote.remove(it.id)} />
-              </div>
             ))}
+
+            {/* The work is happening HERE, where the results will land. Without
+                this the items area looks idle mid-run, which reads as "nothing
+                happened" and invites a pointless second upload. */}
+            {processing && (
+              <div role="status" aria-live="polite"
+                className="flex items-start gap-3 border border-dashed border-[#5A7A6A]/45 bg-[#5A7A6A]/[0.05] px-4 py-5 text-sm">
+                <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin text-[#5A7A6A]" aria-hidden="true" />
+                <span>
+                  <span className="block font-medium text-[#355344]">
+                    Reading your document{processingDocs !== 1 ? "s" : ""}…
+                  </span>
+                  <span className="block mt-0.5 text-[#5c5a56] leading-relaxed">
+                    Your items will appear here, below anything already on the list. This usually takes under a minute — you can leave this page open.
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* The empty project starts with an explicit choice of input method. */}
+          {/* The empty project starts with an explicit choice of input method.
+              While documents are being read, manual entry is parked: adding a
+              line into a list that is about to grow beneath it is a flow nobody
+              actually wants, and the placeholder above already says why. */}
           {adding ? (
             <div className="mt-3" id="new-item-composer">
               <ItemForm key={`new-${newKey}`} quote={quote}
-                onCommit={(b) => { quote.add(b); lastCommitAt.current = Date.now(); setNewKey(k => k + 1); setAdding(false); }}
+                onCommit={(b) => { quote.add(b); setNewKey(k => k + 1); setAdding(false); }}
                 onCancel={() => setAdding(false)} />
             </div>
+          ) : processing ? (
+            quote.items.length > 0 && (
+              <p className="mt-3 border border-dashed border-black/12 py-3 text-center text-sm text-[#8a8782]">
+                Adding items is paused until we finish reading.
+              </p>
+            )
           ) : quote.items.length === 0 ? (
             <div id="quote-start-actions" className="grid grid-cols-1 sm:grid-cols-2 gap-3" aria-label="Start your quote">
               <button onClick={openUpload} disabled={uploading}
@@ -810,7 +829,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         total={total}
         editingItem={adding}
         uploading={uploading}
-        readingDocs={aiPhase?.kind === "reading" ? aiPhase.docs : 0}
+        readingDocs={processing ? processingDocs : 0}
         onReviewQuote={() => { setView("review"); window.scrollTo(0, 0); }}
         onReviewIssues={reviewIssues}
         onFinishItem={finishItem}

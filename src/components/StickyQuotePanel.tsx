@@ -71,9 +71,12 @@ export function StickyQuotePanel({
     // moment parsing finishes, so nothing here needs to describe the outcome.
     // Same rule as readingDocs: processing never blocks — the CTA stays live
     // against whatever items already exist (UX backlog item, now aligned).
-    status = <><Loader2 className="w-4 h-4 flex-shrink-0 animate-spin" aria-hidden="true" /><span>Reading your documents…</span></>;
-    live = "Reading your documents";
-    ctaLabel = itemCount > 0 ? "Review quote" : "Choose how to start";
+    const docs = `document${readingDocs !== 1 ? "s" : ""}`;
+    status = <><Loader2 className="w-4 h-4 flex-shrink-0 animate-spin" aria-hidden="true" /><span>Reading your {docs}…</span></>;
+    live = `Reading your ${docs}`;
+    // Nothing to "choose" while the start options are hidden behind the
+    // placeholder — an empty project has no live action until reading ends.
+    ctaLabel = itemCount > 0 ? "Review quote" : "Reading…";
     onClick = itemCount > 0 ? onReviewQuote : onFinishItem;
     statusTone = "border-black/10 bg-white text-[#5c5a56]";
     panelTone = "border-[#8CA99B] bg-[#F7F8F6]";
@@ -85,7 +88,7 @@ export function StickyQuotePanel({
     const docs = `${readingDocs} document${readingDocs !== 1 ? "s" : ""}`;
     status = <><Loader2 className="w-4 h-4 flex-shrink-0 animate-spin" aria-hidden="true" /><span>Reading {docs}…</span></>;
     live = `Reading ${docs}`;
-    ctaLabel = itemCount > 0 ? "Review quote" : "Choose how to start";
+    ctaLabel = itemCount > 0 ? "Review quote" : "Reading…";
     onClick = itemCount > 0 ? onReviewQuote : onFinishItem;
     statusTone = "border-black/10 bg-white text-[#5c5a56]";
     panelTone = "border-[#8CA99B] bg-[#F7F8F6]";

@@ -379,21 +379,20 @@ export const page = defineType({
   type: "document",
   groups: RECORD_GROUPS,
   fields: [
-    defineField({ name: "title", title: "Page name", type: "string", group: "content", validation: (r) => r.required() }),
+    // Free-text slug, NOT a closed list: a fixed dropdown meant a record could
+    // only ever be created for a page that already existed, so a new page could
+    // never be prepared here. The slug is matched at render time — a record for
+    // a slug the site doesn't serve yet is simply dormant until it does, which
+    // is what lets content be authored ahead of the page shipping.
     defineField({
-      name: "pageId", title: "Page", type: "string", group: "content",
-      description: "Which site page this record drives.",
-      options: {
-        list: [
-          { title: "Home", value: "home" },
-          { title: "Products (listing)", value: "products" },
-          { title: "How it works", value: "how-it-works" },
-          { title: "Contact", value: "contact" },
-          { title: "Privacy", value: "privacy" },
-        ],
-      },
-      validation: (r) => r.required(),
+      name: "pageId", title: "Page slug", type: "string", group: "content",
+      description: "The page's URL path without the leading slash — products, how-it-works, contact. Use \"home\" for the front page. Content applies once a page with this slug is served.",
+      validation: (r) => r.required().lowercase().custom((v) =>
+        typeof v === "string" && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v)
+          ? "Use lowercase letters, numbers and hyphens only — no slashes or spaces."
+          : true),
     }),
+    defineField({ name: "title", title: "Page name", type: "string", group: "content", description: "Label for this record in the Studio only.", validation: (r) => r.required() }),
     defineField({
       name: "heroImage", title: "Hero image", type: "image", options: { hotspot: true }, group: "content",
       description: "Served by Sanity; drag the hotspot to set the focal point.",
