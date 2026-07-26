@@ -9,6 +9,8 @@
 // Leaflet/OSM. Layout follows the approved wireframe; tokens are the shared
 // design language (ui.tsx).
 // ═══════════════════════════════════════════════════════════════════════════════
+import { ObfuscatedEmail } from "../components/ObfuscatedEmail";
+import { getSiteBrand as getBrandForContact } from "../data/sanity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText, HelpCircle, MapPin, Phone, Send, Check, ArrowRight, Clock,
@@ -79,6 +81,7 @@ function clientContext(): EnquiryPayload["client_context"] {
 
 export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; user?: ContactUser }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
+  const brandContact = getBrandForContact(); // phone/email from Sanity Site Settings
   const zoneRef = useRef<HTMLDivElement>(null);
 
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -339,7 +342,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
         {/* Facts strip */}
         <div className="max-w-6xl mx-auto px-6 pb-11">
           <div className="border border-black/10 bg-white grid md:grid-cols-3">
-            <Fact label="Reach us"><a href="tel:0390000000" className="border-b border-black/10 hover:text-[#131311] hover:border-[#5A7A6A]">(03) 9000 0000</a> · <a href="mailto:quotes@openframe.com.au" className="border-b border-black/10 hover:text-[#131311] hover:border-[#5A7A6A]">quotes@openframe.com.au</a></Fact>
+            <Fact label="Reach us">{brandContact?.phone && <><a href={`tel:${brandContact.phone.replace(/[^0-9+]/g, "")}`} className="border-b border-black/10 hover:text-[#131311] hover:border-[#5A7A6A]">{brandContact.phone}</a>{" · "}</>}<ObfuscatedEmail address={brandContact?.email} className="border-b border-black/10 hover:text-[#131311] hover:border-[#5A7A6A]" /></Fact>
             <Fact label="Hours"><span className="text-[#131311] font-semibold">Mon–Fri 8am–5pm</span> · Sat by appointment · Sun closed</Fact>
             <Fact label="Good to know"><b className="text-[#131311] font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Supply only.</b> Your builder or installer fits the frames — we make and deliver them.</Fact>
           </div>

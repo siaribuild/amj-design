@@ -49,6 +49,9 @@ export async function hydrateFromSanity(): Promise<void> {
 export interface SiteBrand {
   businessName: string | null; logoUrl: string | null; faviconUrl: string | null;
   tagline: string | null; copyrightText: string | null; legalLine: string | null;
+  /** Contact details live in Sanity only — never hardcoded. The email is rendered
+   *  through ObfuscatedEmail so it is not harvestable from the bundle or markup. */
+  email: string | null; phone: string | null; workingHours: string | null;
 }
 let brand: SiteBrand | null = null;
 export const getSiteBrand = (): SiteBrand | null => brand;
@@ -64,7 +67,7 @@ export const brandSubject = (): string => brandName() ?? "We";
 export const brandPossessive = (): string => (brandName() ? `${brandName()}'s` : "our");
 
 const SITE_SETTINGS_QUERY = `*[_type == "siteSettings"][0]{
-  businessName, tagline, copyrightText, legalLine,
+  businessName, tagline, copyrightText, legalLine, email, phone, workingHours,
   "logoUrl": logo.asset->url,
   "faviconUrl": favicon.asset->url
 }`;

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { type Page, SAGE, DARK, WARM, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "./ui";
 import { getSiteBrand, brandName } from "../data/sanity";
+import { ObfuscatedEmail } from "../components/ObfuscatedEmail";
 import { ProductsPage } from "../pages/ProductsPage";
 import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { AccountShell, type AccountSection } from "../pages/AccountShell";
@@ -179,10 +180,12 @@ function Nav({ page, setPage, user, setUser }: {
             ))}
           </nav>
           <div className="hidden xl:flex items-center gap-3 flex-shrink-0 xl:ml-auto">
-            <a href="tel:0390000000"
-              className="text-sm text-white/75 hover:text-white flex items-center gap-1.5 transition-colors">
-              <Phone className="w-3.5 h-3.5" />(03) 9000 0000
-            </a>
+            {brand?.phone && (
+              <a href={`tel:${brand.phone.replace(/[^0-9+]/g, "")}`}
+                className="text-sm text-white/75 hover:text-white flex items-center gap-1.5 transition-colors">
+                <Phone className="w-3.5 h-3.5" />{brand.phone}
+              </a>
+            )}
             {!user && (
               <button onClick={() => go("login")}
                 className="text-sm text-white/75 hover:text-white cursor-pointer transition-colors ml-2">
@@ -294,12 +297,15 @@ function Nav({ page, setPage, user, setUser }: {
 
         <div className="px-5 py-4 border-t border-white/10 flex-shrink-0 bg-white/[0.025]">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 mb-2">Contact us</p>
-          <a href="tel:0390000000" className="flex items-center gap-2 text-sm text-white font-medium mb-1.5 hover:text-[#8CA99B] transition-colors">
-            <Phone className="w-4 h-4 text-[#8CA99B]" />(03) 9000 0000
-          </a>
-          <a href="mailto:quotes@openframe.com.au" className="flex items-center gap-2 text-sm text-white/65 hover:text-[#8CA99B] transition-colors">
-            <Mail className="w-4 h-4 text-[#8CA99B]" />quotes@openframe.com.au
-          </a>
+          {brand?.phone && (
+            <a href={`tel:${brand.phone.replace(/[^0-9+]/g, "")}`} className="flex items-center gap-2 text-sm text-white font-medium mb-1.5 hover:text-[#8CA99B] transition-colors">
+              <Phone className="w-4 h-4 text-[#8CA99B]" />{brand.phone}
+            </a>
+          )}
+          <span className="flex items-center gap-2 text-sm text-white/65">
+            <Mail className="w-4 h-4 text-[#8CA99B]" />
+            <ObfuscatedEmail address={brand?.email} className="hover:text-[#8CA99B] transition-colors" />
+          </span>
         </div>
       </div>
     </>
@@ -323,12 +329,15 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
               : <div className="mb-4"><WindowMark size={18} color={SAGE} /></div>}
             {brand?.tagline && <p className="text-sm leading-relaxed mb-5">{brand.tagline}</p>}
             <div className="text-sm space-y-2">
-              <a href="tel:0390000000" className="flex items-center gap-2 hover:text-white transition-colors">
-                <Phone className="w-3.5 h-3.5 text-[#5A7A6A]" />(03) 9000 0000
-              </a>
-              <a href="mailto:quotes@openframe.com.au" className="flex items-center gap-2 hover:text-white transition-colors">
-                <Mail className="w-3.5 h-3.5 text-[#5A7A6A]" />quotes@openframe.com.au
-              </a>
+              {brand?.phone && (
+                <a href={`tel:${brand.phone.replace(/[^0-9+]/g, "")}`} className="flex items-center gap-2 hover:text-white transition-colors">
+                  <Phone className="w-3.5 h-3.5 text-[#5A7A6A]" />{brand.phone}
+                </a>
+              )}
+              <span className="flex items-center gap-2">
+                <Mail className="w-3.5 h-3.5 text-[#5A7A6A]" />
+                <ObfuscatedEmail address={brand?.email} className="hover:text-white transition-colors" />
+              </span>
               <span className="flex items-center gap-2">
                 <MapPin className="w-3.5 h-3.5 text-[#5A7A6A]" />Melbourne &amp; Victoria
               </span>

@@ -6,6 +6,8 @@
 // transactional email, Cloudflare Turnstile on the contact form, Cloudflare Access
 // for the staff console, and passwordless email-OTP sign-in (no stored passwords).
 // ═══════════════════════════════════════════════════════════════════════════════
+import { ObfuscatedEmail } from "../components/ObfuscatedEmail";
+import { getSiteBrand } from "../data/sanity";
 import { Mail, ArrowRight } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, Btn } from "../app/ui";
 import { getPage, imageUrl } from "../data/catalogue";
@@ -178,9 +180,9 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
               <div className="bg-white border border-black/10 p-5 mt-2">
                 <p className="flex items-center gap-2.5 text-sm text-[#131311]">
                   <Mail className="w-4 h-4" style={{ color: SAGE }} />
-                  <a href="mailto:quotes@openframe.com.au" className="hover:underline">quotes@openframe.com.au</a>
+                  <ObfuscatedEmail address={getSiteBrand()?.email} className="hover:underline" />
                 </p>
-                <p className="text-sm text-[#5c5a56] mt-1.5">OpenFrame · Melbourne, Victoria · Supply only</p>
+                <p className="text-sm text-[#5c5a56] mt-1.5">{[getSiteBrand()?.businessName, "Melbourne, Victoria", "Supply only"].filter(Boolean).join(" · ")}</p>
                 <div className="mt-4">
                   <Btn variant="outline" size="sm" onClick={() => go("contact")}>Go to contact page <ArrowRight className="w-4 h-4" /></Btn>
                 </div>

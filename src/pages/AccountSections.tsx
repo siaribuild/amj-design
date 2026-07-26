@@ -3,6 +3,8 @@
 // destination). Reached from the account rail's account/session group. The full
 // project list lives on the merged home (AccountDashboard).
 // ═══════════════════════════════════════════════════════════════════════════════
+import { ObfuscatedEmail } from "../components/ObfuscatedEmail";
+import { getSiteBrand } from "../data/sanity";
 import { Phone, Mail, MessageSquare, BookOpen } from "lucide-react";
 import { type Page, Btn } from "../app/ui";
 
@@ -18,7 +20,7 @@ export function HelpPage({ setPage }: { setPage: (p: Page) => void }) {
         <div className="bg-white border border-black/10 p-5">
           <h3 className="text-[13px] uppercase tracking-[0.1em] text-[#5c5a56] font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>Talk to us</h3>
           <a href="tel:0390000000" className="flex items-center gap-2.5 text-sm text-[#131311] hover:text-[#5A7A6A] mb-2"><Phone className="w-4 h-4 text-[#5A7A6A]" />(03) 9000 0000</a>
-          <a href="mailto:quotes@openframe.com.au" className="flex items-center gap-2.5 text-sm text-[#131311] hover:text-[#5A7A6A]"><Mail className="w-4 h-4 text-[#5A7A6A]" />quotes@openframe.com.au</a>
+          <span className="flex items-center gap-2.5 text-sm text-[#131311]"><Mail className="w-4 h-4 text-[#5A7A6A]" /><ObfuscatedEmail address={getSiteBrand()?.email} className="hover:text-[#5A7A6A]" /></span>
           <p className="text-xs text-[#5c5a56] mt-3 pt-3 border-t border-black/[0.07]">Mon–Fri 8am–5pm · Sat by appointment</p>
         </div>
         <div className="bg-white border border-black/10 p-5">
