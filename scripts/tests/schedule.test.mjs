@@ -106,7 +106,7 @@ test("catalogue aliases resolve architect vocabulary to the RIGHT family, both p
   const original = families.slice();
   try {
     const awning = families.find((f) => f.slug === "awning-window");
-    awning.aliases = ["PICTURE", "Top-Hung Sash"];
+    awning.aliases = ["PICTURE", "Top Hung"];
     // Deterministic path: a type the built-in table has NEVER seen now maps to the
     // real family purely from catalogue content — and prices normally.
     const rows = matchSchedule(parseScheduleText([`WINDOW SCHEDULE
@@ -116,7 +116,7 @@ W N° HEIGHT WIDTH HEAD HT. GLAZING D.GLAZE REQ. WINDOW TYPE COMMENTS
     assert.ok(!rows[0].review?.product, "an aliased type is not an error");
     // Case/punctuation differences must not defeat the match (AI path supplies
     // free-form type text, so this normalisation matters most there).
-    assert.equal(resolveScheduleType("window", "top-hung sash").familySlug, "awning-window");
+    assert.equal(resolveScheduleType("window", "top hung").familySlug, "awning-window");
     assert.equal(resolveScheduleType("window", "  PICTURE  ").familySlug, "awning-window");
     // AI path resolves the SAME alias to the estimator's operation vocabulary.
     assert.equal(resolveScheduleType("window", "PICTURE").operationType, "awning");
@@ -125,6 +125,38 @@ W N° HEIGHT WIDTH HEAD HT. GLAZING D.GLAZE REQ. WINDOW TYPE COMMENTS
   } finally {
     families.length = 0; families.push(...original);
   }
+});
+
+test("multi-word type tags are read as ONE phrase, exactly as printed", () => {
+  const original = families.slice();
+  try {
+    families.find((f) => f.slug === "awning-window").aliases = ["Top Hung"];
+    const parsedRows = parseScheduleText([`WINDOW SCHEDULE
+W N° HEIGHT WIDTH HEAD HT. GLAZING D.GLAZE REQ. WINDOW TYPE COMMENTS
+1 1027 610 2100 CLEAR YES Top hung
+2 1027 610 2100 CLEAR YES Top hung OBSCURE GLASS`]).rows;
+    // "Top hung" is ONE tag — never split into type "Top" + comment "hung" — and
+    // is preserved exactly as displayed on the schedule.
+    assert.equal(parsedRows[0].typeText, "Top hung");
+    assert.equal(parsedRows[0].comments, null);
+    // A genuine trailing comment still separates correctly after the full phrase.
+    assert.equal(parsedRows[1].typeText, "Top hung");
+    assert.equal(parsedRows[1].comments, "OBSCURE GLASS");
+    // …and it resolves to the right family, priced, no error.
+    const rows = matchSchedule(parsedRows);
+    assert.equal(getProductBySlug(rows[0].productSlug).familySlug, "awning-window");
+    assert.ok(!rows[0].review?.product);
+  } finally {
+    families.length = 0; families.push(...original);
+  }
+});
+
+test("a longer tag always beats its own prefix (greedy longest-first)", () => {
+  // Built-in multi-word phrases must not regress: OFFSET AWNING is not AWNING,
+  // and STACKER SLIDING is not STACKER.
+  assert.equal(byCode.W01.rawType, "OFFSET AWNING");
+  assert.equal(byCode.D03.rawType, "STACKER SLIDING");
+  assert.match(byCode.D03.location, /RIGHT TO LEFT/);
 });
 
 test("schedule defaults are stated, not guessed: qty 1 per row, sizes are OPENING sizes", () => {

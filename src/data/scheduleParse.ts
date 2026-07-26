@@ -11,6 +11,8 @@
 // wrapped COMMENTS continuation. Drawing noise around the table is ignored.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { families } from "./catalogue";
+
 export type ScheduleSection = "window" | "door";
 
 export interface RawScheduleRow {
@@ -77,16 +79,44 @@ function headerSpec(header: string, section: ScheduleSection): ColumnSpec {
   return { numericOrder: order, hasMaterial: section === "door" && /MATERIAL/i.test(header) };
 }
 
+// The recognised type phrases for a section: the built-in list PLUS every
+// catalogue family name and its Sanity-authored aliases. Multi-word trade tags
+// ("TOP HUNG", "PICTURE WINDOW") are therefore understood as whole phrases
+// without a code change — the parser and the matcher share one vocabulary.
+//
+// Sorted longest-phrase-first so a tag always beats its own prefix: "TOP HUNG"
+// must never be read as "TOP" + comment "HUNG", nor "OFFSET AWNING" as "OFFSET".
+function typeVocabulary(section: ScheduleSection): string[] {
+  const base = section === "window" ? WINDOW_TYPES : DOOR_TYPES;
+  const category = section === "window" ? "windows" : "doors";
+  const fromCatalogue: string[] = [];
+  for (const f of families) {
+    if (f.categorySlug !== category) continue;
+    fromCatalogue.push(f.name, ...(f.aliases ?? []));
+  }
+  const seen = new Set<string>();
+  const all: string[] = [];
+  for (const phrase of [...base, ...fromCatalogue]) {
+    const norm = (phrase || "").trim().toUpperCase().replace(/\s+/g, " ");
+    if (norm && !seen.has(norm)) { seen.add(norm); all.push(norm); }
+  }
+  return all.sort((a, b) => b.split(" ").length - a.split(" ").length || b.length - a.length);
+}
+
 // Greedy longest-first type match. Returns [typeText, remainingComment].
+// The type is returned AS PRINTED (original casing/punctuation) — "Top hung"
+// stays "Top hung" — so the line reproduces the schedule faithfully; downstream
+// family resolution normalises case and punctuation itself.
 function splitTypeAndComment(tokens: string[], section: ScheduleSection): [string | null, string] {
-  const vocab = section === "window" ? WINDOW_TYPES : DOOR_TYPES;
   const joined = tokens.join(" ");
   const up = joined.toUpperCase();
-  for (const phrase of vocab) {
-    if (up === phrase) return [phrase, ""];
-    if (up.startsWith(phrase + " ")) return [phrase, joined.slice(phrase.length).trim()];
+  for (const phrase of typeVocabulary(section)) {
+    if (up === phrase) return [joined, ""];
+    if (up.startsWith(phrase + " ")) return [joined.slice(0, phrase.length), joined.slice(phrase.length).trim()];
   }
   // Unknown type: take the first token as a best-guess type, rest as comment.
+  // The matcher then fails to map it to a family and raises an ERROR — an
+  // unrecognised tag is never silently priced as something else.
   if (tokens.length) return [tokens[0], tokens.slice(1).join(" ")];
   return [null, ""];
 }
