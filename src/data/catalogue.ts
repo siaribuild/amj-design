@@ -20,6 +20,11 @@ export interface Family {
   slug: string;
   categorySlug: string;
   name: string;
+  /** Alternative names architects use on schedules (e.g. FIXED, PICTURE WINDOW).
+   *  Authored in Sanity so new trade vocabulary is a CONTENT change, not a code
+   *  change. Matched exactly (case/whitespace-insensitive), never fuzzily —
+   *  the price difference between families is material. */
+  aliases?: string[];
   shortDescription: string;
   description: string;
 }

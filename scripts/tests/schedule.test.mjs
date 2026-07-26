@@ -16,8 +16,8 @@ await build({
   stdin: {
     contents: `
       export { parseScheduleText } from ${p("src/data/scheduleParse.ts")};
-      export { matchSchedule } from ${p("src/data/scheduleMatch.ts")};
-      export { getProductBySlug } from ${p("src/data/catalogue.ts")};
+      export { matchSchedule, resolveScheduleType } from ${p("src/data/scheduleMatch.ts")};
+      export { getProductBySlug, families } from ${p("src/data/catalogue.ts")};
       export { lineBlocksSubmission, reviewClass } from ${p("src/data/configurator.ts")};
     `,
     resolveDir: projectRoot,
@@ -26,7 +26,7 @@ await build({
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { parseScheduleText, matchSchedule, getProductBySlug, lineBlocksSubmission, reviewClass } = await import(pathToFileURL(outfile).href);
+const { parseScheduleText, matchSchedule, resolveScheduleType, getProductBySlug, families, lineBlocksSubmission, reviewClass } = await import(pathToFileURL(outfile).href);
 
 // Extracted text of the Lot 312 Banjo Boulevard plan (sheet A6), as produced by a
 // text-layer extractor. HEIGHT is printed BEFORE WIDTH; item 13 is skipped.
@@ -84,12 +84,56 @@ test("produces 19 line items in schedule order", () => {
   assert.equal(lines[18].code, "D04");
 });
 
-test("FIXED windows are never silently invented — substitution is always disclosed", () => {
-  // Superseded intent: these used to be left product-less and blocking. They are
-  // now priced via the nearest family, but the substitution must NEVER be silent.
+test("an unmappable family is an ERROR — never a best-guess substitution", () => {
+  // FIXED has no catalogue family (and no alias pointing at one), so we must NOT
+  // price it as a near-miss family: the price difference between families is
+  // material, so a wrong guess is worse than asking. The customer picks the
+  // product; the durable fix is adding the wording to a family's Sanity aliases.
   for (const code of ["W02", "W08", "W15"]) {
-    assert.ok(byCode[code].review?.substitute, `${code} must disclose the substitution`);
-    assert.equal(byCode[code].status, "Needs review");
+    const l = byCode[code];
+    assert.equal(l.productSlug, "", `${code}: no product may be guessed`);
+    assert.ok(l.review?.product, `${code}: flagged for the customer to choose`);
+    assert.ok(!l.review?.substitute, `${code}: never silently substituted`);
+    assert.equal(lineBlocksSubmission(l), true, `${code}: an unmappable type BLOCKS`);
+    assert.equal(reviewClass(l.review), "customer");
+    assert.equal(l.status, "Needs review");
+  }
+});
+
+test("catalogue aliases resolve architect vocabulary to the RIGHT family, both paths", () => {
+  // Aliases are catalogue content: adding trade wording must not need a code
+  // change, and must resolve to the exact family — never a near-miss.
+  const original = families.slice();
+  try {
+    const awning = families.find((f) => f.slug === "awning-window");
+    awning.aliases = ["PICTURE", "Top-Hung Sash"];
+    // Deterministic path: a type the built-in table has NEVER seen now maps to the
+    // real family purely from catalogue content — and prices normally.
+    const rows = matchSchedule(parseScheduleText([`WINDOW SCHEDULE
+W N° HEIGHT WIDTH HEAD HT. GLAZING D.GLAZE REQ. WINDOW TYPE COMMENTS
+1 1027 610 2100 CLEAR YES PICTURE`]).rows);
+    assert.equal(getProductBySlug(rows[0].productSlug).familySlug, "awning-window");
+    assert.ok(!rows[0].review?.product, "an aliased type is not an error");
+    // Case/punctuation differences must not defeat the match (AI path supplies
+    // free-form type text, so this normalisation matters most there).
+    assert.equal(resolveScheduleType("window", "top-hung sash").familySlug, "awning-window");
+    assert.equal(resolveScheduleType("window", "  PICTURE  ").familySlug, "awning-window");
+    // AI path resolves the SAME alias to the estimator's operation vocabulary.
+    assert.equal(resolveScheduleType("window", "PICTURE").operationType, "awning");
+    // An unknown term still resolves to nothing on both paths — no guessing.
+    assert.deepEqual(resolveScheduleType("window", "PORTHOLE"), { familySlug: null, operationType: null });
+  } finally {
+    families.length = 0; families.push(...original);
+  }
+});
+
+test("schedule defaults are stated, not guessed: qty 1 per row, sizes are OPENING sizes", () => {
+  // One schedule row = one opening, and schedules state opening sizes by
+  // convention. These defaults matter for MANUAL entry, where the customer is
+  // asked directly.
+  for (const l of lines) {
+    assert.equal(l.qty, 1);
+    assert.equal(l.measuredBy, "opening");
   }
 });
 
@@ -127,21 +171,6 @@ test("oversized opening: best-fit is PRICED but always WARNED, never presented a
   }
 });
 
-test("recognised type with no catalogue family is substituted + warned, not left unpriced", () => {
-  // FIXED windows have no family of their own; they are priced as the nearest
-  // family (awning) with an explicit substitution warning, so the customer still
-  // gets an indicative number instead of a blocking "choose a product".
-  for (const code of ["W02", "W08", "W15"]) {
-    const l = byCode[code];
-    assert.ok(l.productSlug, `${code}: substituted product offered`);
-    assert.ok(l.review?.substitute, `${code}: substitution warned`);
-    assert.match(l.review.substitute, /Indicative price only/i);
-    assert.ok(!l.review?.product, `${code}: not a customer 'choose a product' error`);
-    assert.equal(lineBlocksSubmission(l), false, `${code}: substitution never blocks`);
-    assert.notEqual(l.status, "Ready");
-  }
-});
-
 test("submission lifecycle: technical-only lines are submittable; customer gaps block", () => {
   // Timber door: mapped to an aluminium product, priced, technical flag only →
   // must NOT block submission (submission is how it reaches an AMJ technician).
@@ -151,9 +180,10 @@ test("submission lifecycle: technical-only lines are submittable; customer gaps 
   // still submittable (the customer can't resize a building).
   assert.equal(lineBlocksSubmission(byCode.W01), false);
   assert.equal(reviewClass(byCode.W01.review), "technical");
-  // FIXED window: substituted + warned → indicative price → also submittable.
-  assert.equal(lineBlocksSubmission(byCode.W02), false);
-  assert.equal(reviewClass(byCode.W02.review), "technical");
+  // FIXED window: no family maps to it, and guessing a near-miss family would
+  // mis-price it → an ERROR the customer resolves by choosing the product.
+  assert.equal(lineBlocksSubmission(byCode.W02), true);
+  assert.equal(reviewClass(byCode.W02.review), "customer");
   // A clean, fitting awning blocks nothing.
   assert.equal(lineBlocksSubmission(byCode.W05), false);
   // Only a genuine customer gap blocks: an unreadable size is an ERROR.

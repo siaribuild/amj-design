@@ -40,6 +40,18 @@ export const family = defineType({
     defineField({ name: "name", type: "string", validation: (r) => r.required() }),
     defineField({ name: "slug", type: "slug", options: { source: "name" }, validation: (r) => r.required() }),
     defineField({ name: "category", type: "reference", to: [{ type: "category" }], validation: (r) => r.required() }),
+    // Alternative names architects/drafters use for this family on a schedule.
+    // The estimator maps a schedule's TYPE text to a family through these, so a
+    // new piece of trade vocabulary is a CONTENT change, not a code change.
+    // Matching is exact (case/whitespace-insensitive) — never a fuzzy guess,
+    // because the price difference between families is material.
+    defineField({
+      name: "aliases",
+      title: "Schedule aliases (architect terminology)",
+      type: "array",
+      of: [{ type: "string" }],
+      description: "e.g. FIXED, FIXED LITE, PICTURE WINDOW — exact terms as printed on schedules. One per entry.",
+    }),
     defineField({ name: "shortDescription", type: "text", rows: 2 }),
     defineField({ name: "description", type: "text", rows: 4 }),
   ],

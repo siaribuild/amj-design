@@ -23,6 +23,7 @@ import { resolveDefaultEnvelope, defaultRequirement, ARCHETYPE_REGISTRY_VERSION,
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
 import { runProjectEstimate } from "../estimator/estimate";
+import { resolveScheduleType } from "../../../src/data/scheduleMatch";
 import { sha256hex } from "./hash";
 
 // ── Pure: §9.3 parent/child tag decomposition ────────────────────────────────
@@ -569,6 +570,12 @@ function safeObject(value: string | null | undefined): Record<string, unknown> {
 function operationFrom(typeText: string | null): string | null {
   const t = (typeText || "").toUpperCase();
   if (!t) return null;
+  // Catalogue-authored aliases FIRST, so architect vocabulary added in Sanity is
+  // understood identically by the AI and deterministic paths. Exact match only —
+  // an unrecognised type resolves to null and yields no candidate (an honest
+  // "we don't know", never a mispriced guess at a neighbouring family).
+  const viaCatalogue = resolveScheduleType(typeText && /DOOR|ENTRY|STACKER|SLIDER/.test(t) ? "door" : "window", typeText).operationType;
+  if (viaCatalogue) return viaCatalogue;
   if (t.includes("AWNING")) return "awning";
   if (t.includes("STACKER") || t.includes("SLIDING") || t.includes("SLIDER")) return "sliding";
   if (t.includes("FIXED")) return "fixed";

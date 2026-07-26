@@ -11,7 +11,7 @@ export const CATALOGUE_QUERY = `{
     "id":_id, "slug":slug.current, name, shortDescription, description
   },
   "families": *[_type=="family"]|order(name asc){
-    "id":_id, "slug":slug.current, "categorySlug":category->slug.current, name, shortDescription, description
+    "id":_id, "slug":slug.current, "categorySlug":category->slug.current, name, aliases, shortDescription, description
   },
   "products": *[_type=="product"]|order(featuredOrder asc){
     "id":_id, "slug":slug.current, name,

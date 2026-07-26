@@ -10,7 +10,7 @@
 // Deterministic and dependency-light (catalogue + configurator only), so it is
 // unit-testable and shared by the Worker and the client.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { getProductsByFamily, getProductBySlug, type Product } from "./catalogue";
+import { getProductsByFamily, getProductBySlug, families, type Product } from "./catalogue";
 import { defaultOptions, normCode, type MeasuredBy } from "./configurator";
 import type { RawScheduleRow, ScheduleSection } from "./scheduleParse";
 
@@ -74,6 +74,10 @@ const DOOR_SERIES_BIAS = ["amj100l", "amj100t", "amj80", "amj150", "amj65"];
 function familyFor(section: ScheduleSection, typeText: string | null): { slug: string | null; known: boolean } {
   const key = (typeText || "").trim().toUpperCase();
   const table = section === "window" ? WINDOW_FAMILY : DOOR_FAMILY;
+  // Catalogue-authored aliases win: they are live content and can cover
+  // vocabulary the built-in table has never seen.
+  const byAlias = familyFromAliases(section, typeText);
+  if (byAlias) return { slug: byAlias, known: true };
   if (key in table) return { slug: table[key], known: true };
   return { slug: null, known: false };
 }
@@ -110,13 +114,55 @@ function pickProduct(familySlug: string, section: ScheduleSection, w: number, h:
   return { product: byBias(products)[0], fits: false };
 }
 
-// Nearest catalogue family for a recognised type that has no family of its own
-// (e.g. a FIXED window is priced as the equivalent awning until FIXED exists as
-// its own family). Substitution is always WARNED, never silent.
-const SUBSTITUTE_FAMILY: Record<string, string> = {
-  window: "awning-window",
-  door: "casement-door",
+// Catalogue-authored aliases: a family may declare the alternative names
+// architects print on schedules (Sanity `family.aliases`). Looked up EXACTLY
+// (case/punctuation-insensitive) — never fuzzily, and never substituted with a
+// "close enough" family, because the price difference between families is
+// material. An unmappable type is an ERROR the customer resolves by picking the
+// product, not a silent best guess.
+const canonicalType = (s: string) => s.trim().toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+
+function familyFromAliases(section: ScheduleSection, typeText: string | null): string | null {
+  const key = canonicalType(typeText || "");
+  if (!key) return null;
+  const category = section === "window" ? "windows" : "doors";
+  for (const f of families) {
+    if (f.categorySlug !== category) continue;
+    if (canonicalType(f.name) === key) return f.slug;
+    if ((f.aliases ?? []).some((a) => canonicalType(a) === key)) return f.slug;
+  }
+  return null;
+}
+
+// Catalogue family → the estimator's operation vocabulary. The bridge that lets
+// the AI path honour the SAME catalogue aliases as the deterministic one: resolve
+// the schedule's type text to a family (via aliases), then to an operation.
+const FAMILY_OPERATION: Record<string, string> = {
+  "awning-window": "awning",
+  "casement-window": "casement",
+  "sliding-window": "sliding",
+  "glass-louvre": "louvre",
+  "tilt-and-turn-window": "tilt-turn",
+  "sashless-double-hung": "double-hung",
+  "single-hung-window": "double-hung",
+  "sliding-door": "sliding",
+  "slim-frame-sliding-door": "sliding",
+  "lift-slide-door": "lift-slide",
+  "casement-door": "hinged",
+  "bi-fold-door": "bi-fold",
+  "pivot-door": "pivot",
 };
+
+/** Schedule TYPE text → { familySlug, operationType }, honouring catalogue
+ *  aliases. Shared by the deterministic matcher and the AI pipeline so both agree
+ *  on what a piece of architect vocabulary means. Returns nulls when nothing
+ *  matches — callers must raise an error, never guess a near-miss family. */
+export function resolveScheduleType(section: ScheduleSection, typeText: string | null): {
+  familySlug: string | null; operationType: string | null;
+} {
+  const { slug } = familyFor(section, typeText);
+  return { familySlug: slug, operationType: slug ? FAMILY_OPERATION[slug] ?? null : null };
+}
 
 const pad2 = (s: string) => {
   const n = parseInt(s, 10);
@@ -134,7 +180,7 @@ export function matchSchedule(rows: RawScheduleRow[]): ParsedLine[] {
     const h = r.heightMm ?? 0;
 
     // ── product ──────────────────────────────────────────────────────────────
-    const { slug: familySlug, known } = familyFor(r.section, r.typeText);
+    const { slug: familySlug } = familyFor(r.section, r.typeText);
     let productSlug = "";
     let product: Product | undefined;
     if (familySlug) {
@@ -151,25 +197,14 @@ export function matchSchedule(rows: RawScheduleRow[]): ParsedLine[] {
           `(${product.name} covers ${product.minWidth ?? "?"}–${product.maxWidth ?? "?"} W, ${product.minHeight ?? "?"}–${product.maxHeight ?? "?"} H mm). ` +
           `AMJ will design a composite or custom unit and confirm the price at technical review.`;
       }
-    } else if (known) {
-      // Recognised type with no catalogue family of its own (e.g. FIXED). Price
-      // the nearest family as a SUBSTITUTE so the line still carries an indicative
-      // number, and warn — AMJ confirms the real configuration.
-      const subFamily = SUBSTITUTE_FAMILY[r.section];
-      const picked = subFamily ? pickProduct(subFamily, r.section, w, h) : { product: undefined, fits: false };
-      product = picked.product;
-      productSlug = product?.slug ?? "";
-      if (product) {
-        review.substitute = `Indicative price only — “${r.typeText}” has no catalogue product of its own, ` +
-          `so it is priced as ${product.name}. AMJ will confirm the correct configuration at technical review.`;
-        if (!picked.fits && w > 0 && h > 0) {
-          review.fit = `${w}×${h} mm is also outside the standard range — AMJ will confirm a composite or custom unit.`;
-        }
-      } else {
-        review.product = `Schedule type “${r.typeText}” has no matching catalogue product — please select one.`;
-      }
     } else {
-      review.product = `Could not match schedule type “${r.typeText ?? "?"}” to a product — please select one.`;
+      // No family maps to this type — via the built-in table OR the catalogue's
+      // own aliases. We deliberately do NOT guess a "close enough" family: the
+      // price difference between families is material, so a wrong guess is worse
+      // than asking. This is an ERROR the customer resolves by choosing the
+      // product; when the right family exists under different wording, the fix is
+      // to add that wording to the family's Schedule aliases in Sanity.
+      review.product = `Schedule type “${r.typeText ?? "?"}” doesn’t match a catalogue product — please choose one.`;
     }
 
     // ── dimensions ───────────────────────────────────────────────────────────
@@ -229,7 +264,12 @@ export function matchSchedule(rows: RawScheduleRow[]): ParsedLine[] {
       code,
       productSlug,
       location: noteParts.join(" · "),
-      measuredBy: "",
+      // A schedule states OPENING sizes by convention, and one row = one opening.
+      // Both are stated defaults, not guesses — the "how did you measure" and
+      // quantity questions matter for MANUAL entry by non-professionals, where the
+      // customer answers them directly.
+      measuredBy: "opening",
+
       width: r.widthMm ? String(r.widthMm) : "",
       height: r.heightMm ? String(r.heightMm) : "",
       options: product ? defaultOptions(product) : {},
