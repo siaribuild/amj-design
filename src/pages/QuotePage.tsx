@@ -542,7 +542,12 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/50 via-transparent to-transparent" />
 
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-20 pb-6 md:pt-24 md:pb-9">
-          <div className="grid gap-4 md:gap-10 md:grid-cols-[1fr_minmax(300px,380px)] md:items-center">
+          {/* The picker has no visible control here: it is opened from the items
+              area (where the results land) and from the ?upload=1 deep link. */}
+          <input ref={fileInputRef} type="file" multiple className="hidden"
+            accept=".pdf,.dwg,.xls,.xlsx,.csv,.jpg,.jpeg,.png"
+            onChange={e => handleFiles(e.target.files)} />
+          <div>
             {/* Copy */}
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-2.5 md:mb-4">
@@ -554,7 +559,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.9rem, 4.2vw, 3rem)" }}>
                 Build your quote
               </h1>
-              <p className="text-white/80 text-[13px] leading-snug md:text-[15px] md:leading-relaxed max-w-lg">
+              <p className="text-white/80 text-[13px] leading-snug md:text-[15px] md:leading-relaxed max-w-2xl">
                 Add products manually or upload your plans and schedule. We'll review the
                 specifications and issue a confirmed quote before any deposit is required.
               </p>
@@ -566,30 +571,6 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
               </div>
             </div>
 
-            {/* Upload panel — functional, matches home-hero panel styling. On mobile
-                the decorative box collapses to just the button (the priority action). */}
-            <div className="sm:border sm:border-dashed sm:border-white/25 sm:bg-white/[0.06] sm:backdrop-blur-md sm:p-6 sm:text-center">
-              <input ref={fileInputRef} type="file" multiple className="hidden"
-                accept=".pdf,.dwg,.xls,.xlsx,.csv,.jpg,.jpeg,.png"
-                onChange={e => handleFiles(e.target.files)} />
-              {uploading ? (
-                <div className="flex items-center justify-center gap-3 py-3 sm:py-4 sm:flex-col">
-                  <div className="w-5 h-5 sm:w-6 sm:h-6 border-2 border-[#8CA99B] border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-white/75">Reading your document{processingDocs !== 1 ? "s" : ""}{quote.title ? <> for <strong className="font-semibold">{quote.title}</strong></> : ""}…</p>
-                </div>
-              ) : (
-                <>
-                  <UploadCloud className="hidden sm:block w-8 h-8 text-white/70 mx-auto mb-3" />
-                  <p className="hidden sm:block text-sm font-semibold text-white mb-1">Upload plans or a schedule</p>
-                  <p className="text-[11px] tracking-wide text-white/55 mb-2 sm:mb-4"
-                    style={{ fontFamily: "'DM Mono', monospace" }}>{quote.files.length > 0 && quote.title ? <>Adding to <strong className="font-semibold text-white/70">{quote.title}</strong></> : "PDF · DWG · XLS · CSV · JPG"}</p>
-                  <Btn variant="sage" size="md" onClick={openUpload} className="w-full justify-center">
-                    <Upload className="w-4 h-4" />Upload files
-                  </Btn>
-                  <p className="hidden sm:block text-[11px] text-white/50 mt-3">or drag and drop files here</p>
-                </>
-              )}
-            </div>
           </div>
         </div>
       </section>
@@ -620,8 +601,8 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
           {/* File rail (UX spec: multifile-ux-spec.md) — one chip per uploaded
               document, showing what the system DETECTED each file as. Files are
               integral to the order (only Clear all removes them, for now). */}
-          {quote.files.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
+          {(quote.files.length > 0 || quote.items.length > 0) && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               {quote.files.map((f) => {
                 // Type chip renders ONLY once a real classification exists. null is
                 // permanent for anonymous/deterministic uploads and transient for
@@ -671,6 +652,17 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                   </div>
                 );
               })}
+              {/* The upload affordance for a project that already has content —
+                  the empty-state card is gone by then, and the file rail is where
+                  documents live. Stays ENABLED while reading: adding a second
+                  document is the designed multi-file path (the server coalesces
+                  uploads behind a ~10s debounce), unlike manual entry, which is
+                  parked. Re-adding the same file is caught in handleFiles. */}
+              <button type="button" onClick={openUpload}
+                className="inline-flex items-center gap-1.5 border border-dashed border-black/25 px-3 py-1.5 text-xs font-medium text-[#5A7A6A] hover:border-[#5A7A6A] hover:bg-[#F7F8F6] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A]">
+                <Upload className="w-3.5 h-3.5" aria-hidden="true" />
+                {quote.files.length > 0 ? "Add another document" : "Upload plans or a schedule"}
+              </button>
             </div>
           )}
           {quote.items.length === 0 && (
