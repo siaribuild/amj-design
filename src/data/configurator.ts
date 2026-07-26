@@ -80,50 +80,81 @@ export function clearReviewKey(review: Record<string, string> | null | undefined
   return Object.keys(rest).length ? rest : null;
 }
 
-// ─── Review categories (submission lifecycle) ─────────────────────────────────
-// CUSTOMER_REVIEW_KEYS are things the customer must resolve before submitting
-// (pick a product, enter a readable size). TECHNICAL_REVIEW_KEYS are engineering
-// decisions only an AMJ technician can make (aluminium substitution for a timber
-// door, a composite unit for an out-of-range opening, obscure glazing, a
-// multi-unit note). Technical-only lines MUST remain submittable — submission is
-// exactly how they reach the technician — while final quotation stays blocked
-// until resolved downstream.
-export const CUSTOMER_REVIEW_KEYS = new Set(["dims", "product", "options"]);
-export const TECHNICAL_REVIEW_KEYS = new Set([
-  "fit", "material", "type", "note", "glazing", "thermalRecommendation",
-  "customerConfigurationChanged", "noLongerInDocuments",
-]);
+// ─── Review severity (submission lifecycle) ───────────────────────────────────
+// TWO severities, one registry — the single source of truth for whether a line
+// blocks. Everything downstream (the red border, the header pill, the sticky
+// counters, the submit gate, the server check) derives from THIS map, so they can
+// never disagree.
+//
+//  • error   — critical input only the CUSTOMER can supply, and without it the
+//              line cannot be priced at all. BLOCKS submission.
+//  • warning — the opening is valid but a product/constraint mismatch needs an
+//              AMJ technical decision (composite unit, substitution, glazing).
+//              The line is PRICED best-fit (indicative) and NEVER blocks —
+//              submission is exactly how it reaches the technician.
+export type ReviewSeverity = "error" | "warning";
 
-export function reviewClass(review: Record<string, string> | null | undefined): "customer" | "technical" | null {
+export const REVIEW_SEVERITY: Record<string, ReviewSeverity> = {
+  // Critical missing input — the customer must resolve these.
+  dims: "error",              // size unreadable/absent
+  qty: "error",               // quantity unreadable — never silently assumed
+  measuredBy: "error",        // frame vs opening unknown — changes the size
+  options: "error",           // a required option is unset
+  product: "error",           // no product at all and none can be substituted
+  // AMJ technical decisions — priced best-fit, flagged, submittable.
+  fit: "warning",             // outside standard range ⇒ composite/custom unit
+  substitute: "warning",      // no exact family ⇒ nearest product priced instead
+  material: "warning",        // e.g. timber schedule → aluminium catalogue
+  type: "warning",
+  note: "warning",
+  glazing: "warning",
+  thermalRecommendation: "warning",
+  customerConfigurationChanged: "warning",
+  noLongerInDocuments: "warning",
+};
+
+// An UNKNOWN review key is treated as a warning, deliberately: a new key must
+// never silently block every customer's submission. Unrecognised reasons still
+// show on the line and still reach the technician.
+export const severityOf = (key: string): ReviewSeverity => REVIEW_SEVERITY[key] ?? "warning";
+
+/** The highest severity present on a line's review reasons (error > warning). */
+export function reviewSeverity(review: Record<string, string> | null | undefined): ReviewSeverity | null {
   if (!review) return null;
   const keys = Object.keys(review);
-  if (keys.some((k) => CUSTOMER_REVIEW_KEYS.has(k))) return "customer";
-  if (keys.some((k) => TECHNICAL_REVIEW_KEYS.has(k))) return "technical";
-  return null;
+  if (!keys.length) return null;
+  if (keys.some((k) => severityOf(k) === "error")) return "error";
+  return "warning";
 }
 
-// Does this line block submission? True only for customer-fixable gaps — an item
-// that can't be priced (no product / missing dims / missing required option) or a
-// duplicate code. Priced lines with only technical flags do NOT block. This is the
+/** Legacy vocabulary ("customer" ≡ error, "technical" ≡ warning), kept so older
+ *  call sites keep reading naturally. Derives from the one registry above. */
+export function reviewClass(review: Record<string, string> | null | undefined): "customer" | "technical" | null {
+  const s = reviewSeverity(review);
+  return s === "error" ? "customer" : s === "warning" ? "technical" : null;
+}
+
+// Does this line block submission? Derived from REVIEW_SEVERITY, so the gate, the
+// red border and the sticky counters can never disagree:
+//
+//   block ⇔ an ERROR-severity reason is present
+//         ∨ the line cannot be priced and no WARNING explains why
+//
+// A warning-flagged line is priced best-fit (indicative) and stays submittable —
+// submission is exactly how an AMJ technical decision gets made. This is the
 // single source of truth shared by the client submit gate and the server.
 export function lineBlocksSubmission(it: {
   productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;
   origin?: string; aiPriced?: boolean; lineTotal?: number | null;
   review?: Record<string, string> | null;
 }): boolean {
+  const severity = reviewSeverity(it.review);
+  if (severity === "error") return true;
   if (it.origin === "ai" || it.aiPriced) {
     const priced = typeof it.lineTotal === "number" && Number.isFinite(it.lineTotal);
-    // A registered customer may intentionally change an AI recommendation. Its
-    // exact price is invalidated and must reach staff review; other unpriced AI
-    // failures remain customer-blocking.
-    return !priced && !it.review?.customerConfigurationChanged;
+    return !priced && severity !== "warning";
   }
-  // A deterministic line with no priceable product blocks — UNLESS it is an
-  // oversized 'fit' line: no standard product is manufactured at that size, so
-  // AMJ designs a composite/custom unit at review. The customer can't resolve it
-  // (they can't resize their building), so it must stay submittable (the
-  // deterministic analog of the AI customerConfigurationChanged case above).
-  return !priceConfigured(it).ok && !it.review?.fit;
+  return !priceConfigured(it).ok && severity !== "warning";
 }
 
 /** Customer-visible total. AI prices are private CPQ outputs and must never be

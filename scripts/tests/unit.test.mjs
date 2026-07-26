@@ -15,7 +15,7 @@ const outfile = join(runDir, "unit-bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { priceConfigured, lineBlocksSubmission, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel } from ${p("src/data/configurator.ts")};
+      export { priceConfigured, lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel } from ${p("src/data/configurator.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData } from ${p("src/data/catalogueQuery.ts")};
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
@@ -274,4 +274,43 @@ test("editedFieldsAfterSave: a real change flags exactly its field group and uni
   const stored = { product_slug: incoming.product_slug, options_json: '{"colour":"black"}', dims_json: '{"width":"900","height":"1200"}', qty: 2, edited_fields: '["qty"]' };
   const out = JSON.parse(M.editedFieldsAfterSave(stored, incoming));
   assert.deepEqual(out.sort(), ["dims_json", "qty"].sort(), "width change adds dims_json; prior qty edit survives");
+});
+
+// ── Review severity: the ONE registry that decides what blocks ────────────────
+test("severity registry: only critical missing input is an error; mismatches are warnings", () => {
+  for (const k of ["dims", "qty", "measuredBy", "options", "product"]) {
+    assert.equal(M.severityOf(k), "error", `${k} must block`);
+  }
+  for (const k of ["fit", "substitute", "material", "glazing", "thermalRecommendation", "noLongerInDocuments"]) {
+    assert.equal(M.severityOf(k), "warning", `${k} must not block`);
+  }
+  // An UNRECOGNISED key must never silently block every customer's submission.
+  assert.equal(M.severityOf("some_future_key"), "warning");
+});
+
+test("reviewSeverity: error outranks warning; empty/absent is null", () => {
+  assert.equal(M.reviewSeverity(null), null);
+  assert.equal(M.reviewSeverity({}), null);
+  assert.equal(M.reviewSeverity({ fit: "composite" }), "warning");
+  assert.equal(M.reviewSeverity({ dims: "unreadable" }), "error");
+  assert.equal(M.reviewSeverity({ fit: "composite", dims: "unreadable" }), "error", "error wins");
+});
+
+test("lineBlocksSubmission derives from severity: errors block, warnings never do", () => {
+  const priceable = {
+    productSlug: "amj80-series-sliding-window", width: "1200", height: "900",
+    options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+    qty: 1,
+  };
+  // A fully priced line with a WARNING stays submittable.
+  assert.equal(M.lineBlocksSubmission({ ...priceable, review: { fit: "composite" } }), false);
+  // The same line with an ERROR blocks, even though it prices.
+  assert.equal(M.lineBlocksSubmission({ ...priceable, review: { qty: "unreadable" } }), true);
+  // Unpriceable with no explanation blocks; unpriceable WITH a warning does not.
+  const unpriceable = { ...priceable, productSlug: "" };
+  assert.equal(M.lineBlocksSubmission(unpriceable), true);
+  assert.equal(M.lineBlocksSubmission({ ...unpriceable, review: { fit: "composite" } }), false);
+  // AI lines: an error blocks regardless of price.
+  assert.equal(M.lineBlocksSubmission({ ...priceable, origin: "ai", lineTotal: 900, review: { dims: "unreadable" } }), true);
+  assert.equal(M.lineBlocksSubmission({ ...priceable, origin: "ai", lineTotal: null, review: { customerConfigurationChanged: "edited" } }), false);
 });
