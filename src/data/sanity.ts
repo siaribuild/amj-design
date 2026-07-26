@@ -46,12 +46,15 @@ export async function hydrateFromSanity(): Promise<void> {
 // document exists for future use. Hydrated once before first render (main.tsx),
 // so the header can read it synchronously; a slow/absent CMS falls back to the
 // built-in wordmark and the static favicon.
-export interface SiteBrand { businessName: string | null; logoUrl: string | null; faviconUrl: string | null }
+export interface SiteBrand {
+  businessName: string | null; logoUrl: string | null; faviconUrl: string | null;
+  tagline: string | null; copyrightText: string | null; legalLine: string | null;
+}
 let brand: SiteBrand | null = null;
 export const getSiteBrand = (): SiteBrand | null => brand;
 
 const SITE_SETTINGS_QUERY = `*[_type == "siteSettings"][0]{
-  businessName,
+  businessName, tagline, copyrightText, legalLine,
   "logoUrl": logo.asset->url,
   "faviconUrl": favicon.asset->url
 }`;

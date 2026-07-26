@@ -15,7 +15,7 @@ import { type Product, getProductBySlug, getProductsByFamily } from "../data/cat
 import {
   type QItem, type QuoteState, type MeasuredBy, type OptionChoice, MEASURED_LABELS,
   optionGroupsFor, defaultOptions, priceConfigured, linePriceTotal, familyGroups,
-  fmt, mm, productLabel, POPULAR_COLOURS, normCode, suggestCode, clearReviewKey, reviewClass,
+  fmt, mm, productLabel, POPULAR_COLOURS, normCode, suggestCode, clearReviewKey, lineBlocksSubmission,
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
@@ -614,9 +614,15 @@ export function ItemSummaryCard({
   // Customer-blocking (must fix to submit) vs technical-only (AMJ confirms; the
   // customer can still submit). Product/dims live-issues and 'customer' review keys
   // block; a priced line with only 'technical' flags does not.
-  const rClass = reviewClass(item.review);
-  const customerBlocking = issues.length > 0 || !!duplicate || rClass === "customer";
-  const technicalOnly = !customerBlocking && rClass === "technical";
+  // ONE predicate for Tier 1 — the RED border, the "Needs attention" pill AND the
+  // sticky "N need attention" count all derive from lineBlocksSubmission (the
+  // client+server single source of truth), so they can never diverge again (UX
+  // review 2026-07-26). A PRICED line carrying a review flag is Tier 2 (sky, "AMJ
+  // confirms — you can still submit"), never red. Out-of-range live issues (which
+  // still price, so don't block) also fall to Tier 2 so they stay visible.
+  const customerBlocking = lineBlocksSubmission(item) || !!duplicate;
+  const hasReviewFlag = !!item.review && Object.keys(item.review).length > 0;
+  const technicalOnly = !customerBlocking && (hasReviewFlag || issues.length > 0);
   const attention = customerBlocking || technicalOnly;
   const toggle = (s: EditFocus) => setOpen(o => (o === s ? null : s));
   const update = (patch: Partial<QItem>) => quote.update(item.id, patch);

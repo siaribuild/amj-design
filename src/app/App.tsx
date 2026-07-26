@@ -311,19 +311,24 @@ function Nav({ page, setPage, user, setUser }: {
 // ─── Footer ───────────────────────────────────────────────────────────────────
 function Footer({ setPage }: { setPage: (p: Page) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
+  const brand = getSiteBrand(); // Sanity logo/tagline/copyright/ABN; null ⇒ fallbacks
   return (
     <footer className="relative bg-[#131311] text-white/55 pt-16 pb-10 overflow-hidden">
       <GhostMark size={360} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
       <div className="max-w-6xl mx-auto px-6 relative">
         <div className="flex flex-col md:flex-row justify-between gap-10 mb-10">
           <div className="max-w-xs">
-            <div className="flex items-center gap-2.5 mb-4">
-              <WindowMark size={18} color={SAGE} />
-              <span className="font-semibold text-sm text-white"
-                style={{ fontFamily: "'Space Grotesk', sans-serif" }}>OpenFrame</span>
-            </div>
+            {/* Same Sanity logo asset as the header (its own wordmark ⇒ no text);
+                falls back to the built-in mark + wordmark when no logo is set. */}
+            {brand?.logoUrl
+              ? <img src={brand.logoUrl} alt={brand.businessName ?? "OpenFrame"} className="h-7 w-auto max-w-[180px] object-contain mb-4" />
+              : <div className="flex items-center gap-2.5 mb-4">
+                  <WindowMark size={18} color={SAGE} />
+                  <span className="font-semibold text-sm text-white"
+                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}>OpenFrame</span>
+                </div>}
             <p className="text-sm leading-relaxed mb-5">
-              Aluminium windows and doors supplied direct for Melbourne projects. Supply only — installation not included.
+              {brand?.tagline ?? "Aluminium windows and doors supplied direct for Melbourne projects. Supply only — installation not included."}
             </p>
             <div className="text-sm space-y-2">
               <a href="tel:0390000000" className="flex items-center gap-2 hover:text-white transition-colors">
@@ -354,9 +359,12 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
             ))}
           </div>
         </div>
+        {/* Sanity-driven: Copyright Text on the left, Legal Line (ABN) on the
+            right; each falls back independently so a partial singleton never
+            blanks a line. */}
         <div className="border-t border-white/10 pt-6 flex flex-col md:flex-row justify-between gap-2 text-xs text-white/25">
-          <span>© 2025 OpenFrame · Melbourne, Victoria · ABN 00 000 000 000</span>
-          <span>Supply only · Prototype — sample content</span>
+          <span>{brand?.copyrightText ?? "© 2025 OpenFrame · Melbourne, Victoria"}</span>
+          <span className="md:text-right">{brand?.legalLine ?? "ABN 00 000 000 000 · Supply only"}</span>
         </div>
       </div>
     </footer>

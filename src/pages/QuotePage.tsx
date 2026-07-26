@@ -595,10 +595,12 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                   return (
                     <div key={f.id} className="inline-flex items-center gap-2.5 border border-red-300 bg-red-50 px-3 py-1.5 text-xs max-w-full">
                       <span className="text-red-800 font-medium truncate max-w-[12rem]">Remove {f.name}? Its lines go too.</span>
+                      {/* Quiet text-scale controls — the red container carries the
+                          alarm; the buttons shouldn't shout (UX review 2026-07-26). */}
                       <button onClick={() => void handleRemoveFile(String(f.id), f.name)}
-                        className="border border-red-600 bg-red-600 text-white px-2 py-0.5 font-medium hover:bg-red-700 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600">Remove</button>
+                        className="text-xs font-medium text-red-700 border border-red-300 bg-white px-1.5 py-0.5 hover:bg-red-100 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-red-400">Remove</button>
                       <button onClick={() => setRemovingFile(null)} autoFocus
-                        className="border border-black/12 bg-white px-2 py-0.5 font-medium text-[#5c5a56] hover:border-black/25 cursor-pointer">Keep</button>
+                        className="text-xs text-[#5c5a56] border border-black/12 bg-white px-1.5 py-0.5 hover:border-black/25 cursor-pointer">Keep</button>
                     </div>
                   );
                 }
