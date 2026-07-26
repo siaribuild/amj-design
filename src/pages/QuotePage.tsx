@@ -15,7 +15,7 @@ import { StickyQuotePanel } from "../components/StickyQuotePanel";
 import { uploadFile, startParse, extractionStatus, deleteFile, resolveCollision, restoreAiLine, UploadError, type ParseJob, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
 import {
   type QuoteState, type QItem,
-  linePriceTotal, fmt, mm, productLabel, hasDuplicateCode, lineBlocksSubmission, reviewClass, DEFAULT_PROJECT_TITLE,
+  linePriceTotal, fmt, mm, productLabel, hasDuplicateCode, lineBlocksSubmission, reviewSeverity, DEFAULT_PROJECT_TITLE,
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
@@ -88,9 +88,11 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
     (it.origin === "ai" || it.aiPriced) &&
     (typeof it.lineTotal !== "number" || !Number.isFinite(it.lineTotal)) &&
     !!it.review?.customerConfigurationChanged).length;
-  // Lines that will be confirmed by AMJ at technical review (informational; never
-  // block the customer's submission).
-  const technicalCount = quote.items.filter((it) => !itemBlocked(it) && reviewClass(it.review) === "technical").length;
+  // WARNING-severity lines: priced (indicative) and submittable, but carrying an
+  // AMJ technical decision — a composite for an oversized opening, a substituted
+  // product, a material/glazing caveat. Counted separately from errors so the
+  // sticky panel can show both without the gate ever depending on warnings.
+  const technicalCount = quote.items.filter((it) => !itemBlocked(it) && reviewSeverity(it.review) === "warning").length;
   const hasContent = quote.items.length > 0 || quote.files.length > 0;
 
   // One item expanded at a time; sticky-panel actions drive focus to the problem.
@@ -750,6 +752,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         itemCount={quote.items.length}
         attentionCount={attentionCount}
         pendingPriceCount={pendingPriceCount}
+        technicalCount={technicalCount}
         total={total}
         editingItem={adding}
         uploading={uploading}
