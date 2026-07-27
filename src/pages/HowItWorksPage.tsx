@@ -21,7 +21,7 @@
 // self-verifies — six items are six by inspection — and three artefacts have
 // already drifted on a hand-written count.
 import { ArrowRight, Camera, ClipboardCheck, FileText, Info, PenLine, Send, Truck, Upload, Factory } from "lucide-react";
-import { GhostMark, SLabel, Btn, type Page } from "../app/ui";
+import { GhostMark, SLabel, Btn, CtaBanner, type Page } from "../app/ui";
 import { getPage, imageUrl, products } from "../data/catalogue";
 import { brandName, brandSubject } from "../data/sanity";
 
@@ -328,26 +328,14 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
 
       <PhaseSection p={PHASES[2]} brand={brand} />
 
-      {/* ── CTA ──────────────────────────────────────────────────────────── */}
-      <section className="bg-white border-t border-black/8 py-12 md:py-20">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="relative bg-[#131311] text-white overflow-hidden p-10 md:p-14">
-            <GhostMark size={320} opacity={0.025} color="#fff" pos="right-0 bottom-0" />
-            <div className="relative">
-              <h2 className="font-semibold tracking-tight mb-3 max-w-[20ch]" style={{ ...DISPLAY, fontSize: "clamp(1.5rem, 3.4vw, 2rem)" }}>
-                Get a number in seconds. A real quote when you're ready.
-              </h2>
-              <p className="text-white/60 text-[15px] max-w-[46ch] mb-7 leading-relaxed">
-                Enter a few dimensions, or upload your schedule and we'll prepare it for review.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <Btn variant="sage" size="lg" onClick={() => go("quote")}>Build an estimate <ArrowRight className="w-4 h-4" /></Btn>
-                <Btn variant="white" size="lg" onClick={() => go("quote")}><Upload className="w-4 h-4" />Upload plans / schedule</Btn>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* ── CTA ──────────────────────────────────────────────────────────────
+          The shared banner. This one was a dark panel with two buttons that both
+          went to /quote anyway — a choice with no consequence. */}
+      <CtaBanner
+        title="Get a number in seconds. A real quote when you're ready."
+        sub="Enter a few dimensions, or upload your schedule and we'll prepare it for review."
+        onQuote={() => go("quote")}
+      />
     </div>
   );
 }

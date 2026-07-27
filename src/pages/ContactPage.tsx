@@ -16,7 +16,7 @@ import {
   FileText, HelpCircle, MapPin, Phone, Send, Check, ArrowRight, Clock,
   Truck, Building2, BookOpen, AlertCircle, CheckCircle,
 } from "lucide-react";
-import { type Page, SAGE, WindowMark, GhostMark, Btn } from "../app/ui";
+import { type Page, SAGE, WindowMark, GhostMark, Btn, CtaBanner } from "../app/ui";
 import { getPage, imageUrl } from "../data/catalogue";
 import { submitEnquiry, getLocations, type ApiLocation, type EnquiryPayload } from "../data/api";
 import { LocationMap } from "../components/LocationMap";
@@ -349,19 +349,14 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
         </div>
       </section>
 
-      {/* ─── CLOSING CTA ───────────────────────────────────────────────────────── */}
-      <div className="bg-[#FAFAF9] border-t border-black/8 px-6 pt-2 pb-16">
-        <div className="relative max-w-[1104px] mx-auto bg-[#5A7A6A] overflow-hidden">
-          <GhostMark size={210} opacity={0.09} color="#fff" pos="right-6 top-1/2 -translate-y-1/2" />
-          <div className="relative px-8 py-8 flex flex-wrap items-center justify-between gap-5">
-            <div>
-              <h2 className="text-white font-semibold mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.35rem,2.2vw,1.75rem)" }}>Already know your sizes?</h2>
-              <p className="text-white/85 text-[14.5px]">Skip the back-and-forth — get an indicative estimate in minutes. No account required.</p>
-            </div>
-            <Btn variant="primary" size="md" onClick={() => go("quote")}>Start a quote <ArrowRight className="w-[15px] h-[15px]" /></Btn>
-          </div>
-        </div>
-      </div>
+      {/* ─── CLOSING CTA ─────────────────────────────────────────────────────
+          The shared banner. This one had a GhostMark, its own max-width, and
+          pt-2/pb-16 — the asymmetry that made the page look bottom-heavy. */}
+      <CtaBanner
+        title="Already know your sizes?"
+        sub="Skip the back-and-forth — get an indicative estimate in minutes. No account required."
+        onQuote={() => go("quote")}
+      />
     </div>
   );
 }

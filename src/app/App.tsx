@@ -7,7 +7,7 @@ import {
   Send, Eye, LogOut, Package, LayoutDashboard,
   Search, Lock, Key, Bell, Settings, ExternalLink
 } from "lucide-react";
-import { type Page, SAGE, DARK, WARM, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "./ui";
+import { type Page, SAGE, DARK, WARM, WindowMark, GhostMark, SLabel, Btn, CtaBanner, FieldLabel, Input } from "./ui";
 import { getSiteBrand, brandName } from "../data/sanity";
 import { ObfuscatedEmail } from "../components/ObfuscatedEmail";
 import { ProductsPage } from "../pages/ProductsPage";
@@ -95,24 +95,8 @@ function Select({ value, onChange, children }: {
   );
 }
 
-// CTA banner — sage bg, dark button; reused on Products, Resources, How It Works
-function CtaBanner({ title, sub, btnLabel, onClick }: {
-  title: string; sub: string; btnLabel?: string; onClick: () => void;
-}) {
-  return (
-    <div className="relative bg-[#5A7A6A] px-8 md:px-10 py-8 md:py-10 flex flex-col md:flex-row items-center justify-between gap-6 overflow-hidden">
-      <GhostMark size={200} opacity={0.08} color="#fff" pos="right-4 top-1/2 -translate-y-1/2" />
-      <div className="relative">
-        <h3 className="text-xl font-semibold text-white mb-1"
-          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</h3>
-        <p className="text-white/80 text-sm">{sub}</p>
-      </div>
-      <div className="flex-shrink-0 relative">
-        <Btn variant="primary" size="md" onClick={onClick}>{btnLabel ?? "Get a quote"} <ArrowRight className="w-4 h-4" /></Btn>
-      </div>
-    </div>
-  );
-}
+// CtaBanner now lives in ./ui with every other shared primitive, so the pages
+// that were each growing their own variant share one.
 
 // The signed-in account surfaces (one home + account + help + the record workspace).
 const ACCOUNT_PAGES: Page[] = ["dashboard", "account", "help", "order"];
@@ -997,41 +981,15 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
       {/* ─── FINAL CTA ───────────────────────────────────────────────────────
           The owner's own headline, kept verbatim and moved here — commitment
           framing belongs at the point of commitment, and the hero leads with
-          speed instead. Second and last sage fill on the page. */}
-      <section className="bg-white py-14 md:py-16 border-t border-black/8">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="relative bg-[#5A7A6A] overflow-hidden">
-            <GhostMark size={220} opacity={0.08} color="#fff" pos="right-6 top-1/2 -translate-y-1/2" />
-            <div className="relative px-6 sm:px-10 py-9 md:py-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-              <div className="flex items-start gap-4">
-                <span className="hidden sm:flex w-11 h-11 border border-white/30 items-center justify-center flex-shrink-0">
-                  <WindowMark size={20} color="#ffffff" />
-                </span>
-                <div>
-                  <h2 className="text-white font-semibold mb-1.5"
-                    style={{ ...DISPLAY, fontSize: "clamp(1.4rem, 2.4vw, 1.9rem)" }}>
-                    Your windows and doors, priced before you commit.
-                  </h2>
-                  <p className="text-white/85 text-base mb-2">
-                    Upload a schedule, or build it line by line. Free either way.
-                  </p>
-                  <p className="text-white/60 text-[12px]" style={MONO}>
-                    $0 to get a quote · no account · a reviewed quote in about two business days
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3 md:flex-shrink-0">
-                <Btn variant="primary" size="lg" onClick={onUploadSchedule}>
-                  <Upload className="w-4 h-4" aria-hidden="true" /> Upload a schedule
-                </Btn>
-                <Btn variant="white" size="lg" onClick={() => go("quote")}>
-                  Build it line by line
-                </Btn>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+          speed instead. Second and last sage fill on the page.
+          Now the shared banner: the upload/build fork is made once, in the hero,
+          where it has the sublines that explain it. Repeating it here asked the
+          visitor to re-decide at the moment the page wants them to act. */}
+      <CtaBanner
+        title="Your windows and doors, priced before you commit."
+        sub="Free to start, no account, and a reviewed quote in about two business days."
+        onQuote={() => go("quote")}
+      />
     </div>
   );
 }
@@ -1091,15 +1049,17 @@ function ResourcesPage({ setPage }: { setPage: (p: Page) => void }) {
             </div>
           ))}
         </div>
-        <CtaBanner
-          title="Ready to get a quote?"
-          sub="Use these guides to prepare your dimensions, then start a quote online."
-          onClick={() => go("quote")}
-        />
         <p className="text-xs text-[#5c5a56] mt-5 mb-10 bg-[#F2F0EC] border border-black/8 p-4">
           Documents are sample placeholders. Final technical documents, test reports and warranty terms are provided with reviewed quotes.
         </p>
       </div>
+      {/* Outside the page container: the banner owns its own full-width section
+          so its padding matches every other page's. */}
+      <CtaBanner
+        title="Ready to get a quote?"
+        sub="Use these guides to prepare your dimensions, then start a quote online."
+        onQuote={() => go("quote")}
+      />
     </div>
   );
 }
@@ -1614,7 +1574,7 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
       <CtaBanner
         title="Ready to get a quote?"
         sub="Start online — enter dimensions or bring your window schedule."
-        onClick={() => go("quote")}
+        onQuote={() => go("quote")}
       />
     </div>
   );

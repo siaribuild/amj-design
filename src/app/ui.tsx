@@ -3,6 +3,7 @@
 // own files. App.tsx re-imports everything here, so there is a single source of
 // truth for the design language.
 import type { ReactNode } from "react";
+import { ArrowRight } from "lucide-react";
 
 // Client-side route identifiers. Kept here so page files can type their props.
 export type Page =
@@ -105,5 +106,48 @@ export function Input({ value, onChange, placeholder, type = "text", className =
     <input type={type} value={value} defaultValue={defaultValue} onChange={onChange}
       placeholder={placeholder} inputMode={inputMode}
       className={`w-full border border-[#131311]/20 bg-white px-3 py-2.5 text-sm text-[#131311] placeholder-[#9a9894] focus:outline-none focus:border-[#5A7A6A] transition-colors ${className}`} />
+  );
+}
+
+// ─── Closing CTA banner ───────────────────────────────────────────────────────
+// THE closing call to action, shared by every marketing page. Before this, each
+// page had grown its own: two buttons here, one there; a WindowMark in a bordered
+// box on home, a GhostMark watermark on contact and resources, none on how-it-works;
+// and section padding that ranged from py-8 to an outright asymmetric pt-2/pb-16.
+//
+// The shape is fixed on purpose — headline, one line of copy, ONE action reading
+// "Get a quote". A closing banner that offers a choice is asking the visitor to
+// make a decision at the moment you want them to act, and the variations were
+// pure drift rather than per-page intent.
+//
+// It renders its own <section>, so the padding above and below is identical and
+// cannot drift again: a caller that only got the inner panel would still be free
+// to wrap it in whatever spacing it liked, which is how this diverged the first time.
+export function CtaBanner({ title, sub, onQuote }: {
+  title: string;
+  sub: string;
+  /** Must navigate to the quote page. Pages own their own routing, so the
+   *  handler is passed in rather than the component reaching for a router. */
+  onQuote: () => void;
+}) {
+  return (
+    <section className="bg-white border-t border-black/8 py-14">
+      <div className="max-w-6xl mx-auto px-6">
+        <div className="bg-[#5A7A6A] px-6 sm:px-10 py-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          <div className="max-w-[54ch]">
+            <h2 className="text-white font-semibold leading-tight mb-1.5"
+              style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.4rem, 2.4vw, 1.9rem)" }}>
+              {title}
+            </h2>
+            <p className="text-white/85 text-[15px] md:text-base leading-relaxed">{sub}</p>
+          </div>
+          <div className="md:flex-shrink-0">
+            <Btn variant="primary" size="lg" onClick={onQuote}>
+              Get a quote <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </Btn>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
