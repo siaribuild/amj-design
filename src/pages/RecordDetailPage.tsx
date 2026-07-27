@@ -396,7 +396,18 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
     finally { setBusy(false); }
   };
 
-  if (missing) return <div className="bg-white border border-black/10 p-8 text-sm text-[#5c5a56]">We couldn't find that order.</div>;
+  if (missing) return (
+    <div className="bg-white border border-black/10 p-8">
+      <p className="text-[15px] text-[#131311] mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>We couldn't open that order.</p>
+      <p className="text-sm text-[#5c5a56] leading-relaxed max-w-[52ch]">
+        Your tracking session may have ended — it lasts until you close your browser. Nothing has been lost:
+        confirm it's you and it will open again.
+      </p>
+      <div className="mt-4">
+        <Btn variant="sage" size="sm" onClick={() => setPage("track-order")}>Verify by email</Btn>
+      </div>
+    </div>
+  );
   if (!order) return <div className="bg-white border border-black/10 p-8 text-sm text-[#5c5a56]">Loading your order…</div>;
 
   const m = orderMeta(order);
@@ -532,7 +543,18 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId]);
 
-  if (missing) return <div className="bg-white border border-black/10 p-8 text-sm text-[#5c5a56]">We couldn't find that quote.</div>;
+  if (missing) return (
+    <div className="bg-white border border-black/10 p-8">
+      <p className="text-[15px] text-[#131311] mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>We couldn't open that quote.</p>
+      <p className="text-sm text-[#5c5a56] leading-relaxed max-w-[52ch]">
+        Your tracking session may have ended — it lasts until you close your browser. Nothing has been lost:
+        confirm it's you and it will open again.
+      </p>
+      <div className="mt-4">
+        <Btn variant="sage" size="sm" onClick={() => setPage("track-order")}>Verify by email</Btn>
+      </div>
+    </div>
+  );
   if (!data?.project) return <div className="bg-white border border-black/10 p-8 text-sm text-[#5c5a56]">Loading your quote…</div>;
 
   const p = data.project;
