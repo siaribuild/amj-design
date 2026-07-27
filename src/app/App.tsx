@@ -631,10 +631,18 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
               <span style={{ color: SAGE_LT }}>priced in about a minute.</span>
             </h1>
 
+            {/* The minute belongs to the MACHINE, and the sentence has to say so.
+                An earlier version read "…matched and costed. A person checks it
+                before you get a quote", which put the human review immediately
+                after the headline's "about a minute" with nothing separating the
+                two timescales — so it implied a person turns it around inside the
+                minute too. The estimate is instant and indicative; the quote takes
+                about two business days. Both durations are stated, in that order. */}
             <p className="text-white/80 leading-relaxed mb-8 max-w-[52ch]"
               style={{ fontSize: "clamp(1rem, 1.4vw, 1.125rem)" }}>
-              Upload the window and door schedule from your plans and every line comes back matched and costed.
-              A person checks it before you get a quote — and nothing is charged until you accept one.
+              Upload the window and door schedule from your plans and every line comes back matched
+              and costed — that part takes about a minute. A person then reviews it, usually within
+              two business days, before it becomes a quote. Nothing is charged until you accept one.
             </p>
 
             {/* One primary, one alternative, one link. The mock makes "Build an
