@@ -13,6 +13,7 @@ import {
 import { Search } from "lucide-react";
 import { opsMe, opsChallenge, opsVerify, opsLogout, opsSummary, opsSearch, type OpsUser, type OpsSummary, type OpsSearchResult } from "./api";
 import { Quotes } from "./Quotes";
+import { Projects } from "./Projects";
 import { Approvals } from "./Approvals";
 import { Orders } from "./Orders";
 import { Customers } from "./Customers";
@@ -22,9 +23,10 @@ import { Rules, Files, Audit, Admin } from "./AdminTabs";
 
 const SAGE = "#5A7A6A";
 
-type Tab = "dashboard" | "quotes" | "approvals" | "orders" | "customers" | "pricing" | "enquiries" | "rules" | "files" | "audit" | "admin";
+type Tab = "dashboard" | "projects" | "quotes" | "approvals" | "orders" | "customers" | "pricing" | "enquiries" | "rules" | "files" | "audit" | "admin";
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
+  { id: "projects", label: "Projects", icon: <FileText className="w-4 h-4" /> },
   { id: "quotes", label: "Quotes", icon: <FileText className="w-4 h-4" /> },
   { id: "approvals", label: "Approvals", icon: <CheckSquare className="w-4 h-4" /> },
   { id: "orders", label: "Orders", icon: <Package className="w-4 h-4" /> },
@@ -163,6 +165,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
         </header>
         <div className="p-8">
           {tab === "dashboard" ? <Dashboard />
+            : tab === "projects" ? <Projects />
             : tab === "quotes" ? <Quotes />
             : tab === "approvals" ? <Approvals />
             : tab === "orders" ? <Orders />

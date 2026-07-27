@@ -15,7 +15,8 @@ import { drainLearningOutbox, issueRevision } from "../lib/revisions";
 import { logEvent } from "../lib/activity";
 import { evaluateApprovals, createApprovalInstance, resolveInstance, canApprove } from "../lib/approvals";
 import { splitLine, mergeComposite } from "../lib/composite";
-import { orderDto, applyTransition, markPaid, availableActions, type OrderRow } from "../lib/orders";
+import { orderDto, applyTransition, markPaid, availableActions, STAGE_LABEL, type Stage, type OrderRow } from "../lib/orders";
+import { lifecycleOf, daysSince } from "../lib/lifecycle";
 import { uuid } from "../lib/util";
 import { scanFile } from "../lib/scan";
 import {
@@ -224,6 +225,63 @@ ops.get("/queues/submissions", async (c) => {
 });
 
 // GET /api/ops/projects/:id — the internal quote workspace.
+// GET /api/ops/projects — THE list. One row per job, whatever stage it is at:
+// what used to be the Quotes queue and the Orders list are the same set of
+// records filtered differently, so they are one query with a derived phase.
+//
+// Sorted by "ours first, then longest neglected". Deliberately NOT updated_at:
+// that moves when the CUSTOMER replies, which buries the thing we have to do
+// underneath the thing that just happened.
+ops.get("/projects", async (c) => {
+  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
+  const { results } = await c.env.DB.prepare(`
+    SELECT p.id, p.title, p.public_ref, p.status_customer, p.status_internal, p.updated_at,
+           p.contact_name, p.contact_email,
+           o.name AS org_name, u.name AS customer_name, u.email AS customer_email,
+           ord.id AS order_id, ord.order_no, ord.stage AS order_stage,
+           (SELECT count(*) FROM quote_line l WHERE l.project_id = p.id AND l.revision_id IS NULL AND l.parent_line_id IS NULL) AS line_count,
+           (SELECT COALESCE(sum(l.line_total), 0) FROM quote_line l WHERE l.project_id = p.id AND l.revision_id IS NULL AND l.parent_line_id IS NULL) AS draft_total,
+           (SELECT count(*) FROM quote_line l WHERE l.project_id = p.id AND l.revision_id IS NULL AND l.parent_line_id IS NULL AND (l.status <> 'ready' OR l.line_total IS NULL)) AS unresolved,
+           (SELECT r.totals_json FROM quote_revision r WHERE r.project_id = p.id ORDER BY r.revision_no DESC LIMIT 1) AS latest_totals
+      FROM project p
+      LEFT JOIN organisation o ON o.id = p.organisation_id
+      LEFT JOIN user u   ON u.id   = p.owner_user_id
+      LEFT JOIN "order" ord ON ord.project_id = p.id
+     WHERE p.status_customer <> 'draft'
+     ORDER BY p.updated_at DESC`).all<any>();
+
+  const projects = (results ?? []).map((r) => {
+    const lifecycle = lifecycleOf({
+      statusInternal: r.status_internal, statusCustomer: r.status_customer, orderStage: r.order_stage,
+    });
+    const issued = safeParse(r.latest_totals ?? "{}").total;
+    // Three different meanings can occupy the value column. Say which one this is
+    // — a number read down a phone with the wrong basis is worse than no number.
+    const valueBasis = r.order_id ? "contract" : issued != null ? "issued" : "est.";
+    return {
+      id: r.id, ref: r.public_ref ?? r.id, title: r.title ?? "Untitled project",
+      customerName: r.customer_name ?? r.contact_name ?? null,
+      customerEmail: r.customer_email ?? r.contact_email ?? null,
+      org: r.org_name ?? null,
+      lineCount: Number(r.line_count ?? 0),
+      value: typeof issued === "number" && (r.order_id || issued > 0) ? issued : Number(r.draft_total ?? 0),
+      valueBasis,
+      unresolved: Number(r.unresolved ?? 0),
+      orderNo: r.order_no ?? null,
+      ...lifecycle,
+      daysInStage: daysSince(r.updated_at),
+      updatedAt: r.updated_at,
+    };
+  });
+
+  // "Ours" first, then the longest-neglected within each group.
+  const rank = { Us: 0, Customer: 1, Nobody: 2 } as const;
+  projects.sort((a, b) =>
+    rank[a.waitingOn] - rank[b.waitingOn] || (b.daysInStage ?? 0) - (a.daysInStage ?? 0));
+
+  return c.json({ projects });
+});
+
 ops.get("/projects/:id", async (c) => {
   if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
   const id = c.req.param("id");
@@ -242,7 +300,40 @@ ops.get("/projects/:id", async (c) => {
   const { results: files } = await c.env.DB.prepare("SELECT id, kind, filename, size, virus_status, created_at FROM file_asset WHERE project_id = ? ORDER BY created_at DESC").bind(id).all();
   const { results: revisions } = await c.env.DB.prepare("SELECT id, revision_no, snapshot_status, totals_json, issued_at, accepted_at FROM quote_revision WHERE project_id = ? ORDER BY revision_no DESC").bind(id).all<any>();
   const { results: comments } = await c.env.DB.prepare("SELECT cm.id, cm.line_id, cm.kind, cm.body, cm.created_at, u.name AS author FROM comment cm LEFT JOIN user u ON u.id = cm.author_id WHERE cm.project_id = ? ORDER BY cm.created_at DESC").bind(id).all();
-  const { results: activity } = await c.env.DB.prepare("SELECT a.action, a.occurred_at, COALESCE(u.name, a.actor) AS actor FROM audit_event a LEFT JOIN user u ON u.id = a.actor WHERE a.entity_type = 'project' AND a.entity_id = ? ORDER BY a.occurred_at DESC").bind(id).all();
+  // The order for this project, if it has reached one. A project and its order
+  // are one job (order is 1:1 with project); the split is storage, not domain.
+  const order = await c.env.DB.prepare(
+    // `stage` (0002) is the 12-step journey every other surface reads. `status`
+    // is the vestigial 8-value enum from 0001 — reading it here put an order that
+    // had reached balance_paid into the "Intake" phase.
+    `SELECT id, order_no, stage, payment_status, accepted_revision_id, created_at, updated_at
+       FROM "order" WHERE project_id = ? ORDER BY created_at DESC LIMIT 1`,
+  ).bind(id).first<any>();
+  const { results: payments } = order
+    ? await c.env.DB.prepare("SELECT kind, amount, percent, status, reference, invoiced_at, paid_at FROM payment WHERE order_id = ? ORDER BY kind DESC").bind(order.id).all()
+    : { results: [] as any[] };
+  // The CONTRACT lines, read from the revision that was accepted rather than from
+  // order_line. Both exist and agree — orders.ts copies one into the other at
+  // acceptance — but order_line is a thin copy carrying only ref/qty/total, while
+  // revision_line keeps dims_json, options and the room. Reading the accepted
+  // revision gives the same contract with the detail a staffer actually needs.
+  const { results: orderLines } = order?.accepted_revision_id
+    ? await c.env.DB.prepare(
+      `SELECT id, external_ref, room_label, product_snapshot_json, dims_json, qty, line_total
+         FROM revision_line WHERE revision_id = ? ORDER BY external_ref`,
+    ).bind(order.accepted_revision_id).all()
+    : { results: [] as any[] };
+
+  // History spans BOTH entities. It used to filter on entity_type='project' only,
+  // while every fulfilment action logs against 'order' — so on a merged plane the
+  // entire post-acceptance history would silently disappear.
+  const { results: activity } = await c.env.DB.prepare(
+    `SELECT a.action, a.occurred_at, a.entity_type, COALESCE(u.name, a.actor) AS actor
+       FROM audit_event a LEFT JOIN user u ON u.id = a.actor
+      WHERE (a.entity_type = 'project' AND a.entity_id = ?)
+         OR (a.entity_type = 'order'   AND a.entity_id = ?)
+      ORDER BY a.occurred_at DESC`,
+  ).bind(id, order?.id ?? "").all();
 
   const instance = await c.env.DB.prepare("SELECT id, state FROM approval_instance WHERE project_id = ? ORDER BY created_at DESC LIMIT 1").bind(id).first<{ id: string; state: string }>();
   let approvals: any = null;
@@ -254,6 +345,10 @@ ops.get("/projects/:id", async (c) => {
   return c.json({
     project: {
       id: p.id, title: p.title ?? "Untitled project",
+      // The one reference the merged record is anchored on. "OF-Q-" reads oddly
+      // on a job that shipped months ago, but it is printed on every issued PDF
+      // and email, so it is never renamed — only ever shown paired with the title.
+      publicRef: p.public_ref ?? null,
       statusCustomer: p.status_customer, statusInternal: p.status_internal,
       statusInternalLabel: STATUS_INTERNAL_LABEL[p.status_internal] ?? p.status_internal,
       nextStates: FLOW[p.status_internal] ?? [],
@@ -273,6 +368,36 @@ ops.get("/projects/:id", async (c) => {
     comments,
     activity,
     approvals,
+    // ── The merged view's additions (Slice 1) ───────────────────────────────
+    // Additive: the existing Quotes workspace ignores these, so both surfaces
+    // can read one endpoint while the merge is built.
+    lifecycle: lifecycleOf({
+      statusInternal: p.status_internal, statusCustomer: p.status_customer,
+      orderStage: order?.stage ?? null,
+    }),
+    daysInStage: daysSince(p.updated_at),
+    // The CONTRACT lines. Once a revision is accepted the draft lines are no
+    // longer what anyone is building — order_line is. Without these an accepted
+    // project renders an empty table, which is how a staffer concludes the record
+    // is broken.
+    orderLines: orderLines.map((l: any) => {
+      const snap = safeParse(l.product_snapshot_json);
+      const dims = safeParse(l.dims_json ?? "{}");
+      return {
+        id: l.id, code: l.external_ref ?? "", qty: l.qty, lineTotal: l.line_total,
+        room: (l.room_label as string) ?? "",
+        productName: (snap.productName as string) ?? (snap.productSlug as string) ?? "—",
+        width: String(dims.width ?? ""), height: String(dims.height ?? ""),
+      };
+    }),
+    order: order ? {
+      id: order.id, orderNo: order.order_no, stage: order.stage,
+      stageLabel: STAGE_LABEL[order.stage as Stage] ?? order.stage,
+      paymentStatus: order.payment_status,
+      acceptedRevisionId: order.accepted_revision_id,
+      createdAt: order.created_at,
+    } : null,
+    payments,
   });
 });
 

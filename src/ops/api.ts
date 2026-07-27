@@ -90,10 +90,14 @@ export interface OpsApprovalStep { trigger_family: string; reason: string | null
 export interface OpsApprovals { state: string; steps: OpsApprovalStep[] }
 export interface OpsWorkspace {
   project: {
-    id: string; title: string; statusCustomer: string; statusInternal: string;
+    id: string; title: string; publicRef: string | null; statusCustomer: string; statusInternal: string;
     statusInternalLabel: string; nextStates: string[]; canSubmitForApproval: boolean;
     unresolvedLineCount: number;
     org: string | null; customerName: string | null; customerEmail: string | null;
+    // Submission contact, captured at submit time — the only identity an
+    // anonymous submitter has, so the record must fall back to it.
+    contactName: string | null; contactEmail: string | null;
+    contactPhone: string | null; deliverySuburb: string | null;
     assignee: string | null; internalOwnerId: string | null; updatedAt: string;
   };
   lines: OpsLine[];
@@ -102,6 +106,20 @@ export interface OpsWorkspace {
   comments: OpsComment[];
   activity: OpsActivity[];
   approvals: OpsApprovals | null;
+  // Slice 1 additions — the merged record. Optional so the existing Quotes
+  // workspace, which ignores them, keeps reading the same endpoint while the
+  // merged plane is built beside it.
+  lifecycle?: OpsLifecycle;
+  daysInStage?: number | null;
+  order?: {
+    id: string; orderNo: string; stage: string; stageLabel: string;
+    paymentStatus: string; acceptedRevisionId: string | null; createdAt: string;
+  } | null;
+  payments?: OpsPayment[];
+  /** Contract lines — what is actually being built, once a revision is accepted.
+   *  The draft lines are no longer the truth at that point, and on an accepted
+   *  project there are usually none left at all. */
+  orderLines?: { id: string; code: string; room: string; qty: number; lineTotal: number; productName: string; width: string; height: string }[];
 }
 
 export interface OpsApprovalTask {
@@ -340,3 +358,37 @@ export interface OpsCatalogueMirror {
   }[];
 }
 export const opsCatalogueMirror = () => req<OpsCatalogueMirror>("/api/ops/pricing/catalogue");
+
+// ── Projects — the merged record (Slice 1) ───────────────────────────────────
+// One job, one row, whatever stage it is at. What used to be the Quotes queue
+// and the Orders list are the same set of records filtered differently.
+export type OpsPhase = "Intake" | "Pricing" | "Issued" | "Accepted" | "Production" | "Delivered";
+export const OPS_PHASES: OpsPhase[] = ["Intake", "Pricing", "Issued", "Accepted", "Production", "Delivered"];
+
+export interface OpsLifecycle {
+  phase: OpsPhase;
+  phaseIndex: number;
+  /** The precise state, in words — shown under the phase, never instead of it. */
+  stateLabel: string;
+  waitingOn: "Us" | "Customer" | "Nobody";
+}
+
+export interface OpsProjectRow extends OpsLifecycle {
+  id: string; ref: string; title: string;
+  customerName: string | null; customerEmail: string | null; org: string | null;
+  lineCount: number;
+  value: number;
+  /** Which kind of number `value` is: an estimate, an issued quote, or a contract. */
+  valueBasis: "est." | "issued" | "contract";
+  unresolved: number;
+  orderNo: string | null;
+  daysInStage: number | null;
+  updatedAt: string;
+}
+
+export interface OpsPayment {
+  kind: string; amount: number; percent: number; status: string;
+  reference: string | null; invoiced_at: string | null; paid_at: string | null;
+}
+
+export const opsProjects = () => req<{ projects: OpsProjectRow[] }>("/api/ops/projects");
