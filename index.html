@@ -5,9 +5,17 @@
       
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>OpenFrame Website</title>
-      <meta name="description" content="Streamlines trade management by providing professionals with tools to track orders, manage inventory, and optimize sales workflows efficiently." />
-      <meta name="robots" content="noindex, nofollow" />
+      <!-- Title and description are REPLACED per-URL by the Worker before this
+           shell is served (worker/lib/shell.ts), so a social scraper's single
+           fetch sees the real values. These are only the pre-render fallback. -->
+      <title>Aluminium Windows &amp; Doors</title>
+      <meta name="description" content="Price aluminium windows and doors online, get a reviewed quote from our team, and track your order through to delivery." />
+      <!-- The site-wide "noindex, nofollow" that used to sit here is gone. It
+           overrode every per-page robots value the SEO work produced, so the
+           whole site was invisible to search regardless of what any page said.
+           Indexability is now decided in ONE place: /robots.txt, which the
+           Worker serves as Disallow unless APP_ENV is production. -->
+      <meta name="robots" content="max-image-preview:large" />
       <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
       
     </head>

@@ -444,6 +444,34 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.ok(merged.body.lines[0].review?.fit, "merging restores the fit warning");
     });
 
+    // Social scrapers fetch the raw HTML once and never run JS, so the shell's
+    // head has to be right on the FIRST response — the client's injection is too
+    // late for them.
+    await t.test("crawler surfaces: server-rendered head, sitemap and robots", async () => {
+      const html = await (await customer.request("/")).text();
+      assert.ok(!/content="noindex/.test(html), "no site-wide robots meta may block indexing");
+      assert.ok(html.includes("og:title"), "og:title is present without running any JS");
+      assert.ok(html.includes("og:url"), "og:url is present");
+      assert.ok(!html.includes("OpenFrame Website"), "the build-time placeholder title must be replaced");
+
+      // A product URL gets that product own title, not the home page one.
+      const prodHtml = await (await customer.request("/products/amj80-series-sliding-window")).text();
+      assert.ok(prodHtml.includes("AMJ80 Series Sliding Window"), "product head is rendered server-side");
+
+      const sitemap = await customer.request("/sitemap.xml");
+      assert.equal(sitemap.status, 200);
+      const xml = await sitemap.text();
+      assert.ok(xml.includes("<urlset"));
+      assert.ok(xml.includes("how-it-works"));
+      assert.ok(xml.includes("products/amj80-series-sliding-window"), "products are listed individually");
+
+      const robots = await customer.request("/robots.txt");
+      assert.equal(robots.status, 200);
+      // APP_ENV is development here, so it must REFUSE crawling: a non-production
+      // deployment getting indexed is the failure mode this guards.
+      assert.ok((await robots.text()).includes("Disallow"));
+    });
+
     await t.test("customer and ops SPA fallback plus real static assets", async () => {
       const customerShell = await customer.request("/catalogue/deep-link");
       assert.equal(customerShell.status, 200);

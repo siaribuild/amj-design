@@ -95,7 +95,12 @@ function itemIssues(p: Product, it: { width: string; height: string; options: Re
   const issues: Issue[] = [];
   const w = parseInt(it.width) || 0, h = parseInt(it.height) || 0;
   if (!w || !h) issues.push({ section: "dims", msg: "Enter the opening size" });
-  else if (!inRangeFor(p, w, h)) issues.push({ section: "dims", msg: "Size is outside the allowed range" });
+  // Only UNDERSIZE is an issue. An oversized opening is a real building the
+  // customer cannot change; it carries a `fit` warning, prices best-fit and
+  // stays submittable — the same treatment a parsed oversized line gets.
+  else if ((p.minWidth != null && w < p.minWidth) || (p.minHeight != null && h < p.minHeight)) {
+    issues.push({ section: "dims", msg: `Size is below the minimum for ${p.name}` });
+  }
   for (const g of optionGroupsFor(p)) if (g.required && !it.options[g.typeSlug]) issues.push({ section: "options", msg: `Choose ${g.label.toLowerCase()}` });
   return issues;
 }
@@ -116,7 +121,8 @@ function DimensionsFields({ p, width, height, measuredBy, setWidth, setHeight, s
   const w = parseInt(width) || 0, h = parseInt(height) || 0;
   const dimsEntered = w > 0 && h > 0;
   const inRange = inRangeFor(p, w, h);
-  const outOfRange = dimsEntered && !inRange;
+  const tooSmall = dimsEntered && ((p.minWidth != null && w < p.minWidth) || (p.minHeight != null && h < p.minHeight));
+  const oversize = dimsEntered && !inRange && !tooSmall;
   const wideFamily = p.categorySlug === "doors" || p.familySlug === "sliding-window";
   const reversed = wideFamily && dimsEntered && h > w * 1.1 && inRange;
   return (
@@ -144,10 +150,20 @@ function DimensionsFields({ p, width, height, measuredBy, setWidth, setHeight, s
               <span>Height is greater than width — these look reversed. <button onClick={() => { setWidth(height); setHeight(width); }} className="underline font-medium cursor-pointer">Swap</button></span>
             </div>
           )}
-          {outOfRange && (
+          {tooSmall && (
             <div className="flex items-start gap-2 bg-red-50 border border-red-300 px-3 py-2 text-xs text-red-700">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-red-500" />
-              <span>Size must be within {mm(p.minWidth ?? 0)}–{mm(p.maxWidth ?? 0)} wide and {mm(p.minHeight ?? 0)}–{mm(p.maxHeight ?? 0)} high for {p.name}.</span>
+              <span>{p.name} starts at {mm(p.minWidth ?? 0)} wide and {mm(p.minHeight ?? 0)} high. Check the measurement.</span>
+            </div>
+          )}
+          {oversize && (
+            <div className="flex items-start gap-2 border border-[#4C6A88]/35 px-3 py-2 text-xs text-[#33526f]" style={{ background: "rgba(76,106,136,0.06)" }}>
+              <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              <span>
+                No single {p.name} is made this large (up to {mm(p.maxWidth ?? 0)} × {mm(p.maxHeight ?? 0)}). Openings this
+                size are built as two or more units joined on site. <strong className="font-medium">Keep your real size</strong> — we design
+                the join and confirm the price at technical review.
+              </span>
             </div>
           )}
         </div>
@@ -396,8 +412,17 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
   const gstMode = useGstMode();
   const finalCode = normCode(code) || (productSlug ? suggestCode(quote.items, productSlug) : "");
   const duplicateCode = !!finalCode && quote.items.some(item => normCode(item.code) === finalCode);
-  const canSave = priced.ok && inRange && !duplicateCode;
-  const built: Omit<QItem, "id"> = { code: finalCode, productSlug, location, measuredBy, width, height, options, qty, status: "Ready" };
+  const oversize = dimsEntered && !inRange && !((p?.minWidth != null && w < p.minWidth) || (p?.minHeight != null && h < p.minHeight));
+  const tooSmall = dimsEntered && !inRange && !oversize;
+  // Oversize is submittable, flagged; undersize is a typo and blocks.
+  const canSave = priced.ok && !tooSmall && !duplicateCode;
+  const built: Omit<QItem, "id"> = {
+    code: finalCode, productSlug, location, measuredBy, width, height, options, qty,
+    status: oversize ? "Needs review" : "Ready",
+    review: oversize
+      ? { fit: "No single unit is made at this size — we will confirm how it is built and price it at technical review." }
+      : null,
+  };
 
   const pickFamily = (slug: string) => { setFamilySlug(slug); setProductSlug(""); if (!codeEdited) setCode(""); };
   const pickProduct = (slug: string) => {

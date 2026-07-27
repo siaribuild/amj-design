@@ -20,6 +20,7 @@ import { parse } from "./routes/parse";
 import { ops } from "./routes/ops";
 import { integrations } from "./routes/integrations";
 import { debug } from "./routes/debug";
+import { buildSitemap, buildRobots, renderShell } from "./lib/shell";
 import { ensureCatalogue } from "./lib/catalogue";
 import { getActiveLocations } from "../src/data/catalogue";
 import { drainLearningOutbox } from "./lib/revisions";
@@ -94,6 +95,17 @@ export default {
     // host's SPA shell. The ops console is a separate bundle on ops.* (guarded by
     // Cloudflare Access in prod); we pick the shell up front because the asset
     // system maps "/" to index.html.
+    // Crawler-facing files are GENERATED, not static, so they must be handled
+    // before the asset check — both end in an extension and would otherwise be
+    // looked up in the bundle and 404.
+    const host = request.headers.get("host") ?? url.hostname;
+    const isOps = host.startsWith("ops.");
+    if (!isOps && url.pathname === "/sitemap.xml") {
+      await ensureCatalogue(env);           // products come from the live catalogue
+      return buildSitemap(env, url.origin);
+    }
+    if (!isOps && url.pathname === "/robots.txt") return buildRobots(url.origin, env.APP_ENV === "production");
+
     const isAsset = /\.[a-zA-Z0-9]+$/.test(url.pathname) && !url.pathname.endsWith(".html");
     if (isAsset) return env.ASSETS.fetch(request);
 
@@ -109,9 +121,21 @@ export default {
       return api.fetch(request, env, ctx);
     }
 
-    const host = request.headers.get("host") ?? url.hostname;
-    const shell = host.startsWith("ops.") ? "/ops.html" : "/index.html";
-    return env.ASSETS.fetch(new URL(shell, url.origin).toString());
+    const shell = isOps ? "/ops.html" : "/index.html";
+    const res = await env.ASSETS.fetch(new URL(shell, url.origin).toString());
+
+    // Rewrite the customer shell's <head> for this URL. The SPA injects its own
+    // tags after hydration, but social scrapers read the first response and never
+    // run JS — so without this, every shared link previews as the build-time
+    // placeholder. Failure here must never cost the page: fall back to the shell.
+    if (isOps) return res;
+    try {
+      const html = await renderShell(env, await res.text(), url);
+      return new Response(html, { headers: res.headers });
+    } catch (e) {
+      console.log(`[shell] head render failed: ${String(e)}`);
+      return env.ASSETS.fetch(new URL(shell, url.origin).toString());
+    }
   },
   async queue(batch: MessageBatch<AiExtractionJob>, env: Env): Promise<void> {
     await consumeAiJobs(batch, env);
