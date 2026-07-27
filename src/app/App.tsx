@@ -821,12 +821,42 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
             </div>
           </div>
 
-          {/* The sage "Then a person checks it" panel sat here and is gone (owner
-              decision). The two-business-day review is still stated in the hero
-              — "that part takes about a minute. A person then reviews it, usually
-              within two business days" — and again in process card 01, so the
-              claim is still qualified; it is no longer qualified twice within one
-              screen, and the section ends on the evidence. */}
+          {/* The handover — the LAST ROW OF THE DEMO, not a panel under it.
+              -mt-px welds it to the pair above so it shares their border; the
+              sage panel it replaces floated below with its own margin and its own
+              fill, which is why it read as a disclaimer sticker rather than part
+              of the object.
+              It exists because the footer above ends on "flagged for a technician
+              to confirm" — a sentence that opens a loop the section then had no
+              ending for. Closing it here also brackets the demo with its two
+              timescales: the machine's minute in the header, the human's two days
+              at the foot. The numeral is deliberately smaller than "< 1 min" —
+              the minute is the claim, the review is the qualifier, and the type
+              scale should say which is which.
+              No tint (the results footer directly above already carries the sage
+              wash; two stacked tinted strips stutter), no meter, no motion — the
+              staggered row reveal is the machine working, this is the person. */}
+          <div className="border border-black/10 -mt-px bg-white px-4 py-4 lg:px-5 lg:py-5
+                          flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div className="max-w-[62ch]">
+              <span className="block text-[11px] uppercase tracking-[0.14em] text-[#8a8782] mb-1.5" style={MONO}>
+                What happens next
+              </span>
+              <p className="text-[15px] text-[#131311] leading-relaxed">
+                A technician confirms specifications, sizes and buildability before it becomes a quote.
+                Nothing is charged either way.
+              </p>
+            </div>
+            {/* Phone: numeral and caption share one baseline, left-aligned with
+                everything above. Right-aligned only once there is a row to sit in. */}
+            <div className="flex items-baseline gap-2 lg:flex-col lg:items-end lg:gap-0 lg:text-right lg:flex-shrink-0">
+              <div className="font-semibold text-[#3f5a4c] leading-none"
+                style={{ ...MONO, fontSize: "clamp(1.25rem, 3vw, 1.75rem)" }}>
+                ~2 days
+              </div>
+              <div className="text-[#8a8782] text-[12px] lg:mt-1.5">for a person to check it</div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -834,7 +864,12 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           Real photography, kept as-is. The mock renders its system tiles as CSS
           grids of glowing rectangles; a window manufacturer showing a drawing
           instead of a photograph tells a visitor something it does not want said. */}
-      <section className="relative bg-[#FAFAF9] py-14 md:py-[68px] overflow-hidden">
+      {/* border-t: Systems was the only section on the page without one, which is
+          why white → bone read as nothing happening rather than as a new context.
+          Every other white-to-white boundary here is separated by a rule; this one
+          was relying on a 1.5% luminance step. Do NOT darken bone to force the
+          contrast instead — bone is what separates Systems from Process below it. */}
+      <section className="relative bg-[#FAFAF9] py-14 md:py-[68px] border-t border-black/8 overflow-hidden">
         <GhostMark size={300} opacity={0.04} pos="right-0 bottom-0" />
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Systems</SLabel>
