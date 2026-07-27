@@ -371,6 +371,12 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       await requestJson(guest, `/api/projects/${projectId}/revisions`);
 
       // Signing out drops the session, so a shared machine keeps nothing.
+      // Navigating away and back must NOT demand the code again: the credential
+      // is an httpOnly cookie that lives until the browser closes, so a fresh
+      // page load resolves the same session. (The UI resumes from this call.)
+      const resumed = await requestJson(guest, "/api/guest/record");
+      assert.equal(resumed.body.id, projectId, "the session resumes without re-verifying");
+
       await requestJson(guest, "/api/guest/signout", { method: "POST" });
       await requestJson(guest, "/api/guest/record", {}, 404);
     });

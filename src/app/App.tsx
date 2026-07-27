@@ -1022,6 +1022,12 @@ function AccountPage({ user, setPage, setUser, authLoading }: { user: AuthUser |
 function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [step, setStep] = useState<"lookup" | "code" | "record">("lookup");
+  // "resuming" until we know whether a guest session is already live. Without
+  // this, navigating away (Message us, Contact) and coming back re-mounted the
+  // page at "lookup" and demanded the reference, email and code again — even
+  // though the cookie was still valid. The session lasts until the browser
+  // closes, so the UI has to ask the server, not its own useState.
+  const [resuming, setResuming] = useState(true);
   const [ref, setRef] = useState(""); const [email, setEmail] = useState(""); const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const [devCode, setDevCode] = useState<string | undefined>();
@@ -1030,6 +1036,18 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
   const [rec, setRec] = useState<{ kind: "project" | "order"; id: string; status?: string } | null>(null);
 
   const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+
+  // Resume an existing guest session on mount. The credential is an httpOnly
+  // cookie, so the browser still has it after a navigation — only this
+  // component's state was lost. A 404 simply means no live session.
+  useEffect(() => {
+    let live = true;
+    guestRecord()
+      .then((r) => { if (live) { setRec(r); setStep("record"); } })
+      .catch(() => { /* no session — the lookup form is correct */ })
+      .finally(() => { if (live) setResuming(false); });
+    return () => { live = false; };
+  }, []);
 
   const request = async () => {
     if (!validEmail || !ref.trim() || busy) return;
@@ -1061,11 +1079,16 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
         <SLabel>Quote &amp; order tracking</SLabel>
         <h1 className="text-3xl font-semibold text-[#131311] mb-2"
           style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Track your quote or order</h1>
-        {step !== "record" && (
+        {!resuming && step !== "record" && (
           <p className="text-[#5c5a56] text-sm mb-8">Enter the reference from your confirmation email — a quote (OF-Q-) or an order (OF-) — with the email address you used. We'll send a one-time code to confirm it's you; no account required.</p>
         )}
 
-        {step === "lookup" && (
+        {/* Hold the form back until we know whether a session is already live —
+            otherwise the lookup flashes up and is snatched away. */}
+        {resuming && (
+          <div className="bg-white border border-black/8 p-6 text-sm text-[#5c5a56]">Checking your session…</div>
+        )}
+        {!resuming && step === "lookup" && (
           <div className="group relative bg-white border border-black/8 p-6 space-y-4 overflow-hidden">
             <FrameCorners size={10} color={SAGE} show="always" />
             <div><FieldLabel>Quote or order reference</FieldLabel><Input value={ref} onChange={e => setRef(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && request()} placeholder="OF-Q-10001 or OF-58001" className="font-mono tracking-wide" /></div>
