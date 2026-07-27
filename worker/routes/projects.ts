@@ -6,7 +6,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { itemToInsert, itemFields, incomingServerId, editedFieldsAfterSave, rowToApiLine, type LineRow, type EditableSnapshot } from "../lib/lines";
-import { resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
+import { ownedProject, resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 import { uuid } from "../lib/util";
 
@@ -84,11 +84,10 @@ projects.get("/current", async (c) => {
 // Scoped to the signed-in owner so a customer can review exactly what they
 // submitted (e.g. while it's under review, before any revision is issued).
 projects.get("/:id", async (c) => {
-  const user = await resolveUser(c.env, c.req.raw);
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  const project = await c.env.DB.prepare(
-    "SELECT * FROM project WHERE id = ? AND owner_user_id = ?",
-  ).bind(c.req.param("id"), user.id).first<ProjectRow>();
+  // ownedProject, not owner-only: the same customer reaching their record through
+  // an emailed code rather than an account must see the same thing. It already
+  // encodes the draft-vs-committed rule, so this needs no separate policy.
+  const project = await ownedProject(c.env, c.req.raw, c.req.param("id"));
   if (!project) return c.json({ error: "not_found" }, 404);
   return c.json({ project: projectDto(project), items: await loadLines(c.env, project.id), files: await loadProjectFiles(c.env, project.id) });
 });

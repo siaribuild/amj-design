@@ -15,7 +15,7 @@ import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { AccountShell, type AccountSection } from "../pages/AccountShell";
 import { AccountDashboard } from "../pages/AccountDashboard";
 import { HelpPage } from "../pages/AccountSections";
-import { OrderDetail, ProjectDetail, GuestRecordView } from "../pages/RecordDetailPage";
+import { OrderDetail, ProjectDetail } from "../pages/RecordDetailPage";
 import { QuoteReviewPage } from "../pages/QuoteReviewPage";
 import { initialsOf } from "../pages/accountModel";
 import { QuotePage } from "../pages/QuotePage";
@@ -28,7 +28,7 @@ import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, ge
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
-import { getCurrentProject, saveLines, submitProject, updateProfile, clearDraft, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiGuestQuote, type ApiItem, type ApiScheduleFile, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
+import { getCurrentProject, saveLines, submitProject, updateProfile, clearDraft, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
 import { GstContext, type GstMode } from "../data/gst";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1025,7 +1025,6 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
   // Exactly one of these is set: a project that hasn't been accepted yet has no
   // order, and its quote reference is what the submission email told them to use.
   const [order, setOrder] = useState<ApiOrder | null>(null);
-  const [quote, setQuote] = useState<ApiGuestQuote | null>(null);
   const [items, setItems] = useState<ApiItem[]>([]);
   const [files, setFiles] = useState<ApiScheduleFile[]>([]);
 
@@ -1045,15 +1044,13 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
     setBusy(true); setError("");
     try {
       await guestTrackVerify(email.trim(), ref.trim(), code.trim());
-      const rec = await guestRecord();
-      setOrder(rec.order ?? null); setQuote(rec.quote ?? null);
-      setItems(rec.items ?? []); setFiles(rec.files ?? []); setStep("record");
+      setRec(await guestRecord()); setStep("record");
     } catch { setError("That code didn't match, or the details don't match a quote or order."); }
     finally { setBusy(false); }
   };
   const reset = () => {
     void guestSignOut().catch(() => {});   // do not leave a live session behind
-    setStep("lookup"); setCode(""); setOrder(null); setQuote(null); setItems([]); setFiles([]); setError(""); setDevCode(undefined);
+    setStep("lookup"); setCode(""); setRec(null); setError(""); setDevCode(undefined);
   };
 
   return (
@@ -1092,10 +1089,12 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
           </div>
         )}
 
-        {step === "record" && (order || quote) && (
+        {step === "record" && rec && (
           <div>
             <button onClick={reset} className="text-xs text-[#5c5a56] hover:text-[#131311] flex items-center gap-1 cursor-pointer mb-5"><ChevronLeft className="w-3 h-3" />New search</button>
-            <GuestRecordView record={{ order: order ?? undefined, quote: quote ?? undefined, items, files }} setPage={go} />
+            {rec.kind === "order"
+              ? <OrderDetail orderId={rec.id} setPage={go} />
+              : <ProjectDetail projectId={rec.id} status={rec.status} setPage={go} />}
           </div>
         )}
       </div>

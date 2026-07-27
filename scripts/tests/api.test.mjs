@@ -254,7 +254,13 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.match(request.body.devCode, /^\d{6}$/);
       await requestJson(anonymous, "/api/guest/track/verify", { method: "POST", json: { email: "sarah@northsidebuild.com.au", ref: newOrder.orderNo, code: request.body.devCode } });
       const record = await requestJson(anonymous, "/api/guest/record");
-      assert.equal(record.body.order.id, newOrder.id);
+      assert.equal(record.body.kind, "order");
+      assert.equal(record.body.id, newOrder.id);
+      // The record itself comes from the ORDINARY customer endpoint — one view,
+      // one payload, for guests and signed-in customers alike.
+      const full = await requestJson(anonymous, `/api/orders/${newOrder.id}`);
+      assert.equal(full.body.order.id, newOrder.id);
+      assert.ok(full.body.order.lines.length > 0);
     });
 
     // Regression: the submission email hands the customer their QUOTE reference
@@ -293,18 +299,20 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.match(req.body.devCode, /^\d{6}$/, "no tracking code issued for a submitted quote");
 
       await requestJson(guest, "/api/guest/track/verify", { method: "POST", json: { email, ref, code: req.body.devCode } });
+      // The guest endpoint says only WHICH record the session covers.
       const rec = await requestJson(guest, "/api/guest/record");
-      // No order exists yet, so the quote view is returned — and it carries NO
-      // price, because the estimate has not been through technical review.
-      assert.equal(rec.body.order, undefined);
-      assert.equal(rec.body.quote.ref, ref);
-      assert.equal(rec.body.quote.status, "submitted");
-      // The guest record carries the same substance as the signed-in view: the
-      // submitted lines and their documents, not just a status word.
-      assert.equal(rec.body.items.length, 1);
-      assert.equal(rec.body.items[0].code, "W01");
-      assert.ok(rec.body.items[0].lineTotal > 0, "line prices must travel with the guest record");
-      assert.ok(Array.isArray(rec.body.files));
+      assert.equal(rec.body.kind, "project");
+      assert.equal(rec.body.id, projectId);
+      assert.equal(rec.body.status, "submitted");
+
+      // The record itself comes from the ORDINARY customer endpoint, so a guest
+      // and a signed-in customer are served the same payload by the same code —
+      // there is no second view or DTO to drift.
+      const full = await requestJson(guest, `/api/projects/${projectId}`);
+      assert.equal(full.body.items.length, 1);
+      assert.equal(full.body.items[0].code, "W01");
+      assert.ok(full.body.items[0].lineTotal > 0);
+      assert.ok(Array.isArray(full.body.files));
 
       // A wrong email must still not resolve the reference.
       const wrong = await requestJson(guest, "/api/guest/track/request", { method: "POST", json: { email: "someone.else@example.com", ref } });

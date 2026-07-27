@@ -276,25 +276,11 @@ export const guestTrackVerify = (email: string, ref: string, code: string) =>
     method: "POST",
     body: JSON.stringify({ email, ref, code }),
   });
-/** A quote still in review — there is no order yet. Line items and their
- *  indicative prices travel with it, under the same "may differ after technical
- *  review" caveat the signed-in account view uses. */
-export interface ApiGuestQuote {
-  ref: string;
-  title: string;
-  status: string;
-  contactName: string | null;
-  submittedAt: string;
-  createdAt?: string;
-}
-/** Exactly one of `order` / `quote` is present, depending on how far the project
- *  has progressed; `items` and `files` accompany a quote. */
+/** Which record this guest session covers. The record itself is then read
+ *  through the ordinary customer endpoints, which accept the same session — one
+ *  payload and one view for guests and signed-in customers alike. */
 export const guestRecord = () =>
-  req<{ order?: ApiOrder; quote?: ApiGuestQuote; items?: ApiItem[]; files?: ApiScheduleFile[] }>(
-    "/api/guest/record",
-  );
-/** Ends the guest session — for shared machines, since the cookie otherwise
- *  lives until the browser closes. */
+  req<{ kind: "project" | "order"; id: string; status?: string }>("/api/guest/record");
 export const guestSignOut = () => req<{ ok: boolean }>("/api/guest/signout", { method: "POST" });
 
 // ── Files (R2) ───────────────────────────────────────────────────────────────

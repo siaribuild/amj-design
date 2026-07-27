@@ -361,7 +361,7 @@ export function ContactCard({ setPage }: { setPage: (p: Page) => void }) {
 }
 
 // ═══ ORDER DETAIL ═════════════════════════════════════════════════════════════
-export function OrderDetail({ orderId, setPage, backToList }: { orderId: string; setPage: (p: Page) => void; backToList: () => void }) {
+export function OrderDetail({ orderId, setPage, backToList }: { orderId: string; setPage: (p: Page) => void; backToList?: () => void }) {
   const { refresh } = useAccount();
   const [order, setOrder] = useState<ApiOrder | null>(null);
   const [files, setFiles] = useState<ApiFile[]>([]);
@@ -406,7 +406,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
 
   return (
     <>
-      <BackLink onClick={backToList} />
+      {backToList && <BackLink onClick={backToList} />}
       <div className="flex justify-between items-start gap-5 flex-wrap pb-[22px] border-b border-black/10 mb-[26px]">
         <div>
           {/* One project, whole life: the project ref anchors the record; the order
@@ -511,8 +511,8 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
 
 // ═══ QUOTE-STAGE PROJECT DETAIL (submitted / under review / needs info) ═══════
 export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRecord }: {
-  projectId: string; status?: string; setPage: (p: Page) => void; backToList: () => void;
-  onOpenRecord: (rec: TrackFocus) => void;
+  projectId: string; status?: string; setPage: (p: Page) => void; backToList?: () => void;
+  onOpenRecord?: (rec: TrackFocus) => void;
 }) {
   const [data, setData] = useState<CurrentProject | null>(null);
   const [files, setFiles] = useState<ApiFile[]>([]);
@@ -558,7 +558,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
 
   return (
     <>
-      <BackLink onClick={backToList} />
+      {backToList && <BackLink onClick={backToList} />}
       <div className="flex justify-between items-start gap-5 flex-wrap pb-[22px] border-b border-black/10 mb-[26px]">
         <div>
           <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
@@ -626,134 +626,4 @@ function itemToParsed(it: ApiItem): ParsedLine {
     width: it.width, height: it.height,
     qty: it.qty, lineTotal: it.lineTotal,
   };
-}
-
-// ─── Guest record view ────────────────────────────────────────────────────────
-// A guest who verified a tracking code sees the SAME record the signed-in
-// account area shows — journey, line items, documents, payment state — scoped to
-// the one record their grant covers. Built from the same blocks as OrderDetail /
-// ProjectDetail rather than a parallel layout, so the two can't drift.
-//
-// What a guest deliberately does NOT get: anything that mutates. Accepting a
-// quote, paying, signing off drawings and confirming delivery all commit the
-// customer to something, and a 6-digit code mailed to an address is not the
-// footing to do that on — those actions ask them to sign in. A guest_grant is
-// read-only by design.
-export function GuestRecordView({ record, setPage }: {
-  record: { order?: ApiOrder; quote?: ApiGuestQuote; items?: ApiItem[]; files?: ApiScheduleFile[] };
-  setPage: (p: Page) => void;
-}) {
-  const { order, quote } = record;
-
-  if (order) {
-    const lines: ParsedLine[] = (order.lines ?? []).map(parseLine);
-    const meta = orderMeta(order);
-    return (
-      <>
-        <div className="flex justify-between items-start gap-5 flex-wrap pb-[22px] border-b border-black/10 mb-[26px]">
-          <div>
-            <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
-              <span className="text-[13px] font-medium text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>{order.orderNo}</span>
-              <StatusPill tone={meta.tone}>{order.stageLabel}</StatusPill>
-            </div>
-            <h1 className="font-semibold text-[#131311] leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.55rem,3.4vw,2rem)" }}>
-              {order.projectTitle ?? "Your order"}
-            </h1>
-            <div className="flex gap-x-4 gap-y-2 flex-wrap text-[13.5px] text-[#5c5a56] mt-2">
-              <span>Ordered <span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDate(order.createdAt)}</span></span>
-              {order.lineCount != null && <span>{num(`${order.lineCount} lines`)}</span>}
-            </div>
-          </div>
-          {order.total != null && (
-            <div className="text-right">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-[#8a8782]" style={{ fontFamily: "'DM Mono', monospace" }}>Order total</div>
-              <div className="text-2xl font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{money(order.total)}</div>
-            </div>
-          )}
-        </div>
-        <Blk eyebrow="Lifecycle" title="Quote → order journey"><Timeline nodes={orderTimeline(order)} /></Blk>
-        {lines.length > 0 && (
-          <Blk eyebrow="Schedule" title="Order lines" right="As confirmed on your quote">
-            <LineList lines={lines} total={order.total ?? undefined} footerLabel="Order total" showUnit />
-          </Blk>
-        )}
-        {order.files && order.files.length > 0 && <SourceSchedule files={order.files} />}
-        <SummaryBand order={order}><ContactCard setPage={setPage} /></SummaryBand>
-        <GuestSignInNote setPage={setPage} />
-      </>
-    );
-  }
-
-  if (!quote) return null;
-
-  const items = record.items ?? [];
-  const lines: ParsedLine[] = items.map(itemToParsed);
-  const total = items.reduce((s, it) => s + (it.lineTotal ?? 0), 0);
-  const needsInfo = quote.status === "needs_information";
-  const issued = quote.status === "quote_issued";
-
-  const timeline: TlNode[] = [
-    { key: "req", title: "Quote requested", state: "done", pill: { tone: "pos", label: "Done" },
-      status: <>Submitted {num(fmtDate(quote.createdAt ?? quote.submittedAt))} · {num(`${lines.length} lines`)}</> },
-    needsInfo
-      ? { key: "review", title: "Review — we need an answer", state: "cur", pill: { tone: "attn", label: "Action needed", pulse: true },
-          status: <>Check your email — pricing is paused until you reply</> }
-      : issued
-        ? { key: "review", title: "Reviewed quote ready", state: "done", pill: { tone: "pos", label: "Done" },
-            status: <>We've emailed your reviewed quote</> }
-        : { key: "review", title: "Technical review", state: "cur", pill: { tone: "work", label: "You're here", pulse: true },
-            status: <>{brandSubject()} {brandSubject() === "We" ? "are" : "is"} checking specifications and pricing — usually within 2 business days</> },
-    { key: "accept", title: "Accept quote → 50% deposit", state: issued ? "cur" : "locked",
-      pill: issued ? { tone: "attn", label: "Waiting on you" } : { tone: "mute", label: "Not started" },
-      status: <>Nothing is charged until you accept the reviewed quote</> },
-    { key: "make", title: "Manufacture & delivery", state: "locked", pill: { tone: "mute", label: "Not started" },
-      status: <>Begins once the deposit is received</> },
-  ];
-
-  return (
-    <>
-      <div className="flex justify-between items-start gap-5 flex-wrap pb-[22px] border-b border-black/10 mb-[26px]">
-        <div>
-          <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
-            <span className="text-[13px] font-medium text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>{quote.ref}</span>
-            <StatusPill tone={needsInfo ? "attn" : issued ? "pos" : "work"}>
-              {needsInfo ? "Needs your answer" : issued ? "Quote ready" : "Being priced"}
-            </StatusPill>
-          </div>
-          <h1 className="font-semibold text-[#131311] leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.55rem,3.4vw,2rem)" }}>{quote.title}</h1>
-          <div className="flex gap-x-4 gap-y-2 flex-wrap text-[13.5px] text-[#5c5a56] mt-2">
-            <span>Submitted for pricing <span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDate(quote.submittedAt)}</span></span>
-            <span>{num(`${lines.length} lines`)}</span>
-          </div>
-        </div>
-        {total > 0 && (
-          <div className="text-right">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-[#8a8782]" style={{ fontFamily: "'DM Mono', monospace" }}>Indicative</div>
-            <div className="text-2xl font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{money(total)}</div>
-          </div>
-        )}
-      </div>
-      <Blk eyebrow="Lifecycle" title="Quote → order journey"><Timeline nodes={timeline} /></Blk>
-      {lines.length > 0 && (
-        <Blk eyebrow="Schedule" title="Submitted lines" right="As you submitted them">
-          <LineList lines={lines} total={total} showUnit
-            footerLabel="Estimates — your reviewed quote may differ after technical review" />
-        </Blk>
-      )}
-      {record.files && record.files.length > 0 && <SourceSchedule files={record.files} />}
-      <SummaryBand><ContactCard setPage={setPage} /></SummaryBand>
-      <GuestSignInNote setPage={setPage} />
-    </>
-  );
-}
-
-// Anything that commits the customer lives behind a real session, so the guest
-// view says so once, plainly, instead of showing dead buttons.
-function GuestSignInNote({ setPage }: { setPage: (p: Page) => void }) {
-  return (
-    <p className="text-[13px] text-[#5c5a56] leading-relaxed mt-6 pt-5 border-t border-black/10">
-      This is a read-only view. To accept a quote, make a payment or sign off drawings,{" "}
-      <button onClick={() => setPage("login")} className="text-[#5A7A6A] font-medium hover:underline cursor-pointer">sign in with this email address</button>.
-    </p>
-  );
 }

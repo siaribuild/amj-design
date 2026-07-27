@@ -2,7 +2,9 @@
 //
 //   request { email, ref } -> always-neutral response; a code is emailed only on
 //   a match (OWASP anti-enumeration). verify { email, ref, code } -> a scoped,
-//   short-lived guest_grant token. records/{token} -> a read-only order view.
+//   short-lived guest_grant token, delivered as an httpOnly SESSION cookie.
+//   record -> which record that session covers; the record itself is read through
+//   the ordinary customer endpoints, which accept the same session.
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { GUEST_COOKIE, guestCookie, clearGuestCookie, newToken, parseCookies, uuid } from "../lib/util";
@@ -113,72 +115,27 @@ guest.post("/signout", (c) => {
   return c.json({ ok: true });
 });
 
-// GET /api/guest/record — the record this guest session covers. An accepted
-// project resolves to its order; one still in review returns the quote instead,
-// which is all that exists at that point.
+// GET /api/guest/record — WHICH record this session covers, nothing more.
+// The record itself is fetched through the ordinary customer endpoints, which
+// now accept a guest session: one payload, one view, no second copy of either to
+// keep in step.
 guest.get("/record", async (c) => {
   const cookie = parseCookies(c.req.raw.headers.get("Cookie"))[GUEST_COOKIE];
   const grant = cookie ? await c.env.DB
-    .prepare("SELECT * FROM guest_grant WHERE token = ? AND expires_at > datetime('now')")
-    .bind(cookie).first<{ record_id: string; record_type: string }>() : null;
+    .prepare("SELECT record_type, record_id FROM guest_grant WHERE token = ? AND expires_at > datetime('now')")
+    .bind(cookie).first<{ record_type: string; record_id: string }>() : null;
   if (!grant) return c.json({ error: "not_found" }, 404);
 
-  if (grant.record_type === "order") {
-    const order = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(grant.record_id).first<OrderRow>();
-    if (!order) return c.json({ error: "not_found" }, 404);
-    // Same context the signed-in order view gets — line items and the project
-    // title, not just stage and payments — so a guest sees the whole record.
-    const ctx = await c.env.DB.prepare(
-      `SELECT p.title AS project_title, p.public_ref AS project_ref,
-              (SELECT revision_no FROM quote_revision qr WHERE qr.id = o.accepted_revision_id) AS revision_no
-         FROM "order" o JOIN project p ON p.id = o.project_id WHERE o.id = ?`,
-    ).bind(order.id).first<{ project_title: string | null; project_ref: string | null; revision_no: number | null }>();
-    // order_line carries only these five columns — no position, room_label or
-    // dims_json (room labels live on the revision snapshot). Matches the query
-    // the signed-in order view uses.
-    const { results: lines } = await c.env.DB.prepare(
-      "SELECT external_ref, product_snapshot_json, qty, line_total FROM order_line WHERE order_id = ?",
-    ).bind(order.id).all();
-    return c.json({
-      order: {
-        ...(await orderDto(c.env, order)),
-        projectTitle: ctx?.project_title ?? null,
-        projectRef: ctx?.project_ref ?? null,
-        revisionNo: ctx?.revision_no ?? null,
-        lineCount: lines.length,
-        lines,
-      },
-    });
-  }
+  if (grant.record_type === "order") return c.json({ kind: "order", id: grant.record_id });
 
-  // Pre-order: the same record the signed-in account area renders for a project
-  // — journey, submitted lines, documents. Indicative prices ARE included: the
-  // customer saw them while building and again on submit, and the account view
-  // shows them under the same "may differ after technical review" caveat.
-  // Withholding them from a guest would be an inconsistency, not caution.
-  //
-  // NOTE: project has no submitted_at column — updated_at is the closest thing,
-  // and it is what moved when the status became "submitted".
-  const p = await c.env.DB.prepare(
-    `SELECT id, public_ref, title, status_customer, contact_name, updated_at, created_at
-       FROM project WHERE id = ?`,
-  ).bind(grant.record_id).first<{
-    id: string; public_ref: string | null; title: string | null; status_customer: string;
-    contact_name: string | null; updated_at: string | null; created_at: string;
-  }>();
+  // A project that has since become an order points at the order — the richer
+  // record, and the one the customer is asking about by then.
+  const o = await c.env.DB.prepare('SELECT id FROM "order" WHERE project_id = ?')
+    .bind(grant.record_id).first<{ id: string }>();
+  if (o) return c.json({ kind: "order", id: o.id });
+
+  const p = await c.env.DB.prepare("SELECT status_customer FROM project WHERE id = ?")
+    .bind(grant.record_id).first<{ status_customer: string }>();
   if (!p) return c.json({ error: "not_found" }, 404);
-
-  const items = await loadLines(c.env, p.id);
-  return c.json({
-    quote: {
-      ref: p.public_ref ?? p.id,
-      title: p.title ?? "My Project",
-      status: p.status_customer,
-      contactName: p.contact_name,
-      submittedAt: p.updated_at ?? p.created_at,
-      createdAt: p.created_at,
-    },
-    items,
-    files: await loadProjectFiles(c.env, p.id),
-  });
+  return c.json({ kind: "project", id: grant.record_id, status: p.status_customer });
 });

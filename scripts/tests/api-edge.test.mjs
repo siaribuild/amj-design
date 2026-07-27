@@ -523,8 +523,9 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       const nosey = new Session(baseUrl);
       await login(nosey, "/api/auth", "nosey@example.com");
       await requestJson(nosey, `/api/projects/${pid}`, {}, 404);
-      // Anonymous access is rejected outright.
-      await requestJson(new Session(baseUrl), `/api/projects/${pid}`, {}, 401);
+      // A caller with no credential is refused — and gets the SAME 404 a signed-in
+      // stranger gets, so the response never reveals that the project exists.
+      await requestJson(new Session(baseUrl), `/api/projects/${pid}`, {}, 404);
 
       // The account dashboard payload: a durable ref + draft/issued totals per project.
       const list = await requestJson(buyer, "/api/projects");
