@@ -461,7 +461,9 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       const sitemap = await customer.request("/sitemap.xml");
       assert.equal(sitemap.status, 200);
       const xml = await sitemap.text();
-      assert.ok(xml.includes("<urlset"));
+      // The namespace must be sitemapS.org — a one-letter slip makes the whole
+      // document invalid to every crawler that validates it.
+      assert.ok(xml.includes("http://www.sitemaps.org/schemas/sitemap/0.9"), "correct sitemap namespace");
       assert.ok(xml.includes("how-it-works"));
       assert.ok(xml.includes("products/amj80-series-sliding-window"), "products are listed individually");
 
