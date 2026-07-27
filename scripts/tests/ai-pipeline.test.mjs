@@ -343,22 +343,22 @@ test("applyDefaultEnvelope: fills only bare openings, never overrides an explici
   assert.equal(assumption.origin, "envelope_default", "application recorded as an §8.2 assumption");
 });
 
-test("learning example: retrieval and training stay gated pending quality review; deltas + reasons are captured (§17)", () => {
+test("learning example: retrieval and training stay gated; the AI draft and the issued outcome are both carried (§17)", () => {
   const rec = buildExampleRecord({
     projectId: "prj_1", quoteRevisionId: "rev_1", inputMode: "schedule_only",
     sourceChecksums: ["abc123"],
-    buildingModel: { openings: [] }, draftLines: [{ status: "ready" }], revisionLines: [{ externalRef: "W01" }],
-    feedback: [
-      { field: "product", category: "preference_correction", reason_code: "CUSTOMER_PREFERENCE", initial_value_json: '{"productId":"a"}', final_value_json: '{"productId":"b"}' },
-      { field: "width", category: "extraction_correction", reason_code: "WRONG_DIMENSION", initial_value_json: "1810", final_value_json: "1210" },
-      { field: "height", category: "extraction_correction", reason_code: "WRONG_DIMENSION", initial_value_json: null, final_value_json: "2100" },
-    ],
+    buildingModel: { openings: [] },
+    draftLines: [{ status: "ready", catalogue: { productId: "a" } }],
+    revisionLines: [{ externalRef: "W01", product: { productId: "b" } }],
   });
   assert.equal(rec.eligibleForRetrieval, false, "raw project examples stay quarantined until quality approval");
   assert.equal(rec.eligibleForTraining, false, "§17.5: training only via governed dataset releases");
-  assert.equal(rec.deltas.length, 3);
-  assert.deepEqual(rec.deltas[0].aiValue, { productId: "a" });
-  assert.deepEqual(rec.overrideReasons.sort(), ["CUSTOMER_PREFERENCE", "WRONG_DIMENSION"].sort(), "reason codes deduped");
+  // The lesson is the PAIR — what the machine drafted beside what a human issued.
+  // It used to be a reviewer-typed delta list from review_feedback; that surface is
+  // gone, and the primary evidence is strictly better than a summary of it.
+  assert.deepEqual(rec.ai.draftLines[0].catalogue, { productId: "a" }, "the AI's proposal is preserved");
+  assert.deepEqual(rec.human.revisionLines[0].product, { productId: "b" }, "the issued outcome is preserved");
+  assert.equal(rec.deltas, undefined, "no reviewer-typed delta list — it is derivable from the pair");
   assert.ok(rec.pipelineVersion, "reproducibility: pipeline version pinned (§21.3)");
 });
 

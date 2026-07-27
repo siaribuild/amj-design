@@ -2,7 +2,6 @@ import type { Env } from "../../types";
 import { uuid } from "../util";
 import { contextKey } from "../estimator/learning";
 import type { OpeningInput } from "../estimator/types";
-import { isOverrideReason, OVERRIDE_REASONS } from "./schema";
 
 export interface IssuedCartLine {
   id: string;
@@ -87,17 +86,18 @@ export async function captureRecommendationOutcomes(
       stable(proposedOptions) === stable(finalOptions) &&
       proposedTotal === line.line_total;
     const decision = !proposal ? "no_ai_proposal" : accepted ? "accepted" : "adjusted";
-    const feedback = proposal?.opening_id
-      ? await env.DB.prepare(
-        `SELECT reason_code FROM review_feedback
-          WHERE project_id=? AND opening_id=?
-          ORDER BY created_at DESC LIMIT 1`,
-      ).bind(projectId, proposal.opening_id).first<{ reason_code: string }>()
-      : null;
-    const governedReason = feedback && isOverrideReason(feedback.reason_code)
-      ? feedback.reason_code : null;
-    const governedRanker = governedReason ? OVERRIDE_REASONS[governedReason].ranker : false;
-    const recommendationEligible = sameCoreConfiguration || (!!proposal && decision === "adjusted" && governedRanker);
+    // Eligibility used to depend on a reason code logged in the ops Estimator tab.
+    // That tab reviewed the proposal BEFORE submission, a stage staff take no part
+    // in, and it is gone — so the gate moves to where the human actually is.
+    //
+    // Issuing a quote IS the review. A line issued exactly as proposed carries the
+    // reviewer's endorsement and trains the ranker immediately. A line staff
+    // CHANGED before issuing stays `pending`: the final configuration is what they
+    // chose, but whether that choice is a ranking lesson ("the AI picked a product
+    // that misses the U-value") or noise ("the customer wanted a different colour")
+    // is not derivable from the diff. A manager settles it afterwards, on the
+    // issued outcome, via PATCH /api/ops/recommendation-outcomes/:id.
+    const recommendationEligible = sameCoreConfiguration;
     const qualityState = recommendationEligible ? "approved" : "pending";
     const finalConfiguration = {
       productSlug: line.product_slug,
@@ -123,7 +123,7 @@ export async function captureRecommendationOutcomes(
       line.selected_variant_id, JSON.stringify(finalConfiguration), line.line_total,
       proposedTotal == null ? null : line.line_total - proposedTotal, decision,
       decision === "accepted" ? "HUMAN_ACCEPTED"
-        : governedReason ?? (decision === "adjusted" ? "HUMAN_ADJUSTED_UNSPECIFIED" : "NO_AI_PROPOSAL"),
+        : decision === "adjusted" ? "HUMAN_ADJUSTED_UNSPECIFIED" : "NO_AI_PROPOSAL",
       recommendationEligible ? 1 : 0,
       qualityState,
     ));

@@ -1,18 +1,18 @@
-// Persist a selection to D1 and capture review feedback (spec §5.1, §6a, §12).
+// Persist a selection to D1 (spec §5.1).
 //
-// A selection writes one selection_run, the FULL candidate_result set (so a
-// reviewer sees every candidate + why it passed/failed), and a draft_order_line
-// carrying the immutable catalogue + price snapshots. Feedback capture is the
-// learning substrate: every human correction records a MANDATORY reason-code
-// category so the right layer learns — and it is best-effort (never blocks the
-// quote, per §6a).
+// A selection writes one selection_run, the FULL candidate_result set (every
+// candidate + why it passed/failed) and a draft_order_line carrying the immutable
+// catalogue + price snapshots. The candidate set is written for AUDIT — it is
+// what answers "why not the cheaper one?" long after the fact, and it earns its
+// storage without any screen rendering it.
 import type { Env } from "../../types";
 import { uuid } from "../util";
 import type { SelectionResult } from "./select";
-import { isOverrideReason, OVERRIDE_REASONS } from "../ai/schema";
 
 // The reason-code taxonomy (mirrors the migration 0014 CHECK). Only
 // preference_correction may ever train the ranker (enforced downstream).
+// Still live: it is the `layer` vocabulary every OVERRIDE_REASON maps onto, used
+// by the post-issue adjudication of a recommendation_outcome.
 export const FEEDBACK_CATEGORIES = [
   "extraction_correction",
   "reconciliation_correction",
@@ -22,8 +22,6 @@ export const FEEDBACK_CATEGORIES = [
   "commercial_correction",
 ] as const;
 export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
-export const isFeedbackCategory = (v: unknown): v is FeedbackCategory =>
-  typeof v === "string" && (FEEDBACK_CATEGORIES as readonly string[]).includes(v);
 
 export interface PersistedSelection {
   selectionRunId: string;
@@ -100,52 +98,9 @@ export async function persistSelection(
   return { selectionRunId, draftLineId, status: result.status };
 }
 
-export interface FeedbackInput {
-  projectId: string;
-  openingId?: string | null;
-  selectionRunId?: string | null;
-  field: string;
-  initialValue?: unknown;
-  finalValue?: unknown;
-  category: string;      // MUST be a FeedbackCategory
-  reasonCode: string;    // MUST be non-empty
-  reviewerId?: string | null;
-  note?: string | null;
-  versions?: { catalogueRev?: string; ruleVersion?: string; rankerVersion?: string; pricingVersion?: string };
-}
-
-export type FeedbackResult =
-  | { ok: true; id: string }
-  | { ok: false; error: "invalid_category" | "missing_reason_code" | "invalid_reason_code" | "reason_category_mismatch" | "write_failed" };
-
-// Record one correction. A category is MANDATORY (free-text-only is rejected) so
-// the correction routes to the right layer. Best-effort at the call site: a
-// caller issuing a quote must treat a failure as non-blocking (§6a).
-export async function recordFeedback(env: Env, input: FeedbackInput): Promise<FeedbackResult> {
-  if (!isFeedbackCategory(input.category)) return { ok: false, error: "invalid_category" };
-  if (!input.reasonCode || !input.reasonCode.trim()) return { ok: false, error: "missing_reason_code" };
-  const reasonCode = input.reasonCode.trim();
-  if (!isOverrideReason(reasonCode)) return { ok: false, error: "invalid_reason_code" };
-  if (OVERRIDE_REASONS[reasonCode].layer !== input.category) {
-    return { ok: false, error: "reason_category_mismatch" };
-  }
-  const id = uuid();
-  try {
-    await env.DB.prepare(
-      `INSERT INTO review_feedback
-         (id, project_id, opening_id, selection_run_id, field, initial_value_json, final_value_json,
-          category, reason_code, reviewer_id, note, catalogue_rev, rule_version, ranker_version, pricing_version)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    ).bind(
-      id, input.projectId, input.openingId ?? null, input.selectionRunId ?? null, input.field,
-      input.initialValue !== undefined ? JSON.stringify(input.initialValue) : null,
-      input.finalValue !== undefined ? JSON.stringify(input.finalValue) : null,
-      input.category, reasonCode, input.reviewerId ?? null, input.note ?? null,
-      input.versions?.catalogueRev ?? null, input.versions?.ruleVersion ?? null,
-      input.versions?.rankerVersion ?? null, input.versions?.pricingVersion ?? null,
-    ).run();
-    return { ok: true, id };
-  } catch {
-    return { ok: false, error: "write_failed" };
-  }
-}
+// recordFeedback() lived here and is gone (2026-07-27). It wrote `review_feedback`
+// from the ops Estimator tab — a pre-submission review surface that was removed
+// because that stage has no staff in it. Learning comes from a REVIEWED QUOTE:
+// outcomes are captured at issue and adjudicated via PATCH
+// /api/ops/recommendation-outcomes/:id, which uses the same reason-code taxonomy
+// below. The table remains, unread and unwritten, until a migration drops it.

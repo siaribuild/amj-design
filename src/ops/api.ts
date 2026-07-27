@@ -127,31 +127,13 @@ export const opsPatchLine = (lineId: string, patch: Partial<{
 export const opsLineConfigurations = (lineId: string) =>
   req<{ configurations: OpsExactConfiguration[] }>(`/api/ops/lines/${lineId}/configurations`);
 
-// ── Estimator (CPQ) review workspace ─────────────────────────────────────────
-export interface EstimatorProject { id: string; title: string; statusCustomer: string; openings: number; attention: number }
-export interface ScoreComponents {
-  compliance: number; geometry: number; configuration: number;
-  commercial: number; historical: number; dataCompleteness: number;
-}
-export interface EstimatorCandidate {
-  productId: string; productName: string; variantId: string | null; catalogueRev: string; passed: boolean;
-  filters: { filter: string; passed: boolean; severity?: string; reason?: string }[];
-  score: number | null; components: ScoreComponents | null; rank: number | null; selected: boolean; failReasons: string[];
-}
-export interface EstimatorOpening {
-  id: string; externalRef: string | null; room: string | null; family: string | null;
-  operation: string | null; width: number | null; height: number | null; status: string;
-  selectionRunId: string | null;
-  candidates: EstimatorCandidate[];
-  draft: { id: string; status: string; confidence: number | null; catalogue: any; price: any; warnings: string[] } | null;
-}
-export const opsEstimatorProjects = () => req<{ projects: EstimatorProject[] }>("/api/ops/estimator/projects");
-export const opsEstimatorWorkspace = (projectId: string) =>
-  req<{ openings: EstimatorOpening[]; categories: string[] }>(`/api/ops/projects/${projectId}/estimator`);
-export const opsRunEstimate = (projectId: string) =>
-  req<{ openings: number; selected: number; lines: any[] }>(`/api/ops/projects/${projectId}/estimate`, { method: "POST", body: "{}" });
-export const opsEstimatorFeedback = (projectId: string, body: { openingId?: string; selectionRunId?: string; field: string; category: string; reasonCode: string; initialValue?: any; finalValue?: any; note?: string }) =>
-  req<{ ok: boolean; id: string }>(`/api/ops/projects/${projectId}/feedback`, { method: "POST", body: JSON.stringify(body) });
+// The Estimator review workspace lived here and is gone (2026-07-27). It reviewed
+// the machine's product selection BEFORE submission — a stage at which staff have
+// no part: the AI proposal is built into the customer's own draft, and the moment
+// staff get involved is submission, which lands in Quotes. Quotes already offers
+// the substantive act (opsLineConfigurations → swap in a different eligible
+// configuration), and the candidate set persists in `candidate_result` for audit
+// whether or not a screen renders it.
 
 // ── LLM building-modelling pipeline (strategy §19) ───────────────────────────
 // The pipeline runs automatically on upload; ops is a review-only surface, so

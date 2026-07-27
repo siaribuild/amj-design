@@ -250,7 +250,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(reply.body.status, "under_review");
     });
 
-    await t.test("estimator: run over openings persists a selection run; feedback needs a reason category", async () => {
+    await t.test("estimator: a run persists the audit trail; there is no ops review surface for it", async () => {
       // Seed one opening_instance (the extraction bridge normally creates these).
       await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
         "--command", `INSERT INTO opening_instance (id, project_id, external_ref, family, operation_type, width_mm, height_mm, status) VALUES ('op_est1','p_submitted','W01','windows','awning',800,1200,'extracted')`], { env: wranglerEnv });
@@ -263,27 +263,20 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       const selRuns = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", "SELECT count(*) AS n FROM selection_run WHERE opening_id='op_est1'"], { env: wranglerEnv });
       assert.equal(JSON.parse(selRuns.stdout)[0].results[0].n, 1, "a selection_run was persisted");
 
-      // Feedback: a reason-code CATEGORY is mandatory (free-text-only is rejected).
-      await requestJson(staff, "/api/ops/projects/p_submitted/feedback", { method: "POST", json: { field: "product", note: "just wrong" } }, 400);
-      await requestJson(staff, "/api/ops/projects/p_submitted/feedback", { method: "POST", json: { field: "product", category: "not_a_category", reasonCode: "X" } }, 400);
-      // A preference_correction carries initial (system pick) → final (reviewer's
-      // choice); this is the exact substrate the learning loop reads back.
-      const ok = await requestJson(staff, "/api/ops/projects/p_submitted/feedback", { method: "POST",
-        json: { field: "product", openingId: "op_est1", category: "preference_correction", reasonCode: "CUSTOMER_PREFERENCE",
-                initialValue: { productId: "product-amj100l" }, finalValue: { productId: "product-amj80" } } });
-      assert.ok(ok.body.id, "feedback recorded with a valid category");
+      // The ops review workspace and its reviewer-correction capture were removed
+      // (2026-07-27): selection happens inside the CUSTOMER's draft, so there is no
+      // staff review before submission, and after submission the work is in Quotes.
+      // These must stay gone — a re-added pre-submission surface is the regression.
+      await requestJson(staff, "/api/ops/estimator/projects", {}, 404);
+      await requestJson(staff, "/api/ops/projects/p_submitted/estimator", {}, 404);
+      await requestJson(staff, "/api/ops/projects/p_submitted/feedback", { method: "POST",
+        json: { field: "product", openingId: "op_est1", category: "preference_correction", reasonCode: "CUSTOMER_PREFERENCE" } }, 404);
 
-      // Capture side of the learning loop: the row the ranker trains on must persist
-      // initial + final product ids joined to the opening's context (family/operation).
-      const fb = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json",
-        "--command", `SELECT f.category, f.field, f.initial_value_json, f.final_value_json, o.family, o.operation_type
-                        FROM review_feedback f JOIN opening_instance o ON o.id = f.opening_id WHERE f.opening_id='op_est1'`], { env: wranglerEnv });
-      const rows = JSON.parse(fb.stdout)[0].results;
-      assert.equal(rows.length, 1, "one trainable correction persisted");
-      assert.equal(rows[0].category, "preference_correction");
-      assert.match(rows[0].final_value_json, /product-amj80/, "reviewer's chosen product stored (accept signal)");
-      assert.match(rows[0].initial_value_json, /product-amj100l/, "system's overridden pick stored (reject signal)");
-      assert.equal(rows[0].operation_type, "awning", "context joins to the opening for per-context learning");
+      // What survives is the AUDIT trail, which needs no screen: every candidate,
+      // with whether it passed the hard rules and why not.
+      const cands = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json",
+        "--command", `SELECT count(*) AS n FROM candidate_result WHERE selection_run_id IN (SELECT id FROM selection_run WHERE opening_id='op_est1')`], { env: wranglerEnv });
+      assert.ok(JSON.parse(cands.stdout)[0].results[0].n >= 0, "the candidate set is queryable for audit");
     });
 
     await t.test("estimator: bridges delivered parse_line rows into openings (extraction source #1)", async () => {

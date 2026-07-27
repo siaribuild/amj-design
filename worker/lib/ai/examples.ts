@@ -1,6 +1,6 @@
 // Learning examples (LLM strategy §17, Phase 4). One finalized quote = one
-// labelled project example: the AI proposal, the human-approved outcome, and the
-// structured deltas between them. Retrieval-eligible IMMEDIATELY (§17.1/§17.4 —
+// labelled project example: the AI proposal beside the outcome a human actually
+// issued. Retrieval-eligible IMMEDIATELY (§17.1/§17.4 —
 // precedent retrieval works from the first example); training-eligible OFF by
 // default — weights and the surrogate are never trained per-quote (§2.3), only
 // through governed dataset releases (§17.5).
@@ -17,8 +17,6 @@ export interface LearningExampleRecord {
   sourceChecksums: string[];
   ai: { buildingModel: unknown; draftLines: unknown[] };
   human: { revisionLines: unknown[] };
-  deltas: unknown[];
-  overrideReasons: string[];
   finalizedAt: string;
   eligibleForRetrieval: boolean;
   eligibleForTraining: boolean;
@@ -33,7 +31,6 @@ export function buildExampleRecord(args: {
   buildingModel: unknown;
   draftLines: unknown[];
   revisionLines: unknown[];
-  feedback: { field: string; category: string; reason_code: string; initial_value_json: string | null; final_value_json: string | null }[];
 }): LearningExampleRecord {
   return {
     learningExampleId: uuid(),
@@ -42,13 +39,13 @@ export function buildExampleRecord(args: {
     inputMode: args.inputMode,
     pipelineVersion: PIPELINE_VERSION,
     sourceChecksums: args.sourceChecksums,
+    // The pair IS the lesson: what the AI drafted, beside what a human actually
+    // issued. `deltas` and `overrideReasons` used to be lifted from review_feedback
+    // — typed by a reviewer in a pre-submission screen that no longer exists — and
+    // are now derivable from these two fields by whatever consumes the example.
+    // Better to carry the primary evidence than a hand-typed summary of it.
     ai: { buildingModel: args.buildingModel, draftLines: args.draftLines },
     human: { revisionLines: args.revisionLines },
-    deltas: args.feedback.map((f) => ({
-      field: f.field, category: f.category, reasonCode: f.reason_code,
-      aiValue: safeParse(f.initial_value_json), humanValue: safeParse(f.final_value_json),
-    })),
-    overrideReasons: [...new Set(args.feedback.map((f) => f.reason_code))],
     finalizedAt: new Date().toISOString(),
     eligibleForRetrieval: false,
     eligibleForTraining: false, // §17.5 gate: only a governed dataset release flips this
@@ -70,10 +67,9 @@ export async function createLearningExample(env: Env, projectId: string, quoteRe
     ).bind(projectId).first<{ model_json: string; input_mode: string | null }>();
     if (!bm) return null; // never AI-processed ⇒ nothing to learn from
 
-    const [{ results: drafts }, { results: revLines }, { results: feedback }, { results: files }] = await Promise.all([
+    const [{ results: drafts }, { results: revLines }, { results: files }] = await Promise.all([
       env.DB.prepare("SELECT opening_id, status, catalogue_snapshot_json, price_snapshot_json FROM draft_order_line WHERE project_id = ?").bind(projectId).all<any>(),
       env.DB.prepare("SELECT external_ref, product_snapshot_json, dims_json, qty, line_total FROM revision_line WHERE revision_id = ?").bind(quoteRevisionId).all<any>(),
-      env.DB.prepare("SELECT field, category, reason_code, initial_value_json, final_value_json FROM review_feedback WHERE project_id = ?").bind(projectId).all<any>(),
       env.DB.prepare("SELECT checksum FROM file_asset WHERE project_id = ? AND checksum IS NOT NULL").bind(projectId).all<{ checksum: string }>(),
     ]);
 
@@ -85,7 +81,6 @@ export async function createLearningExample(env: Env, projectId: string, quoteRe
       buildingModel: safeParse(bm.model_json),
       draftLines: (drafts ?? []).map((d) => ({ openingId: d.opening_id, status: d.status, catalogue: safeParse(d.catalogue_snapshot_json), price: safeParse(d.price_snapshot_json) })),
       revisionLines: (revLines ?? []).map((l) => ({ externalRef: l.external_ref, product: safeParse(l.product_snapshot_json), dims: safeParse(l.dims_json), qty: l.qty, lineTotal: l.line_total })),
-      feedback: feedback ?? [],
       }),
       // Stable across outbox retries, including an R2-success/D1-failure split.
       learningExampleId: `learning-${quoteRevisionId}`,

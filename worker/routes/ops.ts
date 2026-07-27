@@ -23,7 +23,6 @@ import {
 } from "../lib/estimator/estimate";
 import { createCatalogueRepository, hasAnyExactPricingCoverage, sanityExecutor } from "../lib/estimator/catalogue";
 import { checkHardRules } from "../lib/estimator/rules";
-import { recordFeedback, FEEDBACK_CATEGORIES } from "../lib/estimator/persist";
 import { runAiExtraction } from "../lib/ai/pipeline";
 import { reserveAiRunBudget } from "../lib/ai/jobs";
 import { isOverrideReason, OVERRIDE_REASONS } from "../lib/ai/schema";
@@ -966,14 +965,14 @@ ops.post("/files/:id/rescan", async (c) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Estimator (CPQ) — run the deterministic engine over a project's openings and
-// capture review feedback. Internal, role-gated. The selection is deterministic
-// and versioned; the AI extraction tier is a separate (flagged) path.
+// Estimator (CPQ) — the deterministic selection engine's support seam. There is
+// no ops review surface for it: selection happens inside the customer's draft, so
+// the first staff touchpoint is the submitted quote, in Quotes.
 // ═══════════════════════════════════════════════════════════════════════════
 
 // POST /api/ops/projects/:id/estimate — select + price every opening_instance.
-// SUPPORT LEVER ONLY (not in the ops UI): the pipeline estimates automatically on
-// upload and after each logged correction; this remains for support/debugging.
+// SUPPORT LEVER ONLY (never in the ops UI): the pipeline estimates automatically
+// on upload; this remains for support/debugging and for AI_EXTRACTION_MODE='manual'.
 ops.post("/projects/:id/estimate", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
@@ -986,56 +985,6 @@ ops.post("/projects/:id/estimate", async (c) => {
   return c.json(summary);
 });
 
-// GET /api/ops/projects/:id/draft-lines — the estimator's current draft lines.
-ops.get("/projects/:id/draft-lines", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
-  if (!staff) return c.json({ error: "forbidden" }, 403);
-  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
-  const { results } = await c.env.DB.prepare(
-    `SELECT d.id, d.opening_id, d.status, d.confidence, d.catalogue_snapshot_json, d.price_snapshot_json, d.warnings_json,
-            o.external_ref, o.room
-       FROM draft_order_line d LEFT JOIN opening_instance o ON o.id = d.opening_id
-      WHERE d.project_id = ? ORDER BY d.created_at`,
-  ).bind(c.req.param("id")).all<any>();
-  return c.json({ lines: (results ?? []).map((r) => ({
-    id: r.id, openingId: r.opening_id, externalRef: r.external_ref, room: r.room,
-    status: r.status, confidence: r.confidence,
-    catalogue: safeParse(r.catalogue_snapshot_json ?? "{}"),
-    price: safeParse(r.price_snapshot_json ?? "{}"),
-    warnings: safeParse(r.warnings_json ?? "[]"),
-  })) });
-});
-
-// POST /api/ops/projects/:id/feedback — record ONE reviewer correction. A
-// reason-code CATEGORY is mandatory (free-text-only is rejected) so the correction
-// routes to the right layer (spec §12, §6a).
-ops.post("/projects/:id/feedback", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
-  if (!staff) return c.json({ error: "forbidden" }, 403);
-  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
-  const projectId = c.req.param("id");
-  const body = await c.req.json().catch(() => ({} as any));
-  const res = await recordFeedback(c.env, {
-    projectId,
-    openingId: body?.openingId ?? null,
-    selectionRunId: body?.selectionRunId ?? null,
-    field: String(body?.field ?? "").slice(0, 60),
-    initialValue: body?.initialValue,
-    finalValue: body?.finalValue,
-    category: String(body?.category ?? ""),
-    reasonCode: String(body?.reasonCode ?? ""),
-    reviewerId: staff.id,
-    note: body?.note ? String(body.note).slice(0, 500) : null,
-  });
-  if (!res.ok) {
-    return c.json({ error: res.error, categories: FEEDBACK_CATEGORIES }, 400);
-  }
-  // Ops is review-only (owner decision 2026-07-25): a logged correction re-runs
-  // the DETERMINISTIC selection automatically (no AI spend) so the learned
-  // preference is reflected without anyone clicking a run button. Best-effort.
-  await runProjectEstimate(c.env, projectId).catch(() => { /* review stays valid even if re-rank fails */ });
-  return c.json({ ok: true, id: res.id });
-});
 
 // GET /api/ops/lines/:id/configurations — exact, currently eligible catalogue
 // configurations for a review line. Loaded on demand to avoid a Sanity request
@@ -1226,67 +1175,14 @@ ops.get("/projects/:id/building-model", async (c) => {
     evidence: evidence ?? [],
   });
 });
-
-// GET /api/ops/estimator/projects — projects that have estimator openings, with a
-// status breakdown, so the review workspace can list them.
-ops.get("/estimator/projects", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
-  if (!staff) return c.json({ error: "forbidden" }, 403);
-  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
-  const { results } = await c.env.DB.prepare(`
-    SELECT o.project_id AS id, p.title, p.status_customer,
-           count(*) AS openings,
-           SUM(CASE WHEN o.status IN ('needs_manual_review','catalogue_data_incomplete') THEN 1 ELSE 0 END) AS attention
-      FROM opening_instance o LEFT JOIN project p ON p.id = o.project_id
-     GROUP BY o.project_id ORDER BY attention DESC, p.title`).all<any>();
-  return c.json({ projects: (results ?? []).map((r) => ({
-    id: r.id, title: r.title ?? "Untitled project", statusCustomer: r.status_customer,
-    openings: r.openings, attention: r.attention,
-  })) });
-});
-
-// GET /api/ops/projects/:id/estimator — the review workspace payload: each opening
-// with its full candidate_result set (pass/fail + score), the selected candidate,
-// the draft line + price snapshot, and evidence refs.
-ops.get("/projects/:id/estimator", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
-  if (!staff) return c.json({ error: "forbidden" }, 403);
-  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
-  const projectId = c.req.param("id");
-
-  const { results: openings } = await c.env.DB.prepare(
-    "SELECT id, external_ref, room, family, operation_type, width_mm, height_mm, status FROM opening_instance WHERE project_id = ? ORDER BY created_at",
-  ).bind(projectId).all<any>();
-
-  const out = [];
-  for (const o of openings ?? []) {
-    const run = await c.env.DB.prepare("SELECT id FROM selection_run WHERE opening_id = ? ORDER BY created_at DESC LIMIT 1").bind(o.id).first<{ id: string }>();
-    let candidates: any[] = [];
-    if (run) {
-      const { results } = await c.env.DB.prepare(
-        "SELECT sanity_product_id, selected_variant_id, catalogue_rev, hard_rule_passed, hard_rule_outcome_json, score, score_components_json, reason_codes, rank, selected FROM candidate_result WHERE selection_run_id = ? ORDER BY selected DESC, rank",
-      ).bind(run.id).all<any>();
-      candidates = (results ?? []).map((r) => ({
-        productId: r.sanity_product_id, variantId: r.selected_variant_id, catalogueRev: r.catalogue_rev,
-        passed: !!r.hard_rule_passed, filters: safeParse(r.hard_rule_outcome_json ?? "[]"),
-        score: r.score, components: safeParse(r.score_components_json ?? "null"), rank: r.rank, selected: !!r.selected,
-        failReasons: safeParse(r.reason_codes ?? "[]"),
-        productName: getProductBySlug(String(r.sanity_product_id).replace(/^product-/, ""))?.name ?? r.sanity_product_id,
-      }));
-    }
-    const draft = await c.env.DB.prepare("SELECT id, status, confidence, catalogue_snapshot_json, price_snapshot_json, warnings_json FROM draft_order_line WHERE opening_id = ? ORDER BY created_at DESC LIMIT 1").bind(o.id).first<any>();
-    out.push({
-      id: o.id, externalRef: o.external_ref, room: o.room, family: o.family,
-      operation: o.operation_type, width: o.width_mm, height: o.height_mm, status: o.status,
-      selectionRunId: run?.id ?? null,
-      candidates,
-      draft: draft ? { id: draft.id, status: draft.status, confidence: draft.confidence,
-        catalogue: safeParse(draft.catalogue_snapshot_json ?? "{}"), price: safeParse(draft.price_snapshot_json ?? "{}"),
-        warnings: safeParse(draft.warnings_json ?? "[]") } : null,
-    });
-  }
-  return c.json({ openings: out, categories: FEEDBACK_CATEGORIES });
-});
+// The Estimator review workspace and its reviewer-correction capture were
+// removed (2026-07-27, owner decision). They served a stage that does not exist:
+// the AI proposal is built into the CUSTOMER's draft, so there is no staff review
+// before submission — and after submission the work happens in the Quotes
+// workspace. Learning now comes only from a REVIEWED QUOTE: outcomes are captured
+// at issue (captureRecommendationOutcomes) and adjudicated afterwards via
+// PATCH /recommendation-outcomes/:id. `candidate_result` still persists the full
+// candidate set for audit, with or without a screen to render it.
 
 // GET /api/ops/files/:id/download — staff download (any file).
 ops.get("/files/:id/download", async (c) => {
