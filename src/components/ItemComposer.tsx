@@ -784,6 +784,12 @@ export function ItemSummaryCard({
               ))}
             </div>
           )}
+          {/* How this opening gets built, when it is too large for one unit.
+              Sits ABOVE the editable detail: it is the answer to "why does my
+              line look like this?", not a footnote under it. */}
+          {item.segments && item.segments.length > 0 && (
+            <CompositePanel item={item} />
+          )}
           {/* Product is editable — a schedule line the parser couldn't match (or
               flagged for substitution) is re-pointed here. Changing product resets
               options to the new product's defaults and clears the product flag. */}
@@ -817,6 +823,77 @@ export function ItemSummaryCard({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Composite opening — how one opening gets built as several joined units ───
+//
+// The customer submitted ONE line with ONE tag (W12) and gets back N products.
+// Everything here defends against that reading as a bait-and-switch:
+//
+//  • their code, their opening size and their price stay exactly where they were
+//  • segments carry the WORD "included", never an amount, so three numbers can
+//    never look like three charges. The parent total is the only figure.
+//  • the sum is restated as the parent's own total — repeating a number the
+//    customer already saw is reassurance; introducing new ones is alarm.
+//
+// It is read-only by construction: a customer may not choose or edit a
+// composite, only see it and question it. There are no controls here.
+export function CompositePanel({ item }: { item: QItem }) {
+  const segments = item.segments ?? [];
+  const units = segments.reduce((n, s) => n + Math.max(1, s.qtyPerParent), 0);
+  const openingW = parseInt(item.width) || 0;
+  const openingH = parseInt(item.height) || 0;
+  const brand = brandSubject();
+
+  return (
+    <div className="border-t border-black/8 px-4 py-4 md:px-5" style={{ background: "rgba(76,106,136,0.04)" }}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="w-2.5 h-2.5 border border-[#4C6A88] flex-shrink-0" aria-hidden="true" />
+        <span className="text-[10px] uppercase tracking-[0.14em] text-[#4C6A88]" style={{ fontFamily: "'DM Mono', monospace" }}>
+          Built as {units} units
+        </span>
+      </div>
+
+      <p className="text-[13.5px] text-[#5c5a56] leading-relaxed mb-3 max-w-[62ch]">
+        No single unit is made {mm(item.width)} wide, so {item.code || "this opening"} is built as {units} units joined
+        on site. One opening, one price — {brand.toLowerCase() === "we" ? "we confirm" : `${brand} confirms`} the join at technical review.
+      </p>
+
+      <div className="border border-black/10 bg-white">
+        <div className="flex items-center justify-between px-3.5 py-2 border-b border-black/8">
+          <span className="text-[11px] text-[#8a8782]" style={{ fontFamily: "'DM Mono', monospace" }}>Your opening</span>
+          <span className="text-[12px] text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>
+            {openingW && openingH ? `${openingW.toLocaleString("en-AU")} × ${openingH.toLocaleString("en-AU")} mm` : "—"}
+          </span>
+        </div>
+        {segments.map((s, i) => (
+          <div key={s.id} className="flex items-baseline justify-between gap-3 px-3.5 py-2.5 border-b border-black/5 last:border-b-0">
+            <span className="text-[13px] text-[#131311] min-w-0">
+              <span className="text-[#8a8782] mr-2" style={{ fontFamily: "'DM Mono', monospace" }}>
+                Unit {i + 1}{s.qtyPerParent > 1 ? ` ×${s.qtyPerParent}` : ""}
+              </span>
+              {productLabel(s.productSlug)}
+            </span>
+            <span className="flex items-baseline gap-3 flex-shrink-0">
+              <span className="text-[12px] text-[#5c5a56]" style={{ fontFamily: "'DM Mono', monospace" }}>
+                {(parseInt(s.width) || 0).toLocaleString("en-AU")} × {(parseInt(s.height) || 0).toLocaleString("en-AU")}
+              </span>
+              {/* A WORD, not a number. This is the whole double-charge defence. */}
+              <span className="text-[11px] text-[#8a8782] w-[4.5rem] text-right" style={{ fontFamily: "'DM Mono', monospace" }}>
+                included
+              </span>
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-[12px] text-[#8a8782] leading-relaxed mt-3 max-w-[62ch]">
+        Two or more units joined on site is how large openings are made. The join is an engineering
+        decision — mullion size, wind load, weather seal — so {brand.toLowerCase() === "we" ? "we design" : `${brand} designs`} and
+        prices it. It isn't something you set here.
+      </p>
     </div>
   );
 }

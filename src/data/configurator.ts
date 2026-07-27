@@ -40,6 +40,19 @@ export interface QItem {
   // customer resolves each field (see clearReviewKey).
   review?: Record<string, string> | null;
 }
+/** One unit of a composite opening. Never an item in its own right: no tag, no
+ *  independent removal, and its price is display-only — the parent's lineTotal
+ *  is the authoritative figure and the client must never sum these. */
+export interface QSegment {
+  id: string;
+  productSlug: string;
+  width: string;
+  height: string;
+  qtyPerParent: number;
+  qty: number;
+  lineTotal: number | null;
+}
+
 export interface QFile {
   id: string | number; name: string; kind: string;
   status: "Uploaded" | "Processing" | "Needs attention";

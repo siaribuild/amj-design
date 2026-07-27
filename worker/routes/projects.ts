@@ -5,7 +5,7 @@
 // first save, not on every visit, so idle traffic leaves no junk.
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { itemToInsert, itemFields, incomingServerId, editedFieldsAfterSave, rowToApiLine, type LineRow, type EditableSnapshot } from "../lib/lines";
+import { itemToInsert, itemFields, incomingServerId, editedFieldsAfterSave, rowToApiLine, type ApiSegment, type LineRow, type EditableSnapshot } from "../lib/lines";
 import { ownedProject, resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 import { uuid } from "../lib/util";
@@ -63,7 +63,40 @@ export async function loadLines(env: Env, projectId: string) {
     // items in the customer's list. The count they see is the count they authored.
     "SELECT * FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL ORDER BY position",
   ).bind(projectId).all<LineRow>();
-  return results.map(rowToApiLine);
+  const items = results.map(rowToApiLine);
+
+  // Attach segments to the parents that have them. One extra query, only when a
+  // composite actually exists — the common project pays nothing for this.
+  const parentIds = results.filter((r) => r.line_kind === "composite_parent").map((r) => r.id);
+  if (!parentIds.length) return items;
+
+  const placeholders = parentIds.map(() => "?").join(",");
+  const { results: segRows } = await env.DB.prepare(
+    `SELECT id, parent_line_id, segment_seq, qty_per_parent, product_slug, dims_json, options_json, qty, line_total
+       FROM quote_line WHERE parent_line_id IN (${placeholders}) ORDER BY segment_seq`,
+  ).bind(...parentIds).all<{
+    id: string; parent_line_id: string; segment_seq: number; qty_per_parent: number;
+    product_slug: string; dims_json: string; options_json: string; qty: number; line_total: number | null;
+  }>();
+
+  const byParent = new Map<string, ApiSegment[]>();
+  for (const s of segRows) {
+    const dims = safeParse(s.dims_json);
+    const list = byParent.get(s.parent_line_id) ?? [];
+    list.push({
+      id: s.id,
+      productSlug: s.product_slug,
+      width: String(dims.width ?? ""),
+      height: String(dims.height ?? ""),
+      qtyPerParent: s.qty_per_parent,
+      qty: s.qty,
+      // Segment prices are DISPLAY-ONLY and the client must never sum them: the
+      // parent's line_total is the authoritative figure.
+      lineTotal: s.line_total,
+    });
+    byParent.set(s.parent_line_id, list);
+  }
+  return items.map((it) => (byParent.has(it.id) ? { ...it, segments: byParent.get(it.id) } : it));
 }
 
 // Source files attached to a project (the uploaded schedule). The bytes stay in

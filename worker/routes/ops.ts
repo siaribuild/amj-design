@@ -500,7 +500,7 @@ ops.post("/lines/:id/split", async (c) => {
     })),
   });
   if (!result.ok) return c.json({ error: "invalid_split", errors: result.errors }, 400);
-  await logEvent(c.env, { projectId: parent.project_id, kind: "line.split", detail: `${segments.length} units` });
+  await logEvent(c.env, { entityType: "project", entityId: parent.project_id, action: "line.split", after: { lineId: parent.id, units: segments.length } });
   return c.json({ ok: true });
 });
 
@@ -522,7 +522,7 @@ ops.post("/lines/:id/merge", async (c) => {
     JSON.stringify({ fit: "No single unit is made at this size — we will confirm how it is built and price it at technical review." }),
     parent.id,
   ).run();
-  await logEvent(c.env, { projectId: parent.project_id, kind: "line.merge", detail: "composite undone" });
+  await logEvent(c.env, { entityType: "project", entityId: parent.project_id, action: "line.merge", after: { lineId: parent.id } });
   return c.json({ ok: true });
 });
 

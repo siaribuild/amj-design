@@ -21,6 +21,22 @@ import { uuid } from "./util";
 // The line shape exchanged with the client. `id` is the STABLE server line id —
 // the client round-trips it as `serverId` so a save upserts (never delete+recreate)
 // and the parse_line → quote_line provenance link survives autosave and submit.
+/** One unit of a composite opening. Not a line: it never enters the customer's
+ *  item list, has no architect tag of its own, and is never independently
+ *  removable or editable by them. It describes HOW the parent gets built. */
+export interface ApiSegment {
+  id: string;
+  productSlug: string;
+  width: string;
+  height: string;
+  /** How many of this frame go into ONE opening (a symmetric split is one
+   *  segment with 2, not two identical rows). */
+  qtyPerParent: number;
+  qty: number;
+  /** Display-only. The parent's lineTotal is authoritative — never sum these. */
+  lineTotal: number | null;
+}
+
 export interface ApiLine {
   id: string;
   code: string;

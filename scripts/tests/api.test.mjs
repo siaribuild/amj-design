@@ -40,6 +40,12 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "AI_EXTRACTION_MODE:manual",
     ], { env: wranglerEnv });
     await waitForUrl(`${baseUrl}/api/health`, server);
+    // Structural assertions the API deliberately does not expose (segments are
+    // nested inside their parent, never listed) are checked straight in D1.
+    const sql = async (command) => {
+      const r = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", command], { env: wranglerEnv });
+      return JSON.parse(r.stdout)[0].results;
+    };
 
     const anonymous = new Session(baseUrl);
     await t.test("health, routing, and unauthenticated access boundaries", async () => {
@@ -367,6 +373,75 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       // Signing out drops the session, so a shared machine keeps nothing.
       await requestJson(guest, "/api/guest/signout", { method: "POST" });
       await requestJson(guest, "/api/guest/record", {}, 404);
+    });
+
+    // A composite is ONE opening built as several joined units. The customer
+    // authored one line and must keep seeing one line: their tag, their count,
+    // one price. Getting this wrong reads to them as double-charging.
+    await t.test("composite: one opening, segments nested, nothing double-counted", async () => {
+      // Self-contained: a fresh project, submitted, so it is in a state a
+      // reviewer may act on regardless of what earlier tests did.
+      const cust = new Session(baseUrl);
+      const made = await requestJson(cust, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Composite project",
+          items: [{
+            code: "W12", location: "Living", productSlug: "amj80-series-sliding-window",
+            measuredBy: "opening", width: "1200", height: "900", qty: 1,
+            options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+            lineTotal: 1,
+          }],
+        },
+      });
+      const projectId = made.body.project.id;
+      const parentId = made.body.items[0].id;
+      const openingTotal = made.body.items[0].lineTotal;
+      await requestJson(cust, `/api/projects/${projectId}/submit`, {
+        method: "POST",
+        json: { contact: { name: "Composite Tester", email: "composite@example.com", phone: "0400 000 000", suburb: "Rowville" } },
+      });
+
+      const split = await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
+        method: "POST",
+        json: {
+          axis: "vertical",
+          segments: [
+            { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
+            { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
+          ],
+        },
+      });
+      assert.equal(split.body.ok, true);
+
+      // The reviewer's list still shows ONE line for W12 — segments are nested,
+      // never loose beside their opening.
+      const seen = await requestJson(ops, `/api/ops/projects/${projectId}`);
+      assert.equal(seen.body.lines.length, 1, "a split must never add items to the quote");
+      const w12 = seen.body.lines[0];
+      assert.equal(w12.code, "W12", "their tag is untouched");
+      // The parent total is the server's sum of its units, priced per frame
+      // through the one engine — not the old whole-opening figure.
+      const segs = await sql(`SELECT line_total, qty_per_parent FROM quote_line WHERE parent_line_id='${parentId}' ORDER BY segment_seq`);
+      assert.equal(segs.length, 2, "two units exist, owned by their parent");
+      assert.equal(w12.lineTotal, segs.reduce((n, x) => n + x.line_total, 0), "the opening total IS the sum of its units");
+      assert.notEqual(w12.lineTotal, openingTotal);
+
+      // A geometry that cannot be built is refused, naming the offending unit.
+      const bad = await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
+        method: "POST",
+        json: { segments: [{ widthMm: 600, heightMm: 500, productSlug: "amj80-series-sliding-window" },
+                           { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window" }] },
+      }, 400);
+      assert.ok(bad.body.errors.some((e) => /Unit 1 is 500mm across/.test(e)));
+
+      // Merging restores the fit warning: the reason for splitting is still true,
+      // so an unbuildable single unit must never come back as Ready.
+      await requestJson(ops, `/api/ops/lines/${parentId}/merge`, { method: "POST" });
+      const merged = await requestJson(ops, `/api/ops/projects/${projectId}`);
+      assert.equal(merged.body.lines.length, 1);
+      assert.equal((await sql(`SELECT id FROM quote_line WHERE parent_line_id='${parentId}'`)).length, 0, "units are gone after a merge");
+      assert.ok(merged.body.lines[0].review?.fit, "merging restores the fit warning");
     });
 
     await t.test("customer and ops SPA fallback plus real static assets", async () => {
