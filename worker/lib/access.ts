@@ -106,7 +106,7 @@ export async function claimAnonProjectForUser(env: Env, userId: string, claimTok
       // then delete the anon project (its file_asset/line rows cascade; a draft
       // never has an order, the only non-cascading reference).
       const off = await env.DB
-        .prepare("SELECT COALESCE(MAX(position), -1) + 1 AS n FROM quote_line WHERE project_id = ? AND revision_id IS NULL")
+        .prepare("SELECT COALESCE(MAX(position), -1) + 1 AS n FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL")
         .bind(existing.id).first<{ n: number }>();
       const offset = off?.n ?? 0;
       await env.DB.batch([

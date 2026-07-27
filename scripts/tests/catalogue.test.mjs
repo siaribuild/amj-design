@@ -34,7 +34,11 @@ test("catalogue query normalization and runtime hydration", async () => {
     // Options are dereferenced from the shared `option` documents (single source of
     // truth): name/price/type live on the option, not copied onto the product.
     assert.match(catalogue.CATALOGUE_QUERY, /option->optionType->slug\.current/);
-    assert.match(catalogue.CATALOGUE_QUERY, /"price": option->pricingComponent/);
+    // Option PRICES must NOT be published. D1 owns what an option costs; Sanity
+    // maps which options a product offers and which is standard. This query is
+    // served to every browser, so a price in it is a published price list.
+    assert.doesNotMatch(catalogue.CATALOGUE_QUERY, /pricingComponent/,
+      "the public catalogue query must never expose option pricing");
     // Colours come from the "applies to all" option type; images resolve to asset
     // url + focal point for on-demand sizing.
     assert.match(catalogue.CATALOGUE_QUERY, /optionType->appliesToAll==true/);

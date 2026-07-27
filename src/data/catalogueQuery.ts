@@ -19,6 +19,10 @@ export const SEO_PROJECTION = `seo{
       "schema": schema{ schemaType, exclude }
     }`;
 
+// NOTE: option PRICES are deliberately absent from this query. Sanity maps which
+// options a product offers and which one is standard for it; D1 owns what each
+// non-standard option costs (pricing_option_surcharge). The catalogue is served
+// publicly to every browser, so a price here is a published price list.
 export const CATALOGUE_QUERY = `{
   "categories": *[_type=="category"]|order(name asc){
     "id":_id, "slug":slug.current, name, shortDescription, description
@@ -40,7 +44,6 @@ export const CATALOGUE_QUERY = `{
       "typeSlug": option->optionType->slug.current,
       "typeName": option->optionType->name,
       "name": option->name,
-      "price": option->pricingComponent,
       "hex": option->hex
     },
     featuredOrder,
@@ -49,8 +52,7 @@ export const CATALOGUE_QUERY = `{
   "colours": *[_type=="option" && optionType->appliesToAll==true]|order(isDefault desc, name asc){
     "name": name,
     "availability": select(isDefault == true => "standard", "optional"),
-    "hex": hex,
-    "price": pricingComponent
+    "hex": hex
   },
   "pages": *[_type=="page"]|order(_updatedAt desc){
     pageId,

@@ -17,7 +17,7 @@ interface EvalStep { ruleId: string; family: string; role: string; reason: strin
 // Evaluate active rules; return the steps that fire.
 export async function evaluateApprovals(env: Env, projectId: string): Promise<EvalStep[]> {
   const project = await env.DB.prepare("SELECT status_internal FROM project WHERE id = ?").bind(projectId).first<{ status_internal: string }>();
-  const { results: lines } = await env.DB.prepare("SELECT line_total FROM quote_line WHERE project_id = ? AND revision_id IS NULL").bind(projectId).all<{ line_total: number | null }>();
+  const { results: lines } = await env.DB.prepare("SELECT line_total FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL").bind(projectId).all<{ line_total: number | null }>();
   const total = lines.reduce((s, l) => s + (l.line_total || 0), 0);
   const isTechnical = project?.status_internal === "technical_review_required";
 

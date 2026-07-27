@@ -88,7 +88,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
     ),
   ];
   const positionRow = await env.DB.prepare(
-    "SELECT COALESCE(MAX(position), -1) + 1 AS n FROM quote_line WHERE project_id = ? AND revision_id IS NULL",
+    "SELECT COALESCE(MAX(position), -1) + 1 AS n FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL",
   ).bind(input.projectId).first<{ n: number }>();
   let nextPosition = positionRow?.n ?? 0;
   for (const line of input.lines) {

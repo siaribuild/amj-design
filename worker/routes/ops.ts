@@ -14,6 +14,7 @@ import { findOrCreateInternalUser, isStaffEmail, resolveStaff } from "../lib/sta
 import { drainLearningOutbox, issueRevision } from "../lib/revisions";
 import { logEvent } from "../lib/activity";
 import { evaluateApprovals, createApprovalInstance, resolveInstance, canApprove } from "../lib/approvals";
+import { splitLine, mergeComposite } from "../lib/composite";
 import { orderDto, applyTransition, markPaid, availableActions, type OrderRow } from "../lib/orders";
 import { uuid } from "../lib/util";
 import { scanFile } from "../lib/scan";
@@ -462,6 +463,69 @@ ops.post("/approvals/:stepId/delegate", async (c) => {
 });
 
 // PATCH /api/ops/lines/:id — estimator edits a draft line; server reprices.
+// The set of internal states in which a reviewer may still change a line.
+const EDITABLE_STATES = `'submitted','triage_pending','estimator_assigned','technical_review_required','customer_clarification_required'`;
+
+/** Resolve an editable parent opening for a staff caller, or null. */
+async function editableParent(env: Env, req: Request, lineId: string) {
+  const staff = await resolveStaff(env, req);
+  if (!staff || !hasAssignedRole(staff)) return null;
+  return env.DB.prepare(
+    `SELECT q.* FROM quote_line q JOIN project p ON p.id=q.project_id
+      WHERE q.id=? AND q.revision_id IS NULL AND q.parent_line_id IS NULL
+        AND p.status_internal IN (${EDITABLE_STATES})`,
+  ).bind(lineId).first<LineRow & { project_id: string }>();
+}
+
+// POST /api/ops/lines/:id/split — plan one opening as several joined units.
+//
+// Ops only, by design: the customer cannot choose a composite. The AI proposal
+// path calls splitLine() directly; this is the human correction surface.
+ops.post("/lines/:id/split", async (c) => {
+  const parent = await editableParent(c.env, c.req.raw, c.req.param("id"));
+  if (!parent) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  const segments = Array.isArray(body?.segments) ? body.segments : [];
+  const axis = body?.axis === "horizontal" ? "horizontal" : "vertical";
+  const result = await splitLine(c.env, {
+    parentId: parent.id,
+    axis,
+    origin: "ops",
+    segments: segments.map((s: Record<string, unknown>) => ({
+      widthMm: Number(s?.widthMm) || 0,
+      heightMm: Number(s?.heightMm) || 0,
+      productSlug: String(s?.productSlug ?? ""),
+      qtyPerParent: Number(s?.qtyPerParent) || 1,
+      options: (s?.options && typeof s.options === "object" ? s.options : {}) as Record<string, string>,
+    })),
+  });
+  if (!result.ok) return c.json({ error: "invalid_split", errors: result.errors }, 400);
+  await logEvent(c.env, { projectId: parent.project_id, kind: "line.split", detail: `${segments.length} units` });
+  return c.json({ ok: true });
+});
+
+// POST /api/ops/lines/:id/merge — undo a split.
+//
+// The `fit` warning is restored deliberately: the reason the opening was split
+// (no single unit is made this wide) is still true, and letting it return as a
+// clean line would present an unbuildable single unit as Ready.
+ops.post("/lines/:id/merge", async (c) => {
+  const parent = await editableParent(c.env, c.req.raw, c.req.param("id"));
+  if (!parent) return c.json({ error: "not_found" }, 404);
+  await mergeComposite(c.env, parent.id);
+  await c.env.DB.prepare(
+    `UPDATE quote_line
+        SET review_json = json_patch(COALESCE(review_json,'{}'), ?),
+            status='technical_review', updated_at=datetime('now')
+      WHERE id=?`,
+  ).bind(
+    JSON.stringify({ fit: "No single unit is made at this size — we will confirm how it is built and price it at technical review." }),
+    parent.id,
+  ).run();
+  await logEvent(c.env, { projectId: parent.project_id, kind: "line.merge", detail: "composite undone" });
+  return c.json({ ok: true });
+});
+
 ops.patch("/lines/:id", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
