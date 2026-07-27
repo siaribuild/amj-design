@@ -126,3 +126,57 @@ test("an unknown reference reveals nothing about whether it exists", async ({ pa
   await expect(page.getByPlaceholder("••••••")).toBeVisible();
   await expect(page.getByText(/Dev mode/i)).toHaveCount(0);
 });
+
+// The OF-Q path — a quote that has been submitted but has no order yet. This is
+// the reference the confirmation email actually hands a customer, and it is the
+// one that broke first: lookup only ever searched order numbers, and matched the
+// email against a user row that an anonymous submitter does not have.
+//
+// Built through the REAL path rather than a seed fixture: an anonymous draft,
+// submitted with a contact address, exactly as a customer creates one. That also
+// means the test covers the anonymous case specifically, which is where both
+// original defects lived.
+test("a submitted quote is trackable by its OF-Q reference, anonymously", async ({ page }) => {
+  const email = "e2e.quote.tracker@example.com";
+
+  // page.request shares this page's cookie jar, so the claim cookie minted here
+  // is the same one the browser holds — an anonymous customer, not a fixture.
+  await page.goto("/");
+  const saved = await page.request.put("/api/projects/current/lines", {
+    data: {
+      title: "E2E tracked quote",
+      items: [{
+        code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+        measuredBy: "opening", width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+        lineTotal: 1,
+      }],
+    },
+  });
+  const project = (await saved.json()).project;
+  expect(project.ref, "a submitted quote gets an OF-Q reference").toMatch(/^OF-Q-\d+$/);
+
+  await page.request.post(`/api/projects/${project.id}/submit`, {
+    data: { contact: { name: "E2E Tester", email, phone: "0400 000 000", suburb: "Rowville" } },
+  });
+
+  // Now track it the way the confirmation email tells them to.
+  await page.goto("/track-order");
+  await page.getByPlaceholder(refField).fill(project.ref);
+  await page.getByPlaceholder(emailField).fill(email);
+  await page.getByRole("button", { name: /send code/i }).click();
+
+  const devText = await page.getByText(/Dev mode/i).textContent();
+  const code = devText?.match(/\d{6}/)?.[0] ?? "";
+  expect(code, "a quote reference must issue a code, not silently match nothing").toMatch(/^\d{6}$/);
+
+  await page.getByPlaceholder("••••••").fill(code);
+  await page.getByRole("button", { name: /view status/i }).click();
+
+  // The pre-order view: their reference, their lines, and the journey — not a
+  // bare status word, which is all this used to show.
+  await expect(page.getByText(/didn't match/i)).toHaveCount(0);
+  await expect(page.getByText(project.ref).first()).toBeVisible();
+  await expect(page.getByText(/Quote → order journey/i)).toBeVisible();
+  await expect(page.getByText("E2E tracked quote").first()).toBeVisible();
+});
