@@ -144,15 +144,22 @@ function chargeableOptionSlugs(productSlug: string, options: Record<string, stri
  *  when the line cannot be priced; callers must not substitute an estimate. */
 export async function priceItem(env: Env, it: {
   productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;
+  /** Owner of the project, for the account discount. Anonymous ⇒ null ⇒ 0%. */
+  ownerUserId?: string | null;
 }): Promise<number | null> {
   await ensureCatalogue(env);
-  const family = getProductBySlug(it.productSlug)?.familySlug || null;
+  // The rate card is keyed on the PRODUCT (0031), not its family: two frames in
+  // one family are not the same cost, and the family key made them inseparable.
+  // The product must exist in the catalogue — an unknown slug has no card and
+  // must not fall through to a generic rate.
+  const product = getProductBySlug(it.productSlug);
   const w = parseInt(it.width) || 0;
   const h = parseInt(it.height) || 0;
-  if (!family || w <= 0 || h <= 0) return null;
+  if (!product || w <= 0 || h <= 0) return null;
   const snapshot = await priceLine(env, {
-    family, widthMm: w, heightMm: h, qty: Math.max(1, Math.floor(it.qty) || 1),
+    family: product.slug, widthMm: w, heightMm: h, qty: Math.max(1, Math.floor(it.qty) || 1),
     optionSlugs: chargeableOptionSlugs(it.productSlug, it.options),
+    ownerUserId: it.ownerUserId ?? null,
     // Fail rather than under-price: an option with no D1 row is a data gap, and
     // treating it as free would issue a quote we would have to honour.
     requireAllOptions: true,
@@ -164,7 +171,12 @@ export async function priceItem(env: Env, it: {
 }
 
 // as server-owned by the caller: set on INSERT, never overwritten on UPDATE.
-export async function itemFields(env: Env, raw: unknown) {
+//
+// `ownerUserId` is the project's owner, used only for the account discount. The
+// ROUTE passes it from the resolved project — never read off the request body,
+// because a percentage off the price is precisely the field a browser would like
+// to set for itself.
+export async function itemFields(env: Env, raw: unknown, ownerUserId?: string | null) {
   const it = (raw ?? {}) as Record<string, unknown>;
   const width = String(it.width ?? "");
   const height = String(it.height ?? "");
@@ -173,7 +185,7 @@ export async function itemFields(env: Env, raw: unknown) {
   const productSlug = String(it.productSlug ?? "");
   const measured = String(it.measuredBy ?? "");
 
-  const lineTotal = await priceItem(env, { productSlug, width, height, options, qty });
+  const lineTotal = await priceItem(env, { productSlug, width, height, options, qty, ownerUserId });
   const priced = { ok: lineTotal != null };
 
   // A line still carrying review reasons stays 'technical_review' (Needs review)
@@ -204,8 +216,8 @@ export async function itemFields(env: Env, raw: unknown) {
 }
 
 // A brand-new line: the shared fields plus a fresh server id and position.
-export async function itemToInsert(env: Env, projectId: string, raw: unknown, position: number) {
-  return { id: uuid(), project_id: projectId, position, ...(await itemFields(env, raw)) };
+export async function itemToInsert(env: Env, projectId: string, raw: unknown, position: number, ownerUserId?: string | null) {
+  return { id: uuid(), project_id: projectId, position, ...(await itemFields(env, raw, ownerUserId)) };
 }
 
 // The client round-trips the server line id as `serverId`. Returns it only when it

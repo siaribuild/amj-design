@@ -251,7 +251,8 @@ export const opsLogContact = (id: string, outcome: string, note?: string) =>
 export interface OpsRateCardRow {
   id: string; perimRate: number; areaRate: number; minCharge: number;
   version: string; updatedAt: string | null;
-  modifierCount: number; exampleTotal: number; productCount: number;
+  modifierCount: number; exampleTotal: number;
+  productName: string | null; familySlug: string | null;
 }
 export interface OpsModifier {
   id: string; seq: number; label: string | null;
@@ -277,7 +278,7 @@ export interface OpsReconcileRun {
   ok: boolean; checkedAt: string;
   missing: { slug: string; productSlugs: string[] }[];
   orphaned: string[];
-  familiesWithoutRateCard: string[];
+  productsWithoutRateCard: string[];
 }
 
 // Pricing writes need the RESPONSE BODY on failure, not just a status: a 409 is
@@ -335,7 +336,7 @@ export interface OpsCatalogueMirror {
   source: "sanity" | "builtin"; loadedAt: string | null; productCount: number;
   categories: {
     slug: string; name: string;
-    families: { slug: string; name: string; productCount: number; optionCount: number; hasRateCard: boolean }[];
+    families: { slug: string; name: string; productCount: number; optionCount: number; hasRateCard: boolean; productsWithoutCard: string[] }[];
   }[];
 }
 export const opsCatalogueMirror = () => req<OpsCatalogueMirror>("/api/ops/pricing/catalogue");

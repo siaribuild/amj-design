@@ -97,6 +97,7 @@ interface LineRow {
   ai_proposal_line_id?: string | null; selected_variant_id?: string | null;
   configuration_snapshot_json?: string | null; pricing_snapshot_json?: string | null;
   edited_fields?: string | null; edit_version: number;
+  owner_user_id?: string | null;
   quote_edit_version?: number;
 }
 
@@ -536,7 +537,7 @@ ops.patch("/lines/:id", async (c) => {
   if (!staff) return c.json({ error: "forbidden" }, 403);
   if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const line = await c.env.DB.prepare(
-    `SELECT q.*, p.quote_edit_version FROM quote_line q JOIN project p ON p.id=q.project_id
+    `SELECT q.*, p.quote_edit_version, p.owner_user_id FROM quote_line q JOIN project p ON p.id=q.project_id
       WHERE q.id=? AND q.revision_id IS NULL
         AND p.status_internal IN (
           'submitted','triage_pending','estimator_assigned',
@@ -633,7 +634,7 @@ ops.patch("/lines/:id", async (c) => {
   } else {
     // Same engine as the customer save and the schedule parse — a reviewer edit
     // must never produce a different number from the one the customer saw.
-    lineTotal = await priceItem(c.env, { productSlug, width, height, options, qty });
+    lineTotal = await priceItem(c.env, { productSlug, width, height, options, qty, ownerUserId: line.owner_user_id ?? null });
   }
   // Readiness is derived, never forced: unpriced ⇒ incomplete; priced but still
   // carrying review flags ⇒ technical_review (submittable, staff must resolve);

@@ -36,12 +36,18 @@ export interface PricingModifier {
 }
 
 export interface PriceInput {
-  family: string;                     // family slug (rate-card key)
+  /** Rate-card key — the PRODUCT slug (0031). Was the family slug until every
+   *  product got its own card; products in one family are not the same frame at
+   *  the same cost, and a family key made them impossible to price apart. */
+  family: string;
   widthMm: number;
   heightMm: number;
   qty: number;
   optionSurcharges?: number[];        // resolved surcharges (server-side only)
   modifiers?: PricingModifier[];      // per-product conditional rules (private)
+  /** The account's discount (0032), as a percentage off. 0 for anonymous quotes,
+   *  which have no user row. Applied last, before rounding. */
+  discountPercent?: number;
   /** Emit a step-by-step arithmetic trace (ops Pricing preview only). Off by
    *  default so the snapshot persisted on 70k lines does not carry it. */
   explain?: boolean;
@@ -75,6 +81,9 @@ export interface PriceSnapshot {
   rateCardVersion: string;
   pricingPolicyVersion: string;
   depositPercent: number;
+  /** The account discount that priced this line — recorded so a total can be
+   *  reproduced later, when the account's rate may have changed. */
+  discountPercent: number;
   /** Modifier ids applied, in order — audit trail, server-side only. */
   appliedModifiers: string[];
   computedAt: string;
@@ -153,6 +162,19 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
       amount: fired ? unit - before : null, runningTotal: unit, applied: fired,
     });
   }
+  // The account discount, last and before rounding, so a discounted total still
+  // lands on the customer-visible $10 grid. Clamped: a negative "discount" is a
+  // surcharge by another name, and >100% would pay the customer to order.
+  const discountPercent = Math.min(100, Math.max(0, input.discountPercent ?? 0));
+  const beforeDiscount = unit;
+  if (discountPercent > 0) unit = unit * (1 - discountPercent / 100);
+  step({
+    key: "discount", label: `account discount ${discountPercent}%`,
+    detail: discountPercent > 0 ? `off ${money(beforeDiscount)}` : "none on this account",
+    amount: discountPercent > 0 ? unit - beforeDiscount : null,
+    runningTotal: unit, applied: discountPercent > 0,
+  });
+
   const beforeRound = unit;
   unit = round10(unit);
   step({ key: "round", label: "rounded to nearest $10", detail: money(beforeRound), amount: unit - beforeRound, runningTotal: unit, applied: unit !== beforeRound });
@@ -169,6 +191,7 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
     rateCardVersion: rate.version,
     pricingPolicyVersion: policy.version,
     depositPercent: policy.depositPercent,
+    discountPercent,
     appliedModifiers,
     computedAt: new Date().toISOString(),
     ...(input.explain ? { steps } : {}),
@@ -234,20 +257,36 @@ export class MissingSurcharge extends Error {
   }
 }
 
+/** The account's discount, resolved SERVER-SIDE from the owning user.
+ *
+ *  Never taken from the request: a percentage off the price is exactly the field
+ *  a browser would love to supply. An anonymous project has no owner_user_id and
+ *  prices at 0 — the discount is a reason to register, not a default for everyone. */
+export async function loadAccountDiscount(env: Env, userId: string | null | undefined): Promise<number> {
+  if (!userId) return 0;
+  const row = await env.DB.prepare("SELECT discount_percent FROM user WHERE id = ?")
+    .bind(userId).first<{ discount_percent: number }>();
+  const v = Number(row?.discount_percent);
+  return Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0;
+}
+
 // End-to-end: price one line from private D1 and return the snapshot.
 export async function priceLine(env: Env, args: {
   family: string; widthMm: number; heightMm: number; qty: number;
   optionSlugs?: string[]; requireExactRate?: boolean; requireAllOptions?: boolean;
+  /** Owner of the project being priced, or null for an anonymous one. */
+  ownerUserId?: string | null;
 }): Promise<PriceSnapshot> {
-  const [rate, policy, surcharges] = await Promise.all([
+  const [rate, policy, surcharges, discountPercent] = await Promise.all([
     loadRateCard(env, args.family, !args.requireExactRate),
     loadPolicy(env),
     loadOptionSurcharges(env, args.optionSlugs ?? [], args.requireAllOptions),
+    loadAccountDiscount(env, args.ownerUserId),
   ]);
   // Modifiers hang off the rate card actually resolved (which may be 'default').
   const modifiers = await loadModifiers(env, rate.id);
   return computePrice(rate, policy, {
     family: args.family, widthMm: args.widthMm, heightMm: args.heightMm,
-    qty: args.qty, optionSurcharges: surcharges, modifiers,
+    qty: args.qty, optionSurcharges: surcharges, modifiers, discountPercent,
   });
 }

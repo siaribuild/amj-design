@@ -103,8 +103,9 @@ export interface ReconcileResult {
   missing: { slug: string; productSlugs: string[] }[];
   /** Priced but offered by nothing. Harmless; listed for completeness. */
   orphaned: string[];
-  /** Families with no rate card of their own — they price at 'default' silently. */
-  familiesWithoutRateCard: string[];
+  /** Products with no rate card of their own — they price at 'default' silently.
+   *  Cards are per PRODUCT since 0031; a family-level gap no longer exists. */
+  productsWithoutRateCard: string[];
 }
 
 /** Every chargeable option slug the catalogue offers, mapped to the products
@@ -150,17 +151,17 @@ export async function reconcilePricing(env: Env): Promise<ReconcileResult> {
     .map(([slug, productSlugs]) => ({ slug, productSlugs }))
     .sort((a, b) => b.productSlugs.length - a.productSlugs.length);
   const orphaned = [...havePrice].filter((slug) => !offered.has(slug)).sort();
-  const familiesWithoutRateCard = [...new Set(products.map((p) => p.familySlug))]
-    .filter((f) => f && !haveCard.has(f)).sort();
+  const productsWithoutRateCard = products.map((p) => p.slug)
+    .filter((slug) => slug && !haveCard.has(slug)).sort();
 
-  const ok = missing.length === 0 && familiesWithoutRateCard.length === 0;
+  const ok = missing.length === 0 && productsWithoutRateCard.length === 0;
   const checkedAt = new Date().toISOString();
   await env.DB.prepare(
     `INSERT INTO pricing_reconcile_run (id, checked_at, ok, missing_json, orphaned_json, no_rate_card_json)
      VALUES (?, ?, ?, ?, ?, ?)`,
-  ).bind(uuid(), checkedAt, ok ? 1 : 0, JSON.stringify(missing), JSON.stringify(orphaned), JSON.stringify(familiesWithoutRateCard)).run();
+  ).bind(uuid(), checkedAt, ok ? 1 : 0, JSON.stringify(missing), JSON.stringify(orphaned), JSON.stringify(productsWithoutRateCard)).run();
 
-  return { ok, checkedAt, missing, orphaned, familiesWithoutRateCard };
+  return { ok, checkedAt, missing, orphaned, productsWithoutRateCard };
 }
 
 /** The last recorded run, or null when nothing has ever checked. The distinction
@@ -176,14 +177,14 @@ export async function lastReconcileRun(env: Env): Promise<ReconcileResult | null
   return {
     ok: !!row.ok, checkedAt: row.checked_at,
     missing: parse(row.missing_json, []), orphaned: parse(row.orphaned_json, []),
-    familiesWithoutRateCard: parse(row.no_rate_card_json, []),
+    productsWithoutRateCard: parse(row.no_rate_card_json, []),
   };
 }
 
 // ── Worked example ───────────────────────────────────────────────────────────
 export interface SampleSize { key: "small" | "typical" | "large"; widthMm: number; heightMm: number; qty: number }
 
-/** Fixed fallbacks, used only when the family has too little quote history.
+/** Fixed fallbacks, used only when the product has too little quote history.
  *  Labelled as such in the response — never silently substituted, because an
  *  invented size presented as "your typical window" is a lie the operator will
  *  calibrate against. */
@@ -193,11 +194,11 @@ const STANDARD_SIZES: SampleSize[] = [
   { key: "large", widthMm: 2400, heightMm: 1500, qty: 1 },
 ];
 
-/** The 10th / median / 90th percentile of what this family was actually quoted at
- *  over the last 90 days. Their own mix, because an invented size gets argued
+/** The 10th / median / 90th percentile of what this PRODUCT was actually quoted
+ *  at over the last 90 days. Their own mix, because an invented size gets argued
  *  with and their own numbers do not. */
-export async function sampleSizes(env: Env, familySlug: string): Promise<{ samples: SampleSize[]; fromHistory: boolean; lineCount: number }> {
-  const slugs = products.filter((p) => p.familySlug === familySlug).map((p) => p.slug);
+export async function sampleSizes(env: Env, productSlug: string): Promise<{ samples: SampleSize[]; fromHistory: boolean; lineCount: number }> {
+  const slugs = products.filter((p) => p.slug === productSlug).map((p) => p.slug);
   if (!slugs.length) return { samples: STANDARD_SIZES, fromHistory: false, lineCount: 0 };
   const placeholders = slugs.map(() => "?").join(",");
   const { results } = await env.DB.prepare(
@@ -247,8 +248,8 @@ export async function previewSample(env: Env, args: {
  *  until an estimator nudges qty — at which point the price jumps for a reason
  *  invisible to everyone in the conversation. The confirm dialog says this out
  *  loud rather than letting it be discovered. */
-export async function draftExposure(env: Env, familySlug: string): Promise<{ lines: number; projects: number }> {
-  const slugs = products.filter((p) => p.familySlug === familySlug).map((p) => p.slug);
+export async function draftExposure(env: Env, productSlug: string): Promise<{ lines: number; projects: number }> {
+  const slugs = products.filter((p) => p.slug === productSlug).map((p) => p.slug);
   if (!slugs.length) return { lines: 0, projects: 0 };
   const placeholders = slugs.map(() => "?").join(",");
   const row = await env.DB.prepare(

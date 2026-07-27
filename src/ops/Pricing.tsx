@@ -107,7 +107,7 @@ function HealthBanner({ run, checked, busy, onRecheck, onFix }: {
   run: OpsReconcileRun | null; checked: boolean; busy: boolean; onRecheck: () => void; onFix: () => void;
 }) {
   if (!checked) return null;
-  const gaps = (run?.missing.length ?? 0) + (run?.familiesWithoutRateCard.length ?? 0);
+  const gaps = (run?.missing.length ?? 0) + (run?.productsWithoutRateCard.length ?? 0);
 
   if (!run) {
     return (
@@ -136,8 +136,8 @@ function HealthBanner({ run, checked, busy, onRecheck, onFix }: {
         {run.missing.length > 0 && (
           <span>{run.missing.length} chargeable option{run.missing.length === 1 ? " has" : "s have"} no price — lines using {run.missing.length === 1 ? "it" : "them"} refuse to price.</span>
         )}
-        {run.familiesWithoutRateCard.length > 0 && (
-          <span>{run.familiesWithoutRateCard.length} famil{run.familiesWithoutRateCard.length === 1 ? "y has" : "ies have"} no rate card — {run.familiesWithoutRateCard.length === 1 ? "it prices" : "they price"} at ‘default’.</span>
+        {run.productsWithoutRateCard.length > 0 && (
+          <span>{run.productsWithoutRateCard.length} product{run.productsWithoutRateCard.length === 1 ? " has" : "s have"} no rate card — {run.productsWithoutRateCard.length === 1 ? "it prices" : "they price"} at ‘default’.</span>
         )}
       </span>
       <span className="flex items-center gap-3 shrink-0">
@@ -184,7 +184,7 @@ function RateCards() {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-[11px] uppercase tracking-wide" style={{ color: MUTED }}>
-              <th className="text-left font-medium px-4 py-2">Family</th>
+              <th className="text-left font-medium px-4 py-2">Product</th>
               <th className="text-right font-medium px-3 py-2">Perim $/m</th>
               <th className="text-right font-medium px-3 py-2">Area $/m²</th>
               <th className="text-right font-medium px-3 py-2">Min $</th>
@@ -198,12 +198,21 @@ function RateCards() {
               <tr key={c.id} onClick={() => setOpen(c.id)}
                 className="border-t border-black/5 cursor-pointer hover:bg-black/[0.015]">
                 <td className="px-4 py-2" style={{ color: INK }}>
-                  <span style={MONO}>{c.id}</span>
+                  {/* Product NAME first — the slug is the join key staff match
+                      against migrations and SQL, so it stays, underneath. */}
+                  {c.productName
+                    ? <>
+                        <span>{c.productName}</span>
+                        <span className="block text-[11px]" style={{ ...MONO, color: MUTED }}>
+                          {c.id}{c.familySlug ? ` · ${c.familySlug}` : ""}
+                        </span>
+                      </>
+                    : <span style={MONO}>{c.id}</span>}
                   {c.id === "default" && (
                     // Load-bearing: loadRateCard silently falls back here for any
-                    // family without a card of its own, so it must not read as
+                    // product without a card of its own, so it must not read as
                     // just another row.
-                    <span className="ml-2 text-[11px]" style={{ color: MUTED }}>← fallback for unmapped families</span>
+                    <span className="ml-2 text-[11px]" style={{ color: MUTED }}>← fallback for unmapped products</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-right" style={{ ...MONO, color: INK }}>{c.perimRate.toFixed(2)}</td>

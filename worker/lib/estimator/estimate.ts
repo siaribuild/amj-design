@@ -156,8 +156,13 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
     buildHistoricalModel(env),
     buildApprovedThermalModel(env),
   ]);
-  // Price a candidate for an opening via the private D1 rate card (family = the
-  // product's series slug, e.g. awning-window; falls back to 'default').
+  // The project's owner, for the account discount. Resolved once here rather than
+  // per candidate — an estimate prices dozens of candidates per opening.
+  const owner = await env.DB.prepare("SELECT owner_user_id FROM project WHERE id = ?")
+    .bind(projectId).first<{ owner_user_id: string | null }>();
+
+  // Price a candidate for an opening via the private D1 rate card, keyed on the
+  // product's pricingRef (a PRODUCT slug since 0031; falls back to 'default').
   const priceFn = async (candidate: CatalogueCandidate, opening: OpeningInput, variant: PerformanceVariant | null) => {
     if (!candidate.pricingRef) return null;
     const pricingKey = candidate.pricingRef;
@@ -167,6 +172,7 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
       heightMm: opening.heightMm ?? 0,
       qty: opening.qty ?? 1,
       optionSlugs: [...new Set([...(opening.optionSlugs ?? []), ...(variant?.pricingOptionSlugs ?? [])])],
+      ownerUserId: owner?.owner_user_id ?? null,
       // A declared product pricing reference is an exact private CPQ contract.
       // Falling back to a generic operation price would make thermally broken /
       // coating recommendations look priced while silently omitting their cost.

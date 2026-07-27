@@ -73,7 +73,10 @@ opsPricing.get("/rate-cards", async (c) => {
       id: r.id, perimRate: r.perim_rate, areaRate: r.area_rate, minCharge: r.min_charge ?? 0,
       version: r.version, updatedAt: r.updated_at, modifierCount: modifiers.length,
       exampleTotal: snap.total,
-      productCount: products.filter((p) => p.familySlug === r.id).length,
+      // Cards are keyed on the product slug (0031), so the row can name the
+      // product and the family it belongs to.
+      productName: products.find((p) => p.slug === r.id)?.name ?? null,
+      familySlug: products.find((p) => p.slug === r.id)?.familySlug ?? null,
     };
   }));
 
@@ -446,7 +449,10 @@ opsPricing.get("/catalogue", async (c) => {
           slug: fam.slug, name: fam.name,
           productCount: fp.length,
           optionCount: new Set(fp.flatMap((p) => p.options.map((o) => `${o.typeSlug}:${o.name}`))).size,
-          hasRateCard: haveCard.has(fam.slug),
+          // Cards are per product now: a family is covered when every product in
+          // it has one, and partial coverage is worth seeing.
+          hasRateCard: fp.length > 0 && fp.every((p) => haveCard.has(p.slug)),
+          productsWithoutCard: fp.filter((p) => !haveCard.has(p.slug)).map((p) => p.slug),
         };
       }),
     })),

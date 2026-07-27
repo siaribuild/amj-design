@@ -626,6 +626,46 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(rookie, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 409);
     });
 
+    await t.test("account discount: registered prices below anonymous, and the browser cannot set it", async () => {
+      const line = {
+        code: "W01", location: "Discount probe", productSlug: "amj80-series-sliding-window",
+        measuredBy: "opening", width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+        lineTotal: 1,
+      };
+      const save = (session) => requestJson(session, "/api/projects/current/lines", {
+        method: "PUT", json: { title: "Discount probe", items: [line] },
+      });
+
+      // Anonymous: no user row, so no discount.
+      const guest = new Session(baseUrl);
+      const anonTotal = (await save(guest)).body.items[0].lineTotal;
+      assert.ok(anonTotal > 0, "an anonymous line prices");
+
+      // Registered: 5% by default (0032), applied before the $10 rounding.
+      const member = new Session(baseUrl);
+      await login(member, "/api/auth", "discount.default@example.com");
+      const memberTotal = (await save(member)).body.items[0].lineTotal;
+      assert.ok(memberTotal < anonTotal, `registered (${memberTotal}) prices below anonymous (${anonTotal})`);
+      // The discount is applied to the UNROUNDED subtotal and the result is then
+      // put on the $10 grid — so it cannot be derived from the rounded anonymous
+      // total (513 × 0.95 → 490, whereas 510 × 0.95 → 480). Assert the band, which
+      // is what "5% off, then rounded" actually guarantees.
+      const fivePercentOff = anonTotal * 0.95;
+      assert.ok(Math.abs(memberTotal - fivePercentOff) <= 10,
+        `${memberTotal} is within the $10 grid of 5% off ${anonTotal} (${fivePercentOff})`);
+
+      // The discount is resolved from the USER, never from the request: a
+      // percentage off the price is exactly the field a browser would like to set.
+      const liar = new Session(baseUrl);
+      await login(liar, "/api/auth", "discount.liar@example.com");
+      const lied = await requestJson(liar, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { title: "Discount probe", items: [{ ...line, discountPercent: 90, ownerUserId: "u_demo" }] },
+      });
+      assert.equal(lied.body.items[0].lineTotal, memberTotal, "a discount in the payload is ignored");
+    });
+
     // ── Ops → Pricing: the editor for the D1 commercial layer ────────────────
     //
     // These rates ARE the money. Before this surface existed they could only be
@@ -648,17 +688,18 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.ok(asEstimator.body.cards.length > 0);
 
       // …and the console hiding a button is not the gate; the Worker is.
-      await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window",
+      await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window",
         { method: "PUT", json: { perimRate: 1, areaRate: 1, minCharge: 0, expectedVersion: "v1" } }, 403);
 
-      const card = asEstimator.body.cards.find((c) => c.id === "awning-window");
-      assert.ok(card, "the seeded awning-window card is present");
+      const card = asEstimator.body.cards.find((c) => c.id === "amj80-series-awning-window");
+      assert.ok(card, "rate cards are per PRODUCT (0031) — the AMJ80 awning has its own");
+      assert.equal(card.familySlug, "awning-window", "and still reports the family it belongs to");
 
       // The preview prices UNSAVED values through the real engine, and shows the
       // steps that did nothing as well as the ones that did.
       const preview = await requestJson(reader, "/api/ops/pricing/preview", {
         method: "POST",
-        json: { rateCardId: "awning-window", perimRate: card.perimRate + 10, samples: [{ key: "typical", widthMm: 1200, heightMm: 1200, qty: 1 }] },
+        json: { rateCardId: "amj80-series-awning-window", perimRate: card.perimRate + 10, samples: [{ key: "typical", widthMm: 1200, heightMm: 1200, qty: 1 }] },
       });
       const [sample] = preview.body.samples;
       assert.ok(sample.snapshot.total > card.exampleTotal, "a higher perimeter rate prices higher");
@@ -666,11 +707,11 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
         "a step that did nothing is still reported — that is what teaches the formula");
       // A preview must not write.
       const untouched = await requestJson(reader, "/api/ops/pricing/rate-cards");
-      assert.equal(untouched.body.cards.find((c) => c.id === "awning-window").perimRate, card.perimRate);
+      assert.equal(untouched.body.cards.find((c) => c.id === "amj80-series-awning-window").perimRate, card.perimRate);
 
       // Promote to manager: writes open, and the version bumps.
       await requestJson(staff, `/api/ops/staff/${who.body.user.id}`, { method: "PATCH", json: { role: "manager" } });
-      const saved = await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window", {
+      const saved = await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window", {
         method: "PUT",
         json: { perimRate: card.perimRate + 10, areaRate: card.areaRate, minCharge: card.minCharge, note: "supplier increase", expectedVersion: card.version },
       });
@@ -679,24 +720,24 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       // The SAME expectedVersion must now be refused: two managers on one
       // supplier increase is an ordinary afternoon, and a silent last-write-wins
       // is how one of them loses their change without ever knowing.
-      await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window", {
+      await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window", {
         method: "PUT",
         json: { perimRate: 999, areaRate: 999, minCharge: 0, expectedVersion: card.version },
       }, 409);
 
       // The change is readable as before/after, which is what a revert needs.
-      const detail = await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window");
+      const detail = await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window");
       assert.equal(detail.body.card.perimRate, card.perimRate + 10);
       assert.equal(JSON.parse(detail.body.history[0].before).perimRate, card.perimRate);
       assert.equal(detail.body.history[0].note, "supplier increase");
       assert.ok(detail.body.samples.length === 3, "small / typical / large, because a rate change is not uniform");
 
       // Revert is admin-only, and lands as a NEW forward change.
-      await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window/revert",
+      await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window/revert",
         { method: "POST", json: { toVersion: saved.body.version } }, 403);
-      await requestJson(staff, `/api/ops/pricing/rate-cards/awning-window/revert`,
+      await requestJson(staff, `/api/ops/pricing/rate-cards/amj80-series-awning-window/revert`,
         { method: "POST", json: { toVersion: saved.body.version } });
-      const reverted = await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window");
+      const reverted = await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window");
       assert.equal(reverted.body.card.perimRate, card.perimRate, "revert restores the earlier rate");
       assert.ok(reverted.body.history.length >= 2, "and does so as a new entry, never a rewind");
 
@@ -715,7 +756,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       }
 
       // A negative rate is not a low price, it is a typo that pays the customer.
-      await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window",
+      await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window",
         { method: "PUT", json: { perimRate: -5, areaRate: 300, minCharge: 0 } }, 400);
       await requestJson(reader, `/api/ops/pricing/options/colour%3Amonument`, { method: "PUT", json: { surcharge: -1 } }, 400);
 

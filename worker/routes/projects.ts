@@ -129,7 +129,9 @@ projects.post("/current/price-preview", async (c) => {
   const { project } = await resolveCurrentProject(c.env, c.req.raw);
   if (!project) return c.json({ ok: false, total: null }, 403);
   const body = await c.req.json().catch(() => ({}));
-  const f = await itemFields(c.env, body);
+  // The preview must price with the SAME account discount the save will apply,
+  // or a registered customer sees one number while typing and another once saved.
+  const f = await itemFields(c.env, body, project.owner_user_id);
   return c.json({ ok: f.line_total != null, total: f.line_total });
 });
 
@@ -212,7 +214,7 @@ projects.put("/current/lines", async (c) => {
     }
   }
   for (const { raw, i, id } of resolved) {
-    const f = await itemFields(c.env, raw);
+    const f = await itemFields(c.env, raw, project.owner_user_id);
     if (id) {
       // UPDATE preserves the row's id AND its server-owned origin (not from client).
       // Schedule-origin rows also record WHICH field groups the human changed
@@ -277,7 +279,7 @@ projects.put("/current/lines", async (c) => {
            )`,
       ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.measured_by, f.qty, f.line_total, f.status, i, f.review_json, edited, id, project.id, project.id, nextQuoteVersion, mutationToken));
     } else {
-      const r = await itemToInsert(c.env, project.id, raw, i);
+      const r = await itemToInsert(c.env, project.id, raw, i, project.owner_user_id);
       stmts.push(c.env.DB.prepare(
         `INSERT INTO quote_line
            (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position, origin, review_json)
