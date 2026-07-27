@@ -445,23 +445,32 @@ function IconBrowse({ size = 22, color = SAGE_LT }: { size?: number; color?: str
 // payment structure. All independently verifiable today.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// A real window-and-door schedule (Lot 312, sheet A6 — the same fixture the
-// parser is tested against). It is run through the REAL parser and matcher in the
-// browser on this page, so the panel below is not a drawing of the feature, it is
-// the feature. Both modules are pure and import-safe; the catalogue is already
-// hydrated by the time this renders (main.tsx awaits it before mounting).
+// A window-and-door schedule in the real sheet format — HEIGHT printed before
+// WIDTH, the same column headers the parser is tested against — with openings
+// sized inside what the catalogue actually manufactures.
+//
+// It is run through the REAL parser and matcher in the browser, so the panel
+// below is not a drawing of the feature, it is the feature: the product names,
+// the dimensions and the ready/flagged counts are all computed, never typed.
+// Both modules are pure and import-safe, and the catalogue is already hydrated
+// by the time this renders (main.tsx awaits it before mounting).
+//
+// D02 is deliberately 3500mm wide, past the AMJ150's 3000mm maximum, so the one
+// flagged line is a genuine oversize rather than a manufactured wart — it is the
+// case that becomes a composite, and it is what the review panel below exists for.
 const SAMPLE_SCHEDULE = `WINDOW SCHEDULE
 W N° HEIGHT WIDTH HEAD HT. GLAZING D.GLAZE REQ. WINDOW TYPE COMMENTS
-1 2100 2050 2400 CLEAR YES OFFSET AWNING
-2 700 3500 1605 CLEAR YES FIXED
-3 2100 2100 2300 CLEAR YES AWNING
-4 2100 3200 2300 CLEAR YES AWNING 2x 600mm WIDE AWNINGS
-5 2057 850 2300 CLEAR YES AWNING
-7 854 1810 2100 CLEAR YES AWNING
-9 1027 1810 2100 CLEAR YES AWNING
+1 1200 900 2400 CLEAR YES AWNING
+2 1500 1800 2400 CLEAR YES SLIDING
+3 1200 1200 2400 CLEAR YES AWNING
+4 600 900 2100 CLEAR YES AWNING
+5 1500 1200 2400 CLEAR YES SLIDING
+6 1800 700 2400 CLEAR YES CASEMENT
+7 900 1500 2400 CLEAR YES SLIDING
 EXTERNAL DOOR SCHEDULE
 D N° HEIGHT WIDTH GLAZING D. GLAZE REQ. MATERIAL DOOR TYPE COMMENTS
-3 2300 3000 CLEAR YES ALUMINIUM STACKER SLIDING RIGHT TO LEFT`;
+1 2100 2400 CLEAR YES ALUMINIUM STACKER SLIDING
+2 2100 3500 CLEAR YES ALUMINIUM STACKER SLIDING RIGHT TO LEFT`;
 
 /** The two filled/hollow cells used across the site for the 0 / 50 / 100 arc.
  *  `light` inverts it for dark or sage grounds — the same prop SLabel takes,
@@ -707,7 +716,8 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
             <div className="relative border border-black/10 bg-[#131311] flex flex-col min-h-[300px]">
               <div className="px-4 py-2.5 border-b border-white/12 flex items-center justify-between">
                 <span className="text-[11px] uppercase tracking-[0.14em] text-white/50" style={MONO}>From your plans</span>
-                <span className="text-[11px] text-white/35" style={MONO}>sheet A6</span>
+                {/* No invented sheet number: the honest label is what it is. */}
+                <span className="text-[11px] text-white/35" style={MONO}>window &amp; door schedule</span>
               </div>
               <div className="flex-1 overflow-x-auto px-4 py-3.5">
                 <pre className="text-[11px] md:text-[11.5px] leading-[1.75] text-white/70 whitespace-pre" style={MONO}>
