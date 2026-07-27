@@ -4,6 +4,7 @@ import { ChevronLeft, Loader2, UserPlus, FileCheck2, StickyNote, Save, MessageCi
 import {
   opsSubmissions, opsProject, opsAssign, opsPatchLine, opsAddNote, opsIssueRevision,
   opsSetStatus, opsRequestClarification, opsSubmitForApproval, opsLineConfigurations,
+  OpsApiError,
   type OpsSubmission, type OpsWorkspace, type OpsLine, type OpsExactConfiguration,
 } from "./api";
 
@@ -312,8 +313,14 @@ function LineRow({ line, onSaved }: { line: OpsLine; onSaved: () => void }) {
         resolveReview: true,
       });
       onSaved();
-    } catch {
-      setConfigurationError("This configuration could not be exactly priced. Confirm its private rate and option surcharge rows.");
+    } catch (e) {
+      // Name the gap. The old copy — "confirm its private rate and option
+      // surcharge rows" — described an internal table to someone who cannot open
+      // one, so an unpriceable line was a dead end with no next click.
+      const missing = e instanceof OpsApiError ? e.missingOptions : [];
+      setConfigurationError(missing.length
+        ? `Can't price this line — ${missing.join(", ")} has no price in D1. Ask a manager to set it in Pricing → Options, or choose a different option.`
+        : "Can't price this line — no rate card covers this product. Ask a manager to check Pricing → Rate cards.");
     } finally { setResolving(false); }
   };
 

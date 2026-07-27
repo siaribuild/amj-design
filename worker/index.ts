@@ -24,6 +24,7 @@ import { buildSitemap, buildRobots, renderShell } from "./lib/shell";
 import { ensureCatalogue } from "./lib/catalogue";
 import { getActiveLocations } from "../src/data/catalogue";
 import { drainLearningOutbox } from "./lib/revisions";
+import { reconcilePricing } from "./lib/pricing-admin";
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -142,5 +143,8 @@ export default {
   },
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     await drainLearningOutbox(env, 50);
+    // Sweep for pricing gaps, so a missed publish webhook cannot hide one
+    // indefinitely. Caught separately: neither job may sink the other.
+    await reconcilePricing(env).catch((e) => console.log(`[reconcile] scheduled sweep failed: ${String(e)}`));
   },
 };

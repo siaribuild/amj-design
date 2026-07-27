@@ -24,7 +24,13 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
-  if (!res.ok) throw new Error(`${path} → ${res.status}`);
+  // Failures carry the server's reason, not just a status. An unpriceable line
+  // knows WHICH option has no price; throwing that away is what left the ops copy
+  // saying "confirm its private rate rows" to someone who cannot open one.
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new OpsApiError(res.status, (body as any)?.error ?? `http_${res.status}`, (body as any)?.missingOptions);
+  }
   return res.json() as Promise<T>;
 }
 
@@ -258,3 +264,96 @@ export const opsUpdateEnquiry = (id: string, patch: Record<string, unknown>) =>
   req<{ enquiry: OpsEnquiryDetail }>(`/api/ops/enquiries/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 export const opsLogContact = (id: string, outcome: string, note?: string) =>
   req<{ ok: boolean; contactOutcome: string }>(`/api/ops/enquiries/${id}/contact-log`, { method: "POST", body: JSON.stringify({ outcome, note }) });
+
+// ── Pricing (the D1 commercial layer) ────────────────────────────────────────
+export interface OpsRateCardRow {
+  id: string; perimRate: number; areaRate: number; minCharge: number;
+  version: string; updatedAt: string | null;
+  modifierCount: number; exampleTotal: number; productCount: number;
+}
+export interface OpsModifier {
+  id: string; seq: number; label: string | null;
+  whenField: "width" | "height" | "area" | "qty";
+  whenOp: ">" | ">=" | "<" | "<=" | "==";
+  whenValue: number; thenType: "percent" | "fixed"; thenValue: number;
+}
+export interface OpsSample { key: "small" | "typical" | "large"; widthMm: number; heightMm: number; qty: number }
+export interface OpsPriceStep {
+  key: string; label: string; detail?: string;
+  amount: number | null; runningTotal: number; applied: boolean;
+}
+export interface OpsPricedSample {
+  sample: OpsSample;
+  snapshot: { ok: boolean; unit: number; total: number; depositAmount: number; steps?: OpsPriceStep[]; appliedModifiers: string[] };
+}
+export interface OpsPricingHistory {
+  id: string; fromVersion?: string | null; toVersion: string;
+  before: string | null; after: string | null; note: string | null;
+  actor: string; createdAt: string;
+}
+export interface OpsReconcileRun {
+  ok: boolean; checkedAt: string;
+  missing: { slug: string; productSlugs: string[] }[];
+  orphaned: string[];
+  familiesWithoutRateCard: string[];
+}
+
+// Pricing writes need the RESPONSE BODY on failure, not just a status: a 409 is
+// "someone else changed this while you had it open", which is a different message
+// and a different remedy from a generic failure.
+export class OpsApiError extends Error {
+  constructor(public status: number, public code: string, public missingOptions: string[] = []) { super(code); }
+}
+const write = <T>(path: string, method: string, body: unknown): Promise<T> =>
+  req<T>(path, { method, body: JSON.stringify(body ?? {}) });
+
+export const opsRateCards = () =>
+  req<{ canEdit: boolean; sample: OpsSample; cards: OpsRateCardRow[] }>("/api/ops/pricing/rate-cards");
+
+export const opsRateCard = (id: string) =>
+  req<{
+    canEdit: boolean; canRevert: boolean;
+    card: { id: string; perimRate: number; areaRate: number; minCharge: number; version: string };
+    updatedAt: string | null; modifiers: OpsModifier[];
+    samples: OpsSample[]; samplesFromHistory: boolean; sampleLineCount: number;
+    draftExposure: { lines: number; projects: number };
+    history: OpsPricingHistory[];
+  }>(`/api/ops/pricing/rate-cards/${id}`);
+
+export const opsPricePreview = (body: {
+  rateCardId: string; perimRate?: number; areaRate?: number; minCharge?: number;
+  modifiers?: OpsModifier[]; samples?: OpsSample[];
+}) => write<{ samples: OpsPricedSample[] }>("/api/ops/pricing/preview", "POST", body);
+
+export const opsSaveRateCard = (id: string, body: {
+  perimRate: number; areaRate: number; minCharge: number; note?: string; expectedVersion: string;
+}) => write<{ ok: boolean; version: string }>(`/api/ops/pricing/rate-cards/${id}`, "PUT", body);
+
+export const opsSaveModifiers = (id: string, body: { modifiers: OpsModifier[]; note?: string; expectedVersion: string }) =>
+  write<{ ok: boolean; version: string }>(`/api/ops/pricing/rate-cards/${id}/modifiers`, "PUT", body);
+
+export const opsRevertRateCard = (id: string, toVersion: string) =>
+  write<{ ok: boolean; version: string }>(`/api/ops/pricing/rate-cards/${id}/revert`, "POST", { toVersion });
+
+export const opsPricingOptions = () =>
+  req<{ canEdit: boolean; reconcile: OpsReconcileRun | null; options: { slug: string; surcharge: number; version: string; offeredBy: number }[] }>("/api/ops/pricing/options");
+
+export const opsSaveOption = (slug: string, surcharge: number, expectedVersion?: string) =>
+  write<{ ok: boolean; version: string }>(`/api/ops/pricing/options/${encodeURIComponent(slug)}`, "PUT", { surcharge, expectedVersion });
+
+export const opsReconcile = () => write<{ run: OpsReconcileRun }>("/api/ops/pricing/reconcile", "POST", {});
+export const opsReconcileLast = () => req<{ run: OpsReconcileRun | null }>("/api/ops/pricing/reconcile");
+
+export const opsPricingPolicy = () =>
+  req<{ canEdit: boolean; policy: { depositPercent: number; version: string }; history: OpsPricingHistory[] }>("/api/ops/pricing/policy");
+export const opsSavePolicy = (depositPercent: number, expectedVersion: string, note?: string) =>
+  write<{ ok: boolean; version: string }>("/api/ops/pricing/policy", "PUT", { depositPercent, expectedVersion, note });
+
+export interface OpsCatalogueMirror {
+  source: "sanity" | "builtin"; loadedAt: string | null; productCount: number;
+  categories: {
+    slug: string; name: string;
+    families: { slug: string; name: string; productCount: number; optionCount: number; hasRateCard: boolean }[];
+  }[];
+}
+export const opsCatalogueMirror = () => req<OpsCatalogueMirror>("/api/ops/pricing/catalogue");

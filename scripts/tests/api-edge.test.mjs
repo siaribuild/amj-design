@@ -633,6 +633,115 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(rookie, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 409);
     });
 
+    // ── Ops → Pricing: the editor for the D1 commercial layer ────────────────
+    //
+    // These rates ARE the money. Before this surface existed they could only be
+    // changed by a migration, so nothing here has ever been exercised by a test;
+    // and the failure modes are all quiet ones — a wrong role that silently
+    // succeeds, a concurrent edit that silently wins, a $0 stored as an absent
+    // row (which means "unknown option", not "free").
+    await t.test("pricing admin: role gates, versioned writes, conflicts, and reconciliation", async () => {
+      const reader = new Session(baseUrl);
+      await login(reader, "/api/ops/auth", "pricing-reader@openframe.com.au");
+      const who = await requestJson(reader, "/api/ops/me");
+
+      // Role-less staff: not even read. An estimator, however, MUST be able to
+      // see the rates their quotes are built from — denying that turns every
+      // pricing question into an interruption.
+      await requestJson(reader, "/api/ops/pricing/rate-cards", {}, 403);
+      await requestJson(staff, `/api/ops/staff/${who.body.user.id}`, { method: "PATCH", json: { role: "estimator" } });
+      const asEstimator = await requestJson(reader, "/api/ops/pricing/rate-cards");
+      assert.equal(asEstimator.body.canEdit, false, "an estimator reads but cannot write");
+      assert.ok(asEstimator.body.cards.length > 0);
+
+      // …and the console hiding a button is not the gate; the Worker is.
+      await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window",
+        { method: "PUT", json: { perimRate: 1, areaRate: 1, minCharge: 0, expectedVersion: "v1" } }, 403);
+
+      const card = asEstimator.body.cards.find((c) => c.id === "awning-window");
+      assert.ok(card, "the seeded awning-window card is present");
+
+      // The preview prices UNSAVED values through the real engine, and shows the
+      // steps that did nothing as well as the ones that did.
+      const preview = await requestJson(reader, "/api/ops/pricing/preview", {
+        method: "POST",
+        json: { rateCardId: "awning-window", perimRate: card.perimRate + 10, samples: [{ key: "typical", widthMm: 1200, heightMm: 1200, qty: 1 }] },
+      });
+      const [sample] = preview.body.samples;
+      assert.ok(sample.snapshot.total > card.exampleTotal, "a higher perimeter rate prices higher");
+      assert.ok(sample.snapshot.steps.some((s) => s.key === "min-charge" && !s.applied),
+        "a step that did nothing is still reported — that is what teaches the formula");
+      // A preview must not write.
+      const untouched = await requestJson(reader, "/api/ops/pricing/rate-cards");
+      assert.equal(untouched.body.cards.find((c) => c.id === "awning-window").perimRate, card.perimRate);
+
+      // Promote to manager: writes open, and the version bumps.
+      await requestJson(staff, `/api/ops/staff/${who.body.user.id}`, { method: "PATCH", json: { role: "manager" } });
+      const saved = await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window", {
+        method: "PUT",
+        json: { perimRate: card.perimRate + 10, areaRate: card.areaRate, minCharge: card.minCharge, note: "supplier increase", expectedVersion: card.version },
+      });
+      assert.notEqual(saved.body.version, card.version, "a write bumps the version");
+
+      // The SAME expectedVersion must now be refused: two managers on one
+      // supplier increase is an ordinary afternoon, and a silent last-write-wins
+      // is how one of them loses their change without ever knowing.
+      await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window", {
+        method: "PUT",
+        json: { perimRate: 999, areaRate: 999, minCharge: 0, expectedVersion: card.version },
+      }, 409);
+
+      // The change is readable as before/after, which is what a revert needs.
+      const detail = await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window");
+      assert.equal(detail.body.card.perimRate, card.perimRate + 10);
+      assert.equal(JSON.parse(detail.body.history[0].before).perimRate, card.perimRate);
+      assert.equal(detail.body.history[0].note, "supplier increase");
+      assert.ok(detail.body.samples.length === 3, "small / typical / large, because a rate change is not uniform");
+
+      // Revert is admin-only, and lands as a NEW forward change.
+      await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window/revert",
+        { method: "POST", json: { toVersion: saved.body.version } }, 403);
+      await requestJson(staff, `/api/ops/pricing/rate-cards/awning-window/revert`,
+        { method: "POST", json: { toVersion: saved.body.version } });
+      const reverted = await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window");
+      assert.equal(reverted.body.card.perimRate, card.perimRate, "revert restores the earlier rate");
+      assert.ok(reverted.body.history.length >= 2, "and does so as a new entry, never a rewind");
+
+      // Reconciliation names what has no price, and $0 is stored as a ROW —
+      // a missing row means "unknown option", which is an error, not a free one.
+      const run = await requestJson(reader, "/api/ops/pricing/reconcile", { method: "POST", json: {} });
+      assert.equal(typeof run.body.run.ok, "boolean");
+      const gap = run.body.run.missing[0];
+      if (gap) {
+        await requestJson(reader, `/api/ops/pricing/options/${encodeURIComponent(gap.slug)}`, { method: "PUT", json: { surcharge: 0 } });
+        const after = await requestJson(reader, "/api/ops/pricing/reconcile", { method: "POST", json: {} });
+        assert.ok(!after.body.run.missing.some((m) => m.slug === gap.slug), "closing a gap in place removes it");
+        const options = await requestJson(reader, "/api/ops/pricing/options");
+        assert.ok(options.body.options.some((o) => o.slug === gap.slug && o.surcharge === 0),
+          "an 'included' option is a row worth $0, not an absent row");
+      }
+
+      // A negative rate is not a low price, it is a typo that pays the customer.
+      await requestJson(reader, "/api/ops/pricing/rate-cards/awning-window",
+        { method: "PUT", json: { perimRate: -5, areaRate: 300, minCharge: 0 } }, 400);
+      await requestJson(reader, `/api/ops/pricing/options/colour%3Amonument`, { method: "PUT", json: { surcharge: -1 } }, 400);
+
+      // Deposit % is contractual, not commercial: admin only, even for a manager.
+      await requestJson(reader, "/api/ops/pricing/policy", { method: "PUT", json: { depositPercent: 50 } }, 403);
+      const policy = await requestJson(staff, "/api/ops/pricing/policy");
+      await requestJson(staff, "/api/ops/pricing/policy",
+        { method: "PUT", json: { depositPercent: 50, expectedVersion: policy.body.policy.version } });
+      assert.equal((await requestJson(staff, "/api/ops/pricing/policy")).body.policy.depositPercent, 50);
+      await requestJson(staff, "/api/ops/pricing/policy",
+        { method: "PUT", json: { depositPercent: 140, expectedVersion: "v2" } }, 400);
+
+      // The catalogue mirror reports what the ENGINE loaded, not what the browser
+      // bundle happens to contain — the divergence the old screen could not show.
+      const mirror = await requestJson(reader, "/api/ops/pricing/catalogue");
+      assert.ok(["sanity", "builtin"].includes(mirror.body.source));
+      assert.ok(mirror.body.categories.some((c) => c.families.some((f) => f.hasRateCard)));
+    });
+
     await t.test("enquiries: question + appointment, server-owned attribution, reference, validation", async () => {
       const s = new Session(baseUrl);
       const ip = (v) => ({ headers: { "X-Forwarded-For": v } }); // distinct sources dodge the per-IP throttle

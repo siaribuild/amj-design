@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { invalidateCatalogue } from "../lib/catalogue";
 import { logEvent } from "../lib/activity";
+import { reconcilePricing } from "../lib/pricing-admin";
 
 export const integrations = new Hono<{ Bindings: Env }>();
 
@@ -48,5 +49,14 @@ integrations.post("/sanity/published", async (c) => {
 
   invalidateCatalogue();
   await logEvent(c.env, { actor: "sanity-webhook", entityType: "catalogue", entityId: ids[0] ?? "*", action: `catalogue published (${ids.length || "unknown"} docs); cache invalidated` });
-  return c.json({ ok: true, invalidated: true, documents: ids.length });
+
+  // Publishing an option that D1 has no price for is what CREATES the gap, so the
+  // check runs on the event that causes it — the result is waiting in ops within
+  // seconds, addressed to whoever just published, while they still remember why.
+  // Never at the cost of the webhook: a reconcile failure is not a publish failure.
+  const run = await reconcilePricing(c.env).catch((e) => {
+    console.log(`[reconcile] post-publish check failed: ${String(e)}`);
+    return null;
+  });
+  return c.json({ ok: true, invalidated: true, documents: ids.length, reconciled: run?.ok ?? null });
 });

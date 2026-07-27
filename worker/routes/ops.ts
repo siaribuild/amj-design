@@ -29,9 +29,15 @@ import { reserveAiRunBudget } from "../lib/ai/jobs";
 import { isOverrideReason, OVERRIDE_REASONS } from "../lib/ai/schema";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { priceItem } from "../lib/lines";
-import { priceLine } from "../lib/estimator/pricing";
+import { MissingSurcharge, priceLine } from "../lib/estimator/pricing";
+import { opsPricing } from "./ops-pricing";
 
 export const ops = new Hono<{ Bindings: Env }>();
+
+// The D1 commercial layer's editor (rate cards, option surcharges, modifiers,
+// policy) plus catalogue reconciliation. Its own file: it is a distinct surface
+// with its own role gates, and ops.ts is already long enough.
+ops.route("/pricing", opsPricing);
 
 // Internal workflow state machine (status_internal). 'issued' is reached via
 // issue-revision; 'customer_clarification_required' via request-clarification.
@@ -603,11 +609,18 @@ ops.patch("/lines/:id", async (c) => {
       ...pricingOptionSlugsFromOptions(options),
       ...(variant.pricingOptionSlugs ?? []),
     ])];
+    // Carry the CAUSE, not just the failure: which option has no price in D1 is
+    // what turns "this can't be priced" into something the estimator can hand to
+    // a manager, or route around by choosing differently.
+    let missingOptions: string[] = [];
     const exact = await priceLine(c.env, {
       family: candidate.pricingRef, widthMm: Number(width), heightMm: Number(height), qty,
       optionSlugs: pricingOptionSlugs, requireExactRate: true, requireAllOptions: true,
-    }).catch(() => null);
-    if (!exact?.ok) return c.json({ error: "exact_pricing_unavailable" }, 409);
+    }).catch((e) => {
+      if (e instanceof MissingSurcharge) missingOptions = e.missing;
+      return null;
+    });
+    if (!exact?.ok) return c.json({ error: "exact_pricing_unavailable", missingOptions }, 409);
     lineTotal = exact.total;
     nextVariantId = variant.variantId;
     nextPricingSnapshot = JSON.stringify(exact);

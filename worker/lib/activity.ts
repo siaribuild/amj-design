@@ -9,8 +9,16 @@ export async function logEvent(env: Env, opts: {
   entityId: string;
   action: string;          // e.g. 'assigned', 'status.technical_review_required'
   after?: unknown;
+  // `before` matters wherever the question is "what did it change FROM" — money,
+  // above all. The column has existed since 0001 and went unused until the ops
+  // Pricing screen made rate edits a routine act rather than a migration.
+  before?: unknown;
 }): Promise<void> {
   await env.DB.prepare(
-    "INSERT INTO audit_event (id, actor, entity_type, entity_id, action, after_json) VALUES (?, ?, ?, ?, ?, ?)",
-  ).bind(uuid(), opts.actor ?? "system", opts.entityType, opts.entityId, opts.action, opts.after != null ? JSON.stringify(opts.after) : null).run();
+    "INSERT INTO audit_event (id, actor, entity_type, entity_id, action, before_json, after_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).bind(
+    uuid(), opts.actor ?? "system", opts.entityType, opts.entityId, opts.action,
+    opts.before != null ? JSON.stringify(opts.before) : null,
+    opts.after != null ? JSON.stringify(opts.after) : null,
+  ).run();
 }

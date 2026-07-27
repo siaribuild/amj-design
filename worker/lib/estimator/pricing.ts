@@ -42,6 +42,25 @@ export interface PriceInput {
   qty: number;
   optionSurcharges?: number[];        // resolved surcharges (server-side only)
   modifiers?: PricingModifier[];      // per-product conditional rules (private)
+  /** Emit a step-by-step arithmetic trace (ops Pricing preview only). Off by
+   *  default so the snapshot persisted on 70k lines does not carry it. */
+  explain?: boolean;
+}
+
+/** The arithmetic, decomposed, in the order computePrice performs it.
+ *
+ *  Exists because a rate card is two numbers that mean nothing in isolation: an
+ *  operator cannot tell what moving perim_rate 45 → 50 does to a real window.
+ *  Steps that did NOTHING are still reported (`applied: false`) — "minimum charge:
+ *  no effect" and "rule ①: did not fire" are what teach the shape of the formula
+ *  on a day when nothing is wrong. */
+export interface PriceStep {
+  key: string;                  // 'perimeter' | 'area' | 'options' | 'min-charge' | modifier id | 'round' | 'qty'
+  label: string;
+  detail?: string;              // the operands, e.g. "4.80 m × $55.00"
+  amount: number | null;        // the contribution, or null when nothing was added
+  runningTotal: number;
+  applied: boolean;
 }
 
 // The snapshot persisted on a line. Deliberately carries the total and the
@@ -59,6 +78,8 @@ export interface PriceSnapshot {
   /** Modifier ids applied, in order — audit trail, server-side only. */
   appliedModifiers: string[];
   computedAt: string;
+  /** Present only when `explain` was requested (ops Pricing preview). */
+  steps?: PriceStep[];
 }
 
 // Round to the nearest $10 (matches the existing configurator convention).
@@ -86,8 +107,30 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
   const perimeterM = (2 * (w + h)) / 1000;
   const areaM2 = (w * h) / 1_000_000;
   const surcharges = (input.optionSurcharges ?? []).reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0);
-  let unit = perimeterM * rate.perimRate + areaM2 * rate.areaRate + surcharges;
+  // The trace is written as the arithmetic happens, never recomputed afterwards —
+  // a preview that can disagree with production is worse than no preview.
+  const steps: PriceStep[] = [];
+  const step = (s: PriceStep) => { if (input.explain) steps.push(s); };
+  const money = (n: number) => `$${n.toFixed(2)}`;
+
+  const perimPart = perimeterM * rate.perimRate;
+  const areaPart = areaM2 * rate.areaRate;
+  let unit = perimPart + areaPart + surcharges;
+  step({ key: "perimeter", label: "perimeter", detail: `${perimeterM.toFixed(2)} m × ${money(rate.perimRate)}`, amount: perimPart, runningTotal: perimPart, applied: true });
+  step({ key: "area", label: "area", detail: `${areaM2.toFixed(2)} m² × ${money(rate.areaRate)}`, amount: areaPart, runningTotal: perimPart + areaPart, applied: true });
+  step({
+    key: "options", label: "options",
+    detail: `${(input.optionSurcharges ?? []).length} chargeable`,
+    amount: surcharges, runningTotal: unit, applied: surcharges > 0,
+  });
+
+  const beforeMin = unit;
   unit = Math.max(unit, rate.minCharge);
+  step({
+    key: "min-charge", label: `minimum charge ${money(rate.minCharge)}`,
+    detail: unit > beforeMin ? "raised the subtotal" : "no effect",
+    amount: unit > beforeMin ? unit - beforeMin : null, runningTotal: unit, applied: unit > beforeMin,
+  });
   // Per-product conditional rules, in seq order: `percent` compounds on the
   // running subtotal, `fixed` adds a flat amount. Applied AFTER the base +
   // surcharges and the minimum charge, BEFORE rounding — so the customer-visible
@@ -95,12 +138,26 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
   const appliedModifiers: string[] = [];
   const dims = { width: w, height: h, area: areaM2, qty };
   for (const m of [...(input.modifiers ?? [])].sort((a, b) => a.seq - b.seq)) {
-    if (!modifierMatches(m, dims)) continue;
-    unit = m.thenType === "percent" ? unit * (1 + m.thenValue / 100) : unit + m.thenValue;
-    appliedModifiers.push(m.id);
+    const fired = modifierMatches(m, dims);
+    const before = unit;
+    if (fired) {
+      unit = m.thenType === "percent" ? unit * (1 + m.thenValue / 100) : unit + m.thenValue;
+      appliedModifiers.push(m.id);
+    }
+    step({
+      key: m.id,
+      label: m.label || `${m.whenField} ${m.whenOp} ${m.whenValue}`,
+      detail: fired
+        ? (m.thenType === "percent" ? `+${m.thenValue}%` : `+${money(m.thenValue)}`)
+        : "did not fire",
+      amount: fired ? unit - before : null, runningTotal: unit, applied: fired,
+    });
   }
+  const beforeRound = unit;
   unit = round10(unit);
+  step({ key: "round", label: "rounded to nearest $10", detail: money(beforeRound), amount: unit - beforeRound, runningTotal: unit, applied: unit !== beforeRound });
   const total = ok ? unit * qty : 0;
+  step({ key: "qty", label: `× qty ${qty}`, amount: total - unit, runningTotal: total, applied: qty > 1 });
   const depositAmount = round10((total * policy.depositPercent) / 100);
   return {
     ok,
@@ -114,6 +171,7 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
     depositPercent: policy.depositPercent,
     appliedModifiers,
     computedAt: new Date().toISOString(),
+    ...(input.explain ? { steps } : {}),
   };
 }
 
@@ -156,16 +214,24 @@ export async function loadOptionSurcharges(env: Env, optionSlugs: string[], requ
   if (!optionSlugs.length) return [];
   const out: number[] = [];
   const unique = [...new Set(optionSlugs)];
-  let resolved = 0;
+  const missing: string[] = [];
   for (const slug of unique) {
     const r = await env.DB.prepare("SELECT surcharge FROM pricing_option_surcharge WHERE id = ? AND active = 1").bind(slug).first<{ surcharge: number }>();
-    if (r && Number.isFinite(r.surcharge)) {
-      resolved++;
-      out.push(r.surcharge);
-    }
+    if (r && Number.isFinite(r.surcharge)) out.push(r.surcharge);
+    else missing.push(slug);
   }
-  if (requireAll && resolved !== unique.length) throw new Error("missing_option_surcharge");
+  if (requireAll && missing.length) throw new MissingSurcharge(missing);
   return out;
+}
+
+/** Names WHICH option has no price. Refusing to price is correct — treating a
+ *  missing row as free would issue a quote we then have to honour — but "could
+ *  not be exactly priced" tells an estimator nothing they can act on, and the
+ *  slug is the difference between a dead end and a two-minute fix. */
+export class MissingSurcharge extends Error {
+  constructor(public missing: string[]) {
+    super("missing_option_surcharge");
+  }
 }
 
 // End-to-end: price one line from private D1 and return the snapshot.
