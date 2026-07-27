@@ -494,7 +494,7 @@ function Meter({ paid, light = false }: { paid: "0%" | "50%" | "100%"; light?: b
   return <span className="flex gap-1" aria-hidden="true">{cell(paid !== "0%")}{cell(paid === "100%")}</span>;
 }
 
-function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; onUploadSchedule: () => void }) {
+function HomePage({ setPage }: { setPage: (p: Page) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const MONO = { fontFamily: "'DM Mono', monospace" } as const;
   const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
@@ -651,31 +651,27 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
               two business days, before it becomes a quote. Nothing is charged until you accept one.
             </p>
 
-            {/* One primary, one alternative, one link. The mock makes "Build an
-                estimate" the solid button; that inverts the point — the upload
-                path is the one with the differentiated claim, and building line
-                by line is the fallback for people without a schedule.
-                The sublines are load-bearing: "Upload a schedule" silently
-                excludes anyone who does not have one. */}
-            <div className="flex flex-col sm:flex-row gap-4 sm:gap-5">
-              <div className="flex flex-col gap-1.5">
-                <Btn variant="sage" size="lg" onClick={onUploadSchedule} className="justify-center">
-                  <Upload className="w-[18px] h-[18px]" aria-hidden="true" /> Upload a schedule
-                </Btn>
-                <small className="text-white/50 text-[12px]" style={MONO}>PDF or spreadsheet · no account</small>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Btn variant="white" size="lg" onClick={() => go("quote")} className="justify-center">
-                  Build it line by line
-                </Btn>
-                <small className="text-white/50 text-[12px]" style={MONO}>No schedule? Enter sizes yourself</small>
-              </div>
-            </div>
-
-            <button onClick={() => go("products")}
-              className="mt-6 inline-flex items-center gap-2 text-white/70 hover:text-white text-sm underline underline-offset-4 decoration-white/30 hover:decoration-white transition-colors cursor-pointer">
-              See the window and door systems <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-            </button>
+            {/* ONE action.
+                It was three: upload (sage), build line by line (white outline),
+                and a text link to the products page. Two problems, both real.
+                The outline button was barely visible against a photograph — and
+                a secondary nobody can see is not a secondary, it is a dead
+                control taking up the most valuable space on the site. And the
+                two buttons went to the SAME page, which already forks properly
+                on arrival: the quote page opens with two equal panels, "Upload a
+                file" and "Add a product manually", each with room to explain
+                itself. Making that choice here as well meant making it twice,
+                worse the first time.
+                The third — a link to the systems page — duplicated both the nav
+                item and the Systems section directly below the fold.
+                So: one button, and the subline keeps both paths in words so a
+                visitor without a schedule is never excluded by the label. */}
+            <Btn variant="sage" size="lg" onClick={() => go("quote")}>
+              Get a quote <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </Btn>
+            <p className="mt-2.5 text-white/55 text-[13px]" style={MONO}>
+              Upload a schedule, or enter sizes yourself · free, no account
+            </p>
 
             <div className="mt-8 pt-5 border-t border-white/12 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-white/55" style={MONO}>
               {facts.map((f, i) => (
@@ -1946,12 +1942,9 @@ export default function App() {
     }
   };
 
-  // Home "Upload a schedule" → the quote builder, where the real upload + parse
-  // happens (the builder auto-opens the file picker via ?upload=1).
-  const uploadDemoScheduleFromHome = () => {
-    navigateTo("quote");
-    if (typeof window !== "undefined") { try { window.history.replaceState(null, "", "?upload=1"); } catch { /* noop */ } };
-  };
+  // The home page's "Upload a schedule" deep link lived here. The hero now has a
+  // single "Get a quote" and the quote builder makes the upload-vs-build choice
+  // itself, so nothing needs to pre-open the file picker from outside.
 
   // Account-page guards: bounce to login once the session check settles with no
   // user; a hard reload on /order has no focused record → back to the home.
@@ -1963,7 +1956,7 @@ export default function App() {
 
   const renderPage = () => {
     switch (page) {
-      case "home":             return <HomePage setPage={navigateTo} onUploadSchedule={uploadDemoScheduleFromHome} />;
+      case "home":             return <HomePage setPage={navigateTo} />;
       case "products":         return <ProductsPage setPage={navigateTo} category={catCategory} family={catFamily} onSelectCategory={selectCategory} onSelectFamily={setCatFamily} onOpenProduct={openProduct} />;
       case "product-detail":   return <ProductDetailPage slug={productSlug} setPage={navigateTo} onOpenProduct={openProduct} onBack={backToFamily} quote={quote} />;
       case "quote":            return <QuotePage setPage={navigateTo} user={user} quote={quote} onSubmit={submitCurrentProject} />;
@@ -1982,7 +1975,7 @@ export default function App() {
       case "help":             return inShell("help", <HelpPage setPage={navigateTo} />);
       case "track-order":      return <TrackOrderPage setPage={navigateTo} />;
       case "order":            return inShell("projects", renderRecord());
-      default:                 return <HomePage setPage={navigateTo} onUploadSchedule={uploadDemoScheduleFromHome} />;
+      default:                 return <HomePage setPage={navigateTo} />;
     }
   };
 
