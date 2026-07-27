@@ -20,6 +20,25 @@ export function parseCookies(header: string | null | undefined): Record<string, 
 export const CLAIM_COOKIE = "apertly_claim";
 
 // httpOnly claim cookie — 1 year. Secure only in production (localhost is http).
+export const GUEST_COOKIE = "apertly_guest";
+
+// Credential for a guest who has verified an emailed code against a record.
+// Deliberately a SESSION cookie — no Max-Age, no Expires — so it dies when the
+// browser closes: an anonymous person acting on a committed record should not
+// leave a durable credential behind on a shared or borrowed machine. The
+// server-side guest_grant.expires_at is the second, independent bound.
+export function guestCookie(token: string, env: Env): string {
+  const attrs = [`${GUEST_COOKIE}=${token}`, "Path=/", "HttpOnly", "SameSite=Lax"];
+  if (env.APP_ENV === "production") attrs.push("Secure");
+  return attrs.join("; ");
+}
+
+export function clearGuestCookie(env: Env): string {
+  const attrs = [`${GUEST_COOKIE}=`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
+  if (env.APP_ENV === "production") attrs.push("Secure");
+  return attrs.join("; ");
+}
+
 export function claimCookie(token: string, env: Env): string {
   const attrs = [
     `${CLAIM_COOKIE}=${token}`,

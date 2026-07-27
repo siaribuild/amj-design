@@ -289,10 +289,13 @@ export interface ApiGuestQuote {
 }
 /** Exactly one of `order` / `quote` is present, depending on how far the project
  *  has progressed; `items` and `files` accompany a quote. */
-export const guestRecord = (token: string) =>
+export const guestRecord = () =>
   req<{ order?: ApiOrder; quote?: ApiGuestQuote; items?: ApiItem[]; files?: ApiScheduleFile[] }>(
-    `/api/guest/records/${token}`,
+    "/api/guest/record",
   );
+/** Ends the guest session — for shared machines, since the cookie otherwise
+ *  lives until the browser closes. */
+export const guestSignOut = () => req<{ ok: boolean }>("/api/guest/signout", { method: "POST" });
 
 // ── Files (R2) ───────────────────────────────────────────────────────────────
 export interface ApiFile {

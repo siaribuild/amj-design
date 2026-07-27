@@ -252,8 +252,8 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
     await t.test("guest order tracking grant and read-only record", async () => {
       const request = await requestJson(anonymous, "/api/guest/track/request", { method: "POST", json: { email: "sarah@northsidebuild.com.au", ref: newOrder.orderNo } });
       assert.match(request.body.devCode, /^\d{6}$/);
-      const grant = await requestJson(anonymous, "/api/guest/track/verify", { method: "POST", json: { email: "sarah@northsidebuild.com.au", ref: newOrder.orderNo, code: request.body.devCode } });
-      const record = await requestJson(anonymous, `/api/guest/records/${grant.body.token}`);
+      await requestJson(anonymous, "/api/guest/track/verify", { method: "POST", json: { email: "sarah@northsidebuild.com.au", ref: newOrder.orderNo, code: request.body.devCode } });
+      const record = await requestJson(anonymous, "/api/guest/record");
       assert.equal(record.body.order.id, newOrder.id);
     });
 
@@ -292,8 +292,8 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       const req = await requestJson(guest, "/api/guest/track/request", { method: "POST", json: { email, ref } });
       assert.match(req.body.devCode, /^\d{6}$/, "no tracking code issued for a submitted quote");
 
-      const g = await requestJson(guest, "/api/guest/track/verify", { method: "POST", json: { email, ref, code: req.body.devCode } });
-      const rec = await requestJson(guest, `/api/guest/records/${g.body.token}`);
+      await requestJson(guest, "/api/guest/track/verify", { method: "POST", json: { email, ref, code: req.body.devCode } });
+      const rec = await requestJson(guest, "/api/guest/record");
       // No order exists yet, so the quote view is returned — and it carries NO
       // price, because the estimate has not been through technical review.
       assert.equal(rec.body.order, undefined);
@@ -309,6 +309,22 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       // A wrong email must still not resolve the reference.
       const wrong = await requestJson(guest, "/api/guest/track/request", { method: "POST", json: { email: "someone.else@example.com", ref } });
       assert.equal(wrong.body.devCode, undefined);
+
+      // The claim cookie is enough for a CART and nothing more. `guest` still
+      // holds the claim cookie for this project (it built the draft), but the
+      // project is submitted now — a durable year-long device cookie must not by
+      // itself authorise acting on a committed record. Proving control of the
+      // email address is the bar, which is what this session has now done.
+      const cookieOnly = new Session(baseUrl);
+      cookieOnly.cookies = new Map(guest.cookies);
+      cookieOnly.cookies.delete("apertly_guest");
+      await requestJson(cookieOnly, `/api/projects/${projectId}/revisions`, {}, 404);
+      // …and with the verified guest session, the same request resolves.
+      await requestJson(guest, `/api/projects/${projectId}/revisions`);
+
+      // Signing out drops the session, so a shared machine keeps nothing.
+      await requestJson(guest, "/api/guest/signout", { method: "POST" });
+      await requestJson(guest, "/api/guest/record", {}, 404);
     });
 
     await t.test("customer and ops SPA fallback plus real static assets", async () => {

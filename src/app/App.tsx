@@ -28,7 +28,7 @@ import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, ge
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
-import { getCurrentProject, saveLines, submitProject, updateProfile, clearDraft, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiGuestQuote, type ApiItem, type ApiScheduleFile, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
+import { getCurrentProject, saveLines, submitProject, updateProfile, clearDraft, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiGuestQuote, type ApiItem, type ApiScheduleFile, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
 import { GstContext, type GstMode } from "../data/gst";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1044,14 +1044,17 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
     if (!/^\d{6}$/.test(code.trim()) || busy) return;
     setBusy(true); setError("");
     try {
-      const { token } = await guestTrackVerify(email.trim(), ref.trim(), code.trim());
-      const rec = await guestRecord(token);
+      await guestTrackVerify(email.trim(), ref.trim(), code.trim());
+      const rec = await guestRecord();
       setOrder(rec.order ?? null); setQuote(rec.quote ?? null);
       setItems(rec.items ?? []); setFiles(rec.files ?? []); setStep("record");
     } catch { setError("That code didn't match, or the details don't match a quote or order."); }
     finally { setBusy(false); }
   };
-  const reset = () => { setStep("lookup"); setCode(""); setOrder(null); setQuote(null); setItems([]); setFiles([]); setError(""); setDevCode(undefined); };
+  const reset = () => {
+    void guestSignOut().catch(() => {});   // do not leave a live session behind
+    setStep("lookup"); setCode(""); setOrder(null); setQuote(null); setItems([]); setFiles([]); setError(""); setDevCode(undefined);
+  };
 
   return (
     <div className="relative min-h-screen bg-[#FAFAF9] pt-16 pb-24 overflow-hidden">

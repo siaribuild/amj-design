@@ -1,7 +1,7 @@
 // Shared project-resolution + ownership helpers used across routes.
 import type { Env } from "../types";
 import { resolveUser } from "./auth";
-import { CLAIM_COOKIE, claimCookie, newToken, parseCookies, uuid } from "./util";
+import { CLAIM_COOKIE, GUEST_COOKIE, claimCookie, newToken, parseCookies, uuid } from "./util";
 
 export interface ProjectRow {
   id: string;
@@ -123,13 +123,50 @@ export async function claimAnonProjectForUser(env: Env, userId: string, claimTok
     .bind(userId, anon.id).run();
 }
 
-// The requester owns a project if signed in as its owner, or holds its claim cookie.
+/** A project is a "cart" only while it is still a draft. Everything from
+ *  submission onwards is a committed record — a quote under review, a quote to
+ *  accept, an order in manufacture. */
+const isCart = (p: ProjectRow) => p.status_customer === "draft";
+
+/** Resolve an emailed-code guest session to the project it covers, if any.
+ *  Grants are issued per record; an order grant still resolves to its project so
+ *  one verification covers the whole journey. */
+export async function guestGrantProjectId(env: Env, req: Request): Promise<string | null> {
+  const token = parseCookies(req.headers.get("Cookie"))[GUEST_COOKIE];
+  if (!token) return null;
+  const g = await env.DB
+    .prepare("SELECT record_type, record_id FROM guest_grant WHERE token = ? AND expires_at > datetime('now')")
+    .bind(token).first<{ record_type: string; record_id: string }>();
+  if (!g) return null;
+  if (g.record_type === "project") return g.record_id;
+  const o = await env.DB.prepare('SELECT project_id FROM "order" WHERE id = ?')
+    .bind(g.record_id).first<{ project_id: string }>();
+  return o?.project_id ?? null;
+}
+
+// Who may act on a project, by how far it has progressed.
+//
+//   draft ("the cart")  — signed-in owner, OR the anonymous claim cookie. A
+//                         cookie is the right weight for an unsubmitted basket.
+//   submitted onwards   — signed-in owner, OR a guest session created by
+//                         verifying a code emailed to the address on the record.
+//                         The claim cookie ALONE is deliberately not enough: it
+//                         is a durable year-long cookie on one device, and
+//                         accepting a quote or signing off drawings commits the
+//                         customer to something. Proving control of the address
+//                         is the bar for that, and it is the same bar a
+//                         registered customer clears (this platform is
+//                         passwordless — they sign in with an emailed code too).
 export async function ownedProject(env: Env, req: Request, projectId: string): Promise<ProjectRow | null> {
   const p = await env.DB.prepare("SELECT * FROM project WHERE id = ?").bind(projectId).first<ProjectRow>();
   if (!p) return null;
   const user = await resolveUser(env, req);
   if (user && p.owner_user_id === user.id) return p;
+
   const claim = parseCookies(req.headers.get("Cookie"))[CLAIM_COOKIE];
-  if (claim && p.claim_token === claim) return p;
+  if (claim && p.claim_token === claim && isCart(p)) return p;
+
+  const grantProjectId = await guestGrantProjectId(env, req);
+  if (grantProjectId === p.id) return p;
   return null;
 }

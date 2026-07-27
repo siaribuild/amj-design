@@ -4,17 +4,31 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
 import { isStaff } from "../lib/staff";
+import { guestGrantProjectId } from "../lib/access";
 import { orderDto, applyTransition, markPaid, TRANSITIONS, type OrderRow } from "../lib/orders";
 
 export const orders = new Hono<{ Bindings: Env }>();
 
 // An order is the customer's if its project is owned by the signed-in user.
+// An order belongs to a signed-in owner, OR to a guest who verified an emailed
+// code against the record. Registered-only was a dead end: an anonymous customer
+// whose quote became an order could not sign off drawings or confirm delivery —
+// steps the process REQUIRES of them — so their order simply stalled. The claim
+// cookie is deliberately not accepted here; an order is a committed record.
 async function ownedOrder(env: Env, req: Request, orderId: string): Promise<OrderRow | null> {
   const user = await resolveUser(env, req);
-  if (!user) return null;
+  if (user) {
+    const owned = await env.DB
+      .prepare('SELECT o.* FROM "order" o JOIN project p ON p.id = o.project_id WHERE o.id = ? AND p.owner_user_id = ?')
+      .bind(orderId, user.id)
+      .first<OrderRow>();
+    if (owned) return owned;
+  }
+  const grantProjectId = await guestGrantProjectId(env, req);
+  if (!grantProjectId) return null;
   return env.DB
-    .prepare('SELECT o.* FROM "order" o JOIN project p ON p.id = o.project_id WHERE o.id = ? AND p.owner_user_id = ?')
-    .bind(orderId, user.id)
+    .prepare('SELECT o.* FROM "order" o WHERE o.id = ? AND o.project_id = ?')
+    .bind(orderId, grantProjectId)
     .first<OrderRow>();
 }
 
@@ -53,11 +67,16 @@ orders.get("/", async (c) => {
 
 // GET /api/orders/:id — full order detail (stage, payments, lines).
 orders.get("/:id", async (c) => {
+  // Same two credentials as the actions below — a guest who can sign off
+  // drawings must also be able to READ the order those drawings belong to.
   const user = await resolveUser(c.env, c.req.raw);
-  if (!user) return c.json({ error: "not_found" }, 404);
-  const order = await c.env.DB
-    .prepare(`${ORDER_CTX_SELECT} WHERE o.id = ? AND p.owner_user_id = ?`)
-    .bind(c.req.param("id"), user.id).first<OrderCtxRow>();
+  const grantProjectId = await guestGrantProjectId(c.env, c.req.raw);
+  if (!user && !grantProjectId) return c.json({ error: "not_found" }, 404);
+  const order = user
+    ? await c.env.DB.prepare(`${ORDER_CTX_SELECT} WHERE o.id = ? AND p.owner_user_id = ?`)
+        .bind(c.req.param("id"), user.id).first<OrderCtxRow>()
+    : await c.env.DB.prepare(`${ORDER_CTX_SELECT} WHERE o.id = ? AND o.project_id = ?`)
+        .bind(c.req.param("id"), grantProjectId).first<OrderCtxRow>();
   if (!order) return c.json({ error: "not_found" }, 404);
   const { results: lines } = await c.env.DB
     .prepare("SELECT external_ref, product_snapshot_json, qty, line_total FROM order_line WHERE order_id = ?")

@@ -5,7 +5,7 @@
 //   short-lived guest_grant token. records/{token} -> a read-only order view.
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { newToken, uuid } from "../lib/util";
+import { GUEST_COOKIE, guestCookie, clearGuestCookie, newToken, parseCookies, uuid } from "../lib/util";
 import { isDevEnv, isEmail, normEmail, sha256hex, sixDigit } from "../lib/auth";
 import { notify } from "../lib/email";
 import { orderDto, type OrderRow } from "../lib/orders";
@@ -97,18 +97,30 @@ guest.post("/track/verify", async (c) => {
 
   const token = newToken();
   await c.env.DB.prepare(
-    "INSERT INTO guest_grant (id, record_type, record_id, email, token, expires_at) VALUES (?, ?, ?, ?, ?, datetime('now','+30 minutes'))",
+    "INSERT INTO guest_grant (id, record_type, record_id, email, token, expires_at) VALUES (?, ?, ?, ?, ?, datetime('now','+12 hours'))",
   ).bind(uuid(), match.kind, match.id, email, token).run();
-  return c.json({ token });
+  // The grant travels as an httpOnly SESSION cookie, never in a URL. It now
+  // authorises actions on the record, and a token in a path leaks through server
+  // logs, Referer headers, browser history and any pasted link. No Max-Age, so
+  // closing the browser ends it regardless of the server-side window.
+  c.header("Set-Cookie", guestCookie(token, c.env));
+  return c.json({ ok: true });
 });
 
-// GET /api/guest/records/:token — read-only view for a valid grant. An accepted
+// POST /api/guest/signout — drop the guest session (shared machines).
+guest.post("/signout", (c) => {
+  c.header("Set-Cookie", clearGuestCookie(c.env));
+  return c.json({ ok: true });
+});
+
+// GET /api/guest/record — the record this guest session covers. An accepted
 // project resolves to its order; one still in review returns the quote instead,
 // which is all that exists at that point.
-guest.get("/records/:token", async (c) => {
-  const grant = await c.env.DB
+guest.get("/record", async (c) => {
+  const cookie = parseCookies(c.req.raw.headers.get("Cookie"))[GUEST_COOKIE];
+  const grant = cookie ? await c.env.DB
     .prepare("SELECT * FROM guest_grant WHERE token = ? AND expires_at > datetime('now')")
-    .bind(c.req.param("token")).first<{ record_id: string; record_type: string }>();
+    .bind(cookie).first<{ record_id: string; record_type: string }>() : null;
   if (!grant) return c.json({ error: "not_found" }, 404);
 
   if (grant.record_type === "order") {
