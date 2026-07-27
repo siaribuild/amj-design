@@ -203,8 +203,10 @@ ops.get("/queues/submissions", async (c) => {
     SELECT p.id, p.title, p.status_customer, p.status_internal, p.updated_at,
            o.name AS org_name, u.name AS customer_name, u.email AS customer_email,
            io.name AS assignee_name,
-           (SELECT count(*) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL) AS item_count,
-           (SELECT COALESCE(SUM(line_total), 0) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL) AS total
+           -- PARENTS ONLY — same rule as loadLines(). A segment must never be
+           -- summed beside the parent that already aggregates it.
+           (SELECT count(*) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL AND parent_line_id IS NULL) AS item_count,
+           (SELECT COALESCE(SUM(line_total), 0) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL AND parent_line_id IS NULL) AS total
       FROM project p
       LEFT JOIN organisation o ON o.id = p.organisation_id
       LEFT JOIN user u  ON u.id  = p.owner_user_id
@@ -227,7 +229,9 @@ ops.get("/projects/:id", async (c) => {
      WHERE p.id = ?`).bind(id).first<any>();
   if (!p) return c.json({ error: "not_found" }, 404);
 
-  const { results: lines } = await c.env.DB.prepare("SELECT * FROM quote_line WHERE project_id = ? AND revision_id IS NULL ORDER BY position").bind(id).all<LineRow>();
+  // PARENTS ONLY — the reviewer sees the same line list the customer does, with
+  // segments nested inside their parent rather than loose beside it.
+  const { results: lines } = await c.env.DB.prepare("SELECT * FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL ORDER BY position").bind(id).all<LineRow>();
   const { results: files } = await c.env.DB.prepare("SELECT id, kind, filename, size, virus_status, created_at FROM file_asset WHERE project_id = ? ORDER BY created_at DESC").bind(id).all();
   const { results: revisions } = await c.env.DB.prepare("SELECT id, revision_no, snapshot_status, totals_json, issued_at, accepted_at FROM quote_revision WHERE project_id = ? ORDER BY revision_no DESC").bind(id).all<any>();
   const { results: comments } = await c.env.DB.prepare("SELECT cm.id, cm.line_id, cm.kind, cm.body, cm.created_at, u.name AS author FROM comment cm LEFT JOIN user u ON u.id = cm.author_id WHERE cm.project_id = ? ORDER BY cm.created_at DESC").bind(id).all();

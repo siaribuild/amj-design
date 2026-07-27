@@ -29,8 +29,11 @@ projects.get("/", async (c) => {
   if (!user) return c.json({ projects: [] });
   const { results } = await c.env.DB.prepare(`
     SELECT p.id, p.public_ref, p.title, p.status_customer, p.updated_at, p.created_at,
-           (SELECT count(*) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL) AS item_count,
-           (SELECT COALESCE(SUM(line_total), 0) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL) AS draft_total,
+           -- PARENTS ONLY. A composite's segments belong to their parent line,
+           -- which already aggregates them; counting or summing them alongside
+           -- it would double the customer's item count and total.
+           (SELECT count(*) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL AND parent_line_id IS NULL) AS item_count,
+           (SELECT COALESCE(SUM(line_total), 0) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL AND parent_line_id IS NULL) AS draft_total,
            (SELECT id FROM quote_revision WHERE project_id = p.id AND snapshot_status = 'issued' ORDER BY revision_no DESC LIMIT 1) AS issued_revision_id,
            (SELECT revision_no FROM quote_revision WHERE project_id = p.id AND snapshot_status = 'issued' ORDER BY revision_no DESC LIMIT 1) AS issued_revision_no,
            (SELECT totals_json FROM quote_revision WHERE project_id = p.id AND snapshot_status = 'issued' ORDER BY revision_no DESC LIMIT 1) AS issued_totals_json
@@ -56,7 +59,9 @@ const projectDto = (p: ProjectRow) => ({
 
 export async function loadLines(env: Env, projectId: string) {
   const { results } = await env.DB.prepare(
-    "SELECT * FROM quote_line WHERE project_id = ? AND revision_id IS NULL ORDER BY position",
+    // PARENTS ONLY: segments render INSIDE their parent card, never as separate
+    // items in the customer's list. The count they see is the count they authored.
+    "SELECT * FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL ORDER BY position",
   ).bind(projectId).all<LineRow>();
   return results.map(rowToApiLine);
 }
