@@ -1,59 +1,149 @@
-import { ArrowRight, Camera, Check, ClipboardCheck, Info, Upload } from "lucide-react";
-import { GhostMark, SAGE, SLabel, WindowMark, Btn, type Page } from "../app/ui";
+import { ArrowRight, Info, Upload } from "lucide-react";
+import { GhostMark, SLabel, Btn, type Page } from "../app/ui";
 import { getPage, imageUrl } from "../data/catalogue";
+import { brandName, brandSubject } from "../data/sanity";
 
-const GRID_BG = {
-  backgroundImage: "linear-gradient(to right,rgba(90,122,106,0.045) 1px,transparent 1px),linear-gradient(to bottom,rgba(90,122,106,0.045) 1px,transparent 1px)",
-  backgroundSize: "64px 64px",
-};
 const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 const MONO = { fontFamily: "'DM Mono', monospace" } as const;
 
+// The four answers a first-time visitor actually arrives with. Deliberately no
+// single end-to-end duration: the real span is a quote review, a build and a
+// delivery, and one headline number reads as a promise about the whole job.
+// Durations live per phase in the ledger, matching what the account area tells
+// a paying customer.
 const FACTS = [
-  { k: "Model", v: "Supply only", sub: "— no installation" },
-  { k: "Payment", v: "50% / 50%", sub: "deposit + balance" },
-  { k: "Your checkpoint", v: "Sign off before build", sub: "" },
-  { k: "Delivery", v: "≈ 2 weeks", sub: "door-to-door, VIC" },
+  { k: "To get a quote", v: "$0", sub: "no account, no card" },
+  { k: "First payment", v: "50%", sub: "only after you accept" },
+  { k: "Your involvement", v: "6 moments", sub: "the rest is ours" },
+  { k: "Model", v: "Supply only", sub: "you arrange installation" },
 ];
 
-const STEPS = [
-  {
-    n: "01", verb: "Price", sub: "— your number, then your quote",
-    desc: "Start with an instant indicative estimate on the website. When you're ready, submit your job and OpenFrame reviews it and issues a detailed, final quote for your specifications.",
-    micro: ["Instant online estimate", "Submit full quote request", "OpenFrame issues final quote"],
-  },
-  {
-    n: "02", verb: "Approve", sub: "— accept, then 50% to begin",
-    desc: "Happy with the quote? Accept it and we invoice a 50% deposit to start your order. Nothing is charged until your quote has been reviewed and confirmed by OpenFrame.",
-    micro: ["Accept final quote", "50% deposit invoiced", "Payment starts your order"],
-  },
-  {
-    n: "03", verb: "Confirm", sub: "— you sign off before anything is made", checkpoint: true,
-    desc: "OpenFrame prepares shop drawings showing every window, door and dimension in your order. You review and sign off — so what gets built is exactly what you approved, down to the millimetre.",
-    micro: ["Shop drawings prepared", "You review every item", "Sign off to release for build"],
-  },
-  {
-    n: "04", verb: "Build", sub: "— checked in front of you", checkpoint: true,
-    desc: "Your order goes into manufacturing. Before anything is despatched, we share quality-assurance photos of every item — so you can see it's right before it leaves the factory.",
-    micro: ["Manufacturing", "Pre-despatch QA, every item", "Photos shared with you"],
-  },
-  {
-    n: "05", verb: "Deliver", sub: "— balance, final OK, door-to-door",
-    desc: "Settle the remaining 50%, give the final go-ahead, and we deliver door-to-door across Melbourne and Victoria — around two weeks. After-sales support carries on from there.",
-    micro: ["Final 50% balance", "You confirm OK", "Delivery ≈ 2 weeks", "After-sales support"],
-  },
+// ── The handover ledger ──────────────────────────────────────────────────────
+// Ownership is the LAYOUT AXIS, not a badge on a step. Every moment sits in one
+// lane or the other, so a customer action has nowhere to hide — which is exactly
+// how earlier drafts lost drawings sign-off and despatch confirmation inside a
+// step labelled as ours.
+//
+// The numbered moments are the SIX customer gates the app itself enforces
+// (accountModel.tsx `deriveGates`, worker/lib/orders.ts): submit · accept · pay
+// deposit · sign off · pay balance · confirm. Keep this list and that one in
+// step — a count stated here and contradicted by the product is worse than no
+// count at all.
+type Moment = {
+  side: "you" | "us";
+  n?: string;
+  title: string;
+  body: string;
+  meta?: string;
+  /** Cumulative percentage paid AFTER this moment; set only where it changes. */
+  paid?: 0 | 50 | 100;
+};
+
+const LEDGER: Moment[] = [
+  { side: "you", n: "01", title: "Price it", paid: 0,
+    body: "Enter your dimensions and options, or upload a window and door schedule. No account needed." },
+  { side: "us", title: "Indicative estimate, instantly",
+    body: "A number on screen, worked out from your numbers. Not a quote yet." },
+  { side: "you", n: "02", title: "Submit it for pricing",
+    body: "One click. If anything is unclear we'll ask you, and you answer." },
+  { side: "us", title: "Technical review — by a person", meta: "about 2 business days",
+    body: "Specifications, dimensions and manufacturing suitability checked by hand." },
+  { side: "us", title: "Reviewed quote issued",
+    body: "Itemised line by line, with the specification confirmed. Nothing charged yet." },
+  { side: "you", n: "03", title: "Accept it, and pay 50%", paid: 50,
+    body: "The first time anything is charged — and the number you pay is the number you accepted. Stop before this point and you owe nothing." },
+  { side: "us", title: "Shop drawings prepared",
+    body: "Every unit and every dimension, drawn for your approval." },
+  { side: "you", n: "04", title: "Sign off the drawings",
+    body: "Nothing is manufactured until you do. Changes are free up to this point; dimensions lock when you sign." },
+  { side: "us", title: "Manufacturing", meta: "about 3–4 weeks",
+    body: "Nothing needed from you while your order is built." },
+  { side: "us", title: "Quality check before despatch",
+    body: "Every item photographed and shared with you — before it leaves the factory." },
+  { side: "you", n: "05", title: "Pay the balance", paid: 100,
+    body: "The final 50%, invoiced only after you've seen the photos." },
+  { side: "you", n: "06", title: "Confirm you're ready",
+    body: "Delivery is booked on your go-ahead, not before." },
+  { side: "us", title: "Delivered to your door", meta: "about 2 weeks after the balance",
+    body: "Across Melbourne and Victoria. After-sales support carries on from there." },
 ];
 
-function Microstep({ children }: { children: string }) {
+/** Paid-so-far meter: two cells, echoing the 50/50 bar in the account area.
+ *  Rendered only where the number changes — fewer marks make the change loud. */
+function PaidMeter({ paid }: { paid: 0 | 50 | 100 }) {
+  const cell = (filled: boolean) => (
+    <span className={`block w-2.5 h-2.5 border ${filled ? "bg-[#131311] border-[#131311]" : "border-black/25"}`} />
+  );
   return (
-    <span className="text-[11px] tracking-[0.02em] text-[#3f5a4c] bg-[#5A7A6A]/8 border border-[#5A7A6A]/20 px-2.5 py-1.5" style={MONO}>
-      {children}
+    <span className="inline-flex flex-col items-start gap-1" aria-hidden="true">
+      <span className="flex gap-1">{cell(paid >= 50)}{cell(paid >= 100)}</span>
+      <span className="text-[10px] tracking-[0.1em] text-[#8a8782]" style={MONO}>
+        {paid === 0 ? "0%" : paid === 50 ? "50%" : "100%"}
+      </span>
     </span>
   );
 }
 
+// One ledger row. Ownership is carried THREE ways at once — lane position, a
+// filled vs. hollow square, and a text label — so it survives the mobile
+// collapse and never depends on colour alone.
+function LedgerRow({ m, brand }: { m: Moment; brand: string }) {
+  const yours = m.side === "you";
+  return (
+    <div className="grid grid-cols-[44px_1fr] md:grid-cols-[92px_1fr_1fr] border-b border-black/10 bg-white">
+      {/* Money rail — desktop. Only the rows where the total changes carry a mark. */}
+      <div className="hidden md:flex items-start justify-center pt-7 border-r border-black/10">
+        {m.paid !== undefined && <PaidMeter paid={m.paid} />}
+      </div>
+
+      {/* Mobile ownership rail: a solid bar for your moments, a hairline for ours. */}
+      <div className="md:hidden flex items-start justify-center pt-7">
+        <span className={yours ? "block w-2.5 h-2.5 bg-[#131311]" : "block w-2.5 h-2.5 border border-black/25"} />
+      </div>
+
+      {/* YOU lane */}
+      <div className={`px-4 py-5 md:px-7 md:py-7 md:border-r border-black/10 ${yours ? "" : "hidden md:block"}`}>
+        {yours && <MomentBody m={m} label="You" />}
+      </div>
+
+      {/* Company lane. On mobile it shares the single column and is indented, so
+          the zig-zag survives as a shape even without two columns. */}
+      <div className={`px-4 py-5 pl-8 md:pl-7 md:px-7 md:py-7 ${yours ? "hidden md:block" : ""}`}>
+        {!yours && <MomentBody m={m} label={brand} />}
+      </div>
+    </div>
+  );
+}
+
+function MomentBody({ m, label }: { m: Moment; label: string }) {
+  const yours = m.side === "you";
+  return (
+    <>
+      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+        <span className={yours ? "w-2.5 h-2.5 bg-[#131311] flex-shrink-0" : "w-2.5 h-2.5 border border-black/30 flex-shrink-0"} aria-hidden="true" />
+        {m.n && <span className="text-[11px] tracking-[0.12em] text-[#131311]" style={MONO}>{m.n}</span>}
+        {/* Desktop has lane headers, so the per-row label would be noise there;
+            on mobile the lanes collapse and it is the primary ownership cue. */}
+        <span className="md:hidden text-[10px] uppercase tracking-[0.14em] text-[#8a8782]" style={MONO}>{label}</span>
+        {m.paid !== undefined && (
+          <span className="md:hidden text-[10px] uppercase tracking-[0.14em] text-[#3f5a4c] border border-[#5A7A6A]/30 bg-[#5A7A6A]/8 px-1.5 py-0.5" style={MONO}>
+            {m.paid === 0 ? "Nothing paid" : m.paid === 50 ? "50% paid" : "Paid in full"}
+          </span>
+        )}
+      </div>
+      <h3 className={`font-semibold tracking-tight ${yours ? "text-[#131311] text-[17px] md:text-[19px]" : "text-[#3d3b38] text-[15px] md:text-[18px]"}`} style={DISPLAY}>{m.title}</h3>
+      {m.meta && <div className="text-[12px] text-[#8a8782] mt-1" style={MONO}>{m.meta}</div>}
+      <p className={`text-[#5c5a56] leading-[1.55] mt-1.5 max-w-[46ch] ${yours ? "text-[14.5px]" : "text-[13.5px] md:text-[14px]"}`}>{m.body}</p>
+    </>
+  );
+}
+
+
 export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
   const go = (p: Page) => { setPage?.(p); window.scrollTo(0, 0); };
+  // The lane header is the one place a company name earns its keep. When Site
+  // Settings has none, "Us" is a pronoun rather than an invented brand.
+  const brand = brandName() ?? "Us";
   return (
     <div className="bg-[#FAFAF9] min-h-screen">
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
@@ -90,82 +180,41 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
         </div>
       </section>
 
-      {/* ── Process ──────────────────────────────────────────────────────── */}
+      {/* ── The process: the handover ledger ─────────────────────────────── */}
       <section className="py-16 md:py-24">
         <div className="max-w-6xl mx-auto px-6">
-          <div className="max-w-[60ch] mb-11">
+          <div className="max-w-[60ch] mb-9">
             <SLabel>The process</SLabel>
             <h2 className="font-semibold text-[#131311] leading-[1.08] tracking-tight mb-3" style={{ ...DISPLAY, fontSize: "clamp(1.6rem, 3.4vw, 2.15rem)" }}>
-              Five steps. Two are yours to approve.
+              Six moments are yours. Everything between them is ours.
             </h2>
             <p className="text-[#5c5a56] text-[15.5px] leading-relaxed max-w-[54ch]">
-              The full job runs through drawings, manufacturing and quality checks behind the scenes — but from your side it's five clear stages, and nothing gets built or shipped until you've signed off.
+              Follow it top to bottom. Filled squares are the moments you act; hollow squares are the work {brandSubject().toLowerCase() === "we" ? "we do" : `${brand} does`} in between. Nothing is charged until you accept a quote a person has reviewed.
             </p>
           </div>
 
-          <div className="border-t border-black/10">
-            {STEPS.map((s) => (
-              <div key={s.n}
-                className={`grid grid-cols-[56px_1fr] md:grid-cols-[88px_1fr] border-b border-black/10 ${s.checkpoint ? "bg-gradient-to-r from-[#5A7A6A]/[0.06] to-white" : "bg-white"}`}>
-                {/* rail */}
-                <div className={`flex flex-col items-center py-7 md:py-8 border-r ${s.checkpoint ? "bg-[#5A7A6A] border-[#5A7A6A]" : "border-black/10"}`}
-                  style={!s.checkpoint ? { backgroundImage: "linear-gradient(180deg, transparent, rgba(90,122,106,0.08))" } : undefined}>
-                  <span className="text-[12px] font-medium" style={{ ...MONO, color: s.checkpoint ? "#fff" : "#3f5a4c" }}>{s.n}</span>
-                  <span className="mt-3.5" style={{ opacity: s.checkpoint ? 0.9 : 0.55 }}>
-                    <WindowMark size={22} color={s.checkpoint ? "#fff" : SAGE} />
-                  </span>
-                </div>
-                {/* body */}
-                <div className="px-6 py-7 md:px-8 md:py-8">
-                  {s.checkpoint && (
-                    <div className="flex items-center gap-2 mb-2.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#5A7A6A]" />
-                      <span className="text-[10px] uppercase tracking-[0.12em] text-[#3f5a4c]" style={MONO}>Your checkpoint</span>
-                    </div>
-                  )}
-                  <div className="flex items-baseline gap-3 flex-wrap">
-                    <h3 className="font-semibold text-[#131311] tracking-tight" style={{ ...DISPLAY, fontSize: "clamp(1.3rem, 2.6vw, 1.6rem)" }}>{s.verb}</h3>
-                    <span className="text-[15px] text-[#5c5a56]">{s.sub}</span>
-                  </div>
-                  <p className="text-[#5c5a56] text-[15px] leading-[1.6] mt-3 mb-4 max-w-[60ch]">{s.desc}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {s.micro.map((m) => <Microstep key={m}>{m}</Microstep>)}
-                  </div>
-                </div>
-              </div>
-            ))}
+          {/* Lane headers — desktop only; on mobile every row carries its own label. */}
+          <div className="hidden md:grid grid-cols-[92px_1fr_1fr] border-t border-l border-r border-black/10 bg-[#F2F0EC]">
+            <div className="px-3 py-2.5 border-r border-black/10 text-[10px] uppercase tracking-[0.14em] text-[#8a8782] text-center" style={MONO}>Paid</div>
+            <div className="px-7 py-2.5 border-r border-black/10 text-[10px] uppercase tracking-[0.14em] text-[#131311]" style={MONO}>You</div>
+            <div className="px-7 py-2.5 text-[10px] uppercase tracking-[0.14em] text-[#8a8782]" style={MONO}>{brand}</div>
+          </div>
+
+          <div className="border-t md:border-t-0 border-l border-r border-black/10">
+            {LEDGER.map((m, i) => <LedgerRow key={`${m.side}-${i}`} m={m} brand={brand} />)}
+          </div>
+
+          {/* The one thing that is NOT in this process — kept adjacent to the
+              ledger rather than as a footnote four screens down. */}
+          <div className="border-l border-r border-b border-black/10 bg-[#F2F0EC] px-5 py-5 md:px-7">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-[#8a8782] mb-1.5" style={MONO}>Not in this process</div>
+            <p className="text-[#5c5a56] text-[14.5px] leading-[1.6] max-w-[60ch]">
+              Installation. Supply only — your builder or installer fits the frames on site. We hand over at your address.
+            </p>
           </div>
         </div>
       </section>
 
-      {/* ── Trust / low-risk ─────────────────────────────────────────────── */}
-      <section className="relative bg-white border-t border-b border-black/10 py-16 md:py-24" style={GRID_BG}>
-        <GhostMark size={320} opacity={0.025} pos="right-0 bottom-0" />
-        <div className="max-w-6xl mx-auto px-6 relative">
-          <div className="max-w-[60ch] mb-11">
-            <SLabel>Why it's low-risk</SLabel>
-            <h2 className="font-semibold text-[#131311] leading-[1.08] tracking-tight mb-3" style={{ ...DISPLAY, fontSize: "clamp(1.6rem, 3.4vw, 2.15rem)" }}>
-              Two points where you're in control.
-            </h2>
-            <p className="text-[#5c5a56] text-[15.5px] leading-relaxed max-w-[54ch]">
-              Made-to-measure supply only works if what arrives is right. Two sign-offs make sure of it.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {[
-              { Icon: ClipboardCheck, h: "You sign off the drawings", p: "Nothing is manufactured until you've reviewed shop drawings showing every unit and dimension and approved them. No surprises off a misread schedule." },
-              { Icon: Camera, h: "You see QA photos before despatch", p: "Every item is photographed during a pre-despatch quality check and shared with you. You confirm it's right before it leaves the factory — not after it's on your site." },
-            ].map(({ Icon, h, p }) => (
-              <div key={h} className="relative bg-white border border-black/10 p-6 md:p-7 overflow-hidden">
-                <span className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-[#5A7A6A]/35" />
-                <Icon className="w-8 h-8 text-[#5A7A6A]" strokeWidth={1.5} aria-hidden="true" />
-                <h3 className="font-semibold text-[#131311] text-lg mt-3 mb-2 tracking-tight" style={DISPLAY}>{h}</h3>
-                <p className="text-[#5c5a56] text-[14.5px] leading-[1.6]">{p}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* ── Payment ──────────────────────────────────────────────────────── */}
       <section className="py-16 md:py-24">
@@ -194,49 +243,12 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
             </div>
             <div className="flex items-start gap-2.5 px-6 md:px-8 py-4 bg-[#F2F0EC] text-[12.5px] text-[#5c5a56] leading-relaxed">
               <Info className="w-4 h-4 flex-shrink-0 mt-0.5 text-[#5c5a56]" strokeWidth={1.8} aria-hidden="true" />
-              <span>Instant estimates are indicative only and subject to technical review. Final pricing, manufacturing suitability and delivery timing are confirmed by OpenFrame before any deposit is invoiced. Supply only — installation is not included.</span>
+              <span>Instant estimates are indicative only and subject to technical review. Final pricing, manufacturing suitability and delivery timing are confirmed on technical review before any deposit is invoiced. Supply only — installation is not included.</span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── Provide / Handle ─────────────────────────────────────────────── */}
-      <section className="pb-16 md:pb-24">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="border border-black/10 bg-white p-6 md:p-7">
-              <h4 className="text-[11px] uppercase tracking-[0.12em] text-[#9a9894] mb-4" style={MONO}>What you provide</h4>
-              <ul className="flex flex-col gap-3">
-                {[
-                  "Product types, sizes and quantities — or a window schedule / plans to upload",
-                  "Dimensions confirmed by a qualified builder or installer",
-                  "Delivery suburb and site access details",
-                  "Sign-off on shop drawings before manufacture",
-                ].map((t) => (
-                  <li key={t} className="flex gap-3 text-[14.5px] text-[#131311]">
-                    <Check className="w-4 h-4 text-[#5A7A6A] flex-shrink-0 mt-0.5" strokeWidth={2} aria-hidden="true" />{t}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="border border-black/10 bg-white p-6 md:p-7">
-              <h4 className="text-[11px] uppercase tracking-[0.12em] text-[#9a9894] mb-4" style={MONO}>What OpenFrame handles</h4>
-              <ul className="flex flex-col gap-3">
-                {[
-                  "Technical review of every specification and dimension",
-                  "Shop drawings, manufacturing and compliance documentation",
-                  "Pre-despatch quality assurance on every item",
-                  "Door-to-door delivery across Melbourne and Victoria",
-                ].map((t) => (
-                  <li key={t} className="flex gap-3 text-[14.5px] text-[#131311]">
-                    <Check className="w-4 h-4 text-[#131311] flex-shrink-0 mt-0.5" strokeWidth={2} aria-hidden="true" />{t}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* ── CTA ──────────────────────────────────────────────────────────── */}
       <section className="pb-20 md:pb-28">
