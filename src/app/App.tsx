@@ -1022,11 +1022,9 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
   const [ref, setRef] = useState(""); const [email, setEmail] = useState(""); const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const [devCode, setDevCode] = useState<string | undefined>();
-  // Exactly one of these is set: a project that hasn't been accepted yet has no
-  // order, and its quote reference is what the submission email told them to use.
-  const [order, setOrder] = useState<ApiOrder | null>(null);
-  const [items, setItems] = useState<ApiItem[]>([]);
-  const [files, setFiles] = useState<ApiScheduleFile[]>([]);
+  // WHICH record this session covers. The record itself is rendered by the same
+  // components the account area uses, fetching through the same endpoints.
+  const [rec, setRec] = useState<{ kind: "project" | "order"; id: string; status?: string } | null>(null);
 
   const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
 
