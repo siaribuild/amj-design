@@ -11,10 +11,14 @@ const MONO = { fontFamily: "'DM Mono', monospace" } as const;
 // delivery, and one headline number reads as a promise about the whole job.
 // Durations live per phase in the ledger, matching what the account area tells
 // a paying customer.
+// "6 moments" moved to the ledger heading, where the count belongs. This slot
+// now carries the speed claim, which is the stronger answer to the question a
+// trade visitor actually arrives with — a schedule that would take an evening to
+// price by hand is priced and submitted in about a minute.
 const FACTS = [
   { k: "To get a quote", v: "$0", sub: "no account, no card" },
+  { k: "With a schedule", v: "~1 minute", sub: "upload it — it prices itself" },
   { k: "First payment", v: "50%", sub: "only after you accept" },
-  { k: "Your involvement", v: "6 moments", sub: "the rest is ours" },
   { k: "Model", v: "Supply only", sub: "you arrange installation" },
 ];
 
@@ -41,11 +45,11 @@ type Moment = {
 
 const LEDGER: Moment[] = [
   { side: "you", n: "01", title: "Price it", paid: 0,
-    body: "Enter your dimensions and options, or upload a window and door schedule. No account needed." },
-  { side: "us", title: "Indicative estimate, instantly",
-    body: "A number on screen, worked out from your numbers. Not a quote yet." },
+    body: "Upload your window and door schedule and it prices itself, line by line — no retyping. Or enter dimensions and options by hand. No account needed." },
+  { side: "us", title: "We read the schedule and price it",
+    body: "Every line matched to a product and costed on the spot. A number on screen, not a quote yet." },
   { side: "you", n: "02", title: "Submit it for pricing",
-    body: "One click. If anything is unclear we'll ask you, and you answer." },
+    body: "One click. With a schedule in hand, most projects get this far in about a minute. If anything is unclear we'll ask you, and you answer." },
   { side: "us", title: "Technical review — by a person", meta: "about 2 business days",
     body: "Specifications, dimensions and manufacturing suitability checked by hand." },
   { side: "us", title: "Reviewed quote issued",
