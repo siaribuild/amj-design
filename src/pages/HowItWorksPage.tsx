@@ -22,7 +22,7 @@
 // already drifted on a hand-written count.
 import { ArrowRight, Camera, ClipboardCheck, FileText, Info, PenLine, Send, Truck, Upload, Factory } from "lucide-react";
 import { GhostMark, SLabel, Btn, type Page } from "../app/ui";
-import { getPage, imageUrl } from "../data/catalogue";
+import { getPage, imageUrl, products } from "../data/catalogue";
 import { brandName, brandSubject } from "../data/sanity";
 
 const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
@@ -126,15 +126,15 @@ function ProcessCard({ c, brand, last }: { c: Card; brand: string; last: boolean
       sm:[&:nth-child(n+2)]:-mt-px lg:[&:nth-child(n+2)]:mt-0 lg:[&:nth-child(n+2)]:-ml-px
       ${yours ? "bg-white" : "bg-[#FAFAF9]"}`}>
       <div className="flex items-center justify-between mb-4">
-        <span className={`w-8 h-8 flex items-center justify-center border text-xs
-          ${yours ? "border-[#5A7A6A]/40 text-[#5A7A6A]" : "border-black/12 text-[#8a8782]"}`} style={MONO}>
+        <span className={`flex items-center justify-center border
+          ${yours ? "w-11 h-11 border-[#5A7A6A]/40 text-[#5A7A6A] text-[15px]" : "w-8 h-8 border-black/12 text-[#8a8782] text-xs"}`} style={MONO}>
           {yours ? c.n : <Icon className="w-4 h-4" aria-hidden="true" />}
         </span>
         <span className="text-[10px] uppercase tracking-[0.14em] text-[#8a8782]" style={MONO}>
           {yours ? "You" : brand}
         </span>
       </div>
-      <h3 className={`font-semibold leading-tight mb-1.5 ${yours ? "text-[#131311] text-[17px]" : "text-[#3d3b38] text-[15px]"}`} style={DISPLAY}>
+      <h3 className={`font-semibold leading-tight mb-1.5 ${yours ? "text-[#131311] text-[18px] md:text-[19px]" : "text-[#3d3b38] text-[15px]"}`} style={DISPLAY}>
         {c.title}
       </h3>
       {c.meta && <div className="text-[11px] text-[#8a8782] mb-1.5" style={MONO}>{c.meta}</div>}
@@ -169,7 +169,7 @@ function PhaseSection({ p, brand }: { p: Phase; brand: string }) {
             <div className="text-[10px] uppercase tracking-[0.14em] text-[#8a8782] mb-1.5" style={MONO}>Paid so far</div>
             <div className="flex md:justify-end items-center gap-2">
               <Meter paid={p.paid} />
-              <span className="font-semibold text-[#131311] text-[19px]" style={DISPLAY}>{p.paid}</span>
+              <span className="font-semibold text-[#3f5a4c] leading-none" style={{ ...DISPLAY, fontSize: "clamp(2rem, 5vw, 2.75rem)" }}>{p.paid}</span>
             </div>
             <div className="text-[12px] text-[#5c5a56] mt-1" style={MONO}>{p.paidNote} · {p.duration}</div>
           </div>
@@ -195,6 +195,9 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
   // The ownership eyebrow is the one place a company name earns its keep. With
   // Site Settings unset it reads "We" — a pronoun, never an invented brand.
   const brand = brandName() ?? "We";
+  // A featured product photograph stands in for the QA shot. Falls back to
+  // nothing rather than a placeholder if the catalogue has no imagery.
+  const qaShot = imageUrl(products.find((pr) => pr.heroImage)?.heroImage, { w: 900, h: 700 }) || "";
 
   return (
     <div className="bg-[#FAFAF9] min-h-screen">
@@ -248,10 +251,10 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
               <a key={p.id} href={`#${p.id}`}
                 className="border-r border-y border-black/10 bg-white px-3 py-4 md:px-5 md:py-5 hover:bg-[#F7F8F6] transition-colors">
                 <div className="text-[10px] uppercase tracking-[0.12em] text-[#8a8782] mb-1" style={MONO}>{p.label.replace(" — ", " · ")}</div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Meter paid={p.paid} />
-                  <span className="font-semibold text-[#131311] text-[15px] md:text-[17px]" style={DISPLAY}>{p.paid}</span>
+                <div className="flex items-baseline gap-2 mb-1.5">
+                  <span className="font-semibold text-[#3f5a4c] leading-none" style={{ ...DISPLAY, fontSize: "clamp(1.6rem, 6vw, 2.4rem)" }}>{p.paid}</span>
                 </div>
+                <div className="mb-2"><Meter paid={p.paid} /></div>
                 <div className="text-[11.5px] md:text-[12.5px] text-[#5c5a56] leading-snug" style={MONO}>{p.duration}</div>
               </a>
             ))}
@@ -295,19 +298,30 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
           <h2 className="font-semibold text-[#131311] leading-[1.08] tracking-tight mb-7 max-w-[20ch]" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
             You see it before it ships.
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 border border-black/10 bg-white">
-            {[
-              { icon: Camera, t: "Every item photographed", p: "Photographs of your actual units, shared with you." },
-              { icon: Send, t: "Then the balance is invoiced", p: "Not before. If something is wrong, it is wrong on our side of the invoice." },
-            ].map((c, i) => (
-              <div key={c.t} className={`px-6 py-7 md:px-8 ${i === 0 ? "border-b md:border-b-0 md:border-r border-black/10" : ""}`}>
-                <span className="w-8 h-8 mb-4 flex items-center justify-center border border-[#5A7A6A]/40 text-[#5A7A6A]">
-                  <c.icon className="w-4 h-4" aria-hidden="true" />
-                </span>
-                <h3 className="font-semibold text-[#131311] text-[17px] leading-tight mb-1.5" style={DISPLAY}>{c.t}</h3>
-                <p className="text-[#5c5a56] text-[14.5px] leading-relaxed">{c.p}</p>
-              </div>
-            ))}
+          {/* A real photograph of a real unit — this section is literally about
+              photographing what you ordered, so product imagery is the subject
+              here, not decoration. */}
+          <div className="grid grid-cols-1 md:grid-cols-[1.1fr_1fr] border border-black/10 bg-white">
+            <div className="relative min-h-[220px] md:min-h-[300px] bg-[#0c0c0a] overflow-hidden">
+              {qaShot && <img src={qaShot} alt="A finished aluminium window unit, photographed before despatch" className="absolute inset-0 w-full h-full object-cover" />}
+              <span className="absolute left-4 bottom-4 bg-[#131311]/85 text-white text-[11px] uppercase tracking-[0.14em] px-2.5 py-1.5" style={MONO}>
+                Pre-despatch QA
+              </span>
+            </div>
+            <div className="divide-y divide-black/10">
+              {[
+                { icon: Camera, t: "Every item photographed", p: "Photographs of your actual units, shared with you." },
+                { icon: Send, t: "Then the balance is invoiced", p: "Not before. If something is wrong, it is wrong on our side of the invoice." },
+              ].map((c) => (
+                <div key={c.t} className="px-6 py-6 md:px-8 md:py-7">
+                  <span className="w-8 h-8 mb-3 flex items-center justify-center border border-[#5A7A6A]/40 text-[#5A7A6A]">
+                    <c.icon className="w-4 h-4" aria-hidden="true" />
+                  </span>
+                  <h3 className="font-semibold text-[#131311] text-[17px] leading-tight mb-1.5" style={DISPLAY}>{c.t}</h3>
+                  <p className="text-[#5c5a56] text-[14.5px] leading-relaxed">{c.p}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
