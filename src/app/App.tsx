@@ -447,11 +447,14 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
     },
   ];
 
+  // The THREE phases, worded exactly as /how-it-works words them. This used to
+  // be a separate four-step telling with its own numbering, so a visitor
+  // clicking through met a second, differently-worded account of one process.
+  // Keep these headings and that page in step.
   const steps: { n: string; title: string; body: string; Icon: typeof Upload }[] = [
-    { n: "01", title: "Build or upload",              body: "Choose products and enter dimensions, or upload a window/door schedule.", Icon: Upload },
-    { n: "02", title: "Indicative estimate",          body: "Receive an indicative estimate based on selections and project details.", Icon: FileText },
-    { n: "03", title: "Technical review",             body: "Our team checks specifications, dimensions and manufacturing suitability.", Icon: Search },
-    { n: "04", title: "Reviewed quote before deposit", body: "You approve the reviewed quote before any deposit is paid.", Icon: Check },
+    { n: "01", title: "Quote",    body: "Upload a schedule and it prices itself. A person then checks it by hand and issues a reviewed quote — about two business days, nothing charged.", Icon: Upload },
+    { n: "02", title: "Order",    body: "Accept the quote and pay 50%. You sign off shop drawings before anything is manufactured — changes are free until you do.", Icon: Check },
+    { n: "03", title: "Delivery", body: "Every item is photographed before it ships. You pay the balance after you have seen the photos, then we deliver.", Icon: FileText },
   ];
 
   const trust = ["Indicative first", "Reviewed before deposit", "Manufacturer-backed", "Supply only"];
@@ -579,7 +582,7 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
             How quote-to-order works
           </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0">
             {steps.map((s, i) => (
               <div key={s.n}
                 className="relative border border-black/10 bg-white p-6 flex flex-col sm:[&:nth-child(n+2)]:-mt-px lg:[&:nth-child(n+2)]:mt-0 lg:[&:nth-child(n+2)]:-ml-px">
