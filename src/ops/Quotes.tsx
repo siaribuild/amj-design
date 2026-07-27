@@ -85,10 +85,26 @@ function Workspace({ id, onBack }: { id: string; onBack: () => void }) {
   const p = ws.project;
   const total = ws.lines.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
   const next = p.nextStates ?? [];
+  // One blanket message used to cover every failure: "resolve and exactly price
+  // every line". That is the right sentence for exactly ONE of these codes. On a
+  // concurrency conflict it sent people hunting a pricing problem that did not
+  // exist, while the actual cause — someone else editing the same quote — went
+  // unsaid and the lost edit went unnoticed.
+  const ACTION_ERRORS: Record<string, string> = {
+    unresolved_lines: "Resolve and exactly price every line, then try again.",
+    line_changed_reload_required: "Someone else changed this quote while you had it open — your edit wasn't saved. Reload the record and try again.",
+    quote_changed_retry: "Someone else changed this quote while you had it open — your edit wasn't saved. Reload the record and try again.",
+    workflow_changed_retry: "This quote moved to another state while you had it open. Reload the record to see where it is now.",
+    stage_conflict: "That step has already been taken. Reload the record to see the current state.",
+    forbidden_role: "You don't have permission for that action.",
+  };
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true); setActionError("");
     try { await fn(); await load(); }
-    catch { setActionError("That action could not be completed. Resolve and exactly price every line, then try again."); }
+    catch (e) {
+      const code = e instanceof OpsApiError ? e.code : "";
+      setActionError(ACTION_ERRORS[code] ?? "That action could not be completed.");
+    }
     finally { setBusy(false); }
   };
 

@@ -55,6 +55,17 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
   const [order, setOrder] = useState<OpsOrder | null>(null);
   const [actions, setActions] = useState<OpsAction[]>([]);
   const [busy, setBusy] = useState(false);
+  // Recording a payment asks for the REAL bank reference. It used to invent one —
+  // `EFT-${random}` — and write that fiction to payment.reference, which the
+  // customer then reads back on their own record as proof of a transfer. A money
+  // record carrying a made-up identifier is worse than one carrying none: it
+  // cannot be reconciled against a bank statement, and it looks reconciled.
+  //
+  // These two live ABOVE the `if (!order)` guard below. Declaring them after it
+  // is a hooks-order violation (React #310) that white-screens the tab the moment
+  // the order loads — which is exactly what happened on the first attempt.
+  const [payFor, setPayFor] = useState<OpsAction | null>(null);
+  const [payRef, setPayRef] = useState("");
 
   const load = () => opsOrder(id).then(r => { setOrder(r.order); setActions(r.actions); }).catch(() => setOrder(null));
   useEffect(() => { load(); }, [id]);
@@ -65,14 +76,24 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
   const files = ((order as unknown as { files?: OpsScheduleFile[] }).files) ?? [];
 
   const act = async (a: OpsAction) => {
+    if (a.action.startsWith("pay:")) { setPayFor(a); setPayRef(""); return; }
     setBusy(true);
     try {
-      const r = a.action.startsWith("pay:")
-        ? await opsPayOrder(id, a.action.split(":")[1], `EFT-${Math.floor(Math.random() * 9000 + 1000)}`)
-        : await opsAdvanceOrder(id, a.action);
+      const r = await opsAdvanceOrder(id, a.action);
       // advance/pay return the bare order (no joined title/customer) — keep the header.
       setOrder(prev => ({ ...r.order, title: prev?.title, customerName: prev?.customerName, orgName: prev?.orgName }));
       setActions(r.actions);
+    } finally { setBusy(false); }
+  };
+
+  const confirmPayment = async () => {
+    if (!payFor || !payRef.trim()) return;
+    setBusy(true);
+    try {
+      const r = await opsPayOrder(id, payFor.action.split(":")[1], payRef.trim());
+      setOrder(prev => ({ ...r.order, title: prev?.title, customerName: prev?.customerName, orgName: prev?.orgName }));
+      setActions(r.actions);
+      setPayFor(null); setPayRef("");
     } finally { setBusy(false); }
   };
 
@@ -97,6 +118,33 @@ function Detail({ id, onBack }: { id: string; onBack: () => void }) {
                 {a.action.startsWith("pay:") ? <Landmark className="w-4 h-4" /> : <Truck className="w-4 h-4" />}{a.label}
               </button>
             ))}
+          </div>
+        )}
+
+        {/* Confirm-in-place: the record stays on screen while the decision is made,
+            and Confirm cannot fire until a real reference has been typed. */}
+        {payFor && (
+          <div className="mt-4 border border-[#5A7A6A]/35 bg-[#5A7A6A]/[0.06] p-4">
+            <p className="text-sm text-[#14150f] mb-1">
+              Record the {payFor.action.split(":")[1]} payment for {order.orderNo}?
+            </p>
+            <p className="text-xs text-[#5c5a56] mb-3">
+              This marks the payment received and the customer sees it on their record. Enter the
+              reference from your bank statement so it can be reconciled later.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input value={payRef} onChange={e => setPayRef(e.target.value)} autoFocus
+                onKeyDown={e => { if (e.key === "Enter") confirmPayment(); if (e.key === "Escape") setPayFor(null); }}
+                placeholder="Bank reference, e.g. EFT-4821"
+                className="border border-black/15 px-2.5 py-1.5 text-sm w-64 bg-white"
+                style={{ fontFamily: "'DM Mono', monospace" }} />
+              <button onClick={confirmPayment} disabled={busy || !payRef.trim()}
+                className="text-sm text-white px-3 py-1.5 disabled:opacity-40" style={{ background: SAGE }}>
+                Confirm payment
+              </button>
+              <button onClick={() => setPayFor(null)} disabled={busy}
+                className="text-sm px-3 py-1.5 text-[#5c5a56] hover:text-[#14150f]">Cancel</button>
+            </div>
           </div>
         )}
       </div>
