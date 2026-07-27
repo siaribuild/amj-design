@@ -204,22 +204,30 @@ test("oversized opening: best-fit is PRICED but always WARNED, never presented a
 });
 
 test("submission lifecycle: technical-only lines are submittable; customer gaps block", () => {
+  // These fixtures are RAW parser output, produced before anything is priced.
+  // Priceability is now the server's answer alone — the browser holds no rate
+  // data — so a line the server priced carries a lineTotal, and `priced` here
+  // stands in for that round-trip. Without it every line would read "unpriced",
+  // which is true of parser output and says nothing about submittability.
+  const priced = (l) => ({ ...l, lineTotal: 500 });
   // Timber door: mapped to an aluminium product, priced, technical flag only →
   // must NOT block submission (submission is how it reaches an AMJ technician).
-  assert.equal(lineBlocksSubmission(byCode.D01), false);
+  assert.equal(lineBlocksSubmission(priced(byCode.D01)), false);
   assert.equal(reviewClass(byCode.D01.review), "technical");
   // Oversized awning: best-fit priced + 'fit' warning → AMJ designs a composite →
   // still submittable (the customer can't resize a building).
-  assert.equal(lineBlocksSubmission(byCode.W01), false);
+  assert.equal(lineBlocksSubmission(priced(byCode.W01)), false);
   assert.equal(reviewClass(byCode.W01.review), "technical");
   // FIXED window: no family maps to it, and guessing a near-miss family would
   // mis-price it → an ERROR the customer resolves by choosing the product.
-  assert.equal(lineBlocksSubmission(byCode.W02), true);
+  assert.equal(lineBlocksSubmission(priced(byCode.W02)), true);
   assert.equal(reviewClass(byCode.W02.review), "customer");
   // A clean, fitting awning blocks nothing.
-  assert.equal(lineBlocksSubmission(byCode.W05), false);
+  assert.equal(lineBlocksSubmission(priced(byCode.W05)), false);
   // Only a genuine customer gap blocks: an unreadable size is an ERROR.
-  assert.equal(lineBlocksSubmission({ ...byCode.W05, review: { dims: "Size could not be read" } }), true);
+  assert.equal(lineBlocksSubmission({ ...priced(byCode.W05), review: { dims: "Size could not be read" } }), true);
+  // And a line the server could NOT price blocks, with no warning to explain it.
+  assert.equal(lineBlocksSubmission({ ...byCode.W05, lineTotal: null }), true);
 });
 
 test("fitting awnings map cleanly and are ready", () => {

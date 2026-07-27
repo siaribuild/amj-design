@@ -72,11 +72,45 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
         },
       });
       customerProjectId = saved.body.project.id;
+      // PARITY CANARY. 1200×900 sliding window, all four options standard:
+      // perimeter 4.2m × $45 + area 1.08m² × $300 = $513 → $510 on the $10 grid.
+      // This number is what the retired client-side engine produced, so it pins
+      // the unified D1 engine to the same answer. It caught a real regression on
+      // the first run: the D1 surcharge table is keyed by option alone, so every
+      // STANDARD choice was billed and this came back $710. Standard options are
+      // included in the base rate and must contribute no surcharge slug.
       assert.equal(saved.body.items[0].lineTotal, 510);
       await login(customer, "/api/auth", "regression@example.com");
       const claimed = await requestJson(customer, "/api/projects/current");
       assert.equal(claimed.body.project.id, customerProjectId);
       assert.equal(claimed.body.items.length, 1);
+    });
+
+    // The single-engine guarantee, stated as behaviour rather than structure.
+    await t.test("one pricing engine: conditional modifiers apply to every line", async () => {
+      const s = new Session(baseUrl);
+      const line = (w) => ({
+        code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+        measuredBy: "opening", width: String(w), height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+        lineTotal: 1,
+      });
+
+      // 1300 wide crosses the seeded "width > 1200mm ⇒ +10%" modifier.
+      // Base: perimeter 4.4m × $45 + area 1.17m² × $300 = $549 → ×1.10 = $603.9
+      // → $600 on the $10 grid. Under the retired client engine this line came
+      // back $550: that engine had no modifier concept at all, so the owner's
+      // own pricing rule silently did not apply to manual or schedule lines.
+      const wide = await requestJson(s, "/api/projects/current/lines", {
+        method: "PUT", json: { title: "Modifier check", items: [line(1300)] },
+      });
+      assert.equal(wide.body.items[0].lineTotal, 600, "wide-frame modifier must apply to a manual line");
+
+      // 1200 is NOT over the threshold — the rule is exclusive, not inclusive.
+      const narrow = await requestJson(s, "/api/projects/current/lines", {
+        method: "PUT", json: { items: [{ ...line(1200), serverId: wide.body.items[0].id }] },
+      });
+      assert.equal(narrow.body.items[0].lineTotal, 510, "at exactly 1200 the modifier must not fire");
     });
 
     await t.test("one draft per customer: a second anon draft merges its lines on sign-in", async () => {

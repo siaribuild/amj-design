@@ -80,6 +80,21 @@ projects.get("/current", async (c) => {
   return c.json({ project: projectDto(project), items: await loadLines(c.env, project.id), files: await loadProjectFiles(c.env, project.id) });
 });
 
+// POST /api/projects/current/price-preview — price ONE candidate line without
+// saving it, so the composer can show a live figure while the customer types.
+//
+// This exists because the browser no longer prices anything: the rate model is
+// commercial data and lives in D1. Scoped to a caller who already has a project
+// (session or claim cookie) so it is not an open price-probing endpoint — the
+// rate card would otherwise be reconstructable by sweeping dimensions.
+projects.post("/current/price-preview", async (c) => {
+  const { project } = await resolveCurrentProject(c.env, c.req.raw);
+  if (!project) return c.json({ ok: false, total: null }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const f = await itemFields(c.env, body);
+  return c.json({ ok: f.line_total != null, total: f.line_total });
+});
+
 // GET /api/projects/:id — a specific owned project + its draft lines (read-only).
 // Scoped to the signed-in owner so a customer can review exactly what they
 // submitted (e.g. while it's under review, before any revision is issued).
@@ -159,7 +174,7 @@ projects.put("/current/lines", async (c) => {
     }
   }
   for (const { raw, i, id } of resolved) {
-    const f = itemFields(raw);
+    const f = await itemFields(c.env, raw);
     if (id) {
       // UPDATE preserves the row's id AND its server-owned origin (not from client).
       // Schedule-origin rows also record WHICH field groups the human changed
@@ -224,7 +239,7 @@ projects.put("/current/lines", async (c) => {
            )`,
       ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.measured_by, f.qty, f.line_total, f.status, i, f.review_json, edited, id, project.id, project.id, nextQuoteVersion, mutationToken));
     } else {
-      const r = itemToInsert(project.id, raw, i);
+      const r = await itemToInsert(c.env, project.id, raw, i);
       stmts.push(c.env.DB.prepare(
         `INSERT INTO quote_line
            (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position, origin, review_json)

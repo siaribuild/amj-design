@@ -150,21 +150,19 @@ export function lineBlocksSubmission(it: {
 }): boolean {
   const severity = reviewSeverity(it.review);
   if (severity === "error") return true;
-  if (it.origin === "ai" || it.aiPriced) {
-    const priced = typeof it.lineTotal === "number" && Number.isFinite(it.lineTotal);
-    return !priced && severity !== "warning";
-  }
-  return !priceConfigured(it).ok && severity !== "warning";
+  // Priced-ness is the SERVER's answer, for every origin. The browser holds no
+  // rate data and must not form a second opinion about whether a line can be
+  // sold — that is how the two engines diverged in the first place.
+  const priced = typeof it.lineTotal === "number" && Number.isFinite(it.lineTotal);
+  return !priced && severity !== "warning";
 }
 
-/** Customer-visible total. AI prices are private CPQ outputs and must never be
- * silently recomputed by the browser's legacy indicative formula. */
-export function linePriceTotal(it: {
-  productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;
-  origin?: string; aiPriced?: boolean; lineTotal?: number | null;
-}): number {
-  if (it.origin === "ai" || it.aiPriced) return typeof it.lineTotal === "number" && Number.isFinite(it.lineTotal) ? it.lineTotal : 0;
-  return priceConfigured(it).total;
+/** Customer-visible total — always the server's figure, never recomputed here.
+ *  Rate cards, option surcharges and conditional modifiers are commercial data
+ *  in D1; the browser renders what the server priced. An unpriced line reads 0
+ *  and is caught by lineBlocksSubmission, not papered over with an estimate. */
+export function linePriceTotal(it: { lineTotal?: number | null }): number {
+  return typeof it.lineTotal === "number" && Number.isFinite(it.lineTotal) ? it.lineTotal : 0;
 }
 
 // ─── Item codes (schedule/builder references) ─────────────────────────────────
@@ -188,23 +186,15 @@ export function hasDuplicateCode(items: QItem[], id: number, code: string): bool
   return !!n && items.some(it => it.id !== id && normCode(it.code) === n);
 }
 
-// ─── Rate model ($/m perimeter, $/m² area) per family ─────────────────────────
-const RATES: Record<string, { perim: number; area: number }> = {
-  "sliding-window":        { perim: 45,  area: 300 },
-  "awning-window":         { perim: 55,  area: 340 },
-  "casement-window":       { perim: 55,  area: 350 },
-  "glass-louvre":          { perim: 60,  area: 320 },
-  "tilt-and-turn-window":  { perim: 90,  area: 520 },
-  "sashless-double-hung":  { perim: 60,  area: 360 },
-  "single-hung-window":    { perim: 50,  area: 330 },
-  "sliding-door":          { perim: 85,  area: 420 },
-  "casement-door":         { perim: 95,  area: 460 },
-  "bi-fold-door":          { perim: 130, area: 520 },
-  "pivot-door":            { perim: 160, area: 640 },
-  "slim-frame-sliding-door": { perim: 150, area: 560 },
-  "lift-slide-door":       { perim: 150, area: 600 },
-};
-const DEFAULT_RATE = { perim: 60, area: 380 };
+// ─── Rate model — REMOVED FROM THE BROWSER ────────────────────────────────────
+// The per-family $/m perimeter and $/m² area table used to live here, which meant
+// it shipped in the JS bundle and anyone could read the pricing model from
+// devtools. It is commercial data and now exists only in D1 (pricing_rate_card),
+// alongside the option surcharges and the conditional modifiers.
+//
+// Nothing in the browser prices a line. The server does it in priceItem()
+// (worker/lib/lines.ts) and the composer asks for a live figure through
+// POST /api/projects/current/price-preview.
 
 // ─── Option surcharges ($ over the included/standard choice) ───────────────────
 const OPTION_ADD: Record<string, number> = {
@@ -294,30 +284,6 @@ export function addDemoSchedule(quote: QuoteState): void {
 
 // ─── Pricing ──────────────────────────────────────────────────────────────────
 export interface PriceResult { unit: number; total: number; ok: boolean; missing: string[] }
-
-export function priceConfigured(it: {
-  productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;
-}): PriceResult {
-  const p = getProductBySlug(it.productSlug);
-  const w = parseInt(it.width) || 0, h = parseInt(it.height) || 0;
-  const groups = p ? optionGroupsFor(p) : [];
-
-  const missing: string[] = [];
-  if (!p) missing.push("product");
-  if (!w) missing.push("width");
-  if (!h) missing.push("height");
-  for (const g of groups) if (g.required && !it.options[g.typeSlug]) missing.push(g.label.toLowerCase());
-  if (!p || !w || !h) return { unit: 0, total: 0, ok: false, missing };
-
-  const rate = RATES[p.familySlug] ?? DEFAULT_RATE;
-  let unit = (2 * (w + h)) / 1000 * rate.perim + (w * h) / 1_000_000 * rate.area;
-  for (const g of groups) {
-    const chosen = g.choices.find(c => c.name === it.options[g.typeSlug]);
-    if (chosen) unit += chosen.add;
-  }
-  unit = Math.round(unit / 10) * 10;
-  return { unit, total: unit * it.qty, ok: missing.length === 0, missing };
-}
 
 // ─── Formatting + labels ──────────────────────────────────────────────────────
 export const fmt = (n: number) => `$${Math.round(n).toLocaleString("en-AU")}`;

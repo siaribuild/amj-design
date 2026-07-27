@@ -95,6 +95,14 @@ export const logout = () => req<{ ok: boolean }>("/api/auth/logout", { method: "
 /** The current project (session- or claim-cookie scoped) + its draft lines + files. */
 export const getCurrentProject = () => req<CurrentProject>("/api/projects/current");
 
+/** Price one candidate line without saving it. The browser holds no rate data —
+ *  the commercial model lives in D1 — so the composer asks the server for the
+ *  figure it shows while the customer types. */
+export const previewPrice = (item: { productSlug: string; width: string; height: string; options: Record<string, string>; qty: number }) =>
+  req<{ ok: boolean; total: number | null }>("/api/projects/current/price-preview", {
+    method: "POST", body: JSON.stringify(item),
+  });
+
 /** A specific owned project + its lines (read-only) — e.g. to review a submission. */
 export const getProject = (projectId: string) =>
   req<CurrentProject>(`/api/projects/${projectId}`);

@@ -10,7 +10,7 @@ import { uuid } from "./util";
 import { logEvent } from "./activity";
 import { extractSchedule } from "./extract";
 import { matchSchedule, type ParsedLine } from "../../src/data/scheduleMatch";
-import { priceConfigured } from "../../src/data/configurator";
+import { priceItem } from "./lines";
 import type { ProjectRow } from "./access";
 
 export interface ParseFile { id: string; r2_key: string; filename: string; size: number | null; content_type?: string; virus_status?: string }
@@ -279,13 +279,16 @@ export async function runScheduleParse(
   };
   const seenTags = new Set<string>();
   const created: { line: ParsedLine; qlId: string; plId: string; idx: number }[] = [];
+  // Priced up front: the loop below builds statements synchronously, and with a
+  // single engine pricing is now a D1 round-trip.
+  const lineTotals = await Promise.all(lines.map((l) => priceItem(env, l)));
   lines.forEach((l, idx) => {
-    const priced = priceConfigured({ productSlug: l.productSlug, width: l.width, height: l.height, options: l.options, qty: l.qty });
+    const priced = { ok: lineTotals[idx] != null };
     const hasReview = !!l.review && Object.keys(l.review).length > 0;
     // Unpriceable ⇒ 'incomplete' (customer-blocking); priced+flagged ⇒
     // 'technical_review' (we resolve, submittable); priced+clean ⇒ 'ready'.
     const status = !priced.ok ? "incomplete" : hasReview ? "technical_review" : "ready";
-    const lineTotal = priced.ok ? priced.total : null;
+    const lineTotal = lineTotals[idx];
     const plId = uuid();
     let qlId: string;
 

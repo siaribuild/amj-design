@@ -15,7 +15,7 @@ const outfile = join(runDir, "unit-bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { priceConfigured, lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel } from ${p("src/data/configurator.ts")};
+      export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel } from ${p("src/data/configurator.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData } from ${p("src/data/catalogueQuery.ts")};
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
@@ -23,7 +23,7 @@ await build({
       export { normalizePhone, enquiryReference, validateEnquiry } from ${p("worker/lib/enquiry.ts")};
       export { availableActions, ACTION_LABEL, TRANSITIONS, STAGES, STAGE_LABEL, DEPOSIT_PERCENT } from ${p("worker/lib/orders.ts")};
       export { canApprove } from ${p("worker/lib/approvals.ts")};
-      export { itemFields, editedFieldsAfterSave } from ${p("worker/lib/lines.ts")};
+      export { editedFieldsAfterSave } from ${p("worker/lib/lines.ts")};
       export { pricingOptionSlugsFromOptions } from ${p("worker/lib/estimator/estimate.ts")};
       export { staffDomains, isStaffEmail } from ${p("worker/lib/staff.ts")};
     `,
@@ -61,36 +61,11 @@ test("only an explicit customer edit can submit an unpriced AI line for human re
   }), false);
 });
 
-test("priceConfigured: complete line prices, rounds to $10, multiplies by qty", () => {
-  const one = M.priceConfigured({ productSlug: slug, width: "1200", height: "900", options: fullOptions, qty: 1 });
-  assert.equal(one.ok, true);
-  assert.deepEqual(one.missing, []);
-  assert.equal(one.unit % 10, 0, "unit rounds to nearest $10");
-  assert.ok(one.unit > 0);
-  const four = M.priceConfigured({ productSlug: slug, width: "1200", height: "900", options: fullOptions, qty: 4 });
-  assert.equal(four.total, one.unit * 4);
-});
-
-test("priceConfigured: perimeter+area model — bigger window costs more", () => {
-  const small = M.priceConfigured({ productSlug: slug, width: "800", height: "600", options: fullOptions, qty: 1 });
-  const big = M.priceConfigured({ productSlug: slug, width: "1800", height: "1400", options: fullOptions, qty: 1 });
-  assert.ok(big.unit > small.unit);
-});
-
-test("priceConfigured: missing dimensions/product flagged, not priced", () => {
-  assert.deepEqual(M.priceConfigured({ productSlug: slug, width: "", height: "900", options: fullOptions, qty: 1 }).missing.includes("width"), true);
-  assert.equal(M.priceConfigured({ productSlug: slug, width: "1200", height: "", options: fullOptions, qty: 1 }).ok, false);
-  const noProduct = M.priceConfigured({ productSlug: "does-not-exist", width: "1200", height: "900", options: {}, qty: 1 });
-  assert.equal(noProduct.ok, false);
-  assert.equal(noProduct.unit, 0);
-  assert.ok(noProduct.missing.includes("product"));
-});
-
-test("priceConfigured: missing required option (hardware) blocks pricing", () => {
-  const r = M.priceConfigured({ productSlug: slug, width: "1200", height: "900", options: { colour: "Dover White" }, qty: 1 });
-  assert.equal(r.ok, false);
-  assert.ok(r.missing.some((m) => m.includes("hardware")));
-});
+// NOTE: the four priceConfigured unit tests that stood here are gone with the
+// function. Pricing is no longer a pure browser calculation — it is one D1-backed
+// engine — so it is covered end-to-end in api.test.mjs ("one pricing engine…"),
+// which exercises the real rate cards, surcharges and modifiers rather than a
+// second copy of the formula.
 
 test("suggestCode: W## for windows, D## for doors, continues from highest", () => {
   assert.equal(M.suggestCode([], slug), "W01");
@@ -263,14 +238,14 @@ test("catalogueQuery.toCatalogueData: showroom locations normalise", () => {
 
 // ── Human-edit provenance (0019, multi-file UX spec §1b) ─────────────────────
 test("editedFieldsAfterSave: an unchanged autosave round-trip marks NOTHING as edited", () => {
-  const incoming = M.itemFields({ productSlug: "amj80-series-awning-window", width: "900", height: "1200", options: { colour: "black" }, qty: 2, origin: "schedule" });
+  const incoming = { product_slug: "amj80-series-awning-window", options_json: JSON.stringify({ colour: "black" }), dims_json: JSON.stringify({ width: "900", height: "1200" }), qty: 2 };
   const stored = { product_slug: incoming.product_slug, options_json: '{"colour":"black"}', dims_json: '{"height":"1200","width":"900"}', qty: 2, edited_fields: null };
   // Note the stored JSON has DIFFERENT key order — must still compare equal.
   assert.equal(M.editedFieldsAfterSave(stored, incoming), null, "key-order differences never false-flag an edit");
 });
 
 test("editedFieldsAfterSave: a real change flags exactly its field group and unions with prior edits", () => {
-  const incoming = M.itemFields({ productSlug: "amj80-series-awning-window", width: "950", height: "1200", options: { colour: "black" }, qty: 2, origin: "schedule" });
+  const incoming = { product_slug: "amj80-series-awning-window", options_json: JSON.stringify({ colour: "black" }), dims_json: JSON.stringify({ width: "950", height: "1200" }), qty: 2 };
   const stored = { product_slug: incoming.product_slug, options_json: '{"colour":"black"}', dims_json: '{"width":"900","height":"1200"}', qty: 2, edited_fields: '["qty"]' };
   const out = JSON.parse(M.editedFieldsAfterSave(stored, incoming));
   assert.deepEqual(out.sort(), ["dims_json", "qty"].sort(), "width change adds dims_json; prior qty edit survives");

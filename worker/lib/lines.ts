@@ -1,7 +1,21 @@
 // Mapping between the client's QItem shape and normalized quote_line rows,
-// plus authoritative server-side pricing. Imports the SAME pure pricing
-// functions the SPA uses (src/data/configurator.ts) so estimates never diverge.
-import { priceConfigured, type MeasuredBy } from "../../src/data/configurator";
+// plus authoritative server-side pricing.
+//
+// Pricing runs through ONE engine — priceLine → computePrice — reading rate
+// cards, option surcharges and conditional modifiers from D1. The browser prices
+// nothing; it renders the line_total this returns.
+//
+// Before unification a second engine (priceConfigured) lived in
+// src/data/configurator.ts. It shipped the whole rate table to every visitor in
+// the JS bundle, and it had no modifier concept — so the owner's
+// "width > 1200mm ⇒ +10%" rule silently never applied to manual or schedule
+// lines, only to AI ones.
+import type { Env } from "../types";
+import { colorbondColourOptions, getProductBySlug } from "../../src/data/catalogue";
+import { type MeasuredBy } from "../../src/data/configurator";
+import { ensureCatalogue } from "./catalogue";
+import { pricingOptionSlugsFromOptions } from "./estimator/estimate";
+import { priceLine } from "./estimator/pricing";
 import { uuid } from "./util";
 
 // The line shape exchanged with the client. `id` is the STABLE server line id —
@@ -75,8 +89,66 @@ export function rowToApiLine(r: LineRow): ApiLine {
 // The mutable columns of a quote_line, normalized + server-priced from one client
 // item. Shared by the INSERT (new line) and UPDATE (existing line) paths so the
 // pricing/status rules can't diverge between them. `origin` is included but treated
+const canonSlug = (v: string) => v.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+/** Which chosen options actually carry a surcharge, as D1 surcharge ids.
+ *
+ *  The split follows the ownership rule: SANITY maps which options a product
+ *  offers and which one is standard for it; D1 owns what a non-standard option
+ *  costs. So availability is read from the catalogue and the price from D1.
+ *
+ *  A standard option contributes NO slug — it is included in the base rate, and
+ *  charging for it is exactly the bug the parity test caught (a 1200×900 sliding
+ *  window priced $710 instead of $510 because all four standard choices were
+ *  billed). Anything the catalogue does not recognise is logged, never guessed.
+ */
+function chargeableOptionSlugs(productSlug: string, options: Record<string, string>): string[] {
+  const product = getProductBySlug(productSlug);
+  const slugs: string[] = [];
+  for (const [typeSlug, value] of Object.entries(options)) {
+    if (!value || typeof value !== "string") continue;
+    const match = typeSlug === "colour"
+      ? colorbondColourOptions.find((o) => o.name === value)
+      : product?.options.find((o) => o.typeSlug === typeSlug && o.name === value);
+    if (!match) {
+      // Reconciliation: the catalogue does not offer this option for this
+      // product. Do not invent a price — say so, and let the line go unpriced.
+      console.log(`[pricing] unknown option "${typeSlug}:${value}" for product "${productSlug}"`);
+      continue;
+    }
+    if (match.availability === "standard") continue;   // included in the base rate
+    slugs.push(`${canonSlug(typeSlug)}:${canonSlug(value)}`);
+  }
+  return slugs;
+}
+
+/** THE pricing entry point for a configured line. Every path that needs a price
+ *  — the customer save, the schedule parse, the ops edit, the live preview —
+ *  goes through here, so there is one engine and one set of rules. Returns null
+ *  when the line cannot be priced; callers must not substitute an estimate. */
+export async function priceItem(env: Env, it: {
+  productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;
+}): Promise<number | null> {
+  await ensureCatalogue(env);
+  const family = getProductBySlug(it.productSlug)?.familySlug || null;
+  const w = parseInt(it.width) || 0;
+  const h = parseInt(it.height) || 0;
+  if (!family || w <= 0 || h <= 0) return null;
+  const snapshot = await priceLine(env, {
+    family, widthMm: w, heightMm: h, qty: Math.max(1, Math.floor(it.qty) || 1),
+    optionSlugs: chargeableOptionSlugs(it.productSlug, it.options),
+    // Fail rather than under-price: an option with no D1 row is a data gap, and
+    // treating it as free would issue a quote we would have to honour.
+    requireAllOptions: true,
+  }).catch((e) => {
+    console.log(`[pricing] unpriceable ${it.productSlug} ${w}x${h}: ${String(e)}`);
+    return null;
+  });
+  return snapshot?.ok ? snapshot.total : null;
+}
+
 // as server-owned by the caller: set on INSERT, never overwritten on UPDATE.
-export function itemFields(raw: unknown) {
+export async function itemFields(env: Env, raw: unknown) {
   const it = (raw ?? {}) as Record<string, unknown>;
   const width = String(it.width ?? "");
   const height = String(it.height ?? "");
@@ -85,8 +157,8 @@ export function itemFields(raw: unknown) {
   const productSlug = String(it.productSlug ?? "");
   const measured = String(it.measuredBy ?? "");
 
-  const priced = priceConfigured({ productSlug, width, height, options, qty });
-  const lineTotal = priced.ok ? priced.total : null;
+  const lineTotal = await priceItem(env, { productSlug, width, height, options, qty });
+  const priced = { ok: lineTotal != null };
 
   // A line still carrying review reasons stays 'technical_review' (Needs review)
   // even if it happens to price; clearing the last flag (client drops resolved
@@ -116,8 +188,8 @@ export function itemFields(raw: unknown) {
 }
 
 // A brand-new line: the shared fields plus a fresh server id and position.
-export function itemToInsert(projectId: string, raw: unknown, position: number) {
-  return { id: uuid(), project_id: projectId, position, ...itemFields(raw) };
+export async function itemToInsert(env: Env, projectId: string, raw: unknown, position: number) {
+  return { id: uuid(), project_id: projectId, position, ...(await itemFields(env, raw)) };
 }
 
 // The client round-trips the server line id as `serverId`. Returns it only when it
@@ -146,7 +218,7 @@ export interface EditableSnapshot { product_slug: string | null; options_json: s
 /** The union of previously-edited groups and whatever this save actually changed
  *  on a schedule-origin line. Returns the JSON to store (null when nothing has
  *  ever been edited — keeps rows clean for the importer's fast path). */
-export function editedFieldsAfterSave(stored: EditableSnapshot, incoming: ReturnType<typeof itemFields>): string | null {
+export function editedFieldsAfterSave(stored: EditableSnapshot, incoming: Awaited<ReturnType<typeof itemFields>>): string | null {
   let prior: string[] = [];
   try { const v = JSON.parse(stored.edited_fields || "[]"); if (Array.isArray(v)) prior = v.filter((x) => typeof x === "string"); } catch { /* none */ }
   const now = new Set(prior);

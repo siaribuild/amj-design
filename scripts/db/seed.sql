@@ -16,7 +16,8 @@
 INSERT INTO user (id, email, name, phone, type, role, last_verified_at) VALUES
   ('u_demo',  'gediminas.bereznevicius@gmail.com',  'Demo Builder', '(03) 9000 1234', 'customer', NULL,    datetime('now')),
   ('u_demo2',  'doni@siaribuild.com.au',  'Siari Build', '(03) 0000 1234', 'customer', NULL,    datetime('now')),
-  ('u_staff', 'admin@openframe.com.au', 'AMJ Staff',    NULL,             'internal', 'admin', datetime('now'));
+  ('u_staff1', 'ged@openframe.com.au', 'Gediminas Bereznevicius',    NULL,             'internal', 'admin', datetime('now')),
+  ('u_staff2', 'doni@openframe.com.au', 'Doni Haziraj',    NULL,             'internal', 'admin', datetime('now'));
 
 -- Approval rules (demo thresholds; commercial fires on the seeded Fitzroy quote)
 INSERT INTO approval_rule (id, name, trigger_family, condition_json, approver_role) VALUES

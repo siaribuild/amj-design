@@ -27,7 +27,7 @@ import { runAiExtraction } from "../lib/ai/pipeline";
 import { reserveAiRunBudget } from "../lib/ai/jobs";
 import { isOverrideReason, OVERRIDE_REASONS } from "../lib/ai/schema";
 import { getProductBySlug } from "../../src/data/catalogue";
-import { priceConfigured } from "../../src/data/configurator";
+import { priceItem } from "../lib/lines";
 import { priceLine } from "../lib/estimator/pricing";
 
 export const ops = new Hono<{ Bindings: Env }>();
@@ -551,8 +551,9 @@ ops.patch("/lines/:id", async (c) => {
       dimensions: { widthMm: Number(width), heightMm: Number(height) }, quantity: qty,
     });
   } else {
-    const priced = priceConfigured({ productSlug, width, height, options, qty });
-    lineTotal = priced.ok ? priced.total : null;
+    // Same engine as the customer save and the schedule parse — a reviewer edit
+    // must never produce a different number from the one the customer saw.
+    lineTotal = await priceItem(c.env, { productSlug, width, height, options, qty });
   }
   // Readiness is derived, never forced: unpriced ⇒ incomplete; priced but still
   // carrying review flags ⇒ technical_review (submittable, staff must resolve);

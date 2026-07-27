@@ -14,10 +14,11 @@ import { SAGE, WindowMark, Btn, FieldLabel, Input } from "../app/ui";
 import { type Product, getProductBySlug, getProductsByFamily } from "../data/catalogue";
 import {
   type QItem, type QuoteState, type MeasuredBy, type OptionChoice, MEASURED_LABELS,
-  optionGroupsFor, defaultOptions, priceConfigured, linePriceTotal, familyGroups,
+  optionGroupsFor, defaultOptions, linePriceTotal, familyGroups,
   fmt, mm, productLabel, POPULAR_COLOURS, normCode, suggestCode, clearReviewKey, lineBlocksSubmission,
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
+import { previewPrice } from "../data/api";
 import { brandSubject } from "../data/sanity";
 
 export type EditFocus = "product" | "dims" | "options" | "qty";
@@ -373,7 +374,25 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
   const w = parseInt(width) || 0, h = parseInt(height) || 0;
   const dimsEntered = w > 0 && h > 0;
   const inRange = !!p && inRangeFor(p, w, h);
-  const priced = priceConfigured({ productSlug, width, height, options, qty });
+
+  // The browser holds no rate data — the commercial model lives in D1 — so the
+  // live figure is asked of the server. Debounced while typing, and the previous
+  // figure is cleared the moment the configuration changes so a stale price can
+  // never sit under a new specification.
+  const [priced, setPriced] = useState<{ ok: boolean; total: number; unit: number }>({ ok: false, total: 0, unit: 0 });
+  const priceKey = JSON.stringify({ productSlug, width, height, options, qty });
+  useEffect(() => {
+    if (!productSlug || !dimsEntered) { setPriced({ ok: false, total: 0, unit: 0 }); return; }
+    let live = true;
+    setPriced((prev) => ({ ...prev, ok: false }));
+    const t = setTimeout(() => {
+      previewPrice({ productSlug, width, height, options, qty })
+        .then((r) => { if (live) setPriced({ ok: r.ok, total: r.total ?? 0, unit: qty > 0 ? (r.total ?? 0) / qty : 0 }); })
+        .catch(() => { if (live) setPriced({ ok: false, total: 0, unit: 0 }); });
+    }, 250);
+    return () => { live = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceKey, dimsEntered]);
   const gstMode = useGstMode();
   const finalCode = normCode(code) || (productSlug ? suggestCode(quote.items, productSlug) : "");
   const duplicateCode = !!finalCode && quote.items.some(item => normCode(item.code) === finalCode);
@@ -572,7 +591,7 @@ export function ItemSummaryCard({
   const rootRef = useRef<HTMLDivElement>(null);
   const p = getProductBySlug(item.productSlug);
   const basisCopy = basis ? BASIS_COPY[basis] : null;
-  const pr = priceConfigured(item);
+  const pr = { total: linePriceTotal(item) };
   const displayTotal = linePriceTotal(item);
   const aiPriced = item.origin === "ai" || !!item.aiPriced;
   const priceReady = aiPriced ? typeof item.lineTotal === "number" : pr.ok;
