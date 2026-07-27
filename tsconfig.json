@@ -1,0 +1,36 @@
+{
+  // Type-checking only — nothing is emitted. Vite/esbuild still do the building;
+  // this exists purely as the check they cannot perform. esbuild strips types
+  // without resolving them, so an undefined identifier or a wrong column name
+  // compiles cleanly and ships. That has now caused four production defects.
+  //
+  // Deliberately NOT strict. The goal is to catch what actually broke — unknown
+  // identifiers (TS2304), bad property access, wrong argument counts — not to
+  // relitigate every implicit `any` in a large existing codebase. Tightening can
+  // come later, one flag at a time, once this is green and enforced.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["@cloudflare/workers-types"],
+
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowJs": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["src", "worker"],
+  "exclude": ["node_modules", "dist", "sanity", "scripts"]
+}

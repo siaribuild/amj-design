@@ -249,8 +249,9 @@ parse.post("/projects/current/lines/:id/collision", async (c) => {
 // run's state + customer-safe summary; the client polls only while a run is in
 // flight (2s→5s, stop at 2 min). Anonymous projects simply never have a run.
 parse.get("/projects/current/extraction-status", async (c) => {
-  const { project, cookie } = await resolveCurrentProject(c.env, c.req.raw);
-  if (cookie) c.header("Set-Cookie", cookie);
+  // resolveCurrentProject never mints a cookie (only resolveOrCreate does),
+  // so there is nothing to set here.
+  const { project } = await resolveCurrentProject(c.env, c.req.raw);
   if (!project) return c.json({ run: null });
   const pending = await c.env.DB.prepare(
     `SELECT j.source_generation, j.status, j.created_at

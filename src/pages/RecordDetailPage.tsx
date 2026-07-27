@@ -16,7 +16,7 @@ import { type Page, Btn } from "../app/ui";
 import {
   getOrder, getProject, getRevisions, getProjectFiles, getClarifications, replyClarification,
   confirmDrawings, confirmQa,
-  type ApiOrder, type ApiFile, type ApiScheduleFile, type ApiClarification, type ApiItem, type ApiGuestQuote, type CurrentProject,
+  type ApiOrder, type ApiFile, type ApiScheduleFile, type ApiClarification, type ApiItem, type CurrentProject,
 } from "../data/api";
 import { productLabel } from "../data/configurator";
 import {
