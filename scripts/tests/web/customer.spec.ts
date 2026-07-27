@@ -1,4 +1,19 @@
 import { test, expect, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+// Identities come from the SEED, never a literal here. A hardcoded address rots
+// silently the moment the owner edits seed.sql — which is exactly what happened
+// to this file: it kept asking for demo@openframe.com.au long after u_demo's
+// address changed, and the login test had been failing ever since.
+const seedSql = readFileSync(join(process.cwd(), "scripts", "db", "seed.sql"), "utf8");
+function seedEmail(userId: string): string {
+  const row = seedSql.split("\n").find((l) => l.includes(`'${userId}'`) && l.includes("@"));
+  const email = row?.match(/'([^']+@[^']+)'/)?.[1];
+  if (!email) throw new Error(`seed.sql: no email for ${userId}`);
+  return email;
+}
+const DEMO_EMAIL = seedEmail("u_demo");
 
 // Read the dev-mode OTP the Worker surfaces in non-prod, and complete a two-step
 // email login form.
@@ -27,7 +42,7 @@ test("catalogue drives the products list and detail pages", async ({ page }) => 
 test("customer OTP login lands on the attention-first dashboard with real data", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByText(/Sign in or register/i)).toBeVisible();
-  await otpLogin(page, /your@email\.com/, "demo@openframe.com.au", /verify & continue/i);
+  await otpLogin(page, /your@email\.com/, DEMO_EMAIL, /verify & continue/i);
   // Greeting + attention summary
   await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening), Demo/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Needs your attention" })).toBeVisible();
@@ -80,16 +95,9 @@ test("contact page: showroom visit tab + chip↔form location sync", async ({ pa
   await expect(page.getByText(/OF-ENQ-\d{4}-\d{6}/).first()).toBeVisible();
 });
 
-test("guest order tracking shows a read-only status", async ({ page }) => {
-  await page.goto("/track-order");
-  await page.getByPlaceholder("OF-58001").fill("OF-58001");
-  await page.getByPlaceholder("Email used on the order").fill("demo@openframe.com.au");
-  await page.getByRole("button", { name: /send code/i }).click();
-  const devText = await page.getByText(/Dev mode/i).textContent();
-  await page.getByPlaceholder("••••••").fill(devText?.match(/\d{6}/)?.[0] ?? "");
-  await page.getByRole("button", { name: /view order/i }).click();
-  await expect(page.getByText("Order OF-58001")).toBeVisible();
-  await expect(page.getByText(/In manufacturing/i).first()).toBeVisible();
-  // Read-only: no staff/customer action controls in the guest view.
-  await expect(page.getByRole("button", { name: /approve|confirm|accept/i })).toHaveCount(0);
-});
+// Guest order tracking lives in tracking.spec.ts, which owns the whole flow —
+// lookup, code, the record view, session resume and sign-out — and reads its
+// identity from the seed. A second copy lived here, had rotted against both the
+// seed and the current placeholders, and would have raced the same 60s per
+// email+reference rate limiter that the other file deliberately serialises
+// around. One flow, one test.

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Menu, X, ArrowRight, ChevronRight, ChevronLeft,
   Upload, Check, AlertCircle, Truck, FileText, Phone,
@@ -24,7 +24,9 @@ import { type TrackFocus } from "../pages/OrderTrackingPage";
 import { ContactPage } from "../pages/ContactPage";
 import { PrivacyPolicyPage } from "../pages/PrivacyPolicyPage";
 import { pathForPage, routeFromPathname } from "./routes";
-import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug, getFamily, getCategory } from "../data/catalogue";
+import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug, getFamily, getCategory, getActiveLocations } from "../data/catalogue";
+import { parseScheduleText } from "../data/scheduleParse";
+import { matchSchedule } from "../data/scheduleMatch";
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
@@ -420,15 +422,95 @@ function IconBrowse({ size = 22, color = SAGE_LT }: { size?: number; color?: str
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// HOME
+//
+// The page leads with the thing that actually differentiates the business: a
+// tradie with a schedule on their plans gets every line matched and costed in
+// about a minute, without retyping anything. Everything else on the page exists
+// to make that claim credible or to hold its necessary caveat.
+//
+// Two truths have to survive together, and the page is built so a visitor cannot
+// take one without the other:
+//   • the estimate is INSTANT, and indicative;
+//   • a person reviews it before it becomes a quote — about two business days.
+// The caveat is therefore not 11px grey at the bottom. It is a full-strength sage
+// panel physically joined to the speed claim (§ "The minute" below).
+//
+// Deliberately absent: any section whose subject is social proof. There are no
+// published testimonials, ratings or project counts in Sanity, and a section that
+// marks its own content as sample data still ships a page with nothing behind it.
+// "What you can check" occupies that slot instead — real showrooms from the
+// locations registry, the standards the products are actually made to, and the
+// payment structure. All independently verifiable today.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// A real window-and-door schedule (Lot 312, sheet A6 — the same fixture the
+// parser is tested against). It is run through the REAL parser and matcher in the
+// browser on this page, so the panel below is not a drawing of the feature, it is
+// the feature. Both modules are pure and import-safe; the catalogue is already
+// hydrated by the time this renders (main.tsx awaits it before mounting).
+const SAMPLE_SCHEDULE = `WINDOW SCHEDULE
+W N° HEIGHT WIDTH HEAD HT. GLAZING D.GLAZE REQ. WINDOW TYPE COMMENTS
+1 2100 2050 2400 CLEAR YES OFFSET AWNING
+2 700 3500 1605 CLEAR YES FIXED
+3 2100 2100 2300 CLEAR YES AWNING
+4 2100 3200 2300 CLEAR YES AWNING 2x 600mm WIDE AWNINGS
+5 2057 850 2300 CLEAR YES AWNING
+7 854 1810 2100 CLEAR YES AWNING
+9 1027 1810 2100 CLEAR YES AWNING
+EXTERNAL DOOR SCHEDULE
+D N° HEIGHT WIDTH GLAZING D. GLAZE REQ. MATERIAL DOOR TYPE COMMENTS
+3 2300 3000 CLEAR YES ALUMINIUM STACKER SLIDING RIGHT TO LEFT`;
+
+/** The two filled/hollow cells used across the site for the 0 / 50 / 100 arc.
+ *  aria-hidden: the percentage is always written out beside it. */
+function Meter({ paid }: { paid: "0%" | "50%" | "100%" }) {
+  const cell = (on: boolean) => <span className={`block w-2.5 h-2.5 border ${on ? "bg-[#131311] border-[#131311]" : "border-black/25"}`} />;
+  return <span className="flex gap-1" aria-hidden="true">{cell(paid !== "0%")}{cell(paid === "100%")}</span>;
+}
+
 function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; onUploadSchedule: () => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
+  const MONO = { fontFamily: "'DM Mono', monospace" } as const;
+  const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 
-  // Task-led entry points — same three actions on hero and final band.
-  const actions: { title: string; sub: string; icon: React.ReactNode; page: Page; onClick?: () => void }[] = [
-    { title: "Build an estimate", sub: "Enter dimensions and options",              icon: <IconEstimate />, page: "quote" },
-    { title: "Upload a schedule", sub: "Send plans or a schedule for review",       icon: <IconUpload />,   page: "quote", onClick: onUploadSchedule },
-    { title: "Browse products",   sub: "Explore window and door systems",           icon: <IconBrowse />,   page: "products" },
-  ];
+  // The sample, matched for real. Never throws the page away if the parser does:
+  // an empty result renders the section without the result panel.
+  const sample = useMemo(() => {
+    try {
+      const lines = matchSchedule(parseScheduleText([SAMPLE_SCHEDULE]).rows);
+      return { lines, ready: lines.filter((l) => l.status === "Ready").length };
+    } catch {
+      return { lines: [] as ReturnType<typeof matchSchedule>, ready: 0 };
+    }
+  }, []);
+  const flagged = sample.lines.length - sample.ready;
+
+  // The schedule as printed, with its two section/column headers marked so the
+  // panel reads as a document rather than a wall of digits.
+  const scheduleLines = SAMPLE_SCHEDULE.split("\n").map((text) => ({
+    text,
+    head: /SCHEDULE$/.test(text) || /^[WD] N°/.test(text),
+  }));
+
+  const heroImg = imageUrl(getPage("home")?.heroImage, { w: 1920, h: 1080 });
+
+  // Reveal the matched rows once, on first scroll into view. This is the entire
+  // motion budget below the hero, spent on the one thing worth watching.
+  const resultRef = useRef<HTMLDivElement | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  useEffect(() => {
+    const el = resultRef.current;
+    if (!el || revealed) return;
+    if (typeof IntersectionObserver === "undefined"
+      || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { setRevealed(true); return; }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { setRevealed(true); io.disconnect(); }
+    }, { threshold: 0.15 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [revealed]);
 
   const systems: { title: string; desc: string; chips: string[]; more: boolean; cta: string; img: string; alt: string }[] = [
     {
@@ -447,75 +529,133 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
     },
   ];
 
-  // The THREE phases, worded exactly as /how-it-works words them. This used to
-  // be a separate four-step telling with its own numbering, so a visitor
-  // clicking through met a second, differently-worded account of one process.
-  // Keep these headings and that page in step.
-  const steps: { n: string; title: string; body: string; Icon: typeof Upload }[] = [
-    { n: "01", title: "Quote",    body: "Upload a schedule and it prices itself. A person then checks it by hand and issues a reviewed quote — about two business days, nothing charged.", Icon: Upload },
-    { n: "02", title: "Order",    body: "Accept the quote and pay 50%. You sign off shop drawings before anything is manufactured — changes are free until you do.", Icon: Check },
-    { n: "03", title: "Delivery", body: "Every item is photographed before it ships. You pay the balance after you have seen the photos, then we deliver.", Icon: FileText },
+  // The THREE phases, worded exactly as /how-it-works words them. This used to be
+  // a separate four-step telling with its own numbering, so a visitor clicking
+  // through met a second, differently-worded account of one process. The owner's
+  // design mock reintroduced the four-step version; it is deliberately not used.
+  // Keep these headings, these percentages and that page in step.
+  const steps: { n: string; title: string; paid: "0%" | "50%" | "100%"; body: string; Icon: typeof Upload }[] = [
+    { n: "01", title: "Quote", paid: "0%", body: "Upload a schedule and it prices itself. A person then checks it by hand and issues a reviewed quote — about two business days, nothing charged.", Icon: Upload },
+    { n: "02", title: "Order", paid: "50%", body: "Accept the quote and pay 50%. You sign off shop drawings before anything is manufactured — changes are free until you do.", Icon: Check },
+    { n: "03", title: "Delivery", paid: "100%", body: "Every item is photographed before it ships. You pay the balance after you have seen the photos, then we deliver.", Icon: FileText },
   ];
 
-  const trust = ["Indicative first", "Reviewed before deposit", "Manufacturer-backed", "Supply only"];
+  // The canonical numbers, identical to HERO_FACTS on /how-it-works. Coining a new
+  // set here is how the two pages started disagreeing last time.
+  const facts = ["$0 to get a quote", "~1 minute with a schedule", "50% first payment", "Supply only"];
+
+  const suburbs = getActiveLocations().map((l) => `${l.suburb} ${l.stateCode}`);
+
+  // The four objections that stop a click, taken from the owner's design mock.
+  // Payment wording is the 50/50 schedule, not the mock's vaguer "a deposit".
+  const questions: { q: string; a: string; link?: { label: string; page: Page } }[] = [
+    {
+      q: "Do you install?",
+      a: "No — we're supply only. We manufacture your frames and deliver them; your own builder or installer fits them on site. That keeps pricing lean and lets you use the trades you trust.",
+    },
+    {
+      q: "Where do you deliver?",
+      a: suburbs.length
+        ? `We manufacture and deliver from our showrooms in ${suburbs.join(", ")}. Tell us the site address and delivery is quoted with the frames.`
+        : "Tell us the site address and delivery is quoted with the frames.",
+      link: { label: "Find a showroom", page: "contact" },
+    },
+    {
+      q: "When do I pay?",
+      a: "Not until you accept. The estimate is free and needs no account. You pay 50% when you accept a reviewed quote, and the balance after you've seen photographs of your finished units.",
+      link: { label: "The full payment schedule", page: "how-it-works" },
+    },
+    {
+      q: "Trade or a one-off project?",
+      a: "Both. Trade accounts get repeat pricing and a standing contact; a one-off renovation is quoted exactly the same way, with no minimum.",
+      link: { label: "Ask about a trade account", page: "contact" },
+    },
+  ];
 
   return (
     <div>
-      {/* ─── HERO — integrated architectural image + framed entry block ─────── */}
-      <section className="relative min-h-screen flex items-center bg-[#0c0c0a] overflow-hidden">
-        <img src={imageUrl(getPage("home")?.heroImage, { w: 1920, h: 1080 })}
-          alt="Aluminium-framed sliding doors on a modern Melbourne home at dusk, warm interior light behind dark cladding"
-          className="absolute inset-0 w-full h-full object-cover opacity-80 hero-zoom" />
-        {/* Contrast overlay — concentrated on the left behind the content frame,
-            easing to ~20% by a quarter across so the image reads clearly */}
-        <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.85) 0%, rgba(12,12,10,0.5) 12%, rgba(12,12,10,0.2) 27%, rgba(12,12,10,0.12) 60%, rgba(12,12,10,0.1) 100%)" }} />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/40 via-transparent to-transparent" />
-        {/* Mullion grid motif (hero frame rectangle removed) */}
+      {/* ─── HERO ────────────────────────────────────────────────────────────
+          Photograph, not a CSS drawing. The owner's mock composes a window out
+          of four absolutely-positioned layers and twelve grid cells; on a 375px
+          screen all of that sits under an 85%-black veil and renders as a dark
+          rectangle. A manufacturer showing a drawing of a window instead of a
+          photograph of one is also saying it has no photographs. The mock's
+          sky/glow/veil survive below as the no-image fallback, which is the job
+          they are genuinely good at.
+          No content frame and no action cards: the gradient already earns the
+          contrast, and three equal-weight boxes are the "too many entry points"
+          problem in miniature. */}
+      <section className="relative min-h-[100svh] flex items-center bg-[#0c0c0a] overflow-hidden">
+        {heroImg
+          ? <img src={heroImg} alt="Aluminium-framed sliding doors on a modern Melbourne home at dusk, warm interior light behind dark cladding"
+              {...{ fetchpriority: "high" }} decoding="async"
+              className="absolute inset-0 w-full h-full object-cover opacity-80 hero-zoom" />
+          : <div className="absolute inset-0" aria-hidden="true"
+              style={{ background: "linear-gradient(#12140f 0%, #1b1d16 44%, #26241c 100%)" }} />}
+        {/* One warm radial, kept from the mock. It unifies whatever image is
+            authored in Sanity into the site's dusk palette — which matters
+            precisely because that image is not under our control. */}
+        <div className="absolute inset-0" aria-hidden="true"
+          style={{ background: "radial-gradient(60% 55% at 62% 50%, rgba(226,164,92,0.22) 0%, rgba(226,164,92,0) 70%)" }} />
+        <div className="absolute inset-0" aria-hidden="true"
+          style={{ background: "linear-gradient(to right, rgba(12,12,10,0.88) 0%, rgba(12,12,10,0.55) 14%, rgba(12,12,10,0.22) 30%, rgba(12,12,10,0.12) 62%, rgba(12,12,10,0.1) 100%)" }} />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/45 via-transparent to-transparent" aria-hidden="true" />
 
-        <div className="relative w-full max-w-6xl mx-auto px-6 pt-28 pb-16 md:py-28">
-          <div className="w-full max-w-2xl">
-            {/* Content frame */}
-            <div className="border border-white/15 bg-[#0c0c0a]/55 backdrop-blur-md p-6 sm:p-8 md:p-10">
-              <div className="flex items-center gap-2 mb-5">
-                <WindowMark size={11} color="rgba(255,255,255,0.55)" />
-                <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60"
-                  style={{ fontFamily: "'DM Mono', monospace" }}>Premium aluminium systems</span>
+        <div className="relative w-full max-w-6xl mx-auto px-6 pt-28 pb-14 md:py-24">
+          <div className="w-full max-w-[46rem]">
+            <div className="flex items-center gap-2 mb-5">
+              <WindowMark size={11} color="rgba(255,255,255,0.55)" />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60" style={MONO}>
+                Supply-only aluminium · Melbourne &amp; Victoria
+              </span>
+            </div>
+
+            <h1 className="font-semibold text-white leading-[1.02] tracking-tight mb-5"
+              style={{ ...DISPLAY, fontSize: "clamp(2.15rem, 6vw, 4.25rem)" }}>
+              Your windows and doors,{" "}
+              {/* Not italic — the mock's device: same weight, sage. The only sage
+                  above the fold, and it lands on the claim that matters. */}
+              <span style={{ color: SAGE_LT }}>priced in about a minute.</span>
+            </h1>
+
+            <p className="text-white/80 leading-relaxed mb-8 max-w-[52ch]"
+              style={{ fontSize: "clamp(1rem, 1.4vw, 1.125rem)" }}>
+              Upload the window and door schedule from your plans and every line comes back matched and costed.
+              A person checks it before you get a quote — and nothing is charged until you accept one.
+            </p>
+
+            {/* One primary, one alternative, one link. The mock makes "Build an
+                estimate" the solid button; that inverts the point — the upload
+                path is the one with the differentiated claim, and building line
+                by line is the fallback for people without a schedule.
+                The sublines are load-bearing: "Upload a schedule" silently
+                excludes anyone who does not have one. */}
+            <div className="flex flex-col sm:flex-row gap-4 sm:gap-5">
+              <div className="flex flex-col gap-1.5">
+                <Btn variant="white" size="lg" onClick={onUploadSchedule}
+                  className="!bg-white !text-[#131311] !border-white hover:!bg-white/90 justify-center">
+                  <Upload className="w-[18px] h-[18px]" aria-hidden="true" /> Upload a schedule
+                </Btn>
+                <small className="text-white/50 text-[12px]" style={MONO}>PDF or spreadsheet · no account</small>
               </div>
-              <h1 className="font-semibold text-white leading-[1.02] tracking-tight mb-5"
-                style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2.5rem, 6vw, 4.25rem)" }}>
-                Quoted for<br />your project.
-              </h1>
-              <p className="text-white/80 leading-relaxed mb-8 max-w-lg"
-                style={{ fontSize: "clamp(1rem, 1.4vw, 1.125rem)" }}>
-                Get an indicative estimate first. A reviewed quote before any deposit.
-                Supply only, across Melbourne &amp; Victoria.
-              </p>
-
-              {/* Three action cards — the card itself is the action */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {actions.map(a => (
-                  <button key={a.title} onClick={() => a.onClick ? a.onClick() : go(a.page)}
-                    aria-label={`${a.title} — ${a.sub}`}
-                    className="group relative text-left border border-white/15 bg-white/[0.06] hover:bg-white/[0.11] hover:border-[#5A7A6A] transition-all duration-150 p-4 min-h-[116px] flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0a]">
-                    <div className="mb-3">{a.icon}</div>
-                    <div className="flex-1">
-                      <p className="font-semibold text-white text-base leading-tight mb-1"
-                        style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{a.title}</p>
-                      <p className="text-white/60 text-sm leading-snug">{a.sub}</p>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-white/40 group-hover:text-[#8CA99B] group-hover:translate-x-0.5 transition-all mt-3" />
-                  </button>
-                ))}
+              <div className="flex flex-col gap-1.5">
+                <Btn variant="white" size="lg" onClick={() => go("quote")} className="justify-center">
+                  Build it line by line
+                </Btn>
+                <small className="text-white/50 text-[12px]" style={MONO}>No schedule? Enter sizes yourself</small>
               </div>
             </div>
 
-            {/* Trust strip — restrained, under the frame */}
-            <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-white/55"
-              style={{ fontFamily: "'DM Mono', monospace" }}>
-              {trust.map((t, i) => (
-                <span key={t} className="flex items-center gap-3">
+            <button onClick={() => go("products")}
+              className="mt-6 inline-flex items-center gap-2 text-white/70 hover:text-white text-sm underline underline-offset-4 decoration-white/30 hover:decoration-white transition-colors cursor-pointer">
+              See the window and door systems <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+
+            <div className="mt-8 pt-5 border-t border-white/12 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-white/55" style={MONO}>
+              {facts.map((f, i) => (
+                <span key={f} className="flex items-center gap-3">
                   {i > 0 && <span className="w-px h-3 bg-white/20" aria-hidden="true" />}
-                  {t}
+                  {f}
                 </span>
               ))}
             </div>
@@ -523,15 +663,153 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
         </div>
       </section>
 
-      {/* ─── EXPLORE OUR SYSTEMS ────────────────────────────────────────────── */}
-      <section className="relative bg-[#FAFAF9] py-20 md:py-28 overflow-hidden">
+      {/* ─── THE MINUTE ──────────────────────────────────────────────────────
+          The evidence for the headline, and the section the mock does not have —
+          which is why the mock's page reads as a list of assurances rather than a
+          demonstration. The rows below are produced by the SAME parser and
+          matcher the product runs; nothing here is drawn by hand.
+          No dollar figures anywhere: rate cards are commercial D1 data, so a
+          price on this page would be either invented or published margin. */}
+      <section className="relative bg-white border-t border-black/8 py-14 md:py-[68px]" style={GRID_BG}>
+        <div className="max-w-6xl mx-auto px-6 relative">
+          <SLabel>The minute</SLabel>
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-8">
+            <div className="max-w-[54ch]">
+              <h2 className="font-semibold text-[#131311] leading-tight mb-2.5"
+                style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
+                Your schedule, read line by line.
+              </h2>
+              <p className="text-[#5c5a56] text-[15px] md:text-base leading-relaxed">
+                Item numbers, sizes, glazing, door material — the schedule your draftsperson already drew.
+                Upload the PDF and every row comes back matched to a system. Nothing retyped, nothing re-measured.
+              </p>
+            </div>
+            {/* The page's missing large numeral. "Under a minute" is the wording
+                the quote page already uses; do not out-claim the product with a
+                precise figure nobody measured. */}
+            <div className="lg:text-right lg:flex-shrink-0">
+              <div className="font-semibold text-[#3f5a4c] leading-none" style={{ ...MONO, fontSize: "clamp(1.7rem, 5vw, 2.75rem)" }}>
+                &lt; 1 min
+              </div>
+              <div className="text-[#8a8782] text-[13px] mt-1.5">from upload to a matched list</div>
+            </div>
+          </div>
+
+          {/* Hairline-collapsed pair: the source document, then what came back. */}
+          <div className="grid grid-cols-1 lg:grid-cols-2">
+            {/* The source document — the schedule text itself, not a photograph
+                of one. It is the literal input to the parser running beside it,
+                which is the strongest possible version of this panel and needs no
+                stock imagery standing in for the real thing. */}
+            <div className="relative border border-black/10 bg-[#131311] flex flex-col min-h-[300px]">
+              <div className="px-4 py-2.5 border-b border-white/12 flex items-center justify-between">
+                <span className="text-[11px] uppercase tracking-[0.14em] text-white/50" style={MONO}>From your plans</span>
+                <span className="text-[11px] text-white/35" style={MONO}>sheet A6</span>
+              </div>
+              <div className="flex-1 overflow-x-auto px-4 py-3.5">
+                <pre className="text-[11px] md:text-[11.5px] leading-[1.75] text-white/70 whitespace-pre" style={MONO}>
+{scheduleLines.map((line, i) => (
+  <span key={i} className={line.head ? "text-[#8CA99B]" : undefined}>{line.text + "\n"}</span>
+))}
+                </pre>
+              </div>
+              <div className="px-4 py-3 border-t border-white/12 text-[12px] text-white/45" style={MONO}>
+                item n° · height · width · glazing · type — the columns we read
+              </div>
+            </div>
+
+            <div ref={resultRef} className="border border-black/10 lg:-ml-px -mt-px lg:mt-0 bg-white flex flex-col">
+              <div className="px-4 py-2.5 border-b border-black/10 flex items-center justify-between">
+                <span className="text-[11px] uppercase tracking-[0.14em] text-[#8a8782]" style={MONO}>What came back</span>
+                <span className="text-[11px] text-[#8a8782]" style={MONO}>{sample.lines.length} lines</span>
+              </div>
+              <div className="divide-y divide-black/8 flex-1">
+                {sample.lines.map((l, i) => {
+                  const product = getProductBySlug(l.productSlug);
+                  return (
+                    <div key={l.code}
+                      className="px-4 py-2.5 flex items-baseline gap-3 transition-all duration-200"
+                      style={{
+                        opacity: revealed ? 1 : 0,
+                        transform: revealed ? "translateY(0)" : "translateY(6px)",
+                        transitionDelay: `${i * 55}ms`,
+                      }}>
+                      <span className="text-[#5A7A6A] text-[12px] w-9 flex-shrink-0" style={MONO}>{l.code}</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[#131311] text-[14px] leading-tight truncate" style={DISPLAY}>
+                          {product?.name ?? l.rawType ?? "Needs a product"}
+                        </span>
+                        <span className="block text-[#8a8782] text-[12px]" style={MONO}>
+                          {l.width} × {l.height}
+                        </span>
+                      </span>
+                      {/* Never colour alone: the word carries the state. */}
+                      <span className={`text-[11px] flex-shrink-0 ${l.status === "Ready" ? "text-[#5A7A6A]" : "text-[#8a6a2a]"}`} style={MONO}>
+                        {l.status === "Ready" ? "✓ ready" : "· to confirm"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="px-4 py-3 border-t border-black/10 text-[13px] text-[#3d3b38]"
+                style={{ background: "rgba(90,122,106,0.07)" }}>
+                {/* Leads with what the machine did, then what it hands over. The
+                    flags are the point, not an apology: it says which lines need a
+                    decision instead of guessing and quoting the wrong frame. */}
+                {sample.lines.length} of {sample.lines.length} lines read and matched
+                {flagged > 0 && <> · {flagged} flagged for a technician to confirm</>}
+              </div>
+            </div>
+          </div>
+
+          {/* The caveat, at full strength and physically attached to the claim —
+              one of only two sage fills on the page. A visitor cannot take the
+              minute without taking the two days. Same numbers, same wording as
+              /how-it-works, so the two pages agree by construction. */}
+          <div className="border border-black/10 -mt-px px-5 py-5 md:px-7 md:py-6 flex flex-col md:flex-row md:items-center gap-5 md:gap-8"
+            style={{ background: "#5A7A6A" }}>
+            <div className="flex-1">
+              <h3 className="text-white font-semibold text-[17px] md:text-[19px] mb-1.5" style={DISPLAY}>
+                Then a person checks it.
+              </h3>
+              <p className="text-white/85 text-[15px] leading-relaxed max-w-[62ch]">
+                An instant estimate is indicative. Before it becomes a quote, a technician confirms
+                specifications, sizes and buildability — about two business days. Nothing is charged either way.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 md:gap-4 flex-shrink-0 text-white/90 text-[13px]" style={MONO}>
+              <span className="flex items-center gap-2">
+                <span className="flex gap-1" aria-hidden="true">
+                  <span className="block w-2.5 h-2.5 border border-white/50" />
+                  <span className="block w-2.5 h-2.5 border border-white/50" />
+                </span>
+                0%
+              </span>
+              <ArrowRight className="w-3.5 h-3.5 text-white/60" aria-hidden="true" />
+              <span className="flex items-center gap-2">
+                <span className="flex gap-1" aria-hidden="true">
+                  <span className="block w-2.5 h-2.5 border border-white bg-white" />
+                  <span className="block w-2.5 h-2.5 border border-white/50" />
+                </span>
+                50%
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── SYSTEMS ─────────────────────────────────────────────────────────
+          Real photography, kept as-is. The mock renders its system tiles as CSS
+          grids of glowing rectangles; a window manufacturer showing a drawing
+          instead of a photograph tells a visitor something it does not want said. */}
+      <section className="relative bg-[#FAFAF9] py-14 md:py-[68px] overflow-hidden">
         <GhostMark size={300} opacity={0.04} pos="right-0 bottom-0" />
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Systems</SLabel>
-          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-10">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-8">
             <h2 className="font-semibold text-[#131311] leading-tight"
-              style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
-              Explore our systems
+              style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
+              Windows and doors, made to your sizes.
             </h2>
             <p className="text-[#5c5a56] text-base max-w-sm md:text-right">
               Window and door systems made to spec, reviewed before production.
@@ -544,15 +822,14 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
                 aria-label={`${s.cta} — ${s.desc}`}
                 className="group relative overflow-hidden bg-[#131311] text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
                 <div className="relative aspect-[4/3] md:aspect-[16/11] overflow-hidden">
-                  <img src={s.img} alt={s.alt}
+                  <img src={s.img} alt={s.alt} loading="lazy" decoding="async"
                     className="absolute inset-0 w-full h-full object-cover opacity-55 group-hover:opacity-65 group-hover:scale-[1.03] transition-all duration-500" />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#131311] via-[#131311]/45 to-transparent" />
                   <div className="absolute inset-3 border border-white/12 group-hover:border-white/25 transition-colors pointer-events-none" />
                   <div className="absolute inset-0 p-6 md:p-7 flex flex-col justify-end">
                     <h3 className="text-white font-semibold mb-1.5"
-                      style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.5rem, 2.6vw, 2rem)" }}>{s.title}</h3>
+                      style={{ ...DISPLAY, fontSize: "clamp(1.5rem, 2.6vw, 2rem)" }}>{s.title}</h3>
                     <p className="text-white/75 text-[15px] leading-snug max-w-md mb-4">{s.desc}</p>
-                    {/* Chips as framed mini-tabs */}
                     <div className="flex flex-wrap gap-1.5 mb-5">
                       {s.chips.map(c => (
                         <span key={c} className="border border-white/25 text-white/80 text-[12px] tracking-wide px-2.5 py-1">{c}</span>
@@ -573,28 +850,37 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
         </div>
       </section>
 
-      {/* ─── HOW QUOTE-TO-ORDER WORKS ──────────────────────────────────────── */}
-      <section className="relative bg-white py-20 md:py-28 border-t border-black/8 overflow-hidden" style={GRID_BG}>
+      {/* ─── PROCESS ─────────────────────────────────────────────────────────
+          THREE phases, named and numbered exactly as /how-it-works names them.
+          The percentages turn three identical-looking cards into a visible money
+          arc, and every one of them is a fact rather than decoration. */}
+      <section className="relative bg-white py-14 md:py-[68px] border-t border-black/8 overflow-hidden" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Process</SLabel>
-          <h2 className="font-semibold text-[#131311] leading-tight mb-12"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
-            How quote-to-order works
-          </h2>
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-8">
+            <h2 className="font-semibold text-[#131311] leading-tight"
+              style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
+              Quote, order, delivery.
+            </h2>
+            <button onClick={() => go("how-it-works")}
+              className="text-sm text-[#5A7A6A] hover:text-[#3f5a4c] inline-flex items-center gap-1.5 md:flex-shrink-0 cursor-pointer">
+              See every step <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0">
             {steps.map((s, i) => (
               <div key={s.n}
                 className="relative border border-black/10 bg-white p-6 flex flex-col sm:[&:nth-child(n+2)]:-mt-px lg:[&:nth-child(n+2)]:mt-0 lg:[&:nth-child(n+2)]:-ml-px">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="w-8 h-8 border border-[#5A7A6A]/40 flex items-center justify-center text-[#5A7A6A] text-xs relative"
-                    style={{ fontFamily: "'DM Mono', monospace" }}>{s.n}</span>
-                  <s.Icon className="w-4 h-4 text-[#5A7A6A]" />
+                <div className="flex items-start justify-between mb-4">
+                  <span className="w-8 h-8 border border-[#5A7A6A]/40 flex items-center justify-center text-[#5A7A6A] text-xs" style={MONO}>{s.n}</span>
+                  <span className="flex items-center gap-2">
+                    <Meter paid={s.paid} />
+                    <span className="font-semibold text-[#3f5a4c] leading-none" style={{ ...MONO, fontSize: "clamp(1.5rem, 4vw, 2.1rem)" }}>{s.paid}</span>
+                  </span>
                 </div>
-                <h3 className="font-semibold text-[#131311] text-base leading-tight mb-1.5"
-                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{s.title}</h3>
+                <h3 className="font-semibold text-[#131311] text-base leading-tight mb-1.5" style={DISPLAY}>{s.title}</h3>
                 <p className="text-[#5c5a56] text-[15px] leading-relaxed">{s.body}</p>
-                {/* minimal connective arrow between steps (desktop) */}
                 {i < steps.length - 1 && (
                   <ChevronRight className="hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5A7A6A]/60 bg-white z-10" aria-hidden="true" />
                 )}
@@ -602,9 +888,8 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
             ))}
           </div>
 
-          {/* Single framed note — stated once */}
           <div className="mt-4 border border-black/10 bg-[#FAFAF9] px-5 py-4 flex items-start gap-3">
-            <Truck className="w-4 h-4 text-[#5A7A6A] flex-shrink-0 mt-0.5" />
+            <Truck className="w-4 h-4 text-[#5A7A6A] flex-shrink-0 mt-0.5" aria-hidden="true" />
             <p className="text-[15px] text-[#131311]">
               Supply only — installation is arranged by your builder or installer.
             </p>
@@ -612,8 +897,99 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
         </div>
       </section>
 
-      {/* ─── FINAL CTA BAND ────────────────────────────────────────────────── */}
-      <section className="bg-[#FAFAF9] py-16 md:py-20">
+      {/* ─── WHAT YOU CAN CHECK ──────────────────────────────────────────────
+          Credibility built only from things that are true today and that a
+          visitor can independently verify. This replaces the mock's social-proof
+          band, whose content was invented and labelled as sample data — marking a
+          fake as fake does not make it shippable, and "500+ projects quoted" is an
+          unverified claim about a business, not a placeholder.
+          The showroom column renders only if the registry has entries. */}
+      <section className="relative bg-[#0c0c0a] py-14 md:py-[68px] overflow-hidden">
+        <img src={IMG.doors} alt="" aria-hidden="true" loading="lazy" decoding="async"
+          className="absolute inset-0 w-full h-full object-cover opacity-25" />
+        <div className="absolute inset-0" aria-hidden="true"
+          style={{ background: "linear-gradient(to right, rgba(12,12,10,0.94) 0%, rgba(12,12,10,0.78) 45%, rgba(12,12,10,0.6) 100%)" }} />
+        <GhostMark size={280} opacity={0.025} color="#fff" pos="right-0 bottom-0" />
+        <div className="max-w-6xl mx-auto px-6 relative">
+          <SLabel light>What you can check</SLabel>
+          <h2 className="font-semibold text-white leading-tight mb-8 max-w-[24ch]"
+            style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
+            Nothing here is a claim you have to take on trust.
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-white/12">
+            {suburbs.length > 0 && (
+              <div className="py-5 md:py-0 md:pr-7">
+                <h3 className="text-white font-semibold text-[17px] mb-2" style={DISPLAY}>Showrooms</h3>
+                <p className="text-white/60 text-[13px] mb-2.5" style={MONO}>{suburbs.join(" · ")}</p>
+                <p className="text-white/75 text-[15px] leading-relaxed mb-3">
+                  See and handle the frames before you order.
+                </p>
+                <button onClick={() => go("contact")} className="text-[#8CA99B] hover:text-white text-sm inline-flex items-center gap-1.5 cursor-pointer">
+                  Book a time <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              </div>
+            )}
+            <div className="py-5 md:py-0 md:px-7">
+              <h3 className="text-white font-semibold text-[17px] mb-2" style={DISPLAY}>Standards</h3>
+              <p className="text-white/60 text-[13px] mb-2.5" style={MONO}>AS 2047 · AS 1288</p>
+              <p className="text-white/75 text-[15px] leading-relaxed mb-3">
+                Test reports, warranty terms and compliance certificates are published, not promised.
+              </p>
+              <button onClick={() => go("resources")} className="text-[#8CA99B] hover:text-white text-sm inline-flex items-center gap-1.5 cursor-pointer">
+                Compliance documents <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="py-5 md:py-0 md:pl-7">
+              <h3 className="text-white font-semibold text-[17px] mb-2" style={DISPLAY}>Money</h3>
+              <p className="font-semibold text-white leading-none mb-2.5" style={{ ...MONO, fontSize: "clamp(1.5rem, 4vw, 2.1rem)" }}>50 / 50</p>
+              <p className="text-white/75 text-[15px] leading-relaxed mb-3">
+                $0 to quote. 50% on acceptance, and the balance only after you have seen photographs of your finished units.
+              </p>
+              <button onClick={() => go("how-it-works")} className="text-[#8CA99B] hover:text-white text-sm inline-flex items-center gap-1.5 cursor-pointer">
+                The full payment schedule <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── GOOD TO KNOW ────────────────────────────────────────────────────
+          The four objections that stop a click, all four answers visible. An
+          accordion would hide content on a page already criticised for being
+          blank. The 2×2 hairline-collapsed grid is the site's card track, not a
+          table: prose blocks with headings, no header row, no column runs. */}
+      <section className="relative bg-[#FAFAF9] py-14 md:py-[68px] border-t border-black/8" style={GRID_BG}>
+        <div className="max-w-6xl mx-auto px-6 relative">
+          <SLabel>Good to know</SLabel>
+          <h2 className="font-semibold text-[#131311] leading-tight mb-8"
+            style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
+            The questions people ask before they start.
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
+            {questions.map((q) => (
+              <div key={q.q}
+                className="border border-black/10 bg-white p-6 flex flex-col md:[&:nth-child(n+3)]:-mt-px md:[&:nth-child(even)]:-ml-px [&:nth-child(n+2)]:-mt-px md:[&:nth-child(2)]:mt-0">
+                <h3 className="font-semibold text-[#131311] text-[17px] leading-tight mb-2" style={DISPLAY}>{q.q}</h3>
+                <p className="text-[#5c5a56] text-[15px] leading-relaxed flex-1">{q.a}</p>
+                {q.link && (
+                  <button onClick={() => go(q.link!.page)}
+                    className="mt-3 text-sm text-[#5A7A6A] hover:text-[#3f5a4c] inline-flex items-center gap-1.5 self-start cursor-pointer">
+                    {q.link.label} <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── FINAL CTA ───────────────────────────────────────────────────────
+          The owner's own headline, kept verbatim and moved here — commitment
+          framing belongs at the point of commitment, and the hero leads with
+          speed instead. Second and last sage fill on the page. */}
+      <section className="bg-white py-14 md:py-16 border-t border-black/8">
         <div className="max-w-6xl mx-auto px-6">
           <div className="relative bg-[#5A7A6A] overflow-hidden">
             <GhostMark size={220} opacity={0.08} color="#fff" pos="right-6 top-1/2 -translate-y-1/2" />
@@ -623,21 +999,24 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
                   <WindowMark size={20} color="#ffffff" />
                 </span>
                 <div>
-                  <h2 className="text-white font-semibold mb-1"
-                    style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.4rem, 2.4vw, 1.9rem)" }}>
-                    Ready to price your project?
+                  <h2 className="text-white font-semibold mb-1.5"
+                    style={{ ...DISPLAY, fontSize: "clamp(1.4rem, 2.4vw, 1.9rem)" }}>
+                    Your windows and doors, priced before you commit.
                   </h2>
-                  <p className="text-white/80 text-base">
-                    Start an estimate in minutes or upload your schedule to get started.
+                  <p className="text-white/85 text-base mb-2">
+                    Upload a schedule, or build it line by line. Free either way.
+                  </p>
+                  <p className="text-white/60 text-[12px]" style={MONO}>
+                    $0 to get a quote · no account · a reviewed quote in about two business days
                   </p>
                 </div>
               </div>
               <div className="flex flex-col sm:flex-row gap-3 md:flex-shrink-0">
-                <Btn variant="primary" size="lg" onClick={() => go("quote")}>
-                  Start a quote <ArrowRight className="w-4 h-4" />
+                <Btn variant="primary" size="lg" onClick={onUploadSchedule}>
+                  <Upload className="w-4 h-4" aria-hidden="true" /> Upload a schedule
                 </Btn>
-                <Btn variant="white" size="lg" onClick={onUploadSchedule}>
-                  Upload a schedule
+                <Btn variant="white" size="lg" onClick={() => go("quote")}>
+                  Build it line by line
                 </Btn>
               </div>
             </div>
@@ -647,6 +1026,7 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
     </div>
   );
 }
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RESOURCES
@@ -1588,7 +1968,9 @@ export default function App() {
       case "products":         return <ProductsPage setPage={navigateTo} category={catCategory} family={catFamily} onSelectCategory={selectCategory} onSelectFamily={setCatFamily} onOpenProduct={openProduct} />;
       case "product-detail":   return <ProductDetailPage slug={productSlug} setPage={navigateTo} onOpenProduct={openProduct} onBack={backToFamily} quote={quote} />;
       case "quote":            return <QuotePage setPage={navigateTo} user={user} quote={quote} onSubmit={submitCurrentProject} />;
-      case "how-it-works":     return <HowItWorksPage />;
+      // Without setPage the page's own CTAs called setPage?.(…) on undefined and
+      // did nothing but scroll to top — a dead end for traffic the home page sends.
+      case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;
       case "resources":        return <ResourcesPage setPage={navigateTo} />;
       case "contact":          return <ContactPage setPage={navigateTo} user={user} />;
       case "privacy":          return <PrivacyPolicyPage setPage={navigateTo} />;
