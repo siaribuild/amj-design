@@ -1061,7 +1061,9 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
         <SLabel>Quote &amp; order tracking</SLabel>
         <h1 className="text-3xl font-semibold text-[#131311] mb-2"
           style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Track your quote or order</h1>
-        <p className="text-[#5c5a56] text-sm mb-8">Enter the reference from your confirmation email — a quote (OF-Q-) or an order (OF-) — with the email address you used. We'll send a one-time code to confirm it's you; no account required.</p>
+        {step !== "record" && (
+          <p className="text-[#5c5a56] text-sm mb-8">Enter the reference from your confirmation email — a quote (OF-Q-) or an order (OF-) — with the email address you used. We'll send a one-time code to confirm it's you; no account required.</p>
+        )}
 
         {step === "lookup" && (
           <div className="group relative bg-white border border-black/8 p-6 space-y-4 overflow-hidden">
