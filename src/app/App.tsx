@@ -446,15 +446,42 @@ const SAMPLE_SCHEDULE = `WINDOW SCHEDULE
 W N° HEIGHT WIDTH HEAD HT. GLAZING D.GLAZE REQ. WINDOW TYPE COMMENTS
 1 1200 900 2400 CLEAR YES AWNING
 2 1500 1800 2400 CLEAR YES SLIDING
-3 1200 1200 2400 CLEAR YES AWNING
-4 600 900 2100 CLEAR YES AWNING
-5 1500 1200 2400 CLEAR YES SLIDING
-6 1800 700 2400 CLEAR YES CASEMENT
-7 900 1500 2400 CLEAR YES SLIDING
+3 1800 700 2400 CLEAR YES CASEMENT
 EXTERNAL DOOR SCHEDULE
 D N° HEIGHT WIDTH GLAZING D. GLAZE REQ. MATERIAL DOOR TYPE COMMENTS
 1 2100 2400 CLEAR YES ALUMINIUM STACKER SLIDING
 2 2100 3500 CLEAR YES ALUMINIUM STACKER SLIDING RIGHT TO LEFT`;
+
+/** The source schedule, parsed into the columns worth SHOWING.
+ *
+ *  The panel used to render the raw text in a <pre>, which is what the parser
+ *  reads but not what a visitor needs to see: HEAD HT., GLAZING and D.GLAZE REQ.
+ *  are noise here, and the raw form gives no column alignment on a narrow screen.
+ *  This keeps the four columns the claim is about — the item tag, its size, and
+ *  what it is — and lays them out as a table.
+ *
+ *  Deliberately NOT reusing parseScheduleText: this is presentation of the source
+ *  document, and it must show what is PRINTED (height before width, as on the
+ *  sheet) rather than the normalised result, which is the other panel's job. */
+function sampleScheduleRows(): { section: string; rows: { code: string; h: string; w: string; type: string }[] }[] {
+  const out: { section: string; rows: { code: string; h: string; w: string; type: string }[] }[] = [];
+  let current: (typeof out)[number] | null = null;
+  for (const line of SAMPLE_SCHEDULE.split("\n")) {
+    if (/SCHEDULE$/.test(line)) { current = { section: line, rows: [] }; out.push(current); continue; }
+    if (/^[WD] N°/.test(line) || !current) continue;
+    const parts = line.trim().split(/\s+/);
+    const isDoor = current.section.startsWith("EXTERNAL");
+    // Windows print: n° height width headHt glazing dglaze TYPE…
+    // Doors print:   n° height width glazing dglaze material TYPE…
+    const typeFrom = isDoor ? 6 : 6;
+    out[out.length - 1].rows.push({
+      code: `${isDoor ? "D" : "W"}${parts[0].padStart(2, "0")}`,
+      h: parts[1], w: parts[2],
+      type: parts.slice(typeFrom).join(" "),
+    });
+  }
+  return out;
+}
 
 /** The two filled/hollow cells used across the site for the 0 / 50 / 100 arc.
  *  `light` inverts it for dark or sage grounds — the same prop SLabel takes,
@@ -484,12 +511,7 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
   }, []);
   const flagged = sample.lines.length - sample.ready;
 
-  // The schedule as printed, with its two section/column headers marked so the
-  // panel reads as a document rather than a wall of digits.
-  const scheduleLines = SAMPLE_SCHEDULE.split("\n").map((text) => ({
-    text,
-    head: /SCHEDULE$/.test(text) || /^[WD] N°/.test(text),
-  }));
+  const scheduleSections = sampleScheduleRows();
 
   const heroImg = imageUrl(getPage("home")?.heroImage, { w: 1920, h: 1080 });
 
@@ -711,15 +733,37 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
                 {/* No invented sheet number: the honest label is what it is. */}
                 <span className="text-[11px] text-white/35" style={MONO}>window &amp; door schedule</span>
               </div>
-              <div className="flex-1 overflow-x-auto px-4 py-3.5">
-                <pre className="text-[11px] md:text-[11.5px] leading-[1.75] text-white/70 whitespace-pre" style={MONO}>
-{scheduleLines.map((line, i) => (
-  <span key={i} className={line.head ? "text-[#8CA99B]" : undefined}>{line.text + "\n"}</span>
-))}
-                </pre>
+              {/* Laid out as the columns it is, not as a wall of digits. Only the
+                  four that matter to the claim — the item tag, its printed size,
+                  and what it is. HEAD HT., GLAZING and D.GLAZE REQ. are on the
+                  real sheet and are noise here. */}
+              <div className="flex-1 px-4 py-3.5">
+                <table className="w-full text-[11.5px] leading-[1.9]" style={MONO}>
+                  <thead>
+                    <tr className="text-[#8CA99B]">
+                      <th className="text-left font-normal pb-1">N°</th>
+                      <th className="text-right font-normal pb-1">HEIGHT</th>
+                      <th className="text-right font-normal pb-1">WIDTH</th>
+                      <th className="text-left font-normal pb-1 pl-4">TYPE</th>
+                    </tr>
+                  </thead>
+                  {scheduleSections.map((sec) => (
+                    <tbody key={sec.section}>
+                      <tr><td colSpan={4} className="text-[#8CA99B]/70 pt-2.5 pb-0.5 text-[10.5px] tracking-[0.1em]">{sec.section}</td></tr>
+                      {sec.rows.map((r) => (
+                        <tr key={r.code} className="text-white/70">
+                          <td className="text-left">{r.code}</td>
+                          <td className="text-right">{r.h}</td>
+                          <td className="text-right">{r.w}</td>
+                          <td className="text-left pl-4 text-white/55">{r.type}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  ))}
+                </table>
               </div>
               <div className="px-4 py-3 border-t border-white/12 text-[12px] text-white/45" style={MONO}>
-                item n° · height · width · glazing · type — the columns we read
+                height is printed before width, exactly as your draftsperson drew it
               </div>
             </div>
 
@@ -768,26 +812,12 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
             </div>
           </div>
 
-          {/* The caveat, at full strength and physically attached to the claim —
-              one of only two sage fills on the page. A visitor cannot take the
-              minute without taking the two days. Same numbers, same wording as
-              /how-it-works, so the two pages agree by construction. */}
-          <div className="border border-black/10 -mt-px px-5 py-5 md:px-7 md:py-6 flex flex-col md:flex-row md:items-center gap-5 md:gap-8 bg-[#5A7A6A]">
-            <div className="flex-1">
-              <h3 className="text-white font-semibold text-[17px] md:text-[19px] mb-1.5" style={DISPLAY}>
-                Then a person checks it.
-              </h3>
-              <p className="text-white/85 text-[15px] leading-relaxed max-w-[62ch]">
-                An instant estimate is indicative. Before it becomes a quote, a technician confirms
-                specifications, sizes and buildability — about two business days. Nothing is charged either way.
-              </p>
-            </div>
-            <div className="flex items-center gap-3 md:gap-4 flex-shrink-0 text-white/90 text-[13px]" style={MONO}>
-              <span className="flex items-center gap-2"><Meter paid="0%" light /> 0%</span>
-              <ArrowRight className="w-3.5 h-3.5 text-white/60" aria-hidden="true" />
-              <span className="flex items-center gap-2"><Meter paid="50%" light /> 50%</span>
-            </div>
-          </div>
+          {/* The sage "Then a person checks it" panel sat here and is gone (owner
+              decision). The two-business-day review is still stated in the hero
+              — "that part takes about a minute. A person then reviews it, usually
+              within two business days" — and again in process card 01, so the
+              claim is still qualified; it is no longer qualified twice within one
+              screen, and the section ends on the evidence. */}
         </div>
       </section>
 

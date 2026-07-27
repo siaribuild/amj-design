@@ -56,10 +56,10 @@ export function Projects() {
 
   return (
     <div className="max-w-[1180px]">
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex gap-2 mb-4 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap">
         {FILTERS.map((f) => (
           <button key={f.id} onClick={() => setFilter(f.id)}
-            className="text-xs px-3 py-1.5 border"
+            className="text-xs px-3 py-2 border whitespace-nowrap flex-shrink-0"
             style={{
               background: filter === f.id ? SAGE : "#fff",
               borderColor: filter === f.id ? SAGE : "rgba(0,0,0,0.12)",
@@ -83,7 +83,42 @@ export function Projects() {
           )}
         </div>
       ) : (
-        <div className="bg-white border border-black/8">
+        <>
+        {/* PHONE — card per row. Not a horizontally scrolling table: this list
+            exists to be SCANNED, and a scan that needs a sideways swipe per row
+            is not a scan. Not column-priority either — nine columns down to three
+            is a card wearing a table costume, and the hidden cells still ship. */}
+        <div className="lg:hidden -mx-4 border-y border-black/8 bg-white">
+          {shown.map((r) => (
+            <button key={r.id} onClick={() => setOpenId(r.id)}
+              className="w-full text-left px-4 py-3 border-b border-black/8 last:border-0 active:bg-[#faf9f6]">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-[13px]" style={{ ...MONO, color: SAGE }}>{r.ref}</span>
+                <span className="text-right">
+                  <span className="block text-[15px]" style={{ ...MONO, color: INK }}>{money(r.value)}</span>
+                  <span className="block text-[11px]" style={{ color: MUTED }}>{r.valueBasis}</span>
+                </span>
+              </div>
+              <p className="text-[15px] truncate mt-0.5" style={{ color: INK }}>{r.title}</p>
+              <p className="text-[13px] truncate" style={{ color: "#5c5a56" }}>
+                {[r.customerName, r.org].filter(Boolean).join(" · ") || "—"}
+              </p>
+              <div className="flex items-baseline justify-between gap-3 mt-1">
+                <span className="text-[12px]" style={{ color: "#5c5a56" }}>{r.phase} · {r.stateLabel}</span>
+                <span className="text-[12px] flex-shrink-0" style={{ color: r.waitingOn === "Us" ? INK : MUTED, fontWeight: r.waitingOn === "Us" ? 600 : 400 }}>
+                  {r.waitingOn} · <span style={MONO}>{r.daysInStage ?? "—"}d</span>
+                </span>
+              </div>
+              {r.unresolved > 0 && (
+                <span className="inline-block mt-1.5 text-[11px] px-1.5 py-0.5 border" style={{ borderColor: "rgba(180,120,40,0.4)", color: "#7a5410" }}>
+                  Unpriced {r.unresolved}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="hidden lg:block bg-white border border-black/8">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wide border-b border-black/8" style={{ color: MUTED }}>
@@ -139,8 +174,8 @@ export function Projects() {
             </tbody>
           </table>
         </div>
+        </>
       )}
-
     </div>
   );
 }

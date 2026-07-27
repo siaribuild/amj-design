@@ -82,6 +82,11 @@ export interface OpsLine {
   selectedVariantId: string | null;
   /** Unresolved technical-review reasons (field → reason) from an auto-parse. */
   review: Record<string, string> | null;
+  /** 'simple' | 'composite_parent' — one opening, or one built from joined frames. */
+  lineKind?: string;
+  compositeAxis?: string | null;
+  /** The joined frames this opening is built from, when it is a composite. */
+  segments?: OpsSegment[];
 }
 export interface OpsComment { id: string; line_id: string | null; kind: string; body: string; author: string | null; created_at: string }
 export interface OpsRevision { id: string; revisionNo: number; status: string; total: number; issuedAt: string; acceptedAt: string | null }
@@ -388,3 +393,26 @@ export interface OpsRecordAction {
 
 export const opsStartPricing = (id: string) =>
   req<{ ok: boolean; statusInternal: string }>(`/api/ops/projects/${id}/start-pricing`, { method: "POST", body: "{}" });
+
+// ── Composite openings (split / merge) ───────────────────────────────────────
+// ONE opening built from several joined frames. Ops-only by design: a customer
+// cannot choose a composite, but a 3500mm door that no single unit is made at
+// has to become one before it can be priced or built.
+//
+// These endpoints have existed since the composite work and had no caller until
+// now, which is why splitting was unreachable from the console.
+export interface OpsSegment {
+  id: string; productSlug: string; productName: string;
+  width: string; height: string;
+  /** How many of this frame go into ONE opening. */
+  qtyPerParent: number;
+  qty: number; lineTotal: number | null;
+}
+
+export const opsSplitLine = (lineId: string, body: {
+  axis: "vertical" | "horizontal";
+  segments: { widthMm: number; heightMm: number; productSlug: string; qtyPerParent: number }[];
+}) => req<{ ok: boolean }>(`/api/ops/lines/${lineId}/split`, { method: "POST", body: JSON.stringify(body) });
+
+export const opsMergeComposite = (lineId: string) =>
+  req<{ ok: boolean }>(`/api/ops/lines/${lineId}/merge`, { method: "POST", body: "{}" });

@@ -25,7 +25,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
     const port = await freePort();
     const baseUrl = `http://127.0.0.1:${port}`;
     // Local/test env: dev OTP on, Access off (staff session fallback), Sanity off (deterministic built-in catalogue). Prod values live in wrangler.jsonc.
-    server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn", "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "ENQUIRY_INTERNAL_TO:enquiries@openframe.com.au", "--var", "MANUFACTURER_TO:leads@amj.test", "--var", "SANITY_WEBHOOK_SECRET:test-webhook-secret", "--var", "AI_EXTRACTION_MODE:manual", "--var", "THERMAL_DEBUG_KEY:test-debug-key"], { env: wranglerEnv });
+    server = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", state, "--assets", assets, "--log-level", "warn", "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "ENQUIRY_INTERNAL_TO:enquiries@openframe.com.au", "--var", "MANUFACTURER_TO:leads@amj.test", "--var", "MANUFACTURER_EMAIL_DOMAINS:amjtradedirect.test", "--var", "SANITY_WEBHOOK_SECRET:test-webhook-secret", "--var", "AI_EXTRACTION_MODE:manual", "--var", "THERMAL_DEBUG_KEY:test-debug-key"], { env: wranglerEnv });
     await waitForUrl(`${baseUrl}/api/health`, server);
 
     const anon = new Session(baseUrl);
@@ -631,6 +631,40 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
         json: { title: "Discount probe", items: [{ ...line, discountPercent: 90, ownerUserId: "u_demo" }] },
       });
       assert.equal(lied.body.items[0].lineTotal, memberTotal, "a discount in the payload is ignored");
+    });
+
+    await t.test("manufacturer partner: enquiries only, and nothing else", async () => {
+      // A partner is not an OpenFrame staffer. They sign in through the same
+      // console behind the same Access policy, and the WORKER refuses them
+      // everything except enquiries — containment is per endpoint, not a hidden
+      // tab, because a partner who guesses a URL must still be refused.
+      const mfr = new Session(baseUrl);
+      const who = await login(mfr, "/api/ops/auth", "partner@amjtradedirect.test");
+      assert.equal(who.body.user.role, "manufacturer", "the domain pins the role at sign-in");
+
+      // The one surface they reach — including the contact details they need in
+      // order to ring the customer.
+      const list = await requestJson(mfr, "/api/ops/enquiries");
+      assert.ok(Array.isArray(list.body.enquiries));
+      const lead = list.body.enquiries[0];
+      if (lead) {
+        const detail = await requestJson(mfr, `/api/ops/enquiries/${lead.id}`);
+        assert.ok("email" in detail.body.enquiry || "phone" in detail.body.enquiry, "contact details are visible");
+        await requestJson(mfr, `/api/ops/enquiries/${lead.id}`, { method: "PATCH", json: { manufacturerQuoteRef: "AMJ-9911" } });
+        await requestJson(mfr, `/api/ops/enquiries/${lead.id}/contact-log`, { method: "POST", json: { outcome: "contacted" } });
+      }
+
+      // Everything else is refused. Quotes, orders, money, pricing, staff, audit.
+      for (const path of ["/api/ops/projects", "/api/ops/customers", "/api/ops/files",
+        "/api/ops/audit", "/api/ops/staff", "/api/ops/pricing/rate-cards", "/api/ops/summary"]) {
+        await requestJson(mfr, path, {}, 403);
+      }
+      await requestJson(mfr, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 403);
+      await requestJson(mfr, "/api/ops/projects/p_submitted/start-pricing", { method: "POST", json: {} }, 403);
+
+      // And a partner is never bootstrapped to admin, even on a fresh database.
+      const again = await requestJson(mfr, "/api/ops/me");
+      assert.equal(again.body.user.role, "manufacturer");
     });
 
     // ── Ops → Pricing: the editor for the D1 commercial layer ────────────────

@@ -45,12 +45,13 @@ test("the projects list opens one record covering the whole job", async ({ page 
   // that existed only in storage.
   await staffLogin(page);
   await page.getByRole("button", { name: "Projects", exact: true }).click();
-  await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
+  const fitzroy = page.getByText("Fitzroy townhouses").locator("visible=true");
+  await expect(fitzroy.first()).toBeVisible();
   // The two derived columns that replaced the assignee.
   await expect(page.getByText("Waiting on")).toBeVisible();
   await expect(page.getByText("Days in stage")).toBeVisible();
 
-  await page.getByText("Fitzroy townhouses").click();
+  await fitzroy.first().click();
   // The record: the precise state, and one primary action. Owners are gone.
   await expect(page.getByText(/^Now ·/)).toBeVisible();
   await expect(page.getByRole("button", { name: /Start pricing|Issue reviewed quote/ })).toBeVisible();

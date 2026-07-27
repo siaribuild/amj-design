@@ -10,7 +10,7 @@ import {
   isEmail, normEmail, sessionCookie, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
 import { notify } from "../lib/email";
-import { findOrCreateInternalUser, isStaffEmail, resolveStaff } from "../lib/staff";
+import { findOrCreateInternalUser, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
 import { drainLearningOutbox, issueRevision } from "../lib/revisions";
 import { logEvent } from "../lib/activity";
 import { splitLine, mergeComposite } from "../lib/composite";
@@ -81,7 +81,12 @@ const safeParse = (s: string): Record<string, any> => {
 // The one role boundary still worth having is a manufacturer scoped to Enquiries.
 // That is a different persona with a different sign-in, not a value of this
 // column, and it is not built yet.
-const isStaffUser = (staff: { role: string | null } | null) => !!staff;
+// A MANUFACTURER partner signs in through the same console but is not staff.
+// They reach the enquiry surface and nothing else — enforced here, per endpoint,
+// rather than by hiding a tab, because a partner who guesses a URL must still be
+// refused. Every `isStaffUser` gate below therefore excludes them.
+const isManufacturer = (staff: { role: string | null } | null) => staff?.role === "manufacturer";
+const isStaffUser = (staff: { role: string | null } | null) => !!staff && !isManufacturer(staff);
 const hasAssignedRole = isStaffUser;
 const canRecordPayment = isStaffUser;
 const canManageLearning = isStaffUser;
@@ -128,6 +133,10 @@ const opsLineDto = (r: LineRow) => {
     // on the flags the parser raised (material substitution, out-of-range, glazing…).
     origin: r.origin ?? "manual",
     review: review && Object.keys(review).length ? (review as Record<string, string>) : null,
+    // 'simple' | 'composite_parent'. A composite is ONE opening built from several
+    // joined frames; its segments are never loose items beside it.
+    lineKind: (r as { line_kind?: string }).line_kind ?? "simple",
+    compositeAxis: (r as { composite_axis?: string | null }).composite_axis ?? null,
   };
 };
 
@@ -173,7 +182,7 @@ ops.post("/auth/logout", async (c) => {
 
 // GET /api/ops/me — the acting staff member, or 401.
 ops.get("/me", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
+  const staff = await resolveOpsUser(c.env, c.req.raw);
   if (!staff) return c.json({ authenticated: false, user: null }, 401);
   return c.json({ authenticated: true, user: userDto(staff) });
 });
@@ -302,6 +311,16 @@ ops.get("/projects/:id", async (c) => {
   // PARENTS ONLY — the reviewer sees the same line list the customer does, with
   // segments nested inside their parent rather than loose beside it.
   const { results: lines } = await c.env.DB.prepare("SELECT * FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL ORDER BY position").bind(id).all<LineRow>();
+  // The SEGMENTS of any composite parent. The parents-only query above is right
+  // for the item list, but it meant the console could never see, or offer, a
+  // split — the split/merge endpoints have existed since the composite work and
+  // have never had a caller.
+  const { results: segments } = await c.env.DB.prepare(
+    `SELECT id, parent_line_id, product_slug, dims_json, qty_per_parent, qty, line_total, segment_seq
+       FROM quote_line
+      WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NOT NULL
+      ORDER BY parent_line_id, segment_seq`,
+  ).bind(id).all<any>();
   const { results: files } = await c.env.DB.prepare("SELECT id, kind, filename, size, virus_status, created_at FROM file_asset WHERE project_id = ? ORDER BY created_at DESC").bind(id).all();
   const { results: revisions } = await c.env.DB.prepare("SELECT id, revision_no, snapshot_status, totals_json, issued_at, accepted_at FROM quote_revision WHERE project_id = ? ORDER BY revision_no DESC").bind(id).all<any>();
   const { results: comments } = await c.env.DB.prepare("SELECT cm.id, cm.line_id, cm.kind, cm.body, cm.created_at, u.name AS author FROM comment cm LEFT JOIN user u ON u.id = cm.author_id WHERE cm.project_id = ? ORDER BY cm.created_at DESC").bind(id).all();
@@ -358,7 +377,18 @@ ops.get("/projects/:id", async (c) => {
       contactPhone: p.contact_phone ?? null, deliverySuburb: p.delivery_suburb ?? null,
       updatedAt: p.updated_at,
     },
-    lines: lines.map(opsLineDto),
+    lines: lines.map((l) => ({
+      ...opsLineDto(l),
+      segments: (segments ?? []).filter((s2: any) => s2.parent_line_id === l.id).map((s2: any) => {
+        const d = safeParse(s2.dims_json ?? "{}");
+        return {
+          id: s2.id, productSlug: s2.product_slug,
+          productName: getProductBySlug(s2.product_slug)?.name ?? s2.product_slug,
+          width: String(d.width ?? ""), height: String(d.height ?? ""),
+          qtyPerParent: s2.qty_per_parent ?? 1, qty: s2.qty, lineTotal: s2.line_total,
+        };
+      }),
+    })),
     files,
     revisions: revisions.map((r: any) => ({ id: r.id, revisionNo: r.revision_no, status: r.snapshot_status, total: safeParse(r.totals_json).total ?? 0, issuedAt: r.issued_at, acceptedAt: r.accepted_at })),
     comments,
@@ -1277,9 +1307,10 @@ const enquiryDetailDto = (r: any) => ({
 
 // GET /api/ops/enquiries — filterable list, newest first.
 ops.get("/enquiries", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
+  const staff = await resolveOpsUser(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
-  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  // Enquiries are the ONE surface a manufacturer partner reaches.
+  if (!hasAssignedRole(staff) && !isManufacturer(staff)) return c.json({ error: "forbidden_role" }, 403);
   const q = c.req.query();
   const where: string[] = []; const binds: unknown[] = [];
   const eq = (param: string, col: string) => { if (q[param]) { where.push(`e.${col} = ?`); binds.push(q[param]); } };
@@ -1296,9 +1327,10 @@ ops.get("/enquiries", async (c) => {
 
 // GET /api/ops/enquiries/:id — full lead + attribution + activity trail.
 ops.get("/enquiries/:id", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
+  const staff = await resolveOpsUser(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
-  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  // Enquiries are the ONE surface a manufacturer partner reaches.
+  if (!hasAssignedRole(staff) && !isManufacturer(staff)) return c.json({ error: "forbidden_role" }, 403);
   const e = await c.env.DB.prepare(
     "SELECT e.*, u.name AS assigned_name FROM enquiry e LEFT JOIN user u ON u.id = e.assigned_user WHERE e.id = ?",
   ).bind(c.req.param("id")).first<any>();
@@ -1313,9 +1345,10 @@ ops.get("/enquiries/:id", async (c) => {
 // a downstream AMJ quote/order, or acknowledge the handoff. source_owner is never
 // settable here (server-owned).
 ops.patch("/enquiries/:id", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
+  const staff = await resolveOpsUser(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
-  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  // Enquiries are the ONE surface a manufacturer partner reaches.
+  if (!hasAssignedRole(staff) && !isManufacturer(staff)) return c.json({ error: "forbidden_role" }, 403);
   const id = c.req.param("id");
   const exists = await c.env.DB.prepare("SELECT id FROM enquiry WHERE id = ?").bind(id).first();
   if (!exists) return c.json({ error: "not_found" }, 404);
@@ -1346,9 +1379,10 @@ ops.patch("/enquiries/:id", async (c) => {
 
 // POST /api/ops/enquiries/:id/contact-log — record a contact attempt/outcome.
 ops.post("/enquiries/:id/contact-log", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
+  const staff = await resolveOpsUser(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
-  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  // Enquiries are the ONE surface a manufacturer partner reaches.
+  if (!hasAssignedRole(staff) && !isManufacturer(staff)) return c.json({ error: "forbidden_role" }, 403);
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
   const outcome = ENQUIRY_DIMENSIONS.contact_outcome.includes(String(body?.outcome)) ? String(body.outcome) : "attempted";

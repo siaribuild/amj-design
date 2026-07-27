@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, FileText, CheckSquare, Package, Users, Boxes, SlidersHorizontal,
-  FolderOpen, ScrollText, Settings, LogOut, Loader2, AlertCircle, Mail,
+  FolderOpen, ScrollText, Settings, LogOut, Loader2, AlertCircle, Mail, X,
 } from "lucide-react";
 import { Search } from "lucide-react";
 import { opsMe, opsChallenge, opsVerify, opsLogout, opsSummary, opsSearch, type OpsUser, type OpsSummary, type OpsSearchResult } from "./api";
@@ -21,7 +21,7 @@ import { Files, Audit, Admin } from "./AdminTabs";
 const SAGE = "#5A7A6A";
 
 type Tab = "dashboard" | "projects" | "customers" | "pricing" | "enquiries" | "files" | "audit" | "admin";
-const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+const ALL_TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
   { id: "projects", label: "Projects", icon: <FileText className="w-4 h-4" /> },
   { id: "customers", label: "Customers", icon: <Users className="w-4 h-4" /> },
@@ -31,6 +31,15 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "audit", label: "Audit", icon: <ScrollText className="w-4 h-4" /> },
   { id: "admin", label: "Admin", icon: <Settings className="w-4 h-4" /> },
 ];
+
+/** What this user may see.
+ *
+ *  A MANUFACTURER partner is not an OpenFrame staffer: they sign in through the
+ *  same console, behind the same Access policy, and get exactly one tab. The
+ *  Worker refuses them every other endpoint regardless — this only stops the
+ *  console offering doors that would slam. */
+const tabsFor = (user: OpsUser) =>
+  user.role === "manufacturer" ? ALL_TABS.filter((t) => t.id === "enquiries") : ALL_TABS;
 
 export function OpsApp() {
   const [user, setUser] = useState<OpsUser | null>(null);
@@ -119,11 +128,15 @@ function OpsLogin({ onAuthed }: { onAuthed: (u: OpsUser) => void }) {
 
 // ── Console shell ────────────────────────────────────────────────────────────
 function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void }) {
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const TABS = tabsFor(user);
+  // A manufacturer has no dashboard to land on — their first tab is their only tab.
+  const [tab, setTab] = useState<Tab>(TABS[0]?.id ?? "dashboard");
   return (
     <div className="min-h-screen bg-[#f6f6f3] flex" style={{ fontFamily: "'Inter', sans-serif" }}>
-      {/* Sidebar */}
-      <aside className="w-56 bg-[#14150f] text-white flex flex-col fixed inset-y-0 left-0">
+      {/* Sidebar — desktop and tablet only. Below md it is a fixed 224px rail on
+          a 375px screen, and with the content's own p-8 that left 87px of usable
+          width: 375 − 224 − 64. A nine-column table was rendering into that. */}
+      <aside className="hidden md:flex w-56 bg-[#14150f] text-white flex-col fixed inset-y-0 left-0">
         <div className="px-5 h-14 flex items-center gap-2 border-b border-white/10 font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
           <span className="w-5 h-5 border-2 grid place-items-center" style={{ borderColor: SAGE }}><span className="w-1.5 h-1.5" style={{ background: SAGE }} /></span>
           OpenFrame Ops
@@ -148,15 +161,24 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
         </div>
       </aside>
 
-      {/* Content */}
-      <main className="flex-1 ml-56">
-        <header className="h-14 bg-white border-b border-black/8 flex items-center justify-between px-8">
-          <h1 className="text-[15px] font-semibold text-[#14150f] capitalize" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+      {/* Content.
+          `min-w-0` matters as much as the margin: a flex child defaults to
+          min-width:auto, so any wide table pushed the whole document sideways and
+          gave page-level horizontal scroll on top of the squeeze. */}
+      <main className="flex-1 min-w-0 md:ml-56 pb-16 md:pb-0">
+        <header className="h-12 md:h-14 bg-white border-b border-black/8 flex items-center justify-between px-4 md:px-8">
+          <h1 className="text-[15px] font-semibold text-[#14150f] capitalize flex items-center gap-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+            {/* The mark alone on mobile — the logo carries the name, so no wordmark. */}
+            <span className="md:hidden w-4 h-4 border-2 grid place-items-center flex-shrink-0" style={{ borderColor: SAGE }}>
+              <span className="w-1 h-1" style={{ background: SAGE }} />
+            </span>
             {TABS.find(t => t.id === tab)?.label}
           </h1>
-          <SearchBox onNavigate={setTab} />
+          {/* The omnibox is a desktop control; on a phone it left ~200px of
+              results under the keyboard. The bottom bar gets a Search slot. */}
+          <div className="hidden md:block"><SearchBox onNavigate={setTab} /></div>
         </header>
-        <div className="p-8">
+        <div className="p-4 md:p-8">
           {tab === "dashboard" ? <Dashboard setTab={setTab} />
             : tab === "projects" ? <Projects />
             : tab === "customers" ? <Customers user={user} />
@@ -168,7 +190,91 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
             : <Placeholder label={TABS.find(t => t.id === tab)?.label ?? ""} />}
         </div>
       </main>
+
+      <MobileNav tabs={TABS} tab={tab} setTab={setTab} user={user} onSignOut={onSignOut} />
     </div>
+  );
+}
+
+/** The phone's navigation: four destinations plus More, fixed to the bottom.
+ *
+ *  A bottom bar rather than a hamburger drawer because the two most repeated
+ *  moves are Dashboard ⇄ Projects, and a drawer makes each of those two taps and
+ *  a full-screen state change — from the least thumb-reachable corner of the
+ *  screen, for the most frequent control in the app.
+ *
+ *  With ONE tab (the manufacturer, who sees only Enquiries) the bar is not
+ *  rendered at all: a nav bar with a single destination is a lie about there
+ *  being somewhere to go, and it costs 52px of a phone screen to tell it. */
+function MobileNav({ tabs, tab, setTab, user, onSignOut }: {
+  tabs: typeof ALL_TABS; tab: Tab; setTab: (t: Tab) => void; user: OpsUser; onSignOut: () => void;
+}) {
+  const [more, setMore] = useState(false);
+  // One destination is not navigation. A manufacturer sees only Enquiries, and a
+  // bar telling them there is somewhere else to go would be a lie costing 52px.
+  if (tabs.length <= 1) return null;
+
+  const primary = tabs.slice(0, 4);
+  const rest = tabs.slice(4);
+
+  return (
+    <>
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[#14150f] border-t border-white/10 flex"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+        {primary.map((t) => {
+          const active = tab === t.id;
+          return (
+            <button key={t.id} onClick={() => { setTab(t.id); setMore(false); }}
+              className="flex-1 h-[52px] flex flex-col items-center justify-center gap-0.5"
+              style={active ? { borderTop: `2px solid ${SAGE}` } : { borderTop: "2px solid transparent" }}>
+              <span style={{ color: active ? SAGE : "rgba(255,255,255,0.45)" }}>{t.icon}</span>
+              <span className="text-[10px]" style={{ color: active ? "#fff" : "rgba(255,255,255,0.45)" }}>{t.label}</span>
+            </button>
+          );
+        })}
+        {rest.length > 0 && (
+          <button onClick={() => setMore(true)}
+            className="flex-1 h-[52px] flex flex-col items-center justify-center gap-0.5"
+            style={rest.some((t) => t.id === tab) ? { borderTop: `2px solid ${SAGE}` } : { borderTop: "2px solid transparent" }}>
+            <span style={{ color: rest.some((t) => t.id === tab) ? SAGE : "rgba(255,255,255,0.45)" }}><Settings className="w-4 h-4" /></span>
+            <span className="text-[10px]" style={{ color: rest.some((t) => t.id === tab) ? "#fff" : "rgba(255,255,255,0.45)" }}>More</span>
+          </button>
+        )}
+      </nav>
+
+      {/* Rises from the bottom, matching its trigger. An overlay, never a route:
+          it must not unmount the surface beneath, so tab, open record, scroll
+          position and any half-typed field survive opening and closing it. */}
+      {more && (
+        <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end" onClick={() => setMore(false)}>
+          <div className="absolute inset-0 bg-black/45" />
+          <div className="relative bg-[#14150f] max-h-[80dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+            <div className="flex items-center justify-between px-5 h-12 border-b border-white/10">
+              <span className="text-[11px] uppercase tracking-[0.14em] text-white/40">More</span>
+              <button onClick={() => setMore(false)} className="w-11 h-11 -mr-3 flex items-center justify-center text-white/60" aria-label="Close">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {rest.map((t) => (
+              <button key={t.id} onClick={() => { setTab(t.id); setMore(false); }}
+                className="w-full h-[52px] flex items-center gap-3 px-5 text-sm"
+                style={{ color: tab === t.id ? "#fff" : "rgba(255,255,255,0.55)" }}>
+                {t.icon}{t.label}
+              </button>
+            ))}
+            <div className="border-t border-white/10 mt-2 px-5 py-3">
+              <p className="text-sm text-white truncate">{user.name || user.email}</p>
+              <p className="text-[11px] text-white/40 truncate">{user.email}</p>
+            </div>
+            {/* Separated so it is never a mis-tap of the row above. */}
+            <button onClick={onSignOut} className="w-full h-12 flex items-center gap-2 px-5 text-sm text-white/60 mt-2 mb-2">
+              <LogOut className="w-4 h-4" />Sign out
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

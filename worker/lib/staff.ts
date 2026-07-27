@@ -20,7 +20,25 @@ export function staffDomains(env: Env): string[] {
 
 export function isStaffEmail(env: Env, email: string): boolean {
   const domain = email.split("@")[1]?.toLowerCase();
-  return !!domain && staffDomains(env).includes(domain);
+  return !!domain && (staffDomains(env).includes(domain) || manufacturerDomains(env).includes(domain));
+}
+
+/** Domains whose users are MANUFACTURER partners, not OpenFrame staff.
+ *
+ *  They sign in through the same console and sit behind the same Cloudflare
+ *  Access policy, but they are not employees: the Worker refuses them everything
+ *  except the enquiry surface. Containment is in code, per endpoint — never by
+ *  hiding a tab, because a partner who guesses a URL must still be refused.
+ *
+ *  Empty by default, so nothing is a manufacturer until a domain is configured. */
+export function manufacturerDomains(env: Env): string[] {
+  return (env.MANUFACTURER_EMAIL_DOMAINS ?? "")
+    .split(",").map((d) => d.trim().toLowerCase()).filter(Boolean);
+}
+
+export function isManufacturerEmail(env: Env, email: string): boolean {
+  const domain = email.split("@")[1]?.toLowerCase();
+  return !!domain && manufacturerDomains(env).includes(domain);
 }
 
 // Whether any admin exists. Used to bootstrap the first staffer (see below).
@@ -44,6 +62,7 @@ async function bootstrapAdmin(env: Env, user: UserRow): Promise<UserRow> {
 // Find or create an internal user for an allowlisted email. Promotes an existing
 // customer row to internal (e.g. a staffer who once used the customer portal).
 export async function findOrCreateInternalUser(env: Env, email: string): Promise<UserRow> {
+  const manufacturer = isManufacturerEmail(env, email);
   const existing = await env.DB.prepare("SELECT * FROM user WHERE email = ?").bind(email).first<UserRow>();
   if (existing) {
     let user = existing;
@@ -53,9 +72,19 @@ export async function findOrCreateInternalUser(env: Env, email: string): Promise
     } else {
       await env.DB.prepare("UPDATE user SET last_verified_at = datetime('now') WHERE id = ?").bind(existing.id).run();
     }
+    // A manufacturer is re-pinned to their role on EVERY sign-in and never
+    // bootstrapped to admin — a partner must not inherit the empty-database
+    // promotion, and an admin must not be able to leave them elevated by accident.
+    if (manufacturer) {
+      if (user.role !== "manufacturer") {
+        await env.DB.prepare("UPDATE user SET role = 'manufacturer' WHERE id = ?").bind(user.id).run();
+        user = { ...user, role: "manufacturer" };
+      }
+      return user;
+    }
     return bootstrapAdmin(env, user);
   }
-  const role = (await anyAdminExists(env)) ? null : "admin";
+  const role = manufacturer ? "manufacturer" : (await anyAdminExists(env)) ? null : "admin";
   const id = uuid();
   await env.DB.prepare(
     "INSERT INTO user (id, email, name, type, role, last_verified_at) VALUES (?, ?, ?, 'internal', ?, datetime('now'))",
@@ -70,7 +99,26 @@ export async function findOrCreateInternalUser(env: Env, email: string): Promise
 // fallback is disabled so a request that reaches the Worker without passing Access
 // (e.g. the ops host mis-configured, or a direct hit) cannot authenticate as staff.
 // The session fallback exists solely for local/staging where Access isn't wired up.
+/** The acting OPS user — staff OR a manufacturer partner.
+ *
+ *  Only the surfaces a partner is allowed to reach may use this. Everything else
+ *  uses resolveStaff, which refuses them. That split is deliberate and it fails
+ *  CLOSED: an endpoint added later is staff-only unless it opts in, rather than
+ *  being open unless someone remembers to add a gate. Before roles were flattened
+ *  every session was staff, so nineteen endpoints checked only "is signed in" —
+ *  which would have admitted a partner to quotes, orders and payments. */
+export async function resolveOpsUser(env: Env, req: Request): Promise<UserRow | null> {
+  return resolveInternalUser(env, req);
+}
+
+/** The acting STAFF member, or null. A manufacturer partner is authenticated but
+ *  is not staff, and is refused here. */
 export async function resolveStaff(env: Env, req: Request): Promise<UserRow | null> {
+  const user = await resolveInternalUser(env, req);
+  return user && user.role !== "manufacturer" ? user : null;
+}
+
+async function resolveInternalUser(env: Env, req: Request): Promise<UserRow | null> {
   const accessConfigured = !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD);
   if (accessConfigured) {
     const jwt = req.headers.get("Cf-Access-Jwt-Assertion");

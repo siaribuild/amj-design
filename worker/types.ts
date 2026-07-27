@@ -24,6 +24,8 @@ export interface Env {
   ENQUIRY_INTERNAL_TO?: string;
   /** Enquiries: single manufacturer handoff address for ALL locations (appointments). */
   MANUFACTURER_TO?: string;
+  /** Comma-separated domains whose users are manufacturer partners (Enquiries only). */
+  MANUFACTURER_EMAIL_DOMAINS?: string;
   /** Cloudflare Turnstile secret (captcha) — set to enable server verification. */
   TURNSTILE_SECRET?: string;
   /** Sanity catalogue source (Worker-side). Client uses VITE_SANITY_* instead. */
