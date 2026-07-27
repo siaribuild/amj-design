@@ -235,7 +235,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
     });
 
     await t.test("workflow transitions: valid move, invalid move 409, clarification round-trip", async () => {
-      await requestJson(staff, "/api/ops/projects/p_submitted/assign", { method: "POST", json: {} });
+      await requestJson(staff, "/api/ops/projects/p_submitted/start-pricing", { method: "POST", json: {} });
       const moved = await requestJson(staff, "/api/ops/projects/p_submitted/status", { method: "POST", json: { statusInternal: "technical_review_required" } });
       assert.equal(moved.body.statusInternal, "technical_review_required");
       await requestJson(staff, "/api/ops/projects/p_submitted/status", { method: "POST", json: { statusInternal: "issued" } }, 409);
@@ -361,40 +361,41 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(resolved.body.line.status, "ready", "priced + no flags ⇒ ready");
     });
 
-    await t.test("approvals: no-rule auto-clears, reject returns to estimator, wrong role blocked", async () => {
-      // p_draft ($1,740, no technical) has no matching rule -> straight to ready.
-      await requestJson(staff, "/api/ops/projects/p_draft/assign", { method: "POST", json: {} });
-      const auto = await requestJson(staff, "/api/ops/projects/p_draft/submit-for-approval", { method: "POST", json: {} });
-      assert.equal(auto.body.statusInternal, "approved_for_issue");
+    await t.test("no approval step: a priced quote issues directly, and the old surfaces are gone", async () => {
+      // The approval engine — rules, instances, steps, delegate — was removed
+      // (0033). With anyone able to approve, including the submitter, a mandatory
+      // gate logged "approved by the author" and manufactured assurance nobody
+      // gave. These must stay gone; a reappearing gate is the regression.
+      await requestJson(staff, "/api/ops/projects/p_draft/submit-for-approval", { method: "POST", json: {} }, 404);
+      await requestJson(staff, "/api/ops/approvals", {}, 404);
+      await requestJson(staff, "/api/ops/rules", {}, 404);
 
-      // p_submitted (>$4,000) needs a manager approval.
-      const submitted = await requestJson(staff, "/api/ops/projects/p_submitted/submit-for-approval", { method: "POST", json: {} });
-      assert.equal(submitted.body.statusInternal, "approval_pending");
-      const step = (await requestJson(staff, "/api/ops/approvals")).body.approvals.find((s) => s.project_id === "p_submitted");
-      assert.ok(step);
+      // Start pricing is what /assign used to do as a side effect of setting an
+      // owner. It is the ONLY route out of `submitted` — without it every new
+      // submission strands in the queue.
+      await requestJson(staff, "/api/ops/projects/p_submitted/start-pricing", { method: "POST", json: {} });
+      const ws = await requestJson(staff, "/api/ops/projects/p_submitted");
+      assert.equal(ws.body.project.statusInternal, "estimator_assigned");
+      assert.equal(ws.body.project.internalOwnerId, undefined, "no owner is carried any more");
 
-      // A pure estimator cannot approve a manager step.
-      const estimator = new Session(baseUrl);
-      const est = await login(estimator, "/api/ops/auth", "estimator@openframe.com.au");
-      await requestJson(staff, `/api/ops/staff/${est.body.user.id}`, { method: "PATCH", json: { role: "estimator" } });
-      await requestJson(estimator, `/api/ops/approvals/${step.id}/approve`, { method: "POST", json: {} }, 403);
-
-      // Reject sends the project back to the estimator.
-      await requestJson(staff, `/api/ops/approvals/${step.id}/reject`, { method: "POST", json: { comment: "Needs rework" } });
-      const after = await requestJson(staff, "/api/ops/projects/p_submitted");
-      assert.equal(after.body.project.statusInternal, "estimator_assigned");
+      // And the record offers issuing directly, with no sign-off in between.
+      const issue = ws.body.actions.find((a) => a.id === "issue-revision");
+      assert.ok(issue, "a quote in pricing offers 'issue' as an action");
+      assert.equal(issue.tier, "primary");
     });
 
-    await t.test("admin RBAC: rules + staff role changes require admin", async () => {
-      const estimator = new Session(baseUrl);
-      const est = await login(estimator, "/api/ops/auth", "estimator@openframe.com.au");
-      // (already estimator from previous subtest) — non-admin is blocked.
-      const rule = (await requestJson(staff, "/api/ops/rules")).body.rules[0];
-      await requestJson(estimator, `/api/ops/rules/${rule.id}`, { method: "PATCH", json: { active: false } }, 403);
-      await requestJson(estimator, `/api/ops/staff/${est.body.user.id}`, { method: "PATCH", json: { role: "admin" } }, 403);
-      // Admin can, and invalid roles are rejected.
-      await requestJson(staff, `/api/ops/rules/${rule.id}`, { method: "PATCH", json: { value: 9999 } });
-      await requestJson(staff, `/api/ops/staff/${est.body.user.id}`, { method: "PATCH", json: { role: "not-a-role" } }, 400);
+    await t.test("flat access: every staff user reaches the money and PII surfaces", async () => {
+      // Roles were flattened (owner decision): the perimeter is Cloudflare Access
+      // on ops.*, not an in-app dropdown. A freshly provisioned staffer with no
+      // role reaches everything, where they used to hit silent 403s.
+      const fresh = new Session(baseUrl);
+      await login(fresh, "/api/ops/auth", "flat.access@openframe.com.au");
+      await requestJson(fresh, "/api/ops/customers");
+      await requestJson(fresh, "/api/ops/files");
+      await requestJson(fresh, "/api/ops/pricing/rate-cards");
+      // The stage machine still refuses an out-of-order payment — that guard is
+      // domain logic, not a role.
+      await requestJson(fresh, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 409);
     });
 
     await t.test("audit log + entity filter, customers 360, and search", async () => {
@@ -527,14 +528,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(typeof row.draft_total, "number");
 
       // Staff take it through approval → issue; then the customer requests changes.
-      await requestJson(staff, `/api/ops/projects/${pid}/assign`, { method: "POST", json: {} });
-      const sfa = await requestJson(staff, `/api/ops/projects/${pid}/submit-for-approval`, { method: "POST", json: {} });
-      if (sfa.body.statusInternal === "approval_pending") {
-        const pendingSteps = await requestJson(staff, "/api/ops/approvals");
-        for (const step of pendingSteps.body.approvals.filter((s) => s.project_id === pid)) {
-          await requestJson(staff, `/api/ops/approvals/${step.id}/approve`, { method: "POST", json: {} });
-        }
-      }
+      await requestJson(staff, `/api/ops/projects/${pid}/start-pricing`, { method: "POST", json: {} });
       const issuedRev = await requestJson(staff, `/api/ops/projects/${pid}/issue-revision`, { method: "POST", json: {} });
       const revId = issuedRev.body.id;
       const issuedList = await requestJson(buyer, "/api/projects");
@@ -553,19 +547,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       // A second change request on the same (now stale) revision is rejected too.
       await requestJson(buyer, `/api/revisions/${revId}/request-changes`, { method: "POST", json: { message: "again" } }, 409);
 
-      // Re-approval and a replacement issue must not make revision 1 live again.
-      const replacementApproval = await requestJson(
-        staff, `/api/ops/projects/${pid}/submit-for-approval`,
-        { method: "POST", json: {} },
-      );
-      if (replacementApproval.body.statusInternal === "approval_pending") {
-        const replacementSteps = await requestJson(staff, "/api/ops/approvals");
-        for (const step of replacementSteps.body.approvals.filter((s) => s.project_id === pid)) {
-          await requestJson(staff, `/api/ops/approvals/${step.id}/approve`, {
-            method: "POST", json: {},
-          });
-        }
-      }
+      // A replacement issue must not make revision 1 live again.
       const replacement = await requestJson(
         staff, `/api/ops/projects/${pid}/issue-revision`,
         { method: "POST", json: {} },
@@ -597,34 +579,19 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
         json: { contact: { name: "AI Edit", email: "ai-edit@example.com" } } });
       assert.equal(submitted.body.status, "submitted");
 
-      await requestJson(staff, `/api/ops/projects/${pid}/assign`, { method: "POST", json: {} });
+      await requestJson(staff, `/api/ops/projects/${pid}/start-pricing`, { method: "POST", json: {} });
       const workspace = await requestJson(staff, `/api/ops/projects/${pid}`);
-      assert.equal(workspace.body.project.canSubmitForApproval, false);
       assert.equal(workspace.body.project.unresolvedLineCount, 1);
-      await requestJson(staff, `/api/ops/projects/${pid}/submit-for-approval`, { method: "POST", json: {} }, 409);
+      // Unpriced lines block issuing — the action is offered but carries a reason.
+      const issue = workspace.body.actions.find((a) => a.id === "issue-revision");
+      assert.ok(issue.blockedReason, "the blocked action says WHY, rather than vanishing");
+      await requestJson(staff, `/api/ops/projects/${pid}/issue-revision`, { method: "POST", json: {} }, 409);
     });
 
-    await t.test("RBAC: role-less internal staff is blocked from payments + customer PII", async () => {
-      const rookie = new Session(baseUrl);
-      await login(rookie, "/api/ops/auth", "rookie@openframe.com.au"); // internal, role = null
-      const who = await requestJson(rookie, "/api/ops/me");
-      // No assigned role → no money movement, no order advance, no customer PII / files.
-      await requestJson(rookie, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 403);
-      await requestJson(rookie, "/api/ops/orders/o_1/advance", { method: "POST", json: { action: "share-qa" } }, 403);
-      await requestJson(rookie, "/api/ops/customers", {}, 403);
-      await requestJson(rookie, "/api/ops/files", {}, 403);
-      // Admin assigns estimator → PII opens, but payments stay manager/admin-only.
-      await requestJson(staff, `/api/ops/staff/${who.body.user.id}`, { method: "PATCH", json: { role: "estimator" } });
-      await requestJson(rookie, "/api/ops/customers");
-      // An estimator can fix profile fields, but the sign-in email stays admin-only.
-      const est = await requestJson(rookie, "/api/ops/customers/u_sarah", { method: "PATCH", json: { phone: "0400 222 111" } });
-      assert.equal(est.body.customer.phone, "0400 222 111");
-      await requestJson(rookie, "/api/ops/customers/u_sarah", { method: "PATCH", json: { email: "hijack@example.com" } }, 403);
-      await requestJson(rookie, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 403);
-      // Promote to manager → the payment now reaches domain logic (o_1 stage conflict).
-      await requestJson(staff, `/api/ops/staff/${who.body.user.id}`, { method: "PATCH", json: { role: "manager" } });
-      await requestJson(rookie, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 409);
-    });
+    // The role-based RBAC test that lived here is gone. Roles were flattened
+    // (owner decision, 2026-07-28): a role-less staffer is no longer blocked from
+    // payments, PII or files, so asserting that they are would assert the opposite
+    // of the intended behaviour. "flat access" above covers the replacement.
 
     await t.test("account discount: registered prices below anonymous, and the browser cannot set it", async () => {
       const line = {
@@ -673,23 +640,15 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
     // and the failure modes are all quiet ones — a wrong role that silently
     // succeeds, a concurrent edit that silently wins, a $0 stored as an absent
     // row (which means "unknown option", not "free").
-    await t.test("pricing admin: role gates, versioned writes, conflicts, and reconciliation", async () => {
+    await t.test("pricing admin: versioned writes, conflicts, and reconciliation", async () => {
       const reader = new Session(baseUrl);
       await login(reader, "/api/ops/auth", "pricing-reader@openframe.com.au");
       const who = await requestJson(reader, "/api/ops/me");
 
-      // Role-less staff: not even read. An estimator, however, MUST be able to
-      // see the rates their quotes are built from — denying that turns every
-      // pricing question into an interruption.
-      await requestJson(reader, "/api/ops/pricing/rate-cards", {}, 403);
-      await requestJson(staff, `/api/ops/staff/${who.body.user.id}`, { method: "PATCH", json: { role: "estimator" } });
+      // Access is flat: any staff user reads AND writes pricing.
       const asEstimator = await requestJson(reader, "/api/ops/pricing/rate-cards");
-      assert.equal(asEstimator.body.canEdit, false, "an estimator reads but cannot write");
+      assert.equal(asEstimator.body.canEdit, true, "every staff user can edit pricing");
       assert.ok(asEstimator.body.cards.length > 0);
-
-      // …and the console hiding a button is not the gate; the Worker is.
-      await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window",
-        { method: "PUT", json: { perimRate: 1, areaRate: 1, minCharge: 0, expectedVersion: "v1" } }, 403);
 
       const card = asEstimator.body.cards.find((c) => c.id === "amj80-series-awning-window");
       assert.ok(card, "rate cards are per PRODUCT (0031) — the AMJ80 awning has its own");
@@ -709,8 +668,6 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       const untouched = await requestJson(reader, "/api/ops/pricing/rate-cards");
       assert.equal(untouched.body.cards.find((c) => c.id === "amj80-series-awning-window").perimRate, card.perimRate);
 
-      // Promote to manager: writes open, and the version bumps.
-      await requestJson(staff, `/api/ops/staff/${who.body.user.id}`, { method: "PATCH", json: { role: "manager" } });
       const saved = await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window", {
         method: "PUT",
         json: { perimRate: card.perimRate + 10, areaRate: card.areaRate, minCharge: card.minCharge, note: "supplier increase", expectedVersion: card.version },
@@ -732,9 +689,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(detail.body.history[0].note, "supplier increase");
       assert.ok(detail.body.samples.length === 3, "small / typical / large, because a rate change is not uniform");
 
-      // Revert is admin-only, and lands as a NEW forward change.
-      await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window/revert",
-        { method: "POST", json: { toVersion: saved.body.version } }, 403);
+      // Revert lands as a NEW forward change, never a rewind.
       await requestJson(staff, `/api/ops/pricing/rate-cards/amj80-series-awning-window/revert`,
         { method: "POST", json: { toVersion: saved.body.version } });
       const reverted = await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window");
@@ -760,8 +715,6 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
         { method: "PUT", json: { perimRate: -5, areaRate: 300, minCharge: 0 } }, 400);
       await requestJson(reader, `/api/ops/pricing/options/colour%3Amonument`, { method: "PUT", json: { surcharge: -1 } }, 400);
 
-      // Deposit % is contractual, not commercial: admin only, even for a manager.
-      await requestJson(reader, "/api/ops/pricing/policy", { method: "PUT", json: { depositPercent: 50 } }, 403);
       const policy = await requestJson(staff, "/api/ops/pricing/policy");
       await requestJson(staff, "/api/ops/pricing/policy",
         { method: "PUT", json: { depositPercent: 50, expectedVersion: policy.body.policy.version } });
@@ -869,11 +822,13 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       // Contact log records the outcome.
       await requestJson(staff, `/api/ops/enquiries/${apptRow.id}/contact-log`, { method: "POST", json: { outcome: "contacted", note: "left voicemail" } });
       assert.equal((await requestJson(staff, `/api/ops/enquiries/${apptRow.id}`)).body.enquiry.contactOutcome, "contacted");
-      // Role-less staff are blocked from the enquiry PII surface.
+      // Access is flat: any staff user reaches enquiries. A NON-staff caller
+      // still cannot — that boundary is the one that matters and it holds.
       const rookie2 = new Session(baseUrl);
       await login(rookie2, "/api/ops/auth", "rookie2@openframe.com.au");
-      await requestJson(rookie2, "/api/ops/enquiries", {}, 403);
-      await requestJson(rookie2, `/api/ops/enquiries/${apptRow.id}`, {}, 403);
+      await requestJson(rookie2, "/api/ops/enquiries");
+      await requestJson(rookie2, `/api/ops/enquiries/${apptRow.id}`);
+      await requestJson(anon, "/api/ops/enquiries", {}, 403);
     });
   } finally {
     await stop(server);

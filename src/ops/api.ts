@@ -13,7 +13,7 @@ export interface OpsSummary {
   activeOrders: number;
   awaitingPayment: number;
   customers: number;
-  approvalsPending: number;
+  readyToIssue: number;
   newEnquiries: number;
   degraded?: boolean;
 }
@@ -86,26 +86,23 @@ export interface OpsLine {
 export interface OpsComment { id: string; line_id: string | null; kind: string; body: string; author: string | null; created_at: string }
 export interface OpsRevision { id: string; revisionNo: number; status: string; total: number; issuedAt: string; acceptedAt: string | null }
 export interface OpsActivity { actor: string | null; action: string; occurred_at: string }
-export interface OpsApprovalStep { trigger_family: string; reason: string | null; approver_role: string; state: string; comment: string | null; acted_at: string | null; acted_by: string | null }
-export interface OpsApprovals { state: string; steps: OpsApprovalStep[] }
 export interface OpsWorkspace {
   project: {
     id: string; title: string; publicRef: string | null; statusCustomer: string; statusInternal: string;
-    statusInternalLabel: string; nextStates: string[]; canSubmitForApproval: boolean;
+    statusInternalLabel: string; nextStates: string[];
     unresolvedLineCount: number;
     org: string | null; customerName: string | null; customerEmail: string | null;
     // Submission contact, captured at submit time — the only identity an
     // anonymous submitter has, so the record must fall back to it.
     contactName: string | null; contactEmail: string | null;
     contactPhone: string | null; deliverySuburb: string | null;
-    assignee: string | null; internalOwnerId: string | null; updatedAt: string;
+    updatedAt: string;
   };
   lines: OpsLine[];
   files: { id: string; kind: string; filename: string; size: number; virus_status: string }[];
   revisions: OpsRevision[];
   comments: OpsComment[];
   activity: OpsActivity[];
-  approvals: OpsApprovals | null;
   // Slice 1 additions — the merged record. Optional so the existing Quotes
   // workspace, which ignores them, keeps reading the same endpoint while the
   // merged plane is built beside it.
@@ -120,17 +117,12 @@ export interface OpsWorkspace {
    *  The draft lines are no longer the truth at that point, and on an accepted
    *  project there are usually none left at all. */
   orderLines?: { id: string; code: string; room: string; qty: number; lineTotal: number; productName: string; width: string; height: string }[];
-}
-
-export interface OpsApprovalTask {
-  id: string; trigger_family: string; reason: string | null; approver_role: string;
-  project_id: string; title: string; customer_name: string | null; org_name: string | null;
+  /** What can be done to this job right now, derived server-side. */
+  actions?: OpsRecordAction[];
 }
 
 export const opsSubmissions = () => req<{ submissions: OpsSubmission[] }>("/api/ops/queues/submissions");
 export const opsProject = (id: string) => req<OpsWorkspace>(`/api/ops/projects/${id}`);
-export const opsAssign = (id: string, userId?: string) =>
-  req<{ ok: boolean; assignee: string | null; statusInternal: string }>(`/api/ops/projects/${id}/assign`, { method: "POST", body: JSON.stringify({ userId }) });
 export interface OpsExactConfiguration {
   productSlug: string; productName: string; variantId: string;
   frameTechnology: string; glassBuildUp: string | null; coating: string | null;
@@ -168,14 +160,9 @@ export const opsSetStatus = (id: string, statusInternal: string) =>
   req<{ statusInternal: string; statusInternalLabel: string; nextStates: string[] }>(`/api/ops/projects/${id}/status`, { method: "POST", body: JSON.stringify({ statusInternal }) });
 export const opsRequestClarification = (id: string, message: string) =>
   req<{ ok: boolean; statusInternalLabel: string }>(`/api/ops/projects/${id}/request-clarification`, { method: "POST", body: JSON.stringify({ message }) });
-export const opsSubmitForApproval = (id: string) =>
-  req<{ statusInternal: string; steps: { family: string; role: string; reason: string }[] }>(`/api/ops/projects/${id}/submit-for-approval`, { method: "POST" });
 
-export const opsApprovals = () => req<{ approvals: OpsApprovalTask[]; canActRoles: string | null }>("/api/ops/approvals");
-export const opsApprove = (stepId: string, comment?: string) =>
-  req<{ ok: boolean; stepState: string; instanceState: string }>(`/api/ops/approvals/${stepId}/approve`, { method: "POST", body: JSON.stringify({ comment }) });
-export const opsReject = (stepId: string, comment?: string) =>
-  req<{ ok: boolean; stepState: string; instanceState: string }>(`/api/ops/approvals/${stepId}/reject`, { method: "POST", body: JSON.stringify({ comment }) });
+// submit-for-approval / approve / reject / delegate lived here and are gone
+// (2026-07-28) with the approval engine. A priced quote is issued directly.
 
 // ── Orders ops (O5) ──────────────────────────────────────────────────────────
 export interface OpsPayment { kind: string; amount: number; percent: number; status: string; reference: string | null; invoicedAt: string | null; paidAt: string | null }
@@ -212,15 +199,11 @@ export const opsUpdateCustomer = (id: string, patch: { name?: string; phone?: st
   req<{ ok: boolean; customer: OpsCustomerDetail["customer"] }>(`/api/ops/customers/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 
 // ── Admin (O6) ───────────────────────────────────────────────────────────────
-export interface OpsRule { id: string; name: string; trigger_family: string; condition_json: string; approver_role: string; active: number }
 export interface OpsFile { id: string; kind: string; filename: string; size: number; virus_status: string; scan_engine: string | null; scanned_at: string | null; created_at: string; project_title: string | null; customer_name: string | null }
 export interface OpsAudit { entity_type: string; entity_id: string; action: string; occurred_at: string; actor: string | null }
 export interface OpsStaff { id: string; email: string; name: string | null; role: string | null; last_verified_at: string | null }
 export interface OpsSearchResult { type: string; id: string; label: string; hint: string }
 
-export const opsRules = () => req<{ rules: OpsRule[] }>("/api/ops/rules");
-export const opsPatchRule = (id: string, patch: { active?: boolean; value?: number }) =>
-  req<{ ok: boolean }>(`/api/ops/rules/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 export const opsFiles = () => req<{ files: OpsFile[] }>("/api/ops/files");
 /** Re-run the scanner over a stored file (clears 'skipped'/'pending' so it can be
  *  downloaded again; an infected verdict purges the bytes). */
@@ -392,3 +375,16 @@ export interface OpsPayment {
 }
 
 export const opsProjects = () => req<{ projects: OpsProjectRow[] }>("/api/ops/projects");
+
+// ── Record actions (Slice 2) ─────────────────────────────────────────────────
+export interface OpsRecordAction {
+  id: string; label: string;
+  tier: "primary" | "secondary" | "overflow";
+  /** Applies, but cannot run yet — shown disabled with this sentence beside it. */
+  blockedReason?: string;
+  /** Moves money or emails the customer ⇒ confirm in place before running. */
+  confirm?: string;
+}
+
+export const opsStartPricing = (id: string) =>
+  req<{ ok: boolean; statusInternal: string }>(`/api/ops/projects/${id}/start-pricing`, { method: "POST", body: "{}" });

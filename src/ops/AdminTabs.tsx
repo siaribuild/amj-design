@@ -2,52 +2,18 @@
 import { useEffect, useState } from "react";
 import { Loader2, Download, Power, ShieldCheck } from "lucide-react";
 import {
-  opsRules, opsPatchRule, opsFiles, opsRescanFile, opsAudit, opsStaff, opsSetRole,
-  type OpsRule, type OpsFile, type OpsAudit, type OpsStaff,
+  opsFiles, opsRescanFile, opsAudit, opsStaff, opsSetRole,
+  type OpsFile, type OpsAudit, type OpsStaff,
 } from "./api";
 
 const SAGE = "#5A7A6A";
 const kb = (n: number) => (n < 1024 ? `${n} B` : `${Math.round(n / 1024)} KB`);
 const when = (s: string) => new Date(s).toLocaleString("en-AU");
 
-// ── Rules (approval rules — admin can toggle / retune) ───────────────────────
-export function Rules() {
-  const [rules, setRules] = useState<OpsRule[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const load = () => opsRules().then(r => setRules(r.rules)).catch(() => setRules([]));
-  useEffect(() => { load(); }, []);
-  if (!rules) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
+// The Rules tab is gone with the approval engine (2026-07-28). It let an admin
+// toggle and retune the rules that decided which quotes needed sign-off; with no
+// approval step there is nothing for a rule to trigger.
 
-  const toggle = async (r: OpsRule) => { setBusy(true); try { await opsPatchRule(r.id, { active: !r.active }); await load(); } finally { setBusy(false); } };
-  const retune = async (r: OpsRule, value: number) => { setBusy(true); try { await opsPatchRule(r.id, { value }); await load(); } finally { setBusy(false); } };
-
-  return (
-    <div className="max-w-3xl space-y-3">
-      <p className="text-xs text-[#8b8880] mb-1">Approval rules evaluated when a quote is submitted for approval. Admin-only.</p>
-      {rules.map(r => {
-        const cond = safeParse(r.condition_json);
-        return (
-          <div key={r.id} className="bg-white border border-black/8 p-4 flex items-center gap-4">
-            <button onClick={() => toggle(r)} disabled={busy} title={r.active ? "Active" : "Inactive"}
-              className={`w-9 h-9 grid place-items-center border ${r.active ? "border-[#5A7A6A] text-[#5A7A6A] bg-[#5A7A6A]/8" : "border-black/15 text-black/30"}`}>
-              <Power className="w-4 h-4" />
-            </button>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-[#14150f]">{r.name}</p>
-              <p className="text-xs text-[#8b8880]">{r.trigger_family} → {r.approver_role} · {cond.type}{cond.value !== undefined ? ` (${cond.value})` : ""}</p>
-            </div>
-            {cond.value !== undefined && (
-              <input type="number" defaultValue={cond.value} onBlur={e => { const v = Number(e.target.value); if (v !== cond.value) retune(r, v); }}
-                className="w-24 border border-black/15 px-2 py-1 text-sm" />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── Files (all uploads) ──────────────────────────────────────────────────────
 export function Files() {
   const [files, setFiles] = useState<OpsFile[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);

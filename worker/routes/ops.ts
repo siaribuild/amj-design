@@ -2,7 +2,7 @@
 //
 // O1: staff auth (domain-allowlisted internal OTP for dev; Cloudflare Access in
 // prod), identity, and a dashboard summary. Queues, the quote workspace,
-// approvals, etc. land in O2+.
+// the merged project record, enquiries, pricing and admin.
 import { Hono } from "hono";
 import type { Env } from "../types";
 import {
@@ -13,10 +13,10 @@ import { notify } from "../lib/email";
 import { findOrCreateInternalUser, isStaffEmail, resolveStaff } from "../lib/staff";
 import { drainLearningOutbox, issueRevision } from "../lib/revisions";
 import { logEvent } from "../lib/activity";
-import { evaluateApprovals, createApprovalInstance, resolveInstance, canApprove } from "../lib/approvals";
 import { splitLine, mergeComposite } from "../lib/composite";
 import { orderDto, applyTransition, markPaid, availableActions, STAGE_LABEL, type Stage, type OrderRow } from "../lib/orders";
 import { lifecycleOf, daysSince } from "../lib/lifecycle";
+import { actionsFor } from "../lib/ops-actions";
 import { uuid } from "../lib/util";
 import { scanFile } from "../lib/scan";
 import {
@@ -41,25 +41,22 @@ ops.route("/pricing", opsPricing);
 
 // Internal workflow state machine (status_internal). 'issued' is reached via
 // issue-revision; 'customer_clarification_required' via request-clarification.
-// approved_for_issue is reached ONLY via submit-for-approval (which evaluates
-// approval rules), never as a direct /status move.
+//
+// There is no approval step. The rules that decided WHICH quotes needed sign-off
+// are gone, and with anyone able to approve — including the person who submitted
+// it — a mandatory gate would log "approved by the author" and manufacture
+// assurance nobody actually gave. A priced quote is issued by whoever works it.
 const FLOW: Record<string, string[]> = {
   submitted: ["triage_pending", "estimator_assigned", "customer_clarification_required"],
   triage_pending: ["estimator_assigned", "customer_clarification_required"],
-  estimator_assigned: ["technical_review_required", "customer_clarification_required"],
-  technical_review_required: ["estimator_assigned", "customer_clarification_required"],
-  approval_pending: [],
-  approved_for_issue: ["issued", "estimator_assigned"],
+  estimator_assigned: ["technical_review_required", "customer_clarification_required", "issued"],
+  technical_review_required: ["estimator_assigned", "customer_clarification_required", "issued"],
   customer_clarification_required: ["estimator_assigned"],
 };
-
-// Statuses from which an estimator can submit the quote for approval.
-export const CAN_SUBMIT_FOR_APPROVAL = new Set(["estimator_assigned", "technical_review_required"]);
 
 export const STATUS_INTERNAL_LABEL: Record<string, string> = {
   draft: "Draft", submitted: "Submitted", triage_pending: "Awaiting triage",
   estimator_assigned: "Assigned", technical_review_required: "Technical review",
-  approval_pending: "Approval pending", approved_for_issue: "Ready to issue",
   customer_clarification_required: "Awaiting customer", issued: "Quote issued",
 };
 
@@ -67,20 +64,29 @@ const safeParse = (s: string): Record<string, any> => {
   try { const v = JSON.parse(s || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; }
 };
 
-// ── Persona RBAC ─────────────────────────────────────────────────────────────
-// Being `type='internal'` (past Cloudflare Access in prod) is the perimeter, but
-// it is NOT sufficient for money movements or bulk customer PII. A freshly
-// provisioned staffer starts with role=null and must be assigned a role by an
-// admin before they can act on sensitive surfaces. (Broader per-endpoint personas
-// remain an O-series roadmap item; these gates cover the highest-risk operations.)
-const ROLES = ["estimator", "technical_reviewer", "manager", "admin"];
-const hasAssignedRole = (staff: { role: string | null }) => !!staff.role && ROLES.includes(staff.role);
-const canRecordPayment = (staff: { role: string | null }) => staff.role === "manager" || staff.role === "admin";
-const canManageLearning = (staff: { role: string | null }) => staff.role === "manager" || staff.role === "admin";
-const canIssueQuote = (staff: { role: string | null }) =>
-  staff.role === "estimator" || staff.role === "manager" || staff.role === "admin";
-const canAdjudicateThermal = (staff: { role: string | null }) =>
-  staff.role === "technical_reviewer" || staff.role === "manager" || staff.role === "admin";
+// ── Access ───────────────────────────────────────────────────────────────────
+// FLAT, by owner decision (2026-07-28): every OpenFrame staff user has full
+// access. The four personas — estimator / technical_reviewer / manager / admin —
+// gated three things inconsistently (a technical_reviewer could not issue a
+// quote, which was an accident rather than a policy) and, with two staff who are
+// both admins, distinguished nobody.
+//
+// The perimeter is Cloudflare Access on the ops.* host, not an in-app dropdown.
+// That is the honest description of what actually protects this: anyone who
+// reaches the console can record a payment, change a rate card and change a
+// customer's sign-in email. Where the consequence is irreversible the guard is a
+// CONFIRMATION — the rate-card editor's typed-slug tripwire, the payment
+// reference — rather than a role that two people both hold.
+//
+// The one role boundary still worth having is a manufacturer scoped to Enquiries.
+// That is a different persona with a different sign-in, not a value of this
+// column, and it is not built yet.
+const isStaffUser = (staff: { role: string | null } | null) => !!staff;
+const hasAssignedRole = isStaffUser;
+const canRecordPayment = isStaffUser;
+const canManageLearning = isStaffUser;
+const canIssueQuote = isStaffUser;
+const canAdjudicateThermal = isStaffUser;
 
 async function unresolvedLineCount(env: Env, projectId: string): Promise<number> {
   const row = await env.DB.prepare(
@@ -186,7 +192,9 @@ ops.get("/summary", async (c) => {
         (SELECT count(*) FROM "order" WHERE stage NOT IN ('after_sales','cancelled'))            AS active_orders,
         (SELECT count(*) FROM "order" WHERE stage IN ('deposit_invoiced','balance_invoiced'))    AS awaiting_payment,
         (SELECT count(*) FROM user WHERE type = 'customer')                                       AS customers,
-        (SELECT count(*) FROM approval_step WHERE state = 'pending')                              AS approvals_pending,
+        (SELECT count(*) FROM project p2 WHERE p2.status_internal IN ('estimator_assigned','technical_review_required')
+           AND NOT EXISTS (SELECT 1 FROM quote_line l2 WHERE l2.project_id = p2.id AND l2.revision_id IS NULL
+                            AND (l2.status <> 'ready' OR l2.line_total IS NULL)))                        AS ready_to_issue,
         (SELECT count(*) FROM enquiry WHERE workflow_status = 'new')                              AS new_enquiries
     `).first<Record<string, number>>();
 
@@ -196,11 +204,11 @@ ops.get("/summary", async (c) => {
       activeOrders: row?.active_orders ?? 0,
       awaitingPayment: row?.awaiting_payment ?? 0,
       customers: row?.customers ?? 0,
-      approvalsPending: row?.approvals_pending ?? 0,
+      readyToIssue: row?.ready_to_issue ?? 0,
       newEnquiries: row?.new_enquiries ?? 0,
     });
   } catch {
-    return c.json({ submissions: 0, inReview: 0, activeOrders: 0, awaitingPayment: 0, customers: 0, approvalsPending: 0, newEnquiries: 0, degraded: true });
+    return c.json({ submissions: 0, inReview: 0, activeOrders: 0, awaitingPayment: 0, customers: 0, readyToIssue: 0, newEnquiries: 0, degraded: true });
   }
 });
 
@@ -210,7 +218,6 @@ ops.get("/queues/submissions", async (c) => {
   const { results } = await c.env.DB.prepare(`
     SELECT p.id, p.title, p.status_customer, p.status_internal, p.updated_at,
            o.name AS org_name, u.name AS customer_name, u.email AS customer_email,
-           io.name AS assignee_name,
            -- PARENTS ONLY — same rule as loadLines(). A segment must never be
            -- summed beside the parent that already aggregates it.
            (SELECT count(*) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL AND parent_line_id IS NULL) AS item_count,
@@ -218,7 +225,6 @@ ops.get("/queues/submissions", async (c) => {
       FROM project p
       LEFT JOIN organisation o ON o.id = p.organisation_id
       LEFT JOIN user u  ON u.id  = p.owner_user_id
-      LEFT JOIN user io ON io.id = p.internal_owner_id
      WHERE p.status_customer IN ('submitted','needs_information','under_review')
      ORDER BY p.updated_at ASC`).all();
   return c.json({ submissions: results });
@@ -286,11 +292,10 @@ ops.get("/projects/:id", async (c) => {
   if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
   const id = c.req.param("id");
   const p = await c.env.DB.prepare(`
-    SELECT p.*, o.name AS org_name, u.name AS customer_name, u.email AS customer_email, io.name AS assignee_name
+    SELECT p.*, o.name AS org_name, u.name AS customer_name, u.email AS customer_email
       FROM project p
       LEFT JOIN organisation o ON o.id = p.organisation_id
       LEFT JOIN user u  ON u.id  = p.owner_user_id
-      LEFT JOIN user io ON io.id = p.internal_owner_id
      WHERE p.id = ?`).bind(id).first<any>();
   if (!p) return c.json({ error: "not_found" }, 404);
 
@@ -335,12 +340,6 @@ ops.get("/projects/:id", async (c) => {
       ORDER BY a.occurred_at DESC`,
   ).bind(id, order?.id ?? "").all();
 
-  const instance = await c.env.DB.prepare("SELECT id, state FROM approval_instance WHERE project_id = ? ORDER BY created_at DESC LIMIT 1").bind(id).first<{ id: string; state: string }>();
-  let approvals: any = null;
-  if (instance) {
-    const { results: steps } = await c.env.DB.prepare("SELECT s.trigger_family, s.reason, s.approver_role, s.state, s.comment, s.acted_at, u.name AS acted_by FROM approval_step s LEFT JOIN user u ON u.id = s.acted_by WHERE s.instance_id = ?").bind(instance.id).all();
-    approvals = { state: instance.state, steps };
-  }
 
   return c.json({
     project: {
@@ -352,14 +351,11 @@ ops.get("/projects/:id", async (c) => {
       statusCustomer: p.status_customer, statusInternal: p.status_internal,
       statusInternalLabel: STATUS_INTERNAL_LABEL[p.status_internal] ?? p.status_internal,
       nextStates: FLOW[p.status_internal] ?? [],
-      canSubmitForApproval: CAN_SUBMIT_FOR_APPROVAL.has(p.status_internal) &&
-        lines.every((line) => line.status === "ready" && line.line_total != null),
       unresolvedLineCount: lines.filter((line) => line.status !== "ready" || line.line_total == null).length,
       org: p.org_name, customerName: p.customer_name, customerEmail: p.customer_email,
       // Submission contact captured at submit time (persisted even for anon submitters).
       contactName: p.contact_name ?? null, contactEmail: p.contact_email ?? null,
       contactPhone: p.contact_phone ?? null, deliverySuburb: p.delivery_suburb ?? null,
-      assignee: p.assignee_name, internalOwnerId: p.internal_owner_id,
       updatedAt: p.updated_at,
     },
     lines: lines.map(opsLineDto),
@@ -367,7 +363,6 @@ ops.get("/projects/:id", async (c) => {
     revisions: revisions.map((r: any) => ({ id: r.id, revisionNo: r.revision_no, status: r.snapshot_status, total: safeParse(r.totals_json).total ?? 0, issuedAt: r.issued_at, acceptedAt: r.accepted_at })),
     comments,
     activity,
-    approvals,
     // ── The merged view's additions (Slice 1) ───────────────────────────────
     // Additive: the existing Quotes workspace ignores these, so both surfaces
     // can read one endpoint while the merge is built.
@@ -376,6 +371,14 @@ ops.get("/projects/:id", async (c) => {
       orderStage: order?.stage ?? null,
     }),
     daysInStage: daysSince(p.updated_at),
+    // What can be done to this job right now, derived server-side so the console
+    // cannot offer what the Worker would refuse.
+    actions: actionsFor({
+      statusInternal: p.status_internal,
+      order: (order as any) ?? null,
+      unresolvedLines: lines.filter((line) => line.status !== "ready" || line.line_total == null).length,
+      customerEmail: p.customer_email ?? p.contact_email ?? null,
+    }),
     // The CONTRACT lines. Once a revision is accepted the draft lines are no
     // longer what anyone is building — order_line is. Without these an accepted
     // project renders an empty table, which is how a staffer concludes the record
@@ -402,22 +405,26 @@ ops.get("/projects/:id", async (c) => {
 });
 
 // POST /api/ops/projects/:id/assign { userId? } — claim/assign the quote.
-ops.post("/projects/:id/assign", async (c) => {
+// POST /api/ops/projects/:id/start-pricing — move a submitted quote into pricing.
+//
+// This was /assign, which did double duty: it set internal_owner_id AND performed
+// the submitted → estimator_assigned transition. Owners are gone (anyone with ops
+// access works any job), but the TRANSITION is load-bearing — FLOW offers no
+// other route out of `submitted`, so deleting the endpoint outright would have
+// stranded every new submission in the queue forever.
+ops.post("/projects/:id/start-pricing", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
-  const body = await c.req.json().catch(() => ({}));
-  const targetId = typeof body?.userId === "string" && body.userId ? body.userId : staff.id;
   const res = await c.env.DB.prepare(
-    `UPDATE project SET internal_owner_id=?, status_internal='estimator_assigned', updated_at=datetime('now')
+    `UPDATE project SET status_internal='estimator_assigned', updated_at=datetime('now')
       WHERE id=? AND status_internal IN (
         'draft','submitted','triage_pending','estimator_assigned',
         'technical_review_required','customer_clarification_required'
       )`,
-  ).bind(targetId, c.req.param("id")).run();
+  ).bind(c.req.param("id")).run();
   if (!res.meta.changes) return c.json({ error: "not_found" }, 404);
-  const assignee = await c.env.DB.prepare("SELECT name FROM user WHERE id = ?").bind(targetId).first<{ name: string }>();
-  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: c.req.param("id"), action: targetId === staff.id ? "assigned to self" : `assigned to ${assignee?.name ?? "staff"}` });
-  return c.json({ ok: true, assignee: assignee?.name ?? null, statusInternal: "estimator_assigned" });
+  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: c.req.param("id"), action: "started pricing" });
+  return c.json({ ok: true, statusInternal: "estimator_assigned" });
 });
 
 // POST /api/ops/projects/:id/status { statusInternal } — a validated workflow move.
@@ -489,112 +496,9 @@ ops.post("/projects/:id/request-clarification", async (c) => {
   return c.json({ ok: true, statusInternal: "customer_clarification_required", statusInternalLabel: STATUS_INTERNAL_LABEL.customer_clarification_required });
 });
 
-// POST /api/ops/projects/:id/submit-for-approval — evaluate rules; gate or auto-clear.
-ops.post("/projects/:id/submit-for-approval", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
-  if (!staff) return c.json({ error: "forbidden" }, 403);
-  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
-  const id = c.req.param("id");
-  const project = await c.env.DB.prepare(
-    "SELECT status_internal, quote_edit_version FROM project WHERE id = ?",
-  ).bind(id).first<{ status_internal: string; quote_edit_version: number }>();
-  if (!project) return c.json({ error: "not_found" }, 404);
-  if (!["estimator_assigned", "technical_review_required"].includes(project.status_internal)) {
-    return c.json({ error: "invalid_transition", from: project.status_internal }, 409);
-  }
-  const unresolved = await unresolvedLineCount(c.env, id);
-  if (unresolved > 0) return c.json({ error: "unresolved_lines", count: unresolved }, 409);
-  const steps = await evaluateApprovals(c.env, id);
-  if (steps.length === 0) {
-    const approved = await c.env.DB.prepare(
-      `UPDATE project SET status_internal='approved_for_issue', updated_at=datetime('now')
-        WHERE id=? AND status_internal=? AND quote_edit_version=?
-          AND NOT EXISTS (
-            SELECT 1 FROM quote_line
-             WHERE project_id=? AND revision_id IS NULL
-               AND (status <> 'ready' OR line_total IS NULL)
-          )
-        RETURNING id`,
-    ).bind(id, project.status_internal, project.quote_edit_version, id).first<{ id: string }>();
-    if (!approved) return c.json({ error: "quote_changed_retry" }, 409);
-    await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: id, action: "no approval required — ready to issue" });
-    return c.json({ statusInternal: "approved_for_issue", steps: [] });
-  }
-  const instanceId = await createApprovalInstance(
-    c.env, id, steps, project.status_internal, project.quote_edit_version,
-  );
-  if (!instanceId) return c.json({ error: "quote_changed_retry" }, 409);
-  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: id, action: `submitted for approval (${steps.length} step${steps.length !== 1 ? "s" : ""})` });
-  return c.json({ statusInternal: "approval_pending", steps: steps.map((s) => ({ family: s.family, role: s.role, reason: s.reason })) });
-});
-
-// GET /api/ops/approvals — pending steps the acting staff can clear (admin sees all).
-ops.get("/approvals", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
-  if (!staff) return c.json({ error: "forbidden" }, 403);
-  const { results } = await c.env.DB.prepare(`
-    SELECT s.id, s.trigger_family, s.reason, s.approver_role, s.state,
-           ai.project_id, p.title, u.name AS customer_name, o.name AS org_name
-      FROM approval_step s
-      JOIN approval_instance ai ON ai.id = s.instance_id AND ai.state = 'pending'
-      JOIN project p ON p.id = ai.project_id
-      LEFT JOIN user u ON u.id = p.owner_user_id
-      LEFT JOIN organisation o ON o.id = p.organisation_id
-     WHERE s.state = 'pending'
-     ORDER BY s.id`).all<any>();
-  const approvals = results.filter((s) => canApprove(staff, s.approver_role));
-  return c.json({ approvals, canActRoles: staff.role });
-});
-
-async function actOnStep(c: any, action: "approved" | "rejected") {
-  const staff = await resolveStaff(c.env, c.req.raw);
-  if (!staff) return c.json({ error: "forbidden" }, 403);
-  const stepId = c.req.param("stepId");
-  const step = await c.env.DB.prepare(
-    "SELECT s.*, ai.project_id FROM approval_step s JOIN approval_instance ai ON ai.id = s.instance_id WHERE s.id = ?",
-  ).bind(stepId).first<any>();
-  if (!step) return c.json({ error: "not_found" }, 404);
-  if (step.state !== "pending") return c.json({ error: "already_acted" }, 409);
-  if (!canApprove(staff, step.approver_role)) return c.json({ error: "wrong_role" }, 403);
-  const body = await c.req.json().catch(() => ({}));
-  const acted = await c.env.DB.prepare(
-    `UPDATE approval_step SET state = ?, acted_by = ?, acted_at = datetime('now'), comment = ?
-      WHERE id = ? AND state='pending' AND approver_role=?
-      RETURNING id`,
-  ).bind(action, staff.id, typeof body?.comment === "string" ? body.comment : null, stepId, step.approver_role)
-    .first<{ id: string }>();
-  if (!acted) return c.json({ error: "already_acted" }, 409);
-  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: step.project_id, action: `${action === "approved" ? "approved" : "rejected"} ${step.trigger_family} approval` });
-  const instanceState = await resolveInstance(c.env, step.instance_id);
-  return c.json({ ok: true, stepState: action, instanceState });
-}
-
-// POST /api/ops/approvals/:stepId/approve | /reject
-ops.post("/approvals/:stepId/approve", (c) => actOnStep(c, "approved"));
-ops.post("/approvals/:stepId/reject", (c) => actOnStep(c, "rejected"));
-
-// POST /api/ops/approvals/:stepId/delegate { role } — re-route to another role.
-// Only someone who could act on the step (its required role, or an admin) may
-// delegate it — otherwise an estimator could reroute a manager step to itself.
-ops.post("/approvals/:stepId/delegate", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
-  if (!staff) return c.json({ error: "forbidden" }, 403);
-  const body = await c.req.json().catch(() => ({}));
-  const role = String(body?.role ?? "").trim();
-  const valid = ["estimator", "technical_reviewer", "manager", "admin"];
-  if (!valid.includes(role)) return c.json({ error: "invalid_role" }, 400);
-  const step = await c.env.DB.prepare(
-    "SELECT s.approver_role, s.state, ai.project_id FROM approval_step s JOIN approval_instance ai ON ai.id = s.instance_id WHERE s.id = ?",
-  ).bind(c.req.param("stepId")).first<{ approver_role: string; state: string; project_id: string }>();
-  if (!step || step.state !== "pending") return c.json({ error: "not_found" }, 404);
-  if (!canApprove(staff, step.approver_role)) return c.json({ error: "wrong_role" }, 403);
-  await c.env.DB.prepare("UPDATE approval_step SET approver_role = ? WHERE id = ? AND state = 'pending'").bind(role, c.req.param("stepId")).run();
-  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: step.project_id, action: `delegated ${step.approver_role} approval → ${role}` });
-  return c.json({ ok: true, approverRole: role });
-});
-
-// PATCH /api/ops/lines/:id — estimator edits a draft line; server reprices.
-// The set of internal states in which a reviewer may still change a line.
+// The set of internal states in which a reviewer may still change a line. The
+// record plane renders inputs only in these states, because the server accepts
+// edits only in these states — a Save that silently 404s is worse than no Save.
 const EDITABLE_STATES = `'submitted','triage_pending','estimator_assigned','technical_review_required','customer_clarification_required'`;
 
 /** Resolve an editable parent opening for a staff caller, or null. */
@@ -1016,33 +920,6 @@ ops.get("/customers/:id", async (c) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const isAdmin = (staff: { role: string | null }) => staff.role === "admin";
-
-// GET /api/ops/rules — approval rules.
-ops.get("/rules", async (c) => {
-  if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
-  const { results } = await c.env.DB.prepare("SELECT id, name, trigger_family, condition_json, approver_role, active FROM approval_rule ORDER BY trigger_family").all();
-  return c.json({ rules: results });
-});
-
-// PATCH /api/ops/rules/:id { active?, value? } — toggle / retune a rule (admin only).
-ops.patch("/rules/:id", async (c) => {
-  const staff = await resolveStaff(c.env, c.req.raw);
-  if (!staff) return c.json({ error: "forbidden" }, 403);
-  if (!isAdmin(staff)) return c.json({ error: "admin_only" }, 403);
-  const rule = await c.env.DB.prepare("SELECT * FROM approval_rule WHERE id = ?").bind(c.req.param("id")).first<any>();
-  if (!rule) return c.json({ error: "not_found" }, 404);
-  const body = await c.req.json().catch(() => ({}));
-  let condition = rule.condition_json;
-  if (body?.value !== undefined) {
-    const cond = safeParse(rule.condition_json);
-    cond.value = Number(body.value) || 0;
-    condition = JSON.stringify(cond);
-  }
-  const active = body?.active !== undefined ? (body.active ? 1 : 0) : rule.active;
-  await c.env.DB.prepare("UPDATE approval_rule SET active = ?, condition_json = ? WHERE id = ?").bind(active, condition, rule.id).run();
-  await logEvent(c.env, { actor: staff.id, entityType: "rule", entityId: rule.id, action: "updated approval rule" });
-  return c.json({ ok: true });
-});
 
 // GET /api/ops/files — all uploaded files across projects.
 ops.get("/files", async (c) => {

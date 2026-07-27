@@ -12,28 +12,21 @@ import {
 } from "lucide-react";
 import { Search } from "lucide-react";
 import { opsMe, opsChallenge, opsVerify, opsLogout, opsSummary, opsSearch, type OpsUser, type OpsSummary, type OpsSearchResult } from "./api";
-import { Quotes } from "./Quotes";
 import { Projects } from "./Projects";
-import { Approvals } from "./Approvals";
-import { Orders } from "./Orders";
 import { Customers } from "./Customers";
 import { Pricing } from "./Pricing";
 import { Enquiries } from "./Enquiries";
-import { Rules, Files, Audit, Admin } from "./AdminTabs";
+import { Files, Audit, Admin } from "./AdminTabs";
 
 const SAGE = "#5A7A6A";
 
-type Tab = "dashboard" | "projects" | "quotes" | "approvals" | "orders" | "customers" | "pricing" | "enquiries" | "rules" | "files" | "audit" | "admin";
+type Tab = "dashboard" | "projects" | "customers" | "pricing" | "enquiries" | "files" | "audit" | "admin";
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
   { id: "projects", label: "Projects", icon: <FileText className="w-4 h-4" /> },
-  { id: "quotes", label: "Quotes", icon: <FileText className="w-4 h-4" /> },
-  { id: "approvals", label: "Approvals", icon: <CheckSquare className="w-4 h-4" /> },
-  { id: "orders", label: "Orders", icon: <Package className="w-4 h-4" /> },
   { id: "customers", label: "Customers", icon: <Users className="w-4 h-4" /> },
   { id: "enquiries", label: "Enquiries", icon: <Mail className="w-4 h-4" /> },
   { id: "pricing", label: "Pricing", icon: <Boxes className="w-4 h-4" /> },
-  { id: "rules", label: "Rules", icon: <SlidersHorizontal className="w-4 h-4" /> },
   { id: "files", label: "Files", icon: <FolderOpen className="w-4 h-4" /> },
   { id: "audit", label: "Audit", icon: <ScrollText className="w-4 h-4" /> },
   { id: "admin", label: "Admin", icon: <Settings className="w-4 h-4" /> },
@@ -164,15 +157,11 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
           <SearchBox onNavigate={setTab} />
         </header>
         <div className="p-8">
-          {tab === "dashboard" ? <Dashboard />
+          {tab === "dashboard" ? <Dashboard setTab={setTab} />
             : tab === "projects" ? <Projects />
-            : tab === "quotes" ? <Quotes />
-            : tab === "approvals" ? <Approvals />
-            : tab === "orders" ? <Orders />
             : tab === "customers" ? <Customers user={user} />
             : tab === "enquiries" ? <Enquiries user={user} />
             : tab === "pricing" ? <Pricing />
-            : tab === "rules" ? <Rules />
             : tab === "files" ? <Files />
             : tab === "audit" ? <Audit />
             : tab === "admin" ? <Admin />
@@ -183,7 +172,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
   );
 }
 
-function Dashboard() {
+function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
   const [s, setS] = useState<OpsSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => { opsSummary().then(setS).catch(e => setErr(String(e?.message ?? e))); }, []);
@@ -199,33 +188,64 @@ function Dashboard() {
   );
   if (!s) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
 
-  const cards: { label: string; value: number; hint: string; accent?: boolean }[] = [
-    { label: "New enquiries", value: s.newEnquiries, hint: "contact leads", accent: s.newEnquiries > 0 },
-    { label: "New submissions", value: s.submissions, hint: "awaiting triage", accent: s.submissions > 0 },
-    { label: "In review", value: s.inReview, hint: "being priced" },
-    { label: "Approvals pending", value: s.approvalsPending, hint: "need sign-off" },
-    { label: "Active orders", value: s.activeOrders, hint: "in fulfilment" },
-    { label: "Awaiting payment", value: s.awaitingPayment, hint: "deposit / balance", accent: s.awaitingPayment > 0 },
-    { label: "Customers", value: s.customers, hint: "registered accounts" },
-  ];
+  // ── Needs us ───────────────────────────────────────────────────────────────
+  // Rows, not cards, and every row LINKS — it never acts. The dashboard is a
+  // pointer to the tab that owns the work; the moment it grows its own buttons it
+  // becomes a second inbox competing with the sidebar, which is the disease the
+  // project merge just cured. Rows with a zero count render nothing at all: a
+  // permanent "0 pending" trains people to stop reading the screen.
+  const needsUs: { key: string; count: number; text: string; tab: Tab }[] = [
+    { key: "sub", count: s.submissions, text: "new submission|new submissions nobody has started", tab: "projects" },
+    { key: "rev", count: s.inReview, text: "quote|quotes being priced", tab: "projects" },
+    { key: "iss", count: s.readyToIssue, text: "quote is priced and ready to issue|quotes are priced and ready to issue", tab: "projects" },
+    { key: "pay", count: s.awaitingPayment, text: "order awaiting payment|orders awaiting payment", tab: "projects" },
+    { key: "enq", count: s.newEnquiries, text: "enquiry nobody has replied to|enquiries nobody has replied to", tab: "enquiries" },
+  ].filter(r => r.count > 0);
+
   return (
-    <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {cards.map(c => (
-          <div key={c.label} className={`bg-white border p-5 ${c.accent ? "border-[#5A7A6A]/40" : "border-black/8"}`}>
-            <p className="text-[11px] uppercase tracking-wide text-[#5c5a56]">{c.label}</p>
-            <p className="text-3xl font-semibold text-[#14150f] mt-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{c.value}</p>
-            <p className="text-xs text-[#8b8880] mt-1">{c.hint}</p>
+    <div className="max-w-3xl">
+      <p className="text-[11px] uppercase tracking-[0.14em] text-[#8b8880] mb-2">Needs us</p>
+      {needsUs.length === 0 ? (
+        <div className="bg-white border border-black/8 px-5 py-6">
+          <p className="text-sm text-[#14150f]">Nothing is waiting on us.</p>
+          <p className="text-xs text-[#8b8880] mt-1">New submissions and enquiries appear here.</p>
+        </div>
+      ) : (
+        <div className="bg-white border border-black/8 border-l-2 border-l-[#5A7A6A]">
+          {needsUs.map(r => {
+            const [one, many] = r.text.split("|");
+            return (
+              <button key={r.key} onClick={() => setTab(r.tab)}
+                className="w-full text-left px-5 py-3.5 border-b border-black/5 last:border-0 hover:bg-[#faf9f6] flex items-baseline gap-3">
+                <span className="text-xl font-semibold text-[#14150f]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{r.count}</span>
+                <span className="text-sm text-[#3d3b38] flex-1">{r.count === 1 ? one : many}</span>
+                <span className="text-xs text-[#5A7A6A]">Open →</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* The scoreboard, demoted and honestly inert. Fine for it to be a count —
+          as long as it is not pretending to be work. */}
+      <p className="text-[11px] uppercase tracking-[0.14em] text-[#8b8880] mt-7 mb-2">The shop</p>
+      <div className="bg-white border border-black/8 flex flex-wrap">
+        {[
+          { label: "Active orders", value: s.activeOrders },
+          { label: "Customers", value: s.customers },
+        ].map(c => (
+          <div key={c.label} className="px-5 py-4 border-r border-black/5 last:border-0">
+            <p className="text-[11px] uppercase tracking-wide text-[#8b8880]">{c.label}</p>
+            <p className="text-xl font-semibold text-[#14150f] mt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>{c.value}</p>
           </div>
         ))}
       </div>
-      <p className="text-xs text-[#8b8880] mt-6">Queues, the quote workspace, approvals and order operations arrive in the next milestones.</p>
     </div>
   );
 }
 
 // Omnibox — searches projects/orders/orgs/customers; selecting jumps to the tab.
-const TYPE_TAB: Record<string, Tab> = { project: "quotes", order: "orders", organisation: "customers", customer: "customers" };
+const TYPE_TAB: Record<string, Tab> = { project: "projects", order: "projects", organisation: "customers", customer: "customers" };
 function SearchBox({ onNavigate }: { onNavigate: (t: Tab) => void }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<OpsSearchResult[]>([]);

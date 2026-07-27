@@ -25,10 +25,19 @@ import { uuid } from "../lib/util";
 
 export const opsPricing = new Hono<{ Bindings: Env }>();
 
-const ROLES = ["estimator", "technical_reviewer", "manager", "admin"];
-const canView = (s: { role: string | null }) => !!s.role && ROLES.includes(s.role);
-const canEdit = (s: { role: string | null }) => s.role === "manager" || s.role === "admin";
-const canAdmin = (s: { role: string | null }) => s.role === "admin";
+// FLAT access (owner decision, 2026-07-28): every OpenFrame staff user has full
+// access, here as everywhere else. The three tiers this file used to keep —
+// view / edit / policy — distinguished nobody once both staff were admins, and
+// the perimeter that actually protects pricing is Cloudflare Access on ops.*.
+//
+// What survives as a guard is CONFIRMATION rather than role: the rate-card editor
+// still refuses a save whose expectedVersion is stale, still records before/after
+// on every write, and the console still makes a change past ±20% type the family
+// slug. Those catch the mistake a role never would.
+const isStaffUser = (s: { role: string | null }) => !!s;
+const canView = isStaffUser;
+const canEdit = isStaffUser;
+const canAdmin = isStaffUser;
 
 /** Resolve the acting staffer at the required level, or the response to return. */
 async function gate(c: any, level: "view" | "edit" | "admin") {

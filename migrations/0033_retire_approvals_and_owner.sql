@@ -1,0 +1,50 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 0033_retire_approvals_and_owner — the approval engine and the assignee go.
+--
+-- OWNER DECISIONS (2026-07-28):
+--
+--  • "drop the concept of Owner - anyone who has ops access can perform
+--    review/approve, etc."  →  project.internal_owner_id is no longer read or
+--    written. `/assign` became `/start-pricing`: that endpoint did DOUBLE DUTY,
+--    setting the owner AND performing the submitted → estimator_assigned move,
+--    and FLOW offers no other route out of `submitted` — deleting it outright
+--    would have stranded every new submission in the queue forever.
+--
+--  • "Do not see the point of Rules either."  →  approval_rule and the whole
+--    evaluate/instance/step engine are gone. Two rules existed in production
+--    (total > $4,000 → manager; technical status → technical_reviewer), both
+--    routing to roles that, with two admin staff, distinguished nobody.
+--
+--  • Approval as a STEP is gone entirely, not replaced by a lighter check. With
+--    anyone able to approve — including the person who submitted — a mandatory
+--    gate logs "approved by the author" and manufactures assurance nobody gave.
+--    A priced quote is issued by whoever is working it.
+--
+-- WHAT THIS MIGRATION DOES, AND DELIBERATELY DOES NOT:
+--
+-- It drops NO TABLES. approval_instance and approval_step carry ATTRIBUTION for
+-- money-adjacent decisions — who approved what, when, and why. Nothing writes or
+-- reads them any more, but deleting the record of who signed off a $12k quote on
+-- the same day the workflow is refactored is how the one thing that mattered gets
+-- lost. They stay, inert.
+--
+-- approval_rule stays with them, and that is not sentiment. `approval_step.rule_id
+-- REFERENCES approval_rule(id)`: dropping the parent leaves a dangling foreign key,
+-- and with foreign_keys ON every cascade through approval_step then fails with
+-- "no such table: main.approval_rule". Deleting a PROJECT cascades that far — so
+-- the first version of this migration broke anonymous-draft merging on sign-in,
+-- which the suite caught as a 500 on /api/auth/verify. Retiring the three tables
+-- is one deliberate migration, later, not a side effect of removing a feature.
+--
+-- It does NOT drop project.internal_owner_id. Dropping a column in SQLite is a
+-- full table rebuild, and the historical values are the only record of who used
+-- to be on a job. Unread is sufficient.
+--
+-- In-flight states are migrated so nothing sits in a state the FLOW no longer
+-- contains: approval_pending and approved_for_issue both mean "priced, not yet
+-- issued", which is exactly estimator_assigned now.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+UPDATE project SET status_internal = 'estimator_assigned'
+ WHERE status_internal IN ('approval_pending', 'approved_for_issue');
+

@@ -19,11 +19,6 @@ INSERT INTO user (id, email, name, phone, type, role, last_verified_at) VALUES
   ('u_staff1', 'ged@openframe.com.au', 'Gediminas Bereznevicius',    NULL,             'internal', 'admin', datetime('now')),
   ('u_staff2', 'doni@openframe.com.au', 'Doni Haziraj',    NULL,             'internal', 'admin', datetime('now'));
 
--- Approval rules (demo thresholds; commercial fires on the seeded Fitzroy quote)
-INSERT INTO approval_rule (id, name, trigger_family, condition_json, approver_role) VALUES
-  ('rule_comm', 'Large order value',        'commercial', '{"type":"total_gt","value":4000}', 'manager'),
-  ('rule_tech', 'Technical review required', 'technical',  '{"type":"status_technical"}',      'technical_reviewer');
-
 -- Organisation + membership
 INSERT INTO organisation (id, name, trading_name, abn) VALUES
   ('org_demo', 'Demo Build Co', 'Demo Build Co Pty Ltd', '12 345 678 901');

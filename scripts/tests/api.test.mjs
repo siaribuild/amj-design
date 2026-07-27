@@ -21,11 +21,11 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
     const migrationRerun = await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env: wranglerEnv });
     assert.match(migrationRerun.stdout + migrationRerun.stderr, /No migrations to apply/i);
     await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env: wranglerEnv });
-    const dbCheck = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", "SELECT (SELECT count(*) FROM user) AS users, (SELECT count(*) FROM project) AS projects, (SELECT count(*) FROM quote_line) AS quote_lines, (SELECT count(*) FROM quote_revision) AS revisions, (SELECT count(*) FROM [order]) AS orders, (SELECT count(*) FROM payment) AS payments, (SELECT count(*) FROM approval_rule) AS approval_rules; PRAGMA foreign_key_check;"], { env: wranglerEnv });
+    const dbCheck = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", "SELECT (SELECT count(*) FROM user) AS users, (SELECT count(*) FROM project) AS projects, (SELECT count(*) FROM quote_line) AS quote_lines, (SELECT count(*) FROM quote_revision) AS revisions, (SELECT count(*) FROM [order]) AS orders, (SELECT count(*) FROM payment) AS payments; PRAGMA foreign_key_check;"], { env: wranglerEnv });
     const statements = JSON.parse(dbCheck.stdout);
     assert.deepEqual(statements[0].results[0], {
       users: seedUserCount, projects: 3, quote_lines: 4, revisions: 1,
-      orders: 1, payments: 2, approval_rules: 2,
+      orders: 1, payments: 2,
     });
     assert.deepEqual(statements[1].results, []);
 
@@ -162,22 +162,15 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
     });
 
     const ops = new Session(baseUrl);
-    await t.test("staff OTP, dashboard, queue, assignment, approvals, and revision issue", async () => {
+    await t.test("staff OTP, dashboard, queue, start pricing, and revision issue", async () => {
       await login(ops, "/api/ops/auth", staffEmail);
       const summary = await requestJson(ops, "/api/ops/summary");
       assert.ok(summary.body.submissions >= 1);
       const queue = await requestJson(ops, "/api/ops/queues/submissions");
       assert.ok(queue.body.submissions.some((project) => project.id === "p_submitted"));
-      await requestJson(ops, "/api/ops/projects/p_submitted/assign", { method: "POST", json: {} });
-      const approval = await requestJson(ops, "/api/ops/projects/p_submitted/submit-for-approval", { method: "POST", json: {} });
-      assert.equal(approval.body.statusInternal, "approval_pending");
-      // Cannot issue while approvals are still pending (approval-bypass guard).
-      await requestJson(ops, "/api/ops/projects/p_submitted/issue-revision", { method: "POST", json: {} }, 409);
-      const pending = await requestJson(ops, "/api/ops/approvals");
-      assert.ok(pending.body.approvals.length >= 1);
-      for (const step of pending.body.approvals.filter((item) => item.project_id === "p_submitted")) {
-        await requestJson(ops, `/api/ops/approvals/${step.id}/approve`, { method: "POST", json: { comment: "Regression approval" } });
-      }
+      await requestJson(ops, "/api/ops/projects/p_submitted/start-pricing", { method: "POST", json: {} });
+      // No approval step: a priced quote issues directly (0033). The guard that
+      // remains is the one that always mattered — every line priced and resolved.
       const issued = await requestJson(ops, "/api/ops/projects/p_submitted/issue-revision", { method: "POST", json: {} });
       assert.equal(issued.body.revisionNo, 1);
     });
@@ -506,20 +499,9 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.match(opsShell.body, /<title>OpenFrame Ops Console<\/title>/);
     });
 
-    await t.test("estimator cannot delegate an approval to self", async () => {
-      await requestJson(ops, "/api/ops/projects/p_draft/assign", { method: "POST", json: {} });
-      await requestJson(ops, "/api/ops/lines/ql_1", { method: "PATCH", json: { qty: 10 } });
-      await requestJson(ops, "/api/ops/projects/p_draft/submit-for-approval", { method: "POST", json: {} });
-      const pending = await requestJson(ops, "/api/ops/approvals");
-      const step = pending.body.approvals.find((item) => item.project_id === "p_draft");
-      assert.ok(step);
-      const estimator = new Session(baseUrl);
-      const estimatorLogin = await login(estimator, "/api/ops/auth", "estimator@openframe.com.au");
-      await requestJson(ops, `/api/ops/staff/${estimatorLogin.body.user.id}`, { method: "PATCH", json: { role: "estimator" } });
-      const delegated = await estimator.request(`/api/ops/approvals/${step.id}/delegate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: "estimator" }) });
-      const approved = await estimator.request(`/api/ops/approvals/${step.id}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      assert.deepEqual([delegated.status, approved.status], [403, 403]);
-    });
+    // "estimator cannot delegate an approval to self" lived here. Delegation, the
+    // approval step and the estimator role are all gone (0033), so the behaviour it
+    // guarded no longer exists to be guarded.
 
     await t.test("unauthenticated legacy staff seam is forbidden", async () => {
       const response = await fetch(`${baseUrl}/api/projects/p_draft/issue-revision`, { method: "POST" });

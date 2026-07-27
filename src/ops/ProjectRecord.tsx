@@ -5,9 +5,9 @@
 // query already joins the project back in. Splitting them across a Quotes tab and
 // an Orders tab made a staffer cross a boundary that exists only in storage.
 //
-// READ-ONLY for now (Slice 1). Actions land next; until then the existing Quotes
-// and Orders tabs remain the places where work happens, so nothing is lost while
-// this is proven against real records.
+// This IS where work happens. It absorbed the Quotes workspace (line editing,
+// notes, clarifications, issuing) and the Orders detail (stage advances,
+// payments), and both of those tabs are gone.
 //
 // Two deliberate refusals, both worth stating because the obvious design does the
 // opposite:
@@ -21,7 +21,11 @@
 //  • NO progress ring, badge or colour-only state. Every state carries its word.
 import { useEffect, useState } from "react";
 import { ChevronLeft, Loader2, FileText, Paperclip, History as HistoryIcon } from "lucide-react";
-import { opsProject, OPS_PHASES, type OpsWorkspace, type OpsPhase } from "./api";
+import {
+  OpsApiError, opsProject, opsStartPricing, opsSetStatus, opsIssueRevision,
+  opsRequestClarification, opsAddNote, opsPatchLine, opsAdvanceOrder, opsPayOrder,
+  OPS_PHASES, type OpsWorkspace, type OpsPhase, type OpsRecordAction,
+} from "./api";
 
 const SAGE = "#5A7A6A";
 const INK = "#131311";
@@ -37,13 +41,52 @@ const when = (ts: string | null | undefined) => {
   return isNaN(+d) ? "—" : d.toLocaleString("en-AU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 };
 
+// Failures name the cause. One blanket "resolve and exactly price every line"
+// used to cover every code, which on a concurrency conflict sent people hunting a
+// pricing problem that did not exist.
+const ACTION_ERRORS: Record<string, string> = {
+  unresolved_lines: "Resolve and exactly price every line, then try again.",
+  line_changed_reload_required: "Someone else changed this record while you had it open — your edit wasn't saved. Reload and try again.",
+  quote_changed_retry: "Someone else changed this record while you had it open — your edit wasn't saved. Reload and try again.",
+  workflow_changed_retry: "This job moved to another state while you had it open. Reload to see where it is now.",
+  stage_conflict: "That step has already been taken. Reload to see the current state.",
+  forbidden_role: "You don't have permission for that action.",
+};
+
 export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }) {
   const [ws, setWs] = useState<OpsWorkspace | null>(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
   // Which version is being viewed: null = the live draft.
   const [revisionId, setRevisionId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  // The action awaiting confirmation, and the free text it needs (a bank
+  // reference, or the clarification message).
+  const [confirming, setConfirming] = useState<OpsRecordAction | null>(null);
+  const [confirmText, setConfirmText] = useState("");
 
-  useEffect(() => { opsProject(id).then(setWs).catch(() => setWs(null)); }, [id]);
+  const load = () => opsProject(id).then(setWs).catch(() => setWs(null));
+  useEffect(() => { load(); }, [id]);
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true); setError("");
+    try { await fn(); await load(); setConfirming(null); setConfirmText(""); }
+    catch (e) {
+      const code = e instanceof OpsApiError ? e.code : "";
+      setError(ACTION_ERRORS[code] ?? "That action could not be completed.");
+    } finally { setBusy(false); }
+  };
+
+  const perform = (a: OpsRecordAction) => {
+    if (a.id === "start-pricing") return run(() => opsStartPricing(id));
+    if (a.id === "issue-revision") return run(() => opsIssueRevision(id));
+    if (a.id.startsWith("status:")) return run(() => opsSetStatus(id, a.id.slice(7)));
+    if (a.id.startsWith("advance:")) return run(() => opsAdvanceOrder(ws!.order!.id, a.id.slice(8)));
+    if (a.id.startsWith("pay:")) return run(() => opsPayOrder(ws!.order!.id, a.id.slice(4), confirmText.trim()));
+    if (a.id === "request-clarification") return run(() => opsRequestClarification(id, confirmText.trim()));
+    if (a.id === "note") return run(() => opsAddNote(id, confirmText.trim()));
+  };
+
   if (!ws) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
 
   const p = ws.project;
@@ -59,6 +102,13 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
     ? contractLines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: "ready" }))
     : ws.lines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: l.status }));
   const total = rows.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
+
+  // Three modes, and the difference must be visible. The server only accepts line
+  // edits in the pricing states, so rendering inputs anywhere else produces a
+  // Save that silently 404s — which is exactly what the old workspace did once a
+  // quote was issued.
+  const EDITABLE = new Set(["submitted", "triage_pending", "estimator_assigned", "technical_review_required", "customer_clarification_required"]);
+  const editable = !revisionId && !showingContract && EDITABLE.has(p.statusInternal);
 
   return (
     <div className="max-w-[1180px]">
@@ -92,6 +142,62 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
         </div>
 
         {life && <PhaseRibbon phase={life.phase} stateLabel={life.stateLabel} waitingOn={life.waitingOn} days={ws.daysInStage ?? null} />}
+
+        {/* ── Actions ────────────────────────────────────────────────────────
+            Exactly one primary, filled — the single move that advances this job.
+            Colour weight tracks consequence weight. Inapplicable actions are not
+            here at all; BLOCKED ones are, disabled, with the reason beside them. */}
+        {(ws.actions ?? []).length > 0 && !revisionId && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {(ws.actions ?? []).map((a) => {
+              const blocked = !!a.blockedReason;
+              const primary = a.tier === "primary";
+              return (
+                <span key={a.id} className="flex items-center gap-2">
+                  <button
+                    onClick={() => (a.confirm || a.id === "note" || a.id === "request-clarification" ? (setConfirming(a), setConfirmText("")) : perform(a))}
+                    disabled={busy || blocked}
+                    className="text-sm px-3.5 py-2 disabled:opacity-45 disabled:cursor-not-allowed"
+                    style={primary
+                      ? { background: SAGE, color: "#fff" }
+                      : { border: "1px solid rgba(0,0,0,0.15)", color: INK, background: "#fff" }}>
+                    {a.label}
+                  </button>
+                  {blocked && <span className="text-[12px]" style={{ color: "#7a5410" }}>{a.blockedReason}</span>}
+                </span>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Confirm in place — the record stays on screen while the decision is
+            made. A modal would hide the very thing being decided about. */}
+        {confirming && (
+          <div className="mt-3 border p-4" style={{ borderColor: "rgba(90,122,106,0.35)", background: "rgba(90,122,106,0.06)" }}>
+            <p className="text-sm mb-1" style={{ color: INK }}>{confirming.label}?</p>
+            {confirming.confirm && <p className="text-xs mb-2.5" style={{ color: MUTED }}>{confirming.confirm}</p>}
+            {(confirming.id.startsWith("pay:") || confirming.id === "note" || confirming.id === "request-clarification") && (
+              <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} autoFocus
+                onKeyDown={(e) => { if (e.key === "Escape") setConfirming(null); }}
+                placeholder={confirming.id.startsWith("pay:") ? "Bank reference, e.g. EFT-4821"
+                  : confirming.id === "note" ? "What should the file record?" : "What do you need from the customer?"}
+                className="w-full border border-black/15 px-2.5 py-1.5 text-sm bg-white mb-3"
+                style={confirming.id.startsWith("pay:") ? MONO : undefined} />
+            )}
+            <div className="flex items-center gap-2">
+              <button onClick={() => perform(confirming)}
+                disabled={busy || ((confirming.id.startsWith("pay:") || confirming.id === "note" || confirming.id === "request-clarification") && !confirmText.trim())}
+                className="text-sm text-white px-3.5 py-2 disabled:opacity-40" style={{ background: SAGE }}>
+                Confirm
+              </button>
+              <button onClick={() => setConfirming(null)} disabled={busy} className="text-sm px-3 py-2" style={{ color: MUTED }}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <p className="mt-3 text-[13px] px-3 py-2 border" style={{ background: "rgba(180,60,40,0.07)", borderColor: "rgba(180,60,40,0.28)", color: "#8a3b2a" }}>{error}</p>
+        )}
 
         {/* The blocker, said once, in the header — not discovered at the bottom. */}
         {p.unresolvedLineCount > 0 && (
@@ -146,19 +252,8 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
               </thead>
               <tbody>
                 {rows.map((l) => (
-                  <tr key={l.id} className="border-t border-black/5">
-                    <td className="px-4 py-2" style={{ ...MONO, color: SAGE }}>{l.code || "—"}</td>
-                    <td className="px-3 py-2" style={{ color: INK }}>
-                      {l.productName}
-                      {l.room && <span className="block text-[11px]" style={{ color: MUTED }}>{l.room}</span>}
-                    </td>
-                    <td className="px-3 py-2 text-right" style={{ ...MONO, color: MUTED }}>{l.width && l.height ? `${l.width} × ${l.height}` : "—"}</td>
-                    <td className="px-3 py-2 text-right" style={{ ...MONO, color: MUTED }}>{l.qty}</td>
-                    <td className="px-3 py-2 text-right" style={{ ...MONO, color: INK }}>{money(l.lineTotal)}</td>
-                    <td className="px-4 py-2 text-[12px]" style={{ color: l.status === "ready" ? SAGE : "#8a6a2a" }}>
-                      {l.status === "ready" ? "ready" : "needs review"}
-                    </td>
-                  </tr>
+                  <LineRow key={l.id} line={l} editable={editable} busy={busy}
+                    onSaved={load} onError={setError} />
                 ))}
                 {rows.length === 0 && (
                   <tr><td colSpan={6} className="px-4 py-6 text-center text-sm" style={{ color: MUTED }}>No lines on this project.</td></tr>
@@ -306,3 +401,71 @@ function Block({ title, meta, icon, children }: { title: string; meta?: string; 
 
 const Empty = ({ children }: { children: React.ReactNode }) =>
   <p className="px-4 py-4 text-[13px]" style={{ color: MUTED }}>{children}</p>;
+
+/** One line. Editable only in the pricing states and only on the live draft —
+ *  the server refuses edits anywhere else, and a Save button that silently 404s
+ *  is worse than no Save button. */
+function LineRow({ line, editable, busy, onSaved, onError }: {
+  line: { id: string; code: string; productName: string; room: string; width: string; height: string; qty: number; lineTotal: number | null; status: string };
+  editable: boolean; busy: boolean;
+  onSaved: () => void; onError: (m: string) => void;
+}) {
+  const [w, setW] = useState(line.width);
+  const [h, setH] = useState(line.height);
+  const [qty, setQty] = useState(String(line.qty));
+  const [saving, setSaving] = useState(false);
+
+  // Re-sync when the record reloads under us (someone else's edit, or our own).
+  useEffect(() => { setW(line.width); setH(line.height); setQty(String(line.qty)); },
+    [line.width, line.height, line.qty]);
+
+  const dirty = editable && (w !== line.width || h !== line.height || qty !== String(line.qty));
+  const save = async () => {
+    setSaving(true);
+    try {
+      await opsPatchLine(line.id, { width: w, height: h, qty: Math.max(1, parseInt(qty) || 1) });
+      onSaved();
+    } catch (e) {
+      onError(e instanceof OpsApiError ? (ACTION_ERRORS[e.code] ?? "That line could not be saved.") : "That line could not be saved.");
+    } finally { setSaving(false); }
+  };
+
+  const cell = "border border-black/12 px-1.5 py-1 text-right w-[68px] bg-white";
+  return (
+    <tr className="border-t border-black/5">
+      <td className="px-4 py-2" style={{ ...MONO, color: SAGE }}>{line.code || "—"}</td>
+      <td className="px-3 py-2" style={{ color: INK }}>
+        {line.productName}
+        {line.room && <span className="block text-[11px]" style={{ color: MUTED }}>{line.room}</span>}
+      </td>
+      <td className="px-3 py-2 text-right" style={{ ...MONO, color: MUTED }}>
+        {editable ? (
+          <span className="inline-flex items-center gap-1">
+            <input value={w} onChange={(e) => setW(e.target.value)} inputMode="numeric" className={cell} style={MONO} />
+            <span>×</span>
+            <input value={h} onChange={(e) => setH(e.target.value)} inputMode="numeric" className={cell} style={MONO} />
+          </span>
+        ) : (line.width && line.height ? `${line.width} × ${line.height}` : "—")}
+      </td>
+      <td className="px-3 py-2 text-right" style={{ ...MONO, color: MUTED }}>
+        {editable
+          ? <input value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" className={`${cell} w-[52px]`} style={MONO} />
+          : line.qty}
+      </td>
+      <td className="px-3 py-2 text-right" style={{ ...MONO, color: INK }}>{money(line.lineTotal)}</td>
+      <td className="px-4 py-2 text-[12px]">
+        {dirty ? (
+          <button onClick={save} disabled={saving || busy}
+            className="text-xs text-white px-2.5 py-1 disabled:opacity-40" style={{ background: SAGE }}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+        ) : (
+          // Never colour alone — the word carries the state.
+          <span style={{ color: line.status === "ready" ? SAGE : "#8a6a2a" }}>
+            {line.status === "ready" ? "ready" : "needs review"}
+          </span>
+        )}
+      </td>
+    </tr>
+  );
+}

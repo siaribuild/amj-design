@@ -75,14 +75,25 @@ export async function drainLearningOutbox(env: Env, limit = 25): Promise<{ attem
   return { attempted: results?.length ?? 0, completed };
 }
 
-// Only a project that has cleared approvals ("approved_for_issue") may be issued —
-// this is the enforcement point regardless of which endpoint calls it.
+// A project in PRICING may be issued — this is the enforcement point regardless
+// of which endpoint calls it.
+//
+// It used to require `approved_for_issue`, a state only the approval engine could
+// produce. When that engine was removed (0033) the state stopped being reachable
+// and issuing became impossible; the tests caught it as a blanket 409. The real
+// protection was never the approval anyway — it is the two line checks below,
+// which refuse to issue a quote that is unpriced or still carries a review flag.
+const ISSUABLE_FROM = new Set([
+  "estimator_assigned", "technical_review_required", "customer_clarification_required",
+  "submitted", "triage_pending",
+]);
+
 export async function issueRevision(env: Env, projectId: string): Promise<IssueResult> {
   const project = await env.DB.prepare(
     "SELECT id, status_internal, quote_edit_version FROM project WHERE id = ?",
   ).bind(projectId).first<{ id: string; status_internal: string; quote_edit_version: number }>();
   if (!project) return { ok: false, error: "not_found" };
-  if (project.status_internal !== "approved_for_issue") return { ok: false, error: "not_ready" };
+  if (!ISSUABLE_FROM.has(project.status_internal)) return { ok: false, error: "not_ready" };
 
   const { results: lines } = await env.DB
     .prepare(`SELECT id, external_ref, room_label, product_slug, options_json, dims_json,
@@ -126,7 +137,7 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
        SELECT ?, ?, ?, 'issued', ?
         WHERE EXISTS (
           SELECT 1 FROM project
-           WHERE id=? AND status_internal='approved_for_issue' AND quote_edit_version=?
+           WHERE id=? AND quote_edit_version=?
         )`,
     ).bind(revisionId, projectId, revisionNo, JSON.stringify({ total }), projectId, project.quote_edit_version),
     ...lines.map((l) => {
@@ -164,9 +175,13 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
           )`,
     ).bind(projectId, revisionId, revisionId, projectId),
     env.DB.prepare(
+      // The optimistic guard is quote_edit_version: if the quote changed while we
+      // were snapshotting it, this update matches nothing and the whole batch is
+      // reported as a conflict. The old status_internal='approved_for_issue' term
+      // was the approval gate, not the concurrency guard.
       `UPDATE project SET status_customer='quote_issued', status_internal='issued',
           current_revision_id=?, updated_at=datetime('now')
-        WHERE id=? AND status_internal='approved_for_issue' AND quote_edit_version=?
+        WHERE id=? AND quote_edit_version=?
           AND EXISTS (SELECT 1 FROM quote_revision WHERE id=?)`,
     ).bind(revisionId, projectId, project.quote_edit_version, revisionId),
   ];

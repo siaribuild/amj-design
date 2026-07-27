@@ -22,7 +22,6 @@ await build({
       export { normEmail, isEmail, sixDigit, sha256hex, userDto } from ${p("worker/lib/auth.ts")};
       export { normalizePhone, enquiryReference, validateEnquiry } from ${p("worker/lib/enquiry.ts")};
       export { availableActions, ACTION_LABEL, TRANSITIONS, STAGES, STAGE_LABEL, DEPOSIT_PERCENT } from ${p("worker/lib/orders.ts")};
-      export { canApprove } from ${p("worker/lib/approvals.ts")};
       export { editedFieldsAfterSave } from ${p("worker/lib/lines.ts")};
       export { pricingOptionSlugsFromOptions } from ${p("worker/lib/estimator/estimate.ts")};
       export { staffDomains, isStaffEmail } from ${p("worker/lib/staff.ts")};
@@ -163,12 +162,8 @@ test("orders: TRANSITIONS graph + STAGES/labels integrity", () => {
   assert.ok(M.ACTION_LABEL["pay:deposit"] && M.ACTION_LABEL["pay:balance"]);
 });
 
-test("approvals.canApprove: admin wildcard, exact role, mismatch", () => {
-  assert.equal(M.canApprove({ role: "admin" }, "manager"), true);
-  assert.equal(M.canApprove({ role: "manager" }, "manager"), true);
-  assert.equal(M.canApprove({ role: "estimator" }, "manager"), false);
-  assert.equal(M.canApprove({ role: null }, "manager"), false);
-});
+// canApprove is gone with the approval engine (0033): access is flat, and there
+// is no approval step for a role to gate.
 
 test("staff.staffDomains + isStaffEmail allowlist", () => {
   assert.deepEqual(M.staffDomains({}), ["openframe.com.au"]);

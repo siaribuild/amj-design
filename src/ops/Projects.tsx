@@ -141,9 +141,6 @@ export function Projects() {
         </div>
       )}
 
-      <p className="text-xs mt-3" style={{ color: MUTED }}>
-        Read-only for now — quotes and orders are still worked in their own tabs while this is proven.
-      </p>
     </div>
   );
 }

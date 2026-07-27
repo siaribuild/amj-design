@@ -31,34 +31,47 @@ async function staffLogin(page: Page) {
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 }
 
-test("ops staff login shows the dashboard with real counts", async ({ page }) => {
+test("the dashboard points at work rather than counting it", async ({ page }) => {
   await staffLogin(page);
-  await expect(page.getByText("New submissions")).toBeVisible();
-  await expect(page.getByText("Active orders")).toBeVisible();
+  // Rows that link, never buttons that act — the dashboard is a pointer to the
+  // tab that owns the work, not a second inbox competing with the sidebar.
+  await expect(page.getByText("Needs us")).toBeVisible();
+  await expect(page.getByText("The shop")).toBeVisible();
 });
 
-test("ops quotes queue lists a submission and opens the workspace", async ({ page }) => {
+test("the projects list opens one record covering the whole job", async ({ page }) => {
+  // Quotes and Orders merged into Projects: a project, the revisions issued from
+  // it and the order it becomes are one job, and staff no longer cross a boundary
+  // that existed only in storage.
   await staffLogin(page);
-  await page.getByRole("button", { name: "Quotes" }).click();
+  await page.getByRole("button", { name: "Projects", exact: true }).click();
   await expect(page.getByText("Fitzroy townhouses")).toBeVisible();
-  await page.getByRole("button", { name: /open →/i }).first().click();
-  // Workspace: summary rail + the estimator actions.
-  await expect(page.getByRole("button", { name: /assign to me/i })).toBeVisible();
-  await expect(page.getByText(/Technical notes/i)).toBeVisible();
+  // The two derived columns that replaced the assignee.
+  await expect(page.getByText("Waiting on")).toBeVisible();
+  await expect(page.getByText("Days in stage")).toBeVisible();
+
+  await page.getByText("Fitzroy townhouses").click();
+  // The record: the precise state, and one primary action. Owners are gone.
+  await expect(page.getByText(/^Now ·/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /Start pricing|Issue reviewed quote/ })).toBeVisible();
+  await expect(page.getByText(/Assign to me/i)).toHaveCount(0);
 });
 
-test("ops tabs render (orders, customers, pricing, audit)", async ({ page }) => {
+test("ops tabs render (customers, pricing, audit); the retired ones are gone", async ({ page }) => {
   await staffLogin(page);
-  await page.getByRole("button", { name: "Orders" }).click();
-  await expect(page.getByText("OF-58001")).toBeVisible();
-  await page.getByRole("button", { name: "Customers" }).click();
+  // Quotes, Orders, Approvals and Rules were removed — a reappearing tab is the
+  // regression this guards.
+  for (const gone of ["Quotes", "Orders", "Approvals", "Rules"]) {
+    await expect(page.getByRole("button", { name: gone, exact: true })).toHaveCount(0);
+  }
+  await page.getByRole("button", { name: "Customers", exact: true }).click();
   await expect(page.getByText("Sarah Nguyen")).toBeVisible();
   // Catalogue became Pricing: the tab now EDITS the D1 commercial layer rather
   // than listing a build-time product artefact nobody could change.
-  await page.getByRole("button", { name: "Pricing" }).click();
+  await page.getByRole("button", { name: "Pricing", exact: true }).click();
   await expect(page.getByRole("button", { name: "Rate cards" })).toBeVisible();
   await expect(page.getByText("awning-window").first()).toBeVisible();
-  await page.getByRole("button", { name: "Audit" }).click();
+  await page.getByRole("button", { name: "Audit", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Audit" })).toBeVisible();
 });
 
@@ -78,7 +91,7 @@ test("ops enquiries tab shows a lead with its immutable attribution", async ({ p
   expect(created.ok(), "the public enquiry endpoint accepted the lead").toBeTruthy();
 
   await staffLogin(page);
-  await page.getByRole("button", { name: "Enquiries" }).click();
+  await page.getByRole("button", { name: "Enquiries", exact: true }).click();
   await expect(page.getByText(name).first()).toBeVisible();
   await expect(page.getByText("OpenFrame Website").first()).toBeVisible();
   // Open it and confirm the attribution staff cannot edit.
