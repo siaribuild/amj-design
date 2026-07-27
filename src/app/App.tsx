@@ -464,9 +464,13 @@ D N° HEIGHT WIDTH GLAZING D. GLAZE REQ. MATERIAL DOOR TYPE COMMENTS
 3 2300 3000 CLEAR YES ALUMINIUM STACKER SLIDING RIGHT TO LEFT`;
 
 /** The two filled/hollow cells used across the site for the 0 / 50 / 100 arc.
+ *  `light` inverts it for dark or sage grounds — the same prop SLabel takes,
+ *  rather than a second hand-rolled copy of the glyph at each call site.
  *  aria-hidden: the percentage is always written out beside it. */
-function Meter({ paid }: { paid: "0%" | "50%" | "100%" }) {
-  const cell = (on: boolean) => <span className={`block w-2.5 h-2.5 border ${on ? "bg-[#131311] border-[#131311]" : "border-black/25"}`} />;
+function Meter({ paid, light = false }: { paid: "0%" | "50%" | "100%"; light?: boolean }) {
+  const on = light ? "bg-white border-white" : "bg-[#131311] border-[#131311]";
+  const off = light ? "border-white/50" : "border-black/25";
+  const cell = (filled: boolean) => <span className={`block w-2.5 h-2.5 border ${filled ? on : off}`} />;
   return <span className="flex gap-1" aria-hidden="true">{cell(paid !== "0%")}{cell(paid === "100%")}</span>;
 }
 
@@ -632,8 +636,7 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
                 excludes anyone who does not have one. */}
             <div className="flex flex-col sm:flex-row gap-4 sm:gap-5">
               <div className="flex flex-col gap-1.5">
-                <Btn variant="white" size="lg" onClick={onUploadSchedule}
-                  className="!bg-white !text-[#131311] !border-white hover:!bg-white/90 justify-center">
+                <Btn variant="sage" size="lg" onClick={onUploadSchedule} className="justify-center">
                   <Upload className="w-[18px] h-[18px]" aria-hidden="true" /> Upload a schedule
                 </Btn>
                 <small className="text-white/50 text-[12px]" style={MONO}>PDF or spreadsheet · no account</small>
@@ -743,8 +746,9 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
                           {l.width} × {l.height}
                         </span>
                       </span>
-                      {/* Never colour alone: the word carries the state. */}
-                      <span className={`text-[11px] flex-shrink-0 ${l.status === "Ready" ? "text-[#5A7A6A]" : "text-[#8a6a2a]"}`} style={MONO}>
+                      {/* Never colour alone: the word carries the state. amber-800
+                          is the review colour the quote page already uses. */}
+                      <span className={`text-[11px] flex-shrink-0 ${l.status === "Ready" ? "text-[#5A7A6A]" : "text-amber-800"}`} style={MONO}>
                         {l.status === "Ready" ? "✓ ready" : "· to confirm"}
                       </span>
                     </div>
@@ -766,8 +770,7 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
               one of only two sage fills on the page. A visitor cannot take the
               minute without taking the two days. Same numbers, same wording as
               /how-it-works, so the two pages agree by construction. */}
-          <div className="border border-black/10 -mt-px px-5 py-5 md:px-7 md:py-6 flex flex-col md:flex-row md:items-center gap-5 md:gap-8"
-            style={{ background: "#5A7A6A" }}>
+          <div className="border border-black/10 -mt-px px-5 py-5 md:px-7 md:py-6 flex flex-col md:flex-row md:items-center gap-5 md:gap-8 bg-[#5A7A6A]">
             <div className="flex-1">
               <h3 className="text-white font-semibold text-[17px] md:text-[19px] mb-1.5" style={DISPLAY}>
                 Then a person checks it.
@@ -778,21 +781,9 @@ function HomePage({ setPage, onUploadSchedule }: { setPage: (p: Page) => void; o
               </p>
             </div>
             <div className="flex items-center gap-3 md:gap-4 flex-shrink-0 text-white/90 text-[13px]" style={MONO}>
-              <span className="flex items-center gap-2">
-                <span className="flex gap-1" aria-hidden="true">
-                  <span className="block w-2.5 h-2.5 border border-white/50" />
-                  <span className="block w-2.5 h-2.5 border border-white/50" />
-                </span>
-                0%
-              </span>
+              <span className="flex items-center gap-2"><Meter paid="0%" light /> 0%</span>
               <ArrowRight className="w-3.5 h-3.5 text-white/60" aria-hidden="true" />
-              <span className="flex items-center gap-2">
-                <span className="flex gap-1" aria-hidden="true">
-                  <span className="block w-2.5 h-2.5 border border-white bg-white" />
-                  <span className="block w-2.5 h-2.5 border border-white/50" />
-                </span>
-                50%
-              </span>
+              <span className="flex items-center gap-2"><Meter paid="50%" light /> 50%</span>
             </div>
           </div>
         </div>
