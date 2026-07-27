@@ -494,8 +494,11 @@ function Meter({ paid, light = false }: { paid: "0%" | "50%" | "100%"; light?: b
   return <span className="flex gap-1" aria-hidden="true">{cell(paid !== "0%")}{cell(paid === "100%")}</span>;
 }
 
-function HomePage({ setPage }: { setPage: (p: Page) => void }) {
-  const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
+// `setPage` is App's navigateTo, which takes an optional path override — the hero
+// uses it to land on /quote?upload=1 so the primary action opens the file picker
+// on arrival rather than dropping the visitor on a fork it already promised past.
+function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => void }) {
+  const go = (p: Page, pathOverride?: string) => { setPage(p, pathOverride); window.scrollTo(0, 0); };
   const MONO = { fontFamily: "'DM Mono', monospace" } as const;
   const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 
@@ -646,32 +649,42 @@ function HomePage({ setPage }: { setPage: (p: Page) => void }) {
                 about two business days. Both durations are stated, in that order. */}
             <p className="text-white/80 leading-relaxed mb-8 max-w-[52ch]"
               style={{ fontSize: "clamp(1rem, 1.4vw, 1.125rem)" }}>
+              {/* Two sentences, not three. "Nothing is charged until you accept" is
+                  already in the facts row below ($0 to get a quote) and again in the
+                  closing banner — a third telling cost ~72px of vertical space, which
+                  is what pushed the CTA off the fold on a small phone. The two
+                  TIMESCALES stay explicitly separated; that separation is the point. */}
               Upload the window and door schedule from your plans and every line comes back matched
-              and costed — that part takes about a minute. A person then reviews it, usually within
-              two business days, before it becomes a quote. Nothing is charged until you accept one.
+              and costed. A person reviews it within two business days before it becomes a quote.
             </p>
 
-            {/* ONE action.
-                It was three: upload (sage), build line by line (white outline),
-                and a text link to the products page. Two problems, both real.
-                The outline button was barely visible against a photograph — and
-                a secondary nobody can see is not a secondary, it is a dead
-                control taking up the most valuable space on the site. And the
-                two buttons went to the SAME page, which already forks properly
-                on arrival: the quote page opens with two equal panels, "Upload a
-                file" and "Add a product manually", each with room to explain
-                itself. Making that choice here as well meant making it twice,
-                worse the first time.
-                The third — a link to the systems page — duplicated both the nav
-                item and the Systems section directly below the fold.
-                So: one button, and the subline keeps both paths in words so a
-                visitor without a schedule is never excluded by the label. */}
-            <Btn variant="sage" size="lg" onClick={() => go("quote")}>
-              Get a quote <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            {/* TWO actions, at unequal tiers.
+                It was three (upload / outline button / products link), then briefly
+                one — and one was wrong. Below 1280px the nav's "Get a quote" is
+                inside the hamburger and the closing banner is ~7000px away, so on a
+                phone THIS is the whole funnel; a single neutral label there means
+                sounding like every other supplier at the moment of peak attention,
+                while the differentiator is stated only in 13px mono.
+                Two controls at unequal weight let the primary be specific without
+                excluding the renovator who has no schedule — the secondary is what
+                makes specialising the primary safe.
+                They are also no longer the same action: the primary opens the file
+                picker on arrival (?upload=1), the secondary lands on the fork.
+                The secondary is TEXT, not an outline button. The old one failed
+                because a border needs a known ground and the hero photograph is
+                Sanity-authored: at the CTA's x-position the gradient is only ~0.38
+                alpha, so border-white/40 fell under 1.5:1 and the control read as
+                floating text — worse than a link, because it looked broken. */}
+            <Btn variant="sage" size="lg" onClick={() => go("quote", "/quote?upload=1")}>
+              <Upload className="w-[18px] h-[18px]" aria-hidden="true" /> Upload your schedule
             </Btn>
             <p className="mt-2.5 text-white/55 text-[13px]" style={MONO}>
-              Upload a schedule, or enter sizes yourself · free, no account
+              PDF or spreadsheet, straight from your plans
             </p>
+            <button onClick={() => go("quote")}
+              className="mt-3 inline-flex items-center gap-1.5 text-white text-[15px] font-medium underline underline-offset-4 decoration-white/60 hover:decoration-white cursor-pointer">
+              No schedule? Enter sizes instead <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </button>
 
             <div className="mt-8 pt-5 border-t border-white/12 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-white/55" style={MONO}>
               {facts.map((f, i) => (

@@ -560,8 +560,13 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                 Build your quote
               </h1>
               <p className="text-white/80 text-[13px] leading-snug md:text-[15px] md:leading-relaxed max-w-2xl">
-                Add products manually or upload your plans and schedule. We'll review the
-                specifications and issue a confirmed quote before any deposit is required.
+                {/* Schedule first. A tradie arrives here from a hero promising
+                    "your schedule, priced in about a minute" and this line used to
+                    lead with "Add products manually", demoting the thing they were
+                    just sold and dropping the minute entirely. */}
+                Upload your plans and schedule and every line comes back priced in about a minute —
+                or add products manually. We'll review the specifications and issue a confirmed
+                quote before any deposit is required.
               </p>
               {/* Trust row — decorative, hidden on mobile to keep the hero shallow */}
               <div className="hidden sm:flex flex-wrap items-center gap-x-6 gap-y-2 mt-5 text-[13px] text-white/65">

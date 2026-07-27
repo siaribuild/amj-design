@@ -66,7 +66,7 @@ export function Btn({
   type = "button", disabled = false
 }: {
   children: ReactNode;
-  variant?: "primary" | "sage" | "outline" | "ghost" | "white" | "danger";
+  variant?: "primary" | "sage" | "outline" | "ghost" | "danger";
   size?: "sm" | "md" | "lg";
   onClick?: () => void; className?: string;
   type?: "button" | "submit"; disabled?: boolean;
@@ -77,7 +77,10 @@ export function Btn({
     sage:    "bg-[#5A7A6A] text-white hover:bg-[#4a6858]",
     outline: "border border-[#131311] text-[#131311] hover:bg-[#131311] hover:text-white",
     ghost:   "text-[#5c5a56] hover:text-[#131311] hover:bg-black/5",
-    white:   "border border-white/40 text-white hover:bg-white hover:text-[#131311]",
+    // `white` (border-only, over an image) is deliberately gone. It had no call
+    // sites left and it is the treatment that failed on the home hero: a border
+    // needs a known ground, and a CMS-authored photograph is by definition not one.
+    // If a secondary is ever needed on an image again it must carry its own fill.
     danger:  "bg-red-600 text-white hover:bg-red-700",
   };
   return (
