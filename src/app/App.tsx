@@ -103,9 +103,12 @@ const ACCOUNT_PAGES: Page[] = ["dashboard", "account", "help", "order"];
 const isAccountPage = (p: Page) => ACCOUNT_PAGES.includes(p);
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
-function Nav({ page, setPage, user, setUser }: {
+function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
   page: Page; setPage: (p: Page) => void;
   user: AuthUser | null; setUser: (u: AuthUser | null) => void;
+  /** False when the current page is showing a sub-view with no hero behind the
+   *  header. Defaults true so every other page is unaffected. */
+  viewHasHero?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const go = (p: Page) => { setPage(p); setOpen(false); window.scrollTo(0, 0); };
@@ -135,7 +138,12 @@ function Nav({ page, setPage, user, setUser }: {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
   const heroPage = page === "home" || page === "products" || page === "product-detail" || page === "quote" || page === "trade" || page === "how-it-works";
-  const transparent = heroPage && !scrolled;
+  // A hero page can still have hero-LESS sub-views, and the quote page does: its
+  // build view has a dark hero for the header to overlay, but Review and
+  // Submitted have none. The header stayed transparent over those, which on a
+  // bone ground is an invisible menu. The page has to tell us — it cannot be
+  // inferred from the route, so App owns the flag and passes it down here.
+  const transparent = heroPage && viewHasHero && !scrolled;
 
   return (
     <>
@@ -771,9 +779,14 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                   ))}
                 </table>
               </div>
-              <div className="px-4 py-3 border-t border-white/12 text-[12px] text-white/45" style={MONO}>
-                height is printed before width, exactly as your draftsperson drew it
-              </div>
+              {/* The footnote that was here — "height is printed before width,
+                  exactly as your draftsperson drew it" — is gone. The table's own
+                  HEIGHT and WIDTH column headers already say it, so it was a
+                  caption restating a label, and it spent the closing line of the
+                  source panel on a convention rather than on the point.
+                  The panel now ends where the document ends, which is right: it
+                  is a facsimile of the visitor's own schedule, and a real one has
+                  no footer. */}
             </div>
 
             {/* This panel was bg-white on a paper section — invisible, with an
@@ -1749,6 +1762,12 @@ export default function App() {
   // Which order/project the tracking page should open (set from the dashboard).
   // Cleared on any ordinary navigation so unrelated entry points show the default.
   const [focusRecord, setFocusRecord] = useState<TrackFocus>(null);
+  // Whether the CURRENT view has a hero for the header to overlay. Only the
+  // quote page changes it — its Review and Submitted views have none, and the
+  // header was left transparent over them.
+  const [viewHasHero, setViewHasHero] = useState(true);
+  // Reset on navigation, so a heroless sub-view cannot leak into the next page.
+  useEffect(() => { setViewHasHero(true); }, [page]);
   const navigateTo = (p: Page, pathOverride?: string) => {
     const nextPath = pathOverride ?? pathForPage(p);
     if (window.location.pathname !== nextPath) window.history.pushState({ page: p }, "", nextPath);
@@ -2010,7 +2029,7 @@ export default function App() {
       case "home":             return <HomePage setPage={navigateTo} />;
       case "products":         return <ProductsPage setPage={navigateTo} category={catCategory} family={catFamily} onSelectCategory={selectCategory} onSelectFamily={setCatFamily} onOpenProduct={openProduct} />;
       case "product-detail":   return <ProductDetailPage slug={productSlug} setPage={navigateTo} onOpenProduct={openProduct} onBack={backToFamily} quote={quote} />;
-      case "quote":            return <QuotePage setPage={navigateTo} user={user} quote={quote} onSubmit={submitCurrentProject} />;
+      case "quote":            return <QuotePage setPage={navigateTo} user={user} quote={quote} onSubmit={submitCurrentProject} onHeroChange={setViewHasHero} />;
       // Without setPage the page's own CTAs called setPage?.(…) on undefined and
       // did nothing but scroll to top — a dead end for traffic the home page sends.
       case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;
@@ -2133,7 +2152,7 @@ export default function App() {
         .hero-zoom { animation: heroZoom 2.5s ease-out both; }
         @media (prefers-reduced-motion: reduce) { .hero-zoom { animation: none; } }
       `}</style>
-      <Nav page={page} setPage={navigateTo} user={user} setUser={setUser} />
+      <Nav page={page} setPage={navigateTo} user={user} setUser={setUser} viewHasHero={viewHasHero} />
       <main>{renderPage()}</main>
       {page !== "admin" && <Footer setPage={navigateTo} />}
       {!["home", "quote", "admin", "product-detail", "dashboard", "account", "help", "order"].includes(page) && (

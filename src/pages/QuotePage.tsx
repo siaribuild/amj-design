@@ -55,7 +55,14 @@ function ProjectNameField({ value, onCommit }: { value: string; onCommit: (v: st
   );
 }
 
-export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Page) => void; user: QuoteUser; quote: QuoteState; onSubmit?: (contact: SubmitContact) => Promise<SubmitResult> }) {
+export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
+  setPage: (p: Page) => void; user: QuoteUser; quote: QuoteState;
+  onSubmit?: (contact: SubmitContact) => Promise<SubmitResult>;
+  /** Only the BUILD view has a dark hero for the header to overlay. Review and
+   *  Submitted do not, and without telling the shell that, the header stayed
+   *  transparent over them — an invisible menu on a light ground. */
+  onHeroChange?: (hasHero: boolean) => void;
+}) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [view, setView] = useState<"build" | "review">("build");
   const [newKey, setNewKey] = useState(0);
@@ -68,6 +75,8 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  // Keep the shell's header in step with which view is showing.
+  useEffect(() => { onHeroChange?.(view === "build" && !submitted); }, [view, submitted, onHeroChange]);
   const [contactName, setContactName] = useState(user?.name || "");
   const [contactEmail, setContactEmail] = useState(user?.email || "");
   const [contactPhone, setContactPhone] = useState(user?.phone || "");
