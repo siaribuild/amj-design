@@ -61,10 +61,40 @@ export const CATALOGUE_QUERY = `{
   },
   "locations": *[_type=="showroomLocation"]|order(stateCode asc, suburb asc){
     "id":_id, stateCode, suburb, displayName, lat, lng, appointmentAvailable, status, historicalAliases
+  },
+  "guideCategories": *[_type=="guideCategory"]|order(order asc, title asc){
+    "id":_id, "slug":slug.current, title, order, description
+  },
+  "guides": *[_type=="guide" && defined(slug.current)]|order(publishedAt desc, title asc){
+    "id":_id, "slug":slug.current, title, summary,
+    "categorySlug": category->slug.current, "categoryTitle": category->title,
+    "productSlugs": products[]->slug.current,
+    "heroImage": heroImage{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip, "aspect": asset->metadata.dimensions.aspectRatio },
+    publishedAt,
+    "hasBody": count(body) > 0,
+    "attachments": attachments[]{
+      label, docType, revision, revisedAt, standardRef, note,
+      "url": file.asset->url,
+      "ext": upper(file.asset->extension),
+      "size": file.asset->size
+    },
+    ${SEO_PROJECTION}
+  }
+}`;
+
+// The BODY, fetched only when an article page opens. Portable text for every
+// guide riding the catalogue query would make every page on the site pay for
+// two routes. One extra round-trip on the one page that needs it is the trade.
+export const GUIDE_BODY_QUERY = `*[_type=="guide" && slug.current==$slug][0]{
+  "body": body[]{
+    ...,
+    _type == "image" => { "url": asset->url, "lqip": asset->metadata.lqip, alt, caption }
   }
 }`;
 
 export interface RawCataloguePayload {
+  guideCategories?: any[];
+  guides?: any[];
   categories: Category[];
   families: Family[];
   products: any[];
@@ -206,5 +236,20 @@ export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
     })),
     pages: dedupePages((raw.pages ?? []).filter((p) => p?.pageId).map(normalizePage)),
     locations: (raw.locations ?? []).filter((l) => l?.id).map(normalizeLocation),
+    guideCategories: (raw.guideCategories ?? []).filter((c: any) => c?.slug),
+    // A guide with no category cannot be filtered to, and a guide with neither a
+    // body nor a file has nothing to give — Sanity refuses to publish one, but
+    // the query is defensive because a draft-mode fetch could still see it.
+    guides: (raw.guides ?? [])
+      .filter((g: any) => g?.slug && g?.categorySlug)
+      .map((g: any) => ({
+        ...g,
+        productSlugs: (g.productSlugs ?? []).filter(Boolean),
+        heroImage: normalizeImage(g.heroImage) ?? undefined,
+        attachments: (g.attachments ?? []).filter((a: any) => a?.url && a?.label),
+        hasBody: !!g.hasBody,
+        seo: normalizeSeo(g.seo),
+      }))
+      .filter((g: any) => g.hasBody || g.attachments.length > 0),
   };
 }

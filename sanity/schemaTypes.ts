@@ -636,4 +636,191 @@ export const siteSettings = defineType({
   preview: { prepare: () => ({ title: "Site Settings" }) },
 });
 
-export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation, siteSettings];
+
+// ─── Guides & documentation ───────────────────────────────────────────────────
+// A guide is an article that may also carry files. Two document types, because
+// a category that is a plain string on each article drifts the moment two
+// authors type "Compliance" and "compliance" — and the index page filters on it.
+
+const GUIDE_GROUPS = [
+  { name: "content", title: "Content", default: true },
+  { name: "files", title: "Files" },
+  { name: "seo", title: "SEO" },
+];
+
+export const guideCategory = defineType({
+  name: "guideCategory",
+  title: "Guide category",
+  type: "document",
+  fields: [
+    defineField({ name: "title", title: "Title", type: "string", validation: (r) => r.required() }),
+    defineField({
+      name: "slug", title: "Slug", type: "slug", options: { source: "title", maxLength: 60 },
+      validation: (r) => r.required(),
+    }),
+    defineField({
+      name: "order", title: "Order", type: "number",
+      description: "Lower numbers appear first in the filter rail. Ties fall back to title.",
+    }),
+    defineField({
+      name: "description", title: "Description", type: "text", rows: 2,
+      description: "Shown under the index heading when this topic is selected — the role a family's short description plays on the products page.",
+    }),
+  ],
+  orderings: [{ title: "Order", name: "order", by: [{ field: "order", direction: "asc" }, { field: "title", direction: "asc" }] }],
+  preview: { select: { title: "title", subtitle: "slug.current" } },
+});
+
+// A single downloadable file. An OBJECT rather than a bare file field, because a
+// trade reader decides whether to click from the metadata, not the filename:
+// what kind of document it is, which revision, and what it weighs.
+//
+// It is an ARRAY on the guide, not a single field. The owner's model is 1:1
+// (one article, one attachment) and that is very likely right for most guides —
+// but an array expresses 1:1 perfectly well with one entry, whereas a single
+// field cannot express "this product's datasheet AND its CAD file" without a
+// schema migration and a content rewrite. The cheap direction is the array; the
+// presentation layer can still choose to surface only the first.
+export const guideAttachment = defineType({
+  name: "guideAttachment",
+  title: "Attachment",
+  type: "object",
+  fields: [
+    defineField({ name: "file", title: "File", type: "file", validation: (r) => r.required() }),
+    defineField({
+      name: "label", title: "Label", type: "string",
+      description: "What this document is, in the reader's words — \"AMJ80 sliding window data sheet\". Not the filename.",
+      validation: (r) => r.required().max(80),
+    }),
+    defineField({
+      name: "docType", title: "Document type", type: "string",
+      options: {
+        list: [
+          { title: "Data sheet", value: "datasheet" },
+          { title: "Installation guide", value: "installation" },
+          { title: "CAD / detail drawing", value: "cad" },
+          { title: "Test report", value: "test-report" },
+          { title: "Warranty", value: "warranty" },
+          { title: "Certificate", value: "certificate" },
+          { title: "Care & maintenance", value: "maintenance" },
+        ],
+      },
+      validation: (r) => r.required(),
+    }),
+    defineField({
+      name: "revision", title: "Revision", type: "string",
+      description: "The document's own revision or issue, if it carries one — \"Rev C\", \"Issue 2\". Shown beside the file so a reader can tell whether they already have it.",
+    }),
+    defineField({
+      name: "revisedAt", title: "Revision date", type: "date",
+      description: "The date printed on the document, not the date it was uploaded.",
+    }),
+    defineField({
+      name: "standardRef", title: "Standard", type: "string",
+      description: "The standard this document relates to — AS 2047:2014, AS 1288, NCC 2022 Section J. The single most useful token for a certifier scanning a list.",
+    }),
+    // This is what pays for linking a product STRAIGHT to a file: a file opens in
+    // a viewer with no page around it to carry a scope caveat, so the caveat has
+    // to travel on the row, before the click.
+    defineField({
+      name: "note", title: "Scope note", type: "text", rows: 2,
+      description: "A caveat a reader needs BEFORE downloading — \"Covers frames to 2100mm high\". Not a description of the document.",
+      validation: (r) => r.max(160),
+    }),
+  ],
+  preview: { select: { title: "label", subtitle: "docType" } },
+});
+
+export const guide = defineType({
+  name: "guide",
+  title: "Guide",
+  type: "document",
+  groups: GUIDE_GROUPS,
+  fields: [
+    defineField({ name: "title", title: "Title", type: "string", group: "content", validation: (r) => r.required() }),
+    defineField({
+      name: "slug", title: "Slug", type: "slug", group: "content",
+      options: { source: "title", maxLength: 80 },
+      validation: (r) => r.required(),
+    }),
+    defineField({
+      name: "summary", title: "Summary", type: "text", rows: 2, group: "content",
+      description: "One or two sentences. This is the whole of what a reader sees on the index, so it has to say what the guide answers — not what it is about.",
+      validation: (r) => r.required().max(180),
+    }),
+    defineField({
+      name: "category", title: "Category", type: "reference", to: [{ type: "guideCategory" }],
+      group: "content", validation: (r) => r.required(),
+    }),
+    defineField({
+      name: "products", title: "Applies to products", type: "array",
+      of: [{ type: "reference", to: [{ type: "product" }] }], group: "content",
+      validation: (r) => r.unique(),
+      description: "Every product this guide is relevant to. Each one surfaces this guide's files in its Downloads tab, so leaving it empty means the guide lives on the index only.",
+    }),
+    defineField({
+      name: "heroImage", title: "Hero image", type: "image",
+      options: { hotspot: true }, group: "content",
+      description: "Optional. Without one the article opens on its title over the site's dark ground rather than a photograph.",
+    }),
+    // Deliberately a SMALL block set. The brief asked for simple markup, and an
+    // unconstrained editor is how a content system stops matching its design
+    // language — every extra style is a way for an article to stop looking like
+    // the site.
+    defineField({
+      name: "body", title: "Body", type: "array", group: "content",
+      of: [
+        {
+          type: "block",
+          styles: [
+            { title: "Paragraph", value: "normal" },
+            { title: "Heading", value: "h2" },
+            { title: "Subheading", value: "h3" },
+          ],
+          lists: [{ title: "Bullet", value: "bullet" }, { title: "Numbered", value: "number" }],
+          marks: {
+            decorators: [{ title: "Bold", value: "strong" }, { title: "Emphasis", value: "em" }],
+            annotations: [
+              {
+                name: "link", type: "object", title: "Link",
+                fields: [{ name: "href", type: "url", title: "URL", validation: (r: any) => r.required() }],
+              },
+            ],
+          },
+        },
+        {
+          type: "image", options: { hotspot: true },
+          fields: [
+            { name: "alt", type: "string", title: "Alt text", validation: (r: any) => r.required() },
+            { name: "caption", type: "string", title: "Caption" },
+          ],
+        },
+      ],
+    }),
+    defineField({
+      name: "attachments", title: "Attachments", type: "array",
+      of: [{ type: "guideAttachment" }], group: "files",
+      description: "Files this guide hosts. These are what a product's Downloads tab links to.",
+    }),
+    defineField({
+      name: "publishedAt", title: "Published", type: "date", group: "content",
+      description: "Used for ordering. An unset date sorts last.",
+    }),
+    defineField({ name: "seo", title: "SEO", type: "seoMeta", group: "seo" }),
+  ],
+  validation: (r) =>
+    r.custom((doc: any) =>
+      doc?.body?.length || doc?.attachments?.length
+        ? true
+        : "A guide needs either something to read or at least one document to download."),
+  orderings: [
+    { title: "Newest", name: "newest", by: [{ field: "publishedAt", direction: "desc" }] },
+    { title: "Title", name: "title", by: [{ field: "title", direction: "asc" }] },
+  ],
+  preview: {
+    select: { title: "title", subtitle: "category.title", media: "heroImage" },
+  },
+});
+
+
+export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation, siteSettings, guideCategory, guideAttachment, guide];

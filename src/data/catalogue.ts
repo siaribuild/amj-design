@@ -670,6 +670,8 @@ export interface CatalogueData {
   colours?: ProductOption[];
   pages?: SitePage[];
   locations?: ShowroomLocation[];
+  guideCategories?: GuideCategory[];
+  guides?: Guide[];
 }
 export function hydrateCatalogue(data: CatalogueData): void {
   if (data.categories?.length) categories = data.categories;
@@ -678,4 +680,70 @@ export function hydrateCatalogue(data: CatalogueData): void {
   if (data.colours?.length) colorbondColourOptions = data.colours;
   if (data.pages?.length) pages = data.pages;
   if (data.locations?.length) locations = data.locations;
+  if (data.guideCategories?.length) guideCategories = data.guideCategories;
+  if (data.guides?.length) guides = data.guides;
 }
+
+// ─── Guides & documentation (Sanity-managed) ──────────────────────────────────
+// An article that may also host files. The INDEX metadata below travels in the
+// one catalogue round-trip because the product Downloads tab needs it on a page
+// that is not the guides index — it is small and every page already pays for
+// that request. The BODY does not: portable text on ~n articles would bloat
+// every page load on the site to serve one route, so it is fetched per-article.
+export interface GuideCategory { id: string; slug: string; title: string; order?: number }
+
+export interface GuideAttachment {
+  /** Direct URL to the asset in Sanity's CDN. */
+  url: string;
+  /** What the document IS, in the reader's words — never the filename. */
+  label: string;
+  docType: string;
+  /** File extension, upper-cased, for the reader to recognise before clicking. */
+  ext: string;
+  /** Bytes. Rendered human-readable; a trade user on site data notices. */
+  size?: number;
+  revision?: string;
+  revisedAt?: string;
+  /** The standard the document relates to — AS 2047:2014, NCC 2022 Section J. */
+  standardRef?: string;
+  /** A scope caveat shown BEFORE the click. This is what pays for linking a
+   *  product straight to a file: the file opens with no page around it. */
+  note?: string;
+}
+
+export interface Guide {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  categorySlug: string;
+  categoryTitle: string;
+  /** Slugs of every product this guide applies to. Drives the Downloads tab. */
+  productSlugs: string[];
+  heroImage?: CatalogueImage;
+  attachments: GuideAttachment[];
+  publishedAt?: string;
+  seo?: SeoMeta;
+  /** Whether the guide has anything to READ. Derived in the query, never
+   *  authored — a flag an editor maintains drifts from the body the first time
+   *  someone adds a paragraph. Nothing offers "Read the guide" without it. */
+  hasBody: boolean;
+}
+
+export let guideCategories: GuideCategory[] = [];
+export let guides: Guide[] = [];
+
+export const getGuideBySlug = (slug: string): Guide | undefined => guides.find((g) => g.slug === slug);
+export const getGuidesByCategory = (categorySlug: string): Guide[] =>
+  categorySlug === "all" ? guides : guides.filter((g) => g.categorySlug === categorySlug);
+
+/** Every attachment relevant to a product, flattened, each carrying the guide it
+ *  came from so the Downloads tab can offer the file AND its context. */
+export const getProductDocuments = (productSlug: string): { guide: Guide; attachment: GuideAttachment }[] =>
+  guides
+    .filter((g) => g.productSlugs.includes(productSlug))
+    .flatMap((g) => g.attachments.map((attachment) => ({ guide: g, attachment })));
+
+/** Guides that apply to a product but host no file — still worth reading. */
+export const getProductGuides = (productSlug: string): Guide[] =>
+  guides.filter((g) => g.productSlugs.includes(productSlug));

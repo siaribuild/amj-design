@@ -14,7 +14,10 @@ import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
 import {
   type CategorySlug, type Product, type ProductOption,
   getProductBySlug, getFamily, getCategory, getRelatedProducts, products, imageUrl,
+  getProductDocuments, getProductGuides,
 } from "../data/catalogue";
+import { DocumentRow, groupDocuments } from "../components/DocumentRow";
+import { pathForPage } from "../app/routes";
 import { ItemForm, ItemSummaryCard } from "../components/ItemComposer";
 import { type QItem, type QuoteState, linePriceTotal, fmt } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
@@ -115,33 +118,90 @@ function TechnicalContent({ product }: { product: Product }) {
   );
 }
 
-function DownloadsContent() {
-  const docs = ["Spec sheet", "CAD / detail drawing", "Measuring guide", "Warranty & compliance"];
+// Real documents, from Sanity, replacing four hardcoded strings that all read
+// "On request" — four things that LOOKED like documentation and were not.
+//
+// Rows, not the old two-column tiles: a row can carry a metadata line and a tile
+// cannot, and the metadata line is the whole point. Grouped by kind in the
+// code-defined order, using the same shape as OptionsContent above.
+function DownloadsContent({ product, setPage }: { product: Product; setPage: (p: Page, path?: string) => void }) {
+  const docs = getProductDocuments(product.slug);
+  // Guides that apply to this product but host no file — still worth reading,
+  // and otherwise unreachable from here. This is the one gap in a file-first
+  // Downloads tab, and it costs one small block to close.
+  const reads = getProductGuides(product.slug).filter((g) => g.attachments.length === 0);
+  const openGuide = (slug: string) => setPage("guide", pathForPage("guide", slug));
+
+  if (!docs.length && !reads.length) {
+    // The tab stays. Someone checking whether documentation exists deserves a
+    // definite answer rather than an absence they have to interpret — and a tab
+    // set that varies product to product makes the site feel unfinished in a way
+    // an honest empty tab does not.
+    return (
+      <div className="card p-6 flex items-start gap-3">
+        <Info className="w-4 h-4 text-sage flex-shrink-0 mt-0.5" aria-hidden="true" />
+        <div>
+          <p className="text-sm text-ink font-semibold mb-1.5">No documents are published for this system yet.</p>
+          <p className="text-sm text-body leading-relaxed mb-4 max-w-[54ch]">
+            Technical documents, test reports and warranty terms are issued with a reviewed quote.
+            If you need something specific before then, ask and we'll send it if we have it.
+          </p>
+          <Btn variant="outline" size="sm" onClick={() => setPage("contact")}>Ask about documents</Btn>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-start gap-2 border border-black/10 bg-bone px-4 py-3">
-        <Info className="w-4 h-4 text-sage flex-shrink-0 mt-0.5" />
-        <p className="text-sm text-body">Technical downloads will be provided after review or by request.</p>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {docs.map(d => (
-          <div key={d} className="flex items-center justify-between gap-3 border border-black/10 px-4 py-3 text-quieter">
-            <span className="flex items-center gap-2 text-sm text-body"><FileText className="w-4 h-4" />{d}</span>
-            <span className="text-[11px] uppercase tracking-wider" style={{ fontFamily: "'DM Mono', monospace" }}>On request</span>
+    <div className="space-y-6">
+      {groupDocuments(docs).map((group) => (
+        <div key={group.docType}>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2" style={{ fontFamily: "'DM Mono', monospace" }}>
+            {group.label}
+          </p>
+          <div className="card">
+            {group.items.map((d, i) => (
+              <DocumentRow key={`${d.guide.slug}-${i}`} attachment={d.attachment} guide={d.guide} onOpenGuide={openGuide} />
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
+
+      {reads.length > 0 && (
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2" style={{ fontFamily: "'DM Mono', monospace" }}>
+            Related guides
+          </p>
+          <div className="card">
+            {reads.map((g) => (
+              <button key={g.slug} onClick={() => openGuide(g.slug)}
+                className="icon-btn w-full text-left flex items-start justify-between gap-3 px-4 py-3 border-b border-black/8 last:border-0 cursor-pointer">
+                <span className="min-w-0">
+                  <span className="block text-sm text-ink">{g.title}</span>
+                  <span className="block text-[12.5px] text-body mt-0.5 leading-relaxed">{g.summary}</span>
+                </span>
+                <ArrowRight className="w-4 h-4 text-quieter flex-shrink-0 mt-0.5" aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // Overview is shown standalone (outside tabs); the rest are tabbed.
-const TABS = [
-  { id: "technical", label: "Technical details" },
-  { id: "options", label: "Options" },
-  { id: "downloads", label: "Downloads" },
-] as const;
-type TabId = typeof TABS[number]["id"];
+// A FUNCTION of the product, so Downloads can carry a count — a count lets a
+// visitor skip a tab, and it is checkable data rather than decoration.
+const tabsFor = (product: Product) => {
+  const n = getProductDocuments(product.slug).length;
+  return [
+    { id: "technical", label: "Technical details" },
+    { id: "options", label: "Options" },
+    { id: "downloads", label: n > 0 ? `Downloads · ${n}` : "Downloads" },
+  ] as const;
+};
+type TabId = "technical" | "options" | "downloads";
 
 export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote }: {
   slug: string;
@@ -152,6 +212,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
 }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [tab, setTab] = useState<TabId>("technical");
+  const tabs = tabsFor(product);
   const [openSection, setOpenSection] = useState<TabId | "">("technical");
   const [justAdded, setJustAdded] = useState<QItem | null>(null);
   const [seed, setSeed] = useState<Partial<QItem> | null>(null);
@@ -183,7 +244,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
   const sectionBody = (id: TabId) => {
     if (id === "options") return <OptionsContent product={product} />;
     if (id === "technical") return <TechnicalContent product={product} />;
-    return <DownloadsContent />;
+    return <DownloadsContent product={product} setPage={setPage} />;
   };
 
   const remount = (s: Partial<QItem> | null) => { setSeed(s); setJustAdded(null); setComposerKey(k => k + 1); };
@@ -276,7 +337,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
             {/* Desktop tabs */}
             <div className="hidden lg:block">
               <div className="flex border-b border-black/10 gap-6 mb-6">
-                {TABS.map(t => (
+                {tabs.map(t => (
                   <button key={t.id} onClick={() => setTab(t.id)}
                     aria-current={tab === t.id ? "true" : undefined}
                     className={`pb-3 text-sm border-b-2 transition-all cursor-pointer -mb-px ${tab === t.id ? "border-sage text-ink font-medium" : "border-transparent text-body hover:text-ink"}`}>
@@ -284,13 +345,13 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
                   </button>
                 ))}
               </div>
-              <h2 className="sr-only">{TABS.find(t => t.id === tab)?.label}</h2>
+              <h2 className="sr-only">{tabs.find(t => t.id === tab)?.label}</h2>
               <div>{sectionBody(tab)}</div>
             </div>
 
             {/* Mobile accordion */}
             <div className="lg:hidden border-t border-black/10">
-              {TABS.map(t => {
+              {tabs.map(t => {
                 const open = openSection === t.id;
                 return (
                   <div key={t.id} className="border-b border-black/10">

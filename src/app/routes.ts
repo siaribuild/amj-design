@@ -18,6 +18,9 @@ export const PAGE_PATHS: Record<Page, string> = {
   "track-order": "/track-order",
   order: "/order",
   privacy: "/privacy",
+  // An article under the guides index. Same relationship product-detail has to
+  // /products: a slug route, so it is excluded from the static map below.
+  guide: "/resources",
 };
 
 // Legacy paths kept working after the account-area IA collapse (Dashboard+Projects
@@ -33,7 +36,7 @@ const LEGACY_ROUTES = new Map<string, Page>([
 
 const STATIC_ROUTES = new Map<string, Page>(
   Object.entries(PAGE_PATHS)
-    .filter(([page]) => page !== "product-detail")
+    .filter(([page]) => page !== "product-detail" && page !== "guide")
     .map(([page, path]) => [path, page as Page]),
 );
 
@@ -42,7 +45,7 @@ function normalizePathname(pathname: string) {
   return pathname.replace(/\/+$/, "") || "/";
 }
 
-export function routeFromPathname(pathname: string): { page: Page; productSlug?: string } {
+export function routeFromPathname(pathname: string): { page: Page; productSlug?: string; guideSlug?: string } {
   const normalized = normalizePathname(pathname);
   const staticPage = STATIC_ROUTES.get(normalized) ?? LEGACY_ROUTES.get(normalized);
   if (staticPage) return { page: staticPage };
@@ -52,12 +55,22 @@ export function routeFromPathname(pathname: string): { page: Page; productSlug?:
     return { page: "product-detail", productSlug: decodeURIComponent(productMatch[1]) };
   }
 
+  const guideMatch = normalized.match(/^\/resources\/([^/]+)$/);
+  if (guideMatch) {
+    return { page: "guide", guideSlug: decodeURIComponent(guideMatch[1]) };
+  }
+
   return { page: "home" };
 }
 
-export function pathForPage(page: Page, productSlug?: string) {
-  if (page === "product-detail" && productSlug) {
-    return `/products/${encodeURIComponent(productSlug)}`;
+/** `slug` is the record slug for the two routes that have one — a product, or a
+ *  guide. Everything else ignores it and returns its static path. */
+export function pathForPage(page: Page, slug?: string) {
+  if (page === "product-detail" && slug) {
+    return `/products/${encodeURIComponent(slug)}`;
+  }
+  if (page === "guide" && slug) {
+    return `/resources/${encodeURIComponent(slug)}`;
   }
   return PAGE_PATHS[page];
 }
