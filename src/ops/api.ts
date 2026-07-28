@@ -48,7 +48,17 @@ export const opsChallenge = (email: string) =>
 export const opsVerify = (email: string, code: string) =>
   req<{ authenticated: boolean; user: OpsUser }>("/api/ops/auth/verify", { method: "POST", body: JSON.stringify({ email, code }) });
 
-export const opsLogout = () => req<{ ok: boolean }>("/api/ops/auth/logout", { method: "POST" });
+/** Logo + business name from Sanity Site Settings. Either may be null — the
+ *  console shows its wordmark rather than a stand-in when they are. */
+export interface OpsBrand { logo: string | null; businessName: string | null }
+export const opsBrand = () => req<OpsBrand>("/api/ops/brand");
+
+/** `accessLogout` is set whenever Cloudflare Access is the identity provider —
+ *  in that mode clearing the local session achieves nothing and the browser has
+ *  to be sent to Access's own logout endpoint. Null in dev, where the session
+ *  cookie really is the identity. */
+export const opsLogout = () =>
+  req<{ ok: boolean; accessLogout: string | null }>("/api/ops/auth/logout", { method: "POST" });
 
 export const opsSummary = () => req<OpsSummary>("/api/ops/summary");
 

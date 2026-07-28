@@ -30,8 +30,13 @@ export function Files() {
   };
   if (!files) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
   if (!files.length) return <div className="bg-white border border-dashed border-black/15 p-12 text-center text-sm text-[#5c5a56]">No files uploaded yet.</div>;
+  // overflow-x-auto is containment, not a design. A w-full table still has a
+  // min-content width, and without this it forces the whole DOCUMENT wider —
+  // page-level horizontal scroll, which is what made the old fixed bottom bar
+  // desynchronise from the content. Proper phone cards for Files are still
+  // pending; this stops the table breaking the page in the meantime.
   return (
-    <div className="bg-white border border-black/8">
+    <div className="bg-white border border-black/8 overflow-x-auto">
       <table className="w-full text-sm">
         <thead><tr className="text-left text-[11px] uppercase tracking-wide text-[#8b8880] border-b border-black/8">
           <th className="px-4 py-2.5 font-medium">File</th><th className="px-4 py-2.5 font-medium">Project</th>

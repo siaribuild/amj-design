@@ -240,6 +240,10 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
               </span>
               <span className="text-[11px]" style={{ color: MUTED }}>{rows.length} lines</span>
             </div>
+            {/* Contained rather than carded — line cards for the record plane are
+                still pending. Without this the table's min-content width widens
+                the whole document instead of scrolling inside its own panel. */}
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-[11px] uppercase tracking-wide" style={{ color: MUTED }}>
@@ -264,6 +268,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           {ws.comments.length > 0 && (

@@ -180,7 +180,10 @@ function RateCards() {
         charge, then the rules, then rounded to $10. The example column prices a 1200 × 1200 mm opening with no
         options on each card — a mistyped rate shows up there before it reaches a customer.
       </p>
-      <div className="bg-white border border-black/8">
+      {/* Contained so it scrolls inside its own box rather than widening the
+          document. Pricing is a desktop surface and is still slated for an
+          explicit desktop-only notice on phones. */}
+      <div className="bg-white border border-black/8 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-[11px] uppercase tracking-wide" style={{ color: MUTED }}>
@@ -791,7 +794,10 @@ function Options({ onChanged }: { onChanged: () => void }) {
         </span>
       </div>
 
-      <div className="bg-white border border-black/8">
+      {/* Contained so it scrolls inside its own box rather than widening the
+          document. Pricing is a desktop surface and is still slated for an
+          explicit desktop-only notice on phones. */}
+      <div className="bg-white border border-black/8 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-[11px] uppercase tracking-wide" style={{ color: MUTED }}>

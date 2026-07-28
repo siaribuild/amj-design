@@ -8,10 +8,10 @@
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, FileText, CheckSquare, Package, Users, Boxes, SlidersHorizontal,
-  FolderOpen, ScrollText, Settings, LogOut, Loader2, AlertCircle, Mail, X,
+  FolderOpen, ScrollText, Settings, LogOut, Loader2, AlertCircle, Mail, X, Menu,
 } from "lucide-react";
 import { Search } from "lucide-react";
-import { opsMe, opsChallenge, opsVerify, opsLogout, opsSummary, opsSearch, type OpsUser, type OpsSummary, type OpsSearchResult } from "./api";
+import { opsMe, opsChallenge, opsVerify, opsLogout, opsSummary, opsSearch, opsBrand, type OpsUser, type OpsSummary, type OpsSearchResult, type OpsBrand } from "./api";
 import { Projects } from "./Projects";
 import { Customers } from "./Customers";
 import { Pricing } from "./Pricing";
@@ -19,6 +19,50 @@ import { Enquiries } from "./Enquiries";
 import { Files, Audit, Admin } from "./AdminTabs";
 
 const SAGE = "#5A7A6A";
+
+// ── Brand ────────────────────────────────────────────────────────────────────
+// One request per page load, shared by all three mount points (sign-in screen,
+// desktop rail, mobile drawer) — a module-scope promise rather than a fetch per
+// component, which is what three independent useEffects would have been.
+let brandPromise: Promise<OpsBrand> | null = null;
+function useOpsBrand(): OpsBrand {
+  const [brand, setBrand] = useState<OpsBrand>({ logo: null, businessName: null });
+  useEffect(() => {
+    brandPromise ??= opsBrand().catch(() => ({ logo: null, businessName: null }));
+    let live = true;
+    brandPromise.then((b) => { if (live) setBrand(b); });
+    return () => { live = false; };
+  }, []);
+  return brand;
+}
+
+/** The console's identity. The Sanity logo already contains the wordmark, so
+ *  "Ops" is set beside it rather than repeated inside it.
+ *
+ *  No placeholder: with nothing configured this is the business name, or failing
+ *  that the plain word. An invented mark standing in for an unset logo is the
+ *  thing that hides the fact that it is unset. */
+function OpsLogo({ height = 24, className = "" }: { height?: number; className?: string }) {
+  const { logo, businessName } = useOpsBrand();
+  return (
+    <span className={`inline-flex items-baseline gap-2 min-w-0 ${className}`}>
+      {logo ? (
+        // The asset is a 5:1 SVG drawn in near-white on sage — authored for a
+        // dark ground, which is what the whole ops chrome is. Height-driven so a
+        // re-uploaded logo of any width still fits.
+        <img src={logo} alt={businessName ?? "Logo"} style={{ height, width: "auto" }}
+          className="self-center flex-shrink-0" />
+      ) : (
+        <span className="text-white font-semibold truncate" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: height * 0.62 }}>
+          {businessName ?? "OpenFrame"}
+        </span>
+      )}
+      <span className="text-white/45 font-medium flex-shrink-0" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: height * 0.52 }}>
+        Ops
+      </span>
+    </span>
+  );
+}
 
 type Tab = "dashboard" | "projects" | "customers" | "pricing" | "enquiries" | "files" | "audit" | "admin";
 const ALL_TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -53,7 +97,28 @@ export function OpsApp() {
     </div>;
   }
   if (!user) return <OpsLogin onAuthed={setUser} />;
-  return <OpsShell user={user} onSignOut={() => { opsLogout().catch(() => {}); setUser(null); }} />;
+  return <OpsShell user={user} onSignOut={signOut} />;
+
+  // Awaited, not fire-and-forget. The old version cleared React state
+  // immediately and let the request race in the background, so the UI showed a
+  // sign-in screen whether or not anything had actually been signed out.
+  //
+  // Behind Cloudflare Access, clearing local state is ALL it ever did: Access
+  // re-injects a valid assertion on the next request, so a refresh landed the
+  // user straight back in the console. Sign-out has to be a full navigation to
+  // Access's logout endpoint — it clears the CF_Authorization cookie, which
+  // nothing this app runs can touch.
+  async function signOut() {
+    let accessLogout: string | null = null;
+    try {
+      ({ accessLogout } = await opsLogout());
+    } catch {
+      // The local session may or may not have been destroyed. Fall through: in
+      // Access mode the redirect is what matters and it does not depend on this.
+    }
+    if (accessLogout) { window.location.href = accessLogout; return; }
+    setUser(null);
+  }
 }
 
 // ── Sign in (domain-allowlisted internal OTP) ────────────────────────────────
@@ -83,10 +148,7 @@ function OpsLogin({ onAuthed }: { onAuthed: (u: OpsUser) => void }) {
     <div className="min-h-screen bg-[#14150f] flex items-center justify-center px-6" style={{ fontFamily: "'Inter', sans-serif" }}>
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="inline-flex items-center gap-2 text-white font-semibold tracking-tight text-lg" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-            <span className="w-6 h-6 border-2 grid place-items-center" style={{ borderColor: SAGE }}><span className="w-2 h-2" style={{ background: SAGE }} /></span>
-            OpenFrame Ops
-          </div>
+          <OpsLogo height={30} />
           <p className="text-white/40 text-sm mt-2">Internal console — staff sign-in</p>
         </div>
         <div className="bg-[#1d1e17] border border-white/10 p-6 space-y-4">
@@ -131,15 +193,15 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
   const TABS = tabsFor(user);
   // A manufacturer has no dashboard to land on — their first tab is their only tab.
   const [tab, setTab] = useState<Tab>(TABS[0]?.id ?? "dashboard");
+  const [navOpen, setNavOpen] = useState(false);
   return (
     <div className="min-h-screen bg-[#f6f6f3] flex" style={{ fontFamily: "'Inter', sans-serif" }}>
       {/* Sidebar — desktop and tablet only. Below md it is a fixed 224px rail on
           a 375px screen, and with the content's own p-8 that left 87px of usable
           width: 375 − 224 − 64. A nine-column table was rendering into that. */}
       <aside className="hidden md:flex w-56 bg-[#14150f] text-white flex-col fixed inset-y-0 left-0">
-        <div className="px-5 h-14 flex items-center gap-2 border-b border-white/10 font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-          <span className="w-5 h-5 border-2 grid place-items-center" style={{ borderColor: SAGE }}><span className="w-1.5 h-1.5" style={{ background: SAGE }} /></span>
-          OpenFrame Ops
+        <div className="px-5 h-14 flex items-center border-b border-white/10">
+          <OpsLogo height={22} />
         </div>
         <nav className="flex-1 py-3 overflow-y-auto">
           {TABS.map(t => (
@@ -165,17 +227,30 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
           `min-w-0` matters as much as the margin: a flex child defaults to
           min-width:auto, so any wide table pushed the whole document sideways and
           gave page-level horizontal scroll on top of the squeeze. */}
-      <main className="flex-1 min-w-0 md:ml-56 pb-16 md:pb-0">
-        <header className="h-12 md:h-14 bg-white border-b border-black/8 flex items-center justify-between px-4 md:px-8">
-          <h1 className="text-[15px] font-semibold text-[#14150f] capitalize flex items-center gap-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-            {/* The mark alone on mobile — the logo carries the name, so no wordmark. */}
-            <span className="md:hidden w-4 h-4 border-2 grid place-items-center flex-shrink-0" style={{ borderColor: SAGE }}>
-              <span className="w-1 h-1" style={{ background: SAGE }} />
-            </span>
-            {TABS.find(t => t.id === tab)?.label}
+      <main className="flex-1 min-w-0 md:ml-56">
+        {/* Sticky, not fixed: it participates in layout, so nothing needs a
+            compensating pad and no content can hide beneath it. The bottom bar
+            this replaces was fixed to the VIEWPORT, which is why any tab that
+            overflowed horizontally (Customers) slid its content out from under
+            it — the bar stayed put while the page moved sideways.
+            z-30 sits under the drawer (z-50) and its scrim (z-40). */}
+        <header className="sticky top-0 z-30 h-12 md:h-14 bg-white border-b border-black/8 flex items-center gap-2 px-4 md:px-8">
+          {/* Always rendered on mobile, including for a manufacturer with a single
+              tab: the drawer is the only place a phone user can see who they are
+              signed in as and sign out. The bottom bar returned null for them,
+              which left them with no way to sign out on a phone at all. */}
+          <button onClick={() => setNavOpen(true)}
+            className="md:hidden -ml-2 w-10 h-10 flex items-center justify-center text-[#5c5a56] active:bg-black/5 flex-shrink-0"
+            aria-label="Open menu" aria-expanded={navOpen} aria-controls="ops-nav-drawer">
+            <Menu className="w-5 h-5" />
+          </button>
+          <h1 className="text-[15px] font-semibold text-[#14150f] capitalize flex items-center gap-2 min-w-0 flex-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+            <span className="truncate">{TABS.find(t => t.id === tab)?.label}</span>
           </h1>
           {/* The omnibox is a desktop control; on a phone it left ~200px of
-              results under the keyboard. The bottom bar gets a Search slot. */}
+              results under the keyboard. Search on mobile is still unbuilt —
+              the bottom bar was documented as carrying a Search slot and never
+              actually did, so nothing regresses here. */}
           <div className="hidden md:block"><SearchBox onNavigate={setTab} /></div>
         </header>
         <div className="p-4 md:p-8">
@@ -191,89 +266,97 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
         </div>
       </main>
 
-      <MobileNav tabs={TABS} tab={tab} setTab={setTab} user={user} onSignOut={onSignOut} />
+      <MobileNav open={navOpen} onClose={() => setNavOpen(false)}
+        tabs={TABS} tab={tab} setTab={setTab} user={user} onSignOut={onSignOut} />
     </div>
   );
 }
 
-/** The phone's navigation: four destinations plus More, fixed to the bottom.
+/** The phone's navigation: a slide-out drawer from the left, opened from the
+ *  sticky header's hamburger.
  *
- *  A bottom bar rather than a hamburger drawer because the two most repeated
- *  moves are Dashboard ⇄ Projects, and a drawer makes each of those two taps and
- *  a full-screen state change — from the least thumb-reachable corner of the
- *  screen, for the most frequent control in the app.
+ *  This replaces a fixed bottom bar (four slots plus More). The bar was chosen
+ *  for thumb reach on the two most repeated moves, and that reasoning was sound
+ *  in isolation, but it lost on three counts in practice:
  *
- *  With ONE tab (the manufacturer, who sees only Enquiries) the bar is not
- *  rendered at all: a nav bar with a single destination is a lie about there
- *  being somewhere to go, and it costs 52px of a phone screen to tell it. */
-function MobileNav({ tabs, tab, setTab, user, onSignOut }: {
+ *  1. It was FIXED TO THE VIEWPORT, so on any tab whose content overflowed
+ *     horizontally the page slid sideways underneath a bar that did not move —
+ *     the labels ended up over the wrong columns and the active marker pointed
+ *     at nothing. Customers, a six-column table with no phone treatment, did
+ *     this on every phone. A drawer cannot desynchronise from content because
+ *     it is not on screen while content is being read.
+ *  2. Eight tabs into five slots meant three of them lived behind a generic
+ *     "More" cog. The drawer shows all eight at once, in the same order and
+ *     with the same icons as the desktop rail, so the two surfaces teach the
+ *     same map instead of two different ones.
+ *  3. It returned null for a manufacturer (one tab), and identity and Sign out
+ *     lived inside its More sheet — so a partner on a phone had no way to see
+ *     who they were signed in as, or to sign out at all. The drawer renders
+ *     regardless of tab count for exactly that reason.
+ *
+ *  Still an overlay and never a route: it must not unmount the surface beneath,
+ *  so the open record, scroll position and any half-typed field survive it. */
+function MobileNav({ open, onClose, tabs, tab, setTab, user, onSignOut }: {
+  open: boolean; onClose: () => void;
   tabs: typeof ALL_TABS; tab: Tab; setTab: (t: Tab) => void; user: OpsUser; onSignOut: () => void;
 }) {
-  const [more, setMore] = useState(false);
-  // One destination is not navigation. A manufacturer sees only Enquiries, and a
-  // bar telling them there is somewhere else to go would be a lie costing 52px.
-  if (tabs.length <= 1) return null;
-
-  const primary = tabs.slice(0, 4);
-  const rest = tabs.slice(4);
+  // Escape closes, and the page behind does not scroll while it is open —
+  // otherwise a swipe meant for the drawer scrolls the record underneath it.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [open, onClose]);
 
   return (
     <>
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[#14150f] border-t border-white/10 flex"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-        {primary.map((t) => {
-          const active = tab === t.id;
-          return (
-            <button key={t.id} onClick={() => { setTab(t.id); setMore(false); }}
-              className="flex-1 h-[52px] flex flex-col items-center justify-center gap-0.5"
-              style={active ? { borderTop: `2px solid ${SAGE}` } : { borderTop: "2px solid transparent" }}>
-              <span style={{ color: active ? SAGE : "rgba(255,255,255,0.45)" }}>{t.icon}</span>
-              <span className="text-[10px]" style={{ color: active ? "#fff" : "rgba(255,255,255,0.45)" }}>{t.label}</span>
-            </button>
-          );
-        })}
-        {rest.length > 0 && (
-          <button onClick={() => setMore(true)}
-            className="flex-1 h-[52px] flex flex-col items-center justify-center gap-0.5"
-            style={rest.some((t) => t.id === tab) ? { borderTop: `2px solid ${SAGE}` } : { borderTop: "2px solid transparent" }}>
-            <span style={{ color: rest.some((t) => t.id === tab) ? SAGE : "rgba(255,255,255,0.45)" }}><Settings className="w-4 h-4" /></span>
-            <span className="text-[10px]" style={{ color: rest.some((t) => t.id === tab) ? "#fff" : "rgba(255,255,255,0.45)" }}>More</span>
-          </button>
-        )}
-      </nav>
+      {/* Scrim. Rendered only when open so it can never swallow a tap while
+          closed — a transparent full-screen layer left mounted is the classic
+          way a drawer breaks every control on the page behind it. */}
+      {open && <div className="md:hidden fixed inset-0 z-40 bg-black/45" onClick={onClose} aria-hidden="true" />}
 
-      {/* Rises from the bottom, matching its trigger. An overlay, never a route:
-          it must not unmount the surface beneath, so tab, open record, scroll
-          position and any half-typed field survive opening and closing it. */}
-      {more && (
-        <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end" onClick={() => setMore(false)}>
-          <div className="absolute inset-0 bg-black/45" />
-          <div className="relative bg-[#14150f] max-h-[80dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}
-            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-            <div className="flex items-center justify-between px-5 h-12 border-b border-white/10">
-              <span className="text-[11px] uppercase tracking-[0.14em] text-white/40">More</span>
-              <button onClick={() => setMore(false)} className="w-11 h-11 -mr-3 flex items-center justify-center text-white/60" aria-label="Close">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            {rest.map((t) => (
-              <button key={t.id} onClick={() => { setTab(t.id); setMore(false); }}
-                className="w-full h-[52px] flex items-center gap-3 px-5 text-sm"
-                style={{ color: tab === t.id ? "#fff" : "rgba(255,255,255,0.55)" }}>
-                {t.icon}{t.label}
-              </button>
-            ))}
-            <div className="border-t border-white/10 mt-2 px-5 py-3">
-              <p className="text-sm text-white truncate">{user.name || user.email}</p>
-              <p className="text-[11px] text-white/40 truncate">{user.email}</p>
-            </div>
-            {/* Separated so it is never a mis-tap of the row above. */}
-            <button onClick={onSignOut} className="w-full h-12 flex items-center gap-2 px-5 text-sm text-white/60 mt-2 mb-2">
-              <LogOut className="w-4 h-4" />Sign out
-            </button>
-          </div>
+      {/* The panel itself stays mounted and translates, so opening and closing
+          animate. -translate-x-full keeps it fully off-screen when closed;
+          `invisible` on top of that takes it out of the tab order, which
+          transform alone does not do. */}
+      <aside id="ops-nav-drawer"
+        className={`md:hidden fixed inset-y-0 left-0 z-50 w-[264px] max-w-[82vw] bg-[#14150f] text-white flex flex-col
+                    transition-transform duration-200 ease-out
+                    ${open ? "translate-x-0" : "-translate-x-full invisible"}`}
+        aria-hidden={!open}>
+        <div className="px-5 h-12 flex items-center justify-between border-b border-white/10">
+          <OpsLogo height={22} />
+          <button onClick={onClose} className="w-10 h-10 -mr-3 flex items-center justify-center text-white/60" aria-label="Close menu">
+            <X className="w-5 h-5" />
+          </button>
         </div>
-      )}
+
+        {/* Same order, same icons, same active treatment as the desktop rail.
+            44px rows: this is a touch target, not a 32px desktop menu item. */}
+        <nav className="flex-1 py-2 overflow-y-auto">
+          {tabs.map((t) => (
+            <button key={t.id} onClick={() => { setTab(t.id); onClose(); }}
+              className={`w-full flex items-center gap-3 px-5 h-11 text-sm border-l-2 ${tab === t.id ? "text-white bg-white/[0.08]" : "text-white/55 border-transparent active:bg-white/5"}`}
+              style={tab === t.id ? { borderColor: SAGE } : undefined}>
+              {t.icon}{t.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="border-t border-white/10 p-3" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+          <div className="px-2 pb-2">
+            <p className="text-sm text-white truncate">{user.name || user.email}</p>
+            <p className="text-[11px] text-white/40 truncate">{user.email}</p>
+          </div>
+          {/* Separated from the list so it is never a mis-tap of a destination. */}
+          <button onClick={onSignOut} className="w-full flex items-center gap-2 px-2 h-11 text-sm text-white/55">
+            <LogOut className="w-4 h-4" />Sign out
+          </button>
+        </div>
+      </aside>
     </>
   );
 }

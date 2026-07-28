@@ -31,7 +31,29 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
   if (!rows) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
   if (!rows.length) return <div className="bg-white border border-dashed border-black/15 p-12 text-center text-sm text-[#5c5a56]">No registered customers yet.</div>;
   return (
-    <div className="bg-white border border-black/8">
+    <>
+    {/* PHONE — card per row, the same treatment Projects already had and this
+        list never got. A six-column table cannot fit 375px: its min-content
+        width forces the whole document wider, which is page-level horizontal
+        scroll. That is what broke navigation here — the old bottom bar was
+        fixed to the VIEWPORT, so the content slid sideways underneath it while
+        the bar stayed put. The nav is a drawer now, but the table was the cause
+        and it is fixed here rather than papered over there. */}
+    <div className="lg:hidden -mx-4 border-y border-black/8 bg-white">
+      {rows.map(c => (
+        <button key={c.id} onClick={() => onOpen(c.id)}
+          className="w-full text-left px-4 py-3 border-b border-black/8 last:border-0 active:bg-[#faf9f6]">
+          <p className="text-[15px] font-medium text-[#14150f] truncate">{c.name || c.email.split("@")[0]}</p>
+          <p className="text-[13px] text-[#5c5a56] truncate">{c.email}</p>
+          {c.company && <p className="text-[13px] text-[#5c5a56] truncate">{c.company}{c.abn ? ` · ABN ${c.abn}` : ""}</p>}
+          <p className="text-[12px] text-[#8b8880] mt-1">
+            {c.projects} project{c.projects === 1 ? "" : "s"} · {c.orders} order{c.orders === 1 ? "" : "s"} · joined {fmtDate(c.created_at)}
+          </p>
+        </button>
+      ))}
+    </div>
+
+    <div className="hidden lg:block bg-white border border-black/8">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-[11px] uppercase tracking-wide text-[#8b8880] border-b border-black/8">
@@ -54,6 +76,7 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
         </tbody>
       </table>
     </div>
+    </>
   );
 }
 

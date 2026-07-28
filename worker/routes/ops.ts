@@ -177,7 +177,49 @@ ops.post("/auth/verify", async (c) => {
 ops.post("/auth/logout", async (c) => {
   await destroySession(c.env, c.req.raw);
   c.header("Set-Cookie", clearCookie("apertly_session", c.env));
-  return c.json({ ok: true });
+  // When Access is configured it IS the identity: resolveInternalUser reads the
+  // Cf-Access-Jwt-Assertion header and ignores the session cookie entirely. So
+  // the two lines above sign NOBODY out in production — they delete a KV session
+  // that is not being consulted and clear a cookie that is not being read, and
+  // Cloudflare re-injects a valid assertion on the very next request. Only Access
+  // can end an Access session, and only from the browser, so hand the client the
+  // endpoint to navigate to. Host-relative on purpose: /cdn-cgi/* is handled at
+  // the Cloudflare edge before the Worker sees it, and scoping the logout to this
+  // hostname signs the user out of ops rather than every Access app in the org.
+  const accessConfigured = !!(c.env.ACCESS_TEAM_DOMAIN && c.env.ACCESS_AUD);
+  return c.json({ ok: true, accessLogout: accessConfigured ? "/cdn-cgi/access/logout" : null });
+});
+
+// GET /api/ops/brand — the logo and business name from Sanity Site Settings.
+//
+// Deliberately NOT staff-gated: it is served on the sign-in screen, and every
+// value in it is already public (the logo is a Sanity CDN URL the marketing site
+// serves to anonymous visitors). Gating it would only mean the login screen
+// could not be branded.
+//
+// Never invents a brand. With Sanity unreachable or the field unset it returns
+// nulls and the console falls back to its wordmark — the same rule the
+// server-rendered <head> follows: carry less rather than a placeholder.
+ops.get("/brand", async (c) => {
+  const empty = { logo: null as string | null, businessName: null as string | null };
+  if (!c.env.SANITY_PROJECT_ID) return c.json(empty);
+  const cacheKey = "ops:brand";
+  try {
+    const cached = await c.env.KV.get(cacheKey);
+    if (cached) return c.json(JSON.parse(cached));
+    const query = encodeURIComponent(`*[_type=="siteSettings"][0]{businessName, "logo": logo.asset->url}`);
+    const res = await fetch(
+      `https://${c.env.SANITY_PROJECT_ID}.api.sanity.io/v2024-01-01/data/query/${c.env.SANITY_DATASET || "production"}?query=${query}`,
+    );
+    const { result } = await res.json<{ result?: { businessName?: string; logo?: string } }>();
+    const brand = { logo: result?.logo ?? null, businessName: result?.businessName ?? null };
+    // Short TTL: a logo change should reach the console the same day without a
+    // deploy, and this is one small request an hour.
+    await c.env.KV.put(cacheKey, JSON.stringify(brand), { expirationTtl: 3600 });
+    return c.json(brand);
+  } catch {
+    return c.json(empty);
+  }
 });
 
 // GET /api/ops/me — the acting staff member, or 401.
