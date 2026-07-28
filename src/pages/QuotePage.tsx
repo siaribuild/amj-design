@@ -41,16 +41,16 @@ function ProjectNameField({ value, onCommit }: { value: string; onCommit: (v: st
         onBlur={commit}
         onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } else if (e.key === "Escape") { e.preventDefault(); cancel(); } }}
         size={Math.max(draft.length, 12)}
-        className="text-2xl md:text-3xl font-semibold text-[#131311] leading-tight bg-white border border-[#5A7A6A] px-2 py-0.5 max-w-full focus:outline-none focus:ring-2 focus:ring-[#5A7A6A]/40"
+        className="text-2xl md:text-3xl font-semibold text-ink leading-tight bg-white border border-sage px-2 py-0.5 max-w-full focus:outline-none focus:ring-2 focus:ring-sage/40"
         style={{ fontFamily: "'Space Grotesk', sans-serif" }} />
     );
   }
   return (
     <button onClick={begin} aria-label={`Rename project${value ? ` (${value})` : ""}`}
-      className="group/name inline-flex items-center gap-2 text-2xl md:text-3xl font-semibold text-[#131311] leading-tight border border-black/12 hover:border-[#5A7A6A] bg-white px-2 py-0.5 max-w-full transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A]"
+      className="group/name inline-flex items-center gap-2 text-2xl md:text-3xl font-semibold text-ink leading-tight border border-black/12 hover:border-sage bg-white px-2 py-0.5 max-w-full transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage"
       style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
       <span className="truncate">{value}</span>
-      <Pencil className="w-4 h-4 text-[#9a9894] group-hover/name:text-[#5A7A6A] flex-shrink-0" aria-hidden="true" />
+      <Pencil className="w-4 h-4 text-quieter group-hover/name:text-sage flex-shrink-0" aria-hidden="true" />
     </button>
   );
 }
@@ -479,10 +479,10 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
       <div className="relative min-h-screen ground-bone pt-24 pb-24 overflow-hidden">
         <GhostMark size={300} opacity={0.05} pos="right-0 bottom-0" />
         <div className="max-w-md w-full mx-auto px-6 text-center relative">
-          <div className="w-14 h-14 border border-[#5A7A6A]/30 bg-sage-wash flex items-center justify-center mx-auto mb-6"><WindowMark size={24} color={SAGE} /></div>
-          <h2 className="text-2xl font-semibold text-[#131311] mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Quote submitted</h2>
-          <p className="text-sm text-[#5c5a56] leading-relaxed mb-8 mt-2">We've received your project and emailed a confirmation to <span className="text-[#131311]">{contactEmail || "your email"}</span>. We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote with its reference. Expect a response within 1–2 business days.</p>
-          <p className="text-xs text-[#5c5a56] mb-6">No payment at this stage. Deposit only after you approve the reviewed quote.</p>
+          <div className="w-14 h-14 border border-sage/30 bg-sage-wash flex items-center justify-center mx-auto mb-6"><WindowMark size={24} color={SAGE} /></div>
+          <h2 className="text-2xl font-semibold text-ink mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Quote submitted</h2>
+          <p className="text-sm text-body leading-relaxed mb-8 mt-2">We've received your project and emailed a confirmation to <span className="text-ink">{contactEmail || "your email"}</span>. We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote with its reference. Expect a response within 1–2 business days.</p>
+          <p className="text-xs text-body mb-6">No payment at this stage. Deposit only after you approve the reviewed quote.</p>
           <div className="flex gap-3 justify-center">
             <Btn variant="sage" size="md" onClick={() => go(user ? "order" : "track-order")}>{user ? "View status" : "Track an order"}</Btn>
             <Btn variant="ghost" size="md" onClick={() => go("home")}>Back to home</Btn>
@@ -497,30 +497,30 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     return (
       <div className="min-h-screen ground-bone pt-16">
         <div className="max-w-2xl mx-auto px-6 py-10">
-          <button onClick={() => setView("build")} className="text-[#5c5a56] hover:text-[#131311] text-sm mb-5 flex items-center gap-1 cursor-pointer"><ChevronLeft className="w-4 h-4" />Back to MyProject</button>
+          <button onClick={() => setView("build")} className="text-body hover:text-ink text-sm mb-5 flex items-center gap-1 cursor-pointer"><ChevronLeft className="w-4 h-4" />Back to MyProject</button>
           <SLabel>Review quote</SLabel>
-          <h1 className="text-3xl font-semibold text-[#131311] mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Review and submit</h1>
-          <p className="text-[#5c5a56] text-sm mb-6">No payment at this stage. A reviewed quote is issued after manual technical review.</p>
+          <h1 className="text-3xl font-semibold text-ink mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Review and submit</h1>
+          <p className="text-body text-sm mb-6">No payment at this stage. A reviewed quote is issued after manual technical review.</p>
           <div className="card p-5 mb-4">
             <SLabel>Your quote</SLabel>
             <div className="space-y-2 mb-3">
               {quote.items.map((it, i) => (
                 <div key={it.id} className="flex justify-between gap-3 text-sm border-b border-black/6 last:border-0 py-1.5">
-                  <span className="text-[#131311] min-w-0 truncate">{String(i + 1).padStart(2, "0")} · {productLabel(it.productSlug)} — {mm(it.width)} × {mm(it.height)} ×{it.qty}</span>
-                  <span className="text-[#5c5a56] flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>
+                  <span className="text-ink min-w-0 truncate">{String(i + 1).padStart(2, "0")} · {productLabel(it.productSlug)} — {mm(it.width)} × {mm(it.height)} ×{it.qty}</span>
+                  <span className="text-body flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>
                     {it.review?.customerConfigurationChanged && (typeof it.lineTotal !== "number" || !Number.isFinite(it.lineTotal))
                       ? "Pending final price"
                       : lineBlocksSubmission(it) ? "Review" : fmt(gstAdjust(linePriceTotal(it), gstMode))}
                   </span>
                 </div>
               ))}
-              {quote.files.length > 0 && <p className="text-xs text-[#5c5a56] pt-1">+ {quote.files.length} uploaded file{quote.files.length !== 1 ? "s" : ""} for review</p>}
+              {quote.files.length > 0 && <p className="text-xs text-body pt-1">+ {quote.files.length} uploaded file{quote.files.length !== 1 ? "s" : ""} for review</p>}
             </div>
-            <div className="flex justify-between border-t border-black/8 pt-3 text-sm"><span className="text-[#5c5a56]">{pendingPriceCount ? "Priced-items subtotal" : "Estimated total"}</span><span className="font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
+            <div className="flex justify-between border-t border-black/8 pt-3 text-sm"><span className="text-body">{pendingPriceCount ? "Priced-items subtotal" : "Estimated total"}</span><span className="font-semibold text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
             {pendingPriceCount > 0 && <p className="mt-2 text-xs text-amber-800">{pendingPriceCount} customer-changed configuration{pendingPriceCount === 1 ? "" : "s"} will be added after we confirm the exact product and price.</p>}
           </div>
           <div className="card p-5 space-y-4 mb-4">
-            {user && <p className="text-sm text-[#5A7A6A] flex items-center gap-1.5"><CheckCircle className="w-4 h-4" />Pre-filled from your account — edit if needed.</p>}
+            {user && <p className="text-sm text-sage flex items-center gap-1.5"><CheckCircle className="w-4 h-4" />Pre-filled from your account — edit if needed.</p>}
             <div><FieldLabel>Full name</FieldLabel><Input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Your name" /></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><FieldLabel>Email</FieldLabel><Input value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="your@email.com" /></div>
@@ -528,7 +528,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
             </div>
             <div><FieldLabel>Delivery suburb / postcode</FieldLabel><Input value={suburb} onChange={e => setSuburb(e.target.value)} placeholder="e.g. Preston VIC 3072" /></div>
           </div>
-          <div className="bg-[#F2F0EC] border border-black/8 p-4 mb-6 text-xs text-[#5c5a56]"><AlertCircle className="w-3 h-3 inline mr-1" />Estimated totals are confirmed on technical review. No deposit until you approve the reviewed quote. Supply only — installation not included.</div>
+          <div className="bg-bone border border-black/8 p-4 mb-6 text-xs text-body"><AlertCircle className="w-3 h-3 inline mr-1" />Estimated totals are confirmed on technical review. No deposit until you approve the reviewed quote. Supply only — installation not included.</div>
           {submitError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5 mb-3 justify-end"><AlertCircle className="w-4 h-4" />{submitError}</p>}
           <div className="flex justify-end"><Btn variant="sage" size="lg" disabled={!contactName || !contactEmail || submitting || aiPhase?.kind === "reading"} onClick={handleSubmit}>{submitting ? "Submitting…" : aiPhase?.kind === "reading" ? "Refining estimate…" : <>Submit for technical review <Send className="w-4 h-4" /></>}</Btn></div>
         </div>
@@ -541,14 +541,14 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     <div className="min-h-[100svh] ground-bone flex flex-col">
       {/* ─── Dark functional hero — header overlays it; upload panel is a live
              part of the hero, styled like the panels on the home hero ───────── */}
-      <section className="relative bg-[#0c0c0a] overflow-hidden">
+      <section className="relative bg-night overflow-hidden">
         <img
           src="https://images.unsplash.com/photo-1774516534130-d67eb3c98798?w=1920&h=1080&fit=crop&auto=format"
           alt="Contemporary home interior with full-height aluminium-framed glazing onto a landscaped garden at dusk"
           className="absolute inset-0 w-full h-full object-cover opacity-70 hero-zoom" />
         {/* Contrast overlay — stronger on the left behind the copy */}
         <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.9) 0%, rgba(12,12,10,0.6) 22%, rgba(12,12,10,0.32) 50%, rgba(12,12,10,0.28) 100%)" }} />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/50 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-night/50 via-transparent to-transparent" />
 
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-20 pb-6 md:pt-24 md:pb-9">
           {/* The picker has no visible control here: it is opened from the items
@@ -602,7 +602,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 project list, submission and reviewed quote. */}
             <ProjectNameField value={quote.title} onCommit={quote.setTitle} />
             {quote.items.length > 0 && (
-              <span className="text-xs text-[#5c5a56] border border-black/10 px-2 py-0.5 flex-shrink-0">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span>
+              <span className="text-xs text-body border border-black/10 px-2 py-0.5 flex-shrink-0">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span>
             )}
             {/* Whole-project reset. Lives here — beside the scope it wipes (items +
                 schedule) — rather than on the sticky action bar, so it is findable
@@ -610,7 +610,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
             {hasContent && (
               <button ref={clearBtnRef} type="button" onClick={() => setClearConfirm(true)}
                 aria-label="Clear all items and the uploaded schedule"
-                className="ml-auto inline-flex items-center gap-1.5 card px-2.5 py-1 text-xs font-medium text-[#6f6c67] hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A]">
+                className="ml-auto inline-flex items-center gap-1.5 card px-2.5 py-1 text-xs font-medium text-body-soft hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
                 <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />Clear all
               </button>
             )}
@@ -627,10 +627,10 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 // promise (UX review 2026-07-26). Known types only:
                 const type = (f.docType ?? null) as string | null;
                 const known: Record<string, { label: string; tint: string }> = {
-                  schedule: { label: "SCHEDULE", tint: "border-[#5A7A6A]/30 bg-sage-wash text-[#355344]" },
-                  energy_report: { label: "ENERGY REPORT", tint: "border-[#4C6A88]/30 bg-[#4C6A88]/10 text-[#4C6A88]" }, // TONE.work
-                  plans: { label: "PLANS", tint: "border-black/15 bg-black/[0.03] text-[#6f6c67]" },
-                  supporting: { label: "SUPPORTING", tint: "border-dashed border-black/15 bg-black/[0.03] text-[#6f6c67]" },
+                  schedule: { label: "SCHEDULE", tint: "border-sage/30 bg-sage-wash text-sage-ink" },
+                  energy_report: { label: "ENERGY REPORT", tint: "border-info/30 bg-info/10 text-info" }, // TONE.work
+                  plans: { label: "PLANS", tint: "border-black/15 bg-black/[0.03] text-body-soft" },
+                  supporting: { label: "SUPPORTING", tint: "border-dashed border-black/15 bg-black/[0.03] text-body-soft" },
                 };
                 const chip = type ? known[type] : undefined;
                 const confirming = removingFile === String(f.id);
@@ -645,25 +645,25 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                       <button onClick={() => void handleRemoveFile(String(f.id), f.name)}
                         className="text-xs font-medium text-red-700 border border-red-300 bg-white px-1.5 py-0.5 hover:bg-red-100 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-red-400">Remove</button>
                       <button onClick={() => setRemovingFile(null)} autoFocus
-                        className="text-xs text-[#5c5a56] card px-1.5 py-0.5 hover:border-black/25 cursor-pointer">Keep</button>
+                        className="text-xs text-body card px-1.5 py-0.5 hover:border-black/25 cursor-pointer">Keep</button>
                     </div>
                   );
                 }
                 return (
                   <div key={f.id} className="inline-flex items-center gap-2 card px-3 py-1.5 text-xs max-w-full">
-                    <Paperclip className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0" aria-hidden="true" />
-                    <span className="text-[#131311] font-medium truncate max-w-[14rem]">{f.name}</span>
+                    <Paperclip className="w-3.5 h-3.5 text-sage flex-shrink-0" aria-hidden="true" />
+                    <span className="text-ink font-medium truncate max-w-[14rem]">{f.name}</span>
                     {chip && (
                       <span className={`text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 border leading-none flex-shrink-0 ${chip.tint}`}
                         style={{ fontFamily: "'DM Mono', monospace" }}>{chip.label}</span>
                     )}
-                    <span className="text-[#8a8782] flex-shrink-0">
+                    <span className="text-quiet flex-shrink-0">
                       {type === "supporting" ? "· Not used for pricing" : "· Attached for review"}
                     </span>
                     {/* Per-file Remove (spec §1c). Trash2 (not X) — X reads as
                         "dismiss", Trash2 as "delete"; matches Clear-all's icon. */}
                     <button onClick={() => setRemovingFile(String(f.id))} aria-label={`Remove ${f.name}`}
-                      className="flex-shrink-0 -mr-1 w-5 h-5 inline-flex items-center justify-center text-[#8a8782] hover:text-red-600 transition-colors cursor-pointer">
+                      className="flex-shrink-0 -mr-1 w-5 h-5 inline-flex items-center justify-center text-quiet hover:text-red-600 transition-colors cursor-pointer">
                       <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                   </div>
@@ -676,14 +676,14 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                   uploads behind a ~10s debounce), unlike manual entry, which is
                   parked. Re-adding the same file is caught in handleFiles. */}
               <button type="button" onClick={openUpload}
-                className="inline-flex items-center gap-1.5 border border-dashed border-black/25 px-3 py-1.5 text-xs font-medium text-[#5A7A6A] hover:border-[#5A7A6A] hover:bg-[#F7F8F6] transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A]">
+                className="inline-flex items-center gap-1.5 border border-dashed border-black/25 px-3 py-1.5 text-xs font-medium text-sage hover:border-sage hover:bg-sage-veil transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
                 <Upload className="w-3.5 h-3.5" aria-hidden="true" />
                 {quote.files.length > 0 ? "Add another document" : "Upload plans or a schedule"}
               </button>
             </div>
           )}
           {quote.items.length === 0 && (
-            <p className="text-[#5c5a56] text-sm mt-1.5 max-w-lg">Add products or upload a schedule — we issue a reviewed quote before any deposit. Supply only.</p>
+            <p className="text-body text-sm mt-1.5 max-w-lg">Add products or upload a schedule — we issue a reviewed quote before any deposit. Supply only.</p>
           )}
         </div>
 
@@ -693,7 +693,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
               the customer's line stands either way; Link converts it to a
               schedule line that future re-parses may refresh (edits protected). */}
           {collisionTags.map((tag) => (
-            <div key={tag} role="status" className="mb-4 border border-[#4C6A88]/30 bg-[#4C6A88]/10 px-4 py-3 text-sm text-[#31485f]">
+            <div key={tag} role="status" className="mb-4 border border-info/30 bg-info/10 px-4 py-3 text-sm text-info-ink">
               <div className="flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="flex-1 min-w-0">
@@ -709,14 +709,14 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
           ))}
           {uploadNotice && (
             <div role={uploadNotice.type === "error" ? "alert" : "status"} aria-live="polite"
-              className={`mb-4 flex items-start gap-2.5 border px-4 py-3 text-sm ${uploadNotice.type === "success" ? "border-[#5A7A6A]/30 bg-sage-wash text-[#355344]" : "border-red-300 bg-red-50 text-red-800"}`}>
+              className={`mb-4 flex items-start gap-2.5 border px-4 py-3 text-sm ${uploadNotice.type === "success" ? "border-sage/30 bg-sage-wash text-sage-ink" : "border-red-300 bg-red-50 text-red-800"}`}>
               {uploadNotice.type === "success"
                 ? <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
                 : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />}
               <span className="flex-1">
                 {uploadNotice.message}
                 {uploadNotice.type === "success" && aiPhase?.kind === "reading" && (
-                  <span className="inline-flex items-center gap-1.5 ml-1.5 text-[#355344]/80">
+                  <span className="inline-flex items-center gap-1.5 ml-1.5 text-sage-ink/80">
                     · <Loader2 className="w-3.5 h-3.5 animate-spin inline" aria-hidden="true" /> refining product and glazing allowances…
                   </span>
                 )}
@@ -732,7 +732,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                   <span className="ml-1.5 whitespace-nowrap">
                     · not for this project?{" "}
                     <button onClick={() => void handleRemoveFile(removeOffer.fileId, removeOffer.name)}
-                      className="underline font-medium hover:text-[#131311] cursor-pointer">Remove file</button>
+                      className="underline font-medium hover:text-ink cursor-pointer">Remove file</button>
                   </span>
                 )}
               </span>
@@ -768,13 +768,13 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 happened" and invites a pointless second upload. */}
             {processing && (
               <div role="status" aria-live="polite"
-                className="flex items-start gap-3 border border-dashed border-[#5A7A6A]/45 bg-[#5A7A6A]/[0.05] px-4 py-5 text-sm">
-                <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin text-[#5A7A6A]" aria-hidden="true" />
+                className="flex items-start gap-3 border border-dashed border-sage/45 bg-sage/[0.05] px-4 py-5 text-sm">
+                <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin text-sage" aria-hidden="true" />
                 <span>
-                  <span className="block font-medium text-[#355344]">
+                  <span className="block font-medium text-sage-ink">
                     Reading your document{processingDocs !== 1 ? "s" : ""}…
                   </span>
-                  <span className="block mt-0.5 text-[#5c5a56] leading-relaxed">
+                  <span className="block mt-0.5 text-body leading-relaxed">
                     Your items will appear here, below anything already on the list. This usually takes under a minute — you can leave this page open.
                   </span>
                 </span>
@@ -794,34 +794,34 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
             </div>
           ) : processing ? (
             quote.items.length > 0 && (
-              <p className="mt-3 border border-dashed border-black/12 py-3 text-center text-sm text-[#8a8782]">
+              <p className="mt-3 border border-dashed border-black/12 py-3 text-center text-sm text-quiet">
                 Adding items is paused until we finish reading.
               </p>
             )
           ) : quote.items.length === 0 ? (
             <div id="quote-start-actions" className="grid grid-cols-1 sm:grid-cols-2 gap-3" aria-label="Start your quote">
               <button onClick={openUpload} disabled={uploading}
-                className="group min-h-32 card p-5 text-left hover:border-[#5A7A6A] hover:bg-[#F7F8F6] disabled:opacity-60 disabled:cursor-wait transition-colors cursor-pointer">
-                <span className="w-9 h-9 mb-4 flex items-center justify-center bg-sage-wash text-[#5A7A6A] group-hover:bg-[#5A7A6A] group-hover:text-white transition-colors">
+                className="group min-h-32 card p-5 text-left hover:border-sage hover:bg-sage-veil disabled:opacity-60 disabled:cursor-wait transition-colors cursor-pointer">
+                <span className="w-9 h-9 mb-4 flex items-center justify-center bg-sage-wash text-sage group-hover:bg-sage group-hover:text-white transition-colors">
                   {uploading
                     ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" aria-hidden="true" />
                     : <UploadCloud className="w-5 h-5" aria-hidden="true" />}
                 </span>
-                <span className="block text-base font-semibold text-[#131311] mb-1">{uploading ? "Reading schedule…" : "Upload a file"}</span>
-                <span className="block text-sm leading-relaxed text-[#5c5a56]">Import products from plans or a window and door schedule.</span>
+                <span className="block text-base font-semibold text-ink mb-1">{uploading ? "Reading schedule…" : "Upload your schedule"}</span>
+                <span className="block text-sm leading-relaxed text-body">Every line on your PDF comes back matched and priced. Plans work too.</span>
               </button>
               <button onClick={() => setAdding(true)}
-                className="group min-h-32 card p-5 text-left hover:border-[#5A7A6A] hover:bg-[#F7F8F6] transition-colors cursor-pointer">
-                <span className="w-9 h-9 mb-4 flex items-center justify-center bg-sage-wash text-[#5A7A6A] group-hover:bg-[#5A7A6A] group-hover:text-white transition-colors">
+                className="group min-h-32 card p-5 text-left hover:border-sage hover:bg-sage-veil transition-colors cursor-pointer">
+                <span className="w-9 h-9 mb-4 flex items-center justify-center bg-sage-wash text-sage group-hover:bg-sage group-hover:text-white transition-colors">
                   <Plus className="w-5 h-5" aria-hidden="true" />
                 </span>
-                <span className="block text-base font-semibold text-[#131311] mb-1">Add a product manually</span>
-                <span className="block text-sm leading-relaxed text-[#5c5a56]">Choose a product, then enter its dimensions and options.</span>
+                <span className="block text-base font-semibold text-ink mb-1">Add a product manually</span>
+                <span className="block text-sm leading-relaxed text-body">Choose a product, then enter its dimensions and options.</span>
               </button>
             </div>
           ) : (
             <button onClick={() => setAdding(true)}
-              className="mt-3 w-full flex items-center justify-center gap-1.5 border border-dashed border-black/20 hover:border-[#5A7A6A] py-3 text-sm text-[#5A7A6A] font-medium cursor-pointer transition-colors">
+              className="mt-3 w-full flex items-center justify-center gap-1.5 border border-dashed border-black/20 hover:border-sage py-3 text-sm text-sage font-medium cursor-pointer transition-colors">
               <Plus className="w-4 h-4" />Add another item
             </button>
           )}
@@ -850,8 +850,8 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
           onClick={cancelClear} onKeyDown={e => { if (e.key === "Escape") cancelClear(); }}>
           <div ref={clearDialogRef} onClick={e => e.stopPropagation()}
             className="w-full max-w-sm card p-5" style={{ boxShadow: "0 20px 50px rgba(19,19,17,0.28)" }}>
-            <h3 className="text-base font-semibold text-[#131311] mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Clear everything?</h3>
-            <p className="text-sm text-[#5c5a56] leading-relaxed mb-4">This removes all {quote.items.length} item{quote.items.length !== 1 ? "s" : ""} and the uploaded schedule and can't be undone.</p>
+            <h3 className="text-base font-semibold text-ink mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Clear everything?</h3>
+            <p className="text-sm text-body leading-relaxed mb-4">This removes all {quote.items.length} item{quote.items.length !== 1 ? "s" : ""} and the uploaded schedule and can't be undone.</p>
             <div className="flex justify-end gap-2">
               <Btn variant="ghost" size="md" onClick={cancelClear}>Cancel</Btn>
               <Btn variant="danger" size="md" onClick={handleClearAll}>Clear all</Btn>

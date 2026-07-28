@@ -40,9 +40,9 @@ export function AccountShell({ section, setPage, user, onSignOut, children }: {
         <div className="max-w-6xl mx-auto px-6 pt-[26px] pb-[60px] grid lg:grid-cols-[1fr_236px] gap-0 lg:gap-[34px] items-start">
           <main className="min-w-0 lg:order-1 order-2">
             {/* Mobile breadcrumb — orients without the rail. */}
-            <div className="flex lg:hidden items-center gap-2 pb-4 text-[11px] uppercase tracking-[0.05em] text-[#5c5a56]" style={{ fontFamily: "'DM Mono', monospace" }}>
+            <div className="flex lg:hidden items-center gap-2 pb-4 text-[11px] uppercase tracking-[0.05em] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>
               <Mark size={14} color={SAGE} />
-              My Projects <span className="opacity-45">/</span> <b className="text-[#131311] font-medium">{SECTION_LABEL[section]}</b>
+              My Projects <span className="opacity-45">/</span> <b className="text-ink font-medium">{SECTION_LABEL[section]}</b>
             </div>
             {children}
           </main>
@@ -73,11 +73,11 @@ function Rail({ section, setPage, user, onSignOut }: {
     return (
       <button onClick={() => go(it.page)} aria-current={on ? "page" : undefined}
         className={`flex items-center gap-[11px] px-3 py-2.5 text-sm text-left border-l-2 transition-colors cursor-pointer ${
-          on ? "text-[#131311] font-semibold bg-[#5A7A6A]/[0.07] border-l-[#5A7A6A]" : "text-[#5c5a56] border-l-transparent hover:text-[#131311] hover:bg-[#5A7A6A]/[0.07]"}`}>
-        <span className={on ? "text-[#5A7A6A]" : "text-[#5c5a56]"}>{it.icon}</span>
+          on ? "text-ink font-semibold bg-sage/[0.07] border-l-sage" : "text-body border-l-transparent hover:text-ink hover:bg-sage/[0.07]"}`}>
+        <span className={on ? "text-sage" : "text-body"}>{it.icon}</span>
         {it.label}
         {it.badge != null && (
-          <span className="ml-auto text-[11px] text-[#5c5a56] bg-black/[0.045] px-[7px] py-px" style={{ fontFamily: "'DM Mono', monospace" }}>{it.badge}</span>
+          <span className="ml-auto text-[11px] text-body bg-black/[0.045] px-[7px] py-px" style={{ fontFamily: "'DM Mono', monospace" }}>{it.badge}</span>
         )}
       </button>
     );
@@ -87,12 +87,12 @@ function Rail({ section, setPage, user, onSignOut }: {
     <aside className="hidden lg:flex flex-col sticky top-[82px] lg:order-2" aria-label="Account navigation">
       {/* Identity header — the always-on "which account / am I trade" glance. */}
       <div className="flex items-center gap-[11px] px-2.5 pb-[15px] border-b border-black/10 mb-2">
-        <span className="w-[38px] h-[38px] bg-[#5A7A6A] text-white grid place-items-center text-sm flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>
+        <span className="w-[38px] h-[38px] bg-sage text-white grid place-items-center text-sm flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>
           {initialsOf(user.company || user.name)}
         </span>
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-[#131311] leading-tight truncate">{user.company || user.name}</div>
-          <div className="text-[10.5px] tracking-[0.05em] text-[#5c5a56] mt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>
+          <div className="text-sm font-semibold text-ink leading-tight truncate">{user.company || user.name}</div>
+          <div className="text-[10.5px] tracking-[0.05em] text-body mt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>
             {(user.type ?? "customer").toUpperCase()}{user.company ? " · TRADE" : ""}
           </div>
         </div>
@@ -105,7 +105,7 @@ function Rail({ section, setPage, user, onSignOut }: {
       <div className="border-t border-black/10 mt-3 pt-3 flex flex-col gap-px">
         {account.map((it) => <Item key={it.key} it={it} />)}
         <button onClick={onSignOut}
-          className="flex items-center gap-[11px] px-3 py-2.5 text-sm text-left border-l-2 border-l-transparent text-[#5c5a56] hover:text-[#131311] hover:bg-[#5A7A6A]/[0.07] transition-colors cursor-pointer">
+          className="flex items-center gap-[11px] px-3 py-2.5 text-sm text-left border-l-2 border-l-transparent text-body hover:text-ink hover:bg-sage/[0.07] transition-colors cursor-pointer">
           <LogOut className="w-[17px] h-[17px]" />Sign out
         </button>
       </div>

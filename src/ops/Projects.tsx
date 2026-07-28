@@ -13,14 +13,12 @@
 //  • DAYS IN STAGE — sorted descending within "ours". The default answers "what
 //    do I touch next", which `updated_at` cannot: that moves when the CUSTOMER
 //    replies, burying our oldest obligation under the newest event.
+import { SAGE, INK, QUIET as MUTED } from "../styles/tokens";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { opsProjects, type OpsProjectRow } from "./api";
 import { ProjectRecord } from "./ProjectRecord";
 
-const SAGE = "#5A7A6A";
-const INK = "#131311";
-const MUTED = "#8b8880";
 const MONO = { fontFamily: "'DM Mono', monospace" } as const;
 
 const money = (n: number) => `$${Math.round(n).toLocaleString("en-AU")}`;
@@ -91,7 +89,7 @@ export function Projects() {
         <div className="lg:hidden -mx-4 border-y border-black/8 bg-white">
           {shown.map((r) => (
             <button key={r.id} onClick={() => setOpenId(r.id)}
-              className="w-full text-left px-4 py-3 border-b border-black/8 last:border-0 active:bg-[#faf9f6]">
+              className="w-full text-left px-4 py-3 border-b border-black/8 last:border-0 active:bg-bone">
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-[13px]" style={{ ...MONO, color: SAGE }}>{r.ref}</span>
                 <span className="text-right">
@@ -100,17 +98,17 @@ export function Projects() {
                 </span>
               </div>
               <p className="text-[15px] truncate mt-0.5" style={{ color: INK }}>{r.title}</p>
-              <p className="text-[13px] truncate" style={{ color: "#5c5a56" }}>
+              <p className="text-[13px] truncate" style={{ color: "var(--body)" }}>
                 {[r.customerName, r.org].filter(Boolean).join(" · ") || "—"}
               </p>
               <div className="flex items-baseline justify-between gap-3 mt-1">
-                <span className="text-[12px]" style={{ color: "#5c5a56" }}>{r.phase} · {r.stateLabel}</span>
+                <span className="text-[12px]" style={{ color: "var(--body)" }}>{r.phase} · {r.stateLabel}</span>
                 <span className="text-[12px] flex-shrink-0" style={{ color: r.waitingOn === "Us" ? INK : MUTED, fontWeight: r.waitingOn === "Us" ? 600 : 400 }}>
                   {r.waitingOn} · <span style={MONO}>{r.daysInStage ?? "—"}d</span>
                 </span>
               </div>
               {r.unresolved > 0 && (
-                <span className="inline-block mt-1.5 text-[11px] px-1.5 py-0.5 border" style={{ borderColor: "rgba(180,120,40,0.4)", color: "#7a5410" }}>
+                <span className="inline-block mt-1.5 text-[11px] px-1.5 py-0.5 border" style={{ borderColor: "rgba(180,120,40,0.4)", color: "var(--warning-ink)" }}>
                   Unpriced {r.unresolved}
                 </span>
               )}
@@ -136,7 +134,7 @@ export function Projects() {
             <tbody>
               {shown.map((r) => (
                 <tr key={r.id} onClick={() => setOpenId(r.id)}
-                  className="border-b border-black/5 last:border-0 cursor-pointer hover:bg-[#faf9f6]">
+                  className="border-b border-black/5 last:border-0 cursor-pointer hover:bg-bone">
                   <td className="px-4 py-2.5" style={{ ...MONO, color: SAGE }}>{r.ref}</td>
                   <td className="px-3 py-2.5" style={{ color: INK }}>
                     {r.title}
@@ -164,7 +162,7 @@ export function Projects() {
                   <td className="px-3 py-2.5 text-right" style={{ ...MONO, color: MUTED }}>{r.daysInStage ?? "—"}</td>
                   <td className="px-4 py-2.5">
                     {r.unresolved > 0 && (
-                      <span className="text-[11px] px-1.5 py-0.5 border" style={{ borderColor: "rgba(180,120,40,0.4)", color: "#7a5410" }}>
+                      <span className="text-[11px] px-1.5 py-0.5 border" style={{ borderColor: "rgba(180,120,40,0.4)", color: "var(--warning-ink)" }}>
                         Unpriced {r.unresolved}
                       </span>
                     )}

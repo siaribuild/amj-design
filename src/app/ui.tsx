@@ -4,6 +4,11 @@
 // truth for the design language.
 import type { ReactNode } from "react";
 import { ArrowRight } from "lucide-react";
+import { SAGE, INK as DARK, LINE } from "../styles/tokens";
+// Re-exported so the pages that have always imported the palette from here keep
+// working. ui.tsx is the design language's front door; styles/tokens.ts is where
+// the values live, and every one of them is a var(--…) pointing at theme.css.
+export { SAGE, INK as DARK, PAPER, BONE, LINE } from "../styles/tokens";
 
 // Client-side route identifiers. Kept here so page files can type their props.
 export type Page =
@@ -14,16 +19,6 @@ export type Page =
   | "track-order" | "order"
   | "privacy";
 
-// ─── Brand constants ──────────────────────────────────────────────────────────
-export const SAGE = "#5A7A6A";
-export const DARK = "#131311";
-// The two light surfaces, for the few places that need an inline style rather
-// than a class (GRID_BG, the account TONE palette). WARM = #FAFAF9 was here and
-// was imported by App.tsx without ever being used — it was 1.04:1 against white,
-// which is why it could be dead without anyone noticing the page looked flat.
-export const PAPER = "#FFFFFF";
-export const BONE = "#F0EDE8";
-export const LINE = "rgba(19,19,17,0.14)";
 
 // 4-pane window mark — logo and repeated motif
 export function WindowMark({ size = 20, color = SAGE }: { size?: number; color?: string }) {
@@ -59,7 +54,7 @@ export function SLabel({ children, light = false }: { children: ReactNode; light
   return (
     <div className="flex items-center gap-2 mb-3">
       <WindowMark size={10} color={light ? "rgba(255,255,255,0.5)" : SAGE} />
-      <span className={`text-xs font-semibold uppercase tracking-widest ${light ? "text-white/50" : "text-[#5A7A6A]"}`}>
+      <span className={`text-xs font-semibold uppercase tracking-widest ${light ? "text-white/50" : "text-sage"}`}>
         {children}
       </span>
     </div>
@@ -79,10 +74,10 @@ export function Btn({
 }) {
   const sizes = { sm: "px-4 py-2 text-xs", md: "px-6 py-3 text-sm", lg: "px-8 py-4 text-sm" };
   const variants: Record<string, string> = {
-    primary: "bg-[#131311] text-white hover:bg-[#2a2a27]",
-    sage:    "bg-[#5A7A6A] text-white hover:bg-[#4a6858]",
-    outline: "border border-[#131311] text-[#131311] hover:bg-[#131311] hover:text-white",
-    ghost:   "text-[#5c5a56] hover:text-[#131311] hover:bg-black/5",
+    primary: "bg-ink text-white hover:bg-ink-hover",
+    sage:    "bg-sage text-white hover:bg-sage-hover",
+    outline: "border border-ink text-ink hover:bg-ink hover:text-white",
+    ghost:   "text-body hover:text-ink hover:bg-black/5",
     // `white` (border-only, over an image) is deliberately gone. It had no call
     // sites left and it is the treatment that failed on the home hero: a border
     // needs a known ground, and a CMS-authored photograph is by definition not one.
@@ -91,7 +86,7 @@ export function Btn({
   };
   return (
     <button type={type} onClick={onClick} disabled={disabled}
-      className={`inline-flex items-center gap-2 font-medium tracking-wide transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${sizes[size]} ${variants[variant]} ${className}`}>
+      className={`inline-flex items-center gap-2 font-medium tracking-wide transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${sizes[size]} ${variants[variant]} ${className}`}>
       {children}
     </button>
   );
@@ -100,7 +95,7 @@ export function Btn({
 // ─── Form primitives ──────────────────────────────────────────────────────────
 export function FieldLabel({ children }: { children: ReactNode }) {
   return (
-    <label className="text-[10px] font-semibold text-[#3a3835] uppercase tracking-widest block mb-1.5">
+    <label className="text-[10px] font-semibold text-ink-soft uppercase tracking-widest block mb-1.5">
       {children}
     </label>
   );
@@ -114,7 +109,7 @@ export function Input({ value, onChange, placeholder, type = "text", className =
   return (
     <input type={type} value={value} defaultValue={defaultValue} onChange={onChange}
       placeholder={placeholder} inputMode={inputMode}
-      className={`w-full border border-[#131311]/20 bg-white px-3 py-2.5 text-sm text-[#131311] placeholder-[#9a9894] focus:outline-none focus:border-[#5A7A6A] transition-colors ${className}`} />
+      className={`w-full border border-ink/20 bg-white px-3 py-2.5 text-sm text-ink placeholder-quieter focus:outline-none focus:border-sage transition-colors ${className}`} />
   );
 }
 
@@ -150,7 +145,7 @@ export function CtaBanner({ title, sub, onQuote, ground = "paper" }: {
   return (
     <section className={`${ground === "bone" ? "ground-bone" : "ground-paper"} border-t border-black/8 py-14`}>
       <div className="max-w-6xl mx-auto px-6">
-        <div className="bg-[#5A7A6A] px-6 sm:px-10 py-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+        <div className="bg-sage px-6 sm:px-10 py-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="max-w-[54ch]">
             <h2 className="text-white font-semibold leading-tight mb-1.5"
               style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.4rem, 2.4vw, 1.9rem)" }}>

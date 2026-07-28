@@ -116,7 +116,7 @@ const PHASES: Phase[] = [
 /** Two filled/hollow cells — the same 50/50 glyph the account area uses.
  *  aria-hidden: the percentage is always written out beside it. */
 function Meter({ paid }: { paid: "0%" | "50%" | "100%" }) {
-  const cell = (on: boolean) => <span className={`block w-2.5 h-2.5 border ${on ? "bg-[#131311] border-[#131311]" : "border-black/25"}`} />;
+  const cell = (on: boolean) => <span className={`block w-2.5 h-2.5 border ${on ? "bg-ink border-ink" : "border-black/25"}`} />;
   return <span className="flex gap-1" aria-hidden="true">{cell(paid !== "0%")}{cell(paid === "100%")}</span>;
 }
 
@@ -129,24 +129,24 @@ function ProcessCard({ c, brand, last }: { c: Card; brand: string; last: boolean
       ${yours ? "bg-paper" : "bg-recessive"}`}>
       <div className="flex items-center justify-between mb-4">
         <span className={`flex items-center justify-center border
-          ${yours ? "w-11 h-11 border-[#5A7A6A]/40 text-[#5A7A6A] text-[15px]" : "w-8 h-8 border-black/12 text-[#8a8782] text-xs"}`} style={MONO}>
+          ${yours ? "w-11 h-11 border-sage/40 text-sage text-[15px]" : "w-8 h-8 border-black/12 text-quiet text-xs"}`} style={MONO}>
           {yours ? c.n : <Icon className="w-4 h-4" aria-hidden="true" />}
         </span>
-        <span className="text-[10px] uppercase tracking-[0.14em] text-[#8a8782]" style={MONO}>
+        <span className="text-[10px] uppercase tracking-[0.14em] text-quiet" style={MONO}>
           {yours ? "You" : brand}
         </span>
       </div>
-      <h3 className={`font-semibold leading-tight mb-1.5 ${yours ? "text-[#131311] text-[18px] md:text-[19px]" : "text-[#3d3b38] text-[15px]"}`} style={DISPLAY}>
+      <h3 className={`font-semibold leading-tight mb-1.5 ${yours ? "text-ink text-[18px] md:text-[19px]" : "text-ink-soft text-[15px]"}`} style={DISPLAY}>
         {c.title}
       </h3>
-      {c.meta && <div className="text-[11px] text-[#8a8782] mb-1.5" style={MONO}>{c.meta}</div>}
-      <p className="text-[#5c5a56] text-[14.5px] leading-relaxed">{c.body}</p>
+      {c.meta && <div className="text-[11px] text-quiet mb-1.5" style={MONO}>{c.meta}</div>}
+      <p className="text-body text-[14.5px] leading-relaxed">{c.body}</p>
       {/* Connector punches through the shared hairline. Its fill must match the
           card it sits on, or the join shows a notch. */}
       {!last && (
         <>
-          <ArrowRight className={`hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5A7A6A]/60 z-10 ${yours ? "bg-paper" : "bg-recessive"}`} aria-hidden="true" />
-          <ArrowRight className={`lg:hidden absolute left-1/2 -translate-x-1/2 -bottom-2.5 w-4 h-4 rotate-90 text-[#5A7A6A]/60 z-10 ${yours ? "bg-paper" : "bg-recessive"}`} aria-hidden="true" />
+          <ArrowRight className={`hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-sage/60 z-10 ${yours ? "bg-paper" : "bg-recessive"}`} aria-hidden="true" />
+          <ArrowRight className={`lg:hidden absolute left-1/2 -translate-x-1/2 -bottom-2.5 w-4 h-4 rotate-90 text-sage/60 z-10 ${yours ? "bg-paper" : "bg-recessive"}`} aria-hidden="true" />
         </>
       )}
     </div>
@@ -161,19 +161,19 @@ function PhaseSection({ p, brand }: { p: Phase; brand: string }) {
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-9">
           <div className="max-w-[46ch]">
             <SLabel>{p.label}</SLabel>
-            <h2 id={`${p.id}-h`} className="font-semibold text-[#131311] leading-[1.08] tracking-tight" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
+            <h2 id={`${p.id}-h`} className="font-semibold text-ink leading-[1.08] tracking-tight" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
               {p.heading}
             </h2>
-            {p.intro && <p className="text-[#5c5a56] text-[15.5px] leading-relaxed mt-2.5">{p.intro}</p>}
+            {p.intro && <p className="text-body text-[15.5px] leading-relaxed mt-2.5">{p.intro}</p>}
           </div>
           {/* Money, in the same place in every phase header. */}
           <div className="md:text-right flex-shrink-0">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-[#8a8782] mb-1.5" style={MONO}>Paid so far</div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-quiet mb-1.5" style={MONO}>Paid so far</div>
             <div className="flex md:justify-end items-center gap-2">
               <Meter paid={p.paid} />
-              <span className="font-semibold text-[#3f5a4c] leading-none" style={{ ...DISPLAY, fontSize: "clamp(2rem, 5vw, 2.75rem)" }}>{p.paid}</span>
+              <span className="font-semibold text-sage-deep leading-none" style={{ ...DISPLAY, fontSize: "clamp(2rem, 5vw, 2.75rem)" }}>{p.paid}</span>
             </div>
-            <div className="text-[12px] text-[#5c5a56] mt-1" style={MONO}>{p.paidNote} · {p.duration}</div>
+            <div className="text-[12px] text-body mt-1" style={MONO}>{p.paidNote} · {p.duration}</div>
           </div>
         </div>
 
@@ -183,8 +183,8 @@ function PhaseSection({ p, brand }: { p: Phase; brand: string }) {
 
         {p.note && (
           <div className="mt-4 card px-5 py-4 flex items-start gap-3">
-            <p.note.icon className="w-4 h-4 flex-shrink-0 mt-0.5 text-[#5c5a56]" strokeWidth={1.8} aria-hidden="true" />
-            <span className="text-[13px] text-[#5c5a56] leading-relaxed">{p.note.text}</span>
+            <p.note.icon className="w-4 h-4 flex-shrink-0 mt-0.5 text-body" strokeWidth={1.8} aria-hidden="true" />
+            <span className="text-[13px] text-body leading-relaxed">{p.note.text}</span>
           </div>
         )}
       </div>
@@ -204,15 +204,15 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
   return (
     <div className="ground-bone min-h-screen">
       {/* ── Hero (facts live inside it, not butted underneath) ───────────── */}
-      <section className="relative bg-[#0c0c0a] overflow-hidden">
+      <section className="relative bg-night overflow-hidden">
         <img src={imageUrl(getPage("how-it-works")?.heroImage, { w: 1600, h: 900 })} alt="Dark aluminium window frames in a contemporary residential interior"
           className="absolute inset-0 w-full h-full object-cover object-center opacity-40" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#0c0c0a]/95 via-[#0c0c0a]/80 to-[#0c0c0a]/35" />
+        <div className="absolute inset-0 bg-gradient-to-r from-night/95 via-night/80 to-night/35" />
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-32 pb-14 md:pt-36 md:pb-16">
           <div className="max-w-2xl">
             <SLabel light>How it works</SLabel>
             <h1 className="font-semibold text-white leading-[1.03] tracking-tight mb-4 max-w-[15ch]" style={{ ...DISPLAY, fontSize: "clamp(2.1rem, 5vw, 3.5rem)" }}>
-              From estimate to delivery, without the guesswork.
+              Nothing gets made until you sign it off.
             </h1>
             <p className="text-white/70 leading-relaxed max-w-xl text-base md:text-lg">
               Upload a schedule and it prices itself. Nothing is charged until you accept a quote a person has checked.
@@ -232,16 +232,16 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
       <section className="relative ground-paper border-t border-black/8 py-10 md:py-16" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>The shape of it</SLabel>
-          <h2 className="font-semibold text-[#131311] leading-[1.08] tracking-tight mb-3 max-w-[20ch]" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
+          <h2 className="font-semibold text-ink leading-[1.08] tracking-tight mb-3 max-w-[20ch]" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
             Three phases, and what each one asks of you.
           </h2>
-          <p className="text-[#5c5a56] text-[15.5px] leading-relaxed max-w-[54ch] mb-3">
+          <p className="text-body text-[15.5px] leading-relaxed max-w-[54ch] mb-3">
             Numbered steps below are yours. Everything between them is {brandSubject() === "We" ? "ours" : `${brand}'s`}.
           </p>
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[13px] text-[#131311] mb-8" style={MONO}>
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[13px] text-ink mb-8" style={MONO}>
             {VERBS.map((v, i) => (
               <span key={v} className="flex items-center gap-2.5">
-                {i > 0 && <span className="text-[#c9c6c1]" aria-hidden="true">·</span>}{v}
+                {i > 0 && <span className="text-quietest" aria-hidden="true">·</span>}{v}
               </span>
             ))}
           </div>
@@ -251,13 +251,13 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
           <div className="grid grid-cols-3 border-l border-black/10">
             {PHASES.map((p) => (
               <a key={p.id} href={`#${p.id}`}
-                className="border-r border-y border-black/10 bg-white px-3 py-4 md:px-5 md:py-5 hover:bg-[#F7F8F6] transition-colors">
-                <div className="text-[10px] uppercase tracking-[0.12em] text-[#8a8782] mb-1" style={MONO}>{p.label.replace(" — ", " · ")}</div>
+                className="border-r border-y border-black/10 bg-white px-3 py-4 md:px-5 md:py-5 hover:bg-sage-veil transition-colors">
+                <div className="text-[10px] uppercase tracking-[0.12em] text-quiet mb-1" style={MONO}>{p.label.replace(" — ", " · ")}</div>
                 <div className="flex items-baseline gap-2 mb-1.5">
-                  <span className="font-semibold text-[#3f5a4c] leading-none" style={{ ...DISPLAY, fontSize: "clamp(1.6rem, 6vw, 2.4rem)" }}>{p.paid}</span>
+                  <span className="font-semibold text-sage-deep leading-none" style={{ ...DISPLAY, fontSize: "clamp(1.6rem, 6vw, 2.4rem)" }}>{p.paid}</span>
                 </div>
                 <div className="mb-2"><Meter paid={p.paid} /></div>
-                <div className="text-[11.5px] md:text-[12.5px] text-[#5c5a56] leading-snug" style={MONO}>{p.duration}</div>
+                <div className="text-[11.5px] md:text-[12.5px] text-body leading-snug" style={MONO}>{p.duration}</div>
               </a>
             ))}
           </div>
@@ -269,7 +269,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
       {/* ── The line — the only sage fill on the page, at the one threshold ── */}
       <section className="ground-paper border-t border-black/8 py-12 md:py-14">
         <div className="max-w-6xl mx-auto px-6">
-          <div className="relative bg-[#5A7A6A] text-white overflow-hidden p-8 md:p-12">
+          <div className="relative bg-sage text-white overflow-hidden p-8 md:p-12">
             <GhostMark size={300} opacity={0.08} color="#fff" pos="right-0 bottom-0" />
             <div className="relative flex flex-col md:flex-row md:items-end md:justify-between gap-6">
               <div className="max-w-[46ch]">
@@ -297,16 +297,16 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
       <section className="relative ground-paper border-t border-black/8 py-12 md:py-16" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Before despatch</SLabel>
-          <h2 className="font-semibold text-[#131311] leading-[1.08] tracking-tight mb-7 max-w-[20ch]" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
+          <h2 className="font-semibold text-ink leading-[1.08] tracking-tight mb-7 max-w-[20ch]" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
             You see it before it ships.
           </h2>
           {/* A real photograph of a real unit — this section is literally about
               photographing what you ordered, so product imagery is the subject
               here, not decoration. */}
           <div className="grid grid-cols-1 md:grid-cols-[1.1fr_1fr] card">
-            <div className="relative min-h-[220px] md:min-h-[300px] bg-[#0c0c0a] overflow-hidden">
+            <div className="relative min-h-[220px] md:min-h-[300px] bg-night overflow-hidden">
               {qaShot && <img src={qaShot} alt="A finished aluminium window unit, photographed before despatch" className="absolute inset-0 w-full h-full object-cover" />}
-              <span className="absolute left-4 bottom-4 bg-[#131311]/85 text-white text-[11px] uppercase tracking-[0.14em] px-2.5 py-1.5" style={MONO}>
+              <span className="absolute left-4 bottom-4 bg-ink/85 text-white text-[11px] uppercase tracking-[0.14em] px-2.5 py-1.5" style={MONO}>
                 Pre-despatch QA
               </span>
             </div>
@@ -316,11 +316,11 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
                 { icon: Send, t: "Then the balance is invoiced", p: "Not before. If something is wrong, it is wrong on our side of the invoice." },
               ].map((c) => (
                 <div key={c.t} className="px-6 py-6 md:px-8 md:py-7">
-                  <span className="w-8 h-8 mb-3 flex items-center justify-center border border-[#5A7A6A]/40 text-[#5A7A6A]">
+                  <span className="w-8 h-8 mb-3 flex items-center justify-center border border-sage/40 text-sage">
                     <c.icon className="w-4 h-4" aria-hidden="true" />
                   </span>
-                  <h3 className="font-semibold text-[#131311] text-[17px] leading-tight mb-1.5" style={DISPLAY}>{c.t}</h3>
-                  <p className="text-[#5c5a56] text-[14.5px] leading-relaxed">{c.p}</p>
+                  <h3 className="font-semibold text-ink text-[17px] leading-tight mb-1.5" style={DISPLAY}>{c.t}</h3>
+                  <p className="text-body text-[14.5px] leading-relaxed">{c.p}</p>
                 </div>
               ))}
             </div>
@@ -334,7 +334,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
           The shared banner. This one was a dark panel with two buttons that both
           went to /quote anyway — a choice with no consequence. */}
       <CtaBanner
-        title="Get a number in seconds. A real quote when you're ready."
+        title="Get a number in about a minute. A reviewed quote when you're ready."
         sub="Enter a few dimensions, or upload your schedule and we'll prepare it for review."
         onQuote={() => go("quote")}
       />

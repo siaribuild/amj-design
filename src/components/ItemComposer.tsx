@@ -54,7 +54,7 @@ export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; to
   let bw: number, bh: number;
   if (ratio >= 1) { bw = MAXW; bh = MAXW / ratio; if (bh > MAXH) { bh = MAXH; bw = MAXH * ratio; } }
   else { bh = MAXH; bw = MAXH * ratio; if (bw > MAXW) { bw = MAXW; bh = MAXW / ratio; } }
-  const stroke = tone === "sage" ? "#5A7A6A" : "rgba(255,255,255,0.55)";
+  const stroke = tone === "sage" ? "var(--sage)" : "rgba(255,255,255,0.55)";
   const faint = tone === "sage" ? "rgba(90,122,106,0.35)" : "rgba(255,255,255,0.24)";
   return (
     <div className="flex items-end justify-center py-1" style={{ minHeight: MAXH + 30 }} aria-hidden="true">
@@ -81,7 +81,7 @@ export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; to
 const MEASURE_OPTIONS: { id: Exclude<MeasuredBy, "">; label: string }[] = [
   { id: "frame", label: "Frame size" }, { id: "opening", label: "Opening size" }, { id: "unsure", label: "Not sure" },
 ];
-const selectClass = "w-full border border-[#131311]/20 bg-white pl-3 pr-9 py-2.5 text-sm text-[#131311] focus:outline-none focus:border-[#5A7A6A] transition-colors appearance-none cursor-pointer";
+const selectClass = "w-full border border-ink/20 bg-white pl-3 pr-9 py-2.5 text-sm text-ink focus:outline-none focus:border-sage transition-colors appearance-none cursor-pointer";
 
 function inRangeFor(p: Product, w: number, h: number) {
   return (p.minWidth == null || w >= p.minWidth) && (p.maxWidth == null || w <= p.maxWidth)
@@ -139,10 +139,10 @@ function DimensionsFields({ p, width, height, measuredBy, setWidth, setHeight, s
             <Input type="number" inputMode="numeric" value={height} onChange={e => setHeight(e.target.value)} placeholder="e.g. 1210" />
           </div>
           {dimsEntered && inRange && (
-            <p className="text-sm text-[#131311]"><Check className="w-3.5 h-3.5 inline text-[#5A7A6A] mr-1" />You have entered: <span className="font-medium">{mm(width)} wide × {mm(height)} high</span></p>
+            <p className="text-sm text-ink"><Check className="w-3.5 h-3.5 inline text-sage mr-1" />You have entered: <span className="font-medium">{mm(width)} wide × {mm(height)} high</span></p>
           )}
           {!dimsEntered && (
-            <p className="text-xs text-[#5c5a56]">Fits {mm(p.minWidth ?? 0)}–{mm(p.maxWidth ?? 0)} wide, {mm(p.minHeight ?? 0)}–{mm(p.maxHeight ?? 0)} high.</p>
+            <p className="text-xs text-body">Fits {mm(p.minWidth ?? 0)}–{mm(p.maxWidth ?? 0)} wide, {mm(p.minHeight ?? 0)}–{mm(p.maxHeight ?? 0)} high.</p>
           )}
           {reversed && (
             <div className="flex items-start gap-2 bg-amber-50 border border-amber-300 px-3 py-2 text-xs text-amber-800">
@@ -157,7 +157,7 @@ function DimensionsFields({ p, width, height, measuredBy, setWidth, setHeight, s
             </div>
           )}
           {oversize && (
-            <div className="flex items-start gap-2 border border-[#4C6A88]/35 px-3 py-2 text-xs text-[#33526f]" style={{ background: "rgba(76,106,136,0.06)" }}>
+            <div className="flex items-start gap-2 border border-info/35 px-3 py-2 text-xs text-info-ink" style={{ background: "rgba(76,106,136,0.06)" }}>
               <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
               <span>
                 No single {p.name} is made this large (up to {mm(p.maxWidth ?? 0)} × {mm(p.maxHeight ?? 0)}). Openings this
@@ -171,11 +171,11 @@ function DimensionsFields({ p, width, height, measuredBy, setWidth, setHeight, s
       {/* Measurement basis — after the size has been entered */}
       {dimsEntered && (
         <div className="mt-4">
-          <p className="text-[10px] uppercase tracking-widest text-[#5c5a56] mb-2">How did you measure?</p>
+          <p className="text-[10px] uppercase tracking-widest text-body mb-2">How did you measure?</p>
           <div className="grid grid-cols-3 gap-1.5">
             {MEASURE_OPTIONS.map(m => (
               <button key={m.id} onClick={() => setMeasuredBy(m.id)}
-                className={`px-2 py-2 text-xs border transition-colors cursor-pointer ${measuredBy === m.id ? "border-[#5A7A6A] bg-[#5A7A6A] text-white font-medium" : "border-black/15 bg-white text-[#131311] hover:border-[#5A7A6A]/60"}`}>
+                className={`px-2 py-2 text-xs border transition-colors cursor-pointer ${measuredBy === m.id ? "border-sage bg-sage text-white font-medium" : "border-black/15 bg-white text-ink hover:border-sage/60"}`}>
                 {m.label}
               </button>
             ))}
@@ -195,10 +195,10 @@ const OPTION_GRID = "grid grid-cols-2 @md:grid-cols-3 @xl:grid-cols-4 gap-1.5";
 function OptionButton({ label, hex, selected, onPick }: { label: string; hex?: string; selected: boolean; onPick: () => void }) {
   return (
     <button onClick={onPick} aria-pressed={selected} title={label}
-      className={`flex items-center gap-2 px-2.5 py-2 border text-left transition-colors cursor-pointer min-w-0 ${selected ? "border-[#131311] bg-[#131311]/[0.04] ring-1 ring-[#131311]" : "border-black/15 bg-white hover:border-[#5A7A6A]"}`}>
+      className={`flex items-center gap-2 px-2.5 py-2 border text-left transition-colors cursor-pointer min-w-0 ${selected ? "border-ink bg-ink/[0.04] ring-1 ring-ink" : "border-black/15 bg-white hover:border-sage"}`}>
       {hex !== undefined && <span className="w-4 h-4 flex-shrink-0 border border-black/25" style={{ background: hex || "#ccc" }} aria-hidden="true" />}
-      <span className="text-xs text-[#131311] truncate flex-1">{label}</span>
-      {selected && <Check className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0" aria-hidden="true" />}
+      <span className="text-xs text-ink truncate flex-1">{label}</span>
+      {selected && <Check className="w-3.5 h-3.5 text-sage flex-shrink-0" aria-hidden="true" />}
     </button>
   );
 }
@@ -215,13 +215,13 @@ function ColourChoices({ choices, value, onPick }: { choices: OptionChoice[]; va
         {popular.map(c => <OptionButton key={c.name} label={c.name} hex={c.hex} selected={value === c.name} onPick={() => onPick(c.name)} />)}
       </div>
       <button onClick={() => setShowAll(s => !s)} aria-expanded={showAll}
-        className="mt-2 flex items-center gap-1 text-xs font-medium text-[#5A7A6A] hover:text-[#4a6858] cursor-pointer">
+        className="mt-2 flex items-center gap-1 text-xs font-medium text-sage hover:text-sage-hover cursor-pointer">
         {showAll ? "Hide other colours" : "Other colours"}
         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAll ? "rotate-180" : ""}`} />
       </button>
       <div className={`grid transition-[grid-template-rows] duration-200 ${showAll ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
         <div className="overflow-hidden">
-          <p className="text-[10px] uppercase tracking-widest text-[#5c5a56] pt-2 pb-1.5">All standard colours</p>
+          <p className="text-[10px] uppercase tracking-widest text-body pt-2 pb-1.5">All standard colours</p>
           <div className={OPTION_GRID}>
             {choices.map(c => <OptionButton key={c.name} label={c.name} hex={c.hex} selected={value === c.name} onPick={() => onPick(c.name)} />)}
           </div>
@@ -245,13 +245,13 @@ function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<str
           <div key={g.typeSlug} className="border border-black/10">
             <button onClick={() => setOpenOpt(open ? null : g.typeSlug)} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left cursor-pointer bg-white">
               <span className="min-w-0">
-                <span className="text-[10px] uppercase tracking-widest text-[#5c5a56] block">{g.label}{g.required && !val ? <span className="text-amber-600"> · required</span> : ""}</span>
-                <span className={`text-sm font-medium truncate flex items-center gap-1.5 ${val ? "text-[#131311]" : "text-[#9a9894]"}`}>
+                <span className="text-[10px] uppercase tracking-widest text-body block">{g.label}{g.required && !val ? <span className="text-amber-600"> · required</span> : ""}</span>
+                <span className={`text-sm font-medium truncate flex items-center gap-1.5 ${val ? "text-ink" : "text-quieter"}`}>
                   {isColour && val && <span className="w-3.5 h-3.5 flex-shrink-0 border border-black/25" style={{ background: swatchHex || "#ccc" }} aria-hidden="true" />}
                   {val || "Select…"}
                 </span>
               </span>
-              <ChevronDown className={`w-4 h-4 text-[#5c5a56] flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+              <ChevronDown className={`w-4 h-4 text-body flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
             </button>
             <div className={`grid transition-[grid-template-rows] duration-200 ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
               <div className="overflow-hidden">
@@ -295,18 +295,18 @@ function ProductPicker({ productSlug, onPick }: { productSlug: string; onPick: (
             <option value="">Choose a type…</option>
             {famGroups.map(g => <optgroup key={g.category} label={g.category}>{g.families.map(f => <option key={f.slug} value={f.slug}>{f.name}</option>)}</optgroup>)}
           </select>
-          <ChevronDown className="w-4 h-4 text-[#5c5a56] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <ChevronDown className="w-4 h-4 text-body absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
       </div>
       <div>
         <FieldLabel>Product</FieldLabel>
         <div className="relative">
           <select value={selValue} onChange={e => { if (e.target.value) onPick(e.target.value); }} disabled={!familySlug}
-            className={`${selectClass} disabled:bg-[#FAFAF9] disabled:text-[#9a9894] disabled:cursor-not-allowed`}>
+            className={`${selectClass} disabled:bg-bone disabled:text-quieter disabled:cursor-not-allowed`}>
             <option value="">{familySlug ? "Choose a product…" : "Select a type first"}</option>
             {familyProducts.map(pr => <option key={pr.slug} value={pr.slug}>{pr.name}</option>)}
           </select>
-          <ChevronDown className="w-4 h-4 text-[#5c5a56] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <ChevronDown className="w-4 h-4 text-body absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
       </div>
     </div>
@@ -321,10 +321,10 @@ function QtyLocationFields({ qty, location, setQty, setLocation }: {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <FieldLabel>Quantity — identical units</FieldLabel>
-          <div className="flex items-center border border-[#131311]/20 h-[44px] w-full">
-            <button onClick={() => setQty(Math.max(1, qty - 1))} className="w-12 h-full flex items-center justify-center text-[#5c5a56] hover:bg-[#FAFAF9] cursor-pointer" aria-label="Decrease quantity"><Minus className="w-4 h-4" /></button>
+          <div className="flex items-center border border-ink/20 h-[44px] w-full">
+            <button onClick={() => setQty(Math.max(1, qty - 1))} className="w-12 h-full flex items-center justify-center text-body hover:bg-bone cursor-pointer" aria-label="Decrease quantity"><Minus className="w-4 h-4" /></button>
             <span className="flex-1 text-center text-sm font-medium">{qty}</span>
-            <button onClick={() => setQty(qty + 1)} className="w-12 h-full flex items-center justify-center text-[#5c5a56] hover:bg-[#FAFAF9] cursor-pointer" aria-label="Increase quantity"><Plus className="w-4 h-4" /></button>
+            <button onClick={() => setQty(qty + 1)} className="w-12 h-full flex items-center justify-center text-body hover:bg-bone cursor-pointer" aria-label="Increase quantity"><Plus className="w-4 h-4" /></button>
           </div>
         </div>
         <div>
@@ -332,7 +332,7 @@ function QtyLocationFields({ qty, location, setQty, setLocation }: {
           <Input value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Bedroom 1, north elevation" />
         </div>
       </div>
-      <p className="text-[11px] text-[#5c5a56] mt-2"><Info className="w-3 h-3 inline mr-1" />Quantity means every unit on this line is identical. For a different size, add a separate item.</p>
+      <p className="text-[11px] text-body mt-2"><Info className="w-3 h-3 inline mr-1" />Quantity means every unit on this line is identical. For a different size, add a separate item.</p>
     </div>
   );
 }
@@ -344,15 +344,15 @@ function Section({ label, summary, open, onToggle, children, variant = "boxed", 
   const boxed = variant === "boxed";
   return (
     <div className={boxed ? `border ${attention ? "border-amber-300" : "border-black/10"}` : "border-b border-black/[0.06] last:border-b-0"}>
-      <button onClick={onToggle} aria-expanded={open} className={`w-full flex items-center justify-between gap-3 text-left cursor-pointer ${attention ? "bg-amber-50" : "bg-white"} ${boxed ? "px-4 py-3" : "px-4 py-2.5 hover:bg-[#FAFAF9] transition-colors"}`}>
+      <button onClick={onToggle} aria-expanded={open} className={`w-full flex items-center justify-between gap-3 text-left cursor-pointer ${attention ? "bg-amber-50" : "bg-white"} ${boxed ? "px-4 py-3" : "px-4 py-2.5 hover:bg-bone transition-colors"}`}>
         <span className="min-w-0">
-          <span className={`text-[10px] uppercase tracking-widest block flex items-center gap-1 ${attention ? "text-amber-700" : "text-[#5c5a56]"}`}>{label}{attention && <AlertCircle className="w-3 h-3" />}</span>
-          <span className="text-sm text-[#131311] font-medium truncate block">{summary}</span>
+          <span className={`text-[10px] uppercase tracking-widest block flex items-center gap-1 ${attention ? "text-amber-700" : "text-body"}`}>{label}{attention && <AlertCircle className="w-3 h-3" />}</span>
+          <span className="text-sm text-ink font-medium truncate block">{summary}</span>
         </span>
-        <ChevronDown className={`w-4 h-4 text-[#5c5a56] flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className={`w-4 h-4 text-body flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       <div className={`grid transition-[grid-template-rows] duration-200 ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-        <div className="overflow-hidden"><div className={`${boxed ? "px-4 pb-4 pt-1 border-t border-black/6" : "px-4 pb-4 pt-1 border-t border-black/6 bg-[#FAFAF9]/40"}`}>{children}</div></div>
+        <div className="overflow-hidden"><div className={`${boxed ? "px-4 pb-4 pt-1 border-t border-black/6" : "px-4 pb-4 pt-1 border-t border-black/6 bg-bone/40"}`}>{children}</div></div>
       </div>
     </div>
   );
@@ -473,17 +473,17 @@ export function ItemForm({
       {/* Persistent header — the dismiss affordance is here from the first render,
           so an empty form (no product yet) can still be backed out of. */}
       {onCancel && (
-        <div className="flex items-center justify-between gap-3 border-b border-black/10 bg-[#FAFAF9] px-4 md:px-5 py-2.5">
-          <p className="text-[10px] uppercase tracking-widest text-[#5c5a56]">New item</p>
+        <div className="flex items-center justify-between gap-3 border-b border-black/10 bg-bone px-4 md:px-5 py-2.5">
+          <p className="text-[10px] uppercase tracking-widest text-body">New item</p>
           {confirmClose ? (
-            <span className="flex items-center gap-2 text-xs text-[#5c5a56]">
+            <span className="flex items-center gap-2 text-xs text-body">
               Discard this item?
               <button type="button" onClick={() => onCancel?.()} className="font-medium text-red-600 hover:text-red-700 cursor-pointer">Discard</button>
-              <button type="button" onClick={() => setConfirmClose(false)} className="font-medium text-[#131311] hover:text-[#5A7A6A] cursor-pointer">Keep editing</button>
+              <button type="button" onClick={() => setConfirmClose(false)} className="font-medium text-ink hover:text-sage cursor-pointer">Keep editing</button>
             </span>
           ) : (
             <button type="button" onClick={requestCancel} aria-label="Cancel new item"
-              className="inline-flex items-center gap-1 -mr-1 px-2 py-1 text-xs font-medium text-[#6f6c67] hover:text-[#131311] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A]">
+              className="inline-flex items-center gap-1 -mr-1 px-2 py-1 text-xs font-medium text-body-soft hover:text-ink cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
               Cancel <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           )}
@@ -499,10 +499,10 @@ export function ItemForm({
                 {duplicateCode && <p className="text-[11px] text-amber-700 mt-1">Item ID already exist</p>}
               </div>
               <div className="flex items-center gap-2.5 min-w-0">
-                <span className="w-8 h-8 border border-[#5A7A6A]/30 flex items-center justify-center flex-shrink-0"><WindowMark size={15} color={SAGE} /></span>
+                <span className="w-8 h-8 border border-sage/30 flex items-center justify-center flex-shrink-0"><WindowMark size={15} color={SAGE} /></span>
                 <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-widest text-[#5c5a56]">Product</p>
-                  <p className="text-sm font-semibold text-[#131311] truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{p.name}</p>
+                  <p className="text-[10px] uppercase tracking-widest text-body">Product</p>
+                  <p className="text-sm font-semibold text-ink truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{p.name}</p>
                 </div>
               </div>
             </div>
@@ -523,17 +523,17 @@ export function ItemForm({
                   <option value="">Choose a type…</option>
                   {famGroups.map(g => <optgroup key={g.category} label={g.category}>{g.families.map(f => <option key={f.slug} value={f.slug}>{f.name}</option>)}</optgroup>)}
                 </select>
-                <ChevronDown className="w-4 h-4 text-[#5c5a56] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-4 h-4 text-body absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
             <div>
               <FieldLabel>Product</FieldLabel>
               <div className="relative">
-                <select value={productSlug} onChange={e => pickProduct(e.target.value)} disabled={!familySlug} className={`${selectClass} disabled:bg-[#FAFAF9] disabled:text-[#9a9894] disabled:cursor-not-allowed`}>
+                <select value={productSlug} onChange={e => pickProduct(e.target.value)} disabled={!familySlug} className={`${selectClass} disabled:bg-bone disabled:text-quieter disabled:cursor-not-allowed`}>
                   <option value="">{familySlug ? "Choose a product…" : "Select a type first"}</option>
                   {familyProducts.map(pr => <option key={pr.slug} value={pr.slug}>{pr.name}</option>)}
                 </select>
-                <ChevronDown className="w-4 h-4 text-[#5c5a56] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-4 h-4 text-body absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
           </div>
@@ -568,15 +568,15 @@ export function ItemForm({
           )}
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] uppercase tracking-widest text-[#5c5a56]">Estimated price</p>
-              <p className="text-lg font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{canSave ? fmt(gstAdjust(priced.total, gstMode)) : "—"} <span className="text-xs font-normal text-[#5c5a56]">{gstSuffix(gstMode)}{canSave && qty > 1 ? ` · ${fmt(gstAdjust(priced.unit, gstMode))} ea` : ""}</span></p>
+              <p className="text-[10px] uppercase tracking-widest text-body">Estimated price</p>
+              <p className="text-lg font-semibold text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{canSave ? fmt(gstAdjust(priced.total, gstMode)) : "—"} <span className="text-xs font-normal text-body">{gstSuffix(gstMode)}{canSave && qty > 1 ? ` · ${fmt(gstAdjust(priced.unit, gstMode))} ea` : ""}</span></p>
             </div>
             <div className="flex items-center gap-2">
               {onCancel && <Btn variant="ghost" size="md" onClick={requestCancel}>Cancel</Btn>}
               <Btn variant="sage" size="md" onClick={() => canSave && onCommit(built)} disabled={!canSave}><Check className="w-4 h-4" />{submitLabel}</Btn>
             </div>
           </div>
-          <p className="text-[10px] text-[#5c5a56] mt-1.5">Confirmed on technical review before any deposit. Supply only.</p>
+          <p className="text-[10px] text-body mt-1.5">Confirmed on technical review before any deposit. Supply only.</p>
         </div>
       )}
     </div>
@@ -605,16 +605,16 @@ function CodeField({ code, duplicate, editSignal, onCommit }: {
         onChange={e => setDraft(e.target.value.toUpperCase())}
         onBlur={commit}
         onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } else if (e.key === "Escape") { e.preventDefault(); cancel(); } }}
-        className="w-[4.75rem] h-8 border border-[#5A7A6A] bg-white px-2 text-xs font-semibold text-[#131311] focus:outline-none focus:ring-2 focus:ring-[#5A7A6A]/40"
+        className="w-[4.75rem] h-8 border border-sage bg-white px-2 text-xs font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-sage/40"
         style={{ fontFamily: "'DM Mono', monospace" }} />
     );
   }
   return (
     <button onClick={begin} aria-label={`Edit item ID${code ? ` ${code}` : ""}`}
-      className={`group/code inline-flex items-center gap-1 h-8 px-2 text-xs font-semibold border transition-colors cursor-pointer ${duplicate ? "border-amber-400 bg-amber-50 text-amber-800" : "border-black/15 bg-white text-[#131311] hover:border-[#5A7A6A]"}`}
+      className={`group/code inline-flex items-center gap-1 h-8 px-2 text-xs font-semibold border transition-colors cursor-pointer ${duplicate ? "border-amber-400 bg-amber-50 text-amber-800" : "border-black/15 bg-white text-ink hover:border-sage"}`}
       style={{ fontFamily: "'DM Mono', monospace" }}>
       {code || "Set code"}
-      <Pencil className="w-3 h-3 text-[#9a9894] group-hover/code:text-[#5A7A6A]" aria-hidden="true" />
+      <Pencil className="w-3 h-3 text-quieter group-hover/code:text-sage" aria-hidden="true" />
     </button>
   );
 }
@@ -715,12 +715,12 @@ export function ItemSummaryCard({
   ].join(" · ");
   const priceLabel = priceReady ? fmt(gstAdjust(displayTotal, gstMode)) : "$-,--";
 
-  const borderTone = customerBlocking ? "border-amber-400" : technicalOnly ? "border-sky-300" : added ? "border-[#5A7A6A]/50" : "border-black/12";
+  const borderTone = customerBlocking ? "border-amber-400" : technicalOnly ? "border-sky-300" : added ? "border-sage/50" : "border-black/12";
 
   return (
     <div id={id} ref={rootRef} className={`border bg-white scroll-mt-24 ${borderTone}`}>
       {/* Header: product identity and the highest-priority item actions. */}
-      <div className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 bg-[#FAFAF9] border-b border-black/[0.06] whitespace-nowrap">
+      <div className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 bg-bone border-b border-black/[0.06] whitespace-nowrap">
         <span className="flex-shrink-0">
           <CodeField code={item.code} duplicate={duplicate} editSignal={codeFocusSignal} onCommit={v => update({ code: v })} />
         </span>
@@ -729,7 +729,7 @@ export function ItemSummaryCard({
               warning explains the caveat. Only a line with NO product at all
               shows the italic amber "Choose a product" customer action. */}
           <button onClick={toggleExpanded} aria-expanded={isExpanded}
-            className={`min-w-0 truncate text-left text-sm font-semibold leading-tight cursor-pointer hover:text-[#5A7A6A] ${item.productSlug ? "text-[#131311]" : "text-[#9a7a1a] italic"}`}
+            className={`min-w-0 truncate text-left text-sm font-semibold leading-tight cursor-pointer hover:text-sage ${item.productSlug ? "text-ink" : "text-warning-ink italic"}`}
             style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
             {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
           </button>
@@ -737,15 +737,15 @@ export function ItemSummaryCard({
             ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">Needs </span>attention</span>
             : technicalOnly
               ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-sky-300 bg-sky-50 text-sky-800" title={item.review?.fit ? `Indicative price — no standard product is made at this size; ${brandSubject()} will design a composite/custom unit and confirm the price at review. You can still submit.` : `${brandSubject()} will confirm this at review — you can still submit.`}><Info className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">In </span>review</span>
-              : <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-sage-wash text-[#355344]"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
+              : <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-sage/30 bg-sage-wash text-sage-ink"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
           {/* Basis chip (UX spec §5): orthogonal to status — report-backed vs
               assumption-based. Hidden on small screens; the tooltip carries the
               compliance sentence once, and doubles as the upload upsell. */}
           {basisCopy && (
             <span className={`hidden md:inline-flex flex-shrink-0 items-center text-[10px] font-medium px-1.5 py-0.5 border ${
               basisCopy.strong
-                ? "border-[#2C7A54]/30 bg-[#2C7A54]/10 text-[#2C7A54]"
-                : "border-dashed border-black/20 bg-black/[0.03] text-[#6f6c67]"
+                ? "border-positive/30 bg-positive/10 text-positive"
+                : "border-dashed border-black/20 bg-black/[0.03] text-body-soft"
             }`} title={basisCopy.detail.replace("{brand}", brandSubject())}>
               {basisCopy.label}
             </span>
@@ -753,20 +753,20 @@ export function ItemSummaryCard({
           {/* Updated pill (spec §3): information, not a demand — work-slate tone,
               session-scoped (decays on reload). Expanding shows the old→new rows. */}
           {!!changes?.length && (
-            <span className="flex-shrink-0 inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 border border-[#4C6A88]/30 bg-[#4C6A88]/10 text-[#4C6A88]"
+            <span className="flex-shrink-0 inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 border border-info/30 bg-info/10 text-info"
               title="This line was updated by a document you uploaded — expand to see what changed.">
               Updated
             </span>
           )}
         </span>
-        <span className={`flex-shrink-0 text-sm font-semibold ${priceReady ? "text-[#131311]" : "text-[#5c5a56]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
-          {priceLabel}{priceReady ? <span className="hidden sm:inline text-[10px] font-normal text-[#5c5a56]"> {gstSuffix(gstMode)}</span> : null}
+        <span className={`flex-shrink-0 text-sm font-semibold ${priceReady ? "text-ink" : "text-body"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
+          {priceLabel}{priceReady ? <span className="hidden sm:inline text-[10px] font-normal text-body"> {gstSuffix(gstMode)}</span> : null}
         </span>
 
         <div className="flex items-center gap-0.5 flex-shrink-0" aria-label="Item actions">
-          {onDuplicate && <button onClick={onDuplicate} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-[#5c5a56] hover:text-[#5A7A6A] hover:bg-white cursor-pointer" aria-label="Duplicate item"><Copy className="w-4 h-4" /></button>}
-          {onRemove && <button onClick={onRemove} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-[#5c5a56] hover:text-red-600 hover:bg-white cursor-pointer" aria-label="Remove item"><Trash2 className="w-4 h-4" /></button>}
-          <button onClick={toggleExpanded} aria-expanded={isExpanded} aria-label={isExpanded ? "Collapse item" : "Expand item"} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-[#5c5a56] hover:text-[#131311] hover:bg-white cursor-pointer">
+          {onDuplicate && <button onClick={onDuplicate} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-body hover:text-sage hover:bg-white cursor-pointer" aria-label="Duplicate item"><Copy className="w-4 h-4" /></button>}
+          {onRemove && <button onClick={onRemove} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-body hover:text-red-600 hover:bg-white cursor-pointer" aria-label="Remove item"><Trash2 className="w-4 h-4" /></button>}
+          <button onClick={toggleExpanded} aria-expanded={isExpanded} aria-label={isExpanded ? "Collapse item" : "Expand item"} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-body hover:text-ink hover:bg-white cursor-pointer">
             <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
           </button>
         </div>
@@ -796,9 +796,9 @@ export function ItemSummaryCard({
         <div className="px-3 sm:px-4 py-3 bg-white">
           <button onClick={toggleExpanded} aria-expanded={isExpanded}
             className="w-full text-left cursor-pointer group/summary">
-            <span className="block text-[10px] uppercase tracking-widest text-[#8a8782] mb-1">Configuration</span>
-            <span className="block text-xs text-[#5c5a56] leading-snug group-hover/summary:text-[#131311]">{summaryLine}</span>
-            <span className="block text-xs text-[#5c5a56] leading-snug mt-1 truncate group-hover/summary:text-[#131311]"><span className="text-[#8a8782]">Options:</span> {selectedOptionsSummary}</span>
+            <span className="block text-[10px] uppercase tracking-widest text-quiet mb-1">Configuration</span>
+            <span className="block text-xs text-body leading-snug group-hover/summary:text-ink">{summaryLine}</span>
+            <span className="block text-xs text-body leading-snug mt-1 truncate group-hover/summary:text-ink"><span className="text-quiet">Options:</span> {selectedOptionsSummary}</span>
           </button>
           {attention && attentionMsg && (
             <p className={`text-xs mt-2.5 pt-2.5 border-t flex items-start gap-1.5 leading-snug ${technicalOnly ? "text-sky-800 border-sky-200" : "text-amber-700 border-amber-200"}`}>
@@ -820,7 +820,7 @@ export function ItemSummaryCard({
               carries it inline where the chip's tooltip can't be hovered. */}
           {basisCopy && (
             <p className={`md:hidden px-3 sm:px-4 py-2 text-[11px] leading-snug border-b border-black/[0.06] ${
-              basisCopy.strong ? "text-[#2C7A54] bg-[#2C7A54]/5" : "text-[#6f6c67] bg-black/[0.02]"
+              basisCopy.strong ? "text-positive bg-positive/5" : "text-body-soft bg-black/[0.02]"
             }`}>
               {basisCopy.detail.replace("{brand}", brandSubject())}
             </p>
@@ -829,12 +829,12 @@ export function ItemSummaryCard({
               grammar as superseded revision values. What changed and to what —
               the WHY (which document) lives in the digest banner. */}
           {!!changes?.length && (
-            <div className="px-3 sm:px-4 py-2 bg-[#4C6A88]/5 border-b border-black/[0.06]">
-              <span className="block text-[10px] uppercase tracking-widest text-[#4C6A88] mb-1">Updated from your documents</span>
+            <div className="px-3 sm:px-4 py-2 bg-info/5 border-b border-black/[0.06]">
+              <span className="block text-[10px] uppercase tracking-widest text-info mb-1">Updated from your documents</span>
               {changes.map((ch, i) => (
-                <p key={i} className="text-xs text-[#31485f] leading-snug">
+                <p key={i} className="text-xs text-info-ink leading-snug">
                   <span className="capitalize">{ch.field === "qty" ? "Quantity" : ch.field}</span>:{" "}
-                  <span className="line-through text-[#8a8782]">{ch.from}</span>
+                  <span className="line-through text-quiet">{ch.from}</span>
                   {" → "}
                   <span className="font-medium">{ch.to}</span>
                 </p>
@@ -855,7 +855,7 @@ export function ItemSummaryCard({
               const np = getProductBySlug(slug);
               update({ productSlug: slug, options: np ? defaultOptions(np) : {}, review: clearReviewKey(item.review, "product") });
             }} />
-            {p && <p className="text-[11px] text-[#5c5a56] mt-2"><Info className="w-3 h-3 inline mr-1" />Changing the product resets its options to the standard selections.</p>}
+            {p && <p className="text-[11px] text-body mt-2"><Info className="w-3 h-3 inline mr-1" />Changing the product resets its options to the standard selections.</p>}
           </Section>
           {p ? (
             <>
@@ -907,38 +907,38 @@ export function CompositePanel({ item }: { item: QItem }) {
   return (
     <div className="border-t border-black/8 px-4 py-4 md:px-5" style={{ background: "rgba(76,106,136,0.04)" }}>
       <div className="flex items-center gap-2 mb-3">
-        <span className="w-2.5 h-2.5 border border-[#4C6A88] flex-shrink-0" aria-hidden="true" />
-        <span className="text-[10px] uppercase tracking-[0.14em] text-[#4C6A88]" style={{ fontFamily: "'DM Mono', monospace" }}>
+        <span className="w-2.5 h-2.5 border border-info flex-shrink-0" aria-hidden="true" />
+        <span className="text-[10px] uppercase tracking-[0.14em] text-info" style={{ fontFamily: "'DM Mono', monospace" }}>
           Built as {units} units
         </span>
       </div>
 
-      <p className="text-[13.5px] text-[#5c5a56] leading-relaxed mb-3 max-w-[62ch]">
+      <p className="text-[13.5px] text-body leading-relaxed mb-3 max-w-[62ch]">
         No single unit is made {mm(item.width)} wide, so {item.code || "this opening"} is built as {units} units joined
         on site. One opening, one price — {brand.toLowerCase() === "we" ? "we confirm" : `${brand} confirms`} the join at technical review.
       </p>
 
       <div className="card">
         <div className="flex items-center justify-between px-3.5 py-2 border-b border-black/8">
-          <span className="text-[11px] text-[#8a8782]" style={{ fontFamily: "'DM Mono', monospace" }}>Your opening</span>
-          <span className="text-[12px] text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>
+          <span className="text-[11px] text-quiet" style={{ fontFamily: "'DM Mono', monospace" }}>Your opening</span>
+          <span className="text-[12px] text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>
             {openingW && openingH ? `${openingW.toLocaleString("en-AU")} × ${openingH.toLocaleString("en-AU")} mm` : "—"}
           </span>
         </div>
         {segments.map((s, i) => (
           <div key={s.id} className="flex items-baseline justify-between gap-3 px-3.5 py-2.5 border-b border-black/5 last:border-b-0">
-            <span className="text-[13px] text-[#131311] min-w-0">
-              <span className="text-[#8a8782] mr-2" style={{ fontFamily: "'DM Mono', monospace" }}>
+            <span className="text-[13px] text-ink min-w-0">
+              <span className="text-quiet mr-2" style={{ fontFamily: "'DM Mono', monospace" }}>
                 Unit {i + 1}{s.qtyPerParent > 1 ? ` ×${s.qtyPerParent}` : ""}
               </span>
               {productLabel(s.productSlug)}
             </span>
             <span className="flex items-baseline gap-3 flex-shrink-0">
-              <span className="text-[12px] text-[#5c5a56]" style={{ fontFamily: "'DM Mono', monospace" }}>
+              <span className="text-[12px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>
                 {(parseInt(s.width) || 0).toLocaleString("en-AU")} × {(parseInt(s.height) || 0).toLocaleString("en-AU")}
               </span>
               {/* A WORD, not a number. This is the whole double-charge defence. */}
-              <span className="text-[11px] text-[#8a8782] w-[4.5rem] text-right" style={{ fontFamily: "'DM Mono', monospace" }}>
+              <span className="text-[11px] text-quiet w-[4.5rem] text-right" style={{ fontFamily: "'DM Mono', monospace" }}>
                 included
               </span>
             </span>
@@ -946,7 +946,7 @@ export function CompositePanel({ item }: { item: QItem }) {
         ))}
       </div>
 
-      <p className="text-[12px] text-[#8a8782] leading-relaxed mt-3 max-w-[62ch]">
+      <p className="text-[12px] text-quiet leading-relaxed mt-3 max-w-[62ch]">
         Two or more units joined on site is how large openings are made. The join is an engineering
         decision — mullion size, wind load, weather seal — so {brand.toLowerCase() === "we" ? "we design" : `${brand} designs`} and
         prices it. It isn't something you set here.

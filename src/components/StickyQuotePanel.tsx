@@ -61,7 +61,7 @@ export function StickyQuotePanel({
   // A muted "Adding…" chip rides alongside the saved-quote status whenever a new
   // item is being composed on top of existing items — it never becomes the CTA.
   const addingChip = editingItem && itemCount > 0 ? (
-    <span className="flex items-center gap-1 card px-2 py-1 text-[#6f6c67] whitespace-nowrap">
+    <span className="flex items-center gap-1 card px-2 py-1 text-body-soft whitespace-nowrap">
       <Pencil className="w-3 h-3" aria-hidden="true" />Adding…
     </span>
   ) : null;
@@ -78,8 +78,8 @@ export function StickyQuotePanel({
     // placeholder — an empty project has no live action until reading ends.
     ctaLabel = itemCount > 0 ? "Review quote" : "Reading…";
     onClick = itemCount > 0 ? onReviewQuote : onFinishItem;
-    statusTone = "border-black/10 bg-white text-[#5c5a56]";
-    panelTone = "border-[#8CA99B] bg-[#F7F8F6]";
+    statusTone = "border-black/10 bg-white text-body";
+    panelTone = "border-sage-light bg-sage-veil";
     ctaDisabled = true;
   } else if (readingDocs > 0) {
     // Project-level processing (bar = project state; rail chips = which file).
@@ -90,16 +90,16 @@ export function StickyQuotePanel({
     live = `Reading ${docs}`;
     ctaLabel = itemCount > 0 ? "Review quote" : "Reading…";
     onClick = itemCount > 0 ? onReviewQuote : onFinishItem;
-    statusTone = "border-black/10 bg-white text-[#5c5a56]";
-    panelTone = "border-[#8CA99B] bg-[#F7F8F6]";
+    statusTone = "border-black/10 bg-white text-body";
+    panelTone = "border-sage-light bg-sage-veil";
     ctaDisabled = true;
   } else if (itemCount === 0 && !editingItem) {
     status = <span>No items added yet</span>;
     live = "No items added yet";
     ctaLabel = "Choose how to start";
     onClick = onFinishItem;
-    statusTone = "border-black/10 bg-white text-[#5c5a56]";
-    panelTone = "border-[#8CA99B] bg-[#F7F8F6]";
+    statusTone = "border-black/10 bg-white text-body";
+    panelTone = "border-sage-light bg-sage-veil";
   } else if (itemCount === 0 && editingItem) {
     // The only case where the in-progress item leads — there is nothing else to report.
     status = <><AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" /><span>Adding your first item</span></>;
@@ -112,13 +112,13 @@ export function StickyQuotePanel({
   } else if (attentionCount > 0) {
     status = (
       <>
-        <span className="card px-2 py-1 text-[#5c5a56] whitespace-nowrap">
+        <span className="card px-2 py-1 text-body whitespace-nowrap">
           {items(itemCount)}
         </span>
         {/* With warnings present the "ready" chip is dropped: three counts stop
             summing legibly, and errors are what the CTA acts on. */}
         {!confirmChip && (
-          <span className="flex items-center gap-1 border border-[#5A7A6A]/30 bg-sage-wash px-2 py-1 text-[#355344] whitespace-nowrap">
+          <span className="flex items-center gap-1 border border-sage/30 bg-sage-wash px-2 py-1 text-sage-ink whitespace-nowrap">
             <Check className="w-3.5 h-3.5" aria-hidden="true" />{readyCount} ready
           </span>
         )}
@@ -133,13 +133,13 @@ export function StickyQuotePanel({
     live = `${attentionCount} need your details${technicalCount ? `, ${technicalCount} we'll confirm at review` : ""}.`;
     ctaLabel = attentionCount === 1 ? "Review issue" : "Review issues";
     onClick = onReviewIssues;
-    statusTone = "border-transparent bg-transparent text-[#131311] p-0 flex-wrap";
-    panelTone = "border-amber-400 bg-[#F7F8F6]";
+    statusTone = "border-transparent bg-transparent text-ink p-0 flex-wrap";
+    panelTone = "border-amber-400 bg-sage-veil";
     ctaTone = "bg-amber-700 hover:bg-amber-800 focus-visible:ring-amber-600";
   } else if (pendingPriceCount > 0) {
     status = (
       <>
-        <span className="flex items-center gap-1 border border-[#5A7A6A]/30 bg-sage-wash px-2 py-1 text-[#355344] whitespace-nowrap">
+        <span className="flex items-center gap-1 border border-sage/30 bg-sage-wash px-2 py-1 text-sage-ink whitespace-nowrap">
           <Check className="w-3.5 h-3.5" aria-hidden="true" />{readyCount} priced
         </span>
         <span className="flex items-center gap-1 border border-amber-300 bg-amber-100 px-2 py-1 text-amber-900 whitespace-nowrap">
@@ -151,14 +151,14 @@ export function StickyQuotePanel({
     live = `${pendingPriceCount} of ${items(itemCount)} pending final pricing`;
     ctaLabel = "Review quote";
     onClick = onReviewQuote;
-    statusTone = "border-transparent bg-transparent text-[#131311] p-0 flex-wrap";
-    panelTone = "border-amber-400 bg-[#F7F8F6]";
+    statusTone = "border-transparent bg-transparent text-ink p-0 flex-wrap";
+    panelTone = "border-amber-400 bg-sage-veil";
   } else {
     // Nothing blocks. If warnings remain, the bar must NOT claim a clean sweep —
     // it splits the count and wears a slate top-border (caveats, not a demand).
     status = (
       <>
-        <span className="flex items-center gap-1 border border-[#5A7A6A]/30 bg-sage-wash px-2 py-1 text-[#355344] whitespace-nowrap">
+        <span className="flex items-center gap-1 border border-sage/30 bg-sage-wash px-2 py-1 text-sage-ink whitespace-nowrap">
           <Check className="w-3.5 h-3.5" aria-hidden="true" />{confirmChip ? `${readyCount} ready` : `${items(itemCount)} ready`}
         </span>
         {confirmChip}
@@ -170,8 +170,8 @@ export function StickyQuotePanel({
       : `${items(itemCount)} ready`;
     ctaLabel = "Review quote";
     onClick = onReviewQuote;
-    statusTone = "border-transparent bg-transparent text-[#131311] p-0 flex-wrap";
-    panelTone = confirmChip ? "border-[#4C6A88] bg-[#F7F8F6]" : "border-[#5A7A6A] bg-[#F7F8F6]";
+    statusTone = "border-transparent bg-transparent text-ink p-0 flex-wrap";
+    panelTone = confirmChip ? "border-info bg-sage-veil" : "border-sage bg-sage-veil";
   }
 
   return (
@@ -188,11 +188,11 @@ export function StickyQuotePanel({
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3 sm:py-3.5 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
         <div className="flex items-center justify-between gap-3 min-w-0 sm:contents">
           <div className="sm:order-2 flex flex-col min-w-0 flex-shrink-0">
-            <span className="text-[9px] uppercase tracking-[0.16em] text-[#6f6c67] leading-none mb-1">{pendingPriceCount ? "Priced subtotal" : "Estimate"}</span>
+            <span className="text-[9px] uppercase tracking-[0.16em] text-body-soft leading-none mb-1">{pendingPriceCount ? "Priced subtotal" : "Estimate"}</span>
             <span className="flex items-baseline gap-1.5">
-            <span className="text-[#131311] text-lg sm:text-[17px] font-semibold leading-none tabular-nums"
+            <span className="text-ink text-lg sm:text-[17px] font-semibold leading-none tabular-nums"
               style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(shownTotal)}</span>
-            <span className="text-[#6f6c67] text-xs whitespace-nowrap">{gstSuffix(gstMode)}</span>
+            <span className="text-body-soft text-xs whitespace-nowrap">{gstSuffix(gstMode)}</span>
             </span>
           </div>
           <div className={`sm:order-1 sm:flex-1 flex items-center gap-1.5 min-w-0 border px-2.5 py-2 text-[13px] font-medium ${statusTone}`}>{status}</div>

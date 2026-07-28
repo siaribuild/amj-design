@@ -49,33 +49,93 @@
    * more than the #FAFAF9 step that failed in the first place. */
   --recessive: #E1DDD4;
 
+  /* ─── The palette, by ROLE ──────────────────────────────────────────────────
+   * Every colour the site uses is named here and nowhere else, so the scheme is
+   * changed from this block rather than from ~1000 call sites. Before this,
+   * `#5A7A6A` appeared 267 times, `#5c5a56` 253 and `#131311` 246 — all as
+   * arbitrary Tailwind values (`text-[#5c5a56]`), which are classes but are not
+   * tokens: nothing could be re-themed without a find-and-replace.
+   *
+   * Two pairs were visually identical and are deliberately merged, because a
+   * palette with two names for one colour has a knob that does nothing:
+   *   #8b8880 + #8a8782  →  --quiet      (rgb 139,136,128 vs 138,135,130)
+   *   #3a3835 + #3d3b38  →  --ink-soft
+   */
+
+  /* Brand */
+  --sage-light: #8CA99B;   /* sage on a dark ground */
+  --sage-deep:  #3f5a4c;   /* numerals, hover */
+  --sage-ink:   #355344;   /* text ON sage-wash */
+  --sage-hover: #4a6858;
+
+  /* Text — the warm neutral ramp, darkest first */
+  --ink:         #131311;
+  --ink-soft:    #3a3835;
+  --body:        #5c5a56;
+  --body-soft:   #6f6c67;
+  --quiet:       #8b8880;   /* labels, captions */
+  --quieter:     #9a9894;   /* placeholders */
+  --quietest:    #b5b2ac;   /* empty states */
+
+  /* Chrome */
+  --night: #0c0c0a;        /* hero and site header */
+  --ops:   #14150f;        /* the internal console */
+  --ops-panel: #1d1e17;    /* a raised panel on the ops chrome */
+
+  /* States. Never used alone — the word always carries the meaning too. */
+  --positive:    #2c7a54;
+  --warning:     #8a6a2a;
+  --warning-ink: #7a5410;
+  --info:        #4C6A88;  /* composite / informational */
+  --info-ink:    #31485f;  /* text on an info panel */
+  --ink-hover:   #2a2a27;  /* the primary button, hovered */
+  --sage-veil:   #F7F8F6;  /* the faintest sage surface — a transient state */
+  --shade:       #E8E5DF;  /* one step below bone; image placeholders */
+
+  /* Status TONES — the account area's four states, each a text/fill/edge triple.
+   * They were four inline hex+rgba literals, so a re-theme missed them entirely.
+   * Never colour alone: every pill carries an icon and a word as well. */
+  --tone-attn:      #A2610A;
+  --tone-attn-bg:   rgba(178,110,15,.10);
+  --tone-attn-bd:   rgba(178,110,15,.34);
+  --tone-attn-node: #C07714;
+  --tone-pos:       #2C7A54;
+  --tone-pos-bg:    rgba(44,122,84,.10);
+  --tone-pos-bd:    rgba(44,122,84,.30);
+  --tone-work:      #4C6A88;
+  --tone-work-bg:   rgba(76,106,136,.10);
+  --tone-work-bd:   rgba(76,106,136,.30);
+  --tone-mute:      #8b897f;
+  --tone-mute-bg:   rgba(0,0,0,.045);
+  --tone-mute-bd:   rgba(0,0,0,.12);
+
   --font-size: 16px;
   --background: #FAFAF8;
-  --foreground: #131311;
-  --card: #FFFFFF;
-  --card-foreground: #131311;
-  --popover: #FFFFFF;
-  --popover-foreground: #131311;
-  --primary: #131311;
+  --foreground: var(--ink);
+  --card: var(--paper);
+  --card-foreground: var(--ink);
+  --popover: var(--paper);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
   --primary-foreground: #FAFAF8;
-  --secondary: #F0EDE8;
-  --secondary-foreground: #131311;
-  --muted: #E8E5DF;
+  --secondary: var(--bone);
+  --secondary-foreground: var(--ink);
+  --muted: var(--shade);
   --muted-foreground: #787570;
-  --accent: #5A7A6A;
+  --accent: var(--sage);
   --accent-foreground: #ffffff;
   --destructive: #C0392B;
   --destructive-foreground: #ffffff;
-  --border: rgba(19, 19, 17, 0.1);
+  --border: var(--line);
   --input: transparent;
-  --input-background: #F0EDE8;
+  --input-background: var(--bone);
   --switch-background: #C8C5BE;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
   --ring: #B8946A;
   --chart-1: #B8946A;
   --chart-2: #787570;
-  --chart-3: #131311;
+  --chart-3: var(--ink);
   --chart-4: #C8C5BE;
   --chart-5: #E8E5DF;
   --radius: 0.125rem;
@@ -134,6 +194,31 @@
   --color-line-strong: var(--line-strong);
   --color-sage-wash: var(--sage-wash);
   --color-recessive: var(--recessive);
+  /* Emitted for every utility Tailwind knows — text-, bg-, border-, ring-,
+     divide-, from-/via-/to- — and alpha works on all of them (bg-sage/10). */
+  --color-sage: var(--sage);
+  --color-sage-light: var(--sage-light);
+  --color-sage-deep: var(--sage-deep);
+  --color-sage-ink: var(--sage-ink);
+  --color-sage-hover: var(--sage-hover);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-body: var(--body);
+  --color-body-soft: var(--body-soft);
+  --color-quiet: var(--quiet);
+  --color-quieter: var(--quieter);
+  --color-quietest: var(--quietest);
+  --color-night: var(--night);
+  --color-ops: var(--ops);
+  --color-ops-panel: var(--ops-panel);
+  --color-positive: var(--positive);
+  --color-warning: var(--warning);
+  --color-warning-ink: var(--warning-ink);
+  --color-info: var(--info);
+  --color-info-ink: var(--info-ink);
+  --color-ink-hover: var(--ink-hover);
+  --color-sage-veil: var(--sage-veil);
+  --color-shade: var(--shade);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

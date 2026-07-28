@@ -3,6 +3,7 @@
 // and ABN come from each customer's own profile. Staff with an assigned role can
 // edit the profile; the sign-in email is the unique login ID — customers can't
 // change it themselves, and only ADMINS can here.
+import { SAGE } from "../styles/tokens";
 import { useEffect, useState } from "react";
 import { ChevronLeft, Loader2, User, Mail, Phone, Building2, PenLine, Lock } from "lucide-react";
 import {
@@ -10,7 +11,6 @@ import {
   type OpsCustomer, type OpsCustomerDetail, type OpsUser,
 } from "./api";
 
-const SAGE = "#5A7A6A";
 const money = (n: number | null) => (n == null ? "—" : `$${Math.round(n).toLocaleString("en-AU")}`);
 const fmtDate = (s: string | null) => {
   if (!s) return "—";
@@ -29,7 +29,7 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
   useEffect(() => { opsCustomers().then(r => setRows(r.customers)).catch(e => setError(String(e?.message ?? e))); }, []);
   if (error) return <div className="bg-white border border-red-200 p-6 text-sm text-red-600">Couldn't load customers. {error}</div>;
   if (!rows) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
-  if (!rows.length) return <div className="bg-white border border-dashed border-black/15 p-12 text-center text-sm text-[#5c5a56]">No registered customers yet.</div>;
+  if (!rows.length) return <div className="bg-white border border-dashed border-black/15 p-12 text-center text-sm text-body">No registered customers yet.</div>;
   return (
     <>
     {/* PHONE — card per row, the same treatment Projects already had and this
@@ -42,11 +42,11 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
     <div className="lg:hidden -mx-4 border-y border-black/8 bg-white">
       {rows.map(c => (
         <button key={c.id} onClick={() => onOpen(c.id)}
-          className="w-full text-left px-4 py-3 border-b border-black/8 last:border-0 active:bg-[#faf9f6]">
-          <p className="text-[15px] font-medium text-[#14150f] truncate">{c.name || c.email.split("@")[0]}</p>
-          <p className="text-[13px] text-[#5c5a56] truncate">{c.email}</p>
-          {c.company && <p className="text-[13px] text-[#5c5a56] truncate">{c.company}{c.abn ? ` · ABN ${c.abn}` : ""}</p>}
-          <p className="text-[12px] text-[#8b8880] mt-1">
+          className="w-full text-left px-4 py-3 border-b border-black/8 last:border-0 active:bg-bone">
+          <p className="text-[15px] font-medium text-ops truncate">{c.name || c.email.split("@")[0]}</p>
+          <p className="text-[13px] text-body truncate">{c.email}</p>
+          {c.company && <p className="text-[13px] text-body truncate">{c.company}{c.abn ? ` · ABN ${c.abn}` : ""}</p>}
+          <p className="text-[12px] text-quiet mt-1">
             {c.projects} project{c.projects === 1 ? "" : "s"} · {c.orders} order{c.orders === 1 ? "" : "s"} · joined {fmtDate(c.created_at)}
           </p>
         </button>
@@ -56,7 +56,7 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
     <div className="hidden lg:block card">
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-[11px] uppercase tracking-wide text-[#8b8880] border-b border-black/8">
+          <tr className="text-left text-[11px] uppercase tracking-wide text-quiet border-b border-black/8">
             <th className="px-4 py-2.5 font-medium">Customer</th><th className="px-4 py-2.5 font-medium">Business</th>
             <th className="px-4 py-2.5 font-medium">Projects</th><th className="px-4 py-2.5 font-medium">Orders</th>
             <th className="px-4 py-2.5 font-medium">Registered</th><th className="px-4 py-2.5" />
@@ -64,12 +64,12 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
         </thead>
         <tbody>
           {rows.map(c => (
-            <tr key={c.id} className="border-b border-black/5 last:border-0 hover:bg-[#faf9f6]">
-              <td className="px-4 py-3 font-medium text-[#14150f]">{c.name || c.email.split("@")[0]}<span className="block text-xs text-[#8b8880] font-normal">{c.email}</span></td>
-              <td className="px-4 py-3 text-[#5c5a56]">{c.company || <span className="text-[#b5b2ac]">—</span>}<span className="block text-xs text-[#8b8880]">{c.abn ? `ABN ${c.abn}` : ""}</span></td>
-              <td className="px-4 py-3 text-[#5c5a56]">{c.projects}</td>
-              <td className="px-4 py-3 text-[#5c5a56]">{c.orders}</td>
-              <td className="px-4 py-3 text-[#5c5a56]">{fmtDate(c.created_at)}</td>
+            <tr key={c.id} className="border-b border-black/5 last:border-0 hover:bg-bone">
+              <td className="px-4 py-3 font-medium text-ops">{c.name || c.email.split("@")[0]}<span className="block text-xs text-quiet font-normal">{c.email}</span></td>
+              <td className="px-4 py-3 text-body">{c.company || <span className="text-quietest">—</span>}<span className="block text-xs text-quiet">{c.abn ? `ABN ${c.abn}` : ""}</span></td>
+              <td className="px-4 py-3 text-body">{c.projects}</td>
+              <td className="px-4 py-3 text-body">{c.orders}</td>
+              <td className="px-4 py-3 text-body">{fmtDate(c.created_at)}</td>
               <td className="px-4 py-3 text-right"><button onClick={() => onOpen(c.id)} className="text-sm font-medium hover:underline" style={{ color: SAGE }}>Open →</button></td>
             </tr>
           ))}
@@ -115,22 +115,22 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
 
   return (
     <div className="max-w-3xl">
-      <button onClick={onBack} className="text-xs text-[#5c5a56] hover:text-[#14150f] flex items-center gap-1 mb-4"><ChevronLeft className="w-3.5 h-3.5" />Back to customers</button>
+      <button onClick={onBack} className="text-xs text-body hover:text-ops flex items-center gap-1 mb-4"><ChevronLeft className="w-3.5 h-3.5" />Back to customers</button>
       <div className="card p-5 mb-5">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold text-[#14150f] flex items-center gap-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><User className="w-5 h-5" style={{ color: SAGE }} />{cu.name || cu.email.split("@")[0]}</h2>
+          <h2 className="text-lg font-semibold text-ops flex items-center gap-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><User className="w-5 h-5" style={{ color: SAGE }} />{cu.name || cu.email.split("@")[0]}</h2>
           {!editing && (
-            <button onClick={startEdit} className="inline-flex items-center gap-1.5 text-xs text-[#5c5a56] border border-black/12 px-2.5 py-1.5 hover:border-[#5A7A6A] hover:text-[#5A7A6A]">
+            <button onClick={startEdit} className="inline-flex items-center gap-1.5 text-xs text-body border border-black/12 px-2.5 py-1.5 hover:border-sage hover:text-sage">
               <PenLine className="w-3 h-3" />Edit details
             </button>
           )}
         </div>
         {!editing ? (
-          <div className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-[#5c5a56]">
-            <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-[#b5b2ac]" />{cu.email}</span>
-            {cu.phone && <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-[#b5b2ac]" />{cu.phone}</span>}
-            <span className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5 text-[#b5b2ac]" />{cu.company || "No business name"}{cu.abn ? ` · ABN ${cu.abn}` : ""}</span>
-            <span className="text-[#8b8880]">Registered {fmtDate(cu.createdAt)}</span>
+          <div className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-body">
+            <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-quietest" />{cu.email}</span>
+            {cu.phone && <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-quietest" />{cu.phone}</span>}
+            <span className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5 text-quietest" />{cu.company || "No business name"}{cu.abn ? ` · ABN ${cu.abn}` : ""}</span>
+            <span className="text-quiet">Registered {fmtDate(cu.createdAt)}</span>
           </div>
         ) : (
           <div className="mt-3 border-t border-black/[0.07] pt-3">
@@ -142,36 +142,36 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
               {isAdmin ? (
                 <div className="sm:col-span-2">
                   <EditField label="Sign-in email — the customer's unique login ID" value={draft.email} type="email" onChange={(v) => setDraft({ ...draft, email: v })} />
-                  <p className="text-[11px] text-[#8b8880] mt-1">The customer signs in with the new address from their next login. Sessions and records are unaffected.</p>
+                  <p className="text-[11px] text-quiet mt-1">The customer signs in with the new address from their next login. Sessions and records are unaffected.</p>
                 </div>
               ) : (
-                <p className="sm:col-span-2 text-[11px] text-[#8b8880] flex items-center gap-1.5"><Lock className="w-3 h-3" />Sign-in email ({cu.email}) can only be changed by an admin.</p>
+                <p className="sm:col-span-2 text-[11px] text-quiet flex items-center gap-1.5"><Lock className="w-3 h-3" />Sign-in email ({cu.email}) can only be changed by an admin.</p>
               )}
             </div>
             {editErr && <p className="text-xs text-red-600 mt-2">{editErr}</p>}
             <div className="flex gap-2 mt-3">
-              <button onClick={save} disabled={busy} className="text-xs px-3.5 py-2 bg-[#5A7A6A] text-white disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button>
-              <button onClick={() => setEditing(false)} className="text-xs px-2.5 py-2 text-[#5c5a56] hover:text-[#14150f]">Cancel</button>
+              <button onClick={save} disabled={busy} className="text-xs px-3.5 py-2 bg-sage text-white disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button>
+              <button onClick={() => setEditing(false)} className="text-xs px-2.5 py-2 text-body hover:text-ops">Cancel</button>
             </div>
           </div>
         )}
       </div>
 
       <Section title="Projects">
-        {d.projects.length === 0 && <p className="px-4 py-3 text-xs text-[#b5b2ac]">No projects.</p>}
+        {d.projects.length === 0 && <p className="px-4 py-3 text-xs text-quietest">No projects.</p>}
         {d.projects.map(p => (
           <div key={p.id} className="flex items-center justify-between px-4 py-2.5 text-sm border-b border-black/5 last:border-0">
-            <span className="text-[#14150f]">{p.title ?? "Untitled"}</span>
-            <span className="text-xs px-2 py-0.5 border border-black/12 text-[#5c5a56]">{p.status_customer}</span>
+            <span className="text-ops">{p.title ?? "Untitled"}</span>
+            <span className="text-xs px-2 py-0.5 border border-black/12 text-body">{p.status_customer}</span>
           </div>
         ))}
       </Section>
 
       <Section title="Orders">
-        {d.orders.length === 0 && <p className="px-4 py-3 text-xs text-[#b5b2ac]">No orders.</p>}
+        {d.orders.length === 0 && <p className="px-4 py-3 text-xs text-quietest">No orders.</p>}
         {d.orders.map(o => (
           <div key={o.id} className="flex items-center justify-between px-4 py-2.5 text-sm border-b border-black/5 last:border-0">
-            <span className="font-mono text-[#14150f]">{o.order_no}<span className="ml-2 text-xs text-[#8b8880] font-sans">{o.stage}</span></span>
+            <span className="font-mono text-ops">{o.order_no}<span className="ml-2 text-xs text-quiet font-sans">{o.stage}</span></span>
             <span style={{ fontFamily: "'DM Mono', monospace" }}>{money(o.total)}</span>
           </div>
         ))}
@@ -183,9 +183,9 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
 function EditField({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
   return (
     <label className="block">
-      <span className="block text-[10px] uppercase tracking-wide text-[#8b8880] mb-1">{label}</span>
+      <span className="block text-[10px] uppercase tracking-wide text-quiet mb-1">{label}</span>
       <input type={type} value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full border border-black/15 px-2.5 py-1.5 text-sm outline-none focus:border-[#5A7A6A]" />
+        className="w-full border border-black/15 px-2.5 py-1.5 text-sm outline-none focus:border-sage" />
     </label>
   );
 }
@@ -193,7 +193,7 @@ function EditField({ label, value, onChange, type = "text" }: { label: string; v
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <>
-      <h3 className="text-[11px] uppercase tracking-wide text-[#8b8880] mb-2">{title}</h3>
+      <h3 className="text-[11px] uppercase tracking-wide text-quiet mb-2">{title}</h3>
       <div className="card mb-5">{children}</div>
     </>
   );

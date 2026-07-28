@@ -16,6 +16,7 @@
 //    shop an approval gate resolves to self-approval or a verbal yes clicked on
 //    someone else's behalf, which is worse than no gate because it looks like a
 //    control. Safety comes from preview, audit, and one-click revert instead.
+import { SAGE, QUIET as MUTED } from "../styles/tokens";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, Check, ExternalLink, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
@@ -26,9 +27,7 @@ import {
   type OpsRateCardRow, type OpsReconcileRun,
 } from "./api";
 
-const SAGE = "#5A7A6A";
-const INK = "#14150f";
-const MUTED = "#8b8880";
+const INK = "var(--ops)";
 const MONO = { fontFamily: "'DM Mono', monospace" } as const;
 const HEAD = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 
@@ -155,7 +154,7 @@ function Banner({ tone, children }: { tone: "ok" | "warn"; children: React.React
       style={{
         background: ok ? "rgba(90,122,106,0.08)" : "rgba(180,120,40,0.09)",
         borderColor: ok ? "rgba(90,122,106,0.25)" : "rgba(180,120,40,0.3)",
-        color: ok ? "#355344" : "#7a5410",
+        color: ok ? "var(--sage-ink)" : "var(--warning-ink)",
       }}>
       {children}
     </div>
@@ -520,10 +519,10 @@ function Rules({ rules, setRules, preview, canEdit }: {
                   </span>
                 ))}
                 {r.id && fires.length === preview.length && preview.length > 0 && (
-                  <span style={{ color: "#7a5410" }}>Fires at every size you sell — consider folding it into the base rate.</span>
+                  <span style={{ color: "var(--warning-ink)" }}>Fires at every size you sell — consider folding it into the base rate.</span>
                 )}
                 {r.id && fires.length === 0 && (
-                  <span style={{ color: "#7a5410" }}>Never fires at any size you currently quote. Check the value and its units.</span>
+                  <span style={{ color: "var(--warning-ink)" }}>Never fires at any size you currently quote. Check the value and its units.</span>
                 )}
               </p>
             </div>
@@ -633,7 +632,7 @@ function ConfirmDialog({ family, before, after, baseline, preview, exposure, onC
         </p>
 
         {tripwire && (
-          <div className="text-xs px-3 py-2 mb-3 border" style={{ background: "rgba(180,120,40,0.09)", borderColor: "rgba(180,120,40,0.3)", color: "#7a5410" }}>
+          <div className="text-xs px-3 py-2 mb-3 border" style={{ background: "rgba(180,120,40,0.09)", borderColor: "rgba(180,120,40,0.3)", color: "var(--warning-ink)" }}>
             <p className="mb-2">This is a {Math.round(biggest)}% change. Type the family slug to confirm.</p>
             <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={family}
               className="w-full border border-black/12 px-2 py-1 bg-white" style={{ ...MONO, color: INK }} />
@@ -921,7 +920,7 @@ function CatalogueMirror() {
 
   return (
     <>
-      <div className="bg-sage-wash border border-[#5A7A6A]/25 text-[#355344] text-xs px-4 py-2.5 mb-5">
+      <div className="bg-sage-wash border border-sage/25 text-sage-ink text-xs px-4 py-2.5 mb-5">
         <p>
           <strong>Names, descriptions, images, and which options each product offers are edited in Sanity Studio.
             What anything costs is edited here.</strong>
@@ -957,7 +956,7 @@ function CatalogueMirror() {
                     // A missing rate card does not fail — it silently prices at
                     // 'default'. Quieter than a missing option price, and worth
                     // saying with its consequence attached.
-                    : <span style={{ color: "#7a5410" }}>✗ no rate card — prices at ‘default’</span>}
+                    : <span style={{ color: "var(--warning-ink)" }}>✗ no rate card — prices at ‘default’</span>}
                 </span>
               </div>
             ))}

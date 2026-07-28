@@ -15,13 +15,16 @@ import {
   type ApiProjectSummary, type ApiOrder, type ApiOrderLine,
 } from "../data/api";
 
-// ── Semantic tones (authoritative hex from the approved mock's :root) ─────────
+// ── Semantic tones ───────────────────────────────────────────────────────────
+// Values live in theme.css; these are var() references so the account area
+// re-themes with everything else. They were inline hex + rgba literals, which a
+// palette change silently skipped.
 export type Tone = "attn" | "pos" | "work" | "mute" | "draft";
 export const TONE: Record<Exclude<Tone, "draft">, { text: string; bg: string; bd: string; node: string }> = {
-  attn: { text: "#A2610A", bg: "rgba(178,110,15,.10)", bd: "rgba(178,110,15,.34)", node: "#C07714" },
-  pos:  { text: "#2C7A54", bg: "rgba(44,122,84,.10)",  bd: "rgba(44,122,84,.30)",  node: "#2C7A54" },
-  work: { text: "#4C6A88", bg: "rgba(76,106,136,.10)", bd: "rgba(76,106,136,.30)", node: "#4C6A88" },
-  mute: { text: "#8b897f", bg: "rgba(0,0,0,.045)",     bd: "rgba(0,0,0,.12)",      node: "#8b897f" },
+  attn: { text: "var(--tone-attn)", bg: "var(--tone-attn-bg)", bd: "var(--tone-attn-bd)", node: "var(--tone-attn-node)" },
+  pos:  { text: "var(--tone-pos)",  bg: "var(--tone-pos-bg)",  bd: "var(--tone-pos-bd)",  node: "var(--tone-pos)" },
+  work: { text: "var(--tone-work)", bg: "var(--tone-work-bg)", bd: "var(--tone-work-bd)", node: "var(--tone-work)" },
+  mute: { text: "var(--tone-mute)", bg: "var(--tone-mute-bg)", bd: "var(--tone-mute-bd)", node: "var(--tone-mute)" },
 };
 
 const PILL_ICON: Record<Tone, ReactNode> = {
@@ -35,7 +38,7 @@ const PILL_ICON: Record<Tone, ReactNode> = {
 // Status pill — icon + text label (accessibility: never colour alone).
 export function StatusPill({ tone, children, icon }: { tone: Tone; children: ReactNode; icon?: ReactNode }) {
   const style = tone === "draft"
-    ? { color: "#5c5a56", background: "transparent", borderColor: "rgba(0,0,0,.10)", borderStyle: "dashed" as const }
+    ? { color: "var(--body)", background: "transparent", borderColor: "rgba(0,0,0,.10)", borderStyle: "dashed" as const }
     : { color: TONE[tone].text, background: TONE[tone].bg, borderColor: TONE[tone].bd };
   return (
     <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.04em] px-2 py-1 border whitespace-nowrap leading-none"
@@ -77,7 +80,7 @@ export const initialsOf = (s: string) =>
 // ── Record state vocabulary ───────────────────────────────────────────────────
 export interface RecordMeta { pill: string; tone: Tone; needsYou: boolean; next: ReactNode }
 
-const b = (t: ReactNode) => <b className="text-[#131311] font-semibold">{t}</b>;
+const b = (t: ReactNode) => <b className="text-ink font-semibold">{t}</b>;
 
 export function orderMeta(o: ApiOrder): RecordMeta {
   const pay = (kind: "deposit" | "balance") => o.payments.find((p) => p.kind === kind);

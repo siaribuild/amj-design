@@ -5,6 +5,7 @@
 // dashboard summary. Quotes queue + workspace, approvals, orders ops etc. land
 // in O2+. Tabs beyond Dashboard are placeholders for now.
 // ═══════════════════════════════════════════════════════════════════════════════
+import { SAGE } from "../styles/tokens";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, FileText, CheckSquare, Package, Users, Boxes, SlidersHorizontal,
@@ -18,7 +19,6 @@ import { Pricing } from "./Pricing";
 import { Enquiries } from "./Enquiries";
 import { Files, Audit, Admin } from "./AdminTabs";
 
-const SAGE = "#5A7A6A";
 
 // ── Brand ────────────────────────────────────────────────────────────────────
 // One request per page load, shared by all three mount points (sign-in screen,
@@ -92,7 +92,7 @@ export function OpsApp() {
   useEffect(() => { opsMe().then(setUser).finally(() => setLoading(false)); }, []);
 
   if (loading) {
-    return <div className="min-h-screen bg-[#14150f] flex items-center justify-center">
+    return <div className="min-h-screen bg-ops flex items-center justify-center">
       <Loader2 className="w-6 h-6 text-white/50 animate-spin" />
     </div>;
   }
@@ -145,20 +145,20 @@ function OpsLogin({ onAuthed }: { onAuthed: (u: OpsUser) => void }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#14150f] flex items-center justify-center px-6" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="min-h-screen bg-ops flex items-center justify-center px-6" style={{ fontFamily: "'Inter', sans-serif" }}>
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <OpsLogo height={30} />
           <p className="text-white/40 text-sm mt-2">Internal console — staff sign-in</p>
         </div>
-        <div className="bg-[#1d1e17] border border-white/10 p-6 space-y-4">
+        <div className="bg-ops-panel border border-white/10 p-6 space-y-4">
           {step === "email" ? (
             <>
               <label className="block">
                 <span className="text-[11px] uppercase tracking-wide text-white/40">Work email</span>
                 <input type="email" value={email} autoFocus onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && send()}
                   placeholder="you@openframe.com.au"
-                  className="mt-1 w-full bg-[#14150f] border border-white/15 px-3 py-2 text-sm text-white outline-none focus:border-[#5A7A6A]" />
+                  className="mt-1 w-full bg-ops border border-white/15 px-3 py-2 text-sm text-white outline-none focus:border-sage" />
               </label>
               <button onClick={send} disabled={busy}
                 className="w-full py-2 text-sm font-medium text-white disabled:opacity-50" style={{ background: SAGE }}>
@@ -171,8 +171,8 @@ function OpsLogin({ onAuthed }: { onAuthed: (u: OpsUser) => void }) {
               <input value={code} autoFocus inputMode="numeric" maxLength={6}
                 onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={e => e.key === "Enter" && verify()}
                 placeholder="••••••"
-                className="w-full bg-[#14150f] border border-white/15 px-3 py-2 text-sm text-white tracking-[0.3em] outline-none focus:border-[#5A7A6A]" />
-              {devCode && <p className="text-xs text-[#8CA99B] bg-sage-wash border border-[#5A7A6A]/25 px-2 py-1.5">Dev mode — code is <span className="font-mono font-semibold">{devCode}</span></p>}
+                className="w-full bg-ops border border-white/15 px-3 py-2 text-sm text-white tracking-[0.3em] outline-none focus:border-sage" />
+              {devCode && <p className="text-xs text-sage-light bg-sage-wash border border-sage/25 px-2 py-1.5">Dev mode — code is <span className="font-mono font-semibold">{devCode}</span></p>}
               <button onClick={verify} disabled={busy}
                 className="w-full py-2 text-sm font-medium text-white disabled:opacity-50" style={{ background: SAGE }}>
                 {busy ? "Verifying…" : "Sign in"}
@@ -199,7 +199,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
       {/* Sidebar — desktop and tablet only. Below md it is a fixed 224px rail on
           a 375px screen, and with the content's own p-8 that left 87px of usable
           width: 375 − 224 − 64. A nine-column table was rendering into that. */}
-      <aside className="hidden md:flex w-56 bg-[#14150f] text-white flex-col fixed inset-y-0 left-0">
+      <aside className="hidden md:flex w-56 bg-ops text-white flex-col fixed inset-y-0 left-0">
         <div className="px-5 h-14 flex items-center border-b border-white/10">
           <OpsLogo height={22} />
         </div>
@@ -240,11 +240,11 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
               signed in as and sign out. The bottom bar returned null for them,
               which left them with no way to sign out on a phone at all. */}
           <button onClick={() => setNavOpen(true)}
-            className="md:hidden -ml-2 w-10 h-10 flex items-center justify-center text-[#5c5a56] active:bg-black/5 flex-shrink-0"
+            className="md:hidden -ml-2 w-10 h-10 flex items-center justify-center text-body active:bg-black/5 flex-shrink-0"
             aria-label="Open menu" aria-expanded={navOpen} aria-controls="ops-nav-drawer">
             <Menu className="w-5 h-5" />
           </button>
-          <h1 className="text-[15px] font-semibold text-[#14150f] capitalize flex items-center gap-2 min-w-0 flex-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+          <h1 className="text-[15px] font-semibold text-ops capitalize flex items-center gap-2 min-w-0 flex-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
             <span className="truncate">{TABS.find(t => t.id === tab)?.label}</span>
           </h1>
           {/* The omnibox is a desktop control; on a phone it left ~200px of
@@ -323,7 +323,7 @@ function MobileNav({ open, onClose, tabs, tab, setTab, user, onSignOut }: {
           `invisible` on top of that takes it out of the tab order, which
           transform alone does not do. */}
       <aside id="ops-nav-drawer"
-        className={`md:hidden fixed inset-y-0 left-0 z-50 w-[264px] max-w-[82vw] bg-[#14150f] text-white flex flex-col
+        className={`md:hidden fixed inset-y-0 left-0 z-50 w-[264px] max-w-[82vw] bg-ops text-white flex flex-col
                     transition-transform duration-200 ease-out
                     ${open ? "translate-x-0" : "-translate-x-full invisible"}`}
         aria-hidden={!open}>
@@ -372,7 +372,7 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
   if (err) return (
     <div className="bg-white border border-red-200 p-6">
       <p className="text-sm text-red-600 font-medium">Couldn't load the summary.</p>
-      <p className="text-xs text-[#8b8880] mt-1">{err}</p>
+      <p className="text-xs text-quiet mt-1">{err}</p>
     </div>
   );
   if (!s) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
@@ -393,22 +393,22 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
 
   return (
     <div className="max-w-3xl">
-      <p className="text-[11px] uppercase tracking-[0.14em] text-[#8b8880] mb-2">Needs us</p>
+      <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2">Needs us</p>
       {needsUs.length === 0 ? (
         <div className="card px-5 py-6">
-          <p className="text-sm text-[#14150f]">Nothing is waiting on us.</p>
-          <p className="text-xs text-[#8b8880] mt-1">New submissions and enquiries appear here.</p>
+          <p className="text-sm text-ops">Nothing is waiting on us.</p>
+          <p className="text-xs text-quiet mt-1">New submissions and enquiries appear here.</p>
         </div>
       ) : (
-        <div className="card border-l-2 border-l-[#5A7A6A]">
+        <div className="card border-l-2 border-l-sage">
           {needsUs.map(r => {
             const [one, many] = r.text.split("|");
             return (
               <button key={r.key} onClick={() => setTab(r.tab)}
-                className="w-full text-left px-5 py-3.5 border-b border-black/5 last:border-0 hover:bg-[#faf9f6] flex items-baseline gap-3">
-                <span className="text-xl font-semibold text-[#14150f]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{r.count}</span>
-                <span className="text-sm text-[#3d3b38] flex-1">{r.count === 1 ? one : many}</span>
-                <span className="text-xs text-[#5A7A6A]">Open →</span>
+                className="w-full text-left px-5 py-3.5 border-b border-black/5 last:border-0 hover:bg-bone flex items-baseline gap-3">
+                <span className="text-xl font-semibold text-ops" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{r.count}</span>
+                <span className="text-sm text-ink-soft flex-1">{r.count === 1 ? one : many}</span>
+                <span className="text-xs text-sage">Open →</span>
               </button>
             );
           })}
@@ -417,15 +417,15 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
 
       {/* The scoreboard, demoted and honestly inert. Fine for it to be a count —
           as long as it is not pretending to be work. */}
-      <p className="text-[11px] uppercase tracking-[0.14em] text-[#8b8880] mt-7 mb-2">The shop</p>
+      <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mt-7 mb-2">The shop</p>
       <div className="card flex flex-wrap">
         {[
           { label: "Active orders", value: s.activeOrders },
           { label: "Customers", value: s.customers },
         ].map(c => (
           <div key={c.label} className="px-5 py-4 border-r border-black/5 last:border-0">
-            <p className="text-[11px] uppercase tracking-wide text-[#8b8880]">{c.label}</p>
-            <p className="text-xl font-semibold text-[#14150f] mt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>{c.value}</p>
+            <p className="text-[11px] uppercase tracking-wide text-quiet">{c.label}</p>
+            <p className="text-xl font-semibold text-ops mt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>{c.value}</p>
           </div>
         ))}
       </div>
@@ -446,16 +446,16 @@ function SearchBox({ onNavigate }: { onNavigate: (t: Tab) => void }) {
   }, [q]);
   return (
     <div className="relative w-72">
-      <Search className="w-4 h-4 text-[#b5b2ac] absolute left-2.5 top-2.5" />
+      <Search className="w-4 h-4 text-quietest absolute left-2.5 top-2.5" />
       <input value={q} onChange={e => setQ(e.target.value)} onFocus={() => results.length && setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder="Search projects, orders, customers…" className="w-full border border-black/12 pl-8 pr-3 py-1.5 text-sm outline-none focus:border-[#5A7A6A]" />
+        placeholder="Search projects, orders, customers…" className="w-full border border-black/12 pl-8 pr-3 py-1.5 text-sm outline-none focus:border-sage" />
       {open && results.length > 0 && (
         <div className="absolute right-0 top-full mt-1 w-full card shadow-lg z-20 max-h-80 overflow-y-auto">
           {results.map((r, i) => (
             <button key={i} onMouseDown={() => { onNavigate(TYPE_TAB[r.type] ?? "dashboard"); setOpen(false); setQ(""); }}
-              className="w-full text-left px-3 py-2 hover:bg-[#faf9f6] flex items-center justify-between">
-              <span className="text-sm text-[#14150f]">{r.label}<span className="ml-2 text-[10px] uppercase tracking-wide text-[#b5b2ac]">{r.type}</span></span>
-              <span className="text-xs text-[#8b8880]">{r.hint}</span>
+              className="w-full text-left px-3 py-2 hover:bg-bone flex items-center justify-between">
+              <span className="text-sm text-ops">{r.label}<span className="ml-2 text-[10px] uppercase tracking-wide text-quietest">{r.type}</span></span>
+              <span className="text-xs text-quiet">{r.hint}</span>
             </button>
           ))}
         </div>
@@ -467,7 +467,7 @@ function SearchBox({ onNavigate }: { onNavigate: (t: Tab) => void }) {
 function Placeholder({ label }: { label: string }) {
   return (
     <div className="bg-white border border-dashed border-black/15 p-12 text-center">
-      <p className="text-sm text-[#5c5a56]"><span className="font-medium text-[#14150f]">{label}</span> — coming in a later milestone.</p>
+      <p className="text-sm text-body"><span className="font-medium text-ops">{label}</span> — coming in a later milestone.</p>
     </div>
   );
 }

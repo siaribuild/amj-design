@@ -4,12 +4,11 @@
 // (never a street address). Selecting a marker calls onSelect; the selected pin is
 // emphasised and panned into view. The state-grouped list beside it is the primary,
 // fully-accessible way to choose — the map is an enhancement.
+import { SAGE } from "../styles/tokens";
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { ApiLocation } from "../data/api";
-
-const SAGE = "#5A7A6A";
 
 // A square, brand-consistent marker (a small window mark). Larger + filled when selected.
 function pin(active: boolean): L.DivIcon {
@@ -80,7 +79,7 @@ export function LocationMap({ locations, selectedId, onSelect }: {
   return (
     <div
       ref={elRef}
-      className="h-[320px] md:h-[420px] w-full border border-black/10 bg-[#eef0ec]"
+      className="h-[320px] md:h-[420px] w-full border border-black/10 bg-bone"
       role="application"
       aria-label="Map of showroom locations"
     />

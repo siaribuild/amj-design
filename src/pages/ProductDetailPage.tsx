@@ -24,7 +24,7 @@ const OPTION_TYPE_ORDER = ["Glass", "Frame colour", "Colour", "Hardware", "Flysc
 function AvailabilityBadge({ availability }: { availability: ProductOption["availability"] }) {
   const standard = availability === "standard";
   return (
-    <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 border ${standard ? "border-[#5A7A6A]/40 text-[#5A7A6A] bg-[#5A7A6A]/[0.06]" : "border-black/15 text-[#5c5a56]"}`}
+    <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 border ${standard ? "border-sage/40 text-sage bg-sage/[0.06]" : "border-black/15 text-body"}`}
       style={{ fontFamily: "'DM Mono', monospace" }}>
       {standard ? "Standard" : "Optional"}
     </span>
@@ -41,22 +41,22 @@ function OverviewContent({ product, familyBlurb }: { product: Product; familyBlu
   return (
     <div className="space-y-5">
       {product.descriptionParagraphs.map((p, i) => (
-        <p key={i} className="text-[#5c5a56] leading-relaxed">{p}</p>
+        <p key={i} className="text-body leading-relaxed">{p}</p>
       ))}
       {familyBlurb && (
-        <div className="border-l-2 border-[#5A7A6A]/40 pl-4">
-          <p className="text-xs font-semibold text-[#5A7A6A] uppercase tracking-wide mb-1"
+        <div className="border-l-2 border-sage/40 pl-4">
+          <p className="text-xs font-semibold text-sage uppercase tracking-wide mb-1"
             style={{ fontFamily: "'DM Mono', monospace" }}>Best suited to</p>
-          <p className="text-sm text-[#5c5a56] leading-relaxed">{familyBlurb}</p>
+          <p className="text-sm text-body leading-relaxed">{familyBlurb}</p>
         </div>
       )}
       {inclusions.length > 0 && (
         <div>
-          <p className="text-xs font-semibold text-[#131311] uppercase tracking-wide mb-2">Standard inclusions</p>
+          <p className="text-xs font-semibold text-ink uppercase tracking-wide mb-2">Standard inclusions</p>
           <ul className="space-y-1.5">
             {inclusions.map(l => (
-              <li key={l} className="text-sm text-[#5c5a56] flex gap-2">
-                <Check className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0 mt-0.5" />{l}
+              <li key={l} className="text-sm text-body flex gap-2">
+                <Check className="w-3.5 h-3.5 text-sage flex-shrink-0 mt-0.5" />{l}
               </li>
             ))}
           </ul>
@@ -73,22 +73,22 @@ function OptionsContent({ product }: { product: Product }) {
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
   });
   if (typeNames.length === 0) {
-    return <p className="text-sm text-[#5c5a56]">Options for this product are confirmed at technical review.</p>;
+    return <p className="text-sm text-body">Options for this product are confirmed at technical review.</p>;
   }
   return (
     <div className="space-y-6">
-      <p className="text-sm text-[#5c5a56]">Standard and selectable options for this system. Final selections are confirmed on your estimate.</p>
+      <p className="text-sm text-body">Standard and selectable options for this system. Final selections are confirmed on your estimate.</p>
       {typeNames.map(tn => {
         const items = product.options
           .filter(o => o.typeName === tn)
           .sort((a, b) => (a.availability === b.availability ? 0 : a.availability === "standard" ? -1 : 1));
         return (
           <div key={tn}>
-            <p className="text-xs font-semibold text-[#131311] uppercase tracking-wide mb-2">{tn}</p>
+            <p className="text-xs font-semibold text-ink uppercase tracking-wide mb-2">{tn}</p>
             <div className="border border-black/8">
               {items.map((o, i) => (
                 <div key={o.name} className={`flex items-center justify-between gap-3 px-4 py-2.5 ${i > 0 ? "border-t border-black/6" : ""}`}>
-                  <span className="text-sm text-[#131311]">{o.name}</span>
+                  <span className="text-sm text-ink">{o.name}</span>
                   <AvailabilityBadge availability={o.availability} />
                 </div>
               ))}
@@ -106,8 +106,8 @@ function TechnicalContent({ product }: { product: Product }) {
       <tbody>
         {product.specs.map(row => (
           <tr key={row.label} className="border-b border-black/6">
-            <td className="py-2.5 pr-4 text-xs text-[#5c5a56] font-medium w-44 align-top">{row.label}</td>
-            <td className="py-2.5 text-[#131311]">{row.value}</td>
+            <td className="py-2.5 pr-4 text-xs text-body font-medium w-44 align-top">{row.label}</td>
+            <td className="py-2.5 text-ink">{row.value}</td>
           </tr>
         ))}
       </tbody>
@@ -119,14 +119,14 @@ function DownloadsContent() {
   const docs = ["Spec sheet", "CAD / detail drawing", "Measuring guide", "Warranty & compliance"];
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-2 border border-black/10 bg-[#FAFAF9] px-4 py-3">
-        <Info className="w-4 h-4 text-[#5A7A6A] flex-shrink-0 mt-0.5" />
-        <p className="text-sm text-[#5c5a56]">Technical downloads will be provided after review or by request.</p>
+      <div className="flex items-start gap-2 border border-black/10 bg-bone px-4 py-3">
+        <Info className="w-4 h-4 text-sage flex-shrink-0 mt-0.5" />
+        <p className="text-sm text-body">Technical downloads will be provided after review or by request.</p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {docs.map(d => (
-          <div key={d} className="flex items-center justify-between gap-3 border border-black/10 px-4 py-3 text-[#9a9894]">
-            <span className="flex items-center gap-2 text-sm text-[#5c5a56]"><FileText className="w-4 h-4" />{d}</span>
+          <div key={d} className="flex items-center justify-between gap-3 border border-black/10 px-4 py-3 text-quieter">
+            <span className="flex items-center gap-2 text-sm text-body"><FileText className="w-4 h-4" />{d}</span>
             <span className="text-[11px] uppercase tracking-wider" style={{ fontFamily: "'DM Mono', monospace" }}>On request</span>
           </div>
         ))}
@@ -200,13 +200,13 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
     <div id="configure">
       <div className="flex items-center gap-2 mb-3">
         <WindowMark size={16} color={SAGE} />
-        <h2 className="text-base font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Configure &amp; get an estimate</h2>
+        <h2 className="text-base font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Configure &amp; get an estimate</h2>
       </div>
       {liveJustAdded ? (
         <div className="space-y-3">
           <ItemSummaryCard item={liveJustAdded} added quote={quote} />
-          <div className="border border-black/10 bg-[#FAFAF9] px-4 py-4">
-            <p className="text-sm text-[#5c5a56] mb-3">MyProject now has <span className="font-medium text-[#131311]">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span> · estimated {fmt(gstAdjust(projectTotal, gstMode))} {gstSuffix(gstMode)}.</p>
+          <div className="border border-black/10 bg-bone px-4 py-4">
+            <p className="text-sm text-body mb-3">MyProject now has <span className="font-medium text-ink">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span> · estimated {fmt(gstAdjust(projectTotal, gstMode))} {gstSuffix(gstMode)}.</p>
             <Btn variant="sage" size="md" onClick={() => remount({ options: liveJustAdded.options, location: liveJustAdded.location, measuredBy: liveJustAdded.measuredBy })} className="w-full justify-center"><Plus className="w-4 h-4" />Add another like this</Btn>
             <div className="grid grid-cols-2 gap-2 mt-2">
               <Btn variant="outline" size="md" onClick={() => onBack(categorySlug, product.familySlug)} className="justify-center">Another product</Btn>
@@ -224,7 +224,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
   return (
     <div className="ground-bone min-h-screen">
       {/* ─── PRODUCT HERO — one image, header overlays it ────────────────────── */}
-      <section className="relative min-h-[440px] md:min-h-[520px] flex items-end bg-[#0c0c0a] overflow-hidden">
+      <section className="relative min-h-[440px] md:min-h-[520px] flex items-end bg-night overflow-hidden">
         <img src={imageUrl(product.heroImage, { w: 1600, h: 900 })}
           alt={`${product.name} — aluminium ${isWindow ? "window" : "door"} system installed in a contemporary home`}
           className="absolute inset-0 w-full h-full object-cover opacity-70 hero-zoom" />
@@ -257,7 +257,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
       <div id="product-sections" className="max-w-6xl mx-auto px-6 py-8 md:py-12">
         {/* Back link — top of content, where it is clearly visible on the light body */}
         <button onClick={() => onBack(categorySlug, product.familySlug)}
-          className="inline-flex items-center gap-1 text-sm text-[#5c5a56] hover:text-[#131311] transition-colors mb-6 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
+          className="inline-flex items-center gap-1 text-sm text-body hover:text-ink transition-colors mb-6 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2">
           <ChevronLeft className="w-4 h-4" />Back to products
         </button>
 
@@ -269,7 +269,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
           <div className="lg:order-1 lg:flex-1 min-w-0">
             {/* Overview — standalone, outside the tabs */}
             <section className="mb-8">
-              <h2 className="font-semibold text-[#131311] leading-tight mb-4" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.3rem, 2.2vw, 1.6rem)" }}>Overview</h2>
+              <h2 className="font-semibold text-ink leading-tight mb-4" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.3rem, 2.2vw, 1.6rem)" }}>Overview</h2>
               <OverviewContent product={product} familyBlurb={familyBlurb} />
             </section>
 
@@ -279,7 +279,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
                 {TABS.map(t => (
                   <button key={t.id} onClick={() => setTab(t.id)}
                     aria-current={tab === t.id ? "true" : undefined}
-                    className={`pb-3 text-sm border-b-2 transition-all cursor-pointer -mb-px ${tab === t.id ? "border-[#5A7A6A] text-[#131311] font-medium" : "border-transparent text-[#5c5a56] hover:text-[#131311]"}`}>
+                    className={`pb-3 text-sm border-b-2 transition-all cursor-pointer -mb-px ${tab === t.id ? "border-sage text-ink font-medium" : "border-transparent text-body hover:text-ink"}`}>
                     {t.label}
                   </button>
                 ))}
@@ -298,9 +298,9 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
                       <button onClick={() => setOpenSection(open ? "" : t.id)}
                         aria-expanded={open}
                         className="w-full flex items-center justify-between gap-3 py-4 text-left cursor-pointer">
-                        <span className={`text-sm ${open ? "font-semibold text-[#131311]" : "font-medium text-[#131311]"}`}
+                        <span className={`text-sm ${open ? "font-semibold text-ink" : "font-medium text-ink"}`}
                           style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{t.label}</span>
-                        <ChevronDown className={`w-4 h-4 text-[#5c5a56] transition-transform ${open ? "rotate-180" : ""}`} />
+                        <ChevronDown className={`w-4 h-4 text-body transition-transform ${open ? "rotate-180" : ""}`} />
                       </button>
                     </h2>
                     {open && <div className="pb-6">{sectionBody(t.id)}</div>}
@@ -313,18 +313,18 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
       </div>
       {/* ─── GALLERY ─────────────────────────────────────────────────────────── */}
       {product.gallery.length > 0 && (
-        <section className="border-t border-black/8 bg-[#FAFAF9] py-12 md:py-16">
+        <section className="border-t border-black/8 bg-bone py-12 md:py-16">
           <div className="max-w-6xl mx-auto px-6">
-            <h2 className="font-semibold text-[#131311] leading-tight mb-6"
+            <h2 className="font-semibold text-ink leading-tight mb-6"
               style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.4rem, 2.4vw, 1.8rem)" }}>Gallery</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {product.gallery.map((src, i) => (
                 <button key={i} onClick={() => setLightbox(i)}
-                  className="relative bg-[#0c0c0a] aspect-[4/3] overflow-hidden group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2"
+                  className="relative bg-night aspect-[4/3] overflow-hidden group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2"
                   aria-label={`Enlarge ${product.name} view ${i + 1}`}>
                   <img src={imageUrl(src, { w: 800, h: 600 })} alt={`${product.name} — view ${i + 1}`}
                     className="w-full h-full object-cover opacity-70 group-hover:opacity-85 group-hover:scale-[1.03] transition-all duration-500" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/55 via-[#0c0c0a]/10 to-transparent pointer-events-none" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-night/55 via-night/10 to-transparent pointer-events-none" />
                   <div className="absolute inset-2 border border-white/12 group-hover:border-white/30 transition-colors pointer-events-none" />
                   <span className="absolute bottom-3 right-3 w-8 h-8 border border-white/40 bg-black/30 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <Maximize2 className="w-4 h-4 text-white" />
@@ -340,12 +340,12 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
       <section className="border-t border-black/8 py-12 md:py-16">
         <div className="max-w-6xl mx-auto px-6">
           <div className="flex items-end justify-between gap-4 mb-6">
-            <h2 className="font-semibold text-[#131311] leading-tight"
+            <h2 className="font-semibold text-ink leading-tight"
               style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.4rem, 2.4vw, 1.8rem)" }}>
               {related.length > 0 ? `More ${family?.name ?? "products"}` : "Keep browsing"}
             </h2>
             <button onClick={() => onBack(categorySlug, product.familySlug)}
-              className="inline-flex items-center gap-1 text-sm font-medium text-[#5A7A6A] hover:text-[#4a6858] transition-colors cursor-pointer flex-shrink-0">
+              className="inline-flex items-center gap-1 text-sm font-medium text-sage hover:text-sage-hover transition-colors cursor-pointer flex-shrink-0">
               <ChevronLeft className="w-3.5 h-3.5" />Back to products
             </button>
           </div>
@@ -353,17 +353,17 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {related.map(r => (
                 <button key={r.id} onClick={() => onOpenProduct(r.slug)}
-                  className="group relative card hover:border-[#5A7A6A]  transition-all text-left overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
-                  <div className="relative bg-[#0c0c0a] aspect-[4/3] overflow-hidden">
+                  className="group relative card hover:border-sage  transition-all text-left overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2">
+                  <div className="relative bg-night aspect-[4/3] overflow-hidden">
                     <img src={imageUrl(r.heroImage, { w: 640, h: 480 })} alt={`${r.name} aluminium ${isWindow ? "window" : "door"} system`}
                       className="w-full h-full object-cover opacity-70 group-hover:opacity-80 group-hover:scale-105 transition-all duration-500" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0c0c0a]/55 via-[#0c0c0a]/10 to-transparent pointer-events-none" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-night/55 via-night/10 to-transparent pointer-events-none" />
                     <div className="absolute inset-2 border border-white/10 group-hover:border-white/28 transition-all pointer-events-none" />
                   </div>
                   <div className="p-5 flex flex-col flex-1">
-                    <h3 className="font-semibold text-[#131311] mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{r.name}</h3>
-                    <p className="text-sm text-[#5c5a56] leading-relaxed mb-3 line-clamp-2">{r.shortDescription}</p>
-                    <span className="mt-auto inline-flex items-center gap-1.5 text-sm font-medium text-[#5A7A6A] group-hover:gap-2.5 transition-all">
+                    <h3 className="font-semibold text-ink mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{r.name}</h3>
+                    <p className="text-sm text-body leading-relaxed mb-3 line-clamp-2">{r.shortDescription}</p>
+                    <span className="mt-auto inline-flex items-center gap-1.5 text-sm font-medium text-sage group-hover:gap-2.5 transition-all">
                       View product <ArrowRight className="w-3.5 h-3.5" />
                     </span>
                   </div>
@@ -371,8 +371,8 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
               ))}
             </div>
           ) : (
-            <div className="border border-black/10 bg-[#FAFAF9] px-6 py-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <p className="text-sm text-[#5c5a56]">This is the only system in the {family?.name ?? "family"} right now. Browse the full catalogue to compare other options.</p>
+            <div className="border border-black/10 bg-bone px-6 py-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <p className="text-sm text-body">This is the only system in the {family?.name ?? "family"} right now. Browse the full catalogue to compare other options.</p>
               <Btn variant="outline" size="sm" onClick={() => onBack(categorySlug, "all")}>View all {category?.name?.toLowerCase() ?? "products"}</Btn>
             </div>
           )}

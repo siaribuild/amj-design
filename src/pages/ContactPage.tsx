@@ -172,7 +172,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
   return (
     <div className="ground-bone min-h-screen">
       {/* ─── HERO — orientation only ───────────────────────────────────────────── */}
-      <section className="relative bg-[#0c0c0a] overflow-hidden">
+      <section className="relative bg-night overflow-hidden">
         {heroImg && <img src={heroImg} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover opacity-25" />}
         <GhostMark size={340} opacity={0.05} color="#fff" pos="right-0 top-0" />
         <div className="relative max-w-6xl mx-auto px-6 pt-[78px] pb-10">
@@ -192,12 +192,12 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
       {/* ─── ROUTER — every intent at a glance ─────────────────────────────────── */}
       <section className="relative ground-paper border-t border-black/8" style={GRID_BG} aria-labelledby="route-h">
         <div className="max-w-6xl mx-auto px-6 pt-11 pb-9">
-          <h2 id="route-h" className="text-[#131311] font-semibold mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.3rem,2.4vw,1.5rem)" }}>What do you need?</h2>
-          <p className="text-[#5c5a56] text-[15px] mb-6 max-w-[60ch]">Everything lives on this page. The three most common jobs are below; smaller ones are one tap under them.</p>
+          <h2 id="route-h" className="text-ink font-semibold mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.3rem,2.4vw,1.5rem)" }}>What do you need?</h2>
+          <p className="text-body text-[15px] mb-6 max-w-[60ch]">Everything lives on this page. The three most common jobs are below; smaller ones are one tap under them.</p>
 
           <div className="grid md:grid-cols-3 gap-3 mb-[18px]">
             <RouterCard lead icon={<FileText className="w-[18px] h-[18px]" />} title="Get a price" tag="Fastest · start here"
-              body="Enter your sizes or upload a window schedule for an indicative estimate. No account, a couple of minutes."
+              body="Upload a window schedule and every line comes back priced in about a minute. Or enter sizes by hand. No account."
               cta="Open the quote tool" onClick={() => go("quote")} />
             <RouterCard icon={<HelpCircle className="w-[18px] h-[18px]" />} title="Ask a question"
               body="Products, glass, sizing or a quote you already have. A person replies within one business day."
@@ -208,15 +208,15 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 border-t border-dashed border-black/10 pt-[18px]">
-            <span className="text-[11px] uppercase tracking-[0.12em] text-[#8b8880] mr-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>Or jump to</span>
+            <span className="text-[11px] uppercase tracking-[0.12em] text-quiet mr-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>Or jump to</span>
             <QuickLink icon={<Truck className="w-[15px] h-[15px]" />} label="Track an order" onClick={() => go("track-order")} />
             <QuickLink icon={<Building2 className="w-[15px] h-[15px]" />} label="Trade account" onClick={() => go("trade")} />
             <QuickLink icon={<BookOpen className="w-[15px] h-[15px]" />} label="Guides & measuring help" onClick={() => go("resources")} />
-            <a href="tel:0390000000" className="ml-auto inline-flex items-center gap-2.5 border border-[#5A7A6A]/40 bg-[#5A7A6A]/[0.07] px-3.5 py-[7px]">
-              <Phone className="w-4 h-4 text-[#5A7A6A]" />
-              <span className="text-[10px] uppercase tracking-[0.12em] text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>Talk to us</span>
-              <span className="font-semibold text-[14.5px] text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>(03) 9000 0000</span>
-              <span className="text-[11.5px] text-[#5c5a56] hidden sm:inline">Mon–Fri 8–5</span>
+            <a href="tel:0390000000" className="ml-auto inline-flex items-center gap-2.5 border border-sage/40 bg-sage/[0.07] px-3.5 py-[7px]">
+              <Phone className="w-4 h-4 text-sage" />
+              <span className="text-[10px] uppercase tracking-[0.12em] text-sage" style={{ fontFamily: "'DM Mono', monospace" }}>Talk to us</span>
+              <span className="font-semibold text-[14.5px] text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>(03) 9000 0000</span>
+              <span className="text-[11.5px] text-body hidden sm:inline">Mon–Fri 8–5</span>
             </a>
           </div>
         </div>
@@ -228,10 +228,10 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
           <div className="mb-[18px]">
             <div className="flex items-center gap-2 mb-2">
               <WindowMark size={12} color={SAGE} />
-              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>Do it here</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-sage" style={{ fontFamily: "'DM Mono', monospace" }}>Do it here</span>
             </div>
-            <h2 id="zone-h" className="text-[#131311] font-semibold mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.3rem,2.4vw,1.5rem)" }}>Two things you can finish on this page</h2>
-            <p className="text-[#5c5a56] text-[14.5px] max-w-[64ch]">Both options are always shown. Pick one — the form for it opens right below.</p>
+            <h2 id="zone-h" className="text-ink font-semibold mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.3rem,2.4vw,1.5rem)" }}>Two things you can finish on this page</h2>
+            <p className="text-body text-[14.5px] max-w-[64ch]">Both options are always shown. Pick one — the form for it opens right below.</p>
           </div>
 
           {/* Tabs */}
@@ -243,13 +243,13 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
           </div>
 
           {/* Active panel */}
-          <div role="tabpanel" aria-labelledby={`tab-${tab}`} className="border border-[#5A7A6A] bg-white p-6 md:px-6 md:py-7">
+          <div role="tabpanel" aria-labelledby={`tab-${tab}`} className="border border-sage bg-white p-6 md:px-6 md:py-7">
             {status === "sent" ? (
               <SuccessCard intent={sentIntent} reference={reference} name={name} onQuote={() => go("quote")} onAgain={() => { setStatus("idle"); setMessage(""); }} />
             ) : tab === "ask" ? (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
                 <div>
-                  <p className="text-xs text-[#5c5a56] flex items-center gap-1.5 mb-4"><Clock className="w-3.5 h-3.5 text-[#5A7A6A]" />A real person replies within one business day — no account needed.</p>
+                  <p className="text-xs text-body flex items-center gap-1.5 mb-4"><Clock className="w-3.5 h-3.5 text-sage" />A real person replies within one business day — no account needed.</p>
                   {errors && Object.values(errors).some(Boolean) && <ErrorSummary errors={errors} />}
                   <div className="space-y-3.5">
                     <div className="grid sm:grid-cols-2 gap-3.5">
@@ -266,34 +266,34 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                   {TURNSTILE_SITE_KEY && <div ref={turnstileRef} className="mt-4" />}
                   <div className="flex flex-wrap items-center gap-3.5 mt-[18px]">
                     <Btn variant="sage" size="md" onClick={submit} className={status === "sending" || !captchaReady ? "opacity-60 pointer-events-none" : ""}>{status === "sending" ? "Sending…" : <>Send message <Send className="w-[15px] h-[15px]" /></>}</Btn>
-                    <span className="text-[11.5px] text-[#8f8d88] max-w-[30ch]">Used only to reply — see our <button onClick={() => go("privacy")} className="text-[#5A7A6A] underline">Privacy Policy</button>. We don't add you to a list.</span>
+                    <span className="text-[11.5px] text-quieter max-w-[30ch]">Used only to reply — see our <button onClick={() => go("privacy")} className="text-sage underline">Privacy Policy</button>. We don't add you to a list.</span>
                   </div>
                 </div>
                 <aside className="border border-black/10 ground-bone p-[18px]">
-                  <h4 className="text-xs uppercase tracking-[0.13em] text-[#5A7A6A] mb-3" style={{ fontFamily: "'DM Mono', monospace" }}>Helps us answer fast</h4>
+                  <h4 className="text-xs uppercase tracking-[0.13em] text-sage mb-3" style={{ fontFamily: "'DM Mono', monospace" }}>Helps us answer fast</h4>
                   <ul className="space-y-2.5">
                     {["Rough width × height for each opening", "Product type — sliding, awning, fixed, door", "Your quote reference, if you have one"].map(t => (
-                      <li key={t} className="flex gap-2.5 text-[13px] text-[#5c5a56] leading-snug"><Check className="w-[15px] h-[15px] text-[#5A7A6A] flex-shrink-0 mt-0.5" />{t}</li>
+                      <li key={t} className="flex gap-2.5 text-[13px] text-body leading-snug"><Check className="w-[15px] h-[15px] text-sage flex-shrink-0 mt-0.5" />{t}</li>
                     ))}
                   </ul>
                   <div className="border-t border-black/10 my-4" />
-                  <p className="text-[12.5px] text-[#5c5a56]">Chasing a price instead? The <button onClick={() => go("quote")} className="text-[#5A7A6A] border-b border-[#5A7A6A]/40">quote tool</button> is faster. Existing order? <button onClick={() => go("track-order")} className="text-[#5A7A6A] border-b border-[#5A7A6A]/40">Track it here</button>.</p>
+                  <p className="text-[12.5px] text-body">Chasing a price instead? The <button onClick={() => go("quote")} className="text-sage border-b border-sage/40">quote tool</button> is faster. Existing order? <button onClick={() => go("track-order")} className="text-sage border-b border-sage/40">Track it here</button>.</p>
                 </aside>
               </div>
             ) : (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
                 {/* Picker + map */}
                 <div>
-                  <p className="text-[13.5px] text-[#5c5a56] mb-[18px] max-w-[52ch]">Pick the showroom nearest you. A representative calls to confirm a time. We show the suburb here — the exact address comes with your confirmation.</p>
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#3a3835] mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>Choose a location<span className="text-[#5A7A6A] ml-1">*</span></div>
+                  <p className="text-[13.5px] text-body mb-[18px] max-w-[52ch]">Pick the showroom nearest you. A representative calls to confirm a time. We show the suburb here — the exact address comes with your confirmation.</p>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-ink-soft mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>Choose a location<span className="text-sage ml-1">*</span></div>
                   <div className="flex flex-wrap gap-2 mb-1.5">
-                    {locations.length === 0 && <span className="text-[13px] text-[#8b8880]">Loading locations…</span>}
+                    {locations.length === 0 && <span className="text-[13px] text-quiet">Loading locations…</span>}
                     {locations.map(l => {
                       const sel = locationId === l.id;
                       return (
                         <button key={l.id} type="button" onClick={() => selectLocation(l.id)} aria-pressed={sel}
-                          className={`inline-flex items-center gap-1.5 px-3 py-2 text-[13px] border transition-colors cursor-pointer ${sel ? "border-[#5A7A6A] bg-sage-wash text-[#355344] font-medium" : "border-black/12 bg-white text-[#5c5a56] hover:border-[#5A7A6A]/50"}`}>
-                          {sel && <Check className="w-3 h-3 text-[#5A7A6A]" />}{l.suburb} <span className={`text-[10px] ${sel ? "text-[#5A7A6A]" : "text-[#a8a6a1]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>{l.stateCode}</span>
+                          className={`inline-flex items-center gap-1.5 px-3 py-2 text-[13px] border transition-colors cursor-pointer ${sel ? "border-sage bg-sage-wash text-sage-ink font-medium" : "border-black/12 bg-white text-body hover:border-sage/50"}`}>
+                          {sel && <Check className="w-3 h-3 text-sage" />}{l.suburb} <span className={`text-[10px] ${sel ? "text-sage" : "text-quietest"}`} style={{ fontFamily: "'DM Mono', monospace" }}>{l.stateCode}</span>
                         </button>
                       );
                     })}
@@ -302,7 +302,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                   <div className="my-3.5">
                     <LocationMap locations={locations} selectedId={locationId || null} onSelect={selectLocation} />
                   </div>
-                  <p className="text-[11.5px] text-[#8b8880]">Suburb shown for privacy. Exact address shared on confirmation.</p>
+                  <p className="text-[11.5px] text-quiet">Suburb shown for privacy. Exact address shared on confirmation.</p>
                 </div>
                 {/* Visit form */}
                 <div>
@@ -331,7 +331,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                   {TURNSTILE_SITE_KEY && <div ref={turnstileRef} className="mt-4" />}
                   <div className="flex flex-wrap items-center gap-3.5 mt-[18px]">
                     <Btn variant="sage" size="md" onClick={submit} className={status === "sending" || !captchaReady ? "opacity-60 pointer-events-none" : ""}>{status === "sending" ? "Sending…" : <>Request a call to book <Phone className="w-[15px] h-[15px]" /></>}</Btn>
-                    <span className="text-[11.5px] text-[#8f8d88] max-w-[30ch]">No obligation — we just agree a time. No appointment is confirmed until we call.</span>
+                    <span className="text-[11.5px] text-quieter max-w-[30ch]">No obligation — we just agree a time. No appointment is confirmed until we call.</span>
                   </div>
                 </div>
               </div>
@@ -342,9 +342,9 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
         {/* Facts strip */}
         <div className="max-w-6xl mx-auto px-6 pb-11">
           <div className="card grid md:grid-cols-3">
-            <Fact label="Reach us">{brandContact?.phone && <><a href={`tel:${brandContact.phone.replace(/[^0-9+]/g, "")}`} className="border-b border-black/10 hover:text-[#131311] hover:border-[#5A7A6A]">{brandContact.phone}</a>{" · "}</>}<ObfuscatedEmail address={brandContact?.email} className="border-b border-black/10 hover:text-[#131311] hover:border-[#5A7A6A]" /></Fact>
-            <Fact label="Hours"><span className="text-[#131311] font-semibold">Mon–Fri 8am–5pm</span> · Sat by appointment · Sun closed</Fact>
-            <Fact label="Good to know"><b className="text-[#131311] font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Supply only.</b> Your builder or installer fits the frames — we make and deliver them.</Fact>
+            <Fact label="Reach us">{brandContact?.phone && <><a href={`tel:${brandContact.phone.replace(/[^0-9+]/g, "")}`} className="border-b border-black/10 hover:text-ink hover:border-sage">{brandContact.phone}</a>{" · "}</>}<ObfuscatedEmail address={brandContact?.email} className="border-b border-black/10 hover:text-ink hover:border-sage" /></Fact>
+            <Fact label="Hours"><span className="text-ink font-semibold">Mon–Fri 8am–5pm</span> · Sat by appointment · Sun closed</Fact>
+            <Fact label="Good to know"><b className="text-ink font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Supply only.</b> Your builder or installer fits the frames — we make and deliver them.</Fact>
           </div>
         </div>
       </section>
@@ -354,7 +354,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
           pt-2/pb-16 — the asymmetry that made the page look bottom-heavy. */}
       <CtaBanner
         title="Already know your sizes?"
-        sub="Skip the back-and-forth — get an indicative estimate in minutes. No account required."
+        sub="Skip the back-and-forth — get an indicative estimate in about a minute. No account required."
         onQuote={() => go("quote")}
       />
     </div>
@@ -362,27 +362,27 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
 }
 
 // ─── Building blocks ──────────────────────────────────────────────────────────
-const inputCls = "w-full border border-[#131311]/20 bg-white px-3 py-[11px] text-sm text-[#131311] placeholder-[#9a9894] focus:outline-none focus:border-[#5A7A6A] transition-colors";
+const inputCls = "w-full border border-ink/20 bg-white px-3 py-[11px] text-sm text-ink placeholder-quieter focus:outline-none focus:border-sage transition-colors";
 const selectCls = "appearance-none pr-8 bg-[url('data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2214%22%20height=%2214%22%20viewBox=%220%200%2024%2024%22%20fill=%22none%22%20stroke=%22%235c5a56%22%20stroke-width=%222%22%3E%3Cpolyline%20points=%226%209%2012%2015%2018%209%22/%3E%3C/svg%3E')] bg-no-repeat bg-[right_12px_center]";
 
 function RouterCard({ icon, title, body, cta, tag, lead, down, onClick }: { icon: React.ReactNode; title: string; body: string; cta: string; tag?: string; lead?: boolean; down?: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`group text-left flex flex-col border p-[17px] transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] ${lead ? "border-[#5A7A6A] bg-[#5A7A6A]/[0.07]" : "border-black/10 bg-white card-link"}`}>
-      {tag && <span className="self-start text-[9.5px] tracking-[0.14em] uppercase bg-[#5A7A6A] text-white px-2 py-[3px] mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>{tag}</span>}
+    <button onClick={onClick} className={`group text-left flex flex-col border p-[17px] transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage ${lead ? "border-sage bg-sage/[0.07]" : "border-black/10 bg-white card-link"}`}>
+      {tag && <span className="self-start text-[9.5px] tracking-[0.14em] uppercase bg-sage text-white px-2 py-[3px] mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>{tag}</span>}
       <div className="flex items-center gap-2.5 mb-2.5">
-        <span className={`w-9 h-9 grid place-items-center border transition-colors ${lead ? "border-[#5A7A6A] text-[#5A7A6A]" : "border-[#5A7A6A]/40 text-[#5A7A6A] group-hover:bg-[#5A7A6A] group-hover:border-[#5A7A6A] group-hover:text-white"}`}>{icon}</span>
-        <h3 className="text-[16px] leading-tight text-[#131311] font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</h3>
+        <span className={`w-9 h-9 grid place-items-center border transition-colors ${lead ? "border-sage text-sage" : "border-sage/40 text-sage group-hover:bg-sage group-hover:border-sage group-hover:text-white"}`}>{icon}</span>
+        <h3 className="text-[16px] leading-tight text-ink font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</h3>
       </div>
-      <p className="text-[13px] text-[#5c5a56] leading-[1.42] flex-1">{body}</p>
-      <span className="mt-2.5 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>{cta} {down ? "↓" : <ArrowRight className="w-3.5 h-3.5" />}</span>
+      <p className="text-[13px] text-body leading-[1.42] flex-1">{body}</p>
+      <span className="mt-2.5 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-sage" style={{ fontFamily: "'DM Mono', monospace" }}>{cta} {down ? "↓" : <ArrowRight className="w-3.5 h-3.5" />}</span>
     </button>
   );
 }
 
 function QuickLink({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} className="inline-flex items-center gap-[7px] text-[13.5px] text-[#131311] card px-3.5 py-2 hover:border-[#5A7A6A] hover:text-[#5A7A6A] transition-colors cursor-pointer">
-      <span className="text-[#5A7A6A]">{icon}</span>{label}
+    <button onClick={onClick} className="inline-flex items-center gap-[7px] text-[13.5px] text-ink card px-3.5 py-2 hover:border-sage hover:text-sage transition-colors cursor-pointer">
+      <span className="text-sage">{icon}</span>{label}
     </button>
   );
 }
@@ -390,14 +390,14 @@ function QuickLink({ icon, label, onClick }: { icon: React.ReactNode; label: str
 function TabButton({ id, active, onSelect, icon, note, title, sub }: { id: string; active: boolean; onSelect: () => void; icon: React.ReactNode; note: string; title: string; sub: string }) {
   return (
     <button role="tab" id={`tab-${id}`} aria-selected={active} tabIndex={active ? 0 : -1} onClick={onSelect}
-      className={`relative flex items-start gap-3 text-left border p-4 transition-colors cursor-pointer ${active ? "border-[#5A7A6A] bg-white shadow-[inset_0_3px_0_#5A7A6A] sm:border-b-white z-10" : "border-black/10 bg-white hover:border-[#5A7A6A]/40"}`}>
-      <span className={`w-[38px] h-[38px] grid place-items-center border flex-shrink-0 transition-colors ${active ? "bg-[#5A7A6A] border-[#5A7A6A] text-white" : "border-[#5A7A6A]/40 text-[#5A7A6A]"}`}>{icon}</span>
+      className={`relative flex items-start gap-3 text-left border p-4 transition-colors cursor-pointer ${active ? "border-sage bg-white shadow-[inset_0_3px_0_var(--sage)] sm:border-b-white z-10" : "border-black/10 bg-white hover:border-sage/40"}`}>
+      <span className={`w-[38px] h-[38px] grid place-items-center border flex-shrink-0 transition-colors ${active ? "bg-sage border-sage text-white" : "border-sage/40 text-sage"}`}>{icon}</span>
       <span className="flex flex-col gap-[3px]">
-        <span className={`text-[10px] uppercase tracking-[0.14em] ${active ? "text-[#5A7A6A]" : "text-[#a8a6a1]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>{note}</span>
-        <span className="text-[16.5px] leading-tight text-[#131311] font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</span>
-        <span className="text-xs text-[#5c5a56] leading-snug">{sub}</span>
+        <span className={`text-[10px] uppercase tracking-[0.14em] ${active ? "text-sage" : "text-quietest"}`} style={{ fontFamily: "'DM Mono', monospace" }}>{note}</span>
+        <span className="text-[16.5px] leading-tight text-ink font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</span>
+        <span className="text-xs text-body leading-snug">{sub}</span>
       </span>
-      <span className={`absolute top-3.5 right-3.5 w-[9px] h-[9px] border ${active ? "bg-[#5A7A6A] border-[#5A7A6A]" : "bg-white border-[#5A7A6A]/40"}`} aria-hidden="true" />
+      <span className={`absolute top-3.5 right-3.5 w-[9px] h-[9px] border ${active ? "bg-sage border-sage" : "bg-white border-sage/40"}`} aria-hidden="true" />
     </button>
   );
 }
@@ -405,8 +405,8 @@ function TabButton({ id, active, onSelect, icon, note, title, sub }: { id: strin
 function FieldR({ id, label, req, opt, error, children }: { id: string; label: string; req?: boolean; opt?: boolean; error?: string; children: React.ReactNode }) {
   return (
     <div id={`field-${id}`}>
-      <label className="block text-[10px] font-semibold uppercase tracking-[0.13em] text-[#3a3835] mb-1.5" style={{ fontFamily: "'DM Mono', monospace" }}>
-        {label}{req && <span className="text-[#5A7A6A] ml-0.5">*</span>}{opt && <span className="text-[#9a9894] font-normal tracking-[0.08em] ml-1">(optional)</span>}
+      <label className="block text-[10px] font-semibold uppercase tracking-[0.13em] text-ink-soft mb-1.5" style={{ fontFamily: "'DM Mono', monospace" }}>
+        {label}{req && <span className="text-sage ml-0.5">*</span>}{opt && <span className="text-quieter font-normal tracking-[0.08em] ml-1">(optional)</span>}
       </label>
       {children}
       {error && <p className="text-xs text-red-600 mt-1.5">{error}</p>}
@@ -438,8 +438,8 @@ function Honeypot({ website, setWebsite }: { website: string; setWebsite: (v: st
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="px-5 py-[17px] border-b md:border-b-0 md:border-r border-black/10 last:border-0">
-      <div className="text-[10px] uppercase tracking-[0.13em] text-[#5A7A6A] mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>{label}</div>
-      <div className="text-[13.5px] text-[#5c5a56] leading-relaxed">{children}</div>
+      <div className="text-[10px] uppercase tracking-[0.13em] text-sage mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>{label}</div>
+      <div className="text-[13.5px] text-body leading-relaxed">{children}</div>
     </div>
   );
 }
@@ -449,13 +449,13 @@ function SuccessCard({ intent, reference, name, onQuote, onAgain }: { intent: In
   const appt = intent === "appointment_request";
   return (
     <div className="max-w-xl mx-auto text-center py-4" role="status" aria-live="polite">
-      <div className="w-12 h-12 border border-[#5A7A6A]/30 bg-sage-wash flex items-center justify-center mx-auto mb-4"><CheckCircle className="w-6 h-6" style={{ color: SAGE }} /></div>
-      <h3 className="text-lg font-semibold text-[#131311] mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{appt ? "Appointment request received" : "Message received"}</h3>
-      {reference && <p className="inline-block text-xs font-mono bg-[#F2F0EC] border border-black/10 px-2.5 py-1 mb-4">{reference}</p>}
-      <p className="text-sm text-[#5c5a56] max-w-md mx-auto mb-6 leading-relaxed">
+      <div className="w-12 h-12 border border-sage/30 bg-sage-wash flex items-center justify-center mx-auto mb-4"><CheckCircle className="w-6 h-6" style={{ color: SAGE }} /></div>
+      <h3 className="text-lg font-semibold text-ink mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{appt ? "Appointment request received" : "Message received"}</h3>
+      {reference && <p className="inline-block text-xs font-mono bg-bone border border-black/10 px-2.5 py-1 mb-4">{reference}</p>}
+      <p className="text-sm text-body max-w-md mx-auto mb-6 leading-relaxed">
         {appt
-          ? <>Thanks {first} — your request is logged as <span className="text-[#131311] font-medium">{reference}</span>. A representative will call you to agree a suitable showroom visit time. <span className="text-[#131311]">No appointment is confirmed yet.</span></>
-          : <>Thanks {first} — your question is logged as <span className="text-[#131311] font-medium">{reference}</span>. A real person will reply within one business day.</>}
+          ? <>Thanks {first} — your request is logged as <span className="text-ink font-medium">{reference}</span>. A representative will call you to agree a suitable showroom visit time. <span className="text-ink">No appointment is confirmed yet.</span></>
+          : <>Thanks {first} — your question is logged as <span className="text-ink font-medium">{reference}</span>. A real person will reply within one business day.</>}
       </p>
       <div className="flex flex-wrap gap-3 justify-center">
         <Btn variant="outline" size="md" onClick={onQuote}>Start a quote <ArrowRight className="w-4 h-4" /></Btn>

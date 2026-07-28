@@ -71,11 +71,11 @@ function CategoryTile({ label, count, icon, active, onClick }: {
 }) {
   return (
     <button onClick={onClick} aria-pressed={active}
-      className={`text-left border p-4 w-full transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2 ${active ? "card card-selected" : "card card-link"}`}>
+      className={`text-left border p-4 w-full transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2 ${active ? "card card-selected" : "card card-link"}`}>
       <div className="mb-2.5">{icon}</div>
-      <p className={`text-sm mb-0.5 ${active ? "font-semibold text-[#131311]" : "font-medium text-[#131311]"}`}
+      <p className={`text-sm mb-0.5 ${active ? "font-semibold text-ink" : "font-medium text-ink"}`}
         style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{label}</p>
-      <p className="text-xs text-[#5c5a56]">{count} system types</p>
+      <p className="text-xs text-body">{count} system types</p>
     </button>
   );
 }
@@ -91,7 +91,7 @@ function ProductCard({ product, category, onView }: { product: Product; category
   const meta = [spec("Max size") && `max ${spec("Max size")}`, spec("Wind rating")].filter(Boolean).join("  ·  ");
   return (
     <button onClick={onView}
-      className="group relative card card-link text-left overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
+      className="group relative card card-link text-left overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2">
       {/* The photograph, undimmed.
           It used to be composited at 70% over pure black, with a 55% black
           scrim over the bottom third and a 2px inset white rule — a treatment
@@ -103,24 +103,24 @@ function ProductCard({ product, category, onView }: { product: Product; category
           toward black, arrive as twelve identical grey rectangles.
           Placeholder is warm neutral rather than black — a black rectangle is a
           worse first frame than a stock-coloured one on a paper page. */}
-      <div className="relative bg-[#E8E5DF] aspect-[4/3] overflow-hidden">
+      <div className="relative bg-shade aspect-[4/3] overflow-hidden">
         <img src={imageUrl(product.heroImage, { w: 640, h: 480 })}
           alt={`${product.name} aluminium ${category === "windows" ? "window" : "door"} system`}
           loading="lazy" decoding="async"
           className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500" />
       </div>
       <div className="p-5 flex flex-col flex-1">
-        <h3 className="font-semibold text-[#131311] text-[19px] leading-tight tracking-[-0.01em] mb-1.5"
+        <h3 className="font-semibold text-ink text-[19px] leading-tight tracking-[-0.01em] mb-1.5"
           style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{product.name}</h3>
-        <p className="text-sm text-[#5c5a56] leading-relaxed mb-3 line-clamp-2">{product.shortDescription}</p>
+        <p className="text-sm text-body leading-relaxed mb-3 line-clamp-2">{product.shortDescription}</p>
         {/* One unboxed line. The chips' own border was black/10, which over bone
             composites to about #D8D5D1 — a barely-visible box around 11px grey
             mono, which reads as tentative rather than as detail. */}
         {meta && (
-          <p className="text-[11.5px] text-[#8a8782] tracking-wide mb-4"
+          <p className="text-[11.5px] text-quiet tracking-wide mb-4"
             style={{ fontFamily: "'DM Mono', monospace" }}>{meta}</p>
         )}
-        <span className="mt-auto inline-flex items-center gap-1.5 text-sm font-medium text-[#5A7A6A] group-hover:gap-2.5 transition-all">
+        <span className="mt-auto inline-flex items-center gap-1.5 text-sm font-medium text-sage group-hover:gap-2.5 transition-all">
           View product <ArrowRight className="w-3.5 h-3.5" />
         </span>
       </div>
@@ -155,14 +155,14 @@ function MobileFamilySelector({ category, families, family, onSelect }: {
 
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-widest text-[#5c5a56] mb-2"
+      <p className="text-xs font-semibold uppercase tracking-widest text-body mb-2"
         style={{ fontFamily: "'DM Mono', monospace" }}>Browse by family</p>
       <div className="relative" ref={ref}>
         <button type="button" onClick={() => setOpen(o => !o)}
           aria-haspopup="listbox" aria-expanded={open}
-          className="w-full flex items-center justify-between gap-3 card px-4 py-3 text-sm text-[#131311] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
+          className="w-full flex items-center justify-between gap-3 card px-4 py-3 text-sm text-ink cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2">
           <span className="font-medium">{current.name}</span>
-          <ChevronDown className={`w-4 h-4 text-[#5c5a56] flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+          <ChevronDown className={`w-4 h-4 text-body flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
         </button>
         {open && (
           <div role="listbox" aria-label="Product family"
@@ -171,9 +171,9 @@ function MobileFamilySelector({ category, families, family, onSelect }: {
               const active = o.slug === family;
               return (
                 <button key={o.slug} type="button" role="option" aria-selected={active} onClick={() => select(o.slug)}
-                  className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left text-sm border-b border-black/6 last:border-b-0 cursor-pointer transition-colors ${active ? "bg-sage-wash text-[#131311] font-semibold" : "text-[#131311] hover:bg-black/[0.02]"}`}>
+                  className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left text-sm border-b border-black/6 last:border-b-0 cursor-pointer transition-colors ${active ? "bg-sage-wash text-ink font-semibold" : "text-ink hover:bg-black/[0.02]"}`}>
                   <span>{o.name}</span>
-                  <span className="text-xs text-[#5c5a56] flex-shrink-0">{o.count} system{o.count === 1 ? "" : "s"}</span>
+                  <span className="text-xs text-body flex-shrink-0">{o.count} system{o.count === 1 ? "" : "s"}</span>
                 </button>
               );
             })}
@@ -220,7 +220,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
   return (
     <div className="ground-paper min-h-screen">
       {/* ─── HERO — contextual to selected category, header overlays it ─────── */}
-      <section className="relative h-[360px] md:h-[440px] flex items-end bg-[#0c0c0a] overflow-hidden">
+      <section className="relative h-[360px] md:h-[440px] flex items-end bg-night overflow-hidden">
         <img src={imageUrl(getPage("products")?.heroImage, { w: 1920, h: 1080 })} alt={hero.alt} className="absolute inset-0 w-full h-full object-cover opacity-70 hero-zoom" />
         <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.88) 0%, rgba(12,12,10,0.55) 20%, rgba(12,12,10,0.25) 45%, rgba(12,12,10,0.15) 100%)" }} />
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-24 pb-10 md:pt-28 md:pb-12">
@@ -259,11 +259,11 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
           {/* ─── MOBILE — category cards + family scroll rail ───────────────── */}
           <div className="lg:hidden mb-8 space-y-5">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-[#5c5a56] mb-2"
+              <p className="text-xs font-semibold uppercase tracking-widest text-body mb-2"
                 style={{ fontFamily: "'DM Mono', monospace" }}>Category</p>
               <div className="grid grid-cols-2 gap-3">
-                <CategoryTile label="Windows" count={windowCount} icon={<WindowMark size={20} color={category === "windows" ? SAGE : "#9a9894"} />} active={category === "windows"} onClick={() => onSelectCategory("windows")} />
-                <CategoryTile label="Doors" count={doorCount} icon={<IconDoorCat size={20} color={category === "doors" ? SAGE : "#9a9894"} />} active={category === "doors"} onClick={() => onSelectCategory("doors")} />
+                <CategoryTile label="Windows" count={windowCount} icon={<WindowMark size={20} color={category === "windows" ? SAGE : "var(--quieter)"} />} active={category === "windows"} onClick={() => onSelectCategory("windows")} />
+                <CategoryTile label="Doors" count={doorCount} icon={<IconDoorCat size={20} color={category === "doors" ? SAGE : "var(--quieter)"} />} active={category === "doors"} onClick={() => onSelectCategory("doors")} />
               </div>
             </div>
             <MobileFamilySelector category={category} families={families} family={family} onSelect={onSelectFamily} />
@@ -273,25 +273,25 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
           <aside className="hidden lg:block">
             <div className="lg:sticky lg:top-24 space-y-8">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-[#5c5a56] mb-3"
+                <p className="text-xs font-semibold uppercase tracking-widest text-body mb-3"
                   style={{ fontFamily: "'DM Mono', monospace" }}>Category</p>
                 <div className="space-y-2">
-                  <CategoryTile label="Windows" count={windowCount} icon={<WindowMark size={20} color={category === "windows" ? SAGE : "#9a9894"} />} active={category === "windows"} onClick={() => onSelectCategory("windows")} />
-                  <CategoryTile label="Doors" count={doorCount} icon={<IconDoorCat size={20} color={category === "doors" ? SAGE : "#9a9894"} />} active={category === "doors"} onClick={() => onSelectCategory("doors")} />
+                  <CategoryTile label="Windows" count={windowCount} icon={<WindowMark size={20} color={category === "windows" ? SAGE : "var(--quieter)"} />} active={category === "windows"} onClick={() => onSelectCategory("windows")} />
+                  <CategoryTile label="Doors" count={doorCount} icon={<IconDoorCat size={20} color={category === "doors" ? SAGE : "var(--quieter)"} />} active={category === "doors"} onClick={() => onSelectCategory("doors")} />
                 </div>
               </div>
 
               <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-[#5c5a56] mb-2"
+                <p className="text-xs font-semibold uppercase tracking-widest text-body mb-2"
                   style={{ fontFamily: "'DM Mono', monospace" }}>{category === "windows" ? "Window systems" : "Door systems"}</p>
                 <div className="flex flex-col">
                   <button onClick={() => onSelectFamily("all")} aria-pressed={family === "all"}
-                    className={`text-left px-3 py-2.5 text-sm border-l-2 transition-colors cursor-pointer ${family === "all" ? "border-[#5A7A6A] text-[#131311] font-semibold bg-sage-wash" : "border-transparent text-[#5c5a56] hover:text-[#131311] hover:bg-black/[0.02]"}`}>
+                    className={`text-left px-3 py-2.5 text-sm border-l-2 transition-colors cursor-pointer ${family === "all" ? "border-sage text-ink font-semibold bg-sage-wash" : "border-transparent text-body hover:text-ink hover:bg-black/[0.02]"}`}>
                     All {category}
                   </button>
                   {families.map(f => (
                     <button key={f.slug} onClick={() => onSelectFamily(f.slug)} aria-pressed={family === f.slug}
-                      className={`text-left px-3 py-2.5 text-sm border-l-2 transition-colors cursor-pointer ${family === f.slug ? "border-[#5A7A6A] text-[#131311] font-semibold bg-sage-wash" : "border-transparent text-[#5c5a56] hover:text-[#131311] hover:bg-black/[0.02]"}`}>
+                      className={`text-left px-3 py-2.5 text-sm border-l-2 transition-colors cursor-pointer ${family === f.slug ? "border-sage text-ink font-semibold bg-sage-wash" : "border-transparent text-body hover:text-ink hover:bg-black/[0.02]"}`}>
                       {f.name}
                     </button>
                   ))}
@@ -309,7 +309,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
                   thing that belongs here is a filter function. */}
               {family !== "all" && (
                 <button onClick={() => onSelectFamily("all")}
-                  className="w-full text-left border-t border-line pt-3 mt-1 px-3 py-2 text-xs text-[#5c5a56] hover:text-[#131311] cursor-pointer">
+                  className="w-full text-left border-t border-line pt-3 mt-1 px-3 py-2 text-xs text-body hover:text-ink cursor-pointer">
                   Clear filter
                 </button>
               )}
@@ -328,12 +328,12 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
             {/* Count on the heading's baseline, the site's established heading-row
                 pattern (home Systems, Process). */}
             <div className="flex items-end justify-between gap-4 mb-2">
-              <h2 className="font-semibold text-[#131311] leading-tight"
+              <h2 className="font-semibold text-ink leading-tight"
                 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.6rem, 2.8vw, 2.1rem)" }}>{heading}</h2>
-              <p className="text-[13px] text-[#8a8782] flex-shrink-0 pb-1"
+              <p className="text-[13px] text-quiet flex-shrink-0 pb-1"
                 style={{ fontFamily: "'DM Mono', monospace" }}>{list.length} system{list.length === 1 ? "" : "s"}</p>
             </div>
-            <p className="text-[#5c5a56] text-[15px] leading-relaxed max-w-2xl mb-8">{description}</p>
+            <p className="text-body text-[15px] leading-relaxed max-w-2xl mb-8">{description}</p>
 
             {/* Product grid / empty state */}
             {list.length > 0 ? (
@@ -344,9 +344,9 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
               </div>
             ) : (
               <div className="card p-8 text-center mb-10">
-                <AlertCircle className="w-6 h-6 text-[#5A7A6A] mx-auto mb-3" />
-                <p className="text-[#131311] font-medium mb-1">No systems found for this selection.</p>
-                <p className="text-sm text-[#5c5a56] mb-5">Try another family or upload your schedule and we'll help identify the right product.</p>
+                <AlertCircle className="w-6 h-6 text-sage mx-auto mb-3" />
+                <p className="text-ink font-medium mb-1">No systems found for this selection.</p>
+                <p className="text-sm text-body mb-5">Try another family or upload your schedule and we'll help identify the right product.</p>
                 <div className="flex flex-col sm:flex-row gap-3 justify-center">
                   <Btn variant="outline" size="sm" onClick={() => onSelectFamily("all")}>Clear filters</Btn>
                   <Btn variant="sage" size="sm" onClick={() => go("quote")}>Upload schedule</Btn>
@@ -380,7 +380,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
       <section className="ground-bone border-t border-black/8 py-14 md:py-[68px]">
         <div className="max-w-6xl mx-auto px-6">
           <SLabel>What you get</SLabel>
-          <h2 className="font-semibold text-[#131311] leading-tight mb-8"
+          <h2 className="font-semibold text-ink leading-tight mb-8"
             style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.6rem, 2.8vw, 2.1rem)" }}>
             Made to your schedule, supplied to your site.
           </h2>
@@ -389,10 +389,10 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-black/10">
             {TRUST_ITEMS.map((t, i) => (
               <div key={t.title} className={`py-5 sm:py-0 ${i === 0 ? "sm:pr-6" : "sm:px-6"} ${i === TRUST_ITEMS.length - 1 ? "sm:pr-0" : ""}`}>
-                <t.Icon className="w-4 h-4 text-[#5A7A6A] mb-2.5" aria-hidden="true" />
-                <p className="text-[15px] font-semibold text-[#131311] leading-snug mb-1"
+                <t.Icon className="w-4 h-4 text-sage mb-2.5" aria-hidden="true" />
+                <p className="text-[15px] font-semibold text-ink leading-snug mb-1"
                   style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{t.title}</p>
-                <p className="text-[13.5px] text-[#5c5a56] leading-relaxed">{t.sub}</p>
+                <p className="text-[13.5px] text-body leading-relaxed">{t.sub}</p>
               </div>
             ))}
           </div>
@@ -401,11 +401,11 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
               promised"; the resources page itself states that its documents are
               sample placeholders, so repeating that sentence here would double
               an assertion the destination does not yet support. */}
-          <p className="mt-8 pt-5 border-t border-black/8 text-sm text-[#5c5a56] flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span className="text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>AS 2047 · AS 1288</span>
+          <p className="mt-8 pt-5 border-t border-black/8 text-sm text-body flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>AS 2047 · AS 1288</span>
             <span>The Australian standards for windows, doors and glazing in buildings.</span>
             <button onClick={() => go("resources")}
-              className="text-[#5A7A6A] hover:text-[#3f5a4c] inline-flex items-center gap-1.5 cursor-pointer">
+              className="text-sage hover:text-sage-deep inline-flex items-center gap-1.5 cursor-pointer">
               Compliance references <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </p>

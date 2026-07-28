@@ -19,6 +19,7 @@
 //    Ops needs the past, dated and attributed. Different job, different object:
 //    a coarse phase ribbon to orient, and a ledger of what actually happened.
 //  • NO progress ring, badge or colour-only state. Every state carries its word.
+import { SAGE, INK, QUIET as MUTED } from "../styles/tokens";
 import { Fragment, useEffect, useState } from "react";
 import { ChevronLeft, Loader2, FileText, Paperclip, History as HistoryIcon } from "lucide-react";
 import {
@@ -35,9 +36,6 @@ import {
 // implementation of product picking, option defaults and range checks.
 import { ItemForm } from "../components/ItemComposer";
 
-const SAGE = "#5A7A6A";
-const INK = "#131311";
-const MUTED = "#8b8880";
 const MONO = { fontFamily: "'DM Mono', monospace" } as const;
 const HEAD = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 
@@ -171,7 +169,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
                       : { border: "1px solid rgba(0,0,0,0.15)", color: INK, background: "#fff" }}>
                     {a.label}
                   </button>
-                  {blocked && <span className="text-[12px]" style={{ color: "#7a5410" }}>{a.blockedReason}</span>}
+                  {blocked && <span className="text-[12px]" style={{ color: "var(--warning-ink)" }}>{a.blockedReason}</span>}
                 </span>
               );
             })}
@@ -209,7 +207,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
 
         {/* The blocker, said once, in the header — not discovered at the bottom. */}
         {p.unresolvedLineCount > 0 && (
-          <p className="mt-3 text-[13px] px-3 py-2 border" style={{ background: "rgba(180,120,40,0.09)", borderColor: "rgba(180,120,40,0.3)", color: "#7a5410" }}>
+          <p className="mt-3 text-[13px] px-3 py-2 border" style={{ background: "rgba(180,120,40,0.09)", borderColor: "rgba(180,120,40,0.3)", color: "var(--warning-ink)" }}>
             {p.unresolvedLineCount} line{p.unresolvedLineCount === 1 ? "" : "s"} {p.unresolvedLineCount === 1 ? "is" : "are"} unpriced or unresolved — a quote cannot be issued until {p.unresolvedLineCount === 1 ? "it is" : "they are"} settled.
           </p>
         )}
@@ -234,7 +232,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
           )}
 
           {revisionId && (
-            <div className="border border-black/10 border-b-0 px-4 py-2 text-[13px]" style={{ background: "rgba(90,122,106,0.07)", color: "#355344" }}>
+            <div className="border border-black/10 border-b-0 px-4 py-2 text-[13px]" style={{ background: "rgba(90,122,106,0.07)", color: "var(--sage-ink)" }}>
               Viewing an issued revision — read-only.{" "}
               <button onClick={() => setRevisionId(null)} className="underline underline-offset-2">Back to the live draft</button>
             </div>
@@ -320,7 +318,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
             {ws.files.map((f) => (
               <div key={f.id} className="px-4 py-2.5 border-b border-black/5 last:border-0 flex items-baseline justify-between gap-2">
                 <span className="text-[13px] truncate" style={{ color: INK }}>{f.filename}</span>
-                <span className="text-[11px] flex-shrink-0" style={{ ...MONO, color: f.virus_status === "clean" ? MUTED : "#8a6a2a" }}>
+                <span className="text-[11px] flex-shrink-0" style={{ ...MONO, color: f.virus_status === "clean" ? MUTED : "var(--warning)" }}>
                   {f.virus_status === "clean" ? `${Math.max(1, Math.round(f.size / 1024))} kB` : f.virus_status}
                 </span>
               </div>
@@ -544,7 +542,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
       <td className="px-4 py-2 text-[12px]">
         <span className="flex items-center gap-2">
           {/* Never colour alone — the word carries the state. */}
-          <span style={{ color: line.status === "ready" ? SAGE : "#8a6a2a" }}>
+          <span style={{ color: line.status === "ready" ? SAGE : "var(--warning)" }}>
             {line.status === "ready" ? "ready" : "needs review"}
           </span>
           {editable && (
@@ -608,7 +606,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
                 </span>
               ) : (
                 <span className="flex items-center gap-2">
-                  {sg.status !== "ready" && <span style={{ color: "#8a6a2a" }}>not priced</span>}
+                  {sg.status !== "ready" && <span style={{ color: "var(--warning)" }}>not priced</span>}
                   <button onClick={() => setEditingUnit(editingUnit === sg.id ? null : sg.id)} disabled={busy}
                     className="underline underline-offset-2" style={{ color: SAGE }}>
                     {editingUnit === sg.id ? "close" : "edit"}
@@ -658,7 +656,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
                 {atMaxUnits ? `Maximum ${policy?.maxSegments} units` : "+ Add unit"}
               </button>
             ) : <span />}
-            <span className="text-[12px]" style={{ color: delta === 0 || Math.abs(delta) <= tolerance ? MUTED : "#8a6a2a" }}>
+            <span className="text-[12px]" style={{ color: delta === 0 || Math.abs(delta) <= tolerance ? MUTED : "var(--warning)" }}>
               {openingAlong === 0
                 ? "The opening has no size."
                 : delta === 0
@@ -824,7 +822,7 @@ function SplitPanel({ line, composite, busy, policy, onDone, onError }: {
           </label>
         ))}
       </div>
-      <p className="text-[12px] mb-3" style={{ color: delta === 0 || Math.abs(delta) <= tolerance ? MUTED : "#8a6a2a" }}>
+      <p className="text-[12px] mb-3" style={{ color: delta === 0 || Math.abs(delta) <= tolerance ? MUTED : "var(--warning)" }}>
         {delta === 0
           ? `Units span ${spanned} mm — exactly the opening.`
           : `Units span ${spanned} mm, ${Math.abs(delta)} mm ${delta > 0 ? "more than" : "less than"} the opening. Allowed — it is recorded on the line.`}
