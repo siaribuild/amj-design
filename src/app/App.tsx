@@ -674,7 +674,15 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               style={{ ...DISPLAY, fontSize: "clamp(2.75rem, 6vw, 4.25rem)" }}>
               {/* Not italic — the mock's device: same weight, sage. The only sage
                   above the fold, and it lands on the claim that matters. */}
-              <span style={{ color: SAGE_LT }}>Priced in about a minute.</span>
+              {/* White, like every other hero on the site.
+                  The sage was a TWO-TONE device: "Your windows and doors," in
+                  white, then the claim in sage — the accent landed on the claim
+                  because there was a white half to land against. Shortening the
+                  headline to the claim alone left the span as its only child, so
+                  the whole heading turned green and home became the one page
+                  whose hero heading was not white. The device needs two halves;
+                  with one, plain white is right. */}
+              Priced in about a minute.
             </h1>
 
             {/* THE HUMAN REVIEW IS NOT IN THE HERO AT ALL, and that resolves a
