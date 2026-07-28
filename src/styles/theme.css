@@ -448,3 +448,27 @@
     letter-spacing: 0.01em;
   }
 }
+
+/* ─── Action areas ────────────────────────────────────────────────────────────
+ * The two "how do you want to start" tiles on the quote page are not cards.
+ * A card is a thing you read; these are things you PRESS, and there are only
+ * two of them, so they do not need a fill to be found. They stay paper and are
+ * found by their border and their hover.
+ *
+ * .action-hover is the ghost-control hover — sage edge, faint sage fill. It was
+ * hand-written on the upload button and then not on "Add another item" or the
+ * project-name field, so the same control hovered three different ways. One
+ * class, so it cannot drift again.
+ */
+@layer components {
+  .action-tile {
+    background-color: var(--paper);
+    border: 1px solid var(--line);
+  }
+  .action-hover { transition: border-color 150ms ease, background-color 150ms ease; }
+  .action-hover:hover,
+  .action-hover:focus-visible {
+    border-color: var(--sage);
+    background-color: var(--sage-veil);
+  }
+}

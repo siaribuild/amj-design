@@ -47,7 +47,7 @@ function ProjectNameField({ value, onCommit }: { value: string; onCommit: (v: st
   }
   return (
     <button onClick={begin} aria-label={`Rename project${value ? ` (${value})` : ""}`}
-      className="group/name inline-flex items-center gap-2 text-2xl md:text-3xl font-semibold text-ink leading-tight border border-black/12 hover:border-sage bg-white px-2 py-0.5 max-w-full transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+      className="group/name inline-flex items-center gap-2 text-2xl md:text-3xl font-semibold text-ink leading-tight border border-black/12 action-hover bg-white px-2 py-0.5 max-w-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage"
       style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
       <span className="truncate">{value}</span>
       <Pencil className="w-4 h-4 text-quieter group-hover/name:text-sage flex-shrink-0" aria-hidden="true" />
@@ -676,7 +676,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                   uploads behind a ~10s debounce), unlike manual entry, which is
                   parked. Re-adding the same file is caught in handleFiles. */}
               <button type="button" onClick={openUpload}
-                className="inline-flex items-center gap-1.5 border border-dashed border-black/25 px-3 py-1.5 text-xs font-medium text-sage hover:border-sage hover:bg-sage-veil transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+                className="inline-flex items-center gap-1.5 border border-dashed border-black/25 action-hover px-3 py-1.5 text-xs font-medium text-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
                 <Upload className="w-3.5 h-3.5" aria-hidden="true" />
                 {quote.files.length > 0 ? "Add another document" : "Upload plans or a schedule"}
               </button>
@@ -801,7 +801,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
           ) : quote.items.length === 0 ? (
             <div id="quote-start-actions" className="grid grid-cols-1 sm:grid-cols-2 gap-3" aria-label="Start your quote">
               <button onClick={openUpload} disabled={uploading}
-                className="group min-h-32 card p-5 text-left hover:border-sage hover:bg-sage-veil disabled:opacity-60 disabled:cursor-wait transition-colors cursor-pointer">
+                className="group min-h-32 action-tile action-hover p-5 text-left disabled:opacity-60 disabled:cursor-wait cursor-pointer">
                 <span className="w-9 h-9 mb-4 flex items-center justify-center bg-sage-wash text-sage group-hover:bg-sage group-hover:text-white transition-colors">
                   {uploading
                     ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" aria-hidden="true" />
@@ -811,7 +811,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 <span className="block text-sm leading-relaxed text-body">Every line on your PDF comes back matched and priced. Plans work too.</span>
               </button>
               <button onClick={() => setAdding(true)}
-                className="group min-h-32 card p-5 text-left hover:border-sage hover:bg-sage-veil transition-colors cursor-pointer">
+                className="group min-h-32 action-tile action-hover p-5 text-left cursor-pointer">
                 <span className="w-9 h-9 mb-4 flex items-center justify-center bg-sage-wash text-sage group-hover:bg-sage group-hover:text-white transition-colors">
                   <Plus className="w-5 h-5" aria-hidden="true" />
                 </span>
@@ -821,7 +821,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
             </div>
           ) : (
             <button onClick={() => setAdding(true)}
-              className="mt-3 w-full flex items-center justify-center gap-1.5 border border-dashed border-black/20 hover:border-sage py-3 text-sm text-sage font-medium cursor-pointer transition-colors">
+              className="mt-3 w-full flex items-center justify-center gap-1.5 border border-dashed border-black/20 action-hover py-3 text-sm text-sage font-medium cursor-pointer">
               <Plus className="w-4 h-4" />Add another item
             </button>
           )}
