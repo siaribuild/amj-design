@@ -132,17 +132,23 @@ export function Input({ value, onChange, placeholder, type = "text", className =
 // It renders its own <section>, so the padding above and below is identical and
 // cannot drift again: a caller that only got the inner panel would still be free
 // to wrap it in whatever spacing it liked, which is how this diverged the first time.
-export function CtaBanner({ title, sub, onQuote }: {
+export function CtaBanner({ title, sub, onQuote, ground = "paper" }: {
   title: string;
   sub: string;
   /** Must navigate to the quote page. Pages own their own routing, so the
    *  handler is passed in rather than the component reaching for a router. */
   onQuote: () => void;
+  /** Which light surface this instance sits on.
+   *
+   *  The ground was hardcoded to paper, which is right for the CLOSING banner —
+   *  it follows a bone section on every page. It is wrong for a banner used
+   *  mid-page: on home the proof-point banner follows "The minute", which is
+   *  also paper, and two paper sections in a row is the seam disappearing again.
+   *  A shared component cannot know which position it is in, so the page says. */
+  ground?: "paper" | "bone";
 }) {
-  // Paper on purpose. Between two bone sections this is the page's breath, and
-  // the sage panel it holds is the one full-strength fill per page.
   return (
-    <section className="ground-paper border-t border-black/8 py-14">
+    <section className={`${ground === "bone" ? "ground-bone" : "ground-paper"} border-t border-black/8 py-14`}>
       <div className="max-w-6xl mx-auto px-6">
         <div className="bg-[#5A7A6A] px-6 sm:px-10 py-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="max-w-[54ch]">

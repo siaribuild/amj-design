@@ -853,6 +853,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
         title="Do that with your own schedule."
         sub="Upload yours and every line comes back priced in about a minute. That first pass is the machine's — a person reviews it within two business days, and that is the quote you accept."
         onQuote={() => go("quote")}
+        ground="bone"
       />
 
       {/* ─── SYSTEMS ─────────────────────────────────────────────────────────
@@ -864,7 +865,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           Every other white-to-white boundary here is separated by a rule; this one
           was relying on a 1.5% luminance step. Do NOT darken bone to force the
           contrast instead — bone is what separates Systems from Process below it. */}
-      <section className="relative ground-bone py-14 md:py-[68px] border-t border-black/8 overflow-hidden">
+      <section className="relative ground-paper py-14 md:py-[68px] border-t border-black/8 overflow-hidden">
         <GhostMark size={300} opacity={0.04} pos="right-0 bottom-0" />
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Systems</SLabel>
@@ -916,7 +917,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           THREE phases, named and numbered exactly as /how-it-works names them.
           The percentages turn three identical-looking cards into a visible money
           arc, and every one of them is a fact rather than decoration. */}
-      <section className="relative ground-paper py-14 md:py-[68px] border-t border-black/8 overflow-hidden" style={GRID_BG}>
+      <section className="relative ground-bone py-14 md:py-[68px] border-t border-black/8 overflow-hidden" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Process</SLabel>
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-8">
