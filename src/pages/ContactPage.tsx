@@ -190,7 +190,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
       </section>
 
       {/* ─── ROUTER — every intent at a glance ─────────────────────────────────── */}
-      <section className="relative bg-white border-t border-black/8" style={GRID_BG} aria-labelledby="route-h">
+      <section className="relative ground-paper border-t border-black/8" style={GRID_BG} aria-labelledby="route-h">
         <div className="max-w-6xl mx-auto px-6 pt-11 pb-9">
           <h2 id="route-h" className="text-[#131311] font-semibold mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.3rem,2.4vw,1.5rem)" }}>What do you need?</h2>
           <p className="text-[#5c5a56] text-[15px] mb-6 max-w-[60ch]">Everything lives on this page. The three most common jobs are below; smaller ones are one tap under them.</p>

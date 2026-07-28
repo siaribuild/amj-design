@@ -7,10 +7,12 @@
 //
 // Two axes have to survive without a grid:
 //
-//  • OWNERSHIP is a card SPECIES, not a column. Your moments are white with a
-//    sage-hairline box and a DM Mono numeral; our work is bone with a muted
-//    glyph and never a numeral — so your cards sit as figure and ours recede
-//    into the section as ground. Four cues (fill, numeral, glyph, word), none
+//  • OWNERSHIP is a card SPECIES, not a column. Your moments are PAPER with a
+//    sage-hairline box and a DM Mono numeral; our work is RECESSIVE with a muted
+//    glyph and never a numeral — so on the bone section your cards rise (+6.2 L*)
+//    and ours sink (−5.7 L*). Ours used to be bone, i.e. the section colour
+//    exactly, which is not receding, it is disappearing — the same defect as
+//    white-on-white in a warmer shade. Four cues (fill, numeral, glyph, word), none
 //    of them colour alone, and none of them dependent on a two-column layout —
 //    which is what the previous lane version got wrong at 375px.
 //  • MONEY is three numerals in the same position in three phase headers, plus
@@ -124,7 +126,7 @@ function ProcessCard({ c, brand, last }: { c: Card; brand: string; last: boolean
   return (
     <div className={`relative border border-black/10 p-5 md:p-6 flex flex-col
       sm:[&:nth-child(n+2)]:-mt-px lg:[&:nth-child(n+2)]:mt-0 lg:[&:nth-child(n+2)]:-ml-px
-      ${yours ? "bg-paper" : "bg-bone"}`}>
+      ${yours ? "bg-paper" : "bg-recessive"}`}>
       <div className="flex items-center justify-between mb-4">
         <span className={`flex items-center justify-center border
           ${yours ? "w-11 h-11 border-[#5A7A6A]/40 text-[#5A7A6A] text-[15px]" : "w-8 h-8 border-black/12 text-[#8a8782] text-xs"}`} style={MONO}>
@@ -143,8 +145,8 @@ function ProcessCard({ c, brand, last }: { c: Card; brand: string; last: boolean
           card it sits on, or the join shows a notch. */}
       {!last && (
         <>
-          <ArrowRight className={`hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5A7A6A]/60 z-10 ${yours ? "bg-paper" : "bg-bone"}`} aria-hidden="true" />
-          <ArrowRight className={`lg:hidden absolute left-1/2 -translate-x-1/2 -bottom-2.5 w-4 h-4 rotate-90 text-[#5A7A6A]/60 z-10 ${yours ? "bg-paper" : "bg-bone"}`} aria-hidden="true" />
+          <ArrowRight className={`hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5A7A6A]/60 z-10 ${yours ? "bg-paper" : "bg-recessive"}`} aria-hidden="true" />
+          <ArrowRight className={`lg:hidden absolute left-1/2 -translate-x-1/2 -bottom-2.5 w-4 h-4 rotate-90 text-[#5A7A6A]/60 z-10 ${yours ? "bg-paper" : "bg-recessive"}`} aria-hidden="true" />
         </>
       )}
     </div>
@@ -227,7 +229,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
       </section>
 
       {/* ── The shape of it — the whole page in one screen ────────────────── */}
-      <section className="relative bg-white border-t border-black/8 py-10 md:py-16" style={GRID_BG}>
+      <section className="relative ground-paper border-t border-black/8 py-10 md:py-16" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>The shape of it</SLabel>
           <h2 className="font-semibold text-[#131311] leading-[1.08] tracking-tight mb-3 max-w-[20ch]" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
@@ -265,7 +267,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
       <PhaseSection p={PHASES[0]} brand={brand} />
 
       {/* ── The line — the only sage fill on the page, at the one threshold ── */}
-      <section className="bg-white border-t border-black/8 py-12 md:py-14">
+      <section className="ground-paper border-t border-black/8 py-12 md:py-14">
         <div className="max-w-6xl mx-auto px-6">
           <div className="relative bg-[#5A7A6A] text-white overflow-hidden p-8 md:p-12">
             <GhostMark size={300} opacity={0.08} color="#fff" pos="right-0 bottom-0" />
@@ -292,7 +294,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
       <PhaseSection p={PHASES[1]} brand={brand} />
 
       {/* ── Before despatch — the card section between phases ─────────────── */}
-      <section className="relative bg-white border-t border-black/8 py-12 md:py-16" style={GRID_BG}>
+      <section className="relative ground-paper border-t border-black/8 py-12 md:py-16" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Before despatch</SLabel>
           <h2 className="font-semibold text-[#131311] leading-[1.08] tracking-tight mb-7 max-w-[20ch]" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>

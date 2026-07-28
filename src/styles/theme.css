@@ -36,6 +36,18 @@
   /* The accent, under the name the codebase actually uses for it. Same value as
    * --accent; still rationed to one FILL per page (the closing CtaBanner). */
   --sage: #5A7A6A;
+  /* A RECESSIVE card fill, for the one case two surfaces cannot express: a
+   * section holding two card species where one must read as subordinate. On a
+   * bone ground, paper rises +6.2 L* and this sinks −5.7 — so both are visible
+   * and the hierarchy is carried by direction rather than by presence.
+   *
+   * It exists because "recede into the ground" was implemented as "be the
+   * ground", which is invisible, and that is the same defect as white-on-white
+   * wearing a different colour. Recede means darker, not identical.
+   *
+   * --muted (#E8E5DF) was the obvious candidate and is too weak: −2.8 L*, barely
+   * more than the #FAFAF9 step that failed in the first place. */
+  --recessive: #E1DDD4;
 
   --font-size: 16px;
   --background: #FAFAF8;
@@ -121,6 +133,7 @@
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
   --color-sage-wash: var(--sage-wash);
+  --color-recessive: var(--recessive);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -235,15 +248,23 @@
  * a rule, not a fourth tint.
  */
 @layer components {
-  .ground-paper { background-color: var(--paper); }
-  .ground-bone  { background-color: var(--bone); }
+  /* The ground publishes what a card on it should be, and the card reads it.
+   *
+   * This is done with an inherited CUSTOM PROPERTY rather than the obvious
+   * `.ground-bone .card { … }` descendant pair, because grounds nest: the app
+   * shell is a ground, and every page sets its own inside it. With descendant
+   * selectors both rules match a card on an inner ground, they have identical
+   * specificity, and source order decides — so the OUTER ground silently won and
+   * a page could not override the shell. Custom properties inherit from the
+   * nearest ancestor that sets them, which is exactly the proximity rule this
+   * needs, and it is less CSS. */
+  .ground-paper { background-color: var(--paper); --card-fill: var(--bone); }
+  .ground-bone  { background-color: var(--bone);  --card-fill: var(--paper); }
 
   .card {
     border: 1px solid var(--line);
-    background-color: var(--bone);
+    background-color: var(--card-fill, var(--bone));
   }
-  .ground-paper .card { background-color: var(--bone); }
-  .ground-bone  .card { background-color: var(--paper); }
 
   /* The honest hover: a sage contour. Flat, on-language, and it replaces five
    * separate shadow improvisations that existed only because the resting border

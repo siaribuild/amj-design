@@ -202,14 +202,17 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
     : (activeFamily?.name ?? "");
   const description = familyDescription(category, family);
 
-  // ground-bone: the section owns the ground, so every .card inside it resolves
-  // to paper. This page carried 16 of the site's 26 white-on-white blocks — a
-  // grid of white cards on a white ground, where the gutters between them were
-  // the only thing separating one product from the next and were themselves
-  // invisible. The bone panels further down (the help and empty-state boxes)
-  // become white cards too, so the page stops mixing two conventions.
+  // ground-paper, and the CARDS carry the fill. Bone as a full-page ground was
+  // tried first and read as a wash of warm grey behind photography — the images
+  // are the figure on a catalogue and a tinted field competes with them.
+  //
+  // Inverting it keeps the derivation rule intact (the card still takes the
+  // other surface, it is just the other way round now) and fixes the original
+  // complaint the same way: a product tile is a bone body under a dark image on
+  // a white page, so the gutters between tiles read and the text below each
+  // photograph is bounded instead of floating.
   return (
-    <div className="ground-bone min-h-screen">
+    <div className="ground-paper min-h-screen">
       {/* ─── HERO — contextual to selected category, header overlays it ─────── */}
       <section className="relative h-[360px] md:h-[440px] flex items-end bg-[#0c0c0a] overflow-hidden">
         <img src={imageUrl(getPage("products")?.heroImage, { w: 1920, h: 1080 })} alt={hero.alt} className="absolute inset-0 w-full h-full object-cover opacity-70 hero-zoom" />
