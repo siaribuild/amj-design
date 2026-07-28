@@ -3,8 +3,14 @@
 // inherit the meta title/description/image, and anything still blank falls back
 // to Site Settings → Default SEO). Tags it manages carry data-seo="1".
 //
-// Note: index.html still ships a global `robots: noindex, nofollow` for the
-// pre-launch site — remove that line at launch so per-page robots take effect.
+// Indexability lives in two places and nowhere else:
+//   • /robots.txt — Allow when APP_ENV is production, Disallow otherwise
+//     (worker/index.ts → buildRobots). This is the site-wide switch.
+//   • the per-page `robots` value resolved here, which marks the account and
+//     transactional routes noindex.
+// index.html's global "noindex, nofollow" is long gone — it used to override
+// every per-page value, so the whole site was invisible regardless of what any
+// page said. Do not reintroduce a blanket robots meta in the shell.
 import { useEffect } from "react";
 import { type SeoMeta } from "../data/catalogue";
 import { getSiteSeo, getSiteIdentity, getOrgIdentity } from "../data/sanity";

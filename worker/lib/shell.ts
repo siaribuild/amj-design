@@ -38,7 +38,7 @@ async function siteMeta(env: Env): Promise<SiteMeta> {
 /** The routes a crawler should see. Mirrors the marketing map in App.tsx —
  *  app/transactional routes are deliberately absent, exactly as they are noindex
  *  in the client. */
-const PUBLIC_PAGES = ["", "products", "how-it-works", "contact", "privacy"];
+const PUBLIC_PAGES = ["", "products", "how-it-works", "contact", "privacy", "quote", "resources", "trade-account"];
 
 export async function buildSitemap(env: Env, origin: string): Promise<Response> {
   const meta = await siteMeta(env);   // warms nothing, but keeps failure handling in one place

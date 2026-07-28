@@ -2120,12 +2120,27 @@ export default function App() {
         ] : undefined,
       };
     }
+    // PUBLIC pages — indexable. The first five have a Sanity page record behind
+    // them (hero image + per-page SEO); quote, resources and trade-account do
+    // not yet, so they fall back to the site defaults, which is correct rather
+    // than a placeholder — add the records in Studio and they take over.
+    //
+    // privacy was noIndex and is not any more: it is a public document, it is
+    // linked from the footer of every page, and people do search for it.
+    //
+    // quote / resources / trade-account were never listed here at all, so they
+    // fell through to the catch-all below and were noindexed as if they were
+    // account pages. /quote is the site's main conversion landing page and every
+    // CTA points at it; /trade-account and /resources are marketing.
     const marketing: Record<string, { pageId: string; title: string; noIndex?: boolean }> = {
       home: { pageId: "home", title: co ? `${co} — Aluminium Windows & Doors` : "Aluminium Windows & Doors" },
       products: { pageId: "products", title: `Aluminium Windows & Doors${suffix}` },
       "how-it-works": { pageId: "how-it-works", title: `How It Works${suffix}` },
       contact: { pageId: "contact", title: `Contact${suffix}` },
-      privacy: { pageId: "privacy", title: `Privacy Policy${suffix}`, noIndex: true },
+      privacy: { pageId: "privacy", title: `Privacy Policy${suffix}` },
+      quote: { pageId: "quote", title: `Get a Quote${suffix}` },
+      resources: { pageId: "resources", title: `Guides & Compliance${suffix}` },
+      trade: { pageId: "trade", title: `Trade Accounts${suffix}` },
     };
     const m = marketing[page];
     if (m) {
@@ -2137,7 +2152,10 @@ export default function App() {
         // can narrow "WebPage" to ContactPage/AboutPage/FAQPage without code.
         facts: {
           kind: "page" as const,
-          url: abs(m.pageId === "home" ? "/" : `/${m.pageId}`),
+          // From the ROUTE table, not the pageId — they diverge: `trade` lives at
+          // /trade-account. Deriving the canonical from the pageId would have
+          // published a URL that 404s the moment a page id stops matching its path.
+          url: abs(pathForPage(page as Page)),
           name: m.title, image: img || undefined,
         },
       };
