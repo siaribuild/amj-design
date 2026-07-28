@@ -14,9 +14,9 @@ import { getSiteBrand as getBrandForContact } from "../data/sanity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText, HelpCircle, MapPin, Phone, Send, Check, ArrowRight, Clock,
-  Truck, Building2, BookOpen, AlertCircle, CheckCircle,
+  Truck, AlertCircle, CheckCircle,
 } from "lucide-react";
-import { type Page, SAGE, WindowMark, GhostMark, Btn, CtaBanner } from "../app/ui";
+import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, CtaBanner } from "../app/ui";
 import { getPage, imageUrl } from "../data/catalogue";
 import { submitEnquiry, getLocations, type ApiLocation, type EnquiryPayload } from "../data/api";
 import { LocationMap } from "../components/LocationMap";
@@ -193,9 +193,16 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
       <section className="relative ground-paper border-t border-black/8" style={GRID_BG} aria-labelledby="route-h">
         <div className="max-w-6xl mx-auto px-6 pt-11 pb-9">
           <h2 id="route-h" className="text-ink font-semibold mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.3rem,2.4vw,1.5rem)" }}>What do you need?</h2>
-          <p className="text-body text-[15px] mb-6 max-w-[60ch]">Everything lives on this page. The three most common jobs are below; smaller ones are one tap under them.</p>
+          <p className="text-body text-[15px] mb-6 max-w-[60ch]">Everything lives on this page — pick the one that matches what you came for.</p>
 
-          <div className="grid md:grid-cols-3 gap-3 mb-[18px]">
+          {/* FOUR routes, not three plus a footnote. Tracking an order was a
+              QuickLink in an "Or jump to" strip below, which made it a smaller
+              job than the other three; it is not — it is one of the four reasons
+              someone lands on a contact page.
+              At md the grid is 2×2 rather than four across: four cards in a
+              1152px row leaves ~270px each, which is narrower than the copy
+              needs and made the lead card stop reading as the lead. */}
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
             <RouterCard lead icon={<FileText className="w-[18px] h-[18px]" />} title="Get a price" tag="Fastest · start here"
               body="Upload a window schedule and every line comes back priced in about a minute. Or enter sizes by hand. No account."
               cta="Open the quote tool" onClick={() => go("quote")} />
@@ -205,20 +212,18 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
             <RouterCard icon={<MapPin className="w-[18px] h-[18px]" />} title="Book a showroom visit"
               body="See the frames in person at one of our showrooms. Pick a spot and we'll call to set a time."
               cta="Choose a location" down onClick={() => openTab("visit")} />
+            <RouterCard icon={<Truck className="w-[18px] h-[18px]" />} title="Track an order"
+              body="Follow an order from deposit to delivery. Your reference is on the quote we issued."
+              cta="Track an order" onClick={() => go("track-order")} />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 border-t border-dashed border-black/10 pt-[18px]">
-            <span className="text-[11px] uppercase tracking-[0.12em] text-quiet mr-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>Or jump to</span>
-            <QuickLink icon={<Truck className="w-[15px] h-[15px]" />} label="Track an order" onClick={() => go("track-order")} />
-            <QuickLink icon={<Building2 className="w-[15px] h-[15px]" />} label="Trade account" onClick={() => go("trade")} />
-            <QuickLink icon={<BookOpen className="w-[15px] h-[15px]" />} label="Guides & measuring help" onClick={() => go("resources")} />
-            <a href="tel:0390000000" className="ml-auto inline-flex items-center gap-2.5 border border-sage/40 bg-sage/[0.07] px-3.5 py-[7px]">
-              <Phone className="w-4 h-4 text-sage" />
-              <span className="text-[10px] uppercase tracking-[0.12em] text-sage" style={{ fontFamily: "'DM Mono', monospace" }}>Talk to us</span>
-              <span className="font-semibold text-[14.5px] text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>(03) 9000 0000</span>
-              <span className="text-[11.5px] text-body hidden sm:inline">Mon–Fri 8–5</span>
-            </a>
-          </div>
+          {/* The "Or jump to" strip is gone. Track an order became a card above;
+              Trade account and Guides are both in the footer already, so the
+              strip was a third copy of the site's navigation.
+              The "Talk to us" pill went with it — it advertised (03) 9000 0000
+              while the Reach us panel below showed the brand's real number from
+              Sanity, so the page published two different phone numbers. The one
+              that survives is the one the CMS actually holds. */}
         </div>
       </section>
 
@@ -339,9 +344,25 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
           </div>
         </div>
 
-        {/* Facts strip */}
-        <div className="max-w-6xl mx-auto px-6 pb-11">
-          <div className="card grid md:grid-cols-3">
+      </section>
+
+      {/* ─── THE PRACTICALS ────────────────────────────────────────────────────
+          Was a strip tacked onto the bottom of the "Do it here" section, sharing
+          its ground and its padding — so the page's three standing facts (how to
+          reach us, when we are open, what we do and do not do) read as a
+          footnote to a form rather than as their own answer.
+          Now a section on the site's standard rhythm. Ground is paper so it
+          alternates against the bone above it, and the three facts sit as
+          hairline-divided columns rather than a card — they are a reference, not
+          an object to press. */}
+      <section className="ground-paper border-t border-black/8 py-14 md:py-[68px]" aria-labelledby="practicals-h">
+        <div className="max-w-6xl mx-auto px-6">
+          <SLabel>The practicals</SLabel>
+          <h2 id="practicals-h" className="font-semibold text-ink leading-tight mb-8"
+            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.6rem, 2.8vw, 2.1rem)" }}>
+            Where to find us, and what we do.
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black/10">
             <Fact label="Reach us">{brandContact?.phone && <><a href={`tel:${brandContact.phone.replace(/[^0-9+]/g, "")}`} className="border-b border-black/10 hover:text-ink hover:border-sage">{brandContact.phone}</a>{" · "}</>}<ObfuscatedEmail address={brandContact?.email} className="border-b border-black/10 hover:text-ink hover:border-sage" /></Fact>
             <Fact label="Hours"><span className="text-ink font-semibold">Mon–Fri 8am–5pm</span> · Sat by appointment · Sun closed</Fact>
             <Fact label="Good to know"><b className="text-ink font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Supply only.</b> Your builder or installer fits the frames — we make and deliver them.</Fact>
@@ -352,7 +373,13 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
       {/* ─── CLOSING CTA ─────────────────────────────────────────────────────
           The shared banner. This one had a GhostMark, its own max-width, and
           pt-2/pb-16 — the asymmetry that made the page look bottom-heavy. */}
+      {/* ground="bone": the practicals section above it is paper, and the
+          banner's paper default would put two paper sections back to back —
+          the seam disappearing, which is the thing the ground system exists to
+          stop. On other pages the banner follows a bone section, so the default
+          is right there and wrong here. */}
       <CtaBanner
+        ground="bone"
         title="Already know your sizes?"
         sub="Skip the back-and-forth — get an indicative estimate in about a minute. No account required."
         onQuote={() => go("quote")}
@@ -375,14 +402,6 @@ function RouterCard({ icon, title, body, cta, tag, lead, down, onClick }: { icon
       </div>
       <p className="text-[13px] text-body leading-[1.42] flex-1">{body}</p>
       <span className="mt-2.5 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-sage" style={{ fontFamily: "'DM Mono', monospace" }}>{cta} {down ? "↓" : <ArrowRight className="w-3.5 h-3.5" />}</span>
-    </button>
-  );
-}
-
-function QuickLink({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="inline-flex items-center gap-[7px] text-[13.5px] text-ink card px-3.5 py-2 hover:border-sage hover:text-sage transition-colors cursor-pointer">
-      <span className="text-sage">{icon}</span>{label}
     </button>
   );
 }
@@ -435,11 +454,14 @@ function Honeypot({ website, setWebsite }: { website: string; setWebsite: (v: st
   );
 }
 
+// A standing fact. The divider now comes from the parent grid (divide-x), so
+// this only owns its padding — it was carrying its own border and a last:border-0
+// that only worked while it lived inside a bordered card.
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="px-5 py-[17px] border-b md:border-b-0 md:border-r border-black/10 last:border-0">
+    <div className="py-5 sm:py-0 sm:px-6 first:sm:pl-0 last:sm:pr-0">
       <div className="text-[10px] uppercase tracking-[0.13em] text-sage mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>{label}</div>
-      <div className="text-[13.5px] text-body leading-relaxed">{children}</div>
+      <div className="text-[14px] text-body leading-relaxed">{children}</div>
     </div>
   );
 }

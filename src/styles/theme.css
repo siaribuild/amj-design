@@ -22,17 +22,17 @@
  */
 :root {
   --paper: #FFFFFF;
-  --bone: #F8F6F4;          /* ΔL* 3.0 from paper (owner: ~50% lighter) */
+  --bone: #FBFAF8;          /* ΔL* 1.6 from paper — deliberately barely there */
   /* One structural hairline. Still under 3:1 and that is fine: it draws the
    * contour, the fill step draws the boundary. Asking a hairline to do a
    * ground's job is the mistake this replaces. */
-  --line: rgba(19, 19, 17, 0.14);
+  --line: rgba(19, 19, 17, 0.18);
   --line-strong: rgba(19, 19, 17, 0.28);   /* inputs and controls only */
   /* Selection. Opaque on purpose: every bg-[#5A7A6A]/[0.06] on the site is alpha
    * over an ASSUMED white ground. Composited over bone the same alpha yields
    * #E7E6E1 — the hue drops out and selection reads as dirty grey. An opaque
    * token reads identically on both grounds. */
-  --sage-wash: #DEE4E1;
+  --sage-wash: #F3F6F5;
   /* The accent, under the name the codebase actually uses for it. Same value as
    * --accent; still rationed to one FILL per page (the closing CtaBanner). */
   --sage: #5A7A6A;
@@ -47,7 +47,7 @@
    *
    * --muted (#E8E5DF) was the obvious candidate and is too weak: −2.8 L*, barely
    * more than the #FAFAF9 step that failed in the first place. */
-  --recessive: #F0EDE8;
+  --recessive: #F5F3F0;
 
   /* ─── The palette, by ROLE ──────────────────────────────────────────────────
    * Every colour the site uses is named here and nowhere else, so the scheme is
@@ -89,7 +89,7 @@
   --info:        #4C6A88;  /* composite / informational */
   --info-ink:    #31485f;  /* text on an info panel */
   --ink-hover:   #2a2a27;  /* the primary button, hovered */
-  --sage-veil:   #EEF3F0;  /* faint sage surface — a transient state */
+  --sage-veil:   #F7FAF8;  /* faint sage surface — a transient state */
   --shade:       #E8E5DF;  /* one step below bone; image placeholders */
 
   /* Status TONES — the account area's four states, each a text/fill/edge triple.
