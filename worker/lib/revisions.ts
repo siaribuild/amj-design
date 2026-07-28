@@ -111,7 +111,7 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
     .prepare(`SELECT id, external_ref, room_label, product_slug, options_json, dims_json,
                     qty, line_total, status, ai_proposal_line_id, selected_variant_id,
                     configuration_snapshot_json, pricing_snapshot_json,
-                    recommendation_basis, recommendation_confidence
+                    recommendation_basis, recommendation_confidence, line_kind
                FROM quote_line
               WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL
               ORDER BY position`)
@@ -122,6 +122,7 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
       ai_proposal_line_id: string | null; selected_variant_id: string | null;
       configuration_snapshot_json: string | null; pricing_snapshot_json: string | null;
       recommendation_basis: string | null; recommendation_confidence: string | null;
+      line_kind: string | null;
     }>();
 
   // Never issue an empty or partially-priced quote: a NULL line_total means the

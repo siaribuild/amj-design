@@ -537,6 +537,25 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
           { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
         ] },
       });
+      // Give the opening an AI proposal that matches it EXACTLY — same product,
+      // same size, same quantity — so sameCoreConfiguration is true and the only
+      // thing standing between this outcome and an "approved" ranking lesson is
+      // the composite guard itself. Without that guard this fixture trains the
+      // ranker to believe an oversized single unit was the right answer.
+      const aiSeed = await sql(`SELECT product_slug, dims_json, qty, line_total FROM quote_line WHERE id='${parentId}'`);
+      const { product_slug: aiSlug, dims_json: aiDims, qty: aiQty } = aiSeed[0];
+      const dims = JSON.parse(aiDims);
+      // Single-line SQL: wrangler's --command does not accept embedded newlines.
+      await sql(`INSERT INTO ai_runs (id, project_id, pipeline_version) VALUES ('run_c1','${projectId}','test')`);
+      await sql(`INSERT INTO ai_proposal (id, project_id, ai_run_id, source_generation, source_manifest_hash, pipeline_version) VALUES ('prop_c1','${projectId}','run_c1',1,'hash','test')`);
+      await sql(`INSERT INTO opening_instance (id, project_id) VALUES ('open_c1','${projectId}')`);
+      // ranking_context_json — NOT dimensions_json — is what the outcome capture
+      // reads the proposed size and quantity from, so it is what decides whether
+      // sameCoreConfiguration holds.
+      const ctx = `{"dimensions":{"widthMm":${Number(dims.width)},"heightMm":${Number(dims.height)}},"quantity":${aiQty},"family":"sliding-window","operationType":"sliding"}`;
+      await sql(`INSERT INTO ai_proposal_line (id, proposal_id, project_id, opening_id, quote_line_id, quantity, dimensions_json, ranking_context_json, product_id, product_slug, catalogue_revision, configuration_json, price_snapshot_json, recommendation_basis, confidence_band, review_required, applied_to_cart, created_at) VALUES ('apl_c1','prop_c1','${projectId}','open_c1','${parentId}',${aiQty},'{"widthMm":${Number(dims.width)},"heightMm":${Number(dims.height)}}','${ctx}','prod','${aiSlug}','rev1','{"options":{}}','{"total":${aiSeed[0].line_total}}','test','high',0,1,datetime('now'))`);
+      await sql(`UPDATE quote_line SET ai_proposal_line_id='apl_c1' WHERE id='${parentId}'`);
+
       const opsView = await requestJson(ops, `/api/ops/projects/${projectId}`);
       assert.equal(opsView.body.lines[0].segments.length, 2, "the composite is back for the issue check");
       const opsTotal = opsView.body.lines.reduce((n, l) => n + (l.lineTotal ?? 0), 0);
@@ -547,6 +566,26 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       );
       assert.equal(issuedLines.length, opsView.body.lines.length, "one issued line per opening, never per unit");
       assert.ok(issuedLines.every((l) => l.external_ref), "no issued line is missing its item code");
+
+      // The LEARNING signal must not read a composite as an endorsement.
+      //
+      // A split changes none of the fields sameCoreConfiguration compares — the
+      // opening keeps the product the AI chose and its size never moves — so
+      // "no single unit is made this wide, build it as two" scored as
+      // core-configuration-unchanged and trained the ranker as an approved
+      // lesson saying the oversized single unit was right. It stays `pending`
+      // for a human now, and carries a reason code naming the cause.
+      await requestJson(ops, "/api/ops/learning-outbox/drain", { method: "POST" });
+      const outcomes = await sql(
+        `SELECT quality_state, recommendation_eligible, reason_code
+           FROM recommendation_outcome
+          WHERE quote_line_id='${parentId}'`,
+      );
+      for (const o of outcomes) {
+        assert.equal(o.recommendation_eligible, 0, "a composite is never an auto-approved recommendation");
+        assert.equal(o.quality_state, "pending", "a composite outcome waits for a human");
+        assert.equal(o.reason_code, "HUMAN_BUILT_AS_COMPOSITE", "the cause is named, not bucketed as unspecified");
+      }
     });
 
     // Social scrapers fetch the raw HTML once and never run JS, so the shell's

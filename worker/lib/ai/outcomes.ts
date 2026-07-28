@@ -13,6 +13,8 @@ export interface IssuedCartLine {
   line_total: number;
   ai_proposal_line_id: string | null;
   selected_variant_id: string | null;
+  /** 'composite_parent' when the reviewer rebuilt this opening as joined units. */
+  line_kind?: string | null;
 }
 
 const object = (value: string | null | undefined): Record<string, unknown> => {
@@ -97,7 +99,23 @@ export async function captureRecommendationOutcomes(
     // that misses the U-value") or noise ("the customer wanted a different colour")
     // is not derivable from the diff. A manager settles it afterwards, on the
     // issued outcome, via PATCH /api/ops/recommendation-outcomes/:id.
-    const recommendationEligible = sameCoreConfiguration;
+    // A COMPOSITE is never an endorsement, however identical the fields look.
+    //
+    // sameCoreConfiguration compares product, variant, dimensions and quantity —
+    // and a split changes NONE of them: the parent keeps the product the AI chose
+    // and the opening's size never moves, by design. So a reviewer deciding "no
+    // single unit is made this wide, build it as two 1750s" scored as core-
+    // configuration-unchanged and went in as an approved lesson reading "the
+    // AMJ80 sliding window was the right answer at 3500 mm, it just cost more
+    // than predicted" — the exact inverse of what happened.
+    //
+    // What the decomposition SHOULD teach is not expressible here: this table
+    // records one configuration against another, and a composite's answer is N
+    // units with their own products and geometry. Until that is modelled, the
+    // honest state is `pending` — a human settles it — rather than a confident
+    // wrong one.
+    const isComposite = line.line_kind === "composite_parent";
+    const recommendationEligible = sameCoreConfiguration && !isComposite;
     const qualityState = recommendationEligible ? "approved" : "pending";
     const finalConfiguration = {
       productSlug: line.product_slug,
@@ -123,7 +141,12 @@ export async function captureRecommendationOutcomes(
       line.selected_variant_id, JSON.stringify(finalConfiguration), line.line_total,
       proposedTotal == null ? null : line.line_total - proposedTotal, decision,
       decision === "accepted" ? "HUMAN_ACCEPTED"
-        : decision === "adjusted" ? "HUMAN_ADJUSTED_UNSPECIFIED" : "NO_AI_PROPOSAL",
+        // Naming the composite case matters more than the eligibility flag: it is
+        // the one adjustment whose CAUSE is recoverable from the record, and
+        // without it every split lands in the same undifferentiated bucket as a
+        // colour change.
+        : decision === "adjusted" ? (isComposite ? "HUMAN_BUILT_AS_COMPOSITE" : "HUMAN_ADJUSTED_UNSPECIFIED")
+        : "NO_AI_PROPOSAL",
       recommendationEligible ? 1 : 0,
       qualityState,
     ));
