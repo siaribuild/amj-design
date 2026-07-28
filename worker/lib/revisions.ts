@@ -95,13 +95,26 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
   if (!project) return { ok: false, error: "not_found" };
   if (!ISSUABLE_FROM.has(project.status_internal)) return { ok: false, error: "not_ready" };
 
+  // PARENTS ONLY — the same rule loadLines() and every customer-facing view
+  // follow. A composite parent's line_total already IS the sum of its units, so
+  // without this the issued quote charged for the opening AND for each unit
+  // inside it. Verified against a dev database before the guard: a project ops
+  // priced at $9,800 issued at $16,400, with the units appearing on the
+  // customer's quote as extra lines carrying no item code — the exact
+  // double-charge CompositePanel writes "included" instead of an amount to
+  // prevent, arriving through the snapshot instead of the screen.
+  //
+  // The readiness gates below stay correct on parents alone: recomputeComposite
+  // rolls an unpriced or flagged unit up into its parent's line_total and
+  // status, so a bad unit still blocks the issue through its opening.
   const { results: lines } = await env.DB
     .prepare(`SELECT id, external_ref, room_label, product_slug, options_json, dims_json,
                     qty, line_total, status, ai_proposal_line_id, selected_variant_id,
                     configuration_snapshot_json, pricing_snapshot_json,
                     recommendation_basis, recommendation_confidence
                FROM quote_line
-              WHERE project_id = ? AND revision_id IS NULL ORDER BY position`)
+              WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL
+              ORDER BY position`)
     .bind(projectId)
     .all<{
       id: string; external_ref: string | null; room_label: string | null; product_slug: string;

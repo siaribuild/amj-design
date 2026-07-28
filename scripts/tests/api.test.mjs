@@ -520,6 +520,33 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.equal(merged.body.lines.length, 1);
       assert.equal((await sql(`SELECT id FROM quote_line WHERE parent_line_id='${parentId}'`)).length, 0, "units are gone after a merge");
       assert.ok(merged.body.lines[0].review?.fit, "merging restores the fit warning");
+
+      // ISSUING charges the opening ONCE. Last, because issuing moves the project
+      // out of the states line edits are accepted in.
+      //
+      // The revision query had no parent guard, so it summed the composite parent
+      // AND every unit inside it: a project ops priced at $9,800 issued at
+      // $16,400, with the units on the customer's quote as extra lines carrying no
+      // item code. That is the double-charge CompositePanel writes "included"
+      // instead of an amount to prevent, arriving through the snapshot rather
+      // than through the screen.
+      await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
+        method: "POST",
+        json: { axis: "vertical", segments: [
+          { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
+          { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window", qtyPerParent: 1 },
+        ] },
+      });
+      const opsView = await requestJson(ops, `/api/ops/projects/${projectId}`);
+      assert.equal(opsView.body.lines[0].segments.length, 2, "the composite is back for the issue check");
+      const opsTotal = opsView.body.lines.reduce((n, l) => n + (l.lineTotal ?? 0), 0);
+      const issued = await requestJson(ops, `/api/ops/projects/${projectId}/issue-revision`, { method: "POST" });
+      assert.equal(issued.body.total, opsTotal, "the issued total is the total the reviewer approved");
+      const issuedLines = await sql(
+        `SELECT external_ref, line_total FROM revision_line WHERE revision_id='${issued.body.id}'`,
+      );
+      assert.equal(issuedLines.length, opsView.body.lines.length, "one issued line per opening, never per unit");
+      assert.ok(issuedLines.every((l) => l.external_ref), "no issued line is missing its item code");
     });
 
     // Social scrapers fetch the raw HTML once and never run JS, so the shell's
