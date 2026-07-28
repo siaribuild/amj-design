@@ -279,4 +279,28 @@
     background-color: var(--sage-wash);
     border-color: var(--sage);
   }
+
+  /* A panel's header band.
+   *
+   * Panel headers carried NO fill — just a bottom hairline — so on a white panel
+   * on a white section the header was three invisible things stacked: no ground
+   * step, no panel edge, no header edge. The label floated.
+   *
+   * Recessive rather than sage, deliberately. Sage already means two things on
+   * this site — selection (an active filter, a chosen tile) and outcome (the
+   * "5 of 5 lines read and matched" footer, a "ready" line). Spending it on
+   * structural chrome as well would make it mean "tinted", which is how an
+   * accent stops working. Chrome recedes; the accent stays for the result. */
+  .panel-head {
+    background-color: var(--recessive);
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* The counterpart: an OUTCOME band. Opaque, so it reads identically whether
+   * the panel under it is paper or bone — the old inline rgba(90,122,106,0.07)
+   * assumed a white ground and turns to grey mud over bone. */
+  .panel-result {
+    background-color: var(--sage-wash);
+    border-top: 1px solid var(--line);
+  }
 }

@@ -776,8 +776,12 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               </div>
             </div>
 
-            <div ref={resultRef} className="border border-black/10 lg:-ml-px -mt-px lg:mt-0 bg-white flex flex-col">
-              <div className="px-4 py-2.5 border-b border-black/10 flex items-center justify-between">
+            {/* This panel was bg-white on a paper section — invisible, with an
+                unfilled header on top of it, so three boundaries in a row read as
+                nothing. It is a card now (bone on paper), which also gives the
+                pair its shape: a dark source document beside a light result. */}
+            <div ref={resultRef} className="card lg:-ml-px -mt-px lg:mt-0 flex flex-col">
+              <div className="panel-head px-4 py-2.5 flex items-center justify-between">
                 <span className="text-[11px] uppercase tracking-[0.14em] text-[#8a8782]" style={MONO}>What came back</span>
                 <span className="text-[11px] text-[#8a8782]" style={MONO}>{sample.lines.length} lines</span>
               </div>
@@ -810,8 +814,11 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                   );
                 })}
               </div>
-              <div className="px-4 py-3 border-t border-black/10 text-[13px] text-[#3d3b38]"
-                style={{ background: "rgba(90,122,106,0.07)" }}>
+              {/* The OUTCOME band — the one place sage belongs on this panel.
+                  Was an inline rgba(90,122,106,0.07), i.e. alpha over an assumed
+                  white ground; over the panel's new bone it composites to about
+                  #E6E5DF, which is grey with the hue gone. Opaque token instead. */}
+              <div className="panel-result px-4 py-3 text-[13px] text-[#3d3b38]">
                 {/* Leads with what the machine did, then what it hands over. The
                     flags are the point, not an apology: it says which lines need a
                     decision instead of guessing and quoting the wrong frame. */}
