@@ -61,7 +61,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
             <Section id="who-we-are" title="1. Who we are">
               <p>
                 OpenFrame ("we", "us", "our") supplies aluminium windows and doors to trade
-                and residential customers across Melbourne and Victoria, on a supply-only basis. This
+                and residential customers Australia-wide, on a supply-only basis. This
                 policy explains how we handle personal information collected through this website and
                 is intended to be consistent with the Australian Privacy Principles (APPs) under the
                 <em> Privacy Act 1988</em> (Cth).

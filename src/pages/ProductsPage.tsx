@@ -14,18 +14,16 @@ import {
 } from "../data/catalogue";
 
 // ─── Per-category presentation copy (marketing text, not product data) ─────────
-const HERO: Record<CategorySlug, { headline: string; sub: string; body: string; image: string; alt: string }> = {
+const HERO: Record<CategorySlug, { headline: string; sub: string; image: string; alt: string }> = {
   windows: {
     headline: "Aluminium window systems.",
     sub: "Engineered for performance. Made to suit your project.",
-    body: "Explore our range of aluminium window systems and find the right solution before you build an estimate.",
     image: "https://images.unsplash.com/photo-1774199616762-31d947dc7d35?w=1920&h=1080&fit=crop&auto=format",
     alt: "Aluminium-framed windows set into a contemporary residential facade",
   },
   doors: {
     headline: "Aluminium door systems.",
     sub: "Built for wide openings, smooth operation and everyday durability.",
-    body: "Explore sliding, hinged, folding, pivot and large-panel door systems before building an estimate.",
     image: "https://images.unsplash.com/photo-1758998202918-d921125a700f?w=1920&h=1080&fit=crop&auto=format",
     alt: "Large aluminium sliding doors opening onto an alfresco area",
   },
@@ -40,7 +38,7 @@ const TRUST_ITEMS: { title: string; sub: string; Icon: typeof Truck }[] = [
   { title: "Made to your sizes", sub: "Every unit is manufactured to the dimensions on your schedule.", Icon: ShieldCheck },
   { title: "Reviewed before you pay", sub: "A person checks your quote within two business days. $0 to quote, 50% on acceptance.", Icon: CheckCircle },
   { title: "Supply only", sub: "We manufacture and deliver. Installation is arranged by your builder or installer.", Icon: Package },
-  { title: "Delivered across Melbourne & Victoria", sub: "Door-to-door, from our factory to your site.", Icon: Truck },
+  { title: "Delivered Australia-wide", sub: "Door-to-door, from our factory to your site.", Icon: Truck },
 ];
 
 function familyDescription(category: CategorySlug, familySlug: string): string {
@@ -234,8 +232,13 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
             </div>
             <h1 className="font-semibold text-white leading-[1.05] tracking-tight mb-3"
               style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2rem, 4.4vw, 3rem)" }}>{hero.headline}</h1>
-            <p className="text-white/85 text-base md:text-lg mb-2">{hero.sub}</p>
-            <p className="text-white/70 text-sm md:text-[15px] leading-relaxed max-w-lg mb-6">{hero.body}</p>
+            {/* One supporting line, not two. The hero carried headline + sub +
+                body — three stacked text blocks, 182 characters of support under
+                a 25-character headline — and `body` was filler either way
+                ("Explore our range… and find the right solution"), restating the
+                sub and describing the act of browsing to someone already
+                browsing. The catalogue itself is the argument on this page. */}
+            <p className="text-white/85 text-[15px] md:text-lg leading-relaxed max-w-[44ch] mb-6">{hero.sub}</p>
             {/* "Upload a schedule", not "Start a quote": it is the specific,
                 higher-signal version of the action, it is exactly what the two
                 deleted mid-page panels were offering — so that ask survives once,

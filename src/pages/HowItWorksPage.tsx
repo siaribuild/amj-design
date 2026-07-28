@@ -107,7 +107,7 @@ const PHASES: Phase[] = [
       { side: "you", n: "06", title: "Confirm you're ready",
         body: "Delivery is booked on your go-ahead, not before." },
       { side: "us", icon: Truck, title: "Delivered to your door", meta: "about 2 weeks after the balance",
-        body: "Across Melbourne and Victoria, with after-sales support from there." },
+        body: "Australia-wide, with after-sales support from there." },
     ],
     note: { icon: Truck, text: "Supply only — your builder or installer fits the frames. We hand over at your address." },
   },

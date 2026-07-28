@@ -333,7 +333,7 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
                 <ObfuscatedEmail address={brand?.email} className="hover:text-white transition-colors" />
               </span>
               <span className="flex items-center gap-2">
-                <MapPin className="w-3.5 h-3.5 text-[#5A7A6A]" />Melbourne &amp; Victoria
+                <MapPin className="w-3.5 h-3.5 text-[#5A7A6A]" />Australia-wide
               </span>
             </div>
           </div>
@@ -617,7 +617,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           problem in miniature. */}
       <section className="relative min-h-[100svh] flex items-center bg-[#0c0c0a] overflow-hidden">
         {heroImg
-          ? <img src={heroImg} alt="Aluminium-framed sliding doors on a modern Melbourne home at dusk, warm interior light behind dark cladding"
+          ? <img src={heroImg} alt="Aluminium-framed sliding doors on a modern Australian home at dusk, warm interior light behind dark cladding"
               {...{ fetchpriority: "high" }} decoding="async"
               className="absolute inset-0 w-full h-full object-cover opacity-80 hero-zoom" />
           : <div className="absolute inset-0" aria-hidden="true"
@@ -636,7 +636,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
             <div className="flex items-center gap-2 mb-5">
               <WindowMark size={11} color="rgba(255,255,255,0.55)" />
               <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60" style={MONO}>
-                Supply-only aluminium · Melbourne &amp; Victoria
+                Supply-only aluminium · Australia-wide
               </span>
             </div>
 
@@ -657,13 +657,19 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                 about two business days. Both durations are stated, in that order. */}
             <p className="text-white/80 leading-relaxed mb-8 max-w-[52ch]"
               style={{ fontSize: "clamp(1rem, 1.4vw, 1.125rem)" }}>
-              {/* Two sentences, not three. "Nothing is charged until you accept" is
-                  already in the facts row below ($0 to get a quote) and again in the
-                  closing banner — a third telling cost ~72px of vertical space, which
-                  is what pushed the CTA off the fold on a small phone. The two
-                  TIMESCALES stay explicitly separated; that separation is the point. */}
-              Upload the window and door schedule from your plans and every line comes back matched
-              and costed. A person reviews it within two business days before it becomes a quote.
+              {/* 169 characters over ~5 lines at 375px, which is a paragraph, not
+                  a hero line — it did not survive a glance. Now 110 over ~3.
+                  What had to survive the cut, and did:
+                   • BOTH timescales, in order — the machine's minute is in the
+                     headline, the person's two days here. That separation is the
+                     whole reason this sentence exists (see above) and shortening
+                     must not collapse it.
+                   • "your schedule", so a tradie knows it means their document.
+                  What went: "the window and door schedule from your plans" →
+                  "your schedule" (the headline already says windows and doors),
+                  and "before it becomes a quote", which the two-day figure implies. */}
+              Upload your schedule and every line comes back matched and costed.
+              A person reviews it within two business days.
             </p>
 
             {/* TWO actions, at unequal tiers.
@@ -1622,7 +1628,7 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
     <div className="bg-[#FAFAF9] min-h-screen">
       {/* ─── Hero — dark architectural, consistent with the other pages ───────── */}
       <section className="relative bg-[#0c0c0a] overflow-hidden min-h-[340px] md:min-h-[420px] flex items-end pt-16">
-        <img src={IMG.hero} alt="Aluminium-framed façade on a contemporary Melbourne build at dusk"
+        <img src={IMG.hero} alt="Aluminium-framed façade on a contemporary Australian build at dusk"
           className="absolute inset-0 w-full h-full object-cover opacity-60 hero-zoom" />
         <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.92) 0%, rgba(12,12,10,0.6) 34%, rgba(12,12,10,0.25) 100%)" }} />
         <GhostMark size={300} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
