@@ -472,3 +472,33 @@
     background-color: var(--sage-veil);
   }
 }
+
+/* ─── Tabs ────────────────────────────────────────────────────────────────────
+ * A tab is a way of switching what you are looking at, so the INACTIVE one is
+ * not a lesser object — it is the same object, not currently chosen. Shading it
+ * says "disabled" or "secondary", neither of which is true.
+ *
+ * So both states sit on paper and the active one is marked by a sage edge and a
+ * 3px inset bar along its top. The contact tablist already worked this way; the
+ * products Windows/Doors switch did not — it used .card for both states, so the
+ * unselected category came out filled.
+ *
+ * Keyed off the ARIA state, not a class, so the look cannot drift from the
+ * semantics: whatever is announced as selected is what is drawn as selected.
+ * Covers aria-selected (tablist) and aria-pressed (toggle button).
+ */
+@layer components {
+  .tab {
+    background-color: var(--paper);
+    border: 1px solid var(--line);
+    transition: border-color 150ms ease;
+  }
+  .tab:hover,
+  .tab:focus-visible { border-color: color-mix(in oklab, var(--sage) 45%, transparent); }
+
+  .tab[aria-selected="true"],
+  .tab[aria-pressed="true"] {
+    border-color: var(--sage);
+    box-shadow: inset 0 3px 0 var(--sage);
+  }
+}

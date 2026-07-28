@@ -71,7 +71,7 @@ function CategoryTile({ label, count, icon, active, onClick }: {
 }) {
   return (
     <button onClick={onClick} aria-pressed={active}
-      className={`text-left border p-4 w-full transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2 ${active ? "card card-selected" : "card card-link"}`}>
+      className="tab text-left p-4 w-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2">
       <div className="mb-2.5">{icon}</div>
       <p className={`text-sm mb-0.5 ${active ? "font-semibold text-ink" : "font-medium text-ink"}`}
         style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{label}</p>

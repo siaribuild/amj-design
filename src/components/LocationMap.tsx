@@ -79,7 +79,13 @@ export function LocationMap({ locations, selectedId, onSelect }: {
   return (
     <div
       ref={elRef}
-      className="h-[320px] md:h-[420px] w-full border border-black/10 bg-bone"
+      // isolate: Leaflet gives its panes z-index 400–700 and its controls 800,
+      // while the site header is z-50 — so on a scroll the map painted straight
+      // over the menu. isolation:isolate makes this element a stacking context,
+      // so every one of those z-indexes is resolved INSIDE the map and none of
+      // them can outrank anything on the page. relative z-0 keeps the element
+      // itself below the header.
+      className="relative z-0 isolate h-[320px] md:h-[420px] w-full border border-black/10 bg-bone"
       role="application"
       aria-label="Map of showroom locations"
     />

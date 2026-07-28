@@ -394,7 +394,7 @@ const selectCls = "appearance-none pr-8 bg-[url('data:image/svg+xml,%3Csvg%20xml
 
 function RouterCard({ icon, title, body, cta, tag, lead, down, onClick }: { icon: React.ReactNode; title: string; body: string; cta: string; tag?: string; lead?: boolean; down?: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`group text-left flex flex-col border p-[17px] transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage ${lead ? "border-sage bg-sage/[0.07]" : "border-black/10 bg-white card-link"}`}>
+    <button onClick={onClick} className={`group text-left flex flex-col card card-link p-[17px] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage ${lead ? "border-sage" : ""}`}>
       {tag && <span className="self-start text-[9.5px] tracking-[0.14em] uppercase bg-sage text-white px-2 py-[3px] mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>{tag}</span>}
       <div className="flex items-center gap-2.5 mb-2.5">
         <span className={`w-9 h-9 grid place-items-center border transition-colors ${lead ? "border-sage text-sage" : "border-sage/40 text-sage group-hover:bg-sage group-hover:border-sage group-hover:text-white"}`}>{icon}</span>
@@ -409,7 +409,7 @@ function RouterCard({ icon, title, body, cta, tag, lead, down, onClick }: { icon
 function TabButton({ id, active, onSelect, icon, note, title, sub }: { id: string; active: boolean; onSelect: () => void; icon: React.ReactNode; note: string; title: string; sub: string }) {
   return (
     <button role="tab" id={`tab-${id}`} aria-selected={active} tabIndex={active ? 0 : -1} onClick={onSelect}
-      className={`relative flex items-start gap-3 text-left border p-4 transition-colors cursor-pointer ${active ? "border-sage bg-white shadow-[inset_0_3px_0_var(--sage)] sm:border-b-white z-10" : "border-black/10 bg-white hover:border-sage/40"}`}>
+      className={`tab relative flex items-start gap-3 text-left p-4 cursor-pointer ${active ? "sm:border-b-white z-10" : ""}`}>
       <span className={`w-[38px] h-[38px] grid place-items-center border flex-shrink-0 transition-colors ${active ? "bg-sage border-sage text-white" : "border-sage/40 text-sage"}`}>{icon}</span>
       <span className="flex flex-col gap-[3px]">
         <span className={`text-[10px] uppercase tracking-[0.14em] ${active ? "text-sage" : "text-quietest"}`} style={{ fontFamily: "'DM Mono', monospace" }}>{note}</span>
