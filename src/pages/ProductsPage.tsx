@@ -96,7 +96,7 @@ function CategoryTile({ label, count, icon, active, onClick }: {
 function ProductCard({ product, category, onView }: { product: Product; category: CategorySlug; onView: () => void }) {
   return (
     <button onClick={onView}
-      className="group relative bg-white border border-black/8 hover:border-[#5A7A6A] hover:shadow-sm transition-all text-left overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
+      className="group relative card card-link transition-all text-left overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
       <div className="relative bg-[#0c0c0a] aspect-[4/3] overflow-hidden">
         <img src={imageUrl(product.heroImage, { w: 640, h: 480 })} alt={`${product.name} aluminium ${category === "windows" ? "window" : "door"} system`}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-70 group-hover:opacity-80" />
@@ -153,13 +153,13 @@ function MobileFamilySelector({ category, families, family, onSelect }: {
       <div className="relative" ref={ref}>
         <button type="button" onClick={() => setOpen(o => !o)}
           aria-haspopup="listbox" aria-expanded={open}
-          className="w-full flex items-center justify-between gap-3 border border-black/15 bg-white px-4 py-3 text-sm text-[#131311] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
+          className="w-full flex items-center justify-between gap-3 card px-4 py-3 text-sm text-[#131311] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
           <span className="font-medium">{current.name}</span>
           <ChevronDown className={`w-4 h-4 text-[#5c5a56] flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
         </button>
         {open && (
           <div role="listbox" aria-label="Product family"
-            className="absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-black/15 shadow-lg max-h-[60vh] overflow-y-auto">
+            className="absolute left-0 right-0 top-full mt-1 z-30 card shadow-lg max-h-[60vh] overflow-y-auto">
             {options.map(o => {
               const active = o.slug === family;
               return (
@@ -202,8 +202,14 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
     : (activeFamily?.name ?? "");
   const description = familyDescription(category, family);
 
+  // ground-bone: the section owns the ground, so every .card inside it resolves
+  // to paper. This page carried 16 of the site's 26 white-on-white blocks — a
+  // grid of white cards on a white ground, where the gutters between them were
+  // the only thing separating one product from the next and were themselves
+  // invisible. The bone panels further down (the help and empty-state boxes)
+  // become white cards too, so the page stops mixing two conventions.
   return (
-    <div className="bg-white min-h-screen">
+    <div className="ground-bone min-h-screen">
       {/* ─── HERO — contextual to selected category, header overlays it ─────── */}
       <section className="relative h-[360px] md:h-[440px] flex items-end bg-[#0c0c0a] overflow-hidden">
         <img src={imageUrl(getPage("products")?.heroImage, { w: 1920, h: 1080 })} alt={hero.alt} className="absolute inset-0 w-full h-full object-cover opacity-70 hero-zoom" />
@@ -331,7 +337,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
             )}
 
             {/* Custom schedule strip */}
-            <div className="border border-black/10 bg-white px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-10">
+            <div className="card px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-10">
               <div className="flex items-start gap-3">
                 <FileText className="w-5 h-5 text-[#5A7A6A] flex-shrink-0 mt-0.5" />
                 <div>

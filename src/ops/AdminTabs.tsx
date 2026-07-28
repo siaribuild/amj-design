@@ -36,7 +36,7 @@ export function Files() {
   // desynchronise from the content. Proper phone cards for Files are still
   // pending; this stops the table breaking the page in the meantime.
   return (
-    <div className="bg-white border border-black/8 overflow-x-auto">
+    <div className="card overflow-x-auto">
       <table className="w-full text-sm">
         <thead><tr className="text-left text-[11px] uppercase tracking-wide text-[#8b8880] border-b border-black/8">
           <th className="px-4 py-2.5 font-medium">File</th><th className="px-4 py-2.5 font-medium">Project</th>
@@ -90,12 +90,12 @@ export function Audit() {
     <div className="max-w-3xl">
       <div className="flex gap-1.5 mb-3">
         {["", "project", "order", "user", "rule"].map(e => (
-          <button key={e || "all"} onClick={() => setFilter(e)} className={`text-xs px-2.5 py-1 border ${filter === e ? "border-[#5A7A6A] bg-[#5A7A6A]/8 text-[#355344]" : "border-black/12 text-[#5c5a56]"}`}>{e || "All"}</button>
+          <button key={e || "all"} onClick={() => setFilter(e)} className={`text-xs px-2.5 py-1 border ${filter === e ? "border-[#5A7A6A] bg-sage-wash text-[#355344]" : "border-black/12 text-[#5c5a56]"}`}>{e || "All"}</button>
         ))}
       </div>
       {!events ? <Loader2 className="w-5 h-5 text-black/30 animate-spin" />
         : events.length === 0 ? <p className="text-sm text-[#b5b2ac]">No events.</p>
-        : <ol className="bg-white border border-black/8 divide-y divide-black/5">
+        : <ol className="card divide-y divide-black/5">
             {events.map((e, i) => (
               <li key={i} className="px-4 py-2 text-sm flex items-center gap-3">
                 <span className="text-[10px] uppercase tracking-wide text-[#8b8880] w-14 shrink-0">{e.entity_type}</span>
@@ -125,7 +125,7 @@ export function Admin() {
     <div className="max-w-3xl">
       <p className="text-xs text-[#8b8880] mb-3 flex items-center gap-1.5"><ShieldCheck className="w-4 h-4" />Staff & roles. Only admins can change roles.</p>
       {err && <p className="text-xs text-red-600 mb-2">{err}</p>}
-      <div className="bg-white border border-black/8 divide-y divide-black/5">
+      <div className="card divide-y divide-black/5">
         {staff.map(s => (
           <div key={s.id} className="px-4 py-3 flex items-center gap-3 text-sm">
             <div className="flex-1"><span className="text-[#14150f]">{s.name}</span><span className="block text-xs text-[#8b8880]">{s.email}</span></div>

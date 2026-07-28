@@ -35,7 +35,7 @@ export function AccountShell({ section, setPage, user, onSignOut, children }: {
   const data = useAccountData();
   return (
     <AccountDataCtx.Provider value={data}>
-      <div className="min-h-screen bg-[#FAFAF9] pt-16">
+      <div className="min-h-screen ground-bone pt-16">
         {/* Content LEFT, identity/nav rail RIGHT. */}
         <div className="max-w-6xl mx-auto px-6 pt-[26px] pb-[60px] grid lg:grid-cols-[1fr_236px] gap-0 lg:gap-[34px] items-start">
           <main className="min-w-0 lg:order-1 order-2">

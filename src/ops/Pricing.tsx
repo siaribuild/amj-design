@@ -183,7 +183,7 @@ function RateCards() {
       {/* Contained so it scrolls inside its own box rather than widening the
           document. Pricing is a desktop surface and is still slated for an
           explicit desktop-only notice on phones. */}
-      <div className="bg-white border border-black/8 overflow-x-auto">
+      <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-[11px] uppercase tracking-wide" style={{ color: MUTED }}>
@@ -352,7 +352,7 @@ function RateCardDetail({ id, onBack }: { id: string; onBack: () => void }) {
               ? `Small / typical / large are the 10th, 50th and 90th percentile of the ${d.sampleLineCount} ${id} lines quoted in the last 90 days.`
               : "Not enough recent lines for this family — using standard sizes (900×600, 1200×1200, 2400×1500)."}
           </p>
-          <div className="mt-3 border border-black/8 bg-white">
+          <div className="mt-3 card">
             {preview.map((p) => (
               <div key={p.sample.key} className="flex items-center justify-between px-3 py-1.5 border-b border-black/5 last:border-0 text-xs">
                 <span style={{ color: MUTED }}>{p.sample.key}</span>
@@ -418,10 +418,10 @@ function Field({ label, value, onChange, suffix, disabled }: {
  *  of the formula on a day when nothing is wrong, so that on the day something is
  *  wrong the operator can read it. */
 function WorkedExample({ priced }: { priced: OpsPricedSample | undefined }) {
-  if (!priced) return <div className="border border-black/8 bg-white p-3 text-xs" style={{ color: MUTED }}>No example available.</div>;
+  if (!priced) return <div className="card p-3 text-xs" style={{ color: MUTED }}>No example available.</div>;
   const steps = priced.snapshot.steps ?? [];
   return (
-    <div className="border border-black/8 bg-white p-3">
+    <div className="card p-3">
       <p className="text-xs mb-2" style={{ color: MUTED }}>
         {priced.sample.widthMm} × {priced.sample.heightMm} mm · qty {priced.sample.qty}
       </p>
@@ -473,7 +473,7 @@ function Rules({ rules, setRules, preview, canEdit }: {
         )}
       </div>
 
-      <div className="bg-white border border-black/8">
+      <div className="card">
         {rules.length === 0 && <p className="px-4 py-3 text-xs" style={{ color: MUTED }}>No rules — the base rate is the whole price.</p>}
         {rules.map((r, i) => {
           // "Fires for" answers "did I write what I meant?" without the operator
@@ -582,7 +582,7 @@ function ConfirmDialog({ family, before, after, baseline, preview, exposure, onC
 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={onCancel}>
-      <div className="bg-white border border-black/10 max-w-xl w-full p-6" onClick={(e) => e.stopPropagation()}>
+      <div className="card max-w-xl w-full p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-4">
           <h3 className="text-base" style={{ ...HEAD, color: INK }}>Review pricing change — {family}</h3>
           <button onClick={onCancel}><X className="w-4 h-4" style={{ color: MUTED }} /></button>
@@ -691,7 +691,7 @@ function History({ rows, canRevert, onRevert }: {
   return (
     <div className="mt-8">
       <h3 className="text-xs uppercase tracking-wide mb-2" style={{ color: MUTED }}>Change history</h3>
-      <div className="bg-white border border-black/8">
+      <div className="card">
         {rows.map((h) => (
           <div key={h.id} className="px-4 py-2.5 border-b border-black/5 last:border-0">
             <div className="flex items-baseline justify-between">
@@ -797,7 +797,7 @@ function Options({ onChanged }: { onChanged: () => void }) {
       {/* Contained so it scrolls inside its own box rather than widening the
           document. Pricing is a desktop surface and is still slated for an
           explicit desktop-only notice on phones. */}
-      <div className="bg-white border border-black/8 overflow-x-auto">
+      <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-[11px] uppercase tracking-wide" style={{ color: MUTED }}>
@@ -921,7 +921,7 @@ function CatalogueMirror() {
 
   return (
     <>
-      <div className="bg-[#5A7A6A]/8 border border-[#5A7A6A]/25 text-[#355344] text-xs px-4 py-2.5 mb-5">
+      <div className="bg-sage-wash border border-[#5A7A6A]/25 text-[#355344] text-xs px-4 py-2.5 mb-5">
         <p>
           <strong>Names, descriptions, images, and which options each product offers are edited in Sanity Studio.
             What anything costs is edited here.</strong>
@@ -943,7 +943,7 @@ function CatalogueMirror() {
       {d.categories.map((cat) => (
         <div key={cat.slug} className="mb-6">
           <h3 className="text-sm font-semibold mb-2" style={{ ...HEAD, color: INK }}>{cat.name}</h3>
-          <div className="bg-white border border-black/8">
+          <div className="card">
             {cat.families.map((fam) => (
               <div key={fam.slug} className="px-4 py-2.5 border-b border-black/5 last:border-0 flex items-center justify-between">
                 <span className="text-sm" style={{ color: INK }}>

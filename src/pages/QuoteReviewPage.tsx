@@ -45,8 +45,8 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
     return () => { off = true; };
   }, [projectId]);
 
-  if (missing) return <div className="bg-white border border-black/10 p-8 text-sm text-[#5c5a56]">We couldn't find that quote.</div>;
-  if (!data?.project || revisions === null) return <div className="bg-white border border-black/10 p-8 text-sm text-[#5c5a56]">Loading your quote…</div>;
+  if (missing) return <div className="card p-8 text-sm text-[#5c5a56]">We couldn't find that quote.</div>;
+  if (!data?.project || revisions === null) return <div className="card p-8 text-sm text-[#5c5a56]">Loading your quote…</div>;
 
   const p = data.project;
   const current = revisions.find((r) => r.status === "issued");
@@ -55,7 +55,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
     return (
       <>
         <BackLink onClick={backToList} />
-        <div className="bg-white border border-black/10 p-8 text-sm text-[#5c5a56]">This quote is not awaiting your decision any more — check the dashboard for its current state.</div>
+        <div className="card p-8 text-sm text-[#5c5a56]">This quote is not awaiting your decision any more — check the dashboard for its current state.</div>
       </>
     );
   }
@@ -164,7 +164,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
               <label htmlFor="req-changes" className="block text-[13px] font-semibold text-[#131311] mt-3">What would you like changed?</label>
               <textarea id="req-changes" value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
                 placeholder="e.g. Swap D01 to a 3-panel stacker; change W05 glazing to obscure…"
-                className="w-full border border-black/10 bg-white px-3 py-[11px] text-sm text-[#131311] outline-none focus:border-[#5A7A6A] resize-y min-h-[76px] my-2" />
+                className="w-full card px-3 py-[11px] text-sm text-[#131311] outline-none focus:border-[#5A7A6A] resize-y min-h-[76px] my-2" />
               <p className="flex items-start gap-2 text-[12.5px] text-[#5c5a56] leading-normal">
                 <Clock className="w-[15px] h-[15px] flex-shrink-0 mt-px" style={{ color: TONE.work.text }} />
                 <span>Sending this moves the quote back to <b className="text-[#131311]">Under review</b>. {R} stays on file, unchanged — We will issue a new revision with your changes for you to accept. No cost to request changes.</span>
@@ -203,7 +203,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
 
         <FilesBlock files={files} />
         <SummaryBand>
-          <div className="flex-1 basis-[250px] bg-white border border-black/10 p-[18px]">
+          <div className="flex-1 basis-[250px] card p-[18px]">
             <h3 className="text-[13px] tracking-[0.1em] uppercase text-[#5c5a56] font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>This quote · {R}</h3>
             <div className="flex justify-between pb-3 text-sm"><span>Total inc GST</span><span className="font-semibold text-base" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{money(total)}</span></div>
             <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-[#5c5a56]">Deposit to begin</span><span className="font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums", color: TONE.attn.text }}>{money(deposit)}</span></div>
@@ -211,7 +211,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
             <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-[#5c5a56] inline-flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" style={{ color: TONE.attn.text }} />Valid until {fmtDate(validUntil.toISOString())}</span><span style={{ fontFamily: "'DM Mono', monospace", color: TONE.attn.text }}>{daysLeft} days</span></div>
           </div>
           <ContactCard setPage={setPage} />
-          <div className="flex-1 basis-[250px] bg-white border border-black/10 p-[18px]">
+          <div className="flex-1 basis-[250px] card p-[18px]">
             <h3 className="text-[13px] tracking-[0.1em] uppercase text-[#5c5a56] font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>Good to know</h3>
             <p className="text-[13px] text-[#5c5a56] leading-relaxed">Issued revisions can't be edited — accepting is always against a specific revision. Requesting changes returns the quote to <b className="text-[#131311]">Under review</b> and we issue a fresh revision. Nothing is charged until you accept.</p>
           </div>

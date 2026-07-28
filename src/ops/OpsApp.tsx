@@ -172,7 +172,7 @@ function OpsLogin({ onAuthed }: { onAuthed: (u: OpsUser) => void }) {
                 onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={e => e.key === "Enter" && verify()}
                 placeholder="••••••"
                 className="w-full bg-[#14150f] border border-white/15 px-3 py-2 text-sm text-white tracking-[0.3em] outline-none focus:border-[#5A7A6A]" />
-              {devCode && <p className="text-xs text-[#8CA99B] bg-[#5A7A6A]/10 border border-[#5A7A6A]/25 px-2 py-1.5">Dev mode — code is <span className="font-mono font-semibold">{devCode}</span></p>}
+              {devCode && <p className="text-xs text-[#8CA99B] bg-sage-wash border border-[#5A7A6A]/25 px-2 py-1.5">Dev mode — code is <span className="font-mono font-semibold">{devCode}</span></p>}
               <button onClick={verify} disabled={busy}
                 className="w-full py-2 text-sm font-medium text-white disabled:opacity-50" style={{ background: SAGE }}>
                 {busy ? "Verifying…" : "Sign in"}
@@ -195,7 +195,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
   const [tab, setTab] = useState<Tab>(TABS[0]?.id ?? "dashboard");
   const [navOpen, setNavOpen] = useState(false);
   return (
-    <div className="min-h-screen bg-[#f6f6f3] flex" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="min-h-screen ground-bone flex" style={{ fontFamily: "'Inter', sans-serif" }}>
       {/* Sidebar — desktop and tablet only. Below md it is a fixed 224px rail on
           a 375px screen, and with the content's own p-8 that left 87px of usable
           width: 375 − 224 − 64. A nine-column table was rendering into that. */}
@@ -395,12 +395,12 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
     <div className="max-w-3xl">
       <p className="text-[11px] uppercase tracking-[0.14em] text-[#8b8880] mb-2">Needs us</p>
       {needsUs.length === 0 ? (
-        <div className="bg-white border border-black/8 px-5 py-6">
+        <div className="card px-5 py-6">
           <p className="text-sm text-[#14150f]">Nothing is waiting on us.</p>
           <p className="text-xs text-[#8b8880] mt-1">New submissions and enquiries appear here.</p>
         </div>
       ) : (
-        <div className="bg-white border border-black/8 border-l-2 border-l-[#5A7A6A]">
+        <div className="card border-l-2 border-l-[#5A7A6A]">
           {needsUs.map(r => {
             const [one, many] = r.text.split("|");
             return (
@@ -418,7 +418,7 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
       {/* The scoreboard, demoted and honestly inert. Fine for it to be a count —
           as long as it is not pretending to be work. */}
       <p className="text-[11px] uppercase tracking-[0.14em] text-[#8b8880] mt-7 mb-2">The shop</p>
-      <div className="bg-white border border-black/8 flex flex-wrap">
+      <div className="card flex flex-wrap">
         {[
           { label: "Active orders", value: s.activeOrders },
           { label: "Customers", value: s.customers },
@@ -450,7 +450,7 @@ function SearchBox({ onNavigate }: { onNavigate: (t: Tab) => void }) {
       <input value={q} onChange={e => setQ(e.target.value)} onFocus={() => results.length && setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
         placeholder="Search projects, orders, customers…" className="w-full border border-black/12 pl-8 pr-3 py-1.5 text-sm outline-none focus:border-[#5A7A6A]" />
       {open && results.length > 0 && (
-        <div className="absolute right-0 top-full mt-1 w-full bg-white border border-black/10 shadow-lg z-20 max-h-80 overflow-y-auto">
+        <div className="absolute right-0 top-full mt-1 w-full card shadow-lg z-20 max-h-80 overflow-y-auto">
           {results.map((r, i) => (
             <button key={i} onMouseDown={() => { onNavigate(TYPE_TAB[r.type] ?? "dashboard"); setOpen(false); setQ(""); }}
               className="w-full text-left px-3 py-2 hover:bg-[#faf9f6] flex items-center justify-between">

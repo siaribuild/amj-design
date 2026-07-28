@@ -61,7 +61,7 @@ export function StickyQuotePanel({
   // A muted "Adding…" chip rides alongside the saved-quote status whenever a new
   // item is being composed on top of existing items — it never becomes the CTA.
   const addingChip = editingItem && itemCount > 0 ? (
-    <span className="flex items-center gap-1 border border-black/10 bg-white px-2 py-1 text-[#6f6c67] whitespace-nowrap">
+    <span className="flex items-center gap-1 card px-2 py-1 text-[#6f6c67] whitespace-nowrap">
       <Pencil className="w-3 h-3" aria-hidden="true" />Adding…
     </span>
   ) : null;
@@ -112,13 +112,13 @@ export function StickyQuotePanel({
   } else if (attentionCount > 0) {
     status = (
       <>
-        <span className="border border-black/10 bg-white px-2 py-1 text-[#5c5a56] whitespace-nowrap">
+        <span className="card px-2 py-1 text-[#5c5a56] whitespace-nowrap">
           {items(itemCount)}
         </span>
         {/* With warnings present the "ready" chip is dropped: three counts stop
             summing legibly, and errors are what the CTA acts on. */}
         {!confirmChip && (
-          <span className="flex items-center gap-1 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 px-2 py-1 text-[#355344] whitespace-nowrap">
+          <span className="flex items-center gap-1 border border-[#5A7A6A]/30 bg-sage-wash px-2 py-1 text-[#355344] whitespace-nowrap">
             <Check className="w-3.5 h-3.5" aria-hidden="true" />{readyCount} ready
           </span>
         )}
@@ -139,7 +139,7 @@ export function StickyQuotePanel({
   } else if (pendingPriceCount > 0) {
     status = (
       <>
-        <span className="flex items-center gap-1 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 px-2 py-1 text-[#355344] whitespace-nowrap">
+        <span className="flex items-center gap-1 border border-[#5A7A6A]/30 bg-sage-wash px-2 py-1 text-[#355344] whitespace-nowrap">
           <Check className="w-3.5 h-3.5" aria-hidden="true" />{readyCount} priced
         </span>
         <span className="flex items-center gap-1 border border-amber-300 bg-amber-100 px-2 py-1 text-amber-900 whitespace-nowrap">
@@ -158,7 +158,7 @@ export function StickyQuotePanel({
     // it splits the count and wears a slate top-border (caveats, not a demand).
     status = (
       <>
-        <span className="flex items-center gap-1 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 px-2 py-1 text-[#355344] whitespace-nowrap">
+        <span className="flex items-center gap-1 border border-[#5A7A6A]/30 bg-sage-wash px-2 py-1 text-[#355344] whitespace-nowrap">
           <Check className="w-3.5 h-3.5" aria-hidden="true" />{confirmChip ? `${readyCount} ready` : `${items(itemCount)} ready`}
         </span>
         {confirmChip}

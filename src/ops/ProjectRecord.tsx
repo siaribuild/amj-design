@@ -129,7 +129,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
           acceptance-time metadata that belongs on invoices, not the anchor — the
           customer's own record already makes that call, and a staffer reading a
           number down the phone must be reading the one the customer is looking at. */}
-      <div className="bg-white border border-black/8 px-5 py-4 mb-4">
+      <div className="card px-5 py-4 mb-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg leading-tight" style={{ ...HEAD, color: INK }}>
@@ -240,7 +240,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
             </div>
           )}
 
-          <div className="bg-white border border-black/8">
+          <div className="card">
             <div className="px-4 py-2.5 border-b border-black/8 flex items-center justify-between">
               <span className="text-[11px] uppercase tracking-[0.14em]" style={{ color: MUTED }}>
                 {revisionId ? "Issued lines" : showingContract ? "Contract lines" : "Draft lines"}
@@ -404,7 +404,7 @@ function VersionTab({ label, meta, active, onClick }: { label: string; meta: str
 
 function Block({ title, meta, icon, children }: { title: string; meta?: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="bg-white border border-black/8 mt-4 lg:mt-0">
+    <div className="card mt-4 lg:mt-0">
       <div className="px-4 py-2.5 border-b border-black/8 flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-[0.14em] flex items-center gap-1.5" style={{ color: MUTED }}>
           {icon}{title}

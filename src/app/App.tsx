@@ -7,7 +7,7 @@ import {
   Send, Eye, LogOut, Package, LayoutDashboard,
   Search, Lock, Key, Bell, Settings, ExternalLink
 } from "lucide-react";
-import { type Page, SAGE, DARK, WARM, WindowMark, GhostMark, SLabel, Btn, CtaBanner, FieldLabel, Input } from "./ui";
+import { type Page, SAGE, DARK, WindowMark, GhostMark, SLabel, Btn, CtaBanner, FieldLabel, Input } from "./ui";
 import { getSiteBrand, brandName } from "../data/sanity";
 import { ObfuscatedEmail } from "../components/ObfuscatedEmail";
 import { ProductsPage } from "../pages/ProductsPage";
@@ -705,7 +705,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           matcher the product runs; nothing here is drawn by hand.
           No dollar figures anywhere: rate cards are commercial D1 data, so a
           price on this page would be either invented or published margin. */}
-      <section className="relative bg-white border-t border-black/8 py-14 md:py-[68px]" style={GRID_BG}>
+      <section className="relative ground-paper border-t border-black/8 py-14 md:py-[68px]" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>The minute</SLabel>
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-8">
@@ -864,7 +864,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           Every other white-to-white boundary here is separated by a rule; this one
           was relying on a 1.5% luminance step. Do NOT darken bone to force the
           contrast instead — bone is what separates Systems from Process below it. */}
-      <section className="relative bg-[#FAFAF9] py-14 md:py-[68px] border-t border-black/8 overflow-hidden">
+      <section className="relative ground-bone py-14 md:py-[68px] border-t border-black/8 overflow-hidden">
         <GhostMark size={300} opacity={0.04} pos="right-0 bottom-0" />
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Systems</SLabel>
@@ -916,7 +916,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           THREE phases, named and numbered exactly as /how-it-works names them.
           The percentages turn three identical-looking cards into a visible money
           arc, and every one of them is a fact rather than decoration. */}
-      <section className="relative bg-white py-14 md:py-[68px] border-t border-black/8 overflow-hidden" style={GRID_BG}>
+      <section className="relative ground-paper py-14 md:py-[68px] border-t border-black/8 overflow-hidden" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Process</SLabel>
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-8">
@@ -933,7 +933,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0">
             {steps.map((s, i) => (
               <div key={s.n}
-                className="relative border border-black/10 bg-white p-6 flex flex-col sm:[&:nth-child(n+2)]:-mt-px lg:[&:nth-child(n+2)]:mt-0 lg:[&:nth-child(n+2)]:-ml-px">
+                className="relative card p-6 flex flex-col sm:[&:nth-child(n+2)]:-mt-px lg:[&:nth-child(n+2)]:mt-0 lg:[&:nth-child(n+2)]:-ml-px">
                 <div className="flex items-start justify-between mb-4">
                   <span className="w-8 h-8 border border-[#5A7A6A]/40 flex items-center justify-center text-[#5A7A6A] text-xs" style={MONO}>{s.n}</span>
                   <span className="flex items-center gap-2">
@@ -1021,7 +1021,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           accordion would hide content on a page already criticised for being
           blank. The 2×2 hairline-collapsed grid is the site's card track, not a
           table: prose blocks with headings, no header row, no column runs. */}
-      <section className="relative bg-[#FAFAF9] py-14 md:py-[68px] border-t border-black/8" style={GRID_BG}>
+      <section className="relative ground-bone py-14 md:py-[68px] border-t border-black/8" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Good to know</SLabel>
           <h2 className="font-semibold text-[#131311] leading-tight mb-8"
@@ -1032,7 +1032,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
             {questions.map((q) => (
               <div key={q.q}
-                className="border border-black/10 bg-white p-6 flex flex-col md:[&:nth-child(n+3)]:-mt-px md:[&:nth-child(even)]:-ml-px [&:nth-child(n+2)]:-mt-px md:[&:nth-child(2)]:mt-0">
+                className="card p-6 flex flex-col md:[&:nth-child(n+3)]:-mt-px md:[&:nth-child(even)]:-ml-px [&:nth-child(n+2)]:-mt-px md:[&:nth-child(2)]:mt-0">
                 <h3 className="font-semibold text-[#131311] text-[17px] leading-tight mb-2" style={DISPLAY}>{q.q}</h3>
                 <p className="text-[#5c5a56] text-[15px] leading-relaxed flex-1">{q.a}</p>
                 {q.link && (
@@ -1106,7 +1106,7 @@ function ResourcesPage({ setPage }: { setPage: (p: Page) => void }) {
       <div className="max-w-5xl mx-auto px-6 py-10 pb-0">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-10">
           {filtered.map(r => (
-            <div key={r.t} className="group relative bg-white border border-black/8 hover:border-[#5A7A6A] p-5 transition-all cursor-pointer overflow-hidden">
+            <div key={r.t} className="group relative card hover:border-[#5A7A6A] p-5 transition-all cursor-pointer overflow-hidden">
               <FrameCorners size={10} color={SAGE} />
               <span className="text-[10px] font-semibold uppercase tracking-widest text-[#5A7A6A]">{r.cat}</span>
               <h3 className="font-semibold text-[#131311] mt-2 mb-1 group-hover:text-[#5A7A6A] transition-colors"
@@ -1169,7 +1169,7 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
   };
 
   return (
-    <div className="relative min-h-screen bg-[#FAFAF9] flex items-center justify-center pt-16 pb-24 overflow-hidden">
+    <div className="relative min-h-screen ground-bone flex items-center justify-center pt-16 pb-24 overflow-hidden">
       <GhostMark size={320} opacity={0.05} pos="right-0 bottom-0" />
       <div className="w-full max-w-sm mx-auto px-6 relative">
         <div className="text-center mb-8">
@@ -1184,7 +1184,7 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
               : `We sent a 6-digit code to ${email.trim()}`}
           </p>
         </div>
-        <div className="group relative bg-white border border-black/8 p-6 space-y-4 overflow-hidden">
+        <div className="group relative card p-6 space-y-4 overflow-hidden">
           <FrameCorners size={10} color={SAGE} show="always" />
           {step === "email" ? (
             <>
@@ -1210,7 +1210,7 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
                   placeholder="••••••" />
               </div>
               {devCode && (
-                <p className="text-xs text-[#5A7A6A] bg-[#5A7A6A]/8 border border-[#5A7A6A]/20 px-2 py-1.5">
+                <p className="text-xs text-[#5A7A6A] bg-sage-wash border border-[#5A7A6A]/20 px-2 py-1.5">
                   Dev mode — your code is <span className="font-mono font-semibold">{devCode}</span>
                 </p>
               )}
@@ -1284,14 +1284,14 @@ function ProfilePage({ user, setPage, setUser, authLoading, embedded }: { user: 
       )}
       <div className="space-y-4">
         <div className="grid lg:grid-cols-2 gap-4 items-start">
-          <div className="bg-white border border-black/8 p-5">
+          <div className="card p-5">
             <h3 className="font-semibold text-sm text-[#131311] mb-4">Personal details</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><FieldLabel>Full name</FieldLabel><Input value={name} onChange={e => setName(e.target.value)} /></div>
               <div><FieldLabel>Phone number</FieldLabel><Input value={phone} onChange={e => setPhone(e.target.value)} /></div>
             </div>
           </div>
-          <div className="bg-white border border-black/8 p-5">
+          <div className="card p-5">
             <h3 className="font-semibold text-sm text-[#131311] mb-1">Business details</h3>
             <p className="text-xs text-[#5c5a56] mb-4">Shown on your quotes and orders.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1324,7 +1324,7 @@ function AccountIdentity({ user, setPage }: { user: AuthUser; setPage: (p: Page)
   return (
     <section className="pt-2">
       <h2 className="text-sm font-semibold text-[#131311] uppercase tracking-wider mb-3">Sign-in</h2>
-      <dl className="bg-white border border-black/8 px-5 py-1">
+      <dl className="card px-5 py-1">
         <div className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-4 py-2.5 border-b border-black/6">
           <dt className="text-[10px] font-semibold text-[#3a3835] uppercase tracking-widest sm:w-40 sm:flex-shrink-0 flex items-center gap-1.5"><Lock className="w-3 h-3 text-[#5A7A6A]" />Sign-in email</dt>
           <dd className="text-sm text-[#131311]">{user.email}</dd>
@@ -1379,7 +1379,7 @@ function AccountSettingsPage({ user, setPage, setUser, authLoading, embedded }: 
       )}
       <div className="space-y-4">
         <div className="grid lg:grid-cols-2 gap-4 items-start">
-          <div className="bg-white border border-black/8 p-5">
+          <div className="card p-5">
             <div className="flex items-center gap-2 mb-2"><Settings className="w-4 h-4 text-[#5A7A6A]" /><h3 className="font-semibold text-sm text-[#131311]">Price display</h3></div>
             <p className="text-sm text-[#5c5a56] leading-relaxed mb-4">Choose how estimates show pricing across the site. This changes the display only — quoted and invoiced totals are always GST-inclusive.</p>
             <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Price display">
@@ -1387,7 +1387,7 @@ function AccountSettingsPage({ user, setPage, setUser, authLoading, embedded }: 
                 const active = user.priceGstMode === o.mode;
                 return (
                   <button key={o.mode} role="radio" aria-checked={active} onClick={() => setGst(o.mode)}
-                    className={`text-left border px-3 py-3 transition-colors cursor-pointer ${active ? "border-[#5A7A6A] bg-[#5A7A6A]/8" : "border-black/12 bg-white hover:border-[#5A7A6A]/50"}`}>
+                    className={`text-left border px-3 py-3 transition-colors cursor-pointer ${active ? "border-[#5A7A6A] bg-sage-wash" : "border-black/12 bg-white hover:border-[#5A7A6A]/50"}`}>
                     <span className="flex items-center gap-1.5 text-sm font-semibold text-[#131311]">
                       {active && <Check className="w-3.5 h-3.5 text-[#5A7A6A]" />}{o.label}
                     </span>
@@ -1397,7 +1397,7 @@ function AccountSettingsPage({ user, setPage, setUser, authLoading, embedded }: 
               })}
             </div>
           </div>
-          <div className="bg-white border border-black/8 p-5">
+          <div className="card p-5">
             <div className="flex items-center gap-2 mb-2"><Key className="w-4 h-4 text-[#5A7A6A]" /><h3 className="font-semibold text-sm text-[#131311]">Sign-in &amp; security</h3></div>
             <p className="text-sm text-[#5c5a56] leading-relaxed">Your account is passwordless — you sign in with a one-time code emailed to <span className="text-[#131311]">{user.email}</span>. There's no password to set or change.</p>
           </div>
@@ -1491,7 +1491,7 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
   };
 
   return (
-    <div className="relative min-h-screen bg-[#FAFAF9] pt-16 pb-24 overflow-hidden">
+    <div className="relative min-h-screen ground-bone pt-16 pb-24 overflow-hidden">
       <GhostMark size={280} opacity={0.05} pos="right-0 top-0" />
       <div className="max-w-xl mx-auto px-6 py-12 relative">
         <SLabel>Quote &amp; order tracking</SLabel>
@@ -1504,10 +1504,10 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
         {/* Hold the form back until we know whether a session is already live —
             otherwise the lookup flashes up and is snatched away. */}
         {resuming && (
-          <div className="bg-white border border-black/8 p-6 text-sm text-[#5c5a56]">Checking your session…</div>
+          <div className="card p-6 text-sm text-[#5c5a56]">Checking your session…</div>
         )}
         {!resuming && step === "lookup" && (
-          <div className="group relative bg-white border border-black/8 p-6 space-y-4 overflow-hidden">
+          <div className="group relative card p-6 space-y-4 overflow-hidden">
             <FrameCorners size={10} color={SAGE} show="always" />
             <div><FieldLabel>Quote or order reference</FieldLabel><Input value={ref} onChange={e => setRef(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && request()} placeholder="OF-Q-10001 or OF-58001" className="font-mono tracking-wide" /></div>
             <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && request()} placeholder="Email used on the quote" /></div>
@@ -1522,11 +1522,11 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
         )}
 
         {step === "code" && (
-          <div className="group relative bg-white border border-black/8 p-6 space-y-4 overflow-hidden">
+          <div className="group relative card p-6 space-y-4 overflow-hidden">
             <FrameCorners size={10} color={SAGE} show="always" />
             <p className="text-sm text-[#5c5a56]">If <span className="text-[#131311]">{ref.trim()}</span> matches a quote or order for <span className="text-[#131311]">{email.trim()}</span>, we've sent a 6-digit code.</p>
             <div><FieldLabel>6-digit code</FieldLabel><Input value={code} autoFocus inputMode="numeric" maxLength={6} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={e => e.key === "Enter" && verify()} placeholder="••••••" /></div>
-            {devCode && <p className="text-xs text-[#5A7A6A] bg-[#5A7A6A]/8 border border-[#5A7A6A]/20 px-2 py-1.5">Dev mode — your code is <span className="font-mono font-semibold">{devCode}</span></p>}
+            {devCode && <p className="text-xs text-[#5A7A6A] bg-sage-wash border border-[#5A7A6A]/20 px-2 py-1.5">Dev mode — your code is <span className="font-mono font-semibold">{devCode}</span></p>}
             {error && <p className="text-xs text-red-600">{error}</p>}
             <Btn variant="sage" size="md" onClick={verify} className={`w-full justify-center ${code.length !== 6 || busy ? "opacity-50 pointer-events-none" : ""}`}>{busy ? "Checking…" : "View status"}</Btn>
             <button onClick={reset} className="text-sm text-[#5c5a56] hover:text-[#131311] cursor-pointer">← Start over</button>
@@ -1552,14 +1552,14 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
 function ApprovedQuotePage() {
   const [t1, setT1] = useState(false); const [t2, setT2] = useState(false); const [t3, setT3] = useState(false);
   return (
-    <div className="relative min-h-screen bg-[#FAFAF9] pt-24 pb-24 overflow-hidden">
+    <div className="relative min-h-screen ground-bone pt-24 pb-24 overflow-hidden">
       <GhostMark size={260} opacity={0.05} pos="right-0 bottom-0" />
       <div className="max-w-2xl mx-auto px-6 relative">
         <div className="flex items-center gap-2 mb-2"><CheckCircle className="w-4 h-4 text-[#5A7A6A]" /><span className="text-xs text-[#5A7A6A] font-medium uppercase tracking-wide">Human verified</span></div>
         <h1 className="text-3xl font-semibold text-[#131311] mb-1"
           style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Reviewed quote — OF-58712</h1>
         <p className="text-[#5c5a56] text-sm mb-8">Issued after manual technical review · 12 Jan 2025</p>
-        <div className="group relative bg-white border border-black/8 p-5 mb-4 overflow-hidden">
+        <div className="group relative card p-5 mb-4 overflow-hidden">
           <FrameCorners size={10} color={SAGE} show="always" />
           <h3 className="font-semibold text-sm text-[#131311] mb-4">Approved line items</h3>
           <table className="w-full text-sm"><thead><tr className="border-b border-black/8 text-[10px] text-[#5c5a56] uppercase tracking-wide">
@@ -1574,7 +1574,7 @@ function ApprovedQuotePage() {
             <span className="font-semibold" style={{ fontFamily: "'DM Mono', monospace" }}>[deposit amount]</span>
           </div>
         </div>
-        <div className="group relative bg-white border border-black/8 p-5 mb-4 space-y-3 overflow-hidden">
+        <div className="group relative card p-5 mb-4 space-y-3 overflow-hidden">
           <FrameCorners size={10} color={SAGE} show="always" />
           <h3 className="font-semibold text-sm text-[#131311] mb-1">Acknowledge before paying</h3>
           {[[t1,setT1,"Dimensions verified by a qualified builder, installer or professional."],[t2,setT2,"Supply-only order. Installation not included."],[t3,setT3,"Payment confirms the reviewed quote only. Changes after deposit may incur costs."]].map(([v,s,l],i) => (
@@ -1627,7 +1627,7 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
               </div>
             ))}
           </div>
-          <div className="group relative bg-white border border-black/8 p-6 overflow-hidden">
+          <div className="group relative card p-6 overflow-hidden">
             <FrameCorners size={10} color={SAGE} show="always" />
             <h3 className="font-semibold text-[#131311] mb-4">Apply for a trade account</h3>
             <div className="space-y-3">
@@ -1660,7 +1660,7 @@ function AdminPage() {
     { ref: "OF-58671", name: "Metro Reno Group",   type: "Trade",     project: "Extension — St Kilda",  items: 6, status: "Ready",           conf: 94, age: "2d" },
   ];
   const q = quotes[sel];
-  const sc: Record<string,string> = { "Review required":"text-amber-400 bg-amber-400/10","More info needed":"text-red-400 bg-red-400/10","Ready":"text-[#5A7A6A] bg-[#5A7A6A]/10" };
+  const sc: Record<string,string> = { "Review required":"text-amber-400 bg-amber-400/10","More info needed":"text-red-400 bg-red-400/10","Ready":"text-[#5A7A6A] bg-sage-wash" };
   return (
     <div className="relative bg-[#0c0c0a] min-h-screen pt-16 text-white overflow-hidden">
       <GhostMark size={400} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
@@ -2025,7 +2025,7 @@ export default function App() {
   // Wrap an account screen in the right-rail shell. The login/home redirects happen
   // in the effect above, never during render.
   function inShell(section: AccountSection, node: React.ReactNode) {
-    if (!user) return <div className="min-h-screen bg-[#FAFAF9]" />;
+    if (!user) return <div className="min-h-screen ground-bone" />;
     const signOut = () => { apiLogout().catch(() => {}); setUser(null); navigateTo("home"); };
     return <AccountShell section={section} setPage={navigateTo} user={user} onSignOut={signOut}>{node}</AccountShell>;
   }
@@ -2111,7 +2111,7 @@ export default function App() {
 
   return (
     <GstContext.Provider value={user?.priceGstMode ?? "inc"}>
-    <div className="min-h-screen bg-[#FAFAF9]" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="min-h-screen ground-bone" style={{ fontFamily: "'Inter', sans-serif" }}>
       <Seo {...seoProps} />
       <style>{`
         * { -webkit-font-smoothing: antialiased; }

@@ -53,7 +53,7 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
       ))}
     </div>
 
-    <div className="hidden lg:block bg-white border border-black/8">
+    <div className="hidden lg:block card">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-[11px] uppercase tracking-wide text-[#8b8880] border-b border-black/8">
@@ -116,7 +116,7 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
   return (
     <div className="max-w-3xl">
       <button onClick={onBack} className="text-xs text-[#5c5a56] hover:text-[#14150f] flex items-center gap-1 mb-4"><ChevronLeft className="w-3.5 h-3.5" />Back to customers</button>
-      <div className="bg-white border border-black/8 p-5 mb-5">
+      <div className="card p-5 mb-5">
         <div className="flex items-start justify-between gap-3">
           <h2 className="text-lg font-semibold text-[#14150f] flex items-center gap-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><User className="w-5 h-5" style={{ color: SAGE }} />{cu.name || cu.email.split("@")[0]}</h2>
           {!editing && (
@@ -194,7 +194,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <>
       <h3 className="text-[11px] uppercase tracking-wide text-[#8b8880] mb-2">{title}</h3>
-      <div className="bg-white border border-black/8 mb-5">{children}</div>
+      <div className="card mb-5">{children}</div>
     </>
   );
 }

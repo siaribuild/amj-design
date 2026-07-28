@@ -29,7 +29,7 @@ const TABS: { id: string; label: string; params: Record<string, string> }[] = [
 const statusClass = (s: string) => {
   if (["new", "requested"].includes(s)) return "text-amber-700 bg-amber-50 border-amber-200";
   if (["closed", "completed", "order_placed"].includes(s)) return "text-blue-700 bg-blue-50 border-blue-200";
-  if (["contacted", "confirmed", "manufacturer_quote_created"].includes(s)) return "text-[#355344] bg-[#5A7A6A]/10 border-[#5A7A6A]/25";
+  if (["contacted", "confirmed", "manufacturer_quote_created"].includes(s)) return "text-[#355344] bg-sage-wash border-[#5A7A6A]/25";
   if (["lost", "cancelled", "no_show", "no_response"].includes(s)) return "text-red-700 bg-red-50 border-red-200";
   return "text-[#5c5a56] bg-[#F2F0EC] border-black/10";
 };
@@ -71,7 +71,7 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
         : !rows ? <Loader2 className="w-5 h-5 text-black/30 animate-spin" />
         : !rows.length ? <div className="bg-white border border-dashed border-black/15 p-12 text-center text-sm text-[#5c5a56]">No enquiries in this view.</div>
         : (
-          <div className="bg-white border border-black/8 overflow-x-auto">
+          <div className="card overflow-x-auto">
             <table className="w-full text-sm min-w-[860px]">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wide text-[#8b8880] border-b border-black/8">
@@ -86,7 +86,7 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
                     <td className="px-4 py-3 text-[#14150f]">{e.name}{e.company && <span className="block text-xs text-[#8b8880]">{e.company}</span>}</td>
                     <td className="px-4 py-3 text-[#5c5a56]">{e.email}{e.phone && <span className="block text-xs text-[#8b8880]">{e.phone}</span>}</td>
                     <td className="px-4 py-3 text-[#5c5a56]">{e.locationSuburb ? `${e.locationState} – ${e.locationSuburb}` : "—"}</td>
-                    <td className="px-4 py-3"><span className="text-[11px] px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/8 text-[#355344] whitespace-nowrap">OpenFrame Website</span></td>
+                    <td className="px-4 py-3"><span className="text-[11px] px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-sage-wash text-[#355344] whitespace-nowrap">OpenFrame Website</span></td>
                     <td className="px-4 py-3 text-[#8b8880] whitespace-nowrap">{when(e.createdAt)}</td>
                     <td className="px-4 py-3 text-[#5c5a56] whitespace-nowrap">{e.assignedName ?? "—"}</td>
                     <td className="px-4 py-3"><span className={`text-[11px] px-2 py-0.5 border ${statusClass(e.workflowStatus)}`}>{humanize(e.workflowStatus)}</span></td>
@@ -127,19 +127,19 @@ function Detail({ id, user, onBack }: { id: string; user: OpsUser; onBack: () =>
       <button onClick={onBack} className="text-xs text-[#5c5a56] hover:text-[#14150f] flex items-center gap-1 mb-4"><ChevronLeft className="w-3.5 h-3.5" />Back to enquiries</button>
 
       {/* Summary header */}
-      <div className="bg-white border border-black/8 p-5 mb-5">
+      <div className="card p-5 mb-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2.5">
               <span className="font-mono text-sm text-[#14150f]">{d.reference}</span>
               <IntentBadge intent={d.intent} />
-              <span className="text-[11px] px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/8 text-[#355344]">Source: OpenFrame Website</span>
+              <span className="text-[11px] px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-sage-wash text-[#355344]">Source: OpenFrame Website</span>
             </div>
             <h2 className="text-lg font-semibold text-[#14150f] mt-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{d.name}{d.company ? ` · ${d.company}` : ""}</h2>
             <p className="text-xs text-[#8b8880]">Submitted {when(d.createdAt)}{d.assignedName ? ` · owner ${d.assignedName}` : " · unassigned"}</p>
           </div>
           <div className="flex items-center gap-2">
-            {d.assignedUser !== user.id && <button onClick={() => patch({ assignedUser: user.id })} disabled={busy} className="text-xs px-3 py-1.5 border border-[#5A7A6A] text-[#355344] hover:bg-[#5A7A6A]/8 disabled:opacity-50">Assign to me</button>}
+            {d.assignedUser !== user.id && <button onClick={() => patch({ assignedUser: user.id })} disabled={busy} className="text-xs px-3 py-1.5 border border-[#5A7A6A] text-[#355344] hover:bg-sage-wash disabled:opacity-50">Assign to me</button>}
           </div>
         </div>
       </div>
@@ -211,14 +211,14 @@ function Detail({ id, user, onBack }: { id: string; user: OpsUser; onBack: () =>
 
         {/* Status rail */}
         <aside className="space-y-4">
-          <div className="bg-white border border-black/8 p-4 space-y-3">
+          <div className="card p-4 space-y-3">
             <p className="text-[11px] uppercase tracking-wide text-[#8b8880]">Status</p>
             <StatusSelect label="Workflow" value={d.workflowStatus} options={WORKFLOW} disabled={busy} onChange={(v) => patch({ workflowStatus: v })} />
             <StatusSelect label="Contact" value={d.contactOutcome} options={CONTACT} disabled={busy} onChange={(v) => patch({ contactOutcome: v })} />
             {isAppt && <StatusSelect label="Appointment" value={d.appointmentStatus} options={APPOINTMENT} disabled={busy} onChange={(v) => patch({ appointmentStatus: v })} />}
             <StatusSelect label="Commercial" value={d.commercialOutcome} options={COMMERCIAL} disabled={busy} onChange={(v) => patch({ commercialOutcome: v })} />
           </div>
-          <div className="bg-white border border-black/8 p-4">
+          <div className="card p-4">
             <p className="text-[11px] uppercase tracking-wide text-[#8b8880] mb-2">Log a contact attempt</p>
             <div className="flex flex-wrap gap-1.5">
               {["attempted", "contacted", "no_response"].map((o) => (
@@ -234,7 +234,7 @@ function Detail({ id, user, onBack }: { id: string; user: OpsUser; onBack: () =>
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white border border-black/8 p-5">
+    <div className="card p-5">
       <h3 className="text-[11px] uppercase tracking-wide text-[#8b8880] mb-3">{title}</h3>
       <div className="space-y-1.5">{children}</div>
     </div>
@@ -253,7 +253,7 @@ function StatusSelect({ label, value, options, disabled, onChange }: { label: st
     <label className="block">
       <span className="text-[10px] uppercase tracking-wide text-[#8b8880]">{label}</span>
       <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}
-        className="mt-0.5 w-full border border-black/15 bg-white px-2 py-1.5 text-sm text-[#14150f] outline-none focus:border-[#5A7A6A] disabled:opacity-60">
+        className="mt-0.5 w-full card px-2 py-1.5 text-sm text-[#14150f] outline-none focus:border-[#5A7A6A] disabled:opacity-60">
         {options.map((o) => <option key={o} value={o}>{humanize(o)}</option>)}
       </select>
     </label>

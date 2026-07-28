@@ -33,7 +33,7 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
   };
 
   if (loading) {
-    return <div className="bg-white border border-black/10 p-8 text-sm text-[#5c5a56]">Loading your account…</div>;
+    return <div className="card p-8 text-sm text-[#5c5a56]">Loading your account…</div>;
   }
   const projs = projects ?? [];
   const ords = orders ?? [];
@@ -72,7 +72,7 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
       ) : (
         <>
           {/* Summary strip — numbers only where they drive action */}
-          <div className="flex flex-wrap border border-black/10 bg-white mb-6" role="group" aria-label="Account summary">
+          <div className="flex flex-wrap card mb-6" role="group" aria-label="Account summary">
             <SummaryCell hot={gates.length > 0} label="Need you now" value={String(gates.length)} small="open gates" />
             <SummaryCell hot={payable > 0} label="Payable now" value={money(payable)} />
             <SummaryCell label="On order" value={String(activeOrders.length)} />
@@ -87,7 +87,7 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
               <span className="ml-auto text-[13px] text-[#5c5a56] hidden sm:inline">Ordered by urgency · each opens the exact record</span>
             </div>
             {gates.length === 0 ? (
-              <div className="bg-white border border-black/10 p-[18px] flex flex-col gap-[9px]" style={{ borderLeft: `3px solid ${TONE.pos.text}` }}>
+              <div className="card p-[18px] flex flex-col gap-[9px]" style={{ borderLeft: `3px solid ${TONE.pos.text}` }}>
                 <span className="w-[34px] h-[34px] grid place-items-center border" style={{ color: TONE.pos.text, borderColor: TONE.pos.bd, background: TONE.pos.bg }}><CheckCircle className="w-[18px] h-[18px]" /></span>
                 <h3 className="text-[15px] font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>You're all caught up</h3>
                 <p className="text-[12.5px] text-[#5c5a56] leading-relaxed">Nothing needs you right now — we'll email you and show it here the moment something does.</p>
@@ -179,7 +179,7 @@ const GATE_ICON: Record<string, ReactNode> = {
 function GateCard({ gate, onOpen }: { gate: Gate; onOpen: () => void }) {
   return (
     <button onClick={onOpen} aria-label={`${gate.title} — ${gate.refLabel}`}
-      className="w-full text-left bg-white border border-black/10 grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-x-[18px] gap-y-3 items-center px-5 py-[18px] transition-all cursor-pointer hover:shadow-[0_1px_0_rgba(178,110,15,.34)]"
+      className="w-full text-left card grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-x-[18px] gap-y-3 items-center px-5 py-[18px] card-link transition-all cursor-pointer"
       style={{ borderLeft: `3px solid ${TONE.attn.text}` }}>
       <span className="w-[42px] h-[42px] grid place-items-center border" style={{ borderColor: TONE.attn.bd, background: TONE.attn.bg, color: TONE.attn.text }}>
         {GATE_ICON[gate.pill] ?? <FileText className="w-5 h-5" />}
@@ -243,7 +243,7 @@ export function UnifiedList({ projects, orders, setPage, onOpenRecord, emptyNote
 
   if (rows.length === 0) {
     return (
-      <div className="bg-white border border-black/10 p-[18px]">
+      <div className="card p-[18px]">
         <h3 className="text-sm font-semibold text-[#131311] mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Nothing here yet</h3>
         <p className="text-[12.5px] text-[#5c5a56] leading-relaxed">{emptyNote ?? <>Start a quote and it will appear here as it moves from estimate to delivered order.</>}</p>
       </div>
@@ -291,7 +291,7 @@ function RecordRow({ refText, title, pill, next, value, meta, draft, onOpen }: {
 // Empty state (a): brand-new account — a welcoming "start your first quote" hub.
 function EmptyHub({ go }: { go: (p: Page) => void }) {
   return (
-    <div className="max-w-xl bg-white border border-black/10 p-8 flex flex-col items-center text-center gap-3">
+    <div className="max-w-xl card p-8 flex flex-col items-center text-center gap-3">
       <span className="w-12 h-12 border border-black/10 grid place-items-center"><WindowMark size={26} color={SAGE} /></span>
       <h2 className="text-lg font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Start your first project</h2>
       <p className="text-[13px] text-[#5c5a56] max-w-[36ch]">Price your windows and doors in minutes, then submit the project for a full reviewed quote.</p>

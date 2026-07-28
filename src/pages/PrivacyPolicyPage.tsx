@@ -29,7 +29,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
   const li = "flex gap-2.5 before:content-['—'] before:text-[#5A7A6A] before:flex-shrink-0";
 
   return (
-    <div className="bg-[#FAFAF9] min-h-screen">
+    <div className="ground-bone min-h-screen">
       {/* ─── Slim dark hero ──────────────────────────────────────────────────── */}
       <section className="relative bg-[#0c0c0a] overflow-hidden pt-28 pb-12">
         {imageUrl(getPage("privacy")?.heroImage, { w: 1920, h: 600 }) && (
@@ -177,7 +177,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
 
             <Section id="contact" title="12. Contact us">
               <p>To exercise your rights or ask a question about this policy, get in touch:</p>
-              <div className="bg-white border border-black/10 p-5 mt-2">
+              <div className="card p-5 mt-2">
                 <p className="flex items-center gap-2.5 text-sm text-[#131311]">
                   <Mail className="w-4 h-4" style={{ color: SAGE }} />
                   <ObfuscatedEmail address={getSiteBrand()?.email} className="hover:underline" />

@@ -39,7 +39,7 @@ export function OrderReadout({ order }: { order: ApiOrder }) {
         {balance && <PaymentCard title="Balance" orderNo={order.orderNo} p={balance} />}
       </div>
       {order.files && order.files.length > 0 && (
-        <div className="bg-white border border-black/8 p-5 mb-3">
+        <div className="card p-5 mb-3">
           <p className="text-[10px] tracking-[0.2em] text-[#5c5a56] uppercase mb-3">Attached schedule</p>
           <ul className="space-y-2">
             {order.files.map(f => (
@@ -52,7 +52,7 @@ export function OrderReadout({ order }: { order: ApiOrder }) {
           </ul>
         </div>
       )}
-      <div className="bg-white border border-black/8 p-5">
+      <div className="card p-5">
         <p className="text-[10px] tracking-[0.2em] text-[#5c5a56] uppercase mb-4">Progress</p>
         <ol className="space-y-0">
           {STAGES.map(([key, label], i) => {
@@ -79,7 +79,7 @@ function PaymentCard({ title, orderNo, p }: { title: string; orderNo: string; p:
   const paid = p.status === "paid";
   const invoiced = !!p.invoicedAt;
   return (
-    <div className={`border p-4 ${paid ? "bg-[#5A7A6A]/6 border-[#5A7A6A]/25" : invoiced ? "bg-white border-black/12" : "bg-[#FAFAF9] border-black/8"}`}>
+    <div className={`border p-4 ${paid ? "bg-[#5A7A6A]/6 border-[#5A7A6A]/25" : invoiced ? "bg-white border-black/12" : "ground-bone border-black/8"}`}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs tracking-wide text-[#5c5a56] uppercase">{title} · {p.percent}%</span>
         <span className={`text-[10px] px-1.5 py-0.5 border ${paid ? "border-[#5A7A6A] text-[#5A7A6A]" : invoiced ? "border-amber-500 text-amber-600" : "border-black/15 text-black/40"}`}>

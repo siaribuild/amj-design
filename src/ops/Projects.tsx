@@ -118,7 +118,7 @@ export function Projects() {
           ))}
         </div>
 
-        <div className="hidden lg:block bg-white border border-black/8">
+        <div className="hidden lg:block card">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wide border-b border-black/8" style={{ color: MUTED }}>

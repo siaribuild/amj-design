@@ -467,10 +467,10 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // ─── Submitted ──────────────────────────────────────────────────────────────
   if (submitted) {
     return (
-      <div className="relative min-h-screen bg-[#FAFAF9] pt-24 pb-24 overflow-hidden">
+      <div className="relative min-h-screen ground-bone pt-24 pb-24 overflow-hidden">
         <GhostMark size={300} opacity={0.05} pos="right-0 bottom-0" />
         <div className="max-w-md w-full mx-auto px-6 text-center relative">
-          <div className="w-14 h-14 border border-[#5A7A6A]/30 bg-[#5A7A6A]/8 flex items-center justify-center mx-auto mb-6"><WindowMark size={24} color={SAGE} /></div>
+          <div className="w-14 h-14 border border-[#5A7A6A]/30 bg-sage-wash flex items-center justify-center mx-auto mb-6"><WindowMark size={24} color={SAGE} /></div>
           <h2 className="text-2xl font-semibold text-[#131311] mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Quote submitted</h2>
           <p className="text-sm text-[#5c5a56] leading-relaxed mb-8 mt-2">We've received your project and emailed a confirmation to <span className="text-[#131311]">{contactEmail || "your email"}</span>. We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote with its reference. Expect a response within 1–2 business days.</p>
           <p className="text-xs text-[#5c5a56] mb-6">No payment at this stage. Deposit only after you approve the reviewed quote.</p>
@@ -486,13 +486,13 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
   // ─── Review + submit ──────────────────────────────────────────────────────────
   if (view === "review") {
     return (
-      <div className="min-h-screen bg-[#FAFAF9] pt-16">
+      <div className="min-h-screen ground-bone pt-16">
         <div className="max-w-2xl mx-auto px-6 py-10">
           <button onClick={() => setView("build")} className="text-[#5c5a56] hover:text-[#131311] text-sm mb-5 flex items-center gap-1 cursor-pointer"><ChevronLeft className="w-4 h-4" />Back to MyProject</button>
           <SLabel>Review quote</SLabel>
           <h1 className="text-3xl font-semibold text-[#131311] mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Review and submit</h1>
           <p className="text-[#5c5a56] text-sm mb-6">No payment at this stage. A reviewed quote is issued after manual technical review.</p>
-          <div className="border border-black/10 bg-white p-5 mb-4">
+          <div className="card p-5 mb-4">
             <SLabel>Your quote</SLabel>
             <div className="space-y-2 mb-3">
               {quote.items.map((it, i) => (
@@ -510,7 +510,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
             <div className="flex justify-between border-t border-black/8 pt-3 text-sm"><span className="text-[#5c5a56]">{pendingPriceCount ? "Priced-items subtotal" : "Estimated total"}</span><span className="font-semibold text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
             {pendingPriceCount > 0 && <p className="mt-2 text-xs text-amber-800">{pendingPriceCount} customer-changed configuration{pendingPriceCount === 1 ? "" : "s"} will be added after we confirm the exact product and price.</p>}
           </div>
-          <div className="border border-black/10 bg-white p-5 space-y-4 mb-4">
+          <div className="card p-5 space-y-4 mb-4">
             {user && <p className="text-sm text-[#5A7A6A] flex items-center gap-1.5"><CheckCircle className="w-4 h-4" />Pre-filled from your account — edit if needed.</p>}
             <div><FieldLabel>Full name</FieldLabel><Input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Your name" /></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -529,7 +529,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
 
   // ─── Build ────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-[100svh] bg-[#FAFAF9] flex flex-col">
+    <div className="min-h-[100svh] ground-bone flex flex-col">
       {/* ─── Dark functional hero — header overlays it; upload panel is a live
              part of the hero, styled like the panels on the home hero ───────── */}
       <section className="relative bg-[#0c0c0a] overflow-hidden">
@@ -598,7 +598,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
             {hasContent && (
               <button ref={clearBtnRef} type="button" onClick={() => setClearConfirm(true)}
                 aria-label="Clear all items and the uploaded schedule"
-                className="ml-auto inline-flex items-center gap-1.5 border border-black/12 bg-white px-2.5 py-1 text-xs font-medium text-[#6f6c67] hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A]">
+                className="ml-auto inline-flex items-center gap-1.5 card px-2.5 py-1 text-xs font-medium text-[#6f6c67] hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A]">
                 <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />Clear all
               </button>
             )}
@@ -615,7 +615,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                 // promise (UX review 2026-07-26). Known types only:
                 const type = (f.docType ?? null) as string | null;
                 const known: Record<string, { label: string; tint: string }> = {
-                  schedule: { label: "SCHEDULE", tint: "border-[#5A7A6A]/30 bg-[#5A7A6A]/8 text-[#355344]" },
+                  schedule: { label: "SCHEDULE", tint: "border-[#5A7A6A]/30 bg-sage-wash text-[#355344]" },
                   energy_report: { label: "ENERGY REPORT", tint: "border-[#4C6A88]/30 bg-[#4C6A88]/10 text-[#4C6A88]" }, // TONE.work
                   plans: { label: "PLANS", tint: "border-black/15 bg-black/[0.03] text-[#6f6c67]" },
                   supporting: { label: "SUPPORTING", tint: "border-dashed border-black/15 bg-black/[0.03] text-[#6f6c67]" },
@@ -633,12 +633,12 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                       <button onClick={() => void handleRemoveFile(String(f.id), f.name)}
                         className="text-xs font-medium text-red-700 border border-red-300 bg-white px-1.5 py-0.5 hover:bg-red-100 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-red-400">Remove</button>
                       <button onClick={() => setRemovingFile(null)} autoFocus
-                        className="text-xs text-[#5c5a56] border border-black/12 bg-white px-1.5 py-0.5 hover:border-black/25 cursor-pointer">Keep</button>
+                        className="text-xs text-[#5c5a56] card px-1.5 py-0.5 hover:border-black/25 cursor-pointer">Keep</button>
                     </div>
                   );
                 }
                 return (
-                  <div key={f.id} className="inline-flex items-center gap-2 border border-black/12 bg-white px-3 py-1.5 text-xs max-w-full">
+                  <div key={f.id} className="inline-flex items-center gap-2 card px-3 py-1.5 text-xs max-w-full">
                     <Paperclip className="w-3.5 h-3.5 text-[#5A7A6A] flex-shrink-0" aria-hidden="true" />
                     <span className="text-[#131311] font-medium truncate max-w-[14rem]">{f.name}</span>
                     {chip && (
@@ -697,7 +697,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
           ))}
           {uploadNotice && (
             <div role={uploadNotice.type === "error" ? "alert" : "status"} aria-live="polite"
-              className={`mb-4 flex items-start gap-2.5 border px-4 py-3 text-sm ${uploadNotice.type === "success" ? "border-[#5A7A6A]/30 bg-[#5A7A6A]/8 text-[#355344]" : "border-red-300 bg-red-50 text-red-800"}`}>
+              className={`mb-4 flex items-start gap-2.5 border px-4 py-3 text-sm ${uploadNotice.type === "success" ? "border-[#5A7A6A]/30 bg-sage-wash text-[#355344]" : "border-red-300 bg-red-50 text-red-800"}`}>
               {uploadNotice.type === "success"
                 ? <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
                 : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />}
@@ -789,8 +789,8 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
           ) : quote.items.length === 0 ? (
             <div id="quote-start-actions" className="grid grid-cols-1 sm:grid-cols-2 gap-3" aria-label="Start your quote">
               <button onClick={openUpload} disabled={uploading}
-                className="group min-h-32 border border-black/12 bg-white p-5 text-left hover:border-[#5A7A6A] hover:bg-[#F7F8F6] disabled:opacity-60 disabled:cursor-wait transition-colors cursor-pointer">
-                <span className="w-9 h-9 mb-4 flex items-center justify-center bg-[#5A7A6A]/10 text-[#5A7A6A] group-hover:bg-[#5A7A6A] group-hover:text-white transition-colors">
+                className="group min-h-32 card p-5 text-left hover:border-[#5A7A6A] hover:bg-[#F7F8F6] disabled:opacity-60 disabled:cursor-wait transition-colors cursor-pointer">
+                <span className="w-9 h-9 mb-4 flex items-center justify-center bg-sage-wash text-[#5A7A6A] group-hover:bg-[#5A7A6A] group-hover:text-white transition-colors">
                   {uploading
                     ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" aria-hidden="true" />
                     : <UploadCloud className="w-5 h-5" aria-hidden="true" />}
@@ -799,8 +799,8 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
                 <span className="block text-sm leading-relaxed text-[#5c5a56]">Import products from plans or a window and door schedule.</span>
               </button>
               <button onClick={() => setAdding(true)}
-                className="group min-h-32 border border-black/12 bg-white p-5 text-left hover:border-[#5A7A6A] hover:bg-[#F7F8F6] transition-colors cursor-pointer">
-                <span className="w-9 h-9 mb-4 flex items-center justify-center bg-[#5A7A6A]/10 text-[#5A7A6A] group-hover:bg-[#5A7A6A] group-hover:text-white transition-colors">
+                className="group min-h-32 card p-5 text-left hover:border-[#5A7A6A] hover:bg-[#F7F8F6] transition-colors cursor-pointer">
+                <span className="w-9 h-9 mb-4 flex items-center justify-center bg-sage-wash text-[#5A7A6A] group-hover:bg-[#5A7A6A] group-hover:text-white transition-colors">
                   <Plus className="w-5 h-5" aria-hidden="true" />
                 </span>
                 <span className="block text-base font-semibold text-[#131311] mb-1">Add a product manually</span>
@@ -837,7 +837,7 @@ export function QuotePage({ setPage, user, quote, onSubmit }: { setPage: (p: Pag
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" role="dialog" aria-modal="true" aria-label="Clear everything"
           onClick={cancelClear} onKeyDown={e => { if (e.key === "Escape") cancelClear(); }}>
           <div ref={clearDialogRef} onClick={e => e.stopPropagation()}
-            className="w-full max-w-sm bg-white border border-black/10 p-5" style={{ boxShadow: "0 20px 50px rgba(19,19,17,0.28)" }}>
+            className="w-full max-w-sm card p-5" style={{ boxShadow: "0 20px 50px rgba(19,19,17,0.28)" }}>
             <h3 className="text-base font-semibold text-[#131311] mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Clear everything?</h3>
             <p className="text-sm text-[#5c5a56] leading-relaxed mb-4">This removes all {quote.items.length} item{quote.items.length !== 1 ? "s" : ""} and the uploaded schedule and can't be undone.</p>
             <div className="flex justify-end gap-2">

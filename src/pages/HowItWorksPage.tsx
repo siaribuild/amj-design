@@ -124,7 +124,7 @@ function ProcessCard({ c, brand, last }: { c: Card; brand: string; last: boolean
   return (
     <div className={`relative border border-black/10 p-5 md:p-6 flex flex-col
       sm:[&:nth-child(n+2)]:-mt-px lg:[&:nth-child(n+2)]:mt-0 lg:[&:nth-child(n+2)]:-ml-px
-      ${yours ? "bg-white" : "bg-[#FAFAF9]"}`}>
+      ${yours ? "bg-paper" : "bg-bone"}`}>
       <div className="flex items-center justify-between mb-4">
         <span className={`flex items-center justify-center border
           ${yours ? "w-11 h-11 border-[#5A7A6A]/40 text-[#5A7A6A] text-[15px]" : "w-8 h-8 border-black/12 text-[#8a8782] text-xs"}`} style={MONO}>
@@ -143,8 +143,8 @@ function ProcessCard({ c, brand, last }: { c: Card; brand: string; last: boolean
           card it sits on, or the join shows a notch. */}
       {!last && (
         <>
-          <ArrowRight className={`hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5A7A6A]/60 z-10 ${yours ? "bg-white" : "bg-[#FAFAF9]"}`} aria-hidden="true" />
-          <ArrowRight className={`lg:hidden absolute left-1/2 -translate-x-1/2 -bottom-2.5 w-4 h-4 rotate-90 text-[#5A7A6A]/60 z-10 ${yours ? "bg-white" : "bg-[#FAFAF9]"}`} aria-hidden="true" />
+          <ArrowRight className={`hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5A7A6A]/60 z-10 ${yours ? "bg-paper" : "bg-bone"}`} aria-hidden="true" />
+          <ArrowRight className={`lg:hidden absolute left-1/2 -translate-x-1/2 -bottom-2.5 w-4 h-4 rotate-90 text-[#5A7A6A]/60 z-10 ${yours ? "bg-paper" : "bg-bone"}`} aria-hidden="true" />
         </>
       )}
     </div>
@@ -153,7 +153,7 @@ function ProcessCard({ c, brand, last }: { c: Card; brand: string; last: boolean
 
 function PhaseSection({ p, brand }: { p: Phase; brand: string }) {
   return (
-    <section id={p.id} aria-labelledby={`${p.id}-h`} className="relative bg-[#FAFAF9] py-12 md:py-20 overflow-hidden">
+    <section id={p.id} aria-labelledby={`${p.id}-h`} className="relative ground-bone py-12 md:py-20 overflow-hidden">
       <GhostMark size={300} opacity={0.04} pos="right-0 bottom-0" />
       <div className="max-w-6xl mx-auto px-6 relative">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-9">
@@ -180,7 +180,7 @@ function PhaseSection({ p, brand }: { p: Phase; brand: string }) {
         </div>
 
         {p.note && (
-          <div className="mt-4 border border-black/10 bg-white px-5 py-4 flex items-start gap-3">
+          <div className="mt-4 card px-5 py-4 flex items-start gap-3">
             <p.note.icon className="w-4 h-4 flex-shrink-0 mt-0.5 text-[#5c5a56]" strokeWidth={1.8} aria-hidden="true" />
             <span className="text-[13px] text-[#5c5a56] leading-relaxed">{p.note.text}</span>
           </div>
@@ -200,7 +200,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
   const qaShot = imageUrl(products.find((pr) => pr.heroImage)?.heroImage, { w: 900, h: 700 }) || "";
 
   return (
-    <div className="bg-[#FAFAF9] min-h-screen">
+    <div className="ground-bone min-h-screen">
       {/* ── Hero (facts live inside it, not butted underneath) ───────────── */}
       <section className="relative bg-[#0c0c0a] overflow-hidden">
         <img src={imageUrl(getPage("how-it-works")?.heroImage, { w: 1600, h: 900 })} alt="Dark aluminium window frames in a contemporary residential interior"
@@ -301,7 +301,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
           {/* A real photograph of a real unit — this section is literally about
               photographing what you ordered, so product imagery is the subject
               here, not decoration. */}
-          <div className="grid grid-cols-1 md:grid-cols-[1.1fr_1fr] border border-black/10 bg-white">
+          <div className="grid grid-cols-1 md:grid-cols-[1.1fr_1fr] card">
             <div className="relative min-h-[220px] md:min-h-[300px] bg-[#0c0c0a] overflow-hidden">
               {qaShot && <img src={qaShot} alt="A finished aluminium window unit, photographed before despatch" className="absolute inset-0 w-full h-full object-cover" />}
               <span className="absolute left-4 bottom-4 bg-[#131311]/85 text-white text-[11px] uppercase tracking-[0.14em] px-2.5 py-1.5" style={MONO}>

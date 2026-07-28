@@ -36,7 +36,7 @@ export function BackLink({ onClick }: { onClick: () => void }) {
 
 export function Blk({ eyebrow, title, right, children, id }: { eyebrow: string; title: string; right?: ReactNode; children: ReactNode; id?: string }) {
   return (
-    <section id={id} className="bg-white border border-black/10">
+    <section id={id} className="card">
       <div className="flex items-center gap-2.5 px-5 py-[15px] border-b border-black/10 flex-wrap">
         <span className="text-[11.5px] tracking-[0.14em] uppercase text-[#5A7A6A]" style={{ fontFamily: "'DM Mono', monospace" }}>{eyebrow}</span>
         <h2 className="text-[15px] font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</h2>
@@ -103,7 +103,7 @@ const Safe = ({ children }: { children: ReactNode }) => (
 // Manual bank-transfer payment instructions (payment is invoice + transfer, not card).
 function PayPanel({ kind, amount, orderNo }: { kind: "deposit" | "balance"; amount: number | undefined; orderNo: string }) {
   return (
-    <div className="bg-white border border-black/10 p-4 mt-3.5">
+    <div className="card p-4 mt-3.5">
       <p className="flex items-center gap-2 text-sm font-medium text-[#131311] mb-2"><Landmark className="w-4 h-4 text-[#5A7A6A]" />Pay the {kind} by bank transfer</p>
       <div className="text-[13px] text-[#5c5a56] space-y-1" style={{ fontFamily: "'DM Mono', monospace" }}>
         <p>Amount <span className="text-[#131311] font-medium">{money(amount)}</span></p>
@@ -291,7 +291,7 @@ export function SummaryBand({ order, children }: { order?: ApiOrder; children?: 
   return (
     <div className="flex flex-wrap gap-4 mt-0.5" aria-label="Summary">
       {order && (
-        <div className="flex-1 basis-[250px] bg-white border border-black/10 p-[18px]">
+        <div className="flex-1 basis-[250px] card p-[18px]">
           <h3 className="text-[13px] tracking-[0.1em] uppercase text-[#5c5a56] font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>Payment · 50 / 50</h3>
           <div className="flex h-2.5 border border-black/10 mb-3.5" role="img" aria-label={dep?.status === "paid" ? (bal?.status === "paid" ? "Fully paid" : "Half paid") : "Unpaid"}>
             <span className="block" style={{ width: "50%", background: dep?.status === "paid" ? TONE.pos.text : TONE.attn.bg }} />
@@ -326,7 +326,7 @@ function PayRow({ label, amount, state }: {
 
 export function ContactCard({ setPage }: { setPage: (p: Page) => void }) {
   return (
-    <div className="flex-1 basis-[250px] bg-white border border-black/10 p-[18px]">
+    <div className="flex-1 basis-[250px] card p-[18px]">
       <h3 className="text-[13px] tracking-[0.1em] uppercase text-[#5c5a56] font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>Your contact</h3>
       <div className="flex items-center gap-3">
         <span className="w-10 h-10 bg-[#5A7A6A]/[0.07] border border-black/10 grid place-items-center text-[#5A7A6A] text-sm flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>OF</span>
@@ -377,7 +377,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
   };
 
   if (missing) return (
-    <div className="bg-white border border-black/10 p-8">
+    <div className="card p-8">
       <p className="text-[15px] text-[#131311] mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>We couldn't open that order.</p>
       <p className="text-sm text-[#5c5a56] leading-relaxed max-w-[52ch]">
         Your tracking session may have ended — it lasts until you close your browser. Nothing has been lost:
@@ -388,7 +388,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
       </div>
     </div>
   );
-  if (!order) return <div className="bg-white border border-black/10 p-8 text-sm text-[#5c5a56]">Loading your order…</div>;
+  if (!order) return <div className="card p-8 text-sm text-[#5c5a56]">Loading your order…</div>;
 
   const m = orderMeta(order);
   const lines = (order.lines ?? []).map((l) => ({ ...parseLine(l), room: rooms[l.external_ref ?? ""] ?? null }));
@@ -467,7 +467,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
           </ActionGate>
         )}
         {!["deposit_invoiced", "drawings_shared", "balance_invoiced", "balance_paid"].includes(order.stage) && (
-          <section className="p-5 border border-black/10 bg-white flex items-center gap-3" style={{ borderLeft: `3px solid ${TONE.pos.text}` }}>
+          <section className="p-5 card flex items-center gap-3" style={{ borderLeft: `3px solid ${TONE.pos.text}` }}>
             <span className="w-[34px] h-[34px] grid place-items-center border flex-shrink-0" style={{ color: TONE.pos.text, borderColor: TONE.pos.bd, background: TONE.pos.bg }}><Check className="w-[18px] h-[18px]" /></span>
             <div>
               <h2 className="text-[15px] font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>On track — nothing needed from you</h2>
@@ -523,7 +523,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId]);
 
   if (missing) return (
-    <div className="bg-white border border-black/10 p-8">
+    <div className="card p-8">
       <p className="text-[15px] text-[#131311] mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>We couldn't open that quote.</p>
       <p className="text-sm text-[#5c5a56] leading-relaxed max-w-[52ch]">
         Your tracking session may have ended — it lasts until you close your browser. Nothing has been lost:
@@ -534,7 +534,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
       </div>
     </div>
   );
-  if (!data?.project) return <div className="bg-white border border-black/10 p-8 text-sm text-[#5c5a56]">Loading your quote…</div>;
+  if (!data?.project) return <div className="card p-8 text-sm text-[#5c5a56]">Loading your quote…</div>;
 
   const p = data.project;
   const st = p.status;
@@ -578,7 +578,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
       <div className="flex flex-col gap-[26px]">
         {needsInfo ? (
           <ActionGate pill="Action needed from you" step="Step 2 of 9" title="We need a bit more information">
-            <div className="bg-white border border-black/10 divide-y divide-black/[0.07] mt-2 mb-3">
+            <div className="card divide-y divide-black/[0.07] mt-2 mb-3">
               {thread.map((cm, i) => (
                 <div key={i} className={`px-4 py-2.5 ${cm.author_type === "internal" ? "" : "bg-[#5A7A6A]/[0.05]"}`}>
                   <p className="text-[10.5px] uppercase tracking-wide text-[#8b8880] mb-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>{cm.author_type === "internal" ? brandSubject() : "You"}</p>
@@ -588,12 +588,12 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
             </div>
             <div className="flex gap-2">
               <input value={reply} onChange={(e) => setReply(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendReply()}
-                placeholder="Type your answer…" className="flex-1 border border-black/15 bg-white px-3 py-2 text-sm outline-none focus:border-[#5A7A6A]" />
+                placeholder="Type your answer…" className="flex-1 card px-3 py-2 text-sm outline-none focus:border-[#5A7A6A]" />
               <Btn variant="sage" size="md" onClick={sendReply} disabled={busy || !reply.trim()}><Send className="w-4 h-4" />Send</Btn>
             </div>
           </ActionGate>
         ) : (
-          <section className="p-5 border border-black/10 bg-white flex items-center gap-3" style={{ borderLeft: `3px solid ${TONE.work.text}` }}>
+          <section className="p-5 card flex items-center gap-3" style={{ borderLeft: `3px solid ${TONE.work.text}` }}>
             <span className="w-[34px] h-[34px] grid place-items-center border flex-shrink-0" style={{ color: TONE.work.text, borderColor: TONE.work.bd, background: TONE.work.bg }}><Loader2 className="w-[18px] h-[18px]" /></span>
             <div>
               <h2 className="text-[15px] font-semibold text-[#131311]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>With our team — nothing needed from you</h2>

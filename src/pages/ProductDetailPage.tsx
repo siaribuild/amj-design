@@ -222,7 +222,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
   );
 
   return (
-    <div className="bg-white min-h-screen">
+    <div className="ground-bone min-h-screen">
       {/* ─── PRODUCT HERO — one image, header overlays it ────────────────────── */}
       <section className="relative min-h-[440px] md:min-h-[520px] flex items-end bg-[#0c0c0a] overflow-hidden">
         <img src={imageUrl(product.heroImage, { w: 1600, h: 900 })}
@@ -353,7 +353,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {related.map(r => (
                 <button key={r.id} onClick={() => onOpenProduct(r.slug)}
-                  className="group relative bg-white border border-black/8 hover:border-[#5A7A6A] hover:shadow-sm transition-all text-left overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
+                  className="group relative card hover:border-[#5A7A6A]  transition-all text-left overflow-hidden flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] focus-visible:ring-offset-2">
                   <div className="relative bg-[#0c0c0a] aspect-[4/3] overflow-hidden">
                     <img src={imageUrl(r.heroImage, { w: 640, h: 480 })} alt={`${r.name} aluminium ${isWindow ? "window" : "door"} system`}
                       className="w-full h-full object-cover opacity-70 group-hover:opacity-80 group-hover:scale-105 transition-all duration-500" />

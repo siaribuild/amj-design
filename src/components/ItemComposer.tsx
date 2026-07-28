@@ -469,7 +469,7 @@ export function ItemForm({
   const requestCancel = () => { if (dirty && !confirmClose) { setConfirmClose(true); return; } onCancel?.(); };
 
   return (
-    <div className="border border-black/10 bg-white">
+    <div className="card">
       {/* Persistent header — the dismiss affordance is here from the first render,
           so an empty form (no product yet) can still be backed out of. */}
       {onCancel && (
@@ -737,7 +737,7 @@ export function ItemSummaryCard({
             ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">Needs </span>attention</span>
             : technicalOnly
               ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-sky-300 bg-sky-50 text-sky-800" title={item.review?.fit ? `Indicative price — no standard product is made at this size; ${brandSubject()} will design a composite/custom unit and confirm the price at review. You can still submit.` : `${brandSubject()} will confirm this at review — you can still submit.`}><Info className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">In </span>review</span>
-              : <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-[#5A7A6A]/10 text-[#355344]"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
+              : <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-[#5A7A6A]/30 bg-sage-wash text-[#355344]"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
           {/* Basis chip (UX spec §5): orthogonal to status — report-backed vs
               assumption-based. Hidden on small screens; the tooltip carries the
               compliance sentence once, and doubles as the upload upsell. */}
@@ -918,7 +918,7 @@ export function CompositePanel({ item }: { item: QItem }) {
         on site. One opening, one price — {brand.toLowerCase() === "we" ? "we confirm" : `${brand} confirms`} the join at technical review.
       </p>
 
-      <div className="border border-black/10 bg-white">
+      <div className="card">
         <div className="flex items-center justify-between px-3.5 py-2 border-b border-black/8">
           <span className="text-[11px] text-[#8a8782]" style={{ fontFamily: "'DM Mono', monospace" }}>Your opening</span>
           <span className="text-[12px] text-[#131311]" style={{ fontFamily: "'DM Mono', monospace" }}>

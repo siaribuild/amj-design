@@ -17,7 +17,13 @@ export type Page =
 // ─── Brand constants ──────────────────────────────────────────────────────────
 export const SAGE = "#5A7A6A";
 export const DARK = "#131311";
-export const WARM = "#FAFAF9";
+// The two light surfaces, for the few places that need an inline style rather
+// than a class (GRID_BG, the account TONE palette). WARM = #FAFAF9 was here and
+// was imported by App.tsx without ever being used — it was 1.04:1 against white,
+// which is why it could be dead without anyone noticing the page looked flat.
+export const PAPER = "#FFFFFF";
+export const BONE = "#F0EDE8";
+export const LINE = "rgba(19,19,17,0.14)";
 
 // 4-pane window mark — logo and repeated motif
 export function WindowMark({ size = 20, color = SAGE }: { size?: number; color?: string }) {
@@ -133,8 +139,10 @@ export function CtaBanner({ title, sub, onQuote }: {
    *  handler is passed in rather than the component reaching for a router. */
   onQuote: () => void;
 }) {
+  // Paper on purpose. Between two bone sections this is the page's breath, and
+  // the sage panel it holds is the one full-strength fill per page.
   return (
-    <section className="bg-white border-t border-black/8 py-14">
+    <section className="ground-paper border-t border-black/8 py-14">
       <div className="max-w-6xl mx-auto px-6">
         <div className="bg-[#5A7A6A] px-6 sm:px-10 py-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="max-w-[54ch]">

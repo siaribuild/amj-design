@@ -170,7 +170,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
   const heroImg = imageUrl(getPage("contact")?.heroImage, { w: 1920, h: 460 });
 
   return (
-    <div className="bg-[#FAFAF9] min-h-screen">
+    <div className="ground-bone min-h-screen">
       {/* ─── HERO — orientation only ───────────────────────────────────────────── */}
       <section className="relative bg-[#0c0c0a] overflow-hidden">
         {heroImg && <img src={heroImg} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover opacity-25" />}
@@ -223,7 +223,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
       </section>
 
       {/* ─── DO IT HERE — tablist ──────────────────────────────────────────────── */}
-      <section className="bg-[#FAFAF9] border-t border-black/8" aria-labelledby="zone-h">
+      <section className="ground-bone border-t border-black/8" aria-labelledby="zone-h">
         <div ref={zoneRef} className="max-w-6xl mx-auto px-6 pt-10 pb-5.5" style={{ scrollMarginTop: "16px" }}>
           <div className="mb-[18px]">
             <div className="flex items-center gap-2 mb-2">
@@ -269,7 +269,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                     <span className="text-[11.5px] text-[#8f8d88] max-w-[30ch]">Used only to reply — see our <button onClick={() => go("privacy")} className="text-[#5A7A6A] underline">Privacy Policy</button>. We don't add you to a list.</span>
                   </div>
                 </div>
-                <aside className="border border-black/10 bg-[#FAFAF9] p-[18px]">
+                <aside className="border border-black/10 ground-bone p-[18px]">
                   <h4 className="text-xs uppercase tracking-[0.13em] text-[#5A7A6A] mb-3" style={{ fontFamily: "'DM Mono', monospace" }}>Helps us answer fast</h4>
                   <ul className="space-y-2.5">
                     {["Rough width × height for each opening", "Product type — sliding, awning, fixed, door", "Your quote reference, if you have one"].map(t => (
@@ -292,7 +292,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                       const sel = locationId === l.id;
                       return (
                         <button key={l.id} type="button" onClick={() => selectLocation(l.id)} aria-pressed={sel}
-                          className={`inline-flex items-center gap-1.5 px-3 py-2 text-[13px] border transition-colors cursor-pointer ${sel ? "border-[#5A7A6A] bg-[#5A7A6A]/10 text-[#355344] font-medium" : "border-black/12 bg-white text-[#5c5a56] hover:border-[#5A7A6A]/50"}`}>
+                          className={`inline-flex items-center gap-1.5 px-3 py-2 text-[13px] border transition-colors cursor-pointer ${sel ? "border-[#5A7A6A] bg-sage-wash text-[#355344] font-medium" : "border-black/12 bg-white text-[#5c5a56] hover:border-[#5A7A6A]/50"}`}>
                           {sel && <Check className="w-3 h-3 text-[#5A7A6A]" />}{l.suburb} <span className={`text-[10px] ${sel ? "text-[#5A7A6A]" : "text-[#a8a6a1]"}`} style={{ fontFamily: "'DM Mono', monospace" }}>{l.stateCode}</span>
                         </button>
                       );
@@ -341,7 +341,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
 
         {/* Facts strip */}
         <div className="max-w-6xl mx-auto px-6 pb-11">
-          <div className="border border-black/10 bg-white grid md:grid-cols-3">
+          <div className="card grid md:grid-cols-3">
             <Fact label="Reach us">{brandContact?.phone && <><a href={`tel:${brandContact.phone.replace(/[^0-9+]/g, "")}`} className="border-b border-black/10 hover:text-[#131311] hover:border-[#5A7A6A]">{brandContact.phone}</a>{" · "}</>}<ObfuscatedEmail address={brandContact?.email} className="border-b border-black/10 hover:text-[#131311] hover:border-[#5A7A6A]" /></Fact>
             <Fact label="Hours"><span className="text-[#131311] font-semibold">Mon–Fri 8am–5pm</span> · Sat by appointment · Sun closed</Fact>
             <Fact label="Good to know"><b className="text-[#131311] font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Supply only.</b> Your builder or installer fits the frames — we make and deliver them.</Fact>
@@ -367,7 +367,7 @@ const selectCls = "appearance-none pr-8 bg-[url('data:image/svg+xml,%3Csvg%20xml
 
 function RouterCard({ icon, title, body, cta, tag, lead, down, onClick }: { icon: React.ReactNode; title: string; body: string; cta: string; tag?: string; lead?: boolean; down?: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`group text-left flex flex-col border p-[17px] transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] ${lead ? "border-[#5A7A6A] bg-[#5A7A6A]/[0.07]" : "border-black/10 bg-white hover:border-[#5A7A6A] hover:bg-[#fcfdfc] hover:shadow-[0_1px_0_#5A7A6A]"}`}>
+    <button onClick={onClick} className={`group text-left flex flex-col border p-[17px] transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5A7A6A] ${lead ? "border-[#5A7A6A] bg-[#5A7A6A]/[0.07]" : "border-black/10 bg-white card-link"}`}>
       {tag && <span className="self-start text-[9.5px] tracking-[0.14em] uppercase bg-[#5A7A6A] text-white px-2 py-[3px] mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>{tag}</span>}
       <div className="flex items-center gap-2.5 mb-2.5">
         <span className={`w-9 h-9 grid place-items-center border transition-colors ${lead ? "border-[#5A7A6A] text-[#5A7A6A]" : "border-[#5A7A6A]/40 text-[#5A7A6A] group-hover:bg-[#5A7A6A] group-hover:border-[#5A7A6A] group-hover:text-white"}`}>{icon}</span>
@@ -381,7 +381,7 @@ function RouterCard({ icon, title, body, cta, tag, lead, down, onClick }: { icon
 
 function QuickLink({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} className="inline-flex items-center gap-[7px] text-[13.5px] text-[#131311] border border-black/10 bg-white px-3.5 py-2 hover:border-[#5A7A6A] hover:text-[#5A7A6A] transition-colors cursor-pointer">
+    <button onClick={onClick} className="inline-flex items-center gap-[7px] text-[13.5px] text-[#131311] card px-3.5 py-2 hover:border-[#5A7A6A] hover:text-[#5A7A6A] transition-colors cursor-pointer">
       <span className="text-[#5A7A6A]">{icon}</span>{label}
     </button>
   );
@@ -449,7 +449,7 @@ function SuccessCard({ intent, reference, name, onQuote, onAgain }: { intent: In
   const appt = intent === "appointment_request";
   return (
     <div className="max-w-xl mx-auto text-center py-4" role="status" aria-live="polite">
-      <div className="w-12 h-12 border border-[#5A7A6A]/30 bg-[#5A7A6A]/8 flex items-center justify-center mx-auto mb-4"><CheckCircle className="w-6 h-6" style={{ color: SAGE }} /></div>
+      <div className="w-12 h-12 border border-[#5A7A6A]/30 bg-sage-wash flex items-center justify-center mx-auto mb-4"><CheckCircle className="w-6 h-6" style={{ color: SAGE }} /></div>
       <h3 className="text-lg font-semibold text-[#131311] mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{appt ? "Appointment request received" : "Message received"}</h3>
       {reference && <p className="inline-block text-xs font-mono bg-[#F2F0EC] border border-black/10 px-2.5 py-1 mb-4">{reference}</p>}
       <p className="text-sm text-[#5c5a56] max-w-md mx-auto mb-6 leading-relaxed">

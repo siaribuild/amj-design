@@ -1,6 +1,42 @@
 @custom-variant dark (&:is(.dark *));
 
+/* ─── Surfaces ────────────────────────────────────────────────────────────────
+ * The site has exactly TWO light surfaces, and a card's fill is derived from
+ * its section's ground rather than chosen. An author never picks a card colour,
+ * so "white card on a white ground" stops being a thing that can be written.
+ *
+ * WHY THIS EXISTS. The old ground was #FAFAF9 — 1.04:1 against white, a ΔL* of
+ * 2.0. That is white with a rounding error, so the site had one light surface
+ * pretending to be two. The hairline could not cover for it either: black/8
+ * composites to #ebebeb at 1.19:1, and reaching the 3:1 a real boundary needs
+ * would take roughly black/45 (#8C8C8C) — a 1px mid-grey box around ~95
+ * elements. Neither device was carrying anything, which is why flat white
+ * stretches of the site read as blank.
+ *
+ * The tell that this was already hurting: four separate hand-rolled shadows had
+ * appeared (ContactPage 370/393, AccountDashboard 182, ProductsPage 99) — people
+ * inventing a fake border because the real one did not read.
+ *
+ * --bone is not a new colour. It is --secondary, already on the theme's warm
+ * neutral ramp (#F0EDE8 → #E8E5DF → #C8C5BE), so nothing here is invented.
+ */
 :root {
+  --paper: #FFFFFF;
+  --bone: #F0EDE8;          /* ΔL* 6.2 from paper — ~3× the old step */
+  /* One structural hairline. Still under 3:1 and that is fine: it draws the
+   * contour, the fill step draws the boundary. Asking a hairline to do a
+   * ground's job is the mistake this replaces. */
+  --line: rgba(19, 19, 17, 0.14);
+  --line-strong: rgba(19, 19, 17, 0.28);   /* inputs and controls only */
+  /* Selection. Opaque on purpose: every bg-[#5A7A6A]/[0.06] on the site is alpha
+   * over an ASSUMED white ground. Composited over bone the same alpha yields
+   * #E7E6E1 — the hue drops out and selection reads as dirty grey. An opaque
+   * token reads identically on both grounds. */
+  --sage-wash: #DEE4E1;
+  /* The accent, under the name the codebase actually uses for it. Same value as
+   * --accent; still rationed to one FILL per page (the closing CtaBanner). */
+  --sage: #5A7A6A;
+
   --font-size: 16px;
   --background: #FAFAF8;
   --foreground: #131311;
@@ -79,6 +115,12 @@
 }
 
 @theme inline {
+  /* Emitted as bg-paper / bg-bone / border-line / bg-sage-wash. */
+  --color-paper: var(--paper);
+  --color-bone: var(--bone);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-sage-wash: var(--sage-wash);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -177,5 +219,43 @@
     font-size: var(--text-base);
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
+  }
+}
+
+/* ─── Ground and card ─────────────────────────────────────────────────────────
+ * A section declares its ground; a card takes the OTHER light surface. The card
+ * fill is therefore never equal to the ground it sits on, by construction —
+ * there is no combination of these classes that reproduces the bug.
+ *
+ * The default (no ground class) assumes paper, because paper is what an
+ * unstyled page is.
+ *
+ * NESTING: never same on same. A panel inside a bone card would be bone again,
+ * which means do not nest that deep — go three levels and the answer is ink or
+ * a rule, not a fourth tint.
+ */
+@layer components {
+  .ground-paper { background-color: var(--paper); }
+  .ground-bone  { background-color: var(--bone); }
+
+  .card {
+    border: 1px solid var(--line);
+    background-color: var(--bone);
+  }
+  .ground-paper .card { background-color: var(--bone); }
+  .ground-bone  .card { background-color: var(--paper); }
+
+  /* The honest hover: a sage contour. Flat, on-language, and it replaces five
+   * separate shadow improvisations that existed only because the resting border
+   * was invisible. Note it fixes nothing about the RESTING page — that is the
+   * ground's job — and it does not exist on a phone at all. */
+  .card-link { transition: border-color 150ms ease; }
+  .card-link:hover,
+  .card-link:focus-visible { border-color: var(--sage); }
+
+  /* Selection, distinct from both grounds. */
+  .card-selected {
+    background-color: var(--sage-wash);
+    border-color: var(--sage);
   }
 }
