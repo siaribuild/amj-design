@@ -355,15 +355,22 @@
    * separate shadow improvisations that existed only because the resting border
    * was invisible. Note it fixes nothing about the RESTING page — that is the
    * ground's job — and it does not exist on a phone at all. */
-  .card-link { transition: border-color 150ms ease; }
+  /* The WHOLE card responds, not just something inside it. This used to change
+   * only the border, so on the contact router cards the single thing that
+   * visibly reacted was the icon flipping to a sage fill — which is not how any
+   * other clickable surface on the site behaves.
+   * The faint sage tint is the HOVER state, which is what the green was always
+   * for; using it as a resting fill made a card look chosen when it was not. */
+  .card-link { transition: border-color 150ms ease, background-color 150ms ease; }
   .card-link:hover,
-  .card-link:focus-visible { border-color: var(--sage); }
-
-  /* Selection, distinct from both grounds. */
-  .card-selected {
-    background-color: var(--sage-wash);
+  .card-link:focus-visible {
     border-color: var(--sage);
+    background-color: var(--sage-wash);
   }
+
+  /* .card-selected is gone: it had no call sites after tabs took over the
+   * selected state, and it used the fill that now means hover. Selection is
+   * expressed by .tab, keyed off aria-selected / aria-pressed. */
 
   /* A panel's header band.
    *

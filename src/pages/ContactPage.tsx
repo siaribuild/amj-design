@@ -394,7 +394,7 @@ const selectCls = "appearance-none pr-8 bg-[url('data:image/svg+xml,%3Csvg%20xml
 
 function RouterCard({ icon, title, body, cta, tag, lead, down, onClick }: { icon: React.ReactNode; title: string; body: string; cta: string; tag?: string; lead?: boolean; down?: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`group text-left flex flex-col border card-link p-[17px] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage ${lead ? "border-sage bg-sage-wash" : "border-line bg-paper"}`}>
+    <button onClick={onClick} className={`group text-left flex flex-col border card-link p-[17px] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage ${lead ? "border-sage bg-paper" : "border-line bg-paper"}`}>
       {tag && <span className="self-start text-[9.5px] tracking-[0.14em] uppercase bg-sage text-white px-2 py-[3px] mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>{tag}</span>}
       <div className="flex items-center gap-2.5 mb-2.5">
         <span className={`w-9 h-9 grid place-items-center border transition-colors ${lead ? "border-sage text-sage" : "border-sage/40 text-sage group-hover:bg-sage group-hover:border-sage group-hover:text-white"}`}>{icon}</span>
