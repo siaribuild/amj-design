@@ -1143,8 +1143,19 @@ function ResourcesPage({ setPage }: { setPage: (p: Page) => void }) {
   ];
   const cats = ["All","Windows","Doors","Glass","Compliance","Delivery","Builder","Maintenance"];
   const filtered = filter === "All" ? resources : resources.filter(r => r.cat === filter);
+  // ground-paper: the page ground is WHITE (owner call), and it DECLARES that
+  // rather than only painting it — so cards inside derive to bone and get their
+  // definition from the fill instead of from the page.
+  //
+  // It was bg-bone, which paints a ground without declaring one, so every card
+  // here inherited --card-fill from the app shell and came out white on bone.
+  // Any section added later that wants bone opts in with ground-bone; the page
+  // ground stays paper.
+  //
+  // This page is slated for a redesign — this is the ground fix only,
+  // deliberately not a re-layout.
   return (
-    <div className="bg-bone min-h-screen">
+    <div className="ground-paper min-h-screen">
       <div className="relative overflow-hidden">
         <GhostMark size={300} opacity={0.07} pos="right-0 top-0" />
         <div className="max-w-5xl mx-auto px-6 pt-28 pb-8 relative">

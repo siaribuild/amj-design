@@ -476,7 +476,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   // ─── Submitted ──────────────────────────────────────────────────────────────
   if (submitted) {
     return (
-      <div className="relative min-h-screen ground-bone pt-24 pb-24 overflow-hidden">
+      <div className="relative min-h-screen ground-paper pt-24 pb-24 overflow-hidden">
         <GhostMark size={300} opacity={0.05} pos="right-0 bottom-0" />
         <div className="max-w-md w-full mx-auto px-6 text-center relative">
           <div className="w-14 h-14 border border-sage/30 bg-sage-wash flex items-center justify-center mx-auto mb-6"><WindowMark size={24} color={SAGE} /></div>
@@ -495,7 +495,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   // ─── Review + submit ──────────────────────────────────────────────────────────
   if (view === "review") {
     return (
-      <div className="min-h-screen ground-bone pt-16">
+      <div className="min-h-screen ground-paper pt-16">
         <div className="max-w-2xl mx-auto px-6 py-10">
           <button onClick={() => setView("build")} className="text-body hover:text-ink text-sm mb-5 flex items-center gap-1 cursor-pointer"><ChevronLeft className="w-4 h-4" />Back to MyProject</button>
           <SLabel>Review quote</SLabel>
@@ -538,7 +538,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
 
   // ─── Build ────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-[100svh] ground-bone flex flex-col">
+    <div className="min-h-[100svh] ground-paper flex flex-col">
       {/* ─── Dark functional hero — header overlays it; upload panel is a live
              part of the hero, styled like the panels on the home hero ───────── */}
       <section className="relative bg-night overflow-hidden">
