@@ -574,7 +574,8 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
   // set here is how the two pages started disagreeing last time.
   const facts = ["$0 to get a quote", "~1 minute with a schedule", "50% first payment", "Supply only"];
 
-  const suburbs = getActiveLocations().map((l) => `${l.suburb} ${l.stateCode}`);
+  const showrooms = getActiveLocations();
+  const suburbs = showrooms.map((l) => `${l.suburb} ${l.stateCode}`);
 
   // The objections that stop a click, taken from the owner's design mock.
   // Payment wording is the 50/50 schedule, not the mock's vaguer "a deposit".
@@ -1025,14 +1026,31 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           </div>
         </div>
       </section>
+      {/* ─── IN PERSON ───────────────────────────────────────────────────────
+          Replaces "Nothing here is a claim you have to take on trust", which had
+          three unlike things — a place, a standard, a payment term — forced into
+          three equal columns, with a 13px mono caption in two of the slots and a
+          34px numeral in the third.
 
-      {/* ─── WHAT YOU CAN CHECK ──────────────────────────────────────────────
-          Credibility built only from things that are true today and that a
-          visitor can independently verify. This replaces the mock's social-proof
-          band, whose content was invented and labelled as sample data — marking a
-          fake as fake does not make it shippable, and "500+ projects quoted" is an
-          unverified claim about a business, not a placeholder.
-          The showroom column renders only if the registry has entries. */}
+          The presentation was a symptom. TWO of the three columns restated their
+          own neighbours:
+           • Money repeated PROCESS immediately above (which already carries
+             0/50/100% and a link to the same page) AND "When do I pay?" below —
+             under a VERBATIM identical label, "The full payment schedule",
+             pointing at the same page ~500px apart.
+           • Showrooms repeated "Where do you deliver?" below, from the same
+             registry.
+          Only Standards was not an echo, and it was the one making a claim the
+          site contradicts: it said compliance documents are "published, not
+          promised", while /resources opens by saying its documents are sample
+          placeholders.
+
+          So the section is now about the one thing the rest of the page cannot
+          be: everything above it is a screen — a demo, a parser, a price in a
+          minute. This is where the page is physical.
+
+          The row is GENERATED from the registry, one cell per showroom with
+          identical fields, so "three subjects in one slot" cannot recur. */}
       <section className="relative bg-night py-14 md:py-[68px] overflow-hidden">
         <img src={IMG.doors} alt="" aria-hidden="true" loading="lazy" decoding="async"
           className="absolute inset-0 w-full h-full object-cover opacity-25" />
@@ -1040,48 +1058,66 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           style={{ background: "linear-gradient(to right, rgba(12,12,10,0.94) 0%, rgba(12,12,10,0.78) 45%, rgba(12,12,10,0.6) 100%)" }} />
         <GhostMark size={280} opacity={0.025} color="#fff" pos="right-0 bottom-0" />
         <div className="max-w-6xl mx-auto px-6 relative">
-          <SLabel light>What you can check</SLabel>
-          <h2 className="font-semibold text-white leading-tight mb-8 max-w-[24ch]"
-            style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
-            Nothing here is a claim you have to take on trust.
-          </h2>
+          <div className="split-row is-top">
+            <div className="split-prose">
+              <SLabel light>{showrooms.length ? "In person" : "Standards"}</SLabel>
+              <h2 className="font-semibold text-white leading-tight mb-4 max-w-[24ch]"
+                style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
+                {showrooms.length
+                  ? "The quote happens online. The frames do not."
+                  : "Made to AS 2047 and AS 1288 — standards you can look up."}
+              </h2>
+              <p className="text-white/70 text-[17px] leading-relaxed">
+                {showrooms.length
+                  ? "Book a time at a showroom and you can open a sash, check a finish and see how a frame is put together — before you order anything."
+                  : "Every frame is made to these standards. Your test reports and warranty terms come with the reviewed quote — before you have paid anything."}
+              </p>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-white/12">
-            {suburbs.length > 0 && (
-              <div className="py-5 md:py-0 md:pr-7">
-                <h3 className="text-white font-semibold text-[17px] mb-2" style={DISPLAY}>Showrooms</h3>
-                <p className="text-white/60 text-[13px] mb-2.5" style={MONO}>{suburbs.join(" · ")}</p>
-                <p className="text-white/75 text-[15px] leading-relaxed mb-3">
-                  See and handle the frames before you order.
+            {/* The panel carries its OWN fill. At the right edge the gradient
+                bottoms out at 0.6 alpha over a photograph, and a border needs a
+                known ground — the lesson already recorded on the deleted `white`
+                button variant in ui.tsx. */}
+            {showrooms.length > 0 && (
+              <div className="md:flex-shrink-0 md:w-[300px] w-full bg-white/[0.05] border border-white/15 p-6">
+                <p className="text-[11px] uppercase tracking-widest text-white/60 mb-3" style={MONO}>Showrooms</p>
+                <div className="divide-y divide-white/10">
+                  {showrooms.map((l) => (
+                    <div key={l.id} className="flex items-baseline justify-between py-2.5">
+                      <span className="text-white text-[17px]" style={DISPLAY}>{l.suburb}</span>
+                      <span className="text-white/60 text-[12px]" style={MONO}>{l.stateCode}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-white/60 text-[13px] mt-3 leading-relaxed">
+                  By appointment. Request a time and we confirm it.
                 </p>
-                <button onClick={() => go("contact")} className="text-sage-light hover:text-white text-sm inline-flex items-center gap-1.5 cursor-pointer">
-                  Book a time <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                <button onClick={() => go("contact")}
+                  className="text-sage-light hover:text-white text-sm inline-flex items-center gap-1.5 mt-4 cursor-pointer">
+                  Book a showroom visit <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
               </div>
             )}
-            <div className="py-5 md:py-0 md:px-7">
-              <h3 className="text-white font-semibold text-[17px] mb-2" style={DISPLAY}>Standards</h3>
-              <p className="text-white/60 text-[13px] mb-2.5" style={MONO}>AS 2047 · AS 1288</p>
-              <p className="text-white/75 text-[15px] leading-relaxed mb-3">
-                Test reports, warranty terms and compliance certificates are published, not promised.
-              </p>
-              <button onClick={() => go("resources")} className="text-sage-light hover:text-white text-sm inline-flex items-center gap-1.5 cursor-pointer">
-                Compliance documents <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-            </div>
-            <div className="py-5 md:py-0 md:pl-7">
-              <h3 className="text-white font-semibold text-[17px] mb-2" style={DISPLAY}>Money</h3>
-              <p className="font-semibold text-white leading-none mb-2.5" style={{ ...MONO, fontSize: "clamp(1.5rem, 4vw, 2.1rem)" }}>50 / 50</p>
-              <p className="text-white/75 text-[15px] leading-relaxed mb-3">
-                $0 to quote. 50% on acceptance, and the balance only after you have seen photographs of your finished units.
-              </p>
-              <button onClick={() => go("how-it-works")} className="text-sage-light hover:text-white text-sm inline-flex items-center gap-1.5 cursor-pointer">
-                The full payment schedule <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-            </div>
           </div>
+
+          {/* The standards fact, full width and WITHOUT a link. A section whose
+              premise is "we do not say things we cannot back" must not point at
+              a page that opens by saying its documents are placeholders — and
+              this sentence is complete on its own. /resources stays in the nav.
+              "Before you have paid anything" is the load-bearing half: the
+              reviewed quote lands before the 50% deposit, so the constraint is
+              the reassurance. */}
+          {showrooms.length > 0 && (
+            <div className="mt-10 pt-6 border-t border-white/12 flex flex-col md:flex-row md:items-baseline gap-2 md:gap-6">
+              <p className="text-white/60 text-[13px] flex-shrink-0" style={MONO}>AS 2047 · AS 1288</p>
+              <p className="text-white/70 text-[15px] leading-relaxed max-w-[62ch]">
+                Every frame is made to these standards. Your test reports and warranty terms come with the reviewed quote — before you have paid anything.
+              </p>
+            </div>
+          )}
         </div>
       </section>
+
 
       {/* ─── GOOD TO KNOW ────────────────────────────────────────────────────
           The four objections that stop a click, all four answers visible. An

@@ -764,9 +764,9 @@ export function ItemSummaryCard({
         </span>
 
         <div className="flex items-center gap-0.5 flex-shrink-0" aria-label="Item actions">
-          {onDuplicate && <button onClick={onDuplicate} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-body hover:text-sage hover:bg-white cursor-pointer" aria-label="Duplicate item"><Copy className="w-4 h-4" /></button>}
-          {onRemove && <button onClick={onRemove} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-body hover:text-red-600 hover:bg-white cursor-pointer" aria-label="Remove item"><Trash2 className="w-4 h-4" /></button>}
-          <button onClick={toggleExpanded} aria-expanded={isExpanded} aria-label={isExpanded ? "Collapse item" : "Expand item"} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-body hover:text-ink hover:bg-white cursor-pointer">
+          {onDuplicate && <button onClick={onDuplicate} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-body hover:text-sage icon-btn cursor-pointer" aria-label="Duplicate item"><Copy className="w-4 h-4" /></button>}
+          {onRemove && <button onClick={onRemove} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-body hover:text-red-600 icon-btn cursor-pointer" aria-label="Remove item"><Trash2 className="w-4 h-4" /></button>}
+          <button onClick={toggleExpanded} aria-expanded={isExpanded} aria-label={isExpanded ? "Collapse item" : "Expand item"} className="w-8 h-8 sm:w-9 sm:h-9 inline-flex items-center justify-center text-body hover:text-ink icon-btn cursor-pointer">
             <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
           </button>
         </div>
