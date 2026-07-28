@@ -101,13 +101,32 @@ export async function renderShell(env: Env, shellHtml: string, url: URL): Promis
   }
 
   const siteName = meta.ogSiteName?.trim() || brand;
+
+  // ONE canonical form, computed once and used for both canonical and og:url.
+  //
+  // og:url used to echo url.pathname verbatim, so /products/ published
+  // og:url=/products/ while /products published /products — the same page
+  // advertising two identities. The Worker now 301s the slash form, but a
+  // scraper that already holds the old URL, or an inbound link carrying one,
+  // still has to be told which is authoritative.
+  //
+  // And there was NO canonical link in this head at all. The client sets one
+  // only when a Sanity page carries an explicit canonicalUrl, which is almost
+  // never — so for a crawler that does not run JS, most pages declared nothing.
+  const canonicalPath = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : "/";
+  const canonical = url.origin + canonicalPath;
+
   const tags = [
     `<title>${esc(title)}</title>`,
     description ? `<meta name="description" content="${esc(description)}" />` : "",
+    // data-seo="1" hands ownership to the client: Seo.tsx updates this same tag
+    // on navigation instead of leaving the entry URL's canonical behind, and
+    // there is never a second one.
+    `<link rel="canonical" data-seo="1" href="${esc(canonical)}" />`,
     `<meta property="og:title" content="${esc(title)}" />`,
     description ? `<meta property="og:description" content="${esc(description)}" />` : "",
     `<meta property="og:type" content="website" />`,
-    `<meta property="og:url" content="${esc(url.origin + url.pathname)}" />`,
+    `<meta property="og:url" content="${esc(canonical)}" />`,
     siteName ? `<meta property="og:site_name" content="${esc(siteName)}" />` : "",
     image ? `<meta property="og:image" content="${esc(image)}" />` : "",
     `<meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}" />`,

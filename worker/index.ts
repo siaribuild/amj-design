@@ -91,6 +91,30 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    // ── ONE URL PER PAGE ────────────────────────────────────────────────────
+    // routeFromPathname() strips trailing slashes before matching, which is kind
+    // to a visitor who types one but meant that /products and /products/ BOTH
+    // returned 200 with identical content — two URLs for one page, which is what
+    // Search Console reports as "duplicate without user-selected canonical".
+    // The no-slash form wins: it is what the sitemap lists and what pathForPage()
+    // generates, so redirecting the other way would fight every internal link.
+    //
+    // Deliberately narrow:
+    //  • "/" is exempt — the root's slash is not a trailing slash.
+    //  • GET/HEAD only. A 301 on a POST invites the client to re-issue it as GET
+    //    and silently drop the body; /api/* is excluded outright for the same
+    //    reason, and its 404 handler is a better answer than a redirect anyway.
+    //  • search is carried over, so /products/?family=awning keeps its query.
+    // Placed first so nothing downstream can answer 200 before it runs.
+    const method = request.method;
+    if ((method === "GET" || method === "HEAD") &&
+        url.pathname.length > 1 && url.pathname.endsWith("/") &&
+        !url.pathname.startsWith("/api/")) {
+      const target = new URL(url);
+      target.pathname = url.pathname.replace(/\/+$/, "");
+      return Response.redirect(target.toString(), 301);
+    }
+
     // Real static assets (hashed js/css/img, etc.) are served directly, and never
     // wait on the catalogue. Anything else is a client-side route → serve the
     // host's SPA shell. The ops console is a separate bundle on ops.* (guarded by

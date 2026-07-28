@@ -25,6 +25,14 @@ function setMeta(attr: "name" | "property", key: string, content: string) {
   node.setAttribute("content", content);
 }
 
+/** The current URL in its canonical form: origin + path, no trailing slash
+ *  (except the root), and no query or hash — a filtered or anchored view of a
+ *  page is the same page. Matches the Worker's 301 target and the sitemap. */
+function canonicalForCurrentUrl(): string {
+  const { origin, pathname } = window.location;
+  return origin + (pathname.length > 1 ? pathname.replace(/\/+$/, "") : "/");
+}
+
 function setCanonical(href: string) {
   const el = document.head.querySelector<HTMLLinkElement>(`link[rel="canonical"][data-seo="1"]`);
   if (!href) { el?.remove(); return; }
@@ -86,7 +94,13 @@ export function Seo({ seo, title, description, image, noIndex, facts, breadcrumb
     setMeta("name", "description", r.description);
     setMeta("name", "keywords", r.keywords);
     setMeta("name", "robots", r.robots);
-    setCanonical(r.canonical);
+    // Every page declares a canonical, not only the few with a CMS override.
+    // r.canonical is seo.canonicalUrl and is almost always empty, which meant
+    // setCanonical REMOVED the tag the shell rendered — so a crawler that runs
+    // JS saw no canonical at all, and one that does not saw the entry URL's.
+    // The fallback is the current path with any trailing slash stripped, the
+    // same form the Worker 301s to and the sitemap lists.
+    setCanonical(r.canonical || canonicalForCurrentUrl());
     setMeta("property", "og:title", r.ogTitle);
     setMeta("property", "og:description", r.ogDescription);
     setMeta("property", "og:type", r.ogType);
