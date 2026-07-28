@@ -36,7 +36,7 @@ const HERO: Record<CategorySlug, { headline: string; sub: string; image: string;
 // home page's "Nothing here is a claim you have to take on trust" exists to avoid.
 const TRUST_ITEMS: { title: string; sub: string; Icon: typeof Truck }[] = [
   { title: "Made to your sizes", sub: "Every unit is manufactured to the dimensions on your schedule.", Icon: ShieldCheck },
-  { title: "Reviewed before you pay", sub: "A person checks your quote within two business days. $0 to quote, 50% on acceptance.", Icon: CheckCircle },
+  { title: "Reviewed before you pay", sub: "A person checks your quote before it is issued. $0 to quote, 50% on acceptance.", Icon: CheckCircle },
   { title: "Supply only", sub: "We manufacture and deliver. Installation is arranged by your builder or installer.", Icon: Package },
   { title: "Delivered Australia-wide", sub: "Door-to-door, from our factory to your site.", Icon: Truck },
 ];

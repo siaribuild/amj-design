@@ -565,7 +565,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
   // design mock reintroduced the four-step version; it is deliberately not used.
   // Keep these headings, these percentages and that page in step.
   const steps: { n: string; title: string; paid: "0%" | "50%" | "100%"; body: string; Icon: typeof Upload }[] = [
-    { n: "01", title: "Quote", paid: "0%", body: "Upload a schedule and it prices itself. A person then checks it by hand and issues a reviewed quote — about two business days, nothing charged.", Icon: Upload },
+    { n: "01", title: "Quote", paid: "0%", body: "Upload a schedule and it prices itself. A person then checks it by hand and issues a reviewed quote — nothing charged.", Icon: Upload },
     { n: "02", title: "Order", paid: "50%", body: "Accept the quote and pay 50%. You sign off shop drawings before anything is manufactured — changes are free until you do.", Icon: Check },
     { n: "03", title: "Delivery", paid: "100%", body: "Every item is photographed before it ships. You pay the balance after you have seen the photos, then we deliver.", Icon: FileText },
   ];
@@ -635,41 +635,46 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           <div className="w-full max-w-[46rem]">
             <div className="flex items-center gap-2 mb-5">
               <WindowMark size={11} color="rgba(255,255,255,0.55)" />
+              {/* The eyebrow carries the CATEGORY now, so the headline does not
+                  have to. That is what buys the headline its size. */}
               <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60" style={MONO}>
-                Supply-only aluminium · Australia-wide
+                Aluminium windows &amp; doors · Supply only · Australia-wide
               </span>
             </div>
 
+            {/* Measured in the live 327px column at 375px:
+                  "Your windows and doors, priced in about a minute"  34px  3 lines  104px
+                  "Priced in about a minute."                        44px  2 lines   90px
+                Shorter text is what allows the LARGER type — the old headline was
+                small on a phone because it was long, not because the clamp was
+                mean. Two lines at 44px instead of three at 34px: bigger, fewer
+                lines, and shorter overall.
+                The minimum goes 2.15rem → 2.75rem; the vw term and the desktop
+                maximum are unchanged, so nothing above ~460px moves. */}
             <h1 className="font-semibold text-white leading-[1.02] tracking-tight mb-5"
-              style={{ ...DISPLAY, fontSize: "clamp(2.15rem, 6vw, 4.25rem)" }}>
-              Your windows and doors,{" "}
+              style={{ ...DISPLAY, fontSize: "clamp(2.75rem, 6vw, 4.25rem)" }}>
               {/* Not italic — the mock's device: same weight, sage. The only sage
                   above the fold, and it lands on the claim that matters. */}
-              <span style={{ color: SAGE_LT }}>priced in about a minute.</span>
+              <span style={{ color: SAGE_LT }}>Priced in about a minute.</span>
             </h1>
 
-            {/* The minute belongs to the MACHINE, and the sentence has to say so.
-                An earlier version read "…matched and costed. A person checks it
-                before you get a quote", which put the human review immediately
-                after the headline's "about a minute" with nothing separating the
-                two timescales — so it implied a person turns it around inside the
-                minute too. The estimate is instant and indicative; the quote takes
-                about two business days. Both durations are stated, in that order. */}
+            {/* THE HUMAN REVIEW IS NOT IN THE HERO AT ALL, and that resolves a
+                genuine conflict between two owner instructions.
+                Earlier: "'A person checks it before you get a quote' — that sounds
+                like a person checks within a minute", so the duration was added.
+                Now: "the whole 2 days promise is a turn off… that's A LONG time",
+                so the duration is unwelcome. Stating the review WITHOUT a duration
+                re-creates the first problem; stating it WITH one re-creates the
+                second. There is no wording that satisfies both.
+                So the hero makes only the claim that is instant and true — the
+                machine prices it — and the review is explained twice below, in
+                Process 01 and on How it works, where someone reading on is asking
+                "then what?" rather than glancing. The site is already careful that
+                "priced" (an estimate) and "quote" (reviewed) are different words,
+                and the hero never says quote. */}
             <p className="text-white/80 leading-relaxed mb-8 max-w-[52ch]"
               style={{ fontSize: "clamp(1rem, 1.4vw, 1.125rem)" }}>
-              {/* 169 characters over ~5 lines at 375px, which is a paragraph, not
-                  a hero line — it did not survive a glance. Now 110 over ~3.
-                  What had to survive the cut, and did:
-                   • BOTH timescales, in order — the machine's minute is in the
-                     headline, the person's two days here. That separation is the
-                     whole reason this sentence exists (see above) and shortening
-                     must not collapse it.
-                   • "your schedule", so a tradie knows it means their document.
-                  What went: "the window and door schedule from your plans" →
-                  "your schedule" (the headline already says windows and doors),
-                  and "before it becomes a quote", which the two-day figure implies. */}
               Upload your schedule and every line comes back matched and costed.
-              A person reviews it within two business days.
             </p>
 
             {/* TWO actions, at unequal tiers.
@@ -877,7 +882,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           of putting the action where the evidence is, and it is worth it. */}
       <CtaBanner
         title="Do that with your own schedule."
-        sub="Upload yours and every line comes back priced in about a minute. That first pass is the machine's — a person reviews it within two business days, and that is the quote you accept."
+        sub="Upload yours and every line comes back priced in about a minute. That first pass is the machine's — a person checks it before it becomes the quote you accept."
         onQuote={() => go("quote")}
         ground="bone"
       />
@@ -1083,7 +1088,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           visitor to re-decide at the moment the page wants them to act. */}
       <CtaBanner
         title="Your windows and doors, priced before you commit."
-        sub="Free to start, no account, and a reviewed quote in about two business days."
+        sub="Free to start, no account, and every quote checked by a person before you pay."
         onQuote={() => go("quote")}
       />
     </div>
@@ -1663,7 +1668,7 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
               ))}
               <Btn variant="sage" size="md" className="w-full justify-center">Apply <ArrowRight className="w-4 h-4" /></Btn>
             </div>
-            <p className="text-xs text-[#5c5a56] mt-3">Reviewed within 2 business days.</p>
+            <p className="text-xs text-[#5c5a56] mt-3">Checked by a person before you pay.</p>
           </div>
         </div>
       </section>
