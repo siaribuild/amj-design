@@ -107,8 +107,32 @@ interface ParentRow {
   line_kind: string; composite_axis: string | null;
 }
 
+/** The opening's size, from the parent's dims. Returns zeros when unparseable —
+ *  callers treat that as "cannot be planned as units yet". */
+function openingOf(parent: { dims_json: string }): { widthMm: number; heightMm: number } {
+  let dims: { width?: string; height?: string } = {};
+  try { dims = JSON.parse(parent.dims_json || "{}"); } catch { /* absent */ }
+  return {
+    widthMm: parseInt(String(dims.width ?? "")) || 0,
+    heightMm: parseInt(String(dims.height ?? "")) || 0,
+  };
+}
+
+/** The opening's option selections, as a plain string map. */
+function parentOptions(optionsJson: string | null): Record<string, string> {
+  try {
+    const parsed = JSON.parse(optionsJson || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).map(([k, v]) => [k, String(v ?? "")]),
+    );
+  } catch {
+    return {};
+  }
+}
+
 /** Recompute everything DERIVED about a parent from its segments. The single
- *  writer of segment.qty and of parent.line_total / status. */
+ *  writer of segment.qty, and of parent.line_total / status / coverage_delta_mm. */
 export async function recomputeComposite(env: Env, parentId: string): Promise<void> {
   const parent = await env.DB
     .prepare("SELECT id, project_id, qty, dims_json, line_kind, composite_axis FROM quote_line WHERE id=?")
@@ -116,9 +140,14 @@ export async function recomputeComposite(env: Env, parentId: string): Promise<vo
   if (!parent) return;
 
   const { results: segments } = await env.DB.prepare(
-    `SELECT id, qty_per_parent, line_total, status FROM quote_line
+    `SELECT id, qty_per_parent, line_total, status, dims_json FROM quote_line
       WHERE parent_line_id=? ORDER BY segment_seq`,
-  ).bind(parentId).all<{ id: string; qty_per_parent: number; line_total: number | null; status: string }>();
+  ).bind(parentId).all<{
+    id: string; qty_per_parent: number; line_total: number | null; status: string; dims_json: string;
+  }>();
+
+  const opening = openingOf(parent);
+  const axis = parent.composite_axis === "horizontal" ? "horizontal" : "vertical";
 
   if (!segments.length) {
     // Last segment removed ⇒ the parent is a plain line again. It must NOT come
@@ -141,9 +170,23 @@ export async function recomputeComposite(env: Env, parentId: string): Promise<vo
     ? "incomplete"
     : segments.some((s) => s.status === "technical_review") ? "technical_review" : "ready";
 
+  // Coverage is DERIVED here too, not only at split time. Once a reviewer can
+  // resize one unit — or add and remove units — a delta computed once at split
+  // is a number describing a plan that no longer exists, and it is the number the
+  // fit warning is drawn from.
+  const along = axis === "vertical" ? "width" : "height";
+  const spanned = segments.reduce((sum, s) => {
+    let d: Record<string, unknown> = {};
+    try { d = JSON.parse(s.dims_json || "{}"); } catch { /* absent ⇒ contributes 0 */ }
+    return sum + (parseInt(String(d[along] ?? "")) || 0) * Math.max(1, s.qty_per_parent);
+  }, 0);
+  const openingAlong = axis === "vertical" ? opening.widthMm : opening.heightMm;
+  const coverage = openingAlong > 0 ? spanned - openingAlong : null;
+
   stmts.push(env.DB.prepare(
-    "UPDATE quote_line SET line_total=?, status=?, line_kind='composite_parent', updated_at=datetime('now') WHERE id=?",
-  ).bind(total, total == null ? "incomplete" : worst, parentId));
+    `UPDATE quote_line SET line_total=?, status=?, line_kind='composite_parent',
+       coverage_delta_mm=?, updated_at=datetime('now') WHERE id=?`,
+  ).bind(total, total == null ? "incomplete" : worst, coverage, parentId));
 
   await env.DB.batch(stmts);
 }
@@ -159,13 +202,11 @@ export async function splitLine(env: Env, args: {
   const axis = args.axis ?? "vertical";
   const policy = await loadCompositePolicy(env);
   const parent = await env.DB
-    .prepare("SELECT id, project_id, qty, dims_json, line_kind, composite_axis FROM quote_line WHERE id=? AND parent_line_id IS NULL")
-    .bind(args.parentId).first<ParentRow>();
+    .prepare("SELECT id, project_id, qty, dims_json, options_json, line_kind, composite_axis FROM quote_line WHERE id=? AND parent_line_id IS NULL")
+    .bind(args.parentId).first<ParentRow & { options_json: string }>();
   if (!parent) return { ok: false, errors: ["That opening no longer exists."] };
 
-  let dims: { width?: string; height?: string } = {};
-  try { dims = JSON.parse(parent.dims_json || "{}"); } catch { /* treated as absent below */ }
-  const opening = { widthMm: parseInt(String(dims.width ?? "")) || 0, heightMm: parseInt(String(dims.height ?? "")) || 0 };
+  const opening = openingOf(parent);
   if (!opening.widthMm || !opening.heightMm) {
     return { ok: false, errors: ["The opening has no size, so it cannot be planned as units yet."] };
   }
@@ -173,29 +214,48 @@ export async function splitLine(env: Env, args: {
   const check = validateSplit(opening, args.segments, axis, policy);
   if (!check.ok) return { ok: false, errors: check.errors };
 
+  // Options are INHERITED when the caller does not state them.
+  //
+  // They used to default to {}, which silently discarded the customer's colour,
+  // hardware, flyscreen and installation the moment an opening was split — and
+  // since most option rows carry a surcharge, it discarded money with them: the
+  // units were re-priced as bare product. The spec the customer chose is a fact
+  // about the opening, so it is the correct default for every frame in it.
+  //
+  // An explicit object (including {}) is still honoured, so a caller that means
+  // "no options" can say so, and per-unit overrides work normally.
+  const inherited = parentOptions(parent.options_json);
+  const segments = args.segments.map((s) => ({ ...s, options: s.options ?? inherited }));
+
   // Price each segment through THE engine — same rates, same surcharges, same
   // modifiers as any other line. Per frame, which is the whole point.
-  const totals = await Promise.all(args.segments.map((s) => priceItem(env, {
+  const totals = await Promise.all(segments.map((s) => priceItem(env, {
     productSlug: s.productSlug,
     width: String(s.widthMm), height: String(s.heightMm),
-    options: s.options ?? {},
+    options: s.options,
     qty: Math.max(1, parent.qty) * Math.max(1, s.qtyPerParent ?? 1),
   })));
 
   const stmts = [
     env.DB.prepare("DELETE FROM quote_line WHERE parent_line_id=?").bind(parent.id),
-    ...args.segments.map((s, i) => env.DB.prepare(
+    ...segments.map((s, i) => env.DB.prepare(
       `INSERT INTO quote_line
          (id, project_id, parent_line_id, segment_seq, qty_per_parent, line_kind,
           external_ref, room_label, product_slug, options_json, dims_json,
           measured_by, qty, line_total, status, position, origin)
-       VALUES (?, ?, ?, ?, ?, 'segment', NULL, NULL, ?, ?, ?, '', ?, ?, ?, ?, 'ai')`,
+       VALUES (?, ?, ?, ?, ?, 'segment', NULL, NULL, ?, ?, ?, '', ?, ?, ?, ?, ?)`,
     ).bind(
       uuid(), parent.project_id, parent.id, i, Math.max(1, s.qtyPerParent ?? 1),
-      s.productSlug, JSON.stringify(s.options ?? {}),
+      s.productSlug, JSON.stringify(s.options),
       JSON.stringify({ width: String(s.widthMm), height: String(s.heightMm) }),
       Math.max(1, parent.qty) * Math.max(1, s.qtyPerParent ?? 1),
       totals[i], totals[i] == null ? "incomplete" : "ready", i,
+      // The ORIGIN of the split, not a constant. This was hardcoded 'ai', so a
+      // split a person planned recorded AI-authored children — which misreports
+      // provenance in the audit trail and, because the PATCH path treats
+      // origin='ai' lines as AI-managed, sent segment edits down a branch that
+      // needs an opening_instance row no segment has.
+      args.origin,
     )),
     env.DB.prepare(
       "UPDATE quote_line SET line_kind='composite_parent', composite_axis=?, coverage_delta_mm=?, composite_origin=?, updated_at=datetime('now') WHERE id=?",
@@ -212,4 +272,185 @@ export async function splitLine(env: Env, args: {
 export async function mergeComposite(env: Env, parentId: string): Promise<void> {
   await env.DB.prepare("DELETE FROM quote_line WHERE parent_line_id=?").bind(parentId).run();
   await recomputeComposite(env, parentId);
+}
+
+// ── Per-unit management ───────────────────────────────────────────────────────
+// A reviewer corrects ONE unit — its product, its spec, its size — and the rest
+// of the composite must survive that untouched. Before these existed the only
+// way to change anything was to re-split, which DELETEs every segment and
+// recreates it; that was merely annoying when a unit was nothing but a width,
+// and destroys real work now that a unit carries a product and a spec.
+//
+// All three go through recomputeComposite, so parent total, parent status,
+// coverage and derived qty stay consistent by construction. None of them accept
+// `qty` — it is derived, and this module remains its only writer.
+
+export interface SegmentRow {
+  id: string; parent_line_id: string; project_id: string;
+  product_slug: string; options_json: string; dims_json: string;
+  qty_per_parent: number; segment_seq: number;
+}
+
+/** Load a segment together with the opening it belongs to. */
+export async function loadSegment(env: Env, segmentId: string): Promise<
+  { segment: SegmentRow; parent: ParentRow & { options_json: string } } | null
+> {
+  const segment = await env.DB.prepare(
+    `SELECT id, parent_line_id, project_id, product_slug, options_json, dims_json,
+            qty_per_parent, segment_seq
+       FROM quote_line WHERE id=? AND parent_line_id IS NOT NULL`,
+  ).bind(segmentId).first<SegmentRow>();
+  if (!segment) return null;
+  const parent = await env.DB.prepare(
+    "SELECT id, project_id, qty, dims_json, options_json, line_kind, composite_axis FROM quote_line WHERE id=?",
+  ).bind(segment.parent_line_id).first<ParentRow & { options_json: string }>();
+  return parent ? { segment, parent } : null;
+}
+
+/** Change one unit. Only the fields named in `patch` move; everything else on
+ *  the unit is left alone, which is what makes this safe to call for a one-field
+ *  correction. The ACROSS-axis dimension is not settable — validateSplit makes a
+ *  mismatch there a hard error rather than a coverage allowance, so it is forced
+ *  to the opening and cannot be typed into an unbuildable state. */
+export async function updateSegment(env: Env, args: {
+  segmentId: string;
+  patch: { productSlug?: string; options?: Record<string, string>; alongMm?: number; qtyPerParent?: number };
+}): Promise<{ ok: true } | { ok: false; errors: string[] }> {
+  const loaded = await loadSegment(env, args.segmentId);
+  if (!loaded) return { ok: false, errors: ["That unit no longer exists."] };
+  const { segment, parent } = loaded;
+
+  const opening = openingOf(parent);
+  const axis = parent.composite_axis === "horizontal" ? "horizontal" : "vertical";
+  const dims = openingOf(segment);
+
+  const productSlug = args.patch.productSlug ?? segment.product_slug;
+  const options = args.patch.options ?? parentOptions(segment.options_json);
+  const qtyPerParent = Math.max(1, Math.floor(args.patch.qtyPerParent ?? segment.qty_per_parent));
+  const along = args.patch.alongMm !== undefined
+    ? Math.floor(args.patch.alongMm)
+    : (axis === "vertical" ? dims.widthMm : dims.heightMm);
+
+  const widthMm = axis === "vertical" ? along : opening.widthMm;
+  const heightMm = axis === "vertical" ? opening.heightMm : along;
+
+  if (!productSlug) return { ok: false, errors: ["This unit has no product selected."] };
+  if (!(widthMm > 0)) return { ok: false, errors: ["This unit needs a width."] };
+  if (!(heightMm > 0)) return { ok: false, errors: ["This unit needs a height."] };
+
+  const qty = Math.max(1, parent.qty) * qtyPerParent;
+  const total = await priceItem(env, {
+    productSlug, width: String(widthMm), height: String(heightMm), options, qty,
+  });
+
+  await env.DB.prepare(
+    `UPDATE quote_line SET product_slug=?, options_json=?, dims_json=?, qty_per_parent=?,
+       line_total=?, status=?, updated_at=datetime('now') WHERE id=?`,
+  ).bind(
+    productSlug, JSON.stringify(options),
+    JSON.stringify({ width: String(widthMm), height: String(heightMm) }),
+    qtyPerParent, total, total == null ? "incomplete" : "ready", segment.id,
+  ).run();
+
+  await recomputeComposite(env, parent.id);
+  return { ok: true };
+}
+
+/** Append a unit. It inherits product and spec from the LAST existing unit
+ *  rather than from the opening: once a reviewer has set three units to the same
+ *  fixed panel, the fourth is almost certainly the same, and copying the opening
+ *  would undo work they just did. Its size defaults to whatever is still
+ *  uncovered, or to the last unit's size when the composite already sums. */
+export async function addSegment(env: Env, parentId: string): Promise<
+  { ok: true; id: string } | { ok: false; errors: string[] }
+> {
+  const policy = await loadCompositePolicy(env);
+  const parent = await env.DB.prepare(
+    "SELECT id, project_id, qty, dims_json, options_json, line_kind, composite_axis FROM quote_line WHERE id=? AND parent_line_id IS NULL",
+  ).bind(parentId).first<ParentRow & { options_json: string }>();
+  if (!parent) return { ok: false, errors: ["That opening no longer exists."] };
+
+  const { results: existing } = await env.DB.prepare(
+    `SELECT id, product_slug, options_json, dims_json, qty_per_parent, segment_seq
+       FROM quote_line WHERE parent_line_id=? ORDER BY segment_seq`,
+  ).bind(parentId).all<SegmentRow>();
+  if (!existing.length) return { ok: false, errors: ["This opening is not planned as units."] };
+  if (existing.length >= policy.maxSegments) {
+    return { ok: false, errors: [`A composite may have at most ${policy.maxSegments} units.`] };
+  }
+
+  const opening = openingOf(parent);
+  const axis = parent.composite_axis === "horizontal" ? "horizontal" : "vertical";
+  const last = existing[existing.length - 1];
+  const lastDims = openingOf(last);
+  const lastAlong = axis === "vertical" ? lastDims.widthMm : lastDims.heightMm;
+
+  const spanned = existing.reduce((sum, s) => {
+    const d = openingOf(s);
+    return sum + (axis === "vertical" ? d.widthMm : d.heightMm) * Math.max(1, s.qty_per_parent);
+  }, 0);
+  const openingAlong = axis === "vertical" ? opening.widthMm : opening.heightMm;
+  const shortfall = openingAlong - spanned;
+  const along = shortfall > 0 ? shortfall : lastAlong;
+
+  const widthMm = axis === "vertical" ? along : opening.widthMm;
+  const heightMm = axis === "vertical" ? opening.heightMm : along;
+  const options = parentOptions(last.options_json);
+  const qty = Math.max(1, parent.qty);
+  const total = await priceItem(env, {
+    productSlug: last.product_slug, width: String(widthMm), height: String(heightMm), options, qty,
+  });
+
+  const id = uuid();
+  await env.DB.prepare(
+    `INSERT INTO quote_line
+       (id, project_id, parent_line_id, segment_seq, qty_per_parent, line_kind,
+        external_ref, room_label, product_slug, options_json, dims_json,
+        measured_by, qty, line_total, status, position, origin)
+     VALUES (?, ?, ?, ?, 1, 'segment', NULL, NULL, ?, ?, ?, '', ?, ?, ?, ?, 'ops')`,
+  ).bind(
+    id, parent.project_id, parent.id, existing.length,
+    last.product_slug, JSON.stringify(options),
+    JSON.stringify({ width: String(widthMm), height: String(heightMm) }),
+    qty, total, total == null ? "incomplete" : "ready", existing.length,
+  ).run();
+
+  await recomputeComposite(env, parent.id);
+  return { ok: true, id };
+}
+
+/** Remove one unit, keeping every other unit's id, product and spec.
+ *
+ *  Refuses to take a composite below two units. Collapsing to one is not a
+ *  removal, it is `mergeComposite` — and that path deliberately restores the fit
+ *  warning, because the reason the opening was split is still true. Letting this
+ *  silently collapse would present an unbuildable single unit as ready. */
+export async function removeSegment(env: Env, segmentId: string): Promise<
+  { ok: true; parentId: string } | { ok: false; errors: string[] }
+> {
+  const loaded = await loadSegment(env, segmentId);
+  if (!loaded) return { ok: false, errors: ["That unit no longer exists."] };
+  const { segment, parent } = loaded;
+
+  const siblings = await env.DB
+    .prepare("SELECT count(*) AS n FROM quote_line WHERE parent_line_id=?")
+    .bind(parent.id).first<{ n: number }>();
+  if ((siblings?.n ?? 0) <= 2) {
+    return { ok: false, errors: ["A composite needs at least 2 units. Merge it back to one opening instead."] };
+  }
+
+  await env.DB.prepare("DELETE FROM quote_line WHERE id=?").bind(segment.id).run();
+  // Compact the sequence so positions stay 0..n-1 and the unit numbers a
+  // reviewer sees never skip.
+  const { results: rest } = await env.DB
+    .prepare("SELECT id FROM quote_line WHERE parent_line_id=? ORDER BY segment_seq")
+    .bind(parent.id).all<{ id: string }>();
+  if (rest.length) {
+    await env.DB.batch(rest.map((r, i) => env.DB
+      .prepare("UPDATE quote_line SET segment_seq=?, position=? WHERE id=?")
+      .bind(i, i, r.id)));
+  }
+
+  await recomputeComposite(env, parent.id);
+  return { ok: true, parentId: parent.id };
 }

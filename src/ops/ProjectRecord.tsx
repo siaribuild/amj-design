@@ -19,14 +19,21 @@
 //    Ops needs the past, dated and attributed. Different job, different object:
 //    a coarse phase ribbon to orient, and a ledger of what actually happened.
 //  • NO progress ring, badge or colour-only state. Every state carries its word.
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { ChevronLeft, Loader2, FileText, Paperclip, History as HistoryIcon } from "lucide-react";
 import {
   OpsApiError, opsProject, opsStartPricing, opsSetStatus, opsIssueRevision,
   opsRequestClarification, opsAddNote, opsPatchLine, opsAdvanceOrder, opsPayOrder,
   opsSplitLine, opsMergeComposite,
+  opsPatchSegment, opsAddSegment, opsRemoveSegment, opsLinePricePreview,
   OPS_PHASES, type OpsWorkspace, type OpsPhase, type OpsRecordAction, type OpsSegment,
+  type OpsCompositePolicy,
 } from "./api";
+// The SAME editor the customer configures an opening with. Ops hydrates the same
+// Sanity catalogue (src/ops/main.tsx), so product and option metadata are already
+// here; reusing it is what stops the console growing a second, drifting
+// implementation of product picking, option defaults and range checks.
+import { ItemForm } from "../components/ItemComposer";
 
 const SAGE = "#5A7A6A";
 const INK = "#131311";
@@ -100,8 +107,8 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
   const contractLines = ws.orderLines ?? [];
   const showingContract = !!order && contractLines.length > 0;
   const rows = showingContract
-    ? contractLines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: "ready", lineKind: "simple", segments: [] as OpsSegment[], productSlug: "" }))
-    : ws.lines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: l.status, lineKind: l.lineKind ?? "simple", segments: l.segments ?? [], productSlug: l.productSlug }));
+    ? contractLines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: "ready", lineKind: "simple", segments: [] as OpsSegment[], productSlug: "", options: {} as Record<string, string>, compositeAxis: null as string | null }))
+    : ws.lines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: l.status, lineKind: l.lineKind ?? "simple", segments: l.segments ?? [], productSlug: l.productSlug, options: l.options ?? {}, compositeAxis: l.compositeAxis ?? null }));
   const total = rows.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
 
   // Three modes, and the difference must be visible. The server only accepts line
@@ -258,6 +265,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
               <tbody>
                 {rows.map((l) => (
                   <LineRow key={l.id} line={l} editable={editable} busy={busy}
+                    policy={ws.compositePolicy} siblings={rows}
                     onSaved={load} onError={setError} />
                 ))}
                 {/* Composites: the segments belong UNDER their parent, never
@@ -411,41 +419,109 @@ function Block({ title, meta, icon, children }: { title: string; meta?: string; 
 const Empty = ({ children }: { children: React.ReactNode }) =>
   <p className="px-4 py-4 text-[13px]" style={{ color: MUTED }}>{children}</p>;
 
-/** One line. Editable only in the pricing states and only on the live draft —
- *  the server refuses edits anywhere else, and a Save button that silently 404s
- *  is worse than no Save button. */
-function LineRow({ line, editable, busy, onSaved, onError }: {
+/** One line — an OPENING — and, when it is a composite, the units inside it.
+ *
+ *  Editable only in the pricing states and only on the live draft: the server
+ *  refuses edits anywhere else, and a Save button that silently 404s is worse
+ *  than no Save button.
+ *
+ *  The editor is ItemForm — the SAME component the customer configures with.
+ *  It was tempting to build a compact per-unit product select plus an options
+ *  disclosure here, and that would have been a second implementation of product
+ *  picking, option defaulting, range checking and debounced live pricing, drifting
+ *  from the customer's the moment either changed. Ops already hydrates the same
+ *  Sanity catalogue, so the only things the form actually needed were a narrower
+ *  quote prop and an injectable price function.
+ *
+ *  A unit renders it with scope="unit": no item code and no room (one opening,
+ *  one architect tag) and no quantity box, because a unit's quantity is derived
+ *  from the opening's and composite.ts is its only writer. */
+function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
   line: {
     id: string; code: string; productName: string; room: string; width: string; height: string;
     qty: number; lineTotal: number | null; status: string;
     lineKind: string; segments: OpsSegment[]; productSlug: string;
+    options: Record<string, string>; compositeAxis: string | null;
   };
   editable: boolean; busy: boolean;
+  policy?: OpsCompositePolicy;
+  siblings: { code: string }[];
   onSaved: () => void; onError: (m: string) => void;
 }) {
-  const [w, setW] = useState(line.width);
-  const [h, setH] = useState(line.height);
-  const [qty, setQty] = useState(String(line.qty));
-  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [splitting, setSplitting] = useState(false);
+  const [editingUnit, setEditingUnit] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // Re-sync when the record reloads under us (someone else's edit, or our own).
-  useEffect(() => { setW(line.width); setH(line.height); setQty(String(line.qty)); },
-    [line.width, line.height, line.qty]);
+  const composite = line.lineKind === "composite_parent";
+  const axis: "vertical" | "horizontal" = line.compositeAxis === "horizontal" ? "horizontal" : "vertical";
+  // ItemForm reads `items` only — for the duplicate-code check. The record's own
+  // lines ARE the sibling set, so a reviewer renaming W01 to W02 is told.
+  const quoteLike = { items: siblings.map((s, i) => ({ id: i, code: s.code })) } as never;
 
-  const dirty = editable && (w !== line.width || h !== line.height || qty !== String(line.qty));
-  const save = async () => {
+  const fail = (e: unknown, fallback: string) =>
+    onError(e instanceof OpsApiError ? (ACTION_ERRORS[e.code] ?? fallback) : fallback);
+
+  const saveLine = async (built: { productSlug: string; width: string; height: string; options: Record<string, string>; qty: number; code: string; location: string }) => {
     setSaving(true);
     try {
-      await opsPatchLine(line.id, { width: w, height: h, qty: Math.max(1, parseInt(qty) || 1) });
+      await opsPatchLine(line.id, {
+        productSlug: built.productSlug, width: built.width, height: built.height,
+        options: built.options, qty: built.qty, code: built.code, room: built.location,
+      });
+      setEditing(false);
       onSaved();
-    } catch (e) {
-      onError(e instanceof OpsApiError ? (ACTION_ERRORS[e.code] ?? "That line could not be saved.") : "That line could not be saved.");
-    } finally { setSaving(false); }
+    } catch (e) { fail(e, "That line could not be saved."); }
+    finally { setSaving(false); }
   };
 
-  const cell = "border border-black/12 px-1.5 py-1 text-right w-[68px] bg-white";
-  const composite = line.lineKind === "composite_parent";
+  const saveUnit = async (segId: string, built: { productSlug: string; width: string; height: string; options: Record<string, string> }) => {
+    setSaving(true);
+    try {
+      // Only the along-axis dimension is sent. Across the join the unit must span
+      // the opening exactly — validateSplit treats a mismatch as a hard error,
+      // not a coverage allowance — so the server derives it and the form's value
+      // for it is ignored rather than being able to produce an unbuildable unit.
+      await opsPatchSegment(segId, {
+        productSlug: built.productSlug,
+        options: built.options,
+        alongMm: parseInt(axis === "vertical" ? built.width : built.height) || 0,
+      });
+      setEditingUnit(null);
+      onSaved();
+    } catch (e) { fail(e, "That unit could not be saved."); }
+    finally { setSaving(false); }
+  };
+
+  const addUnit = async () => {
+    setSaving(true);
+    try { await opsAddSegment(line.id); onSaved(); }
+    catch (e) { fail(e, "A unit could not be added."); }
+    finally { setSaving(false); }
+  };
+
+  const removeUnit = async (segId: string) => {
+    setSaving(true);
+    try { await opsRemoveSegment(segId); setConfirmRemove(null); onSaved(); }
+    catch (e) { fail(e, "That unit could not be removed."); }
+    finally { setSaving(false); }
+  };
+
+  // Coverage, measured along the join. Derived from what is on screen so it
+  // agrees with the units listed beneath it; the server records its own on save.
+  const openingAlong = parseInt(axis === "vertical" ? line.width : line.height) || 0;
+  const spanned = line.segments.reduce((sum, s) => {
+    const along = parseInt(axis === "vertical" ? s.width : s.height) || 0;
+    return sum + along * Math.max(1, s.qtyPerParent);
+  }, 0);
+  const delta = openingAlong > 0 ? spanned - openingAlong : 0;
+  const tolerance = policy?.toleranceMm ?? 0;
+  const atMaxUnits = !!policy && line.segments.length >= policy.maxSegments;
+
+  // After per-unit products, "Sliding Window" alone misdescribes the opening.
+  const unitNames = [...new Set(line.segments.map((s) => s.productName))];
+
   return (
     <>
     <tr className="border-t border-black/5">
@@ -456,66 +532,148 @@ function LineRow({ line, editable, busy, onSaved, onError }: {
         {composite && (
           <span className="block text-[11px]" style={{ ...MONO, color: SAGE }}>
             composite · {line.segments.length} joined unit{line.segments.length === 1 ? "" : "s"}
+            {unitNames.length > 1 && ` · ${unitNames.join(" + ")}`}
           </span>
         )}
       </td>
       <td className="px-3 py-2 text-right" style={{ ...MONO, color: MUTED }}>
-        {editable ? (
-          <span className="inline-flex items-center gap-1">
-            <input value={w} onChange={(e) => setW(e.target.value)} inputMode="numeric" className={cell} style={MONO} />
-            <span>×</span>
-            <input value={h} onChange={(e) => setH(e.target.value)} inputMode="numeric" className={cell} style={MONO} />
-          </span>
-        ) : (line.width && line.height ? `${line.width} × ${line.height}` : "—")}
+        {line.width && line.height ? `${line.width} × ${line.height}` : "—"}
       </td>
-      <td className="px-3 py-2 text-right" style={{ ...MONO, color: MUTED }}>
-        {editable
-          ? <input value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" className={`${cell} w-[52px]`} style={MONO} />
-          : line.qty}
-      </td>
+      <td className="px-3 py-2 text-right" style={{ ...MONO, color: MUTED }}>{line.qty}</td>
       <td className="px-3 py-2 text-right" style={{ ...MONO, color: INK }}>{money(line.lineTotal)}</td>
       <td className="px-4 py-2 text-[12px]">
-        {dirty ? (
-          <button onClick={save} disabled={saving || busy}
-            className="text-xs text-white px-2.5 py-1 disabled:opacity-40" style={{ background: SAGE }}>
-            {saving ? "Saving…" : "Save"}
-          </button>
-        ) : (
-          <span className="flex items-center gap-2">
-            {/* Never colour alone — the word carries the state. */}
-            <span style={{ color: line.status === "ready" ? SAGE : "#8a6a2a" }}>
-              {line.status === "ready" ? "ready" : "needs review"}
-            </span>
-            {editable && (
-              <button onClick={() => setSplitting((v) => !v)} disabled={busy}
+        <span className="flex items-center gap-2">
+          {/* Never colour alone — the word carries the state. */}
+          <span style={{ color: line.status === "ready" ? SAGE : "#8a6a2a" }}>
+            {line.status === "ready" ? "ready" : "needs review"}
+          </span>
+          {editable && (
+            <>
+              <button onClick={() => { setEditing((v) => !v); setSplitting(false); }} disabled={busy}
+                className="underline underline-offset-2" style={{ color: SAGE }}>
+                {editing ? "close" : "edit"}
+              </button>
+              <button onClick={() => { setSplitting((v) => !v); setEditing(false); }} disabled={busy}
                 className="underline underline-offset-2" style={{ color: SAGE }}>
                 {composite ? "units" : "split"}
               </button>
-            )}
-          </span>
-        )}
+            </>
+          )}
+        </span>
       </td>
     </tr>
 
-    {/* The segments of a composite, nested under their parent. Display only:
-        the parent's total is authoritative and these are never summed. */}
-    {composite && line.segments.map((sg, i) => (
-      <tr key={sg.id} className="border-t border-black/5" style={{ background: "rgba(90,122,106,0.04)" }}>
-        <td className="px-4 py-1.5 text-right" style={{ ...MONO, color: MUTED }}>{i + 1}.</td>
-        <td className="px-3 py-1.5 text-[13px]" style={{ color: MUTED }}>{sg.productName}</td>
-        <td className="px-3 py-1.5 text-right text-[13px]" style={{ ...MONO, color: MUTED }}>{sg.width} × {sg.height}</td>
-        <td className="px-3 py-1.5 text-right text-[13px]" style={{ ...MONO, color: MUTED }}>
-          {sg.qtyPerParent}× per opening
+    {editing && (
+      <tr>
+        <td colSpan={6} className="px-4 py-4" style={{ background: "rgba(90,122,106,0.06)" }}>
+          <ItemForm
+            quote={quoteLike}
+            priceFn={opsLinePricePreview(line.id)}
+            submitLabel={saving ? "Saving…" : "Save line"}
+            seed={{
+              code: line.code, productSlug: line.productSlug, location: line.room,
+              width: line.width, height: line.height, options: line.options, qty: line.qty,
+            }}
+            onCommit={(built) => saveLine(built as never)}
+            onCancel={() => setEditing(false)}
+          />
         </td>
-        <td className="px-3 py-1.5 text-right text-[13px]" style={{ ...MONO, color: MUTED }}>{money(sg.lineTotal)}</td>
-        <td />
       </tr>
+    )}
+
+    {/* The units of a composite, nested under their opening. */}
+    {composite && line.segments.map((sg, i) => (
+      <Fragment key={sg.id}>
+        <tr className="border-t border-black/5" style={{ background: "rgba(90,122,106,0.04)" }}>
+          <td className="px-4 py-1.5 text-right" style={{ ...MONO, color: MUTED }}>{i + 1}.</td>
+          <td className="px-3 py-1.5 text-[13px]" style={{ color: MUTED }}>
+            {sg.productName}
+            <SpecSummary unit={sg.options} opening={line.options} />
+          </td>
+          <td className="px-3 py-1.5 text-right text-[13px]" style={{ ...MONO, color: MUTED }}>
+            {sg.width} × {sg.height}
+          </td>
+          <td className="px-3 py-1.5 text-right text-[13px]" style={{ ...MONO, color: MUTED }}>
+            {sg.qtyPerParent}× per opening
+          </td>
+          <td className="px-3 py-1.5 text-right text-[13px]" style={{ ...MONO, color: MUTED }}>{money(sg.lineTotal)}</td>
+          <td className="px-4 py-1.5 text-[12px]">
+            {editable && (
+              confirmRemove === sg.id ? (
+                <span className="flex items-center gap-2">
+                  <span style={{ color: INK }}>Remove unit {i + 1}?</span>
+                  <button onClick={() => removeUnit(sg.id)} disabled={saving || busy}
+                    className="underline underline-offset-2 text-red-600">Remove</button>
+                  <button onClick={() => setConfirmRemove(null)} style={{ color: MUTED }}>Keep</button>
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  {sg.status !== "ready" && <span style={{ color: "#8a6a2a" }}>not priced</span>}
+                  <button onClick={() => setEditingUnit(editingUnit === sg.id ? null : sg.id)} disabled={busy}
+                    className="underline underline-offset-2" style={{ color: SAGE }}>
+                    {editingUnit === sg.id ? "close" : "edit"}
+                  </button>
+                  <button onClick={() => setConfirmRemove(sg.id)} disabled={busy}
+                    className="underline underline-offset-2" style={{ color: MUTED }}>remove</button>
+                </span>
+              )
+            )}
+          </td>
+        </tr>
+        {editingUnit === sg.id && (
+          <tr>
+            <td colSpan={6} className="px-4 py-4" style={{ background: "rgba(90,122,106,0.06)" }}>
+              <p className="text-[12px] mb-2.5" style={{ color: MUTED }}>
+                Unit {i + 1} of {line.code || "this opening"}.{" "}
+                {axis === "vertical" ? "Height" : "Width"} is set by the opening
+                ({axis === "vertical" ? line.height : line.width} mm) and cannot be changed here.
+              </p>
+              <ItemForm
+                scope="unit"
+                quote={quoteLike}
+                priceFn={opsLinePricePreview(line.id)}
+                submitLabel={saving ? "Saving…" : `Save unit ${i + 1}`}
+                seed={{ productSlug: sg.productSlug, width: sg.width, height: sg.height, options: sg.options, qty: sg.qty }}
+                onCommit={(built) => saveUnit(sg.id, built as never)}
+                onCancel={() => setEditingUnit(null)}
+              />
+            </td>
+          </tr>
+        )}
+      </Fragment>
     ))}
+
+    {/* Coverage and unit count. Reported, never vetoed: a mullion or jamb
+        allowance is a real engineering decision and the reviewer is the
+        authority — so nothing here disables anything. */}
+    {composite && (
+      <tr style={{ background: "rgba(90,122,106,0.04)" }}>
+        <td />
+        <td colSpan={5} className="px-3 pb-2.5 pt-0.5">
+          <span className="flex flex-wrap items-center justify-between gap-3">
+            {editable ? (
+              <button onClick={addUnit} disabled={saving || busy || atMaxUnits}
+                className="text-[12px] underline underline-offset-2 disabled:no-underline disabled:opacity-50"
+                style={{ color: atMaxUnits ? MUTED : SAGE }}>
+                {atMaxUnits ? `Maximum ${policy?.maxSegments} units` : "+ Add unit"}
+              </button>
+            ) : <span />}
+            <span className="text-[12px]" style={{ color: delta === 0 || Math.abs(delta) <= tolerance ? MUTED : "#8a6a2a" }}>
+              {openingAlong === 0
+                ? "The opening has no size."
+                : delta === 0
+                  ? `Units span ${spanned} mm — exactly the opening.`
+                  : `Units span ${spanned} mm, ${Math.abs(delta)} mm ${delta > 0 ? "more than" : "less than"} the opening. Allowed — recorded on the line.`}
+            </span>
+          </span>
+        </td>
+      </tr>
+    )}
 
     {splitting && (
       <tr>
         <td colSpan={6} className="px-4 py-4" style={{ background: "rgba(90,122,106,0.06)" }}>
-          <SplitPanel line={line} composite={composite} busy={busy}
+          <SplitPanel line={line} composite={composite} busy={busy || saving} policy={policy}
             onDone={() => { setSplitting(false); onSaved(); }}
             onError={onError} />
         </td>
@@ -525,48 +683,84 @@ function LineRow({ line, editable, busy, onSaved, onError }: {
   );
 }
 
-/** Plan one opening as several joined frames.
+/** How a unit's spec differs from the opening's. Options are COPIED from the
+ *  opening when the composite is created, so "as the opening" is the common
+ *  case and the reviewer is scanning for the exceptions. */
+function SpecSummary({ unit, opening }: { unit: Record<string, string>; opening: Record<string, string> }) {
+  const keys = [...new Set([...Object.keys(unit ?? {}), ...Object.keys(opening ?? {})])];
+  const changed = keys.filter((k) => (unit?.[k] ?? "") !== (opening?.[k] ?? ""));
+  if (!keys.length) return null;
+  return (
+    <span className="block text-[11px]" style={{ color: MUTED }}>
+      {changed.length === 0
+        ? "Spec: as the opening"
+        : `Spec: ${changed.length} changed — ${changed.map((k) => `${k} ${unit?.[k] || "none"}`).join(", ")}`}
+    </span>
+  );
+}
+
+/** Plan one opening as several joined frames. CREATE ONLY.
  *
- *  This is the surface that did not exist: splitLine/mergeComposite have been in
- *  the Worker since the composite work and had NO caller, so a 3500mm door that
- *  no single unit is made at could be flagged but never actually resolved.
+ *  It used to double as the editor, with a "Re-split" button. splitLine DELETEs
+ *  every segment and recreates them, which was tolerable when a unit was nothing
+ *  but a width and destroys real work now that a unit carries its own product and
+ *  spec — so the server refuses a second split with 409 and changes go through
+ *  the per-unit controls instead. The only way back to a blank slate is Merge,
+ *  which says plainly that it discards the units.
  *
- *  The proposal is an even split the reviewer then corrects — never a silently
- *  applied answer. Coverage is REPORTED, not vetoed: a deliberate overlap or a
- *  joiner allowance is a real decision, and the server records the delta. */
-function SplitPanel({ line, composite, busy, onDone, onError }: {
+ *  The proposal is an even split the reviewer then corrects. Coverage is
+ *  REPORTED, not vetoed. */
+function SplitPanel({ line, composite, busy, policy, onDone, onError }: {
   line: { id: string; width: string; height: string; productSlug: string; segments: OpsSegment[] };
   composite: boolean; busy: boolean;
+  policy?: OpsCompositePolicy;
   onDone: () => void; onError: (m: string) => void;
 }) {
   const openingW = parseInt(line.width) || 0;
   const openingH = parseInt(line.height) || 0;
-  const [count, setCount] = useState(Math.max(2, line.segments.length || 2));
-  const [widths, setWidths] = useState<number[]>([]);
+  const maxUnits = policy?.maxSegments ?? 4;
+  const joiner = policy?.defaultJoinerMm ?? 0;
+  const [axis, setAxis] = useState<"vertical" | "horizontal">("vertical");
+  const [count, setCount] = useState(2);
+  const [sizes, setSizes] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
 
-  // An even split across the opening, recomputed whenever the count changes.
-  // Remainder lands on the LAST unit so the widths sum exactly.
-  useEffect(() => {
-    const base = Math.floor(openingW / count);
-    setWidths(Array.from({ length: count }, (_, i) => (i === count - 1 ? openingW - base * (count - 1) : base)));
-  }, [count, openingW]);
+  const openingAlong = axis === "vertical" ? openingW : openingH;
 
-  const spanned = widths.reduce((s, w) => s + (w || 0), 0);
-  const delta = spanned - openingW;
+  // The same proposal the server makes: usable span less the joiner allowance
+  // between units, remainder on the LAST unit so the sizes sum exactly. The
+  // console used to divide the raw opening by the count, ignoring the allowance
+  // entirely, so its starting numbers disagreed with proposeEvenSplit().
+  useEffect(() => {
+    const usable = openingAlong - joiner * (count - 1);
+    const base = Math.floor(usable / count);
+    setSizes(Array.from({ length: count }, (_, i) => (i === count - 1 ? usable - base * (count - 1) : base)));
+  }, [count, openingAlong, joiner]);
+
+  const spanned = sizes.reduce((s, w) => s + (w || 0), 0);
+  const delta = spanned - openingAlong;
+  const tolerance = policy?.toleranceMm ?? 0;
 
   const apply = async () => {
     setSaving(true);
     try {
       await opsSplitLine(line.id, {
-        axis: "vertical",
-        segments: widths.map((w) => ({
-          widthMm: w, heightMm: openingH, productSlug: line.productSlug, qtyPerParent: 1,
+        axis,
+        // options are deliberately NOT sent: omitting them is what tells the
+        // server to inherit the opening's spec for every unit.
+        segments: sizes.map((v) => ({
+          widthMm: axis === "vertical" ? v : openingW,
+          heightMm: axis === "vertical" ? openingH : v,
+          productSlug: line.productSlug, qtyPerParent: 1,
         })),
       });
       onDone();
     } catch (e) {
-      onError(e instanceof OpsApiError ? (e.code === "invalid_split" ? "That split isn't buildable — check the unit widths." : ACTION_ERRORS[e.code] ?? "The split could not be applied.") : "The split could not be applied.");
+      onError(e instanceof OpsApiError
+        ? (e.code === "invalid_split" ? "That split isn't buildable — check the unit sizes."
+          : e.code === "already_composite" ? "This opening is already planned as units — edit them directly."
+          : ACTION_ERRORS[e.code] ?? "The split could not be applied.")
+        : "The split could not be applied.");
     } finally { setSaving(false); }
   };
 
@@ -577,46 +771,68 @@ function SplitPanel({ line, composite, busy, onDone, onError }: {
     finally { setSaving(false); }
   };
 
+  if (composite) {
+    return (
+      <div>
+        <p className="text-[13px] mb-2.5" style={{ color: INK }}>
+          This opening is built as {line.segments.length} joined units. Edit them in the rows
+          above — change a unit's product, its spec or its size, add a unit or remove one.
+        </p>
+        <p className="text-[12px] mb-3" style={{ color: MUTED }}>
+          Merging discards all {line.segments.length} units and their spec, and returns this to one opening.
+        </p>
+        <button onClick={merge} disabled={saving || busy}
+          className="text-sm px-3 py-2 border border-black/15" style={{ color: INK }}>
+          {saving ? "Merging…" : "Merge back to one"}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
       <p className="text-[13px] mb-2.5" style={{ color: INK }}>
-        Build this {openingW} × {openingH} mm opening as joined units, side by side.
+        Build this {openingW} × {openingH} mm opening as joined units.
+        Each unit keeps the opening's spec — change any of them afterwards.
       </p>
-      <div className="flex flex-wrap items-end gap-3 mb-2.5">
+      <div className="flex flex-wrap items-end gap-4 mb-2.5">
+        <span className="text-[12px]" style={{ color: MUTED }}>
+          <span className="block mb-1">Joined</span>
+          <span className="flex items-center gap-3">
+            {([["vertical", "Side by side"], ["horizontal", "One above another"]] as const).map(([v, label]) => (
+              <label key={v} className="flex items-center gap-1.5" style={{ color: INK }}>
+                <input type="radio" name={`axis-${line.id}`} checked={axis === v} onChange={() => setAxis(v)} />
+                {label}
+              </label>
+            ))}
+          </span>
+        </span>
         <label className="text-[12px]" style={{ color: MUTED }}>
           Units
           <select value={count} onChange={(e) => setCount(Number(e.target.value))}
             className="ml-2 border border-black/15 px-2 py-1 text-sm bg-white" style={{ color: INK }}>
-            {[2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+            {Array.from({ length: Math.max(0, maxUnits - 1) }, (_, i) => i + 2)
+              .map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
-        {widths.map((w, i) => (
+        {sizes.map((v, i) => (
           <label key={i} className="text-[12px]" style={{ color: MUTED }}>
-            Unit {i + 1} width
-            <input value={String(w)} inputMode="numeric"
-              onChange={(e) => setWidths(widths.map((x, j) => (j === i ? Number(e.target.value) || 0 : x)))}
+            Unit {i + 1} {axis === "vertical" ? "width" : "height"}
+            <input value={String(v)} inputMode="numeric"
+              onChange={(e) => setSizes(sizes.map((x, j) => (j === i ? Number(e.target.value) || 0 : x)))}
               className="ml-2 border border-black/15 px-2 py-1 text-sm w-[76px] text-right bg-white" style={MONO} />
           </label>
         ))}
       </div>
-      {/* Coverage is reported, never vetoed — a joiner allowance is a real
-          decision and the server records the delta either way. */}
-      <p className="text-[12px] mb-3" style={{ color: delta === 0 ? MUTED : "#8a6a2a" }}>
+      <p className="text-[12px] mb-3" style={{ color: delta === 0 || Math.abs(delta) <= tolerance ? MUTED : "#8a6a2a" }}>
         {delta === 0
           ? `Units span ${spanned} mm — exactly the opening.`
           : `Units span ${spanned} mm, ${Math.abs(delta)} mm ${delta > 0 ? "more than" : "less than"} the opening. Allowed — it is recorded on the line.`}
       </p>
-      <div className="flex items-center gap-2">
-        <button onClick={apply} disabled={saving || busy || widths.some((w) => !w)}
-          className="text-sm text-white px-3.5 py-2 disabled:opacity-40" style={{ background: SAGE }}>
-          {saving ? "Applying…" : composite ? "Re-split" : "Split into units"}
-        </button>
-        {composite && (
-          <button onClick={merge} disabled={saving || busy} className="text-sm px-3 py-2 border border-black/15" style={{ color: INK }}>
-            Merge back to one
-          </button>
-        )}
-      </div>
+      <button onClick={apply} disabled={saving || busy || sizes.some((v) => !v)}
+        className="text-sm text-white px-3.5 py-2 disabled:opacity-40" style={{ background: SAGE }}>
+        {saving ? "Applying…" : "Split into units"}
+      </button>
     </div>
   );
 }

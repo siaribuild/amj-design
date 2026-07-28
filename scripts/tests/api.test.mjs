@@ -426,17 +426,73 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.equal(w12.lineTotal, segs.reduce((n, x) => n + x.line_total, 0), "the opening total IS the sum of its units");
       assert.notEqual(w12.lineTotal, openingTotal);
 
+      // Every unit INHERITS the opening's spec. Creating them with no options was
+      // discarding the customer's colour and hardware — and, because most option
+      // rows carry a surcharge, re-pricing the units as bare product.
+      const specs = await sql(`SELECT options_json FROM quote_line WHERE parent_line_id='${parentId}' ORDER BY segment_seq`);
+      const openingSpec = (await sql(`SELECT options_json FROM quote_line WHERE id='${parentId}'`))[0].options_json;
+      for (const s of specs) {
+        assert.equal(s.options_json, openingSpec, "a unit is built to the opening's spec, not to a blank one");
+      }
+
+      // Splitting again is REFUSED. splitLine deletes every unit and recreates
+      // it, which destroys per-unit products and specs that a reviewer set by
+      // hand; changing a composite goes through the per-unit endpoints instead.
+      await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
+        method: "POST",
+        json: { segments: [{ widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window" },
+                           { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window" }] },
+      }, 409);
+
+      // One unit changes; its siblings and their spec survive untouched, and the
+      // opening's total follows the units rather than being priced on its own.
+      const before = await sql(`SELECT id, product_slug, line_total FROM quote_line WHERE parent_line_id='${parentId}' ORDER BY segment_seq`);
+      await requestJson(ops, `/api/ops/segments/${before[1].id}`, {
+        method: "PATCH", json: { productSlug: "amj80-series-awning-window" },
+      });
+      const after = await sql(`SELECT id, product_slug, line_total FROM quote_line WHERE parent_line_id='${parentId}' ORDER BY segment_seq`);
+      assert.equal(after[0].product_slug, before[0].product_slug, "the other unit is untouched");
+      assert.equal(after[1].product_slug, "amj80-series-awning-window", "the edited unit changed");
+      const reread = await requestJson(ops, `/api/ops/projects/${projectId}`);
+      assert.equal(
+        reread.body.lines[0].lineTotal,
+        after.reduce((n, x) => n + x.line_total, 0),
+        "the opening total still IS the sum of its units after a per-unit edit",
+      );
+
+      // The opening's own inputs must not price it as a single frame. This used
+      // to overwrite the sum of the units with a whole-opening figure.
+      const sumBefore = after.reduce((n, x) => n + x.line_total, 0);
+      await requestJson(ops, `/api/ops/lines/${parentId}`, { method: "PATCH", json: { qty: 2 } });
+      const parentAfterQty = await sql(`SELECT line_total FROM quote_line WHERE id='${parentId}'`);
+      const segsAfterQty = await sql(`SELECT qty, line_total FROM quote_line WHERE parent_line_id='${parentId}'`);
+      assert.equal(
+        parentAfterQty[0].line_total,
+        segsAfterQty.reduce((n, x) => n + x.line_total, 0),
+        "a composite parent is never priced directly",
+      );
+      assert.notEqual(sumBefore, null);
+      for (const s of segsAfterQty) assert.equal(s.qty, 2, "unit qty is re-derived from the opening's");
+
+      // Units cannot be reached through the openings endpoint — it writes qty
+      // directly and never re-derives the parent.
+      await requestJson(ops, `/api/ops/lines/${after[0].id}`, { method: "PATCH", json: { qty: 9 } }, 404);
+
+      // A composite cannot be whittled below two units; that is a merge.
+      await requestJson(ops, `/api/ops/segments/${after[1].id}`, { method: "DELETE" }, 400);
+
+      // Merging restores the fit warning: the reason for splitting is still true,
+      // so an unbuildable single unit must never come back as Ready.
+      await requestJson(ops, `/api/ops/lines/${parentId}/merge`, { method: "POST" });
+
       // A geometry that cannot be built is refused, naming the offending unit.
+      // Attempted on the merged (simple) line, since a composite is refused first.
       const bad = await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
         method: "POST",
         json: { segments: [{ widthMm: 600, heightMm: 500, productSlug: "amj80-series-sliding-window" },
                            { widthMm: 600, heightMm: 900, productSlug: "amj80-series-sliding-window" }] },
       }, 400);
       assert.ok(bad.body.errors.some((e) => /Unit 1 is 500mm across/.test(e)));
-
-      // Merging restores the fit warning: the reason for splitting is still true,
-      // so an unbuildable single unit must never come back as Ready.
-      await requestJson(ops, `/api/ops/lines/${parentId}/merge`, { method: "POST" });
       const merged = await requestJson(ops, `/api/ops/projects/${projectId}`);
       assert.equal(merged.body.lines.length, 1);
       assert.equal((await sql(`SELECT id FROM quote_line WHERE parent_line_id='${parentId}'`)).length, 0, "units are gone after a merge");

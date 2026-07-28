@@ -115,6 +115,7 @@ export interface OpsWorkspace {
   };
   lines: OpsLine[];
   files: { id: string; kind: string; filename: string; size: number; virus_status: string }[];
+  compositePolicy: OpsCompositePolicy;
   revisions: OpsRevision[];
   comments: OpsComment[];
   activity: OpsActivity[];
@@ -417,7 +418,41 @@ export interface OpsSegment {
   /** How many of this frame go into ONE opening. */
   qtyPerParent: number;
   qty: number; lineTotal: number | null;
+  /** The unit's own specification. Segments used to be created with NO options
+   *  at all — the opening's colour and hardware were discarded on split, along
+   *  with their surcharges — and the console could not display or set them. */
+  options: Record<string, string>;
+  status: string;
 }
+
+/** The split rules, from D1. The console used to hardcode a unit count of
+ *  [2,3,4] and reimplement the even-split maths without the joiner allowance. */
+export interface OpsCompositePolicy {
+  toleranceMm: number; defaultJoinerMm: number; maxSegments: number;
+}
+
+/** Change ONE unit, leaving its siblings untouched. `qty` is deliberately
+ *  absent — it is derived from the opening, and composite.ts owns it. */
+export const opsPatchSegment = (segmentId: string, patch: Partial<{
+  productSlug: string; options: Record<string, string>;
+  alongMm: number; qtyPerParent: number;
+}>) => req<{ ok: boolean }>(`/api/ops/segments/${segmentId}`, { method: "PATCH", body: JSON.stringify(patch) });
+
+/** Append a unit, inheriting product and spec from the last one. */
+export const opsAddSegment = (lineId: string) =>
+  req<{ ok: boolean; id: string }>(`/api/ops/lines/${lineId}/segments`, { method: "POST", body: "{}" });
+
+/** Remove a unit. Refused below two — that is a merge, not a removal. */
+export const opsRemoveSegment = (segmentId: string) =>
+  req<{ ok: boolean }>(`/api/ops/segments/${segmentId}`, { method: "DELETE" });
+
+/** The live figure for the editor, priced in the RECORD OWNER's context rather
+ *  than the staff member's — the customer preview would be the wrong number. */
+export const opsLinePricePreview = (lineId: string) =>
+  (item: { productSlug: string; width: string; height: string; options: Record<string, string>; qty: number }) =>
+    req<{ ok: boolean; total: number | null }>(`/api/ops/lines/${lineId}/price-preview`, {
+      method: "POST", body: JSON.stringify(item),
+    });
 
 export const opsSplitLine = (lineId: string, body: {
   axis: "vertical" | "horizontal";

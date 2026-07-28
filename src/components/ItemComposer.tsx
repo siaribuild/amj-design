@@ -362,15 +362,37 @@ const optionSummaryOf = (p: Product | undefined, options: Record<string, string>
   (p ? optionGroupsFor(p).map(g => options[g.typeSlug]).filter(Boolean) : []).join(" · ") || "Standard selections";
 
 // ═══ NEW-ITEM FORM (product picker + sections + commit) ═══════════════════════
-export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = false, submitLabel = "Save" }: {
+export function ItemForm({
+  lockedSlug, quote, seed, onCommit, onCancel, rail = false, submitLabel = "Save",
+  priceFn = previewPrice, scope = "item",
+}: {
   lockedSlug?: string;
-  quote: QuoteState;
+  /** Only `items` is read — for the duplicate-code check and code suggestion. It
+   *  is deliberately NOT the whole QuoteState: ops reuses this form against a
+   *  record it loads from its own API, and it has no customer quote store to
+   *  hand over. Narrowing the type is what makes that legal rather than a cast. */
+  quote: Pick<QuoteState, "items">;
   seed?: Partial<QItem> | null;
   onCommit: (built: Omit<QItem, "id">) => void;
   onCancel?: () => void;
   rail?: boolean;
   submitLabel?: string;
+  /** How the live figure is obtained. Defaults to the customer preview, which is
+   *  scoped to the signed-in visitor's own project. Ops must override it: a
+   *  staff member pricing someone else's line has no "current project", and the
+   *  figure has to be computed in that project's owner context so an account
+   *  discount is neither invented nor dropped. */
+  priceFn?: (item: {
+    productSlug: string; width: string; height: string;
+    options: Record<string, string>; qty: number;
+  }) => Promise<{ ok: boolean; total: number | null }>;
+  /** "item" is a whole opening. "unit" is one frame INSIDE a composite opening:
+   *  it has no architect tag and no room of its own — one opening, one code —
+   *  and its size across the join is set by the opening, so those fields are not
+   *  offered rather than being offered and ignored. */
+  scope?: "item" | "unit";
 }) {
+  const isUnit = scope === "unit";
   const seedProduct = seed?.productSlug ? getProductBySlug(seed.productSlug) : undefined;
   const [familySlug, setFamilySlug] = useState(lockedSlug ? (getProductBySlug(lockedSlug)?.familySlug || "") : (seedProduct?.familySlug || ""));
   const [productSlug, setProductSlug] = useState(lockedSlug || seed?.productSlug || "");
@@ -402,7 +424,7 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
     let live = true;
     setPriced((prev) => ({ ...prev, ok: false }));
     const t = setTimeout(() => {
-      previewPrice({ productSlug, width, height, options, qty })
+      priceFn({ productSlug, width, height, options, qty })
         .then((r) => { if (live) setPriced({ ok: r.ok, total: r.total ?? 0, unit: qty > 0 ? (r.total ?? 0) / qty : 0 }); })
         .catch(() => { if (live) setPriced({ ok: false, total: 0, unit: 0 }); });
     }, 250);
@@ -410,8 +432,9 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [priceKey, dimsEntered]);
   const gstMode = useGstMode();
-  const finalCode = normCode(code) || (productSlug ? suggestCode(quote.items, productSlug) : "");
-  const duplicateCode = !!finalCode && quote.items.some(item => normCode(item.code) === finalCode);
+  // A unit carries no code, so it can neither be suggested one nor collide.
+  const finalCode = isUnit ? "" : (normCode(code) || (productSlug ? suggestCode(quote.items, productSlug) : ""));
+  const duplicateCode = !isUnit && !!finalCode && quote.items.some(item => normCode(item.code) === finalCode);
   const oversize = dimsEntered && !inRange && !((p?.minWidth != null && w < p.minWidth) || (p?.minHeight != null && h < p.minHeight));
   const tooSmall = dimsEntered && !inRange && !oversize;
   // Oversize is submittable, flagged; undersize is a typo and blocks.
@@ -485,12 +508,14 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
             </div>
           )
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-[10rem_minmax(0,1fr)_minmax(0,1fr)] gap-3">
-            <div>
-              <FieldLabel>Item ID</FieldLabel>
-              <Input value={code} maxLength={10} onChange={e => { setCodeEdited(true); setCode(e.target.value.toUpperCase()); }} placeholder="e.g. W01" />
-              {duplicateCode && <p className="text-[11px] text-amber-700 mt-1">Item ID already exist</p>}
-            </div>
+          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${isUnit ? "md:grid-cols-2" : "md:grid-cols-[10rem_minmax(0,1fr)_minmax(0,1fr)]"}`}>
+            {!isUnit && (
+              <div>
+                <FieldLabel>Item ID</FieldLabel>
+                <Input value={code} maxLength={10} onChange={e => { setCodeEdited(true); setCode(e.target.value.toUpperCase()); }} placeholder="e.g. W01" />
+                {duplicateCode && <p className="text-[11px] text-amber-700 mt-1">Item ID already exist</p>}
+              </div>
+            )}
             <div>
               <FieldLabel>Product type</FieldLabel>
               <div className="relative">
@@ -522,9 +547,16 @@ export function ItemForm({ lockedSlug, quote, seed, onCommit, onCancel, rail = f
             <Section label="Options" summary={optionSummaryOf(p, options)} attention={hasIssue("options")} open={open.options} onToggle={() => setOpen(o => ({ ...o, options: !o.options }))}>
               <OptionsFields p={p} options={options} setOpt={setOpt} />
             </Section>
-            <Section label="Quantity & note" summary={qtySummary} open={open.qty} onToggle={() => setOpen(o => ({ ...o, qty: !o.qty }))}>
-              <QtyLocationFields qty={qty} location={location} setQty={setQty} setLocation={setLocation} />
-            </Section>
+            {/* A unit's quantity is not its own: it is the opening's quantity
+                times how many of this frame go into one opening, and composite.ts
+                is the single writer of the product. Offering a quantity box here
+                would let a reviewer type a number the next recompute overwrites.
+                The room is the opening's too — one opening, one location. */}
+            {!isUnit && (
+              <Section label="Quantity & note" summary={qtySummary} open={open.qty} onToggle={() => setOpen(o => ({ ...o, qty: !o.qty }))}>
+                <QtyLocationFields qty={qty} location={location} setQty={setQty} setLocation={setLocation} />
+              </Section>
+            )}
           </div>
         )}
       </div>

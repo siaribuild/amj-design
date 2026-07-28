@@ -13,7 +13,10 @@ import { notify } from "../lib/email";
 import { findOrCreateInternalUser, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
 import { drainLearningOutbox, issueRevision } from "../lib/revisions";
 import { logEvent } from "../lib/activity";
-import { splitLine, mergeComposite } from "../lib/composite";
+import {
+  splitLine, mergeComposite, recomputeComposite,
+  updateSegment, addSegment, removeSegment, loadCompositePolicy,
+} from "../lib/composite";
 import { orderDto, applyTransition, markPaid, availableActions, STAGE_LABEL, type Stage, type OrderRow } from "../lib/orders";
 import { lifecycleOf, daysSince } from "../lib/lifecycle";
 import { actionsFor } from "../lib/ops-actions";
@@ -111,6 +114,13 @@ interface LineRow {
   edited_fields?: string | null; edit_version: number;
   owner_user_id?: string | null;
   quote_edit_version?: number;
+  // Composite shape. Read through `as` casts before, which is how the PATCH
+  // handler came to price a composite parent as if it were a single frame — the
+  // discriminator was in the row all along and simply not in the type.
+  line_kind?: string | null;
+  parent_line_id?: string | null;
+  composite_axis?: string | null;
+  coverage_delta_mm?: number | null;
 }
 
 const opsLineDto = (r: LineRow) => {
@@ -357,8 +367,12 @@ ops.get("/projects/:id", async (c) => {
   // for the item list, but it meant the console could never see, or offer, a
   // split — the split/merge endpoints have existed since the composite work and
   // have never had a caller.
+  // Seeded by migration 0028; loadCompositePolicy throws if the row is missing,
+  // which is a deployment fault worth surfacing rather than defaulting around.
+  const compositePolicy = await loadCompositePolicy(c.env);
   const { results: segments } = await c.env.DB.prepare(
-    `SELECT id, parent_line_id, product_slug, dims_json, qty_per_parent, qty, line_total, segment_seq
+    `SELECT id, parent_line_id, product_slug, options_json, dims_json,
+            qty_per_parent, qty, line_total, status, segment_seq
        FROM quote_line
       WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NOT NULL
       ORDER BY parent_line_id, segment_seq`,
@@ -428,10 +442,22 @@ ops.get("/projects/:id", async (c) => {
           productName: getProductBySlug(s2.product_slug)?.name ?? s2.product_slug,
           width: String(d.width ?? ""), height: String(d.height ?? ""),
           qtyPerParent: s2.qty_per_parent ?? 1, qty: s2.qty, lineTotal: s2.line_total,
+          // Without these the console could not show what a unit IS — only its
+          // size and its price. A reviewer checking that unit 2 is the right
+          // colour had nothing to read, and no way to tell an unpriced unit from
+          // a priced one except by the parent going blank.
+          options: safeParse(s2.options_json ?? "{}") as Record<string, string>,
+          status: s2.status ?? "ready",
         };
       }),
     })),
     files,
+    // The split rules, so the browser stops carrying its own copy of them. The
+    // console hardcoded a unit count of [2,3,4] and reimplemented the even-split
+    // maths WITHOUT the joiner allowance, so its proposal disagreed with
+    // proposeEvenSplit() by joinerMm × (units − 1) before the reviewer typed
+    // anything. maxSegments and toleranceMm were unreachable entirely.
+    compositePolicy,
     revisions: revisions.map((r: any) => ({ id: r.id, revisionNo: r.revision_no, status: r.snapshot_status, total: safeParse(r.totals_json).total ?? 0, issuedAt: r.issued_at, acceptedAt: r.accepted_at })),
     comments,
     activity,
@@ -591,6 +617,15 @@ async function editableParent(env: Env, req: Request, lineId: string) {
 ops.post("/lines/:id/split", async (c) => {
   const parent = await editableParent(c.env, c.req.raw, c.req.param("id"));
   if (!parent) return c.json({ error: "not_found" }, 404);
+  // Create-only. splitLine DELETEs every existing segment and recreates them,
+  // which was tolerable when a unit was nothing but a width and destroys real
+  // work now that a unit carries its own product and spec. Changing an existing
+  // composite goes through the per-unit endpoints; the only way back to a blank
+  // slate is merge, which is explicit about discarding the units.
+  const already = await c.env.DB
+    .prepare("SELECT 1 AS x FROM quote_line WHERE parent_line_id=? LIMIT 1")
+    .bind(parent.id).first<{ x: number }>();
+  if (already) return c.json({ error: "already_composite" }, 409);
   const body = await c.req.json().catch(() => ({}));
   const segments = Array.isArray(body?.segments) ? body.segments : [];
   const axis = body?.axis === "horizontal" ? "horizontal" : "vertical";
@@ -603,7 +638,14 @@ ops.post("/lines/:id/split", async (c) => {
       heightMm: Number(s?.heightMm) || 0,
       productSlug: String(s?.productSlug ?? ""),
       qtyPerParent: Number(s?.qtyPerParent) || 1,
-      options: (s?.options && typeof s.options === "object" ? s.options : {}) as Record<string, string>,
+      // undefined, NOT {} — the distinction is the whole point. splitLine reads
+      // "no options stated" as "inherit the opening's spec"; collapsing it to an
+      // empty object here re-asserted "this unit has no colour, no hardware,
+      // no flyscreen" and discarded the customer's selections along with any
+      // surcharge attached to them.
+      options: s?.options && typeof s.options === "object" && !Array.isArray(s.options)
+        ? s.options as Record<string, string>
+        : undefined,
     })),
   });
   if (!result.ok) return c.json({ error: "invalid_split", errors: result.errors }, 400);
@@ -637,9 +679,15 @@ ops.patch("/lines/:id", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
   if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  // parent_line_id IS NULL: this endpoint is for OPENINGS only. A segment has a
+  // derived qty and a parent whose total is Σ(segments), and nothing here
+  // recomputes either — so patching a segment through it wrote qty directly
+  // (breaking composite.ts's single-writer invariant) and left the parent's
+  // total describing a composite that no longer existed. Segments have their own
+  // endpoint below, which cannot express either mistake.
   const line = await c.env.DB.prepare(
     `SELECT q.*, p.quote_edit_version, p.owner_user_id FROM quote_line q JOIN project p ON p.id=q.project_id
-      WHERE q.id=? AND q.revision_id IS NULL
+      WHERE q.id=? AND q.revision_id IS NULL AND q.parent_line_id IS NULL
         AND p.status_internal IN (
           'submitted','triage_pending','estimator_assigned',
           'technical_review_required','customer_clarification_required'
@@ -732,6 +780,17 @@ ops.patch("/lines/:id", async (c) => {
       coating: variant.coating, options, pricingOptionSlugs,
       dimensions: { widthMm: Number(width), heightMm: Number(height) }, quantity: qty,
     });
+  } else if (line.line_kind === "composite_parent") {
+    // A composite parent is NEVER priced directly — its total is Σ(segments).
+    // This branch used to fall through to priceItem, so changing an opening's qty
+    // or size from the always-on inputs in the row overwrote the sum of the units
+    // with a single-frame price. Verified against a dev database: an opening whose
+    // two units totalled $5,400 was rewritten to $1,840 by a qty edit, with the
+    // segments left untouched and their derived qty stale.
+    //
+    // Hold the existing total through the UPDATE and let recomputeComposite below
+    // derive the real one — it is the single writer for exactly this reason.
+    lineTotal = line.line_total ?? null;
   } else {
     // Same engine as the customer save and the schedule parse — a reviewer edit
     // must never produce a different number from the one the customer saw.
@@ -789,8 +848,113 @@ ops.patch("/lines/:id", async (c) => {
     await logEvent(c.env, { actor: staff.id, entityType: "quote_line", entityId: line.id, action: `resolved technical review: ${resolvedKeys.join(", ")}` });
   }
 
+  // Changing the opening changes what its units must add up to: qty is derived
+  // from the parent's, and coverage is measured against the opening's size. Both
+  // are stale the instant either moves, so the derivation runs after every edit
+  // to a composite parent — not only when a unit changes.
+  if (line.line_kind === "composite_parent") await recomputeComposite(c.env, line.id);
+
   const fresh = await c.env.DB.prepare("SELECT * FROM quote_line WHERE id = ?").bind(line.id).first<LineRow>();
   return c.json({ line: opsLineDto(fresh!) });
+});
+
+// POST /api/ops/lines/:id/price-preview — the live figure for the editor.
+//
+// The customer preview (/api/projects/current/price-preview) is scoped to the
+// signed-in visitor's OWN project, so it is useless here: a staff member editing
+// someone else's line has no "current project", and the figure has to be
+// computed against that project's owner or an account discount is either
+// invented or dropped. Same engine, correct context.
+//
+// Read-only and rate-free: it returns a total and nothing about how it was
+// reached, so it exposes no rate-card data the console does not already show.
+ops.post("/lines/:id/price-preview", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const line = await c.env.DB.prepare(
+    `SELECT q.id, p.owner_user_id FROM quote_line q JOIN project p ON p.id=q.project_id WHERE q.id=?`,
+  ).bind(c.req.param("id")).first<{ id: string; owner_user_id: string | null }>();
+  if (!line) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  const options = body?.options && typeof body.options === "object" && !Array.isArray(body.options)
+    ? body.options as Record<string, string> : {};
+  const total = await priceItem(c.env, {
+    productSlug: String(body?.productSlug ?? ""),
+    width: String(body?.width ?? ""), height: String(body?.height ?? ""),
+    options, qty: Math.max(1, Math.floor(Number(body?.qty) || 1)),
+    ownerUserId: line.owner_user_id ?? null,
+  });
+  return c.json({ ok: total != null, total });
+});
+
+// ── Per-unit management of a composite ───────────────────────────────────────
+// Openings use PATCH /lines/:id; units use these. The split is deliberate: a
+// unit has no code and no room (one opening, one architect tag), its qty is
+// derived rather than set, and every write has to re-derive the parent. None of
+// these endpoints accepts `qty` or `external_ref`.
+
+/** The opening a unit belongs to, if its project is still editable by staff. */
+async function editableSegmentParent(env: Env, req: Request, segmentId: string) {
+  const row = await env.DB.prepare(
+    `SELECT q.id, q.parent_line_id, p.id AS project_id
+       FROM quote_line q
+       JOIN quote_line par ON par.id = q.parent_line_id
+       JOIN project p ON p.id = q.project_id
+      WHERE q.id=? AND q.parent_line_id IS NOT NULL AND q.revision_id IS NULL
+        AND p.status_internal IN (
+          'submitted','triage_pending','estimator_assigned',
+          'technical_review_required','customer_clarification_required'
+        )`,
+  ).bind(segmentId).first<{ id: string; parent_line_id: string; project_id: string }>();
+  if (!row) return null;
+  const staff = await resolveStaff(env, req);
+  if (!staff || !hasAssignedRole(staff)) return null;
+  return row;
+}
+
+ops.patch("/segments/:id", async (c) => {
+  const seg = await editableSegmentParent(c.env, c.req.raw, c.req.param("id"));
+  if (!seg) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+
+  const patch: {
+    productSlug?: string; options?: Record<string, string>;
+    alongMm?: number; qtyPerParent?: number;
+  } = {};
+  if (body?.productSlug !== undefined) patch.productSlug = String(body.productSlug);
+  if (body?.options && typeof body.options === "object" && !Array.isArray(body.options)) {
+    patch.options = Object.fromEntries(
+      Object.entries(body.options as Record<string, unknown>).map(([k, v]) => [k, String(v ?? "")]),
+    );
+  }
+  if (body?.alongMm !== undefined) patch.alongMm = Number(body.alongMm) || 0;
+  if (body?.qtyPerParent !== undefined) patch.qtyPerParent = Number(body.qtyPerParent) || 1;
+
+  const result = await updateSegment(c.env, { segmentId: seg.id, patch });
+  if (!result.ok) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
+  await logEvent(c.env, {
+    entityType: "project", entityId: seg.project_id, action: "line.unit.edit",
+    after: { lineId: seg.parent_line_id, unitId: seg.id, fields: Object.keys(patch) },
+  });
+  return c.json({ ok: true });
+});
+
+ops.post("/lines/:id/segments", async (c) => {
+  const parent = await editableParent(c.env, c.req.raw, c.req.param("id"));
+  if (!parent) return c.json({ error: "not_found" }, 404);
+  const result = await addSegment(c.env, parent.id);
+  if (!result.ok) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
+  await logEvent(c.env, { entityType: "project", entityId: parent.project_id, action: "line.unit.add", after: { lineId: parent.id, unitId: result.id } });
+  return c.json({ ok: true, id: result.id });
+});
+
+ops.delete("/segments/:id", async (c) => {
+  const seg = await editableSegmentParent(c.env, c.req.raw, c.req.param("id"));
+  if (!seg) return c.json({ error: "not_found" }, 404);
+  const result = await removeSegment(c.env, seg.id);
+  if (!result.ok) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
+  await logEvent(c.env, { entityType: "project", entityId: seg.project_id, action: "line.unit.remove", after: { lineId: result.parentId, unitId: seg.id } });
+  return c.json({ ok: true });
 });
 
 // POST /api/ops/projects/:id/note { body, lineId? } — technical-review note.
