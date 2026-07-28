@@ -145,8 +145,8 @@ export function CtaBanner({ title, sub, onQuote, ground = "paper" }: {
   return (
     <section className={`${ground === "bone" ? "ground-bone" : "ground-paper"} border-t border-black/8 py-14`}>
       <div className="max-w-6xl mx-auto px-6">
-        <div className="bg-sage px-6 sm:px-10 py-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-          <div className="max-w-[54ch]">
+        <div className="bg-sage px-6 sm:px-10 py-10 split-row is-center">
+          <div className="split-prose">
             <h2 className="text-white font-semibold leading-tight mb-1.5"
               style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.4rem, 2.4vw, 1.9rem)" }}>
               {title}

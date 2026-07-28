@@ -753,8 +753,8 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
       <section className="relative ground-paper border-t border-black/8 py-14 md:py-[68px]" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>The minute</SLabel>
-          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-8">
-            <div className="max-w-[54ch]">
+          <div className="split-row mb-8">
+            <div className="split-prose">
               <h2 className="font-semibold text-ink leading-tight mb-2.5"
                 style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
                 It's already drawn. Stop typing it out twice.
@@ -769,7 +769,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                 the quote page already uses; do not out-claim the product with a
                 precise figure nobody measured. */}
             <div className="lg:text-right lg:flex-shrink-0">
-              <div className="font-semibold text-sage-deep leading-none" style={{ ...MONO, fontSize: "clamp(1.7rem, 5vw, 2.75rem)" }}>
+              <div className="figure">
                 &lt; 1 min
               </div>
               <div className="text-quiet text-[13px] mt-1.5">from upload to a matched list</div>
@@ -997,7 +997,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                   <span className="w-8 h-8 border border-sage/40 flex items-center justify-center text-sage text-xs" style={MONO}>{s.n}</span>
                   <span className="flex items-center gap-2">
                     <Meter paid={s.paid} />
-                    <span className="font-semibold text-sage-deep leading-none" style={{ ...MONO, fontSize: "clamp(1.5rem, 4vw, 2.1rem)" }}>{s.paid}</span>
+                    <span className="figure-sm">{s.paid}</span>
                   </span>
                 </div>
                 <h3 className="font-semibold text-ink text-base leading-tight mb-1.5" style={DISPLAY}>{s.title}</h3>

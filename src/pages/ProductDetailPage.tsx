@@ -371,7 +371,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
               ))}
             </div>
           ) : (
-            <div className="border border-black/10 bg-bone px-6 py-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="border border-black/10 bg-bone px-6 py-8 split-row is-center">
               <p className="text-sm text-body">This is the only system in the {family?.name ?? "family"} right now. Browse the full catalogue to compare other options.</p>
               <Btn variant="outline" size="sm" onClick={() => onBack(categorySlug, "all")}>View all {category?.name?.toLowerCase() ?? "products"}</Btn>
             </div>

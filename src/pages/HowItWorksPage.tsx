@@ -158,7 +158,7 @@ function PhaseSection({ p, brand }: { p: Phase; brand: string }) {
     <section id={p.id} aria-labelledby={`${p.id}-h`} className="relative ground-bone py-12 md:py-20 overflow-hidden">
       <GhostMark size={300} opacity={0.04} pos="right-0 bottom-0" />
       <div className="max-w-6xl mx-auto px-6 relative">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-9">
+        <div className="split-row mb-9">
           <div className="max-w-[46ch]">
             <SLabel>{p.label}</SLabel>
             <h2 id={`${p.id}-h`} className="font-semibold text-ink leading-[1.08] tracking-tight" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
@@ -171,7 +171,7 @@ function PhaseSection({ p, brand }: { p: Phase; brand: string }) {
             <div className="text-[10px] uppercase tracking-[0.14em] text-quiet mb-1.5" style={MONO}>Paid so far</div>
             <div className="flex md:justify-end items-center gap-2">
               <Meter paid={p.paid} />
-              <span className="font-semibold text-sage-deep leading-none" style={{ ...DISPLAY, fontSize: "clamp(2rem, 5vw, 2.75rem)" }}>{p.paid}</span>
+              <span className="figure">{p.paid}</span>
             </div>
             <div className="text-[12px] text-body mt-1" style={MONO}>{p.paidNote} · {p.duration}</div>
           </div>
@@ -235,7 +235,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
           <h2 className="font-semibold text-ink leading-[1.08] tracking-tight mb-3 max-w-[20ch]" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
             Three phases, and what each one asks of you.
           </h2>
-          <p className="text-body text-[15.5px] leading-relaxed max-w-[54ch] mb-3">
+          <p className="text-body text-[15.5px] leading-relaxed split-prose mb-3">
             Numbered steps below are yours. Everything between them is {brandSubject() === "We" ? "ours" : `${brand}'s`}.
           </p>
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[13px] text-ink mb-8" style={MONO}>
@@ -254,7 +254,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
                 className="border-r border-y border-black/10 bg-white px-3 py-4 md:px-5 md:py-5 hover:bg-sage-veil transition-colors">
                 <div className="text-[10px] uppercase tracking-[0.12em] text-quiet mb-1" style={MONO}>{p.label.replace(" — ", " · ")}</div>
                 <div className="flex items-baseline gap-2 mb-1.5">
-                  <span className="font-semibold text-sage-deep leading-none" style={{ ...DISPLAY, fontSize: "clamp(1.6rem, 6vw, 2.4rem)" }}>{p.paid}</span>
+                  <span className="figure">{p.paid}</span>
                 </div>
                 <div className="mb-2"><Meter paid={p.paid} /></div>
                 <div className="text-[11.5px] md:text-[12.5px] text-body leading-snug" style={MONO}>{p.duration}</div>
@@ -271,7 +271,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
         <div className="max-w-6xl mx-auto px-6">
           <div className="relative bg-sage text-white overflow-hidden p-8 md:p-12">
             <GhostMark size={300} opacity={0.08} color="#fff" pos="right-0 bottom-0" />
-            <div className="relative flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+            <div className="relative split-row">
               <div className="max-w-[46ch]">
                 <SLabel light>The line</SLabel>
                 <h2 className="font-semibold leading-[1.08] tracking-tight mb-3" style={{ ...DISPLAY, fontSize: "clamp(1.5rem, 3.2vw, 2rem)" }}>

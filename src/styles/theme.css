@@ -389,3 +389,62 @@
     border-top: 1px solid var(--line);
   }
 }
+
+/* ─── The two-column row ──────────────────────────────────────────────────────
+ * One shape appears all over the site: something on the left, something else
+ * pushed right — a heading beside a figure, or copy beside a button. It had
+ * drifted into 3 breakpoints (sm/md/lg), 8 gaps (0,2,3,4,6,8,10,12), 3
+ * alignments and 7 prose widths, so no two instances lined up.
+ *
+ * Standardised on md (768px) — the breakpoint 7 of the 14 already used, and the
+ * point at which two columns genuinely fit. Below it everything stacks.
+ *
+ * Two variants, because they are two different jobs:
+ *   .split-row         heading + figure — BASELINES align (align-items:flex-end)
+ *   .split-row.is-center   copy + action — the button centres on the text block
+ */
+@layer components {
+  .split-row { display: flex; flex-direction: column; gap: 1rem; }
+
+  @media (min-width: 768px) {
+    .split-row {
+      flex-direction: row;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 2.5rem;               /* the column gutter, one value everywhere */
+    }
+    .split-row.is-center { align-items: center; }
+  }
+
+  /* The text column. 54ch is a comfortable measure and is what the hero region
+   * and the closing banner already used; 44/46/52/56/60/64 were drift. */
+  .split-prose { max-width: 54ch; }
+
+  /* ─── Figures ──────────────────────────────────────────────────────────────
+   * The sage numerals (< 1 min, 0%, 50%…). There were FOUR sizes for one idea,
+   * topping out at ~44px, and on a process card a 33px numeral sat beside a
+   * 16px heading — twice the weight of the thing it was annotating.
+   *
+   * Two tiers, and only two:
+   *   .figure     a SECTION's headline number — it is the point of the section
+   *   .figure-sm  a CARD's number — an annotation, sized to the card's own copy
+   *
+   * On a card the Meter glyph already carries the value visually; the numeral is
+   * there so the meaning is never colour or shape alone, which is a smaller job
+   * than a display numeral was doing. */
+  .figure {
+    font-family: 'DM Mono', monospace;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--sage-deep);
+    font-size: clamp(1.7rem, 4.5vw, 2.4rem);
+  }
+  .figure-sm {
+    font-family: 'DM Mono', monospace;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--sage-deep);
+    font-size: 15px;
+    letter-spacing: 0.01em;
+  }
+}
