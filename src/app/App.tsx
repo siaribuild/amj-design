@@ -821,44 +821,33 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
             </div>
           </div>
 
-          {/* The handover — the LAST ROW OF THE DEMO, not a panel under it.
-              -mt-px welds it to the pair above so it shares their border; the
-              sage panel it replaces floated below with its own margin and its own
-              fill, which is why it read as a disclaimer sticker rather than part
-              of the object.
-              It exists because the footer above ends on "flagged for a technician
-              to confirm" — a sentence that opens a loop the section then had no
-              ending for. Closing it here also brackets the demo with its two
-              timescales: the machine's minute in the header, the human's two days
-              at the foot. The numeral is deliberately smaller than "< 1 min" —
-              the minute is the claim, the review is the qualifier, and the type
-              scale should say which is which.
-              No tint (the results footer directly above already carries the sage
-              wash; two stacked tinted strips stutter), no meter, no motion — the
-              staggered row reveal is the machine working, this is the person. */}
-          <div className="border border-black/10 -mt-px bg-white px-4 py-4 lg:px-5 lg:py-5
-                          flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-            <div className="max-w-[62ch]">
-              <span className="block text-[11px] uppercase tracking-[0.14em] text-[#8a8782] mb-1.5" style={MONO}>
-                What happens next
-              </span>
-              <p className="text-[15px] text-[#131311] leading-relaxed">
-                A technician confirms specifications, sizes and buildability before it becomes a quote.
-                Nothing is charged either way.
-              </p>
-            </div>
-            {/* Phone: numeral and caption share one baseline, left-aligned with
-                everything above. Right-aligned only once there is a row to sit in. */}
-            <div className="flex items-baseline gap-2 lg:flex-col lg:items-end lg:gap-0 lg:text-right lg:flex-shrink-0">
-              <div className="font-semibold text-[#3f5a4c] leading-none"
-                style={{ ...MONO, fontSize: "clamp(1.25rem, 3vw, 1.75rem)" }}>
-                ~2 days
-              </div>
-              <div className="text-[#8a8782] text-[12px] lg:mt-1.5">for a person to check it</div>
-            </div>
-          </div>
         </div>
       </section>
+
+      {/* ─── THE ASK, AT THE PROOF POINT ─────────────────────────────────────
+          Two earlier attempts sat inside the section above — a sage panel, then a
+          welded white row. Both were attached panels, and both were wrong for the
+          same reason: they ENDED the demo when the demo does not need an ending,
+          it needs an exit.
+          This is the highest-conviction moment on the page. The visitor has just
+          watched their own document format get read. Making them scroll back to
+          the hero to act on that taxes the most persuaded visitor there is — and
+          the hero's ask was "trust me, upload", which is a different ask from
+          "you just saw it work, upload". Same button, different state.
+          The subline does the second job: the results footer ends on "flagged for
+          a technician to confirm", which opens a loop, so the copy closes it and
+          removes the money objection in the same breath.
+          It is also the context break — demo → products — that the removed sage
+          panel was accidentally providing. That is why it is a full section here
+          rather than anything attached to the panel above.
+          COST, stated plainly: sage is now a fill twice on this page instead of
+          once, so the closing banner is no longer the only one. That is the price
+          of putting the action where the evidence is, and it is worth it. */}
+      <CtaBanner
+        title="Do that with your own schedule."
+        sub="Upload the PDF and every line comes back the same way. A person checks it before it becomes a quote, and nothing is charged either way."
+        onQuote={() => go("quote")}
+      />
 
       {/* ─── SYSTEMS ─────────────────────────────────────────────────────────
           Real photography, kept as-is. The mock renders its system tiles as CSS
