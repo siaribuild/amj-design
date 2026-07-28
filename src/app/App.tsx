@@ -835,8 +835,14 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           the hero's ask was "trust me, upload", which is a different ask from
           "you just saw it work, upload". Same button, different state.
           The subline does the second job: the results footer ends on "flagged for
-          a technician to confirm", which opens a loop, so the copy closes it and
-          removes the money objection in the same breath.
+          a technician to confirm", which opens a loop, so the copy closes it.
+          It must state BOTH durations, in order, for the same reason the hero
+          does (see the comment there). A first version read "A person checks it
+          before it becomes a quote" with no duration attached, directly under a
+          demo that had just run in well under a minute — which implies the review
+          happens inside that minute. It also has to say what the visitor gets AT
+          UPLOAD: the machine's pass, not a reviewed quote. The instant result is
+          real but it is not the thing you accept.
           It is also the context break — demo → products — that the removed sage
           panel was accidentally providing. That is why it is a full section here
           rather than anything attached to the panel above.
@@ -845,7 +851,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           of putting the action where the evidence is, and it is worth it. */}
       <CtaBanner
         title="Do that with your own schedule."
-        sub="Upload the PDF and every line comes back the same way. A person checks it before it becomes a quote, and nothing is charged either way."
+        sub="Upload yours and every line comes back priced in about a minute. That first pass is the machine's — a person reviews it within two business days, and that is the quote you accept."
         onQuote={() => go("quote")}
       />
 
