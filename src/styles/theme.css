@@ -489,9 +489,30 @@
  */
 @layer components {
   .tab {
+    position: relative;
     background-color: var(--paper);
     border: 1px solid var(--line);
     transition: border-color 150ms ease;
+  }
+
+  /* The selection square, top-right. It was an inline span on the contact
+   * tablist only, so the products switch had no marker at all beyond its
+   * border. Part of the class now, so every tab carries it and it cannot be
+   * forgotten on the next one. aria-hidden by construction — a pseudo-element
+   * is not in the accessibility tree, and the state is already announced. */
+  .tab::after {
+    content: ;
+    position: absolute;
+    top: 14px; right: 14px;
+    width: 9px; height: 9px;
+    border: 1px solid color-mix(in oklab, var(--sage) 40%, transparent);
+    background-color: var(--paper);
+    transition: background-color 150ms ease, border-color 150ms ease;
+  }
+  .tab[aria-selected=true]::after,
+  .tab[aria-pressed=true]::after {
+    background-color: var(--sage);
+    border-color: var(--sage);
   }
   .tab:hover,
   .tab:focus-visible { border-color: color-mix(in oklab, var(--sage) 45%, transparent); }
