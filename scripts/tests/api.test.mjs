@@ -481,6 +481,29 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       // A composite cannot be whittled below two units; that is a merge.
       await requestJson(ops, `/api/ops/segments/${after[1].id}`, { method: "DELETE" }, 400);
 
+      // A CUSTOMER cannot reach the units, even on a draft project.
+      //
+      // Their line-save endpoint addressed every quote_line row on the project,
+      // and the read route hands them segment ids, so a segment id in
+      // `removedIds` deleted the unit — leaving the opening priced for units it
+      // no longer had, with no recompute. It was unreachable only because
+      // composites happen to exist solely on submitted projects today; the AI
+      // proposal path breaks that the moment it proposes a split, because
+      // parsing happens on a DRAFT project. So the state is forced here rather
+      // than waiting for the feature that makes it ordinary.
+      const unitIds = (await sql(`SELECT id FROM quote_line WHERE parent_line_id='${parentId}'`)).map((r) => r.id);
+      await sql(`UPDATE project SET status_customer='draft' WHERE id='${projectId}'`);
+      await requestJson(cust, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { items: [], removedIds: unitIds },
+      });
+      assert.equal(
+        (await sql(`SELECT id FROM quote_line WHERE parent_line_id='${parentId}'`)).length,
+        unitIds.length,
+        "a customer save must not delete the units of a composite",
+      );
+      await sql(`UPDATE project SET status_customer='under_review' WHERE id='${projectId}'`);
+
       // Merging restores the fit warning: the reason for splitting is still true,
       // so an unbuildable single unit must never come back as Ready.
       await requestJson(ops, `/api/ops/lines/${parentId}/merge`, { method: "POST" });

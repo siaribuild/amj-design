@@ -181,11 +181,27 @@ projects.put("/current/lines", async (c) => {
     pricing_snapshot_json: string | null; configuration_snapshot_json: string | null;
     selected_variant_id: string | null;
   };
+  // parent_line_id IS NULL — OPENINGS only, matching the read route, which
+  // returns segments nested inside their parent rather than as items.
+  //
+  // Without it every segment was addressable by this endpoint, and the customer
+  // already knows their ids because the read route sends them. Two ways that
+  // bites: a segment id in `removedIds` DELETEs the unit (segments are never in
+  // `keptIds`, since the client never sends them back as items), and a matching
+  // item id UPDATEs one — writing qty directly and clearing its pricing snapshot.
+  // Neither path calls recomputeComposite, so the opening is left claiming a
+  // total for units that no longer exist or no longer cost that.
+  //
+  // It is not reachable today only because composites exist solely on projects
+  // already past `draft`, which this route requires — an invariant that holds by
+  // accident of ops being the only creator, and that the AI proposal path breaks
+  // the moment it proposes a split, because parsing happens ON a draft project.
+  // A guard is the fix; relying on the ordering of unrelated features is not.
   const storedRows = ((await c.env.DB.prepare(
     `SELECT id, origin, edited_fields, product_slug, options_json, dims_json, qty,
             ai_proposal_line_id, pricing_snapshot_json, configuration_snapshot_json,
             selected_variant_id
-       FROM quote_line WHERE project_id = ? AND revision_id IS NULL`,
+       FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL`,
   ).bind(project.id).all<StoredRow>()).results ?? []);
   const existing = new Map(storedRows.map((r) => [r.id, r]));
   const resolved = items.map((raw, i) => {
@@ -206,7 +222,12 @@ projects.put("/current/lines", async (c) => {
   for (const id of existing.keys()) {
     if (!keptIds.has(id) && removedIds.has(id)) {
       stmts.push(c.env.DB.prepare(
-        `DELETE FROM quote_line WHERE id=? AND project_id=? AND EXISTS (
+        // The parent guard is repeated at the WRITE, not only on the set of ids
+        // this route will consider. A unit is never the customer's to delete —
+        // deleting one silently leaves its opening priced for units it no longer
+        // has — and that should not depend on a SELECT twenty lines away
+        // continuing to filter them out.
+        `DELETE FROM quote_line WHERE id=? AND project_id=? AND parent_line_id IS NULL AND EXISTS (
            SELECT 1 FROM project WHERE id=? AND status_customer='draft'
              AND quote_edit_version=? AND quote_mutation_token=?
          )`,
@@ -230,7 +251,7 @@ projects.put("/current/lines", async (c) => {
         stmts.push(c.env.DB.prepare(
           `UPDATE quote_line SET external_ref=?, room_label=?, measured_by=?,
              position=?, edit_version=edit_version+1, updated_at=datetime('now')
-           WHERE id=? AND project_id=? AND revision_id IS NULL
+           WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
              AND EXISTS (
                SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                  AND quote_edit_version=? AND quote_mutation_token=?
@@ -253,7 +274,7 @@ projects.put("/current/lines", async (c) => {
              pricing_snapshot_json=NULL, configuration_snapshot_json=NULL,
              selected_variant_id=?,
              edit_version=edit_version+1, updated_at=datetime('now')
-           WHERE id=? AND project_id=? AND revision_id IS NULL
+           WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
              AND EXISTS (
                SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                  AND quote_edit_version=? AND quote_mutation_token=?
@@ -272,7 +293,7 @@ projects.put("/current/lines", async (c) => {
       }
       stmts.push(c.env.DB.prepare(
         `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?, options_json=?, dims_json=?, measured_by=?, qty=?, line_total=?, status=?, position=?, review_json=?, edited_fields=?, edit_version=edit_version+1, updated_at=datetime('now')
-         WHERE id=? AND project_id=? AND revision_id IS NULL
+         WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
            AND EXISTS (
              SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                AND quote_edit_version=? AND quote_mutation_token=?
@@ -370,7 +391,7 @@ projects.post("/current/lines/:id/restore-ai", async (c) => {
        pricing_snapshot_json=?, recommendation_basis=?,
        recommendation_confidence=?, edit_version=edit_version+1,
        updated_at=datetime('now')
-     WHERE id=? AND project_id=? AND revision_id IS NULL
+     WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
        AND edit_version=?
        AND EXISTS (
          SELECT 1 FROM project restore_project
