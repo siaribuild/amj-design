@@ -7,7 +7,7 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Upload, UploadCloud, X, Plus, ChevronLeft, ArrowRight,
-  AlertCircle, Check, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil, Paperclip, Trash2, Loader2, Camera,
+  AlertCircle, Check, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil, Paperclip, Trash2, Loader2,
 } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
@@ -286,9 +286,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   // Upload → parse flow (one schedule per quote). The file goes to R2, then the
   // server parses it into draft lines; we re-hydrate from the server on success.
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
   const openUpload = () => fileInputRef.current?.click();
-  const openCamera = () => cameraInputRef.current?.click();
 
   // Friendly copy for an upload the server refused outright (before parsing).
   const uploadErrorMessage = (e: unknown): string => {
@@ -536,7 +534,6 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     const dupeNames = dupes.map((f) => f.name).join(", ");
     if (!files.length) {
       if (fileInputRef.current) fileInputRef.current.value = "";
-      if (cameraInputRef.current) cameraInputRef.current.value = "";
       const many = dupes.length > 1;
       setUploadNotice({
         type: "error",
@@ -620,7 +617,6 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
       setUploading(false);
       setUploadingDocs(0);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      if (cameraInputRef.current) cameraInputRef.current.value = "";
     }
   };
 
@@ -736,9 +732,6 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
               area (where the results land) and from the ?upload=1 deep link. */}
           <input ref={fileInputRef} type="file" multiple className="hidden"
             accept=".pdf,.csv,.jpg,.jpeg,.png,.webp,.heic,.heif,text/csv,image/*"
-            onChange={e => handleFiles(e.target.files)} />
-          <input ref={cameraInputRef} type="file" className="hidden"
-            accept="image/jpeg" capture="environment"
             onChange={e => handleFiles(e.target.files)} />
           <div>
             {/* Copy */}
@@ -863,11 +856,6 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 className="inline-flex items-center gap-1.5 border border-dashed border-black/25 action-hover px-3 py-1.5 text-xs font-medium text-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
                 <Upload className="w-3.5 h-3.5" aria-hidden="true" />
                 {quote.files.length > 0 ? "Add another document" : "Upload plans or a schedule"}
-              </button>
-              <button type="button" onClick={openCamera}
-                className="inline-flex items-center gap-1.5 border border-dashed border-black/25 action-hover px-3 py-1.5 text-xs font-medium text-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
-                <Camera className="w-3.5 h-3.5" aria-hidden="true" />
-                Take a photo
               </button>
             </div>
           )}
@@ -1083,10 +1071,6 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 </span>
                 <span className="block text-base font-semibold text-ink mb-1">Add a product manually</span>
                 <span className="block text-sm leading-relaxed text-body">Choose a product, then enter its dimensions and options.</span>
-              </button>
-              <button onClick={openCamera} disabled={uploading}
-                className="sm:col-span-2 inline-flex items-center justify-center gap-2 py-2 text-sm font-medium text-sage hover:text-sage-ink disabled:opacity-60 cursor-pointer">
-                <Camera className="w-4 h-4" aria-hidden="true" />Take a photo of the schedule
               </button>
             </div>
           ) : (
