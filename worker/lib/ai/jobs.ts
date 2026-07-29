@@ -54,6 +54,24 @@ export async function reserveAiRunBudget(env: Env, projectId: string): Promise<b
   return !!reserved;
 }
 
+/** Give back a reservation when the run billed no provider tokens at all.
+ *  Floors at zero, so a double release can never mint free budget. */
+export async function refundIfNothingSpent(env: Env, projectId: string, runId: string): Promise<boolean> {
+  const owner = await env.DB.prepare("SELECT owner_user_id FROM project WHERE id=?")
+    .bind(projectId).first<{ owner_user_id: string | null }>();
+  if (!owner?.owner_user_id) return false;
+  const spent = await env.DB.prepare(
+    `SELECT coalesce(sum(coalesce(input_tokens,0) + coalesce(output_tokens,0)), 0) AS n
+       FROM ai_stage_runs WHERE ai_run_id = ?`,
+  ).bind(runId).first<{ n: number }>().catch(() => null);
+  if (Number(spent?.n ?? 0) > 0) return false;
+  const released = await env.DB.prepare(
+    `UPDATE ai_daily_usage SET runs = max(0, runs - 1), updated_at=datetime('now')
+      WHERE user_id=? AND usage_day=date('now') AND runs > 0`,
+  ).bind(owner.owner_user_id).run().catch(() => null);
+  return Number(released?.meta?.changes ?? 0) === 1;
+}
+
 export async function enqueueAiExtraction(
   env: Env,
   ctx: ExecutionContext,
@@ -150,6 +168,16 @@ export async function processAiExtractionJob(env: Env, job: AiExtractionJob): Pr
     }
     if (!(await reserveAiRunBudget(env, job.projectId))) throw new Error("ai_daily_budget_exhausted");
     const summary = await runAiExtraction(env, job.projectId, { sourceGeneration: job.generation });
+    // A run that billed NOTHING is not spend, and must not cost a day's
+    // allowance. A day of debugging consumed all 20 reservations on runs that
+    // never reached a model (unsupported file), were refused by the provider
+    // before a token was counted (HTTP 400), or were abandoned mid-flight — and
+    // the customer was then locked out of a feature that had cost eleven cents.
+    //
+    // Keyed on ACTUAL token usage rather than on the error, so a failure that
+    // did spend still pays for itself. The attempts<3 cap per generation bounds
+    // any retry loop this might otherwise enable.
+    await refundIfNothingSpent(env, job.projectId, summary.runId).catch(() => false);
     if (summary.status === "failed") throw new Error("ai_pipeline_failed");
     const completed = await env.DB.prepare(
       `UPDATE ai_job_claim SET status='completed', lease_expires_at=NULL,
