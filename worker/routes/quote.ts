@@ -80,22 +80,25 @@ quote.post("/projects/:id/submit", async (c) => {
   // Do not freeze a cart while its current document generation is still queued
   // or processing. The proposal publisher independently requires draft status,
   // closing the reverse race as well.
+  let aiFallbackToHuman = false;
   if (p.owner_user_id) {
-    const [scheduled, running] = await Promise.all([
-      c.env.KV.get(`aidebounce:${p.id}`),
-      c.env.DB.prepare(
-        `SELECT 1 AS pending FROM ai_job_claim j
-          JOIN project p ON p.id=j.project_id AND p.ai_generation=j.source_generation
-         WHERE j.project_id=? AND j.status IN ('scheduled','processing') LIMIT 1`,
-      ).bind(p.id).first<{ pending: number }>().catch(() => null),
-    ]);
-    if (scheduled || running) return c.json({ error: "ai_processing" }, 409);
+    // D1 is the durable job authority. The debounce KV marker is deliberately
+    // not a submission lock: it can outlive a terminal Cloudflare 429.
+    const running = await c.env.DB.prepare(
+      `SELECT 1 AS pending FROM ai_job_claim j
+        JOIN project p ON p.id=j.project_id AND p.ai_generation=j.source_generation
+       WHERE j.project_id=? AND j.status IN ('scheduled','processing') LIMIT 1`,
+    ).bind(p.id).first<{ pending: number }>().catch(() => null);
+    if (running) return c.json({ error: "ai_processing" }, 409);
     const generation = submitState.ai_generation;
     if (generation > 0) {
       const terminal = await c.env.DB.prepare(
-        "SELECT status FROM ai_job_claim WHERE project_id=? AND source_generation=?",
-      ).bind(p.id, generation).first<{ status: string }>();
-      if (terminal?.status !== "completed") return c.json({ error: "ai_failed" }, 409);
+        "SELECT status, failure_class FROM ai_job_claim WHERE project_id=? AND source_generation=?",
+      ).bind(p.id, generation).first<{ status: string; failure_class: string | null }>();
+      aiFallbackToHuman = terminal?.status === "failed" && terminal.failure_class === "quota";
+      if (terminal?.status !== "completed" && !aiFallbackToHuman) {
+        return c.json({ error: "ai_failed" }, 409);
+      }
     }
   }
 
@@ -116,7 +119,10 @@ quote.post("/projects/:id/submit", async (c) => {
       external_ref: string | null; status: string; line_total: number | null;
       origin: string | null; ai_proposal_line_id: string | null; review_json: string | null;
     }>();
-  if (lines.length === 0) return c.json({ error: "empty_quote" }, 400);
+  // A provider capacity failure must not deadlock a registered customer's
+  // conversion. Their clean source documents are the human review payload even
+  // when AI could not create cart lines on this attempt.
+  if (lines.length === 0 && !aiFallbackToHuman) return c.json({ error: "empty_quote" }, 400);
   // 'ready' and 'technical_review' may both be submitted: a technical_review line
   // is priced and is exactly what submission escalates to an technician (e.g.
   // timber→aluminium substitution, a composite unit for an out-of-range opening).
@@ -157,7 +163,10 @@ quote.post("/projects/:id/submit", async (c) => {
               SELECT 1 FROM ai_job_claim current_job
                WHERE current_job.project_id=project.id
                  AND current_job.source_generation=project.ai_generation
-                 AND current_job.status='completed'
+                 AND (
+                   current_job.status='completed' OR
+                   (current_job.status='failed' AND current_job.failure_class='quota')
+                 )
             )
           )
           AND NOT EXISTS (

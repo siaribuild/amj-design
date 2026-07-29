@@ -137,19 +137,20 @@ test("material schedule glazing instructions constrain the exact eligible varian
       { ...awning.performanceVariants[0], variantId: "single", glassBuildUp: "6.38mm laminated", uValue: 5.6 },
       { ...awning.performanceVariants[0], variantId: "double", glassBuildUp: "5 + 12A + 5 IGU", uValue: 3.2 },
       { ...awning.performanceVariants[0], variantId: "double-low-e", glassBuildUp: "6mm Low-E + 15Ar + 6mm IGU", coating: "Low-E", uValue: 2.7 },
+      { ...awning.performanceVariants[0], variantId: "catalogue-low-e", glassBuildUp: "6mm Low-e+15Ar+ómm Tempered Clear Glass", coating: "Low-E", uValue: 2.7 },
     ],
   });
   const double = checkHardRules({
     family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
     scheduleRequirements: { doubleGlazed: true },
   }, configurations);
-  assert.deepEqual(double.eligibleVariantIds, ["double", "double-low-e"]);
+  assert.deepEqual(double.eligibleVariantIds, ["double", "double-low-e", "catalogue-low-e"]);
 
   const lowEArgon = checkHardRules({
     family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
     scheduleRequirements: { doubleGlazed: true, glassDescription: "Low-E argon" },
   }, configurations);
-  assert.deepEqual(lowEArgon.eligibleVariantIds, ["double-low-e"]);
+  assert.deepEqual(lowEArgon.eligibleVariantIds, ["double-low-e", "catalogue-low-e"]);
 });
 
 test("human-approved thermal precedent is a conservative eligibility floor, not a certification claim", () => {

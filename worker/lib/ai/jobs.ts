@@ -29,7 +29,6 @@ export interface AiJobDiagnostic {
 }
 
 const MAX_AUTOMATIC_ATTEMPTS = 3;
-const RATE_LIMIT_RETRY_SECONDS = 65;
 
 class AiJobFault extends Error {
   constructor(
@@ -68,7 +67,6 @@ export function classifyPipelineFailure(summary: AiExtractionSummary): {
     return {
       failureClass: "quota",
       code: "ai_provider_rate_limited",
-      retryAfterSeconds: RATE_LIMIT_RETRY_SECONDS,
     };
   }
   if (summary.failureKind === "transient_provider" ||
@@ -91,7 +89,6 @@ export function classifyPipelineFailure(summary: AiExtractionSummary): {
     return {
       failureClass: "quota",
       code: "ai_provider_rate_limited",
-      retryAfterSeconds: RATE_LIMIT_RETRY_SECONDS,
     };
   }
   if (warnings.includes("skill_call_permanent") || looksPermanentProviderFailure(joined)) {
@@ -125,7 +122,6 @@ export function classifyJobException(error: unknown): {
     return {
       failureClass: "quota",
       code: "ai_provider_rate_limited",
-      retryAfterSeconds: RATE_LIMIT_RETRY_SECONDS,
     };
   }
   if (looksPermanentProviderFailure(message)) {
@@ -280,7 +276,7 @@ export async function retryCurrentAiExtraction(
           SET status='scheduled', attempts=0, debounce_token=?,
               processing_token=NULL, lease_expires_at=NULL,
               last_error=NULL, failure_class=NULL, retry_after=NULL,
-              updated_at=datetime('now')
+              progress_stage='queued', updated_at=datetime('now')
         WHERE project_id=? AND source_generation=? AND status='failed'
           AND EXISTS (
             SELECT 1 FROM project
@@ -309,25 +305,27 @@ async function recordJobFailure(
   failure: { failureClass: AiJobFailureClass; code: string; retryAfterSeconds?: number },
 ): Promise<AiJobProcessingResult> {
   if (failure.failureClass === "quota") {
-    const delaySeconds = Math.max(5, failure.retryAfterSeconds ?? RATE_LIMIT_RETRY_SECONDS);
-    const released = await env.DB.prepare(
+    // Cloudflare AI Gateway is the sole provider-rate authority. Do not create
+    // a second application throttle or guess its reset window: record the 429
+    // as a customer-safe, retryable error and acknowledge this queue attempt.
+    const recorded = await env.DB.prepare(
       `UPDATE ai_job_claim
-          SET status='scheduled', attempts=max(0, attempts-1),
+          SET status='failed', attempts=max(0, attempts-1),
               lease_expires_at=NULL, processing_token=NULL,
               last_error=?, failure_class='quota',
-              retry_after=datetime('now', ?), updated_at=datetime('now')
+              retry_after=NULL, progress_stage='waiting_capacity',
+              updated_at=datetime('now')
         WHERE project_id=? AND source_generation=? AND status='processing'
           AND processing_token=?`,
     ).bind(
       failure.code,
-      `+${delaySeconds} seconds`,
       job.projectId,
       job.generation,
       processingToken,
     ).run();
-    return Number(released.meta?.changes ?? 0) === 1
-      ? { state: "deferred", retryAfterSeconds: delaySeconds }
-      : { state: "leased" };
+    if (Number(recorded.meta?.changes ?? 0) !== 1) return { state: "leased" };
+    await clearDebounceIfCurrent(env, job);
+    return { state: "failed" };
   }
 
   const canRetry = failure.failureClass === "transient" && attempts < MAX_AUTOMATIC_ATTEMPTS;
@@ -337,6 +335,7 @@ async function recordJobFailure(
         SET status=?, lease_expires_at=NULL, processing_token=NULL,
             last_error=?, failure_class=?,
             retry_after=CASE WHEN ? IS NULL THEN NULL ELSE datetime('now', ?) END,
+            progress_stage=CASE WHEN ? IS NULL THEN progress_stage ELSE 'queued' END,
             updated_at=datetime('now')
       WHERE project_id=? AND source_generation=? AND status='processing'
         AND processing_token=?`,
@@ -346,14 +345,22 @@ async function recordJobFailure(
     failure.failureClass,
     canRetry ? 1 : null,
     canRetry ? `+${delaySeconds} seconds` : null,
+    canRetry ? 1 : null,
     job.projectId,
     job.generation,
     processingToken,
   ).run();
   if (Number(transitioned.meta?.changes ?? 0) !== 1) return { state: "leased" };
+  if (!canRetry) await clearDebounceIfCurrent(env, job);
   return canRetry
     ? { state: "deferred", retryAfterSeconds: delaySeconds }
     : { state: "failed" };
+}
+
+async function clearDebounceIfCurrent(env: Env, job: AiExtractionJob): Promise<void> {
+  const key = `aidebounce:${job.projectId}`;
+  const latestToken = await env.KV.get(key).catch(() => null);
+  if (latestToken === job.debounceToken) await env.KV.delete(key).catch(() => {});
 }
 
 export async function processAiExtractionJob(
@@ -378,7 +385,7 @@ export async function processAiExtractionJob(
         SET status='processing', attempts=attempts+1, debounce_token=?,
             processing_token=?, last_error=NULL, failure_class=NULL,
             retry_after=NULL, lease_expires_at=datetime('now','+10 minutes'),
-            updated_at=datetime('now')
+            progress_stage='reading_documents', updated_at=datetime('now')
       WHERE project_id=? AND source_generation=?
         AND (
           (status='scheduled' AND (retry_after IS NULL OR retry_after <= datetime('now')))
@@ -476,7 +483,8 @@ export async function processAiExtractionJob(
       `UPDATE ai_job_claim
           SET status='completed', lease_expires_at=NULL,
               processing_token=NULL, last_error=NULL, failure_class=NULL,
-              retry_after=NULL, updated_at=datetime('now')
+              retry_after=NULL, progress_stage='complete',
+              updated_at=datetime('now')
         WHERE project_id=? AND source_generation=? AND status='processing'
           AND processing_token=?`,
     ).bind(job.projectId, job.generation, processingToken).run();
@@ -552,11 +560,13 @@ export async function reapAbandonedAiJobs(env: Env): Promise<{ claims: number; r
               failure_class='transient',
               retry_after=CASE WHEN ? IS NULL THEN NULL ELSE datetime('now') END,
               lease_expires_at=NULL, processing_token=NULL,
+              progress_stage=CASE WHEN ? IS NULL THEN progress_stage ELSE 'queued' END,
               updated_at=datetime('now')
         WHERE project_id=? AND source_generation=? AND status='processing'
           AND processing_token=? AND lease_expires_at < datetime('now')`,
     ).bind(
       retryable ? "scheduled" : "failed",
+      retryable ? 1 : null,
       retryable ? 1 : null,
       row.project_id,
       row.source_generation,

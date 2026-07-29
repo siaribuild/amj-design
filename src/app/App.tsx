@@ -596,6 +596,10 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
   // the strongest pair (supply-only, lead time) shares the first row.
   const questions: { q: string; a: string; link?: { label: string; page: Page } }[] = [
     {
+      q: "Can I photograph my schedule?",
+      a: "Yes. Take a clear, straight-on photo that includes the whole table and its headings. If a scanned PDF cannot be read, upload a photo or screenshot of the schedule page instead.",
+    },
+    {
       q: "Do you install?",
       a: "No — we're supply only. We manufacture your frames and deliver them; your own builder or installer fits them on site. That keeps pricing lean and lets you use the trades you trust.",
     },

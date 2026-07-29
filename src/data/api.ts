@@ -353,6 +353,15 @@ export interface ExtractionRun {
   startedAt: string;
   completedAt: string | null;
   summary: { extractedLines: number; conflicts: number; energyApplied: number; cartApplied?: number; documents: number } | null;
+  progressStage?:
+    | "queued"
+    | "reading_documents"
+    | "extracting_schedule"
+    | "building_envelope"
+    | "matching_and_pricing"
+    | "preparing_quote"
+    | "waiting_capacity"
+    | "complete";
   /** Stable, customer-safe category only. Provider responses are never exposed. */
   diagnostic?: {
     code:

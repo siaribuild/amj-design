@@ -7,7 +7,7 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Upload, UploadCloud, X, Plus, ChevronLeft, ArrowRight,
-  AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil, Paperclip, Trash2, Loader2,
+  AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil, Paperclip, Trash2, Loader2, Camera,
 } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
@@ -28,6 +28,50 @@ const whenSafe = (value: string): string | null => {
     ? null
     : date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" });
 };
+
+const AI_IMAGE_TARGET_BYTES = 5_500_000;
+const AI_IMAGE_MAX_SIDE = 2800;
+
+class PhotoPreparationError extends Error {}
+
+async function preparePhotoForAi(file: File): Promise<File> {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const isPhoto = file.type.startsWith("image/") || ["heic", "heif"].includes(extension);
+  const modelReady = ["image/jpeg", "image/png", "image/webp"].includes(file.type)
+    || ["jpg", "jpeg", "png", "webp"].includes(extension);
+  const needsConversion = !modelReady || file.size > AI_IMAGE_TARGET_BYTES;
+  if (!isPhoto || !needsConversion) return file;
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new PhotoPreparationError(
+      "We couldn't read that phone-photo format. Take a new photo here, or choose a JPG, PNG or WebP image.",
+    );
+  }
+  try {
+    const scale = Math.min(1, AI_IMAGE_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new PhotoPreparationError("We couldn't prepare that photo. Please try a JPG or PNG.");
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    let blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.84));
+    if (blob && blob.size > AI_IMAGE_TARGET_BYTES) {
+      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.68));
+    }
+    if (!blob) throw new PhotoPreparationError("We couldn't prepare that photo. Please try a JPG or PNG.");
+    if (blob.size > AI_IMAGE_TARGET_BYTES) {
+      throw new PhotoPreparationError("That photo is still too large to read. Move closer to the schedule and take another photo.");
+    }
+    const base = file.name.replace(/\.[^.]+$/, "") || "schedule-photo";
+    return new File([blob], `${base}.jpg`, { type: "image/jpeg", lastModified: file.lastModified });
+  } finally {
+    bitmap.close();
+  }
+}
 
 // Inline-editable project name — same interaction as the item code (CodeField):
 // a framed value + pencil, click to edit into a framed field, Enter/blur commits,
@@ -90,9 +134,10 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   const [contactPhone, setContactPhone] = useState(user?.phone || "");
   const [suburb, setSuburb] = useState("");
   type SafeDiagnostic = NonNullable<ExtractionRun["diagnostic"]>;
+  type AiProgressStage = NonNullable<ExtractionRun["progressStage"]>;
   const [aiPhase, setAiPhase] = useState<
     null
-    | { kind: "reading"; docs: number }
+    | { kind: "reading"; docs: number; stage?: AiProgressStage }
     | { kind: "deferred"; docs: number; diagnostic: SafeDiagnostic }
     | { kind: "done"; refined: number }
     | { kind: "failed"; diagnostic?: SafeDiagnostic | null }
@@ -107,16 +152,28 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   // the page look idle and invited a duplicate upload).
   const processing = uploading || aiPhase?.kind === "reading";
   const processingDocs = aiPhase?.kind === "reading" ? aiPhase.docs : uploadingDocs;
+  const progressMessage = (stage: AiProgressStage | undefined): string => {
+    switch (stage) {
+      case "queued": return "Securing your files and preparing AI review…";
+      case "reading_documents": return "Reading document text, tables and images…";
+      case "extracting_schedule": return "Reading schedules, plans and energy requirements…";
+      case "building_envelope": return "Building the thermal context and checking requirements…";
+      case "matching_and_pricing": return "Matching suitable products, glazing and prices…";
+      case "preparing_quote": return "Preparing the recommendations for your review…";
+      case "waiting_capacity": return "Waiting for AI service capacity…";
+      default: return "Reading and refining your schedule…";
+    }
+  };
 
   const diagnosticMessage = (diagnostic: SafeDiagnostic | null | undefined): string => {
     const retryTime = diagnostic?.retryAt ? whenSafe(diagnostic.retryAt) : null;
     switch (diagnostic?.code) {
       case "RATE_LIMITED":
-        return `AI refinement is waiting for service capacity${retryTime ? ` and can retry after ${retryTime}` : ""}. Your documents are saved, and you can still submit for human review.`;
+        return `The AI service capacity limit was reached${retryTime ? `; try again after ${retryTime}` : ""}. Your documents are saved, and you can still submit for human review.`;
       case "CATALOGUE_UNAVAILABLE":
         return "AI refinement is waiting for verified product pricing. Your documents are saved, and you can still submit for human review.";
       case "DOCUMENTS_NOT_UNDERSTOOD":
-        return "We couldn't confidently create priced items from these documents. Add any missing items manually or submit them for human review.";
+        return "We couldn't confidently create priced items from these documents. If this is a scanned PDF, upload a clear JPG or PNG photo or screenshot of the schedule page.";
       case "SERVICE_CONFIGURATION_ERROR":
         return "AI refinement is temporarily unavailable. Your documents are saved and our team can review them.";
       case "RETRY_REQUIRED":
@@ -207,7 +264,9 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   // Upload → parse flow (one schedule per quote). The file goes to R2, then the
   // server parses it into draft lines; we re-hydrate from the server on success.
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const openUpload = () => fileInputRef.current?.click();
+  const openCamera = () => cameraInputRef.current?.click();
 
   // Friendly copy for an upload the server refused outright (before parsing).
   const uploadErrorMessage = (e: unknown): string => {
@@ -232,9 +291,9 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   const parseErrorMessage = (r: Extract<ParseResult, { ok: false }>): string => {
     switch (r.reason) {
       case "no_schedule_found":
-        return "We couldn't find a window or door schedule in that file. Check it's the right PDF, or add items manually.";
+        return "We couldn't find a window or door schedule in that file. If it's a scan, upload a clear photo or screenshot of the schedule page.";
       case "no_text_layer":
-        return "This looks like a scanned PDF — we couldn't read its text. Please upload a digital (text) PDF, or add items manually.";
+        return "This looks like a scanned PDF. Upload a clear JPG or PNG photo or screenshot of the schedule page instead.";
       case "quota":
         return `You've reached your monthly upload limit (${r.quota.limit}). It resets on ${r.quota.resetsOn}. You can still add items manually.`;
       case "rate_limited":
@@ -317,7 +376,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
       // and the server no longer queues a run in that case either.
       const docs = quote.files.length - 1;
       if (user && docs > 0) {
-        setAiPhase({ kind: "reading", docs });
+        setAiPhase({ kind: "reading", docs, stage: "queued" });
         pollExtractionRef.current(docs);
       } else {
         setAiPhase(null);
@@ -350,12 +409,6 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     let sawRun = false;
     let lastDiagnostic: SafeDiagnostic | null = null;
     const tick = async (n: number) => {
-      if (Date.now() - t0 > 120_000) {
-        setAiPhase(lastDiagnostic
-          ? { kind: "deferred", docs, diagnostic: lastDiagnostic }
-          : { kind: "failed" });
-        return;
-      }
       let inFlight = false;
       try {
         const { run, basis } = await extractionStatus();
@@ -366,7 +419,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
           lastDiagnostic = run.diagnostic ?? null;
           setAiPhase(run.diagnostic
             ? { kind: "deferred", docs, diagnostic: run.diagnostic }
-            : { kind: "reading", docs });
+            : { kind: "reading", docs, stage: run.progressStage });
         } else if (run?.status === "failed") {
           setAiPhase({ kind: "failed", diagnostic: run.diagnostic });
           return;
@@ -406,7 +459,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
       if (docs > 0 && run && (run.status === "queued" || run.status === "running")) {
         setAiPhase(run.diagnostic
           ? { kind: "deferred", docs, diagnostic: run.diagnostic }
-          : { kind: "reading", docs });
+          : { kind: "reading", docs, stage: run.progressStage });
         pollExtraction(docs);
       } else if (docs > 0 && run?.status === "failed") {
         setAiPhase({ kind: "failed", diagnostic: run.diagnostic });
@@ -431,6 +484,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     const dupeNames = dupes.map((f) => f.name).join(", ");
     if (!files.length) {
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
       const many = dupes.length > 1;
       setUploadNotice({
         type: "error",
@@ -443,7 +497,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     setUploading(true);
     setUploadingDocs(files.length);
     setUploadNotice(null);
-    setAiPhase(user ? { kind: "reading", docs: files.length } : null);
+    setAiPhase(user ? { kind: "reading", docs: files.length, stage: "queued" } : null);
     setRemoveOffer(null);
     const failures: string[] = [];
     const digests: string[] = [];
@@ -452,7 +506,8 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     try {
       for (const file of files) {
         try {
-          const up = await uploadFile(file, "upload");
+          const preparedFile = await preparePhotoForAi(file);
+          const up = await uploadFile(preparedFile, "upload");
           if (user) {
             // Registered projects use the first-class AI proposal path. The
             // durable Worker job creates/refines the real cart; the deterministic
@@ -479,7 +534,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
           if (NOT_A_SCHEDULE.has(result.reason)) { attached++; continue; } // contribution, not a failure
           failures.push(`${file.name}: ${parseErrorMessage(result)}`);
         } catch (e) {
-          failures.push(`${file.name}: ${uploadErrorMessage(e)}`);
+          failures.push(`${file.name}: ${e instanceof PhotoPreparationError ? e.message : uploadErrorMessage(e)}`);
         }
       }
       await quote.reload();
@@ -496,11 +551,13 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
         setUploadNotice({ type: "success", message: parts.join(" · ") });
       }
       // Registered users get an automatic AI run per upload — watch it.
-      if (user) pollExtraction(files.length);
+      if (user && attached > 0) pollExtraction(attached);
+      else if (user) setAiPhase(null);
     } finally {
       setUploading(false);
       setUploadingDocs(0);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
     }
   };
 
@@ -615,7 +672,10 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
           {/* The picker has no visible control here: it is opened from the items
               area (where the results land) and from the ?upload=1 deep link. */}
           <input ref={fileInputRef} type="file" multiple className="hidden"
-            accept=".pdf,.dwg,.xls,.xlsx,.csv,.jpg,.jpeg,.png"
+            accept=".pdf,.csv,.jpg,.jpeg,.png,.webp,.heic,.heif,text/csv,image/*"
+            onChange={e => handleFiles(e.target.files)} />
+          <input ref={cameraInputRef} type="file" className="hidden"
+            accept="image/jpeg" capture="environment"
             onChange={e => handleFiles(e.target.files)} />
           <div>
             {/* Copy */}
@@ -638,7 +698,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                   hero — it is stated at the point it matters, on submit, and a
                   hero is not where a deposit is on anyone's mind. */}
               <p className="text-white/80 text-[15px] leading-relaxed max-w-[46ch]">
-                Upload your schedule and every line comes back priced in about a minute —
+                Upload a PDF, CSV or clear photo and every line comes back priced in about a minute —
                 or add products manually.
               </p>
               {/* Trust row — decorative, hidden on mobile to keep the hero shallow */}
@@ -741,6 +801,11 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 <Upload className="w-3.5 h-3.5" aria-hidden="true" />
                 {quote.files.length > 0 ? "Add another document" : "Upload plans or a schedule"}
               </button>
+              <button type="button" onClick={openCamera}
+                className="inline-flex items-center gap-1.5 border border-dashed border-black/25 action-hover px-3 py-1.5 text-xs font-medium text-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+                <Camera className="w-3.5 h-3.5" aria-hidden="true" />
+                Take a photo
+              </button>
             </div>
           )}
           {quote.items.length === 0 && (
@@ -776,11 +841,6 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />}
               <span className="flex-1">
                 {uploadNotice.message}
-                {uploadNotice.type === "success" && aiPhase?.kind === "reading" && (
-                  <span className="inline-flex items-center gap-1.5 ml-1.5 text-sage-ink/80">
-                    · <Loader2 className="w-3.5 h-3.5 animate-spin inline" aria-hidden="true" /> refining product and glazing allowances…
-                  </span>
-                )}
                 {uploadNotice.type === "success" && aiPhase?.kind === "deferred" && (
                   <span className="ml-1.5 text-amber-800">{diagnosticMessage(aiPhase.diagnostic)}</span>
                 )}
@@ -844,10 +904,12 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin text-sage" aria-hidden="true" />
                 <span>
                   <span className="block font-medium text-sage-ink">
-                    Reading your document{processingDocs !== 1 ? "s" : ""}…
+                    {aiPhase?.kind === "reading"
+                      ? progressMessage(aiPhase.stage)
+                      : `Reading your document${processingDocs !== 1 ? "s" : ""}…`}
                   </span>
                   <span className="block mt-0.5 text-body leading-relaxed">
-                    Your items will appear here, below anything already on the list. This usually takes under a minute — you can leave this page open.
+                    Your items will appear here, below anything already on the list. Longer plan sets can take a few minutes — you can leave this page open.
                   </span>
                 </span>
               </div>
@@ -879,8 +941,8 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                     ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" aria-hidden="true" />
                     : <UploadCloud className="w-5 h-5" aria-hidden="true" />}
                 </span>
-                <span className="block text-base font-semibold text-ink mb-1">{uploading ? "Reading schedule…" : "Upload your schedule"}</span>
-                <span className="block text-sm leading-relaxed text-body">Every line on your PDF comes back matched and priced. Plans work too.</span>
+                <span className="block text-base font-semibold text-ink mb-1">{uploading ? "Reading schedule…" : "Upload schedule or photo"}</span>
+                <span className="block text-sm leading-relaxed text-body">PDFs, CSV files and clear photos come back matched and priced. Plans work too.</span>
               </button>
               <button onClick={() => setAdding(true)}
                 className="group min-h-32 action-tile action-hover p-5 text-left cursor-pointer">
@@ -889,6 +951,10 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 </span>
                 <span className="block text-base font-semibold text-ink mb-1">Add a product manually</span>
                 <span className="block text-sm leading-relaxed text-body">Choose a product, then enter its dimensions and options.</span>
+              </button>
+              <button onClick={openCamera} disabled={uploading}
+                className="sm:col-span-2 inline-flex items-center justify-center gap-2 py-2 text-sm font-medium text-sage hover:text-sage-ink disabled:opacity-60 cursor-pointer">
+                <Camera className="w-4 h-4" aria-hidden="true" />Take a photo of the schedule
               </button>
             </div>
           ) : (

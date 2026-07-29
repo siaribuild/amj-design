@@ -256,7 +256,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
   if (!project) return c.json({ run: null });
   const pending = await c.env.DB.prepare(
     `SELECT j.source_generation, j.status, j.attempts, j.last_error,
-            j.failure_class, j.retry_after, j.created_at, j.updated_at
+            j.failure_class, j.retry_after, j.progress_stage, j.created_at, j.updated_at
        FROM ai_job_claim j JOIN project p ON p.id=j.project_id
       WHERE j.project_id=? AND j.source_generation=p.ai_generation
         AND j.status IN ('scheduled','processing','failed')
@@ -268,6 +268,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
     last_error: string | null;
     failure_class: string | null;
     retry_after: string | null;
+    progress_stage: string;
     created_at: string;
     updated_at: string;
   }>().catch(() => null);
@@ -283,6 +284,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
         completedAt: pending.status === "failed" ? pending.updated_at : null,
         summary: null,
         diagnostic,
+        progressStage: pending.progress_stage,
       },
       basis: {},
     });
@@ -309,7 +311,17 @@ parse.get("/projects/current/extraction-status", async (c) => {
       ? "explicit_energy_report"
       : q.recommendation_basis;
   }
-  return c.json({ run: { id: r.id, status: r.status, startedAt: r.started_at, completedAt: r.completed_at, summary }, basis });
+  return c.json({
+    run: {
+      id: r.id,
+      status: r.status,
+      startedAt: r.started_at,
+      completedAt: r.completed_at,
+      summary,
+      progressStage: r.completed_at ? "complete" : "preparing_quote",
+    },
+    basis,
+  });
 });
 
 parse.get("/projects/current/parse-quota", async (c) => {

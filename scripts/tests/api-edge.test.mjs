@@ -556,6 +556,36 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(current.status, "issued");
     });
 
+    await t.test("registered customer can submit source documents for human review after an AI capacity limit", async () => {
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "capacity-fallback@example.com");
+      const draft = await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { items: [] },
+      });
+      const pid = draft.body.project.id;
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `UPDATE project SET ai_generation=1 WHERE id='${pid}';
+         INSERT INTO file_asset
+           (id,project_id,kind,r2_key,filename,virus_status)
+         VALUES ('capacity-file','${pid}','schedule','test/capacity.pdf','capacity.pdf','clean');
+         INSERT INTO ai_job_claim
+           (project_id,source_generation,debounce_token,status,attempts,failure_class,last_error,progress_stage)
+         VALUES ('${pid}',1,'capacity','failed',0,'quota','ai_provider_rate_limited','waiting_capacity');`,
+      ], { env: wranglerEnv });
+      const status = await requestJson(buyer, "/api/projects/current/extraction-status");
+      assert.equal(status.body.run.status, "failed");
+      assert.equal(status.body.run.progressStage, "waiting_capacity");
+      assert.equal(status.body.run.diagnostic.code, "RATE_LIMITED");
+      const submitted = await requestJson(buyer, `/api/projects/${pid}/submit`, {
+        method: "POST",
+        json: { contact: { name: "Casey Builder", email: "casey@example.com" } },
+      });
+      assert.equal(submitted.body.status, "submitted");
+    });
+
     await t.test("registered customer AI edits reach staff repricing but cannot pass approval unpriced", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "ai-edit@example.com");

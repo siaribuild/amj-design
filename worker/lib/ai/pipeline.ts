@@ -306,8 +306,19 @@ export async function runAiExtraction(
   });
   const warnings: string[] = [];
   const stageFailures: SkillFailureKind[] = [];
+  const setProgress = async (
+    stage: "reading_documents" | "extracting_schedule" | "building_envelope" | "matching_and_pricing" | "preparing_quote",
+  ) => {
+    if (!opts.processingToken) return;
+    await env.DB.prepare(
+      `UPDATE ai_job_claim SET progress_stage=?, updated_at=datetime('now')
+        WHERE project_id=? AND source_generation=? AND status='processing'
+          AND processing_token=?`,
+    ).bind(stage, projectId, sourceGeneration, opts.processingToken).run().catch(() => {});
+  };
   try {
 
+  await setProgress("reading_documents");
   const docs = await ingestProjectFiles(env, projectId);
   const usable = docs.filter((d) => !d.rejected && (d.markdown || d.imageDataUrl));
   if (!usable.length) {
@@ -337,6 +348,7 @@ export async function runAiExtraction(
   const scheduleDocs = usable.filter((d) => d.roles.includes("schedule"));
 
   // Schedule extraction per document (idempotent per content+prompt+model).
+  await setProgress("extracting_schedule");
   const perDoc: { fileId: string; lines: ScheduleLineV1[] }[] = [];
   let anyFailed = false;
   for (const doc of scheduleDocs) {
@@ -416,6 +428,7 @@ export async function runAiExtraction(
   }
 
   // Merge, model, persist the canonical records.
+  await setProgress("building_envelope");
   const merged = mergeScheduleLines(perDoc);
   const model = linesToBuildingModel(projectId, merged, docs);
   applyPlanContext(model, planContexts);
@@ -611,11 +624,13 @@ export async function runAiExtraction(
   await assertCurrentGeneration(env, projectId, sourceGeneration, opts.processingToken);
   if (upserts.length) await env.DB.batch(upserts);
   await assertCurrentGeneration(env, projectId, sourceGeneration, opts.processingToken);
+  await setProgress("matching_and_pricing");
   const estimate = await runProjectEstimate(env, projectId, {
     aiRunId: run.id,
     buildingModelId,
     sourceGeneration,
     sourceManifestHash,
+    processingToken: opts.processingToken,
   });
 
   const status = anyFailed ? "partial" : "completed";
@@ -626,6 +641,7 @@ export async function runAiExtraction(
     cartApplied: estimate.appliedToCart,
     stageWarnings: warnings,
   };
+  await setProgress("preparing_quote");
   await completeAiRun(env, run.id, { status, inputMode: model.inputMode, summary });
   return summary;
   } catch (error) {

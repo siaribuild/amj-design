@@ -154,10 +154,11 @@ function tinyTextPdf(lines) {
 const SCHEDULE_LINES = ["WINDOW SCHEDULE", "W N HEIGHT WIDTH TYPE", "1 2100 2050 AWNING", "2 700 3500 FIXED"];
 
 /** An env whose single project file is `bytes`; `ai` stubs env.AI. */
-function ingestEnv(bytes, ai) {
+function ingestEnv(bytes, ai, overrides = {}) {
   const row = {
     id: "f1", r2_key: "k", filename: "plans.pdf", checksum: null, size: bytes.length,
     virus_status: "clean", doc_type: null, doc_type_source: "auto",
+    ...overrides,
   };
   return {
     AI: ai,
@@ -204,6 +205,20 @@ test("ingest: a PDF with NO text layer reports why, and is not silently 'usable'
   const [doc] = await ingestProjectFiles(env, "p1");
   assert.equal(doc.markdown, null);
   assert.ok(doc.qualityIssues.includes("pdf_no_text_layer"), "a scan is distinguishable from a failure");
+  assert.ok(doc.qualityIssues.includes("scanned_pdf_requires_image_upload"), "the supported photo fallback is explicit");
+});
+
+test("ingest: a clear schedule photo is routed to multimodal schedule extraction", async () => {
+  const bytes = pngBytes(2400, 1800);
+  const env = ingestEnv(bytes, {
+    toMarkdown: async () => [{ data: "WINDOW SCHEDULE\nMARK WIDTH HEIGHT TYPE QTY\nW01 1810 1200 AWNING 1" }],
+  }, { filename: "phone-photo.png" });
+  const [doc] = await ingestProjectFiles(env, "p1");
+  assert.equal(doc.kind, "png");
+  assert.equal(doc.rejected, false);
+  assert.match(doc.imageDataUrl ?? "", /^data:image\/png;base64,/);
+  assert.equal(doc.docType, "schedule");
+  assert.ok(doc.roles.includes("schedule"));
 });
 
 // ── §9.3 parent/child tags ───────────────────────────────────────────────────

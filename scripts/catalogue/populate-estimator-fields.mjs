@@ -1,11 +1,10 @@
-// Populate the estimated estimator fields on every published product.
+// Populate provisional estimator fields on every published product.
 //
-//   node scripts/catalogue/populate-estimator-fields.mjs            # dry run: print mutations
-//   node scripts/catalogue/populate-estimator-fields.mjs --apply    # write (needs SANITY_WRITE_TOKEN)
+//   node scripts/catalogue/populate-estimator-fields.mjs
+//   node scripts/catalogue/populate-estimator-fields.mjs --apply
 //
-// Dry run is safe and needs no token. --apply uses the Sanity mutate API with a
-// write token in SANITY_WRITE_TOKEN; without one, it exits. (The agent may instead
-// apply the printed mutations through the Sanity MCP.)
+// Dry run is the default. --apply requires SANITY_WRITE_TOKEN. Existing
+// certified/manufacturer performance data is never overwritten.
 import { createClient } from "@sanity/client";
 import { deriveEstimatorFields } from "./derive-estimator-fields.mjs";
 
@@ -14,29 +13,118 @@ const dataset = process.env.SANITY_DATASET || "production";
 const token = process.env.SANITY_WRITE_TOKEN;
 const apply = process.argv.includes("--apply");
 
-const client = createClient({ projectId, dataset, apiVersion: "2024-01-01", useCdn: !apply, token });
+const client = createClient({
+  projectId,
+  dataset,
+  apiVersion: "2025-02-19",
+  useCdn: !apply,
+  token,
+  perspective: "published",
+});
 
-const products = await client.fetch(`*[_type == "product" && defined(name)]{
-  "id": _id, "slug": slug.current, name, "family": family->slug.current, "category": category->slug.current,
-  minWidth, maxWidth, minHeight, maxHeight, standardGlass
+const products = await client.fetch(`*[
+  _type == "product" &&
+  defined(name) &&
+  !(_id in path("drafts.**"))
+]{
+  "id": _id,
+  "rev": _rev,
+  "slug": slug.current,
+  name,
+  "family": family->slug.current,
+  "category": category->slug.current,
+  minWidth,
+  maxWidth,
+  minHeight,
+  maxHeight,
+  standardGlass,
+  configuration,
+  dimensionRule,
+  pricingRef,
+  schemaVersion,
+  performanceVariants[]{
+    _key,
+    variantId,
+    glassBuildUp,
+    uValue,
+    shgc,
+    frameType,
+    frameTechnology,
+    coating,
+    pricingOptionSlugs,
+    dataSource,
+    certified,
+    published
+  }
 } | order(family asc)`);
 
-const patches = products.map((p) => ({ id: p.id, name: p.name, fields: deriveEstimatorFields(p) }));
+const hasProtectedPerformance = (product) => (product.performanceVariants ?? []).some(
+  (variant) => variant?.certified === true
+    || variant?.dataSource === "certified"
+    || variant?.dataSource === "manufacturer"
+    || variant?._key !== "std",
+);
+
+const patches = products.map((product) => {
+  const fields = deriveEstimatorFields(product);
+  const preservesPerformance = hasProtectedPerformance(product);
+  if (preservesPerformance) delete fields.performanceVariants;
+  const preservesConfiguration = ["certified", "manufacturer"].includes(product.configuration?.dataSource);
+  const preservesDimensions = ["certified", "manufacturer"].includes(product.dimensionRule?.dataSource);
+  if (preservesConfiguration) delete fields.configuration;
+  if (preservesDimensions) delete fields.dimensionRule;
+  if (product.pricingRef) delete fields.pricingRef;
+  if (Number(product.schemaVersion ?? 0) >= fields.schemaVersion) delete fields.schemaVersion;
+  return {
+    id: product.id,
+    name: product.name,
+    fields,
+    preservesPerformance,
+    preservesConfiguration,
+    preservesDimensions,
+  };
+});
 
 if (!apply) {
-  console.log(`# Dry run — ${patches.length} products would be patched (all values estimated/uncertified)\n`);
-  for (const { id, name, fields } of patches) {
-    const pv = fields.performanceVariants[0];
+  console.log(`# Dry run — ${patches.length} products would be patched`);
+  console.log("# Provisional performance is always estimated/uncertified; protected data is preserved.\n");
+  for (const {
+    id, name, fields, preservesPerformance, preservesConfiguration, preservesDimensions,
+  } of patches) {
+    const variant = fields.performanceVariants?.[0];
     console.log(`${name} (${id})`);
-    console.log(`  operation=${fields.configuration.operationTypes.join("+") || "?"}  Uw=${pv.uValue} SHGC=${pv.shgc} [${pv.glassBuildUp}]  maxArea=${fields.dimensionRule.maxAreaM2}m²  pricingRef=${fields.pricingRef}`);
+    if (preservesPerformance) {
+      console.log("  performance=PRESERVED (certified/manufacturer data exists)");
+    } else {
+      console.log(
+        `  frame=${variant.frameTechnology}  Uw=${variant.uValue}  SHGC=${variant.shgc}`
+        + `  glass=[${variant.glassBuildUp}]`,
+      );
+    }
+    const operation = preservesConfiguration
+      ? "PRESERVED"
+      : fields.configuration.operationTypes.join("+") || "?";
+    const maxArea = preservesDimensions ? "PRESERVED" : `${fields.dimensionRule.maxAreaM2}m²`;
+    console.log(`  operation=${operation}  maxArea=${maxArea}  pricingRef=${fields.pricingRef ?? "PRESERVED"}`);
   }
-  console.log(`\n(no writes; pass --apply with SANITY_WRITE_TOKEN to persist, or apply via the Sanity MCP)`);
+  console.log("\n(no writes; pass --apply with SANITY_WRITE_TOKEN to persist)");
 } else {
-  if (!token) { console.error("SANITY_WRITE_TOKEN required for --apply"); process.exit(1); }
-  let n = 0;
-  for (const { id, fields } of patches) {
-    await client.patch(id).set(fields).commit({ autoGenerateArrayKeys: true });
-    n++;
+  if (!token) {
+    console.error("SANITY_WRITE_TOKEN required for --apply");
+    process.exit(1);
   }
-  console.log(`Applied estimated estimator fields to ${n} products.`);
+  let updated = 0;
+  let protectedCount = 0;
+  let transaction = client.transaction();
+  for (const { id, fields, preservesPerformance } of patches) {
+    const rev = products.find((product) => product.id === id)?.rev;
+    transaction = transaction.patch(id, (patch) => patch.ifRevisionId(rev).set(fields));
+    updated++;
+    if (preservesPerformance) protectedCount++;
+  }
+  await transaction.commit({ autoGenerateArrayKeys: true });
+  console.log(
+    `Applied estimator fields to ${updated} products;`
+    + ` preserved certified/manufacturer performance data on ${protectedCount}.`,
+  );
 }

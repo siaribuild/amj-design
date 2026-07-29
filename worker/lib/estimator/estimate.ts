@@ -135,6 +135,7 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
   buildingModelId: string;
   sourceGeneration: number;
   sourceManifestHash: string;
+  processingToken?: string;
 }): Promise<EstimateSummary> {
   // Extraction source #1: if the project has parsed schedule lines but no
   // openings yet, bridge them first (idempotent).

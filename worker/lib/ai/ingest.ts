@@ -296,6 +296,12 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
       md = viaTextLayer;
     }
     doc.markdown = md.markdown;
+    if (kind === "pdf" && !doc.markdown && doc.qualityIssues.includes("pdf_no_text_layer")) {
+      // Workers AI Markdown conversion does not rasterise PDF pages for vision.
+      // Make the supported fallback explicit instead of presenting a scanned
+      // schedule as a generic extraction failure.
+      doc.qualityIssues.push("scanned_pdf_requires_image_upload");
+    }
     if (doc.markdown) {
       await env.FILES.put(derivedKeys(projectId, f.id).markdown, doc.markdown).catch(() => { /* derivative archive is best-effort */ });
     }
@@ -314,8 +320,9 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
     for (const role of ["schedule", "energy_report", "plans"] as const) {
       if (doc.rolePages[role].length) roles.add(role);
     }
-    // Unclassified standalone uploads retain the legacy schedule attempt. For a
-    // PDF plan set, page routing must provide positive schedule evidence.
+    // Every standalone image gets a schedule attempt even when OCR/classification
+    // is weak: a customer photo of a schedule is a first-class conversion path.
+    // For a PDF plan set, page routing must provide positive schedule evidence.
     if (doc.docType === "supporting" && kind !== "pdf") roles.add("schedule");
     doc.roles = [...roles];
     if (kind === "pdf" && doc.roles.includes("plans")) {

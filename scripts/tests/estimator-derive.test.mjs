@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   classifyGlass, deriveUwShgc, deriveConfiguration, deriveDimensionRule,
-  derivePerformanceVariant, deriveEstimatorFields,
+  deriveFrameTechnology, derivePerformanceVariant, deriveEstimatorFields,
 } from "../catalogue/derive-estimator-fields.mjs";
 
 test("classifyGlass detects double glazing, Low-E and gas fill", () => {
@@ -30,6 +30,16 @@ test("deriveUwShgc gives plausible, ordered values by build-up", () => {
   }
 });
 
+test("provisional T-series frame assumption lowers whole-window Uw without changing glass SHGC", () => {
+  assert.equal(deriveFrameTechnology({ slug: "amj100t-series-awning-window" }), "thermally_broken");
+  assert.equal(deriveFrameTechnology({ slug: "amj65t-casement-door" }), "thermally_broken");
+  assert.equal(deriveFrameTechnology({ slug: "amj100l-series-awning-window" }), "conventional");
+  const conventional = deriveUwShgc("5+12A+5mm Double Tempered Clear Glass", "conventional");
+  const broken = deriveUwShgc("5+12A+5mm Double Tempered Clear Glass", "thermally_broken");
+  assert.ok(broken.uValue < conventional.uValue);
+  assert.equal(broken.shgc, conventional.shgc, "the same glass build-up retains the same provisional SHGC");
+});
+
 test("configuration maps family to structured operation", () => {
   const c = deriveConfiguration({ family: "sliding-door", category: "doors" });
   assert.deepEqual(c.operationTypes, ["sliding"]);
@@ -48,9 +58,10 @@ test("dimensionRule carries bounds, derived area, and a rule version", () => {
 });
 
 test("SAFETY: derived performance is never marked certified", () => {
-  const pv = derivePerformanceVariant({ standardGlass: "6mm Low-e+25Ar+6mm", slug: "x" });
+  const pv = derivePerformanceVariant({ standardGlass: "6mm Low-e+25Ar+6mm", slug: "amj150t-lift-sliding-door" });
   assert.equal(pv.certified, false);
   assert.equal(pv.dataSource, "estimated");
+  assert.equal(pv.frameTechnology, "thermally_broken");
   const all = deriveEstimatorFields({ family: "awning-window", category: "windows", slug: "amj80", standardGlass: "5+8A+5mm Double Tempered", minWidth: 400, maxWidth: 1000, minHeight: 400, maxHeight: 2400 });
   assert.equal(all.performanceVariants[0].certified, false);
   assert.equal(all.pricingRef, "amj80", "pricingRef IS the pricing_rate_card id — see 0031");
@@ -90,6 +101,19 @@ test("CONTRACT: pricingRef IS the pricing_rate_card id, not a token that resembl
       rateCardIds.has(pricingRef),
       `pricingRef "${pricingRef}" matches no active rate card — the estimator resolves rate cards BY this value, so a mismatch fails every AI run`,
     );
+  }
+});
+
+test("CONTRACT: every catalogue product has an exact active rate-card id", () => {
+  const products = readFileSync(join(projectRoot, "sanity/catalogue.ndjson"), "utf8")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .filter((doc) => doc._type === "product" && doc.slug?.current);
+  assert.equal(products.length, 27, "the current catalogue product set is reconciled in full");
+  for (const product of products) {
+    const pricingRef = deriveEstimatorFields({ ...product, slug: product.slug.current }).pricingRef;
+    assert.ok(rateCardIds.has(pricingRef), `${product.name}: missing exact rate card "${pricingRef}"`);
   }
 });
 

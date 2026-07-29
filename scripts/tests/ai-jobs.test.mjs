@@ -50,13 +50,12 @@ const failedSummary = (stageWarnings) => ({
   stageWarnings,
 });
 
-test("provider rate limits defer without being mistaken for a daily run budget", () => {
+test("provider rate limits are classified for reporting without an application retry window", () => {
   const structured = failedSummary([]);
   structured.failureKind = "transient_rate_limit";
   assert.deepEqual(classifyPipelineFailure(structured), {
     failureClass: "quota",
     code: "ai_provider_rate_limited",
-    retryAfterSeconds: 65,
   });
   assert.equal(
     classifyPipelineFailure(failedSummary([

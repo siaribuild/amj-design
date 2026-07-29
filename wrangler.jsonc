@@ -66,9 +66,10 @@
     "PARSE_ENGINE": "deterministic",
     // AI Gateway (owner-provisioned 2026-07-25): routes every model call through
     // the gateway's spend cap ($20/mo), rate limit (20 provider requests/min)
-    // and unified billing. Provider 429s defer the durable extraction job; an
-    // application "runs/day" counter would be inaccurate because one pipeline
-    // run may issue multiple document and repair requests.
+    // and unified billing. The application does not duplicate that request
+    // throttle: a provider 429 is reported as a retryable capacity error and the
+    // saved documents can still proceed to human review. A "runs/day" counter
+    // would be inaccurate because one run may issue multiple model requests.
     // Payload logging is off in the gateway AND enforced per-request in code
     // (collectLog:false). Model selection lives in code: google/gemini-3.6-flash
     // by default; override with AI_PRIMARY_MODEL without a code change.

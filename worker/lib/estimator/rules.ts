@@ -133,7 +133,12 @@ const variantText = (variant: PerformanceVariant) =>
   `${variant.glassBuildUp ?? ""} ${variant.coating ?? ""}`.toLowerCase();
 const isDoubleGlazed = (variant: PerformanceVariant) =>
   /\b(double|double[- ]?glazed|d\.?g\.?|igu|insulated)\b/.test(variantText(variant)) ||
-  /\d+(?:\.\d+)?\s*(?:mm)?\s*\+\s*\d+(?:\.\d+)?\s*(?:mm\s*)?(?:argon|air|ar|a)\s*\+\s*\d+(?:\.\d+)?/i.test(variantText(variant));
+  /\d+(?:\.\d+)?\s*(?:mm)?(?:\s*low[- ]?e)?\s*\+\s*\d+(?:\.\d+)?\s*(?:mm\s*)?(?:argon|air|ar|a)\s*\+\s*\d+(?:\.\d+)?/i.test(variantText(variant)) ||
+  // Some source rows have a typo in the second pane thickness, but the
+  // low-E + gas-cavity + second separator structure still unambiguously
+  // describes an IGU. Keep runtime classification aligned with catalogue
+  // derivation rather than rejecting the provisional T-series variants.
+  /\blow[- ]?e\s*\+\s*\d+(?:\.\d+)?\s*(?:mm\s*)?(?:argon|air|ar|a)\s*\+/i.test(variantText(variant));
 const isSingleGlazed = (variant: PerformanceVariant) => {
   const value = variantText(variant);
   return !isDoubleGlazed(variant) &&

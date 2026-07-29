@@ -20,6 +20,7 @@ export interface PublishProposalInput {
   buildingModelId: string;
   sourceGeneration: number;
   sourceManifestHash: string;
+  processingToken?: string;
   lines: ProposalSelection[];
 }
 
@@ -79,12 +80,20 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
           pipeline_version, catalogue_version, ranker_version, pricing_version, status)
        SELECT ?,?,?,?,?,?,?,?,?,?,'building'
          FROM project
-        WHERE id=? AND ai_generation=? AND status_customer='draft'`,
+        WHERE id=? AND ai_generation=? AND status_customer='draft'
+          AND (
+            ? IS NULL OR EXISTS (
+              SELECT 1 FROM ai_job_claim
+               WHERE project_id=project.id AND source_generation=project.ai_generation
+                 AND status='processing' AND processing_token=?
+            )
+          )`,
     ).bind(
       proposalId, input.projectId, input.aiRunId, input.buildingModelId,
       input.sourceGeneration, input.sourceManifestHash, PIPELINE_VERSION,
       catalogueVersion, rankerVersion, pricingVersion,
       input.projectId, input.sourceGeneration,
+      input.processingToken ?? null, input.processingToken ?? null,
     ),
   ];
   const positionRow = await env.DB.prepare(
@@ -370,10 +379,11 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
           SELECT 1 FROM ai_proposal_line pl
            WHERE pl.proposal_id=? AND pl.quote_line_id=quote_line.id
         )
-        AND EXISTS (SELECT 1 FROM project WHERE id=? AND ai_generation=? AND status_customer='draft')`,
+        AND EXISTS (SELECT 1 FROM project WHERE id=? AND ai_generation=? AND status_customer='draft')
+        AND EXISTS (SELECT 1 FROM ai_proposal guard WHERE guard.id=? AND guard.status='building')`,
   ).bind(
     JSON.stringify({ noLongerInDocuments: "The source documents no longer contain this human-edited item; we will review it." }),
-    input.projectId, proposalId, input.projectId, input.sourceGeneration,
+    input.projectId, proposalId, input.projectId, input.sourceGeneration, proposalId,
   ));
   stmts.push(env.DB.prepare(
     `DELETE FROM quote_line
@@ -384,14 +394,16 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
           SELECT 1 FROM ai_proposal_line pl
            WHERE pl.proposal_id=? AND pl.quote_line_id=quote_line.id
         )
-        AND EXISTS (SELECT 1 FROM project WHERE id=? AND ai_generation=? AND status_customer='draft')`,
-  ).bind(input.projectId, proposalId, input.projectId, input.sourceGeneration));
+        AND EXISTS (SELECT 1 FROM project WHERE id=? AND ai_generation=? AND status_customer='draft')
+        AND EXISTS (SELECT 1 FROM ai_proposal guard WHERE guard.id=? AND guard.status='building')`,
+  ).bind(input.projectId, proposalId, input.projectId, input.sourceGeneration, proposalId));
 
   stmts.push(env.DB.prepare(
     `UPDATE ai_proposal SET status = 'superseded'
       WHERE project_id = ? AND status = 'published' AND id <> ?
-        AND EXISTS (SELECT 1 FROM project WHERE id=? AND ai_generation=? AND status_customer='draft')`,
-  ).bind(input.projectId, proposalId, input.projectId, input.sourceGeneration));
+        AND EXISTS (SELECT 1 FROM project WHERE id=? AND ai_generation=? AND status_customer='draft')
+        AND EXISTS (SELECT 1 FROM ai_proposal guard WHERE guard.id=? AND guard.status='building')`,
+  ).bind(input.projectId, proposalId, input.projectId, input.sourceGeneration, proposalId));
   stmts.push(env.DB.prepare(
     `UPDATE ai_proposal SET status = 'published', published_at = datetime('now')
       WHERE id = ? AND status='building'

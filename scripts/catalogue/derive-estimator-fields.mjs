@@ -70,18 +70,34 @@ export function classifyGlass(glass) {
   return { doubleGlazed, lowE, gasFilled };
 }
 
-// Whole-window Uw/SHGC estimate for an aluminium frame, from the glass build-up.
-// Ranges are typical Australian residential values; deliberately conservative.
-export function deriveUwShgc(glass) {
+// The T-series marker is the only catalogue-level signal currently available
+// for a thermal-break family. This is an explicit TESTING assumption requested
+// by the owner while manufacturer values are pending, not a product claim.
+// Keeping it in one pure function makes the assumption easy to replace.
+export function deriveFrameTechnology(product) {
+  const identifier = `${product.slug ?? ""} ${product.name ?? ""}`.toLowerCase();
+  return /\bamj(?:65|80|100|125|150)t\b/.test(identifier)
+    ? "thermally_broken"
+    : "conventional";
+}
+
+// Provisional whole-window Uw/SHGC estimates for aluminium systems. The
+// glazing build-up drives SHGC; frame technology adjusts whole-window Uw.
+// These deliberately broad testing values are always stored as estimated and
+// uncertified. Manufacturer/AFRC/WERS values must replace them before they are
+// used as compliance evidence.
+export function deriveUwShgc(glass, frameTechnology = "conventional") {
   const { doubleGlazed, lowE, gasFilled } = classifyGlass(glass);
-  if (!doubleGlazed) return { uValue: 6.2, shgc: 0.7 };            // single glazed
-  if (lowE && gasFilled) return { uValue: 2.5, shgc: 0.4 };        // DG Low-E + argon
-  if (lowE) return { uValue: 2.9, shgc: 0.45 };                    // DG Low-E + air
-  return { uValue: 3.9, shgc: 0.62 };                              // DG clear
+  const thermallyBroken = frameTechnology === "thermally_broken";
+  if (!doubleGlazed) return { uValue: thermallyBroken ? 4.8 : 6.2, shgc: 0.7 };
+  if (lowE && gasFilled) return { uValue: thermallyBroken ? 2.0 : 2.5, shgc: 0.4 };
+  if (lowE) return { uValue: thermallyBroken ? 2.4 : 2.9, shgc: 0.45 };
+  return { uValue: thermallyBroken ? 3.0 : 3.9, shgc: 0.62 };
 }
 
 export function derivePerformanceVariant(product) {
-  const { uValue, shgc } = deriveUwShgc(product.standardGlass);
+  const frameTechnology = deriveFrameTechnology(product);
+  const { uValue, shgc } = deriveUwShgc(product.standardGlass, frameTechnology);
   return {
     _type: "performanceVariant",
     _key: "std",
@@ -90,9 +106,7 @@ export function derivePerformanceVariant(product) {
     uValue,
     shgc,
     frameType: "aluminium",
-    // Glass text cannot establish whether the complete frame system is
-    // thermally broken. Keep this unknown until verified catalogue data exists.
-    frameTechnology: "unknown",
+    frameTechnology,
     coating: /low-?e/i.test(product.standardGlass || "") ? "low-e (description-derived)" : null,
     pricingOptionSlugs: [],
     dataSource: "estimated",
