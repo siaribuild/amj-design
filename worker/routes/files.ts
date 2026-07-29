@@ -169,6 +169,31 @@ files.post("/files/upload", async (c) => {
   // the per-project/global capacity.
   const bytes = new Uint8Array(await file.arrayBuffer());
   const checksum = await sha256hex(bytes);
+  // Browser metadata is only a convenience check. Hash the actual bytes here so
+  // stale tabs, renamed files and deterministically resized photos cannot create
+  // another file row or spend another AI extraction. The existing clean object
+  // has already passed scanning, so identical bytes can be reused safely.
+  const duplicate = await c.env.DB.prepare(
+    `SELECT id, filename, kind, size
+       FROM file_asset
+      WHERE project_id=? AND checksum=? AND virus_status='clean' AND id<>?
+      ORDER BY created_at DESC LIMIT 1`,
+  ).bind(project.id, checksum, id).first<{
+    id: string; filename: string; kind: string; size: number | null;
+  }>();
+  if (duplicate) {
+    await rejectUploadReservation(c.env, id, project.id);
+    return c.json({
+      file: {
+        id: duplicate.id,
+        filename: duplicate.filename,
+        kind: duplicate.kind,
+        size: duplicate.size,
+        status: "clean",
+      },
+      duplicate: true,
+    });
+  }
   let verdict;
   try {
     verdict = await scanFile(c.env, {

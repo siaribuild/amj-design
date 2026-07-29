@@ -476,7 +476,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     // not: it is what people do when the screen looks idle. Name it plainly and
     // spend no extraction on identical bytes. (Match on name+size: the server's
     // content checksum isn't exposed on the project's file list.)
-    const seen = new Set(quote.files.map((f) => `${f.filename}|${f.size ?? ""}`));
+    const seen = new Set(quote.files.map((f) => `${f.name}|${f.size ?? ""}`));
     const key = (f: File) => `${f.name}|${f.size}`;
     const chosen = Array.from(list);
     const dupes = chosen.filter((f) => seen.has(key(f)));
@@ -502,12 +502,20 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     const failures: string[] = [];
     const digests: string[] = [];
     const newCollisions: string[] = [];
+    const serverDupes: string[] = [];
     let imported = 0, attached = 0;
     try {
       for (const file of files) {
         try {
           const preparedFile = await preparePhotoForAi(file);
           const up = await uploadFile(preparedFile, "upload");
+          // The server hashes content and is the authority for stale tabs,
+          // renamed files and photos that were resized before upload. A duplicate
+          // response points at the already-retained file and never queues AI.
+          if (up.duplicate) {
+            serverDupes.push(file.name);
+            continue;
+          }
           if (user) {
             // Registered projects use the first-class AI proposal path. The
             // durable Worker job creates/refines the real cart; the deterministic
@@ -540,11 +548,14 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
       await quote.reload();
       if (newCollisions.length) setCollisionTags((t) => [...new Set([...t, ...newCollisions])]);
       if (imported) setAdding(false); // a stray in-progress add-form is stale once imported lines land
-      const dupNote = dupes.length ? `${dupeNames} already added — skipped` : null;
+      const skippedNames = [...dupes.map((f) => f.name), ...serverDupes];
+      const dupNote = skippedNames.length
+        ? `${[...new Set(skippedNames)].join(", ")} already added — skipped`
+        : null;
       if (failures.length) {
-        const okCount = files.length - failures.length;
+        const okCount = files.length - failures.length - serverDupes.length;
         setUploadNotice({ type: "error", message: `${okCount} of ${files.length} file${files.length !== 1 ? "s" : ""} uploaded. ${failures.join(" ")}${dupNote ? ` ${dupNote}.` : ""}` });
-      } else if (digests.length || attached) {
+      } else if (digests.length || attached || dupNote) {
         const parts = [...digests];
         if (attached) parts.push(`${attached} document${attached !== 1 ? "s" : ""} attached for review`);
         if (dupNote) parts.push(dupNote);

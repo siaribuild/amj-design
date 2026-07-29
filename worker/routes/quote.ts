@@ -68,13 +68,18 @@ quote.post("/projects/:id/submit", async (c) => {
     return c.json({ error: "invalid_state", status: p.status_customer }, 409);
   }
   const submitState = await c.env.DB.prepare(
-    `SELECT ai_generation, quote_edit_version FROM project
+    `SELECT ai_generation, quote_edit_version,
+        (SELECT count(*) FROM file_asset
+          WHERE project_id=project.id AND virus_status='clean') AS clean_file_count
+       FROM project
       WHERE id=? AND status_customer='draft' AND quote_mutation_token IS NULL
         AND NOT EXISTS (
           SELECT 1 FROM file_asset
            WHERE project_id=project.id AND virus_status='pending'
         )`,
-  ).bind(p.id).first<{ ai_generation: number; quote_edit_version: number }>();
+  ).bind(p.id).first<{
+    ai_generation: number; quote_edit_version: number; clean_file_count: number;
+  }>();
   if (!submitState) return c.json({ error: "invalid_state" }, 409);
   // Registered-user AI is part of the estimate, not a background decoration.
   // Do not freeze a cart while its current document generation is still queued
@@ -122,7 +127,9 @@ quote.post("/projects/:id/submit", async (c) => {
   // A provider capacity failure must not deadlock a registered customer's
   // conversion. Their clean source documents are the human review payload even
   // when AI could not create cart lines on this attempt.
-  if (lines.length === 0 && !aiFallbackToHuman) return c.json({ error: "empty_quote" }, 400);
+  if (lines.length === 0 && (!aiFallbackToHuman || submitState.clean_file_count === 0)) {
+    return c.json({ error: "empty_quote" }, 400);
+  }
   // 'ready' and 'technical_review' may both be submitted: a technical_review line
   // is priced and is exactly what submission escalates to an technician (e.g.
   // timber→aluminium substitution, a composite unit for an out-of-range opening).
@@ -159,6 +166,15 @@ quote.post("/projects/:id/submit", async (c) => {
               WHERE project_id=project.id AND virus_status='pending'
            )
           AND (
+            EXISTS (
+              SELECT 1 FROM quote_line
+               WHERE project_id=project.id AND revision_id IS NULL
+            ) OR EXISTS (
+              SELECT 1 FROM file_asset
+               WHERE project_id=project.id AND virus_status='clean'
+            )
+          )
+          AND (
             owner_user_id IS NULL OR ai_generation=0 OR EXISTS (
               SELECT 1 FROM ai_job_claim current_job
                WHERE current_job.project_id=project.id
@@ -184,6 +200,15 @@ quote.post("/projects/:id/submit", async (c) => {
     ).bind(contactName, contactPhone || null, p.owner_user_id ?? "__anonymous_no_user__"),
   ]);
   if (Number(committed[0]?.meta?.changes ?? 0) !== 1) {
+    const payload = await c.env.DB.prepare(
+      `SELECT 1 AS present
+         WHERE EXISTS (
+           SELECT 1 FROM quote_line WHERE project_id=? AND revision_id IS NULL
+         ) OR EXISTS (
+           SELECT 1 FROM file_asset WHERE project_id=? AND virus_status='clean'
+         )`,
+    ).bind(p.id, p.id).first<{ present: number }>();
+    if (!payload) return c.json({ error: "empty_quote" }, 400);
     return c.json({ error: "ai_processing" }, 409);
   }
 

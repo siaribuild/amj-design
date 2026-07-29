@@ -55,6 +55,9 @@ export interface QSegment {
 
 export interface QFile {
   id: string | number; name: string; kind: string;
+  /** Stored byte size. Used with the filename for the upload UI's fast-path
+   * duplicate check; the server independently deduplicates by content hash. */
+  size?: number | null;
   status: "Uploaded" | "Processing" | "Needs attention";
   /** Server-detected document type (schedule | energy_report | plans | supporting);
    *  null until classification lands — the rail shows "SORTING…". */

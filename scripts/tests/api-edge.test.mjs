@@ -82,6 +82,21 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       const ok = new FormData();
       ok.append("file", new Blob([Buffer.from("plan")], { type: "text/plain" }), "plan.txt");
       const uploaded = await (await buyer.request("/api/files/upload", { method: "POST", body: ok })).json();
+      // Content identity is authoritative server-side: even a renamed re-upload
+      // reuses the clean file and cannot enqueue another extraction.
+      const duplicateForm = new FormData();
+      duplicateForm.append("file", new Blob([Buffer.from("plan")], { type: "text/plain" }), "renamed-plan.txt");
+      const duplicateResponse = await buyer.request("/api/files/upload", { method: "POST", body: duplicateForm });
+      assert.equal(duplicateResponse.status, 200);
+      const duplicate = await duplicateResponse.json();
+      assert.equal(duplicate.duplicate, true);
+      assert.equal(duplicate.file.id, uploaded.file.id);
+      const uploadProject = await requestJson(buyer, "/api/projects/current");
+      assert.equal(
+        uploadProject.body.files.length,
+        1,
+        "duplicate bytes must retain exactly one file asset",
+      );
       const intruder = new Session(baseUrl);
       await login(intruder, "/api/auth", "intruder@example.com");
       assert.equal((await intruder.request(`/api/files/${uploaded.file.id}/download`)).status, 404);
@@ -584,6 +599,33 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
         json: { contact: { name: "Casey Builder", email: "casey@example.com" } },
       });
       assert.equal(submitted.body.status, "submitted");
+    });
+
+    await t.test("AI capacity fallback cannot submit after its last source file is deleted", async () => {
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "empty-capacity-fallback@example.com");
+      const draft = await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { items: [] },
+      });
+      const pid = draft.body.project.id;
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `UPDATE project SET ai_generation=1 WHERE id='${pid}';
+         INSERT INTO file_asset
+           (id,project_id,kind,r2_key,filename,virus_status)
+         VALUES ('empty-capacity-file','${pid}','schedule','test/empty-capacity.pdf','empty-capacity.pdf','clean');
+         INSERT INTO ai_job_claim
+           (project_id,source_generation,debounce_token,status,attempts,failure_class,last_error,progress_stage)
+         VALUES ('${pid}',1,'empty-capacity','failed',0,'quota','ai_provider_rate_limited','waiting_capacity');
+         DELETE FROM file_asset WHERE id='empty-capacity-file';`,
+      ], { env: wranglerEnv });
+      const rejected = await requestJson(buyer, `/api/projects/${pid}/submit`, {
+        method: "POST",
+        json: { contact: { name: "Casey Builder", email: "casey@example.com" } },
+      }, 400);
+      assert.equal(rejected.body.error, "empty_quote");
     });
 
     await t.test("registered customer AI edits reach staff repricing but cannot pass approval unpriced", async () => {

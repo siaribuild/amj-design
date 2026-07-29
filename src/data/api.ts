@@ -312,7 +312,7 @@ export class UploadError extends Error {
 
 /** Upload a file (multipart) — attaches to the current project. Bytes are scanned
  *  server-side before they are stored, so this can reject. */
-export async function uploadFile(file: File, kind = "upload"): Promise<{ file: ApiFile }> {
+export async function uploadFile(file: File, kind = "upload"): Promise<{ file: ApiFile; duplicate?: boolean }> {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("kind", kind);
