@@ -345,7 +345,21 @@ files.delete("/files/:id", async (c) => {
   if (!p) return c.json({ error: "not_found" }, 404);
   if ((p as { status_customer?: string }).status_customer !== "draft") return c.json({ error: "locked" }, 409);
   const user = await resolveUser(c.env, c.req.raw);
-  const shouldRecompute = autoExtractionEnabled(c.env) && !!user;
+  // Re-read only if there is something LEFT to read. Deleting the last document
+  // used to enqueue a run over an empty project: the customer saw "reading
+  // document" with no document attached, and the run then failed
+  // FILE_UNSUPPORTED with documents:0. Nothing to re-derive from is not a
+  // failure state, it is an empty one.
+  //
+  // The filter mirrors ingestProjectFiles exactly — if it would not be ingested,
+  // it cannot justify an ingestion.
+  const remaining = await c.env.DB.prepare(
+    `SELECT count(*) AS n FROM file_asset
+      WHERE project_id = ? AND id <> ? AND kind IN ('upload','plan','schedule')
+        AND virus_status = 'clean'`,
+  ).bind(fa.project_id, fa.id).first<{ n: number }>();
+  const documentsRemain = Number(remaining?.n ?? 0) > 0;
+  const shouldRecompute = autoExtractionEnabled(c.env) && !!user && documentsRemain;
   const generationRow = await c.env.DB.prepare(
     `SELECT ai_generation, quote_edit_version FROM project
       WHERE id=? AND status_customer='draft' AND quote_mutation_token IS NULL`,

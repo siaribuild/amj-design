@@ -277,10 +277,15 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     try {
       const res = await deleteFile(fileId);
       await quote.reload();
-      if (user) {
-        const docs = Math.max(1, quote.files.length - 1);
+      // Re-read only what is LEFT. `Math.max(1, …)` claimed one document was
+      // being read after the last one was removed — a spinner over nothing,
+      // and the server no longer queues a run in that case either.
+      const docs = quote.files.length - 1;
+      if (user && docs > 0) {
         setAiPhase({ kind: "reading", docs });
         pollExtractionRef.current(docs);
+      } else {
+        setAiPhase(null);
       }
       const parts = [`${name} removed`];
       if (res.removedLines) parts.push(`${res.removedLines} line${res.removedLines !== 1 ? "s" : ""} removed with it`);
