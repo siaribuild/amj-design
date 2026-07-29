@@ -261,10 +261,10 @@ test("stage: escalation trigger in shadow mode is RECORDED but the Pro model is 
   assert.equal(res.escalation.taken, false, "SHADOW: decision logged, model NOT called");
   assert.equal(aiCalls.length, 1, "only the primary model ran");
   assert.equal(aiCalls[0].model, DEFAULT_PRIMARY_MODEL);
-  const stageWrite = dbWrites.find((w) => w.sql.includes("ai_stage_runs"));
+  const stageWrite = dbWrites.find((w) => /UPDATE ai_stage_runs/.test(w.sql));
   assert.ok(stageWrite, "stage record persisted");
-  assert.equal(stageWrite.args[9], 1, "escalation_triggered=1");
-  assert.equal(stageWrite.args[11], 0, "escalation_taken=0");
+  assert.equal(stageWrite.args[5], 1, "escalation_triggered=1");
+  assert.equal(stageWrite.args[7], 0, "escalation_taken=0");
 });
 
 test("stage: with AI_ESCALATION_MODE='on' the escalation model actually runs and is recorded as taken", async () => {
@@ -281,8 +281,8 @@ test("stage: with AI_ESCALATION_MODE='on' the escalation model actually runs and
   assert.deepEqual(res.data, { value: 9 }, "escalated result adopted");
   assert.equal(aiCalls.length, 2);
   assert.equal(aiCalls[1].model, DEFAULT_ESCALATION_MODEL, "second call goes to Gemini 3.1 Pro");
-  const stageWrite = dbWrites.find((w) => w.sql.includes("ai_stage_runs"));
-  assert.equal(stageWrite.args[11], 1, "escalation_taken=1");
+  const stageWrite = dbWrites.find((w) => /UPDATE ai_stage_runs/.test(w.sql));
+  assert.equal(stageWrite.args[7], 1, "escalation_taken=1");
 });
 
 test("stage: no trigger ⇒ no escalation even when enabled", async () => {
@@ -323,8 +323,10 @@ test("stage: failed skill call persists a 'failed' stage record and fails soft",
   const res = await runStage(env, { aiRunId: "r", projectId: "p", skill: testSkill, input: {} });
   assert.ok(!res.ok);
   assert.equal(res.data, null);
-  const stageWrite = dbWrites.find((w) => w.sql.includes("ai_stage_runs"));
-  assert.equal(stageWrite.args[6], "failed");
+  const started = dbWrites.find((w) => /INSERT INTO ai_stage_runs/.test(w.sql));
+  const stageWrite = dbWrites.find((w) => /UPDATE ai_stage_runs/.test(w.sql));
+  assert.ok(started, "the running stage is visible before the provider returns");
+  assert.equal(stageWrite.args[2], "failed");
 });
 
 // ── Vendor schema shape (§13.4) ──────────────────────────────────────────────

@@ -121,12 +121,13 @@ test("ingestion queries scan-clean files only; legacy skipped files never reach 
   assert.doesNotMatch(query, /skipped/);
 });
 
-// ── PDF text-layer fallback ──────────────────────────────────────────────────
+// ── Fast PDF text-layer path ─────────────────────────────────────────────────
 // A real customer plan set failed the AI tier while the DETERMINISTIC tier read
 // it happily: ingest called only env.AI.toMarkdown, and PDFs have no image
 // fallback, so one refusal from toMarkdown meant "no usable documents". These
 // tests hold the invariant that came out of it: any PDF one tier can read, the
-// other must read too — and a downgrade must be visible, never silent.
+// other must read too. A usable text layer is now the primary path; AI Markdown
+// conversion is reserved for scans so vector plans are not interpreted twice.
 //
 // The fixture is built here rather than committed: a customer's architectural
 // plans do not belong in the repo, and a hand-built PDF is exact about what it
@@ -170,33 +171,35 @@ function ingestEnv(bytes, ai, overrides = {}) {
   };
 }
 
-test("ingest: a text PDF stays readable when toMarkdown THROWS", async () => {
+test("ingest: a text PDF uses its local page text without a redundant AI conversion", async () => {
+  let calls = 0;
   const env = ingestEnv(tinyTextPdf(SCHEDULE_LINES), {
-    toMarkdown: async () => { throw new Error("boom"); },
+    toMarkdown: async () => { calls++; throw new Error("must not be called"); },
   });
   const [doc] = await ingestProjectFiles(env, "p1");
-  assert.ok(doc.markdown, "the run must not lose a document toMarkdown refused");
+  assert.equal(calls, 0);
+  assert.ok(doc.markdown);
   assert.match(doc.markdown, /WINDOW SCHEDULE/);
-  assert.ok(doc.qualityIssues.some((w) => w.startsWith("markdown_call_failed:")), "the cause is recorded, not swallowed");
-  assert.ok(doc.qualityIssues.includes("markdown_via_pdf_text_layer"), "a downgrade to the text layer is declared");
+  assert.deepEqual(doc.qualityIssues.filter((w) => w.startsWith("markdown_")), []);
 });
 
 test("ingest: a text PDF stays readable when the AI binding is absent", async () => {
   const env = ingestEnv(tinyTextPdf(SCHEDULE_LINES), undefined);
   const [doc] = await ingestProjectFiles(env, "p1");
   assert.match(doc.markdown ?? "", /WINDOW SCHEDULE/);
-  assert.ok(doc.qualityIssues.includes("markdown_binding_unavailable"));
+  assert.ok(!doc.qualityIssues.includes("markdown_binding_unavailable"));
   assert.ok(doc.roles.includes("schedule"), "the detected schedule page is routed to schedule extraction");
   assert.deepEqual(doc.rolePages.schedule, [1]);
 });
 
-test("ingest: toMarkdown WINS when it works — no needless downgrade", async () => {
+test("ingest: a text PDF does not pay for a second richer conversion", async () => {
+  let calls = 0;
   const env = ingestEnv(tinyTextPdf(SCHEDULE_LINES), {
-    toMarkdown: async () => [{ data: "| W | H |\n|---|---|\n| 1 | 2 |" }],
+    toMarkdown: async () => { calls++; return [{ data: "| W | H |\n|---|---|\n| 1 | 2 |" }]; },
   });
   const [doc] = await ingestProjectFiles(env, "p1");
-  assert.match(doc.markdown ?? "", /\|---\|/, "the richer table conversion is kept");
-  assert.deepEqual(doc.qualityIssues, [], "nothing to warn about when the primary path works");
+  assert.equal(calls, 0);
+  assert.match(doc.markdown ?? "", /WINDOW SCHEDULE/);
 });
 
 test("ingest: a PDF with NO text layer reports why, and is not silently 'usable'", async () => {
@@ -210,10 +213,12 @@ test("ingest: a PDF with NO text layer reports why, and is not silently 'usable'
 
 test("ingest: a clear schedule photo is routed to multimodal schedule extraction", async () => {
   const bytes = pngBytes(2400, 1800);
+  let calls = 0;
   const env = ingestEnv(bytes, {
-    toMarkdown: async () => [{ data: "WINDOW SCHEDULE\nMARK WIDTH HEIGHT TYPE QTY\nW01 1810 1200 AWNING 1" }],
+    toMarkdown: async () => { calls++; throw new Error("photo OCR must not run twice"); },
   }, { filename: "phone-photo.png" });
   const [doc] = await ingestProjectFiles(env, "p1");
+  assert.equal(calls, 0);
   assert.equal(doc.kind, "png");
   assert.equal(doc.rejected, false);
   assert.match(doc.imageDataUrl ?? "", /^data:image\/png;base64,/);

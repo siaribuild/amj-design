@@ -270,6 +270,96 @@ export async function loadAccountDiscount(env: Env, userId: string | null | unde
   return Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0;
 }
 
+export interface CachedPriceArgs {
+  family: string;
+  widthMm: number;
+  heightMm: number;
+  qty: number;
+  optionSlugs?: string[];
+  requireExactRate?: boolean;
+  requireAllOptions?: boolean;
+}
+
+/**
+ * Load the private pricing catalogue once for a multi-opening estimate.
+ *
+ * The old estimator called priceLine() for every eligible product variant. Each
+ * call performed five or more D1 reads, turning a normal schedule into hundreds
+ * or thousands of serial subrequests. Public/manual pricing still uses
+ * priceLine(); the AI batch path uses this immutable per-run resolver.
+ */
+export async function createCachedPriceResolver(
+  env: Env,
+  ownerUserId: string | null | undefined,
+): Promise<(args: CachedPriceArgs) => PriceSnapshot> {
+  const [rateResult, policy, surchargeResult, modifierResult, discountPercent] = await Promise.all([
+    env.DB.prepare(
+      "SELECT id, perim_rate, area_rate, min_charge, version FROM pricing_rate_card WHERE active=1",
+    ).all<any>(),
+    loadPolicy(env),
+    env.DB.prepare(
+      "SELECT id, surcharge FROM pricing_option_surcharge WHERE active=1",
+    ).all<{ id: string; surcharge: number }>(),
+    env.DB.prepare(
+      `SELECT id, rate_card_id, seq, label, when_field, when_op, when_value, then_type, then_value
+         FROM pricing_modifier WHERE active=1 ORDER BY rate_card_id, seq`,
+    ).all<any>(),
+    loadAccountDiscount(env, ownerUserId),
+  ]);
+
+  const rates = new Map<string, RateCard>();
+  for (const row of rateResult.results ?? []) {
+    rates.set(String(row.id), {
+      id: String(row.id),
+      perimRate: Number(row.perim_rate),
+      areaRate: Number(row.area_rate),
+      minCharge: Number(row.min_charge ?? 0),
+      version: String(row.version),
+    });
+  }
+  const surcharges = new Map(
+    (surchargeResult.results ?? [])
+      .filter((row) => Number.isFinite(row.surcharge))
+      .map((row) => [row.id, row.surcharge] as const),
+  );
+  const modifiers = new Map<string, PricingModifier[]>();
+  for (const row of modifierResult.results ?? []) {
+    const rateCardId = String(row.rate_card_id);
+    const list = modifiers.get(rateCardId) ?? [];
+    list.push({
+      id: String(row.id),
+      seq: Number(row.seq ?? 0),
+      label: row.label ?? null,
+      whenField: row.when_field,
+      whenOp: row.when_op,
+      whenValue: Number(row.when_value),
+      thenType: row.then_type,
+      thenValue: Number(row.then_value),
+    });
+    modifiers.set(rateCardId, list);
+  }
+
+  return (args) => {
+    const rate = rates.get(args.family) ?? (!args.requireExactRate ? rates.get("default") : undefined);
+    if (!rate) throw new Error("no_rate_card");
+    const uniqueOptions = [...new Set(args.optionSlugs ?? [])];
+    const missing = uniqueOptions.filter((slug) => !surcharges.has(slug));
+    if (args.requireAllOptions && missing.length) throw new MissingSurcharge(missing);
+    return computePrice(rate, policy, {
+      family: args.family,
+      widthMm: args.widthMm,
+      heightMm: args.heightMm,
+      qty: args.qty,
+      optionSurcharges: uniqueOptions.flatMap((slug) => {
+        const value = surcharges.get(slug);
+        return value == null ? [] : [value];
+      }),
+      modifiers: modifiers.get(rate.id) ?? [],
+      discountPercent,
+    });
+  };
+}
+
 // End-to-end: price one line from private D1 and return the snapshot.
 export async function priceLine(env: Env, args: {
   family: string; widthMm: number; heightMm: number; qty: number;

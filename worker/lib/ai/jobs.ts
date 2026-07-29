@@ -9,6 +9,10 @@ export interface AiExtractionJob {
   debounceToken: string;
 }
 
+interface BackgroundContext {
+  waitUntil(promise: Promise<unknown>): void;
+}
+
 export type AiJobFailureClass = "permanent" | "transient" | "quota";
 
 export interface AiJobProcessingResult {
@@ -28,7 +32,11 @@ export interface AiJobDiagnostic {
   retryAt: string | null;
 }
 
-const MAX_AUTOMATIC_ATTEMPTS = 3;
+// One customer-facing attempt. Repeating a slow/failed immutable run two more
+// times kept the cart locked for minutes and multiplied spend. A staff retry
+// remains available and reuses completed idempotent stages.
+const MAX_AUTOMATIC_ATTEMPTS = 1;
+const AI_JOB_DEADLINE_MS = 50_000;
 
 class AiJobFault extends Error {
   constructor(
@@ -147,6 +155,10 @@ export function customerSafeJobDiagnostic(row: {
   if (lastError === "ai_provider_request_rejected") {
     return { code: "SERVICE_CONFIGURATION_ERROR", retryable: false, retryAt: null };
   }
+  if (lastError === "ai_processing_deadline_exceeded" ||
+      lastError === "ai_processing_stalled") {
+    return { code: "TEMPORARY_FAILURE", retryable: true, retryAt: null };
+  }
   if (row.failure_class === "permanent") {
     return { code: "DOCUMENTS_NOT_UNDERSTOOD", retryable: false, retryAt: null };
   }
@@ -162,7 +174,7 @@ export function customerSafeJobDiagnostic(row: {
 
 export async function dispatchAiExtractionJob(
   env: Env,
-  ctx: ExecutionContext,
+  ctx: BackgroundContext,
   job: AiExtractionJob,
   delaySeconds = 0,
 ): Promise<void> {
@@ -192,7 +204,7 @@ export async function dispatchAiExtractionJob(
 
 export async function enqueueAiExtraction(
   env: Env,
-  ctx: ExecutionContext,
+  ctx: BackgroundContext,
   projectId: string,
   delaySeconds = 10,
 ): Promise<AiExtractionJob> {
@@ -235,7 +247,7 @@ export async function enqueueAiExtraction(
  */
 export async function retryCurrentAiExtraction(
   env: Env,
-  ctx: ExecutionContext,
+  ctx: BackgroundContext,
   projectId: string,
 ): Promise<{ job: AiExtractionJob; alreadyQueued: boolean }> {
   const current = await env.DB.prepare(
@@ -324,6 +336,7 @@ async function recordJobFailure(
       processingToken,
     ).run();
     if (Number(recorded.meta?.changes ?? 0) !== 1) return { state: "leased" };
+    await cancelRunningGeneration(env, job);
     await clearDebounceIfCurrent(env, job);
     return { state: "failed" };
   }
@@ -351,10 +364,28 @@ async function recordJobFailure(
     processingToken,
   ).run();
   if (Number(transitioned.meta?.changes ?? 0) !== 1) return { state: "leased" };
-  if (!canRetry) await clearDebounceIfCurrent(env, job);
+  if (!canRetry) {
+    await cancelRunningGeneration(env, job);
+    await clearDebounceIfCurrent(env, job);
+  }
   return canRetry
     ? { state: "deferred", retryAfterSeconds: delaySeconds }
     : { state: "failed" };
+}
+
+async function cancelRunningGeneration(env: Env, job: AiExtractionJob): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE ai_stage_runs SET status='failed'
+        WHERE status='running' AND ai_run_id IN (
+          SELECT id FROM ai_runs WHERE project_id=? AND source_generation=?
+        )`,
+    ).bind(job.projectId, job.generation),
+    env.DB.prepare(
+      `UPDATE ai_runs SET status='cancelled', completed_at=datetime('now')
+        WHERE project_id=? AND source_generation=? AND status='running'`,
+    ).bind(job.projectId, job.generation),
+  ]).catch(() => {});
 }
 
 async function clearDebounceIfCurrent(env: Env, job: AiExtractionJob): Promise<void> {
@@ -384,7 +415,7 @@ export async function processAiExtractionJob(
     `UPDATE ai_job_claim
         SET status='processing', attempts=attempts+1, debounce_token=?,
             processing_token=?, last_error=NULL, failure_class=NULL,
-            retry_after=NULL, lease_expires_at=datetime('now','+10 minutes'),
+            retry_after=NULL, lease_expires_at=datetime('now','+75 seconds'),
             progress_stage='reading_documents', updated_at=datetime('now')
       WHERE project_id=? AND source_generation=?
         AND (
@@ -417,12 +448,13 @@ export async function processAiExtractionJob(
     return { state: existing?.status === "failed" ? "failed" : "stale" };
   }
 
-  // Keep ownership for long multi-document runs. Every state transition remains
-  // token-guarded in case ownership is genuinely lost despite the heartbeat.
+  // Keep ownership while useful work is progressing. The lease is deliberately
+  // short enough for the customer experience: a dead invocation must not own the
+  // cart for ten minutes.
   let heartbeatLost = false;
   const heartbeat = setInterval(() => {
     void env.DB.prepare(
-      `UPDATE ai_job_claim SET lease_expires_at=datetime('now','+10 minutes'),
+      `UPDATE ai_job_claim SET lease_expires_at=datetime('now','+75 seconds'),
           updated_at=datetime('now')
         WHERE project_id=? AND source_generation=? AND status='processing'
           AND processing_token=?`,
@@ -434,16 +466,28 @@ export async function processAiExtractionJob(
         // A single D1 failure is not proof the lease is lost; the final
         // token-guarded transition remains authoritative.
       });
-  }, 120_000);
+  }, 15_000);
 
   try {
     if (!(await hasAnyExactPricingCoverage(env))) {
       throw new AiJobFault("pricing_catalogue_not_ready", "permanent");
     }
 
-    const summary = await runAiExtraction(env, job.projectId, {
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const extraction = runAiExtraction(env, job.projectId, {
       sourceGeneration: job.generation,
       processingToken,
+    });
+    const summary = await Promise.race([
+      extraction,
+      new Promise<never>((_resolve, reject) => {
+        deadlineTimer = setTimeout(
+          () => reject(new AiJobFault("ai_processing_deadline_exceeded", "transient")),
+          AI_JOB_DEADLINE_MS,
+        );
+      }),
+    ]).finally(() => {
+      if (deadlineTimer) clearTimeout(deadlineTimer);
     });
     if (summary.status === "failed") {
       return await recordJobFailure(

@@ -6,7 +6,7 @@ import { createCatalogueRepository, sanityExecutor } from "./catalogue";
 import { selectForOpening } from "./select";
 import { persistSelection } from "./persist";
 import { buildHistoricalModel, buildApprovedThermalModel } from "./learning";
-import { priceLine } from "./pricing";
+import { createCachedPriceResolver } from "./pricing";
 import { uuid } from "../util";
 import type { CatalogueCandidate, OpeningInput } from "./types";
 import type { PerformanceVariant } from "./types";
@@ -161,25 +161,29 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
   // per candidate — an estimate prices dozens of candidates per opening.
   const owner = await env.DB.prepare("SELECT owner_user_id FROM project WHERE id = ?")
     .bind(projectId).first<{ owner_user_id: string | null }>();
+  const priceFromCache = await createCachedPriceResolver(env, owner?.owner_user_id ?? null);
 
   // Price a candidate for an opening via the private D1 rate card, keyed on the
   // product's pricingRef (a PRODUCT slug since 0031; falls back to 'default').
   const priceFn = async (candidate: CatalogueCandidate, opening: OpeningInput, variant: PerformanceVariant | null) => {
     if (!candidate.pricingRef) return null;
     const pricingKey = candidate.pricingRef;
-    return priceLine(env, {
-      family: pricingKey,
-      widthMm: opening.widthMm ?? 0,
-      heightMm: opening.heightMm ?? 0,
-      qty: opening.qty ?? 1,
-      optionSlugs: [...new Set([...(opening.optionSlugs ?? []), ...(variant?.pricingOptionSlugs ?? [])])],
-      ownerUserId: owner?.owner_user_id ?? null,
-      // A declared product pricing reference is an exact private CPQ contract.
-      // Falling back to a generic operation price would make thermally broken /
-      // coating recommendations look priced while silently omitting their cost.
-      requireExactRate: !!candidate.pricingRef,
-      requireAllOptions: true,
-    }).catch(() => null);
+    try {
+      return priceFromCache({
+        family: pricingKey,
+        widthMm: opening.widthMm ?? 0,
+        heightMm: opening.heightMm ?? 0,
+        qty: opening.qty ?? 1,
+        optionSlugs: [...new Set([...(opening.optionSlugs ?? []), ...(variant?.pricingOptionSlugs ?? [])])],
+        // A declared product pricing reference is an exact private CPQ contract.
+        // Falling back to a generic operation price would make thermally broken /
+        // coating recommendations look priced while silently omitting their cost.
+        requireExactRate: !!candidate.pricingRef,
+        requireAllOptions: true,
+      });
+    } catch {
+      return null;
+    }
   };
 
   const lines: EstimateSummary["lines"] = [];

@@ -351,6 +351,7 @@ export interface ExtractionRun {
   id: string;
   status: "queued" | "running" | "partial" | "completed" | "failed" | "cancelled";
   startedAt: string;
+  updatedAt?: string;
   completedAt: string | null;
   summary: { extractedLines: number; conflicts: number; energyApplied: number; cartApplied?: number; documents: number } | null;
   progressStage?:
@@ -377,6 +378,11 @@ export interface ExtractionRun {
 }
 export const extractionStatus = () =>
   req<{ run: ExtractionRun | null; basis?: Record<string, string> }>("/api/projects/current/extraction-status");
+export const retryExtraction = () =>
+  req<{ ok: true; alreadyQueued: boolean }>("/api/projects/current/extraction-retry", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
 
 /** Remove one document from a draft project (per-file Remove — spec §1c). */
 export async function deleteFile(fileId: string): Promise<{ ok: boolean; removedLines: number; keptForReview: number }> {

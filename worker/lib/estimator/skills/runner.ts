@@ -25,6 +25,7 @@ import type { Skill, SkillFailureKind, SkillRun } from "./types";
 // stored gateway-side even if the dashboard logging toggle is ever re-enabled.
 const gatewayOpts = (env: Env) =>
   env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID, collectLog: false } } : undefined;
+const MODEL_CALL_DEADLINE_MS = 18_000;
 
 // Google's structured-output schema is an OpenAPI 3.0 SUBSET, not JSON Schema:
 // it takes one `type` plus `nullable`, and rejects the JSON-Schema union
@@ -183,7 +184,20 @@ async function callModel(env: Env, model: string, skill: Skill<unknown, unknown>
         max_tokens: EXTRACTION_MAX_TOKENS,
         response_format: { type: "json_schema", json_schema: toVendorSchema(skill.responseSchema) },
       };
-  return await (env.AI as any).run(model, body, gatewayOpts(env));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      (env.AI as any).run(model, body, gatewayOpts(env)),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`ai_model_timeout_${MODEL_CALL_DEADLINE_MS}ms`)),
+          MODEL_CALL_DEADLINE_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function runSkill<I, O>(

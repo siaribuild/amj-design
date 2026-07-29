@@ -92,6 +92,18 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
     // Archive missing/corrupt ⇒ fall through to a fresh run.
   }
 
+  // Persist the in-flight stage BEFORE calling the provider. Previously the row
+  // was written only after the call returned, so a killed invocation left no
+  // evidence of which model task had stalled.
+  const stageRunId = uuid();
+  await env.DB.prepare(
+    `INSERT INTO ai_stage_runs
+       (id, ai_run_id, stage, model, prompt_version, input_hash, status)
+     VALUES (?,?,?,?,?,?,'running')`,
+  ).bind(
+    stageRunId, aiRunId, skill.id, model, skill.promptVersion, inputHash,
+  ).run().catch(() => { /* observability must not block the estimate */ });
+
   // ── Fresh primary-model run (with the runner's single §22.3 repair pass) ─────
   let run = await runSkill(env, skill, input);
 
@@ -126,17 +138,17 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
   }
 
   // ── Persist the stage record (OR REPLACE keeps within-run retries clean) ─────
-  const stageRunId = uuid();
   const status = run.ok ? "completed" : (run.warnings.includes("skill_call_failed") ? "failed" : "invalid");
   await env.DB.prepare(
-    `INSERT OR REPLACE INTO ai_stage_runs
-       (id, ai_run_id, stage, model, prompt_version, input_hash, status, result_r2_key, output_hash,
-        escalation_triggered, escalation_reasons, escalation_taken, input_tokens, output_tokens)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `UPDATE ai_stage_runs
+        SET model=?, prompt_version=?, status=?, result_r2_key=?, output_hash=?,
+            escalation_triggered=?, escalation_reasons=?, escalation_taken=?,
+            input_tokens=?, output_tokens=?
+      WHERE id=?`,
   ).bind(
-    stageRunId, aiRunId, skill.id, run.modelId, skill.promptVersion, inputHash, status, r2Key, run.outputHash,
+    run.modelId, skill.promptVersion, status, r2Key, run.outputHash,
     decision.triggered ? 1 : 0, decision.reasons.length ? JSON.stringify(decision.reasons) : null, taken ? 1 : 0,
-    run.inputTokens || null, run.outputTokens || null,
+    run.inputTokens || null, run.outputTokens || null, stageRunId,
   ).run().catch(() => { /* the stage record is observability, never a blocker */ });
 
   return {

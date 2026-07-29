@@ -16,7 +16,7 @@ await build({
     contents: `
       export { toCandidate, fixtureCatalogueRepository, createCatalogueRepository, catalogueCandidateReadiness } from ${p("worker/lib/estimator/catalogue.ts")};
       export { checkHardRules, RULE_VERSION } from ${p("worker/lib/estimator/rules.ts")};
-      export { computePrice, loadOptionSurcharges } from ${p("worker/lib/estimator/pricing.ts")};
+      export { computePrice, loadOptionSurcharges, createCachedPriceResolver } from ${p("worker/lib/estimator/pricing.ts")};
       export { rankCandidates, selectWithConfidence } from ${p("worker/lib/estimator/rank.ts")};
       export { selectForOpening } from ${p("worker/lib/estimator/select.ts")};
       export { r2Keys } from ${p("worker/lib/estimator/storage.ts")};
@@ -27,7 +27,7 @@ await build({
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { toCandidate, fixtureCatalogueRepository, catalogueCandidateReadiness, checkHardRules, computePrice, loadOptionSurcharges, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
+const { toCandidate, fixtureCatalogueRepository, catalogueCandidateReadiness, checkHardRules, computePrice, loadOptionSurcharges, createCachedPriceResolver, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
 
 const RATE = { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" };
 const POLICY = { depositPercent: 40, gstMode: "inc", version: "v1" };
@@ -263,6 +263,48 @@ test("pricing: perimeter+area model, ×qty, 40% deposit, snapshot versions", () 
   assert.equal(s.depositPercent, 40);        // spec: real deposit is 40%, not 50%
   assert.equal(s.rateCardVersion, "v1");
   assert.equal(s.pricingPolicyVersion, "v1");
+});
+
+test("AI batch pricing loads private tables once, not once per candidate variant", async () => {
+  let reads = 0;
+  const env = {
+    DB: {
+      prepare(sql) {
+        return {
+          async all() {
+            reads++;
+            if (sql.includes("pricing_rate_card")) {
+              return { results: [{ id: "amj80", perim_rate: 55, area_rate: 340, min_charge: 0, version: "v1" }] };
+            }
+            if (sql.includes("pricing_option_surcharge")) {
+              return { results: [{ id: "glazing:low-e", surcharge: 120 }] };
+            }
+            if (sql.includes("pricing_modifier")) return { results: [] };
+            throw new Error(`unexpected all: ${sql}`);
+          },
+          async first() {
+            reads++;
+            if (sql.includes("pricing_policy")) {
+              return { deposit_percent: 40, gst_mode: "inc", version: "v1" };
+            }
+            if (sql.includes("discount_percent")) return { discount_percent: 5 };
+            throw new Error(`unexpected first: ${sql}`);
+          },
+          bind() { return this; },
+        };
+      },
+    },
+  };
+  const price = await createCachedPriceResolver(env, "user-1");
+  assert.equal(reads, 5, "one bounded pricing snapshot");
+  for (let i = 0; i < 100; i++) {
+    const result = price({
+      family: "amj80", widthMm: 1200, heightMm: 900, qty: 1,
+      optionSlugs: ["glazing:low-e"], requireExactRate: true, requireAllOptions: true,
+    });
+    assert.equal(result.ok, true);
+  }
+  assert.equal(reads, 5, "candidate pricing is pure after the initial snapshot");
 });
 
 test("pricing: option surcharges add to the unit; missing dims ⇒ not ok", () => {

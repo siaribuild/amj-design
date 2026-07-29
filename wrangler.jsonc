@@ -3,6 +3,10 @@
   "compatibility_date": "2026-07-16",
   "compatibility_flags": ["nodejs_compat"],
   "main": "worker/index.ts",
+  // Queue consumers default to 30s CPU. PDF parsing plus a multi-opening
+  // deterministic estimate can legitimately approach that ceiling even after
+  // batching; the application-level 50s deadline remains the UX authority.
+  "limits": { "cpu_ms": 60000 },
 
   // Built Vite SPA. The Worker serves these via the ASSETS binding; unmatched
   // client-side routes fall back to index.html (handled in worker/index.ts).

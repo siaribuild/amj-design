@@ -100,7 +100,10 @@ quote.post("/projects/:id/submit", async (c) => {
       const terminal = await c.env.DB.prepare(
         "SELECT status, failure_class FROM ai_job_claim WHERE project_id=? AND source_generation=?",
       ).bind(p.id, generation).first<{ status: string; failure_class: string | null }>();
-      aiFallbackToHuman = terminal?.status === "failed" && terminal.failure_class === "quota";
+      // AI is the preferred first pass, not a conversion deadlock. Any terminal
+      // AI failure may fall back to human review when a clean source document
+      // remains; the empty-payload guard below still prevents blank submissions.
+      aiFallbackToHuman = terminal?.status === "failed";
       if (terminal?.status !== "completed" && !aiFallbackToHuman) {
         return c.json({ error: "ai_failed" }, 409);
       }
@@ -124,9 +127,9 @@ quote.post("/projects/:id/submit", async (c) => {
       external_ref: string | null; status: string; line_total: number | null;
       origin: string | null; ai_proposal_line_id: string | null; review_json: string | null;
     }>();
-  // A provider capacity failure must not deadlock a registered customer's
-  // conversion. Their clean source documents are the human review payload even
-  // when AI could not create cart lines on this attempt.
+  // A terminal AI failure must not deadlock a registered customer's conversion.
+  // Their clean source documents are the human-review payload even when AI could
+  // not create cart lines on this attempt.
   if (lines.length === 0 && (!aiFallbackToHuman || submitState.clean_file_count === 0)) {
     return c.json({ error: "empty_quote" }, 400);
   }
@@ -181,7 +184,7 @@ quote.post("/projects/:id/submit", async (c) => {
                  AND current_job.source_generation=project.ai_generation
                  AND (
                    current_job.status='completed' OR
-                   (current_job.status='failed' AND current_job.failure_class='quota')
+                   current_job.status='failed'
                  )
             )
           )

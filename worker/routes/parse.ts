@@ -11,7 +11,7 @@ import {
   type ParseMode, type ParseFile,
 } from "../lib/parse";
 import { uuid } from "../lib/util";
-import { customerSafeJobDiagnostic } from "../lib/ai/jobs";
+import { customerSafeJobDiagnostic, retryCurrentAiExtraction } from "../lib/ai/jobs";
 
 export const parse = new Hono<{ Bindings: Env }>();
 
@@ -19,6 +19,29 @@ const RATE_WINDOW = 60;              // seconds
 const RATE_MAX = 6;                  // parse attempts per source per window
 const MAX_SCHEDULE_BYTES = 12 * 1024 * 1024; // schedule-specific cap (< the 15MB upload cap)
 const LOCK_TTL = 60;                // seconds — bounds a single parse
+
+// POST /api/projects/current/extraction-retry — customer-controlled retry of a
+// terminal AI attempt. It reuses the same immutable generation and completed
+// stage cache; it never requires deleting/re-uploading the source document.
+parse.post("/projects/current/extraction-retry", async (c) => {
+  const user = await resolveUser(c.env, c.req.raw);
+  if (!user) return c.json({ error: "authentication_required" }, 401);
+  const { project } = await resolveCurrentProject(c.env, c.req.raw);
+  if (!project) return c.json({ error: "not_found" }, 404);
+  if (!c.env.AI) return c.json({ error: "ai_unavailable" }, 409);
+  const failed = await c.env.DB.prepare(
+    `SELECT 1 AS failed FROM ai_job_claim j
+      JOIN project p ON p.id=j.project_id AND p.ai_generation=j.source_generation
+      WHERE j.project_id=? AND j.status='failed'`,
+  ).bind(project.id).first<{ failed: number }>();
+  if (!failed) return c.json({ error: "not_retryable" }, 409);
+  try {
+    const queued = await retryCurrentAiExtraction(c.env, c.executionCtx, project.id);
+    return c.json({ ok: true, alreadyQueued: queued.alreadyQueued });
+  } catch {
+    return c.json({ error: "retry_failed" }, 409);
+  }
+});
 
 // POST /api/projects/current/parse  { fileId, mode?: 'replace'|'append' }
 parse.post("/projects/current/parse", async (c) => {
@@ -254,6 +277,34 @@ parse.get("/projects/current/extraction-status", async (c) => {
   // so there is nothing to set here.
   const { project } = await resolveCurrentProject(c.env, c.req.raw);
   if (!project) return c.json({ run: null });
+  // Customer-facing watchdog. A queue invocation normally records a stage or
+  // heartbeat well inside this window. If it does not, stop presenting stale
+  // activity as live work and release the draft for human-review submission.
+  const stalled = await c.env.DB.prepare(
+    `UPDATE ai_job_claim
+        SET status='failed', attempts=max(attempts,1),
+            last_error='ai_processing_stalled', failure_class='transient',
+            retry_after=NULL, lease_expires_at=NULL, processing_token=NULL,
+            updated_at=datetime('now')
+      WHERE project_id=? AND source_generation=(
+        SELECT ai_generation FROM project WHERE id=?
+      )
+        AND (
+          (status='processing' AND updated_at < datetime('now','-55 seconds'))
+          OR
+          (status='scheduled' AND retry_after IS NULL
+            AND updated_at < datetime('now','-45 seconds'))
+        )`,
+  ).bind(project.id, project.id).run().catch(() => null);
+  if (Number(stalled?.meta?.changes ?? 0) > 0) {
+    await c.env.DB.prepare(
+      `UPDATE ai_runs SET status='cancelled', completed_at=datetime('now')
+        WHERE project_id=? AND source_generation=(
+          SELECT ai_generation FROM project WHERE id=?
+        ) AND status='running'`,
+    ).bind(project.id, project.id).run().catch(() => {});
+    await c.env.KV.delete(`aidebounce:${project.id}`).catch(() => {});
+  }
   const pending = await c.env.DB.prepare(
     `SELECT j.source_generation, j.status, j.attempts, j.last_error,
             j.failure_class, j.retry_after, j.progress_stage, j.created_at, j.updated_at
@@ -281,6 +332,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
         id: `generation-${pending.source_generation}`,
         status: pending.status === "scheduled" ? "queued" : pending.status === "processing" ? "running" : "failed",
         startedAt: pending.created_at,
+        updatedAt: pending.updated_at,
         completedAt: pending.status === "failed" ? pending.updated_at : null,
         summary: null,
         diagnostic,
@@ -316,6 +368,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
       id: r.id,
       status: r.status,
       startedAt: r.started_at,
+      updatedAt: r.completed_at ?? r.started_at,
       completedAt: r.completed_at,
       summary,
       progressStage: r.completed_at ? "complete" : "preparing_quote",

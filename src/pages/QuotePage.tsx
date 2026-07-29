@@ -12,7 +12,7 @@ import {
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
 import { StickyQuotePanel } from "../components/StickyQuotePanel";
-import { uploadFile, startParse, extractionStatus, deleteFile, resolveCollision, restoreAiLine, UploadError, type ExtractionRun, type ParseJob, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
+import { uploadFile, startParse, extractionStatus, retryExtraction, deleteFile, resolveCollision, restoreAiLine, UploadError, type ExtractionRun, type ParseJob, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
 import {
   type QuoteState, type QItem,
   linePriceTotal, fmt, mm, productLabel, hasDuplicateCode, lineBlocksSubmission, reviewSeverity, DEFAULT_PROJECT_TITLE,
@@ -145,6 +145,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   // How many documents the current upload put in flight — kept because the
   // anonymous path has no aiPhase to read a count from.
   const [uploadingDocs, setUploadingDocs] = useState(0);
+  const [retryingAi, setRetryingAi] = useState(false);
 
   // One flag for "the project is busy with documents", covering BOTH paths: the
   // anonymous deterministic parse (bounded by `uploading`) and the registered AI
@@ -344,7 +345,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   };
 
   // AI-run tail (UX spec §2, one banner updating in place): polls only while a
-  // run is in flight; 2s×7 then 5s, hard stop at 2 min. Anonymous users never
+  // run is in flight; 2s×7 then 5s, hard stop at 60s. Anonymous users never
   // have a run, so the first poll returns null and no future-tense copy ever
   // renders for them.
   // Per-line requirement basis for the trust chips (UX spec §5); refreshed on
@@ -410,6 +411,13 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     let lastDiagnostic: SafeDiagnostic | null = null;
     const tick = async (n: number) => {
       let inFlight = false;
+      if (Date.now() - t0 >= 60_000) {
+        setAiPhase({
+          kind: "failed",
+          diagnostic: { code: "TEMPORARY_FAILURE", retryable: true, retryAt: null },
+        });
+        return;
+      }
       try {
         const { run, basis } = await extractionStatus();
         if (basis) setBasisMap(basis);
@@ -447,6 +455,23 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     void tick(0);
   };
   pollExtractionRef.current = pollExtraction;
+  const handleAiRetry = async () => {
+    if (retryingAi || !quote.files.length) return;
+    setRetryingAi(true);
+    setUploadNotice(null);
+    try {
+      await retryExtraction();
+      setAiPhase({ kind: "reading", docs: quote.files.length, stage: "queued" });
+      pollExtraction(quote.files.length);
+    } catch {
+      setAiPhase({
+        kind: "failed",
+        diagnostic: { code: "TEMPORARY_FAILURE", retryable: true, retryAt: null },
+      });
+    } finally {
+      setRetryingAi(false);
+    }
+  };
   useEffect(() => {
     if (!user) return;
     extractionStatus().then(({ run }) => {
@@ -859,7 +884,13 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                   <span className="ml-1.5">· estimate refined for {aiPhase.refined} item{aiPhase.refined !== 1 ? "s" : ""}</span>
                 )}
                 {uploadNotice.type === "success" && aiPhase?.kind === "failed" && (
-                  <span className="ml-1.5 text-amber-800">· {diagnosticMessage(aiPhase.diagnostic)}</span>
+                  <span className="ml-1.5 text-amber-800">
+                    · {diagnosticMessage(aiPhase.diagnostic)}{" "}
+                    <button onClick={() => void handleAiRetry()} disabled={retryingAi}
+                      className="underline font-medium disabled:opacity-50 cursor-pointer">
+                      {retryingAi ? "Retrying…" : "Try AI again"}
+                    </button>
+                  </span>
                 )}
                 {uploadNotice.type === "success" && removeOffer && (
                   <span className="ml-1.5 whitespace-nowrap">
@@ -884,7 +915,15 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
               className="mb-4 flex items-start gap-2.5 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
             >
               <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
-              <span>{diagnosticMessage(aiPhase.diagnostic)}</span>
+              <span className="flex-1">
+                {diagnosticMessage(aiPhase.diagnostic)}{" "}
+                {aiPhase.kind === "failed" && (
+                  <button onClick={() => void handleAiRetry()} disabled={retryingAi}
+                    className="underline font-medium disabled:opacity-50 cursor-pointer">
+                    {retryingAi ? "Retrying…" : "Try AI again"}
+                  </button>
+                )}
+              </span>
             </div>
           )}
           <div className="space-y-2.5">
@@ -920,7 +959,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                       : `Reading your document${processingDocs !== 1 ? "s" : ""}…`}
                   </span>
                   <span className="block mt-0.5 text-body leading-relaxed">
-                    Your items will appear here, below anything already on the list. Longer plan sets can take a few minutes — you can leave this page open.
+                    This normally finishes in under a minute. If automatic review cannot finish, we will stop and keep your document ready for human review.
                   </span>
                 </span>
               </div>

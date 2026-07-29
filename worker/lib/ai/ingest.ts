@@ -161,15 +161,16 @@ export const derivedKeys = (projectId: string, fileId: string) => ({
 // the document genuinely had no text. Three very different faults, one silence.
 type MarkdownResult = { markdown: string | null; reason: string | null };
 type PdfTextResult = MarkdownResult & { pages: string[] };
+const MARKDOWN_CONVERSION_DEADLINE_MS = 12_000;
 
 // The PDF text layer, read with the SAME unpdf build the deterministic extractor
 // uses. That extractor consumes the circulated architectural plan sets happily,
 // so any PDF it can read must also be readable here: two tiers that disagree
 // about whether a document is legible is not a tier, it is a coin toss.
 //
-// This is the fallback, not the primary — toMarkdown understands tables and
-// layout, which a raw text dump does not — but a plain text layer is far better
-// input than nothing, which is what the AI tier had before.
+// This is the primary path for text PDFs: it is fast, page-addressable and avoids
+// paying for a second interpretation before the actual extraction skill runs.
+// toMarkdown remains the bounded fallback for image-only/scanned PDFs.
 async function pdfTextLayer(bytes: Uint8Array): Promise<PdfTextResult> {
   try {
     // Copy: pdf.js detaches the buffer it is handed, and the caller may still
@@ -205,6 +206,23 @@ async function toMarkdownSafe(env: Env, filename: string, bytes: Uint8Array): Pr
   } catch (e) {
     const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     return { markdown: null, reason: `markdown_call_failed:${msg.slice(0, 160)}` };
+  }
+}
+
+async function toMarkdownBounded(env: Env, filename: string, bytes: Uint8Array): Promise<MarkdownResult> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      toMarkdownSafe(env, filename, bytes),
+      new Promise<MarkdownResult>((resolve) => {
+        timer = setTimeout(() => resolve({
+          markdown: null,
+          reason: "markdown_conversion_timed_out",
+        }), MARKDOWN_CONVERSION_DEADLINE_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -282,19 +300,27 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
       }
     }
 
-    let md = await toMarkdownSafe(env, f.filename, bytes);
-    // Carry the reason onto the doc: pipeline.ts folds qualityIssues into the
-    // run's stageWarnings, which is the only record that survives to D1.
-    if (md.reason) doc.qualityIssues = [...doc.qualityIssues, md.reason];
-    // A PDF toMarkdown could not read is not necessarily unreadable — the
-    // deterministic tier reads these same plan sets from the text layer. Fall
-    // back to it rather than failing the whole run.
-    if (!md.markdown && kind === "pdf") {
-      const viaTextLayer = pdfText ?? await pdfTextLayer(bytes);
-      if (viaTextLayer.markdown) doc.qualityIssues = [...doc.qualityIssues, "markdown_via_pdf_text_layer"];
-      else if (viaTextLayer.reason) doc.qualityIssues = [...doc.qualityIssues, viaTextLayer.reason];
-      md = viaTextLayer;
+    // A PDF text layer is already the page-addressable input the extraction
+    // skills need. Sending the same vector PDF through Workers AI Markdown as
+    // well doubled conversion work before extraction even began.
+    //
+    // Markdown conversion is reserved for scanned PDFs with no usable text
+    // layer. Standalone images go directly to the multimodal schedule skill:
+    // performing OCR first was a second paid interpretation of the same photo.
+    let md: MarkdownResult;
+    if (kind === "pdf" && pdfText?.markdown) {
+      md = pdfText;
+    } else if (kind === "pdf") {
+      md = await toMarkdownBounded(env, f.filename, bytes);
+      if (!md.markdown && pdfText?.reason) {
+        doc.qualityIssues = [...doc.qualityIssues, pdfText.reason];
+      }
+    } else {
+      md = { markdown: null, reason: null };
     }
+    // Carry the conversion reason onto the doc: pipeline.ts folds qualityIssues
+    // into the durable run summary.
+    if (md.reason) doc.qualityIssues = [...doc.qualityIssues, md.reason];
     doc.markdown = md.markdown;
     if (kind === "pdf" && !doc.markdown && doc.qualityIssues.includes("pdf_no_text_layer")) {
       // Workers AI Markdown conversion does not rasterise PDF pages for vision.
@@ -312,6 +338,11 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
       doc.docType = f.doc_type as DocType;
     } else {
       doc.docType = classifyDocument(doc.markdown, f.filename);
+      // A clear standalone image is an explicit schedule-photo workflow. Route
+      // it as such without paying for a separate OCR/classification request.
+      if (kind !== "pdf" && doc.imageDataUrl && doc.docType === "supporting") {
+        doc.docType = "schedule";
+      }
       await env.DB.prepare("UPDATE file_asset SET doc_type = ? WHERE id = ? AND doc_type_source = 'auto'")
         .bind(doc.docType, f.id).run().catch(() => { /* display metadata, never a blocker */ });
     }
