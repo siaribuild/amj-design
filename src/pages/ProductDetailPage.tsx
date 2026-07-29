@@ -212,7 +212,6 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
 }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [tab, setTab] = useState<TabId>("technical");
-  const tabs = tabsFor(product);
   const [openSection, setOpenSection] = useState<TabId | "">("technical");
   const [justAdded, setJustAdded] = useState<QItem | null>(null);
   const [seed, setSeed] = useState<Partial<QItem> | null>(null);
@@ -220,6 +219,10 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
   const [lightbox, setLightbox] = useState<number | null>(null);
 
   const product = getProductBySlug(slug) ?? products[0];
+  // Must follow `product` — it reads it. It sat above the declaration and threw
+  // "Cannot access 'product' before initialization" on every render, blanking
+  // the page. `const` is not hoisted the way a function declaration is.
+  const tabs = tabsFor(product);
   const family = getFamily(product.familySlug);
   const category = getCategory(product.categorySlug);
   const categorySlug = (product.categorySlug || "windows") as CategorySlug;

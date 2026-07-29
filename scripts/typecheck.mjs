@@ -25,6 +25,12 @@ const FATAL = new Set([
   "TS2554", // Wrong number of arguments
   "TS2555", // Expected at least N arguments
   "TS2551", // Property does not exist, did you mean …
+  // Added after it let a real one through: `const tabs = tabsFor(product)` sat
+  // above `const product = …` in ProductDetailPage and threw on every render,
+  // blanking the page in production. tsc reported it; the gate did not, because
+  // this code was not listed. A temporal-dead-zone read is never a preference.
+  "TS2448", // Block-scoped variable used before its declaration
+  "TS2454", // Variable is used before being assigned
 ]);
 
 const fatalOnly = process.argv.includes("--fatal-only");
