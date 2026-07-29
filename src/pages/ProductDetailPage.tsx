@@ -14,7 +14,7 @@ import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
 import {
   type CategorySlug, type Product, type ProductOption,
   getProductBySlug, getFamily, getCategory, getRelatedProducts, products, imageUrl,
-  getProductDocuments, getProductGuides,
+  getProductDocuments, getProductResources,
 } from "../data/catalogue";
 import { DocumentRow, groupDocuments } from "../components/DocumentRow";
 import { pathForPage } from "../app/routes";
@@ -126,11 +126,11 @@ function TechnicalContent({ product }: { product: Product }) {
 // code-defined order, using the same shape as OptionsContent above.
 function DownloadsContent({ product, setPage }: { product: Product; setPage: (p: Page, path?: string) => void }) {
   const docs = getProductDocuments(product.slug);
-  // Guides that apply to this product but host no file — still worth reading,
+  // Resources that apply to this product but host no file — still worth reading,
   // and otherwise unreachable from here. This is the one gap in a file-first
   // Downloads tab, and it costs one small block to close.
-  const reads = getProductGuides(product.slug).filter((g) => g.attachments.length === 0);
-  const openGuide = (slug: string) => setPage("guide", pathForPage("guide", slug));
+  const reads = getProductResources(product.slug).filter((r) => r.attachments.length === 0);
+  const openResource = (slug: string) => setPage("resource", pathForPage("resource", slug));
 
   if (!docs.length && !reads.length) {
     // The tab stays. Someone checking whether documentation exists deserves a
@@ -161,7 +161,7 @@ function DownloadsContent({ product, setPage }: { product: Product; setPage: (p:
           </p>
           <div className="card">
             {group.items.map((d, i) => (
-              <DocumentRow key={`${d.guide.slug}-${i}`} attachment={d.attachment} guide={d.guide} onOpenGuide={openGuide} />
+              <DocumentRow key={`${d.resource.slug}-${i}`} attachment={d.attachment} resource={d.resource} onOpenResource={openResource} />
             ))}
           </div>
         </div>
@@ -170,11 +170,11 @@ function DownloadsContent({ product, setPage }: { product: Product; setPage: (p:
       {reads.length > 0 && (
         <div>
           <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2" style={{ fontFamily: "'DM Mono', monospace" }}>
-            Related guides
+            Related reading
           </p>
           <div className="card">
             {reads.map((g) => (
-              <button key={g.slug} onClick={() => openGuide(g.slug)}
+              <button key={g.slug} onClick={() => openResource(g.slug)}
                 className="icon-btn w-full text-left flex items-start justify-between gap-3 px-4 py-3 border-b border-black/8 last:border-0 cursor-pointer">
                 <span className="min-w-0">
                   <span className="block text-sm text-ink">{g.title}</span>

@@ -62,15 +62,23 @@ export const CATALOGUE_QUERY = `{
   "locations": *[_type=="showroomLocation"]|order(stateCode asc, suburb asc){
     "id":_id, stateCode, suburb, displayName, lat, lng, appointmentAvailable, status, historicalAliases
   },
-  "guideCategories": *[_type=="guideCategory"]|order(order asc, title asc){
+  "resourceKinds": *[_type=="resourceKind"]|order(order asc, title asc){
+    "id":_id, "slug":slug.current, title, order, dateDisplay, allowsProducts
+  },
+  "resourceTopics": *[_type=="resourceTopic"]|order(order asc, title asc){
     "id":_id, "slug":slug.current, title, order, description
   },
-  "guides": *[_type=="guide" && defined(slug.current)]|order(publishedAt desc, title asc){
+  "resources": *[_type=="resource" && defined(slug.current)]|order(publishedAt desc, title asc){
     "id":_id, "slug":slug.current, title, summary,
-    "categorySlug": category->slug.current, "categoryTitle": category->title,
+    "topicSlug": topic->slug.current, "topicTitle": topic->title,
+    // Denormalised deliberately: the index renders a kind badge and a date on
+    // every row, and resolving the reference per row at render time would mean
+    // holding the kind list in every component that draws one.
+    "kindSlug": kind->slug.current, "kindTitle": kind->title,
+    "kindDateDisplay": kind->dateDisplay,
     "productSlugs": products[]->slug.current,
     "heroImage": heroImage{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip, "aspect": asset->metadata.dimensions.aspectRatio },
-    publishedAt,
+    publishedAt, updatedAt,
     "attachments": attachments[]{
       label, docType, revision, revisedAt, standardRef, note,
       "url": file.asset->url,
@@ -82,9 +90,9 @@ export const CATALOGUE_QUERY = `{
 }`;
 
 // The BODY, fetched only when an article page opens. Portable text for every
-// guide riding the catalogue query would make every page on the site pay for
-// two routes. One extra round-trip on the one page that needs it is the trade.
-export const GUIDE_BODY_QUERY = `*[_type=="guide" && slug.current==$slug][0]{
+// resource riding the catalogue query would make every page on the site pay for
+// a route most visitors never open. One round-trip on the page that needs it.
+export const RESOURCE_BODY_QUERY = `*[_type=="resource" && slug.current==$slug][0]{
   "body": body[]{
     ...,
     _type == "image" => { "url": asset->url, "lqip": asset->metadata.lqip, alt, caption }
@@ -92,8 +100,9 @@ export const GUIDE_BODY_QUERY = `*[_type=="guide" && slug.current==$slug][0]{
 }`;
 
 export interface RawCataloguePayload {
-  guideCategories?: any[];
-  guides?: any[];
+  resourceKinds?: any[];
+  resourceTopics?: any[];
+  resources?: any[];
   categories: Category[];
   families: Family[];
   products: any[];
@@ -235,17 +244,19 @@ export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
     })),
     pages: dedupePages((raw.pages ?? []).filter((p) => p?.pageId).map(normalizePage)),
     locations: (raw.locations ?? []).filter((l) => l?.id).map(normalizeLocation),
-    guideCategories: (raw.guideCategories ?? []).filter((c: any) => c?.slug),
-    // A guide with no category cannot be filtered to. The body is required by
-    // the schema and is not projected here at all — it is fetched per article.
-    guides: (raw.guides ?? [])
-      .filter((g: any) => g?.slug && g?.categorySlug)
-      .map((g: any) => ({
-        ...g,
-        productSlugs: (g.productSlugs ?? []).filter(Boolean),
-        heroImage: normalizeImage(g.heroImage) ?? undefined,
-        attachments: (g.attachments ?? []).filter((a: any) => a?.url && a?.label),
-        seo: normalizeSeo(g.seo),
+    resourceKinds: (raw.resourceKinds ?? []).filter((k: any) => k?.slug),
+    resourceTopics: (raw.resourceTopics ?? []).filter((t: any) => t?.slug),
+    // A resource missing either axis cannot be filtered to, and both are
+    // required by the schema — this only guards a draft-mode fetch. The body is
+    // not projected here at all; it is fetched per article.
+    resources: (raw.resources ?? [])
+      .filter((r: any) => r?.slug && r?.kindSlug && r?.topicSlug)
+      .map((r: any) => ({
+        ...r,
+        productSlugs: (r.productSlugs ?? []).filter(Boolean),
+        heroImage: normalizeImage(r.heroImage) ?? undefined,
+        attachments: (r.attachments ?? []).filter((a: any) => a?.url && a?.label),
+        seo: normalizeSeo(r.seo),
       })),
   };
 }

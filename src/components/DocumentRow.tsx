@@ -10,7 +10,7 @@
 // article that hosts it: everything the article page would have told the reader
 // travels on the row, before the click.
 import { Download, FileText, ArrowRight } from "lucide-react";
-import type { Guide, GuideAttachment } from "../data/catalogue";
+import type { Resource, ResourceAttachment } from "../data/catalogue";
 
 /** Bytes → what a person would say. A trade user on site data notices 12 MB. */
 export function fileSize(bytes?: number): string | null {
@@ -44,11 +44,12 @@ export const DOC_TYPE_ORDER = [
   "datasheet", "installation", "cad", "test-report", "certificate", "warranty", "maintenance",
 ];
 
-export function DocumentRow({ attachment, guide, onOpenGuide }: {
-  attachment: GuideAttachment;
-  guide: Guide;
-  /** Renders "Read the guide" only when there is a guide to read. */
-  onOpenGuide?: (slug: string) => void;
+export function DocumentRow({ attachment, resource, onOpenResource }: {
+  attachment: ResourceAttachment;
+  resource: Resource;
+  /** Offered by the PRODUCT page, which is not the article. Omitted on the
+   *  article itself, where the reader is already there. */
+  onOpenResource?: (slug: string) => void;
 }) {
   // Only the values that exist. A separator with nothing after it is worse than
   // a shorter line, and a placeholder for a missing revision is a small lie.
@@ -84,13 +85,12 @@ export function DocumentRow({ attachment, guide, onOpenGuide }: {
         </span>
         <Download className="w-4 h-4 text-quieter group-hover:text-sage flex-shrink-0 mt-0.5 transition-colors" aria-hidden="true" />
       </a>
-      {/* Every guide has a body — the schema requires one — so this link always
-          has somewhere real to land. It renders when the HOST wants it: the
-          product page offers it, the guide page (already there) does not. */}
-      {onOpenGuide && (
-        <button onClick={() => onOpenGuide(guide.slug)}
+      {/* Every resource has a body — the schema requires one — so this link
+          always has somewhere real to land. */}
+      {onOpenResource && (
+        <button onClick={() => onOpenResource(resource.slug)}
           className="inline-flex items-center gap-1.5 text-xs text-sage hover:text-sage-deep px-4 pb-3 -mt-1 cursor-pointer">
-          Read the guide <ArrowRight className="w-3 h-3" aria-hidden="true" />
+          Read the article <ArrowRight className="w-3 h-3" aria-hidden="true" />
         </button>
       )}
     </div>
@@ -98,8 +98,8 @@ export function DocumentRow({ attachment, guide, onOpenGuide }: {
 }
 
 /** Documents grouped by kind, in the code-defined order. */
-export function groupDocuments(docs: { guide: Guide; attachment: GuideAttachment }[]) {
-  const byType = new Map<string, { guide: Guide; attachment: GuideAttachment }[]>();
+export function groupDocuments(docs: { resource: Resource; attachment: ResourceAttachment }[]) {
+  const byType = new Map<string, { resource: Resource; attachment: ResourceAttachment }[]>();
   for (const d of docs) {
     const k = d.attachment.docType || "datasheet";
     byType.set(k, [...(byType.get(k) ?? []), d]);

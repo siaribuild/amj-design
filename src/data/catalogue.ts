@@ -670,8 +670,9 @@ export interface CatalogueData {
   colours?: ProductOption[];
   pages?: SitePage[];
   locations?: ShowroomLocation[];
-  guideCategories?: GuideCategory[];
-  guides?: Guide[];
+  resourceKinds?: ResourceKind[];
+  resourceTopics?: ResourceTopic[];
+  resources?: Resource[];
 }
 export function hydrateCatalogue(data: CatalogueData): void {
   if (data.categories?.length) categories = data.categories;
@@ -680,24 +681,39 @@ export function hydrateCatalogue(data: CatalogueData): void {
   if (data.colours?.length) colorbondColourOptions = data.colours;
   if (data.pages?.length) pages = data.pages;
   if (data.locations?.length) locations = data.locations;
-  if (data.guideCategories?.length) guideCategories = data.guideCategories;
-  if (data.guides?.length) guides = data.guides;
+  if (data.resourceKinds?.length) resourceKinds = data.resourceKinds;
+  if (data.resourceTopics?.length) resourceTopics = data.resourceTopics;
+  if (data.resources?.length) resources = data.resources;
 }
 
-// ─── Guides & documentation (Sanity-managed) ──────────────────────────────────
+// ─── Resources (Sanity-managed) ───────────────────────────────────────────────
 // An article that may also host files. The INDEX metadata below travels in the
 // one catalogue round-trip because the product Downloads tab needs it on a page
-// that is not the guides index — it is small and every page already pays for
+// that is not the resources index — it is small and every page already pays for
 // that request. The BODY does not: portable text on ~n articles would bloat
 // every page load on the site to serve one route, so it is fetched per-article.
-export interface GuideCategory {
+//
+// Kinds and topics are DOCUMENTS in Sanity, not literal unions here: the owner
+// adds and renames them without a deploy, so no code may enumerate their values.
+export interface ResourceKind {
+  id: string; slug: string; title: string; order?: number;
+  /** Which date a resource of this kind shows. Set per kind because technical
+   *  documentation ages differently from a post: a datasheet's publication date
+   *  is noise beside its file revision, and a post without a date is suspect. */
+  dateDisplay: "published" | "updated" | "none";
+  /** Whether a resource of this kind may name products — i.e. whether its files
+   *  belong in a product's Downloads tab. Off for editorial kinds. */
+  allowsProducts?: boolean;
+}
+
+export interface ResourceTopic {
   id: string; slug: string; title: string; order?: number;
   /** Shown under the index heading when this topic is selected — the role a
    *  family's short description plays on the products page. */
   description?: string;
 }
 
-export interface GuideAttachment {
+export interface ResourceAttachment {
   /** Direct URL to the asset in Sanity's CDN. */
   url: string;
   /** What the document IS, in the reader's words — never the filename. */
@@ -716,35 +732,55 @@ export interface GuideAttachment {
   note?: string;
 }
 
-export interface Guide {
+export interface Resource {
   id: string;
   slug: string;
   title: string;
   summary: string;
-  categorySlug: string;
-  categoryTitle: string;
-  /** Slugs of every product this guide applies to. Drives the Downloads tab. */
+  /** What it IS. Denormalised from the kind document so a row can render a
+   *  badge and pick a date rule without resolving a reference. */
+  kindSlug: string;
+  kindTitle: string;
+  kindDateDisplay: ResourceKind["dateDisplay"];
+  /** What it is ABOUT. */
+  topicSlug: string;
+  topicTitle: string;
+  /** Slugs of every product this applies to. Drives the Downloads tab. */
   productSlugs: string[];
   heroImage?: CatalogueImage;
-  attachments: GuideAttachment[];
+  attachments: ResourceAttachment[];
   publishedAt?: string;
+  /** The date the content was last checked — not the last keystroke. */
+  updatedAt?: string;
   seo?: SeoMeta;
 }
 
-export let guideCategories: GuideCategory[] = [];
-export let guides: Guide[] = [];
+export let resourceKinds: ResourceKind[] = [];
+export let resourceTopics: ResourceTopic[] = [];
+export let resources: Resource[] = [];
 
-export const getGuideBySlug = (slug: string): Guide | undefined => guides.find((g) => g.slug === slug);
-export const getGuidesByCategory = (categorySlug: string): Guide[] =>
-  categorySlug === "all" ? guides : guides.filter((g) => g.categorySlug === categorySlug);
+export const getResourceBySlug = (slug: string): Resource | undefined =>
+  resources.find((r) => r.slug === slug);
 
-/** Every attachment relevant to a product, flattened, each carrying the guide it
- *  came from so the Downloads tab can offer the file AND its context. */
-export const getProductDocuments = (productSlug: string): { guide: Guide; attachment: GuideAttachment }[] =>
-  guides
-    .filter((g) => g.productSlugs.includes(productSlug))
-    .flatMap((g) => g.attachments.map((attachment) => ({ guide: g, attachment })));
+/** The date to show for a resource, and what to call it — driven by its kind.
+ *  Returns null when the kind shows no date, which is the right answer for a
+ *  technical document whose real date is the revision on the file itself. */
+export function resourceDate(r: Resource): { label: string; value: string } | null {
+  if (r.kindDateDisplay === "none") return null;
+  if (r.kindDateDisplay === "updated") {
+    const v = r.updatedAt || r.publishedAt;
+    return v ? { label: "Updated", value: v } : null;
+  }
+  return r.publishedAt ? { label: "Published", value: r.publishedAt } : null;
+}
 
-/** Guides that apply to a product but host no file — still worth reading. */
-export const getProductGuides = (productSlug: string): Guide[] =>
-  guides.filter((g) => g.productSlugs.includes(productSlug));
+/** Every attachment relevant to a product, flattened, each carrying the resource
+ *  it came from so the Downloads tab can offer the file AND its context. */
+export const getProductDocuments = (productSlug: string): { resource: Resource; attachment: ResourceAttachment }[] =>
+  resources
+    .filter((r) => r.productSlugs.includes(productSlug))
+    .flatMap((r) => r.attachments.map((attachment) => ({ resource: r, attachment })));
+
+/** Resources that apply to a product but host no file — still worth reading. */
+export const getProductResources = (productSlug: string): Resource[] =>
+  resources.filter((r) => r.productSlugs.includes(productSlug));

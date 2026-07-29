@@ -24,9 +24,9 @@ import { type TrackFocus } from "../pages/OrderTrackingPage";
 import { ContactPage } from "../pages/ContactPage";
 import { PrivacyPolicyPage } from "../pages/PrivacyPolicyPage";
 import { ResourcesPage } from "../pages/ResourcesPage";
-import { GuidePage } from "../pages/GuidePage";
+import { ResourceArticlePage } from "../pages/ResourceArticlePage";
 import { pathForPage, routeFromPathname } from "./routes";
-import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug, getFamily, getCategory, getActiveLocations, getGuideBySlug } from "../data/catalogue";
+import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug, getFamily, getCategory, getActiveLocations, getResourceBySlug } from "../data/catalogue";
 import { parseScheduleText } from "../data/scheduleParse";
 import { matchSchedule } from "../data/scheduleMatch";
 import { Seo } from "./Seo";
@@ -1804,12 +1804,12 @@ export default function App() {
     const nextPath = pathOverride ?? pathForPage(p);
     if (window.location.pathname !== nextPath) window.history.pushState({ page: p }, "", nextPath);
     setFocusRecord(null);
-    // Guides carry their slug in the path, so it is read back OUT of the path
+    // Resources carry their slug in the path, so it is read back OUT of the path
     // rather than threaded through a second callback — the URL is already the
     // one source of truth, and popstate reads it the same way.
-    if (p === "guide" && pathOverride) {
-      const s = routeFromPathname(pathOverride).guideSlug;
-      if (s) setGuideSlug(s);
+    if (p === "resource" && pathOverride) {
+      const s = routeFromPathname(pathOverride).resourceSlug;
+      if (s) setResourceSlug(s);
     }
     setPage(p);
     window.scrollTo(0, 0);
@@ -1823,16 +1823,16 @@ export default function App() {
   const [catCategory, setCatCategory] = useState<CategorySlug>("windows");
   const [catFamily, setCatFamily] = useState<string>("all");
   const [productSlug, setProductSlug] = useState<string>(initialRoute.productSlug ?? catalogueProducts[0]?.slug ?? "");
-  // No fallback to guides[0]: a guide the router didn't name is not a guide, and
+  // No fallback to resources[0]: a slug the router didn't name is not a page, and
   // silently opening some other article would be worse than the not-found panel.
-  const [guideSlug, setGuideSlug] = useState<string>(initialRoute.guideSlug ?? "");
+  const [resourceSlug, setResourceSlug] = useState<string>(initialRoute.resourceSlug ?? "");
 
   useEffect(() => {
     const syncRoute = () => {
       const route = routeFromPathname(window.location.pathname);
       setPage(route.page);
       if (route.productSlug) setProductSlug(route.productSlug);
-      if (route.guideSlug) setGuideSlug(route.guideSlug);
+      if (route.resourceSlug) setResourceSlug(route.resourceSlug);
       window.scrollTo(0, 0);
     };
     window.addEventListener("popstate", syncRoute);
@@ -2077,7 +2077,7 @@ export default function App() {
       // did nothing but scroll to top — a dead end for traffic the home page sends.
       case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;
       case "resources":        return <ResourcesPage setPage={navigateTo} />;
-      case "guide":            return <GuidePage slug={guideSlug} setPage={navigateTo} onOpenProduct={openProduct} />;
+      case "resource":         return <ResourceArticlePage slug={resourceSlug} setPage={navigateTo} onOpenProduct={openProduct} />;
       case "contact":          return <ContactPage setPage={navigateTo} user={user} />;
       case "privacy":          return <PrivacyPolicyPage setPage={navigateTo} />;
       case "approved-quote":   return <ApprovedQuotePage />;
@@ -2155,19 +2155,19 @@ export default function App() {
     }
     // An article. Its own SEO tab wins; without one the summary IS the meta
     // description, which is what the summary was written to be.
-    if (page === "guide") {
-      const g = getGuideBySlug(guideSlug);
+    if (page === "resource") {
+      const g = getResourceBySlug(resourceSlug);
       const img = imageUrl(g?.heroImage, { w: 1200, h: 630 });
       return {
         // "About OpenFrame — OpenFrame". A title that already carries the brand
         // does not get it a second time.
         seo: g?.seo,
-        title: g ? (co && g.title.includes(co) ? g.title : `${g.title}${suffix}`) : co ?? "Guide",
+        title: g ? (co && g.title.includes(co) ? g.title : `${g.title}${suffix}`) : co ?? "Resource",
         description: g?.summary, image: img,
         // "post" was already in the schema.org kind map with an Article default
         // and the dates wired — the extension point the file said to use.
         facts: g ? {
-          kind: "post" as const, url: abs(pathForPage("guide", g.slug)),
+          kind: "post" as const, url: abs(pathForPage("resource", g.slug)),
           name: g.title, description: g.summary || undefined, image: img || undefined,
           datePublished: g.publishedAt,
         } : null,
@@ -2175,8 +2175,8 @@ export default function App() {
         // category crumb would repeat /resources — and on "About OpenFrame",
         // whose category is also "About OpenFrame", it repeated the name too.
         breadcrumbs: g ? [
-          { name: "Guides", url: abs(pathForPage("resources")) },
-          { name: g.title, url: abs(pathForPage("guide", g.slug)) },
+          { name: "Resources", url: abs(pathForPage("resources")) },
+          { name: g.title, url: abs(pathForPage("resource", g.slug)) },
         ] : undefined,
       };
     }
@@ -2199,7 +2199,7 @@ export default function App() {
       contact: { pageId: "contact", title: `Contact${suffix}` },
       privacy: { pageId: "privacy", title: `Privacy Policy${suffix}` },
       quote: { pageId: "quote", title: `Get a Quote${suffix}` },
-      resources: { pageId: "resources", title: `Guides & Compliance${suffix}` },
+      resources: { pageId: "resources", title: `Resources${suffix}` },
       trade: { pageId: "trade", title: `Trade Accounts${suffix}` },
     };
     const m = marketing[page];

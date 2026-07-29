@@ -3,7 +3,7 @@
 // When unset, the app keeps using the hardcoded catalogue.ts (hydrate is a no-op).
 import { createClient } from "@sanity/client";
 import { hydrateCatalogue } from "./catalogue";
-import { CATALOGUE_QUERY, GUIDE_BODY_QUERY, SEO_PROJECTION, normalizeSeo, toCatalogueData, type RawCataloguePayload } from "./catalogueQuery";
+import { CATALOGUE_QUERY, RESOURCE_BODY_QUERY, SEO_PROJECTION, normalizeSeo, toCatalogueData, type RawCataloguePayload } from "./catalogueQuery";
 import type { SeoMeta } from "./catalogue";
 
 // Defaults to the committed project (the same one the Worker uses in wrangler.jsonc);
@@ -129,16 +129,16 @@ export async function hydrateSiteSettings(): Promise<void> {
   }
 }
 
-// ── Guide body (per-article) ─────────────────────────────────────────────────
-// Deliberately NOT part of hydrateFromSanity: portable text for every guide
+// ── Resource body (per-article) ──────────────────────────────────────────────
+// Deliberately NOT part of hydrateFromSanity: portable text for every resource
 // would ride the one catalogue round-trip that every page on the site pays for,
 // to serve a route most visitors never open. One extra request on the page that
 // needs it is the right trade. Never throws — a failed body renders as an entry
 // with its documents and no article, which is a legitimate state here.
-export async function fetchGuideBody(slug: string): Promise<any[]> {
+export async function fetchResourceBody(slug: string): Promise<any[]> {
   if (!client) return [];
   try {
-    const res = await client.fetch<{ body?: any[] } | null>(GUIDE_BODY_QUERY, { slug });
+    const res = await client.fetch<{ body?: any[] } | null>(RESOURCE_BODY_QUERY, { slug });
     return res?.body ?? [];
   } catch {
     return [];
