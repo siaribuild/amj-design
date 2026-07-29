@@ -306,6 +306,23 @@ export async function runAiExtraction(
   });
   const warnings: string[] = [];
   const stageFailures: SkillFailureKind[] = [];
+
+  // ── TEMPORARY INSTRUMENTATION ───────────────────────────────────────────────
+  // The queue consumer is being killed with "Exceeded CPU Limit" and the plan
+  // cannot raise it, so the work has to fit — but we do not know where the time
+  // goes. Elapsed WALL time per phase, plus counts. Never document content
+  // (§21.1): no filenames, no markdown, no model output.
+  //
+  // Wall time is not CPU time; awaiting a model call costs wall and no CPU. The
+  // point is to find which phase is large enough to be worth measuring properly.
+  const runStartedAt = Date.now();
+  let phaseMark = runStartedAt;
+  const phase = (label: string, extra = "") => {
+    const now = Date.now();
+    console.log(`[ai-timing] ${label}=${now - phaseMark}ms total=${now - runStartedAt}ms${extra ? ` ${extra}` : ""}`);
+    phaseMark = now;
+  };
+
   const setProgress = async (
     stage: "reading_documents" | "extracting_schedule" | "building_envelope" | "matching_and_pricing" | "preparing_quote",
   ) => {
@@ -320,6 +337,7 @@ export async function runAiExtraction(
 
   await setProgress("reading_documents");
   const docs = await ingestProjectFiles(env, projectId);
+  phase("ingest", `docs=${docs.length}`);
   const usable = docs.filter((d) => !d.rejected && (d.markdown || d.imageDataUrl));
   if (!usable.length) {
     const summary: AiExtractionSummary = {
@@ -375,6 +393,8 @@ export async function runAiExtraction(
     }
   }
 
+  phase("schedule_stage", `docs=${scheduleDocs.length}`);
+
   const planContexts: { fileId: string; context: PlanContextV1 }[] = [];
   for (const doc of planDocs) {
     const res = await runStage(env, {
@@ -397,6 +417,8 @@ export async function runAiExtraction(
 
   // Energy-report extraction (Path 1). Text-only for now: a scanned-image-only
   // report is flagged for review rather than mis-read. First successful
+  phase("plan_stage", `docs=${planDocs.length}`);
+
   // extraction wins; additional reports are surfaced, not silently merged.
   let energy: { fileId: string; extraction: EnergyExtraction } | null = null;
   for (const doc of energyDocs) {
@@ -428,6 +450,7 @@ export async function runAiExtraction(
   }
 
   // Merge, model, persist the canonical records.
+  phase("energy_stage", `docs=${energyDocs.length}`);
   await setProgress("building_envelope");
   const merged = mergeScheduleLines(perDoc);
   const model = linesToBuildingModel(projectId, merged, docs);
@@ -624,6 +647,7 @@ export async function runAiExtraction(
   await assertCurrentGeneration(env, projectId, sourceGeneration, opts.processingToken);
   if (upserts.length) await env.DB.batch(upserts);
   await assertCurrentGeneration(env, projectId, sourceGeneration, opts.processingToken);
+  phase("envelope_and_model");
   await setProgress("matching_and_pricing");
   const estimate = await runProjectEstimate(env, projectId, {
     aiRunId: run.id,
@@ -632,6 +656,8 @@ export async function runAiExtraction(
     sourceManifestHash,
     processingToken: opts.processingToken,
   });
+
+  phase("estimate_and_pricing", `openings=${estimate.openings} selected=${estimate.selected}`);
 
   const status = anyFailed ? "partial" : "completed";
   const summary: AiExtractionSummary = {
