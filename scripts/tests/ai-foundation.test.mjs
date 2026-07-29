@@ -19,7 +19,7 @@ await build({
       export * as schema from ${p("worker/lib/ai/schema.ts")};
       export { evaluateEscalation, LOW_CONFIDENCE_THRESHOLD } from ${p("worker/lib/ai/escalation.ts")};
       export { stageInputHash, stageRawKey, runStage } from ${p("worker/lib/ai/stage.ts")};
-      export { runSkill, toVendorSchema } from ${p("worker/lib/estimator/skills/runner.ts")};
+      export { runSkill, toVendorSchema, readModelText, readModelUsage } from ${p("worker/lib/estimator/skills/runner.ts")};
       export { DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, PIPELINE_VERSION } from ${p("worker/lib/ai/versions.ts")};
       export { FEEDBACK_CATEGORIES } from ${p("worker/lib/estimator/persist.ts")};
       export { energyReportExtractor } from ${p("worker/lib/estimator/skills/energy.ts")};
@@ -30,7 +30,7 @@ await build({
 });
 const {
   schema, evaluateEscalation, LOW_CONFIDENCE_THRESHOLD, stageInputHash, stageRawKey, runStage,
-  runSkill, toVendorSchema, DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, FEEDBACK_CATEGORIES,
+  runSkill, toVendorSchema, readModelText, readModelUsage, DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, FEEDBACK_CATEGORIES,
   energyReportExtractor,
 } = await import(pathToFileURL(outfile).href);
 
@@ -173,8 +173,13 @@ test("runner: uses the env-resolved primary model with determinism settings and 
   assert.deepEqual(run.data, { value: 42 });
   assert.equal(aiCalls.length, 1);
   assert.equal(aiCalls[0].model, DEFAULT_PRIMARY_MODEL, "defaults to Gemini 3.6 Flash");
-  assert.equal(aiCalls[0].params.temperature, EXTRACTION_TEMPERATURE, "§13.4 near-zero temperature");
-  assert.equal(aiCalls[0].params.response_format.type, "json_schema", "strict JSON schema");
+  // Google-native shape: generationConfig, not top-level OpenAI params. Sending
+  // the OpenAI shape is what produced HTTP 400 / gateway 7003 on every call.
+  assert.equal(aiCalls[0].params.generationConfig.temperature, EXTRACTION_TEMPERATURE, "§13.4 near-zero temperature");
+  assert.equal(aiCalls[0].params.response_format, undefined, "no OpenAI response_format on a Google model");
+  assert.equal(aiCalls[0].params.messages, undefined, "no OpenAI messages[] on a Google model");
+  assert.equal(aiCalls[0].params.contents[0].role, "user");
+  assert.equal(typeof aiCalls[0].params.contents[0].parts[0].text, "string");
   assert.deepEqual(aiCalls[0].opts, { gateway: { id: "gw-test", collectLog: false } }, "routed through the gateway with payload logging enforced OFF (§21.1)");
   assert.equal(run.promptVersion, "v1");
   assert.equal(run.repaired, false);
@@ -194,7 +199,8 @@ test("runner: schema failure triggers exactly ONE repair pass, which can rescue 
   assert.equal(run.repaired, true);
   assert.ok(run.warnings.includes("skill_output_repaired"));
   assert.equal(aiCalls.length, 2, "one primary + one repair, never more");
-  assert.match(aiCalls[1].params.messages.at(-1).content, /failed schema validation/i);
+  assert.match(aiCalls[1].params.contents.at(-1).parts[0].text, /failed schema validation/i);
+  assert.equal(aiCalls[1].params.contents[1].role, "model", "Google has no assistant role");
 });
 
 test("runner: repair is bounded — two invalid responses ⇒ fail soft, no third call", async () => {
@@ -348,4 +354,49 @@ test("CONTRACT: no shipped skill schema reaches the provider with a union type",
       assert.equal(norm.nullable, true, `${file}: ${types} must become nullable`);
     }
   }
+});
+
+// ── Provider response shapes ─────────────────────────────────────────────────
+// Google returns candidates[0].content.parts[].text and usageMetadata; the
+// OpenAI-ish providers return response + usage. Reading only the latter meant a
+// successful Google call would still have looked empty.
+test("readModelText: reads Google candidates, falls back to the OpenAI shape", () => {
+  assert.equal(
+    readModelText({ candidates: [{ content: { parts: [{ text: '{"a":' }, { text: "1}" }] } }] }),
+    '{"a":1}',
+    "multi-part text is joined, not truncated to the first part",
+  );
+  assert.equal(readModelText({ response: "plain" }), "plain");
+  // No candidates falls through to the generic branch: a string, never a
+  // throw. validate() then rejects it and the repair pass runs, which is the
+  // designed path for an unusable response.
+  assert.equal(typeof readModelText({ candidates: [] }), "string");
+});
+
+test("readModelUsage: Google usageMetadata and OpenAI usage both counted", () => {
+  assert.deepEqual(
+    readModelUsage({ usageMetadata: { promptTokenCount: 11, candidatesTokenCount: 4 } }),
+    { input: 11, output: 4 },
+  );
+  assert.deepEqual(readModelUsage({ usage: { prompt_tokens: 3, completion_tokens: 2 } }), { input: 3, output: 2 });
+  assert.deepEqual(readModelUsage({}), { input: 0, output: 0 }, "absent usage is zero, never NaN");
+});
+
+test("runner: a multimodal skill sends Google inlineData, not image_url", async () => {
+  const imageSkill = {
+    id: "image-probe", promptVersion: "v1",
+    responseSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"] },
+    buildPrompt: () => "text only",
+    buildContent: () => ([
+      { type: "text", text: "look at this" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAAB" } },
+    ]),
+    validate: (raw) => { try { const v = JSON.parse(raw); return typeof v?.value === "number" ? v : null; } catch { return null; } },
+  };
+  const { env, aiCalls } = fakeEnv({ responses: [good(1)] });
+  await runSkill(env, imageSkill, {});
+  const parts = aiCalls[0].params.contents[0].parts;
+  assert.deepEqual(parts[0], { text: "look at this" });
+  assert.deepEqual(parts[1], { inlineData: { mimeType: "image/png", data: "AAAB" } },
+    "a data: URL becomes inlineData — image_url has no Google equivalent");
 });
