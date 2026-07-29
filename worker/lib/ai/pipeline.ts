@@ -285,7 +285,13 @@ export async function runAiExtraction(
   const usable = docs.filter((d) => !d.rejected && (d.markdown || d.imageDataUrl));
   if (!usable.length) {
     const summary: AiExtractionSummary = { runId: run.id, status: "failed", documents: docs.length, extractedLines: 0, conflicts: 0, energyApplied: 0, buildingModelId: null, estimate: null, stageWarnings: docs.flatMap((d) => d.qualityIssues) };
-    await completeAiRun(env, run.id, { status: "failed", errorCode: docs.length ? "IMAGE_UNREADABLE" : "FILE_UNSUPPORTED", summary });
+    // A PDF that produced no markdown is not an unreadable IMAGE. Reporting it
+    // as one sent the investigation looking at scan quality for a 14-page
+    // vector plan set with a perfectly good text layer.
+    const errorCode = !docs.length
+      ? "FILE_UNSUPPORTED"
+      : docs.some((d) => d.kind === "pdf") ? "MARKDOWN_CONVERSION_FAILED" : "IMAGE_UNREADABLE";
+    await completeAiRun(env, run.id, { status: "failed", errorCode, summary });
     return summary;
   }
 

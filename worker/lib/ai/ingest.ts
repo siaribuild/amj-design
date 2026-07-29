@@ -92,15 +92,30 @@ export const derivedKeys = (projectId: string, fileId: string) => ({
 });
 
 // ── toMarkdown (best-effort; §7.2) ───────────────────────────────────────────
-async function toMarkdownSafe(env: Env, filename: string, bytes: Uint8Array): Promise<string | null> {
+// Returns the markdown AND why it is missing when it is. The reason used to be
+// swallowed by a bare `catch { return null }`, so a PDF with a perfectly good
+// text layer failed the run as "IMAGE_UNREADABLE" with no stage warning and
+// nothing in ai_runs to say whether the binding was absent, the call threw, or
+// the document genuinely had no text. Three very different faults, one silence.
+type MarkdownResult = { markdown: string | null; reason: string | null };
+
+async function toMarkdownSafe(env: Env, filename: string, bytes: Uint8Array): Promise<MarkdownResult> {
+  const ai: any = env.AI;
+  if (!ai?.toMarkdown) return { markdown: null, reason: "markdown_binding_unavailable" };
   try {
-    const ai: any = env.AI;
-    if (!ai?.toMarkdown) return null;
     const res = await ai.toMarkdown([{ name: filename, blob: new Blob([bytes as unknown as BlobPart]) }]);
     const doc = Array.isArray(res) ? res[0] : res;
     const md = doc?.data ?? doc?.markdown ?? null;
-    return typeof md === "string" && md.trim() ? md : null;
-  } catch { return null; }
+    if (typeof md === "string" && md.trim()) return { markdown: md, reason: null };
+    // A shape we did not expect is not the same as an empty document; say which.
+    return {
+      markdown: null,
+      reason: md == null ? "markdown_empty" : `markdown_unexpected_shape:${typeof md}`,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    return { markdown: null, reason: `markdown_call_failed:${msg.slice(0, 160)}` };
+  }
 }
 
 export interface IngestedDoc {
@@ -157,7 +172,11 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
       }
     }
 
-    doc.markdown = await toMarkdownSafe(env, f.filename, bytes);
+    const md = await toMarkdownSafe(env, f.filename, bytes);
+    doc.markdown = md.markdown;
+    // Carry the reason onto the doc: pipeline.ts folds qualityIssues into the
+    // run's stageWarnings, which is the only record that survives to D1.
+    if (md.reason) doc.qualityIssues = [...doc.qualityIssues, md.reason];
     if (doc.markdown) {
       await env.FILES.put(derivedKeys(projectId, f.id).markdown, doc.markdown).catch(() => { /* derivative archive is best-effort */ });
     }
