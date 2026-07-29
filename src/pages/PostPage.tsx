@@ -7,11 +7,10 @@
 //
 // The rail is where the files live, and it is first in DOM order on mobile —
 // someone who opened a page about a datasheet came for the datasheet. A long
-// article with no files earns a rail of its own from its own headings. When
-// there is nothing to put there at all, there is NO rail, and the page narrows:
+// When there is nothing to put there, there is NO rail, and the page narrows:
 // a 54ch measure pinned to the left of a 1152px container is a half-empty page.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { PortableText, type PortableTextComponents } from "@portabletext/react";
 import { ChevronLeft, Check, ArrowRight, Loader2 } from "lucide-react";
 import { type Page, SLabel, CtaBanner } from "../app/ui";
@@ -25,22 +24,14 @@ import { pathForPage } from "../app/routes";
 const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 const MONO = { fontFamily: "'DM Mono', monospace" } as const;
 
-/** A heading's anchor id, derived from its text so it survives a re-fetch. */
-const slugifyHeading = (text: string) =>
-  text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").slice(0, 60);
-
-/** The plain text of a portable-text block. */
-const blockText = (b: any) => (b?.children ?? []).map((c: any) => c?.text ?? "").join("");
-
 // The renderer map matches the authoring block set exactly — the schema offers
 // paragraph, heading, subheading, two list kinds, bold, emphasis, link and
 // image, and nothing here invents a style the editor cannot produce.
 const components: PortableTextComponents = {
   block: {
     normal: ({ children }) => <p className="text-body leading-relaxed mb-5">{children}</p>,
-    h2: ({ children, value }) => (
-      <h2 id={slugifyHeading(blockText(value))}
-        className="font-semibold text-ink mt-10 mb-3 scroll-mt-28"
+    h2: ({ children }) => (
+      <h2 className="font-semibold text-ink mt-10 mb-3"
         style={{ ...DISPLAY, fontSize: "clamp(1.3rem, 2.2vw, 1.6rem)" }}>{children}</h2>
     ),
     h3: ({ children }) => <h3 className="font-semibold text-ink text-[17px] mt-7 mb-2" style={DISPLAY}>{children}</h3>,
@@ -109,15 +100,6 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
     return () => { live = false; };
   }, [slug]);
 
-  // Contents, from the article's own h2s. Four is the threshold: below it a
-  // contents list is longer than the scroll it saves.
-  const contents = useMemo(() => {
-    const hs = (body ?? []).filter((b: any) => b?._type === "block" && b?.style === "h2")
-      .map((b: any) => ({ text: blockText(b), id: slugifyHeading(blockText(b)) }))
-      .filter((h) => h.text);
-    return hs.length >= 4 ? hs : [];
-  }, [body]);
-
   if (!post) {
     return (
       <div className="ground-paper min-h-screen pt-28 pb-20">
@@ -135,7 +117,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
   }
 
   const products = post.productSlugs.map(getProductBySlug).filter(Boolean);
-  const hasRail = !!post.attachment || products.length > 0 || contents.length > 0;
+  const hasRail = !!post.attachment || products.length > 0;
   const shell = hasRail ? "max-w-6xl" : "max-w-3xl";
   const heroUrl = imageUrl(post.heroImage, { w: 1920, h: 1080 });
   const related = posts.filter((p) => p.categorySlug === post.categorySlug && p.slug !== post.slug).slice(0, 3);
@@ -203,19 +185,6 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
                     ))}
                   </div>
                 </div>
-              )}
-              {contents.length > 0 && (
-                <nav aria-label="Contents">
-                  <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2" style={MONO}>Contents</p>
-                  <div className="card py-1">
-                    {contents.map((h) => (
-                      <a key={h.id} href={`#${h.id}`}
-                        className="block px-4 py-2 text-sm text-body hover:text-sage-deep hover:bg-sage-wash transition-colors">
-                        {h.text}
-                      </a>
-                    ))}
-                  </div>
-                </nav>
               )}
             </aside>
           )}

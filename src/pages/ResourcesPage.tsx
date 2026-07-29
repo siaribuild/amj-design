@@ -118,6 +118,11 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
   };
   const clear = () => { setSelected([]); setQuery(""); reset(); };
 
+  // NOTE: no min-h-screen on the root below. The shell owns viewport height; a
+  // page-level one guarantees a strip of the PAGE's ground above the footer
+  // whenever the content is shorter than the screen, which is exactly what the
+  // gap under the closing CTA was.
+
   const railBlock = (
     <div className="border-t border-ink">
       <div className="py-4 border-b border-line">
@@ -146,17 +151,18 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
           );
         })}
       </div>
-      {filtering && (
-        <button onClick={clear}
-          className="w-full text-left py-3.5 text-[10px] uppercase tracking-[0.08em] text-sage hover:text-sage-deep cursor-pointer" style={MONO}>
-          Clear search and filters
-        </button>
-      )}
+      {/* Always present, as in the wireframe. Disabled rather than absent when
+          there is nothing to clear: a control that appears only once you have
+          already acted is a control you cannot learn is there. */}
+      <button onClick={clear} disabled={!filtering}
+        className="w-full text-left py-3.5 text-[10px] uppercase tracking-[0.08em] text-sage hover:text-sage-deep cursor-pointer disabled:text-quieter disabled:cursor-default disabled:hover:text-quieter" style={MONO}>
+        Clear search and filters
+      </button>
     </div>
   );
 
   return (
-    <div className="ground-paper min-h-screen">
+    <div className="ground-paper">
       {/* A BAND, not a hero. The wireframe argues the point and it is right: at a
           laptop viewport a 360px title block consumes the useful first screen
           and pushes the first real record below it. ~210px orients, then gets

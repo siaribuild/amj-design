@@ -313,8 +313,11 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
 function Footer({ setPage }: { setPage: (p: Page) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const brand = getSiteBrand(); // Sanity logo/tagline/copyright/ABN; null ⇒ fallbacks
+  // flex-1 so a page SHORTER than the viewport gives its leftover height to the
+  // footer rather than leaving a pale strip between the closing CTA and it. On a
+  // normal-length page there is no free space and it does nothing.
   return (
-    <footer className="relative bg-ink text-white/55 pt-16 pb-10 overflow-hidden">
+    <footer className="relative bg-ink text-white/55 pt-16 pb-10 overflow-hidden flex-1">
       <GhostMark size={360} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
       <div className="max-w-6xl mx-auto px-6 relative">
         <div className="flex flex-col md:flex-row justify-between gap-10 mb-10">
@@ -923,6 +926,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
         sub="Upload yours and every line comes back priced in about a minute. That first pass is the machine's — a person checks it before it becomes the quote you accept."
         onQuote={() => go("quote")}
         ground="bone"
+        placement="inline"
       />
 
       {/* ─── SYSTEMS ─────────────────────────────────────────────────────────
@@ -2227,7 +2231,7 @@ export default function App() {
 
   return (
     <GstContext.Provider value={user?.priceGstMode ?? "inc"}>
-    <div className="min-h-screen ground-bone" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="min-h-screen ground-bone flex flex-col" style={{ fontFamily: "'Inter', sans-serif" }}>
       <Seo {...seoProps} />
       <style>{`
         * { -webkit-font-smoothing: antialiased; }
