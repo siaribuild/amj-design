@@ -1647,8 +1647,8 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
       {/* ─── Hero — dark architectural, consistent with the other pages ───────── */}
       <section className="relative bg-night overflow-hidden min-h-[340px] md:min-h-[420px] flex items-end pt-16">
         <img src={IMG.hero} alt="Aluminium-framed façade on a contemporary Australian build at dusk"
-          className="absolute inset-0 w-full h-full object-cover opacity-60 hero-zoom" />
-        <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.92) 0%, rgba(12,12,10,0.6) 34%, rgba(12,12,10,0.25) 100%)" }} />
+          className="hero-img hero-zoom" />
+        <div className="hero-scrim" aria-hidden="true" />
         <GhostMark size={300} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
         <div className="relative max-w-6xl mx-auto px-6 pb-10 w-full">
           <div className="flex items-center gap-2 mb-3">

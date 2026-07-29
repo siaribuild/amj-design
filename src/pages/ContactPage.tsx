@@ -173,7 +173,11 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
     <div className="ground-bone min-h-screen">
       {/* ─── HERO — orientation only ───────────────────────────────────────────── */}
       <section className="relative bg-night overflow-hidden">
-        {heroImg && <img src={heroImg} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover opacity-25" />}
+        {/* Was a 25%-opacity image with NO scrim at all — the only dark hero on
+            the site without one, which is why this page's image read as grey
+            wash rather than a photograph. */}
+        {heroImg && <img src={heroImg} alt="" aria-hidden="true" className="hero-img" />}
+        {heroImg && <div className="hero-scrim" aria-hidden="true" />}
         <GhostMark size={340} opacity={0.05} color="#fff" pos="right-0 top-0" />
         <div className="relative max-w-6xl mx-auto px-6 pt-[78px] pb-10">
           <div className="flex items-center gap-2 mb-4">

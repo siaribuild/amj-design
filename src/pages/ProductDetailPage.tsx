@@ -288,8 +288,8 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
       <section className="relative min-h-[440px] md:min-h-[520px] flex items-end bg-night overflow-hidden">
         <img src={imageUrl(product.heroImage, { w: 1600, h: 900 })}
           alt={`${product.name} — aluminium ${isWindow ? "window" : "door"} system installed in a contemporary home`}
-          className="absolute inset-0 w-full h-full object-cover opacity-70 hero-zoom" />
-        <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.9) 0%, rgba(12,12,10,0.6) 24%, rgba(12,12,10,0.25) 55%, rgba(12,12,10,0.12) 100%)" }} />
+          className="hero-img hero-zoom" />
+        <div className="hero-scrim" aria-hidden="true" />
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-24 pb-10 md:pt-28 md:pb-14">
           <div className="max-w-2xl">
             <div className="flex items-center gap-2 mb-3">

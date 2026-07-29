@@ -206,8 +206,8 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page) => void }) {
       {/* ── Hero (facts live inside it, not butted underneath) ───────────── */}
       <section className="relative bg-night overflow-hidden">
         <img src={imageUrl(getPage("how-it-works")?.heroImage, { w: 1600, h: 900 })} alt="Dark aluminium window frames in a contemporary residential interior"
-          className="absolute inset-0 w-full h-full object-cover object-center opacity-40" />
-        <div className="absolute inset-0 bg-gradient-to-r from-night/95 via-night/80 to-night/35" />
+          className="hero-img object-center" />
+        <div className="hero-scrim" aria-hidden="true" />
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-32 pb-14 md:pt-36 md:pb-16">
           <div className="max-w-2xl">
             <SLabel light>How it works</SLabel>

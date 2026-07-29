@@ -552,3 +552,35 @@
      flex-end would drag the heading's baseline down to meet its bottom. */
   .split-row.is-top { align-items: flex-start; }
 }
+
+@layer components {
+  /* ─── Hero shading ───────────────────────────────────────────────────────────
+     ONE scrim, because there were nine. Every dark page hero hand-copied its own
+     gradient, so they drifted: /contact had no scrim at all and a 25%-opacity
+     image, /how-it-works used Tailwind night/95→night/35, and the rest sat at
+     five different opacity curves. The owner named the /products hero as
+     correct; these are its values, and now there is one place to change them.
+
+     Pair with .hero-img on the <img> — the shading is the two together, and
+     splitting them across files is how they came apart in the first place. */
+  .hero-scrim {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to right,
+      rgba(12, 12, 10, 0.88) 0%,
+      rgba(12, 12, 10, 0.55) 20%,
+      rgba(12, 12, 10, 0.25) 45%,
+      rgba(12, 12, 10, 0.15) 100%
+    );
+  }
+
+  .hero-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.7;
+  }
+}

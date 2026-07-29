@@ -545,9 +545,9 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
         <img
           src="https://images.unsplash.com/photo-1774516534130-d67eb3c98798?w=1920&h=1080&fit=crop&auto=format"
           alt="Contemporary home interior with full-height aluminium-framed glazing onto a landscaped garden at dusk"
-          className="absolute inset-0 w-full h-full object-cover opacity-70 hero-zoom" />
+          className="hero-img hero-zoom" />
         {/* Contrast overlay — stronger on the left behind the copy */}
-        <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(12,12,10,0.9) 0%, rgba(12,12,10,0.6) 22%, rgba(12,12,10,0.32) 50%, rgba(12,12,10,0.28) 100%)" }} />
+        <div className="hero-scrim" aria-hidden="true" />
         <div className="absolute inset-0 bg-gradient-to-t from-night/50 via-transparent to-transparent" />
 
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-20 pb-6 md:pt-24 md:pb-9">

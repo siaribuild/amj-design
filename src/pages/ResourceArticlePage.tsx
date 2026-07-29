@@ -155,10 +155,9 @@ export function ResourceArticlePage({ slug, setPage, onOpenProduct }: {
       <section className={`relative bg-night overflow-hidden ${heroUrl ? "min-h-[380px] flex items-end" : ""}`}>
         {heroUrl && (
           <img src={heroUrl} alt="" aria-hidden="true" loading="lazy" decoding="async"
-            className="absolute inset-0 w-full h-full object-cover opacity-70" />
+            className="hero-img" />
         )}
-        <div className="absolute inset-0" aria-hidden="true"
-          style={{ background: "linear-gradient(to right, rgba(12,12,10,0.94) 0%, rgba(12,12,10,0.75) 45%, rgba(12,12,10,0.5) 100%)" }} />
+        <div className="hero-scrim" aria-hidden="true" />
         <div className={`relative w-full ${shell} mx-auto px-6 pt-24 pb-10 md:pt-28 md:pb-12`}>
           {/* Both axes, same order as the index row. */}
           <SLabel light>{resource.kindTitle} in {resource.topicTitle}</SLabel>

@@ -1,16 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // RESOURCES — the index
 //
-// A LIST, not a card grid. Cards are the wrong instrument for homogeneous text
-// records with no photograph: their height is set by the longest summary, so a
-// grid of them can never align, and every record added makes the page harder to
-// scan rather than easier. A row puts every title on the same left edge and
-// every piece of metadata in the same right column, which is what someone
-// scanning eighty of them actually needs. (NN/g say the same thing about cards
-// vs lists for homogeneous items, and name blog posts as the example.)
+// AWAITING REDESIGN. A list-row version shipped briefly and was reverted: it
+// read as an admin table — a bone-filled box pinned to the left of a half-empty
+// page, titles too small to carry weight, summaries clipped mid-word. The card
+// grid below is the state it was reverted TO, not a design anyone defends. The
+// replacement is coming from supervised design work; do not restyle this file
+// ad hoc in the meantime.
 //
-// The page CHANGES SHAPE as it fills, because the honest layout at two records
-// is not the honest layout at two hundred:
+// What survives from the analysis, and is worth keeping in whatever replaces it:
+// the page must CHANGE SHAPE as it fills, because the honest layout at two
+// records is not the honest layout at two hundred:
 //
 //   0        an honest panel — no rail, no search, no list furniture
 //   1–11     the list alone. Two filters over three records is the placeholder
@@ -24,7 +24,7 @@
 // crawlers, and these pages exist to be found).
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useMemo, useState } from "react";
-import { AlertCircle, Search, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Search, X } from "lucide-react";
 import { type Page, SLabel, Btn, CtaBanner } from "../app/ui";
 import {
   resources, resourceKinds, resourceTopics, imageUrl, getPage, resourceDate, type Resource,
@@ -42,49 +42,43 @@ const SHOW_FILTERS_AT = 12;
 const SHOW_SEARCH_AT = 25;
 const PAGE_SIZE = 40;
 
-// ─── One row ──────────────────────────────────────────────────────────────────
-// Left: what it is and what it answers. Right: the tokens someone scanning
-// decides on — the standard first, because a certifier hunting AS 2047 is the
-// reader with the most specific need and nobody else in this market surfaces it.
-function ResourceRow({ resource, showTopic, onOpen }: {
-  resource: Resource; showTopic: boolean; onOpen: (slug: string) => void;
+// ─── One card ─────────────────────────────────────────────────────────────────
+// REVERTED to the card grid on the owner's instruction while the index is
+// redesigned properly. The list-row version that briefly shipped read as an
+// admin table: a bone-filled box pinned left of a half-empty page, titles too
+// small to carry weight, and summaries clipped mid-word. Do not reinstate it
+// from git — the replacement comes from the design work, not from this file's
+// history.
+function ResourceCard({ resource, onOpen }: {
+  resource: Resource; onOpen: (slug: string) => void;
 }) {
   const date = resourceDate(resource);
-  const files = resource.attachments.length;
-  // One standard, not a list: the row is a decision aid, not a bibliography.
-  const standard = resource.attachments.find((a) => a.standardRef)?.standardRef;
-  // Byte size belongs on the file row where the click happens, not here.
-  const fileHint = files === 1
-    ? [resource.attachments[0].ext, fileSize(resource.attachments[0].size)].filter(Boolean).join(" · ")
-    : files > 1 ? `${files} files` : "";
+  const first = resource.attachments[0];
+  const extra = resource.attachments.length - 1;
 
   return (
     <button onClick={() => onOpen(resource.slug)}
-      className="group w-full text-left px-5 py-4 border-b border-black/8 last:border-b-0 cursor-pointer transition-colors hover:bg-sage-wash focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-inset flex flex-col md:flex-row md:items-baseline md:gap-6">
-      <span className="flex-1 min-w-0">
-        {/* KIND in TOPIC — both axes in one chip. The topic half is dropped when
-            a topic filter is on, where repeating it says nothing. */}
-        <span className="block text-[10px] uppercase tracking-[0.14em] text-sage mb-1.5" style={MONO}>
-          {resource.kindTitle}{showTopic && <span className="text-quieter"> in {resource.topicTitle}</span>}
-        </span>
-        <span className="block text-[17px] leading-snug text-ink font-semibold group-hover:text-sage-deep transition-colors" style={DISPLAY}>
-          {resource.title}
-        </span>
-        {/* No `block` here: line-clamp needs display:-webkit-box, and `block`
-            wins the cascade against it, which silently un-clamps the line. */}
-        <span className="text-sm text-body leading-relaxed line-clamp-1 mt-0.5">{resource.summary}</span>
+      className="card card-link p-5 text-left flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2">
+      {/* KIND in TOPIC — both axes in one label. */}
+      <span className="block text-[10px] uppercase tracking-[0.14em] text-sage mb-2" style={MONO}>
+        {resource.kindTitle}<span className="text-quieter"> in {resource.topicTitle}</span>
       </span>
-
-      <span className="flex items-center gap-3 md:flex-col md:items-end md:gap-1 md:text-right flex-shrink-0 mt-2 md:mt-0 md:w-[150px]">
-        {standard && (
-          <span className="text-[11px] text-ink font-medium whitespace-nowrap" style={MONO}>{standard}</span>
-        )}
-        {fileHint && <span className="text-[11px] text-quiet whitespace-nowrap" style={MONO}>{fileHint}</span>}
-        {date && (
-          <span className="text-[11px] text-quieter whitespace-nowrap" style={MONO}>
-            {date.label === "Updated" ? "Upd. " : ""}{docDate(date.value)}
-          </span>
-        )}
+      <span className="block text-[17px] leading-tight text-ink font-semibold mb-1.5" style={DISPLAY}>
+        {resource.title}
+      </span>
+      <span className="text-sm text-body leading-relaxed line-clamp-2">{resource.summary}</span>
+      {/* The files are a HINT of what is inside, never the destination — every
+          card opens the article, and downloading happens from its rail, where
+          the scope note travels with the file. */}
+      <span className="flex items-center justify-between gap-3 border-t border-black/6 mt-4 pt-3">
+        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-sage flex-shrink-0">
+          Read <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+        </span>
+        <span className="text-[11px] text-quiet text-right" style={MONO}>
+          {first
+            ? [first.ext, fileSize(first.size)].filter(Boolean).join(" · ") + (extra > 0 ? ` +${extra}` : "")
+            : date ? `${date.label === "Updated" ? "Upd. " : ""}${docDate(date.value)}` : ""}
+        </span>
       </span>
     </button>
   );
@@ -189,10 +183,9 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
       <section className="relative bg-night h-[300px] md:h-[360px] flex items-end overflow-hidden">
         {heroUrl && (
           <img src={heroUrl} alt="" aria-hidden="true" loading="lazy" decoding="async"
-            className="absolute inset-0 w-full h-full object-cover opacity-60" />
+            className="hero-img" />
         )}
-        <div className="absolute inset-0" aria-hidden="true"
-          style={{ background: "linear-gradient(to right, rgba(12,12,10,0.92) 0%, rgba(12,12,10,0.7) 45%, rgba(12,12,10,0.45) 100%)" }} />
+        <div className="hero-scrim" aria-hidden="true" />
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-24 pb-10">
           <div className="max-w-xl">
             <SLabel light>Resources</SLabel>
@@ -284,9 +277,9 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
 
               {shown.length > 0 ? (
                 <>
-                  <div className="card overflow-hidden mb-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                     {shown.map((r) => (
-                      <ResourceRow key={r.slug} resource={r} showTopic={topic === "all"} onOpen={open} />
+                      <ResourceCard key={r.slug} resource={r} onOpen={open} />
                     ))}
                   </div>
 
