@@ -19,7 +19,7 @@ await build({
       export * as schema from ${p("worker/lib/ai/schema.ts")};
       export { evaluateEscalation, LOW_CONFIDENCE_THRESHOLD } from ${p("worker/lib/ai/escalation.ts")};
       export { stageInputHash, stageRawKey, runStage } from ${p("worker/lib/ai/stage.ts")};
-      export { runSkill } from ${p("worker/lib/estimator/skills/runner.ts")};
+      export { runSkill, toVendorSchema } from ${p("worker/lib/estimator/skills/runner.ts")};
       export { DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, PIPELINE_VERSION } from ${p("worker/lib/ai/versions.ts")};
       export { FEEDBACK_CATEGORIES } from ${p("worker/lib/estimator/persist.ts")};
       export { energyReportExtractor } from ${p("worker/lib/estimator/skills/energy.ts")};
@@ -30,7 +30,7 @@ await build({
 });
 const {
   schema, evaluateEscalation, LOW_CONFIDENCE_THRESHOLD, stageInputHash, stageRawKey, runStage,
-  runSkill, DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, FEEDBACK_CATEGORIES,
+  runSkill, toVendorSchema, DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, FEEDBACK_CATEGORIES,
   energyReportExtractor,
 } = await import(pathToFileURL(outfile).href);
 
@@ -295,4 +295,57 @@ test("stage: failed skill call persists a 'failed' stage record and fails soft",
   assert.equal(res.data, null);
   const stageWrite = dbWrites.find((w) => w.sql.includes("ai_stage_runs"));
   assert.equal(stageWrite.args[6], "failed");
+});
+
+// ── Vendor schema shape (§13.4) ──────────────────────────────────────────────
+// Google's structured output is an OpenAPI 3.0 subset: one `type` plus
+// `nullable`. The JSON-Schema union `type: ["string","null"]` — which every
+// skill uses for optional fields — is rejected with HTTP 400 at the provider,
+// before any tokens are spent. That is what "skill_call_failed" was hiding.
+test("toVendorSchema: nullable unions become OpenAPI 3.0 nullable", () => {
+  assert.deepEqual(toVendorSchema({ type: ["string", "null"] }), { type: "string", nullable: true });
+  assert.deepEqual(toVendorSchema({ type: ["number", "null"] }), { type: "number", nullable: true });
+  assert.deepEqual(toVendorSchema({ type: "string" }), { type: "string" }, "a plain type is untouched");
+});
+
+test("toVendorSchema: recurses through properties, items and nesting", () => {
+  const out = toVendorSchema({
+    type: "object",
+    properties: {
+      jurisdiction: { type: "object", properties: { state: { type: ["string", "null"] } } },
+      rooms: { type: "array", items: { type: "object", properties: { areaM2: { type: ["number", "null"] } } } },
+    },
+    required: ["rooms"],
+  });
+  assert.deepEqual(out.properties.jurisdiction.properties.state, { type: "string", nullable: true });
+  assert.deepEqual(out.properties.rooms.items.properties.areaM2, { type: "number", nullable: true });
+  assert.deepEqual(out.required, ["rooms"], "non-schema keys survive untouched");
+});
+
+test("toVendorSchema: a union of two REAL types is left alone, never guessed", () => {
+  // No OpenAPI 3.0 equivalent exists. Silently picking one would change what the
+  // model is asked for; failing loudly at the provider is the honest outcome.
+  assert.deepEqual(toVendorSchema({ type: ["string", "number"] }), { type: ["string", "number"] });
+});
+
+test("CONTRACT: no shipped skill schema reaches the provider with a union type", async () => {
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { projectRoot } = await import("./helpers.mjs");
+  const dir = join(projectRoot, "worker/lib/estimator/skills");
+  const skills = readdirSync(dir).filter((f) => f.endsWith(".ts") && !["types.ts", "runner.ts"].includes(f));
+  assert.ok(skills.length >= 3, "sanity: the skill directory should not be empty");
+  // The skills are ALLOWED to be written in plain JSON Schema — that is what
+  // their validators speak. The guarantee is that the runner normalises them,
+  // so assert the normaliser handles the exact construct they use.
+  for (const file of skills) {
+    const src = readFileSync(join(dir, file), "utf8");
+    for (const [, types] of src.matchAll(/type:\s*(\[[^\]]*\])/g)) {
+      const parsed = JSON.parse(types.replace(/'/g, '"'));
+      if (!parsed.includes("null")) continue;
+      const norm = toVendorSchema({ type: parsed });
+      assert.equal(Array.isArray(norm.type), false, `${file}: ${types} must not reach the provider as a union`);
+      assert.equal(norm.nullable, true, `${file}: ${types} must become nullable`);
+    }
+  }
 });

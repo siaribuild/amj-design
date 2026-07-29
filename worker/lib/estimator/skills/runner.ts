@@ -26,12 +26,43 @@ import type { Skill, SkillRun } from "./types";
 const gatewayOpts = (env: Env) =>
   env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID, collectLog: false } } : undefined;
 
+// Google's structured-output schema is an OpenAPI 3.0 SUBSET, not JSON Schema:
+// it takes one `type` plus `nullable`, and rejects the JSON-Schema union
+// `type: ["string","null"]` with an HTTP 400 before a single token is spent.
+// Every skill here writes optional fields that way — 34 of them — so every call
+// through Vertex failed at the provider with no output and no usage.
+//
+// Normalising HERE rather than rewriting each schema keeps the skills written in
+// plain JSON Schema (what their validators and tests speak) and means a new
+// skill cannot reintroduce the fault by being written the same way.
+export function toVendorSchema(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(toVendorSchema);
+  if (!node || typeof node !== "object") return node;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+    if (k === "type" && Array.isArray(v)) {
+      const types = v.filter((t) => t !== "null");
+      // ["string","null"] → string + nullable. A union of two REAL types has no
+      // OpenAPI 3.0 equivalent; leave it untouched rather than silently pick one.
+      if (types.length === 1 && v.length !== types.length) {
+        out.type = types[0];
+        out.nullable = true;
+        continue;
+      }
+      out.type = v.length === 1 ? v[0] : v;
+      continue;
+    }
+    out[k] = toVendorSchema(v);
+  }
+  return out;
+}
+
 async function callModel(env: Env, model: string, skill: Skill<unknown, unknown>, messages: { role: string; content: unknown }[]) {
   return await (env.AI as any).run(model, {
     messages,
     temperature: EXTRACTION_TEMPERATURE,
     max_tokens: EXTRACTION_MAX_TOKENS,
-    response_format: { type: "json_schema", json_schema: skill.responseSchema },
+    response_format: { type: "json_schema", json_schema: toVendorSchema(skill.responseSchema) },
   }, gatewayOpts(env));
 }
 
@@ -58,8 +89,18 @@ export async function runSkill<I, O>(
     inputTokens += Number(out?.usage?.prompt_tokens ?? 0);
     outputTokens += Number(out?.usage?.completion_tokens ?? 0);
     rawText = textOf(out);
-  } catch {
-    warnings.push("skill_call_failed"); // never surface raw provider errors
+  } catch (e) {
+    // `skill_call_failed` is load-bearing — stage.ts classifies on it. Keep it,
+    // and add the provider's own words beside it.
+    //
+    // "Never surface raw provider errors" means never to the CUSTOMER. Throwing
+    // them away entirely cost a day: every call was 400ing at Vertex over a
+    // schema construct, and the record said only that something failed. This
+    // string lands in ai_runs.summary_json, which is server-side, and is capped
+    // because a provider message is diagnostics, not a place for document text.
+    warnings.push("skill_call_failed");
+    const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    warnings.push(`skill_call_error:${msg.slice(0, 200)}`);
     return { ok: false, data: null, warnings, modelId: model, promptVersion: skill.promptVersion, outputHash: null, repaired, inputTokens, outputTokens };
   }
 
