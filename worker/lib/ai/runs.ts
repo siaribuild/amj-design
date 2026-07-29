@@ -50,7 +50,8 @@ export async function completeAiRun(
 ): Promise<void> {
   await env.DB.prepare(
     `UPDATE ai_runs SET status = ?, error_code = ?, input_mode = COALESCE(?, input_mode),
-            token_usage_json = ?, summary_json = ?, completed_at = datetime('now') WHERE id = ?`,
+            token_usage_json = ?, summary_json = ?, completed_at = datetime('now')
+      WHERE id = ? AND status = 'running'`,
   ).bind(
     outcome.status, outcome.errorCode ?? null, outcome.inputMode ?? null,
     outcome.tokenUsage ? JSON.stringify(outcome.tokenUsage) : null,

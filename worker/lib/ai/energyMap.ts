@@ -11,7 +11,6 @@
 // conflicts (§9.2), and constraints matching no opening are surfaced, not dropped.
 import type { EnergyConstraint, EnergyExtraction } from "../estimator/skills/energy";
 import type { BuildingModelV1, EnergyRequirementV1, OpeningV1 } from "./schema";
-import { parentTagOf } from "./pipeline";
 
 // §9.1 default document-precedence policy — versioned RULES, not prompt text. A
 // report's own precedence statement (extracted verbatim) may override per project.
@@ -57,37 +56,125 @@ function typeMatches(c: EnergyConstraint, o: OpeningV1): boolean {
   return op.includes(c.elementHint);
 }
 
+/** Case and drawing separators are presentation, not identity. The original
+ * source values remain untouched in evidence and review output. */
+export function normalizeOpeningRef(value: string | null | undefined): string | null {
+  const normalized = (value ?? "").normalize("NFKC").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return normalized || null;
+}
+
+const normalizeContext = (value: string | null | undefined): string | null => {
+  const normalized = (value ?? "").normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return normalized || null;
+};
+
+const parentTag = (value: string | null | undefined): string | null => {
+  const normalized = normalizeOpeningRef(value);
+  if (!normalized) return null;
+  return normalized.match(/^([A-Z]+\d+)[A-Z]$/)?.[1] ?? null;
+};
+
+function contextCompatible(c: EnergyConstraint, o: OpeningV1): boolean {
+  const constraintRoom = normalizeContext(c.room);
+  const openingRoom = normalizeContext(o.roomId);
+  if (constraintRoom && openingRoom && constraintRoom !== openingRoom) return false;
+  if (c.orientation && o.wallOrientation && c.orientation !== o.wallOrientation) return false;
+  return true;
+}
+
+function contextSpecificity(c: EnergyConstraint, o: OpeningV1): number {
+  let score = 0;
+  if (c.room && o.roomId && normalizeContext(c.room) === normalizeContext(o.roomId)) score += 2;
+  if (c.orientation && o.wallOrientation === c.orientation) score += 2;
+  if (!c.room) score += 0.25;
+  if (!c.orientation) score += 0.25;
+  return score;
+}
+
+function sameThermalRequirement(a: EnergyConstraint, b: EnergyConstraint): boolean {
+  return a.maxUValue === b.maxUValue &&
+    a.minShgc === b.minShgc &&
+    a.maxShgc === b.maxShgc &&
+    a.shgcTarget === b.shgcTarget &&
+    a.openablePercent === b.openablePercent;
+}
+
+function ambiguityConflict(
+  opening: OpeningV1,
+  candidates: EnergyConstraint[],
+  index: number,
+): BuildingModelV1["conflicts"][number] {
+  return {
+    conflictId: `conf_energy_${index}`,
+    entity: opening.externalRef,
+    field: "thermalRequirement",
+    values: candidates.map((constraint) => ({
+      value: {
+        ref: constraint.ref,
+        room: constraint.room,
+        orientation: constraint.orientation,
+        maxUValue: constraint.maxUValue,
+        minShgc: constraint.minShgc,
+        maxShgc: constraint.maxShgc,
+      },
+      source: "energy_report",
+      precedence: 100,
+    })),
+    resolution: "human_resolution_required",
+    selectedValue: null,
+    reviewRequired: true,
+  };
+}
+
 export function mapEnergyToOpenings(extraction: EnergyExtraction, openings: OpeningV1[]): EnergyMapResult {
   const requirements: EnergyMapResult["requirements"] = new Map();
   const conflicts: BuildingModelV1["conflicts"] = [];
   const matchedConstraints = new Set<EnergyConstraint>();
 
-  const byRef = new Map(openings.map((o) => [o.externalRef, o]));
-
   for (const o of openings) {
-    // 1. Exact ref.
-    let match = extraction.constraints.find((c) => c.ref && c.ref === o.externalRef);
+    const openingRef = normalizeOpeningRef(o.externalRef);
+    // 1. Exact ref, normalized for case/separator differences.
+    let matches = extraction.constraints.filter((c) =>
+      c.ref && normalizeOpeningRef(c.ref) === openingRef && contextCompatible(c, o));
     let kind: "exact" | "parent_child" | "type" = "exact";
     // 2. Parent/child: a child constraint (W04A) applies to parent opening W04;
     //    a parent constraint (W04) applies to child opening W04A. Children carry
     //    the STRICTEST value when several apply (§9.3 components).
-    if (!match) {
-      const childConstraints = extraction.constraints.filter((c) => c.ref && parentTagOf(c.ref) === o.externalRef);
+    if (!matches.length) {
+      const childConstraints = extraction.constraints.filter((c) =>
+        c.ref && parentTag(c.ref) === openingRef && contextCompatible(c, o));
       if (childConstraints.length) {
-        match = strictest(childConstraints);
+        matches = childConstraints;
         kind = "parent_child";
       } else if (o.parentRef) {
-        match = extraction.constraints.find((c) => c.ref === o.parentRef) ?? undefined;
-        if (match) kind = "parent_child";
+        const parentRef = normalizeOpeningRef(o.parentRef);
+        matches = extraction.constraints.filter((c) =>
+          c.ref && normalizeOpeningRef(c.ref) === parentRef && contextCompatible(c, o));
+        if (matches.length) kind = "parent_child";
       }
     }
     // 3. Type rule.
-    if (!match) {
-      match = extraction.constraints.find((c) => !c.ref && typeMatches(c, o));
-      if (match) kind = "type";
+    if (!matches.length) {
+      matches = extraction.constraints.filter((c) =>
+        !c.ref && typeMatches(c, o) && contextCompatible(c, o));
+      if (matches.length) kind = "type";
     }
-    if (!match) continue;
-    matchedConstraints.add(match);
+    if (!matches.length) continue;
+
+    // A room/orientation-specific row wins over a generic type row. Equally
+    // specific rows that disagree are ambiguous and require human resolution;
+    // array order is never treated as precedence.
+    if (kind !== "parent_child" && matches.length > 1) {
+      const highest = Math.max(...matches.map((constraint) => contextSpecificity(constraint, o)));
+      matches = matches.filter((constraint) => contextSpecificity(constraint, o) === highest);
+    }
+    for (const candidate of matches) matchedConstraints.add(candidate);
+    if (kind !== "parent_child" && matches.length > 1 &&
+        matches.some((candidate) => !sameThermalRequirement(candidate, matches[0]))) {
+      conflicts.push(ambiguityConflict(o, matches, conflicts.length + 1));
+      continue;
+    }
+    const match = matches.length === 1 ? matches[0] : strictest(matches);
     requirements.set(o.externalRef, { ...toRequirement(match), sourceRef: match.ref, matchKind: kind });
 
     // Discrepancy check: report dims vs schedule dims (§Phase-3 exit criterion).
@@ -119,12 +206,6 @@ export function mapEnergyToOpenings(extraction: EnergyExtraction, openings: Open
         reviewRequired: true,
       });
     }
-  }
-
-  // Track child-refs that matched a parent opening so they don't read as unmatched.
-  for (const c of extraction.constraints) {
-    if (matchedConstraints.has(c)) continue;
-    if (c.ref && (byRef.has(c.ref) || (parentTagOf(c.ref) && byRef.has(parentTagOf(c.ref) as string)))) matchedConstraints.add(c);
   }
 
   return { requirements, conflicts, unmatched: extraction.constraints.filter((c) => !matchedConstraints.has(c)) };

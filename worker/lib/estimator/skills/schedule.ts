@@ -86,14 +86,16 @@ export interface ScheduleInput {
   /** Source-file checksum — folded into the stage idempotency payload so a
    *  re-upload of different bytes with identical extracted text still re-runs. */
   checksum?: string | null;
+  /** One-based pages selected by deterministic routing for mixed PDF sets. */
+  pageNumbers?: number[];
 }
 
 export const scheduleExtractor: Skill<ScheduleInput, ScheduleExtractionV1> = {
   id: "schedule_extractor",
-  promptVersion: "v1",
+  promptVersion: "v2",
   responseSchema: SCHEMA,
-  buildPrompt: ({ text, docName }) =>
-    `${RULES}\n\nDOCUMENT (${docName}):\n${(text ?? "").slice(0, 24000)}`,
+  buildPrompt: ({ text, docName, pageNumbers }) =>
+    `${RULES}\n\nDOCUMENT (${docName})${pageNumbers?.length ? `; relevant pages: ${pageNumbers.join(", ")}` : ""}:\n${(text ?? "").slice(0, 32000)}`,
   buildContent(input) {
     if (!input.imageDataUrl) return this.buildPrompt(input);
     const parts: unknown[] = [{ type: "text", text: `${RULES}\n\nDOCUMENT (${input.docName}): supplied as an image.` }];
@@ -123,7 +125,10 @@ export const scheduleExtractor: Skill<ScheduleInput, ScheduleExtractionV1> = {
       issues: Array.isArray(r?.issues) ? r.issues.map((i: unknown) => strCap(i, 160)).filter(Boolean).slice(0, 10) as string[] : [],
       confidence: { tag: conf(r?.confidence?.tag), dimensions: conf(r?.confidence?.dimensions), configuration: conf(r?.confidence?.configuration) },
     })).filter((l: ScheduleLineV1) => l.tag || l.widthMm != null || l.heightMm != null);
-    if (!lines.length) return null;
+    // Untagged dimensions cannot be reconciled to a cart line or reviewed
+    // against later plan/report evidence. Keeping them beside valid tagged rows
+    // is useful evidence, but they cannot make an extraction "successful".
+    if (!lines.some((line: ScheduleLineV1) => !!line.tag)) return null;
     return {
       lines,
       docIssues: Array.isArray(payload?.docIssues)

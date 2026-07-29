@@ -547,6 +547,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       const dims = JSON.parse(aiDims);
       // Single-line SQL: wrangler's --command does not accept embedded newlines.
       await sql(`INSERT INTO ai_runs (id, project_id, pipeline_version) VALUES ('run_c1','${projectId}','test')`);
+      await sql(`INSERT INTO building_models (id, project_id, ai_run_id, schema_version, model_json, confidence_json) VALUES ('bm_c1','${projectId}','run_c1','building-model/1.0','{}','{}')`);
       await sql(`INSERT INTO ai_proposal (id, project_id, ai_run_id, source_generation, source_manifest_hash, pipeline_version) VALUES ('prop_c1','${projectId}','run_c1',1,'hash','test')`);
       await sql(`INSERT INTO opening_instance (id, project_id) VALUES ('open_c1','${projectId}')`);
       // ranking_context_json — NOT dimensions_json — is what the outcome capture
@@ -586,6 +587,31 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
         assert.equal(o.quality_state, "pending", "a composite outcome waits for a human");
         assert.equal(o.reason_code, "HUMAN_BUILT_AS_COMPOSITE", "the cause is named, not bucketed as unspecified");
       }
+      const examples = await sql(
+        `SELECT quote_revision_id, eligible_for_retrieval, eligible_for_training, quality_state
+           FROM learning_examples
+          WHERE quote_revision_id='${issued.body.id}'`,
+      );
+      assert.equal(examples.length, 1, "issuance creates one immutable AI-vs-human learning example");
+      assert.equal(examples[0].eligible_for_retrieval, 0, "an unadjudicated adjustment cannot enter retrieval");
+      assert.equal(examples[0].eligible_for_training, 0, "per-quote issuance never trains model weights");
+      assert.equal(examples[0].quality_state, "pending");
+
+      const review = await requestJson(ops, `/api/ops/projects/${projectId}/recommendation-outcomes`);
+      assert.ok(review.body.reasonOptions.some((reason) => reason.code === "MANUFACTURING_REVIEW"));
+      const pendingOutcome = review.body.outcomes.find((outcome) => outcome.quality_state === "pending");
+      await requestJson(ops, `/api/ops/recommendation-outcomes/${pendingOutcome.id}`, {
+        method: "PATCH",
+        json: { action: "approve", reasonCode: "MANUFACTURING_REVIEW" },
+      });
+      const governed = await sql(
+        `SELECT eligible_for_retrieval, quality_state FROM learning_examples
+          WHERE quote_revision_id='${issued.body.id}'`,
+      );
+      assert.equal(governed[0].eligible_for_retrieval, 0,
+        "a manufacturing-only correction remains outside product/thermal retrieval");
+      assert.equal(governed[0].quality_state, "rejected",
+        "a fully classified but non-learnable project example is closed, not left pending");
     });
 
     // Social scrapers fetch the raw HTML once and never run JS, so the shell's

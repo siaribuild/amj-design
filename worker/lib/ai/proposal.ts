@@ -281,6 +281,17 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       line.opening.thermalContext?.roomAreaM2 != null ? null : "room_area",
       variant ? null : "performance_variant",
     ].filter(Boolean);
+    const documentReviewReasons = [...new Set(
+      (line.opening.thermalContext?.technicalReviewReasons ?? [])
+        .filter((reason): reason is string => typeof reason === "string" && !!reason)
+        .slice(0, 20),
+    )];
+    const hasScheduleCommercialOption =
+      !!line.opening.scheduleRequirements?.colour ||
+      line.opening.scheduleRequirements?.flyscreen != null;
+    const reviewRequired = !(line.result.dominant && chosen.outcome.status === "ready") ||
+      hasScheduleCommercialOption ||
+      documentReviewReasons.length > 0;
     stmts.push(env.DB.prepare(
       `INSERT INTO ai_proposal_line
          (id, proposal_id, project_id, opening_id, quote_line_id, external_ref, quantity,
@@ -297,18 +308,16 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       JSON.stringify(rankingContext), performance ? JSON.stringify(performance) : null, JSON.stringify(chosen.price),
       quote?.line_total ?? null, basis, confidence, JSON.stringify([]),
       JSON.stringify(missingInputs), JSON.stringify(line.result.alternatives),
-      line.result.dominant && chosen.outcome.status === "ready" ? 0 : 1, 0,
+      reviewRequired ? 1 : 0, 0,
     ));
 
     if (canApply) {
-      const hasScheduleCommercialOption =
-        !!line.opening.scheduleRequirements?.colour ||
-        line.opening.scheduleRequirements?.flyscreen != null;
-      const reviewRequired = !(line.result.dominant && chosen.outcome.status === "ready") ||
-        hasScheduleCommercialOption;
       const review = JSON.stringify({
         thermalRecommendation: reviewRequired
           ? "We will confirm this AI-recommended configuration and any schedule-specific options during technical review."
+          : null,
+        energyMapping: documentReviewReasons.length
+          ? documentReviewReasons.join(" ")
           : null,
       });
       stmts.push(env.DB.prepare(
@@ -329,7 +338,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
            )`,
       ).bind(
         chosen.candidate.slug, JSON.stringify(cartOptions), chosen.price!.total,
-        line.result.dominant && chosen.outcome.status === "ready" ? "ready" : "technical_review",
+        reviewRequired ? "technical_review" : "ready",
         review, proposalLineId, variant?.variantId ?? null,
         JSON.stringify(configuration), JSON.stringify(chosen.price), basis, confidence,
         quote.id, isNewQuoteLine ? 0 : quote.edit_version,

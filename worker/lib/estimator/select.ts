@@ -62,7 +62,7 @@ export async function selectForOpening(
   const evaluated: EvaluatedCandidate[] = [];
   for (const candidate of candidates) {
     const outcome = checkHardRules(opening, candidate, RULE_VERSION);
-    if (outcome.passed && opening.thermalContext?.requirementBasis === "human_override") {
+    if (outcome.passed && opening.thermalContext?.thermalPrecedentApplied === true) {
       outcome.status = "commercial_only_estimate";
       outcome.energyCertified = false;
     }

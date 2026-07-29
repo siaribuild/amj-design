@@ -44,7 +44,16 @@ export interface SkillRun<TOutput> {
   repaired: boolean;
   inputTokens: number;
   outputTokens: number;
+  /** Machine-readable failure class for queue retry policy and diagnostics. */
+  failureKind: SkillFailureKind | null;
 }
+
+export type SkillFailureKind =
+  | "transient_rate_limit"
+  | "transient_provider"
+  | "permanent_request"
+  | "provider_unavailable"
+  | "invalid_output";
 
 // Shared clamps for untrusted numeric/string fields.
 export const numOrNull = (v: unknown, min: number, max: number): number | null => {

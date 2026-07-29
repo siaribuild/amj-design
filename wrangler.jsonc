@@ -65,7 +65,10 @@
     // provisioned; then switch to 'auto' for messy/scanned schedules.
     "PARSE_ENGINE": "deterministic",
     // AI Gateway (owner-provisioned 2026-07-25): routes every model call through
-    // the gateway's spend cap ($20/mo), rate limit (10/min) and unified billing.
+    // the gateway's spend cap ($20/mo), rate limit (20 provider requests/min)
+    // and unified billing. Provider 429s defer the durable extraction job; an
+    // application "runs/day" counter would be inaccurate because one pipeline
+    // run may issue multiple document and repair requests.
     // Payload logging is off in the gateway AND enforced per-request in code
     // (collectLog:false). Model selection lives in code: google/gemini-3.6-flash
     // by default; override with AI_PRIMARY_MODEL without a code change.

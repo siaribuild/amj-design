@@ -19,7 +19,7 @@
 import type { Env } from "../../../types";
 import { sha256hex } from "../../ai/hash";
 import { primaryModel, EXTRACTION_TEMPERATURE, EXTRACTION_MAX_TOKENS } from "../../ai/versions";
-import type { Skill, SkillRun } from "./types";
+import type { Skill, SkillFailureKind, SkillRun } from "./types";
 
 // collectLog:false enforces §21.1 payload privacy PER-REQUEST — bodies are never
 // stored gateway-side even if the dashboard logging toggle is ever re-enabled.
@@ -119,6 +119,27 @@ export function readModelUsage(out: any): { input: number; output: number } {
   return { input: Number(out?.usage?.prompt_tokens ?? 0), output: Number(out?.usage?.completion_tokens ?? 0) };
 }
 
+/** Provider errors must retain enough structure for the queue to distinguish a
+ * retryable throttle/outage from a permanent malformed request. */
+export function classifyProviderFailure(error: unknown): SkillFailureKind {
+  const message = (error instanceof Error ? `${error.name}: ${error.message}` : String(error)).toLowerCase();
+  if (/\b429\b|rate.?limit|too many requests|resource[_ ]exhausted|throttl/.test(message)) return "transient_rate_limit";
+  if (/\b(408|500|502|503|504)\b|timed? ?out|timeout|temporar|service unavailable|network|fetch failed|connection reset/.test(message)) {
+    return "transient_provider";
+  }
+  if (/\b(400|401|402|403|404|413|422)\b|\b7003\b|invalid (?:argument|request)|user input error|unsupported/.test(message)) {
+    return "permanent_request";
+  }
+  return "transient_provider";
+}
+
+function failureWarning(kind: SkillFailureKind): string {
+  if (kind === "transient_rate_limit") return "skill_call_rate_limited";
+  if (kind === "transient_provider" || kind === "provider_unavailable") return "skill_call_transient";
+  if (kind === "permanent_request") return "skill_call_permanent";
+  return "skill_output_invalid";
+}
+
 // The schema has to travel IN THE PROMPT, because this provider accepts no
 // schema parameter. When response_format was being sent (and rejected), the
 // model was never told the field names at all — it answered a plan-context
@@ -171,8 +192,14 @@ export async function runSkill<I, O>(
   input: I,
   opts?: { model?: string },
 ): Promise<SkillRun<O>> {
-  if (!env.AI) throw new Error("ai_unavailable");
   const model = opts?.model ?? primaryModel(env);
+  if (!env.AI) {
+    return {
+      ok: false, data: null, warnings: ["skill_call_failed", "skill_call_transient", "skill_call_error:ai_unavailable"],
+      modelId: model, promptVersion: skill.promptVersion, outputHash: null, repaired: false,
+      inputTokens: 0, outputTokens: 0, failureKind: "provider_unavailable",
+    };
+  }
   const warnings: string[] = [];
   let inputTokens = 0, outputTokens = 0;
   let rawText = "";
@@ -200,35 +227,56 @@ export async function runSkill<I, O>(
     warnings.push("skill_call_failed");
     const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     warnings.push(`skill_call_error:${msg.slice(0, 200)}`);
-    return { ok: false, data: null, warnings, modelId: model, promptVersion: skill.promptVersion, outputHash: null, repaired, inputTokens, outputTokens };
+    const failureKind = classifyProviderFailure(e);
+    warnings.push(failureWarning(failureKind));
+    return {
+      ok: false, data: null, warnings, modelId: model, promptVersion: skill.promptVersion,
+      outputHash: null, repaired, inputTokens, outputTokens, failureKind,
+    };
   }
 
   // The load-bearing safety step: validate the untrusted output.
   let data = skill.validate(rawText);
+  let failureKind: SkillFailureKind | null = null;
 
   // §22.3 repair policy: exactly ONE repair call on schema failure, feeding the
   // invalid response back. Transport failure of the repair keeps the original miss.
   if (data == null) {
     try {
+      // Repair the structure, not the source extraction. Re-sending a 30-page
+      // document (and its images) doubled input spend while adding no information
+      // needed to rename fields, close JSON, or remove prose.
+      const repairPrompt = [
+        "Repair the following model response so it conforms exactly to the schema.",
+        "Return ONLY corrected JSON. Preserve extracted values; do not add facts.",
+        schemaInstruction(skill as Skill<unknown, unknown>),
+        "INVALID RESPONSE:",
+        rawText.slice(0, 16000),
+      ].join("\n\n");
       const out: any = await callModel(env, model, skill as Skill<unknown, unknown>, [
-        { role: "user", content: prompt },
-        { role: "assistant", content: rawText.slice(0, 16000) },
-        { role: "user", content: "That response failed schema validation. Return ONLY corrected JSON that conforms exactly to the required schema. No prose." },
+        { role: "user", content: repairPrompt },
       ]);
       const usage = readModelUsage(out);
       inputTokens += usage.input; outputTokens += usage.output;
       const repairedText = readModelText(out);
       const repairedData = skill.validate(repairedText);
       if (repairedData != null) { data = repairedData; rawText = repairedText; repaired = true; }
-    } catch { /* repair is best-effort; the original failure stands */ }
-    if (data == null) warnings.push("skill_output_invalid");
+    } catch (e) {
+      failureKind = classifyProviderFailure(e);
+      warnings.push(failureWarning(failureKind));
+      warnings.push(`skill_repair_error:${failureKind}`);
+    }
+    if (data == null) {
+      warnings.push("skill_output_invalid");
+      failureKind ??= "invalid_output";
+    }
     else warnings.push("skill_output_repaired");
   }
 
   const outputHash = await sha256hex(new TextEncoder().encode(rawText)).catch(() => null);
   return {
     ok: data != null, data, warnings, modelId: model, promptVersion: skill.promptVersion,
-    outputHash, repaired, inputTokens, outputTokens,
+    outputHash, repaired, inputTokens, outputTokens, failureKind: data != null ? null : failureKind,
     ...(data == null ? { rejectedRaw: rawText.slice(0, 20000) } : {}),
   };
 }

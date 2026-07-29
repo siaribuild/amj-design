@@ -11,6 +11,7 @@ import {
   type ParseMode, type ParseFile,
 } from "../lib/parse";
 import { uuid } from "../lib/util";
+import { customerSafeJobDiagnostic } from "../lib/ai/jobs";
 
 export const parse = new Hono<{ Bindings: Env }>();
 
@@ -254,22 +255,34 @@ parse.get("/projects/current/extraction-status", async (c) => {
   const { project } = await resolveCurrentProject(c.env, c.req.raw);
   if (!project) return c.json({ run: null });
   const pending = await c.env.DB.prepare(
-    `SELECT j.source_generation, j.status, j.created_at
+    `SELECT j.source_generation, j.status, j.attempts, j.last_error,
+            j.failure_class, j.retry_after, j.created_at, j.updated_at
        FROM ai_job_claim j JOIN project p ON p.id=j.project_id
       WHERE j.project_id=? AND j.source_generation=p.ai_generation
         AND j.status IN ('scheduled','processing','failed')
       LIMIT 1`,
   ).bind(project.id).first<{
-    source_generation: number; status: "scheduled" | "processing" | "failed"; created_at: string;
+    source_generation: number;
+    status: "scheduled" | "processing" | "failed";
+    attempts: number;
+    last_error: string | null;
+    failure_class: string | null;
+    retry_after: string | null;
+    created_at: string;
+    updated_at: string;
   }>().catch(() => null);
   if (pending) {
+    const diagnostic = (pending.status === "failed" || pending.failure_class === "quota")
+      ? customerSafeJobDiagnostic(pending)
+      : null;
     return c.json({
       run: {
         id: `generation-${pending.source_generation}`,
         status: pending.status === "scheduled" ? "queued" : pending.status === "processing" ? "running" : "failed",
         startedAt: pending.created_at,
-        completedAt: null,
+        completedAt: pending.status === "failed" ? pending.updated_at : null,
         summary: null,
+        diagnostic,
       },
       basis: {},
     });

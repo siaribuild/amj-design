@@ -27,6 +27,10 @@ const QUERY = `*[_type == "product"]{
   standardGlass, airTightness, waterTightness, windPressure,
   "optionCount": count(options),
   "hasConfiguration": defined(configuration),
+  "performanceVariants": performanceVariants[]{
+    variantId, glassBuildUp, uValue, shgc, frameTechnology, coating,
+    pricingOptionSlugs, dataSource, certified, certificationRef, published
+  },
   "hasPerformance": count(performanceVariants) > 0,
   "hasDimensionRule": defined(dimensionRule),
   "hasPricingRef": defined(pricingRef),
@@ -40,11 +44,31 @@ function analyse(products) {
   const real = products.filter(isReal);
   const orphans = products.filter((p) => !isReal(p));
   const missing = (pred) => real.filter((p) => !pred(p));
+  const usableVariants = (p) => (p.performanceVariants ?? []).filter((v) =>
+    v.published !== false &&
+    typeof v.uValue === "number" &&
+    typeof v.shgc === "number" &&
+    !!v.glassBuildUp &&
+    ["conventional", "thermally_broken"].includes(v.frameTechnology));
+  const materialSignatures = (p) => new Set(usableVariants(p).map((v) =>
+    [
+      v.frameTechnology,
+      String(v.glassBuildUp).toLowerCase().replace(/\s+/g, " ").trim(),
+      String(v.coating ?? "").toLowerCase().trim(),
+    ].join("|")));
   const fields = {
     dimensionBounds: { label: "Flat dimension bounds (min/max W/H)", missing: missing(hasBounds) },
     dimensionRule: { label: "Structured dimensionRule (area/aspect/panel + ruleVersion)", missing: missing((p) => p.hasDimensionRule) },
     configuration: { label: "Structured configuration (operation/panel/composite)", missing: missing((p) => p.hasConfiguration) },
     performance: { label: "Energy performanceVariant (U-value/SHGC)", missing: missing((p) => p.hasPerformance) },
+    thermallyDescribedVariant: {
+      label: "Published variant with Uw, SHGC, glass build-up and known frame technology",
+      missing: missing((p) => usableVariants(p).length > 0),
+    },
+    materialChoice: {
+      label: "At least two materially distinct thermal configurations",
+      missing: missing((p) => materialSignatures(p).size >= 2),
+    },
     pricingRef: { label: "pricingRef (private D1 rate-card key)", missing: missing((p) => p.hasPricingRef) },
     schemaVersion: { label: "schemaVersion", missing: missing((p) => typeof p.schemaVersion === "number") },
   };

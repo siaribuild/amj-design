@@ -33,6 +33,14 @@ const stable = (value: unknown): string => {
   return `{${Object.keys(row).sort().map((key) => `${JSON.stringify(key)}:${stable(row[key])}`).join(",")}}`;
 };
 
+export function outcomeQualityState(
+  decision: "accepted" | "adjusted" | "no_ai_proposal",
+  recommendationEligible: boolean,
+): "approved" | "pending" | "rejected" {
+  if (recommendationEligible) return "approved";
+  return decision === "no_ai_proposal" ? "rejected" : "pending";
+}
+
 export async function captureRecommendationOutcomes(
   env: Env,
   projectId: string,
@@ -116,7 +124,11 @@ export async function captureRecommendationOutcomes(
     // wrong one.
     const isComposite = line.line_kind === "composite_parent";
     const recommendationEligible = sameCoreConfiguration && !isComposite;
-    const qualityState = recommendationEligible ? "approved" : "pending";
+    // A line with no AI proposal contains no recommendation signal to adjudicate.
+    // Finalize it immediately as non-learnable so it cannot leave the revision's
+    // learning example pending forever, while still retaining the immutable audit
+    // outcome explaining why it was excluded.
+    const qualityState = outcomeQualityState(decision, recommendationEligible);
     const finalConfiguration = {
       productSlug: line.product_slug,
       performanceVariantId: line.selected_variant_id,

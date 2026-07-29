@@ -153,6 +153,42 @@ export const opsPatchLine = (lineId: string, patch: Partial<{
 export const opsLineConfigurations = (lineId: string) =>
   req<{ configurations: OpsExactConfiguration[] }>(`/api/ops/lines/${lineId}/configurations`);
 
+export interface OpsRecommendationOutcome {
+  id: string;
+  external_ref: string | null;
+  proposed_product_slug: string | null;
+  proposed_variant_id: string | null;
+  proposed_line_total: number | null;
+  final_product_slug: string;
+  final_variant_id: string | null;
+  final_line_total: number;
+  price_delta: number | null;
+  decision: "accepted" | "adjusted" | "no_ai_proposal";
+  reason_code: string;
+  quality_state: "pending" | "approved" | "rejected";
+  created_at: string;
+}
+export interface OpsRecommendationReason {
+  code: string;
+  layer: string;
+  learnsProductPreference: boolean;
+  learnsThermalTarget: boolean;
+}
+export const opsRecommendationOutcomes = (projectId: string) =>
+  req<{ outcomes: OpsRecommendationOutcome[]; reasonOptions: OpsRecommendationReason[] }>(
+    `/api/ops/projects/${projectId}/recommendation-outcomes`);
+export const opsAdjudicateRecommendationOutcome = (
+  outcomeId: string,
+  body: {
+    action: "approve" | "reject";
+    reasonCode?: string;
+    thermalTarget?: { maxUValue: number; minShgc: number | null; maxShgc: number | null };
+  },
+) => req<{ ok: boolean }>(`/api/ops/recommendation-outcomes/${outcomeId}`, {
+  method: "PATCH",
+  body: JSON.stringify(body),
+});
+
 // The Estimator review workspace lived here and is gone (2026-07-27). It reviewed
 // the machine's product selection BEFORE submission — a stage at which staff have
 // no part: the AI proposal is built into the customer's own draft, and the moment

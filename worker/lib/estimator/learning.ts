@@ -138,7 +138,10 @@ export function aggregateApprovedThermal(rows: ThermalCorrectionRow[]): Approved
         },
         thermalContext: {
           ...(opening.thermalContext ?? {}),
-          requirementBasis: "human_override",
+          // Preserve the original case context for retrieval density. The flag
+          // records that approved precedent constrained eligibility without
+          // rewriting a plan/default basis into a compliance claim.
+          thermalPrecedentApplied: true,
         },
       };
     },

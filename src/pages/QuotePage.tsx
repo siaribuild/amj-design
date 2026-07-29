@@ -12,7 +12,7 @@ import {
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
 import { StickyQuotePanel } from "../components/StickyQuotePanel";
-import { uploadFile, startParse, extractionStatus, deleteFile, resolveCollision, restoreAiLine, UploadError, type ParseJob, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
+import { uploadFile, startParse, extractionStatus, deleteFile, resolveCollision, restoreAiLine, UploadError, type ExtractionRun, type ParseJob, type ParseResult, type SubmitContact, type SubmitResult } from "../data/api";
 import {
   type QuoteState, type QItem,
   linePriceTotal, fmt, mm, productLabel, hasDuplicateCode, lineBlocksSubmission, reviewSeverity, DEFAULT_PROJECT_TITLE,
@@ -20,6 +20,14 @@ import {
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
+
+const whenSafe = (value: string): string | null => {
+  const normalized = value.includes("T") ? value : `${value.replace(" ", "T")}Z`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime())
+    ? null
+    : date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" });
+};
 
 // Inline-editable project name — same interaction as the item code (CodeField):
 // a framed value + pencil, click to edit into a framed field, Enter/blur commits,
@@ -81,8 +89,13 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   const [contactEmail, setContactEmail] = useState(user?.email || "");
   const [contactPhone, setContactPhone] = useState(user?.phone || "");
   const [suburb, setSuburb] = useState("");
+  type SafeDiagnostic = NonNullable<ExtractionRun["diagnostic"]>;
   const [aiPhase, setAiPhase] = useState<
-    null | { kind: "reading"; docs: number } | { kind: "done"; refined: number } | { kind: "failed" }
+    null
+    | { kind: "reading"; docs: number }
+    | { kind: "deferred"; docs: number; diagnostic: SafeDiagnostic }
+    | { kind: "done"; refined: number }
+    | { kind: "failed"; diagnostic?: SafeDiagnostic | null }
   >(null);
   // How many documents the current upload put in flight — kept because the
   // anonymous path has no aiPhase to read a count from.
@@ -94,6 +107,28 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   // the page look idle and invited a duplicate upload).
   const processing = uploading || aiPhase?.kind === "reading";
   const processingDocs = aiPhase?.kind === "reading" ? aiPhase.docs : uploadingDocs;
+
+  const diagnosticMessage = (diagnostic: SafeDiagnostic | null | undefined): string => {
+    const retryTime = diagnostic?.retryAt ? whenSafe(diagnostic.retryAt) : null;
+    switch (diagnostic?.code) {
+      case "RATE_LIMITED":
+        return `AI refinement is waiting for service capacity${retryTime ? ` and can retry after ${retryTime}` : ""}. Your documents are saved, and you can still submit for human review.`;
+      case "CATALOGUE_UNAVAILABLE":
+        return "AI refinement is waiting for verified product pricing. Your documents are saved, and you can still submit for human review.";
+      case "DOCUMENTS_NOT_UNDERSTOOD":
+        return "We couldn't confidently create priced items from these documents. Add any missing items manually or submit them for human review.";
+      case "SERVICE_CONFIGURATION_ERROR":
+        return "AI refinement is temporarily unavailable. Your documents are saved and our team can review them.";
+      case "RETRY_REQUIRED":
+        return "AI refinement needs a staff retry. Your documents are saved, and you can still submit for human review.";
+      case "TEMPORARY_FAILURE":
+        return `AI refinement was interrupted${retryTime ? ` and can retry after ${retryTime}` : ""}. Your documents are saved, and you can still submit for human review.`;
+      default:
+        return quote.items.length
+          ? "We couldn't refine this estimate; we will confirm it during human review."
+          : "We couldn't create priced items from these documents; add items manually or contact us.";
+    }
+  };
 
   const total = quote.items.reduce((s, it) => s + linePriceTotal(it), 0);
   const gstMode = useGstMode();
@@ -313,8 +348,14 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     stopPolling();
     const t0 = Date.now();
     let sawRun = false;
+    let lastDiagnostic: SafeDiagnostic | null = null;
     const tick = async (n: number) => {
-      if (Date.now() - t0 > 120_000) { setAiPhase({ kind: "failed" }); return; }
+      if (Date.now() - t0 > 120_000) {
+        setAiPhase(lastDiagnostic
+          ? { kind: "deferred", docs, diagnostic: lastDiagnostic }
+          : { kind: "failed" });
+        return;
+      }
       let inFlight = false;
       try {
         const { run, basis } = await extractionStatus();
@@ -322,11 +363,17 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
         if (run && (run.status === "queued" || run.status === "running")) {
           sawRun = true;
           inFlight = true;
-          setAiPhase({ kind: "reading", docs });
+          lastDiagnostic = run.diagnostic ?? null;
+          setAiPhase(run.diagnostic
+            ? { kind: "deferred", docs, diagnostic: run.diagnostic }
+            : { kind: "reading", docs });
+        } else if (run?.status === "failed") {
+          setAiPhase({ kind: "failed", diagnostic: run.diagnostic });
+          return;
         } else if (run && sawRun) {
           // The run we watched finished — swap the tail for its outcome.
-          if (run.status === "failed" || (run.status === "partial" && (run.summary?.cartApplied ?? 0) === 0)) {
-            setAiPhase({ kind: "failed" });
+          if (run.status === "partial" && (run.summary?.cartApplied ?? 0) === 0) {
+            setAiPhase({ kind: "failed", diagnostic: run.diagnostic });
           } else {
             // Results append to the bottom of the list, where the placeholder
             // has been standing — so the page grows rather than rearranges and
@@ -357,8 +404,12 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
       // to read; the run is only the truth about whether work is under way.
       const docs = quote.files.length;
       if (docs > 0 && run && (run.status === "queued" || run.status === "running")) {
-        setAiPhase({ kind: "reading", docs });
+        setAiPhase(run.diagnostic
+          ? { kind: "deferred", docs, diagnostic: run.diagnostic }
+          : { kind: "reading", docs });
         pollExtraction(docs);
+      } else if (docs > 0 && run?.status === "failed") {
+        setAiPhase({ kind: "failed", diagnostic: run.diagnostic });
       }
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -730,13 +781,14 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                     · <Loader2 className="w-3.5 h-3.5 animate-spin inline" aria-hidden="true" /> refining product and glazing allowances…
                   </span>
                 )}
+                {uploadNotice.type === "success" && aiPhase?.kind === "deferred" && (
+                  <span className="ml-1.5 text-amber-800">{diagnosticMessage(aiPhase.diagnostic)}</span>
+                )}
                 {uploadNotice.type === "success" && aiPhase?.kind === "done" && (
                   <span className="ml-1.5">· estimate refined for {aiPhase.refined} item{aiPhase.refined !== 1 ? "s" : ""}</span>
                 )}
                 {uploadNotice.type === "success" && aiPhase?.kind === "failed" && (
-                  <span className="ml-1.5 text-amber-800">· {quote.items.length
-                    ? "we couldn't refine this estimate; we will confirm it"
-                    : "we couldn't create priced items from these documents; add items manually or contact us"}</span>
+                  <span className="ml-1.5 text-amber-800">· {diagnosticMessage(aiPhase.diagnostic)}</span>
                 )}
                 {uploadNotice.type === "success" && removeOffer && (
                   <span className="ml-1.5 whitespace-nowrap">
@@ -754,6 +806,16 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
 
           {/* Item cards — compact header + collapsible groups, one item open at
               a time, in the order they were added. */}
+          {!uploadNotice && (aiPhase?.kind === "deferred" || aiPhase?.kind === "failed") && (
+            <div
+              role={aiPhase.kind === "failed" ? "alert" : "status"}
+              aria-live="polite"
+              className="mb-4 flex items-start gap-2.5 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+            >
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
+              <span>{diagnosticMessage(aiPhase.diagnostic)}</span>
+            </div>
+          )}
           <div className="space-y-2.5">
             {quote.items.map((it) => (
               <ItemSummaryCard key={it.id} item={it} quote={quote}

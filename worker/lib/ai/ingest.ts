@@ -17,6 +17,8 @@ const MAX_PDF_PAGES = 30;
 
 export type DocKind = "pdf" | "png" | "jpeg" | "webp" | "other";
 export type DocType = "schedule" | "energy_report" | "plans" | "supporting" | "unsupported";
+export type ExtractionRole = "schedule" | "energy_report" | "plans";
+export type RolePages = Record<ExtractionRole, number[]>;
 
 // ── Pure: magic-byte sniffing ────────────────────────────────────────────────
 export function sniffDocKind(bytes: Uint8Array): DocKind {
@@ -91,6 +93,60 @@ export function classifyDocument(markdown: string | null, filename: string): Doc
   return "supporting";
 }
 
+/**
+ * Classify PDF pages independently. Architectural sets routinely contain floor
+ * plans, elevations and a window schedule in one file; a single file-level
+ * label must not make the schedule page invisible to extraction.
+ *
+ * These are routing hints, not extracted business facts. A page may have more
+ * than one role, and low-signal pages remain unassigned rather than guessed.
+ */
+export function classifyPageRoles(pages: string[], filename = ""): RolePages {
+  const roles: RolePages = { schedule: [], energy_report: [], plans: [] };
+  const add = (role: ExtractionRole, pageNo: number) => {
+    if (!roles[role].includes(pageNo)) roles[role].push(pageNo);
+  };
+  pages.forEach((page, index) => {
+    // A filename is useful for a one-page upload, but applying "window
+    // schedule.pdf" to every page of a mixed set would route the whole set.
+    const hay = `${pages.length === 1 ? filename : ""}\n${page}`.toLowerCase();
+    const has = (pattern: RegExp) => pattern.test(hay);
+    const scheduleSignals = [
+      has(/\b(window|door|glazing|opening)\s+schedule\b/),
+      has(/\b(mark|tag|ref(?:erence)?)\b[\s\S]{0,100}\b(width|height|size)\b/),
+      has(/\bqty\b[\s\S]{0,100}\b(width|height)\b/),
+      has(/\b(?:w|d|alw|ald)\s*[-_]?\d{1,3}[a-z]?\b[\s\S]{0,100}\b(?:awning|sliding|fixed|bifold|stacker)\b/),
+    ].filter(Boolean).length;
+    const energySignals = [
+      has(/\bnathers\b/),
+      has(/\benergy\s+(?:rating|assessment|report)\b/),
+      has(/\b(?:u[\s-]?value|uw|shgc)\b/),
+      has(/\b(?:heating|cooling)\s+load\b/),
+      has(/\bstar\s+rating\b/),
+    ].filter(Boolean).length;
+    const planSignals = [
+      has(/\b(?:floor|site|roof|reflected ceiling)\s+plan\b/),
+      has(/\belevation\b/),
+      has(/\bsection\b/),
+      has(/\bscale\s*1\s*:/),
+      has(/\bnorth\s+(?:point|arrow)\b/),
+    ].filter(Boolean).length;
+    const pageNo = index + 1;
+    if (scheduleSignals >= 2 || has(/\b(window|door|glazing|opening)\s+schedule\b/)) add("schedule", pageNo);
+    if (energySignals >= 2) add("energy_report", pageNo);
+    if (planSignals >= 2) add("plans", pageNo);
+  });
+  return roles;
+}
+
+export function textForPages(pages: string[], pageNumbers: number[]): string | null {
+  const selected = pageNumbers
+    .filter((pageNo) => pageNo >= 1 && pageNo <= pages.length)
+    .map((pageNo) => `<!-- page ${pageNo} -->\n${pages[pageNo - 1]}`)
+    .join("\n\n");
+  return selected.trim() ? selected : null;
+}
+
 // ── §7.1 derivative keys ─────────────────────────────────────────────────────
 const safeSeg = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
 export const derivedKeys = (projectId: string, fileId: string) => ({
@@ -104,6 +160,7 @@ export const derivedKeys = (projectId: string, fileId: string) => ({
 // nothing in ai_runs to say whether the binding was absent, the call threw, or
 // the document genuinely had no text. Three very different faults, one silence.
 type MarkdownResult = { markdown: string | null; reason: string | null };
+type PdfTextResult = MarkdownResult & { pages: string[] };
 
 // The PDF text layer, read with the SAME unpdf build the deterministic extractor
 // uses. That extractor consumes the circulated architectural plan sets happily,
@@ -113,22 +170,22 @@ type MarkdownResult = { markdown: string | null; reason: string | null };
 // This is the fallback, not the primary — toMarkdown understands tables and
 // layout, which a raw text dump does not — but a plain text layer is far better
 // input than nothing, which is what the AI tier had before.
-async function pdfTextLayer(bytes: Uint8Array): Promise<MarkdownResult> {
+async function pdfTextLayer(bytes: Uint8Array): Promise<PdfTextResult> {
   try {
     // Copy: pdf.js detaches the buffer it is handed, and the caller may still
     // need these bytes afterwards.
     const pdf = await getDocumentProxy(new Uint8Array(bytes));
-    if (pdf.numPages > MAX_PDF_PAGES) return { markdown: null, reason: "pdf_too_many_pages" };
+    if (pdf.numPages > MAX_PDF_PAGES) return { markdown: null, reason: "pdf_too_many_pages", pages: [] };
     const { text } = await extractText(pdf, { mergePages: false });
-    const pages = Array.isArray(text) ? text : [String(text)];
+    const pages = (Array.isArray(text) ? text : [String(text)]).map((page) => String(page));
     // Page breaks kept: the schedule prompt and the parser both use them.
     const joined = pages.map((p, i) => `\n\n<!-- page ${i + 1} -->\n\n${p}`).join("");
-    if (joined.replace(/\s+/g, "").length < 40) return { markdown: null, reason: "pdf_no_text_layer" };
-    return { markdown: joined, reason: null };
+    if (joined.replace(/\s+/g, "").length < 40) return { markdown: null, reason: "pdf_no_text_layer", pages };
+    return { markdown: joined, reason: null, pages };
   } catch (e) {
     const s = String(e);
     const encrypted = /password|encrypt/i.test(s) || (e as { name?: string })?.name === "PasswordException";
-    return { markdown: null, reason: encrypted ? "pdf_encrypted" : `pdf_read_failed:${s.slice(0, 120)}` };
+    return { markdown: null, reason: encrypted ? "pdf_encrypted" : `pdf_read_failed:${s.slice(0, 120)}`, pages: [] };
   }
 }
 
@@ -157,6 +214,12 @@ export interface IngestedDoc {
   checksum: string | null;
   kind: DocKind;
   docType: DocType;
+  /** A file may contribute to more than one extraction skill. */
+  roles: ExtractionRole[];
+  /** One-based page hints. Empty when the source is not page-addressable. */
+  rolePages: RolePages;
+  /** Page-scoped text for each role; avoids feeding an entire plan set to every skill. */
+  roleText: Partial<Record<ExtractionRole, string>>;
   pageCount: number | null;
   markdown: string | null;
   /** data: URL for image uploads (Mode A photos) — the multimodal input. */
@@ -185,12 +248,26 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
     const kind = sniffDocKind(bytes);
     const doc: IngestedDoc = {
       fileId: f.id, filename: f.filename, checksum: f.checksum, kind,
-      docType: "unsupported", pageCount: null, markdown: null, imageDataUrl: null,
+      docType: "unsupported", roles: [], rolePages: { schedule: [], energy_report: [], plans: [] },
+      roleText: {}, pageCount: null, markdown: null, imageDataUrl: null,
       qualityIssues: [], rejected: false,
     };
     if (kind === "other") { doc.qualityIssues = ["unsupported_format"]; doc.rejected = true; docs.push(doc); continue; }
 
-    if (kind === "pdf") doc.pageCount = pdfPageCount(bytes);
+    let pdfText: PdfTextResult | null = null;
+    if (kind === "pdf") {
+      doc.pageCount = pdfPageCount(bytes);
+      // Always read the text layer once, even when toMarkdown succeeds. It gives
+      // us stable page boundaries for mixed-document routing; toMarkdown remains
+      // the richer whole-document representation.
+      pdfText = await pdfTextLayer(bytes);
+      if (pdfText.pages.length) doc.pageCount = pdfText.pages.length;
+      doc.rolePages = classifyPageRoles(pdfText.pages, f.filename);
+      for (const role of ["schedule", "energy_report", "plans"] as const) {
+        const selected = textForPages(pdfText.pages, doc.rolePages[role]);
+        if (selected) doc.roleText[role] = selected;
+      }
+    }
     else {
       const dims = imageDimensions(bytes, kind);
       const q = assessImageQuality(dims, bytes.length);
@@ -213,7 +290,7 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
     // deterministic tier reads these same plan sets from the text layer. Fall
     // back to it rather than failing the whole run.
     if (!md.markdown && kind === "pdf") {
-      const viaTextLayer = await pdfTextLayer(bytes);
+      const viaTextLayer = pdfText ?? await pdfTextLayer(bytes);
       if (viaTextLayer.markdown) doc.qualityIssues = [...doc.qualityIssues, "markdown_via_pdf_text_layer"];
       else if (viaTextLayer.reason) doc.qualityIssues = [...doc.qualityIssues, viaTextLayer.reason];
       md = viaTextLayer;
@@ -231,6 +308,21 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
       doc.docType = classifyDocument(doc.markdown, f.filename);
       await env.DB.prepare("UPDATE file_asset SET doc_type = ? WHERE id = ? AND doc_type_source = 'auto'")
         .bind(doc.docType, f.id).run().catch(() => { /* display metadata, never a blocker */ });
+    }
+    const roles = new Set<ExtractionRole>();
+    if (doc.docType === "schedule" || doc.docType === "energy_report" || doc.docType === "plans") roles.add(doc.docType);
+    for (const role of ["schedule", "energy_report", "plans"] as const) {
+      if (doc.rolePages[role].length) roles.add(role);
+    }
+    // Unclassified standalone uploads retain the legacy schedule attempt. For a
+    // PDF plan set, page routing must provide positive schedule evidence.
+    if (doc.docType === "supporting" && kind !== "pdf") roles.add("schedule");
+    doc.roles = [...roles];
+    if (kind === "pdf" && doc.roles.includes("plans")) {
+      // The current Worker has neither a Browser Rendering binding nor a
+      // Worker-compatible canvas implementation. Do not pretend a text-layer
+      // pass saw geometry; surface the limitation until a renderer is provisioned.
+      doc.qualityIssues.push("pdf_visual_rendering_unavailable");
     }
     docs.push(doc);
   }

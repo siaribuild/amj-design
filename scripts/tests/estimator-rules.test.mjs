@@ -14,7 +14,7 @@ const outfile = join(runDir, "bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { toCandidate, fixtureCatalogueRepository, createCatalogueRepository } from ${p("worker/lib/estimator/catalogue.ts")};
+      export { toCandidate, fixtureCatalogueRepository, createCatalogueRepository, catalogueCandidateReadiness } from ${p("worker/lib/estimator/catalogue.ts")};
       export { checkHardRules, RULE_VERSION } from ${p("worker/lib/estimator/rules.ts")};
       export { computePrice, loadOptionSurcharges } from ${p("worker/lib/estimator/pricing.ts")};
       export { rankCandidates, selectWithConfidence } from ${p("worker/lib/estimator/rank.ts")};
@@ -27,7 +27,7 @@ await build({
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { toCandidate, fixtureCatalogueRepository, checkHardRules, computePrice, loadOptionSurcharges, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
+const { toCandidate, fixtureCatalogueRepository, catalogueCandidateReadiness, checkHardRules, computePrice, loadOptionSurcharges, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
 
 const RATE = { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" };
 const POLICY = { depositPercent: 40, gstMode: "inc", version: "v1" };
@@ -128,6 +128,68 @@ test("Uw and SHGC must be satisfied jointly by the same exact variant", () => {
   }, split);
   assert.equal(r.passed, false);
   assert.deepEqual(r.eligibleVariantIds, []);
+});
+
+test("material schedule glazing instructions constrain the exact eligible variant", () => {
+  const configurations = toCandidate({
+    ...awning,
+    performanceVariants: [
+      { ...awning.performanceVariants[0], variantId: "single", glassBuildUp: "6.38mm laminated", uValue: 5.6 },
+      { ...awning.performanceVariants[0], variantId: "double", glassBuildUp: "5 + 12A + 5 IGU", uValue: 3.2 },
+      { ...awning.performanceVariants[0], variantId: "double-low-e", glassBuildUp: "6mm Low-E + 15Ar + 6mm IGU", coating: "Low-E", uValue: 2.7 },
+    ],
+  });
+  const double = checkHardRules({
+    family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
+    scheduleRequirements: { doubleGlazed: true },
+  }, configurations);
+  assert.deepEqual(double.eligibleVariantIds, ["double", "double-low-e"]);
+
+  const lowEArgon = checkHardRules({
+    family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
+    scheduleRequirements: { doubleGlazed: true, glassDescription: "Low-E argon" },
+  }, configurations);
+  assert.deepEqual(lowEArgon.eligibleVariantIds, ["double-low-e"]);
+});
+
+test("human-approved thermal precedent is a conservative eligibility floor, not a certification claim", () => {
+  const configurations = toCandidate({
+    ...awning,
+    performanceVariants: [
+      { ...awning.performanceVariants[0], variantId: "standard", uValue: 3.9 },
+      { ...awning.performanceVariants[0], variantId: "improved", uValue: 2.6 },
+    ],
+  });
+  const learned = checkHardRules({
+    family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
+    advisoryRequirements: { maxUValue: 2.8 },
+    thermalContext: { requirementBasis: "human_override" },
+  }, configurations);
+  assert.deepEqual(learned.eligibleVariantIds, ["improved"]);
+  assert.equal(learned.energyCertified, false);
+
+  const explicitWins = checkHardRules({
+    family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
+    requirements: { maxUValue: 4.0 },
+    advisoryRequirements: { maxUValue: 2.0 },
+    thermalContext: { requirementBasis: "explicit_energy_report" },
+  }, configurations);
+  assert.deepEqual(explicitWins.eligibleVariantIds, ["standard", "improved"]);
+});
+
+test("catalogue readiness rejects placeholder thermal rows", () => {
+  const placeholder = cand();
+  assert.equal(catalogueCandidateReadiness(placeholder).ready, false);
+  assert.ok(catalogueCandidateReadiness(placeholder).gaps.includes("thermally_described_variant"));
+
+  const ready = {
+    ...placeholder,
+    performanceVariants: placeholder.performanceVariants.map((variant) => ({
+      ...variant,
+      frameTechnology: "conventional",
+    })),
+  };
+  assert.equal(catalogueCandidateReadiness(ready).ready, true);
 });
 
 test("selection prices the exact variant that met the report, with extracted quantity", async () => {

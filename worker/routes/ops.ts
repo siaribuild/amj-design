@@ -25,11 +25,11 @@ import { scanFile } from "../lib/scan";
 import {
   pricingOptionSlugsFromOptions, runProjectEstimate, toOpeningInput, type OpeningRow,
 } from "../lib/estimator/estimate";
-import { createCatalogueRepository, hasAnyExactPricingCoverage, sanityExecutor } from "../lib/estimator/catalogue";
+import { createCatalogueRepository, sanityExecutor } from "../lib/estimator/catalogue";
 import { checkHardRules } from "../lib/estimator/rules";
-import { runAiExtraction } from "../lib/ai/pipeline";
-import { reserveAiRunBudget } from "../lib/ai/jobs";
+import { retryCurrentAiExtraction } from "../lib/ai/jobs";
 import { isOverrideReason, OVERRIDE_REASONS } from "../lib/ai/schema";
+import { refreshLearningExampleEligibility } from "../lib/ai/examples";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { priceItem } from "../lib/lines";
 import { MissingSurcharge, priceLine } from "../lib/estimator/pricing";
@@ -1288,9 +1288,10 @@ ops.patch("/recommendation-outcomes/:id", async (c) => {
       `UPDATE recommendation_outcome
           SET quality_state='rejected', recommendation_eligible=0, thermal_eligible=0,
               reviewed_by=?, reviewed_at=datetime('now')
-        WHERE id=? AND quality_state='pending' RETURNING id`,
-    ).bind(staff.id, c.req.param("id")).first<{ id: string }>();
+        WHERE id=? AND quality_state='pending' RETURNING id, quote_revision_id`,
+    ).bind(staff.id, c.req.param("id")).first<{ id: string; quote_revision_id: string }>();
     if (!changed) return c.json({ error: "not_found_or_final" }, 409);
+    await refreshLearningExampleEligibility(c.env, changed.quote_revision_id).catch(() => false);
     return c.json({ ok: true, qualityState: "rejected" });
   }
   const reasonCode = String(body?.reasonCode ?? "").trim();
@@ -1321,12 +1322,13 @@ ops.patch("/recommendation-outcomes/:id", async (c) => {
             recommendation_eligible=?, thermal_eligible=?,
             reviewed_thermal_json=?, reviewed_by=?, reviewed_at=datetime('now')
       WHERE id=? AND decision='adjusted' AND quality_state='pending'
-      RETURNING id`,
+      RETURNING id, quote_revision_id`,
   ).bind(
     reasonCode, policy.ranker ? 1 : 0, policy.thermal ? 1 : 0,
     reviewedThermal, staff.id, c.req.param("id"),
-  ).first<{ id: string }>();
+  ).first<{ id: string; quote_revision_id: string }>();
   if (!changed) return c.json({ error: "not_found_or_final" }, 409);
+  await refreshLearningExampleEligibility(c.env, changed.quote_revision_id).catch(() => false);
   await logEvent(c.env, {
     actor: staff.id, entityType: "recommendation_outcome", entityId: changed.id,
     action: `adjudicated recommendation outcome: ${reasonCode}`,
@@ -1351,7 +1353,15 @@ ops.get("/projects/:id/recommendation-outcomes", async (c) => {
        FROM recommendation_outcome
       WHERE project_id=? ORDER BY created_at DESC`,
   ).bind(c.req.param("id")).all();
-  return c.json({ outcomes: results ?? [] });
+  return c.json({
+    outcomes: results ?? [],
+    reasonOptions: Object.entries(OVERRIDE_REASONS).map(([code, policy]) => ({
+      code,
+      layer: policy.layer,
+      learnsProductPreference: policy.ranker,
+      learnsThermalTarget: policy.thermal,
+    })),
+  });
 });
 
 // POST /api/ops/projects/:id/ai-runs — run the LLM building-modelling pipeline
@@ -1380,13 +1390,28 @@ ops.post("/projects/:id/ai-runs", async (c) => {
   const project = await c.env.DB.prepare("SELECT id FROM project WHERE id = ?").bind(projectId).first();
   if (!project) return c.json({ error: "not_found" }, 404);
   if (!c.env.AI) return c.json({ error: "ai_unavailable" }, 409);
-  if (!(await hasAnyExactPricingCoverage(c.env))) {
-    return c.json({ error: "pricing_catalogue_not_ready" }, 409);
+  try {
+    const queued = await retryCurrentAiExtraction(c.env, c.executionCtx, projectId);
+    await logEvent(c.env, {
+      actor: staff.id,
+      entityType: "project",
+      entityId: projectId,
+      action: queued.alreadyQueued
+        ? `AI extraction already queued for generation ${queued.job.generation}`
+        : `AI extraction retry queued for generation ${queued.job.generation}`,
+    });
+    return c.json({
+      accepted: true,
+      alreadyQueued: queued.alreadyQueued,
+      generation: queued.job.generation,
+      status: queued.alreadyQueued ? "in_progress" : "queued",
+    }, 202);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "ai_retry_failed";
+    if (code === "project_not_mutable") return c.json({ error: "project_not_mutable" }, 409);
+    if (code === "ai_generation_conflict") return c.json({ error: "project_changed_retry" }, 409);
+    throw error;
   }
-  if (!(await reserveAiRunBudget(c.env, projectId))) return c.json({ error: "ai_budget_exhausted" }, 429);
-  const summary = await runAiExtraction(c.env, projectId);
-  await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: projectId, action: `ai extraction ${summary.status} — ${summary.extractedLines} lines, ${summary.conflicts} conflicts` });
-  return c.json(summary);
 });
 
 // GET /api/ops/projects/:id/building-model — the latest evidence-linked building

@@ -97,6 +97,47 @@ export async function createLearningExample(env: Env, projectId: string, quoteRe
     return record.learningExampleId;
 }
 
+/**
+ * Promote an immutable example only after every outcome in the issued revision
+ * has been governed. A rejected/noise adjustment keeps the whole project example
+ * out of retrieval so commercial preference or customer-specific choices cannot
+ * be replayed as technical truth. Training remains a separate release process.
+ */
+export async function refreshLearningExampleEligibility(
+  env: Env,
+  quoteRevisionId: string,
+): Promise<boolean> {
+  const counts = await env.DB.prepare(
+    `SELECT count(*) AS total,
+            sum(CASE WHEN quality_state='approved' THEN 1 ELSE 0 END) AS approved,
+            sum(CASE WHEN quality_state='pending' THEN 1 ELSE 0 END) AS pending,
+            sum(CASE WHEN quality_state='rejected' THEN 1 ELSE 0 END) AS rejected,
+            sum(CASE WHEN recommendation_eligible=1 OR thermal_eligible=1 THEN 1 ELSE 0 END) AS learnable
+       FROM recommendation_outcome
+      WHERE quote_revision_id=?`,
+  ).bind(quoteRevisionId).first<{
+    total: number; approved: number | null; pending: number | null; rejected: number | null;
+    learnable: number | null;
+  }>();
+  const eligible = Number(counts?.total ?? 0) > 0 &&
+    Number(counts?.pending ?? 0) === 0 &&
+    Number(counts?.rejected ?? 0) === 0 &&
+    Number(counts?.approved ?? 0) === Number(counts?.total ?? 0) &&
+    Number(counts?.learnable ?? 0) === Number(counts?.total ?? 0);
+  const allFinal = Number(counts?.pending ?? 0) === 0;
+  const qualityState = eligible
+    ? "approved"
+    : Number(counts?.rejected ?? 0) > 0 || allFinal
+      ? "rejected"
+      : "pending";
+  await env.DB.prepare(
+    `UPDATE learning_examples
+        SET eligible_for_retrieval=?, quality_state=?
+      WHERE quote_revision_id=?`,
+  ).bind(eligible ? 1 : 0, qualityState, quoteRevisionId).run();
+  return eligible;
+}
+
 function safeParse(s: string | null | undefined): unknown {
   if (!s) return null;
   try { return JSON.parse(s); } catch { return null; }

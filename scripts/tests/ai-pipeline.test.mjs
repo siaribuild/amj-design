@@ -15,8 +15,8 @@ const outfile = join(runDir, "bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, ingestProjectFiles, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
-      export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext } from ${p("worker/lib/ai/pipeline.ts")};
+      export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
+      export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor } from ${p("worker/lib/ai/pipeline.ts")};
       export { mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1 } from ${p("worker/lib/ai/energyMap.ts")};
       export { applyDefaultEnvelope } from ${p("worker/lib/ai/pipeline.ts")};
       export { resolveDefaultEnvelope, defaultRequirement, ARCHETYPES } from ${p("worker/lib/ai/archetypes.ts")};
@@ -30,8 +30,8 @@ await build({
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
 const {
-  sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, ingestProjectFiles, MIN_IMAGE_DIM,
-  parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
+  sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM,
+  parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
   mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1,
   applyDefaultEnvelope, resolveDefaultEnvelope, defaultRequirement, ARCHETYPES, buildExampleRecord,
 } = await import(pathToFileURL(outfile).href);
@@ -89,6 +89,20 @@ test("classifyDocument: schedule vs energy report vs plans vs supporting", () =>
   assert.equal(classifyDocument("NatHERS certificate — star rating 7.1, SHGC 0.42, U-Value 2.9, cooling load", "report.pdf"), "energy_report");
   assert.equal(classifyDocument("GROUND FLOOR PLAN scale 1:100\nELEVATION north point site plan", "a01.pdf"), "plans");
   assert.equal(classifyDocument("invoice for consulting services", "invoice.pdf"), "supporting");
+});
+
+test("page routing: one architectural set can supply plan context and a schedule", () => {
+  const roles = classifyPageRoles([
+    "GROUND FLOOR PLAN\nNORTH POINT\nSCALE 1:100",
+    "WINDOW SCHEDULE\nMARK WIDTH HEIGHT TYPE QTY\nW01 1810 1200 AWNING 1",
+    "NORTH ELEVATION\nSECTION A-A\nSCALE 1:100",
+  ], "architectural-set.pdf");
+  assert.deepEqual(roles.schedule, [2]);
+  assert.deepEqual(roles.plans, [1, 3]);
+  assert.deepEqual(roles.energy_report, []);
+  assert.match(textForPages([
+    "GROUND FLOOR PLAN", "WINDOW SCHEDULE W01", "NORTH ELEVATION",
+  ], roles.schedule), /page 2[\s\S]*WINDOW SCHEDULE/);
 });
 
 test("ingestion queries scan-clean files only; legacy skipped files never reach AI", async () => {
@@ -171,6 +185,8 @@ test("ingest: a text PDF stays readable when the AI binding is absent", async ()
   const [doc] = await ingestProjectFiles(env, "p1");
   assert.match(doc.markdown ?? "", /WINDOW SCHEDULE/);
   assert.ok(doc.qualityIssues.includes("markdown_binding_unavailable"));
+  assert.ok(doc.roles.includes("schedule"), "the detected schedule page is routed to schedule extraction");
+  assert.deepEqual(doc.rolePages.schedule, [1]);
 });
 
 test("ingest: toMarkdown WINS when it works — no needless downgrade", async () => {
@@ -235,8 +251,9 @@ test("linesToBuildingModel: valid BuildingModelV1 with defaults as ASSUMPTIONS, 
   assert.equal(d01.elementType, "door");
   assert.ok(model.openings.every((o) => o.evidence.length > 0), "every opening carries evidence");
   assert.ok(model.openings.every((o) => o.thermalRequirement === null), "Mode A observes no thermal target");
-  assert.equal(model.jurisdiction.state, null, "unknown location is not silently hard-coded");
-  assert.equal(model.assumptions.some((a) => a.fact.includes("Melbourne")), false);
+  assert.equal(model.jurisdiction.state, "VIC", "Mode A has an explicit commercial-estimate fallback");
+  assert.equal(model.jurisdiction.confidence, 0, "the fallback cannot masquerade as observed evidence");
+  assert.ok(model.assumptions.some((a) => a.fact === "location_default=Melbourne,VIC"));
 });
 
 test("plan context enriches rooms, orientation and floor area without inventing a compliance target", () => {
@@ -258,6 +275,9 @@ test("plan context enriches rooms, orientation and floor area without inventing 
   const opening = model.openings[0];
   assert.equal(model.inputMode, "plans_no_report");
   assert.equal(model.building.totalFloorAreaM2, 210);
+  assert.equal(model.jurisdiction.state, "VIC");
+  assert.equal(model.assumptions.some((a) => a.fact.startsWith("location_default=")), false,
+    "plan evidence replaces the fallback location assumption");
   assert.equal(opening.roomId, "living");
   assert.equal(opening.wallOrientation, "W");
   assert.equal(opening.thermalRequirement, null);
@@ -275,6 +295,23 @@ test("plan context skill clamps untrusted plan output", () => {
   assert.equal(parsed.storeys, null);
   assert.equal(parsed.openings[0].orientation, null);
   assert.equal(parsed.openings[0].roomId, "living");
+});
+
+test("plan context skill rejects schema-valid but business-empty output", () => {
+  assert.equal(planContextExtractor.validate(JSON.stringify({
+    jurisdiction: { state: null, postcode: null, buildingClass: null },
+    storeys: null,
+    totalFloorAreaM2: null,
+    conditionedFloorAreaM2: null,
+    northRotationDeg: null,
+    rooms: [],
+    openings: [],
+    issues: ["nothing legible"],
+  })), null);
+  const schema = planContextExtractor.responseSchema;
+  assert.deepEqual(schema.properties.openings.items.required,
+    ["ref", "roomId", "orientation", "horizontalProjectionMm"],
+    "nested opening fields are part of the model contract, not generic objects");
 });
 
 // ── Schedule skill clamp (§14.3, §25) ────────────────────────────────────────
@@ -299,6 +336,8 @@ test("schedule skill: preserves tags exactly, clamps dims/qty, drops empty lines
   assert.deepEqual(out.docIssues, ["photo slightly skewed"]);
   assert.equal(scheduleExtractor.validate("no json here"), null);
   assert.equal(scheduleExtractor.validate(JSON.stringify({ lines: [] })), null, "zero usable lines is a failed extraction");
+  assert.equal(scheduleExtractor.validate(JSON.stringify({ lines: [{ tag: "", widthMm: 1200, heightMm: 900 }] })), null,
+    "untagged dimensions cannot silently count as a quoteable extraction");
 });
 
 // ── Phase 3: energy-report mapping (§9, §10.1 Path 1) ────────────────────────
@@ -327,6 +366,43 @@ test("energy map: exact ref match wins over a type rule", () => {
   assert.equal(req.maxUValue, 2.3, "exact ref requirement applied");
   assert.equal(req.matchKind, "exact");
   assert.equal(req.basis, "explicit_energy_report", "Path 1 basis — drives the §10.5 compliance language");
+});
+
+test("energy map normalizes drawing separators/case and uses room plus orientation", () => {
+  const r = mapEnergyToOpenings(extraction([
+    constraint({ ref: "w-01", room: "Living Room", orientation: "W", maxUValue: 2.4 }),
+    constraint({ ref: "W 01", room: "Bedroom 1", orientation: "E", maxUValue: 3.6 }),
+  ]), [opening("W01", { roomId: "living-room", wallOrientation: "W" })]);
+  assert.equal(r.requirements.get("W01").maxUValue, 2.4);
+  assert.equal(r.conflicts.length, 0);
+});
+
+test("energy map refuses equally specific contradictory report rows", () => {
+  const r = mapEnergyToOpenings(extraction([
+    constraint({ ref: "W01", room: "Living", orientation: "W", maxUValue: 2.4 }),
+    constraint({ ref: "w-01", room: "Living", orientation: "W", maxUValue: 3.2 }),
+  ]), [opening("W01", { roomId: "living", wallOrientation: "W" })]);
+  assert.equal(r.requirements.has("W01"), false, "array order must not decide the thermal requirement");
+  assert.equal(r.conflicts.length, 1);
+  assert.equal(r.conflicts[0].field, "thermalRequirement");
+  assert.equal(r.conflicts[0].resolution, "human_resolution_required");
+});
+
+test("energy map prefers a matching contextual type rule over a generic rule", () => {
+  const r = mapEnergyToOpenings(extraction([
+    constraint({ elementHint: "awning", maxUValue: 4.0 }),
+    constraint({ elementHint: "awning", room: "Living", orientation: "W", maxUValue: 2.7 }),
+  ]), [opening("W01", { roomId: "living", wallOrientation: "W" })]);
+  assert.equal(r.requirements.get("W01").maxUValue, 2.7);
+});
+
+test("energy map surfaces a ref whose room/orientation contradicts the opening", () => {
+  const row = constraint({ ref: "W01", room: "Bedroom", orientation: "E", maxUValue: 2.7 });
+  const r = mapEnergyToOpenings(extraction([row]), [
+    opening("W01", { roomId: "living", wallOrientation: "W" }),
+  ]);
+  assert.equal(r.requirements.has("W01"), false);
+  assert.deepEqual(r.unmatched, [row], "a same-tag contextual mismatch must not disappear");
 });
 
 test("energy map: child component constraints govern the parent frame with the STRICTEST values (§9.3)", () => {
@@ -424,6 +500,21 @@ test("applyDefaultEnvelope: fills only bare openings, never overrides an explici
   assert.equal(model.envelope.defaultArchetypeId, archetype.id);
   const assumption = model.assumptions.find((a) => a.fact.startsWith("default_envelope:"));
   assert.equal(assumption.origin, "envelope_default", "application recorded as an §8.2 assumption");
+});
+
+test("thermal context persists meaningful case-learning keys and review reasons", () => {
+  const merged = mergeScheduleLines([{ fileId: "f1", lines: [line("W01", 1810, 1200)] }]);
+  const model = linesToBuildingModel("prj_1", merged, []);
+  model.jurisdiction.buildingClass = "1a";
+  const archetype = applyDefaultEnvelope(model);
+  const context = thermalContextFor(model, model.openings[0], [
+    "energy_requirement_ambiguous", "energy_requirement_ambiguous",
+  ]);
+  assert.equal(context.climateZone, "6");
+  assert.equal(context.jurisdiction, "AU-VIC");
+  assert.equal(context.buildingClass, "1a");
+  assert.equal(context.envelopeClass, archetype.id);
+  assert.deepEqual(context.technicalReviewReasons, ["energy_requirement_ambiguous"]);
 });
 
 test("learning example: retrieval and training stay gated; the AI draft and the issued outcome are both carried (§17)", () => {

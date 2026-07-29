@@ -19,11 +19,12 @@ await build({
       export * as schema from ${p("worker/lib/ai/schema.ts")};
       export { evaluateEscalation, LOW_CONFIDENCE_THRESHOLD } from ${p("worker/lib/ai/escalation.ts")};
       export { stageInputHash, stageRawKey, runStage } from ${p("worker/lib/ai/stage.ts")};
-      export { runSkill, toVendorSchema, readModelText, readModelUsage } from ${p("worker/lib/estimator/skills/runner.ts")};
+      export { runSkill, toVendorSchema, readModelText, readModelUsage, classifyProviderFailure } from ${p("worker/lib/estimator/skills/runner.ts")};
       export { DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, PIPELINE_VERSION } from ${p("worker/lib/ai/versions.ts")};
       export { FEEDBACK_CATEGORIES } from ${p("worker/lib/estimator/persist.ts")};
       export { energyReportExtractor } from ${p("worker/lib/estimator/skills/energy.ts")};
       export { parseModelJson } from ${p("worker/lib/estimator/skills/json.ts")};
+      export { outcomeQualityState } from ${p("worker/lib/ai/outcomes.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
@@ -31,8 +32,8 @@ await build({
 });
 const {
   schema, evaluateEscalation, LOW_CONFIDENCE_THRESHOLD, stageInputHash, stageRawKey, runStage,
-  runSkill, toVendorSchema, readModelText, readModelUsage, DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, FEEDBACK_CATEGORIES,
-  energyReportExtractor, parseModelJson,
+  runSkill, toVendorSchema, readModelText, readModelUsage, classifyProviderFailure, DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, FEEDBACK_CATEGORIES,
+  energyReportExtractor, parseModelJson, outcomeQualityState,
 } = await import(pathToFileURL(outfile).href);
 
 // ── Test doubles ─────────────────────────────────────────────────────────────
@@ -91,6 +92,12 @@ test("override taxonomy: all 18 §17.3 codes present, each mapped to a valid lea
   }
   assert.ok(schema.isOverrideReason("WRONG_DIMENSION"));
   assert.ok(!schema.isOverrideReason("MADE_UP_CODE"));
+});
+
+test("a line without an AI proposal is finalized as non-learnable", () => {
+  assert.equal(outcomeQualityState("no_ai_proposal", false), "rejected");
+  assert.equal(outcomeQualityState("adjusted", false), "pending");
+  assert.equal(outcomeQualityState("accepted", true), "approved");
 });
 
 test("taxonomy: only preference/commercial codes may train the ranker; thermal training excludes commercial preference (§17.5)", () => {
@@ -200,8 +207,10 @@ test("runner: schema failure triggers exactly ONE repair pass, which can rescue 
   assert.equal(run.repaired, true);
   assert.ok(run.warnings.includes("skill_output_repaired"));
   assert.equal(aiCalls.length, 2, "one primary + one repair, never more");
-  assert.match(aiCalls[1].params.contents.at(-1).parts[0].text, /failed schema validation/i);
-  assert.equal(aiCalls[1].params.contents[1].role, "model", "Google has no assistant role");
+  assert.equal(aiCalls[1].params.contents.length, 1, "repair does not resend the source document or multimodal payload");
+  assert.match(aiCalls[1].params.contents[0].parts[0].text, /repair the following model response/i);
+  assert.doesNotMatch(aiCalls[1].params.contents[0].parts[0].text, /TASK:\{\}/,
+    "only the rejected answer and schema are needed for structural repair");
 });
 
 test("runner: repair is bounded — two invalid responses ⇒ fail soft, no third call", async () => {
@@ -218,6 +227,20 @@ test("runner: transport failure fails soft (degradation, not an exception)", asy
   const run = await runSkill(env, testSkill, {});
   assert.ok(!run.ok);
   assert.ok(run.warnings.includes("skill_call_failed"));
+  assert.equal(run.failureKind, "permanent_request");
+});
+
+test("runner: provider errors retain retry semantics", () => {
+  assert.equal(classifyProviderFailure(new Error("HTTP 429 RESOURCE_EXHAUSTED")), "transient_rate_limit");
+  assert.equal(classifyProviderFailure(new Error("503 service unavailable")), "transient_provider");
+  assert.equal(classifyProviderFailure(new Error("7003 User Input Error (400)")), "permanent_request");
+});
+
+test("runner: rate limits emit the structured warning consumed by job retry policy", async () => {
+  const { env } = fakeEnv({ responses: [new Error("HTTP 429 RESOURCE_EXHAUSTED")] });
+  const run = await runSkill(env, testSkill, {});
+  assert.equal(run.failureKind, "transient_rate_limit");
+  assert.ok(run.warnings.includes("skill_call_rate_limited"));
 });
 
 test("energy skill: carries a prompt version and no hardcoded model (single-model policy)", () => {

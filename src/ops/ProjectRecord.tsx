@@ -27,8 +27,10 @@ import {
   opsRequestClarification, opsAddNote, opsPatchLine, opsAdvanceOrder, opsPayOrder,
   opsSplitLine, opsMergeComposite,
   opsPatchSegment, opsAddSegment, opsRemoveSegment, opsLinePricePreview,
+  opsLineConfigurations, opsRecommendationOutcomes, opsAdjudicateRecommendationOutcome,
   OPS_PHASES, type OpsWorkspace, type OpsPhase, type OpsRecordAction, type OpsSegment,
-  type OpsCompositePolicy,
+  type OpsCompositePolicy, type OpsExactConfiguration, type OpsRecommendationOutcome,
+  type OpsRecommendationReason,
 } from "./api";
 // The SAME editor the customer configures an opening with. Ops hydrates the same
 // Sanity catalogue (src/ops/main.tsx), so product and option metadata are already
@@ -57,7 +59,31 @@ const ACTION_ERRORS: Record<string, string> = {
   workflow_changed_retry: "This job moved to another state while you had it open. Reload to see where it is now.",
   stage_conflict: "That step has already been taken. Reload to see the current state.",
   forbidden_role: "You don't have permission for that action.",
+  valid_thermal_target_required: "Enter a valid Uw and SHGC range before using this lesson.",
+  thermal_review_role_required: "Your account cannot approve a thermal learning target.",
+  not_found_or_final: "This learning decision was already finalized. Reload to see its current state.",
+  configuration_not_eligible: "That frame and glazing configuration is no longer eligible. Reload the configurations and choose again.",
+  selected_variant_required: "Choose an exact frame and glazing configuration before saving.",
+  exact_pricing_unavailable: "That configuration does not currently have a complete exact price.",
 };
+
+const humanLabel = (value: string) => value
+  .replace(/([a-z])([A-Z])/g, "$1 $2")
+  .replaceAll("_", " ")
+  .toLowerCase()
+  .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const reviewReasons = (review: Record<string, unknown> | null): string[] =>
+  Object.entries(review ?? {}).map(([key, value]) => {
+    const label = key === "noLongerInDocuments"
+      ? "No longer in current documents"
+      : key === "thermalRecommendation"
+        ? "Thermal configuration"
+        : humanLabel(key);
+    return typeof value === "string" && value.trim() && value !== "true"
+      ? `${label}: ${value}`
+      : label;
+  });
 
 export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }) {
   const [ws, setWs] = useState<OpsWorkspace | null>(null);
@@ -70,8 +96,27 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
   // reference, or the clarification message).
   const [confirming, setConfirming] = useState<OpsRecordAction | null>(null);
   const [confirmText, setConfirmText] = useState("");
+  const [learning, setLearning] = useState<{
+    outcomes: OpsRecommendationOutcome[];
+    reasonOptions: OpsRecommendationReason[];
+    status: "loading" | "ready" | "error";
+  }>({ outcomes: [], reasonOptions: [], status: "loading" });
 
-  const load = () => opsProject(id).then(setWs).catch(() => setWs(null));
+  const load = async () => {
+    try {
+      setWs(await opsProject(id));
+    } catch {
+      setWs(null);
+      return;
+    }
+    setLearning((current) => ({ ...current, status: "loading" }));
+    try {
+      const result = await opsRecommendationOutcomes(id);
+      setLearning({ ...result, status: "ready" });
+    } catch {
+      setLearning((current) => ({ ...current, status: "error" }));
+    }
+  };
   useEffect(() => { load(); }, [id]);
 
   const run = async (fn: () => Promise<unknown>) => {
@@ -105,8 +150,8 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
   const contractLines = ws.orderLines ?? [];
   const showingContract = !!order && contractLines.length > 0;
   const rows = showingContract
-    ? contractLines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: "ready", lineKind: "simple", segments: [] as OpsSegment[], productSlug: "", options: {} as Record<string, string>, compositeAxis: null as string | null }))
-    : ws.lines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: l.status, lineKind: l.lineKind ?? "simple", segments: l.segments ?? [], productSlug: l.productSlug, options: l.options ?? {}, compositeAxis: l.compositeAxis ?? null }));
+    ? contractLines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: "ready", lineKind: "simple", segments: [] as OpsSegment[], productSlug: "", options: {} as Record<string, string>, compositeAxis: null as string | null, origin: "revision", selectedVariantId: null as string | null, review: null as Record<string, string> | null }))
+    : ws.lines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: l.status, lineKind: l.lineKind ?? "simple", segments: l.segments ?? [], productSlug: l.productSlug, options: l.options ?? {}, compositeAxis: l.compositeAxis ?? null, origin: l.origin, selectedVariantId: l.selectedVariantId, review: l.review }));
   const total = rows.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
 
   // Three modes, and the difference must be visible. The server only accepts line
@@ -202,7 +247,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
         )}
 
         {error && (
-          <p className="mt-3 text-[13px] px-3 py-2 border" style={{ background: "rgba(180,60,40,0.07)", borderColor: "rgba(180,60,40,0.28)", color: "#8a3b2a" }}>{error}</p>
+          <p role="alert" aria-live="assertive" className="mt-3 text-[13px] px-3 py-2 border" style={{ background: "rgba(180,60,40,0.07)", borderColor: "rgba(180,60,40,0.28)", color: "#8a3b2a" }}>{error}</p>
         )}
 
         {/* The blocker, said once, in the header — not discovered at the bottom. */}
@@ -277,6 +322,33 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
             </div>
           </div>
 
+          {ws.revisions.length > 0 && learning.status === "loading" && (
+            <Block title="Teach future estimates">
+              <p role="status" className="px-4 py-3 text-[13px]" style={{ color: MUTED }}>
+                Loading learning decisions...
+              </p>
+            </Block>
+          )}
+          {ws.revisions.length > 0 && learning.status === "error" && (
+            <Block title="Teach future estimates">
+              <div role="alert" className="px-4 py-3 text-[13px]" style={{ color: "var(--warning-ink)" }}>
+                Learning decisions could not be loaded.{" "}
+                <button onClick={() => void load()} className="underline underline-offset-2" style={{ color: SAGE }}>
+                  Try again
+                </button>
+              </div>
+            </Block>
+          )}
+          {learning.status === "ready" &&
+            learning.outcomes.some((outcome) => outcome.quality_state === "pending" && outcome.decision === "adjusted") && (
+            <LearningReview
+              outcomes={learning.outcomes}
+              reasons={learning.reasonOptions}
+              busy={busy}
+              onRun={run}
+            />
+          )}
+
           {ws.comments.length > 0 && (
             <Block title="Notes" icon={<FileText className="w-3.5 h-3.5" />}>
               {ws.comments.slice(0, 6).map((cm) => (
@@ -346,6 +418,212 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
         </div>
       </div>
     </div>
+  );
+}
+
+function LearningReview({ outcomes, reasons, busy, onRun }: {
+  outcomes: OpsRecommendationOutcome[];
+  reasons: OpsRecommendationReason[];
+  busy: boolean;
+  onRun: (fn: () => Promise<unknown>) => Promise<void>;
+}) {
+  const pending = outcomes.filter((outcome) =>
+    outcome.quality_state === "pending" && outcome.decision === "adjusted");
+  const [reasonById, setReasonById] = useState<Record<string, string>>({});
+  const [thermalById, setThermalById] = useState<Record<string, {
+    maxUValue: string; minShgc: string; maxShgc: string;
+  }>>({});
+  const [confirming, setConfirming] = useState<{ id: string; action: "approve" | "reject" } | null>(null);
+
+  const thermalError = (
+    reason: OpsRecommendationReason | undefined,
+    thermal: { maxUValue: string; minShgc: string; maxShgc: string },
+  ): string => {
+    if (!reason?.learnsThermalTarget) return "";
+    const maxU = Number(thermal.maxUValue);
+    const minShgc = thermal.minShgc === "" ? null : Number(thermal.minShgc);
+    const maxShgc = thermal.maxShgc === "" ? null : Number(thermal.maxShgc);
+    if (thermal.maxUValue.trim() === "" || !Number.isFinite(maxU) || maxU < 0.5 || maxU > 10) {
+      return "Maximum Uw must be between 0.5 and 10.";
+    }
+    if (minShgc != null && (!Number.isFinite(minShgc) || minShgc < 0 || minShgc > 1)) {
+      return "Minimum SHGC must be between 0 and 1.";
+    }
+    if (maxShgc != null && (!Number.isFinite(maxShgc) || maxShgc < 0 || maxShgc > 1)) {
+      return "Maximum SHGC must be between 0 and 1.";
+    }
+    if (minShgc != null && maxShgc != null && minShgc > maxShgc) {
+      return "Minimum SHGC cannot be greater than maximum SHGC.";
+    }
+    return "";
+  };
+
+  return (
+    <Block title="Teach future estimates" meta={`${pending.length} decision${pending.length === 1 ? "" : "s"}`}>
+      <p className="px-4 py-3 text-[13px] border-b border-black/5" style={{ color: MUTED }}>
+        Classify only the reason for the final human change. Product preference and thermal corrections
+        are learned separately; rejecting an outcome keeps it out of future recommendations.
+      </p>
+      {pending.map((outcome) => {
+        const selectedReason = reasons.find((reason) => reason.code === reasonById[outcome.id]);
+        const thermal = thermalById[outcome.id] ?? { maxUValue: "", minShgc: "", maxShgc: "" };
+        const validationError = thermalError(selectedReason, thermal);
+        const canApprove = !!selectedReason && !validationError;
+        const confirm = confirming?.id === outcome.id ? confirming : null;
+        const reasonId = `learning-reason-${outcome.id}`;
+        return (
+          <div key={outcome.id} className="px-4 py-4 border-b border-black/5 last:border-0">
+            <p className="text-sm" style={{ color: INK }}>
+              <span style={MONO}>{outcome.external_ref || "Opening"}</span>
+              {" · "}{outcome.proposed_product_slug || "No AI product"}
+              {outcome.proposed_variant_id ? ` / ${outcome.proposed_variant_id}` : ""}
+              {" → "}{outcome.final_product_slug}
+              {outcome.final_variant_id ? ` / ${outcome.final_variant_id}` : ""}
+            </p>
+            <p className="text-xs mt-1" style={{ color: MUTED }}>
+              AI {money(outcome.proposed_line_total)} · issued {money(outcome.final_line_total)}
+              {outcome.price_delta != null ? ` · change ${money(outcome.price_delta)}` : ""}
+            </p>
+            <div className="mt-3 flex flex-col sm:flex-row gap-2">
+              <label htmlFor={reasonId} className="sr-only">Reason for changing {outcome.external_ref || "opening"}</label>
+              <select
+                id={reasonId}
+                value={reasonById[outcome.id] ?? ""}
+                onChange={(event) => setReasonById((current) => ({
+                  ...current, [outcome.id]: event.target.value,
+                }))}
+                className="flex-1 border border-black/15 px-2.5 py-2 text-sm bg-white"
+              >
+                <option value="">Why did the human change it?</option>
+                {reasons.map((reason) => (
+                  <option key={reason.code} value={reason.code}>
+                    {humanLabel(reason.code)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selectedReason?.learnsThermalTarget && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+                <label className="text-xs" style={{ color: MUTED }}>
+                  Maximum Uw
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0.5"
+                    max="10"
+                    step="0.01"
+                    aria-invalid={!!validationError}
+                    value={thermal.maxUValue}
+                    onChange={(event) => setThermalById((current) => ({
+                      ...current,
+                      [outcome.id]: { ...thermal, maxUValue: event.target.value },
+                    }))}
+                    className="block w-full mt-1 border border-black/15 px-2.5 py-2 text-sm bg-white"
+                    placeholder="e.g. 2.6"
+                  />
+                </label>
+                <label className="text-xs" style={{ color: MUTED }}>
+                  Minimum SHGC (optional)
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    aria-invalid={!!validationError}
+                    value={thermal.minShgc}
+                    onChange={(event) => setThermalById((current) => ({
+                      ...current,
+                      [outcome.id]: { ...thermal, minShgc: event.target.value },
+                    }))}
+                    className="block w-full mt-1 border border-black/15 px-2.5 py-2 text-sm bg-white"
+                    placeholder="e.g. 0.30"
+                  />
+                </label>
+                <label className="text-xs" style={{ color: MUTED }}>
+                  Maximum SHGC (optional)
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    aria-invalid={!!validationError}
+                    value={thermal.maxShgc}
+                    onChange={(event) => setThermalById((current) => ({
+                      ...current,
+                      [outcome.id]: { ...thermal, maxShgc: event.target.value },
+                    }))}
+                    className="block w-full mt-1 border border-black/15 px-2.5 py-2 text-sm bg-white"
+                    placeholder="e.g. 0.55"
+                  />
+                </label>
+              </div>
+            )}
+            {validationError && selectedReason?.learnsThermalTarget && (
+              <p role="alert" className="text-xs mt-2" style={{ color: "var(--warning-ink)" }}>{validationError}</p>
+            )}
+            {confirm ? (
+              <div className="mt-3 border border-black/10 p-3" style={{ background: "rgba(90,122,106,0.06)" }}>
+                <p className="text-xs" style={{ color: INK }}>
+                  {confirm.action === "approve"
+                    ? `Use ${humanLabel(selectedReason?.code ?? "")} as a permanent lesson for future estimates?`
+                    : "Permanently exclude this adjustment from future learning?"}
+                </p>
+                <div className="mt-2 flex gap-3 items-center">
+                  <button
+                    disabled={busy || (confirm.action === "approve" && !canApprove)}
+                    onClick={() => onRun(() => opsAdjudicateRecommendationOutcome(outcome.id,
+                      confirm.action === "reject"
+                        ? { action: "reject" }
+                        : {
+                            action: "approve",
+                            reasonCode: selectedReason?.code,
+                            thermalTarget: selectedReason?.learnsThermalTarget ? {
+                              maxUValue: Number(thermal.maxUValue),
+                              minShgc: thermal.minShgc === "" ? null : Number(thermal.minShgc),
+                              maxShgc: thermal.maxShgc === "" ? null : Number(thermal.maxShgc),
+                            } : undefined,
+                          }))}
+                    className="text-sm px-3 py-1.5 disabled:opacity-45"
+                    style={{ background: SAGE, color: "#fff" }}
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => setConfirming(null)}
+                    className="text-sm underline underline-offset-2 disabled:opacity-45"
+                    style={{ color: MUTED }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 flex gap-3 items-center">
+                <button
+                  disabled={busy || !canApprove}
+                  onClick={() => setConfirming({ id: outcome.id, action: "approve" })}
+                  className="text-sm px-3 py-1.5 disabled:opacity-45"
+                  style={{ background: SAGE, color: "#fff" }}
+                >
+                  Use as a lesson
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() => setConfirming({ id: outcome.id, action: "reject" })}
+                  className="text-sm underline underline-offset-2 disabled:opacity-45"
+                  style={{ color: MUTED }}
+                >
+                  Exclude from learning
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </Block>
   );
 }
 
@@ -440,6 +718,8 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
     qty: number; lineTotal: number | null; status: string;
     lineKind: string; segments: OpsSegment[]; productSlug: string;
     options: Record<string, string>; compositeAxis: string | null;
+    origin: string; selectedVariantId: string | null;
+    review: Record<string, string> | null;
   };
   editable: boolean; busy: boolean;
   policy?: OpsCompositePolicy;
@@ -451,8 +731,14 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
   const [editingUnit, setEditingUnit] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [configurations, setConfigurations] = useState<OpsExactConfiguration[]>([]);
+  const [configurationKey, setConfigurationKey] = useState("");
+  const [configurationState, setConfigurationState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [configurationReload, setConfigurationReload] = useState(0);
+  const [resolveChecks, setResolveChecks] = useState(false);
 
   const composite = line.lineKind === "composite_parent";
+  const aiManaged = line.origin === "ai" || !!line.selectedVariantId;
   const axis: "vertical" | "horizontal" = line.compositeAxis === "horizontal" ? "horizontal" : "vertical";
   // ItemForm reads `items` only — for the duplicate-code check. The record's own
   // lines ARE the sibling set, so a reviewer renaming W01 to W02 is told.
@@ -461,14 +747,55 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
   const fail = (e: unknown, fallback: string) =>
     onError(e instanceof OpsApiError ? (ACTION_ERRORS[e.code] ?? fallback) : fallback);
 
+  useEffect(() => {
+    if (!editing || !aiManaged) {
+      setConfigurationState("idle");
+      return;
+    }
+    let active = true;
+    setConfigurationState("loading");
+    opsLineConfigurations(line.id).then(({ configurations: rows }) => {
+      if (!active) return;
+      setConfigurations(rows);
+      const current = rows.find((row) =>
+        row.productSlug === line.productSlug && row.variantId === line.selectedVariantId);
+      setConfigurationKey(current ? `${current.productSlug}::${current.variantId}` : "");
+      setConfigurationState("ready");
+    }).catch(() => {
+      if (active) {
+        setConfigurations([]);
+        setConfigurationState("error");
+      }
+    });
+    return () => { active = false; };
+  }, [editing, aiManaged, line.id, line.productSlug, line.selectedVariantId, configurationReload]);
+
   const saveLine = async (built: { productSlug: string; width: string; height: string; options: Record<string, string>; qty: number; code: string; location: string }) => {
     setSaving(true);
     try {
+      const chosen = aiManaged
+        ? configurations.find((row) => `${row.productSlug}::${row.variantId}` === configurationKey)
+        : null;
+      if (aiManaged && configurationState !== "ready") {
+        onError("The eligible configurations have not loaded. Try loading them again before saving.");
+        return;
+      }
+      if (aiManaged && !chosen) {
+        onError("Choose an exact frame and glazing configuration before saving this AI-assisted line.");
+        return;
+      }
+      if (chosen && chosen.productSlug !== built.productSlug) {
+        onError("The selected thermal configuration belongs to a different product. Choose a configuration for this product.");
+        return;
+      }
       await opsPatchLine(line.id, {
         productSlug: built.productSlug, width: built.width, height: built.height,
         options: built.options, qty: built.qty, code: built.code, room: built.location,
+        selectedVariantId: chosen?.variantId,
+        resolveReview: resolveChecks ? true : undefined,
       });
       setEditing(false);
+      setResolveChecks(false);
       onSaved();
     } catch (e) { fail(e, "That line could not be saved."); }
     finally { setSaving(false); }
@@ -527,6 +854,16 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
       <td className="px-3 py-2" style={{ color: INK }}>
         {line.productName}
         {line.room && <span className="block text-[11px]" style={{ color: MUTED }}>{line.room}</span>}
+        {line.selectedVariantId && (
+          <span className="block text-[11px]" style={{ ...MONO, color: MUTED }}>
+            configuration · {line.selectedVariantId}
+          </span>
+        )}
+        {line.review && Object.keys(line.review).length > 0 && (
+          <ul className="text-[11px] mt-1 list-disc pl-4" style={{ color: "var(--warning-ink)" }}>
+            {reviewReasons(line.review).map((reason, index) => <li key={`${index}-${reason}`}>{reason}</li>)}
+          </ul>
+        )}
         {composite && (
           <span className="block text-[11px]" style={{ ...MONO, color: SAGE }}>
             composite · {line.segments.length} joined unit{line.segments.length === 1 ? "" : "s"}
@@ -564,12 +901,80 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
     {editing && (
       <tr>
         <td colSpan={6} className="px-4 py-4" style={{ background: "rgba(90,122,106,0.06)" }}>
+          {(aiManaged || !!line.review) && (
+            <div className="mb-4 border border-black/10 bg-white p-3">
+              {aiManaged && (<>
+              <label htmlFor={`configuration-${line.id}`} className="block text-[11px] uppercase tracking-wide mb-1.5" style={{ color: MUTED }}>
+                Exact frame and glazing configuration
+              </label>
+              <select
+                id={`configuration-${line.id}`}
+                value={configurationKey}
+                onChange={(event) => setConfigurationKey(event.target.value)}
+                disabled={configurationState !== "ready"}
+                className="w-full border border-black/15 px-2.5 py-2 text-sm bg-white"
+              >
+                <option value="">
+                  {configurationState === "loading" ? "Loading eligible configurations..." : "Select a currently eligible configuration"}
+                </option>
+                {configurations.map((configuration) => (
+                  <option
+                    key={`${configuration.productSlug}::${configuration.variantId}`}
+                    value={`${configuration.productSlug}::${configuration.variantId}`}
+                  >
+                    {configuration.productName} · {configuration.frameTechnology.replaceAll("_", " ")}
+                    {configuration.glassBuildUp ? ` · ${configuration.glassBuildUp}` : ""}
+                    {configuration.coating ? ` · ${configuration.coating}` : ""}
+                    {configuration.uValue != null ? ` · Uw ${configuration.uValue}` : ""}
+                    {configuration.shgc != null ? ` · SHGC ${configuration.shgc}` : ""}
+                  </option>
+                ))}
+              </select>
+              {configurationState === "error" && (
+                <p role="alert" className="text-xs mt-1.5" style={{ color: "var(--warning-ink)" }}>
+                  Eligible configurations could not be loaded.{" "}
+                  <button
+                    type="button"
+                    onClick={() => setConfigurationReload((value) => value + 1)}
+                    className="underline underline-offset-2"
+                    style={{ color: SAGE }}
+                  >
+                    Try again
+                  </button>
+                </p>
+              )}
+              {configurationState === "ready" && configurations.length === 0 && (
+                <p className="text-xs mt-1.5" style={{ color: "var(--warning-ink)" }}>
+                  No eligible, exactly priceable thermal configuration is available for this opening.
+                </p>
+              )}
+              </>)}
+              {line.review && Object.keys(line.review).length > 0 && (
+                <label className="flex gap-2 items-start mt-3 text-xs" style={{ color: INK }}>
+                  <input
+                    type="checkbox"
+                    checked={resolveChecks}
+                    onChange={(event) => setResolveChecks(event.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    I checked and resolved:
+                    <span className="block mt-1">{reviewReasons(line.review).join("; ")}</span>
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
           <ItemForm
+            key={configurationKey || "line-editor"}
             quote={quoteLike}
             priceFn={opsLinePricePreview(line.id)}
             submitLabel={saving ? "Saving…" : "Save line"}
             seed={{
-              code: line.code, productSlug: line.productSlug, location: line.room,
+              code: line.code,
+              productSlug: configurations.find((row) =>
+                `${row.productSlug}::${row.variantId}` === configurationKey)?.productSlug ?? line.productSlug,
+              location: line.room,
               width: line.width, height: line.height, options: line.options, qty: line.qty,
             }}
             onCommit={(built) => saveLine(built as never)}

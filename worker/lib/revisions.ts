@@ -5,6 +5,7 @@ import type { Env } from "../types";
 import { uuid } from "./util";
 import { getProductBySlug } from "../../src/data/catalogue";
 import { captureRecommendationOutcomes, type IssuedCartLine } from "./ai/outcomes";
+import { createLearningExample, refreshLearningExampleEligibility } from "./ai/examples";
 
 function safeParse(s: string): Record<string, unknown> {
   try { const v = JSON.parse(s || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; }
@@ -43,6 +44,11 @@ export async function processLearningOutbox(env: Env, outboxId: string): Promise
     const payload = JSON.parse(row.payload_json) as LearningOutboxPayload;
     if (!Array.isArray(payload.lines)) throw new Error("invalid_learning_payload");
     await captureRecommendationOutcomes(env, row.project_id, row.quote_revision_id, payload.lines);
+    // The immutable AI-vs-human record is best-effort and never blocks quote
+    // issuance. Eligibility is governed separately: exact human acceptance is
+    // approved immediately; adjusted lines remain pending until adjudicated.
+    const exampleId = await createLearningExample(env, row.project_id, row.quote_revision_id);
+    if (exampleId) await refreshLearningExampleEligibility(env, row.quote_revision_id);
     await env.DB.prepare(
       `UPDATE learning_outbox
           SET status='completed', completed_at=datetime('now'),

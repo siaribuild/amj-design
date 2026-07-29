@@ -10,7 +10,7 @@ import type { Env } from "../../types";
 // accepted. That changes what every skill actually asks for, so the idempotency
 // key must change with it — otherwise a stage cached under the old prompt would
 // replay against the new contract.
-export const PIPELINE_VERSION = "2026-07-29.1";
+export const PIPELINE_VERSION = "2026-07-29.2";
 export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.0";
 
 // §13.1/§13.2 model routing. SINGLE-MODEL POLICY (owner decision 2026-07-25):

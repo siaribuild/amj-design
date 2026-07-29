@@ -107,14 +107,45 @@ export interface CatalogueRepository {
   catalogueVersion(candidates: CatalogueCandidate[]): string;
 }
 
+export interface CatalogueCandidateReadiness {
+  ready: boolean;
+  gaps: string[];
+  usableVariantIds: string[];
+}
+
+/**
+ * Minimum contract required for a thermally meaningful, priceable selection.
+ * A placeholder performance row is not readiness: the estimator must be able to
+ * distinguish the glass/frame configuration whose cost it is recommending.
+ */
+export function catalogueCandidateReadiness(candidate: CatalogueCandidate): CatalogueCandidateReadiness {
+  const gaps: string[] = [];
+  if (!candidate.pricingRef) gaps.push("pricing_ref");
+  if (!candidate.configuration?.operationTypes?.length) gaps.push("operation_types");
+  if (!candidate.dimensionRule) gaps.push("dimension_rule");
+  const usableVariantIds = candidate.performanceVariants
+    .filter((variant) =>
+      variant.published &&
+      variant.uValue != null &&
+      variant.shgc != null &&
+      !!variant.glassBuildUp &&
+      variant.frameTechnology !== "unknown")
+    .map((variant) => variant.variantId);
+  if (!usableVariantIds.length) gaps.push("thermally_described_variant");
+  return { ready: gaps.length === 0, gaps, usableVariantIds };
+}
+
 /** Cheap production preflight used before model spend. It does not promise that
  * every future opening is priceable; it prevents spending when the published
- * catalogue and private rate card have no overlap at all. */
+ * catalogue and private rate card have no thermally meaningful overlap at all. */
 export async function hasAnyExactPricingCoverage(env: Env): Promise<boolean> {
   if (!env.SANITY_PROJECT_ID) return true;
   const repo = createCatalogueRepository(sanityExecutor(env));
   const candidates = await repo.queryCandidates(null, null);
-  const refs = [...new Set(candidates.map((candidate) => candidate.pricingRef).filter((ref): ref is string => !!ref))];
+  const refs = [...new Set(candidates
+    .filter((candidate) => catalogueCandidateReadiness(candidate).ready)
+    .map((candidate) => candidate.pricingRef)
+    .filter((ref): ref is string => !!ref))];
   if (!refs.length) return false;
   const placeholders = refs.map(() => "?").join(",");
   const row = await env.DB.prepare(

@@ -78,13 +78,17 @@ export interface OpeningInput {
     jurisdiction?: string | null;
     buildingClass?: string | null;
     envelopeClass?: string | null;
+    /** Governed human precedent constrained eligibility; never certification. */
+    thermalPrecedentApplied?: boolean;
+    /** Document reconciliation issues that must survive selection into review. */
+    technicalReviewReasons?: string[];
   } | null;
   requirements?: {
     maxUValue?: number | null;
     minShgc?: number | null;
     maxShgc?: number | null;
   } | null;
-  /** Governed human precedent used to rank, never as a compliance hard rule. */
+  /** Governed human precedent used as a conservative eligibility floor. */
   advisoryRequirements?: {
     maxUValue?: number | null;
     minShgc?: number | null;

@@ -1,9 +1,8 @@
-// Phase 1 pipeline (LLM strategy §23 Phase 1): ingest → Gemini schedule
-// extraction (per document, idempotent stage) → merged evidence-linked
-// BuildingModelV1 → opening_requirements → deterministic selection for draft
-// lines. Modes B/C (plan geometry, energy-report precedence) are later phases;
-// this run handles Mode A honestly: schedule text/photos, Melbourne default
-// context recorded as an ASSUMPTION (§3.1), never as an observed fact.
+// AI building-model pipeline: ingest → page-aware schedule/plan/energy skills →
+// merged evidence-linked BuildingModelV1 → deterministic requirements and
+// product selection. The model extracts evidence; deterministic code owns
+// precedence, eligibility and pricing. Mode-A Melbourne/VIC context is always
+// recorded as a fallback assumption and is replaced by project evidence.
 //
 // Persistence: writes the CANONICAL 0016 records (building_models,
 // evidence_items, opening_requirements). Draft-line selection still routes
@@ -18,13 +17,14 @@ import { ingestProjectFiles, type IngestedDoc } from "./ingest";
 import { scheduleExtractor, type ScheduleLineV1 } from "../estimator/skills/schedule";
 import { energyReportExtractor, type EnergyExtraction } from "../estimator/skills/energy";
 import { planContextExtractor, type PlanContextV1 } from "../estimator/skills/plan";
-import { mapEnergyToOpenings } from "./energyMap";
+import { mapEnergyToOpenings, normalizeOpeningRef } from "./energyMap";
 import { resolveDefaultEnvelope, defaultRequirement, ARCHETYPE_REGISTRY_VERSION, type EnvelopeArchetype } from "./archetypes";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
 import { runProjectEstimate } from "../estimator/estimate";
 import { resolveScheduleType } from "../../../src/data/scheduleMatch";
 import { sha256hex } from "./hash";
+import type { SkillFailureKind } from "../estimator/skills/types";
 
 // ── Pure: §9.3 parent/child tag decomposition ────────────────────────────────
 // W04A/W04B are thermal children of architectural parent W04; a bare W04 or W12
@@ -118,8 +118,8 @@ export function linesToBuildingModel(projectId: string, merged: MergeResult, doc
     inputMode: "schedule_only",
     jurisdiction: {
       // §3.1 minimum context — a DEFAULT, recorded as such below, never observed.
-      country: "AU", state: null, postcode: null, nccProfile: null,
-      nathersClimateZone: null, buildingClass: null, confidence: null,
+      country: "AU", state: "VIC", postcode: null, nccProfile: null,
+      nathersClimateZone: 6, buildingClass: null, confidence: 0,
     },
     building: { storeys: null, conditionedFloorAreaM2: null, totalFloorAreaM2: null, exposure: null, northRotationDeg: null, balRating: null },
     envelope: { walls: [], floors: [], ceilings: [], roofs: [], airTightness: null, defaultArchetypeId: null },
@@ -127,12 +127,20 @@ export function linesToBuildingModel(projectId: string, merged: MergeResult, doc
     openings,
     energyAssessment: null,
     assumptions: [
-      { fact: "location=Melbourne,VIC", origin: "regulatory_default", note: "Mode A minimum context (§3.1) — confirm with the customer" },
-      { fact: "new_build_current_energy_requirements", origin: "regulatory_default", note: "Mode A default assumption" },
+      {
+        fact: "location_default=Melbourne,VIC",
+        origin: "regulatory_default",
+        note: "Mode A commercial-estimate fallback only; replace with project evidence and confirm during review",
+      },
+      {
+        fact: "project_type_default=new_build",
+        origin: "regulatory_default",
+        note: "Commercial-estimate fallback only; not a regulatory or compliance determination",
+      },
       ...docs.filter((d) => d.qualityIssues.length).map((d) => ({
         fact: `document_quality:${d.filename}`, origin: "unknown" as const, note: d.qualityIssues.join(","),
       })),
-    ].filter((a) => !a.fact.startsWith("location=Melbourne") && a.fact !== "new_build_current_energy_requirements"),
+    ],
     conflicts: merged.conflicts,
   };
 }
@@ -145,7 +153,11 @@ export function applyPlanContext(
   model.inputMode = "plans_no_report";
   const roomIds = new Set(model.rooms.map((r) => r.roomId));
   for (const { fileId, context } of sources) {
-    model.jurisdiction.state ??= context.jurisdiction.state;
+    if (context.jurisdiction.state) {
+      model.jurisdiction.state = context.jurisdiction.state;
+      model.jurisdiction.confidence = null;
+      model.assumptions = model.assumptions.filter((a) => !a.fact.startsWith("location_default="));
+    }
     model.jurisdiction.postcode ??= context.jurisdiction.postcode;
     model.jurisdiction.buildingClass ??= context.jurisdiction.buildingClass;
     model.building.storeys ??= context.storeys;
@@ -191,7 +203,11 @@ export function applyPlanContext(
   }
 }
 
-function thermalContextFor(model: BuildingModelV1, opening: OpeningV1) {
+export function thermalContextFor(
+  model: BuildingModelV1,
+  opening: OpeningV1,
+  technicalReviewReasons: string[] = [],
+) {
   const room = model.rooms.find((r) => r.roomId === opening.roomId);
   const openingAreaM2 = opening.areaM2;
   const glazingToRoomFloorRatio = openingAreaM2 != null && room?.areaM2
@@ -207,7 +223,7 @@ function thermalContextFor(model: BuildingModelV1, opening: OpeningV1) {
   if (glass.includes("low-e") || glass.includes("low e")) risk += 2;
   return {
     inputMode: model.inputMode,
-    requirementBasis: opening.thermalRequirement?.basis ?? (model.inputMode === "plans_no_report" ? "plan_derived" : null),
+    requirementBasis: opening.thermalRequirement?.basis ?? null,
     roomAreaM2: room?.areaM2 ?? null,
     totalFloorAreaM2: model.building.totalFloorAreaM2,
     openingAreaM2,
@@ -215,6 +231,13 @@ function thermalContextFor(model: BuildingModelV1, opening: OpeningV1) {
     orientation: opening.wallOrientation,
     shadingKnown: opening.shading != null,
     riskBand: risk >= 4 ? "high" : risk >= 2 ? "medium" : "low",
+    climateZone: model.jurisdiction.nathersClimateZone != null
+      ? String(model.jurisdiction.nathersClimateZone)
+      : null,
+    jurisdiction: [model.jurisdiction.country, model.jurisdiction.state].filter(Boolean).join("-") || null,
+    buildingClass: model.jurisdiction.buildingClass,
+    envelopeClass: model.envelope.defaultArchetypeId,
+    technicalReviewReasons: [...new Set(technicalReviewReasons)].slice(0, 20),
   } as const;
 }
 
@@ -256,12 +279,15 @@ export interface AiExtractionSummary {
   estimate: { openings: number; selected: number } | null;
   cartApplied?: number;
   stageWarnings: string[];
+  /** Stable category consumed by queue retry policy; never parse warning text. */
+  failureKind?: SkillFailureKind | "business_incomplete" | "stale_generation" | null;
+  errorCode?: string | null;
 }
 
 export async function runAiExtraction(
   env: Env,
   projectId: string,
-  opts: { sourceGeneration?: number } = {},
+  opts: { sourceGeneration?: number; processingToken?: string } = {},
 ): Promise<AiExtractionSummary> {
   const manifest = await env.DB.prepare(
     "SELECT id, checksum, filename FROM file_asset WHERE project_id = ? AND virus_status = 'clean' ORDER BY id",
@@ -279,18 +305,25 @@ export async function runAiExtraction(
     sourceManifestHash,
   });
   const warnings: string[] = [];
+  const stageFailures: SkillFailureKind[] = [];
   try {
 
   const docs = await ingestProjectFiles(env, projectId);
   const usable = docs.filter((d) => !d.rejected && (d.markdown || d.imageDataUrl));
   if (!usable.length) {
-    const summary: AiExtractionSummary = { runId: run.id, status: "failed", documents: docs.length, extractedLines: 0, conflicts: 0, energyApplied: 0, buildingModelId: null, estimate: null, stageWarnings: docs.flatMap((d) => d.qualityIssues) };
+    const summary: AiExtractionSummary = {
+      runId: run.id, status: "failed", documents: docs.length, extractedLines: 0,
+      conflicts: 0, energyApplied: 0, buildingModelId: null, estimate: null,
+      stageWarnings: docs.flatMap((d) => d.qualityIssues),
+      failureKind: "business_incomplete",
+    };
     // A PDF that produced no markdown is not an unreadable IMAGE. Reporting it
     // as one sent the investigation looking at scan quality for a 14-page
     // vector plan set with a perfectly good text layer.
     const errorCode = !docs.length
       ? "FILE_UNSUPPORTED"
       : docs.some((d) => d.kind === "pdf") ? "MARKDOWN_CONVERSION_FAILED" : "IMAGE_UNREADABLE";
+    summary.errorCode = errorCode;
     await completeAiRun(env, run.id, { status: "failed", errorCode, summary });
     return summary;
   }
@@ -299,9 +332,9 @@ export async function runAiExtraction(
   // skill (Path 1, authoritative); everything else feeds schedule extraction.
   // ingestProjectFiles is oldest-first. Treat the newest successful report as
   // the active revision; older reports remain evidence and are called out.
-  const energyDocs = usable.filter((d) => d.docType === "energy_report").reverse();
-  const planDocs = usable.filter((d) => d.docType === "plans");
-  const scheduleDocs = usable.filter((d) => d.docType === "schedule" || d.docType === "supporting");
+  const energyDocs = usable.filter((d) => d.roles.includes("energy_report")).reverse();
+  const planDocs = usable.filter((d) => d.roles.includes("plans"));
+  const scheduleDocs = usable.filter((d) => d.roles.includes("schedule"));
 
   // Schedule extraction per document (idempotent per content+prompt+model).
   const perDoc: { fileId: string; lines: ScheduleLineV1[] }[] = [];
@@ -309,7 +342,13 @@ export async function runAiExtraction(
   for (const doc of scheduleDocs) {
     const res = await runStage(env, {
       aiRunId: run.id, projectId, skill: scheduleExtractor,
-      input: { text: doc.markdown, imageDataUrl: doc.imageDataUrl, docName: doc.filename, checksum: doc.checksum },
+      input: {
+        text: doc.roleText.schedule ?? doc.markdown,
+        imageDataUrl: doc.imageDataUrl,
+        docName: doc.filename,
+        checksum: doc.checksum,
+        pageNumbers: doc.rolePages.schedule,
+      },
       signals: (data) => ({
         criticalConfidence: data
           ? Object.fromEntries(data.lines.slice(0, 50).map((l, i) => [`line_${i}_dims`, l.confidence.dimensions ?? 0]))
@@ -318,18 +357,30 @@ export async function runAiExtraction(
     });
     warnings.push(...res.warnings);
     if (res.ok && res.data) perDoc.push({ fileId: doc.fileId, lines: res.data.lines });
-    else anyFailed = true;
+    else {
+      anyFailed = true;
+      if (res.failureKind) stageFailures.push(res.failureKind);
+    }
   }
 
   const planContexts: { fileId: string; context: PlanContextV1 }[] = [];
   for (const doc of planDocs) {
     const res = await runStage(env, {
       aiRunId: run.id, projectId, skill: planContextExtractor,
-      input: { text: doc.markdown, imageDataUrl: doc.imageDataUrl, docName: doc.filename, checksum: doc.checksum },
+      input: {
+        text: doc.roleText.plans ?? doc.markdown,
+        imageDataUrl: doc.imageDataUrl,
+        docName: doc.filename,
+        checksum: doc.checksum,
+        pageNumbers: doc.rolePages.plans,
+      },
     });
     warnings.push(...res.warnings);
     if (res.ok && res.data) planContexts.push({ fileId: doc.fileId, context: res.data });
-    else anyFailed = true;
+    else {
+      anyFailed = true;
+      if (res.failureKind) stageFailures.push(res.failureKind);
+    }
   }
 
   // Energy-report extraction (Path 1). Text-only for now: a scanned-image-only
@@ -340,18 +391,27 @@ export async function runAiExtraction(
     if (!doc.markdown) { warnings.push(`energy_report_image_only:${doc.filename}`); continue; }
     const res = await runStage(env, {
       aiRunId: run.id, projectId, skill: energyReportExtractor,
-      input: { text: doc.markdown, checksum: doc.checksum },
+      input: { text: doc.roleText.energy_report ?? doc.markdown, checksum: doc.checksum },
     });
     warnings.push(...res.warnings);
     if (res.ok && res.data) {
       if (!energy) energy = { fileId: doc.fileId, extraction: res.data };
       else warnings.push(`multiple_energy_reports:${doc.filename}`);
-    } else anyFailed = true;
+    } else {
+      anyFailed = true;
+      if (res.failureKind) stageFailures.push(res.failureKind);
+    }
   }
 
   if (!perDoc.length) {
-    const summary: AiExtractionSummary = { runId: run.id, status: "failed", documents: docs.length, extractedLines: 0, conflicts: 0, energyApplied: 0, buildingModelId: null, estimate: null, stageWarnings: warnings };
-    await completeAiRun(env, run.id, { status: "failed", errorCode: "SCHEMA_VALIDATION_FAILED", summary });
+    const failureKind = dominantFailure(stageFailures) ?? "business_incomplete";
+    const errorCode = failureKind === "business_incomplete" ? "NO_USABLE_OPENINGS" : errorCodeForFailure(failureKind);
+    const summary: AiExtractionSummary = {
+      runId: run.id, status: "failed", documents: docs.length, extractedLines: 0,
+      conflicts: 0, energyApplied: 0, buildingModelId: null, estimate: null,
+      stageWarnings: warnings, failureKind, errorCode,
+    };
+    await completeAiRun(env, run.id, { status: "failed", errorCode, summary });
     return summary;
   }
 
@@ -359,6 +419,12 @@ export async function runAiExtraction(
   const merged = mergeScheduleLines(perDoc);
   const model = linesToBuildingModel(projectId, merged, docs);
   applyPlanContext(model, planContexts);
+  const technicalReviewReasons = new Map<string, Set<string>>();
+  const flagOpening = (externalRef: string, reason: string) => {
+    const current = technicalReviewReasons.get(externalRef) ?? new Set<string>();
+    current.add(reason);
+    technicalReviewReasons.set(externalRef, current);
+  };
 
   // Path 1 (§10.1): explicit report requirements are AUTHORITATIVE. Map them
   // onto the opening graph; represent mismatches, surface unmatched constraints.
@@ -386,12 +452,33 @@ export async function runAiExtraction(
       });
     }
     model.conflicts.push(...mapped.conflicts);
+    for (const conflict of mapped.conflicts.filter((item) => item.reviewRequired)) {
+      flagOpening(
+        conflict.entity,
+        conflict.field === "thermalRequirement"
+          ? "energy_requirement_ambiguous"
+          : "energy_dimension_conflict",
+      );
+    }
     model.inputMode = planContexts.length ? "plans_plus_energy_report" : "schedule_only";
     model.energyAssessment = {
       certificateRef: energy.extraction.certificateRef, starRating: energy.extraction.starRating,
       heatingLoad: null, coolingLoad: null, precedenceStatement: energy.extraction.precedenceStatement,
     };
     for (const u of mapped.unmatched) {
+      const sameRef = u.ref
+        ? model.openings.find((opening) => normalizeOpeningRef(opening.externalRef) === normalizeOpeningRef(u.ref))
+        : null;
+      if (sameRef) {
+        flagOpening(sameRef.externalRef, "energy_requirement_context_mismatch");
+      } else {
+        // A report requirement with no corresponding schedule opening is a
+        // project-level reconciliation problem. Propagate it to every proposed
+        // line so the quote cannot silently present itself as review-free.
+        for (const opening of model.openings) {
+          flagOpening(opening.externalRef, "energy_requirement_unmatched");
+        }
+      }
       model.assumptions.push({
         fact: `unmatched_energy_constraint:${u.ref ?? u.elementHint ?? "?"}`,
         origin: "unknown", note: "energy-report constraint matched no schedule opening — review required",
@@ -401,7 +488,9 @@ export async function runAiExtraction(
 
   // Path 3 (Phase 4): conservative default band for openings with no explicit
   // requirement; snapshotted immutably into requirement_json below.
-  const archetype = null;
+  const archetype = applyDefaultEnvelope(model);
+
+  await assertCurrentGeneration(env, projectId, sourceGeneration, opts.processingToken);
 
   const buildingModelId = uuid();
   const stmts: D1PreparedStatement[] = [
@@ -420,15 +509,17 @@ export async function runAiExtraction(
         ev.region ? JSON.stringify(ev.region) : null, ev.extractedText, ev.origin, ev.confidence));
     }
     const tr = o.thermalRequirement;
-    stmts.push(env.DB.prepare(
+    // Absence of a requirement is not a "default envelope". Persist no
+    // requirement row unless an explicit/default pathway actually produced one.
+    if (tr) stmts.push(env.DB.prepare(
       `INSERT INTO opening_requirements (id, project_id, building_model_id, external_ref, parent_opening_id, requirement_basis,
          max_u_value, shgc_target, shgc_min, shgc_max, confidence_json, requirement_json, review_state)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'unreviewed')`,
-    ).bind(uuid(), projectId, buildingModelId, o.externalRef, null, tr?.basis ?? "default_envelope",
-      tr?.maxUValue ?? null, tr?.shgcTarget ?? null, tr?.shgcMin ?? null, tr?.shgcMax ?? null,
+    ).bind(uuid(), projectId, buildingModelId, o.externalRef, null, tr.basis,
+      tr.maxUValue, tr.shgcTarget, tr.shgcMin, tr.shgcMax,
       JSON.stringify(o.confidence),
       JSON.stringify({
-        opening: o.externalRef, thermal: tr ?? null,
+        opening: o.externalRef, thermal: tr,
         // Immutable archetype snapshot (§10.3): a registry change never mutates history.
         archetype: tr?.basis === "default_envelope" && archetype ? archetype : undefined,
       })),
@@ -470,9 +561,8 @@ export async function runAiExtraction(
       colour: o.scheduleRequirements.colour,
       flyscreen: o.scheduleRequirements.flyscreen,
     };
-    const context = thermalContextFor(model, o);
-    const requirementBasis = o.thermalRequirement?.basis ??
-      (model.inputMode === "plans_no_report" ? "plan_derived" : "default_envelope");
+    const context = thermalContextFor(model, o, [...(technicalReviewReasons.get(o.externalRef) ?? [])]);
+    const requirementBasis = o.thermalRequirement?.basis ?? null;
     if (existing) {
       // HUMAN-EDIT GUARD: a field a human set is never overwritten by a document
       // re-run — the human is the highest-precedence source. Locked fields have
@@ -518,7 +608,9 @@ export async function runAiExtraction(
         JSON.stringify(context), requirementBasis, sourceGeneration, projectId, sourceGeneration));
     }
   }
+  await assertCurrentGeneration(env, projectId, sourceGeneration, opts.processingToken);
   if (upserts.length) await env.DB.batch(upserts);
+  await assertCurrentGeneration(env, projectId, sourceGeneration, opts.processingToken);
   const estimate = await runProjectEstimate(env, projectId, {
     aiRunId: run.id,
     buildingModelId,
@@ -536,7 +628,10 @@ export async function runAiExtraction(
   };
   await completeAiRun(env, run.id, { status, inputMode: model.inputMode, summary });
   return summary;
-  } catch {
+  } catch (error) {
+    const stale = error instanceof Error && error.message === "ai_job_stale_before_publish";
+    const failureKind = stale ? "stale_generation" : dominantFailure(stageFailures);
+    const errorCode = stale ? "STALE_GENERATION" : (failureKind ? errorCodeForFailure(failureKind) : "PIPELINE_INTERNAL_ERROR");
     const summary: AiExtractionSummary = {
       runId: run.id,
       status: "failed",
@@ -546,15 +641,58 @@ export async function runAiExtraction(
       energyApplied: 0,
       buildingModelId: null,
       estimate: null,
-      stageWarnings: [...warnings, "pipeline_failed"],
+      stageWarnings: [...warnings, stale ? "stale_generation_before_publish" : "pipeline_failed"],
+      failureKind,
+      errorCode,
     };
     await completeAiRun(env, run.id, {
       status: "failed",
-      errorCode: "MODEL_OUTPUT_INCONSISTENT",
+      errorCode,
       summary,
     }).catch(() => {});
     return summary;
   }
+}
+
+function dominantFailure(failures: SkillFailureKind[]): SkillFailureKind | null {
+  const priority: SkillFailureKind[] = [
+    "transient_rate_limit",
+    "transient_provider",
+    "provider_unavailable",
+    "permanent_request",
+    "invalid_output",
+  ];
+  return priority.find((kind) => failures.includes(kind)) ?? null;
+}
+
+function errorCodeForFailure(failure: SkillFailureKind): string {
+  switch (failure) {
+    case "transient_rate_limit": return "PROVIDER_RATE_LIMITED";
+    case "transient_provider": return "PROVIDER_TEMPORARY_FAILURE";
+    case "provider_unavailable": return "AI_UNAVAILABLE";
+    case "permanent_request": return "PROVIDER_REQUEST_REJECTED";
+    case "invalid_output": return "SCHEMA_VALIDATION_FAILED";
+  }
+}
+
+async function assertCurrentGeneration(
+  env: Env,
+  projectId: string,
+  sourceGeneration: number,
+  processingToken?: string,
+): Promise<void> {
+  const project = await env.DB.prepare(
+    "SELECT ai_generation, status_customer FROM project WHERE id = ?",
+  ).bind(projectId).first<{ ai_generation: number; status_customer: string }>();
+  if (!project || project.ai_generation !== sourceGeneration || project.status_customer !== "draft") {
+    throw new Error("ai_job_stale_before_publish");
+  }
+  if (!processingToken) return;
+  const claim = await env.DB.prepare(
+    `SELECT 1 AS owned FROM ai_job_claim
+      WHERE project_id=? AND source_generation=? AND status='processing' AND processing_token=?`,
+  ).bind(projectId, sourceGeneration, processingToken).first<{ owned: number }>();
+  if (!claim?.owned) throw new Error("ai_job_stale_before_publish");
 }
 
 function avgConfidence(openings: OpeningV1[]): number | null {

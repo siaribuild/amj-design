@@ -353,6 +353,18 @@ export interface ExtractionRun {
   startedAt: string;
   completedAt: string | null;
   summary: { extractedLines: number; conflicts: number; energyApplied: number; cartApplied?: number; documents: number } | null;
+  /** Stable, customer-safe category only. Provider responses are never exposed. */
+  diagnostic?: {
+    code:
+      | "RATE_LIMITED"
+      | "CATALOGUE_UNAVAILABLE"
+      | "DOCUMENTS_NOT_UNDERSTOOD"
+      | "SERVICE_CONFIGURATION_ERROR"
+      | "TEMPORARY_FAILURE"
+      | "RETRY_REQUIRED";
+    retryable: boolean;
+    retryAt: string | null;
+  } | null;
 }
 export const extractionStatus = () =>
   req<{ run: ExtractionRun | null; basis?: Record<string, string> }>("/api/projects/current/extraction-status");

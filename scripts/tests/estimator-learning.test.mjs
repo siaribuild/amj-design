@@ -133,7 +133,9 @@ test("approved thermal learning uses robust medians and stays separate from rank
   assert.equal(learned.advisoryRequirements.maxUValue, 2.6);
   assert.equal(learned.advisoryRequirements.minShgc, 0.32);
   assert.equal(learned.advisoryRequirements.maxShgc, 0.52);
-  assert.equal(learned.thermalContext.requirementBasis, "human_override");
+  assert.equal(learned.thermalContext.requirementBasis, "plan_derived",
+    "precedent does not overwrite the source basis or fracture future case retrieval");
+  assert.equal(learned.thermalContext.thermalPrecedentApplied, true);
 });
 
 test("an explicit energy report always overrides learned thermal precedent", () => {

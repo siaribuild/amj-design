@@ -62,8 +62,6 @@ export interface Env {
    *  only GATE, the AI tier interprets). 'manual': ops-triggered only (tests,
    *  or an emergency spend kill-switch). */
   AI_EXTRACTION_MODE?: string;
-  /** Maximum paid AI extraction runs per registered account per UTC day. */
-  AI_DAILY_RUN_LIMIT?: string;
   /** Shared secret for the admin/debug thermal-log endpoint (/api/debug/thermal).
    *  Unset ⇒ the endpoint is disabled (404). Set via `wrangler secret put`. */
   THERMAL_DEBUG_KEY?: string;

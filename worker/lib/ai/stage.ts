@@ -16,7 +16,7 @@ import type { Env } from "../../types";
 import { sha256hex } from "./hash";
 import { uuid } from "../util";
 import { runSkill } from "../estimator/skills/runner";
-import type { Skill, SkillRun } from "../estimator/skills/types";
+import type { Skill, SkillFailureKind, SkillRun } from "../estimator/skills/types";
 import { evaluateEscalation, type EscalationDecision, type StageSignals } from "./escalation";
 import { PIPELINE_VERSION, primaryModel, escalationModel, escalationEnabled } from "./versions";
 
@@ -56,6 +56,7 @@ export interface StageResult<O> {
   escalation: EscalationDecision & { taken: boolean };
   stageRunId: string | null;
   warnings: string[];
+  failureKind: SkillFailureKind | null;
 }
 
 interface CachedRow { id: string; result_r2_key: string | null }
@@ -81,7 +82,11 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
       // Storage is not a trust boundary: replayed content goes back through the clamp.
       const data = skill.validate(raw);
       if (data != null) {
-        return { ok: true, data, cached: true, escalation: { triggered: false, reasons: [], taken: false }, stageRunId: hit.id, warnings: ["stage_replayed"] };
+        return {
+          ok: true, data, cached: true,
+          escalation: { triggered: false, reasons: [], taken: false },
+          stageRunId: hit.id, warnings: ["stage_replayed"], failureKind: null,
+        };
       }
     }
     // Archive missing/corrupt ⇒ fall through to a fresh run.
@@ -92,7 +97,7 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
 
   // ── Escalation decision — always EVALUATED, only conditionally TAKEN ─────────
   const signals: StageSignals = { ...(args.signals?.(run.data, run) ?? {}) };
-  if (!run.ok) signals.schemaFailedAfterRepair = true;
+  if (run.failureKind === "invalid_output") signals.schemaFailedAfterRepair = true;
   const decision = evaluateEscalation(signals);
   let taken = false;
   if (decision.triggered && escalationEnabled(env)) {
@@ -134,5 +139,9 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
     run.inputTokens || null, run.outputTokens || null,
   ).run().catch(() => { /* the stage record is observability, never a blocker */ });
 
-  return { ok: run.ok, data: run.data, cached: false, escalation: { ...decision, taken }, stageRunId, warnings: run.warnings };
+  return {
+    ok: run.ok, data: run.data, cached: false,
+    escalation: { ...decision, taken }, stageRunId, warnings: run.warnings,
+    failureKind: run.failureKind,
+  };
 }

@@ -13,7 +13,7 @@ import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./typ
 export const RULE_VERSION = "v1";
 
 export type FilterName =
-  | "publication" | "operation" | "dimensions" | "energy"
+  | "publication" | "operation" | "dimensions" | "energy" | "schedule_configuration"
   | "composite" | "option_compatibility" | "data_completeness";
 
 // "warning" keeps a candidate selectable and priceable (indicative), the other
@@ -75,7 +75,12 @@ function checkDimensions(opening: OpeningInput, c: CatalogueCandidate): FilterOu
 function checkEnergy(opening: OpeningInput, c: CatalogueCandidate): {
   outcome: FilterOutcome; certified: boolean; matching: PerformanceVariant[];
 } {
-  const req = opening.requirements;
+  // Human-approved precedent is a conservative eligibility floor. It is not a
+  // regulatory assertion and never overrides an explicit energy report, but it
+  // must be more than a ranking hint: otherwise a cheaper, known-incompatible
+  // configuration can still win and repeat the correction that created the
+  // precedent.
+  const req = effectiveThermalRequirements(opening);
   const maxU = req?.maxUValue ?? null, minShgc = req?.minShgc ?? null, maxShgc = req?.maxShgc ?? null;
   if (maxU == null && minShgc == null && maxShgc == null) {
     return {
@@ -104,6 +109,112 @@ function checkEnergy(opening: OpeningInput, c: CatalogueCandidate): {
   };
 }
 
+type ThermalLimits = NonNullable<OpeningInput["requirements"]>;
+
+function effectiveThermalRequirements(opening: OpeningInput): ThermalLimits | null {
+  const explicit = opening.requirements ?? null;
+  if (opening.thermalContext?.requirementBasis === "explicit_energy_report") return explicit;
+  const learned = opening.advisoryRequirements ?? null;
+  if (!explicit) return learned;
+  if (!learned) return explicit;
+  return {
+    maxUValue: minLimit(explicit.maxUValue, learned.maxUValue),
+    minShgc: maxLimit(explicit.minShgc, learned.minShgc),
+    maxShgc: minLimit(explicit.maxShgc, learned.maxShgc),
+  };
+}
+
+const minLimit = (a: number | null | undefined, b: number | null | undefined) =>
+  a == null ? b ?? null : b == null ? a : Math.min(a, b);
+const maxLimit = (a: number | null | undefined, b: number | null | undefined) =>
+  a == null ? b ?? null : b == null ? a : Math.max(a, b);
+
+const variantText = (variant: PerformanceVariant) =>
+  `${variant.glassBuildUp ?? ""} ${variant.coating ?? ""}`.toLowerCase();
+const isDoubleGlazed = (variant: PerformanceVariant) =>
+  /\b(double|double[- ]?glazed|d\.?g\.?|igu|insulated)\b/.test(variantText(variant)) ||
+  /\d+(?:\.\d+)?\s*(?:mm)?\s*\+\s*\d+(?:\.\d+)?\s*(?:mm\s*)?(?:argon|air|ar|a)\s*\+\s*\d+(?:\.\d+)?/i.test(variantText(variant));
+const isSingleGlazed = (variant: PerformanceVariant) => {
+  const value = variantText(variant);
+  return !isDoubleGlazed(variant) &&
+    (/\b(single|monolithic|laminated|toughened|annealed)\b/.test(value) ||
+      /^\s*\d+(?:\.\d+)?\s*(?:mm)?(?:\s+\w+)*\s*$/.test(variant.glassBuildUp ?? ""));
+};
+const isLowE = (variant: PerformanceVariant) =>
+  /\b(low[- ]?e|solar control|spectrally selective)\b/.test(variantText(variant));
+const hasArgon = (variant: PerformanceVariant) => {
+  const value = variantText(variant);
+  // Catalogue build-ups commonly abbreviate an argon cavity as `15Ar` or
+  // `15 mm Ar`; a word-boundary-only "argon" check silently rejected those
+  // otherwise explicit configurations.
+  return /\bargon\b/.test(value) || /\d+(?:\.\d+)?\s*(?:mm\s*)?ar\b/i.test(value);
+};
+
+/**
+ * Material schedule instructions are source requirements, not preferences.
+ * Only requirements we can determine safely from the current catalogue contract
+ * are enforced here. Unknown catalogue descriptions fail incomplete rather than
+ * being interpreted as evidence of a single- or double-glazed build-up.
+ */
+function checkScheduleConfiguration(opening: OpeningInput, c: CatalogueCandidate): {
+  outcome: FilterOutcome;
+  matching: PerformanceVariant[];
+} {
+  const schedule = opening.scheduleRequirements;
+  const glass = (schedule?.glassDescription ?? "").toLowerCase();
+  const requiresDouble = schedule?.doubleGlazed === true;
+  const requiresSingle = schedule?.doubleGlazed === false;
+  const requiresLowE = /\blow[- ]?e\b/.test(glass);
+  const requiresArgon = /\bargon\b/.test(glass);
+  if (!requiresDouble && !requiresSingle && !requiresLowE && !requiresArgon) {
+    return {
+      outcome: { filter: "schedule_configuration", passed: true },
+      matching: c.performanceVariants.filter((variant) => variant.published),
+    };
+  }
+  const published = c.performanceVariants.filter((variant) => variant.published);
+  if (!published.length) {
+    return {
+      outcome: {
+        filter: "schedule_configuration", passed: false, severity: "incomplete",
+        reason: "schedule specifies a material glazing configuration but the product has no published variants",
+      },
+      matching: [],
+    };
+  }
+  const described = published.filter((variant) => !!variant.glassBuildUp);
+  if (!described.length) {
+    return {
+      outcome: {
+        filter: "schedule_configuration", passed: false, severity: "incomplete",
+        reason: "schedule specifies a material glazing configuration but catalogue glass build-up is missing",
+      },
+      matching: [],
+    };
+  }
+  const matching = described.filter((variant) =>
+    (!requiresDouble || isDoubleGlazed(variant)) &&
+    (!requiresSingle || isSingleGlazed(variant)) &&
+    (!requiresLowE || isLowE(variant)) &&
+    (!requiresArgon || hasArgon(variant)));
+  if (!matching.length) {
+    const requested = [
+      requiresDouble ? "double glazing" : null,
+      requiresSingle ? "single glazing" : null,
+      requiresLowE ? "Low-E coating" : null,
+      requiresArgon ? "argon fill" : null,
+    ].filter(Boolean).join(", ");
+    return {
+      outcome: {
+        filter: "schedule_configuration", passed: false, severity: "reject",
+        reason: `no published variant matches the schedule requirement: ${requested}`,
+      },
+      matching: [],
+    };
+  }
+  return { outcome: { filter: "schedule_configuration", passed: true }, matching };
+}
+
 export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, ruleVersion = RULE_VERSION): RuleOutcome {
   const filters: FilterOutcome[] = [];
 
@@ -125,6 +236,22 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
   // Energy (against estimated/certified performance data).
   const energy = checkEnergy(opening, c);
   filters.push(energy.outcome);
+
+  // Material schedule instructions (double/single glazing, Low-E and argon)
+  // constrain the same exact variant as Uw/SHGC. The intersection below prevents
+  // one variant satisfying the energy target while another satisfies the glazing
+  // instruction.
+  const schedule = checkScheduleConfiguration(opening, c);
+  filters.push(schedule.outcome);
+  const scheduleIds = new Set(schedule.matching.map((variant) => variant.variantId));
+  const eligibleVariants = energy.matching.filter((variant) => scheduleIds.has(variant.variantId));
+  if (energy.outcome.passed && schedule.outcome.passed &&
+      (energy.matching.length || schedule.matching.length) && !eligibleVariants.length) {
+    filters.push({
+      filter: "schedule_configuration", passed: false, severity: "reject",
+      reason: "no single published variant jointly meets the thermal and schedule configuration requirements",
+    });
+  }
 
   // Composite + option compatibility — no rule data yet ⇒ manual review, not a pass.
   // (Only flagged when the opening is actually a composite member; otherwise skipped.)
@@ -154,12 +281,12 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
     passed,
     status,
     energyCertified: energy.certified,
-    eligibleVariantIds: energy.matching.map((v) => v.variantId),
+    eligibleVariantIds: eligibleVariants.map((v) => v.variantId),
     filters,
   };
 }
 
 function energyHadRequirement(opening: OpeningInput): boolean {
-  const r = opening.requirements;
+  const r = effectiveThermalRequirements(opening);
   return !!r && (r.maxUValue != null || r.minShgc != null || r.maxShgc != null);
 }

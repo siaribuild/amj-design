@@ -300,23 +300,18 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(row.width_mm, 800);
     });
 
-    await t.test("ai-runs: a project with no usable documents completes as a FAILED run without any model call", async () => {
+    await t.test("ai-runs: staff retry enters the durable generation/claim lifecycle", async () => {
       await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--command",
-        `INSERT INTO project (id, owner_user_id, title, public_ref, status_customer) VALUES ('p_ai_none', 'u_demo', 'AI empty test', 'OF-Q-99002', 'submitted')`], { env: wranglerEnv });
-      const res = await requestJson(staff, "/api/ops/projects/p_ai_none/ai-runs", { method: "POST", json: {} });
-      assert.equal(res.body.status, "failed", "no documents ⇒ honest failure, not a fabricated draft");
-      assert.equal(res.body.extractedLines, 0);
-      assert.ok(res.body.runId);
-      // §22.1: the failure is recorded on the canonical ai_runs record.
-      const runRow = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json",
-        "--command", "SELECT status, error_code, pipeline_version, primary_model FROM ai_runs WHERE project_id='p_ai_none'"], { env: wranglerEnv });
-      const ai = JSON.parse(runRow.stdout)[0].results[0];
-      assert.equal(ai.status, "failed");
-      assert.equal(ai.error_code, "FILE_UNSUPPORTED");
-      assert.ok(ai.pipeline_version, "run pins the pipeline version (§21.3)");
-      assert.match(ai.primary_model, /gemini-3\.6-flash/, "single-model policy recorded on the run");
-      // The building-model endpoint reports not_found — nothing was fabricated.
-      await requestJson(staff, "/api/ops/projects/p_ai_none/building-model", {}, 404);
+        `INSERT INTO project (id, owner_user_id, title, public_ref, status_customer) VALUES ('p_ai_none', 'u_demo', 'AI empty test', 'OF-Q-99002', 'draft')`], { env: wranglerEnv });
+      const res = await requestJson(staff, "/api/ops/projects/p_ai_none/ai-runs", { method: "POST", json: {} }, 202);
+      assert.equal(res.body.accepted, true);
+      assert.equal(res.body.generation, 1);
+      const claimRow = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json",
+        "--command", "SELECT p.ai_generation, j.source_generation, j.attempts FROM project p JOIN ai_job_claim j ON j.project_id=p.id AND j.source_generation=p.ai_generation WHERE p.id='p_ai_none'"], { env: wranglerEnv });
+      const claim = JSON.parse(claimRow.stdout)[0].results[0];
+      assert.equal(claim.ai_generation, 1);
+      assert.equal(claim.source_generation, 1);
+      assert.ok(claim.attempts >= 0, "durable claim exists even if the queue consumes immediately");
     });
 
     await t.test("Sanity publish webhook: verifies the signature, fails closed on a bad one", async () => {
