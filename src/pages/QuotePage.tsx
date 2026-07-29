@@ -350,8 +350,13 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   useEffect(() => {
     if (!user) return;
     extractionStatus().then(({ run }) => {
-      if (run && (run.status === "queued" || run.status === "running")) {
-        const docs = quote.files.length || 1;
+      // A run can outlive its documents: a worker that dies mid-run leaves the
+      // row 'running' forever, and `|| 1` then claimed one document was being
+      // read for a project with none — a spinner that survived a refresh and
+      // never resolved. The FILES are the truth about whether there is anything
+      // to read; the run is only the truth about whether work is under way.
+      const docs = quote.files.length;
+      if (docs > 0 && run && (run.status === "queued" || run.status === "running")) {
         setAiPhase({ kind: "reading", docs });
         pollExtraction(docs);
       }

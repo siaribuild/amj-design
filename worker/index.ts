@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { Hono } from "hono";
 import type { Env } from "./types";
-import { consumeAiJobs, type AiExtractionJob } from "./lib/ai/jobs";
+import { consumeAiJobs, reapAbandonedAiJobs, type AiExtractionJob } from "./lib/ai/jobs";
 import { auth } from "./routes/auth";
 import { projects } from "./routes/projects";
 import { quote } from "./routes/quote";
@@ -189,5 +189,10 @@ export default {
     // Sweep for pricing gaps, so a missed publish webhook cannot hide one
     // indefinitely. Caught separately: neither job may sink the other.
     await reconcilePricing(env).catch((e) => console.log(`[reconcile] scheduled sweep failed: ${String(e)}`));
+    // Release AI jobs whose worker died mid-run; without this a customer sits
+    // on "reading your documents" until they clear their own project.
+    await reapAbandonedAiJobs(env)
+      .then((n) => { if (n.claims || n.runs) console.log(`[ai] reaped ${n.claims} claim(s), ${n.runs} run(s)`); })
+      .catch((e) => console.log(`[ai] reaper failed: ${String(e)}`));
   },
 };

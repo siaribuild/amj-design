@@ -186,3 +186,38 @@ export async function consumeAiJobs(batch: MessageBatch<AiExtractionJob>, env: E
     }
   }
 }
+
+/** Release claims whose lease expired with nobody coming back for them, and
+ *  close the runs they abandoned.
+ *
+ *  A claim is only ever reclaimed by the NEXT dispatch for the same generation
+ *  (see the `lease_expires_at < now` arm of the claim UPDATE above). When the
+ *  isolate handling a job dies — a deploy mid-run, an eviction, a hung provider
+ *  call — no such dispatch ever comes, so the row sits in 'processing' forever
+ *  and ai_runs sits in 'running'. The customer's screen polls that run and says
+ *  "reading your documents" indefinitely, which is what happened after a deploy
+ *  landed on top of an in-flight run.
+ *
+ *  Runs are marked 'cancelled', not 'failed': the pipeline never reached a
+ *  verdict, and recording a failure it did not actually produce would poison
+ *  both the failure statistics and the learning record. */
+export async function reapAbandonedAiJobs(env: Env): Promise<{ claims: number; runs: number }> {
+  const claims = await env.DB.prepare(
+    `UPDATE ai_job_claim
+        SET status='failed', last_error='lease_expired_abandoned',
+            lease_expires_at=NULL, processing_token=NULL, updated_at=datetime('now')
+      WHERE status='processing' AND lease_expires_at IS NOT NULL
+        AND lease_expires_at < datetime('now')`,
+  ).run();
+  // Generous grace beyond the 10-minute lease: a live run renews its lease every
+  // two minutes, so anything this old is not merely slow.
+  const runs = await env.DB.prepare(
+    `UPDATE ai_runs
+        SET status='cancelled', completed_at=datetime('now')
+      WHERE status='running' AND started_at < datetime('now','-20 minutes')`,
+  ).run();
+  return {
+    claims: Number(claims.meta?.changes ?? 0),
+    runs: Number(runs.meta?.changes ?? 0),
+  };
+}
