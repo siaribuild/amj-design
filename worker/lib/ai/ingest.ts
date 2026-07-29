@@ -7,7 +7,13 @@
 // classify the document, and archive derivatives under the §7.1 R2 layout.
 //
 // The original object is NEVER modified (§7.1) — derivatives live beside it.
+import { extractText, getDocumentProxy } from "unpdf";
 import type { Env } from "../../types";
+
+// Matches the deterministic extractor's bound, for the same reason: cap the work
+// before any processing. Kept equal on purpose — if one tier will read a
+// document, the other must too.
+const MAX_PDF_PAGES = 30;
 
 export type DocKind = "pdf" | "png" | "jpeg" | "webp" | "other";
 export type DocType = "schedule" | "energy_report" | "plans" | "supporting" | "unsupported";
@@ -99,6 +105,33 @@ export const derivedKeys = (projectId: string, fileId: string) => ({
 // the document genuinely had no text. Three very different faults, one silence.
 type MarkdownResult = { markdown: string | null; reason: string | null };
 
+// The PDF text layer, read with the SAME unpdf build the deterministic extractor
+// uses. That extractor consumes the circulated architectural plan sets happily,
+// so any PDF it can read must also be readable here: two tiers that disagree
+// about whether a document is legible is not a tier, it is a coin toss.
+//
+// This is the fallback, not the primary — toMarkdown understands tables and
+// layout, which a raw text dump does not — but a plain text layer is far better
+// input than nothing, which is what the AI tier had before.
+async function pdfTextLayer(bytes: Uint8Array): Promise<MarkdownResult> {
+  try {
+    // Copy: pdf.js detaches the buffer it is handed, and the caller may still
+    // need these bytes afterwards.
+    const pdf = await getDocumentProxy(new Uint8Array(bytes));
+    if (pdf.numPages > MAX_PDF_PAGES) return { markdown: null, reason: "pdf_too_many_pages" };
+    const { text } = await extractText(pdf, { mergePages: false });
+    const pages = Array.isArray(text) ? text : [String(text)];
+    // Page breaks kept: the schedule prompt and the parser both use them.
+    const joined = pages.map((p, i) => `\n\n<!-- page ${i + 1} -->\n\n${p}`).join("");
+    if (joined.replace(/\s+/g, "").length < 40) return { markdown: null, reason: "pdf_no_text_layer" };
+    return { markdown: joined, reason: null };
+  } catch (e) {
+    const s = String(e);
+    const encrypted = /password|encrypt/i.test(s) || (e as { name?: string })?.name === "PasswordException";
+    return { markdown: null, reason: encrypted ? "pdf_encrypted" : `pdf_read_failed:${s.slice(0, 120)}` };
+  }
+}
+
 async function toMarkdownSafe(env: Env, filename: string, bytes: Uint8Array): Promise<MarkdownResult> {
   const ai: any = env.AI;
   if (!ai?.toMarkdown) return { markdown: null, reason: "markdown_binding_unavailable" };
@@ -172,11 +205,20 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
       }
     }
 
-    const md = await toMarkdownSafe(env, f.filename, bytes);
-    doc.markdown = md.markdown;
+    let md = await toMarkdownSafe(env, f.filename, bytes);
     // Carry the reason onto the doc: pipeline.ts folds qualityIssues into the
     // run's stageWarnings, which is the only record that survives to D1.
     if (md.reason) doc.qualityIssues = [...doc.qualityIssues, md.reason];
+    // A PDF toMarkdown could not read is not necessarily unreadable — the
+    // deterministic tier reads these same plan sets from the text layer. Fall
+    // back to it rather than failing the whole run.
+    if (!md.markdown && kind === "pdf") {
+      const viaTextLayer = await pdfTextLayer(bytes);
+      if (viaTextLayer.markdown) doc.qualityIssues = [...doc.qualityIssues, "markdown_via_pdf_text_layer"];
+      else if (viaTextLayer.reason) doc.qualityIssues = [...doc.qualityIssues, viaTextLayer.reason];
+      md = viaTextLayer;
+    }
+    doc.markdown = md.markdown;
     if (doc.markdown) {
       await env.FILES.put(derivedKeys(projectId, f.id).markdown, doc.markdown).catch(() => { /* derivative archive is best-effort */ });
     }
