@@ -107,6 +107,89 @@ test("ingestion queries scan-clean files only; legacy skipped files never reach 
   assert.doesNotMatch(query, /skipped/);
 });
 
+// ── PDF text-layer fallback ──────────────────────────────────────────────────
+// A real customer plan set failed the AI tier while the DETERMINISTIC tier read
+// it happily: ingest called only env.AI.toMarkdown, and PDFs have no image
+// fallback, so one refusal from toMarkdown meant "no usable documents". These
+// tests hold the invariant that came out of it: any PDF one tier can read, the
+// other must read too — and a downgrade must be visible, never silent.
+//
+// The fixture is built here rather than committed: a customer's architectural
+// plans do not belong in the repo, and a hand-built PDF is exact about what it
+// contains.
+function tinyTextPdf(lines) {
+  const esc = (s) => s.replace(/[\\()]/g, (ch) => "\\" + ch);
+  const content = `BT /F1 12 Tf 40 750 Td 14 TL\n${lines.map((l) => `(${esc(l)}) Tj T*`).join("\n")}\nET`;
+  const objs = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [];
+  objs.forEach((body, i) => { offsets.push(pdf.length); pdf += `${i + 1} 0 obj\n${body}\nendobj\n`; });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+  for (const off of offsets) pdf += `${String(off).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Uint8Array([...pdf].map((c) => c.charCodeAt(0)));
+}
+
+const SCHEDULE_LINES = ["WINDOW SCHEDULE", "W N HEIGHT WIDTH TYPE", "1 2100 2050 AWNING", "2 700 3500 FIXED"];
+
+/** An env whose single project file is `bytes`; `ai` stubs env.AI. */
+function ingestEnv(bytes, ai) {
+  const row = {
+    id: "f1", r2_key: "k", filename: "plans.pdf", checksum: null, size: bytes.length,
+    virus_status: "clean", doc_type: null, doc_type_source: "auto",
+  };
+  return {
+    AI: ai,
+    DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [row] }), run: async () => ({}) }) }) },
+    FILES: {
+      get: async () => ({ arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }),
+      put: async () => ({}),
+    },
+  };
+}
+
+test("ingest: a text PDF stays readable when toMarkdown THROWS", async () => {
+  const env = ingestEnv(tinyTextPdf(SCHEDULE_LINES), {
+    toMarkdown: async () => { throw new Error("boom"); },
+  });
+  const [doc] = await ingestProjectFiles(env, "p1");
+  assert.ok(doc.markdown, "the run must not lose a document toMarkdown refused");
+  assert.match(doc.markdown, /WINDOW SCHEDULE/);
+  assert.ok(doc.qualityIssues.some((w) => w.startsWith("markdown_call_failed:")), "the cause is recorded, not swallowed");
+  assert.ok(doc.qualityIssues.includes("markdown_via_pdf_text_layer"), "a downgrade to the text layer is declared");
+});
+
+test("ingest: a text PDF stays readable when the AI binding is absent", async () => {
+  const env = ingestEnv(tinyTextPdf(SCHEDULE_LINES), undefined);
+  const [doc] = await ingestProjectFiles(env, "p1");
+  assert.match(doc.markdown ?? "", /WINDOW SCHEDULE/);
+  assert.ok(doc.qualityIssues.includes("markdown_binding_unavailable"));
+});
+
+test("ingest: toMarkdown WINS when it works — no needless downgrade", async () => {
+  const env = ingestEnv(tinyTextPdf(SCHEDULE_LINES), {
+    toMarkdown: async () => [{ data: "| W | H |\n|---|---|\n| 1 | 2 |" }],
+  });
+  const [doc] = await ingestProjectFiles(env, "p1");
+  assert.match(doc.markdown ?? "", /\|---\|/, "the richer table conversion is kept");
+  assert.deepEqual(doc.qualityIssues, [], "nothing to warn about when the primary path works");
+});
+
+test("ingest: a PDF with NO text layer reports why, and is not silently 'usable'", async () => {
+  // Structurally valid, zero text — the scanned-plans case.
+  const env = ingestEnv(tinyTextPdf([]), { toMarkdown: async () => null });
+  const [doc] = await ingestProjectFiles(env, "p1");
+  assert.equal(doc.markdown, null);
+  assert.ok(doc.qualityIssues.includes("pdf_no_text_layer"), "a scan is distinguishable from a failure");
+});
+
 // ── §9.3 parent/child tags ───────────────────────────────────────────────────
 test("parentTagOf: thermal children map to their architectural parent", () => {
   assert.equal(parentTagOf("W04A"), "W04");

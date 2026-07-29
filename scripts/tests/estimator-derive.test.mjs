@@ -56,3 +56,45 @@ test("SAFETY: derived performance is never marked certified", () => {
   assert.equal(all.pricingRef, "amj80", "pricingRef IS the pricing_rate_card id — see 0031");
   assert.equal(all.schemaVersion, 1);
 });
+
+// ── The Sanity ↔ D1 key contract ─────────────────────────────────────────────
+// This is the test that was missing. `pricingRef` was derived as
+// `price.<slug>.v1` while pricing_rate_card is keyed on the bare product slug
+// (migration 0031), so hasAnyExactPricingCoverage() matched nothing and EVERY
+// AI parse failed with `pricing_catalogue_not_ready` before reaching a model.
+// Both sides looked individually correct; only their meeting point was wrong,
+// and nothing compared them.
+//
+// Offline on purpose: it reads the migration that owns the ids rather than the
+// live database, so it fails in CI rather than in a customer's upload.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { projectRoot } from "./helpers.mjs";
+
+const rateCardIds = (() => {
+  const sql = readFileSync(join(projectRoot, "migrations/0031_product_rate_cards.sql"), "utf8");
+  const block = sql.slice(sql.indexOf("INSERT INTO pricing_rate_card"));
+  return new Set([...block.matchAll(/^\s*\('([^']+)'/gm)].map((m) => m[1]));
+})();
+
+test("CONTRACT: pricingRef IS the pricing_rate_card id, not a token that resembles one", () => {
+  assert.ok(rateCardIds.size > 20, "sanity: the migration should carry a card per product");
+  for (const slug of ["amj80-series-awning-window", "amj150-series-sliding-door", "amj100-series-pivot-door"]) {
+    const { pricingRef } = deriveEstimatorFields({
+      slug, family: "awning-window", category: "windows",
+      standardGlass: "6mm Tempered Clear Glass",
+      minWidth: 400, maxWidth: 1000, minHeight: 400, maxHeight: 2400,
+    });
+    assert.equal(pricingRef, slug, "the ref must equal the slug");
+    assert.ok(
+      rateCardIds.has(pricingRef),
+      `pricingRef "${pricingRef}" matches no active rate card — the estimator resolves rate cards BY this value, so a mismatch fails every AI run`,
+    );
+  }
+});
+
+test("CONTRACT: a decorative ref shape would be caught", () => {
+  // Guards the guard: if someone reintroduces a prefixed/versioned token, the
+  // assertion above must actually fail rather than pass vacuously.
+  assert.equal(rateCardIds.has("price.amj80-series-awning-window.v1"), false);
+});
