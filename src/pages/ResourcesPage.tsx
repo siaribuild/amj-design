@@ -15,7 +15,7 @@
 //   0        an honest panel — no rail, no search, no list furniture
 //   1–11     the list alone. Two filters over three records is the placeholder
 //            problem expressed as taxonomy.
-//   12+      the filter rail appears: kind first, then topic
+//   12+      the category filter appears
 //   25+      search appears
 //   40+      the list renders 40 and offers "Load more"
 //
@@ -27,7 +27,7 @@ import { useMemo, useState } from "react";
 import { AlertCircle, ArrowRight, Search, X } from "lucide-react";
 import { type Page, SLabel, Btn, CtaBanner } from "../app/ui";
 import {
-  resources, resourceKinds, resourceTopics, imageUrl, getPage, resourceDate, type Resource,
+  posts, postCategories, imageUrl, getPage, postDate, type Post,
 } from "../data/catalogue";
 import { FilterSelect } from "../components/FilterSelect";
 import { fileSize, docDate } from "../components/DocumentRow";
@@ -49,24 +49,22 @@ const PAGE_SIZE = 40;
 // small to carry weight, and summaries clipped mid-word. Do not reinstate it
 // from git — the replacement comes from the design work, not from this file's
 // history.
-function ResourceCard({ resource, onOpen }: {
-  resource: Resource; onOpen: (slug: string) => void;
+function PostCard({ post, onOpen }: {
+  post: Post; onOpen: (slug: string) => void;
 }) {
-  const date = resourceDate(resource);
-  const first = resource.attachments[0];
-  const extra = resource.attachments.length - 1;
+  const date = postDate(post);
+  const file = post.attachment;
 
   return (
-    <button onClick={() => onOpen(resource.slug)}
+    <button onClick={() => onOpen(post.slug)}
       className="card card-link p-5 text-left flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2">
-      {/* KIND in TOPIC — both axes in one label. */}
       <span className="block text-[10px] uppercase tracking-[0.14em] text-sage mb-2" style={MONO}>
-        {resource.kindTitle}<span className="text-quieter"> in {resource.topicTitle}</span>
+        {post.categoryTitle}
       </span>
       <span className="block text-[17px] leading-tight text-ink font-semibold mb-1.5" style={DISPLAY}>
-        {resource.title}
+        {post.title}
       </span>
-      <span className="text-sm text-body leading-relaxed line-clamp-2">{resource.summary}</span>
+      <span className="text-sm text-body leading-relaxed line-clamp-2">{post.summary}</span>
       {/* The files are a HINT of what is inside, never the destination — every
           card opens the article, and downloading happens from its rail, where
           the scope note travels with the file. */}
@@ -75,8 +73,8 @@ function ResourceCard({ resource, onOpen }: {
           Read <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
         </span>
         <span className="text-[11px] text-quiet text-right" style={MONO}>
-          {first
-            ? [first.ext, fileSize(first.size)].filter(Boolean).join(" · ") + (extra > 0 ? ` +${extra}` : "")
+          {file
+            ? [file.ext, fileSize(file.size)].filter(Boolean).join(" · ")
             : date ? `${date.label === "Updated" ? "Upd. " : ""}${docDate(date.value)}` : ""}
         </span>
       </span>
@@ -86,79 +84,59 @@ function ResourceCard({ resource, onOpen }: {
 
 export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const open = (slug: string) => { setPage("resource", pathForPage("resource", slug)); window.scrollTo(0, 0); };
+  const open = (slug: string) => { setPage("post", pathForPage("post", slug)); window.scrollTo(0, 0); };
 
-  const [kind, setKind] = useState("all");
-  const [topic, setTopic] = useState("all");
+  const [category, setCategory] = useState("all");
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE_SIZE);
 
   const hero = getPage("resources");
   const heroUrl = imageUrl(hero?.heroImage, { w: 1920, h: 1080 });
 
-  const total = resources.length;
+  const total = posts.length;
   const withFilters = total >= SHOW_FILTERS_AT;
   const withSearch = total >= SHOW_SEARCH_AT;
 
-  // Only values that actually HAVE a resource. A rail offering eight topics
+  // Only categories that actually HAVE a post. A filter offering eight values
   // where six return nothing is the placeholder problem, one level up.
-  const kinds = resourceKinds.filter((k) => resources.some((r) => r.kindSlug === k.slug));
-  const topics = resourceTopics.filter((t) => resources.some((r) => r.topicSlug === t.slug));
+  const cats = postCategories.filter((c) => posts.some((p) => p.categorySlug === c.slug));
 
   // Search covers everything already in memory EXCEPT bodies — those are
   // fetched per article and pulling them all here to search would undo the one
   // decision that keeps this section cheap for every other page on the site.
-  const matches = (r: Resource, q: string) => {
+  const matches = (p: Post, q: string) => {
     const hay = [
-      r.title, r.summary, r.kindTitle, r.topicTitle,
-      ...r.attachments.flatMap((a) => [a.label, a.standardRef ?? ""]),
+      p.title, p.summary, p.categoryTitle,
+      p.attachment?.label ?? "", p.attachment?.standardRef ?? "",
     ].join(" ").toLowerCase();
     return q.split(/\s+/).filter(Boolean).every((term) => hay.includes(term));
   };
 
   const q = query.trim().toLowerCase();
-  const filtered = useMemo(() => resources.filter((r) =>
-    (kind === "all" || r.kindSlug === kind) &&
-    (topic === "all" || r.topicSlug === topic) &&
-    (!q || matches(r, q))), [kind, topic, q]);
+  const filtered = useMemo(() => posts.filter((p) =>
+    (category === "all" || p.categorySlug === category) &&
+    (!q || matches(p, q))), [category, q]);
 
-  const activeTopic = topics.find((t) => t.slug === topic);
-  const activeKind = kinds.find((k) => k.slug === kind);
-  const filtering = kind !== "all" || topic !== "all" || q !== "";
-  const clear = () => { setKind("all"); setTopic("all"); setQuery(""); };
+  const activeCat = cats.find((c) => c.slug === category);
+  const filtering = category !== "all" || q !== "";
+  const clear = () => { setCategory("all"); setQuery(""); };
 
   const shown = filtered.slice(0, limit);
-  const heading = activeTopic?.title ?? (activeKind ? `${activeKind.title}s` : "All resources");
+  const heading = activeCat ? `${activeCat.title}s` : "All resources";
 
-  const kindOptions = [
-    { slug: "all", name: "Any kind", count: total },
-    ...kinds.map((k) => ({ slug: k.slug, name: k.title, count: resources.filter((r) => r.kindSlug === k.slug).length })),
-  ];
-  const topicOptions = [
-    { slug: "all", name: "All topics", count: total },
-    ...topics.map((t) => ({ slug: t.slug, name: t.title, count: resources.filter((r) => r.topicSlug === t.slug).length })),
+  const catOptions = [
+    { slug: "all", name: "All categories", count: total },
+    ...cats.map((c) => ({ slug: c.slug, name: c.title, count: posts.filter((p) => p.categorySlug === c.slug).length })),
   ];
 
   const rail = (
     <>
       <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-body mb-3" style={MONO}>Kind</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-body mb-3" style={MONO}>Category</p>
         <div className="flex flex-col">
-          {kindOptions.map((o) => (
-            <button key={o.slug} onClick={() => setKind(o.slug)}
-              className={`text-left px-3 py-2.5 text-sm border-l-2 transition-colors cursor-pointer flex items-center justify-between gap-2 ${kind === o.slug ? "border-sage text-ink font-semibold bg-sage-wash" : "border-transparent text-body hover:text-ink hover:bg-black/[0.02]"}`}>
-              <span>{o.name}</span>
-              <span className="text-[11px] text-quieter flex-shrink-0" style={MONO}>{o.count}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-body mb-3" style={MONO}>Topic</p>
-        <div className="flex flex-col">
-          {topicOptions.map((o) => (
-            <button key={o.slug} onClick={() => setTopic(o.slug)}
-              className={`text-left px-3 py-2.5 text-sm border-l-2 transition-colors cursor-pointer flex items-center justify-between gap-2 ${topic === o.slug ? "border-sage text-ink font-semibold bg-sage-wash" : "border-transparent text-body hover:text-ink hover:bg-black/[0.02]"}`}>
+          {catOptions.map((o) => (
+            <button key={o.slug} onClick={() => setCategory(o.slug)}
+              className={`text-left px-3 py-2.5 text-sm border-l-2 transition-colors cursor-pointer flex items-center justify-between gap-2 ${category === o.slug ? "border-sage text-ink font-semibold bg-sage-wash" : "border-transparent text-body hover:text-ink hover:bg-black/[0.02]"}`}>
               <span>{o.name}</span>
               <span className="text-[11px] text-quieter flex-shrink-0" style={MONO}>{o.count}</span>
             </button>
@@ -227,9 +205,8 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
           <div className={`py-8 md:py-10 ${withFilters ? "lg:grid lg:grid-cols-[240px_1fr] lg:gap-10" : ""}`}>
             {withFilters && (
               <>
-                <div className="lg:hidden mb-8 space-y-5">
-                  <FilterSelect label="Kind" listLabel="Resource kind" options={kindOptions} value={kind} unit="resource" onSelect={setKind} />
-                  <FilterSelect label="Topic" listLabel="Resource topic" options={topicOptions} value={topic} unit="resource" onSelect={setTopic} />
+                <div className="lg:hidden mb-8">
+                  <FilterSelect label="Category" listLabel="Post category" options={catOptions} value={category} unit="post" onSelect={setCategory} />
                 </div>
                 <aside className="hidden lg:block">
                   <div className="lg:sticky lg:top-24 space-y-8">{rail}</div>
@@ -251,8 +228,8 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
                   </p>
                 )}
               </div>
-              {activeTopic?.description && (
-                <p className="text-body text-[15px] leading-relaxed max-w-2xl mb-6">{activeTopic.description}</p>
+              {activeCat?.description && (
+                <p className="text-body text-[15px] leading-relaxed max-w-2xl mb-6">{activeCat.description}</p>
               )}
 
               {/* Search sits INSIDE the results column, not in the site header:
@@ -273,13 +250,13 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
                   )}
                 </div>
               )}
-              {!activeTopic?.description && !withSearch && <div className="mb-6" />}
+              {!activeCat?.description && !withSearch && <div className="mb-6" />}
 
               {shown.length > 0 ? (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                    {shown.map((r) => (
-                      <ResourceCard key={r.slug} resource={r} onOpen={open} />
+                    {shown.map((p) => (
+                      <PostCard key={p.slug} post={p} onOpen={open} />
                     ))}
                   </div>
 
@@ -311,7 +288,7 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
                   <p className="text-ink font-semibold mb-1.5">
                     {q ? `Nothing matches "${query.trim()}".` : "Nothing matches this selection."}
                   </p>
-                  <p className="text-sm text-body mb-5">Try another kind or topic{q ? ", or a different word" : ""}.</p>
+                  <p className="text-sm text-body mb-5">Try another category{q ? ", or a different word" : ""}.</p>
                   <div className="flex flex-wrap gap-2.5 justify-center">
                     <Btn variant="outline" size="sm" onClick={clear}>Clear filters</Btn>
                     <Btn variant="ghost" size="sm" onClick={() => go("contact")}>Ask a question</Btn>

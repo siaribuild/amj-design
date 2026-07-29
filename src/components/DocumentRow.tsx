@@ -10,7 +10,7 @@
 // article that hosts it: everything the article page would have told the reader
 // travels on the row, before the click.
 import { Download, FileText, ArrowRight } from "lucide-react";
-import type { Resource, ResourceAttachment } from "../data/catalogue";
+import type { Post, PostAttachment } from "../data/catalogue";
 
 /** Bytes → what a person would say. A trade user on site data notices 12 MB. */
 export function fileSize(bytes?: number): string | null {
@@ -44,12 +44,12 @@ export const DOC_TYPE_ORDER = [
   "datasheet", "installation", "cad", "test-report", "certificate", "warranty", "maintenance",
 ];
 
-export function DocumentRow({ attachment, resource, onOpenResource }: {
-  attachment: ResourceAttachment;
-  resource: Resource;
+export function DocumentRow({ attachment, post, onOpenPost }: {
+  attachment: PostAttachment;
+  post: Post;
   /** Offered by the PRODUCT page, which is not the article. Omitted on the
    *  article itself, where the reader is already there. */
-  onOpenResource?: (slug: string) => void;
+  onOpenPost?: (slug: string) => void;
 }) {
   // Only the values that exist. A separator with nothing after it is worse than
   // a shorter line, and a placeholder for a missing revision is a small lie.
@@ -85,10 +85,10 @@ export function DocumentRow({ attachment, resource, onOpenResource }: {
         </span>
         <Download className="w-4 h-4 text-quieter group-hover:text-sage flex-shrink-0 mt-0.5 transition-colors" aria-hidden="true" />
       </a>
-      {/* Every resource has a body — the schema requires one — so this link
+      {/* Every post has a body — the schema requires one — so this link
           always has somewhere real to land. */}
-      {onOpenResource && (
-        <button onClick={() => onOpenResource(resource.slug)}
+      {onOpenPost && (
+        <button onClick={() => onOpenPost(post.slug)}
           className="inline-flex items-center gap-1.5 text-xs text-sage hover:text-sage-deep px-4 pb-3 -mt-1 cursor-pointer">
           Read the article <ArrowRight className="w-3 h-3" aria-hidden="true" />
         </button>
@@ -98,8 +98,8 @@ export function DocumentRow({ attachment, resource, onOpenResource }: {
 }
 
 /** Documents grouped by kind, in the code-defined order. */
-export function groupDocuments(docs: { resource: Resource; attachment: ResourceAttachment }[]) {
-  const byType = new Map<string, { resource: Resource; attachment: ResourceAttachment }[]>();
+export function groupDocuments(docs: { post: Post; attachment: PostAttachment }[]) {
+  const byType = new Map<string, { post: Post; attachment: PostAttachment }[]>();
   for (const d of docs) {
     const k = d.attachment.docType || "datasheet";
     byType.set(k, [...(byType.get(k) ?? []), d]);

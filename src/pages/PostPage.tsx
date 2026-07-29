@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// RESOURCE — one article, and the documents it hosts
+// POST — one article, and the document it hosts
 //
-// The body is NOT in the catalogue payload: portable text for every resource
+// The body is NOT in the catalogue payload: portable text for every post
 // would make every page on the site pay for a route almost nobody opens. It is
 // fetched here, once, on mount.
 //
@@ -16,10 +16,10 @@ import { PortableText, type PortableTextComponents } from "@portabletext/react";
 import { ChevronLeft, Check, ArrowRight, Loader2 } from "lucide-react";
 import { type Page, SLabel, CtaBanner } from "../app/ui";
 import {
-  getResourceBySlug, getProductBySlug, resources, imageUrl, resourceDate, type Resource,
+  getPostBySlug, getProductBySlug, posts, imageUrl, postDate, type Post,
 } from "../data/catalogue";
 import { DocumentRow, docDate } from "../components/DocumentRow";
-import { fetchResourceBody } from "../data/sanity";
+import { fetchPostBody } from "../data/sanity";
 import { pathForPage } from "../app/routes";
 
 const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
@@ -88,22 +88,22 @@ const components: PortableTextComponents = {
   },
 };
 
-export function ResourceArticlePage({ slug, setPage, onOpenProduct }: {
+export function PostPage({ slug, setPage, onOpenProduct }: {
   slug: string;
   setPage: (p: Page, path?: string) => void;
   onOpenProduct: (slug: string) => void;
 }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const openResource = (s: string) => { setPage("resource", pathForPage("resource", s)); window.scrollTo(0, 0); };
+  const openPost = (s: string) => { setPage("post", pathForPage("post", s)); window.scrollTo(0, 0); };
 
-  const resource: Resource | undefined = getResourceBySlug(slug);
+  const post: Post | undefined = getPostBySlug(slug);
   const [body, setBody] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let live = true;
     setLoading(true);
-    fetchResourceBody(slug)
+    fetchPostBody(slug)
       .then((b) => { if (live) { setBody(b); setLoading(false); } })
       .catch(() => { if (live) { setBody([]); setLoading(false); } });
     return () => { live = false; };
@@ -118,7 +118,7 @@ export function ResourceArticlePage({ slug, setPage, onOpenProduct }: {
     return hs.length >= 4 ? hs : [];
   }, [body]);
 
-  if (!resource) {
+  if (!post) {
     return (
       <div className="ground-paper min-h-screen pt-28 pb-20">
         <div className="max-w-2xl mx-auto px-6">
@@ -134,17 +134,17 @@ export function ResourceArticlePage({ slug, setPage, onOpenProduct }: {
     );
   }
 
-  const products = resource.productSlugs.map(getProductBySlug).filter(Boolean);
-  const hasRail = resource.attachments.length > 0 || products.length > 0 || contents.length > 0;
+  const products = post.productSlugs.map(getProductBySlug).filter(Boolean);
+  const hasRail = !!post.attachment || products.length > 0 || contents.length > 0;
   const shell = hasRail ? "max-w-6xl" : "max-w-3xl";
-  const heroUrl = imageUrl(resource.heroImage, { w: 1920, h: 1080 });
-  const related = resources.filter((r) => r.topicSlug === resource.topicSlug && r.slug !== resource.slug).slice(0, 3);
-  const date = resourceDate(resource);
+  const heroUrl = imageUrl(post.heroImage, { w: 1920, h: 1080 });
+  const related = posts.filter((p) => p.categorySlug === post.categorySlug && p.slug !== post.slug).slice(0, 3);
+  const date = postDate(post);
 
   // Only the parts that are true. If nothing is, the line does not render.
   const meta = [
     date && `${date.label} ${docDate(date.value)}`,
-    resource.attachments.length > 0 && `${resource.attachments.length} document${resource.attachments.length === 1 ? "" : "s"}`,
+    post.attachment && "1 document",
   ].filter(Boolean).join(" · ");
 
   return (
@@ -160,12 +160,12 @@ export function ResourceArticlePage({ slug, setPage, onOpenProduct }: {
         <div className="hero-scrim" aria-hidden="true" />
         <div className={`relative w-full ${shell} mx-auto px-6 pt-24 pb-10 md:pt-28 md:pb-12`}>
           {/* Both axes, same order as the index row. */}
-          <SLabel light>{resource.kindTitle} in {resource.topicTitle}</SLabel>
+          <SLabel light>{post.categoryTitle}</SLabel>
           <h1 className="font-semibold text-white leading-[1.05] tracking-tight mb-3 max-w-[24ch]"
             style={{ ...DISPLAY, fontSize: "clamp(1.8rem, 3.6vw, 2.6rem)" }}>
-            {resource.title}
+            {post.title}
           </h1>
-          <p className="text-white/80 text-[15px] md:text-base leading-relaxed split-prose">{resource.summary}</p>
+          <p className="text-white/80 text-[15px] md:text-base leading-relaxed split-prose">{post.summary}</p>
           {meta && <p className="text-white/50 text-[12.5px] mt-3" style={MONO}>{meta}</p>}
         </div>
       </section>
@@ -181,14 +181,12 @@ export function ResourceArticlePage({ slug, setPage, onOpenProduct }: {
             /* order-2 on desktop, FIRST on mobile — the files are why most
                people opened this. */
             <aside className="lg:order-2 lg:w-[380px] lg:flex-shrink-0 lg:sticky lg:top-24 space-y-6">
-              {resource.attachments.length > 0 && (
+              {post.attachment && (
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2" style={MONO}>Documents</p>
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2" style={MONO}>Attachment</p>
                   <div className="card">
-                    {resource.attachments.map((a, i) => (
-                      /* No onOpenResource — we are already on it. */
-                      <DocumentRow key={i} attachment={a} resource={resource} />
-                    ))}
+                    {/* No onOpenPost — we are already on it. */}
+                    <DocumentRow attachment={post.attachment} post={post} />
                   </div>
                 </div>
               )}
@@ -230,11 +228,11 @@ export function ResourceArticlePage({ slug, setPage, onOpenProduct }: {
                 <PortableText value={body} components={components} />
               </div>
             ) : (
-              /* Every resource HAS a body — the schema requires one — so an empty
+              /* Every post HAS a body — the schema requires one — so an empty
                  result here means the fetch failed, not that the page is empty. */
               <p className="text-body leading-relaxed split-prose">
                 This didn't load. Refreshing usually fixes it.
-                {resource.attachments.length > 0 && " Its documents are listed alongside and are unaffected."}
+                {post.attachment && " Its attachment is listed alongside and is unaffected."}
               </p>
             )}
           </div>
@@ -247,7 +245,7 @@ export function ResourceArticlePage({ slug, setPage, onOpenProduct }: {
             <div className="flex items-end justify-between gap-4 mb-6">
               <h2 className="font-semibold text-ink leading-tight"
                 style={{ ...DISPLAY, fontSize: "clamp(1.4rem, 2.4vw, 1.8rem)" }}>
-                More in {resource.topicTitle}
+                More in {post.categoryTitle}
               </h2>
               <button onClick={() => go("resources")}
                 className="text-sm text-sage hover:text-sage-deep inline-flex items-center gap-1.5 flex-shrink-0 pb-1 cursor-pointer">
@@ -256,9 +254,9 @@ export function ResourceArticlePage({ slug, setPage, onOpenProduct }: {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {related.map((r) => (
-                <button key={r.slug} onClick={() => openResource(r.slug)}
+                <button key={r.slug} onClick={() => openPost(r.slug)}
                   className="card card-link p-5 text-left flex flex-col cursor-pointer">
-                  <span className="block text-[10px] uppercase tracking-[0.14em] text-sage mb-1.5" style={MONO}>{r.kindTitle}</span>
+                  <span className="block text-[10px] uppercase tracking-[0.14em] text-sage mb-1.5" style={MONO}>{r.categoryTitle}</span>
                   <span className="block text-[16px] leading-tight text-ink font-semibold mb-1.5" style={DISPLAY}>{r.title}</span>
                   <span className="text-sm text-body leading-relaxed line-clamp-2">{r.summary}</span>
                 </button>

@@ -17,7 +17,7 @@ export type Page =
   | "approved-quote" | "trade" | "login" | "dashboard"
   | "account" | "help"
   | "track-order" | "order"
-  | "privacy" | "resource";
+  | "privacy" | "post";
 
 
 // 4-pane window mark — logo and repeated motif

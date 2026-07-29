@@ -62,24 +62,20 @@ export const CATALOGUE_QUERY = `{
   "locations": *[_type=="showroomLocation"]|order(stateCode asc, suburb asc){
     "id":_id, stateCode, suburb, displayName, lat, lng, appointmentAvailable, status, historicalAliases
   },
-  "resourceKinds": *[_type=="resourceKind"]|order(order asc, title asc){
-    "id":_id, "slug":slug.current, title, order, dateDisplay, allowsProducts
+  "postCategories": *[_type=="postCategory"]|order(order asc, title asc){
+    "id":_id, "slug":slug.current, title, order, description, dateDisplay, allowsProducts
   },
-  "resourceTopics": *[_type=="resourceTopic"]|order(order asc, title asc){
-    "id":_id, "slug":slug.current, title, order, description
-  },
-  "resources": *[_type=="resource" && defined(slug.current)]|order(publishedAt desc, title asc){
+  "posts": *[_type=="post" && defined(slug.current)]|order(publishedAt desc, title asc){
     "id":_id, "slug":slug.current, title, summary,
-    "topicSlug": topic->slug.current, "topicTitle": topic->title,
-    // Denormalised deliberately: the index renders a kind badge and a date on
-    // every row, and resolving the reference per row at render time would mean
-    // holding the kind list in every component that draws one.
-    "kindSlug": kind->slug.current, "kindTitle": kind->title,
-    "kindDateDisplay": kind->dateDisplay,
+    // Denormalised deliberately: a card renders the category name and a date,
+    // and resolving the reference per card would mean holding the category
+    // list in every component that draws one.
+    "categorySlug": category->slug.current, "categoryTitle": category->title,
+    "categoryDateDisplay": category->dateDisplay,
     "productSlugs": products[]->slug.current,
     "heroImage": heroImage{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip, "aspect": asset->metadata.dimensions.aspectRatio },
     publishedAt, updatedAt,
-    "attachments": attachments[]{
+    "attachment": attachment{
       label, docType, revision, revisedAt, standardRef, note,
       "url": file.asset->url,
       "ext": upper(file.asset->extension),
@@ -90,9 +86,9 @@ export const CATALOGUE_QUERY = `{
 }`;
 
 // The BODY, fetched only when an article page opens. Portable text for every
-// resource riding the catalogue query would make every page on the site pay for
+// post riding the catalogue query would make every page on the site pay for
 // a route most visitors never open. One round-trip on the page that needs it.
-export const RESOURCE_BODY_QUERY = `*[_type=="resource" && slug.current==$slug][0]{
+export const POST_BODY_QUERY = `*[_type=="post" && slug.current==$slug][0]{
   "body": body[]{
     ...,
     _type == "image" => { "url": asset->url, "lqip": asset->metadata.lqip, alt, caption }
@@ -100,9 +96,8 @@ export const RESOURCE_BODY_QUERY = `*[_type=="resource" && slug.current==$slug][
 }`;
 
 export interface RawCataloguePayload {
-  resourceKinds?: any[];
-  resourceTopics?: any[];
-  resources?: any[];
+  postCategories?: any[];
+  posts?: any[];
   categories: Category[];
   families: Family[];
   products: any[];
@@ -244,19 +239,20 @@ export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
     })),
     pages: dedupePages((raw.pages ?? []).filter((p) => p?.pageId).map(normalizePage)),
     locations: (raw.locations ?? []).filter((l) => l?.id).map(normalizeLocation),
-    resourceKinds: (raw.resourceKinds ?? []).filter((k: any) => k?.slug),
-    resourceTopics: (raw.resourceTopics ?? []).filter((t: any) => t?.slug),
-    // A resource missing either axis cannot be filtered to, and both are
-    // required by the schema — this only guards a draft-mode fetch. The body is
-    // not projected here at all; it is fetched per article.
-    resources: (raw.resources ?? [])
-      .filter((r: any) => r?.slug && r?.kindSlug && r?.topicSlug)
-      .map((r: any) => ({
-        ...r,
-        productSlugs: (r.productSlugs ?? []).filter(Boolean),
-        heroImage: normalizeImage(r.heroImage) ?? undefined,
-        attachments: (r.attachments ?? []).filter((a: any) => a?.url && a?.label),
-        seo: normalizeSeo(r.seo),
+    postCategories: (raw.postCategories ?? []).filter((c: any) => c?.slug),
+    // A post with no category cannot be filtered to; the schema requires one, so
+    // this only guards a draft-mode fetch. The body is not projected here at
+    // all — it is fetched per post.
+    posts: (raw.posts ?? [])
+      .filter((p: any) => p?.slug && p?.categorySlug)
+      .map((p: any) => ({
+        ...p,
+        productSlugs: (p.productSlugs ?? []).filter(Boolean),
+        heroImage: normalizeImage(p.heroImage) ?? undefined,
+        // A half-uploaded attachment (no asset, or no label) is dropped rather
+        // than rendered as a row that downloads nothing.
+        attachment: p.attachment?.url && p.attachment?.label ? p.attachment : undefined,
+        seo: normalizeSeo(p.seo),
       })),
   };
 }

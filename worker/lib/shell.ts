@@ -10,7 +10,7 @@
 // the client would use. The client still injects on navigation; this only has to
 // be right for the FIRST response, which is all a scraper ever sees.
 import type { Env } from "../types";
-import { getPage, getProductBySlug, getResourceBySlug, products, resources, imageUrl } from "../../src/data/catalogue";
+import { getPage, getProductBySlug, getPostBySlug, products, posts, imageUrl } from "../../src/data/catalogue";
 import { routeFromPathname } from "../../src/app/routes";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -46,10 +46,10 @@ export async function buildSitemap(env: Env, origin: string): Promise<Response> 
   const urls = [
     ...PUBLIC_PAGES.map((p) => ({ loc: `${origin}/${p}`, priority: p === "" ? "1.0" : "0.7" })),
     ...products.filter((p) => p.slug).map((p) => ({ loc: `${origin}/products/${p.slug}`, priority: "0.6" })),
-    // Resources are indexable content in their own right — each is an article at a
+    // Posts are indexable content in their own right — each is an article at a
     // stable URL, and several of them exist to be FOUND (a certifier searching a
     // standard reference lands on the article, not on the product).
-    ...resources.filter((r) => r.slug).map((r) => ({ loc: `${origin}/resources/${r.slug}`, priority: "0.5" })),
+    ...posts.filter((p) => p.slug).map((p) => ({ loc: `${origin}/resources/${p.slug}`, priority: "0.5" })),
   ];
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -89,15 +89,15 @@ export async function renderShell(env: Env, shellHtml: string, url: URL): Promis
       description = p.shortDescription || "";
       image = imageUrl(p.heroImage, { w: 1200, h: 630 }) || "";
     }
-  } else if (route.page === "resource") {
-    // A shared article link previewed as the generic site card before this: the
-    // branch below would have looked up a `resource` page record that cannot exist.
-    const g = getResourceBySlug(route.resourceSlug ?? "");
-    if (g) {
-      // A resource titled "About OpenFrame" must not become "About OpenFrame — OpenFrame".
-      title = g.seo?.metaTitle || (brand && g.title.includes(brand) ? g.title : `${g.title}${suffix}`);
-      description = g.seo?.metaDescription || g.summary || "";
-      image = imageUrl(g.seo?.openGraph?.image, { w: 1200, h: 630 }) || imageUrl(g.heroImage, { w: 1200, h: 630 }) || "";
+  } else if (route.page === "post") {
+    // A shared post link previewed as the generic site card before this: the
+    // branch below would have looked up a `post` page record that cannot exist.
+    const p = getPostBySlug(route.postSlug ?? "");
+    if (p) {
+      // A post titled "About OpenFrame" must not become "About OpenFrame — OpenFrame".
+      title = p.seo?.metaTitle || (brand && p.title.includes(brand) ? p.title : `${p.title}${suffix}`);
+      description = p.seo?.metaDescription || p.summary || "";
+      image = imageUrl(p.seo?.openGraph?.image, { w: 1200, h: 630 }) || imageUrl(p.heroImage, { w: 1200, h: 630 }) || "";
     }
   } else {
     const pageId = route.page === "home" ? "home" : route.page;

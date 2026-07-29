@@ -24,9 +24,9 @@ import { type TrackFocus } from "../pages/OrderTrackingPage";
 import { ContactPage } from "../pages/ContactPage";
 import { PrivacyPolicyPage } from "../pages/PrivacyPolicyPage";
 import { ResourcesPage } from "../pages/ResourcesPage";
-import { ResourceArticlePage } from "../pages/ResourceArticlePage";
+import { PostPage } from "../pages/PostPage";
 import { pathForPage, routeFromPathname } from "./routes";
-import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug, getFamily, getCategory, getActiveLocations, getResourceBySlug } from "../data/catalogue";
+import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug, getFamily, getCategory, getActiveLocations, getPostBySlug } from "../data/catalogue";
 import { parseScheduleText } from "../data/scheduleParse";
 import { matchSchedule } from "../data/scheduleMatch";
 import { Seo } from "./Seo";
@@ -1804,12 +1804,12 @@ export default function App() {
     const nextPath = pathOverride ?? pathForPage(p);
     if (window.location.pathname !== nextPath) window.history.pushState({ page: p }, "", nextPath);
     setFocusRecord(null);
-    // Resources carry their slug in the path, so it is read back OUT of the path
+    // Posts carry their slug in the path, so it is read back OUT of the path
     // rather than threaded through a second callback — the URL is already the
     // one source of truth, and popstate reads it the same way.
-    if (p === "resource" && pathOverride) {
-      const s = routeFromPathname(pathOverride).resourceSlug;
-      if (s) setResourceSlug(s);
+    if (p === "post" && pathOverride) {
+      const s = routeFromPathname(pathOverride).postSlug;
+      if (s) setPostSlug(s);
     }
     setPage(p);
     window.scrollTo(0, 0);
@@ -1823,16 +1823,16 @@ export default function App() {
   const [catCategory, setCatCategory] = useState<CategorySlug>("windows");
   const [catFamily, setCatFamily] = useState<string>("all");
   const [productSlug, setProductSlug] = useState<string>(initialRoute.productSlug ?? catalogueProducts[0]?.slug ?? "");
-  // No fallback to resources[0]: a slug the router didn't name is not a page, and
+  // No fallback to posts[0]: a slug the router didn't name is not a post, and
   // silently opening some other article would be worse than the not-found panel.
-  const [resourceSlug, setResourceSlug] = useState<string>(initialRoute.resourceSlug ?? "");
+  const [postSlug, setPostSlug] = useState<string>(initialRoute.postSlug ?? "");
 
   useEffect(() => {
     const syncRoute = () => {
       const route = routeFromPathname(window.location.pathname);
       setPage(route.page);
       if (route.productSlug) setProductSlug(route.productSlug);
-      if (route.resourceSlug) setResourceSlug(route.resourceSlug);
+      if (route.postSlug) setPostSlug(route.postSlug);
       window.scrollTo(0, 0);
     };
     window.addEventListener("popstate", syncRoute);
@@ -2077,7 +2077,7 @@ export default function App() {
       // did nothing but scroll to top — a dead end for traffic the home page sends.
       case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;
       case "resources":        return <ResourcesPage setPage={navigateTo} />;
-      case "resource":         return <ResourceArticlePage slug={resourceSlug} setPage={navigateTo} onOpenProduct={openProduct} />;
+      case "post":             return <PostPage slug={postSlug} setPage={navigateTo} onOpenProduct={openProduct} />;
       case "contact":          return <ContactPage setPage={navigateTo} user={user} />;
       case "privacy":          return <PrivacyPolicyPage setPage={navigateTo} />;
       case "approved-quote":   return <ApprovedQuotePage />;
@@ -2153,30 +2153,30 @@ export default function App() {
         ] : undefined,
       };
     }
-    // An article. Its own SEO tab wins; without one the summary IS the meta
+    // A post. Its own SEO tab wins; without one the summary IS the meta
     // description, which is what the summary was written to be.
-    if (page === "resource") {
-      const g = getResourceBySlug(resourceSlug);
-      const img = imageUrl(g?.heroImage, { w: 1200, h: 630 });
+    if (page === "post") {
+      const p = getPostBySlug(postSlug);
+      const img = imageUrl(p?.heroImage, { w: 1200, h: 630 });
       return {
         // "About OpenFrame — OpenFrame". A title that already carries the brand
         // does not get it a second time.
-        seo: g?.seo,
-        title: g ? (co && g.title.includes(co) ? g.title : `${g.title}${suffix}`) : co ?? "Resource",
-        description: g?.summary, image: img,
+        seo: p?.seo,
+        title: p ? (co && p.title.includes(co) ? p.title : `${p.title}${suffix}`) : co ?? "Post",
+        description: p?.summary, image: img,
         // "post" was already in the schema.org kind map with an Article default
         // and the dates wired — the extension point the file said to use.
-        facts: g ? {
-          kind: "post" as const, url: abs(pathForPage("resource", g.slug)),
-          name: g.title, description: g.summary || undefined, image: img || undefined,
-          datePublished: g.publishedAt,
+        facts: p ? {
+          kind: "post" as const, url: abs(pathForPage("post", p.slug)),
+          name: p.title, description: p.summary || undefined, image: img || undefined,
+          datePublished: p.publishedAt,
         } : null,
         // Two crumbs, not three: the category has no URL of its own, so a
         // category crumb would repeat /resources — and on "About OpenFrame",
         // whose category is also "About OpenFrame", it repeated the name too.
-        breadcrumbs: g ? [
+        breadcrumbs: p ? [
           { name: "Resources", url: abs(pathForPage("resources")) },
-          { name: g.title, url: abs(pathForPage("resource", g.slug)) },
+          { name: p.title, url: abs(pathForPage("post", p.slug)) },
         ] : undefined,
       };
     }

@@ -670,9 +670,8 @@ export interface CatalogueData {
   colours?: ProductOption[];
   pages?: SitePage[];
   locations?: ShowroomLocation[];
-  resourceKinds?: ResourceKind[];
-  resourceTopics?: ResourceTopic[];
-  resources?: Resource[];
+  postCategories?: PostCategory[];
+  posts?: Post[];
 }
 export function hydrateCatalogue(data: CatalogueData): void {
   if (data.categories?.length) categories = data.categories;
@@ -681,39 +680,33 @@ export function hydrateCatalogue(data: CatalogueData): void {
   if (data.colours?.length) colorbondColourOptions = data.colours;
   if (data.pages?.length) pages = data.pages;
   if (data.locations?.length) locations = data.locations;
-  if (data.resourceKinds?.length) resourceKinds = data.resourceKinds;
-  if (data.resourceTopics?.length) resourceTopics = data.resourceTopics;
-  if (data.resources?.length) resources = data.resources;
+  if (data.postCategories?.length) postCategories = data.postCategories;
+  if (data.posts?.length) posts = data.posts;
 }
 
-// ─── Resources (Sanity-managed) ───────────────────────────────────────────────
-// An article that may also host files. The INDEX metadata below travels in the
-// one catalogue round-trip because the product Downloads tab needs it on a page
-// that is not the resources index — it is small and every page already pays for
-// that request. The BODY does not: portable text on ~n articles would bloat
-// every page load on the site to serve one route, so it is fetched per-article.
+// ─── Posts, the Resources section (Sanity-managed) ────────────────────────────
+// A post is an article that may also carry ONE attachment. The index metadata
+// below travels in the one catalogue round-trip because the product Downloads
+// tab needs it on a page that is not the resources index — it is small, and
+// every page already pays for that request. The BODY does not: portable text on
+// n posts would bloat every page load on the site to serve one route, so it is
+// fetched per post.
 //
-// Kinds and topics are DOCUMENTS in Sanity, not literal unions here: the owner
-// adds and renames them without a deploy, so no code may enumerate their values.
-export interface ResourceKind {
+// Categories are documents in Sanity, so no code may enumerate their values.
+export interface PostCategory {
   id: string; slug: string; title: string; order?: number;
-  /** Which date a resource of this kind shows. Set per kind because technical
-   *  documentation ages differently from a post: a datasheet's publication date
-   *  is noise beside its file revision, and a post without a date is suspect. */
+  /** Shown under the index heading when this category is selected. */
+  description?: string;
+  /** Which date a post in this category shows. Set per category because
+   *  technical documentation ages differently from a post: a datasheet's
+   *  publication date is noise beside the revision printed on the file. */
   dateDisplay: "published" | "updated" | "none";
-  /** Whether a resource of this kind may name products — i.e. whether its files
-   *  belong in a product's Downloads tab. Off for editorial kinds. */
+  /** Whether a post here may name products — i.e. whether its attachment
+   *  belongs in a product's Downloads tab. Off for editorial categories. */
   allowsProducts?: boolean;
 }
 
-export interface ResourceTopic {
-  id: string; slug: string; title: string; order?: number;
-  /** Shown under the index heading when this topic is selected — the role a
-   *  family's short description plays on the products page. */
-  description?: string;
-}
-
-export interface ResourceAttachment {
+export interface PostAttachment {
   /** Direct URL to the asset in Sanity's CDN. */
   url: string;
   /** What the document IS, in the reader's words — never the filename. */
@@ -732,55 +725,51 @@ export interface ResourceAttachment {
   note?: string;
 }
 
-export interface Resource {
+export interface Post {
   id: string;
   slug: string;
   title: string;
   summary: string;
-  /** What it IS. Denormalised from the kind document so a row can render a
-   *  badge and pick a date rule without resolving a reference. */
-  kindSlug: string;
-  kindTitle: string;
-  kindDateDisplay: ResourceKind["dateDisplay"];
-  /** What it is ABOUT. */
-  topicSlug: string;
-  topicTitle: string;
+  /** Denormalised from the category document so a card can render its name and
+   *  pick a date rule without resolving a reference. */
+  categorySlug: string;
+  categoryTitle: string;
+  categoryDateDisplay: PostCategory["dateDisplay"];
   /** Slugs of every product this applies to. Drives the Downloads tab. */
   productSlugs: string[];
   heroImage?: CatalogueImage;
-  attachments: ResourceAttachment[];
+  /** One per post. Optional in general, required when products are named. */
+  attachment?: PostAttachment;
   publishedAt?: string;
   /** The date the content was last checked — not the last keystroke. */
   updatedAt?: string;
   seo?: SeoMeta;
 }
 
-export let resourceKinds: ResourceKind[] = [];
-export let resourceTopics: ResourceTopic[] = [];
-export let resources: Resource[] = [];
+export let postCategories: PostCategory[] = [];
+export let posts: Post[] = [];
 
-export const getResourceBySlug = (slug: string): Resource | undefined =>
-  resources.find((r) => r.slug === slug);
+export const getPostBySlug = (slug: string): Post | undefined => posts.find((p) => p.slug === slug);
 
-/** The date to show for a resource, and what to call it — driven by its kind.
- *  Returns null when the kind shows no date, which is the right answer for a
- *  technical document whose real date is the revision on the file itself. */
-export function resourceDate(r: Resource): { label: string; value: string } | null {
-  if (r.kindDateDisplay === "none") return null;
-  if (r.kindDateDisplay === "updated") {
-    const v = r.updatedAt || r.publishedAt;
+/** The date to show for a post, and what to call it — driven by its category.
+ *  Returns null when the category shows no date, which is the right answer for
+ *  a technical document whose real date is the revision on the file. */
+export function postDate(p: Post): { label: string; value: string } | null {
+  if (p.categoryDateDisplay === "none") return null;
+  if (p.categoryDateDisplay === "updated") {
+    const v = p.updatedAt || p.publishedAt;
     return v ? { label: "Updated", value: v } : null;
   }
-  return r.publishedAt ? { label: "Published", value: r.publishedAt } : null;
+  return p.publishedAt ? { label: "Published", value: p.publishedAt } : null;
 }
 
-/** Every attachment relevant to a product, flattened, each carrying the resource
- *  it came from so the Downloads tab can offer the file AND its context. */
-export const getProductDocuments = (productSlug: string): { resource: Resource; attachment: ResourceAttachment }[] =>
-  resources
-    .filter((r) => r.productSlugs.includes(productSlug))
-    .flatMap((r) => r.attachments.map((attachment) => ({ resource: r, attachment })));
+/** Every attachment relevant to a product, each carrying the post it came from
+ *  so the Downloads tab can offer the file AND its context. */
+export const getProductDocuments = (productSlug: string): { post: Post; attachment: PostAttachment }[] =>
+  posts
+    .filter((p) => p.productSlugs.includes(productSlug) && p.attachment)
+    .map((p) => ({ post: p, attachment: p.attachment! }));
 
-/** Resources that apply to a product but host no file — still worth reading. */
-export const getProductResources = (productSlug: string): Resource[] =>
-  resources.filter((r) => r.productSlugs.includes(productSlug));
+/** Posts that apply to a product but host no file — still worth reading. */
+export const getProductPosts = (productSlug: string): Post[] =>
+  posts.filter((p) => p.productSlugs.includes(productSlug));

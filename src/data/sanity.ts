@@ -3,7 +3,7 @@
 // When unset, the app keeps using the hardcoded catalogue.ts (hydrate is a no-op).
 import { createClient } from "@sanity/client";
 import { hydrateCatalogue } from "./catalogue";
-import { CATALOGUE_QUERY, RESOURCE_BODY_QUERY, SEO_PROJECTION, normalizeSeo, toCatalogueData, type RawCataloguePayload } from "./catalogueQuery";
+import { CATALOGUE_QUERY, POST_BODY_QUERY, SEO_PROJECTION, normalizeSeo, toCatalogueData, type RawCataloguePayload } from "./catalogueQuery";
 import type { SeoMeta } from "./catalogue";
 
 // Defaults to the committed project (the same one the Worker uses in wrangler.jsonc);
@@ -135,10 +135,10 @@ export async function hydrateSiteSettings(): Promise<void> {
 // to serve a route most visitors never open. One extra request on the page that
 // needs it is the right trade. Never throws — a failed body renders as an entry
 // with its documents and no article, which is a legitimate state here.
-export async function fetchResourceBody(slug: string): Promise<any[]> {
+export async function fetchPostBody(slug: string): Promise<any[]> {
   if (!client) return [];
   try {
-    const res = await client.fetch<{ body?: any[] } | null>(RESOURCE_BODY_QUERY, { slug });
+    const res = await client.fetch<{ body?: any[] } | null>(POST_BODY_QUERY, { slug });
     return res?.body ?? [];
   } catch {
     return [];

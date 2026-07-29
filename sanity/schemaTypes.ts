@@ -636,39 +636,35 @@ export const siteSettings = defineType({
   preview: { prepare: () => ({ title: "Site Settings" }) },
 });
 
-// ─── Resources ────────────────────────────────────────────────────────────────
-// A resource is an article that may also carry files: an editorial post, a
-// how-to guide, or a piece of technical documentation. ONE collection, not
-// three, because in this model every record has a readable body — a record that
-// is only a file is a file, and belongs on a product. Comparable manufacturers
-// do split their "technical library" off, but what they are splitting off is a
-// list of bare PDFs with no article behind them, which this schema forbids.
+// ─── Posts (the Resources section) ────────────────────────────────────────────
+// A post is an article that may also carry one attachment. It covers editorial
+// writing, how-to guides and technical documentation alike — one document type,
+// because in this model every record has a readable body. A record that is only
+// a file is a file, and belongs on a product.
 //
-// TWO axes, and they are independent:
-//   • kind  — what a record IS      (Article / Guide / Technical document)
-//   • topic — what it is ABOUT      (Ordering, Compliance, …)
-// Both are DOCUMENTS rather than string lists, so the owner adds, renames and
-// reorders them in Studio without a deploy. A reference also cannot drift the
-// way a free-text field does: an author picks an existing kind, they cannot
-// invent "How-to" beside "Howto".
+// ONE taxonomy: category. An earlier version split "kind" (what it is) from
+// "topic" (what it is about); two axes over a handful of posts was complexity
+// nobody asked for, and it is gone.
+//
+// Categories are DOCUMENTS, not a list in code, so they are added, renamed and
+// reordered in Studio without a deploy. A reference also cannot drift the way a
+// free-text field does: an author picks an existing category, they cannot invent
+// "How-to" beside "Howto".
 
-const RESOURCE_GROUPS = [
+const POST_GROUPS = [
   { name: "content", title: "Content", default: true },
-  { name: "files", title: "Files" },
+  { name: "file", title: "Attachment" },
   { name: "seo", title: "SEO" },
 ];
 
-// What a resource IS. Editor-managed, because the vocabulary belongs to whoever
-// is publishing, not to whoever last deployed. The two behaviour fields below
-// are here rather than hardcoded in the front end for the same reason.
-export const resourceKind = defineType({
-  name: "resourceKind",
-  title: "Resource kind",
+export const postCategory = defineType({
+  name: "postCategory",
+  title: "Category",
   type: "document",
   fields: [
     defineField({
       name: "title", title: "Title", type: "string",
-      description: "Singular, as it appears on a row — \"Guide\", \"Technical document\".",
+      description: "Singular, as it appears on a post — \"Guide\", \"Technical document\".",
       validation: (r) => r.required().max(30),
     }),
     defineField({
@@ -679,16 +675,19 @@ export const resourceKind = defineType({
       name: "order", title: "Order", type: "number",
       description: "Lower numbers appear first in the filter. Ties fall back to title.",
     }),
+    defineField({
+      name: "description", title: "Description", type: "text", rows: 2,
+      description: "Shown under the index heading when this category is selected. Optional.",
+    }),
     // Technical documentation ages differently from a post, so the date rule is
-    // a property of the kind. A datasheet's publication date is noise; its
-    // revision is what matters, and that travels on the file itself.
+    // a property of the category rather than something hardcoded per page.
     defineField({
       name: "dateDisplay", title: "Date shown", type: "string",
       options: {
         list: [
           { title: "Published date — for posts, where currency is the point", value: "published" },
           { title: "Updated date — for guides, which are maintained rather than dated", value: "updated" },
-          { title: "No date — for documents, where the file's own revision is the date that counts", value: "none" },
+          { title: "No date — for documents, where the attachment's own revision is the date that counts", value: "none" },
         ],
         layout: "radio",
       },
@@ -696,11 +695,11 @@ export const resourceKind = defineType({
       validation: (r) => r.required(),
     }),
     // A marketing post that mentions a product must not put a download row on
-    // that product's page. Rather than hardcode which kinds are allowed to do
-    // that, the kind carries the permission.
+    // that product's page. Rather than hardcode which categories may do that,
+    // the category carries the permission.
     defineField({
       name: "allowsProducts", title: "Can be linked to products", type: "boolean",
-      description: "When on, a resource of this kind may name products, and its FILES then appear in each product's Downloads tab. Leave off for editorial kinds — an article that merely mentions a product should link to it in the text.",
+      description: "When on, a post in this category may name products, and its attachment then appears in each product's Downloads tab. Leave off for editorial categories — a post that merely mentions a product should link to it in the text.",
       initialValue: true,
     }),
   ],
@@ -708,35 +707,11 @@ export const resourceKind = defineType({
   preview: { select: { title: "title", subtitle: "slug.current" } },
 });
 
-// What a resource is ABOUT.
-export const resourceTopic = defineType({
-  name: "resourceTopic",
-  title: "Topic",
-  type: "document",
-  fields: [
-    defineField({ name: "title", title: "Title", type: "string", validation: (r) => r.required() }),
-    defineField({
-      name: "slug", title: "Slug", type: "slug", options: { source: "title", maxLength: 60 },
-      validation: (r) => r.required(),
-    }),
-    defineField({
-      name: "order", title: "Order", type: "number",
-      description: "Lower numbers appear first in the filter. Ties fall back to title.",
-    }),
-    defineField({
-      name: "description", title: "Description", type: "text", rows: 2,
-      description: "Shown under the index heading when this topic is selected — the role a family's short description plays on the products page.",
-    }),
-  ],
-  orderings: [{ title: "Order", name: "order", by: [{ field: "order", direction: "asc" }, { field: "title", direction: "asc" }] }],
-  preview: { select: { title: "title", subtitle: "slug.current" } },
-});
-
-// A single downloadable file. An OBJECT rather than a bare file field, because a
+// The downloadable file. An OBJECT rather than a bare file field, because a
 // trade reader decides whether to click from the metadata, not the filename:
 // what kind of document it is, which revision, and what it weighs.
-export const resourceAttachment = defineType({
-  name: "resourceAttachment",
+export const postAttachment = defineType({
+  name: "postAttachment",
   title: "Attachment",
   type: "object",
   fields: [
@@ -771,7 +746,7 @@ export const resourceAttachment = defineType({
     }),
     defineField({
       name: "standardRef", title: "Standard", type: "string",
-      description: "The standard this document relates to — AS 2047:2014, AS 1288, NCC 2022 Section J. The single most useful token for a certifier scanning a list, and it is promoted onto the index row.",
+      description: "The standard this document relates to — AS 2047:2014, AS 1288, NCC 2022 Section J. The single most useful token for a certifier scanning a list.",
     }),
     // This is what pays for linking a product STRAIGHT to a file: a file opens in
     // a viewer with no page around it to carry a scope caveat, so the caveat has
@@ -785,11 +760,11 @@ export const resourceAttachment = defineType({
   preview: { select: { title: "label", subtitle: "docType" } },
 });
 
-export const resource = defineType({
-  name: "resource",
-  title: "Resource",
+export const post = defineType({
+  name: "post",
+  title: "Post",
   type: "document",
-  groups: RESOURCE_GROUPS,
+  groups: POST_GROUPS,
   fields: [
     defineField({ name: "title", title: "Title", type: "string", group: "content", validation: (r) => r.required() }),
     defineField({
@@ -799,36 +774,30 @@ export const resource = defineType({
     }),
     defineField({
       name: "summary", title: "Summary", type: "text", rows: 2, group: "content",
-      description: "One or two sentences. On the index this is clamped to a single line, so lead with what the resource ANSWERS — not what it is about.",
+      description: "One or two sentences. This is the whole of what a reader sees on the index, so lead with what the post ANSWERS — not what it is about.",
       validation: (r) => r.required().max(180),
     }),
     defineField({
-      name: "kind", title: "Kind", type: "reference", to: [{ type: "resourceKind" }],
+      name: "category", title: "Category", type: "reference", to: [{ type: "postCategory" }],
       group: "content", validation: (r) => r.required(),
-      description: "What this IS. Add and rename kinds under Resource kind.",
-    }),
-    defineField({
-      name: "topic", title: "Topic", type: "reference", to: [{ type: "resourceTopic" }],
-      group: "content", validation: (r) => r.required(),
-      description: "What this is ABOUT. Independent of kind.",
+      description: "Add and rename categories under Category.",
     }),
     defineField({
       name: "products", title: "Applies to products", type: "array",
       of: [{ type: "reference", to: [{ type: "product" }] }], group: "content",
       validation: (r) => r.unique(),
-      description: "Only for kinds that allow it. A product's Downloads tab links to this resource's FILES, so naming a product here means you must attach at least one.",
+      description: "Only for categories that allow it. A product's Downloads tab links to this post's ATTACHMENT, so naming a product here means the post needs one.",
     }),
     defineField({
       name: "heroImage", title: "Hero image", type: "image",
       options: { hotspot: true }, group: "content",
-      description: "Optional. Without one the article opens on its title over the site's dark ground rather than a photograph.",
+      description: "Optional. Without one the post opens on its title over the site's dark ground rather than a photograph.",
     }),
-    // Deliberately a SMALL block set. The brief asked for simple markup, and an
-    // unconstrained editor is how a content system stops matching its design
-    // language — every extra style is a way for an article to stop looking like
-    // the site.
+    // Deliberately a SMALL block set. An unconstrained editor is how a content
+    // system stops matching its design language — every extra style is a way for
+    // a post to stop looking like the site.
     //
-    // Mandatory, always. A resource is an ARTICLE first; this is what makes
+    // Mandatory, always. A post is an ARTICLE first; this is what makes
     // /resources/<slug> worth having as a URL at all.
     defineField({
       name: "body", title: "Body", type: "array", group: "content",
@@ -861,10 +830,11 @@ export const resource = defineType({
         },
       ],
     }),
+    // ONE attachment, not a list — the owner's model, and the reason a product
+    // can link straight to the file: one post, one document.
     defineField({
-      name: "attachments", title: "Attachments", type: "array",
-      of: [{ type: "resourceAttachment" }], group: "files",
-      description: "Files this resource hosts. Optional — unless it names a product, because a product's Downloads tab links to the FILE, and a resource with none would put a row there with nothing behind it.",
+      name: "attachment", title: "Attachment", type: "postAttachment", group: "file",
+      description: "The file this post hosts. Optional — unless the post names a product, because a product's Downloads tab links to the FILE, and a post with none would put a row there with nothing behind it.",
     }),
     defineField({
       name: "publishedAt", title: "Published", type: "date", group: "content",
@@ -872,27 +842,23 @@ export const resource = defineType({
     }),
     defineField({
       name: "updatedAt", title: "Last reviewed", type: "date", group: "content",
-      description: "The date you last checked this is still true — not the date you fixed a typo. Shown as \"Updated\" on kinds set to show it.",
+      description: "The date you last checked this is still true — not the date you fixed a typo. Shown as \"Updated\" on categories set to show it.",
     }),
     defineField({ name: "seo", title: "SEO", type: "seoMeta", group: "seo" }),
   ],
-  // Body is required by its own field rule. These enforce the rest of the model.
+  // Body is required by its own field rule. This enforces the rest of the model.
   validation: (r) =>
     r.custom(async (doc: any, ctx: any) => {
       if (!doc?.products?.length) return true;
-      // Naming a product creates a Downloads row on that product's page, and
-      // that row is a link to a file — so the file has to exist. Caught here,
-      // when the author names the product, rather than as an empty tab later.
-      if (!doc?.attachments?.length) {
-        return "This resource is linked to a product, so it needs at least one attachment — a product's Downloads tab links to the file, not to the article.";
+      if (!doc?.attachment?.file) {
+        return "This post is linked to a product, so it needs an attachment — a product's Downloads tab links to the file, not to the article.";
       }
-      // And the kind has to be one that belongs on a product page at all.
-      const kindId = doc?.kind?._ref;
-      if (!kindId) return true;
-      const kind = await ctx.getClient({ apiVersion: "2024-01-01" })
-        .fetch(`*[_id in [$id, "drafts." + $id]][0]{title, allowsProducts}`, { id: kindId });
-      if (kind && kind.allowsProducts === false) {
-        return `A "${kind.title}" cannot be linked to products — its files would appear in the product's Downloads tab. Link to the product in the body text instead, or change the kind.`;
+      const categoryId = doc?.category?._ref;
+      if (!categoryId) return true;
+      const category = await ctx.getClient({ apiVersion: "2024-01-01" })
+        .fetch(`*[_id in [$id, "drafts." + $id]][0]{title, allowsProducts}`, { id: categoryId });
+      if (category && category.allowsProducts === false) {
+        return `A "${category.title}" cannot be linked to products — its attachment would appear in the product's Downloads tab. Link to the product in the body text instead, or change the category.`;
       }
       return true;
     }),
@@ -901,13 +867,9 @@ export const resource = defineType({
     { title: "Title", name: "title", by: [{ field: "title", direction: "asc" }] },
   ],
   preview: {
-    select: { title: "title", kind: "kind.title", topic: "topic.title", media: "heroImage" },
-    prepare: ({ title, kind, topic, media }: any) => ({
-      title,
-      subtitle: [kind, topic].filter(Boolean).join(" · "),
-      media,
-    }),
+    select: { title: "title", category: "category.title", media: "heroImage" },
+    prepare: ({ title, category, media }: any) => ({ title, subtitle: category, media }),
   },
 });
 
-export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation, siteSettings, resourceKind, resourceTopic, resourceAttachment, resource];
+export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation, siteSettings, postCategory, postAttachment, post];
