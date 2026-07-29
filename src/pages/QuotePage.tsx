@@ -7,7 +7,7 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Upload, UploadCloud, X, Plus, ChevronLeft, ArrowRight,
-  AlertCircle, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil, Paperclip, Trash2, Loader2, Camera,
+  AlertCircle, Check, CheckCircle, Send, ShieldCheck, UserCheck, LayoutGrid, Pencil, Paperclip, Trash2, Loader2, Camera,
 } from "lucide-react";
 import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import { ItemForm, ItemSummaryCard, itemNeedsAttention } from "../components/ItemComposer";
@@ -165,6 +165,27 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
       default: return "Reading and refining your schedule…";
     }
   };
+
+  // The pipeline's real milestones, in the order the server reports them. A
+  // single line that overwrote itself threw away everything already achieved:
+  // the customer saw one moving target and no evidence of progress. As a list,
+  // finished steps stay finished and the run reads as advancing rather than
+  // merely churning.
+  //
+  // Shorter labels than progressMessage: a checklist is scanned, not read, and
+  // the sentence-length copy belongs to the single-line fallback.
+  const AI_STEPS: { stage: AiProgressStage; label: string }[] = [
+    { stage: "queued", label: "Securing your files" },
+    { stage: "reading_documents", label: "Reading the documents" },
+    { stage: "extracting_schedule", label: "Extracting the schedule" },
+    { stage: "building_envelope", label: "Checking thermal requirements" },
+    { stage: "matching_and_pricing", label: "Matching products and prices" },
+    { stage: "preparing_quote", label: "Preparing your recommendations" },
+  ];
+  // `waiting_capacity` is deliberately NOT a step: it is not a stage of the work
+  // but a pause in it, and giving it a row would imply the run had moved on.
+  const stepIndex = (stage: AiProgressStage | undefined): number =>
+    AI_STEPS.findIndex((s) => s.stage === stage);
 
   const diagnosticMessage = (diagnostic: SafeDiagnostic | null | undefined): string => {
     const retryTime = diagnostic?.retryAt ? whenSafe(diagnostic.retryAt) : null;
@@ -948,22 +969,77 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
             {/* The work is happening HERE, where the results will land. Without
                 this the items area looks idle mid-run, which reads as "nothing
                 happened" and invites a pointless second upload. */}
-            {processing && (
-              <div role="status" aria-live="polite"
-                className="flex items-start gap-3 border border-dashed border-sage/45 bg-sage/[0.05] px-4 py-5 text-sm">
-                <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin text-sage" aria-hidden="true" />
-                <span>
-                  <span className="block font-medium text-sage-ink">
-                    {aiPhase?.kind === "reading"
-                      ? progressMessage(aiPhase.stage)
-                      : `Reading your document${processingDocs !== 1 ? "s" : ""}…`}
-                  </span>
-                  <span className="block mt-0.5 text-body leading-relaxed">
-                    This normally finishes in under a minute. If automatic review cannot finish, we will stop and keep your document ready for human review.
-                  </span>
-                </span>
-              </div>
-            )}
+            {processing && (() => {
+              // The checklist needs a stage to place the marker. The anonymous
+              // deterministic parse reports none, so it keeps the single line.
+              const active = aiPhase?.kind === "reading" ? aiPhase.stage : undefined;
+              const waiting = active === "waiting_capacity";
+              // An unknown stage is treated as the first step rather than as no
+              // progress: work IS under way, and showing six pending rows would
+              // say the opposite.
+              const current = waiting ? 0 : Math.max(0, stepIndex(active));
+              const showSteps = aiPhase?.kind === "reading" && !!active;
+
+              return (
+                <div role="status" aria-live="polite"
+                  className="border border-dashed border-sage/45 bg-sage/[0.05] px-4 py-5 text-sm">
+                  {showSteps ? (
+                    <>
+                      <ol className="space-y-2">
+                        {AI_STEPS.map((step, i) => {
+                          const done = i < current;
+                          const inProgress = i === current && !waiting;
+                          const stalled = i === current && waiting;
+                          return (
+                            <li key={step.stage} className="flex items-center gap-2.5">
+                              <span className="w-4 h-4 flex-shrink-0 grid place-items-center" aria-hidden="true">
+                                {done ? (
+                                  <Check className="w-4 h-4 text-sage" />
+                                ) : inProgress || stalled ? (
+                                  <Loader2 className={`w-4 h-4 text-sage ${stalled ? "" : "animate-spin"}`} />
+                                ) : (
+                                  <span className="w-2.5 h-2.5 rounded-full border border-line" />
+                                )}
+                              </span>
+                              <span className={
+                                done ? "text-body"
+                                  : inProgress || stalled ? "font-medium text-sage-ink"
+                                    : "text-quieter"
+                              }>
+                                {step.label}
+                              </span>
+                              {/* The state in words, for anyone not seeing the glyph. */}
+                              <span className="sr-only">
+                                {done ? " — done" : inProgress ? " — in progress" : stalled ? " — waiting" : " — pending"}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                      <p className="mt-3 text-body leading-relaxed">
+                        {waiting
+                          ? "Waiting for AI service capacity. Your documents are saved, and you can still submit for human review."
+                          : "This normally finishes in under a minute. If automatic review cannot finish, we will stop and keep your document ready for human review."}
+                      </p>
+                    </>
+                  ) : (
+                    <div className="flex items-start gap-3">
+                      <Loader2 className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin text-sage" aria-hidden="true" />
+                      <span>
+                        <span className="block font-medium text-sage-ink">
+                          {aiPhase?.kind === "reading"
+                            ? progressMessage(aiPhase.stage)
+                            : `Reading your document${processingDocs !== 1 ? "s" : ""}…`}
+                        </span>
+                        <span className="block mt-0.5 text-body leading-relaxed">
+                          This normally finishes in under a minute. If automatic review cannot finish, we will stop and keep your document ready for human review.
+                        </span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* The empty project starts with an explicit choice of input method.
