@@ -926,7 +926,6 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
         sub="Upload yours and every line comes back priced in about a minute. That first pass is the machine's — a person checks it before it becomes the quote you accept."
         onQuote={() => go("quote")}
         ground="bone"
-        placement="inline"
       />
 
       {/* ─── SYSTEMS ─────────────────────────────────────────────────────────

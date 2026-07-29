@@ -127,7 +127,7 @@ export function Input({ value, onChange, placeholder, type = "text", className =
 // It renders its own <section>, so the padding above and below is identical and
 // cannot drift again: a caller that only got the inner panel would still be free
 // to wrap it in whatever spacing it liked, which is how this diverged the first time.
-export function CtaBanner({ title, sub, onQuote, ground = "paper", cta = "Get a quote", placement = "closing" }: {
+export function CtaBanner({ title, sub, onQuote, ground = "paper", cta = "Get a quote" }: {
   title: string;
   sub: string;
   /** Must navigate to the quote page. Pages own their own routing, so the
@@ -146,20 +146,9 @@ export function CtaBanner({ title, sub, onQuote, ground = "paper", cta = "Get a 
    *  banner whose heading asks one question and whose button answers another
    *  is the mismatch a reader notices. */
   cta?: string;
-  /** Where this instance sits in the page.
-   *
-   *  "closing" — the last thing before the footer, which is seven of the eight
-   *  usages. Its bottom padding was 56px of pale ground trapped between the
-   *  sage panel and the near-black footer: a seam that reads as a mistake
-   *  rather than as breathing room, because both neighbours are saturated.
-   *  So the closing banner sits ON the footer.
-   *
-   *  "inline" — mid-page (the home proof-point banner), where the section
-   *  below is another light band and the padding is doing real work. */
-  placement?: "closing" | "inline";
 }) {
   return (
-    <section className={`${ground === "bone" ? "ground-bone" : "ground-paper"} border-t border-black/8 pt-14 ${placement === "inline" ? "pb-14" : ""}`}>
+    <section className={`${ground === "bone" ? "ground-bone" : "ground-paper"} border-t border-black/8 py-14`}>
       <div className="max-w-6xl mx-auto px-6">
         <div className="bg-sage px-6 sm:px-10 py-10 split-row is-center">
           <div className="split-prose">
