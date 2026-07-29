@@ -199,7 +199,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
       case "SERVICE_CONFIGURATION_ERROR":
         return "AI refinement is temporarily unavailable. Your documents are saved and our team can review them.";
       case "RETRY_REQUIRED":
-        return "AI refinement needs a staff retry. Your documents are saved, and you can still submit for human review.";
+        return "AI refinement stopped before finishing. Your documents are saved; you can try AI again or send them for human review.";
       case "TEMPORARY_FAILURE":
         return `AI refinement was interrupted${retryTime ? ` and can retry after ${retryTime}` : ""}. Your documents are saved, and you can still submit for human review.`;
       default:
@@ -432,13 +432,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
     let lastDiagnostic: SafeDiagnostic | null = null;
     const tick = async (n: number) => {
       let inFlight = false;
-      if (Date.now() - t0 >= 60_000) {
-        setAiPhase({
-          kind: "failed",
-          diagnostic: { code: "TEMPORARY_FAILURE", retryable: true, retryAt: null },
-        });
-        return;
-      }
+      const deadlineReached = Date.now() - t0 >= 60_000;
       try {
         const { run, basis } = await extractionStatus();
         if (basis) setBasisMap(basis);
@@ -470,8 +464,20 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
           // or the kill-switch) do we stop; a stale completed run never counts.
           if (Date.now() - t0 > 25_000) { setAiPhase({ kind: "failed" }); return; }
         }
-      } catch { /* transient poll failure — keep trying within the window */ }
-      pollTimer.current = setTimeout(() => void tick(n + 1), inFlight || n >= 7 ? 5000 : 2000);
+      } catch {
+        // A final status read still gets one chance at the deadline; only then
+        // does a network failure become the visible bounded failure state.
+      }
+      if (deadlineReached) {
+        setAiPhase({
+          kind: "failed",
+          diagnostic: { code: "TEMPORARY_FAILURE", retryable: true, retryAt: null },
+        });
+        return;
+      }
+      const normalDelay = inFlight || n >= 7 ? 5000 : 2000;
+      const remaining = Math.max(250, 60_000 - (Date.now() - t0));
+      pollTimer.current = setTimeout(() => void tick(n + 1), Math.min(normalDelay, remaining));
     };
     void tick(0);
   };
@@ -1018,7 +1024,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                       </ol>
                       <p className="mt-3 text-body leading-relaxed">
                         {waiting
-                          ? "Waiting for AI service capacity. Your documents are saved, and you can still submit for human review."
+                          ? "Waiting for AI service capacity. Your documents are saved; if this attempt stops, you can retry or send them for human review."
                           : "This normally finishes in under a minute. If automatic review cannot finish, we will stop and keep your document ready for human review."}
                       </p>
                     </>

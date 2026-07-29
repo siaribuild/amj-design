@@ -3,17 +3,16 @@
   "compatibility_date": "2026-07-16",
   "compatibility_flags": ["nodejs_compat"],
   "main": "worker/index.ts",
-  // Queue consumers default to 30s CPU. pdf.js has no native zlib in workerd, so
-  // inflating a 1.9MB architectural set and decoding its pages is pure JS — the
-  // same parse measures 362ms in Node and exceeded BOTH the free-plan limit and
-  // the 30s paid default here, killing the isolate inside pdfTextLayer before a
-  // model was ever called.
-  //
-  // Raised to the plan maximum DELIBERATELY AS A MEASUREMENT: the instrumented
-  // run will log how long that parse actually takes, which we have never been
-  // able to observe because the isolate died first. Lower it to a real bound —
-  // or remove the server-side parse entirely — once the number is known.
-  "limits": { "cpu_ms": 300000 },
+  // Bound synchronous PDF work without giving a runaway invocation the paid
+  // plan's five-minute maximum. Model/network wait is wall time, not CPU time.
+  "limits": { "cpu_ms": 60000 },
+  // Persist structured phase/model events and Cloudflare invocation metrics
+  // while this workflow is stabilised. Payload logging remains disabled on the
+  // AI Gateway request itself.
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
 
   // Built Vite SPA. The Worker serves these via the ASSETS binding; unmatched
   // client-side routes fall back to index.html (handled in worker/index.ts).

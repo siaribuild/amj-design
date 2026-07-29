@@ -307,19 +307,27 @@ export async function runAiExtraction(
   const warnings: string[] = [];
   const stageFailures: SkillFailureKind[] = [];
 
-  // ── TEMPORARY INSTRUMENTATION ───────────────────────────────────────────────
-  // The queue consumer is being killed with "Exceeded CPU Limit" and the plan
-  // cannot raise it, so the work has to fit — but we do not know where the time
-  // goes. Elapsed WALL time per phase, plus counts. Never document content
-  // (§21.1): no filenames, no markdown, no model output.
-  //
-  // Wall time is not CPU time; awaiting a model call costs wall and no CPU. The
-  // point is to find which phase is large enough to be worth measuring properly.
+  // Structured wall-clock telemetry for phases spanning I/O. Synchronous CPU
+  // timing belongs to Cloudflare's invocation metrics: workerd deliberately
+  // does not make Date.now() a trustworthy profiler for uninterrupted code.
+  // Never log filenames, document text or model output (§21.1).
   const runStartedAt = Date.now();
   let phaseMark = runStartedAt;
-  const phase = (label: string, extra = "") => {
+  const phase = (
+    label: string,
+    fields: Record<string, string | number | boolean | null> = {},
+  ) => {
     const now = Date.now();
-    console.log(`[ai-timing] ${label}=${now - phaseMark}ms total=${now - runStartedAt}ms${extra ? ` ${extra}` : ""}`);
+    console.log({
+      event: "ai_pipeline_phase",
+      aiRunId: run.id,
+      projectId,
+      sourceGeneration,
+      phase: label,
+      durationMs: now - phaseMark,
+      totalDurationMs: now - runStartedAt,
+      ...fields,
+    });
     phaseMark = now;
   };
 
@@ -337,7 +345,7 @@ export async function runAiExtraction(
 
   await setProgress("reading_documents");
   const docs = await ingestProjectFiles(env, projectId);
-  phase("ingest", `docs=${docs.length}`);
+  phase("ingest", { documents: docs.length });
   const usable = docs.filter((d) => !d.rejected && (d.markdown || d.imageDataUrl));
   if (!usable.length) {
     const summary: AiExtractionSummary = {
@@ -365,77 +373,110 @@ export async function runAiExtraction(
   const planDocs = usable.filter((d) => d.roles.includes("plans"));
   const scheduleDocs = usable.filter((d) => d.roles.includes("schedule"));
 
-  // Schedule extraction per document (idempotent per content+prompt+model).
+  // Schedule, plan-context and energy-report extraction are independent views
+  // of the same saved documents. Running those groups sequentially made their
+  // wall times additive and forced a healthy schedule response to compete with
+  // the one-minute UX budget. Groups run concurrently; documents within a group
+  // remain sequential so a multi-file upload never creates an unbounded fan-out.
   await setProgress("extracting_schedule");
-  const perDoc: { fileId: string; lines: ScheduleLineV1[] }[] = [];
-  let anyFailed = false;
-  for (const doc of scheduleDocs) {
-    const res = await runStage(env, {
-      aiRunId: run.id, projectId, skill: scheduleExtractor,
-      input: {
-        text: doc.roleText.schedule ?? doc.markdown,
-        imageDataUrl: doc.imageDataUrl,
-        docName: doc.filename,
-        checksum: doc.checksum,
-        pageNumbers: doc.rolePages.schedule,
-      },
-      signals: (data) => ({
-        criticalConfidence: data
-          ? Object.fromEntries(data.lines.slice(0, 50).map((l, i) => [`line_${i}_dims`, l.confidence.dimensions ?? 0]))
-          : undefined,
-      }),
-    });
-    warnings.push(...res.warnings);
-    if (res.ok && res.data) perDoc.push({ fileId: doc.fileId, lines: res.data.lines });
-    else {
-      anyFailed = true;
-      if (res.failureKind) stageFailures.push(res.failureKind);
+  const documentSkillsStartedAt = Date.now();
+
+  const scheduleTask = async () => {
+    const values: { fileId: string; lines: ScheduleLineV1[] }[] = [];
+    const taskWarnings: string[] = [];
+    const failures: SkillFailureKind[] = [];
+    const startedAt = Date.now();
+    for (const doc of scheduleDocs) {
+      const res = await runStage(env, {
+        aiRunId: run.id, projectId, skill: scheduleExtractor,
+        input: {
+          text: doc.roleText.schedule ?? doc.markdown,
+          imageDataUrl: doc.imageDataUrl,
+          docName: doc.filename,
+          checksum: doc.checksum,
+          pageNumbers: doc.rolePages.schedule,
+        },
+        signals: (data) => ({
+          criticalConfidence: data
+            ? Object.fromEntries(data.lines.slice(0, 50).map((l, i) => [`line_${i}_dims`, l.confidence.dimensions ?? 0]))
+            : undefined,
+        }),
+      });
+      taskWarnings.push(...res.warnings);
+      if (res.ok && res.data) values.push({ fileId: doc.fileId, lines: res.data.lines });
+      else if (res.failureKind) failures.push(res.failureKind);
     }
-  }
+    return { values, warnings: taskWarnings, failures, durationMs: Date.now() - startedAt };
+  };
 
-  phase("schedule_stage", `docs=${scheduleDocs.length}`);
-
-  const planContexts: { fileId: string; context: PlanContextV1 }[] = [];
-  for (const doc of planDocs) {
-    const res = await runStage(env, {
-      aiRunId: run.id, projectId, skill: planContextExtractor,
-      input: {
-        text: doc.roleText.plans ?? doc.markdown,
-        imageDataUrl: doc.imageDataUrl,
-        docName: doc.filename,
-        checksum: doc.checksum,
-        pageNumbers: doc.rolePages.plans,
-      },
-    });
-    warnings.push(...res.warnings);
-    if (res.ok && res.data) planContexts.push({ fileId: doc.fileId, context: res.data });
-    else {
-      anyFailed = true;
-      if (res.failureKind) stageFailures.push(res.failureKind);
+  const planTask = async () => {
+    const values: { fileId: string; context: PlanContextV1 }[] = [];
+    const taskWarnings: string[] = [];
+    const failures: SkillFailureKind[] = [];
+    const startedAt = Date.now();
+    for (const doc of planDocs) {
+      const res = await runStage(env, {
+        aiRunId: run.id, projectId, skill: planContextExtractor,
+        input: {
+          text: doc.roleText.plans ?? doc.markdown,
+          imageDataUrl: doc.imageDataUrl,
+          docName: doc.filename,
+          checksum: doc.checksum,
+          pageNumbers: doc.rolePages.plans,
+        },
+      });
+      taskWarnings.push(...res.warnings);
+      if (res.ok && res.data) values.push({ fileId: doc.fileId, context: res.data });
+      else if (res.failureKind) failures.push(res.failureKind);
     }
-  }
+    return { values, warnings: taskWarnings, failures, durationMs: Date.now() - startedAt };
+  };
 
-  // Energy-report extraction (Path 1). Text-only for now: a scanned-image-only
-  // report is flagged for review rather than mis-read. First successful
-  phase("plan_stage", `docs=${planDocs.length}`);
-
-  // extraction wins; additional reports are surfaced, not silently merged.
-  let energy: { fileId: string; extraction: EnergyExtraction } | null = null;
-  for (const doc of energyDocs) {
-    if (!doc.markdown) { warnings.push(`energy_report_image_only:${doc.filename}`); continue; }
-    const res = await runStage(env, {
-      aiRunId: run.id, projectId, skill: energyReportExtractor,
-      input: { text: doc.roleText.energy_report ?? doc.markdown, checksum: doc.checksum },
-    });
-    warnings.push(...res.warnings);
-    if (res.ok && res.data) {
-      if (!energy) energy = { fileId: doc.fileId, extraction: res.data };
-      else warnings.push(`multiple_energy_reports:${doc.filename}`);
-    } else {
-      anyFailed = true;
-      if (res.failureKind) stageFailures.push(res.failureKind);
+  const energyTask = async () => {
+    let value: { fileId: string; extraction: EnergyExtraction } | null = null;
+    const taskWarnings: string[] = [];
+    const failures: SkillFailureKind[] = [];
+    const startedAt = Date.now();
+    for (const doc of energyDocs) {
+      if (!doc.markdown) {
+        taskWarnings.push(`energy_report_image_only:${doc.filename}`);
+        continue;
+      }
+      const res = await runStage(env, {
+        aiRunId: run.id, projectId, skill: energyReportExtractor,
+        input: { text: doc.roleText.energy_report ?? doc.markdown, checksum: doc.checksum },
+      });
+      taskWarnings.push(...res.warnings);
+      if (res.ok && res.data) {
+        if (!value) value = { fileId: doc.fileId, extraction: res.data };
+        else taskWarnings.push(`multiple_energy_reports:${doc.filename}`);
+      } else if (res.failureKind) {
+        failures.push(res.failureKind);
+      }
     }
-  }
+    return { value, warnings: taskWarnings, failures, durationMs: Date.now() - startedAt };
+  };
+
+  const [scheduleBatch, planBatch, energyBatch] = await Promise.all([
+    scheduleTask(),
+    planTask(),
+    energyTask(),
+  ]);
+  const perDoc = scheduleBatch.values;
+  const planContexts = planBatch.values;
+  const energy = energyBatch.value;
+  warnings.push(...scheduleBatch.warnings, ...planBatch.warnings, ...energyBatch.warnings);
+  stageFailures.push(...scheduleBatch.failures, ...planBatch.failures, ...energyBatch.failures);
+  let anyFailed = stageFailures.length > 0;
+  phase("document_skills", {
+    durationMsObserved: Date.now() - documentSkillsStartedAt,
+    scheduleDurationMs: scheduleBatch.durationMs,
+    planDurationMs: planBatch.durationMs,
+    energyDurationMs: energyBatch.durationMs,
+    scheduleDocuments: scheduleDocs.length,
+    planDocuments: planDocs.length,
+    energyDocuments: energyDocs.length,
+  });
 
   if (!perDoc.length) {
     const failureKind = dominantFailure(stageFailures) ?? "business_incomplete";
@@ -450,7 +491,6 @@ export async function runAiExtraction(
   }
 
   // Merge, model, persist the canonical records.
-  phase("energy_stage", `docs=${energyDocs.length}`);
   await setProgress("building_envelope");
   const merged = mergeScheduleLines(perDoc);
   const model = linesToBuildingModel(projectId, merged, docs);
@@ -657,7 +697,10 @@ export async function runAiExtraction(
     processingToken: opts.processingToken,
   });
 
-  phase("estimate_and_pricing", `openings=${estimate.openings} selected=${estimate.selected}`);
+  phase("estimate_and_pricing", {
+    openings: estimate.openings,
+    selected: estimate.selected,
+  });
 
   const status = anyFailed ? "partial" : "completed";
   const summary: AiExtractionSummary = {

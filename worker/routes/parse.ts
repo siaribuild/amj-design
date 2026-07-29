@@ -29,12 +29,18 @@ parse.post("/projects/current/extraction-retry", async (c) => {
   const { project } = await resolveCurrentProject(c.env, c.req.raw);
   if (!project) return c.json({ error: "not_found" }, 404);
   if (!c.env.AI) return c.json({ error: "ai_unavailable" }, 409);
-  const failed = await c.env.DB.prepare(
-    `SELECT 1 AS failed FROM ai_job_claim j
+  const retryable = await c.env.DB.prepare(
+    `SELECT 1 AS retryable FROM ai_job_claim j
       JOIN project p ON p.id=j.project_id AND p.ai_generation=j.source_generation
-      WHERE j.project_id=? AND j.status='failed'`,
-  ).bind(project.id).first<{ failed: number }>();
-  if (!failed) return c.json({ error: "not_retryable" }, 409);
+      WHERE j.project_id=? AND (
+        j.status='failed'
+        OR (j.status='processing' AND j.lease_expires_at IS NOT NULL
+            AND j.lease_expires_at < datetime('now'))
+        OR (j.status='scheduled' AND j.retry_after IS NULL
+            AND j.updated_at < datetime('now','-45 seconds'))
+      )`,
+  ).bind(project.id).first<{ retryable: number }>();
+  if (!retryable) return c.json({ error: "not_retryable" }, 409);
   try {
     const queued = await retryCurrentAiExtraction(c.env, c.executionCtx, project.id);
     return c.json({ ok: true, alreadyQueued: queued.alreadyQueued });
@@ -271,7 +277,7 @@ parse.post("/projects/current/lines/:id/collision", async (c) => {
 // GET /api/projects/current/extraction-status — the customer's poll while the AI
 // pipeline reads their documents (multi-file UX spec §2/§3). Returns the latest
 // run's state + customer-safe summary; the client polls only while a run is in
-// flight (2s→5s, stop at 2 min). Anonymous projects simply never have a run.
+// flight (2s→5s, one final status read at 60s). Anonymous projects never have a run.
 parse.get("/projects/current/extraction-status", async (c) => {
   // resolveCurrentProject never mints a cookie (only resolveOrCreate does),
   // so there is nothing to set here.

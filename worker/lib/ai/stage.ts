@@ -105,7 +105,9 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
   ).run().catch(() => { /* observability must not block the estimate */ });
 
   // ── Fresh primary-model run (with the runner's single §22.3 repair pass) ─────
-  let run = await runSkill(env, skill, input);
+  let run = await runSkill(env, skill, input, {
+    telemetry: { aiRunId, projectId },
+  });
 
   // ── Escalation decision — always EVALUATED, only conditionally TAKEN ─────────
   const signals: StageSignals = { ...(args.signals?.(run.data, run) ?? {}) };
@@ -113,7 +115,10 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
   const decision = evaluateEscalation(signals);
   let taken = false;
   if (decision.triggered && escalationEnabled(env)) {
-    const escalated = await runSkill(env, skill, input, { model: escalationModel(env) });
+    const escalated = await runSkill(env, skill, input, {
+      model: escalationModel(env),
+      telemetry: { aiRunId, projectId },
+    });
     if (escalated.ok) { run = escalated; taken = true; }
   }
 

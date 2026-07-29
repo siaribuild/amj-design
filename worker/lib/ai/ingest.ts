@@ -260,19 +260,9 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
 
   const docs: IngestedDoc[] = [];
   for (const f of results ?? []) {
-    // TEMPORARY INSTRUMENTATION — elapsed ms per step while we locate the work
-    // that exceeds the queue consumer's CPU limit. Sizes and durations only,
-    // never filenames or content (§21.1).
-    let mark = Date.now();
-    const step = (label: string, extra = "") => {
-      const now = Date.now();
-      console.log(`[ai-timing] ingest.${label}=${now - mark}ms${extra ? ` ${extra}` : ""}`);
-      mark = now;
-    };
     const obj = await env.FILES.get(f.r2_key).catch(() => null);
     if (!obj) continue;
     const bytes = new Uint8Array(await obj.arrayBuffer());
-    step("r2_read", `bytes=${bytes.length}`);
     const kind = sniffDocKind(bytes);
     const doc: IngestedDoc = {
       fileId: f.id, filename: f.filename, checksum: f.checksum, kind,
@@ -285,15 +275,12 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
     let pdfText: PdfTextResult | null = null;
     if (kind === "pdf") {
       doc.pageCount = pdfPageCount(bytes);
-      step("pdfPageCount", `pages=${doc.pageCount}`);
       // Always read the text layer once, even when toMarkdown succeeds. It gives
       // us stable page boundaries for mixed-document routing; toMarkdown remains
       // the richer whole-document representation.
       pdfText = await pdfTextLayer(bytes);
-      step("pdfTextLayer", `pages=${pdfText.pages.length} chars=${(pdfText.markdown ?? "").length}`);
       if (pdfText.pages.length) doc.pageCount = pdfText.pages.length;
       doc.rolePages = classifyPageRoles(pdfText.pages, f.filename);
-      step("classifyPageRoles");
       for (const role of ["schedule", "energy_report", "plans"] as const) {
         const selected = textForPages(pdfText.pages, doc.rolePages[role]);
         if (selected) doc.roleText[role] = selected;
@@ -325,7 +312,6 @@ export async function ingestProjectFiles(env: Env, projectId: string): Promise<I
       md = pdfText;
     } else if (kind === "pdf") {
       md = await toMarkdownBounded(env, f.filename, bytes);
-      step("toMarkdown", `chars=${(md.markdown ?? "").length}`);
       if (!md.markdown && pdfText?.reason) {
         doc.qualityIssues = [...doc.qualityIssues, pdfText.reason];
       }

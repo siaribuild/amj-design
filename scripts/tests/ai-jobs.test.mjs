@@ -178,6 +178,40 @@ test("staff retry is idempotent while the current generation is already queued",
   assert.equal(sends.length, 0);
 });
 
+test("retry reclaims an expired processing lease instead of reporting dead work as live", async () => {
+  const { env, writes, sends } = retryEnv({
+    ai_generation: 18,
+    status_customer: "draft",
+    status: "processing",
+    debounce_token: "dead-token",
+    lease_dead: 1,
+    scheduled_dead: 0,
+  });
+  const result = await retryCurrentAiExtraction(env, { waitUntil() {} }, "project-1");
+  assert.equal(result.alreadyQueued, false);
+  assert.equal(result.job.generation, 18);
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].sql, /lease_expires_at < datetime\('now'\)/);
+  assert.equal(sends.length, 1);
+});
+
+test("retry reclaims a scheduled claim that was never dispatched", async () => {
+  const { env, writes, sends } = retryEnv({
+    ai_generation: 19,
+    status_customer: "draft",
+    status: "scheduled",
+    debounce_token: "lost-token",
+    lease_dead: 0,
+    scheduled_dead: 1,
+  });
+  const result = await retryCurrentAiExtraction(env, { waitUntil() {} }, "project-1");
+  assert.equal(result.alreadyQueued, false);
+  assert.equal(result.job.generation, 19);
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].sql, /status='scheduled' AND retry_after IS NULL/);
+  assert.equal(sends.length, 1);
+});
+
 test("terminal AI runs cannot be overwritten by a late completion", async () => {
   let statement = null;
   const env = {

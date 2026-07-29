@@ -25,7 +25,14 @@ import type { Skill, SkillFailureKind, SkillRun } from "./types";
 // stored gateway-side even if the dashboard logging toggle is ever re-enabled.
 const gatewayOpts = (env: Env) =>
   env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID, collectLog: false } } : undefined;
-const MODEL_CALL_DEADLINE_MS = 18_000;
+// 18s was too short for a real schedule response. The production run on
+// 2026-07-29 died exactly at that fence (`ai_model_timeout_18000ms`), while an
+// earlier successful extraction of the same 19-line schedule returned 1,737
+// output tokens. The smaller plan-context call completed in roughly 10s.
+// 45s bounds a call that is genuinely slow without parking the job on a
+// provider hiccup; the observed duration of every call is logged below so this
+// can be tightened to a measured number instead of a defensive one.
+const MODEL_CALL_DEADLINE_MS = 45_000;
 
 // Google's structured-output schema is an OpenAPI 3.0 SUBSET, not JSON Schema:
 // it takes one `type` plus `nullable`, and rejects the JSON-Schema union
@@ -169,7 +176,19 @@ export function withSchemaInstruction(prompt: unknown, skill: Skill<unknown, unk
   return prompt;
 }
 
-async function callModel(env: Env, model: string, skill: Skill<unknown, unknown>, messages: { role: string; content: unknown }[]) {
+interface SkillTelemetry {
+  aiRunId: string;
+  projectId: string;
+}
+
+async function callModel(
+  env: Env,
+  model: string,
+  skill: Skill<unknown, unknown>,
+  messages: { role: string; content: unknown }[],
+  telemetry: SkillTelemetry | undefined,
+  attempt: "primary" | "repair",
+) {
   // NOTE: Google's structured-output fields (responseMimeType / responseSchema)
   // are NOT in Cloudflare's documented parameter set for this model, so they are
   // deliberately not sent — an undocumented field is how we got here. The guard
@@ -185,6 +204,11 @@ async function callModel(env: Env, model: string, skill: Skill<unknown, unknown>
         response_format: { type: "json_schema", json_schema: toVendorSchema(skill.responseSchema) },
       };
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // Wall-clock around the provider call. Unlike the sync-work timings we tried
+  // to take earlier, this one is meaningful: the clock advances across I/O, so
+  // it reports what the model actually cost us.
+  const startedAt = Date.now();
+  let outcome: "completed" | "timeout" | "failed" = "completed";
   try {
     return await Promise.race([
       (env.AI as any).run(model, body, gatewayOpts(env)),
@@ -195,8 +219,25 @@ async function callModel(env: Env, model: string, skill: Skill<unknown, unknown>
         );
       }),
     ]);
+  } catch (error) {
+    outcome = error instanceof Error && error.message.includes("ai_model_timeout_")
+      ? "timeout"
+      : "failed";
+    throw error;
   } finally {
     if (timer) clearTimeout(timer);
+    if (telemetry) {
+      console.log({
+        event: "ai_model_call",
+        aiRunId: telemetry.aiRunId,
+        projectId: telemetry.projectId,
+        skill: skill.id,
+        model,
+        attempt,
+        outcome,
+        durationMs: Date.now() - startedAt,
+      });
+    }
   }
 }
 
@@ -204,7 +245,7 @@ export async function runSkill<I, O>(
   env: Env,
   skill: Skill<I, O>,
   input: I,
-  opts?: { model?: string },
+  opts?: { model?: string; telemetry?: SkillTelemetry },
 ): Promise<SkillRun<O>> {
   const model = opts?.model ?? primaryModel(env);
   if (!env.AI) {
@@ -225,7 +266,14 @@ export async function runSkill<I, O>(
     skill,
   );
   try {
-    const out: any = await callModel(env, model, skill as Skill<unknown, unknown>, [{ role: "user", content: prompt }]);
+    const out: any = await callModel(
+      env,
+      model,
+      skill as Skill<unknown, unknown>,
+      [{ role: "user", content: prompt }],
+      opts?.telemetry,
+      "primary",
+    );
     const usage = readModelUsage(out);
     inputTokens += usage.input; outputTokens += usage.output;
     rawText = readModelText(out);
@@ -267,9 +315,14 @@ export async function runSkill<I, O>(
         "INVALID RESPONSE:",
         rawText.slice(0, 16000),
       ].join("\n\n");
-      const out: any = await callModel(env, model, skill as Skill<unknown, unknown>, [
-        { role: "user", content: repairPrompt },
-      ]);
+      const out: any = await callModel(
+        env,
+        model,
+        skill as Skill<unknown, unknown>,
+        [{ role: "user", content: repairPrompt }],
+        opts?.telemetry,
+        "repair",
+      );
       const usage = readModelUsage(out);
       inputTokens += usage.input; outputTokens += usage.output;
       const repairedText = readModelText(out);

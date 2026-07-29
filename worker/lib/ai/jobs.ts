@@ -32,11 +32,13 @@ export interface AiJobDiagnostic {
   retryAt: string | null;
 }
 
-// One customer-facing attempt. Repeating a slow/failed immutable run two more
-// times kept the cart locked for minutes and multiplied spend. A staff retry
-// remains available and reuses completed idempotent stages.
+// One bounded automatic attempt. A second invisible attempt would keep the
+// quote locked beyond the customer-facing minute and multiply model spend.
+// Explicit customer/staff retry reuses completed idempotent stages.
 const MAX_AUTOMATIC_ATTEMPTS = 1;
-const AI_JOB_DEADLINE_MS = 50_000;
+// Independent document skills run concurrently, so this is longer than any
+// single model call but remains inside the UI's 60-second promise.
+const AI_JOB_DEADLINE_MS = 55_000;
 
 class AiJobFault extends Error {
   constructor(
@@ -251,7 +253,11 @@ export async function retryCurrentAiExtraction(
   projectId: string,
 ): Promise<{ job: AiExtractionJob; alreadyQueued: boolean }> {
   const current = await env.DB.prepare(
-    `SELECT p.ai_generation, p.status_customer, j.status, j.debounce_token
+    `SELECT p.ai_generation, p.status_customer, j.status, j.debounce_token,
+            (j.lease_expires_at IS NOT NULL AND j.lease_expires_at < datetime('now'))
+              AS lease_dead,
+            (j.status='scheduled' AND j.retry_after IS NULL
+              AND j.updated_at < datetime('now','-45 seconds')) AS scheduled_dead
        FROM project p
        LEFT JOIN ai_job_claim j
          ON j.project_id=p.id AND j.source_generation=p.ai_generation
@@ -261,12 +267,19 @@ export async function retryCurrentAiExtraction(
     status_customer: string;
     status: string | null;
     debounce_token: string | null;
+    lease_dead: number | null;
+    scheduled_dead: number | null;
   }>();
   if (!current) throw new Error("project_not_found");
   if (current.status_customer !== "draft") throw new Error("project_not_mutable");
 
-  if ((current.status === "scheduled" || current.status === "processing") &&
-      current.debounce_token) {
+  // A 'processing' row whose lease has expired is not work in flight — it is an
+  // isolate that died holding the claim. Reporting it as already queued is why
+  // pressing "Try again" did nothing at all: the button answered truthfully
+  // about the row and uselessly about reality. Only a LIVE claim defers.
+  const claimLive = (current.status === "scheduled" && !current.scheduled_dead) ||
+    (current.status === "processing" && !current.lease_dead);
+  if (claimLive && current.debounce_token) {
     return {
       job: {
         projectId,
@@ -277,7 +290,13 @@ export async function retryCurrentAiExtraction(
     };
   }
 
-  if (current.status === "failed") {
+  // Reclaim both a cleanly failed row and an abandoned one. The abandoned case
+  // is the same reset — the previous holder is provably gone — and routing it
+  // here rather than to enqueue avoids fighting the claim row that still exists.
+  const reclaimable = current.status === "failed" ||
+    (current.status === "processing" && !!current.lease_dead) ||
+    (current.status === "scheduled" && !!current.scheduled_dead);
+  if (reclaimable) {
     const job: AiExtractionJob = {
       projectId,
       generation: current.ai_generation,
@@ -289,7 +308,12 @@ export async function retryCurrentAiExtraction(
               processing_token=NULL, lease_expires_at=NULL,
               last_error=NULL, failure_class=NULL, retry_after=NULL,
               progress_stage='queued', updated_at=datetime('now')
-        WHERE project_id=? AND source_generation=? AND status='failed'
+        WHERE project_id=? AND source_generation=?
+          AND (status='failed'
+               OR (status='processing' AND lease_expires_at IS NOT NULL
+                   AND lease_expires_at < datetime('now'))
+               OR (status='scheduled' AND retry_after IS NULL
+                   AND updated_at < datetime('now','-45 seconds')))
           AND EXISTS (
             SELECT 1 FROM project
              WHERE id=? AND status_customer='draft' AND ai_generation=?
