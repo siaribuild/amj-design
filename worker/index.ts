@@ -91,6 +91,26 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    // ── ONE HOST PER SITE ───────────────────────────────────────────────────
+    // www.* is a DNS alias of the apex, so it served the whole site a second
+    // time — with its own sitemap and its own self-referencing canonicals, i.e.
+    // a complete duplicate under a second canonical host. It also broke the
+    // page silently: Sanity's CORS list allows the apex, and an Origin of
+    // www.<domain> is a different origin, so every browser-side query failed
+    // and the header lost its logo.
+    //
+    // A CNAME cannot fix that — DNS does not change the URL the browser holds,
+    // and the Origin header is built from that URL. Only a redirect does.
+    //
+    // Narrow, for the same reasons as the slash rule below: GET/HEAD only, and
+    // only the www. prefix — ops.* is a real, separate application.
+    const host = request.headers.get("host") ?? url.hostname;
+    if ((request.method === "GET" || request.method === "HEAD") && host.startsWith("www.")) {
+      const target = new URL(url);
+      target.hostname = url.hostname.replace(/^www\./, "");
+      return Response.redirect(target.toString(), 301);
+    }
+
     // ── ONE URL PER PAGE ────────────────────────────────────────────────────
     // routeFromPathname() strips trailing slashes before matching, which is kind
     // to a visitor who types one but meant that /products and /products/ BOTH
@@ -123,7 +143,6 @@ export default {
     // Crawler-facing files are GENERATED, not static, so they must be handled
     // before the asset check — both end in an extension and would otherwise be
     // looked up in the bundle and 404.
-    const host = request.headers.get("host") ?? url.hostname;
     const isOps = host.startsWith("ops.");
     if (!isOps && url.pathname === "/sitemap.xml") {
       await ensureCatalogue(env);           // products come from the live catalogue
