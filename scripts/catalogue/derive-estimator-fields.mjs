@@ -107,7 +107,12 @@ export function deriveEstimatorFields(product) {
     configuration: deriveConfiguration(product),
     dimensionRule: deriveDimensionRule(product),
     performanceVariants: [derivePerformanceVariant(product)],
-    pricingRef: `price.${product.slug}.v1`,
+    // The rate card's OWN id, not a decorative token. It was `price.<slug>.v1`,
+    // which matched nothing: pricing_rate_card is keyed on the product slug
+    // (migration 0031), and both the coverage gate and priceLine() use this
+    // value as that id. The mismatch failed every AI job with
+    // `pricing_catalogue_not_ready` before it reached the provider.
+    pricingRef: product.slug,
     schemaVersion: 1,
   };
 }

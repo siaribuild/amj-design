@@ -40,7 +40,7 @@ const awning = {
   configuration: { operationTypes: ["awning"], isCompositeMember: true, dataSource: "estimated" },
   dimensionRule: { minWidthMm: 400, maxWidthMm: 1000, minHeightMm: 400, maxHeightMm: 2400, maxAreaM2: 2.4, maxAspectRatio: 4, ruleVersion: "v1" },
   performanceVariants: [{ variantId: "std", glassBuildUp: "5+8A+5", uValue: 3.9, shgc: 0.62, frameType: "aluminium", dataSource: "estimated", certified: false, published: true }],
-  optionGroups: ["colour", "flyscreen"], pricingRef: "price.amj80.v1",
+  optionGroups: ["colour", "flyscreen"], pricingRef: "amj80",
 };
 const cand = () => toCandidate({ ...awning, performanceVariants: awning.performanceVariants.map((v) => ({ ...v })) });
 

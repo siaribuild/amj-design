@@ -53,6 +53,6 @@ test("SAFETY: derived performance is never marked certified", () => {
   assert.equal(pv.dataSource, "estimated");
   const all = deriveEstimatorFields({ family: "awning-window", category: "windows", slug: "amj80", standardGlass: "5+8A+5mm Double Tempered", minWidth: 400, maxWidth: 1000, minHeight: 400, maxHeight: 2400 });
   assert.equal(all.performanceVariants[0].certified, false);
-  assert.equal(all.pricingRef, "price.amj80.v1");
+  assert.equal(all.pricingRef, "amj80", "pricingRef IS the pricing_rate_card id — see 0031");
   assert.equal(all.schemaVersion, 1);
 });
