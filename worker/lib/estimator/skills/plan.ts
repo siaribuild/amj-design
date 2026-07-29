@@ -1,4 +1,5 @@
 import { type Skill, numOrNull, strCap } from "./types";
+import { parseModelJson } from "./json";
 
 export interface PlanContextV1 {
   jurisdiction: { state: string | null; postcode: string | null; buildingClass: string | null };
@@ -100,7 +101,9 @@ export const planContextExtractor: Skill<{
   },
 };
 
-function safeJson(value: string): unknown {
-  try { return JSON.parse(value); } catch { return null; }
+function safeJson(s: string): unknown {
+  // Was a bare JSON.parse — see json.ts: it discarded correct answers wrapped
+  // in a markdown fence, which is what an un-enforced model returns.
+  return parseModelJson(s);
 }
 

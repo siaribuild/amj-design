@@ -36,6 +36,10 @@ export interface SkillRun<TOutput> {
   promptVersion: string;
   /** sha-256 of the raw model output (audit — §21.1), not the content itself. */
   outputHash: string | null;
+  /** The raw model output, present ONLY when validation rejected it. The one
+   *  case where the text is needed for diagnosis is the one case the accepted-
+   *  output archive never held. Truncated by the writer, never logged. */
+  rejectedRaw?: string;
   /** True when the §22.3 single repair pass produced the accepted output. */
   repaired: boolean;
   inputTokens: number;

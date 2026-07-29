@@ -23,6 +23,7 @@ await build({
       export { DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, PIPELINE_VERSION } from ${p("worker/lib/ai/versions.ts")};
       export { FEEDBACK_CATEGORIES } from ${p("worker/lib/estimator/persist.ts")};
       export { energyReportExtractor } from ${p("worker/lib/estimator/skills/energy.ts")};
+      export { parseModelJson } from ${p("worker/lib/estimator/skills/json.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
@@ -31,7 +32,7 @@ await build({
 const {
   schema, evaluateEscalation, LOW_CONFIDENCE_THRESHOLD, stageInputHash, stageRawKey, runStage,
   runSkill, toVendorSchema, readModelText, readModelUsage, DEFAULT_PRIMARY_MODEL, DEFAULT_ESCALATION_MODEL, EXTRACTION_TEMPERATURE, FEEDBACK_CATEGORIES,
-  energyReportExtractor,
+  energyReportExtractor, parseModelJson,
 } = await import(pathToFileURL(outfile).href);
 
 // ── Test doubles ─────────────────────────────────────────────────────────────
@@ -399,4 +400,40 @@ test("runner: a multimodal skill sends Google inlineData, not image_url", async 
   assert.deepEqual(parts[0], { text: "look at this" });
   assert.deepEqual(parts[1], { inlineData: { mimeType: "image/png", data: "AAAB" } },
     "a data: URL becomes inlineData — image_url has no Google equivalent");
+});
+
+// ── Model output parsing ─────────────────────────────────────────────────────
+// Three copies of a bare JSON.parse discarded correct answers wrapped in a
+// markdown fence — which is exactly what a model returns when the request
+// cannot enforce a JSON mime type. Two paid calls per run, both binned.
+test("parseModelJson: plain JSON, fenced JSON, and prose-wrapped JSON all parse", () => {
+  assert.deepEqual(parseModelJson('{"a":1}'), { a: 1 });
+  assert.deepEqual(parseModelJson('```json\n{"a":1}\n```'), { a: 1 });
+  assert.deepEqual(parseModelJson('```\n{"a":1}\n```'), { a: 1 });
+  assert.deepEqual(parseModelJson('Sure — here you go:\n{"a":1}\nHope that helps.'), { a: 1 });
+  assert.deepEqual(parseModelJson('[{"a":1}]'), [{ a: 1 }]);
+});
+
+test("parseModelJson: braces INSIDE strings do not end the object", () => {
+  assert.deepEqual(parseModelJson('prose {"note":"a } brace","ok":true} tail'), { note: "a } brace", ok: true });
+  assert.deepEqual(parseModelJson('{"esc":"quote \\" and } brace"}'), { esc: 'quote " and } brace' });
+});
+
+test("parseModelJson: refuses what is genuinely not JSON", () => {
+  assert.equal(parseModelJson("I cannot help with that."), null);
+  assert.equal(parseModelJson(""), null);
+  assert.equal(parseModelJson('{"truncated": [1,2'), null, "a cut-off response is not silently half-read");
+});
+
+test("runner: a REJECTED response is carried out for archiving, an accepted one is not", async () => {
+  const fenced = { response: '```json\n{"value":5}\n```', usage: { prompt_tokens: 1, completion_tokens: 1 } };
+  const { env: env1 } = fakeEnv({ responses: [fenced] });
+  const okRun = await runSkill(env1, testSkill, {});
+  assert.ok(okRun.ok, "the test skill's own validator still governs the fields");
+  assert.equal(okRun.rejectedRaw, undefined, "nothing to archive when it parsed");
+
+  const { env: env2 } = fakeEnv({ responses: [bad(), bad()] });
+  const failRun = await runSkill(env2, testSkill, {});
+  assert.equal(failRun.ok, false);
+  assert.equal(failRun.rejectedRaw, "not json at all", "the text survives for diagnosis");
 });

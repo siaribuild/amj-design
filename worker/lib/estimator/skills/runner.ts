@@ -195,5 +195,9 @@ export async function runSkill<I, O>(
   }
 
   const outputHash = await sha256hex(new TextEncoder().encode(rawText)).catch(() => null);
-  return { ok: data != null, data, warnings, modelId: model, promptVersion: skill.promptVersion, outputHash, repaired, inputTokens, outputTokens };
+  return {
+    ok: data != null, data, warnings, modelId: model, promptVersion: skill.promptVersion,
+    outputHash, repaired, inputTokens, outputTokens,
+    ...(data == null ? { rejectedRaw: rawText.slice(0, 20000) } : {}),
+  };
 }

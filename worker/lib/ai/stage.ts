@@ -100,12 +100,20 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
     if (escalated.ok) { run = escalated; taken = true; }
   }
 
-  // ── Archive the accepted raw output to R2 (§7.1) — only when usable ──────────
+  // ── Archive the raw output to R2 (§7.1) ─────────────────────────────────────
   let r2Key: string | null = null;
   if (run.ok && run.data != null) {
     r2Key = stageRawKey(projectId, aiRunId, skill.id, inputHash);
     // Archive exactly what the validator accepted, re-serialized (canonical form).
     await env.FILES.put(r2Key, JSON.stringify(run.data)).catch(() => { r2Key = null; });
+  } else if (run.rejectedRaw) {
+    // And archive what it REJECTED. Only the accepted output was ever kept, so
+    // `skill_output_invalid` — the model answered, we threw it away — was the
+    // one failure with nothing to look at. Lives under the same runs/ prefix,
+    // which the file-delete path already purges, so it inherits that lifecycle
+    // rather than becoming a second retention question.
+    const rejectedKey = `${stageRawKey(projectId, aiRunId, skill.id, inputHash)}.rejected`;
+    await env.FILES.put(rejectedKey, run.rejectedRaw).catch(() => { /* diagnostics are best-effort */ });
   }
 
   // ── Persist the stage record (OR REPLACE keeps within-run retries clean) ─────

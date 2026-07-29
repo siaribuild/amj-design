@@ -5,6 +5,7 @@
 // statement all matter. Output is UNTRUSTED and fully validated/clamped by
 // `validate` (never a guessed default: unreadable ⇒ null).
 import { type Skill, numOrNull, strCap } from "./types";
+import { parseModelJson } from "./json";
 
 export interface EnergyConstraint {
   ref: string | null;            // opening ref (W04A) — null for a type-level rule
@@ -116,5 +117,7 @@ export const energyReportExtractor: Skill<{ text: string; checksum?: string | nu
 };
 
 function safeJson(s: string): unknown {
-  try { return JSON.parse(s); } catch { return null; }
+  // Was a bare JSON.parse — see json.ts: it discarded correct answers wrapped
+  // in a markdown fence, which is what an un-enforced model returns.
+  return parseModelJson(s);
 }

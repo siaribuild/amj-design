@@ -4,6 +4,7 @@
 // clamped by `validate`: tags preserved exactly, unreadable values become null +
 // an issue — NEVER a guess (§25: "unreadable dimensions are null and flagged").
 import { type Skill, numOrNull, strCap } from "./types";
+import { parseModelJson } from "./json";
 
 export interface ScheduleLineV1 {
   tag: string;                       // schedule tag EXACTLY as printed (W04, D03)
@@ -133,5 +134,7 @@ export const scheduleExtractor: Skill<ScheduleInput, ScheduleExtractionV1> = {
 };
 
 function safeJson(s: string): unknown {
-  try { return JSON.parse(s); } catch { return null; }
+  // Was a bare JSON.parse — see json.ts: it discarded correct answers wrapped
+  // in a markdown fence, which is what an un-enforced model returns.
+  return parseModelJson(s);
 }
