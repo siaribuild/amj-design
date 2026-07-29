@@ -437,3 +437,31 @@ test("runner: a REJECTED response is carried out for archiving, an accepted one 
   assert.equal(failRun.ok, false);
   assert.equal(failRun.rejectedRaw, "not json at all", "the text survives for diagnosis");
 });
+
+// ── Schema instruction ───────────────────────────────────────────────────────
+// No schema parameter is accepted by this provider, so the contract has to be in
+// the prompt. Without it the model answered a plan-context request with
+// {project, areasSqm, openings[{reference, room, orientation}]} — its own
+// invention — while the validator required {rooms[], openings[{ref, roomId}]}.
+test("runner: the response schema is appended to a text prompt", async () => {
+  const { env, aiCalls } = fakeEnv({ responses: [good(1)] });
+  await runSkill(env, testSkill, {});
+  const sent = aiCalls[0].params.contents[0].parts.map((p) => p.text ?? "").join("\n");
+  assert.match(sent, /JSON Schema/i, "the model is told the shape it must return");
+  assert.ok(sent.includes(JSON.stringify(testSkill.responseSchema)), "the actual schema travels, not a paraphrase");
+});
+
+test("runner: a multimodal prompt gets the schema as a trailing TEXT part", async () => {
+  const imageSkill = {
+    id: "img", promptVersion: "v1",
+    responseSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"] },
+    buildPrompt: () => "text",
+    buildContent: () => ([{ type: "image_url", image_url: { url: "data:image/png;base64,AAAB" } }]),
+    validate: (raw) => { try { const v = JSON.parse(raw); return typeof v?.value === "number" ? v : null; } catch { return null; } },
+  };
+  const { env, aiCalls } = fakeEnv({ responses: [good(1)] });
+  await runSkill(env, imageSkill, {});
+  const parts = aiCalls[0].params.contents[0].parts;
+  assert.ok(parts[0].inlineData, "the image is still first");
+  assert.match(parts.at(-1).text, /JSON Schema/i, "the schema does not displace the image");
+});

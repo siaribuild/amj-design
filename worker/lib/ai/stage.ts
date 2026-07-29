@@ -113,7 +113,11 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
     // which the file-delete path already purges, so it inherits that lifecycle
     // rather than becoming a second retention question.
     const rejectedKey = `${stageRawKey(projectId, aiRunId, skill.id, inputHash)}.rejected`;
-    await env.FILES.put(rejectedKey, run.rejectedRaw).catch(() => { /* diagnostics are best-effort */ });
+    // Record the key too: archiving it and not saying where cost a manual
+    // reconstruction from the input hash the first time it was needed.
+    await env.FILES.put(rejectedKey, run.rejectedRaw)
+      .then(() => { r2Key = rejectedKey; })
+      .catch(() => { /* diagnostics are best-effort */ });
   }
 
   // ── Persist the stage record (OR REPLACE keeps within-run retries clean) ─────

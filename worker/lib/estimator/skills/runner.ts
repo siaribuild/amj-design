@@ -119,6 +119,34 @@ export function readModelUsage(out: any): { input: number; output: number } {
   return { input: Number(out?.usage?.prompt_tokens ?? 0), output: Number(out?.usage?.completion_tokens ?? 0) };
 }
 
+// The schema has to travel IN THE PROMPT, because this provider accepts no
+// schema parameter. When response_format was being sent (and rejected), the
+// model was never told the field names at all — it answered a plan-context
+// request with {project, areasSqm, openings[{reference, room, orientation}]},
+// its own invention, while the validator wanted {rooms[], openings[{ref,
+// roomId, …}]}. Perfectly good extraction, thrown away for want of a contract.
+//
+// Appended by the runner so no skill can forget it, and so the instruction
+// stays identical across all of them.
+export function schemaInstruction(skill: Skill<unknown, unknown>): string {
+  return [
+    "Return ONLY a JSON object conforming EXACTLY to this JSON Schema.",
+    "Use these property names verbatim. Omit no required property.",
+    "Unknown values are null — never invent, never rename, never add fields.",
+    "No markdown fence, no commentary.",
+    JSON.stringify(skill.responseSchema),
+  ].join("\n");
+}
+
+/** Append the schema to a string prompt, or as a final text part to a
+ *  multimodal one. */
+export function withSchemaInstruction(prompt: unknown, skill: Skill<unknown, unknown>): unknown {
+  const instruction = schemaInstruction(skill);
+  if (typeof prompt === "string") return `${prompt}\n\n${instruction}`;
+  if (Array.isArray(prompt)) return [...prompt, { type: "text", text: instruction }];
+  return prompt;
+}
+
 async function callModel(env: Env, model: string, skill: Skill<unknown, unknown>, messages: { role: string; content: unknown }[]) {
   // NOTE: Google's structured-output fields (responseMimeType / responseSchema)
   // are NOT in Cloudflare's documented parameter set for this model, so they are
@@ -151,7 +179,10 @@ export async function runSkill<I, O>(
   let repaired = false;
 
   // Multimodal skills supply content parts (text + images); text skills a string.
-  const prompt: unknown = skill.buildContent ? skill.buildContent(input) : skill.buildPrompt(input);
+  const prompt: unknown = withSchemaInstruction(
+    skill.buildContent ? skill.buildContent(input) : skill.buildPrompt(input),
+    skill,
+  );
   try {
     const out: any = await callModel(env, model, skill as Skill<unknown, unknown>, [{ role: "user", content: prompt }]);
     const usage = readModelUsage(out);

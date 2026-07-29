@@ -5,7 +5,12 @@
 // alters what a stage would produce for the same input.
 import type { Env } from "../../types";
 
-export const PIPELINE_VERSION = "2026-07-25.1";
+// 2026-07-29.1: the provider request shape changed (Google-native), and the
+// response schema now travels IN THE PROMPT because no schema parameter is
+// accepted. That changes what every skill actually asks for, so the idempotency
+// key must change with it — otherwise a stage cached under the old prompt would
+// replay against the new contract.
+export const PIPELINE_VERSION = "2026-07-29.1";
 export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.0";
 
 // §13.1/§13.2 model routing. SINGLE-MODEL POLICY (owner decision 2026-07-25):
@@ -35,4 +40,9 @@ export const autoExtractionEnabled = (env: Env): boolean =>
 // §13.4 determinism settings for extraction calls: near-zero temperature, strict
 // JSON schema, bounded output. Applied by the skill runner to every call.
 export const EXTRACTION_TEMPERATURE = 0.1;
-export const EXTRACTION_MAX_TOKENS = 8192;
+// Gemini 3.x spends THINKING tokens from this same budget, so the ceiling is
+// not the text length: a plan-context reply stopped mid-object having reported
+// only 1,165 output tokens against the old 8,192. Raised so a long schedule or a
+// 14-page plan set cannot be cut off. It is a ceiling, not a target — typical
+// replies are a fraction of it and are billed on what they actually use.
+export const EXTRACTION_MAX_TOKENS = 32768;
