@@ -1,82 +1,76 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // RESOURCES — the index
 //
-// AWAITING REDESIGN. A list-row version shipped briefly and was reverted: it
-// read as an admin table — a bone-filled box pinned to the left of a half-empty
-// page, titles too small to carry weight, summaries clipped mid-word. The card
-// grid below is the state it was reverted TO, not a design anyone defends. The
-// replacement is coming from supervised design work; do not restyle this file
-// ad hoc in the meantime.
+// Implements the "Forty entries — an index, not a card wall" state from the
+// approved wireframe, and implements it as the ONLY state: search, the filter
+// rail and the result count render at two posts exactly as they do at two
+// hundred. That is the owner's call — the alternative (controls phasing in by
+// count) would mean maintaining two layouts.
 //
-// What survives from the analysis, and is worth keeping in whatever replaces it:
-// the page must CHANGE SHAPE as it fills, because the honest layout at two
-// records is not the honest layout at two hundred:
+// Rows, not cards. Cards are the wrong instrument for homogeneous text records
+// with no photograph: card height is set by the longest summary, so a grid can
+// never align, and each record added makes the page harder to scan. A row puts
+// every title on one left edge and every file fact in one right column — which
+// is the column a certifier scans.
 //
-//   0        an honest panel — no rail, no search, no list furniture
-//   1–11     the list alone. Two filters over three records is the placeholder
-//            problem expressed as taxonomy.
-//   12+      the category filter appears
-//   25+      search appears
-//   40+      the list renders 40 and offers "Load more"
-//
-// Load more rather than pagination (which measurably suppresses how much of a
-// list people see) and rather than infinite scroll (which hides content from
-// crawlers, and these pages exist to be found).
+// Where the wireframe and the site's design language disagree, the site wins:
+// the header, the type scale, the sage accent, the hero image treatment and the
+// button components are the site's, not the mock's.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useMemo, useState } from "react";
-import { AlertCircle, ArrowRight, Search, X } from "lucide-react";
-import { type Page, SLabel, Btn, CtaBanner } from "../app/ui";
-import {
-  posts, postCategories, imageUrl, getPage, postDate, type Post,
-} from "../data/catalogue";
-import { FilterSelect } from "../components/FilterSelect";
+import { Check, Search, X } from "lucide-react";
+import { type Page, SLabel, Btn, CtaBanner, GhostMark } from "../app/ui";
+import { posts, postCategories, imageUrl, getPage, postDate, type Post } from "../data/catalogue";
 import { fileSize, docDate } from "../components/DocumentRow";
 import { pathForPage } from "../app/routes";
 
 const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 const MONO = { fontFamily: "'DM Mono', monospace" } as const;
 
-// The counts at which the page grows each affordance. Together in one place
-// because they are a single editorial judgement, not five scattered ones.
-const SHOW_FILTERS_AT = 12;
-const SHOW_SEARCH_AT = 25;
-const PAGE_SIZE = 40;
+// Twelve at a time, per the wireframe. Load more rather than pagination (which
+// measurably suppresses how much of a list people see) and rather than infinite
+// scroll (which hides content from crawlers — and these pages exist to be found).
+const PAGE_SIZE = 12;
 
-// ─── One card ─────────────────────────────────────────────────────────────────
-// REVERTED to the card grid on the owner's instruction while the index is
-// redesigned properly. The list-row version that briefly shipped read as an
-// admin table: a bone-filled box pinned left of a half-empty page, titles too
-// small to carry weight, and summaries clipped mid-word. Do not reinstate it
-// from git — the replacement comes from the design work, not from this file's
-// history.
-function PostCard({ post, onOpen }: {
-  post: Post; onOpen: (slug: string) => void;
-}) {
-  const date = postDate(post);
-  const file = post.attachment;
+/** The right-hand scan column: what a reader decides on before clicking. File
+ *  facts when there is a file, the date when there is not. Never both, never a
+ *  placeholder for a field the record does not carry. */
+function metaLines(post: Post): string[] {
+  if (post.attachment) {
+    const a = post.attachment;
+    return [a.ext, fileSize(a.size), a.revision, a.standardRef].filter(Boolean) as string[];
+  }
+  const d = postDate(post);
+  return d ? [`${d.label} ${docDate(d.value)}`] : [];
+}
 
+function PostRow({ post, onOpen }: { post: Post; onOpen: (slug: string) => void }) {
+  const meta = metaLines(post);
   return (
     <button onClick={() => onOpen(post.slug)}
-      className="card card-link p-5 text-left flex flex-col cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2">
-      <span className="block text-[10px] uppercase tracking-[0.14em] text-sage mb-2" style={MONO}>
-        {post.categoryTitle}
-      </span>
-      <span className="block text-[17px] leading-tight text-ink font-semibold mb-1.5" style={DISPLAY}>
-        {post.title}
-      </span>
-      <span className="text-sm text-body leading-relaxed line-clamp-2">{post.summary}</span>
-      {/* The files are a HINT of what is inside, never the destination — every
-          card opens the article, and downloading happens from its rail, where
-          the scope note travels with the file. */}
-      <span className="flex items-center justify-between gap-3 border-t border-black/6 mt-4 pt-3">
-        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-sage flex-shrink-0">
-          Read <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+      className="group w-full text-left grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_280px_34px] gap-x-6 gap-y-3 items-center py-6 border-t border-line first:border-t-0 transition-colors hover:bg-sage-wash cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-inset">
+      <span className="min-w-0">
+        <span className="block text-[10px] uppercase tracking-[0.14em] text-sage mb-2" style={MONO}>
+          {post.categoryTitle}
         </span>
-        <span className="text-[11px] text-quiet text-right" style={MONO}>
-          {file
-            ? [file.ext, fileSize(file.size)].filter(Boolean).join(" · ")
-            : date ? `${date.label === "Updated" ? "Upd. " : ""}${docDate(date.value)}` : ""}
+        <span className="block text-ink font-semibold leading-[1.16] mb-1.5"
+          style={{ ...DISPLAY, fontSize: "clamp(1.2rem, 1.8vw, 1.44rem)" }}>
+          {post.title}
         </span>
+        <span className="block text-[13px] text-body leading-relaxed max-w-[700px]">{post.summary}</span>
+      </span>
+
+      {/* The scan column. First line carries the weight — it is the file type, or
+          the date when there is no file. */}
+      <span className="text-[10px] uppercase tracking-[0.07em] leading-[1.7] text-quiet md:justify-self-start" style={MONO}>
+        {meta.map((line, i) => (
+          <span key={i} className={`block ${i === 0 ? "text-ink font-medium" : ""}`}>{line}</span>
+        ))}
+      </span>
+
+      <span aria-hidden="true"
+        className="hidden md:block text-[22px] leading-none text-sage text-right opacity-40 group-hover:opacity-100 transition-opacity">
+        ↗
       </span>
     </button>
   );
@@ -86,107 +80,116 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const open = (slug: string) => { setPage("post", pathForPage("post", slug)); window.scrollTo(0, 0); };
 
-  const [category, setCategory] = useState("all");
+  // Multi-select, per the wireframe: a reader looking for a drawing OR a test
+  // report should not have to choose between them.
+  const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE_SIZE);
 
-  const hero = getPage("resources");
-  const heroUrl = imageUrl(hero?.heroImage, { w: 1920, h: 1080 });
-
+  const heroUrl = imageUrl(getPage("resources")?.heroImage, { w: 1920, h: 1080 });
   const total = posts.length;
-  const withFilters = total >= SHOW_FILTERS_AT;
-  const withSearch = total >= SHOW_SEARCH_AT;
 
   // Only categories that actually HAVE a post. A filter offering eight values
   // where six return nothing is the placeholder problem, one level up.
   const cats = postCategories.filter((c) => posts.some((p) => p.categorySlug === c.slug));
 
-  // Search covers everything already in memory EXCEPT bodies — those are
-  // fetched per article and pulling them all here to search would undo the one
-  // decision that keeps this section cheap for every other page on the site.
+  // Search covers everything already in memory EXCEPT bodies — those are fetched
+  // per post, and pulling them all here would undo the decision that keeps this
+  // section cheap for every other page on the site.
   const matches = (p: Post, q: string) => {
     const hay = [
       p.title, p.summary, p.categoryTitle,
-      p.attachment?.label ?? "", p.attachment?.standardRef ?? "",
+      p.attachment?.label ?? "", p.attachment?.standardRef ?? "", p.attachment?.ext ?? "",
     ].join(" ").toLowerCase();
-    return q.split(/\s+/).filter(Boolean).every((term) => hay.includes(term));
+    return q.split(/\s+/).filter(Boolean).every((t) => hay.includes(t));
   };
 
   const q = query.trim().toLowerCase();
   const filtered = useMemo(() => posts.filter((p) =>
-    (category === "all" || p.categorySlug === category) &&
-    (!q || matches(p, q))), [category, q]);
-
-  const activeCat = cats.find((c) => c.slug === category);
-  const filtering = category !== "all" || q !== "";
-  const clear = () => { setCategory("all"); setQuery(""); };
+    (selected.length === 0 || selected.includes(p.categorySlug)) &&
+    (!q || matches(p, q))), [selected, q]);
 
   const shown = filtered.slice(0, limit);
-  const heading = activeCat ? `${activeCat.title}s` : "All resources";
+  const filtering = selected.length > 0 || q !== "";
+  const reset = () => setLimit(PAGE_SIZE);
+  const toggle = (slug: string) => {
+    setSelected((s) => (s.includes(slug) ? s.filter((x) => x !== slug) : [...s, slug]));
+    reset();
+  };
+  const clear = () => { setSelected([]); setQuery(""); reset(); };
 
-  const catOptions = [
-    { slug: "all", name: "All categories", count: total },
-    ...cats.map((c) => ({ slug: c.slug, name: c.title, count: posts.filter((p) => p.categorySlug === c.slug).length })),
-  ];
-
-  const rail = (
-    <>
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-body mb-3" style={MONO}>Category</p>
-        <div className="flex flex-col">
-          {catOptions.map((o) => (
-            <button key={o.slug} onClick={() => setCategory(o.slug)}
-              className={`text-left px-3 py-2.5 text-sm border-l-2 transition-colors cursor-pointer flex items-center justify-between gap-2 ${category === o.slug ? "border-sage text-ink font-semibold bg-sage-wash" : "border-transparent text-body hover:text-ink hover:bg-black/[0.02]"}`}>
-              <span>{o.name}</span>
-              <span className="text-[11px] text-quieter flex-shrink-0" style={MONO}>{o.count}</span>
-            </button>
-          ))}
+  const railBlock = (
+    <div className="border-t border-ink">
+      <div className="py-4 border-b border-line">
+        <div className="flex items-baseline justify-between gap-3 mb-3 text-[10px] uppercase tracking-[0.1em]" style={MONO}>
+          <span className="text-ink">Category</span>
+          <span className="text-quieter">What it is</span>
         </div>
+        {cats.map((c) => {
+          const on = selected.includes(c.slug);
+          const n = posts.filter((p) => p.categorySlug === c.slug).length;
+          return (
+            <label key={c.slug} className="flex items-center justify-between gap-3 py-1.5 text-[13px] cursor-pointer group/opt">
+              <span className="flex items-center gap-2.5">
+                {/* The tick is drawn, not relied on from the UA: appearance-none
+                    removes the native glyph, and a filled square with no mark in
+                    it does not read as "checked". */}
+                <span className="relative w-[15px] h-[15px] flex-shrink-0">
+                  <input type="checkbox" checked={on} onChange={() => toggle(c.slug)}
+                    className="peer absolute inset-0 w-full h-full appearance-none border border-line bg-paper cursor-pointer checked:bg-sage checked:border-sage focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-1" />
+                  <Check className="absolute inset-0 m-auto w-[11px] h-[11px] text-white opacity-0 peer-checked:opacity-100 pointer-events-none" aria-hidden="true" />
+                </span>
+                <span className={on ? "text-ink font-medium" : "text-body group-hover/opt:text-ink"}>{c.title}</span>
+              </span>
+              <span className="text-[10px] text-quieter flex-shrink-0" style={MONO}>{n}</span>
+            </label>
+          );
+        })}
       </div>
       {filtering && (
         <button onClick={clear}
-          className="w-full text-left border-t border-line pt-3 px-3 py-2 text-xs text-body hover:text-ink cursor-pointer">
-          Clear filters
+          className="w-full text-left py-3.5 text-[10px] uppercase tracking-[0.08em] text-sage hover:text-sage-deep cursor-pointer" style={MONO}>
+          Clear search and filters
         </button>
       )}
-    </>
+    </div>
   );
 
   return (
     <div className="ground-paper min-h-screen">
-      {/* Shorter than the products hero: there is no photograph here worth 440px
-          and the page's job is the list. No CTA either — someone reading
-          documentation is mid-project, and "Upload a schedule" at the top of a
-          reference library is the marketing intrusion the products page deleted. */}
-      <section className="relative bg-night h-[300px] md:h-[360px] flex items-end overflow-hidden">
-        {heroUrl && (
-          <img src={heroUrl} alt="" aria-hidden="true" loading="lazy" decoding="async"
-            className="hero-img" />
-        )}
-        <div className="hero-scrim" aria-hidden="true" />
-        <div className="relative w-full max-w-6xl mx-auto px-6 pt-24 pb-10">
-          <div className="max-w-xl">
-            <SLabel light>Resources</SLabel>
-            <h1 className="font-semibold text-white leading-[1.05] tracking-tight mb-3"
-              style={{ ...DISPLAY, fontSize: "clamp(2rem, 4.4vw, 3rem)" }}>
-              Resources.
-            </h1>
-            {/* The name is deliberately plain, so the standfirst does the
-                specifying — and it can absorb a new kind without being rewritten. */}
-            <p className="text-white/80 text-[15px] md:text-base leading-relaxed max-w-[46ch]">
-              Articles, guides and technical documentation — everything we can publish openly.
-            </p>
-          </div>
+      {/* A BAND, not a hero. The wireframe argues the point and it is right: at a
+          laptop viewport a 360px title block consumes the useful first screen
+          and pushes the first real record below it. ~210px orients, then gets
+          out of the way. */}
+      {/* The wireframe's band is 196–218px measured BELOW its header. This site's
+          header overlays the hero, so the same content area needs the header's
+          height on top — hence 260, not 214. The proportion is the mock's; the
+          arithmetic accounts for a header the mock did not have. */}
+      <section className="relative bg-night h-[248px] md:h-[268px] flex items-end overflow-hidden">
+        {heroUrl && <img src={heroUrl} alt="" aria-hidden="true" loading="lazy" decoding="async" className="hero-img" />}
+        {heroUrl && <div className="hero-scrim" aria-hidden="true" />}
+        {/* The site's own decorative device, in place of the mock's linework. */}
+        <GhostMark size={260} opacity={0.05} color="#fff" pos="right-0 bottom-0" />
+        <div className="relative w-full max-w-6xl mx-auto px-6 pt-24 pb-8">
+          <SLabel light>Articles, guides &amp; documentation</SLabel>
+          <h1 className="font-semibold text-white leading-[1.0] tracking-tight mb-2"
+            style={{ ...DISPLAY, fontSize: "clamp(2.1rem, 4vw, 3.1rem)" }}>
+            Resources
+          </h1>
+          <p className="text-white/70 text-[15px] leading-relaxed max-w-[62ch]">
+            Find a method, standard, drawing or product document — without browsing a catalogue of empty thumbnails.
+          </p>
         </div>
       </section>
 
-      <div className="max-w-6xl mx-auto px-6">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:py-12">
         {total === 0 ? (
-          /* ZERO RECORDS. No rail, no search — furniture over nothing. One
+          /* ZERO RECORDS. No search, no rail — furniture over nothing. One
              honest panel, every clause of which is true and stated elsewhere. */
-          <div className="py-12 md:py-16 max-w-[62ch]">
+          <div className="max-w-[62ch]">
             <div className="card p-6 md:p-8">
-              <h2 className="text-[19px] font-semibold text-ink mb-2.5" style={DISPLAY}>Nothing is published here yet.</h2>
+              <SLabel>0 published</SLabel>
+              <h2 className="text-[19px] font-semibold text-ink mb-2.5 mt-1" style={DISPLAY}>The library is being prepared.</h2>
               <p className="text-body leading-relaxed mb-3">
                 We're supply-only and Australia-wide, so most of what a builder needs arrives with the quote:
                 the schedule we priced, the systems we matched, and the test reports and warranty terms for
@@ -196,115 +199,110 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
                 This section fills as we publish openly. If you need a specific document now, ask.
               </p>
               <div className="flex flex-wrap gap-2.5">
-                <Btn variant="outline" size="sm" onClick={() => go("contact")}>Ask for a document</Btn>
+                <Btn variant="outline" size="sm" onClick={() => go("contact")}>Request a document</Btn>
                 <Btn variant="ghost" size="sm" onClick={() => go("products")}>Browse products</Btn>
               </div>
             </div>
           </div>
         ) : (
-          <div className={`py-8 md:py-10 ${withFilters ? "lg:grid lg:grid-cols-[240px_1fr] lg:gap-10" : ""}`}>
-            {withFilters && (
-              <>
-                <div className="lg:hidden mb-8">
-                  <FilterSelect label="Category" listLabel="Post category" options={catOptions} value={category} unit="post" onSelect={setCategory} />
-                </div>
-                <aside className="hidden lg:block">
-                  <div className="lg:sticky lg:top-24 space-y-8">{rail}</div>
-                </aside>
-              </>
-            )}
-
-            <div className={withFilters ? "" : "max-w-3xl"}>
-              <div className="flex items-end justify-between gap-4 mb-2">
-                <h2 className="font-semibold text-ink leading-tight"
-                  style={{ ...DISPLAY, fontSize: "clamp(1.6rem, 2.8vw, 2.1rem)" }}>
-                  {heading}
-                </h2>
-                {/* A count is worth showing once there is enough that the
-                    number tells you something you cannot see. */}
-                {withFilters && (
-                  <p className="text-[13px] text-quiet flex-shrink-0 pb-1" style={MONO}>
-                    {filtered.length} of {total}
-                  </p>
-                )}
-              </div>
-              {activeCat?.description && (
-                <p className="text-body text-[15px] leading-relaxed max-w-2xl mb-6">{activeCat.description}</p>
-              )}
-
-              {/* Search sits INSIDE the results column, not in the site header:
-                  a search field a reader mistakes for site-wide search is worse
-                  than none, and its placement is what says which it is. */}
-              {withSearch && (
-                <div className="relative mb-5 mt-4">
-                  <Search className="w-4 h-4 text-quieter absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
-                  <input
-                    type="search" value={query} onChange={(e) => { setQuery(e.target.value); setLimit(PAGE_SIZE); }}
-                    placeholder="Search resources" aria-label="Search resources"
-                    className="w-full card pl-10 pr-10 py-2.5 text-sm text-ink placeholder:text-quieter focus:outline-none focus-visible:ring-2 focus-visible:ring-sage" />
-                  {query && (
-                    <button onClick={() => setQuery("")} aria-label="Clear search"
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-quieter hover:text-ink cursor-pointer">
-                      <X className="w-4 h-4" aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-              )}
-              {!activeCat?.description && !withSearch && <div className="mb-6" />}
-
-              {shown.length > 0 ? (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                    {shown.map((p) => (
-                      <PostCard key={p.slug} post={p} onOpen={open} />
-                    ))}
-                  </div>
-
-                  {filtered.length > shown.length && (
-                    <div className="mb-10 flex items-center gap-4">
-                      <Btn variant="outline" size="sm" onClick={() => setLimit((n) => n + PAGE_SIZE)}>Load more</Btn>
-                      <span className="text-[13px] text-quiet" style={MONO}>
-                        {shown.length} of {filtered.length}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Sparse, but real. Not "check back soon" — a promise with no
-                      date behind it. */}
-                  {total < 6 && !filtering && (
-                    <p className="text-sm text-body leading-relaxed mb-10 max-w-[54ch]">
-                      <span className="text-sage-deep" style={MONO}>{total}</span>{" "}
-                      published so far. If what you need isn't here,{" "}
-                      <button onClick={() => go("contact")} className="text-sage hover:text-sage-deep cursor-pointer underline underline-offset-2">
-                        ask
-                      </button>{" "}
-                      — if we have it, we'll send it.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <div className="card p-8 text-center mb-10">
-                  <AlertCircle className="w-5 h-5 text-sage mx-auto mb-3" aria-hidden="true" />
-                  <p className="text-ink font-semibold mb-1.5">
-                    {q ? `Nothing matches "${query.trim()}".` : "Nothing matches this selection."}
-                  </p>
-                  <p className="text-sm text-body mb-5">Try another category{q ? ", or a different word" : ""}.</p>
-                  <div className="flex flex-wrap gap-2.5 justify-center">
-                    <Btn variant="outline" size="sm" onClick={clear}>Clear filters</Btn>
-                    <Btn variant="ghost" size="sm" onClick={() => go("contact")}>Ask a question</Btn>
-                  </div>
-                </div>
+          <>
+            {/* Search sits in the page, above the results — not in the site
+                header. A field a reader mistakes for site-wide search is worse
+                than none, and its placement is what tells them which it is. */}
+            <div className="relative mb-5">
+              <Search className="w-4 h-4 text-quieter absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+              <input type="search" value={query}
+                onChange={(e) => { setQuery(e.target.value); reset(); }}
+                placeholder="Search title, category, standard or product…" aria-label="Search resources"
+                className="w-full card pl-11 pr-11 min-h-[58px] text-[15px] text-ink placeholder:text-quieter focus:outline-none focus-visible:ring-2 focus-visible:ring-sage" />
+              {query && (
+                <button onClick={() => { setQuery(""); reset(); }} aria-label="Clear search"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-quieter hover:text-ink cursor-pointer">
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
               )}
             </div>
-          </div>
+
+            <div className="lg:grid lg:grid-cols-[244px_minmax(0,1fr)] lg:gap-10 lg:items-start">
+              <aside aria-label="Filter resources" className="mb-8 lg:mb-0 lg:sticky lg:top-24">
+                {railBlock}
+              </aside>
+
+              <section>
+                <div className="flex items-center justify-between gap-5 pb-3 border-b border-ink">
+                  <p className="text-[10px] uppercase tracking-[0.09em] text-ink" style={MONO}>
+                    {filtered.length} {filtered.length === 1 ? "resource" : "resources"}
+                    {filtered.length !== total && <span className="text-quieter"> of {total}</span>}
+                  </p>
+                  {/* A statement of the order, not a control that does nothing. */}
+                  <p className="text-[9px] uppercase tracking-[0.08em] text-quieter" style={MONO}>Recent first</p>
+                </div>
+
+                {filtering && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {query && (
+                      <button onClick={() => { setQuery(""); reset(); }}
+                        className="border border-sage bg-sage-wash text-sage text-[9px] uppercase tracking-[0.06em] px-2 py-1.5 cursor-pointer hover:bg-sage-veil" style={MONO}>
+                        Search: {query.trim()} ×
+                      </button>
+                    )}
+                    {selected.map((slug) => (
+                      <button key={slug} onClick={() => toggle(slug)}
+                        className="border border-sage bg-sage-wash text-sage text-[9px] uppercase tracking-[0.06em] px-2 py-1.5 cursor-pointer hover:bg-sage-veil" style={MONO}>
+                        {cats.find((c) => c.slug === slug)?.title ?? slug} ×
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {shown.length > 0 ? (
+                  <>
+                    <div className="border-b border-ink">
+                      {shown.map((p) => <PostRow key={p.slug} post={p} onOpen={open} />)}
+                    </div>
+
+                    {filtered.length > shown.length && (
+                      <div className="grid grid-cols-[1fr_auto] gap-5 items-center pt-5">
+                        <div>
+                          <div className="h-0.5 bg-black/10">
+                            <div className="h-full bg-sage transition-all"
+                              style={{ width: `${Math.min(100, (shown.length / filtered.length) * 100)}%` }} />
+                          </div>
+                          <p className="text-[9px] uppercase tracking-[0.08em] text-quiet mt-2" style={MONO}>
+                            Showing {shown.length} of {filtered.length}
+                          </p>
+                        </div>
+                        <Btn variant="outline" size="sm" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
+                          Load {Math.min(PAGE_SIZE, filtered.length - shown.length)} more
+                        </Btn>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="py-12 border-b border-ink">
+                    <SLabel>No matching resources</SLabel>
+                    <p className="text-ink mt-3 mb-6 leading-tight"
+                      style={{ ...DISPLAY, fontSize: "clamp(1.4rem, 2.4vw, 1.75rem)" }}>
+                      Try a broader term or clear a filter.
+                    </p>
+                    <div className="flex flex-wrap gap-2.5">
+                      <Btn variant="outline" size="sm" onClick={clear}>Clear search and filters</Btn>
+                      <Btn variant="ghost" size="sm" onClick={() => go("contact")}>Ask for a document</Btn>
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+          </>
         )}
       </div>
 
       <CtaBanner
         ground="bone"
-        title="Your windows and doors, priced before you commit."
-        sub="Free to start, no account, and every quote checked by a person before you pay."
-        onQuote={() => go("quote")}
+        title="Need a document tied to a specific product?"
+        sub="Send the product family, drawing reference or standard and a person will locate the current issue."
+        onQuote={() => go("contact")}
+        cta="Contact us"
       />
     </div>
   );

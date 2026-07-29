@@ -127,7 +127,7 @@ export function Input({ value, onChange, placeholder, type = "text", className =
 // It renders its own <section>, so the padding above and below is identical and
 // cannot drift again: a caller that only got the inner panel would still be free
 // to wrap it in whatever spacing it liked, which is how this diverged the first time.
-export function CtaBanner({ title, sub, onQuote, ground = "paper" }: {
+export function CtaBanner({ title, sub, onQuote, ground = "paper", cta = "Get a quote" }: {
   title: string;
   sub: string;
   /** Must navigate to the quote page. Pages own their own routing, so the
@@ -141,6 +141,11 @@ export function CtaBanner({ title, sub, onQuote, ground = "paper" }: {
    *  also paper, and two paper sections in a row is the seam disappearing again.
    *  A shared component cannot know which position it is in, so the page says. */
   ground?: "paper" | "bone";
+  /** The button's words. Defaults to the quote CTA, which is right on every
+   *  marketing page — but /resources closes on "find me a document", and a
+   *  banner whose heading asks one question and whose button answers another
+   *  is the mismatch a reader notices. */
+  cta?: string;
 }) {
   return (
     <section className={`${ground === "bone" ? "ground-bone" : "ground-paper"} border-t border-black/8 py-14`}>
@@ -155,7 +160,7 @@ export function CtaBanner({ title, sub, onQuote, ground = "paper" }: {
           </div>
           <div className="md:flex-shrink-0">
             <Btn variant="primary" size="lg" onClick={onQuote}>
-              Get a quote <ArrowRight className="w-4 h-4" aria-hidden="true" />
+              {cta} <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </Btn>
           </div>
         </div>
