@@ -690,7 +690,12 @@ export function hydrateCatalogue(data: CatalogueData): void {
 // that is not the guides index — it is small and every page already pays for
 // that request. The BODY does not: portable text on ~n articles would bloat
 // every page load on the site to serve one route, so it is fetched per-article.
-export interface GuideCategory { id: string; slug: string; title: string; order?: number }
+export interface GuideCategory {
+  id: string; slug: string; title: string; order?: number;
+  /** Shown under the index heading when this topic is selected — the role a
+   *  family's short description plays on the products page. */
+  description?: string;
+}
 
 export interface GuideAttachment {
   /** Direct URL to the asset in Sanity's CDN. */
@@ -724,10 +729,6 @@ export interface Guide {
   attachments: GuideAttachment[];
   publishedAt?: string;
   seo?: SeoMeta;
-  /** Whether the guide has anything to READ. Derived in the query, never
-   *  authored — a flag an editor maintains drifts from the body the first time
-   *  someone adds a paragraph. Nothing offers "Read the guide" without it. */
-  hasBody: boolean;
 }
 
 export let guideCategories: GuideCategory[] = [];

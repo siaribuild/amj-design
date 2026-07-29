@@ -71,7 +71,6 @@ export const CATALOGUE_QUERY = `{
     "productSlugs": products[]->slug.current,
     "heroImage": heroImage{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip, "aspect": asset->metadata.dimensions.aspectRatio },
     publishedAt,
-    "hasBody": count(body) > 0,
     "attachments": attachments[]{
       label, docType, revision, revisedAt, standardRef, note,
       "url": file.asset->url,
@@ -237,9 +236,8 @@ export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
     pages: dedupePages((raw.pages ?? []).filter((p) => p?.pageId).map(normalizePage)),
     locations: (raw.locations ?? []).filter((l) => l?.id).map(normalizeLocation),
     guideCategories: (raw.guideCategories ?? []).filter((c: any) => c?.slug),
-    // A guide with no category cannot be filtered to, and a guide with neither a
-    // body nor a file has nothing to give — Sanity refuses to publish one, but
-    // the query is defensive because a draft-mode fetch could still see it.
+    // A guide with no category cannot be filtered to. The body is required by
+    // the schema and is not projected here at all — it is fetched per article.
     guides: (raw.guides ?? [])
       .filter((g: any) => g?.slug && g?.categorySlug)
       .map((g: any) => ({
@@ -247,9 +245,7 @@ export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
         productSlugs: (g.productSlugs ?? []).filter(Boolean),
         heroImage: normalizeImage(g.heroImage) ?? undefined,
         attachments: (g.attachments ?? []).filter((a: any) => a?.url && a?.label),
-        hasBody: !!g.hasBody,
         seo: normalizeSeo(g.seo),
-      }))
-      .filter((g: any) => g.hasBody || g.attachments.length > 0),
+      })),
   };
 }

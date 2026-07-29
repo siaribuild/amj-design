@@ -84,10 +84,10 @@ export function DocumentRow({ attachment, guide, onOpenGuide }: {
         </span>
         <Download className="w-4 h-4 text-quieter group-hover:text-sage flex-shrink-0 mt-0.5 transition-colors" aria-hidden="true" />
       </a>
-      {/* The one link that must never lie: offered only when the guide actually
-          has something to read. A body-less guide is a file record, and sending
-          someone to its near-empty page would be the thin-page problem. */}
-      {guide.hasBody && onOpenGuide && (
+      {/* Every guide has a body — the schema requires one — so this link always
+          has somewhere real to land. It renders when the HOST wants it: the
+          product page offers it, the guide page (already there) does not. */}
+      {onOpenGuide && (
         <button onClick={() => onOpenGuide(guide.slug)}
           className="inline-flex items-center gap-1.5 text-xs text-sage hover:text-sage-deep px-4 pb-3 -mt-1 cursor-pointer">
           Read the guide <ArrowRight className="w-3 h-3" aria-hidden="true" />

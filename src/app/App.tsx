@@ -23,8 +23,10 @@ import { HowItWorksPage } from "../pages/HowItWorksPage";
 import { type TrackFocus } from "../pages/OrderTrackingPage";
 import { ContactPage } from "../pages/ContactPage";
 import { PrivacyPolicyPage } from "../pages/PrivacyPolicyPage";
+import { ResourcesPage } from "../pages/ResourcesPage";
+import { GuidePage } from "../pages/GuidePage";
 import { pathForPage, routeFromPathname } from "./routes";
-import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug, getFamily, getCategory, getActiveLocations } from "../data/catalogue";
+import { products as catalogueProducts, type CategorySlug, getPage, imageUrl, getProductBySlug, getFamily, getCategory, getActiveLocations, getGuideBySlug } from "../data/catalogue";
 import { parseScheduleText } from "../data/scheduleParse";
 import { matchSchedule } from "../data/scheduleMatch";
 import { Seo } from "./Seo";
@@ -1170,82 +1172,11 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
 // ═══════════════════════════════════════════════════════════════════════════════
 // RESOURCES
 // ═══════════════════════════════════════════════════════════════════════════════
-function ResourcesPage({ setPage }: { setPage: (p: Page) => void }) {
-  const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const [filter, setFilter] = useState("All");
-  const resources = [
-    { t: "Measuring guide",         s: "How to measure rough opening sizes. Frame size vs. opening size explained.", cat: "Windows" },
-    { t: "Frame allowances guide",  s: "Frame tolerances and clearances for each product type.",                    cat: "Windows" },
-    { t: "Sliding vs. bifold doors",s: "Performance, opening width, cost and access compared.",                    cat: "Doors" },
-    { t: "Glass options explained",  s: "Single, double glaze, LowE, SHGC and U-value — what each means.",         cat: "Glass" },
-    { t: "Double glazing & energy", s: "WERS ratings, NCC requirements and thermal performance data.",              cat: "Glass" },
-    { t: "AS 2047 & AS 1288 overview",s:"What these standards mean for your windows and doors.",                   cat: "Compliance" },
-    { t: "Warranty & compliance docs",s:"Test reports, warranty terms and compliance certificates.",                cat: "Compliance" },
-    { t: "Site delivery checklist", s: "Preparing your site for window and door delivery.",                        cat: "Delivery" },
-    { t: "Builder quote checklist", s: "What to include when submitting a window schedule.",                       cat: "Builder" },
-    { t: "Care and maintenance",    s: "Maintaining aluminium frames, seals, tracks and glass.",                   cat: "Maintenance" },
-  ];
-  const cats = ["All","Windows","Doors","Glass","Compliance","Delivery","Builder","Maintenance"];
-  const filtered = filter === "All" ? resources : resources.filter(r => r.cat === filter);
-  // ground-paper: the page ground is WHITE (owner call), and it DECLARES that
-  // rather than only painting it — so cards inside derive to bone and get their
-  // definition from the fill instead of from the page.
-  //
-  // It was bg-bone, which paints a ground without declaring one, so every card
-  // here inherited --card-fill from the app shell and came out white on bone.
-  // Any section added later that wants bone opts in with ground-bone; the page
-  // ground stays paper.
-  //
-  // This page is slated for a redesign — this is the ground fix only,
-  // deliberately not a re-layout.
-  return (
-    <div className="ground-paper min-h-screen">
-      <div className="relative overflow-hidden">
-        <GhostMark size={300} opacity={0.07} pos="right-0 top-0" />
-        <div className="max-w-5xl mx-auto px-6 pt-28 pb-8 relative">
-          <SLabel>Resources</SLabel>
-          <h1 className="text-4xl font-semibold text-ink mb-4"
-            style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Guides &amp; documentation</h1>
-          <p className="text-body mb-8">Technical guides, delivery checklists and compliance references.</p>
-          <div className="flex flex-wrap gap-2">
-            {cats.map(c => (
-              <button key={c} onClick={() => setFilter(c)}
-                className={`px-4 py-2 text-xs font-medium border transition-all cursor-pointer ${filter === c ? "border-sage bg-sage text-white" : "border-black/15 text-body bg-white hover:border-sage hover:text-sage"}`}>
-                {c}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="max-w-5xl mx-auto px-6 py-10 pb-0">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-10">
-          {filtered.map(r => (
-            <div key={r.t} className="group relative card hover:border-sage p-5 transition-all cursor-pointer overflow-hidden">
-              <FrameCorners size={10} color={SAGE} />
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-sage">{r.cat}</span>
-              <h3 className="font-semibold text-ink mt-2 mb-1 group-hover:text-sage transition-colors"
-                style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{r.t}</h3>
-              <p className="text-xs text-body leading-relaxed mb-3">{r.s}</p>
-              <p className="text-[10px] text-sage opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                <Download className="w-3 h-3" />Download (sample placeholder)
-              </p>
-            </div>
-          ))}
-        </div>
-        <p className="text-xs text-body mt-5 mb-10 bg-bone border border-black/8 p-4">
-          Documents are sample placeholders. Final technical documents, test reports and warranty terms are provided with reviewed quotes.
-        </p>
-      </div>
-      {/* Outside the page container: the banner owns its own full-width section
-          so its padding matches every other page's. */}
-      <CtaBanner
-        title="Ready to get a quote?"
-        sub="Use these guides to prepare your dimensions, then start a quote online."
-        onQuote={() => go("quote")}
-      />
-    </div>
-  );
-}
+// ResourcesPage moved to src/pages/ResourcesPage.tsx and is now Sanity-driven.
+// The version here was a hardcoded array of ten titles with no bodies, no files
+// and no links — ten things that looked like documentation and were not. They
+// were deliberately NOT ported into Sanity as empty records: seeding them would
+// move the lie into the CMS, where it acquires the authority of real data.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // LOGIN
@@ -1873,6 +1804,13 @@ export default function App() {
     const nextPath = pathOverride ?? pathForPage(p);
     if (window.location.pathname !== nextPath) window.history.pushState({ page: p }, "", nextPath);
     setFocusRecord(null);
+    // Guides carry their slug in the path, so it is read back OUT of the path
+    // rather than threaded through a second callback — the URL is already the
+    // one source of truth, and popstate reads it the same way.
+    if (p === "guide" && pathOverride) {
+      const s = routeFromPathname(pathOverride).guideSlug;
+      if (s) setGuideSlug(s);
+    }
     setPage(p);
     window.scrollTo(0, 0);
   };
@@ -1885,12 +1823,16 @@ export default function App() {
   const [catCategory, setCatCategory] = useState<CategorySlug>("windows");
   const [catFamily, setCatFamily] = useState<string>("all");
   const [productSlug, setProductSlug] = useState<string>(initialRoute.productSlug ?? catalogueProducts[0]?.slug ?? "");
+  // No fallback to guides[0]: a guide the router didn't name is not a guide, and
+  // silently opening some other article would be worse than the not-found panel.
+  const [guideSlug, setGuideSlug] = useState<string>(initialRoute.guideSlug ?? "");
 
   useEffect(() => {
     const syncRoute = () => {
       const route = routeFromPathname(window.location.pathname);
       setPage(route.page);
       if (route.productSlug) setProductSlug(route.productSlug);
+      if (route.guideSlug) setGuideSlug(route.guideSlug);
       window.scrollTo(0, 0);
     };
     window.addEventListener("popstate", syncRoute);
@@ -2135,6 +2077,7 @@ export default function App() {
       // did nothing but scroll to top — a dead end for traffic the home page sends.
       case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;
       case "resources":        return <ResourcesPage setPage={navigateTo} />;
+      case "guide":            return <GuidePage slug={guideSlug} setPage={navigateTo} onOpenProduct={openProduct} />;
       case "contact":          return <ContactPage setPage={navigateTo} user={user} />;
       case "privacy":          return <PrivacyPolicyPage setPage={navigateTo} />;
       case "approved-quote":   return <ApprovedQuotePage />;
@@ -2207,6 +2150,33 @@ export default function App() {
           ...(cat ? [{ name: cat.name, url: abs(`/products?category=${cat.slug}`) }] : []),
           ...(fam ? [{ name: fam.name, url: abs(`/products?family=${fam.slug}`) }] : []),
           { name: p.name, url: abs(`/products/${p.slug}`) },
+        ] : undefined,
+      };
+    }
+    // An article. Its own SEO tab wins; without one the summary IS the meta
+    // description, which is what the summary was written to be.
+    if (page === "guide") {
+      const g = getGuideBySlug(guideSlug);
+      const img = imageUrl(g?.heroImage, { w: 1200, h: 630 });
+      return {
+        // "About OpenFrame — OpenFrame". A title that already carries the brand
+        // does not get it a second time.
+        seo: g?.seo,
+        title: g ? (co && g.title.includes(co) ? g.title : `${g.title}${suffix}`) : co ?? "Guide",
+        description: g?.summary, image: img,
+        // "post" was already in the schema.org kind map with an Article default
+        // and the dates wired — the extension point the file said to use.
+        facts: g ? {
+          kind: "post" as const, url: abs(pathForPage("guide", g.slug)),
+          name: g.title, description: g.summary || undefined, image: img || undefined,
+          datePublished: g.publishedAt,
+        } : null,
+        // Two crumbs, not three: the category has no URL of its own, so a
+        // category crumb would repeat /resources — and on "About OpenFrame",
+        // whose category is also "About OpenFrame", it repeated the name too.
+        breadcrumbs: g ? [
+          { name: "Guides", url: abs(pathForPage("resources")) },
+          { name: g.title, url: abs(pathForPage("guide", g.slug)) },
         ] : undefined,
       };
     }

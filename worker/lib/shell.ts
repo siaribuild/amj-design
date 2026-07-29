@@ -10,7 +10,7 @@
 // the client would use. The client still injects on navigation; this only has to
 // be right for the FIRST response, which is all a scraper ever sees.
 import type { Env } from "../types";
-import { getPage, getProductBySlug, products, imageUrl } from "../../src/data/catalogue";
+import { getPage, getProductBySlug, getGuideBySlug, products, guides, imageUrl } from "../../src/data/catalogue";
 import { routeFromPathname } from "../../src/app/routes";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -46,6 +46,10 @@ export async function buildSitemap(env: Env, origin: string): Promise<Response> 
   const urls = [
     ...PUBLIC_PAGES.map((p) => ({ loc: `${origin}/${p}`, priority: p === "" ? "1.0" : "0.7" })),
     ...products.filter((p) => p.slug).map((p) => ({ loc: `${origin}/products/${p.slug}`, priority: "0.6" })),
+    // Guides are indexable content in their own right — each is an article at a
+    // stable URL, and several of them exist to be FOUND (a certifier searching a
+    // standard reference lands on the guide, not on the product).
+    ...guides.filter((g) => g.slug).map((g) => ({ loc: `${origin}/resources/${g.slug}`, priority: "0.5" })),
   ];
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -84,6 +88,16 @@ export async function renderShell(env: Env, shellHtml: string, url: URL): Promis
       title = `${p.name}${suffix}`;
       description = p.shortDescription || "";
       image = imageUrl(p.heroImage, { w: 1200, h: 630 }) || "";
+    }
+  } else if (route.page === "guide") {
+    // A shared guide link previewed as the generic site card before this: the
+    // branch below would have looked up a `guide` page record that cannot exist.
+    const g = getGuideBySlug(route.guideSlug ?? "");
+    if (g) {
+      // A guide titled "About OpenFrame" must not become "About OpenFrame — OpenFrame".
+      title = g.seo?.metaTitle || (brand && g.title.includes(brand) ? g.title : `${g.title}${suffix}`);
+      description = g.seo?.metaDescription || g.summary || "";
+      image = imageUrl(g.seo?.openGraph?.image, { w: 1200, h: 630 }) || imageUrl(g.heroImage, { w: 1200, h: 630 }) || "";
     }
   } else {
     const pageId = route.page === "home" ? "home" : route.page;

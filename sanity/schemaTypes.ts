@@ -756,7 +756,7 @@ export const guide = defineType({
       name: "products", title: "Applies to products", type: "array",
       of: [{ type: "reference", to: [{ type: "product" }] }], group: "content",
       validation: (r) => r.unique(),
-      description: "Every product this guide is relevant to. Each one surfaces this guide's files in its Downloads tab, so leaving it empty means the guide lives on the index only.",
+      description: "Every product this guide is relevant to. A product's Downloads tab links to this guide's FILES, so naming a product here means you must attach at least one.",
     }),
     defineField({
       name: "heroImage", title: "Hero image", type: "image",
@@ -767,8 +767,12 @@ export const guide = defineType({
     // unconstrained editor is how a content system stops matching its design
     // language — every extra style is a way for an article to stop looking like
     // the site.
+    // Mandatory, always. A guide is an ARTICLE first — a record that is only a
+    // file is a file, and belongs on a product, not in a collection people read.
+    // This is also what makes /resources/<slug> worth having as a URL at all.
     defineField({
       name: "body", title: "Body", type: "array", group: "content",
+      validation: (r) => r.required().min(1),
       of: [
         {
           type: "block",
@@ -800,7 +804,7 @@ export const guide = defineType({
     defineField({
       name: "attachments", title: "Attachments", type: "array",
       of: [{ type: "guideAttachment" }], group: "files",
-      description: "Files this guide hosts. These are what a product's Downloads tab links to.",
+      description: "Files this guide hosts. Optional — unless the guide names a product, because a product's Downloads tab links to the FILE, and a guide with none would put a row there with nothing behind it.",
     }),
     defineField({
       name: "publishedAt", title: "Published", type: "date", group: "content",
@@ -808,11 +812,15 @@ export const guide = defineType({
     }),
     defineField({ name: "seo", title: "SEO", type: "seoMeta", group: "seo" }),
   ],
+  // Body is required by its own field rule. This one enforces the OTHER half of
+  // the model: naming a product creates a Downloads row on that product's page,
+  // and that row is a link to a file — so the file has to exist. Caught here,
+  // when the author names the product, rather than as an empty tab later.
   validation: (r) =>
     r.custom((doc: any) =>
-      doc?.body?.length || doc?.attachments?.length
+      !doc?.products?.length || doc?.attachments?.length
         ? true
-        : "A guide needs either something to read or at least one document to download."),
+        : "This guide is linked to a product, so it needs at least one attachment — a product's Downloads tab links to the file, not to the article."),
   orderings: [
     { title: "Newest", name: "newest", by: [{ field: "publishedAt", direction: "desc" }] },
     { title: "Title", name: "title", by: [{ field: "title", direction: "asc" }] },
