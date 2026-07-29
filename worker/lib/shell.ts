@@ -108,6 +108,9 @@ export async function renderShell(env: Env, shellHtml: string, url: URL): Promis
       "how-it-works": `How It Works — Quote to Delivery${suffix}`,
       contact: `Contact${suffix}`,
       privacy: `Privacy Policy${suffix}`,
+      // Absent before, so /resources served a crawler the bare business name
+      // while the client set "Resources — <brand>". Same page, two titles.
+      resources: `Resources${suffix}`,
     };
     title = pg?.seo?.metaTitle || named[pageId] || title;
     description = pg?.seo?.metaDescription || "";
