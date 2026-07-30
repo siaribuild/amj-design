@@ -13,7 +13,13 @@ import type { Env } from "../../types";
 // Matches the deterministic extractor's bound, for the same reason: cap the work
 // before any processing. Kept equal on purpose — if one tier will read a
 // document, the other must too.
-const MAX_PDF_PAGES = 30;
+//
+// 100, not 30: a 31-page energy report was refused by one page. Measured on that
+// file — 4.7MB, 31 pages — the text layer extracts in ~597ms (~19ms/page), so 30
+// sat nowhere near a real constraint; 100 pages is ~2s, well inside the 60s CPU
+// bound. NOTE: over the cap a PDF is still refused outright (pdf_too_many_pages),
+// not truncated — raising the number is the whole change here.
+const MAX_PDF_PAGES = 100;
 
 export type DocKind = "pdf" | "png" | "jpeg" | "webp" | "other";
 export type DocType = "schedule" | "energy_report" | "plans" | "supporting" | "unsupported";

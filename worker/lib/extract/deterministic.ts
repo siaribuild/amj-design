@@ -8,7 +8,9 @@ import type { Env } from "../../types";
 import { parseScheduleText } from "../../../src/data/scheduleParse";
 import type { ExtractInput, ExtractResult, ScheduleExtractor } from "./types";
 
-const MAX_PAGES = 30; // bound parser complexity before any processing
+// 100, not 30 — kept equal to the AI tier's MAX_PDF_PAGES so both agree about
+// what is legible. A 31-page energy report parses in ~600ms; 30 was arbitrary.
+const MAX_PAGES = 100; // bound parser complexity before any processing
 
 export const deterministicExtractor: ScheduleExtractor = {
   id: "cf-deterministic",
