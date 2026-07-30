@@ -442,7 +442,7 @@ export async function processAiExtractionJob(
     `UPDATE ai_job_claim
         SET status='processing', attempts=attempts+1, debounce_token=?,
             processing_token=?, last_error=NULL, failure_class=NULL,
-            retry_after=NULL, lease_expires_at=datetime('now','+75 seconds'),
+            retry_after=NULL, lease_expires_at=datetime('now','+135 seconds'),
             progress_stage='reading_documents', updated_at=datetime('now')
       WHERE project_id=? AND source_generation=?
         AND (
@@ -475,13 +475,14 @@ export async function processAiExtractionJob(
     return { state: existing?.status === "failed" ? "failed" : "stale" };
   }
 
-  // Keep ownership while useful work is progressing. The lease is deliberately
-  // short enough for the customer experience: a dead invocation must not own the
-  // cart for ten minutes.
+  // Keep ownership while useful work is progressing. The lease must OUTLAST the
+  // job deadline (120s), or a lagging heartbeat lets the reaper cancel a run that
+  // is still inside its allowed budget — which, with the old 75s lease, it did.
+  // 135s > 120s, renewed every 15s; the 120s job deadline stays the authority.
   let heartbeatLost = false;
   const heartbeat = setInterval(() => {
     void env.DB.prepare(
-      `UPDATE ai_job_claim SET lease_expires_at=datetime('now','+75 seconds'),
+      `UPDATE ai_job_claim SET lease_expires_at=datetime('now','+135 seconds'),
           updated_at=datetime('now')
         WHERE project_id=? AND source_generation=? AND status='processing'
           AND processing_token=?`,

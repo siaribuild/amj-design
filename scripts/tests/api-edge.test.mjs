@@ -647,10 +647,10 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
            (project_id,source_generation,debounce_token,status,attempts,processing_token,
             lease_expires_at,progress_stage,updated_at)
          VALUES ('${pid}',1,'stalled','processing',1,'stalled-processing',
-            datetime('now','+10 minutes'),'reading_documents',datetime('now','-2 minutes'));
+            datetime('now','+10 minutes'),'reading_documents',datetime('now','-4 minutes'));
          INSERT INTO ai_runs
            (id,project_id,pipeline_version,status,source_generation,started_at)
-         VALUES ('stalled-ai-run','${pid}','test','running',1,datetime('now','-2 minutes'));`,
+         VALUES ('stalled-ai-run','${pid}','test','running',1,datetime('now','-4 minutes'));`,
       ], { env: wranglerEnv });
 
       const status = await requestJson(buyer, "/api/projects/current/extraction-status");

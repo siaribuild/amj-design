@@ -283,9 +283,14 @@ parse.get("/projects/current/extraction-status", async (c) => {
   // so there is nothing to set here.
   const { project } = await resolveCurrentProject(c.env, c.req.raw);
   if (!project) return c.json({ run: null });
-  // Customer-facing watchdog. A queue invocation normally records a stage or
-  // heartbeat well inside this window. If it does not, stop presenting stale
-  // activity as live work and release the draft for human-review submission.
+  // Customer-facing watchdog for a genuinely DEAD invocation — it must never be
+  // shorter than the work we deliberately allow, or it severs healthy runs. It
+  // was 55s while the job is allowed 120s (AI_JOB_DEADLINE_MS) and a single model
+  // call 90s: this poll, not the model, was killing extraction at ~62s. Raised
+  // to 150s so the 120s job deadline is the single authority and this only
+  // catches an invocation that has recorded no stage or heartbeat for far longer
+  // than any healthy run could. During the long concurrent doc-skill phase only
+  // the 15s heartbeat renews updated_at, so the window must clear that gap.
   const stalled = await c.env.DB.prepare(
     `UPDATE ai_job_claim
         SET status='failed', attempts=max(attempts,1),
@@ -296,7 +301,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
         SELECT ai_generation FROM project WHERE id=?
       )
         AND (
-          (status='processing' AND updated_at < datetime('now','-55 seconds'))
+          (status='processing' AND updated_at < datetime('now','-150 seconds'))
           OR
           (status='scheduled' AND retry_after IS NULL
             AND updated_at < datetime('now','-45 seconds'))
