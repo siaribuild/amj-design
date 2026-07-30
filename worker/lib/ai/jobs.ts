@@ -36,9 +36,12 @@ export interface AiJobDiagnostic {
 // quote locked beyond the customer-facing minute and multiply model spend.
 // Explicit customer/staff retry reuses completed idempotent stages.
 const MAX_AUTOMATIC_ATTEMPTS = 1;
-// Independent document skills run concurrently, so this is longer than any
-// single model call but remains inside the UI's 60-second promise.
-const AI_JOB_DEADLINE_MS = 55_000;
+// Whole-run ceiling. Independent document skills run concurrently, so this is
+// longer than any single model call (90s) but far inside the queue consumer's
+// 15-minute wall. Raised from 55s: quality-first 'medium' thinking is allowed to
+// finish rather than being severed to fit an arbitrary minute. The UI no longer
+// treats duration as failure — it shows per-step progress and flags only a stall.
+const AI_JOB_DEADLINE_MS = 120_000;
 
 class AiJobFault extends Error {
   constructor(

@@ -43,6 +43,19 @@ export const autoExtractionEnabled = (env: Env): boolean =>
 // §13.4 determinism settings for extraction calls: near-zero temperature, strict
 // JSON schema, bounded output. Applied by the skill runner to every call.
 export const EXTRACTION_TEMPERATURE = 0.1;
+// Thinking level for extraction skills. 'medium' is the model's own default and
+// the QUALITY-first choice (owner decision 2026-07-30): reasoning about ambiguous
+// schedule rows and product matches is the value of the AI tier, so it is not
+// traded away for latency — instead the deadlines were raised to fit it (see
+// AI_JOB_DEADLINE_MS / MODEL_CALL_DEADLINE_MS). 'low' is available for latency-
+// sensitive tuning once quality at each level is measured, not before.
+//
+// Only 'low' and the 'medium'-equivalent baseline are PROVEN accepted by the
+// binding (capability probe 2026-07-30); 'minimal'/'high' are documented enum
+// siblings but unverified through Cloudflare — verify before defaulting to them.
+export const DEFAULT_THINKING_LEVEL = "medium";
+export const thinkingLevel = (env: Env): string =>
+  (env.AI_THINKING_LEVEL || "").trim().toLowerCase() || DEFAULT_THINKING_LEVEL;
 // Gemini 3.x spends THINKING tokens from this same budget, so the ceiling is
 // not the text length: a plan-context reply stopped mid-object having reported
 // only 1,165 output tokens against the old 8,192. Raised so a long schedule or a

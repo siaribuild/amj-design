@@ -147,6 +147,29 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   const [uploadingDocs, setUploadingDocs] = useState(0);
   const [retryingAi, setRetryingAi] = useState(false);
 
+  // Per-step timing. The customer's real anxiety is a FROZEN screen, not elapsed
+  // time — a minute that is visibly advancing is fine; 45s of nothing is not. So
+  // we record when each stage was first seen and show how long each step took,
+  // with a live timer on the step in flight. `stageLog` is append-only per run.
+  const [stageLog, setStageLog] = useState<{ stage: AiProgressStage; at: number }[]>([]);
+  const [nowTick, setNowTick] = useState(() => 0);
+  const recordStage = (stage: AiProgressStage | undefined) => {
+    if (!stage || stage === "waiting_capacity") return;   // a pause is not a step
+    setStageLog((prev) => (prev.some((s) => s.stage === stage) ? prev : [...prev, { stage, at: Date.now() }]));
+  };
+  // A one-second heartbeat so the in-progress step's timer ticks. Runs only while
+  // a run is in flight, and is torn down the moment it is not — no idle interval.
+  useEffect(() => {
+    if (aiPhase?.kind !== "reading") return;
+    setNowTick(Date.now());
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [aiPhase?.kind]);
+  const fmtDur = (ms: number): string => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  };
+
   // One flag for "the project is busy with documents", covering BOTH paths: the
   // anonymous deterministic parse (bounded by `uploading`) and the registered AI
   // run (which keeps going after the HTTP upload resolves — the gap that made
@@ -426,11 +449,18 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   const pollExtraction = (docs: number) => {
     stopPolling();
     const t0 = Date.now();
+    setStageLog([]);            // fresh timeline for this run
     let sawRun = false;
     let lastDiagnostic: SafeDiagnostic | null = null;
+    let lastStage: AiProgressStage | undefined;
+    let lastStageChangeAt = Date.now();
     const tick = async (n: number) => {
       let inFlight = false;
-      const deadlineReached = Date.now() - t0 >= 60_000;
+      // Duration is NOT failure. The client backstop is generous (past the
+      // server's 120s job ceiling); the server is the authority on actual
+      // failure. We only give up on our own if the whole run window elapses with
+      // no terminal status at all — a stall is surfaced as concern, not death.
+      const windowElapsed = Date.now() - t0 >= 150_000;
       try {
         const { run, basis } = await extractionStatus();
         if (basis) setBasisMap(basis);
@@ -438,6 +468,8 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
           sawRun = true;
           inFlight = true;
           lastDiagnostic = run.diagnostic ?? null;
+          if (run.progressStage !== lastStage) { lastStage = run.progressStage; lastStageChangeAt = Date.now(); }
+          recordStage(run.progressStage);
           setAiPhase(run.diagnostic
             ? { kind: "deferred", docs, diagnostic: run.diagnostic }
             : { kind: "reading", docs, stage: run.progressStage });
@@ -466,15 +498,19 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
         // A final status read still gets one chance at the deadline; only then
         // does a network failure become the visible bounded failure state.
       }
-      if (deadlineReached) {
+      // Only the CLIENT backstop fails here; a healthy-but-slow run keeps its
+      // checklist and its live timer. The server fails the job at 120s and we
+      // read that as run.status==='failed' above — this is just the net for a
+      // status endpoint that never returns a terminal state at all.
+      if (windowElapsed) {
         setAiPhase({
           kind: "failed",
-          diagnostic: { code: "TEMPORARY_FAILURE", retryable: true, retryAt: null },
+          diagnostic: lastDiagnostic ?? { code: "TEMPORARY_FAILURE", retryable: true, retryAt: null },
         });
         return;
       }
       const normalDelay = inFlight || n >= 7 ? 5000 : 2000;
-      const remaining = Math.max(250, 60_000 - (Date.now() - t0));
+      const remaining = Math.max(250, 150_000 - (Date.now() - t0));
       pollTimer.current = setTimeout(() => void tick(n + 1), Math.min(normalDelay, remaining));
     };
     void tick(0);
@@ -974,6 +1010,25 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
               const current = waiting ? 0 : Math.max(0, stepIndex(active));
               const showSteps = aiPhase?.kind === "reading" && !!active;
 
+              // Per-step elapsed, from the observed transition times. A step's end
+              // is the next observed step's start; the current step ticks live.
+              const stepStart = (i: number) => stageLog.find((s) => s.stage === AI_STEPS[i].stage)?.at;
+              const stepDurMs = (i: number): number | null => {
+                const start = stepStart(i);
+                if (start == null) return null;
+                for (let j = i + 1; j < AI_STEPS.length; j++) {
+                  const nx = stepStart(j);
+                  if (nx != null) return nx - start;
+                }
+                return i === current ? Math.max(0, nowTick - start) : null;
+              };
+              // Stall = no new step for a while. This, not elapsed time, is what
+              // actually worries a customer, so it is the only thing that changes
+              // the reassurance into a heads-up.
+              const lastAt = stageLog.length ? stageLog[stageLog.length - 1].at : 0;
+              const sinceLastMs = lastAt ? nowTick - lastAt : 0;
+              const concerned = !waiting && showSteps && sinceLastMs >= 45_000;
+
               return (
                 <div role="status" aria-live="polite"
                   className="border border-dashed border-sage/45 bg-sage/[0.05] px-4 py-5 text-sm">
@@ -984,6 +1039,13 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                           const done = i < current;
                           const inProgress = i === current && !waiting;
                           const stalled = i === current && waiting;
+                          const durMs = stepDurMs(i);
+                          // Reading step names how many documents it is working through —
+                          // the honest, available granularity (the PDF text layer is read
+                          // in one call, so there is no live per-page tick to show).
+                          const detail = inProgress && step.stage === "reading_documents" && aiPhase?.kind === "reading" && aiPhase.docs > 0
+                            ? ` · ${aiPhase.docs} document${aiPhase.docs !== 1 ? "s" : ""}`
+                            : "";
                           return (
                             <li key={step.stage} className="flex items-center gap-2.5">
                               <span className="w-4 h-4 flex-shrink-0 grid place-items-center" aria-hidden="true">
@@ -1000,20 +1062,27 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                                   : inProgress || stalled ? "font-medium text-sage-ink"
                                     : "text-quieter"
                               }>
-                                {step.label}
+                                {step.label}{detail}
                               </span>
                               {/* The state in words, for anyone not seeing the glyph. */}
                               <span className="sr-only">
                                 {done ? " — done" : inProgress ? " — in progress" : stalled ? " — waiting" : " — pending"}
                               </span>
+                              {durMs != null && (
+                                <span className={`ml-auto tabular-nums text-xs ${inProgress ? "text-sage" : "text-quieter"}`}>
+                                  {fmtDur(durMs)}
+                                </span>
+                              )}
                             </li>
                           );
                         })}
                       </ol>
-                      <p className="mt-3 text-body leading-relaxed">
+                      <p className={`mt-3 leading-relaxed ${concerned ? "text-amber-800" : "text-body"}`}>
                         {waiting
                           ? "Waiting for AI service capacity. Your documents are saved; if this attempt stops, you can retry or send them for human review."
-                          : "This normally finishes in under a minute. If automatic review cannot finish, we will stop and keep your document ready for human review."}
+                          : concerned
+                            ? "This step is taking longer than usual — still working. If it can't finish, your documents are saved for human review."
+                            : "Each step completes as it finishes; a schedule usually takes a minute or two. Your documents are saved either way."}
                       </p>
                     </>
                   ) : (

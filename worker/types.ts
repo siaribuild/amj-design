@@ -50,6 +50,10 @@ export interface Env {
    *  §13.1). Defaults in code to google/gemini-3.6-flash; override without a code
    *  change once the model is enabled in the gateway. */
   AI_PRIMARY_MODEL?: string;
+  /** Thinking level for extraction skills ('minimal' | 'low' | 'medium' | 'high').
+   *  Defaults in code to 'low'; raise for accuracy, lower for speed. See the
+   *  runner's googleBody note for the latency evidence behind the default. */
+  AI_THINKING_LEVEL?: string;
   /** Escalation model (LLM strategy §13.2). Currently SHADOW-ONLY: escalation
    *  triggers are logged for frequency analysis but Pro is NOT called until this
    *  is explicitly turned on. Defaults in code to google/gemini-3.1-pro. */

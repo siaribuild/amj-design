@@ -18,7 +18,7 @@
 // only model id, versions and an output HASH.
 import type { Env } from "../../../types";
 import { sha256hex } from "../../ai/hash";
-import { primaryModel, EXTRACTION_TEMPERATURE, EXTRACTION_MAX_TOKENS } from "../../ai/versions";
+import { primaryModel, EXTRACTION_TEMPERATURE, EXTRACTION_MAX_TOKENS, thinkingLevel } from "../../ai/versions";
 import type { Skill, SkillFailureKind, SkillRun } from "./types";
 
 // collectLog:false enforces §21.1 payload privacy PER-REQUEST — bodies are never
@@ -32,7 +32,12 @@ const gatewayOpts = (env: Env) =>
 // 45s bounds a call that is genuinely slow without parking the job on a
 // provider hiccup; the observed duration of every call is logged below so this
 // can be tightened to a measured number instead of a defensive one.
-const MODEL_CALL_DEADLINE_MS = 45_000;
+// A ceiling for a hung call, not a quality budget. At 'medium' thinking (the
+// quality-first default) a real schedule call runs comfortably under this; 45s
+// used to sever healthy medium-thinking work mid-generation, which was the fault,
+// not the model. The customer never waits blindly this long — progress is shown
+// per step and only a genuine stall is treated as concerning.
+const MODEL_CALL_DEADLINE_MS = 90_000;
 
 // Google's structured-output schema is an OpenAPI 3.0 SUBSET, not JSON Schema:
 // it takes one `type` plus `nullable`, and rejects the JSON-Schema union
@@ -96,17 +101,42 @@ function toGoogleParts(content: unknown): unknown[] {
   return parts.length ? parts : [{ text: "" }];
 }
 
-function googleBody(messages: { role: string; content: unknown }[]) {
+// The single field behind this project's latency and its variance. gemini-3.6
+// defaults to thinkingLevel 'medium', and thinking tokens are drawn serially
+// from the same output budget — so a mechanical schedule transcription was
+// licensed to deliberate for thousands of tokens before writing a line, which
+// is why the same document finished in 8s once and blew past 45s the next time.
+//
+// Proven against the live binding (see the /api/debug/ai-probe run, 2026-07-30):
+// baseline medium ran 8.7–18.3s with 700–1,636 thought tokens; 'low' ran
+// 4.3–5.3s — roughly half the median and, more importantly, a collapsed tail.
+//
+// The SHAPE matters and is not guessable: flat `generationConfig.thinkingLevel`
+// is REJECTED with HTTP 400 (7003); only the nested
+// `generationConfig.thinkingConfig.thinkingLevel` is accepted by the binding.
+// Overridable without a deploy via AI_THINKING_LEVEL (e.g. 'minimal' for more
+// speed, 'medium' to restore the old behaviour).
+function googleBody(messages: { role: string; content: unknown }[], thinkingLevel: string) {
+  const generationConfig: Record<string, unknown> = {
+    temperature: EXTRACTION_TEMPERATURE,
+    maxOutputTokens: EXTRACTION_MAX_TOKENS,
+  };
+  // 'medium' is the model's own default, so omitting thinkingConfig reproduces
+  // EXACTLY the request the capability probe proved works — no risk of a 7003 on
+  // an enum value we never tested. Any non-default level is sent explicitly, in
+  // the ONE nested spelling the binding accepts (flat generationConfig.thinkingLevel
+  // is rejected with HTTP 400; only generationConfig.thinkingConfig.thinkingLevel
+  // is honoured — see the probe run 2026-07-30).
+  if (thinkingLevel && thinkingLevel !== "medium") {
+    generationConfig.thinkingConfig = { thinkingLevel };
+  }
   return {
     // Google has no "assistant" role; the repair turn's prior answer is "model".
     contents: messages.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: toGoogleParts(m.content),
     })),
-    generationConfig: {
-      temperature: EXTRACTION_TEMPERATURE,
-      maxOutputTokens: EXTRACTION_MAX_TOKENS,
-    },
+    generationConfig,
   };
 }
 
@@ -196,7 +226,7 @@ async function callModel(
   // untrusted output, plus the single §22.3 repair pass. toVendorSchema() is
   // kept for the day a provider does accept a schema.
   const body = isGoogleModel(model)
-    ? googleBody(messages)
+    ? googleBody(messages, thinkingLevel(env))
     : {
         messages,
         temperature: EXTRACTION_TEMPERATURE,
