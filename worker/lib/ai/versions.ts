@@ -17,7 +17,10 @@ import type { Env } from "../../types";
 // resolution (no impossible min>max band), per-opening orientation-aware computed
 // default band, and graded (non-veto) thermal ranking. Changes what selection
 // produces for the same input, so the stage idempotency key must move with it.
-export const PIPELINE_VERSION = "2026-07-31.1";
+// 2026-07-31.2: schedule extractor emits a structured `split` from the free-text
+// comment (promptVersion v3) and the pipeline proposes a review-flagged composite
+// split. Bump so the stage idempotency key moves with the new contract.
+export const PIPELINE_VERSION = "2026-07-31.2";
 export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.0";
 
 // §13.1/§13.2 model routing. SINGLE-MODEL POLICY (owner decision 2026-07-25):

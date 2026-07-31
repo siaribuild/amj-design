@@ -360,6 +360,22 @@ test("schedule skill: preserves tags exactly, clamps dims/qty, drops empty lines
     "untagged dimensions cannot silently count as a quoteable extraction");
 });
 
+test("schedule skill: extracts a structured split from the free-text comment (WS5)", () => {
+  const out = scheduleExtractor.validate(JSON.stringify({
+    lines: [
+      { tag: "W04", widthMm: 3200, heightMm: 2100, typeText: "AWNING", notes: "2x 600mm wide awnings",
+        split: { operable: [{ operation: "AWNING", count: 2, widthMm: 600 }] } },
+      { tag: "W05", widthMm: 1200, heightMm: 1000, typeText: "AWNING", notes: "clear glass" }, // no split
+    ],
+  }));
+  const w04 = out.lines.find((l) => l.tag === "W04");
+  assert.deepEqual(w04.split, { operable: [{ operation: "awning", count: 2, widthMm: 600 }] }, "operation lower-cased, clamped");
+  assert.equal(out.lines.find((l) => l.tag === "W05").split, null, "no split ⇒ null");
+  // A runaway count is clamped; an unknown-shaped split ⇒ null.
+  const clamped = scheduleExtractor.validate(JSON.stringify({ lines: [{ tag: "W1", widthMm: 900, heightMm: 900, split: { operable: [{ operation: "awning", count: 999 }] } }] }));
+  assert.equal(clamped.lines[0].split.operable[0].count, 12, "count capped");
+});
+
 // ── Phase 3: energy-report mapping (§9, §10.1 Path 1) ────────────────────────
 const opening = (ref, overrides = {}) => ({
   openingId: `op_${ref}`, externalRef: ref, parentRef: parentTagOf(ref),

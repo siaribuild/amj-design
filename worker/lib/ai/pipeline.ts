@@ -20,6 +20,7 @@ import { planContextExtractor, type PlanContextV1 } from "../estimator/skills/pl
 import { mapEnergyToOpenings, normalizeOpeningRef } from "./energyMap";
 import { resolveDefaultEnvelope, defaultRequirement, ARCHETYPE_REGISTRY_VERSION, type EnvelopeArchetype } from "./archetypes";
 import { computeDefaultBand } from "../estimator/thermal/computedBand";
+import { proposeSplit, parseSplitHint, type SplitHint } from "../estimator/split";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
 import { runProjectEstimate } from "../estimator/estimate";
@@ -526,6 +527,26 @@ export async function runAiExtraction(
     current.add(reason);
     technicalReviewReasons.set(externalRef, current);
   };
+
+  // WS5: propose a composite split where the schedule COMMENT describes one. The
+  // model extracts a structured `split` from the free-text comment (flexible to
+  // wording); the deterministic parser is the fallback. The proposal is
+  // ALWAYS review-flagged — it is a smart starting point, never a final answer,
+  // and it is surfaced as a review reason rather than auto-building segment rows
+  // (materialising the composite stays the reviewer's action for now).
+  for (const l of merged.lines) {
+    if (!l.tag || l.widthMm == null || l.heightMm == null) continue;
+    const hint: SplitHint | null = l.split?.operable?.length
+      ? { units: l.split.operable, raw: l.notes ?? "" }
+      : parseSplitHint(l.notes);
+    if (!hint) continue;
+    const proposal = proposeSplit(
+      { operationType: (l.typeText ?? "").toLowerCase() || null, widthMm: l.widthMm, heightMm: l.heightMm },
+      hint,
+    );
+    const layout = proposal.segments.map((s) => `${s.operation} ${s.widthMm}mm`).join(" + ");
+    flagOpening(l.tag, `proposed split (confirm at review): ${layout}`);
+  }
 
   // Path 1 (§10.1): explicit report requirements are AUTHORITATIVE. Map them
   // onto the opening graph; represent mismatches, surface unmatched constraints.
