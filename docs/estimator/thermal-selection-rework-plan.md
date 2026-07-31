@@ -129,11 +129,19 @@ Owner correction: **the split itself is a human/design decision** (ratio 50/50 v
 Energy is simple: a split's segments use the **SAME glass type by default** (no one glazes half an opening clear and half tinted). So the only thermal goal is:
 - **Average the U-value across the split** (e.g. area/50-50 weighted over the segment frames, all with the shared glass) and **fit that average to the opening's requirement**; flag for review.
 
-What this means for the build:
-- **DROPPED**: per-lite different glass, the AI→segment auto-build bridge, geometry/jamb reconciliation, per-lite explicit bands. These were over-scoped.
-- **Already satisfied by the deployed core fix**: a non-split composite gets ONE glass fit to a coherent Uw band + a review flag — exactly "same glass, fit to requirement, flagged".
-- **Small remaining piece (when splits exist)**: a helper that computes a composite's area-weighted average Uw from its segments (shared glass) and checks it against the opening requirement, surfacing a warning. Splits are human-initiated (ops) or future AI-recommended-with-review, so this has no urgent AI trigger.
-- **Deferred to learning**: AI split-ratio recommendation (most-common practice), always review-flagged. The migration `0036` columns remain available to persist a per-segment/parent band snapshot if/when that lands.
+Owner update 2 (2026-07-31): the platform SHOULD propose a split from day one — default 50/50 — and where a schedule COMMENT states the split (e.g. W4 "2x 600mm WIDE AWNINGS" → awning|fixed|awning), parse it and make it AUTHORITATIVE over any default/learned practice. Always review-flagged.
+
+Precedence for the proposed split: **schedule comment → learned practice → 50/50 default**.
+
+Split intelligence — BUILT + tested (`worker/lib/estimator/split.ts`, `estimator-split.test.mjs`):
+- `parseSplitHint(comment)` — "2x 600mm WIDE AWNINGS", "AWNING + FIXED + AWNING", "2 x <op>".
+- `proposeSplit(opening, hint)` — comment-authoritative layout (operable units + fixed remainder, symmetric) else even 50/50; always `reviewRequired`. Widths partition the opening exactly (no jamb allowance).
+- `compositeAveragedUw(segments)` — area-weighted whole-composite Uw (same glass by default) to fit the requirement.
+- Verified against the owner's W4 example: width 3200, "2x 600mm awnings" → awning 600 | fixed 2000 | awning 600 (sum 3200).
+
+Remaining (pipeline wiring — DB-mutating, needs integration validation):
+- Extract the schedule COMMENT through to the opening; when `shouldPropose` (oversize or comment), call `proposeSplit`, materialise a quote_line composite (parent + segments) via `splitLine`, price each segment (same glass), stamp the averaged Uw + per-segment band (`0036` columns), and flag for review.
+- Deferred: learned split-ratio (once training-order data exists; 50/50 is the zero-data baseline).
 
 ### WS6 — Tier-3 computed per-opening band (archetypes + pipeline)
 - `archetypes.ts defaultRequirement()`: accept the opening + `thermalContext` (orientation, room zoneType, glazingToRoomFloorRatio, climateZone); derive an orientation/room-aware Uw cap + SHGC band (relax the §11.3 "no SHGC without orientation" invariant where orientation IS known).
