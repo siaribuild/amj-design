@@ -35,10 +35,16 @@ export const CATALOGUE_QUERY = `{
     "familySlug":family->slug.current, "categorySlug":category->slug.current,
     shortDescription, descriptionParagraphs, standardGlass, notes,
     "dimensionRule": dimensionRule{ minWidthMm, maxWidthMm, minHeightMm, maxHeightMm },
-    // The glass a manually-configured / schedule line carries by default (each
-    // product ships exactly one glass identity). It is a per-m² chargeable option,
-    // so pricing must know it — the same identity the estimator prices for an AI line.
-    "defaultGlazingSlug": performanceVariants[0].glazingOption->slug.current,
+    // The glass a manually-configured / schedule line carries by default. Prefer the
+    // frame thermal profile's first glazing (M2/M6); fall back to the legacy variant.
+    "defaultGlazingSlug": coalesce(thermalProfile->rows[0].glazing->slug.current, performanceVariants[0].glazingOption->slug.current),
+    // Public thermal ratings (M3): the WERS matrix shown on the product page — one
+    // row per glazing the frame offers. Empty for products with no profile yet.
+    "thermal": thermalProfile->rows[]{
+      "glazingName": glazing->name,
+      "glassSpec": glazing->glassSpecification,
+      uValue, shgc, tvw, heatingStars, coolingStars
+    },
     "heroImage": heroImage{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip, "aspect": asset->metadata.dimensions.aspectRatio },
     "gallery": gallery[]{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip },
     keySpecs[]{_key,label,value}, specs[]{_key,label,value},
@@ -143,6 +149,7 @@ function normalizeProduct(p: any): Product {
     minWidth: p.dimensionRule?.minWidthMm ?? null, minHeight: p.dimensionRule?.minHeightMm ?? null,
     maxWidth: p.dimensionRule?.maxWidthMm ?? null, maxHeight: p.dimensionRule?.maxHeightMm ?? null,
     defaultGlazingSlug: p.defaultGlazingSlug ?? null,
+    thermal: Array.isArray(p.thermal) ? p.thermal : [],
     notes: p.notes ?? "", heroImage: normalizeImage(p.heroImage) ?? "",
     gallery: (p.gallery ?? []).map(normalizeImage).filter(Boolean),
     keySpecs: p.keySpecs ?? [], specs: p.specs ?? [],

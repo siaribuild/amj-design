@@ -104,17 +104,52 @@ function OptionsContent({ product }: { product: Product }) {
 }
 
 function TechnicalContent({ product }: { product: Product }) {
+  const thermal = product.thermal ?? [];
   return (
-    <table className="w-full text-sm">
-      <tbody>
-        {product.specs.map(row => (
-          <tr key={row.label} className="border-b border-black/6">
-            <td className="py-2.5 pr-4 text-xs text-body font-medium w-44 align-top">{row.label}</td>
-            <td className="py-2.5 text-ink">{row.value}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="flex flex-col gap-8">
+      <table className="w-full text-sm">
+        <tbody>
+          {product.specs.map(row => (
+            <tr key={row.label} className="border-b border-black/6">
+              <td className="py-2.5 pr-4 text-xs text-body font-medium w-44 align-top">{row.label}</td>
+              <td className="py-2.5 text-ink">{row.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {thermal.length > 0 && (
+        <div>
+          <h3 className="text-xs text-body font-medium uppercase tracking-wide mb-3">Thermal performance (WERS)</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-body border-b border-black/10">
+                  <th className="py-2 pr-4 text-left font-medium">Glazing</th>
+                  <th className="py-2 px-3 text-right font-medium">Uw</th>
+                  <th className="py-2 px-3 text-right font-medium">SHGC</th>
+                  <th className="py-2 px-3 text-right font-medium">Tvw</th>
+                  <th className="py-2 px-3 text-right font-medium">Heating ★</th>
+                  <th className="py-2 pl-3 text-right font-medium">Cooling ★</th>
+                </tr>
+              </thead>
+              <tbody>
+                {thermal.map((t, i) => (
+                  <tr key={i} className="border-b border-black/6">
+                    <td className="py-2 pr-4 text-ink">{t.glazingName}{t.glassSpec ? ` · ${t.glassSpec}` : ""}</td>
+                    <td className="py-2 px-3 text-right tabular-nums text-ink">{t.uValue ?? "—"}</td>
+                    <td className="py-2 px-3 text-right tabular-nums text-ink">{t.shgc ?? "—"}</td>
+                    <td className="py-2 px-3 text-right tabular-nums text-ink">{t.tvw ?? "—"}</td>
+                    <td className="py-2 px-3 text-right tabular-nums text-ink">{t.heatingStars ?? "—"}</td>
+                    <td className="py-2 pl-3 text-right tabular-nums text-ink">{t.coolingStars ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-body mt-2">Whole-window ratings (WERS). Uw = insulation, lower is better; SHGC = solar heat gain.</p>
+        </div>
+      )}
+    </div>
   );
 }
 

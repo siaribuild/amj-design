@@ -47,6 +47,17 @@ export interface ProductOption {
 
 export interface SpecRow { label: string; value: string; }
 
+/** A public WERS thermal rating for one glazing on a product's frame (M3). */
+export interface ThermalSpec {
+  glazingName: string;
+  glassSpec?: string | null; // SG / DG / TG
+  uValue: number | null;
+  shgc: number | null;
+  tvw?: number | null;
+  heatingStars?: number | null;
+  coolingStars?: number | null;
+}
+
 // A catalogue image is either a plain URL (built-in catalogue.ts) or a Sanity
 // asset with an optional focal point. imageUrl() turns it into a display URL,
 // requesting on-demand sizes + focal-point cropping for Sanity assets.
@@ -84,11 +95,13 @@ export interface Product {
   minHeight: number | null;
   maxWidth: number | null;
   maxHeight: number | null;
-  /** The glass identity this product ships by default (its single performance
-   *  variant's glazing option). Priced per m² like the estimator prices an AI
-   *  line's glass — null on the built-in fallback catalogue, which prices glass
-   *  through the rate card's area rate. */
+  /** The glass identity this product ships by default (from its frame thermal
+   *  profile, else the legacy variant). Priced per m² — null on the built-in
+   *  fallback catalogue, which prices glass through the rate card's area rate. */
   defaultGlazingSlug?: string | null;
+  /** Public WERS thermal ratings per glazing the frame offers (M3). Empty until the
+   *  product has a thermal profile. Shown on the product page; never fabricated. */
+  thermal?: ThermalSpec[];
   notes: string;
   heroImage: ImageRef;
   gallery: ImageRef[];
