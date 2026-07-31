@@ -34,6 +34,7 @@ auth.post("/challenge", async (c) => {
       recipient: email,
       eventType: "auth.code.requested",
       templateKey: "signin_code",
+      vars: { code },
       email: { to: email, subject: "Your OpenFrame sign-in code", text: `Your sign-in code is ${code}. It expires in 10 minutes.` },
     });
     // Dev convenience: surface the code so the flow is testable without a provider.

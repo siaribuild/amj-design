@@ -161,6 +161,7 @@ ops.post("/auth/challenge", async (c) => {
       recipient: email,
       eventType: "ops.code.requested",
       templateKey: "ops_signin_code",
+      vars: { code },
       email: { to: email, subject: "Your OpenFrame ops sign-in code", text: `Your ops console code is ${code}. It expires in 10 minutes.` },
     });
     if (isDevEnv(c.env)) return c.json({ ok: true, devCode: code });
@@ -567,7 +568,7 @@ ops.post("/projects/:id/request-clarification", async (c) => {
   if (!(FLOW[project.status_internal] ?? []).includes("customer_clarification_required")) {
     return c.json({ error: "invalid_transition", from: project.status_internal }, 409);
   }
-  const cust = await c.env.DB.prepare("SELECT u.email FROM project p JOIN user u ON u.id = p.owner_user_id WHERE p.id = ?").bind(id).first<{ email: string }>();
+  const cust = await c.env.DB.prepare("SELECT u.email, COALESCE(u.name, p.contact_name) AS name FROM project p JOIN user u ON u.id = p.owner_user_id WHERE p.id = ?").bind(id).first<{ email: string; name: string | null }>();
   const committed = await c.env.DB.batch([
     c.env.DB.prepare(
       `INSERT INTO comment (id, project_id, author_id, kind, body)
@@ -589,6 +590,7 @@ ops.post("/projects/:id/request-clarification", async (c) => {
   await logEvent(c.env, { actor: staff.id, entityType: "project", entityId: id, action: "requested clarification" });
   if (cust?.email) {
     await notify(c.env, { recipient: cust.email, eventType: "clarification.requested", templateKey: "needs_info",
+      vars: { name: cust.name || "there", message },
       email: { to: cust.email, subject: "We need a bit more info on your quote", text: message } });
   }
   return c.json({ ok: true, statusInternal: "customer_clarification_required", statusInternalLabel: STATUS_INTERNAL_LABEL.customer_clarification_required });
@@ -982,10 +984,11 @@ ops.post("/projects/:id/issue-revision", async (c) => {
   const rev = await issueRevision(c.env, id);
   if (!rev.ok) return c.json({ error: rev.error }, rev.error === "not_found" ? 404 : 409);
   await logEvent(c.env, { actor: staff?.id, entityType: "project", entityId: id, action: `issued revision ${rev.revisionNo}` });
-  const cust = await c.env.DB.prepare("SELECT u.email FROM project p JOIN user u ON u.id = p.owner_user_id WHERE p.id = ?").bind(id).first<{ email: string }>();
+  const cust = await c.env.DB.prepare("SELECT u.email, COALESCE(u.name, p.contact_name) AS name FROM project p JOIN user u ON u.id = p.owner_user_id WHERE p.id = ?").bind(id).first<{ email: string; name: string | null }>();
   if (cust?.email) {
     await notify(c.env, {
       recipient: cust.email, eventType: "revision.issued", templateKey: "quote_issued",
+      vars: { name: cust.name || "there", revision: rev.revisionNo },
       email: { to: cust.email, subject: "Your OpenFrame quote is ready", text: `Your reviewed quote (revision ${rev.revisionNo}) is ready to review and accept.` },
     });
   }

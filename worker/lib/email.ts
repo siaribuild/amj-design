@@ -8,6 +8,7 @@
 // Every send is also recorded as a `notification` row for auditability.
 import type { Env } from "../types";
 import { isDevEnv } from "./auth";
+import { loadEmailTemplate, applyPlaceholders } from "./emailTemplates";
 import { uuid } from "./util";
 
 export interface EmailMessage {
@@ -54,16 +55,32 @@ export async function sendEmail(env: Env, msg: EmailMessage): Promise<"sent" | "
 }
 
 // Send (if an email is supplied) and record the notification.
+//
+// When a `templateKey` has an editable Sanity template, the subject and body are
+// rendered from it with `vars` substituted for its [placeholders]. The inline
+// `email` is the built-in FALLBACK: its `to` is always used (the recipient is
+// never in the template), and its subject/text are used verbatim whenever the
+// template is missing or Sanity is unreachable. A CMS outage therefore degrades
+// to the original hard-coded copy, never to a dropped send.
 export async function notify(env: Env, opts: {
   recipient: string;
   eventType: string;
   channel?: "email" | "inbox";
   templateKey?: string;
+  vars?: Record<string, string | number | null | undefined>;
   email?: EmailMessage;
 }): Promise<void> {
+  let email = opts.email;
+  if (email && opts.templateKey) {
+    const tpl = await loadEmailTemplate(env, opts.templateKey);
+    if (tpl) {
+      const vars = opts.vars ?? {};
+      email = { ...email, subject: applyPlaceholders(tpl.subject, vars), text: applyPlaceholders(tpl.body, vars) };
+    }
+  }
   let state: "sent" | "failed" | "queued" = "queued";
-  if (opts.email) {
-    const r = await sendEmail(env, opts.email);
+  if (email) {
+    const r = await sendEmail(env, email);
     state = r === "failed" ? "failed" : "sent";
   }
   await env.DB.prepare(

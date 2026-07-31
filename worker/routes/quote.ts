@@ -226,12 +226,14 @@ quote.post("/projects/:id/submit", async (c) => {
     const fileLine = sched ? `\nUploaded schedule: ${sched.filename} (attached to this quote for technical review)` : "";
     await notify(c.env, {
       recipient: contactEmail, eventType: "quote.submitted", templateKey: "quote_submitted",
+      vars: { name: contactName, ref, scheduleNote: fileLine, trackUrl: `${origin}/track-order` },
       email: { to: contactEmail, subject: `We've received your quote ${ref}`,
         text: `Hi ${contactName},\n\nThanks — your quote ${ref} is in for technical review.${fileLine}\n\nTrack it any time at ${origin}/track-order using reference ${ref} and this email address.\n\n— OpenFrame` },
     });
     const internalTo = c.env.ENQUIRY_INTERNAL_TO || c.env.CONTACT_TO || c.env.EMAIL_FROM || "quotes@openframe.com.au";
     await notify(c.env, {
       recipient: internalTo, eventType: "quote.submitted.internal", templateKey: "quote_submitted_internal",
+      vars: { ref, name: contactName, email: contactEmail, scheduleNote: fileLine },
       email: { to: internalTo, subject: `New quote submitted ${ref}`,
         text: `${ref} submitted for technical review.\nCustomer: ${contactName} <${contactEmail}>${fileLine}\n\nOpen the ops console → this project to review the schedule and lines.` },
     });

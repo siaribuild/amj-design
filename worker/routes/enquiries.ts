@@ -134,7 +134,9 @@ enquiries.post("/enquiries", async (c) => {
   // actually gave an address.
   if (customerEmail) {
     await notify(c.env, {
-      recipient: customerEmail, eventType: "enquiry.confirmation", templateKey: "enquiry_customer",
+      recipient: customerEmail, eventType: "enquiry.confirmation",
+      templateKey: isAppt ? "enquiry_customer_appointment" : "enquiry_customer_question",
+      vars: { name: firstName, reference, showroom: loc?.displayName },
       email: { to: customerEmail, subject: `Your OpenFrame enquiry ${reference}`, text: customerText },
     });
   }
@@ -145,6 +147,11 @@ enquiries.post("/enquiries", async (c) => {
     : `Question · ${clip(body?.topic, 120) || "General"}\n\n${clip(body?.message, 5000)}`;
   await notify(c.env, {
     recipient: internalTo, eventType: "enquiry.internal", templateKey: "enquiry_internal",
+    vars: {
+      enquiryType: isAppt ? "appointment" : "question", reference,
+      name: clip(body?.name, 200), email: customerEmail,
+      phone: clip(body?.phone, 60) || "—", company: clip(body?.company, 200) || "—", summary,
+    },
     email: { to: internalTo, subject: `New ${isAppt ? "appointment" : "question"} enquiry ${reference}`,
       text: `${reference}\n\nName: ${clip(body?.name, 200)}\nEmail: ${customerEmail}\nPhone: ${clip(body?.phone, 60) || "—"}\nCompany: ${clip(body?.company, 200) || "—"}\n\n${summary}\n\nOpen the ops console → Enquiries to action this lead.` },
   });
@@ -154,6 +161,10 @@ enquiries.post("/enquiries", async (c) => {
   if (isAppt && c.env.MANUFACTURER_TO) {
     await notify(c.env, {
       recipient: c.env.MANUFACTURER_TO, eventType: "enquiry.handoff", templateKey: "enquiry_manufacturer",
+      vars: {
+        reference, showroom: loc?.displayName, name: clip(body?.name, 200),
+        phone: clip(body?.phone, 60) || "—", email: customerEmail, bestTimeToCall: clip(body?.bestTimeToCall, 20),
+      },
       email: { to: c.env.MANUFACTURER_TO, subject: `OpenFrame appointment lead ${reference} — ${loc?.displayName}`,
         text: `New appointment lead from OpenFrame.\n\nReference: ${reference}\nShowroom: ${loc?.displayName}\nCustomer: ${clip(body?.name, 200)}\nPhone: ${clip(body?.phone, 60) || "—"}\nEmail: ${customerEmail}\nBest time to call: ${clip(body?.bestTimeToCall, 20)}\n\nPlease call to arrange the visit and acknowledge this lead back to OpenFrame (reference ${reference}). No appointment time is confirmed yet.` },
     });

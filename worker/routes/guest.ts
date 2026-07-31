@@ -75,6 +75,7 @@ guest.post("/track/request", async (c) => {
       recipient: email,
       eventType: "guest.track.requested",
       templateKey: "guest_track_code",
+      vars: { type: noun, ref, code },
       email: { to: email, subject: `Tracking code for ${ref}`, text: `Your tracking code for ${noun} ${ref} is ${code}. It expires in 10 minutes.` },
     });
     if (isDevEnv(c.env)) devCode = code;
