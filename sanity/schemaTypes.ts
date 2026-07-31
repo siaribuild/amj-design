@@ -74,6 +74,18 @@ export const optionType = defineType({
       description: "When on, every product offers all options of this type (e.g. Colour) without listing them per product.",
       initialValue: false,
     }),
+    // WS1 (thermal rework): glazing is a MANDATORY option — every window has a
+    // glass, so exactly one must be selected. Unlike 'applies to all', the
+    // available choices for a required glazing type come from the product's own
+    // performance variants (each variant realises one glazing option), because
+    // Uw depends on the frame×glass pair.
+    defineField({
+      name: "required",
+      title: "Required selection (exactly one)",
+      type: "boolean",
+      description: "When on, every product must have exactly one option of this type selected — e.g. Glazing.",
+      initialValue: false,
+    }),
   ],
   preview: { select: { title: "name" } },
 });
@@ -224,6 +236,14 @@ const performanceVariant = defineArrayMember({
   fields: [
     defineField({ name: "variantId", title: "Variant ID", type: "string", validation: (r) => r.required() }),
     defineField({ name: "glassBuildUp", title: "Glass build-up", type: "string", description: "e.g. 5+12A+5mm Double Tempered, 6mm Low-e+25Ar+6mm." }),
+    // WS1 (thermal rework): the shared glazing OPTION this (frame×glass) variant
+    // realises. Glass is a first-class shared option (edited once, offered per
+    // product); THIS variant is the matrix cell that supplies the frame-specific
+    // Uw/SHGC + price for that glass. Migrated from glassBuildUp by
+    // scripts/migrate-glazing-options.mjs; the estimator falls back to variantId
+    // until every variant is linked.
+    defineField({ name: "glazingOption", title: "Glazing option", type: "reference", to: [{ type: "option" }],
+      description: "The shared glazing choice this variant realises. The variant supplies Uw/SHGC and price; the option is the customer-facing selectable." }),
     defineField({ name: "uValue", title: "Uw (whole-window U-value)", type: "number", validation: (r) => r.min(0.5).max(10) }),
     defineField({ name: "shgc", title: "SHGC (whole-window)", type: "number", validation: (r) => r.min(0).max(1) }),
     defineField({ name: "frameType", title: "Frame type", type: "string", initialValue: "aluminium" }),

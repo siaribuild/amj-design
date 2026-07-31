@@ -4,6 +4,10 @@
 export interface PerformanceVariant {
   variantId: string;
   glassBuildUp: string | null;
+  /** WS1: the shared glazing option this (frame×glass) cell realises. Null until
+   *  the catalogue is migrated; the estimator uses variantId as the glass identity
+   *  in the meantime. */
+  glazingOptionSlug?: string | null;
   uValue: number | null;
   shgc: number | null;
   frameType: string | null;

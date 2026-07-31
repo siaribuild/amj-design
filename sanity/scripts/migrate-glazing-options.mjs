@@ -1,5 +1,19 @@
-// SCAFFOLD — WS1: migrate glazing from performanceVariant into a first-class,
-// shared, MANDATORY glass option, keeping the (frame×glass)→Uw matrix on the product.
+// WS1 — migrate glazing into a first-class, shared, MANDATORY glass option,
+// keeping the (frame×glass)→Uw matrix on the product's performanceVariant.
+//
+// APPLIED 2026-07-31 via the Sanity MCP tools (platform not yet live). Recorded
+// here as the durable reference + re-linker for NEW products. What was done:
+//   - Created optionType "glazing" (_id glazingType, required:true).
+//   - Created 3 shared glass options, canonicalised from the noisy build-up
+//     strings (typos: "ómm", "DoubleTempered", "25Argon" vs "25Ar"):
+//       glassSingleClear   "Single Glazed Clear"   ← "6mm Tempered Clear Glass"
+//       glassDoubleClear   "Double Glazed Clear"   ← "5+12A+5" / "5+8A+5" (no Low-E)
+//       glassDoubleLowE    "Double Glazed Low-E"   ← any "Low-e+…Ar" build-up
+//   - Linked every product's performanceVariant → its glass option
+//     (16 double-clear, 9 double-low-e, 2 single-clear across 27 products), and
+//     published. The variant keeps its own Uw/SHGC (the frame×glass cell).
+// The Studio schema (glazingOption field + optionType.required) is in
+// sanity/schemaTypes.ts — deploy with `npx sanity schema deploy`.
 //
 //   npx sanity exec scripts/migrate-glazing-options.mjs --with-user-token          (dry run)
 //   npx sanity exec scripts/migrate-glazing-options.mjs --with-user-token -- --write

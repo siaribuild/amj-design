@@ -72,7 +72,9 @@ function configurationScore(opening: OpeningInput, c: CatalogueCandidate, varian
 /** A performance variant is the (frame×glass) cell the graded scorer consumes. */
 function variantCell(v: PerformanceVariant | null): GlassCell | null {
   if (!v) return null;
-  return { glassOptionSlug: v.variantId, variantId: v.variantId, uValue: v.uValue, shgc: v.shgc, certified: v.certified, pricingOptionSlugs: v.pricingOptionSlugs };
+  // WS1: prefer the shared glazing option as the glass identity; fall back to the
+  // variantId until the catalogue is migrated.
+  return { glassOptionSlug: v.glazingOptionSlug ?? v.variantId, variantId: v.variantId, uValue: v.uValue, shgc: v.shgc, certified: v.certified, pricingOptionSlugs: v.pricingOptionSlugs };
 }
 
 // WS4: GRADED, never a veto. A thermal miss depresses this component (floored

@@ -27,7 +27,8 @@ const CANDIDATE_QUERY = defineQuery(`*[_type == "product" && defined(name) && de
   dimensionRule,
   "performanceVariants": performanceVariants[]{
     variantId, glassBuildUp, uValue, shgc, frameType, frameTechnology, coating,
-    pricingOptionSlugs, dataSource, certified, certificationRef, published
+    pricingOptionSlugs, dataSource, certified, certificationRef, published,
+    "glazingOptionSlug": glazingOption->slug.current
   },
   "optionGroups": options[].option->optionType->slug.current,
   pricingRef
@@ -69,6 +70,9 @@ export function toCandidate(row: any): CatalogueCandidate | null {
     return [{
       variantId,
       glassBuildUp: v?.glassBuildUp ?? null,
+      // WS1: the shared glazing option this cell realises; null until migrated
+      // (the estimator falls back to variantId as the glass identity).
+      glazingOptionSlug: typeof v?.glazingOptionSlug === "string" && v.glazingOptionSlug ? v.glazingOptionSlug : null,
       uValue,
       shgc,
       frameType: v?.frameType ?? null,
