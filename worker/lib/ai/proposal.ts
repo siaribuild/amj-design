@@ -289,10 +289,17 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       dimensions: configuration.dimensions,
       quantity: configuration.quantity,
     };
+    // WS7: the non-blocking thermal miss. checkEnergy emits an 'energy' warning
+    // when no glass met the resolved band and the closest was assigned — surface
+    // that specifically so a reviewer sees WHY, rather than a generic prompt.
+    const thermalBandNotMet = (chosen.outcome.filters ?? []).some(
+      (f) => f.filter === "energy" && f.severity === "warning",
+    );
     const missingInputs = [
       line.opening.thermalContext?.orientation ? null : "orientation",
       line.opening.thermalContext?.roomAreaM2 != null ? null : "room_area",
       variant ? null : "performance_variant",
+      thermalBandNotMet ? "thermal_band_not_met" : null,
     ].filter(Boolean);
     const documentReviewReasons = [...new Set(
       (line.opening.thermalContext?.technicalReviewReasons ?? [])
@@ -326,9 +333,11 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
 
     if (canApply) {
       const review = JSON.stringify({
-        thermalRecommendation: reviewRequired
-          ? "We will confirm this AI-recommended configuration and any schedule-specific options during technical review."
-          : null,
+        thermalRecommendation: thermalBandNotMet
+          ? "We selected the closest available glazing to the energy requirement and will confirm the final glass and performance during technical review."
+          : reviewRequired
+            ? "We will confirm this AI-recommended configuration and any schedule-specific options during technical review."
+            : null,
         energyMapping: documentReviewReasons.length
           ? documentReviewReasons.join(" ")
           : null,
