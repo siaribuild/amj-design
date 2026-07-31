@@ -34,8 +34,9 @@ export const CATALOGUE_QUERY = `{
     "id":_id, "slug":slug.current, name,
     "familySlug":family->slug.current, "categorySlug":category->slug.current,
     shortDescription, descriptionParagraphs, standardGlass, hardware,
-    minWidth, minHeight, maxWidth, maxHeight, profileThickness, airTightness,
+    profileThickness, airTightness,
     waterTightness, windPressure, notes,
+    "dimensionRule": dimensionRule{ minWidthMm, maxWidthMm, minHeightMm, maxHeightMm },
     "heroImage": heroImage{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip, "aspect": asset->metadata.dimensions.aspectRatio },
     "gallery": gallery[]{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip },
     keySpecs[]{_key,label,value}, specs[]{_key,label,value},
@@ -135,8 +136,10 @@ function normalizeProduct(p: any): Product {
     shortDescription: p.shortDescription ?? "",
     descriptionParagraphs: p.descriptionParagraphs ?? [],
     standardGlass: p.standardGlass ?? "", hardware: p.hardware ?? "",
-    minWidth: p.minWidth ?? null, minHeight: p.minHeight ?? null,
-    maxWidth: p.maxWidth ?? null, maxHeight: p.maxHeight ?? null,
+    // Single size source: the estimator's dimensionRule (the Content-tab min/max
+    // were removed in the 2026-07-31 rationalisation so the two can't diverge).
+    minWidth: p.dimensionRule?.minWidthMm ?? null, minHeight: p.dimensionRule?.minHeightMm ?? null,
+    maxWidth: p.dimensionRule?.maxWidthMm ?? null, maxHeight: p.dimensionRule?.maxHeightMm ?? null,
     profileThickness: p.profileThickness ?? "", airTightness: p.airTightness ?? "",
     waterTightness: p.waterTightness ?? "", windPressure: p.windPressure ?? "",
     notes: p.notes ?? "", heroImage: normalizeImage(p.heroImage) ?? "",

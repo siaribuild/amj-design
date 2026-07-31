@@ -450,10 +450,9 @@ export const product = defineType({
     defineField({ name: "descriptionParagraphs", type: "array", of: [{ type: "text" }], group: "content" }),
     defineField({ name: "standardGlass", type: "string", group: "content" }),
     defineField({ name: "hardware", type: "string", group: "content" }),
-    defineField({ name: "minWidth", type: "number", group: "content" }),
-    defineField({ name: "minHeight", type: "number", group: "content" }),
-    defineField({ name: "maxWidth", type: "number", group: "content" }),
-    defineField({ name: "maxHeight", type: "number", group: "content" }),
+    // Size range moved to the single source of truth: Technical → Dimension rule
+    // (min/maxWidthMm, min/maxHeightMm). The customer-facing "fits X–Y" is derived
+    // from it, so the estimator and the display can no longer disagree.
     defineField({ name: "profileThickness", type: "string", group: "content" }),
     defineField({ name: "airTightness", type: "string", group: "content" }),
     defineField({ name: "waterTightness", type: "string", group: "content" }),
