@@ -3,16 +3,16 @@
 
 export interface PerformanceVariant {
   variantId: string;
-  glassBuildUp: string | null;
-  /** WS1: the shared glazing option this (frame×glass) cell realises. Null until
-   *  the catalogue is migrated; the estimator uses variantId as the glass identity
-   *  in the meantime. */
+  /** The shared glazing option this (frame×glass) cell realises — its slug is the
+   *  glass IDENTITY. Falls back to variantId when unlinked. */
   glazingOptionSlug?: string | null;
+  /** The glazing option's technicalValue (single_clear | double_clear | double_lowe):
+   *  the single source of the single/double/low-e CLASSIFICATION. */
+  glazingClass?: string | null;
   uValue: number | null;
   shgc: number | null;
   frameType: string | null;
   frameTechnology: "conventional" | "thermally_broken" | "unknown";
-  coating: string | null;
   certificationRef: string | null;
   /** Private D1 surcharge identifiers required to price this exact variant. */
   pricingOptionSlugs: string[];
@@ -33,11 +33,6 @@ export interface CatalogueCandidate {
   series: string | null;          // family slug (e.g. awning-window)
   configuration: {
     operationTypes: string[];
-    panelPattern?: string | null;
-    openingDirection?: string | null;
-    isCompositeMember?: boolean;
-    compositePattern?: string | null;
-    dataSource?: string;
   } | null;
   dimensionRule: {
     minWidthMm: number | null;

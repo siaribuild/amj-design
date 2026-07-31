@@ -2,10 +2,11 @@ import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./typ
 import type { RuleOutcome } from "./rules";
 
 const text = (v: string | null | undefined) => (v || "").toLowerCase();
+// Classification from the glazing option's technicalValue (see rules.ts) — the
+// one source of truth, not a parsed build-up string.
 const isDouble = (v: PerformanceVariant) =>
-  /\b(double|dg|igu|insulated)\b/.test(text(v.glassBuildUp));
-const isLowE = (v: PerformanceVariant) =>
-  /\b(low[- ]?e|solar control|spectrally selective)\b/.test(`${text(v.glassBuildUp)} ${text(v.coating)}`);
+  v.glazingClass === "double_clear" || v.glazingClass === "double_lowe";
+const isLowE = (v: PerformanceVariant) => v.glazingClass === "double_lowe";
 
 function scheduleAffinity(opening: OpeningInput, variant: PerformanceVariant): number {
   const req = opening.scheduleRequirements;
@@ -15,8 +16,6 @@ function scheduleAffinity(opening: OpeningInput, variant: PerformanceVariant): n
   if (req.doubleGlazed === false) score += isDouble(variant) ? -3 : 2;
   const glass = text(req.glassDescription);
   if (glass.includes("low-e") || glass.includes("low e")) score += isLowE(variant) ? 4 : -5;
-  if (glass.includes("argon")) score += text(variant.glassBuildUp).includes("argon") ? 3 : -3;
-  if (glass && text(variant.glassBuildUp).includes(glass)) score += 3;
   return score;
 }
 

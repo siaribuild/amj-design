@@ -26,9 +26,10 @@ const CANDIDATE_QUERY = defineQuery(`*[_type == "product" && defined(name) && de
   configuration,
   dimensionRule,
   "performanceVariants": performanceVariants[]{
-    variantId, glassBuildUp, uValue, shgc, frameType, frameTechnology, coating,
+    variantId, uValue, shgc, frameType, frameTechnology,
     pricingOptionSlugs, dataSource, certified, certificationRef, published,
-    "glazingOptionSlug": glazingOption->slug.current
+    "glazingOptionSlug": glazingOption->slug.current,
+    "glazingClass": glazingOption->technicalValue
   },
   "optionGroups": options[].option->optionType->slug.current,
   pricingRef
@@ -69,16 +70,16 @@ export function toCandidate(row: any): CatalogueCandidate | null {
     seenVariants.add(variantId);
     return [{
       variantId,
-      glassBuildUp: v?.glassBuildUp ?? null,
-      // WS1: the shared glazing option this cell realises; null until migrated
-      // (the estimator falls back to variantId as the glass identity).
+      // The shared glazing option this (frame×glass) cell realises: its slug is
+      // the glass identity and its technicalValue (glazingClass) is the single/
+      // double/low-e classification — no longer parsed from a free-text build-up.
       glazingOptionSlug: typeof v?.glazingOptionSlug === "string" && v.glazingOptionSlug ? v.glazingOptionSlug : null,
+      glazingClass: typeof v?.glazingClass === "string" && v.glazingClass ? v.glazingClass : null,
       uValue,
       shgc,
       frameType: v?.frameType ?? null,
       frameTechnology: v?.frameTechnology === "conventional" || v?.frameTechnology === "thermally_broken"
         ? v.frameTechnology : "unknown" as const,
-      coating: v?.coating ?? null,
       certificationRef: v?.certificationRef ?? null,
       pricingOptionSlugs: Array.isArray(v?.pricingOptionSlugs)
         ? v.pricingOptionSlugs.filter((s: unknown): s is string => typeof s === "string" && !!s).slice(0, 20)
@@ -132,7 +133,7 @@ export function catalogueCandidateReadiness(candidate: CatalogueCandidate): Cata
       variant.published &&
       variant.uValue != null &&
       variant.shgc != null &&
-      !!variant.glassBuildUp &&
+      !!variant.glazingOptionSlug &&
       variant.frameTechnology !== "unknown")
     .map((variant) => variant.variantId);
   if (!usableVariantIds.length) gaps.push("thermally_described_variant");

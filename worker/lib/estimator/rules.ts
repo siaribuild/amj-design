@@ -162,31 +162,15 @@ const minLimit = (a: number | null | undefined, b: number | null | undefined) =>
 const maxLimit = (a: number | null | undefined, b: number | null | undefined) =>
   a == null ? b ?? null : b == null ? a : Math.max(a, b);
 
-const variantText = (variant: PerformanceVariant) =>
-  `${variant.glassBuildUp ?? ""} ${variant.coating ?? ""}`.toLowerCase();
+// Glass classification comes from the shared glazing option's technicalValue —
+// single_clear | double_clear | double_lowe — the SINGLE source of truth. It is
+// no longer parsed from a free-text build-up string (which could disagree with
+// the option). Argon vs air is not a modelled distinction: our low-E option is
+// argon-filled, so a schedule that merely says "argon" is not rejected here.
 const isDoubleGlazed = (variant: PerformanceVariant) =>
-  /\b(double|double[- ]?glazed|d\.?g\.?|igu|insulated)\b/.test(variantText(variant)) ||
-  /\d+(?:\.\d+)?\s*(?:mm)?(?:\s*low[- ]?e)?\s*\+\s*\d+(?:\.\d+)?\s*(?:mm\s*)?(?:argon|air|ar|a)\s*\+\s*\d+(?:\.\d+)?/i.test(variantText(variant)) ||
-  // Some source rows have a typo in the second pane thickness, but the
-  // low-E + gas-cavity + second separator structure still unambiguously
-  // describes an IGU. Keep runtime classification aligned with catalogue
-  // derivation rather than rejecting the provisional T-series variants.
-  /\blow[- ]?e\s*\+\s*\d+(?:\.\d+)?\s*(?:mm\s*)?(?:argon|air|ar|a)\s*\+/i.test(variantText(variant));
-const isSingleGlazed = (variant: PerformanceVariant) => {
-  const value = variantText(variant);
-  return !isDoubleGlazed(variant) &&
-    (/\b(single|monolithic|laminated|toughened|annealed)\b/.test(value) ||
-      /^\s*\d+(?:\.\d+)?\s*(?:mm)?(?:\s+\w+)*\s*$/.test(variant.glassBuildUp ?? ""));
-};
-const isLowE = (variant: PerformanceVariant) =>
-  /\b(low[- ]?e|solar control|spectrally selective)\b/.test(variantText(variant));
-const hasArgon = (variant: PerformanceVariant) => {
-  const value = variantText(variant);
-  // Catalogue build-ups commonly abbreviate an argon cavity as `15Ar` or
-  // `15 mm Ar`; a word-boundary-only "argon" check silently rejected those
-  // otherwise explicit configurations.
-  return /\bargon\b/.test(value) || /\d+(?:\.\d+)?\s*(?:mm\s*)?ar\b/i.test(value);
-};
+  variant.glazingClass === "double_clear" || variant.glazingClass === "double_lowe";
+const isSingleGlazed = (variant: PerformanceVariant) => variant.glazingClass === "single_clear";
+const isLowE = (variant: PerformanceVariant) => variant.glazingClass === "double_lowe";
 
 /**
  * Material schedule instructions are source requirements, not preferences.
@@ -203,8 +187,7 @@ function checkScheduleConfiguration(opening: OpeningInput, c: CatalogueCandidate
   const requiresDouble = schedule?.doubleGlazed === true;
   const requiresSingle = schedule?.doubleGlazed === false;
   const requiresLowE = /\blow[- ]?e\b/.test(glass);
-  const requiresArgon = /\bargon\b/.test(glass);
-  if (!requiresDouble && !requiresSingle && !requiresLowE && !requiresArgon) {
+  if (!requiresDouble && !requiresSingle && !requiresLowE) {
     return {
       outcome: { filter: "schedule_configuration", passed: true },
       matching: c.performanceVariants.filter((variant) => variant.published),
@@ -220,27 +203,25 @@ function checkScheduleConfiguration(opening: OpeningInput, c: CatalogueCandidate
       matching: [],
     };
   }
-  const described = published.filter((variant) => !!variant.glassBuildUp);
-  if (!described.length) {
+  const classified = published.filter((variant) => !!variant.glazingClass);
+  if (!classified.length) {
     return {
       outcome: {
         filter: "schedule_configuration", passed: false, severity: "incomplete",
-        reason: "schedule specifies a material glazing configuration but catalogue glass build-up is missing",
+        reason: "schedule specifies a glazing configuration but the product's variants have no glazing option set",
       },
       matching: [],
     };
   }
-  const matching = described.filter((variant) =>
+  const matching = classified.filter((variant) =>
     (!requiresDouble || isDoubleGlazed(variant)) &&
     (!requiresSingle || isSingleGlazed(variant)) &&
-    (!requiresLowE || isLowE(variant)) &&
-    (!requiresArgon || hasArgon(variant)));
+    (!requiresLowE || isLowE(variant)));
   if (!matching.length) {
     const requested = [
       requiresDouble ? "double glazing" : null,
       requiresSingle ? "single glazing" : null,
       requiresLowE ? "Low-E coating" : null,
-      requiresArgon ? "argon fill" : null,
     ].filter(Boolean).join(", ");
     return {
       outcome: {
@@ -295,11 +276,6 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
     });
   }
 
-  // Composite + option compatibility — no rule data yet ⇒ manual review, not a pass.
-  // (Only flagged when the opening is actually a composite member; otherwise skipped.)
-  if (opening.family && c.configuration?.isCompositeMember && opening.requirements) {
-    // present but unmodelled — leave for a human until Phase-0 composite data lands.
-  }
 
   const rejected = filters.some((f) => !f.passed && f.severity === "reject");
   const incomplete = filters.some((f) => !f.passed && f.severity === "incomplete");

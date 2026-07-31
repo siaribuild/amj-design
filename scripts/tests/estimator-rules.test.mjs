@@ -37,9 +37,9 @@ const awning = {
   sanityProductId: "product-amj80-series-awning-window", catalogueRevision: "rev-1", schemaVersion: 1,
   name: "AMJ80 Series Awning Window", slug: "amj80-series-awning-window",
   family: "windows", series: "awning-window",
-  configuration: { operationTypes: ["awning"], isCompositeMember: true, dataSource: "estimated" },
+  configuration: { operationTypes: ["awning"] },
   dimensionRule: { minWidthMm: 400, maxWidthMm: 1000, minHeightMm: 400, maxHeightMm: 2400, maxAreaM2: 2.4, maxAspectRatio: 4, ruleVersion: "v1" },
-  performanceVariants: [{ variantId: "std", glassBuildUp: "5+8A+5", uValue: 3.9, shgc: 0.62, frameType: "aluminium", dataSource: "estimated", certified: false, published: true }],
+  performanceVariants: [{ variantId: "std", glazingOptionSlug: "double-clear", glazingClass: "double_clear", uValue: 3.9, shgc: 0.62, frameType: "aluminium", dataSource: "estimated", certified: false, published: true }],
   optionGroups: ["colour", "flyscreen"], pricingRef: "amj80",
 };
 const cand = () => toCandidate({ ...awning, performanceVariants: awning.performanceVariants.map((v) => ({ ...v })) });
@@ -148,10 +148,10 @@ test("material schedule glazing instructions constrain the exact eligible varian
   const configurations = toCandidate({
     ...awning,
     performanceVariants: [
-      { ...awning.performanceVariants[0], variantId: "single", glassBuildUp: "6.38mm laminated", uValue: 5.6 },
-      { ...awning.performanceVariants[0], variantId: "double", glassBuildUp: "5 + 12A + 5 IGU", uValue: 3.2 },
-      { ...awning.performanceVariants[0], variantId: "double-low-e", glassBuildUp: "6mm Low-E + 15Ar + 6mm IGU", coating: "Low-E", uValue: 2.7 },
-      { ...awning.performanceVariants[0], variantId: "catalogue-low-e", glassBuildUp: "6mm Low-e+15Ar+ómm Tempered Clear Glass", coating: "Low-E", uValue: 2.7 },
+      { ...awning.performanceVariants[0], variantId: "single", glazingOptionSlug: "single-clear", glazingClass: "single_clear", uValue: 5.6 },
+      { ...awning.performanceVariants[0], variantId: "double", glazingOptionSlug: "double-clear", glazingClass: "double_clear", uValue: 3.2 },
+      { ...awning.performanceVariants[0], variantId: "double-low-e", glazingOptionSlug: "double-low-e", glazingClass: "double_lowe", uValue: 2.7 },
+      { ...awning.performanceVariants[0], variantId: "catalogue-low-e", glazingOptionSlug: "double-low-e", glazingClass: "double_lowe", uValue: 2.7 },
     ],
   });
   const double = checkHardRules({

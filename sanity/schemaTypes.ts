@@ -194,14 +194,9 @@ const configuration = defineField({
   fields: [
     defineField({ name: "operationTypes", title: "Operation types", type: "array", of: [{ type: "string" }],
       options: { list: ["fixed", "awning", "casement", "sliding", "stacker", "bi-fold", "hinged", "pivot", "louvre", "double-hung", "tilt-turn", "lift-slide"] },
-      description: "One or more operations this product supports." }),
-    defineField({ name: "panelPattern", title: "Panel / leaf pattern", type: "string", description: "e.g. OX, XO, OXXO — O fixed, X operable." }),
-    defineField({ name: "openingDirection", title: "Opening direction", type: "string", options: { list: ["inward", "outward", "sliding", "n/a"] } }),
-    defineField({ name: "isCompositeMember", title: "Can be a composite member", type: "boolean", initialValue: false,
-      description: "True when this product can be one leaf of a larger composite frame (e.g. awning+fixed+awning)." }),
-    defineField({ name: "compositePattern", title: "Composite pattern", type: "string", description: "e.g. awning_fixed_awning. Blank for standalone units." }),
-    defineField({ name: "dataSource", title: "Data source", type: "string", initialValue: "estimated",
-      options: { list: [{ title: "Certified / verified", value: "certified" }, { title: "Estimated (unverified)", value: "estimated" }] } }),
+      description: "One or more operations this product supports. Leave blank to inherit the family's operation; set only to override or when a product supports several." }),
+    // Removed (2026-07-31 rationalisation — read by no code): panelPattern,
+    // openingDirection, isCompositeMember, compositePattern, dataSource.
   ],
 });
 
@@ -221,8 +216,7 @@ const dimensionRule = defineField({
     defineField({ name: "maxAreaM2", title: "Max area (m²)", type: "number", description: "Whole-unit area cap; blank = derive from W×H limits." }),
     defineField({ name: "maxAspectRatio", title: "Max aspect ratio", type: "number", description: "Longest/shortest side; blank = unbounded." }),
     defineField({ name: "ruleVersion", title: "Rule version", type: "string", initialValue: "v1" }),
-    defineField({ name: "dataSource", title: "Data source", type: "string", initialValue: "estimated",
-      options: { list: [{ title: "Certified / verified", value: "certified" }, { title: "Estimated (unverified)", value: "estimated" }] } }),
+    // Removed (2026-07-31 rationalisation — read by no code): dataSource.
   ],
 });
 
@@ -235,15 +229,13 @@ const performanceVariant = defineArrayMember({
   title: "Performance variant",
   fields: [
     defineField({ name: "variantId", title: "Variant ID", type: "string", validation: (r) => r.required() }),
-    defineField({ name: "glassBuildUp", title: "Glass build-up", type: "string", description: "e.g. 5+12A+5mm Double Tempered, 6mm Low-e+25Ar+6mm." }),
-    // WS1 (thermal rework): the shared glazing OPTION this (frame×glass) variant
-    // realises. Glass is a first-class shared option (edited once, offered per
-    // product); THIS variant is the matrix cell that supplies the frame-specific
-    // Uw/SHGC + price for that glass. Migrated from glassBuildUp by
-    // scripts/migrate-glazing-options.mjs; the estimator falls back to variantId
-    // until every variant is linked.
+    // This variant is one (frame × glass) cell: the shared glazing option is the
+    // glass IDENTITY and its technicalValue is the single/double/low-e class; the
+    // variant supplies the frame-specific Uw/SHGC + price. (glassBuildUp / coating
+    // were removed in the 2026-07-31 rationalisation — the option owns the glass.)
     defineField({ name: "glazingOption", title: "Glazing option", type: "reference", to: [{ type: "option" }],
-      description: "The shared glazing choice this variant realises. The variant supplies Uw/SHGC and price; the option is the customer-facing selectable." }),
+      description: "The shared glazing choice this variant realises — its technicalValue drives the single/double/low-e classification.",
+      validation: (r) => r.required() }),
     defineField({ name: "uValue", title: "Uw (whole-window U-value)", type: "number", validation: (r) => r.min(0.5).max(10) }),
     defineField({ name: "shgc", title: "SHGC (whole-window)", type: "number", validation: (r) => r.min(0).max(1) }),
     defineField({ name: "frameType", title: "Frame type", type: "string", initialValue: "aluminium" }),
@@ -256,7 +248,6 @@ const performanceVariant = defineArrayMember({
       ] },
       validation: (r) => r.required(),
     }),
-    defineField({ name: "coating", title: "Coating", type: "string" }),
     defineField({
       name: "pricingOptionSlugs", title: "Private pricing option references", type: "array",
       of: [{ type: "string" }], options: { layout: "tags" },
@@ -277,7 +268,7 @@ const performanceVariant = defineArrayMember({
     defineField({ name: "effectiveFrom", title: "Effective from", type: "date" }),
   ],
   preview: {
-    select: { title: "glassBuildUp", u: "uValue", shgc: "shgc", src: "dataSource" },
+    select: { title: "glazingOption.name", u: "uValue", shgc: "shgc", src: "dataSource" },
     prepare: ({ title, u, shgc, src }) => ({ title: title || "variant", subtitle: `Uw ${u ?? "?"} · SHGC ${shgc ?? "?"} · ${src}` }),
   },
 });

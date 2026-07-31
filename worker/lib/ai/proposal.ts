@@ -253,9 +253,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
         : line.opening.scheduleRequirements?.flyscreen === false ? "no" : null,
       performanceVariantId: variant?.variantId ?? null,
       frameTechnology: variant?.frameTechnology ?? "unknown",
-      glassBuildUp: variant?.glassBuildUp ?? null,
-      glazing: variant?.glassBuildUp ?? null,
-      coating: variant?.coating ?? null,
+      glazing: variant?.glazingOptionSlug ?? null,
     };
     const configuration = {
       productId: chosen.candidate.sanityProductId,
@@ -263,8 +261,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       performanceVariantId: variant?.variantId ?? null,
       frameType: variant?.frameType ?? null,
       frameTechnology: variant?.frameTechnology ?? "unknown",
-      glazing: variant?.glassBuildUp ?? null,
-      coating: variant?.coating ?? null,
+      glazing: variant?.glazingOptionSlug ?? null,
       options: cartOptions,
       pricingOptionSlugs: [...new Set([
         ...(line.opening.optionSlugs ?? []),

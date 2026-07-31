@@ -776,8 +776,8 @@ ops.patch("/lines/:id", async (c) => {
     nextConfigurationSnapshot = JSON.stringify({
       productId: candidate.sanityProductId, productSlug: candidate.slug,
       performanceVariantId: variant.variantId, frameType: variant.frameType,
-      frameTechnology: variant.frameTechnology, glazing: variant.glassBuildUp,
-      coating: variant.coating, options, pricingOptionSlugs,
+      frameTechnology: variant.frameTechnology, glazing: variant.glazingOptionSlug,
+      options, pricingOptionSlugs,
       dimensions: { widthMm: Number(width), heightMm: Number(height) }, quantity: qty,
     });
   } else if (line.line_kind === "composite_parent") {
@@ -1264,8 +1264,7 @@ ops.get("/lines/:id/configurations", async (c) => {
         productName: candidate.name,
         variantId: variant.variantId,
         frameTechnology: variant.frameTechnology,
-        glassBuildUp: variant.glassBuildUp,
-        coating: variant.coating,
+        glazing: variant.glazingOptionSlug,
         uValue: variant.uValue,
         shgc: variant.shgc,
       }));
