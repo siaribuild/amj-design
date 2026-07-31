@@ -13,6 +13,7 @@ import type { PerformanceVariant } from "./types";
 import { publishAiProposal, type ProposalSelection } from "../ai/proposal";
 import { splitLine, type SegmentSpec } from "../composite";
 import { proposeSplit, type SplitHint } from "./split";
+import { resolveScheduleType } from "../../../src/data/scheduleMatch";
 
 // Schedule TYPE text → structured operation (the delivered parser records the raw
 // schedule term; the estimator needs the operation vocabulary the catalogue uses).
@@ -257,18 +258,25 @@ async function materialiseSplits(env: Env, ctx: {
     const oversize = (parent.outcome.filters ?? []).some((f) => f.filter === "dimensions" && f.severity === "warning");
     if (!hint && !oversize) continue;
 
-    const proposal = proposeSplit(pl.opening, hint);
+    // The default split uses the product's max width so a >2× opening becomes 3+
+    // units, not two still-oversize halves.
+    const proposal = proposeSplit(pl.opening, hint, { maxWidthMm: parent.candidate.dimensionRule?.maxWidthMm ?? null });
     if (proposal.segments.length < 2) continue;
 
+    const section = pl.opening.family === "doors" ? "door" : "window";
     const specs: SegmentSpec[] = [];
     for (const seg of proposal.segments) {
-      const sub = { ...pl.opening, externalRef: null, operationType: seg.operation, widthMm: seg.widthMm, heightMm: seg.heightMm };
+      // Resolve the tradie term (e.g. "fixed") to a manufacturer operation via the
+      // Sanity Family → Schedule Aliases — "fixed" is an alias on Sliding Window,
+      // so a fixed lite is a sliding-window frame, not an unknown operation.
+      const operationType = resolveScheduleType(section, seg.operation).operationType ?? seg.operation;
+      const sub = { ...pl.opening, externalRef: null, operationType, widthMm: seg.widthMm, heightMm: seg.heightMm };
       const sel = await selectForOpening(sub, ctx.repo, ctx.priceFn, ctx.historical);
       specs.push({
         widthMm: seg.widthMm,
         heightMm: seg.heightMm,
-        // Segment's own best-fit product, else the parent's real product (fixed
-        // lite has no product — do NOT fabricate one).
+        // The segment's own best-fit product; only if the alias resolves to nothing
+        // does it fall back to the parent's real product (never a fabricated one).
         productSlug: sel.selected?.candidate.slug ?? parent.candidate.slug,
       });
     }

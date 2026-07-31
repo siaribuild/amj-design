@@ -60,13 +60,22 @@ test("comment overrides the 50/50 default", () => {
   assert.deepEqual(p1.segments.map((s) => s.widthMm), [500, 1400, 500]);
 });
 
-test("no comment ⇒ 50/50 default of the requested operation, exact halves", () => {
-  const proposal = proposeSplit({ operationType: "sliding", widthMm: 3000, heightMm: 1500 }, null);
-  assert.equal(proposal.basis, "default_5050");
+test("no comment, ≤2× oversize ⇒ even 50/50 of the requested operation", () => {
+  const proposal = proposeSplit({ operationType: "sliding", widthMm: 3000, heightMm: 1500 }, null, { maxWidthMm: 2000 });
+  assert.equal(proposal.basis, "default_even");
   assert.deepEqual(proposal.segments, [
     { operation: "sliding", widthMm: 1500, heightMm: 1500 },
     { operation: "sliding", widthMm: 1500, heightMm: 1500 },
   ]);
+});
+
+test("no comment, >2× oversize ⇒ 3 equal units so each fits (just maths)", () => {
+  // 3500 wide, max product width 1300 → ceil(3500/1300)=3.
+  const proposal = proposeSplit({ operationType: "awning", widthMm: 3500, heightMm: 700 }, null, { maxWidthMm: 1300 });
+  assert.equal(proposal.segments.length, 3);
+  assert.deepEqual(proposal.segments.map((s) => s.widthMm), [1166, 1166, 1168]);
+  assert.ok(proposal.segments.every((s) => s.widthMm <= 1300), "every unit now fits the product width");
+  assert.equal(proposal.segments.reduce((s, seg) => s + seg.widthMm, 0), 3500);
 });
 
 test("odd total splits exactly (remainder to the last unit)", () => {

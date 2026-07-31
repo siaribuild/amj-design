@@ -90,7 +90,7 @@ export interface SplitProposal {
   segments: ProposedSegment[];
   /** Always 'vertical' here: coupled units partition the WIDTH, full height each. */
   axis: "vertical" | "horizontal";
-  basis: "schedule_comment" | "learned" | "default_5050";
+  basis: "schedule_comment" | "learned" | "default_even";
   /** ALWAYS true — a proposed split is a starting point, never a final answer. */
   reviewRequired: true;
   note: string;
@@ -148,10 +148,14 @@ export function evenWidths(totalMm: number, count: number): number[] {
   return out;
 }
 
-/** Propose a split for an opening. Comment-authoritative, else 50/50 default. */
+/** Propose a split for an opening. Comment-authoritative, else an even split into
+ *  the minimum number of equal units that each FIT the product's max width (so a
+ *  >2× oversize opening becomes 3+, not two still-oversize halves — "just maths").
+ *  With no max width known it falls back to a 50/50 two-way split. */
 export function proposeSplit(
   opening: OpeningInput,
   hint: SplitHint | null,
+  opts?: { maxWidthMm?: number | null },
 ): SplitProposal {
   const width = Math.max(0, Math.round(opening.widthMm ?? 0));
   const height = Math.max(0, Math.round(opening.heightMm ?? 0));
@@ -170,17 +174,18 @@ export function proposeSplit(
     }
   }
 
-  // 50/50 default: two equal units of the requested operation.
-  const [w1, w2] = evenWidths(width, 2);
+  // Even default: the minimum equal units that each fit the product's max width.
+  const maxW = opts?.maxWidthMm ?? null;
+  const count = maxW && maxW > 0 ? Math.max(2, Math.ceil(width / maxW)) : 2;
+  const widths = evenWidths(width, count);
   return {
-    segments: [
-      { operation: fallbackOp, widthMm: w1, heightMm: height },
-      { operation: fallbackOp, widthMm: w2, heightMm: height },
-    ],
+    segments: widths.map((w) => ({ operation: fallbackOp, widthMm: w, heightMm: height })),
     axis: "vertical",
-    basis: "default_5050",
+    basis: "default_even",
     reviewRequired: true,
-    note: "Proposed as an even 50/50 split (default) — confirm the configuration at review.",
+    note: count === 2
+      ? "Proposed as an even 50/50 split (default) — confirm the configuration at review."
+      : `Proposed as ${count} equal units so each fits the product width (default) — confirm at review.`,
   };
 }
 
