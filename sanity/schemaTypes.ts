@@ -896,4 +896,68 @@ export const post = defineType({
   },
 });
 
-export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation, siteSettings, postCategory, postAttachment, post];
+// ── Email templates — editable transactional email copy ──────────────────────
+// One document per email the platform sends. Each maps to a `key` the Worker
+// dispatches with (worker/lib/email.ts → notify()); at send time the Worker
+// substitutes [placeholders] with live values (a customer name, a reference, a
+// one-time code). The KEY is the join to the code — it is locked once the
+// template exists, because renaming it would silently orphan the email from what
+// sends it. `availablePlaceholders` lists exactly which [tokens] each template
+// may use; a token the sender does not provide is left untouched.
+export const emailTemplate = defineType({
+  name: "emailTemplate",
+  title: "Email template",
+  type: "document",
+  fields: [
+    defineField({
+      name: "title", title: "Name", type: "string",
+      description: "What this email is, in plain words (shown in the Studio only).",
+      validation: (r) => r.required(),
+    }),
+    defineField({
+      name: "key", title: "Template key", type: "string",
+      description: "The identifier the app sends with — it must match the code exactly. Locked once the template exists; a renamed key would stop the email being found.",
+      readOnly: ({ document }) => !!document?._createdAt,
+      validation: (r) => r.required().custom((v) =>
+        typeof v === "string" && /^[a-z0-9_]+$/.test(v) ? true : "Lowercase letters, numbers and underscores only."),
+    }),
+    defineField({
+      name: "audience", title: "Sent to", type: "string",
+      options: { layout: "radio", list: [
+        { title: "Customer", value: "customer" },
+        { title: "Internal (OpenFrame inbox)", value: "internal" },
+        { title: "Staff (ops console)", value: "staff" },
+        { title: "Manufacturer", value: "manufacturer" },
+      ] },
+      description: "Who receives it — informational.",
+    }),
+    defineField({
+      name: "trigger", title: "When it's sent", type: "text", rows: 2,
+      description: "The moment in the workflow that sends this email — a note for editors, not used by the app.",
+    }),
+    defineField({
+      name: "subject", title: "Subject", type: "string",
+      description: "The email subject line. May use [placeholders] — see the list below.",
+      validation: (r) => r.required(),
+    }),
+    defineField({
+      name: "body", title: "Body", type: "text", rows: 14,
+      description: "Plain-text email body. Put [placeholders] where live values belong — e.g. \"Hi [name],\". A blank line starts a new paragraph.",
+      validation: (r) => r.required(),
+    }),
+    defineField({
+      name: "availablePlaceholders", title: "Available placeholders", type: "array",
+      of: [{ type: "string" }], options: { layout: "tags" }, readOnly: true,
+      description: "The [tokens] this email can use — each is replaced with a live value when the email is sent. Fixed by the code that sends it; using any other token leaves it as-is.",
+    }),
+  ],
+  preview: {
+    select: { title: "title", key: "key", audience: "audience" },
+    prepare: ({ title, key, audience }: any) => ({
+      title: title || key,
+      subtitle: [key, audience].filter(Boolean).join(" · "),
+    }),
+  },
+});
+
+export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation, siteSettings, postCategory, postAttachment, post, emailTemplate];
