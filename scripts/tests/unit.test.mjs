@@ -248,7 +248,7 @@ test("editedFieldsAfterSave: a real change flags exactly its field group and uni
 
 // ── Review severity: the ONE registry that decides what blocks ────────────────
 test("severity registry: only critical missing input is an error; mismatches are warnings", () => {
-  for (const k of ["dims", "qty", "measuredBy", "options", "product"]) {
+  for (const k of ["dims", "qty", "options", "product"]) {
     assert.equal(M.severityOf(k), "error", `${k} must block`);
   }
   for (const k of ["fit", "substitute", "material", "glazing", "thermalRecommendation", "noLongerInDocuments"]) {

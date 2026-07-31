@@ -249,14 +249,14 @@ projects.put("/current/lines", async (c) => {
         // A reload followed by autosave must not replace the AI configuration's
         // private server price with the browser's legacy deterministic estimate.
         stmts.push(c.env.DB.prepare(
-          `UPDATE quote_line SET external_ref=?, room_label=?, measured_by=?,
+          `UPDATE quote_line SET external_ref=?, room_label=?,
              position=?, edit_version=edit_version+1, updated_at=datetime('now')
            WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
              AND EXISTS (
                SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                  AND quote_edit_version=? AND quote_mutation_token=?
              )`,
-        ).bind(f.external_ref, f.room_label, f.measured_by, i, id, project.id, project.id, nextQuoteVersion, mutationToken));
+        ).bind(f.external_ref, f.room_label, i, id, project.id, project.id, nextQuoteVersion, mutationToken));
         continue;
       }
       if (aiManaged) {
@@ -266,7 +266,7 @@ projects.put("/current/lines", async (c) => {
         // explicitly unpriced until staff confirms/reprices them.
         stmts.push(c.env.DB.prepare(
           `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?,
-             options_json=?, dims_json=?, measured_by=?, qty=?, line_total=NULL,
+             options_json=?, dims_json=?, qty=?, line_total=NULL,
              status='technical_review', position=?,
              review_json=json_patch(COALESCE(review_json,'{}'), ?),
              edited_fields=?,
@@ -281,7 +281,7 @@ projects.put("/current/lines", async (c) => {
              )`,
         ).bind(
           f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json,
-          f.measured_by, f.qty, i,
+          f.qty, i,
           JSON.stringify({
             customerConfigurationChanged: "You changed an AI-priced configuration; we will confirm its thermal suitability and price.",
           }),
@@ -292,24 +292,24 @@ projects.put("/current/lines", async (c) => {
         continue;
       }
       stmts.push(c.env.DB.prepare(
-        `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?, options_json=?, dims_json=?, measured_by=?, qty=?, line_total=?, status=?, position=?, review_json=?, edited_fields=?, edit_version=edit_version+1, updated_at=datetime('now')
+        `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?, options_json=?, dims_json=?, qty=?, line_total=?, status=?, position=?, review_json=?, edited_fields=?, edit_version=edit_version+1, updated_at=datetime('now')
          WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
            AND EXISTS (
              SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                AND quote_edit_version=? AND quote_mutation_token=?
            )`,
-      ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.measured_by, f.qty, f.line_total, f.status, i, f.review_json, edited, id, project.id, project.id, nextQuoteVersion, mutationToken));
+      ).bind(f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json, f.qty, f.line_total, f.status, i, f.review_json, edited, id, project.id, project.id, nextQuoteVersion, mutationToken));
     } else {
       const r = await itemToInsert(c.env, project.id, raw, i, project.owner_user_id);
       stmts.push(c.env.DB.prepare(
         `INSERT INTO quote_line
-           (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position, origin, review_json)
-          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+           (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, origin, review_json)
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
            WHERE EXISTS (
              SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                AND quote_edit_version=? AND quote_mutation_token=?
            )`,
-      ).bind(r.id, r.project_id, r.external_ref, r.room_label, r.product_slug, r.options_json, r.dims_json, r.measured_by, r.qty, r.line_total, r.status, r.position, r.origin, r.review_json, project.id, nextQuoteVersion, mutationToken));
+      ).bind(r.id, r.project_id, r.external_ref, r.room_label, r.product_slug, r.options_json, r.dims_json, r.qty, r.line_total, r.status, r.position, r.origin, r.review_json, project.id, nextQuoteVersion, mutationToken));
     }
   }
   stmts.push(hasTitle

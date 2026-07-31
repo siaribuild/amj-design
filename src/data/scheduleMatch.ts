@@ -11,7 +11,7 @@
 // unit-testable and shared by the Worker and the client.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { getProductsByFamily, getProductBySlug, families, type Product } from "./catalogue";
-import { defaultOptions, normCode, type MeasuredBy } from "./configurator";
+import { defaultOptions, normCode } from "./configurator";
 import type { RawScheduleRow, ScheduleSection } from "./scheduleParse";
 
 export type LineReview = Record<string, string>; // field → human reason
@@ -20,7 +20,6 @@ export interface ParsedLine {
   code: string;
   productSlug: string;
   location: string; // schedule COMMENTS surfaced as the item note
-  measuredBy: MeasuredBy;
   width: string; // mm
   height: string; // mm
   options: Record<string, string>;
@@ -265,11 +264,6 @@ export function matchSchedule(rows: RawScheduleRow[]): ParsedLine[] {
       productSlug,
       location: noteParts.join(" · "),
       // A schedule states OPENING sizes by convention, and one row = one opening.
-      // Both are stated defaults, not guesses — the "how did you measure" and
-      // quantity questions matter for MANUAL entry by non-professionals, where the
-      // customer answers them directly.
-      measuredBy: "opening",
-
       width: r.widthMm ? String(r.widthMm) : "",
       height: r.heightMm ? String(r.heightMm) : "",
       options: product ? defaultOptions(product) : {},

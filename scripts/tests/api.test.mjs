@@ -71,7 +71,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
           title: "Regression project",
           items: [{
             code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
-            measuredBy: "opening", width: "1200", height: "900", qty: 1,
+            width: "1200", height: "900", qty: 1,
             options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
             lineTotal: 1,
           }],
@@ -97,7 +97,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       const s = new Session(baseUrl);
       const line = (w) => ({
         code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
-        measuredBy: "opening", width: String(w), height: "900", qty: 1,
+        width: String(w), height: "900", qty: 1,
         options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
         lineTotal: 1,
       });
@@ -122,7 +122,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
     await t.test("one draft per customer: a second anon draft merges its lines on sign-in", async () => {
       const line = (code) => ({
         code, location: "Site", productSlug: "amj80-series-sliding-window",
-        measuredBy: "opening", width: "1200", height: "900", qty: 1,
+        width: "1200", height: "900", qty: 1,
         options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
         lineTotal: 1,
       });
@@ -312,7 +312,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
           title: "Guest tracking project",
           items: [{
             code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
-            measuredBy: "opening", width: "1200", height: "900", qty: 1,
+            width: "1200", height: "900", qty: 1,
             options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
             lineTotal: 1,
           }],
@@ -387,7 +387,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
           title: "Composite project",
           items: [{
             code: "W12", location: "Living", productSlug: "amj80-series-sliding-window",
-            measuredBy: "opening", width: "1200", height: "900", qty: 1,
+            width: "1200", height: "900", qty: 1,
             options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
             lineTotal: 1,
           }],

@@ -116,8 +116,8 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
         stmts.push(env.DB.prepare(
           `INSERT INTO quote_line
              (id, project_id, revision_id, external_ref, product_slug, options_json,
-              dims_json, measured_by, qty, line_total, status, position, origin, review_json)
-           SELECT ?,?,NULL,?,'','{}',?,'',?,NULL,'incomplete',?,'ai',?
+              dims_json, qty, line_total, status, position, origin, review_json)
+           SELECT ?,?,NULL,?,'','{}',?,?,NULL,'incomplete',?,'ai',?
              WHERE EXISTS (SELECT 1 FROM ai_proposal WHERE id=? AND status='building')`,
         ).bind(
           effectiveQuoteLineId, input.projectId, line.externalRef,
@@ -215,8 +215,8 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       stmts.push(env.DB.prepare(
         `INSERT INTO quote_line
            (id, project_id, revision_id, external_ref, product_slug, options_json,
-            dims_json, measured_by, qty, line_total, status, position, origin)
-         SELECT ?,?,NULL,?,?,?,?, '',?,?, 'technical_review',?, 'ai'
+            dims_json, qty, line_total, status, position, origin)
+         SELECT ?,?,NULL,?,?,?,?,?,?, 'technical_review',?, 'ai'
            WHERE EXISTS (SELECT 1 FROM ai_proposal WHERE id=? AND status='building')`,
       ).bind(
         effectiveQuoteLineId, input.projectId, line.externalRef, chosen.candidate.slug,

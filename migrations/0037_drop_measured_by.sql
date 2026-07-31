@@ -1,0 +1,12 @@
+-- Drop the "how did you measure?" field (frame/opening/unsure) from quote lines.
+--
+-- Rationale (owner, consulted with builders): builders use one standard way of
+-- measuring; a homeowner measuring differently is caught in human review and
+-- corrected there; and for PRICE estimation the frame-vs-opening distinction is
+-- immaterial — the entered dimensions are used either way. Removing it also saves
+-- vertical space in the estimator tool.
+--
+-- Deploy order: ship the code that no longer references measured_by FIRST (it
+-- inserts without the column, which still has its DEFAULT ''), THEN apply this
+-- drop. The column carried a CHECK constraint that is removed with it.
+ALTER TABLE quote_line DROP COLUMN measured_by;

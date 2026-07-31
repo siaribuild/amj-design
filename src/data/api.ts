@@ -17,7 +17,6 @@ export interface ApiItem {
   code: string;
   productSlug: string;
   location: string;
-  measuredBy: QItem["measuredBy"];
   width: string;
   height: string;
   options: Record<string, string>;

@@ -147,7 +147,7 @@ test("a submitted quote is trackable by its OF-Q reference, anonymously", async 
       title: "E2E tracked quote",
       items: [{
         code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
-        measuredBy: "opening", width: "1200", height: "900", qty: 1,
+        width: "1200", height: "900", qty: 1,
         options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
         lineTotal: 1,
       }],

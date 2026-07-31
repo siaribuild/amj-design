@@ -12,7 +12,6 @@
 // lines, only to AI ones.
 import type { Env } from "../types";
 import { colorbondColourOptions, getProductBySlug } from "../../src/data/catalogue";
-import { type MeasuredBy } from "../../src/data/configurator";
 import { ensureCatalogue } from "./catalogue";
 import { pricingOptionSlugsFromOptions } from "./estimator/estimate";
 import { priceLine } from "./estimator/pricing";
@@ -42,7 +41,6 @@ export interface ApiLine {
   code: string;
   productSlug: string;
   location: string;
-  measuredBy: MeasuredBy;
   width: string;
   height: string;
   options: Record<string, string>;
@@ -56,8 +54,6 @@ export interface ApiLine {
   review?: Record<string, string> | null;
 }
 
-const MEASURED = new Set(["", "frame", "opening", "unsure"]);
-
 // A D1 quote_line row (columns we read back).
 export interface LineRow {
   id: string;
@@ -66,7 +62,6 @@ export interface LineRow {
   product_slug: string;
   options_json: string;
   dims_json: string;
-  measured_by: string;
   qty: number;
   line_total: number | null;
   status: string;
@@ -88,7 +83,6 @@ export function rowToApiLine(r: LineRow): ApiLine {
     code: r.external_ref ?? "",
     productSlug: r.product_slug,
     location: r.room_label ?? "",
-    measuredBy: (MEASURED.has(r.measured_by) ? r.measured_by : "") as MeasuredBy,
     width: String(dims.width ?? ""),
     height: String(dims.height ?? ""),
     options: safeParse(r.options_json) as Record<string, string>,
@@ -183,7 +177,6 @@ export async function itemFields(env: Env, raw: unknown, ownerUserId?: string | 
   const options = (it.options && typeof it.options === "object" ? it.options : {}) as Record<string, string>;
   const qty = Math.max(1, Math.floor(Number(it.qty) || 1));
   const productSlug = String(it.productSlug ?? "");
-  const measured = String(it.measuredBy ?? "");
 
   const lineTotal = await priceItem(env, { productSlug, width, height, options, qty, ownerUserId });
   const priced = { ok: lineTotal != null };
@@ -206,7 +199,6 @@ export async function itemFields(env: Env, raw: unknown, ownerUserId?: string | 
     product_slug: productSlug,
     options_json: JSON.stringify(options),
     dims_json: JSON.stringify({ width, height }),
-    measured_by: MEASURED.has(measured) ? measured : "",
     qty,
     line_total: lineTotal,
     status,

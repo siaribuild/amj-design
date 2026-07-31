@@ -271,7 +271,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
           <ItemSummaryCard item={liveJustAdded} added quote={quote} />
           <div className="border border-black/10 bg-bone px-4 py-4">
             <p className="text-sm text-body mb-3">MyProject now has <span className="font-medium text-ink">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span> · estimated {fmt(gstAdjust(projectTotal, gstMode))} {gstSuffix(gstMode)}.</p>
-            <Btn variant="sage" size="md" onClick={() => remount({ options: liveJustAdded.options, location: liveJustAdded.location, measuredBy: liveJustAdded.measuredBy })} className="w-full justify-center"><Plus className="w-4 h-4" />Add another like this</Btn>
+            <Btn variant="sage" size="md" onClick={() => remount({ options: liveJustAdded.options, location: liveJustAdded.location })} className="w-full justify-center"><Plus className="w-4 h-4" />Add another like this</Btn>
             <div className="grid grid-cols-2 gap-2 mt-2">
               <Btn variant="outline" size="md" onClick={() => onBack(categorySlug, product.familySlug)} className="justify-center">Another product</Btn>
               <Btn variant="primary" size="md" onClick={() => go("quote")} className="justify-center">View MyProject <ArrowRight className="w-4 h-4" /></Btn>

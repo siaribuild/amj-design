@@ -107,7 +107,7 @@ async function unresolvedLineCount(env: Env, projectId: string): Promise<number>
 
 interface LineRow {
   id: string; project_id: string; external_ref: string | null; room_label: string | null; product_slug: string;
-  options_json: string; dims_json: string; measured_by: string; qty: number; line_total: number | null; status: string;
+  options_json: string; dims_json: string; qty: number; line_total: number | null; status: string;
   origin?: string | null; review_json?: string | null;
   ai_proposal_line_id?: string | null; selected_variant_id?: string | null;
   configuration_snapshot_json?: string | null; pricing_snapshot_json?: string | null;

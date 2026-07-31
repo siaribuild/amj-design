@@ -1935,7 +1935,7 @@ export default function App() {
       setQuoteItems((r.items ?? []).map((it, i) => ({
         id: Date.now() + i, serverId: it.id,
         code: it.code, productSlug: it.productSlug, location: it.location,
-        measuredBy: it.measuredBy, width: it.width, height: it.height,
+        width: it.width, height: it.height,
         options: it.options, qty: it.qty, status: it.status,
         origin: it.origin, aiPriced: it.aiPriced, review: it.review ?? null, lineTotal: it.lineTotal,
       })));
@@ -1983,7 +1983,7 @@ export default function App() {
           setQuoteItems(r.items.map((it, i) => ({
             id: Date.now() + i, serverId: it.id,
             code: it.code, productSlug: it.productSlug, location: it.location,
-            measuredBy: it.measuredBy, width: it.width, height: it.height,
+            width: it.width, height: it.height,
             options: it.options, qty: it.qty, status: it.status,
             origin: it.origin, aiPriced: it.aiPriced, review: it.review ?? null, lineTotal: it.lineTotal,
           })));
@@ -2023,10 +2023,10 @@ export default function App() {
               const sent = idx >= 0 ? sentItems[idx] : undefined;
               if (!server || !sent) return it;
               const unchanged = JSON.stringify([
-                it.code, it.productSlug, it.location, it.measuredBy, it.width,
+                it.code, it.productSlug, it.location, it.width,
                 it.height, it.options, it.qty,
               ]) === JSON.stringify([
-                sent.code, sent.productSlug, sent.location, sent.measuredBy,
+                sent.code, sent.productSlug, sent.location,
                 sent.width, sent.height, sent.options, sent.qty,
               ]);
               if (!unchanged) return it;

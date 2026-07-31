@@ -247,8 +247,8 @@ export async function splitLine(env: Env, args: {
       `INSERT INTO quote_line
          (id, project_id, parent_line_id, segment_seq, qty_per_parent, line_kind,
           external_ref, room_label, product_slug, options_json, dims_json,
-          measured_by, qty, line_total, status, position, origin)
-       VALUES (?, ?, ?, ?, ?, 'segment', NULL, NULL, ?, ?, ?, '', ?, ?, ?, ?, ?)`,
+          qty, line_total, status, position, origin)
+       VALUES (?, ?, ?, ?, ?, 'segment', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       uuid(), parent.project_id, parent.id, i, Math.max(1, s.qtyPerParent ?? 1),
       s.productSlug, JSON.stringify(s.options),
@@ -411,8 +411,8 @@ export async function addSegment(env: Env, parentId: string): Promise<
     `INSERT INTO quote_line
        (id, project_id, parent_line_id, segment_seq, qty_per_parent, line_kind,
         external_ref, room_label, product_slug, options_json, dims_json,
-        measured_by, qty, line_total, status, position, origin)
-     VALUES (?, ?, ?, ?, 1, 'segment', NULL, NULL, ?, ?, ?, '', ?, ?, ?, ?, 'ops')`,
+        qty, line_total, status, position, origin)
+     VALUES (?, ?, ?, ?, 1, 'segment', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 'ops')`,
   ).bind(
     id, parent.project_id, parent.id, existing.length,
     last.product_slug, JSON.stringify(options),

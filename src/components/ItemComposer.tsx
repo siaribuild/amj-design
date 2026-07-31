@@ -13,7 +13,7 @@ import { Check, AlertCircle, Info, ChevronDown, Plus, Minus, Pencil, Trash2, Cop
 import { SAGE, WindowMark, Btn, FieldLabel, Input } from "../app/ui";
 import { type Product, getProductBySlug, getProductsByFamily } from "../data/catalogue";
 import {
-  type QItem, type QuoteState, type MeasuredBy, type OptionChoice, MEASURED_LABELS,
+  type QItem, type QuoteState, type OptionChoice,
   optionGroupsFor, defaultOptions, linePriceTotal, familyGroups,
   fmt, mm, productLabel, POPULAR_COLOURS, normCode, suggestCode, clearReviewKey, lineBlocksSubmission,
 } from "../data/configurator";
@@ -78,9 +78,6 @@ export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; to
   );
 }
 
-const MEASURE_OPTIONS: { id: Exclude<MeasuredBy, "">; label: string }[] = [
-  { id: "frame", label: "Frame size" }, { id: "opening", label: "Opening size" }, { id: "unsure", label: "Not sure" },
-];
 const selectClass = "w-full border border-ink/20 bg-white pl-3 pr-9 py-2.5 text-sm text-ink focus:outline-none focus:border-sage transition-colors appearance-none cursor-pointer";
 
 function inRangeFor(p: Product, w: number, h: number) {
@@ -114,9 +111,9 @@ export function itemNeedsAttention(item: QItem): boolean {
 }
 
 // ─── Field blocks (shared by the new-item form and the MyProject card) ────────
-function DimensionsFields({ p, width, height, measuredBy, setWidth, setHeight, setMeasuredBy, rail = false }: {
-  p: Product; width: string; height: string; measuredBy: MeasuredBy;
-  setWidth: (v: string) => void; setHeight: (v: string) => void; setMeasuredBy: (v: MeasuredBy) => void; rail?: boolean;
+function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false }: {
+  p: Product; width: string; height: string;
+  setWidth: (v: string) => void; setHeight: (v: string) => void; rail?: boolean;
 }) {
   const w = parseInt(width) || 0, h = parseInt(height) || 0;
   const dimsEntered = w > 0 && h > 0;
@@ -168,20 +165,6 @@ function DimensionsFields({ p, width, height, measuredBy, setWidth, setHeight, s
           )}
         </div>
       </div>
-      {/* Measurement basis — after the size has been entered */}
-      {dimsEntered && (
-        <div className="mt-4">
-          <p className="text-[10px] uppercase tracking-widest text-body mb-2">How did you measure?</p>
-          <div className="grid grid-cols-3 gap-1.5">
-            {MEASURE_OPTIONS.map(m => (
-              <button key={m.id} onClick={() => setMeasuredBy(m.id)}
-                className={`px-2 py-2 text-xs border transition-colors cursor-pointer ${measuredBy === m.id ? "border-sage bg-sage text-white font-medium" : "border-black/15 bg-white text-ink hover:border-sage/60"}`}>
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -400,7 +383,6 @@ export function ItemForm({
   const [code, setCode] = useState(seed?.code || (productSlug ? suggestCode(quote.items, productSlug) : ""));
   const [codeEdited, setCodeEdited] = useState(!!seed?.code);
 
-  const [measuredBy, setMeasuredBy] = useState<MeasuredBy>(seed?.measuredBy || "");
   const [width, setWidth] = useState(seed?.width || "");
   const [height, setHeight] = useState(seed?.height || "");
   const [options, setOptions] = useState<Record<string, string>>(seed?.options ? { ...seed.options } : (p ? defaultOptions(p) : {}));
@@ -440,7 +422,7 @@ export function ItemForm({
   // Oversize is submittable, flagged; undersize is a typo and blocks.
   const canSave = priced.ok && !tooSmall && !duplicateCode;
   const built: Omit<QItem, "id"> = {
-    code: finalCode, productSlug, location, measuredBy, width, height, options, qty,
+    code: finalCode, productSlug, location, width, height, options, qty,
     status: oversize ? "Needs review" : "Ready",
     review: oversize
       ? { fit: "No single unit is made at this size — we will confirm how it is built and price it at technical review." }
@@ -458,14 +440,14 @@ export function ItemForm({
 
   const famGroups = familyGroups();
   const familyProducts = familySlug ? getProductsByFamily(familySlug) : [];
-  const dimsSummary = dimsEntered ? `${mm(width)} × ${mm(height)}${measuredBy ? ` · ${MEASURED_LABELS[measuredBy as Exclude<MeasuredBy, "">]}` : ""}` : "Enter the opening size";
+  const dimsSummary = dimsEntered ? `${mm(width)} × ${mm(height)}` : "Enter the opening size";
   const qtySummary = `Qty ${qty}${location ? ` · ${location}` : ""}`;
   const issues = p ? itemIssues(p, { width, height, options }) : [];
   const hasIssue = (s: EditFocus) => issues.some(i => i.section === s);
 
   // Dismissing the draft: silent for an empty/product-only form, but a real
   // in-progress item asks first (inline — no modal, matching the page).
-  const dirty = !!productSlug && (dimsEntered || !!location.trim() || measuredBy !== "" || codeEdited);
+  const dirty = !!productSlug && (dimsEntered || !!location.trim() || codeEdited);
   const requestCancel = () => { if (dirty && !confirmClose) { setConfirmClose(true); return; } onCancel?.(); };
 
   return (
@@ -542,7 +524,7 @@ export function ItemForm({
         {p && (
           <div className="space-y-2">
             <Section label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open.dims} onToggle={() => setOpen(o => ({ ...o, dims: !o.dims }))}>
-              <DimensionsFields p={p} width={width} height={height} measuredBy={measuredBy} setWidth={setWidth} setHeight={setHeight} setMeasuredBy={setMeasuredBy} rail={rail} />
+              <DimensionsFields p={p} width={width} height={height} setWidth={setWidth} setHeight={setHeight} rail={rail} />
             </Section>
             <Section label="Options" summary={optionSummaryOf(p, options)} attention={hasIssue("options")} open={open.options} onToggle={() => setOpen(o => ({ ...o, options: !o.options }))}>
               <OptionsFields p={p} options={options} setOpt={setOpt} />
@@ -704,7 +686,7 @@ export function ItemSummaryCard({
   const toggle = (s: EditFocus) => setOpen(o => (o === s ? null : s));
   const update = (patch: Partial<QItem>) => quote.update(item.id, patch);
 
-  const dimsSummary = w && h ? `${mm(item.width)} × ${mm(item.height)}${item.measuredBy ? ` · ${MEASURED_LABELS[item.measuredBy as Exclude<MeasuredBy, "">]}` : ""}` : "Enter the opening size";
+  const dimsSummary = w && h ? `${mm(item.width)} × ${mm(item.height)}` : "Enter the opening size";
   const qtySummary = `Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
   const summaryLine = `${dimsSummary} · Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
   const selectedOptionsSummary = optionSummaryOf(p, item.options);
@@ -860,10 +842,9 @@ export function ItemSummaryCard({
           {p ? (
             <>
               <Section variant="row" label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open === "dims"} onToggle={() => toggle("dims")}>
-                <DimensionsFields p={p} width={item.width} height={item.height} measuredBy={item.measuredBy}
+                <DimensionsFields p={p} width={item.width} height={item.height}
                   setWidth={v => update({ width: v, review: clearReviewKey(item.review, "dims") })}
-                  setHeight={v => update({ height: v, review: clearReviewKey(item.review, "dims") })}
-                  setMeasuredBy={v => update({ measuredBy: v })} />
+                  setHeight={v => update({ height: v, review: clearReviewKey(item.review, "dims") })} />
               </Section>
               <Section variant="row" label="Options" summary={optionSummaryOf(p, item.options)} attention={hasIssue("options")} open={open === "options"} onToggle={() => toggle("options")}>
                 <OptionsFields p={p} options={item.options} setOpt={(t, v) => update({ options: { ...item.options, [t]: v }, review: clearReviewKey(item.review, "options") })} />

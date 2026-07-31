@@ -14,18 +14,12 @@
 import { type Product, getProductBySlug, getCategories, getFamiliesByCategory, colorbondColourOptions } from "./catalogue";
 
 // ─── Quote (MyProject) state ──────────────────────────────────────────────────
-export type MeasuredBy = "" | "frame" | "opening" | "unsure";
-export const MEASURED_LABELS: Record<Exclude<MeasuredBy, "">, string> = {
-  frame: "Frame size", opening: "Opening size", unsure: "Not sure",
-};
-
 export interface QItem {
   id: number;      // LOCAL ephemeral id for React keys / store operations
   serverId?: string; // STABLE server line id, round-tripped so saves upsert (P1-03)
   code: string;    // schedule/item code (W01, D03…) — primary builder reference
   productSlug: string;
   location: string;
-  measuredBy: MeasuredBy; // how the customer measured — kept for technical review
   width: string;   // mm (string while editing)
   height: string;  // mm
   options: Record<string, string>; // optionTypeSlug -> chosen option name
@@ -114,7 +108,6 @@ export const REVIEW_SEVERITY: Record<string, ReviewSeverity> = {
   // Critical missing input — the customer must resolve these.
   dims: "error",              // size unreadable/absent
   qty: "error",               // quantity unreadable — never silently assumed
-  measuredBy: "error",        // frame vs opening unknown — changes the size
   options: "error",           // a required option is unset
   product: "error",           // no product at all and none can be substituted
   // technical decisions — priced best-fit, flagged, submittable.
@@ -281,9 +274,9 @@ export function defaultOptions(p: Product): Record<string, string> {
 }
 
 const DEMO_SCHEDULE_ITEMS = [
-  { code: "W01", productSlug: "amj80-series-sliding-window", location: "Living room", measuredBy: "opening" as const, width: "1750", height: "1200", qty: 4 },
-  { code: "W02", productSlug: "amj80-series-awning-window", location: "Kitchen", measuredBy: "opening" as const, width: "900", height: "1200", qty: 2 },
-  { code: "W04", productSlug: "amj80-series-casement-window", location: "Bedroom 1", measuredBy: "" as const, width: "700", height: "", qty: 2 },
+  { code: "W01", productSlug: "amj80-series-sliding-window", location: "Living room", width: "1750", height: "1200", qty: 4 },
+  { code: "W02", productSlug: "amj80-series-awning-window", location: "Kitchen", width: "900", height: "1200", qty: 2 },
+  { code: "W04", productSlug: "amj80-series-casement-window", location: "Bedroom 1", width: "700", height: "", qty: 2 },
 ];
 
 // Shared demo import used by every simulated schedule-upload entry point.

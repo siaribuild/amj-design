@@ -165,7 +165,6 @@ test("schedule defaults are stated, not guessed: qty 1 per row, sizes are OPENIN
   // asked directly.
   for (const l of lines) {
     assert.equal(l.qty, 1);
-    assert.equal(l.measuredBy, "opening");
   }
 });
 

@@ -29,13 +29,13 @@ INSERT INTO membership (id, user_id, organisation_id, role) VALUES
 INSERT INTO project (id, organisation_id, owner_user_id, title, status_customer, status_internal, public_ref, created_at, updated_at) VALUES
   ('p_draft', 'org_demo', 'u_demo', 'Coburg new build', 'draft', 'draft', 'OF-Q-10001', datetime('now','-1 hours'), datetime('now'));
 
-INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position) VALUES
+INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position) VALUES
   ('ql_1', 'p_draft', 'W01', 'Living room', 'amj80-series-sliding-window',
     '{"colour":"Dover White","hardware":"AMJ Standard D Shape Handle","flyscreen":"None","installation":"Sub Sill & Head"}',
-    '{"width":"1200","height":"900"}', 'opening', 2, 1020, 'ready', 0),
+    '{"width":"1200","height":"900"}', 2, 1020, 'ready', 0),
   ('ql_2', 'p_draft', 'W02', 'Kitchen', 'amj80-series-awning-window',
     '{"colour":"Monument","hardware":"AMJ Standard Chain Winder","flyscreen":"None","installation":"Sub Sill & Head"}',
-    '{"width":"900","height":"1200"}', 'opening', 1, 720, 'ready', 1);
+    '{"width":"900","height":"1200"}', 1, 720, 'ready', 1);
 
 -- ── Converted project + in-progress order (for tracker tests) ────────────────
 INSERT INTO project (id, organisation_id, owner_user_id, title, status_customer, status_internal, public_ref, created_at, updated_at) VALUES
@@ -70,10 +70,10 @@ INSERT INTO membership (id, user_id, organisation_id, role) VALUES
 INSERT INTO project (id, organisation_id, owner_user_id, title, status_customer, status_internal, public_ref, created_at, updated_at) VALUES
   ('p_submitted', 'org_north', 'u_sarah', 'Fitzroy townhouses', 'submitted', 'submitted', 'OF-Q-10003', datetime('now','-2 days'), datetime('now','-2 days'));
 
-INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position) VALUES
+INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position) VALUES
   ('ql_s1', 'p_submitted', 'W01', 'Bed 1', 'amj80-series-sliding-window',
     '{"colour":"Monument","hardware":"AMJ Standard D Shape Handle","flyscreen":"None","installation":"Sub Sill & Head"}',
-    '{"width":"1500","height":"1200"}', 'opening', 6, 1350, 'ready', 0),
+    '{"width":"1500","height":"1200"}', 6, 1350, 'ready', 0),
   ('ql_s2', 'p_submitted', 'D01', 'Living', 'amj80-series-sliding-door',
     '{"colour":"Monument","hardware":"AMJ Standard D Shape Handle","flyscreen":"None","installation":"Sub Sill & Head"}',
-    '{"width":"2400","height":"2100"}', 'opening', 3, 3200, 'ready', 1);
+    '{"width":"2400","height":"2100"}', 3, 3200, 'ready', 1);

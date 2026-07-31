@@ -344,12 +344,12 @@ export async function runScheduleParse(
       added++;
       qlId = uuid();
       stmts.push(env.DB.prepare(
-        `INSERT INTO quote_line (id, project_id, revision_id, external_ref, room_label, product_slug, options_json, dims_json, measured_by, qty, line_total, status, position, origin, review_json)
-         SELECT ?,?,NULL,?,?,?,?,?,?,?,?,?,?, 'schedule', ?
+        `INSERT INTO quote_line (id, project_id, revision_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, origin, review_json)
+         SELECT ?,?,NULL,?,?,?,?,?,?,?,?,?, 'schedule', ?
           WHERE ${mutationGuard}`,
       ).bind(
         qlId, project.id, l.code || null, l.location || null, l.productSlug,
-        JSON.stringify(l.options), JSON.stringify({ width: l.width, height: l.height }), l.measuredBy || "",
+        JSON.stringify(l.options), JSON.stringify({ width: l.width, height: l.height }),
         l.qty, lineTotal, status, position++, l.review ? JSON.stringify(l.review) : null,
         project.id, nextQuoteVersion, mutationToken,
       ));

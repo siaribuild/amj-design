@@ -189,7 +189,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
     await t.test("autosave upserts by stable id, preserving parse-line provenance (P1-03)", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "provenance@example.com");
-      const base = { productSlug: "amj80-series-sliding-window", measuredBy: "frame", width: "1200", height: "900", qty: 1,
+      const base = { productSlug: "amj80-series-sliding-window", width: "1200", height: "900", qty: 1,
         options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" } };
       const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [{ ...base, code: "W01" }, { ...base, code: "W02" }] } });
       const pid = saved.body.project.id;
@@ -464,7 +464,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "Sam", email: "sam@example.com" } } }, 400);
 
       // A fully-priced line makes the quote submittable.
-      const line = { code: "W01", location: "Living", productSlug: "amj80-series-sliding-window", measuredBy: "frame", width: "1200", height: "900", qty: 1,
+      const line = { code: "W01", location: "Living", productSlug: "amj80-series-sliding-window", width: "1200", height: "900", qty: 1,
         options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" } };
       const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
       assert.equal(saved.body.items[0].status, "Ready");
@@ -666,7 +666,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
     await t.test("registered customer AI edits reach staff repricing but cannot pass approval unpriced", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "ai-edit@example.com");
-      const line = { code: "W09", location: "Study", productSlug: "amj80-series-awning-window", measuredBy: "frame", width: "900", height: "1200", qty: 1,
+      const line = { code: "W09", location: "Study", productSlug: "amj80-series-awning-window", width: "900", height: "1200", qty: 1,
         options: { colour: "Monument", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" } };
       const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
       const pid = saved.body.project.id;
@@ -698,7 +698,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
     await t.test("account discount: registered prices below anonymous, and the browser cannot set it", async () => {
       const line = {
         code: "W01", location: "Discount probe", productSlug: "amj80-series-sliding-window",
-        measuredBy: "opening", width: "1200", height: "900", qty: 1,
+        width: "1200", height: "900", qty: 1,
         options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
         lineTotal: 1,
       };
