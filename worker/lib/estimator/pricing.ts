@@ -30,7 +30,12 @@ export interface OptionSurcharge {
   value: number;         // $/unit for per_unit, $/m² for per_sqm
   basis: SurchargeBasis;
 }
-const coerceBasis = (v: unknown): SurchargeBasis => (v === "per_sqm" ? "per_sqm" : "per_unit");
+// M5: null/absent basis is the DB default (per_unit — the column is NOT NULL
+// DEFAULT 'per_unit'), but a WRONG value (e.g. a "per_sq" typo) returns null so the
+// caller treats that surcharge as MISSING (fail-closed), never as a silent per_unit
+// downgrade that would under-charge a large opening.
+const validBasis = (v: unknown): SurchargeBasis | null =>
+  v === "per_sqm" ? "per_sqm" : v == null || v === "per_unit" ? "per_unit" : null;
 
 // A per-product conditional pricing rule (private D1, table `pricing_modifier`).
 // The manufacturer's model is universal in shape but owned per rate card.
@@ -256,8 +261,9 @@ export async function loadOptionSurcharges(env: Env, optionSlugs: string[], requ
   const missing: string[] = [];
   for (const slug of unique) {
     const r = await env.DB.prepare("SELECT surcharge, basis FROM pricing_option_surcharge WHERE id = ? AND active = 1").bind(slug).first<{ surcharge: number; basis: string }>();
-    if (r && Number.isFinite(r.surcharge)) out.push({ value: r.surcharge, basis: coerceBasis(r.basis) });
-    else missing.push(slug);
+    const basis = validBasis(r?.basis);
+    if (r && Number.isFinite(r.surcharge) && basis) out.push({ value: r.surcharge, basis });
+    else missing.push(slug); // no row, non-finite surcharge, or invalid basis ⇒ fail-closed
   }
   if (requireAll && missing.length) throw new MissingSurcharge(missing);
   return out;
@@ -335,8 +341,12 @@ export async function createCachedPriceResolver(
   }
   const surcharges = new Map<string, OptionSurcharge>(
     (surchargeResult.results ?? [])
-      .filter((row) => Number.isFinite(row.surcharge))
-      .map((row) => [row.id, { value: row.surcharge, basis: coerceBasis(row.basis) }] as const),
+      .flatMap((row) => {
+        const basis = validBasis(row.basis);
+        // A row with a bad basis is dropped from the map ⇒ treated as MISSING by
+        // the requireAllOptions check downstream (fail-closed), never per_unit.
+        return Number.isFinite(row.surcharge) && basis ? [[row.id, { value: row.surcharge, basis }] as const] : [];
+      }),
   );
   const modifiers = new Map<string, PricingModifier[]>();
   for (const row of modifierResult.results ?? []) {

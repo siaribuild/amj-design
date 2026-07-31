@@ -354,6 +354,19 @@ opsPricing.put("/options/:slug", async (c) => {
     : body?.basis === "per_unit" ? "per_unit"
     : (before?.basis === "per_sqm" ? "per_sqm" : "per_unit");
 
+  // M5/D9 safeguard: a non-zero per-m² (glass) surcharge must not go live while any
+  // active rate card still bakes glass into its area_rate — that would double-charge
+  // glass. Block it until every card is trimmed to frame/labour (glass_excluded_from_area_rate=1).
+  if (basis === "per_sqm" && surcharge > 0) {
+    const untrimmed = await c.env.DB.prepare(
+      "SELECT count(*) AS n FROM pricing_rate_card WHERE active = 1 AND COALESCE(glass_excluded_from_area_rate, 0) = 0",
+    ).first<{ n: number }>();
+    if (Number(untrimmed?.n ?? 0) > 0) {
+      return c.json({ error: "area_rate_still_includes_glass",
+        detail: `Trim each rate card's area rate to frame/labour and mark glass excluded before setting a per-m² glass price (${untrimmed?.n} card(s) not yet trimmed).` }, 409);
+    }
+  }
+
   // Closing a reconciliation gap is an INSERT, not an update — and it must be
   // possible here rather than in a migration, because a context switch to a
   // deploy is exactly how the empty-table state survived twelve migrations.
