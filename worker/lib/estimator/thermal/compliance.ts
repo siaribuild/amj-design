@@ -44,6 +44,10 @@ export function gradedComplianceScore(cell: GlassCell, band: ThermalBand): numbe
   }
 
   if (!penalties.length) return 1; // fully in band, or no band at all.
+  // TODO(glazing-thermal-M4 / D2): worst-axis-only ties a strictly-worse cell with
+  // an equal-worst-axis cell — harmless at 1 variant, but it FLATTENS real thermal
+  // differences among ~14 near-band glasses. Blend the axes (weighted / RMS) so a
+  // cell worse on ANY axis scores strictly lower, and factor shgcTarget distance.
   const worst = Math.max(...penalties);
   return Math.max(FLOOR, 1 - worst);
 }

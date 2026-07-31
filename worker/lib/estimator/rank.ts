@@ -82,6 +82,12 @@ function variantCell(v: PerformanceVariant | null): GlassCell | null {
 // so among always-eligible glasses the one closest to the band ranks highest.
 // The band is coherence-guarded so an impossible requirement cannot mis-score.
 function complianceScore(opening: OpeningInput, variant: PerformanceVariant | null): number {
+  // TODO(glazing-thermal-M4 / D2): this band diverges from what rules.ts enforces
+  // (explicit-else-advisory here vs the explicit∩advisory intersection in
+  // effectiveThermalRequirements). Resolve ONE shared band via resolveThermalBand
+  // so rank order reflects the enforced band, and fold shgcTarget into the score
+  // (gradedComplianceScore ignores it today) so the report's preferred SHGC is
+  // consulted when ~14 glazings compete. Matters only once products have >1 variant.
   const { band } = coerceCoherent(bandFromRequirements(opening.requirements ?? opening.advisoryRequirements));
   const cell = variantCell(variant);
   if (!band || !bandHasConstraint(band)) {

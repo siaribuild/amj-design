@@ -134,6 +134,16 @@ export const option = defineType({
     // ── Estimator technical contract (spec §4) ──
     defineField({ name: "technicalValue", title: "Technical value", type: "string",
       description: "Machine value the rules engine reads (e.g. 'toughened', 'restrictor_125mm'), distinct from the display name." }),
+    // SCAFFOLD (glazing/thermal, M1/D1): glazing choices stay OPTIONS. These two
+    // fields carry the glass identity for glazing options only; the machine class
+    // (single_clear / double_lowe / triple_lowe …) is technicalValue, to be
+    // constrained to an enum in M2. Non-glazing options leave them blank.
+    defineField({ name: "glassSpecification", title: "Glass specification", type: "string",
+      options: { list: [{ title: "Single glazed (SG)", value: "SG" }, { title: "Double glazed (DG)", value: "DG" }, { title: "Triple glazed (TG)", value: "TG" }] },
+      description: "Glazing options only — WERS GlassSpecification." }),
+    defineField({ name: "glassType", title: "Glass type", type: "string",
+      options: { list: [{ title: "Clear", value: "clear" }, { title: "Toned", value: "toned" }, { title: "Low-E", value: "low_e" }] },
+      description: "Glazing options only — WERS GlassType." }),
     defineField({ name: "reviewRequired", title: "Requires review", type: "boolean", initialValue: false,
       description: "When set, selecting this option always routes the line to manual technical review." }),
     defineField({
@@ -285,6 +295,7 @@ const RECORD_GROUPS = [
 // Product adds a Technical tab for the estimator's machine-readable contract.
 const PRODUCT_GROUPS = [
   { name: "content", title: "Content", default: true },
+  { name: "glazing", title: "Glazing" }, // SCAFFOLD (M1/D1): glazing/thermal tab
   { name: "technical", title: "Technical (estimator)" },
   { name: "seo", title: "SEO" },
 ];
@@ -465,11 +476,18 @@ export const product = defineType({
       description: "Shared options offered on this product, each marked standard or optional.",
     }),
     defineField({ name: "featuredOrder", type: "number", group: "content" }),
+    // ── Glazing / thermal (SCAFFOLD M1/D5) ──
+    // The glazings this product offers + their whole-window Uw/SHGC/stars come from
+    // its FRAME's shared thermal profile. Hardware-twin products share one profile.
+    // The estimator switches to reading via this ref in M2; `performanceVariants`
+    // below is the legacy per-product matrix, kept until the WERS import + M2 land.
+    defineField({ name: "thermalProfile", title: "Thermal profile (frame)", type: "reference", to: [{ type: "thermalProfile" }], group: "glazing",
+      description: "The manufacturer frame this product is built on — supplies its glazing choices and WERS Uw/SHGC/stars." }),
     // ── Estimator technical contract (spec §4) ──
     dimensionRule,
-    defineField({ name: "performanceVariants", title: "Performance variants", type: "array", of: [performanceVariant], group: "technical",
+    defineField({ name: "performanceVariants", title: "Performance variants (legacy)", type: "array", of: [performanceVariant], group: "technical",
       validation: (r) => r.unique(),
-      description: "Whole-window Uw/SHGC per glass build-up. Estimated values must be dataSource:estimated / certified:false." }),
+      description: "LEGACY — being replaced by the shared Thermal profile (Glazing tab). Whole-window Uw/SHGC per glass build-up." }),
     defineField({ name: "pricingRef", title: "Pricing ref", type: "string", group: "technical",
       description: "Key into the PRIVATE D1 rate card. Pricing itself is never stored in Sanity." }),
     defineField({ name: "schemaVersion", title: "Estimator schema version", type: "number", group: "technical", initialValue: 1,
@@ -910,4 +928,55 @@ export const emailTemplate = defineType({
   },
 });
 
-export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation, siteSettings, postCategory, postAttachment, post, emailTemplate];
+// ── SCAFFOLD (glazing/thermal, M1 / D5) — shared per-frame thermal profile ────
+// One document per manufacturer WERS "frame" (series × operation, e.g. "AMJ80
+// Awning"): holds that frame's glazing × thermal matrix. Products reference their
+// frame's profile (product.thermalProfile), so hardware-twin products that share
+// a frame do not duplicate the matrix. Uw/SHGC/stars are PUBLIC WERS certificate
+// data and live here in the public catalogue; the glass PRICE stays private in D1.
+const thermalProfileRow = defineArrayMember({
+  type: "object",
+  name: "thermalProfileRow",
+  title: "Glazing row",
+  fields: [
+    defineField({ name: "glazing", title: "Glazing", type: "reference", to: [{ type: "option" }], validation: (r) => r.required(),
+      description: "The glazing option this row rates (a shared option under the glazing type)." }),
+    defineField({ name: "uValue", title: "Uw", type: "number", validation: (r) => r.min(0.5).max(10) }),
+    defineField({ name: "shgc", title: "SHGC", type: "number", validation: (r) => r.min(0).max(1) }),
+    defineField({ name: "tvw", title: "Tvw", type: "number", validation: (r) => r.min(0).max(1) }),
+    defineField({ name: "heatingStars", title: "Heating stars", type: "number", validation: (r) => r.min(0).max(10) }),
+    defineField({ name: "coolingStars", title: "Cooling stars", type: "number", validation: (r) => r.min(0).max(10) }),
+    defineField({ name: "heatingPercentage", title: "Heating %", type: "number" }),
+    defineField({ name: "coolingPercentage", title: "Cooling %", type: "number" }),
+    defineField({ name: "airInfiltration", title: "Air infiltration", type: "number" }),
+    defineField({ name: "wersWindowId", title: "WERS window id", type: "string", description: "Provenance — WERS WindowId." }),
+    defineField({ name: "certified", title: "Certified", type: "boolean", initialValue: true }),
+    defineField({ name: "certificationRef", title: "Certification ref", type: "string" }),
+    defineField({ name: "published", title: "Published (eligible for selection)", type: "boolean", initialValue: true }),
+  ],
+  preview: {
+    select: { title: "glazing.name", u: "uValue", shgc: "shgc" },
+    prepare: ({ title, u, shgc }: any) => ({ title: title || "glazing", subtitle: `Uw ${u ?? "?"} · SHGC ${shgc ?? "?"}` }),
+  },
+});
+
+export const thermalProfile = defineType({
+  name: "thermalProfile",
+  title: "Thermal profile (frame)",
+  type: "document",
+  fields: [
+    defineField({ name: "name", title: "Frame", type: "string", validation: (r) => r.required(),
+      description: 'The manufacturer frame this profile rates, e.g. "AMJ80 Awning" (WERS FrameDescription = series × operation).' }),
+    defineField({ name: "slug", type: "slug", options: { source: "name" }, validation: (r) => r.required() }),
+    defineField({ name: "frameTechnology", title: "Frame technology", type: "string", initialValue: "unknown",
+      options: { list: [{ title: "Conventional", value: "conventional" }, { title: "Thermally broken", value: "thermally_broken" }, { title: "Unknown", value: "unknown" }] } }),
+    defineField({ name: "rows", title: "Glazing rows", type: "array", of: [thermalProfileRow], validation: (r) => r.unique(),
+      description: "One row per glazing this frame is rated for — the WERS matrix for this frame." }),
+  ],
+  preview: {
+    select: { title: "name", rows: "rows" },
+    prepare: ({ title, rows }: any) => ({ title, subtitle: `${(rows || []).length} glazings` }),
+  },
+});
+
+export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation, siteSettings, postCategory, postAttachment, post, emailTemplate, thermalProfile];
