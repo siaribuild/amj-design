@@ -17,9 +17,25 @@ const FLOOR = 0.1;
 const SHGC_SPAN = 0.2;
 const UVALUE_SPAN = 1.5;
 
-/** 0..1: how well a (frame×glass) cell meets the band. 1.0 = fully in band;
- *  degrades smoothly with distance; floored above 0. An absent band axis is
- *  neutral (no penalty on that axis). */
+// Weight of the in-band SHGC-target refinement (M4/D2). Small, so it only orders
+// cells that are OTHERWISE equal on the band — the report's preferred SHGC (or the
+// band midpoint) becomes the tie-break among ~14 near-band glasses without letting
+// a preference override the band itself.
+const TARGET_WEIGHT = 0.15;
+
+/** The SHGC value a cell should aim at: the report's target if given, else the
+ *  midpoint of a two-sided band. Single-bound bands have no midpoint — the band
+ *  penalty already encodes the direction, so no in-band refinement is applied. */
+function shgcTargetOf(band: ThermalBand): number | null {
+  if (band.shgcTarget != null) return band.shgcTarget;
+  if (band.minShgc != null && band.maxShgc != null) return (band.minShgc + band.maxShgc) / 2;
+  return null;
+}
+
+/** 0..1: how well a (frame×glass) cell meets the band. 1.0 = fully in band and on
+ *  target; degrades smoothly with distance; floored above 0. An absent band axis is
+ *  neutral. M4: axes are BLENDED (probabilistic-OR) so a cell worse on ANY axis
+ *  scores strictly lower — no more worst-axis ties among many near-band glasses. */
 export function gradedComplianceScore(cell: GlassCell, band: ThermalBand): number {
   const penalties: number[] = [];
 
@@ -43,11 +59,15 @@ export function gradedComplianceScore(cell: GlassCell, band: ThermalBand): numbe
     }
   }
 
-  if (!penalties.length) return 1; // fully in band, or no band at all.
-  // TODO(glazing-thermal-M4 / D2): worst-axis-only ties a strictly-worse cell with
-  // an equal-worst-axis cell — harmless at 1 variant, but it FLATTENS real thermal
-  // differences among ~14 near-band glasses. Blend the axes (weighted / RMS) so a
-  // cell worse on ANY axis scores strictly lower, and factor shgcTarget distance.
-  const worst = Math.max(...penalties);
-  return Math.max(FLOOR, 1 - worst);
+  // Blend across axes: 1 − Π(1 − pᵢ). Worst axis still dominates, but a second
+  // adverse axis lowers the score further — strictly monotonic, unlike max().
+  const bandPenalty = penalties.length ? 1 - penalties.reduce((acc, p) => acc * (1 - p), 1) : 0;
+
+  // In-band SHGC-target refinement (small): among cells the band treats equally,
+  // prefer the one nearest the report's target / the band midpoint.
+  const target = shgcTargetOf(band);
+  const tdist = target != null && cell.shgc != null ? clamp01(Math.abs(cell.shgc - target) / SHGC_SPAN) : 0;
+
+  const raw = (1 - bandPenalty) * (1 - TARGET_WEIGHT * tdist);
+  return Math.max(FLOOR, raw);
 }

@@ -1,10 +1,9 @@
 import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./types";
-import type { RuleOutcome } from "./rules";
+import { effectiveThermalRequirements, type RuleOutcome } from "./rules";
 import type { PriceSnapshot } from "./pricing";
 import { variantAffinityScore } from "./configuration";
 import { gradedComplianceScore } from "./thermal/compliance";
-import { coerceCoherent, bandFromRequirements, bandHasConstraint } from "./thermal/precedence";
-import type { GlassCell } from "./thermal/types";
+import type { GlassCell, ThermalBand } from "./thermal/types";
 
 // v3: compliance is GRADED (distance-to-band, floored above 0) instead of a
 // hard-0 veto, so a thermal miss depresses rank without eliminating the line.
@@ -82,19 +81,18 @@ function variantCell(v: PerformanceVariant | null): GlassCell | null {
 // so among always-eligible glasses the one closest to the band ranks highest.
 // The band is coherence-guarded so an impossible requirement cannot mis-score.
 function complianceScore(opening: OpeningInput, variant: PerformanceVariant | null): number {
-  // TODO(glazing-thermal-M4 / D2): this band diverges from what rules.ts enforces
-  // (explicit-else-advisory here vs the explicit∩advisory intersection in
-  // effectiveThermalRequirements). Resolve ONE shared band via resolveThermalBand
-  // so rank order reflects the enforced band, and fold shgcTarget into the score
-  // (gradedComplianceScore ignores it today) so the report's preferred SHGC is
-  // consulted when ~14 glazings compete. Matters only once products have >1 variant.
-  const { band } = coerceCoherent(bandFromRequirements(opening.requirements ?? opening.advisoryRequirements));
+  // M4/D2: score against the SAME enforced band rules apply (explicit ∩ advisory,
+  // coherence-guarded) — not a divergent explicit-else-advisory band — so rank
+  // order reflects what was enforced. gradedComplianceScore folds in the SHGC
+  // target (report value, else band midpoint) as a small in-band tie-break.
+  const req = effectiveThermalRequirements(opening);
   const cell = variantCell(variant);
-  if (!band || !bandHasConstraint(band)) {
+  if (!req) {
     // No thermal band to meet — mildly prefer known/certified data, as before.
     return cell ? (cell.certified ? 0.8 : 0.6) : 0.4;
   }
   if (!cell) return 0.4;
+  const band: ThermalBand = { maxUValue: req.maxUValue ?? null, minShgc: req.minShgc ?? null, maxShgc: req.maxShgc ?? null, shgcTarget: null };
   return gradedComplianceScore(cell, band);
 }
 

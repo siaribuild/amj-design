@@ -132,7 +132,9 @@ type ThermalLimits = NonNullable<OpeningInput["requirements"]>;
 // SECOND min>max collapse site. Delegate to thermal/precedence.resolveThermalBand
 // (explicit → per-type → computed, coherence-guarded) so one guarded path serves
 // both this and energyMap. Plan §2/WS2.
-function effectiveThermalRequirements(opening: OpeningInput): ThermalLimits | null {
+// Exported (M4/D2): the ranker scores against the SAME enforced band this
+// resolves, so rank order can no longer diverge from what the rules enforce.
+export function effectiveThermalRequirements(opening: OpeningInput): ThermalLimits | null {
   const explicit = opening.requirements ?? null;
   let merged: ThermalLimits | null;
   if (opening.thermalContext?.requirementBasis === "explicit_energy_report") {

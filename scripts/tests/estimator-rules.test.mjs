@@ -15,7 +15,8 @@ await build({
   stdin: {
     contents: `
       export { toCandidate, fixtureCatalogueRepository, createCatalogueRepository, catalogueCandidateReadiness } from ${p("worker/lib/estimator/catalogue.ts")};
-      export { checkHardRules, RULE_VERSION } from ${p("worker/lib/estimator/rules.ts")};
+      export { checkHardRules, RULE_VERSION, effectiveThermalRequirements } from ${p("worker/lib/estimator/rules.ts")};
+      export { gradedComplianceScore } from ${p("worker/lib/estimator/thermal/compliance.ts")};
       export { computePrice, loadOptionSurcharges, createCachedPriceResolver } from ${p("worker/lib/estimator/pricing.ts")};
       export { rankCandidates, selectWithConfidence } from ${p("worker/lib/estimator/rank.ts")};
       export { selectForOpening } from ${p("worker/lib/estimator/select.ts")};
@@ -27,7 +28,7 @@ await build({
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { toCandidate, fixtureCatalogueRepository, catalogueCandidateReadiness, checkHardRules, computePrice, loadOptionSurcharges, createCachedPriceResolver, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION } = await import(pathToFileURL(outfile).href);
+const { toCandidate, fixtureCatalogueRepository, catalogueCandidateReadiness, checkHardRules, computePrice, loadOptionSurcharges, createCachedPriceResolver, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION, effectiveThermalRequirements, gradedComplianceScore } = await import(pathToFileURL(outfile).href);
 
 const RATE = { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" };
 const POLICY = { depositPercent: 40, gstMode: "inc", version: "v1" };
@@ -227,6 +228,32 @@ test("M2: toCandidate reads the shared thermal profile, preferring it over legac
   assert.ok(c.performanceVariants.every((v) => v.frameTechnology === "thermally_broken"));
   assert.ok(c.performanceVariants.every((v) => v.certified && v.dataSource === "certified"));
   assert.equal(catalogueCandidateReadiness(c).ready, true, "a certified multi-glazing profile is ready");
+});
+
+test("M4: compliance blends axes — a cell adverse on two axes scores strictly lower than one", () => {
+  const band = { maxUValue: 3.0, minShgc: null, maxShgc: 0.4, shgcTarget: null };
+  const overU = { glassOptionSlug: "a", variantId: "a", uValue: 3.6, shgc: 0.4, certified: true, pricingOptionSlugs: [] };
+  const overBoth = { glassOptionSlug: "b", variantId: "b", uValue: 3.6, shgc: 0.6, certified: true, pricingOptionSlugs: [] };
+  assert.ok(gradedComplianceScore(overBoth, band) < gradedComplianceScore(overU, band),
+    "second adverse axis lowers the score — no worst-axis tie");
+});
+
+test("M4: in-band cells are ordered by nearness to the band midpoint", () => {
+  const band = { maxUValue: null, minShgc: 0.3, maxShgc: 0.5, shgcTarget: null }; // midpoint 0.4
+  const near = { glassOptionSlug: "n", variantId: "n", uValue: 3, shgc: 0.4, certified: true, pricingOptionSlugs: [] };
+  const edge = { glassOptionSlug: "f", variantId: "f", uValue: 3, shgc: 0.5, certified: true, pricingOptionSlugs: [] };
+  assert.ok(gradedComplianceScore(near, band) > gradedComplianceScore(edge, band), "nearest the midpoint ranks highest");
+  assert.ok(gradedComplianceScore(near, band) <= 1);
+});
+
+test("M4: the enforced band is the explicit ∩ advisory intersection (ranker shares it with rules)", () => {
+  const eff = effectiveThermalRequirements({
+    family: "windows", operationType: "awning", widthMm: 1000, heightMm: 1000,
+    requirements: { maxUValue: 3.0, minShgc: null, maxShgc: 0.5 },
+    advisoryRequirements: { maxUValue: 2.5, minShgc: null, maxShgc: null },
+  });
+  assert.equal(eff.maxUValue, 2.5, "tighter Uw cap from the advisory wins");
+  assert.equal(eff.maxShgc, 0.5, "SHGC cap from the explicit report");
 });
 
 test("a product's operation comes from its family (single intrinsic property)", () => {
