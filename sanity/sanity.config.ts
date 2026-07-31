@@ -29,7 +29,7 @@ const structure = (S: StructureBuilder) =>
         .child(
           S.documentTypeList("emailTemplate")
             .title("Email Templates")
-            .defaultOrdering([{ field: "audience", direction: "asc" }, { field: "title", direction: "asc" }]),
+            .defaultOrdering([{ field: "title", direction: "asc" }]),
         ),
       S.divider(),
       ...S.documentTypeListItems().filter((li) => !PINNED.includes(li.getId() ?? "")),

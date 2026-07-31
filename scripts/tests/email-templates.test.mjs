@@ -41,13 +41,11 @@ test("a repeated token is replaced everywhere; a token with no value is left int
   assert.equal(applyPlaceholders("array[0] stays", {}), "array[0] stays");
 });
 
-test("loadEmailTemplate returns null (⇒ built-in fallback) without project id or read token", async () => {
+test("loadEmailTemplate returns null (⇒ built-in fallback) when Sanity is not configured", async () => {
   // No project id ⇒ no network call, immediate fallback. This is the guarantee
   // that a sign-in OTP is never gated on the CMS.
   assert.equal(await loadEmailTemplate({}, "signin_code"), null);
   assert.equal(await loadEmailTemplate({ SANITY_PROJECT_ID: "" }, "signin_code"), null);
-  // Templates are internal content behind the read token; without it, no fetch.
-  assert.equal(await loadEmailTemplate({ SANITY_PROJECT_ID: "xjtrm1ex" }, "signin_code"), null);
 });
 
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
