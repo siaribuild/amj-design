@@ -33,9 +33,7 @@ export const CATALOGUE_QUERY = `{
   "products": *[_type=="product"]|order(featuredOrder asc){
     "id":_id, "slug":slug.current, name,
     "familySlug":family->slug.current, "categorySlug":category->slug.current,
-    shortDescription, descriptionParagraphs, standardGlass, hardware,
-    profileThickness, airTightness,
-    waterTightness, windPressure, notes,
+    shortDescription, descriptionParagraphs, standardGlass, notes,
     "dimensionRule": dimensionRule{ minWidthMm, maxWidthMm, minHeightMm, maxHeightMm },
     // The glass a manually-configured / schedule line carries by default (each
     // product ships exactly one glass identity). It is a per-m² chargeable option,
@@ -139,14 +137,12 @@ function normalizeProduct(p: any): Product {
     familySlug: p.familySlug ?? "", categorySlug: p.categorySlug ?? "",
     shortDescription: p.shortDescription ?? "",
     descriptionParagraphs: p.descriptionParagraphs ?? [],
-    standardGlass: p.standardGlass ?? "", hardware: p.hardware ?? "",
+    standardGlass: p.standardGlass ?? "",
     // Single size source: the estimator's dimensionRule (the Content-tab min/max
     // were removed in the 2026-07-31 rationalisation so the two can't diverge).
     minWidth: p.dimensionRule?.minWidthMm ?? null, minHeight: p.dimensionRule?.minHeightMm ?? null,
     maxWidth: p.dimensionRule?.maxWidthMm ?? null, maxHeight: p.dimensionRule?.maxHeightMm ?? null,
     defaultGlazingSlug: p.defaultGlazingSlug ?? null,
-    profileThickness: p.profileThickness ?? "", airTightness: p.airTightness ?? "",
-    waterTightness: p.waterTightness ?? "", windPressure: p.windPressure ?? "",
     notes: p.notes ?? "", heroImage: normalizeImage(p.heroImage) ?? "",
     gallery: (p.gallery ?? []).map(normalizeImage).filter(Boolean),
     keySpecs: p.keySpecs ?? [], specs: p.specs ?? [],

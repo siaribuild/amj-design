@@ -116,9 +116,8 @@ test("catalogue query normalization and runtime hydration", async () => {
     const replacement = {
       id: "regression-product", slug: "regression-product", name: "Regression Product",
       familySlug: "regression-family", categorySlug: "regression-category",
-      shortDescription: "", descriptionParagraphs: [], standardGlass: "", hardware: "",
+      shortDescription: "", descriptionParagraphs: [], standardGlass: "",
       minWidth: null, minHeight: null, maxWidth: null, maxHeight: null,
-      profileThickness: "", airTightness: "", waterTightness: "", windPressure: "",
       notes: "", heroImage: "", gallery: [], keySpecs: [], specs: [], options: [], featuredOrder: 0,
     };
     catalogue.hydrateCatalogue({ products: [replacement], colours: normalized.colours });

@@ -450,14 +450,11 @@ export const product = defineType({
     defineField({ name: "shortDescription", type: "text", rows: 2, group: "content" }),
     defineField({ name: "descriptionParagraphs", type: "array", of: [{ type: "text" }], group: "content" }),
     defineField({ name: "standardGlass", type: "string", group: "content" }),
-    defineField({ name: "hardware", type: "string", group: "content" }),
-    // Size range moved to the single source of truth: Technical → Dimension rule
-    // (min/maxWidthMm, min/maxHeightMm). The customer-facing "fits X–Y" is derived
-    // from it, so the estimator and the display can no longer disagree.
-    defineField({ name: "profileThickness", type: "string", group: "content" }),
-    defineField({ name: "airTightness", type: "string", group: "content" }),
-    defineField({ name: "waterTightness", type: "string", group: "content" }),
-    defineField({ name: "windPressure", type: "string", group: "content" }),
+    // Hardware / profile thickness / air / water / wind were removed in the
+    // 2026-07-31 cleanup: they duplicated rows in the Specs table (which is what
+    // the site's Technical details tab renders) and were read by no code. Standard
+    // glass stays — the estimator reads it to detect double glazing. Size lives in
+    // Technical → Dimension rule.
     defineField({ name: "notes", type: "text", rows: 2, group: "content" }),
     defineField({ name: "heroImage", title: "Hero image", type: "image", options: { hotspot: true }, group: "content" }),
     defineField({ name: "gallery", type: "array", of: [galleryImage], group: "content" }),
