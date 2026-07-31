@@ -2,11 +2,11 @@ import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./typ
 import type { RuleOutcome } from "./rules";
 
 const text = (v: string | null | undefined) => (v || "").toLowerCase();
-// Classification from the glazing option's technicalValue (see rules.ts) — the
-// one source of truth, not a parsed build-up string.
-const isDouble = (v: PerformanceVariant) =>
-  v.glazingClass === "double_clear" || v.glazingClass === "double_lowe";
-const isLowE = (v: PerformanceVariant) => v.glazingClass === "double_lowe";
+// Classification from the glazing option's technicalValue (the one source of
+// truth, not a parsed build-up). Enum-aware (M2): "double glazed or better" and
+// "low-E" are prefix/suffix on the {single|double|triple}_{clear|toned|low_e} class.
+const isDouble = (v: PerformanceVariant) => /^(double|triple)_/.test(v.glazingClass ?? "");
+const isLowE = (v: PerformanceVariant) => /_lowe$/.test(v.glazingClass ?? "");
 
 function scheduleAffinity(opening: OpeningInput, variant: PerformanceVariant): number {
   const req = opening.scheduleRequirements;

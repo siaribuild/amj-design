@@ -167,10 +167,11 @@ const maxLimit = (a: number | null | undefined, b: number | null | undefined) =>
 // no longer parsed from a free-text build-up string (which could disagree with
 // the option). Argon vs air is not a modelled distinction: our low-E option is
 // argon-filled, so a schedule that merely says "argon" is not rejected here.
-const isDoubleGlazed = (variant: PerformanceVariant) =>
-  variant.glazingClass === "double_clear" || variant.glazingClass === "double_lowe";
-const isSingleGlazed = (variant: PerformanceVariant) => variant.glazingClass === "single_clear";
-const isLowE = (variant: PerformanceVariant) => variant.glazingClass === "double_lowe";
+// Enum-aware (M2): the class is {single|double|triple}_{clear|toned|low_e}.
+// "Double glazed" means double OR better (triple counts); "low-E" is any coating.
+const isDoubleGlazed = (variant: PerformanceVariant) => /^(double|triple)_/.test(variant.glazingClass ?? "");
+const isSingleGlazed = (variant: PerformanceVariant) => /^single_/.test(variant.glazingClass ?? "");
+const isLowE = (variant: PerformanceVariant) => /_lowe$/.test(variant.glazingClass ?? "");
 
 /**
  * Material schedule instructions are source requirements, not preferences.

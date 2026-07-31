@@ -208,6 +208,27 @@ test("catalogue readiness rejects placeholder thermal rows", () => {
   assert.equal(catalogueCandidateReadiness(ready).ready, true);
 });
 
+test("M2: toCandidate reads the shared thermal profile, preferring it over legacy variants", () => {
+  const c = toCandidate({
+    ...awning,
+    performanceVariants: [{ variantId: "legacy", glazingOptionSlug: "old", glazingClass: "double_clear", uValue: 9, shgc: 0.9, frameType: "aluminium", frameTechnology: "conventional", dataSource: "estimated", certified: false, published: true }],
+    thermalProfile: {
+      frameTechnology: "thermally_broken",
+      rows: [
+        { glazingOptionSlug: "dg-lowe", glazingClass: "double_lowe", uValue: 3.9, shgc: 0.24, certified: true, certificationRef: "WERS-1", published: true },
+        { glazingOptionSlug: "dg-clear", glazingClass: "double_clear", uValue: 4.6, shgc: 0.47, certified: true, certificationRef: "WERS-2", published: true },
+        { glazingOptionSlug: "junk", glazingClass: "not_a_real_class", uValue: 4, shgc: 0.3, certified: true, certificationRef: "W", published: true },
+      ],
+    },
+  });
+  // Profile wins over the legacy array; frame tech comes from the profile; the
+  // unknown-class row is dropped (no invisible variant).
+  assert.deepEqual(c.performanceVariants.map((v) => v.variantId).sort(), ["dg-clear", "dg-lowe"]);
+  assert.ok(c.performanceVariants.every((v) => v.frameTechnology === "thermally_broken"));
+  assert.ok(c.performanceVariants.every((v) => v.certified && v.dataSource === "certified"));
+  assert.equal(catalogueCandidateReadiness(c).ready, true, "a certified multi-glazing profile is ready");
+});
+
 test("a product's operation comes from its family (single intrinsic property)", () => {
   const c = toCandidate({ ...awning, seriesOperation: "awning" });
   assert.deepEqual(c.configuration.operationTypes, ["awning"], "family operation is baked in");

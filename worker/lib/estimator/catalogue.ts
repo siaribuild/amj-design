@@ -25,6 +25,17 @@ const CANDIDATE_QUERY = defineQuery(`*[_type == "product" && defined(name) && de
   "series": family->slug.current,
   "seriesOperation": family->operation,
   dimensionRule,
+  // The product's glazing × thermal matrix comes from its shared frame profile
+  // (M2/D5). Preferred over the legacy per-product performanceVariants below,
+  // which stays as a fallback until every product carries a profile.
+  "thermalProfile": thermalProfile->{
+    frameTechnology,
+    "rows": rows[]{
+      "glazingOptionSlug": glazing->slug.current,
+      "glazingClass": glazing->technicalValue,
+      uValue, shgc, frameTechnology, certified, certificationRef, published, wersWindowId
+    }
+  },
   "performanceVariants": performanceVariants[]{
     variantId, uValue, shgc, frameType, frameTechnology,
     pricingOptionSlugs, dataSource, certified, certificationRef, published,
@@ -53,15 +64,60 @@ export function sanityExecutor(env: Env): QueryExecutor {
   };
 }
 
+// The constrained glazing-class vocabulary (M2). A glazing whose technicalValue is
+// outside this set is REJECTED at map time — a free-text typo must not slip through
+// as an invisible, unmatchable variant (review finding, §8).
+const VALID_GLAZING_CLASSES = new Set([
+  "single_clear", "single_toned", "single_lowe",
+  "double_clear", "double_toned", "double_lowe",
+  "triple_clear", "triple_toned", "triple_lowe",
+]);
+
+const coerceFrameTech = (v: unknown): "conventional" | "thermally_broken" | "unknown" =>
+  v === "conventional" || v === "thermally_broken" ? v : "unknown";
+
+// M2/D5: map a shared frame thermal profile's rows to the variant shape the ranker
+// consumes. variantId is the glazing slug (stable per product × glazing). WERS rows
+// are certified; their certificationRef is the WERS window id.
+function profileRowsToVariants(profile: any): any[] {
+  const rows = Array.isArray(profile?.rows) ? profile.rows : [];
+  const profileTech = profile?.frameTechnology;
+  const seen = new Set<string>();
+  return rows.flatMap((r: any) => {
+    const slug = typeof r?.glazingOptionSlug === "string" && r.glazingOptionSlug ? r.glazingOptionSlug : null;
+    if (!slug || seen.has(slug)) return [];
+    const cls = typeof r?.glazingClass === "string" && r.glazingClass ? r.glazingClass : null;
+    if (cls && !VALID_GLAZING_CLASSES.has(cls)) return []; // reject unknown class
+    seen.add(slug);
+    return [{
+      variantId: slug,
+      glazingOptionSlug: slug,
+      glazingClass: cls,
+      uValue: typeof r?.uValue === "number" && r.uValue >= 0.5 && r.uValue <= 10 ? r.uValue : null,
+      shgc: typeof r?.shgc === "number" && r.shgc >= 0 && r.shgc <= 1 ? r.shgc : null,
+      frameType: "aluminium",
+      frameTechnology: coerceFrameTech(r?.frameTechnology ?? profileTech),
+      certificationRef: r?.certificationRef ?? r?.wersWindowId ?? null,
+      pricingOptionSlugs: [],
+      dataSource: r?.certified === false ? "estimated" : "certified",
+      certified: r?.certified !== false,
+      published: r?.published !== false,
+    }];
+  });
+}
+
 // Normalise a raw Sanity row into a CatalogueCandidate, dropping anything that
 // fails the schema-version guard (never silently misread an unsupported shape).
 export function toCandidate(row: any): CatalogueCandidate | null {
   if (!row?.sanityProductId) return null;
   const schemaVersion = typeof row.schemaVersion === "number" ? row.schemaVersion : null;
   if (schemaVersion == null || schemaVersion > SUPPORTED_SCHEMA_VERSION) return null; // reject unsupported
-  const perf = Array.isArray(row.performanceVariants) ? row.performanceVariants : [];
+  // Prefer the shared frame thermal profile (M2/D5); fall back to the legacy
+  // per-product performanceVariants until every product carries a profile.
+  const profileVariants = profileRowsToVariants(row.thermalProfile);
+  const perf = profileVariants.length ? [] : (Array.isArray(row.performanceVariants) ? row.performanceVariants : []);
   const seenVariants = new Set<string>();
-  const variants = perf.flatMap((v: any) => {
+  const legacyVariants = perf.flatMap((v: any) => {
     const variantId = String(v?.variantId ?? "").trim();
     const uValue = typeof v?.uValue === "number" && v.uValue >= 0.5 && v.uValue <= 10 ? v.uValue : null;
     const shgc = typeof v?.shgc === "number" && v.shgc >= 0 && v.shgc <= 1 ? v.shgc : null;
@@ -89,6 +145,7 @@ export function toCandidate(row: any): CatalogueCandidate | null {
       published: v?.published !== false,
     }];
   });
+  const variants = profileVariants.length ? profileVariants : legacyVariants;
   // Operation is a single intrinsic property of the family (family->operation).
   // Bake it into the candidate as the one operation this product performs, so the
   // downstream rules/ranker read one shape without knowing where it came from.
