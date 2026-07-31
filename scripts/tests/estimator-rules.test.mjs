@@ -349,12 +349,35 @@ test("AI batch pricing loads private tables once, not once per candidate variant
 });
 
 test("pricing: option surcharges add to the unit; missing dims ⇒ not ok", () => {
-  const withOpt = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 1, optionSurcharges: [130, 40] });
+  const withOpt = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 1, optionSurcharges: [{ value: 130, basis: "per_unit" }, { value: 40, basis: "per_unit" }] });
   const base = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 1 });
   assert.ok(withOpt.unit > base.unit);
   const bad = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 0, heightMm: 1200, qty: 1 });
   assert.equal(bad.ok, false);
   assert.equal(bad.total, 0);
+});
+
+test("pricing: a per-m² surcharge (glass) scales with glazed area, unlike a flat one", () => {
+  // Same $/m² glass on two sizes must contribute in proportion to area, and a
+  // per_unit surcharge of the same number must NOT scale.
+  const small = { family: "awning-window", widthMm: 1000, heightMm: 1000, qty: 1 }; // 1.0 m²
+  const big = { family: "awning-window", widthMm: 2000, heightMm: 1000, qty: 1 };   // 2.0 m²
+  const perSqm = { value: 90, basis: "per_sqm" };
+  const glassSmall = computePrice(RATE, POLICY, { ...small, optionSurcharges: [perSqm] });
+  const glassBig = computePrice(RATE, POLICY, { ...big, optionSurcharges: [perSqm] });
+  const bareSmall = computePrice(RATE, POLICY, small);
+  const bareBig = computePrice(RATE, POLICY, big);
+  // The glass contribution is 90×area: 90 on 1 m², 180 on 2 m² (before rounding).
+  const smallGlass = glassSmall.unit - bareSmall.unit;
+  const bigGlass = glassBig.unit - bareBig.unit;
+  assert.ok(bigGlass > smallGlass, "more glazed area costs more glass");
+  // Roughly double (both land on the $10 grid): 2 m² glass ≈ 2× the 1 m² glass.
+  assert.ok(Math.abs(bigGlass - 2 * smallGlass) <= 10, "per-m² glass scales ~linearly with area");
+  // A per_unit surcharge of the same magnitude is flat across sizes.
+  const flat = { value: 90, basis: "per_unit" };
+  const flatSmall = computePrice(RATE, POLICY, { ...small, optionSurcharges: [flat] }).unit - bareSmall.unit;
+  const flatBig = computePrice(RATE, POLICY, { ...big, optionSurcharges: [flat] }).unit - bareBig.unit;
+  assert.equal(flatSmall, flatBig, "a per-unit surcharge does not scale with area");
 });
 
 // ── Per-product conditional pricing modifiers (private D1, migration 0026) ────
@@ -402,7 +425,7 @@ test("modifier: non-matching field conditions never fire", () => {
 });
 
 test("pricing: snapshot exposes a TOTAL, never a per-option breakdown", () => {
-  const s = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 1, optionSurcharges: [130] });
+  const s = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 1, optionSurcharges: [{ value: 130, basis: "per_unit" }] });
   assert.ok(!("optionSurcharges" in s) && !("options" in s), "no per-option breakdown leaks into the snapshot");
 });
 
@@ -423,7 +446,7 @@ test("pricing: exact configuration fails closed when any option surcharge is mis
   };
   assert.deepEqual(
     await loadOptionSurcharges(env, ["included-option", "paid-option"], true),
-    [0, 125],
+    [{ value: 0, basis: "per_unit" }, { value: 125, basis: "per_unit" }],
     "zero-dollar included options still count as resolved",
   );
   await assert.rejects(

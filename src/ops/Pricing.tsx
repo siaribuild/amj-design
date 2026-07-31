@@ -814,20 +814,35 @@ function Options({ onChanged }: { onChanged: () => void }) {
                 <tr key={o.slug} className="border-t border-black/5">
                   <td className="px-4 py-1.5" style={{ ...MONO, color: INK }}>
                     {o.slug}
-                    {o.offeredBy === 0 && (
+                    {/* Glass (per-m²) is offered by every product through its
+                        performance variants, not the display option list the
+                        reconciler walks — so a 0 there is not "unoffered". */}
+                    {o.offeredBy === 0 && o.basis !== "per_sqm" && (
                       <span className="ml-2 text-[11px]" style={{ color: MUTED }}>◦ priced but no product offers it</span>
+                    )}
+                    {o.basis === "per_sqm" && (
+                      <span className="ml-2 text-[11px]" style={{ color: MUTED }}>◦ glass, per m² of glazed area</span>
                     )}
                   </td>
                   <td className="px-3 py-1.5 text-right">
-                    <input value={value ?? (o.surcharge === 0 ? "0" : String(o.surcharge))} inputMode="decimal"
-                      disabled={!data.canEdit}
-                      onChange={(e) => setDraft((d) => ({ ...d, [o.slug]: e.target.value }))}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && changed) commit(o.slug, Number(value), o.version);
-                        if (e.key === "Escape") setDraft((d) => { const { [o.slug]: _drop, ...rest } = d; return rest; });
-                      }}
-                      className="w-24 text-right border px-2 py-0.5 text-sm disabled:bg-transparent disabled:border-transparent"
-                      style={{ ...MONO, color: o.surcharge === 0 && !changed ? MUTED : INK, borderColor: changed ? SAGE : "rgba(0,0,0,0.12)" }} />
+                    <span className="inline-flex items-baseline gap-1 justify-end">
+                      <input value={value ?? (o.surcharge === 0 ? "0" : String(o.surcharge))} inputMode="decimal"
+                        disabled={!data.canEdit}
+                        onChange={(e) => setDraft((d) => ({ ...d, [o.slug]: e.target.value }))}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && changed) commit(o.slug, Number(value), o.version);
+                          if (e.key === "Escape") setDraft((d) => { const { [o.slug]: _drop, ...rest } = d; return rest; });
+                        }}
+                        className="w-24 text-right border px-2 py-0.5 text-sm disabled:bg-transparent disabled:border-transparent"
+                        style={{ ...MONO, color: o.surcharge === 0 && !changed ? MUTED : INK, borderColor: changed ? SAGE : "rgba(0,0,0,0.12)" }} />
+                      {/* The unit is the whole point of the basis: $/m² scales with
+                          glazed area, $/unit is flat. Showing it inline stops an
+                          operator reading a per-m² glass rate as a flat dollar. */}
+                      <span className="text-[11px] w-9 text-left" style={{ ...MONO, color: o.basis === "per_sqm" ? SAGE : MUTED }}
+                        title={o.basis === "per_sqm" ? "per square metre of glazed area" : "flat, per unit"}>
+                        {o.basis === "per_sqm" ? "/m²" : "/unit"}
+                      </span>
+                    </span>
                   </td>
                   <td className="px-3 py-1.5 text-right" style={{ ...MONO, color: MUTED }}>{o.offeredBy}</td>
                   <td className="px-4 py-1.5 text-right" style={{ ...MONO, color: MUTED }}>{o.version}</td>
@@ -845,7 +860,7 @@ function Options({ onChanged }: { onChanged: () => void }) {
       </div>
       <p className="text-xs mt-2" style={{ color: MUTED }}>
         {data.canEdit
-          ? "Enter saves a row, Esc reverts it. A surcharge is added once per line that carries the option."
+          ? "Enter saves a row, Esc reverts it. /unit surcharges add once per line; /m² surcharges (glass) scale with the opening's glazed area."
           : "Read-only — a manager or admin can change these."}
       </p>
     </>

@@ -371,11 +371,12 @@ export const opsSaveModifiers = (id: string, body: { modifiers: OpsModifier[]; n
 export const opsRevertRateCard = (id: string, toVersion: string) =>
   write<{ ok: boolean; version: string }>(`/api/ops/pricing/rate-cards/${id}/revert`, "POST", { toVersion });
 
+export type OpsSurchargeBasis = "per_unit" | "per_sqm";
 export const opsPricingOptions = () =>
-  req<{ canEdit: boolean; reconcile: OpsReconcileRun | null; options: { slug: string; surcharge: number; version: string; offeredBy: number }[] }>("/api/ops/pricing/options");
+  req<{ canEdit: boolean; reconcile: OpsReconcileRun | null; options: { slug: string; surcharge: number; version: string; basis: OpsSurchargeBasis; offeredBy: number }[] }>("/api/ops/pricing/options");
 
-export const opsSaveOption = (slug: string, surcharge: number, expectedVersion?: string) =>
-  write<{ ok: boolean; version: string }>(`/api/ops/pricing/options/${encodeURIComponent(slug)}`, "PUT", { surcharge, expectedVersion });
+export const opsSaveOption = (slug: string, surcharge: number, expectedVersion?: string, basis?: OpsSurchargeBasis) =>
+  write<{ ok: boolean; version: string }>(`/api/ops/pricing/options/${encodeURIComponent(slug)}`, "PUT", { surcharge, expectedVersion, basis });
 
 export const opsReconcile = () => write<{ run: OpsReconcileRun }>("/api/ops/pricing/reconcile", "POST", {});
 export const opsReconcileLast = () => req<{ run: OpsReconcileRun | null }>("/api/ops/pricing/reconcile");

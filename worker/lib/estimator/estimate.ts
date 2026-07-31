@@ -182,7 +182,13 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
         widthMm: opening.widthMm ?? 0,
         heightMm: opening.heightMm ?? 0,
         qty: opening.qty ?? 1,
-        optionSlugs: [...new Set([...(opening.optionSlugs ?? []), ...(variant?.pricingOptionSlugs ?? [])])],
+        // The selected glass identity is a chargeable (per-m²) option: its slug
+        // must be priced, not just the free-text pricingOptionSlugs escape hatch.
+        optionSlugs: [...new Set([
+          ...(opening.optionSlugs ?? []),
+          ...(variant?.glazingOptionSlug ? [variant.glazingOptionSlug] : []),
+          ...(variant?.pricingOptionSlugs ?? []),
+        ])],
         // A declared product pricing reference is an exact private CPQ contract.
         // Falling back to a generic operation price would make thermally broken /
         // coating recommendations look priced while silently omitting their cost.

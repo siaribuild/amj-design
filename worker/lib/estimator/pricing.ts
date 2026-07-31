@@ -22,6 +22,16 @@ export interface PricingPolicy {
   version: string;
 }
 
+// How an option surcharge scales. 'per_unit' is a flat amount added once per unit
+// (a handle, a flyscreen). 'per_sqm' is multiplied by the opening's glazed area —
+// the model glass needs, because a bigger opening carries proportionally more of it.
+export type SurchargeBasis = "per_unit" | "per_sqm";
+export interface OptionSurcharge {
+  value: number;         // $/unit for per_unit, $/m² for per_sqm
+  basis: SurchargeBasis;
+}
+const coerceBasis = (v: unknown): SurchargeBasis => (v === "per_sqm" ? "per_sqm" : "per_unit");
+
 // A per-product conditional pricing rule (private D1, table `pricing_modifier`).
 // The manufacturer's model is universal in shape but owned per rate card.
 export interface PricingModifier {
@@ -43,7 +53,7 @@ export interface PriceInput {
   widthMm: number;
   heightMm: number;
   qty: number;
-  optionSurcharges?: number[];        // resolved surcharges (server-side only)
+  optionSurcharges?: OptionSurcharge[]; // resolved surcharges (server-side only)
   modifiers?: PricingModifier[];      // per-product conditional rules (private)
   /** The account's discount (0032), as a percentage off. 0 for anonymous quotes,
    *  which have no user row. Applied last, before rounding. */
@@ -115,7 +125,13 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
   const ok = w > 0 && h > 0;
   const perimeterM = (2 * (w + h)) / 1000;
   const areaM2 = (w * h) / 1_000_000;
-  const surcharges = (input.optionSurcharges ?? []).reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0);
+  // Each surcharge is realised against THIS opening: a per-m² surcharge (glass)
+  // scales with the glazed area, a per-unit surcharge (hardware) is flat.
+  const surchargeList = input.optionSurcharges ?? [];
+  const surcharges = surchargeList.reduce((s, o) => {
+    if (!o || !Number.isFinite(o.value)) return s;
+    return s + (o.basis === "per_sqm" ? o.value * areaM2 : o.value);
+  }, 0);
   // The trace is written as the arithmetic happens, never recomputed afterwards —
   // a preview that can disagree with production is worse than no preview.
   const steps: PriceStep[] = [];
@@ -233,14 +249,14 @@ export async function loadPolicy(env: Env): Promise<PricingPolicy> {
 }
 
 // Resolve option surcharges by slug from the private table (server-side only).
-export async function loadOptionSurcharges(env: Env, optionSlugs: string[], requireAll = false): Promise<number[]> {
+export async function loadOptionSurcharges(env: Env, optionSlugs: string[], requireAll = false): Promise<OptionSurcharge[]> {
   if (!optionSlugs.length) return [];
-  const out: number[] = [];
+  const out: OptionSurcharge[] = [];
   const unique = [...new Set(optionSlugs)];
   const missing: string[] = [];
   for (const slug of unique) {
-    const r = await env.DB.prepare("SELECT surcharge FROM pricing_option_surcharge WHERE id = ? AND active = 1").bind(slug).first<{ surcharge: number }>();
-    if (r && Number.isFinite(r.surcharge)) out.push(r.surcharge);
+    const r = await env.DB.prepare("SELECT surcharge, basis FROM pricing_option_surcharge WHERE id = ? AND active = 1").bind(slug).first<{ surcharge: number; basis: string }>();
+    if (r && Number.isFinite(r.surcharge)) out.push({ value: r.surcharge, basis: coerceBasis(r.basis) });
     else missing.push(slug);
   }
   if (requireAll && missing.length) throw new MissingSurcharge(missing);
@@ -298,8 +314,8 @@ export async function createCachedPriceResolver(
     ).all<any>(),
     loadPolicy(env),
     env.DB.prepare(
-      "SELECT id, surcharge FROM pricing_option_surcharge WHERE active=1",
-    ).all<{ id: string; surcharge: number }>(),
+      "SELECT id, surcharge, basis FROM pricing_option_surcharge WHERE active=1",
+    ).all<{ id: string; surcharge: number; basis: string }>(),
     env.DB.prepare(
       `SELECT id, rate_card_id, seq, label, when_field, when_op, when_value, then_type, then_value
          FROM pricing_modifier WHERE active=1 ORDER BY rate_card_id, seq`,
@@ -317,10 +333,10 @@ export async function createCachedPriceResolver(
       version: String(row.version),
     });
   }
-  const surcharges = new Map(
+  const surcharges = new Map<string, OptionSurcharge>(
     (surchargeResult.results ?? [])
       .filter((row) => Number.isFinite(row.surcharge))
-      .map((row) => [row.id, row.surcharge] as const),
+      .map((row) => [row.id, { value: row.surcharge, basis: coerceBasis(row.basis) }] as const),
   );
   const modifiers = new Map<string, PricingModifier[]>();
   for (const row of modifierResult.results ?? []) {

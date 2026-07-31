@@ -756,6 +756,8 @@ ops.patch("/lines/:id", async (c) => {
     // identifiers and cannot omit a chargeable selection.
     const pricingOptionSlugs = [...new Set([
       ...pricingOptionSlugsFromOptions(options),
+      // Glass identity is a per-m² chargeable option — price it explicitly.
+      ...(variant.glazingOptionSlug ? [variant.glazingOptionSlug] : []),
       ...(variant.pricingOptionSlugs ?? []),
     ])];
     // Carry the CAUSE, not just the failure: which option has no price in D1 is

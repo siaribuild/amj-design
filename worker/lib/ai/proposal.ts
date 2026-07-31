@@ -265,6 +265,8 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       options: cartOptions,
       pricingOptionSlugs: [...new Set([
         ...(line.opening.optionSlugs ?? []),
+        // Glass identity is a per-m² chargeable option — price it explicitly.
+        ...(variant?.glazingOptionSlug ? [variant.glazingOptionSlug] : []),
         ...(variant?.pricingOptionSlugs ?? []),
       ])],
       dimensions: { widthMm: line.opening.widthMm, heightMm: line.opening.heightMm },

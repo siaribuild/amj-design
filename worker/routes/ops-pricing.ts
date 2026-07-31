@@ -313,7 +313,7 @@ opsPricing.get("/options", async (c) => {
   if (!staff) return deny;
 
   const [{ results }, reconcile] = await Promise.all([
-    c.env.DB.prepare("SELECT id, surcharge, version FROM pricing_option_surcharge WHERE active = 1 ORDER BY id").all<any>(),
+    c.env.DB.prepare("SELECT id, surcharge, version, basis FROM pricing_option_surcharge WHERE active = 1 ORDER BY id").all<any>(),
     lastReconcileRun(c.env),
   ]);
 
@@ -330,7 +330,9 @@ opsPricing.get("/options", async (c) => {
     canEdit: canEdit(staff),
     reconcile,
     options: (results ?? []).map((r) => ({
-      slug: r.id, surcharge: r.surcharge, version: r.version, offeredBy: offered.get(r.id)?.length ?? 0,
+      slug: r.id, surcharge: r.surcharge, version: r.version,
+      basis: r.basis === "per_sqm" ? "per_sqm" : "per_unit",
+      offeredBy: offered.get(r.id)?.length ?? 0,
     })),
   });
 });
@@ -344,8 +346,13 @@ opsPricing.put("/options/:slug", async (c) => {
   if (surcharge == null || surcharge < 0) return c.json({ error: "invalid_amount" }, 400);
 
   const before = await c.env.DB.prepare(
-    "SELECT surcharge, version FROM pricing_option_surcharge WHERE id = ?",
+    "SELECT surcharge, version, basis FROM pricing_option_surcharge WHERE id = ?",
   ).bind(slug).first<any>();
+  // Basis is sticky: keep the row's current basis unless the caller changes it, and
+  // default a brand-new row to per_unit (the safe, flat default).
+  const basis = body?.basis === "per_sqm" ? "per_sqm"
+    : body?.basis === "per_unit" ? "per_unit"
+    : (before?.basis === "per_sqm" ? "per_sqm" : "per_unit");
 
   // Closing a reconciliation gap is an INSERT, not an update — and it must be
   // possible here rather than in a migration, because a context switch to a
@@ -356,12 +363,12 @@ opsPricing.put("/options/:slug", async (c) => {
     const version = await applyPricingChange(c.env, {
       table: "pricing_option_surcharge", rowId: slug, actor: staff.id, note: body?.note,
       expectedVersion: before ? (body?.expectedVersion ?? null) : null,
-      before: before ? { surcharge: before.surcharge, version: before.version } : { surcharge: null, version: "v0" },
-      after: { surcharge },
+      before: before ? { surcharge: before.surcharge, basis: before.basis ?? "per_unit", version: before.version } : { surcharge: null, basis: null, version: "v0" },
+      after: { surcharge, basis },
       write: (v) => c.env.DB.prepare(
-        `INSERT INTO pricing_option_surcharge (id, surcharge, version, active) VALUES (?, ?, ?, 1)
-         ON CONFLICT(id) DO UPDATE SET surcharge=excluded.surcharge, version=excluded.version, active=1`,
-      ).bind(slug, surcharge, v).run().then(() => undefined),
+        `INSERT INTO pricing_option_surcharge (id, surcharge, basis, version, active) VALUES (?, ?, ?, ?, 1)
+         ON CONFLICT(id) DO UPDATE SET surcharge=excluded.surcharge, basis=excluded.basis, version=excluded.version, active=1`,
+      ).bind(slug, surcharge, basis, v).run().then(() => undefined),
     });
     return c.json({ ok: true, version });
   } catch (e) {
