@@ -27,14 +27,21 @@ export async function loadEmailTemplate(env: Env, key: string): Promise<EmailTem
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.tpl;
   if (!env.SANITY_PROJECT_ID) return null;
+  // Email templates are internal ops content, so the public dataset grant does
+  // not expose them to anonymous reads — the worker must authenticate. Without a
+  // token the query resolves to nothing and the caller keeps its built-in copy.
+  if (!env.SANITY_READ_TOKEN) return null;
   try {
     const dataset = env.SANITY_DATASET || "production";
     const qs = new URLSearchParams({ query: QUERY });
     qs.set("$key", JSON.stringify(key));
-    // apicdn + a tight deadline: an email must not wait on a slow CMS. On any
-    // miss we fall back to the built-in copy the caller supplied.
-    const url = `https://${env.SANITY_PROJECT_ID}.apicdn.sanity.io/v2024-01-01/data/query/${dataset}?${qs.toString()}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
+    // Authenticated reads go to the live API (not the public CDN). Tight deadline:
+    // an email must not wait on a slow CMS — on any miss we fall back.
+    const url = `https://${env.SANITY_PROJECT_ID}.api.sanity.io/v2024-01-01/data/query/${dataset}?${qs.toString()}`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${env.SANITY_READ_TOKEN}` },
+      signal: AbortSignal.timeout(2500),
+    });
     if (!res.ok) return null; // transient — do NOT cache
     const body = await res.json<{ result?: { subject?: unknown; body?: unknown } | null }>();
     const r = body?.result;

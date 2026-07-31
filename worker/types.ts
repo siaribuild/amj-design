@@ -31,6 +31,11 @@ export interface Env {
   /** Sanity catalogue source (Worker-side). Client uses VITE_SANITY_* instead. */
   SANITY_PROJECT_ID?: string;
   SANITY_DATASET?: string;
+  /** Read token for Sanity content the PUBLIC dataset grant does not expose to
+   *  anonymous reads — e.g. the internal email templates. Optional: without it,
+   *  those reads return nothing and the caller falls back to built-in copy. Set
+   *  as a Worker secret (a read-only "Viewer" token): wrangler secret put SANITY_READ_TOKEN */
+  SANITY_READ_TOKEN?: string;
   /** Workers AI (schedule extraction accuracy tier). Optional — deterministic
    *  on-stack extraction runs without it. Bound in wrangler.jsonc as "AI". */
   AI?: unknown;
