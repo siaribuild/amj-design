@@ -85,6 +85,11 @@ export interface Product {
   minHeight: number | null;
   maxWidth: number | null;
   maxHeight: number | null;
+  /** The glass identity this product ships by default (its single performance
+   *  variant's glazing option). Priced per m² like the estimator prices an AI
+   *  line's glass — null on the built-in fallback catalogue, which prices glass
+   *  through the rate card's area rate. */
+  defaultGlazingSlug?: string | null;
   profileThickness: string;
   airTightness: string;
   waterTightness: string;

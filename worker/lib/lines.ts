@@ -129,6 +129,11 @@ function chargeableOptionSlugs(productSlug: string, options: Record<string, stri
     if (match.availability === "standard") continue;   // included in the base rate
     slugs.push(`${canonSlug(typeSlug)}:${canonSlug(value)}`);
   }
+  // The glass is a per-m² chargeable option, not part of the base rate: attach the
+  // product's default glass identity so a manual/schedule line prices its glazing
+  // the same way the estimator prices an AI line's. (Absent on the built-in
+  // fallback catalogue, where glass is still carried by the area rate.)
+  if (product?.defaultGlazingSlug) slugs.push(product.defaultGlazingSlug);
   return slugs;
 }
 

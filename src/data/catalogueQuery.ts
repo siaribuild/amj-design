@@ -37,6 +37,10 @@ export const CATALOGUE_QUERY = `{
     profileThickness, airTightness,
     waterTightness, windPressure, notes,
     "dimensionRule": dimensionRule{ minWidthMm, maxWidthMm, minHeightMm, maxHeightMm },
+    // The glass a manually-configured / schedule line carries by default (each
+    // product ships exactly one glass identity). It is a per-m² chargeable option,
+    // so pricing must know it — the same identity the estimator prices for an AI line.
+    "defaultGlazingSlug": performanceVariants[0].glazingOption->slug.current,
     "heroImage": heroImage{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip, "aspect": asset->metadata.dimensions.aspectRatio },
     "gallery": gallery[]{ "url": asset->url, hotspot, "lqip": asset->metadata.lqip },
     keySpecs[]{_key,label,value}, specs[]{_key,label,value},
@@ -140,6 +144,7 @@ function normalizeProduct(p: any): Product {
     // were removed in the 2026-07-31 rationalisation so the two can't diverge).
     minWidth: p.dimensionRule?.minWidthMm ?? null, minHeight: p.dimensionRule?.minHeightMm ?? null,
     maxWidth: p.dimensionRule?.maxWidthMm ?? null, maxHeight: p.dimensionRule?.maxHeightMm ?? null,
+    defaultGlazingSlug: p.defaultGlazingSlug ?? null,
     profileThickness: p.profileThickness ?? "", airTightness: p.airTightness ?? "",
     waterTightness: p.waterTightness ?? "", windPressure: p.windPressure ?? "",
     notes: p.notes ?? "", heroImage: normalizeImage(p.heroImage) ?? "",
