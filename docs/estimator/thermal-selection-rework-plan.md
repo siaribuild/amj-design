@@ -15,7 +15,7 @@
 
 **Remaining (scaffolded, documented — needs owner/integration):**
 - **WS1 glass-as-shared-option** — the estimator already treats each `performanceVariant` as the (frame×glass) cell, so the fix works today against the existing catalogue. Making glass a first-class shared Sanity option is a catalogue/UI refactor; schema markers + `sanity/scripts/migrate-glazing-options.mjs` are scaffolded, but the content migration must be run with the owner's Sanity token.
-- **WS5 per-lite composite SEGMENTS** — the impossible-band collapse is already fixed (a composite gets a coherent Uw band + warning); selecting a *separate glass per lite* via segments is the remaining refinement. Migration `0036` + `SegmentSpec` marker scaffolded; needs the AI→segment bridge + integration testing.
+- **WS5 composite thermal** — RE-SCOPED (see WS5 below). Owner: splits are human/design decisions (AI may only recommend from learning, always review-flagged); segments use the SAME glass; goal is an averaged-Uw fit, no per-lite glass, no geometry/jamb. The deployed core fix already handles a non-split composite (one glass, Uw fit, review flag). Remaining is a small averaged-Uw helper (when splits exist) + a deferred learning-based split recommendation.
 - **WS7 AI copy** — the line already lands non-blocking (`commercial_only_estimate` / `technical_review`, submittable); surfacing the `thermal_band_not_met` reason in the customer-facing `review_json` is polish.
 
 ---
@@ -121,13 +121,17 @@ Per §3: glass type = mandatory shared option; the (frame×glass)→Uw cell stay
 - Bump `RANKER_VERSION`; re-check the 0.05 dominance gate.
 - Verify `advisoryRequirements` (learned) still flow into the soft score.
 
-### WS5 — Composite per-lite build via quote_line SEGMENTS (composite + pipeline + persistence)
-Owner decision: composites are **quote_line segments** (a parent line + priced per-lite segments), not per-lite openings.
-- **New migration**: add a per-segment **resolved band + basis + review flag** to the segment `quote_line` rows (`requirements_json` / `requirement_basis` / `review` columns), so each lite carries its OWN band and glass selection.
-- `worker/lib/composite.ts` `SegmentSpec` + `splitLine`/`addSegment`/`updateSegment`: accept + persist a per-lite band; route each segment through the estimator's **glass selection** (meet the band, else closest + warn) rather than copying the parent's glass via `priceItem` alone.
-- **AI bridge** (`pipeline.ts`): materialise a quote_line composite (parent + per-lite segments) from the opening-graph decomposition — match the energy component refs (`W1A`/`W1B`) to the schedule parent (`W1`), assign each lite its element-type band (tier-2) or its own explicit band (tier-1), computed (tier-3) otherwise. Today the AI path never calls `splitLine` — this closes that gap.
-- Where the energy report does NOT break a window into components, a lite's band comes from its element type (tier-2) or computed (tier-3) per lite.
-- `rules.ts isCompositeMember` stub (261): the site where a per-lite band is checked to pick eligible glass and raise a **warning**, never a reject.
+### WS5 — Composite thermal handling (RE-SCOPED per owner, 2026-07-31)
+Owner correction: **the split itself is a human/design decision** (ratio 50/50 vs 40/60; awning+fixed vs 2 awnings — preference). The AI must NOT auto-decide split geometry; it may only *recommend* a split later from learning data, and **every AI-recommended split is flagged for review**. No geometry reconciliation, no jamb allowances — the platform is not an authoritative thermal model.
+
+Energy is simple: a split's segments use the **SAME glass type by default** (no one glazes half an opening clear and half tinted). So the only thermal goal is:
+- **Average the U-value across the split** (e.g. area/50-50 weighted over the segment frames, all with the shared glass) and **fit that average to the opening's requirement**; flag for review.
+
+What this means for the build:
+- **DROPPED**: per-lite different glass, the AI→segment auto-build bridge, geometry/jamb reconciliation, per-lite explicit bands. These were over-scoped.
+- **Already satisfied by the deployed core fix**: a non-split composite gets ONE glass fit to a coherent Uw band + a review flag — exactly "same glass, fit to requirement, flagged".
+- **Small remaining piece (when splits exist)**: a helper that computes a composite's area-weighted average Uw from its segments (shared glass) and checks it against the opening requirement, surfacing a warning. Splits are human-initiated (ops) or future AI-recommended-with-review, so this has no urgent AI trigger.
+- **Deferred to learning**: AI split-ratio recommendation (most-common practice), always review-flagged. The migration `0036` columns remain available to persist a per-segment/parent band snapshot if/when that lands.
 
 ### WS6 — Tier-3 computed per-opening band (archetypes + pipeline)
 - `archetypes.ts defaultRequirement()`: accept the opening + `thermalContext` (orientation, room zoneType, glazingToRoomFloorRatio, climateZone); derive an orientation/room-aware Uw cap + SHGC band (relax the §11.3 "no SHGC without orientation" invariant where orientation IS known).
