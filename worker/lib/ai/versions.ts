@@ -13,7 +13,11 @@ import type { Env } from "../../types";
 // 2026-07-30.1: first-class photo ingestion, explicit scanned-PDF fallback,
 // live progress milestones, provisional thermal catalogue readiness, and
 // Cloudflare-authoritative provider-rate reporting.
-export const PIPELINE_VERSION = "2026-07-30.1";
+// 2026-07-31.1: non-blocking thermal contract — coherence-guarded requirement
+// resolution (no impossible min>max band), per-opening orientation-aware computed
+// default band, and graded (non-veto) thermal ranking. Changes what selection
+// produces for the same input, so the stage idempotency key must move with it.
+export const PIPELINE_VERSION = "2026-07-31.1";
 export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.0";
 
 // §13.1/§13.2 model routing. SINGLE-MODEL POLICY (owner decision 2026-07-25):

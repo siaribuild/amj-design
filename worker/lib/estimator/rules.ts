@@ -9,8 +9,12 @@
 // performance data passes only as an assumption-based commercial estimate —
 // never as a certified compliance pass (spec §13, safety invariant).
 import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./types";
+import { coerceCoherent } from "./thermal/precedence";
 
-export const RULE_VERSION = "v1";
+// v2: thermal is NON-BLOCKING (a miss warns, never rejects) and requirement
+// resolution is coherence-guarded (an impossible min>max band can never zero a
+// product). See docs/estimator/thermal-selection-rework-plan.md.
+export const RULE_VERSION = "v2-thermal-nonblocking";
 
 export type FilterName =
   | "publication" | "operation" | "dimensions" | "energy" | "schedule_configuration"
@@ -72,6 +76,11 @@ function checkDimensions(opening: OpeningInput, c: CatalogueCandidate): FilterOu
 // requirement ⇒ pass (no energy constraint to meet). Requirement but no perf
 // data ⇒ incomplete. Requirement met only by an estimated variant ⇒ passes but
 // NOT certified (caller downgrades the line to commercial_only_estimate).
+// SCAFFOLD WS3 (thermal rework): the no-match branch returns severity:'reject',
+// which eliminates the product and yields the empty line. Make thermal NON-BLOCKING
+// like checkDimensions: downgrade to 'warning', return the closest-band glass set
+// (never []), keep energyCertified=false, and let the line become
+// commercial_only_estimate + reviewRequired. Plan §1/§4/WS3.
 function checkEnergy(opening: OpeningInput, c: CatalogueCandidate): {
   outcome: FilterOutcome; certified: boolean; matching: PerformanceVariant[];
 } {
@@ -99,7 +108,15 @@ function checkEnergy(opening: OpeningInput, c: CatalogueCandidate): {
     (maxShgc == null || (v.shgc != null && v.shgc <= maxShgc));
   const match = variants.filter(satisfies);
   if (!match.length) {
-    return { outcome: { filter: "energy", passed: false, severity: "reject", reason: "no single variant jointly meets the energy requirement" }, certified: false, matching: [] };
+    // WS3: thermal is NON-BLOCKING. Glass is mandatory, so a band no glass meets
+    // must not eliminate the product — keep ALL published variants eligible so the
+    // ranker (graded compliance) picks the CLOSEST, and warn. Mirrors the
+    // dimensions contract: the line becomes commercial_only_estimate, never empty.
+    return {
+      outcome: { filter: "energy", passed: false, severity: "warning", reason: "no glass meets the thermal band — closest selected, confirm at review" },
+      certified: false,
+      matching: variants,
+    };
   }
   const certified = match.some((v) => v.certified && v.dataSource === "certified");
   return {
@@ -111,17 +128,33 @@ function checkEnergy(opening: OpeningInput, c: CatalogueCandidate): {
 
 type ThermalLimits = NonNullable<OpeningInput["requirements"]>;
 
+// SCAFFOLD WS2 (thermal rework): the explicit ∩ advisory intersection here is a
+// SECOND min>max collapse site. Delegate to thermal/precedence.resolveThermalBand
+// (explicit → per-type → computed, coherence-guarded) so one guarded path serves
+// both this and energyMap. Plan §2/WS2.
 function effectiveThermalRequirements(opening: OpeningInput): ThermalLimits | null {
   const explicit = opening.requirements ?? null;
-  if (opening.thermalContext?.requirementBasis === "explicit_energy_report") return explicit;
-  const learned = opening.advisoryRequirements ?? null;
-  if (!explicit) return learned;
-  if (!learned) return explicit;
-  return {
-    maxUValue: minLimit(explicit.maxUValue, learned.maxUValue),
-    minShgc: maxLimit(explicit.minShgc, learned.minShgc),
-    maxShgc: minLimit(explicit.maxShgc, learned.maxShgc),
-  };
+  let merged: ThermalLimits | null;
+  if (opening.thermalContext?.requirementBasis === "explicit_energy_report") {
+    merged = explicit;
+  } else {
+    const learned = opening.advisoryRequirements ?? null;
+    if (!explicit) merged = learned;
+    else if (!learned) merged = explicit;
+    else merged = {
+      maxUValue: minLimit(explicit.maxUValue, learned.maxUValue),
+      minShgc: maxLimit(explicit.minShgc, learned.minShgc),
+      maxShgc: minLimit(explicit.maxShgc, learned.maxShgc),
+    };
+  }
+  if (!merged) return null;
+  // WS2: guard the SECOND min>max collapse site. The explicit ∩ advisory merge
+  // above (maxLimit of mins, minLimit of maxes) can produce an impossible SHGC
+  // interval exactly like energyMap.strictest did — coerce it so it can never
+  // zero every product.
+  const { band } = coerceCoherent({ maxUValue: merged.maxUValue ?? null, minShgc: merged.minShgc ?? null, maxShgc: merged.maxShgc ?? null, shgcTarget: null });
+  if (!band) return null;
+  return { maxUValue: band.maxUValue, minShgc: band.minShgc, maxShgc: band.maxShgc };
 }
 
 const minLimit = (a: number | null | undefined, b: number | null | undefined) =>
@@ -249,12 +282,16 @@ export function checkHardRules(opening: OpeningInput, c: CatalogueCandidate, rul
   const schedule = checkScheduleConfiguration(opening, c);
   filters.push(schedule.outcome);
   const scheduleIds = new Set(schedule.matching.map((variant) => variant.variantId));
-  const eligibleVariants = energy.matching.filter((variant) => scheduleIds.has(variant.variantId));
+  let eligibleVariants = energy.matching.filter((variant) => scheduleIds.has(variant.variantId));
   if (energy.outcome.passed && schedule.outcome.passed &&
       (energy.matching.length || schedule.matching.length) && !eligibleVariants.length) {
+    // WS3: non-blocking. When thermal and the glazing instruction cannot both be
+    // met by one variant, prefer the schedule-compatible glass and WARN rather
+    // than eliminate the product. The ranker picks the closest; review confirms.
+    eligibleVariants = schedule.matching.length ? schedule.matching : energy.matching;
     filters.push({
-      filter: "schedule_configuration", passed: false, severity: "reject",
-      reason: "no single published variant jointly meets the thermal and schedule configuration requirements",
+      filter: "schedule_configuration", passed: false, severity: "warning",
+      reason: "no single variant meets both the thermal and glazing requirement — closest selected, confirm at review",
     });
   }
 

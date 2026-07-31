@@ -80,10 +80,15 @@ test("SAFETY: an energy requirement met only by ESTIMATED data ⇒ commercial_on
   assert.equal(r.energyCertified, false);
 });
 
-test("energy requirement the product cannot meet is rejected", () => {
+test("energy requirement the product cannot meet WARNS but still assigns a product (non-blocking)", () => {
+  // WS3: thermal is non-blocking. Glass is mandatory, so a band no glass meets
+  // must not eliminate the product — it warns and assigns the closest glass.
   const r = checkHardRules({ family: "window", operationType: "awning", widthMm: 800, heightMm: 1200, requirements: { maxUValue: 2.0 } }, cand());
-  assert.equal(r.passed, false);
-  assert.ok(r.filters.find((f) => f.filter === "energy" && f.severity === "reject"));
+  assert.equal(r.passed, true, "thermal never eliminates a product");
+  assert.equal(r.status, "commercial_only_estimate");
+  assert.ok(r.filters.find((f) => f.filter === "energy" && f.severity === "warning"));
+  assert.equal(r.energyCertified, false);
+  assert.ok(r.eligibleVariantIds.length > 0, "a glass is still eligible (closest)");
 });
 
 test("energy requirement with NO performance data ⇒ catalogue_data_incomplete (never a guess)", () => {
@@ -105,16 +110,24 @@ test("energy met by CERTIFIED data ⇒ ready + energyCertified", () => {
   assert.equal(r.energyCertified, true);
 });
 
-test("explicit report limits are exact: the old hidden tolerance cannot turn a miss into a match", () => {
+test("explicit report limits are exact: a miss is a warned commercial estimate, never a silent 'ready' match", () => {
+  // The intent survives the non-blocking move: a near-miss is NOT quietly treated
+  // as a certified match. It never reads 'ready'/certified — it warns and stays
+  // commercial_only_estimate. No hidden tolerance promotes a miss to a pass.
   const r = checkHardRules({
     family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
     requirements: { maxUValue: 3.85 },
   }, cand());
-  assert.equal(r.passed, false);
-  assert.equal(r.status, "unavailable");
+  assert.equal(r.passed, true, "non-blocking: product assigned");
+  assert.notEqual(r.status, "ready", "a miss is never a certified/ready match");
+  assert.equal(r.status, "commercial_only_estimate");
+  assert.equal(r.energyCertified, false);
 });
 
-test("Uw and SHGC must be satisfied jointly by the same exact variant", () => {
+test("Uw and SHGC not jointly met by one variant ⇒ warns + assigns closest (never eliminated)", () => {
+  // Neither variant meets Uw AND SHGC together. Old behaviour rejected with an
+  // empty eligible set; the non-blocking contract keeps a glass eligible so the
+  // ranker picks the closest, and flags the line for review.
   const split = toCandidate({
     ...awning,
     performanceVariants: [
@@ -126,8 +139,9 @@ test("Uw and SHGC must be satisfied jointly by the same exact variant", () => {
     family: "window", operationType: "awning", widthMm: 800, heightMm: 1200,
     requirements: { maxUValue: 3, maxShgc: 0.5 },
   }, split);
-  assert.equal(r.passed, false);
-  assert.deepEqual(r.eligibleVariantIds, []);
+  assert.equal(r.passed, true);
+  assert.equal(r.status, "commercial_only_estimate");
+  assert.ok(r.eligibleVariantIds.length > 0, "closest glass stays eligible, not empty");
 });
 
 test("material schedule glazing instructions constrain the exact eligible variant", () => {

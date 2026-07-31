@@ -56,6 +56,9 @@ export const ARCHETYPES: EnvelopeArchetype[] = [
 /** Resolve the archetype for a building model's jurisdiction, or null when no
  *  published archetype covers it (⇒ no default band is applied — never a guess
  *  from an unrelated region). */
+// SCAFFOLD WS6 (thermal rework): broaden beyond the single VIC archetype (climate
+// -zone keyed) so tier-3 covers a project's jurisdiction. Feeds thermal/computedBand.
+// Plan §5/WS6.
 export function resolveDefaultEnvelope(model: Pick<BuildingModelV1, "jurisdiction">): EnvelopeArchetype | null {
   const state = model.jurisdiction.state;
   if (!state) return null;
@@ -63,6 +66,10 @@ export function resolveDefaultEnvelope(model: Pick<BuildingModelV1, "jurisdictio
 }
 
 /** The Path 3 requirement an archetype implies for one opening. */
+// SCAFFOLD WS6 (thermal rework): make this per-opening — accept the opening +
+// thermalContext (orientation/room/glazing-ratio) and derive an orientation-aware
+// band incl. SHGC when known, instead of a flat archetype constant with SHGC null.
+// Superseded by thermal/computedBand.computeDefaultBand. Plan §5/WS6.
 export function defaultRequirement(archetype: EnvelopeArchetype): EnergyRequirementV1 {
   return {
     basis: "default_envelope",

@@ -2,8 +2,13 @@ import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./typ
 import type { RuleOutcome } from "./rules";
 import type { PriceSnapshot } from "./pricing";
 import { variantAffinityScore } from "./configuration";
+import { gradedComplianceScore } from "./thermal/compliance";
+import { coerceCoherent, bandFromRequirements, bandHasConstraint } from "./thermal/precedence";
+import type { GlassCell } from "./thermal/types";
 
-export const RANKER_VERSION = "v2-exact-configuration";
+// v3: compliance is GRADED (distance-to-band, floored above 0) instead of a
+// hard-0 veto, so a thermal miss depresses rank without eliminating the line.
+export const RANKER_VERSION = "v3-graded-thermal";
 
 const W = {
   compliance: 0.35, geometry: 0.20, configuration: 0.15,
@@ -64,18 +69,25 @@ function configurationScore(opening: OpeningInput, c: CatalogueCandidate, varian
   return 0.5 * operation + 0.5 * variantAffinityScore(opening, variant);
 }
 
+/** A performance variant is the (frame×glass) cell the graded scorer consumes. */
+function variantCell(v: PerformanceVariant | null): GlassCell | null {
+  if (!v) return null;
+  return { glassOptionSlug: v.variantId, variantId: v.variantId, uValue: v.uValue, shgc: v.shgc, certified: v.certified, pricingOptionSlugs: v.pricingOptionSlugs };
+}
+
+// WS4: GRADED, never a veto. A thermal miss depresses this component (floored
+// above 0 in gradedComplianceScore) but the line survives to be ranked + warned,
+// so among always-eligible glasses the one closest to the band ranks highest.
+// The band is coherence-guarded so an impossible requirement cannot mis-score.
 function complianceScore(opening: OpeningInput, variant: PerformanceVariant | null): number {
-  const req = opening.requirements ?? opening.advisoryRequirements;
-  const maxU = req?.maxUValue ?? null;
-  if (maxU == null) return variant ? (variant.certified ? 0.8 : 0.6) : 0.4;
-  const selectedU = variant?.uValue ?? null;
-  if (selectedU == null) return 0;
-  const minShgc = req?.minShgc ?? null;
-  const maxShgc = req?.maxShgc ?? null;
-  if (minShgc != null && (variant?.shgc == null || variant.shgc < minShgc)) return 0;
-  if (maxShgc != null && (variant?.shgc == null || variant.shgc > maxShgc)) return 0;
-  const margin = (maxU - selectedU) / Math.max(0.5, maxU);
-  return clamp01(1 - Math.abs(margin - 0.1) * 2);
+  const { band } = coerceCoherent(bandFromRequirements(opening.requirements ?? opening.advisoryRequirements));
+  const cell = variantCell(variant);
+  if (!band || !bandHasConstraint(band)) {
+    // No thermal band to meet — mildly prefer known/certified data, as before.
+    return cell ? (cell.certified ? 0.8 : 0.6) : 0.4;
+  }
+  if (!cell) return 0.4;
+  return gradedComplianceScore(cell, band);
 }
 
 function commercialScores(inputs: RankInput[]): Map<string, number> {
@@ -112,7 +124,10 @@ export function rankCandidates(opening: OpeningInput, inputs: RankInput[]): Rank
       geometry: geometryScore(opening, i.candidate),
       configuration: configurationScore(opening, i.candidate, i.selectedVariant),
       commercial: commercial.get(configurationId(i)) ?? 0.5,
-      historical: clamp01(i.historicalAcceptance ?? 0),
+      // Neutral 0.5 when there is no learned signal yet — an ABSENT learning
+      // feed must not read as a penalty (preserves the learning contract as the
+      // dataset fills). A real reviewer-acceptance score still nudges up/down.
+      historical: clamp01(i.historicalAcceptance ?? 0.5),
       dataCompleteness: dataCompletenessScore(i.candidate, i.selectedVariant),
     };
     const score =

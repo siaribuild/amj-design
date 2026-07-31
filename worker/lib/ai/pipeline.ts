@@ -19,6 +19,7 @@ import { energyReportExtractor, type EnergyExtraction } from "../estimator/skill
 import { planContextExtractor, type PlanContextV1 } from "../estimator/skills/plan";
 import { mapEnergyToOpenings, normalizeOpeningRef } from "./energyMap";
 import { resolveDefaultEnvelope, defaultRequirement, ARCHETYPE_REGISTRY_VERSION, type EnvelopeArchetype } from "./archetypes";
+import { computeDefaultBand } from "../estimator/thermal/computedBand";
 import { BUILDING_MODEL_SCHEMA_VERSION } from "./versions";
 import type { BuildingModelV1, OpeningV1 } from "./schema";
 import { runProjectEstimate } from "../estimator/estimate";
@@ -246,13 +247,37 @@ export function thermalContextFor(
 // band, recorded as an envelope_default ASSUMPTION — the §10.5 default-basis
 // language flows from requirement_basis, never silently. Returns the archetype
 // used (for the immutable per-run snapshot) or null when none covers the region.
+// SCAFFOLD WS6 (thermal rework): this is precedence TIER 3. It must (a) defer to a
+// tier-2 shared/per-type band, (b) compute PER opening via thermal/computedBand
+// (orientation/room aware, not one flat jurisdiction constant), and (c) assign
+// per-lite bands to composite children. Plan §2/§4/WS6.
 export function applyDefaultEnvelope(model: BuildingModelV1): EnvelopeArchetype | null {
   const archetype = resolveDefaultEnvelope(model);
   if (!archetype) return null;
   let applied = 0;
   for (const o of model.openings) {
     if (o.thermalRequirement) continue; // explicit report values stay authoritative
-    o.thermalRequirement = defaultRequirement(archetype);
+    // WS6: compute the band PER opening — orientation-aware where the wall
+    // orientation is known (a cooling-control SHGC cap for hard-to-shade E/W),
+    // Uw-cap-only otherwise (§11.3). Never sets a minShgc, so it can never form
+    // an impossible interval. Falls back to the flat archetype band if the
+    // computation yields nothing usable.
+    const band = computeDefaultBand(
+      { climateZone: archetype.nccClimateZone, orientation: o.wallOrientation },
+      o.elementType,
+    );
+    o.thermalRequirement = band
+      ? {
+          basis: "default_envelope",
+          maxUValue: band.maxUValue,
+          shgcTarget: band.shgcTarget,
+          shgcMin: band.minShgc,
+          shgcMax: band.maxShgc,
+          zoneType: null,
+          operablePercent: null,
+          notes: `${archetype.defaultOpeningBand.note} (orientation ${o.wallOrientation ?? "unknown"})`,
+        }
+      : defaultRequirement(archetype);
     applied++;
   }
   if (applied) {
@@ -608,6 +633,9 @@ export async function runAiExtraction(
   // requirements_json feeds the deterministic HARD RULES (rules.ts energy filter):
   // an explicit Uw/SHGC requirement is enforced by the same engine as before —
   // the LLM supplies the target, never the pass/fail decision.
+  // SCAFFOLD WS2/WS5: serialise the RESOLVED, coherent band (never min>max), and
+  // per-lite bands for composites. Route computed/ambiguous bands to
+  // advisoryRequirements (soft) rather than requirements (hard). Plan §2/WS2.
   const reqJson = (o: OpeningV1) => o.thermalRequirement
     ? JSON.stringify({ maxUValue: o.thermalRequirement.maxUValue, minShgc: o.thermalRequirement.shgcMin, maxShgc: o.thermalRequirement.shgcMax })
     : null;

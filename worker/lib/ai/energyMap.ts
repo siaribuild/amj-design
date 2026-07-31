@@ -211,10 +211,16 @@ export function mapEnergyToOpenings(extraction: EnergyExtraction, openings: Open
   return { requirements, conflicts, unmatched: extraction.constraints.filter((c) => !matchedConstraints.has(c)) };
 }
 
-// Among several child constraints, the strictest requirement governs the parent
-// frame: lowest U cap, tightest SHGC band.
+// WS2 (thermal rework): a composite frame's child lites can legitimately need
+// DIFFERENT glass (awning 0.37–0.41 vs fixed 0.50–0.56). Intersecting their SHGC
+// bands (maxOf-mins, minOf-maxes) then produces an IMPOSSIBLE band (min>max) — the
+// exact origin of the empty-line bug. We still take the tightest U cap (a single
+// frame band is coherent), but when the SHGC intersection is empty we DROP the
+// pair (keeping a shgcTarget as advisory) rather than emit a contradiction. Full
+// per-lite glazing (each lite its own glass) is the composite-segment work (WS5);
+// this guard makes the collapsed parent band coherent in the meantime.
 function strictest(cs: EnergyConstraint[]): EnergyConstraint {
-  return cs.reduce((a, b) => ({
+  const merged = cs.reduce((a, b) => ({
     ...a,
     maxUValue: minOf(a.maxUValue, b.maxUValue),
     minShgc: maxOf(a.minShgc, b.minShgc),
@@ -223,6 +229,10 @@ function strictest(cs: EnergyConstraint[]): EnergyConstraint {
     openablePercent: a.openablePercent ?? b.openablePercent,
     glazingNote: a.glazingNote ?? b.glazingNote,
   }));
+  if (merged.minShgc != null && merged.maxShgc != null && merged.minShgc > merged.maxShgc) {
+    return { ...merged, minShgc: null, maxShgc: null };
+  }
+  return merged;
 }
 const minOf = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.min(a, b));
 const maxOf = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.max(a, b));

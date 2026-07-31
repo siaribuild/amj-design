@@ -41,6 +41,11 @@ export function variantAffinityScore(opening: OpeningInput, variant: Performance
   return Math.max(0, Math.min(1, 0.5 + raw / 12));
 }
 
+// SCAFFOLD WS3 (thermal rework): glass is the U-value lever and is MANDATORY, so
+// this must never return [] on thermal grounds. Fold the closest-band fallback in
+// (or route through thermal/glassSelection.selectGlassForBand) so a glass is
+// always chosen; keep exactly ONE glass-selection path (choosePerformanceVariant
+// below is currently dead). Plan §3/WS3.
 export function eligiblePerformanceVariants(
   candidate: CatalogueCandidate,
   outcome: RuleOutcome,
@@ -53,6 +58,9 @@ export function eligiblePerformanceVariants(
 /** Select the exact performance configuration that rules, ranking and pricing use.
  * Explicit report limits win. Without a report, schedule text and the transparent
  * building-context risk band provide a price-protective prior. */
+// SCAFFOLD WS3: currently DEAD (no callers). Either revive as the single glass
+// selector (meet band → closest by SHGC-to-target then lowest Uw) or delete in
+// favour of thermal/glassSelection. Do not leave two selection paths. Plan §3/WS3.
 export function choosePerformanceVariant(
   opening: OpeningInput,
   candidate: CatalogueCandidate,

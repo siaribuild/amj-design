@@ -107,6 +107,10 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
     let quote = line.quoteLineId ? quoteState.get(line.quoteLineId) : null;
     const isNewQuoteLine = !quote;
     const basis = recommendationBasis(line.opening);
+    // SCAFFOLD WS7 (thermal rework): reserve this empty-line branch for GENUINE
+    // no-product only (unknown operation / no dimensions). Once thermal is
+    // non-blocking a thermal shortfall NEVER reaches here — it flows through the
+    // real-line branch with a reviewRequired warning. Plan §4/WS7.
     if (!chosen) {
       if (!quote) {
         stmts.push(env.DB.prepare(
@@ -431,6 +435,10 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
   return { proposalId, published: true, appliedLines };
 }
 
+// SCAFFOLD WS7 (thermal rework): the thermal WARNING lands near here — when the
+// chosen glass misses the resolved band (or the band was ambiguous/absent), set
+// review_required=1 and add a thermal reason to review_json + missing_inputs_json,
+// so the line is technical_review (submittable), not incomplete. Plan §4/WS7.
 function recommendationBasis(opening: OpeningInput): string {
   if (opening.thermalContext?.requirementBasis === "explicit_energy_report") return "energy_report";
   if (opening.scheduleRequirements?.glassDescription || opening.scheduleRequirements?.doubleGlazed != null) {

@@ -70,6 +70,10 @@ export async function selectForOpening(
       evaluated.push({ candidate, outcome, selectedVariant: null, price: null, score: null, components: null, rank: null, selected: false });
       continue;
     }
+    // SCAFFOLD WS3 (thermal rework): a thermal miss must NOT drop to a null-variant
+    // unselected row. The frame stays (operation+dimensions); glass is picked to
+    // meet the resolved band else closest via thermal/glassSelection.selectGlassForBand,
+    // carrying a reviewRequired warning. Never selected=null on thermal grounds. Plan §4/WS3.
     const variants = eligiblePerformanceVariants(candidate, outcome);
     if (!variants.length) {
       evaluated.push({ candidate, outcome, selectedVariant: null, price: null, score: null, components: null, rank: null, selected: false });

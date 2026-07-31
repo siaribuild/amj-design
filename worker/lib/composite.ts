@@ -39,6 +39,11 @@ export async function loadCompositePolicy(env: Env): Promise<CompositePolicy> {
   return { toleranceMm: row.tolerance_mm, defaultJoinerMm: row.default_joiner_mm, maxSegments: row.max_segments };
 }
 
+// SCAFFOLD WS5 (thermal rework): a segment (composite lite) carries its OWN
+// resolved band + basis so its glass is picked to meet that band, not copied from
+// the parent. Persisted via migration 0036 (segment_requirements_json etc.).
+// Fill: add `resolvedBand?` + `requirementBasis?` here and thread through
+// splitLine/addSegment/updateSegment + the estimator glass selection. Plan §5/WS5.
 export interface SegmentSpec {
   widthMm: number;
   heightMm: number;
