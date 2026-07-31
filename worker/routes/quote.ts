@@ -52,7 +52,18 @@ quote.post("/projects/:id/clarification-reply", async (c) => {
     return c.json({ error: "invalid_state" }, 409);
   }
   await logEvent(c.env, { actor: user?.id ?? "customer", entityType: "project", entityId: p.id, action: "customer answered clarification" });
-  await notify(c.env, { recipient: "ops", eventType: "clarification.answered", channel: "inbox", templateKey: "clarification_answered" });
+  const ref = p.public_ref ?? p.id;
+  const cust = await c.env.DB.prepare(
+    "SELECT COALESCE(u.name, p.contact_name) AS name FROM project p LEFT JOIN user u ON u.id = p.owner_user_id WHERE p.id = ?",
+  ).bind(p.id).first<{ name: string | null }>();
+  const custName = cust?.name || "The customer";
+  const internalTo = c.env.ENQUIRY_INTERNAL_TO || c.env.CONTACT_TO || c.env.EMAIL_FROM || "quotes@openframe.com.au";
+  await notify(c.env, {
+    recipient: internalTo, eventType: "clarification.answered", templateKey: "clarification_answered",
+    vars: { ref, name: custName, message },
+    email: { to: internalTo, subject: `Customer answered clarification — ${ref}`,
+      text: `${custName} answered the clarification on quote ${ref}:\n\n${message}\n\nOpen the ops console → this project to continue the review.` },
+  });
   return c.json({ ok: true, status: "under_review" });
 });
 
@@ -348,7 +359,18 @@ quote.post("/revisions/:id/request-changes", async (c) => {
     return c.json({ error: "invalid_state" }, 409);
   }
   await logEvent(c.env, { actor: user?.id ?? "customer", entityType: "project", entityId: p.id, action: "customer requested changes on issued quote" });
-  await notify(c.env, { recipient: "ops", eventType: "quote.changes_requested", channel: "inbox", templateKey: "quote_changes_requested" });
+  const ref = p.public_ref ?? p.id;
+  const cust = await c.env.DB.prepare(
+    "SELECT COALESCE(u.name, p.contact_name) AS name FROM project p LEFT JOIN user u ON u.id = p.owner_user_id WHERE p.id = ?",
+  ).bind(p.id).first<{ name: string | null }>();
+  const custName = cust?.name || "The customer";
+  const internalTo = c.env.ENQUIRY_INTERNAL_TO || c.env.CONTACT_TO || c.env.EMAIL_FROM || "quotes@openframe.com.au";
+  await notify(c.env, {
+    recipient: internalTo, eventType: "quote.changes_requested", templateKey: "quote_changes_requested",
+    vars: { ref, name: custName, message },
+    email: { to: internalTo, subject: `Customer requested changes — ${ref}`,
+      text: `${custName} requested changes on the issued quote ${ref}:\n\n${message}\n\nOpen the ops console → this project to revise and re-issue.` },
+  });
   return c.json({ ok: true, status: "under_review" });
 });
 
