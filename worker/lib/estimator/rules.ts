@@ -128,10 +128,9 @@ function checkEnergy(opening: OpeningInput, c: CatalogueCandidate): {
 
 type ThermalLimits = NonNullable<OpeningInput["requirements"]>;
 
-// SCAFFOLD WS2 (thermal rework): the explicit ∩ advisory intersection here is a
-// SECOND min>max collapse site. Delegate to thermal/precedence.resolveThermalBand
-// (explicit → per-type → computed, coherence-guarded) so one guarded path serves
-// both this and energyMap. Plan §2/WS2.
+// The explicit ∩ advisory intersection here can produce an impossible (min>max)
+// band — the same collapse energyMap.strictest once hit. coerceCoherent (below) is
+// the single guarded normalisation both sites route through.
 // Exported (M4/D2): the ranker scores against the SAME enforced band this
 // resolves, so rank order can no longer diverge from what the rules enforce.
 export function effectiveThermalRequirements(opening: OpeningInput): ThermalLimits | null {

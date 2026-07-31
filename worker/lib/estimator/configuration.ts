@@ -40,11 +40,9 @@ export function variantAffinityScore(opening: OpeningInput, variant: Performance
   return Math.max(0, Math.min(1, 0.5 + raw / 12));
 }
 
-// SCAFFOLD WS3 (thermal rework): glass is the U-value lever and is MANDATORY, so
-// this must never return [] on thermal grounds. Fold the closest-band fallback in
-// (or route through thermal/glassSelection.selectGlassForBand) so a glass is
-// always chosen; keep exactly ONE glass-selection path (choosePerformanceVariant
-// below is currently dead). Plan §3/WS3.
+// Glass is the U-value lever and is MANDATORY, so hard-rule eligibility must
+// never collapse to [] on thermal grounds. Final glass selection is the weighted
+// ranker (rank.ts), not a standalone selector.
 export function eligiblePerformanceVariants(
   candidate: CatalogueCandidate,
   outcome: RuleOutcome,
@@ -54,40 +52,3 @@ export function eligiblePerformanceVariants(
   );
 }
 
-/** Select the exact performance configuration that rules, ranking and pricing use.
- * Explicit report limits win. Without a report, schedule text and the transparent
- * building-context risk band provide a price-protective prior. */
-// SCAFFOLD WS3: currently DEAD (no callers). Either revive as the single glass
-// selector (meet band → closest by SHGC-to-target then lowest Uw) or delete in
-// favour of thermal/glassSelection. Do not leave two selection paths. Plan §3/WS3.
-export function choosePerformanceVariant(
-  opening: OpeningInput,
-  candidate: CatalogueCandidate,
-  outcome: RuleOutcome,
-): PerformanceVariant | null {
-  const eligible = eligiblePerformanceVariants(candidate, outcome);
-  if (!eligible.length) return null;
-
-  const hasExplicit = opening.thermalContext?.requirementBasis === "explicit_energy_report" ||
-    opening.requirements?.maxUValue != null ||
-    opening.requirements?.minShgc != null ||
-    opening.requirements?.maxShgc != null;
-
-  return [...eligible].sort((a, b) => {
-    const certified = Number(b.certified && b.dataSource === "certified") -
-      Number(a.certified && a.dataSource === "certified");
-    if (hasExplicit && certified) return certified;
-    const affinity = (scheduleAffinity(opening, b) + contextAffinity(opening, b)) -
-      (scheduleAffinity(opening, a) + contextAffinity(opening, a));
-    if (affinity) return affinity;
-    // Avoid unexplained over-specification: choose the closest passing Uw to the
-    // explicit cap, otherwise prefer the more complete lower-U configuration.
-    const cap = opening.requirements?.maxUValue;
-    if (cap != null && a.uValue != null && b.uValue != null) {
-      return Math.abs(cap - a.uValue) - Math.abs(cap - b.uValue);
-    }
-    if (a.uValue == null) return 1;
-    if (b.uValue == null) return -1;
-    return a.uValue - b.uValue;
-  })[0];
-}
