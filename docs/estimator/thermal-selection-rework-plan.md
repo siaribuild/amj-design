@@ -13,8 +13,10 @@
 - **Versions bumped** — `RULE_VERSION` v2, `RANKER_VERSION` v3, `PIPELINE_VERSION` 2026-07-31.1.
 - **Recommendation-model tests** — `scripts/tests/estimator-recommendation.test.mjs` (8): non-blocking, the W01 regression, glass-to-band, operation authority, and the historical/LLM nudge (tie-break + bounded). `estimator-rules.test.mjs` updated to the non-blocking contract.
 
-**Remaining (scaffolded, documented — needs owner/integration):**
-- **WS1 glass-as-shared-option** — the estimator already treats each `performanceVariant` as the (frame×glass) cell, so the fix works today against the existing catalogue. Making glass a first-class shared Sanity option is a catalogue/UI refactor; schema markers + `sanity/scripts/migrate-glazing-options.mjs` are scaffolded, but the content migration must be run with the owner's Sanity token.
+**Also delivered:**
+- **WS1 glass-as-shared-option — DONE (2026-07-31).** `optionType.required` + `performanceVariant.glazingOption` in the Sanity schema (Studio schema deployed); estimator GROQ reads `glazingOptionSlug` with a variantId fallback. Content migrated via Sanity MCP: "glazing" option type + 3 canonical glass options (Single Clear / Double Clear / Double Low-E), all 27 products linked (16/9/2) and published — verified 0 unlinked on the published perspective. Worker deployed (`91c1f365`).
+
+**Remaining (documented):**
 - **WS5 composite thermal** — RE-SCOPED (see WS5 below). Owner: splits are human/design decisions (AI may only recommend from learning, always review-flagged); segments use the SAME glass; goal is an averaged-Uw fit, no per-lite glass, no geometry/jamb. The deployed core fix already handles a non-split composite (one glass, Uw fit, review flag). Remaining is a small averaged-Uw helper (when splits exist) + a deferred learning-based split recommendation.
 - **WS7 AI copy** — the line already lands non-blocking (`commercial_only_estimate` / `technical_review`, submittable); surfacing the `thermal_band_not_met` reason in the customer-facing `review_json` is polish.
 
