@@ -11,6 +11,8 @@ import { uuid } from "../util";
 import type { CatalogueCandidate, OpeningInput } from "./types";
 import type { PerformanceVariant } from "./types";
 import { publishAiProposal, type ProposalSelection } from "../ai/proposal";
+import { splitLine, type SegmentSpec } from "../composite";
+import { proposeSplit, type SplitHint } from "./split";
 
 // Schedule TYPE text → structured operation (the delivered parser records the raw
 // schedule term; the estimator needs the operation vocabulary the catalogue uses).
@@ -136,6 +138,11 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
   sourceGeneration: number;
   sourceManifestHash: string;
   processingToken?: string;
+}, opts?: {
+  /** Per-opening (external_ref) split hints parsed from schedule comments; the AI
+   *  proposes + materialises a review-flagged composite for these and for oversize
+   *  openings (WS5). Absent ⇒ no auto-split. */
+  splitHints?: Map<string, SplitHint>;
 }): Promise<EstimateSummary> {
   // Extraction source #1: if the project has parsed schedule lines but no
   // openings yet, bridge them first (idempotent).
@@ -224,6 +231,61 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
       }
     }
     appliedToCart = published.appliedLines;
+    // WS5: after the lines exist, materialise a review-flagged composite for any
+    // opening that the schedule comment says to split, or that is oversize.
+    await materialiseSplits(env, { repo, priceFn, historical, proposalLines, splitHints: opts?.splitHints ?? new Map() });
   }
   return { openings: openings.length, selected: selectedCount, appliedToCart, lines };
+}
+
+/** For each opening with a split intent (comment or oversize), select a product
+ *  per segment and turn its quote_line into a composite via splitLine (origin
+ *  'ai', always review-flagged). Fixed lites have no dedicated product in the
+ *  catalogue, so a segment whose operation has none falls back to the parent's
+ *  real product (same frame series) — never an invented one. */
+async function materialiseSplits(env: Env, ctx: {
+  repo: Parameters<typeof selectForOpening>[1];
+  priceFn: Parameters<typeof selectForOpening>[2];
+  historical: Parameters<typeof selectForOpening>[3];
+  proposalLines: ProposalSelection[];
+  splitHints: Map<string, SplitHint>;
+}): Promise<void> {
+  for (const pl of ctx.proposalLines) {
+    const parent = pl.result.selected;
+    if (!pl.quoteLineId || !parent) continue;
+    const hint = (pl.externalRef && ctx.splitHints.get(pl.externalRef)) || null;
+    const oversize = (parent.outcome.filters ?? []).some((f) => f.filter === "dimensions" && f.severity === "warning");
+    if (!hint && !oversize) continue;
+
+    const proposal = proposeSplit(pl.opening, hint);
+    if (proposal.segments.length < 2) continue;
+
+    const specs: SegmentSpec[] = [];
+    for (const seg of proposal.segments) {
+      const sub = { ...pl.opening, externalRef: null, operationType: seg.operation, widthMm: seg.widthMm, heightMm: seg.heightMm };
+      const sel = await selectForOpening(sub, ctx.repo, ctx.priceFn, ctx.historical);
+      specs.push({
+        widthMm: seg.widthMm,
+        heightMm: seg.heightMm,
+        // Segment's own best-fit product, else the parent's real product (fixed
+        // lite has no product — do NOT fabricate one).
+        productSlug: sel.selected?.candidate.slug ?? parent.candidate.slug,
+      });
+    }
+
+    const res = await splitLine(env, { parentId: pl.quoteLineId, segments: specs, axis: proposal.axis, origin: "ai" });
+    if (!res.ok) continue;
+
+    // Per-segment band snapshot (migration 0036): the SAME resolved band across
+    // segments (same glass by default), always review-flagged.
+    const req = pl.opening.requirements ?? {};
+    await env.DB.prepare(
+      `UPDATE quote_line SET segment_requirements_json=?, segment_requirement_basis=?, segment_thermal_review=1
+        WHERE parent_line_id=?`,
+    ).bind(
+      JSON.stringify({ maxUValue: req.maxUValue ?? null, minShgc: req.minShgc ?? null, maxShgc: req.maxShgc ?? null }),
+      proposal.basis,
+      pl.quoteLineId,
+    ).run().catch(() => { /* band snapshot is advisory; never fail the run on it */ });
+  }
 }

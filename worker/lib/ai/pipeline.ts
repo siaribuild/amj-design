@@ -530,16 +530,19 @@ export async function runAiExtraction(
 
   // WS5: propose a composite split where the schedule COMMENT describes one. The
   // model extracts a structured `split` from the free-text comment (flexible to
-  // wording); the deterministic parser is the fallback. The proposal is
-  // ALWAYS review-flagged — it is a smart starting point, never a final answer,
-  // and it is surfaced as a review reason rather than auto-building segment rows
-  // (materialising the composite stays the reviewer's action for now).
+  // wording); the deterministic parser is the fallback. The proposal is ALWAYS
+  // review-flagged — a smart starting point, never a final answer. The hint is
+  // both surfaced as a review reason AND passed to the estimator, which
+  // materialises the composite (parent + priced segments) for comment and
+  // oversize openings.
+  const splitHints = new Map<string, SplitHint>();
   for (const l of merged.lines) {
     if (!l.tag || l.widthMm == null || l.heightMm == null) continue;
     const hint: SplitHint | null = l.split?.operable?.length
       ? { units: l.split.operable, raw: l.notes ?? "" }
       : parseSplitHint(l.notes);
     if (!hint) continue;
+    splitHints.set(l.tag, hint);
     const proposal = proposeSplit(
       { operationType: (l.typeText ?? "").toLowerCase() || null, widthMm: l.widthMm, heightMm: l.heightMm },
       hint,
@@ -744,7 +747,7 @@ export async function runAiExtraction(
     sourceGeneration,
     sourceManifestHash,
     processingToken: opts.processingToken,
-  });
+  }, { splitHints });
 
   phase("estimate_and_pricing", {
     openings: estimate.openings,
