@@ -133,24 +133,12 @@ function familyFromAliases(section: ScheduleSection, typeText: string | null): s
   return null;
 }
 
-// Catalogue family → the estimator's operation vocabulary. The bridge that lets
-// the AI path honour the SAME catalogue aliases as the deterministic one: resolve
-// the schedule's type text to a family (via aliases), then to an operation.
-const FAMILY_OPERATION: Record<string, string> = {
-  "awning-window": "awning",
-  "casement-window": "casement",
-  "sliding-window": "sliding",
-  "glass-louvre": "louvre",
-  "tilt-and-turn-window": "tilt-turn",
-  "sashless-double-hung": "double-hung",
-  "single-hung-window": "double-hung",
-  "sliding-door": "sliding",
-  "slim-frame-sliding-door": "sliding",
-  "lift-slide-door": "lift-slide",
-  "casement-door": "hinged",
-  "bi-fold-door": "bi-fold",
-  "pivot-door": "pivot",
-};
+// Catalogue family → the estimator's operation vocabulary. Read from the family's
+// own `operation` (Sanity content) — the single source of truth — so the AI path
+// honours the SAME families as the deterministic one and a new family's operation
+// is authored once, never mirrored in code.
+const operationForFamily = (slug: string | null): string | null =>
+  slug ? families.find((f) => f.slug === slug)?.operation ?? null : null;
 
 /** Schedule TYPE text → { familySlug, operationType }, honouring catalogue
  *  aliases. Shared by the deterministic matcher and the AI pipeline so both agree
@@ -160,7 +148,7 @@ export function resolveScheduleType(section: ScheduleSection, typeText: string |
   familySlug: string | null; operationType: string | null;
 } {
   const { slug } = familyFor(section, typeText);
-  return { familySlug: slug, operationType: slug ? FAMILY_OPERATION[slug] ?? null : null };
+  return { familySlug: slug, operationType: operationForFamily(slug) };
 }
 
 const pad2 = (s: string) => {

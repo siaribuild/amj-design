@@ -207,6 +207,33 @@ test("catalogue readiness rejects placeholder thermal rows", () => {
   assert.equal(catalogueCandidateReadiness(ready).ready, true);
 });
 
+test("a product with a blank own-set inherits its family's operation (single source of truth)", () => {
+  // Editor left Configuration → Operation types blank; the family owns the op.
+  const inherited = toCandidate({ ...awning, configuration: {}, seriesOperation: "awning" });
+  assert.deepEqual(inherited.configuration.operationTypes, ["awning"], "family operation is baked in");
+  const readiness = catalogueCandidateReadiness({
+    ...inherited,
+    performanceVariants: inherited.performanceVariants.map((v) => ({ ...v, frameTechnology: "conventional" })),
+  });
+  assert.ok(!readiness.gaps.includes("operation_types"), "inherited operation satisfies readiness");
+
+  // An explicit own-set OVERRIDES the family (a multi-operation product).
+  const override = toCandidate({ ...awning, configuration: { operationTypes: ["casement", "hinged"] }, seriesOperation: "hinged" });
+  assert.deepEqual(override.configuration.operationTypes, ["casement", "hinged"], "explicit set wins over the family");
+});
+
+test("the catalogue query resolves a blank own-set via the family operation", async () => {
+  const repo = fixtureCatalogueRepository([{
+    ...awning, category: { slug: { current: "windows" } },
+    configuration: {}, seriesOperation: "awning",
+  }]);
+  const hit = await repo.queryCandidates("windows", "awning");
+  assert.equal(hit.length, 1, "a blank own-set still matches the family's operation");
+  assert.deepEqual(hit[0].configuration.operationTypes, ["awning"]);
+  const miss = await repo.queryCandidates("windows", "sliding");
+  assert.equal(miss.length, 0, "inheritance does not leak into other operations");
+});
+
 test("selection prices the exact variant that met the report, with extracted quantity", async () => {
   const repo = fixtureCatalogueRepository([{
     ...awning,

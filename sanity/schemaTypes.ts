@@ -40,6 +40,19 @@ export const family = defineType({
     defineField({ name: "name", type: "string", validation: (r) => r.required() }),
     defineField({ name: "slug", type: "slug", options: { source: "name" }, validation: (r) => r.required() }),
     defineField({ name: "category", type: "reference", to: [{ type: "category" }], validation: (r) => r.required() }),
+    // The canonical operation every product in this family performs. It is the
+    // single source of truth for the family's operation: products inherit it and
+    // only set their own Configuration → Operation types to OVERRIDE (a product
+    // that supports several operations, e.g. a casement door that is also hinged).
+    // Both the deterministic schedule matcher and the estimator read it, so a new
+    // family's operation is one field here — never repeated on every product.
+    defineField({
+      name: "operation",
+      title: "Operation",
+      type: "string",
+      options: { list: ["fixed", "awning", "casement", "sliding", "stacker", "bi-fold", "hinged", "pivot", "louvre", "double-hung", "tilt-turn", "lift-slide"] },
+      validation: (r) => r.required(),
+    }),
     // Alternative names architects/drafters use for this family on a schedule.
     // The estimator maps a schedule's TYPE text to a family through these, so a
     // new piece of trade vocabulary is a CONTENT change, not a code change.
@@ -194,7 +207,7 @@ const configuration = defineField({
   fields: [
     defineField({ name: "operationTypes", title: "Operation types", type: "array", of: [{ type: "string" }],
       options: { list: ["fixed", "awning", "casement", "sliding", "stacker", "bi-fold", "hinged", "pivot", "louvre", "double-hung", "tilt-turn", "lift-slide"] },
-      description: "One or more operations this product supports. Leave blank to inherit the family's operation; set only to override or when a product supports several." }),
+      description: "Override only. Leave blank and the product inherits its family's Operation. Set this ONLY when the product supports several operations (e.g. a casement door that is also hinged) — then list ALL of them." }),
     // Removed (2026-07-31 rationalisation — read by no code): panelPattern,
     // openingDirection, isCompositeMember, compositePattern, dataSource.
   ],

@@ -15,7 +15,9 @@ import { defineQuery } from "groq";
 // $operation is optional — when empty, match the family only.
 const CANDIDATE_QUERY = defineQuery(`*[_type == "product" && defined(name) && defined(schemaVersion)
   && ($family == "" || category->slug.current == $family)
-  && ($operation == "" || $operation in configuration.operationTypes)]{
+  && ($operation == ""
+      || $operation in configuration.operationTypes
+      || ((!defined(configuration.operationTypes) || count(configuration.operationTypes) == 0) && family->operation == $operation))]{
   "sanityProductId": _id,
   "catalogueRevision": _rev,
   schemaVersion,
@@ -24,6 +26,7 @@ const CANDIDATE_QUERY = defineQuery(`*[_type == "product" && defined(name) && de
   "family": category->slug.current,
   "series": family->slug.current,
   configuration,
+  "seriesOperation": family->operation,
   dimensionRule,
   "performanceVariants": performanceVariants[]{
     variantId, uValue, shgc, frameType, frameTechnology,
@@ -89,6 +92,16 @@ export function toCandidate(row: any): CatalogueCandidate | null {
       published: v?.published !== false,
     }];
   });
+  // A product's own operation types are an OVERRIDE; when blank it inherits the
+  // single canonical operation its family declares (family->operation). Bake the
+  // effective set here so every downstream rule/ranker reads one shape and never
+  // has to know about inheritance.
+  const ownOps = Array.isArray(row.configuration?.operationTypes)
+    ? row.configuration.operationTypes.filter((s: unknown): s is string => typeof s === "string" && !!s)
+    : [];
+  const seriesOperation = typeof row.seriesOperation === "string" && row.seriesOperation ? row.seriesOperation : null;
+  const operationTypes = ownOps.length ? [...new Set(ownOps)] : (seriesOperation ? [seriesOperation] : []);
+  const configuration = row.configuration || operationTypes.length ? { operationTypes } : null;
   return {
     sanityProductId: String(row.sanityProductId),
     catalogueRevision: String(row.catalogueRevision ?? ""),
@@ -97,7 +110,7 @@ export function toCandidate(row: any): CatalogueCandidate | null {
     slug: String(row.slug ?? ""),
     family: row.family ?? null,
     series: row.series ?? null,
-    configuration: row.configuration ?? null,
+    configuration,
     dimensionRule: row.dimensionRule ?? null,
     performanceVariants: variants,
     optionGroups: Array.isArray(row.optionGroups) ? [...new Set(row.optionGroups.filter(Boolean))] as string[] : [],
@@ -198,9 +211,13 @@ export function fixtureCatalogueRepository(rows: any[]): CatalogueRepository {
   const exec: QueryExecutor = async (_q, params) => {
     const family = params.family as string;
     const operation = params.operation as string;
-    return rows.filter((r) =>
-      (!family || r?.category?.slug?.current === family || r?.family === family) &&
-      (!operation || (r?.configuration?.operationTypes ?? []).includes(operation)));
+    return rows.filter((r) => {
+      if (family && r?.category?.slug?.current !== family && r?.family !== family) return false;
+      if (!operation) return true;
+      const ops = r?.configuration?.operationTypes ?? [];
+      // Mirror the live query: an empty own-set inherits the family's operation.
+      return ops.length ? ops.includes(operation) : r?.seriesOperation === operation;
+    });
   };
   return createCatalogueRepository(exec);
 }
