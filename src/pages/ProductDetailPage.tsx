@@ -118,6 +118,21 @@ function TechnicalContent({ product }: { product: Product }) {
   );
 }
 
+// WERS star ratings rendered as filled stars (+ a half), compact, with the exact
+// figure on hover — a rating reads faster as stars than as a decimal. WERS is a
+// 0–10 half-step scale; filled-only keeps the table cell narrow.
+function Stars({ value }: { value: number | null | undefined }) {
+  if (value == null) return <span className="text-quieter">—</span>;
+  const half = Math.round(value * 2) / 2;
+  const full = Math.floor(half);
+  const hasHalf = half - full >= 0.5;
+  return (
+    <span className="text-sage whitespace-nowrap" title={`${value} / 10 stars`} aria-label={`${value} out of 10 stars`}>
+      {"★".repeat(full)}{hasHalf ? "½" : ""}
+    </span>
+  );
+}
+
 // Glazing gets its OWN tab (M3): the WERS thermal ratings per glazing the product's
 // frame offers. Shown only when the product has thermal data — never fabricated.
 function GlazingContent({ product }: { product: Product }) {
@@ -137,8 +152,8 @@ function GlazingContent({ product }: { product: Product }) {
               <th className="py-2 px-3 text-right font-medium">Uw</th>
               <th className="py-2 px-3 text-right font-medium">SHGC</th>
               <th className="py-2 px-3 text-right font-medium">Tvw</th>
-              <th className="py-2 px-3 text-right font-medium">Heating ★</th>
-              <th className="py-2 pl-3 text-right font-medium">Cooling ★</th>
+              <th className="py-2 px-3 text-left font-medium">Heating</th>
+              <th className="py-2 pl-3 text-left font-medium">Cooling</th>
             </tr>
           </thead>
           <tbody>
@@ -148,8 +163,8 @@ function GlazingContent({ product }: { product: Product }) {
                 <td className="py-2 px-3 text-right tabular-nums text-ink">{t.uValue ?? "—"}</td>
                 <td className="py-2 px-3 text-right tabular-nums text-ink">{t.shgc ?? "—"}</td>
                 <td className="py-2 px-3 text-right tabular-nums text-ink">{t.tvw ?? "—"}</td>
-                <td className="py-2 px-3 text-right tabular-nums text-ink">{t.heatingStars ?? "—"}</td>
-                <td className="py-2 pl-3 text-right tabular-nums text-ink">{t.coolingStars ?? "—"}</td>
+                <td className="py-2 px-3 text-left"><Stars value={t.heatingStars} /></td>
+                <td className="py-2 pl-3 text-left"><Stars value={t.coolingStars} /></td>
               </tr>
             ))}
           </tbody>

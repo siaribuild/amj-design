@@ -144,6 +144,8 @@ export const option = defineType({
     defineField({ name: "glassType", title: "Glass type", type: "string",
       options: { list: [{ title: "Clear", value: "clear" }, { title: "Toned", value: "toned" }, { title: "Low-E", value: "low_e" }] },
       description: "Glazing options only — WERS GlassType." }),
+    defineField({ name: "longDisplayName", title: "Long display name", type: "string",
+      description: "Glazing options — the full build-up description (WERS GlazingLongDisplayName), shown to customers." }),
     defineField({ name: "reviewRequired", title: "Requires review", type: "boolean", initialValue: false,
       description: "When set, selecting this option always routes the line to manual technical review." }),
     defineField({
