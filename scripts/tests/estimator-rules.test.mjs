@@ -37,7 +37,8 @@ const awning = {
   sanityProductId: "product-amj80-series-awning-window", catalogueRevision: "rev-1", schemaVersion: 1,
   name: "AMJ80 Series Awning Window", slug: "amj80-series-awning-window",
   family: "windows", series: "awning-window",
-  configuration: { operationTypes: ["awning"] },
+  // Operation is a family property; toCandidate bakes it in from seriesOperation.
+  seriesOperation: "awning",
   dimensionRule: { minWidthMm: 400, maxWidthMm: 1000, minHeightMm: 400, maxHeightMm: 2400, maxAreaM2: 2.4, maxAspectRatio: 4, ruleVersion: "v1" },
   performanceVariants: [{ variantId: "std", glazingOptionSlug: "double-clear", glazingClass: "double_clear", uValue: 3.9, shgc: 0.62, frameType: "aluminium", dataSource: "estimated", certified: false, published: true }],
   optionGroups: ["colour", "flyscreen"], pricingRef: "amj80",
@@ -207,31 +208,25 @@ test("catalogue readiness rejects placeholder thermal rows", () => {
   assert.equal(catalogueCandidateReadiness(ready).ready, true);
 });
 
-test("a product with a blank own-set inherits its family's operation (single source of truth)", () => {
-  // Editor left Configuration → Operation types blank; the family owns the op.
-  const inherited = toCandidate({ ...awning, configuration: {}, seriesOperation: "awning" });
-  assert.deepEqual(inherited.configuration.operationTypes, ["awning"], "family operation is baked in");
+test("a product's operation comes from its family (single intrinsic property)", () => {
+  const c = toCandidate({ ...awning, seriesOperation: "awning" });
+  assert.deepEqual(c.configuration.operationTypes, ["awning"], "family operation is baked in");
   const readiness = catalogueCandidateReadiness({
-    ...inherited,
-    performanceVariants: inherited.performanceVariants.map((v) => ({ ...v, frameTechnology: "conventional" })),
+    ...c,
+    performanceVariants: c.performanceVariants.map((v) => ({ ...v, frameTechnology: "conventional" })),
   });
-  assert.ok(!readiness.gaps.includes("operation_types"), "inherited operation satisfies readiness");
-
-  // An explicit own-set OVERRIDES the family (a multi-operation product).
-  const override = toCandidate({ ...awning, configuration: { operationTypes: ["casement", "hinged"] }, seriesOperation: "hinged" });
-  assert.deepEqual(override.configuration.operationTypes, ["casement", "hinged"], "explicit set wins over the family");
+  assert.ok(!readiness.gaps.includes("operation_types"), "the family operation satisfies readiness");
 });
 
-test("the catalogue query resolves a blank own-set via the family operation", async () => {
+test("the catalogue query matches on the family operation only", async () => {
   const repo = fixtureCatalogueRepository([{
-    ...awning, category: { slug: { current: "windows" } },
-    configuration: {}, seriesOperation: "awning",
+    ...awning, category: { slug: { current: "windows" } }, seriesOperation: "awning",
   }]);
   const hit = await repo.queryCandidates("windows", "awning");
-  assert.equal(hit.length, 1, "a blank own-set still matches the family's operation");
+  assert.equal(hit.length, 1, "matches its family's operation");
   assert.deepEqual(hit[0].configuration.operationTypes, ["awning"]);
   const miss = await repo.queryCandidates("windows", "sliding");
-  assert.equal(miss.length, 0, "inheritance does not leak into other operations");
+  assert.equal(miss.length, 0, "does not match an operation its family does not perform");
 });
 
 test("selection prices the exact variant that met the report, with extracted quantity", async () => {
@@ -286,7 +281,7 @@ test("selection ranks every eligible exact variant so finalized precedent can ch
 test("fixture CatalogueRepository filters by family + operation and stamps a version", async () => {
   const repo = fixtureCatalogueRepository([
     { ...awning, category: { slug: { current: "windows" } } },
-    { ...awning, sanityProductId: "product-door", slug: "d", category: { slug: { current: "doors" } }, configuration: { operationTypes: ["sliding"] } },
+    { ...awning, sanityProductId: "product-door", slug: "d", category: { slug: { current: "doors" } }, seriesOperation: "sliding" },
   ]);
   const windows = await repo.queryCandidates("windows", "awning");
   assert.equal(windows.length, 1);

@@ -196,22 +196,10 @@ const galleryImage = defineArrayMember({
 // carries an explicit provenance flag — an ESTIMATED value must never be treated
 // as a certified compliance figure (spec §13, addendum §1).
 
-// Structured operation/panel/composite model — replaces inferring operation from
-// the family name. Maps schedule terms (fixed, awning, sliding, stacker, hinged…).
-const configuration = defineField({
-  name: "configuration",
-  title: "Configuration (operation / panel / composite)",
-  type: "object",
-  group: "technical",
-  options: { collapsible: true, collapsed: false },
-  fields: [
-    defineField({ name: "operationTypes", title: "Operation types", type: "array", of: [{ type: "string" }],
-      options: { list: ["fixed", "awning", "casement", "sliding", "stacker", "bi-fold", "hinged", "pivot", "louvre", "double-hung", "tilt-turn", "lift-slide"] },
-      description: "Override only. Leave blank and the product inherits its family's Operation. Set this ONLY when the product supports several operations (e.g. a casement door that is also hinged) — then list ALL of them." }),
-    // Removed (2026-07-31 rationalisation — read by no code): panelPattern,
-    // openingDirection, isCompositeMember, compositePattern, dataSource.
-  ],
-});
+// Operation is a single intrinsic property of the FAMILY (family.operation), not
+// the product — every product in a family performs the same operation, so the
+// estimator reads it from the family. The former product-level Configuration
+// object (operation / panel / composite) was removed in the 2026-07-31 cleanup.
 
 // Deterministic dimensional eligibility beyond flat min/max: area, aspect and a
 // versioned rule id so rule changes are auditable.
@@ -481,7 +469,6 @@ export const product = defineType({
     }),
     defineField({ name: "featuredOrder", type: "number", group: "content" }),
     // ── Estimator technical contract (spec §4) ──
-    configuration,
     dimensionRule,
     defineField({ name: "performanceVariants", title: "Performance variants", type: "array", of: [performanceVariant], group: "technical",
       validation: (r) => r.unique(),
