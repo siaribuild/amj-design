@@ -97,10 +97,18 @@ export const getCurrentProject = () => req<CurrentProject>("/api/projects/curren
 /** Price one candidate line without saving it. The browser holds no rate data —
  *  the commercial model lives in D1 — so the composer asks the server for the
  *  figure it shows while the customer types. */
-export const previewPrice = (item: { productSlug: string; width: string; height: string; options: Record<string, string>; qty: number }) =>
-  req<{ ok: boolean; total: number | null }>("/api/projects/current/price-preview", {
-    method: "POST", body: JSON.stringify(item),
+export const previewPrice = async (item: { productSlug: string; width: string; height: string; options: Record<string, string>; qty: number }): Promise<{ ok: boolean; total: number | null; needsProject?: boolean }> => {
+  const res = await fetch("/api/projects/current/price-preview", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(item),
   });
+  // Before the first save there is no project to scope the preview to (the claim
+  // cookie is minted on save). That is not an unpriceable line — the save itself
+  // creates the project and prices it — so flag it distinctly rather than throwing.
+  if (res.status === 403) return { ok: false, total: null, needsProject: true };
+  if (!res.ok) throw new Error(`/api/projects/current/price-preview → ${res.status}`);
+  return res.json() as Promise<{ ok: boolean; total: number | null }>;
+};
 
 /** A specific owned project + its lines (read-only) — e.g. to review a submission. */
 export const getProject = (projectId: string) =>

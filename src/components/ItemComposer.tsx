@@ -449,7 +449,7 @@ export function ItemForm({
   priceFn?: (item: {
     productSlug: string; width: string; height: string;
     options: Record<string, string>; qty: number;
-  }) => Promise<{ ok: boolean; total: number | null }>;
+  }) => Promise<{ ok: boolean; total: number | null; needsProject?: boolean }>;
   /** "item" is a whole opening. "unit" is one frame INSIDE a composite opening:
    *  it has no architect tag and no room of its own — one opening, one code —
    *  and its size across the join is set by the opening, so those fields are not
@@ -480,7 +480,7 @@ export function ItemForm({
   // live figure is asked of the server. Debounced while typing, and the previous
   // figure is cleared the moment the configuration changes so a stale price can
   // never sit under a new specification.
-  const [priced, setPriced] = useState<{ ok: boolean; total: number; unit: number }>({ ok: false, total: 0, unit: 0 });
+  const [priced, setPriced] = useState<{ ok: boolean; total: number; unit: number; needsProject?: boolean }>({ ok: false, total: 0, unit: 0 });
   const priceKey = JSON.stringify({ productSlug, width, height, options, qty });
   useEffect(() => {
     if (!productSlug || !dimsEntered) { setPriced({ ok: false, total: 0, unit: 0 }); return; }
@@ -488,7 +488,7 @@ export function ItemForm({
     setPriced((prev) => ({ ...prev, ok: false }));
     const t = setTimeout(() => {
       priceFn({ productSlug, width, height, options, qty })
-        .then((r) => { if (live) setPriced({ ok: r.ok, total: r.total ?? 0, unit: qty > 0 ? (r.total ?? 0) / qty : 0 }); })
+        .then((r) => { if (live) setPriced({ ok: r.ok, total: r.total ?? 0, unit: qty > 0 ? (r.total ?? 0) / qty : 0, needsProject: r.needsProject }); })
         .catch(() => { if (live) setPriced({ ok: false, total: 0, unit: 0 }); });
     }, 250);
     return () => { live = false; clearTimeout(t); };
@@ -501,7 +501,11 @@ export function ItemForm({
   const oversize = dimsEntered && !inRange && !((p?.minWidth != null && w < p.minWidth) || (p?.minHeight != null && h < p.minHeight));
   const tooSmall = dimsEntered && !inRange && !oversize;
   // Oversize is submittable, flagged; undersize is a typo and blocks.
-  const canSave = priced.ok && !tooSmall && !duplicateCode;
+  // Before the first save there is no project to price-preview against (the claim
+  // cookie is minted on save); the save itself creates the project and prices the
+  // line server-side, so don't deadlock the first item on a preview we can't run.
+  const priceDeferred = !!priced.needsProject;
+  const canSave = (priced.ok || priceDeferred) && !tooSmall && !duplicateCode;
   const built: Omit<QItem, "id"> = {
     code: finalCode, productSlug, location, width, height, options, qty,
     status: oversize ? "Needs review" : "Ready",
@@ -632,7 +636,13 @@ export function ItemForm({
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[10px] uppercase tracking-widest text-body">Estimated price</p>
-              <p className="text-lg font-semibold text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{canSave ? fmt(gstAdjust(priced.total, gstMode)) : "—"} <span className="text-xs font-normal text-body">{gstSuffix(gstMode)}{canSave && qty > 1 ? ` · ${fmt(gstAdjust(priced.unit, gstMode))} ea` : ""}</span></p>
+              {priced.ok ? (
+                <p className="text-lg font-semibold text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(gstAdjust(priced.total, gstMode))} <span className="text-xs font-normal text-body">{gstSuffix(gstMode)}{qty > 1 ? ` · ${fmt(gstAdjust(priced.unit, gstMode))} ea` : ""}</span></p>
+              ) : priceDeferred ? (
+                <p className="text-sm font-medium text-body">Calculated when you add it</p>
+              ) : (
+                <p className="text-lg font-semibold text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>—</p>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {onCancel && <Btn variant="ghost" size="md" onClick={requestCancel}>Cancel</Btn>}
