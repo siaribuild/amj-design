@@ -57,13 +57,14 @@ test("coerceCoherent: nonsensical bounds (U<=0, SHGC out of [0,1]) are dropped",
 });
 
 // ── graded compliance (WS4) ──────────────────────────────────────────────────
-test("compliance: an in-band cell scores at the top; a miss is graded and floored above 0", () => {
-  // M4 ranker: in-band scores ~1, with the SHGC-target tie-break shading it a hair
-  // below 1 unless the cell also sits on the SHGC-target midpoint.
-  const onTarget = gradedComplianceScore(cell("x", 1.6, 0.41), band(1.69, 0.37, 0.45));
-  assert.equal(onTarget, 1, "in-band AND on the SHGC-target midpoint ⇒ a perfect 1");
-  const inBand = gradedComplianceScore(cell("x", 1.6, 0.4), band(1.69, 0.37, 0.45));
-  assert.ok(inBand > 0.98 && inBand <= 1, `in-band off-target scores at the top, got ${inBand}`);
+test("compliance: any in-band cell scores a flat 1.0; a miss is graded and floored above 0", () => {
+  // Owner rule: once a cell MEETS the band it is fully compliant — SHGC position
+  // within the band does NOT shade the score (that biased toward pricier glass).
+  // Two in-band cells at different SHGC both score exactly 1; price decides later.
+  const lowShgc = gradedComplianceScore(cell("x", 1.6, 0.38), band(1.69, 0.37, 0.45));
+  const highShgc = gradedComplianceScore(cell("y", 1.6, 0.44), band(1.69, 0.37, 0.45));
+  assert.equal(lowShgc, 1, "in-band ⇒ 1.0 regardless of SHGC position");
+  assert.equal(highShgc, 1, "the other in-band cell also scores exactly 1.0 (no tie-break)");
   const nearMiss = gradedComplianceScore(cell("x", 1.75, 0.4), band(1.69, 0.37, 0.45));
   assert.ok(nearMiss > 0.1 && nearMiss < 1, `near miss graded, got ${nearMiss}`);
   const grossMiss = gradedComplianceScore(cell("x", 9, 0.9), band(1.69, 0.37, 0.45));

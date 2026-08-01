@@ -238,12 +238,16 @@ test("M4: compliance blends axes — a cell adverse on two axes scores strictly 
     "second adverse axis lowers the score — no worst-axis tie");
 });
 
-test("M4: in-band cells are ordered by nearness to the band midpoint", () => {
-  const band = { maxUValue: null, minShgc: 0.3, maxShgc: 0.5, shgcTarget: null }; // midpoint 0.4
-  const near = { glassOptionSlug: "n", variantId: "n", uValue: 3, shgc: 0.4, certified: true, pricingOptionSlugs: [] };
+test("in-band cells all score a flat 1.0 — compliance does NOT rank by band position (owner rule)", () => {
+  // Reversal of the earlier midpoint tie-break: once a cell MEETS the band it is
+  // fully compliant. The recommendation among compliant cells is decided by PRICE
+  // (the ranker's commercial term), never by which glass is thermally "best" —
+  // that biased toward the most expensive option.
+  const band = { maxUValue: null, minShgc: 0.3, maxShgc: 0.5, shgcTarget: null };
+  const mid = { glassOptionSlug: "n", variantId: "n", uValue: 3, shgc: 0.4, certified: true, pricingOptionSlugs: [] };
   const edge = { glassOptionSlug: "f", variantId: "f", uValue: 3, shgc: 0.5, certified: true, pricingOptionSlugs: [] };
-  assert.ok(gradedComplianceScore(near, band) > gradedComplianceScore(edge, band), "nearest the midpoint ranks highest");
-  assert.ok(gradedComplianceScore(near, band) <= 1);
+  assert.equal(gradedComplianceScore(mid, band), 1, "in-band ⇒ 1.0");
+  assert.equal(gradedComplianceScore(edge, band), 1, "an edge-of-band cell is equally compliant — 1.0");
 });
 
 test("M4: the enforced band is the explicit ∩ advisory intersection (ranker shares it with rules)", () => {
@@ -560,6 +564,19 @@ test("ranker: prefers the snugger fit at equal price", () => {
   const ranked = rankCandidates({ operationType: "awning", widthMm: 700, heightMm: 1400 }, [snug, loose]);
   assert.equal(ranked[0].rank, 1);
   assert.equal(ranked.length, 2);
+});
+
+test("owner rule: among compliant glasses the CHEAPEST is recommended, not the thermally-best", () => {
+  // Both variants MEET the Uw cap, so both score compliance 1.0. The pricier one has
+  // a slightly better Uw/SHGC — under the old midpoint tie-break it would have won.
+  // With flat in-band compliance, the commercial term picks the cheaper glass.
+  const opening = { operationType: "awning", widthMm: 700, heightMm: 1400, requirements: { maxUValue: 4.0 } };
+  const cand = toCandidate({ ...awning, sanityProductId: "amjX" });
+  const v = (id, u, shgc) => ({ variantId: id, glazingOptionSlug: id, glazingClass: "double_clear", uValue: u, shgc, certified: true, dataSource: "certified", published: true, pricingOptionSlugs: [] });
+  const cheap = { candidate: cand, outcome: { passed: true, status: "ready" }, selectedVariant: v("cheap", 3.4, 0.42), price: { total: 900, ok: true } };
+  const pricey = { candidate: cand, outcome: { passed: true, status: "ready" }, selectedVariant: v("pricey", 3.0, 0.36), price: { total: 1500, ok: true } };
+  const ranked = rankCandidates(opening, [pricey, cheap]);
+  assert.equal(ranked.find((r) => r.rank === 1).performanceVariantId, "cheap");
 });
 
 test("r2Keys: layout is consistent and path-traversal-safe", () => {

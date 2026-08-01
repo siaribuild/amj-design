@@ -83,8 +83,8 @@ function variantCell(v: PerformanceVariant | null): GlassCell | null {
 function complianceScore(opening: OpeningInput, variant: PerformanceVariant | null): number {
   // M4/D2: score against the SAME enforced band rules apply (explicit ∩ advisory,
   // coherence-guarded) — not a divergent explicit-else-advisory band — so rank
-  // order reflects what was enforced. gradedComplianceScore folds in the SHGC
-  // target (report value, else band midpoint) as a small in-band tie-break.
+  // order reflects what was enforced. A compliant cell scores a flat 1.0; the
+  // cheapest of the compliant cells then wins on the commercial term (owner rule).
   const req = effectiveThermalRequirements(opening);
   const cell = variantCell(variant);
   if (!req) {
