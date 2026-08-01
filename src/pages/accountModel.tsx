@@ -217,15 +217,10 @@ export function deriveGates(projects: ApiProjectSummary[], orders: ApiOrder[]): 
       cta: "Confirm for despatch", when: "Books delivery", target: { kind: "order", id: o.id },
     });
   }
-  for (const p of projects.filter((x) => x.status_customer === "draft" && x.item_count > 0)) {
-    gates.push({
-      key: `draft-${p.id}`, pill: "Draft", tone: "attn",
-      refLabel: p.title ?? "My Project",
-      title: "Finish & submit for a full quote",
-      desc: <>{b(`${p.item_count} line${p.item_count === 1 ? "" : "s"}`)} added · once you submit, we price it and issue your reviewed quote.</>,
-      cta: "Finish & submit", when: "Est. " + money(p.draft_total), target: { kind: "quote-builder" },
-    });
-  }
+  // The draft (cart) is NOT an attention gate — it is the customer's own unfinished
+  // work, not a business obligation. It gets its own dedicated section at the top of
+  // the dashboard (ContinueProject) so it is always visible without competing with
+  // real money/deadline gates for the same slot.
   return gates;
 }
 

@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useState, type ReactNode } from "react";
 import {
-  ArrowRight, ChevronRight, CreditCard, PenLine, FileText, Truck, Upload,
+  ArrowRight, ArrowDown, ChevronRight, CreditCard, PenLine, FileText, Truck, Upload,
   MessageSquare, CheckCircle,
 } from "lucide-react";
 import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
@@ -41,7 +41,10 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
   const activeOrders = ords.filter((o) => o.stage !== "after_sales");
   const qProjects = quoteProjects(projs);
   const openQuotes = qProjects.filter((p) => p.status_customer !== "draft" && p.status_customer !== "expired").length;
-  const drafts = qProjects.filter((p) => p.status_customer === "draft").length;
+  // The single draft (cart) — one per customer by invariant — powers the top
+  // ContinueProject card. null ⇒ that card is the "start a new project" CTA.
+  const draft = qProjects.find((p) => p.status_customer === "draft") ?? null;
+  const jumpToAttention = () => document.getElementById("needs-your-attention")?.scrollIntoView({ behavior: "smooth", block: "start" });
   const payable = ords.reduce((s, o) => {
     const due = o.stage === "deposit_invoiced" ? o.payments.find((p) => p.kind === "deposit")
       : o.stage === "balance_invoiced" ? o.payments.find((p) => p.kind === "balance") : undefined;
@@ -73,14 +76,18 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
         <>
           {/* Summary strip — numbers only where they drive action */}
           <div className="flex flex-wrap card mb-6" role="group" aria-label="Account summary">
-            <SummaryCell hot={gates.length > 0} label="Need you now" value={String(gates.length)} small="open gates" />
+            <SummaryCell hot={gates.length > 0} label="Need you now" value={String(gates.length)} small="open gates" onClick={gates.length > 0 ? jumpToAttention : undefined} />
             <SummaryCell hot={payable > 0} label="Payable now" value={money(payable)} />
             <SummaryCell label="On order" value={String(activeOrders.length)} />
-            <SummaryCell label="Active quotes" value={String(openQuotes)} small={drafts ? `· ${drafts} draft${drafts === 1 ? "" : "s"}` : undefined} />
+            <SummaryCell label="Active quotes" value={String(openQuotes)} />
           </div>
 
+          {/* Your in-progress project (the cart) — its own section at the top, above the
+              attention gates, so it is always visible and never buried in history. */}
+          <ContinueProject draft={draft} go={go} />
+
           {/* Needs your attention */}
-          <section className="mb-[26px]">
+          <section id="needs-your-attention" className="mb-[26px] scroll-mt-24">
             <div className="flex items-center gap-2.5 mb-3.5">
               <h2 className="text-[1.15rem] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Needs your attention</h2>
               {gates.length > 0 && <span className="text-xs text-white px-[7px] py-0.5" style={{ fontFamily: "'DM Mono', monospace", background: TONE.attn.text }}>{gates.length}</span>}
@@ -121,7 +128,9 @@ function ProjectsSection({ projects, orders, setPage, onOpenRecord }: {
   projects: ApiProjectSummary[]; orders: ApiOrder[]; setPage: (p: Page) => void; onOpenRecord: OpenRecord;
 }) {
   const [tab, setTab] = useState<ProjectsTab>("all");
-  const allQuotes = quoteProjects(projects);
+  // The draft (cart) lives in its own ContinueProject card at the top, not in the
+  // history list — so it is excluded here and appears exactly once on the page.
+  const allQuotes = quoteProjects(projects).filter((p) => p.status_customer !== "draft");
   const activeQuotes = allQuotes.filter((p) => p.status_customer !== "expired");
   const onOrder = orders.filter((o) => !["delivered", "after_sales"].includes(o.stage));
   const completed = orders.filter((o) => ["delivered", "after_sales"].includes(o.stage));
@@ -157,15 +166,70 @@ function ProjectsSection({ projects, orders, setPage, onOpenRecord }: {
   );
 }
 
-function SummaryCell({ label, value, small, hot }: { label: string; value: string; small?: string; hot?: boolean }) {
-  return (
-    <div className="flex-1 min-w-[150px] px-5 py-[15px] flex flex-col gap-[3px] border-r border-black/[0.07] last:border-r-0"
-      style={hot ? { background: TONE.attn.bg } : undefined}>
+function SummaryCell({ label, value, small, hot, onClick }: { label: string; value: string; small?: string; hot?: boolean; onClick?: () => void }) {
+  const cls = "flex-1 min-w-[150px] px-5 py-[15px] flex flex-col gap-[3px] border-r border-black/[0.07] last:border-r-0";
+  const body = (
+    <>
       <span className="text-[11px] tracking-[0.09em] uppercase text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{label}</span>
       <span className="text-2xl font-semibold flex items-baseline gap-2" style={{ fontFamily: "'Space Grotesk', sans-serif", color: hot ? TONE.attn.text : "var(--ink)" }}>
         {value}{small && <small className="text-[12.5px] font-medium text-body" style={{ fontFamily: "'Inter', sans-serif" }}>{small}</small>}
+        {onClick && <ArrowDown className="w-[15px] h-[15px] self-center" style={{ color: hot ? TONE.attn.text : "var(--body)" }} aria-hidden="true" />}
       </span>
-    </div>
+    </>
+  );
+  if (onClick) {
+    // "Need you now" jumps straight to the attention gates rather than restating them.
+    return (
+      <button onClick={onClick} aria-label={`${label}: ${value} — jump to what needs you`}
+        className={`${cls} text-left cursor-pointer transition-colors hover:brightness-[0.97]`} style={{ background: hot ? TONE.attn.bg : "transparent" }}>
+        {body}
+      </button>
+    );
+  }
+  return <div className={cls} style={hot ? { background: TONE.attn.bg } : undefined}>{body}</div>;
+}
+
+// The customer's single in-progress project (the "cart") — a dedicated section at
+// the very top of the dashboard. Two states off the item_count already in the DTO:
+// with lines → a resume card; empty (or no draft) → a start-a-new-project CTA. Kept
+// in a calm sage/draft register (never the amber attention tone) — it wins by
+// POSITION, not by borrowing the urgency reserved for money/deadline gates.
+function ContinueProject({ draft, go }: { draft: ApiProjectSummary | null; go: (p: Page) => void }) {
+  const hasLines = !!draft && draft.item_count > 0;
+  return (
+    <section className="mb-[26px]">
+      <div className="flex items-center gap-2.5 mb-3.5">
+        <h2 className="text-[1.15rem] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+          {hasLines ? "Continue your project" : "Start a new project"}
+        </h2>
+        <span className="ml-auto text-[13px] text-body hidden sm:inline">{hasLines ? "Your in-progress quote — pick up where you left off" : "Price it in minutes, then submit for a reviewed quote"}</span>
+      </div>
+      {hasLines ? (
+        <button onClick={() => go("quote")} aria-label="Resume building your quote"
+          className="w-full text-left card grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-x-[18px] gap-y-3 items-center px-5 py-[18px] card-link transition-all cursor-pointer"
+          style={{ borderLeft: `3px solid ${SAGE}`, backgroundImage: "repeating-linear-gradient(-45deg,transparent,transparent 9px,rgba(0,0,0,.014) 9px,rgba(0,0,0,.014) 10px)" }}>
+          <span className="w-[42px] h-[42px] grid place-items-center border border-black/10 flex-shrink-0"><WindowMark size={20} color={SAGE} /></span>
+          <span className="min-w-0 block">
+            <span className="flex items-center gap-[9px] flex-wrap mb-[3px]"><StatusPill tone="draft">Draft — not submitted</StatusPill></span>
+            <span className="block text-base font-semibold text-ink leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{draft!.title ?? "Your quote in progress"}</span>
+            <span className="block text-[13.5px] text-body mt-[3px]"><b className="font-semibold text-ink">{draft!.item_count} line{draft!.item_count === 1 ? "" : "s"}</b> · finish and submit for a full reviewed quote.</span>
+          </span>
+          <span className="col-span-2 sm:col-span-1 flex sm:flex-col items-center sm:items-end justify-between gap-1.5">
+            <span className="inline-flex items-center gap-2 bg-sage text-white text-[13px] font-medium px-3.5 py-[9px] whitespace-nowrap">Resume building <ArrowRight className="w-4 h-4" /></span>
+            {draft!.draft_total ? <span className="text-[11px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>Estimate {money(draft!.draft_total)} · not submitted for pricing</span> : null}
+          </span>
+        </button>
+      ) : (
+        <div className="card grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-x-[18px] gap-y-3 items-center px-5 py-[18px]" style={{ borderLeft: `3px solid ${SAGE}` }}>
+          <span className="w-[42px] h-[42px] grid place-items-center border border-black/10 flex-shrink-0"><WindowMark size={20} color={SAGE} /></span>
+          <span className="min-w-0 block text-[13.5px] text-body">Price your windows and doors in minutes, then submit for a full reviewed quote.</span>
+          <span className="col-span-2 sm:col-span-1 flex flex-col sm:flex-row sm:items-center gap-2">
+            <Btn variant="sage" size="md" onClick={() => go("quote")}>Start an instant estimate <ArrowRight className="w-4 h-4" /></Btn>
+            <Btn variant="outline" size="md" onClick={() => go("quote")}><Upload className="w-4 h-4" />Upload a schedule</Btn>
+          </span>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -173,7 +237,6 @@ const GATE_ICON: Record<string, ReactNode> = {
   "Balance due": <CreditCard className="w-5 h-5" />, "Deposit due": <CreditCard className="w-5 h-5" />,
   "Sign-off": <PenLine className="w-5 h-5" />, "Quote issued": <FileText className="w-5 h-5" />,
   "Needs information": <MessageSquare className="w-5 h-5" />, "Confirm": <Truck className="w-5 h-5" />,
-  "Draft": <PenLine className="w-5 h-5" />,
 };
 
 function GateCard({ gate, onOpen }: { gate: Gate; onOpen: () => void }) {
