@@ -416,8 +416,14 @@ function Section({ label, summary, open, onToggle, children, variant = "boxed", 
   );
 }
 
-const optionSummaryOf = (p: Product | undefined, options: Record<string, string>) =>
-  (p ? optionGroupsFor(p).map(g => options[g.typeSlug]).filter(Boolean) : []).join(" · ") || "Standard selections";
+const optionSummaryOf = (p: Product | undefined, options: Record<string, string>) => {
+  if (!p) return "Standard selections";
+  // Lead with the chosen glazing (its own picker, not an optionGroup) so a collapsed
+  // summary still says which glass — and it survives truncation as the first item.
+  const glazing = glazingChoicesFor(p).find(g => g.slug === options.glazing)?.name;
+  const parts = [glazing, ...optionGroupsFor(p).map(g => options[g.typeSlug])].filter(Boolean);
+  return parts.join(" · ") || "Standard selections";
+};
 
 // ═══ NEW-ITEM FORM (product picker + sections + commit) ═══════════════════════
 export function ItemForm({
