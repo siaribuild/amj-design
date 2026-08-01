@@ -9,12 +9,12 @@
 //  • Product-first; picker = two dependent fields (Type → Product).
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useState, useEffect, useRef } from "react";
-import { Check, AlertCircle, Info, ChevronDown, Plus, Minus, Pencil, Trash2, Copy, X } from "lucide-react";
+import { Check, AlertCircle, Info, ChevronDown, Plus, Minus, Pencil, Trash2, Copy, X, Sun, Snowflake } from "lucide-react";
 import { SAGE, WindowMark, Btn, FieldLabel, Input } from "../app/ui";
 import { type Product, getProductBySlug, getProductsByFamily } from "../data/catalogue";
 import {
-  type QItem, type QuoteState, type OptionChoice,
-  optionGroupsFor, defaultOptions, linePriceTotal, familyGroups,
+  type QItem, type QuoteState, type OptionChoice, type GlazingChoice,
+  optionGroupsFor, defaultOptions, linePriceTotal, familyGroups, glazingChoicesFor,
   fmt, mm, productLabel, POPULAR_COLOURS, normCode, suggestCode, clearReviewKey, lineBlocksSubmission,
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
@@ -214,11 +214,86 @@ function ColourChoices({ choices, value, onPick }: { choices: OptionChoice[]; va
   );
 }
 
+// Star rating as glyphs (half-star aware), tinted by what it measures.
+function StarRating({ value, className }: { value?: number | null; className: string }) {
+  if (value == null) return <span className="text-quieter">—</span>;
+  const half = Math.round(value * 2) / 2, full = Math.floor(half), hasHalf = half - full >= 0.5;
+  return (
+    <span className={`whitespace-nowrap ${className}`} title={`${value.toFixed(1)} stars`}>
+      {"★".repeat(full)}{hasHalf ? "½" : ""}
+    </span>
+  );
+}
+
+// Glazing picker: every build-up the frame offers (WERS long name + ratings), led by
+// the heating/cooling trade-off a buyer can actually use. The ops-ordered list is the
+// default order (first = recommended when no thermal requirement); the lens re-sorts
+// without hiding any option. The chosen build-up is priced per m² server-side.
+function GlazingChoices({ choices, value, onPick }: { choices: GlazingChoice[]; value: string; onPick: (slug: string) => void }) {
+  const [lens, setLens] = useState<"allround" | "warmth" | "cooling">("allround");
+  const list = lens === "allround" ? choices : [...choices].sort((a, b) =>
+    lens === "warmth" ? (b.heatingStars ?? 0) - (a.heatingStars ?? 0) : (b.coolingStars ?? 0) - (a.coolingStars ?? 0));
+  const recommended = choices[0]?.slug; // first in the ops list = the no-requirement default
+  const lensBtn = (k: typeof lens, label: string) => (
+    <button key={k} onClick={() => setLens(k)} aria-pressed={lens === k}
+      className={`px-2 py-1 border transition-colors cursor-pointer ${lens === k ? "border-ink bg-ink/[0.04]" : "border-black/15 bg-white hover:border-sage"}`}>{label}</button>
+  );
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-2 text-[11px] text-body">
+        <span>Sort</span>
+        {lensBtn("allround", "All-round")}{lensBtn("warmth", "Warmth")}{lensBtn("cooling", "Cooling")}
+        <span className="ml-auto text-quieter">{choices.length} options</span>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {list.map(c => {
+          const sel = c.slug === value;
+          return (
+            <button key={c.slug} onClick={() => onPick(c.slug)} aria-pressed={sel}
+              className={`text-left px-2.5 py-2 border transition-colors cursor-pointer ${sel ? "border-ink bg-ink/[0.04] ring-1 ring-ink" : "border-black/15 bg-white hover:border-sage"}`}>
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="text-xs font-medium text-ink truncate flex-1">{c.name}</span>
+                {c.slug === recommended && <span className="text-[10px] text-sage border border-sage/40 rounded-full px-1.5 leading-tight py-0.5 whitespace-nowrap">Recommended</span>}
+                {sel && <Check className="w-3.5 h-3.5 text-sage flex-shrink-0" aria-hidden="true" />}
+              </span>
+              <span className="flex items-center gap-3 mt-1 text-[11px] text-body">
+                <span className="flex items-center gap-1"><Sun className="w-3 h-3 text-amber-500" aria-hidden="true" /><StarRating value={c.heatingStars} className="text-amber-600" /></span>
+                <span className="flex items-center gap-1"><Snowflake className="w-3 h-3 text-sky-500" aria-hidden="true" /><StarRating value={c.coolingStars} className="text-sky-600" /></span>
+                <span className="ml-auto tabular-nums text-quieter">{c.uValue != null ? `Uw ${c.uValue.toFixed(1)}` : ""}{c.shgc != null ? ` · SHGC ${c.shgc.toFixed(2)}` : ""}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<string, string>; setOpt: (typeSlug: string, v: string) => void }) {
   const groups = optionGroupsFor(p);
+  const glazing = glazingChoicesFor(p);
   const [openOpt, setOpenOpt] = useState<string | null>(null);
+  const glazingName = glazing.find(g => g.slug === options.glazing)?.name;
   return (
     <div className="space-y-2">
+      {glazing.length > 0 && (
+        <div className="border border-black/10">
+          <button onClick={() => setOpenOpt(openOpt === "glazing" ? null : "glazing")} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left cursor-pointer bg-white">
+            <span className="min-w-0">
+              <span className="text-[10px] uppercase tracking-widest text-body block">Glazing</span>
+              <span className={`text-sm font-medium truncate block ${glazingName ? "text-ink" : "text-quieter"}`}>{glazingName || "Select…"}</span>
+            </span>
+            <ChevronDown className={`w-4 h-4 text-body flex-shrink-0 transition-transform ${openOpt === "glazing" ? "rotate-180" : ""}`} />
+          </button>
+          <div className={`grid transition-[grid-template-rows] duration-200 ${openOpt === "glazing" ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+            <div className="overflow-hidden">
+              <div className="@container px-4 pb-3 pt-2 border-t border-black/6">
+                <GlazingChoices choices={glazing} value={options.glazing ?? ""} onPick={v => setOpt("glazing", v)} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {groups.map(g => {
         const val = options[g.typeSlug];
         const open = openOpt === g.typeSlug;

@@ -49,6 +49,9 @@ export interface SpecRow { label: string; value: string; }
 
 /** A public WERS thermal rating for one glazing on a product's frame (M3). */
 export interface ThermalSpec {
+  /** The glazing option's slug — the identity persisted on a line (options.glazing)
+   *  and priced per m² in D1. Null on the built-in fallback catalogue. */
+  slug?: string | null;
   glazingName: string;
   glassSpec?: string | null; // SG / DG / TG
   uValue: number | null;

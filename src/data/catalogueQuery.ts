@@ -41,6 +41,7 @@ export const CATALOGUE_QUERY = `{
     // Public thermal ratings (M3): the WERS matrix shown on the product page — one
     // row per glazing the frame offers. Empty for products with no profile yet.
     "thermal": thermalProfile->rows[]{
+      "slug": glazing->slug.current,
       "glazingName": coalesce(glazing->longDisplayName, glazing->name),
       "glassSpec": glazing->glassSpecification,
       uValue, shgc, tvw, heatingStars, coolingStars

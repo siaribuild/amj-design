@@ -117,6 +117,7 @@ function chargeableOptionSlugs(productSlug: string, options: Record<string, stri
   const slugs: string[] = [];
   for (const [typeSlug, value] of Object.entries(options)) {
     if (!value || typeof value !== "string") continue;
+    if (typeSlug === "glazing") continue;              // the glass is handled below as a per-m² identity
     const match = typeSlug === "colour"
       ? colorbondColourOptions.find((o) => o.name === value)
       : product?.options.find((o) => o.typeSlug === typeSlug && o.name === value);
@@ -129,11 +130,18 @@ function chargeableOptionSlugs(productSlug: string, options: Record<string, stri
     if (match.availability === "standard") continue;   // included in the base rate
     slugs.push(`${canonSlug(typeSlug)}:${canonSlug(value)}`);
   }
-  // The glass is a per-m² chargeable option, not part of the base rate: attach the
-  // product's default glass identity so a manual/schedule line prices its glazing
-  // the same way the estimator prices an AI line's. (Absent on the built-in
-  // fallback catalogue, where glass is still carried by the area rate.)
-  if (product?.defaultGlazingSlug) slugs.push(product.defaultGlazingSlug);
+  // The glass is a per-m² chargeable option, not part of the base rate. Price the
+  // build-up the line SELECTED (options.glazing) when it is one this product's frame
+  // actually offers; otherwise the product's default glass identity. Validating
+  // against the frame's own thermal matrix stops a client pricing an off-list glass.
+  // (Both are absent on the built-in fallback catalogue, where glass rides the area rate.)
+  const chosen = typeof options.glazing === "string" ? options.glazing : "";
+  const offered = new Set((product?.thermal ?? []).map((t) => t.slug).filter((s): s is string => !!s));
+  if (chosen && !offered.has(chosen)) {
+    console.log(`[pricing] glazing "${chosen}" not offered by "${productSlug}" — using the default glass`);
+  }
+  const glazingSlug = chosen && offered.has(chosen) ? chosen : product?.defaultGlazingSlug;
+  if (glazingSlug) slugs.push(glazingSlug);
   return slugs;
 }
 

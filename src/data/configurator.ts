@@ -270,7 +270,28 @@ export function defaultOptions(p: Product): Record<string, string> {
     const std = g.choices.find(c => c.standard);
     out[g.typeSlug] = std?.name ?? g.choices[0]?.name ?? "";
   }
+  // Glazing default = the first build-up in the ops-ordered list — the frame's
+  // recommended glass when no thermal requirement is stated. Priced per m² server-side.
+  const firstGlazing = (p.thermal ?? []).find(t => t.slug)?.slug;
+  if (firstGlazing) out.glazing = firstGlazing;
   return out;
+}
+
+// The glazing build-ups a product offers, as pickable choices (WERS long name +
+// ratings). Ops order (Sanity thermalProfile.rows) is preserved — the first is the
+// no-requirement default. Empty when the product has no thermal profile.
+export interface GlazingChoice {
+  slug: string; name: string; glassSpec?: string | null;
+  uValue: number | null; shgc: number | null;
+  heatingStars?: number | null; coolingStars?: number | null;
+}
+export function glazingChoicesFor(p: Product): GlazingChoice[] {
+  return (p.thermal ?? [])
+    .filter((t): t is typeof t & { slug: string } => typeof t.slug === "string" && !!t.slug)
+    .map(t => ({
+      slug: t.slug, name: t.glazingName, glassSpec: t.glassSpec,
+      uValue: t.uValue, shgc: t.shgc, heatingStars: t.heatingStars, coolingStars: t.coolingStars,
+    }));
 }
 
 const DEMO_SCHEDULE_ITEMS = [
