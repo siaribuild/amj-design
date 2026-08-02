@@ -183,7 +183,10 @@ export async function dispatchAiExtractionJob(
   job: AiExtractionJob,
   delaySeconds = 0,
 ): Promise<void> {
-  await env.KV.put(`aidebounce:${job.projectId}`, job.debounceToken, { expirationTtl: 300 });
+  // KV is only the trailing-debounce optimisation; D1 owns the durable claim.
+  // A transient KV failure must not turn an already-committed upload/delete into
+  // an HTTP failure (or strand the claim before it reaches the queue).
+  await env.KV.put(`aidebounce:${job.projectId}`, job.debounceToken, { expirationTtl: 300 }).catch(() => {});
   try {
     if (env.AI_JOBS) {
       await env.AI_JOBS.send(job, { delaySeconds });

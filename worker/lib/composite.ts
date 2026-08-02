@@ -50,6 +50,10 @@ export interface SegmentSpec {
   productSlug: string;
   qtyPerParent?: number;
   options?: Record<string, string>;
+  selectedVariantId?: string | null;
+  resolvedBand?: { maxUValue: number | null; minShgc: number | null; maxShgc: number | null; shgcTarget?: number | null } | null;
+  requirementBasis?: string | null;
+  thermalReview?: boolean;
 }
 
 export interface SplitValidation {
@@ -247,8 +251,9 @@ export async function splitLine(env: Env, args: {
       `INSERT INTO quote_line
          (id, project_id, parent_line_id, segment_seq, qty_per_parent, line_kind,
           external_ref, room_label, product_slug, options_json, dims_json,
-          qty, line_total, status, position, origin)
-       VALUES (?, ?, ?, ?, ?, 'segment', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          qty, line_total, status, position, origin, selected_variant_id,
+          segment_requirements_json, segment_requirement_basis, segment_thermal_review)
+       VALUES (?, ?, ?, ?, ?, 'segment', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       uuid(), parent.project_id, parent.id, i, Math.max(1, s.qtyPerParent ?? 1),
       s.productSlug, JSON.stringify(s.options),
@@ -260,7 +265,9 @@ export async function splitLine(env: Env, args: {
       // provenance in the audit trail and, because the PATCH path treats
       // origin='ai' lines as AI-managed, sent segment edits down a branch that
       // needs an opening_instance row no segment has.
-      args.origin,
+      args.origin, s.selectedVariantId ?? null,
+      s.resolvedBand ? JSON.stringify(s.resolvedBand) : null,
+      s.requirementBasis ?? null, s.thermalReview ? 1 : 0,
     )),
     env.DB.prepare(
       "UPDATE quote_line SET line_kind='composite_parent', composite_axis=?, coverage_delta_mm=?, composite_origin=?, updated_at=datetime('now') WHERE id=?",
@@ -361,12 +368,16 @@ export async function updateSegment(env: Env, args: {
   return { ok: true };
 }
 
-/** Append a unit. It inherits product and spec from the LAST existing unit
- *  rather than from the opening: once a reviewer has set three units to the same
- *  fixed panel, the fourth is almost certainly the same, and copying the opening
- *  would undo work they just did. Its size defaults to whatever is still
- *  uncovered, or to the last unit's size when the composite already sums. */
-export async function addSegment(env: Env, parentId: string): Promise<
+/** Append a unit. Ops may inherit the last unit as a deliberate productivity
+ * shortcut. Customer-created units are different: their product, options and
+ * along-opening dimension are supplied from the editor, so clicking Add never
+ * creates an accepted default configuration behind the customer's back. */
+export async function addSegment(
+  env: Env,
+  parentId: string,
+  origin: "ops" | "manual" = "ops",
+  draft?: { productSlug: string; options: Record<string, string>; alongMm: number },
+): Promise<
   { ok: true; id: string } | { ok: false; errors: string[] }
 > {
   const policy = await loadCompositePolicy(env);
@@ -396,14 +407,18 @@ export async function addSegment(env: Env, parentId: string): Promise<
   }, 0);
   const openingAlong = axis === "vertical" ? opening.widthMm : opening.heightMm;
   const shortfall = openingAlong - spanned;
-  const along = shortfall > 0 ? shortfall : lastAlong;
+  const inheritedAlong = shortfall > 0 ? shortfall : lastAlong;
+  const productSlug = origin === "manual" ? String(draft?.productSlug ?? "").trim() : last.product_slug;
+  const along = origin === "manual" ? Math.round(Number(draft?.alongMm)) : inheritedAlong;
+  if (!productSlug) return { ok: false, errors: ["Choose a product for the new unit."] };
+  if (!(along > 0)) return { ok: false, errors: ["Enter the new unit's size along the opening."] };
 
   const widthMm = axis === "vertical" ? along : opening.widthMm;
   const heightMm = axis === "vertical" ? opening.heightMm : along;
-  const options = parentOptions(last.options_json);
+  const options = origin === "manual" ? (draft?.options ?? {}) : parentOptions(last.options_json);
   const qty = Math.max(1, parent.qty);
   const total = await priceItem(env, {
-    productSlug: last.product_slug, width: String(widthMm), height: String(heightMm), options, qty,
+    productSlug, width: String(widthMm), height: String(heightMm), options, qty,
   });
 
   const id = uuid();
@@ -412,12 +427,12 @@ export async function addSegment(env: Env, parentId: string): Promise<
        (id, project_id, parent_line_id, segment_seq, qty_per_parent, line_kind,
         external_ref, room_label, product_slug, options_json, dims_json,
         qty, line_total, status, position, origin)
-     VALUES (?, ?, ?, ?, 1, 'segment', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 'ops')`,
+     VALUES (?, ?, ?, ?, 1, 'segment', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     id, parent.project_id, parent.id, existing.length,
-    last.product_slug, JSON.stringify(options),
+    productSlug, JSON.stringify(options),
     JSON.stringify({ width: String(widthMm), height: String(heightMm) }),
-    qty, total, total == null ? "incomplete" : "ready", existing.length,
+    qty, total, total == null ? "incomplete" : "ready", existing.length, origin,
   ).run();
 
   await recomputeComposite(env, parent.id);

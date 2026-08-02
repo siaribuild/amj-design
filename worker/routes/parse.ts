@@ -12,6 +12,7 @@ import {
 } from "../lib/parse";
 import { uuid } from "../lib/util";
 import { customerSafeJobDiagnostic, retryCurrentAiExtraction } from "../lib/ai/jobs";
+import { derivedKeys } from "../lib/ai/ingest";
 
 export const parse = new Hono<{ Bindings: Env }>();
 
@@ -154,8 +155,7 @@ parse.post("/projects/current/parse", async (c) => {
 });
 
 // POST /api/projects/current/clear — reset the draft to zero: delete all draft
-// lines AND the attached schedule file(s) (R2 + rows). The single source file is
-// integral to an order, so it is only removable via this whole-project reset.
+// lines AND every attached document (R2 + rows), regardless of its legacy kind.
 parse.post("/projects/current/clear", async (c) => {
   const { project } = await resolveCurrentProject(c.env, c.req.raw);
   if (!project) return c.json({ ok: true }); // nothing to clear
@@ -164,21 +164,25 @@ parse.post("/projects/current/clear", async (c) => {
   // longer a draft; clearing it would destroy the source schedule and parse
   // evidence that staff and any order still rely on. Refuse.
   if (project.status_customer !== "draft") return c.json({ error: "not_draft" }, 409);
-  const state = await draftScheduleState(c.env, project.id);
+  const { results: attachedFiles } = await c.env.DB.prepare(
+    "SELECT id, r2_key, filename, size FROM file_asset WHERE project_id=?",
+  ).bind(project.id).all<ParseFile>();
   const mutationState = await c.env.DB.prepare(
-    `SELECT quote_edit_version FROM project
+    `SELECT quote_edit_version, ai_generation FROM project
       WHERE id=? AND status_customer='draft' AND quote_mutation_token IS NULL`,
-  ).bind(project.id).first<{ quote_edit_version: number }>();
+  ).bind(project.id).first<{ quote_edit_version: number; ai_generation: number }>();
   if (!mutationState) return c.json({ error: "project_changed_reload_required" }, 409);
   const nextQuoteVersion = mutationState.quote_edit_version + 1;
+  const nextAiGeneration = mutationState.ai_generation + 1;
   const mutationToken = uuid();
   const committed = await c.env.DB.batch([
     c.env.DB.prepare(
-      `UPDATE project SET quote_edit_version=?, quote_mutation_token=?,
+      `UPDATE project SET quote_edit_version=?, ai_generation=?, quote_mutation_token=?,
           updated_at=datetime('now')
-        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=? AND ai_generation=?
           AND quote_mutation_token IS NULL`,
-    ).bind(nextQuoteVersion, mutationToken, project.id, mutationState.quote_edit_version),
+    ).bind(nextQuoteVersion, nextAiGeneration, mutationToken, project.id,
+      mutationState.quote_edit_version, mutationState.ai_generation),
     c.env.DB.prepare(
       `DELETE FROM quote_line
         WHERE project_id=? AND revision_id IS NULL AND EXISTS (
@@ -188,22 +192,42 @@ parse.post("/projects/current/clear", async (c) => {
     ).bind(project.id, project.id, nextQuoteVersion, mutationToken),
     c.env.DB.prepare(
       `DELETE FROM file_asset
-        WHERE project_id=? AND kind='schedule' AND EXISTS (
+        WHERE project_id=? AND EXISTS (
           SELECT 1 FROM project WHERE id=? AND status_customer='draft'
-            AND quote_edit_version=? AND quote_mutation_token=?
+            AND quote_edit_version=? AND ai_generation=? AND quote_mutation_token=?
         )`,
-    ).bind(project.id, project.id, nextQuoteVersion, mutationToken),
+    ).bind(project.id, project.id, nextQuoteVersion, nextAiGeneration, mutationToken),
+    c.env.DB.prepare(
+      `UPDATE ai_job_claim SET status='superseded', updated_at=datetime('now')
+        WHERE project_id=? AND source_generation<?
+          AND status IN ('scheduled','processing') AND EXISTS (
+            SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+              AND quote_edit_version=? AND ai_generation=? AND quote_mutation_token=?
+          )`,
+    ).bind(project.id, nextAiGeneration, project.id, nextQuoteVersion,
+      nextAiGeneration, mutationToken),
+    c.env.DB.prepare(
+      `UPDATE ai_runs SET status='cancelled', completed_at=datetime('now')
+        WHERE project_id=? AND status='running' AND EXISTS (
+          SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+            AND quote_edit_version=? AND ai_generation=? AND quote_mutation_token=?
+        )`,
+    ).bind(project.id, project.id, nextQuoteVersion, nextAiGeneration, mutationToken),
     c.env.DB.prepare(
       `UPDATE project SET quote_mutation_token=NULL, updated_at=datetime('now')
-        WHERE id=? AND status_customer='draft' AND quote_edit_version=?
+        WHERE id=? AND status_customer='draft' AND quote_edit_version=? AND ai_generation=?
           AND quote_mutation_token=?`,
-    ).bind(project.id, nextQuoteVersion, mutationToken),
+    ).bind(project.id, nextQuoteVersion, nextAiGeneration, mutationToken),
   ]);
   if (Number(committed[0]?.meta?.changes ?? 0) !== 1 ||
-      Number(committed[3]?.meta?.changes ?? 0) !== 1) {
+      Number(committed[5]?.meta?.changes ?? 0) !== 1) {
     return c.json({ error: "project_changed_reload_required" }, 409);
   }
-  for (const f of state.scheduleFiles) await c.env.FILES.delete(f.r2_key).catch(() => {});
+  await c.env.KV.delete(`aidebounce:${project.id}`).catch(() => {});
+  await Promise.all((attachedFiles ?? []).flatMap((f) => [
+    c.env.FILES.delete(f.r2_key),
+    c.env.FILES.delete(derivedKeys(project.id, f.id).markdown),
+  ])).catch(() => { /* D1 is authoritative; unreachable R2 objects are lifecycle cleanup */ });
   return c.json({ ok: true });
 });
 

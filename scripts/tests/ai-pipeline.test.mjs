@@ -17,7 +17,7 @@ await build({
     contents: `
       export { sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM } from ${p("worker/lib/ai/ingest.ts")};
       export { parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor } from ${p("worker/lib/ai/pipeline.ts")};
-      export { mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1 } from ${p("worker/lib/ai/energyMap.ts")};
+      export { applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2 } from ${p("worker/lib/ai/energyMap.ts")};
       export { applyDefaultEnvelope } from ${p("worker/lib/ai/pipeline.ts")};
       export { resolveDefaultEnvelope, defaultRequirement, ARCHETYPES } from ${p("worker/lib/ai/archetypes.ts")};
       export { buildExampleRecord } from ${p("worker/lib/ai/examples.ts")};
@@ -32,7 +32,7 @@ await build({
 const {
   sniffDocKind, imageDimensions, assessImageQuality, pdfPageCount, classifyDocument, classifyPageRoles, textForPages, ingestProjectFiles, MIN_IMAGE_DIM,
   parentTagOf, mergeScheduleLines, linesToBuildingModel, applyPlanContext, thermalContextFor, scheduleExtractor, planContextExtractor, validateBuildingModelShape,
-  mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1,
+  applyEnergyAuthority, mapEnergyToOpenings, DIM_TOLERANCE_MM, PRECEDENCE_POLICY_V1, PRECEDENCE_POLICY_V2,
   applyDefaultEnvelope, resolveDefaultEnvelope, defaultRequirement, ARCHETYPES, buildExampleRecord,
 } = await import(pathToFileURL(outfile).href);
 
@@ -388,6 +388,7 @@ const opening = (ref, overrides = {}) => ({
 });
 const constraint = (over = {}) => ({
   ref: null, elementHint: null, maxUValue: null, minShgc: null, maxShgc: null, shgcTarget: null,
+  performanceTypeId: null, performanceDescription: null,
   room: null, orientation: null, openablePercent: null, widthMm: null, heightMm: null, glazingNote: null, ...over,
 });
 const extraction = (constraints, precedenceStatement = null) =>
@@ -432,26 +433,88 @@ test("energy map prefers a matching contextual type rule over a generic rule", (
   assert.equal(r.requirements.get("W01").maxUValue, 2.7);
 });
 
-test("energy map surfaces a ref whose room/orientation contradicts the opening", () => {
+test("energy map keeps an exact ref authoritative when room/orientation differs and flags review", () => {
   const row = constraint({ ref: "W01", room: "Bedroom", orientation: "E", maxUValue: 2.7 });
   const r = mapEnergyToOpenings(extraction([row]), [
     opening("W01", { roomId: "living", wallOrientation: "W" }),
   ]);
-  assert.equal(r.requirements.has("W01"), false);
-  assert.deepEqual(r.unmatched, [row], "a same-tag contextual mismatch must not disappear");
+  assert.equal(r.requirements.get("W01").maxUValue, 2.7, "exact reference remains authoritative");
+  assert.equal(r.conflicts[0].field, "context");
+  assert.deepEqual(r.conflicts[0].selectedValue, { room: "Bedroom", orientation: "E" });
+  assert.equal(r.unmatched.length, 0);
 });
 
-test("energy map: child component constraints govern the parent frame with the STRICTEST values (§9.3)", () => {
+test("energy map: child components retain report types/performance but architectural dimensions win", () => {
   const r = mapEnergyToOpenings(extraction([
-    constraint({ ref: "W04A", maxUValue: 2.5, minShgc: 0.30, maxShgc: 0.45 }),
-    constraint({ ref: "W04B", maxUValue: 2.2, minShgc: 0.37, maxShgc: 0.41 }),
-  ]), [opening("W04")]);
+    constraint({ ref: "W04A", elementHint: "awning", widthMm: 805, heightMm: 2100, maxUValue: 2.27, minShgc: 0.37, maxShgc: 0.41 }),
+    constraint({ ref: "W04B", elementHint: "fixed", widthMm: 1590, heightMm: 2100, maxUValue: 1.69, minShgc: 0.50, maxShgc: 0.56 }),
+    constraint({ ref: "W04C", elementHint: "awning", widthMm: 805, heightMm: 2100, maxUValue: 2.27, minShgc: 0.37, maxShgc: 0.41 }),
+  ]), [opening("W04", { widthMm: 2410, heightMm: 1800 })]);
   const req = r.requirements.get("W04");
   assert.equal(req.matchKind, "parent_child");
-  assert.equal(req.maxUValue, 2.2, "lowest U cap governs");
-  assert.equal(req.shgcMin, 0.37, "tightest SHGC floor governs");
-  assert.equal(req.shgcMax, 0.41, "tightest SHGC ceiling governs");
+  assert.deepEqual(r.authoritativeOpenings.get("W04"), {
+    widthMm: 3200, heightMm: 2100, operationType: null,
+    sourceRefs: ["W04A", "W04B", "W04C"], axis: "vertical",
+    performanceTypeId: null, performanceDescription: null, glazingNote: null,
+    room: null, orientation: null,
+  });
+  assert.deepEqual(r.components.get("W04").map((component) => ({ ref: component.ref, operation: component.operationType, band: [component.requirement.shgcMin, component.requirement.shgcMax] })), [
+    { ref: "W04A", operation: "awning", band: [0.37, 0.41] },
+    { ref: "W04B", operation: "fixed", band: [0.50, 0.56] },
+    { ref: "W04C", operation: "awning", band: [0.37, 0.41] },
+  ], "awning and fixed SHGC bands are not intersected or copied");
+  assert.equal(r.conflicts[0].field, "dimensions");
+  assert.deepEqual(r.conflicts[0].selectedValue, { widthMm: 2410, heightMm: 1800 }, "architectural dimensions win");
+  assert.match(r.reviewWarnings.join(" "), /W04.*architectural dimensions retained/i);
+  assert.deepEqual(r.conflictWarnings, [
+    "W04: energy report components total 3200 × 2100 mm, while the architectural plan/schedule says 2410 × 1800 mm. Architectural dimensions selected: 2410 × 1800 mm; energy-report component types and performance retained.",
+  ], "only the genuine cross-document disagreement belongs in the top warning");
+  assert.doesNotMatch(r.conflictWarnings.join(" "), /defines 3 components/i);
   assert.equal(r.unmatched.length, 0, "child refs that matched a parent are not 'unmatched'");
+});
+
+test("energy map: W1 matching composite geometry does not create a false child-vs-parent size conflict", () => {
+  const r = mapEnergyToOpenings(extraction([
+    constraint({ ref: "W1A", elementHint: "awning", widthMm: 700, heightMm: 2100, maxUValue: 2.27 }),
+    constraint({ ref: "W1B", elementHint: "fixed", widthMm: 1350, heightMm: 2100, maxUValue: 1.69 }),
+  ]), [opening("W1", { widthMm: 2050, heightMm: 2100 })]);
+  assert.equal(r.conflicts.length, 0, "the child widths are summed before comparison");
+  assert.deepEqual(r.authoritativeOpenings.get("W1").widthMm, 2050);
+  assert.equal(r.components.get("W1").length, 2);
+  assert.deepEqual(r.conflictWarnings, [], "building a composite is not itself a document conflict");
+});
+
+test("energy map: incomplete D1 component set retains schedule size and names the dimensional conflict", () => {
+  const r = mapEnergyToOpenings(extraction([
+    constraint({ ref: "D1A", elementHint: "sliding", widthMm: 1200, heightMm: 2405, maxUValue: 2.2 }),
+  ]), [opening("D1", {
+    elementType: "door", widthMm: 1380, heightMm: 2405,
+    configuration: { familyRequested: "SLIDING", panelCount: null, operablePanelCount: null, layoutCode: null, viewBasis: null },
+  })]);
+
+  assert.equal(r.authoritativeOpenings.has("D1"), false, "one child cannot replace a complete parent opening");
+  assert.equal(r.conflicts.length, 1);
+  assert.equal(r.conflicts[0].resolution, "retain_parent_and_flag_incomplete_component");
+  assert.deepEqual(r.conflicts[0].selectedValue, { widthMm: 1380, heightMm: 2405 });
+  assert.deepEqual(r.conflictWarnings, [
+    "D1: energy report says D1A is 1200 × 2405 mm, while the architectural schedule says D1 is 1380 × 2405 mm. Architectural schedule selected: 1380 × 2405 mm because the report component set is incomplete.",
+  ]);
+});
+
+test("energy map: exact report operation and dimensions are authoritative (W2/W3)", () => {
+  const r = mapEnergyToOpenings(extraction([
+    constraint({ ref: "W2", elementHint: "fixed", widthMm: 3500, heightMm: 700, maxUValue: 1.69 }),
+    constraint({ ref: "W3", elementHint: "fixed", widthMm: 2100, heightMm: 2100, maxUValue: 1.69 }),
+  ]), [
+    opening("W2", { widthMm: 3500, heightMm: 700, configuration: { familyRequested: "FIXED", panelCount: null, operablePanelCount: null, layoutCode: null, viewBasis: null } }),
+    opening("W3", { widthMm: 2100, heightMm: 2100, configuration: { familyRequested: "AWNING", panelCount: null, operablePanelCount: null, layoutCode: null, viewBasis: null } }),
+  ]);
+  assert.equal(r.authoritativeOpenings.get("W2").operationType, "fixed");
+  assert.equal(r.conflicts.filter((conflict) => conflict.entity === "W2").length, 0);
+  const w3 = r.conflicts.find((conflict) => conflict.entity === "W3");
+  assert.equal(w3.field, "configuration");
+  assert.equal(w3.selectedValue, "fixed");
+  assert.match(r.reviewWarnings.join(" "), /W3.*energy report specifies fixed.*awning/i);
 });
 
 test("energy map: a parent-ref constraint applies to its child openings", () => {
@@ -478,16 +541,18 @@ test("energy map: report-vs-schedule dimension mismatch is FLAGGED, never silent
   assert.equal(r.conflicts[0].entity, "W01");
   assert.ok(r.conflicts[0].reviewRequired);
   assert.equal(r.conflicts[0].values[0].source, "energy_report");
+  assert.deepEqual(r.conflicts[0].selectedValue, { widthMm: 1810, heightMm: 1200 });
   assert.ok(r.requirements.get("W01"), "the requirement STILL applies — only the dims are disputed");
 });
 
-test("energy map: report height mismatch is flagged independently of width", () => {
+test("energy map: report height mismatch is included in one dimensional discrepancy", () => {
   const r = mapEnergyToOpenings(
     extraction([constraint({ ref: "W01", maxUValue: 2.3, heightMm: 1200 + DIM_TOLERANCE_MM + 10 })]),
     [opening("W01")]);
   assert.equal(r.conflicts.length, 1);
-  assert.equal(r.conflicts[0].field, "heightMm");
+  assert.equal(r.conflicts[0].field, "dimensions");
   assert.equal(r.conflicts[0].values[0].source, "energy_report");
+  assert.deepEqual(r.conflicts[0].selectedValue, { widthMm: 1810, heightMm: 1200 });
 });
 
 test("energy map: constraints matching nothing are surfaced for review, not dropped", () => {
@@ -502,6 +567,36 @@ test("precedence policy: energy report outranks schedule outranks plans (§9.1, 
   assert.ok(rank.energy_report > rank.architectural_schedule);
   assert.ok(rank.architectural_schedule > rank.dimensioned_plans);
   assert.ok(rank.dimensioned_plans > rank.inferred_default);
+});
+
+test("field precedence v2: architecture owns dimensions; energy owns configuration/performance", () => {
+  const dimensionRank = Object.fromEntries(PRECEDENCE_POLICY_V2.dimensions.map((r) => [r.source, r.precedence]));
+  const configurationRank = Object.fromEntries(PRECEDENCE_POLICY_V2.configurationAndPerformance.map((r) => [r.source, r.precedence]));
+  assert.ok(dimensionRank.architectural_schedule > dimensionRank.energy_report);
+  assert.ok(dimensionRank.dimensioned_plans > dimensionRank.energy_report);
+  assert.ok(configurationRank.energy_report > configurationRank.architectural_schedule);
+});
+
+test("applying energy authority retains architectural dimensions and applies report configuration", () => {
+  const target = opening("W04", { widthMm: 2410, heightMm: 1800 });
+  applyEnergyAuthority(target, {
+    widthMm: 3200, heightMm: 2100, operationType: "fixed", sourceRefs: ["W04A", "W04B", "W04C"], axis: "vertical",
+    performanceTypeId: "NUE-001-13 A", performanceDescription: "DG 6Clr-16Ar-6Clr", glazingNote: null,
+    room: "Media", orientation: "W",
+  });
+  assert.deepEqual([target.widthMm, target.heightMm, target.areaM2], [2410, 1800, 4.34]);
+  assert.equal(target.configuration.familyRequested, "fixed", "energy report still owns the operation");
+  assert.equal(target.scheduleRequirements.glassDescription, "DG 6Clr-16Ar-6Clr");
+  assert.equal(target.scheduleRequirements.doubleGlazed, true);
+  assert.equal(target.roomId, "Media");
+  assert.equal(target.wallOrientation, "W");
+
+  const missing = opening("W05", { widthMm: null, heightMm: null, areaM2: null });
+  applyEnergyAuthority(missing, {
+    widthMm: 900, heightMm: 1200, operationType: null, sourceRefs: ["W05"], axis: null,
+    performanceTypeId: null, performanceDescription: null, glazingNote: null, room: null, orientation: null,
+  });
+  assert.deepEqual([missing.widthMm, missing.heightMm, missing.areaM2], [900, 1200, 1.08], "report dimensions fill genuine architectural gaps");
 });
 
 // ── Phase 4: default envelopes (§10.3, Path 3) + learning examples (§17.2) ───

@@ -131,6 +131,83 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       ], { env: wranglerEnv });
     });
 
+    await t.test("clear all durably removes every document kind and survives refresh", async () => {
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "clear-all@example.com");
+      const saved = await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { items: [{
+          code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+          width: "1200", height: "900", qty: 1,
+          options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+        }] },
+      });
+      const projectId = saved.body.project.id;
+      const upload = async (name, bytes, kind) => {
+        const form = new FormData();
+        form.append("file", new Blob([Buffer.from(bytes)], { type: "text/plain" }), name);
+        form.append("kind", kind);
+        const response = await buyer.request("/api/files/upload", { method: "POST", body: form });
+        assert.equal(response.status, 200);
+        return (await response.json()).file.id;
+      };
+      const uploadId = await upload("energy-report.txt", "energy report", "upload");
+      const planId = await upload("plans.txt", "floor plans", "plan");
+      const before = await requestJson(buyer, "/api/projects/current");
+      assert.equal(before.body.items.length, 1);
+      assert.deepEqual(new Set(before.body.files.map((file) => file.kind)), new Set(["upload", "plan"]));
+
+      // A clear must also supersede work already queued against the document set.
+      const generation = await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--json", "--command", `SELECT ai_generation FROM project WHERE id='${projectId}'`,
+      ], { env: wranglerEnv });
+      const oldGeneration = JSON.parse(generation.stdout)[0].results[0].ai_generation;
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `INSERT INTO ai_job_claim (project_id,source_generation,debounce_token,status,attempts) VALUES ('${projectId}',${oldGeneration},'clear-test','scheduled',0)`,
+      ], { env: wranglerEnv });
+
+      await requestJson(buyer, "/api/projects/current/clear", { method: "POST" });
+      const refreshed = await requestJson(buyer, "/api/projects/current");
+      assert.equal(refreshed.body.items.length, 0, "cleared lines cannot return after refresh");
+      assert.equal(refreshed.body.files.length, 0, "non-schedule uploads cannot return after refresh");
+      assert.equal((await buyer.request(`/api/files/${uploadId}/download`)).status, 404);
+      assert.equal((await buyer.request(`/api/files/${planId}/download`)).status, 404);
+
+      const durable = await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--json", "--command", `SELECT p.ai_generation, j.status FROM project p LEFT JOIN ai_job_claim j ON j.project_id=p.id AND j.source_generation=${oldGeneration} WHERE p.id='${projectId}'`,
+      ], { env: wranglerEnv });
+      const row = JSON.parse(durable.stdout)[0].results[0];
+      assert.equal(row.ai_generation, oldGeneration + 1);
+      assert.equal(row.status, "superseded");
+    });
+
+    await t.test("individual remove reports success after deleting file-backed parse evidence", async () => {
+      const buyer = new Session(baseUrl);
+      const draft = await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { items: [] },
+      });
+      const projectId = draft.body.project.id;
+      const form = new FormData();
+      form.append("file", new Blob([Buffer.from("Window,Width,Height\nW1,1200,900")], { type: "text/csv" }), "delete-me.csv");
+      const uploadResponse = await buyer.request("/api/files/upload", { method: "POST", body: form });
+      assert.equal(uploadResponse.status, 200);
+      const fileId = (await uploadResponse.json()).file.id;
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `INSERT INTO schedule_parse_job (id,project_id,file_asset_id,subject,status,error) VALUES ('delete_job','${projectId}','${fileId}','test','failed','no_schedule_found')`,
+      ], { env: wranglerEnv });
+
+      const deleted = await buyer.request(`/api/files/${fileId}`, { method: "DELETE" });
+      assert.equal(deleted.status, 200, "a committed delete must not be reported as a conflict");
+      assert.equal((await deleted.json()).ok, true);
+      const refreshed = await requestJson(buyer, "/api/projects/current");
+      assert.equal(refreshed.body.files.length, 0, "the individually deleted file stays absent after refresh");
+    });
+
     await t.test("upload scanning: dangerous files are refused and never stored", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "scan@example.com");
@@ -468,6 +545,11 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
         options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" } };
       const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
       assert.equal(saved.body.items[0].status, "Ready");
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        `UPDATE quote_line SET origin='ai', status='technical_review', review_json='{"energyMapping":"W01: energy report dimensions 1810 × 1200 mm override plan/schedule dimensions 1800 × 1200 mm; human review is required.","composite":"W01: built as 2 joined units for human review."}' WHERE project_id='${pid}';`,
+      ], { env: wranglerEnv });
 
       // A request-scoped mutation owner is fail-closed: neither another cart save
       // nor submission may observe the epoch and then write through someone
@@ -518,6 +600,10 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       const opsView = await requestJson(staff, `/api/ops/projects/${pid}`);
       assert.equal(opsView.body.project.contactEmail, "sam@example.com");
       assert.equal(opsView.body.project.deliverySuburb, "Preston VIC 3072");
+      const reconciliationNote = opsView.body.comments.find((comment) => comment.kind === "note" && /Automatic document reconciliation/.test(comment.body));
+      assert.ok(reconciliationNote, "submission carries the visible document discrepancies into the staff review thread");
+      assert.match(reconciliationNote.body, /energy report dimensions/);
+      assert.match(reconciliationNote.body, /built as 2 joined units/);
 
       // The submitter can review exactly what they sent (read-only), owner-scoped.
       const readback = await requestJson(buyer, `/api/projects/${pid}`);
@@ -537,6 +623,12 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.match(row.public_ref, /^OF-Q-\d+$/, "server-generated project reference");
       assert.equal(typeof row.draft_total, "number");
 
+      // The reconciliation note persists after a technician resolves the flagged
+      // line; only then may the reviewed revision be issued.
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `UPDATE quote_line SET status='ready', review_json=NULL WHERE project_id='${pid}';`,
+      ], { env: wranglerEnv });
       // Staff take it through approval → issue; then the customer requests changes.
       await requestJson(staff, `/api/ops/projects/${pid}/start-pricing`, { method: "POST", json: {} });
       const issuedRev = await requestJson(staff, `/api/ops/projects/${pid}/issue-revision`, { method: "POST", json: {} });

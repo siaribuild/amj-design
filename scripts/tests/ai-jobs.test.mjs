@@ -15,6 +15,7 @@ await build({
         classifyPipelineFailure,
         classifyJobException,
         customerSafeJobDiagnostic,
+        dispatchAiExtractionJob,
         retryCurrentAiExtraction,
       } from ${p("worker/lib/ai/jobs.ts")};
       export { completeAiRun } from ${p("worker/lib/ai/runs.ts")};
@@ -34,9 +35,24 @@ const {
   classifyPipelineFailure,
   classifyJobException,
   customerSafeJobDiagnostic,
+  dispatchAiExtractionJob,
   retryCurrentAiExtraction,
   completeAiRun,
 } = await import(pathToFileURL(outfile).href);
+
+test("a transient debounce-store failure cannot make a durable mutation look failed", async () => {
+  const sends = [];
+  const env = {
+    KV: { put: async () => { throw new Error("KV unavailable"); } },
+    AI_JOBS: { send: async (...args) => { sends.push(args); } },
+  };
+  await dispatchAiExtractionJob(env, { waitUntil() {} }, {
+    projectId: "project-delete-committed",
+    generation: 4,
+    debounceToken: "delete-token",
+  });
+  assert.equal(sends.length, 1, "the durable queue still receives the job");
+});
 
 const failedSummary = (stageWarnings) => ({
   runId: "run-1",

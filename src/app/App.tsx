@@ -19,6 +19,7 @@ import { OrderDetail, ProjectDetail } from "../pages/RecordDetailPage";
 import { QuoteReviewPage } from "../pages/QuoteReviewPage";
 import { initialsOf } from "../pages/accountModel";
 import { QuotePage } from "../pages/QuotePage";
+import { QuoteProjectPage } from "../pages/QuoteProjectPage";
 import { HowItWorksPage } from "../pages/HowItWorksPage";
 import { type TrackFocus } from "../pages/OrderTrackingPage";
 import { ContactPage } from "../pages/ContactPage";
@@ -32,7 +33,7 @@ import { matchSchedule } from "../data/scheduleMatch";
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
-import { getCurrentProject, saveLines, submitProject, updateProfile, clearDraft, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
+import { getCurrentProject, hydrateQuoteItems, saveLines, submitProject, updateProfile, clearDraft, updateCurrentSegment, addCurrentSegment, removeCurrentSegment, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
 import { GstContext, type GstMode } from "../data/gst";
 import { SAGE_LIGHT as SAGE_LT } from "../styles/tokens";
 
@@ -1906,22 +1907,25 @@ export default function App() {
     removeFile: (id) => setQuoteFiles(prev => prev.filter(f => f.id !== id)),
     // Replace the whole line set (after a schedule parse re-hydrates from server).
     setItems: (items) => setQuoteItems(items.map((it, i) => ({ ...it, id: Date.now() + i }))),
-    // Reset the whole project to zero — lines AND the attached schedule file — on
+    // Reset the whole project to zero — lines AND every attached document — on
     // both sides. Skip the echo save so the just-cleared state isn't re-sent.
     clearAll: async () => {
-      try { await clearDraft(); } catch { /* offline — local clear still applies */ }
+      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+      await clearDraft();
+      removedLineIdsRef.current.clear();
       skipNextSaveRef.current = true;
       setQuoteItems([]); setQuoteFiles([]);
     },
-    // Re-hydrate lines + the attached file from the server (after a parse).
-    reload: async () => {
+    // Re-hydrate lines + attached files from the server (after a parse or a
+    // server-authored mutation).
+    reload: async ({ flushLocalChanges = true } = {}) => {
       // FLUSH FIRST. reload() overwrites local lines with server state, so any
       // edit still sitting in the debounced autosave would be silently lost —
       // exactly what happened when a manually added line vanished as parse
       // results landed. Flushing at the source protects EVERY reload path (AI
       // run completion, file removal, post-parse) rather than one call site.
       if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
-      if (hydratedRef.current) {
+      if (hydratedRef.current && flushLocalChanges) {
         try {
           const removedIds = [...removedLineIdsRef.current];
           await saveLines(quoteItemsRef.current, projectTitleRef.current, removedIds);
@@ -1932,17 +1936,29 @@ export default function App() {
       }
       const r = await getCurrentProject();
       skipNextSaveRef.current = true;
-      setQuoteItems((r.items ?? []).map((it, i) => ({
-        id: Date.now() + i, serverId: it.id,
-        code: it.code, productSlug: it.productSlug, location: it.location,
-        width: it.width, height: it.height,
-        options: it.options, qty: it.qty, status: it.status,
-        origin: it.origin, aiPriced: it.aiPriced, review: it.review ?? null, lineTotal: it.lineTotal,
-      })));
+      setQuoteItems(prev => hydrateQuoteItems(r.items ?? [], Date.now(), prev));
       setQuoteFiles((r.files ?? []).map((f) => ({
         id: f.id, name: f.filename, kind: f.kind, size: f.size,
         status: "Uploaded" as const, docType: f.doc_type ?? null,
       })));
+    },
+    updateSegment: async (segmentId, patch) => {
+      await updateCurrentSegment(segmentId, patch);
+      const r = await getCurrentProject();
+      skipNextSaveRef.current = true;
+      setQuoteItems(prev => hydrateQuoteItems(r.items ?? [], Date.now(), prev));
+    },
+    addSegment: async (parentServerId, patch) => {
+      await addCurrentSegment(parentServerId, patch);
+      const r = await getCurrentProject();
+      skipNextSaveRef.current = true;
+      setQuoteItems(prev => hydrateQuoteItems(r.items ?? [], Date.now(), prev));
+    },
+    removeSegment: async (segmentId) => {
+      await removeCurrentSegment(segmentId);
+      const r = await getCurrentProject();
+      skipNextSaveRef.current = true;
+      setQuoteItems(prev => hydrateQuoteItems(r.items ?? [], Date.now(), prev));
     },
   };
   // ── Persistence (M2): hydrate the anon project on load, snapshot-save on change ──
@@ -1980,13 +1996,7 @@ export default function App() {
         setProjectId(r.project.id);
         if (r.project.title) setProjectTitle(r.project.title);
         if (r.items.length) {
-          setQuoteItems(r.items.map((it, i) => ({
-            id: Date.now() + i, serverId: it.id,
-            code: it.code, productSlug: it.productSlug, location: it.location,
-            width: it.width, height: it.height,
-            options: it.options, qty: it.qty, status: it.status,
-            origin: it.origin, aiPriced: it.aiPriced, review: it.review ?? null, lineTotal: it.lineTotal,
-          })));
+          setQuoteItems(hydrateQuoteItems(r.items));
         }
         // Surface the attached schedule file (integral to the quote/order).
         if (r.files?.length) {
@@ -2086,6 +2096,10 @@ export default function App() {
       case "products":         return <ProductsPage setPage={navigateTo} category={catCategory} family={catFamily} onSelectCategory={selectCategory} onSelectFamily={setCatFamily} onOpenProduct={openProduct} />;
       case "product-detail":   return <ProductDetailPage slug={productSlug} setPage={navigateTo} onOpenProduct={openProduct} onBack={backToFamily} quote={quote} />;
       case "quote":            return <QuotePage setPage={navigateTo} user={user} quote={quote} onSubmit={submitCurrentProject} onHeroChange={setViewHasHero} />;
+      // Same draft, same props, different presentation — the A/B arm. `quote` is
+      // App-level state, so this route shows the identical project with no extra
+      // wiring. It is NOT a hero page, so the header stays solid over its bone canvas.
+      case "quote-project":    return <QuoteProjectPage setPage={navigateTo} user={user} quote={quote} onSubmit={submitCurrentProject} />;
       // Without setPage the page's own CTAs called setPage?.(…) on undefined and
       // did nothing but scroll to top — a dead end for traffic the home page sends.
       case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;

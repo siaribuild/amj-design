@@ -17,7 +17,7 @@ import { ingestProjectFiles, type IngestedDoc } from "./ingest";
 import { scheduleExtractor, type ScheduleLineV1 } from "../estimator/skills/schedule";
 import { energyReportExtractor, type EnergyExtraction } from "../estimator/skills/energy";
 import { planContextExtractor, type PlanContextV1 } from "../estimator/skills/plan";
-import { mapEnergyToOpenings, normalizeOpeningRef } from "./energyMap";
+import { applyEnergyAuthority, mapEnergyToOpenings, normalizeOpeningRef } from "./energyMap";
 import { resolveDefaultEnvelope, defaultRequirement, ARCHETYPE_REGISTRY_VERSION, type EnvelopeArchetype } from "./archetypes";
 import { computeDefaultBand } from "../estimator/thermal/computedBand";
 import { proposeSplit, parseSplitHint, type SplitHint } from "../estimator/split";
@@ -305,6 +305,8 @@ export interface AiExtractionSummary {
   estimate: { openings: number; selected: number } | null;
   cartApplied?: number;
   stageWarnings: string[];
+  /** Human-readable report-vs-plan items retained for audit and staff review. */
+  discrepancyWarnings?: string[];
   /** Stable category consumed by queue retry policy; never parse warning text. */
   failureKind?: SkillFailureKind | "business_incomplete" | "stale_generation" | null;
   errorCode?: string | null;
@@ -539,7 +541,7 @@ export async function runAiExtraction(
   for (const l of merged.lines) {
     if (!l.tag || l.widthMm == null || l.heightMm == null) continue;
     const hint: SplitHint | null = l.split?.operable?.length
-      ? { units: l.split.operable, raw: l.notes ?? "" }
+      ? { units: l.split.operable, raw: l.notes ?? "", source: "schedule_comment" }
       : parseSplitHint(l.notes);
     if (!hint) continue;
     splitHints.set(l.tag, hint);
@@ -551,12 +553,42 @@ export async function runAiExtraction(
     flagOpening(l.tag, `proposed split (confirm at review): ${layout}`);
   }
 
-  // Path 1 (§10.1): explicit report requirements are AUTHORITATIVE. Map them
-  // onto the opening graph; represent mismatches, surface unmatched constraints.
+  // Path 1 (§10.1): report configuration/performance is authoritative, while
+  // architectural dimensions describe the constructed opening. Map both onto
+  // the opening graph; represent mismatches and surface unmatched constraints.
   let energyApplied = 0;
+  let energyReviewWarnings: string[] = [];
+  let energyConflictWarnings: string[] = [];
   if (energy) {
     const mapped = mapEnergyToOpenings(energy.extraction, model.openings);
+    energyReviewWarnings = mapped.reviewWarnings;
+    energyConflictWarnings = mapped.conflictWarnings;
     for (const o of model.openings) {
+      const authority = mapped.authoritativeOpenings.get(o.externalRef);
+      if (authority) {
+        applyEnergyAuthority(o, authority);
+      }
+      const components = mapped.components.get(o.externalRef);
+      if (components?.length) {
+        o.thermalComponents = components;
+        const authorityAxis = authority?.axis ?? "vertical";
+        splitHints.set(o.externalRef, {
+          source: "energy_report",
+          axis: authorityAxis,
+          raw: components.map((component) => component.ref).join(" + "),
+          units: components.map((component) => ({
+            operation: component.operationType ?? "fixed",
+            count: 1,
+            widthMm: component.widthMm,
+            heightMm: component.heightMm,
+            ref: component.ref,
+            requirement: component.requirement,
+            performanceTypeId: component.performanceTypeId,
+            performanceDescription: component.performanceDescription,
+            glazingNote: component.glazingNote,
+          })),
+        });
+      }
       const req = mapped.requirements.get(o.externalRef);
       if (!req) continue;
       energyApplied++;
@@ -582,8 +614,16 @@ export async function runAiExtraction(
         conflict.entity,
         conflict.field === "thermalRequirement"
           ? "energy_requirement_ambiguous"
-          : "energy_dimension_conflict",
+          : conflict.field === "configuration"
+            ? "energy_configuration_conflict"
+            : conflict.field === "context"
+              ? "energy_requirement_context_mismatch"
+              : "energy_dimension_conflict",
       );
+    }
+    for (const warning of mapped.reviewWarnings) {
+      const ref = warning.split(":", 1)[0];
+      if (model.openings.some((opening) => opening.externalRef === ref)) flagOpening(ref, warning);
     }
     model.inputMode = planContexts.length ? "plans_plus_energy_report" : "schedule_only";
     model.energyAssessment = {
@@ -761,6 +801,10 @@ export async function runAiExtraction(
     buildingModelId, estimate: { openings: estimate.openings, selected: estimate.selected },
     cartApplied: estimate.appliedToCart,
     stageWarnings: warnings,
+    // Persist source reconciliation for audit/staff review. Architectural
+    // dimensions already resolve these conflicts, so the customer estimator
+    // does not turn them into a project-level warning or navigation task.
+    discrepancyWarnings: [...new Set(energyConflictWarnings)],
   };
   await setProgress("preparing_quote");
   await completeAiRun(env, run.id, { status, inputMode: model.inputMode, summary });

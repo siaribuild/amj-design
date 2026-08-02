@@ -25,6 +25,11 @@ export interface Family {
    *  the schedule matcher and estimator both read it, and products inherit it
    *  unless they set their own Configuration → Operation types to override. */
   operation?: string;
+  /** Inline SVG markup for the family's pictogram, authored in Sanity. Rendered
+   *  through an allow-list sanitiser (components/quote-project/FamilyPictogram).
+   *  Absent until an editor authors one — no built-in stand-in is substituted,
+   *  so unconfigured content stays visible rather than being masked. */
+  icon?: string;
   /** Alternative names architects use on schedules (e.g. FIXED, PICTURE WINDOW).
    *  Authored in Sanity so new trade vocabulary is a CONTENT change, not a code
    *  change. Matched exactly (case/whitespace-insensitive), never fuzzily —

@@ -5,6 +5,9 @@ export const PAGE_PATHS: Record<Page, string> = {
   products: "/products",
   "product-detail": "/products",
   quote: "/quote",
+  // Internal A/B alternative to /quote. Registered here so direct navigation and
+  // browser back/forward work; deliberately absent from every public nav link.
+  "quote-project": "/quote-project",
   "how-it-works": "/how-it-works",
   resources: "/resources",
   contact: "/contact",

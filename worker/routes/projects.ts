@@ -9,6 +9,8 @@ import { itemToInsert, itemFields, incomingServerId, editedFieldsAfterSave, rowT
 import { ownedProject, resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 import { uuid } from "../lib/util";
+import { addSegment, recomputeComposite, removeSegment, updateSegment } from "../lib/composite";
+import { logEvent } from "../lib/activity";
 
 export const projects = new Hono<{ Bindings: Env }>();
 
@@ -72,11 +74,11 @@ export async function loadLines(env: Env, projectId: string) {
 
   const placeholders = parentIds.map(() => "?").join(",");
   const { results: segRows } = await env.DB.prepare(
-    `SELECT id, parent_line_id, segment_seq, qty_per_parent, product_slug, dims_json, options_json, qty, line_total
+    `SELECT id, parent_line_id, segment_seq, qty_per_parent, product_slug, dims_json, options_json, qty, line_total, status
        FROM quote_line WHERE parent_line_id IN (${placeholders}) ORDER BY segment_seq`,
   ).bind(...parentIds).all<{
     id: string; parent_line_id: string; segment_seq: number; qty_per_parent: number;
-    product_slug: string; dims_json: string; options_json: string; qty: number; line_total: number | null;
+    product_slug: string; dims_json: string; options_json: string; qty: number; line_total: number | null; status: string;
   }>();
 
   const byParent = new Map<string, ApiSegment[]>();
@@ -93,6 +95,8 @@ export async function loadLines(env: Env, projectId: string) {
       // Segment prices are DISPLAY-ONLY and the client must never sum them: the
       // parent's line_total is the authoritative figure.
       lineTotal: s.line_total,
+      options: safeParse(s.options_json) as Record<string, string>,
+      status: s.status === "ready" ? "Ready" : "Needs review",
     });
     byParent.set(s.parent_line_id, list);
   }
@@ -133,6 +137,113 @@ projects.post("/current/price-preview", async (c) => {
   // or a registered customer sees one number while typing and another once saved.
   const f = await itemFields(c.env, body, project.owner_user_id);
   return c.json({ ok: f.line_total != null, total: f.line_total });
+});
+
+type DraftCompositeParent = { id: string; project_id: string };
+
+async function currentDraftCompositeParent(env: Env, req: Request, lineId: string): Promise<DraftCompositeParent | null> {
+  const { project } = await resolveCurrentProject(env, req);
+  if (!project || project.status_customer !== "draft") return null;
+  return env.DB.prepare(
+    `SELECT id, project_id FROM quote_line
+      WHERE id=? AND project_id=? AND revision_id IS NULL
+        AND parent_line_id IS NULL AND line_kind='composite_parent'`,
+  ).bind(lineId, project.id).first<DraftCompositeParent>();
+}
+
+async function currentDraftSegment(env: Env, req: Request, segmentId: string): Promise<{
+  id: string; parent_line_id: string; project_id: string;
+} | null> {
+  const { project } = await resolveCurrentProject(env, req);
+  if (!project || project.status_customer !== "draft") return null;
+  return env.DB.prepare(
+    `SELECT segment.id, segment.parent_line_id, segment.project_id
+       FROM quote_line segment
+       JOIN quote_line parent ON parent.id=segment.parent_line_id
+      WHERE segment.id=? AND segment.project_id=? AND segment.revision_id IS NULL
+        AND parent.line_kind='composite_parent' AND parent.parent_line_id IS NULL`,
+  ).bind(segmentId, project.id).first<{ id: string; parent_line_id: string; project_id: string }>();
+}
+
+async function markCustomerCompositeEdit(env: Env, projectId: string, parentId: string, segmentId?: string) {
+  if (segmentId) {
+    await env.DB.prepare(
+      `UPDATE quote_line SET status=CASE WHEN line_total IS NULL THEN 'incomplete' ELSE 'technical_review' END
+        WHERE id=? AND project_id=? AND parent_line_id=?`,
+    ).bind(segmentId, projectId, parentId).run();
+    await recomputeComposite(env, parentId);
+  }
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE quote_line SET
+         review_json=json_patch(COALESCE(review_json,'{}'), ?),
+         status=CASE WHEN line_total IS NULL THEN 'incomplete' ELSE 'technical_review' END,
+         updated_at=datetime('now')
+       WHERE id=? AND project_id=? AND parent_line_id IS NULL`,
+    ).bind(JSON.stringify({
+      customerCompositeChanged: "Composite units were edited in the estimator; confirm the unit layout, glazing and energy-report compliance during technical review.",
+    }), parentId, projectId),
+    env.DB.prepare(
+      `UPDATE project SET quote_edit_version=quote_edit_version+1, updated_at=datetime('now')
+        WHERE id=? AND status_customer='draft'`,
+    ).bind(projectId),
+  ]);
+}
+
+// Draft-owner composite editing. These are ownership wrappers around the same
+// domain functions used by Ops; pricing, coverage, quantity derivation and the
+// two-unit minimum therefore cannot drift between the two surfaces.
+projects.patch("/current/segments/:id", async (c) => {
+  const segment = await currentDraftSegment(c.env, c.req.raw, c.req.param("id"));
+  if (!segment) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  const patch: { productSlug?: string; options?: Record<string, string>; alongMm?: number } = {};
+  if (body?.productSlug !== undefined) patch.productSlug = String(body.productSlug);
+  if (body?.options && typeof body.options === "object" && !Array.isArray(body.options)) {
+    patch.options = Object.fromEntries(
+      Object.entries(body.options as Record<string, unknown>).map(([key, value]) => [key, String(value ?? "")]),
+    );
+  }
+  if (body?.alongMm !== undefined) patch.alongMm = Number(body.alongMm) || 0;
+  const result = await updateSegment(c.env, { segmentId: segment.id, patch });
+  if ("errors" in result) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
+  await markCustomerCompositeEdit(c.env, segment.project_id, segment.parent_line_id, segment.id);
+  await logEvent(c.env, {
+    entityType: "project", entityId: segment.project_id, action: "customer.line.unit.edit",
+    after: { lineId: segment.parent_line_id, unitId: segment.id, fields: Object.keys(patch) },
+  });
+  return c.json({ ok: true });
+});
+
+projects.post("/current/lines/:id/segments", async (c) => {
+  const parent = await currentDraftCompositeParent(c.env, c.req.raw, c.req.param("id"));
+  if (!parent) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json<Record<string, unknown>>().catch(() => null);
+  const productSlug = typeof body?.productSlug === "string" ? body.productSlug : "";
+  const options = body?.options && typeof body.options === "object" && !Array.isArray(body.options)
+    ? body.options as Record<string, string> : {};
+  const alongMm = Math.round(Number(body?.alongMm));
+  const result = await addSegment(c.env, parent.id, "manual", { productSlug, options, alongMm });
+  if ("errors" in result) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
+  await markCustomerCompositeEdit(c.env, parent.project_id, parent.id, result.id);
+  await logEvent(c.env, {
+    entityType: "project", entityId: parent.project_id, action: "customer.line.unit.add",
+    after: { lineId: parent.id, unitId: result.id },
+  });
+  return c.json({ ok: true, id: result.id });
+});
+
+projects.delete("/current/segments/:id", async (c) => {
+  const segment = await currentDraftSegment(c.env, c.req.raw, c.req.param("id"));
+  if (!segment) return c.json({ error: "not_found" }, 404);
+  const result = await removeSegment(c.env, segment.id);
+  if ("errors" in result) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
+  await markCustomerCompositeEdit(c.env, segment.project_id, result.parentId);
+  await logEvent(c.env, {
+    entityType: "project", entityId: segment.project_id, action: "customer.line.unit.remove",
+    after: { lineId: result.parentId, unitId: segment.id },
+  });
+  return c.json({ ok: true });
 });
 
 // GET /api/projects/:id — a specific owned project + its draft lines (read-only).

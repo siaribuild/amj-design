@@ -13,6 +13,32 @@ import { uuid } from "../lib/util";
 
 export const quote = new Hono<{ Bindings: Env }>();
 
+function reconciliationReviewNote(lines: {
+  external_ref: string | null;
+  review_json: string | null;
+  origin: string | null;
+  ai_proposal_line_id: string | null;
+}[]): string | null {
+  const notes = new Set<string>();
+  for (const line of lines) {
+    if (line.origin !== "ai" && !line.ai_proposal_line_id) continue;
+    let review: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(line.review_json ?? "{}");
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) review = parsed;
+    } catch { /* unreadable review data contributes no note */ }
+    for (const key of ["energyMapping", "composite"] as const) {
+      const value = typeof review[key] === "string" ? review[key].trim().slice(0, 1000) : "";
+      if (!value) continue;
+      notes.add(line.external_ref && !value.startsWith(`${line.external_ref}:`)
+        ? `${line.external_ref}: ${value}`
+        : value);
+    }
+  }
+  if (!notes.size) return null;
+  return `Automatic document reconciliation — human review required:\n${[...notes].map((note) => `- ${note}`).join("\n")}`.slice(0, 5000);
+}
+
 // GET /api/projects/:id/clarifications — clarification thread for the customer.
 quote.get("/projects/:id/clarifications", async (c) => {
   const p = await ownedProject(c.env, c.req.raw, c.req.param("id"));
@@ -165,6 +191,7 @@ quote.post("/projects/:id/submit", async (c) => {
   }
   const codes = lines.map((l) => (l.external_ref ?? "").trim().toUpperCase()).filter(Boolean);
   if (new Set(codes).size !== codes.length) return c.json({ error: "duplicate_codes" }, 400);
+  const reviewNote = reconciliationReviewNote(lines);
 
   const committed = await c.env.DB.batch([
     c.env.DB.prepare(
@@ -226,6 +253,17 @@ quote.post("/projects/:id/submit", async (c) => {
     return c.json({ error: "ai_processing" }, 409);
   }
 
+  // Carry the same discrepancy text the customer saw into the staff review
+  // thread at the moment the request is submitted. This is deliberately a note,
+  // not a new workflow state or task.
+  if (reviewNote) {
+    await c.env.DB.prepare(
+      "INSERT INTO comment (id, project_id, author_id, kind, body) VALUES (?, ?, ?, 'note', ?)",
+    ).bind(uuid(), p.id, p.owner_user_id, reviewNote).run().catch((error) => {
+      console.log(`[submit] reconciliation note failed: ${String(error)}`);
+    });
+  }
+
   // Notify customer + internal queue that the quote is in for review, and include
   // the uploaded schedule (name) so the reviewer knows the source is attached.
   try {
@@ -235,18 +273,19 @@ quote.post("/projects/:id/submit", async (c) => {
     const ref = p.public_ref ?? p.id;
     const origin = new URL(c.req.url).origin;
     const fileLine = sched ? `\nUploaded schedule: ${sched.filename} (attached to this quote for technical review)` : "";
+    const reviewLine = reviewNote ? `\n\n${reviewNote}` : "";
     await notify(c.env, {
       recipient: contactEmail, eventType: "quote.submitted", templateKey: "quote_submitted",
-      vars: { name: contactName, ref, scheduleNote: fileLine, trackUrl: `${origin}/track-order` },
+      vars: { name: contactName, ref, scheduleNote: `${fileLine}${reviewLine}`, trackUrl: `${origin}/track-order` },
       email: { to: contactEmail, subject: `We've received your quote ${ref}`,
-        text: `Hi ${contactName},\n\nThanks — your quote ${ref} is in for technical review.${fileLine}\n\nTrack it any time at ${origin}/track-order using reference ${ref} and this email address.\n\n— OpenFrame` },
+        text: `Hi ${contactName},\n\nThanks — your quote ${ref} is in for technical review.${fileLine}${reviewLine}\n\nTrack it any time at ${origin}/track-order using reference ${ref} and this email address.\n\n— OpenFrame` },
     });
     const internalTo = c.env.ENQUIRY_INTERNAL_TO || c.env.CONTACT_TO || c.env.EMAIL_FROM || "quotes@openframe.com.au";
     await notify(c.env, {
       recipient: internalTo, eventType: "quote.submitted.internal", templateKey: "quote_submitted_internal",
-      vars: { ref, name: contactName, email: contactEmail, scheduleNote: fileLine },
+      vars: { ref, name: contactName, email: contactEmail, scheduleNote: `${fileLine}${reviewLine}` },
       email: { to: internalTo, subject: `New quote submitted ${ref}`,
-        text: `${ref} submitted for technical review.\nCustomer: ${contactName} <${contactEmail}>${fileLine}\n\nOpen the ops console → this project to review the schedule and lines.` },
+        text: `${ref} submitted for technical review.\nCustomer: ${contactName} <${contactEmail}>${fileLine}${reviewLine}\n\nOpen the ops console → this project to review the schedule and lines.` },
     });
   } catch (e) {
     console.log(`[submit] notify failed: ${String(e)}`);

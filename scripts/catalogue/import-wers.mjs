@@ -49,6 +49,10 @@ const FRAME_TO_PRODUCTS = {
   "AMJ150 Fixed Window": ["amj150-fixed-window"],
 };
 const FIXED_PRODUCT_SLUGS = new Set(["amj100t-fixed-window", "amj80st-fixed-window", "amj100l-fixed-window", "amj67t-fixed-window", "amj150-fixed-window"]);
+// Owner-entered AMJ80ST limits, explicitly approved as the common fixed-window
+// range on 2026-08-02. Keep these inline on createOrReplace so a future WERS
+// refresh cannot erase the completed catalogue fields.
+const FIXED_DIMENSION_RULE = { minWidthMm: 400, maxWidthMm: 3000, minHeightMm: 400, maxHeightMm: 3000 };
 const UNMAPPED_FRAMES = ["AMJ100 Awning", "AMJ100LST Awning Window", "AMJ80T TB Awning Window", "AMJ67T Awning Window", "AMJ100T Sliding Window", "AMJ100L Sliding Window", "AMJ100 Sliding Door"];
 
 // ── Derivations ───────────────────────────────────────────────────────────────
@@ -142,8 +146,8 @@ export function build(rows) {
         category: { _type: "reference", _ref: WINDOWS_CATEGORY },
         schemaVersion: 1,
         thermalProfile: { _type: "reference", _ref: `thermal-${slugify(frame)}` },
-        // NOTE: needs dimensionRule + pricingRef + copy/images before it is
-        // quotable — thermal-only until ops completes it.
+        dimensionRule: { ...FIXED_DIMENSION_RULE },
+        pricingRef: slug,
       });
     }
   }

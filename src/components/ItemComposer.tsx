@@ -54,8 +54,8 @@ export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; to
   let bw: number, bh: number;
   if (ratio >= 1) { bw = MAXW; bh = MAXW / ratio; if (bh > MAXH) { bh = MAXH; bw = MAXH * ratio; } }
   else { bh = MAXH; bw = MAXH * ratio; if (bw > MAXW) { bw = MAXW; bh = MAXW / ratio; } }
-  const stroke = tone === "sage" ? "var(--sage)" : "rgba(255,255,255,0.55)";
-  const faint = tone === "sage" ? "rgba(90,122,106,0.35)" : "rgba(255,255,255,0.24)";
+  const stroke = tone === "sage" ? "var(--sage)" : "color-mix(in srgb, var(--paper) 55%, transparent)";
+  const faint = tone === "sage" ? "color-mix(in srgb, var(--sage) 35%, transparent)" : "color-mix(in srgb, var(--paper) 24%, transparent)";
   return (
     <div className="flex items-end justify-center py-1" style={{ minHeight: MAXH + 30 }} aria-hidden="true">
       <div className="relative" style={{ width: bw, height: bh }}>
@@ -64,7 +64,7 @@ export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; to
           <span className="text-[9px] my-1" style={{ writingMode: "vertical-rl", color: stroke, fontFamily: "'DM Mono', monospace" }}>H</span>
           <div className="w-px flex-1" style={{ background: faint }} />
         </div>
-        <div className="absolute inset-0 border-2" style={{ borderColor: stroke, background: tone === "sage" ? "rgba(90,122,106,0.05)" : "rgba(255,255,255,0.04)" }}>
+        <div className="absolute inset-0 border-2" style={{ borderColor: stroke, background: tone === "sage" ? "color-mix(in srgb, var(--sage) 5%, transparent)" : "color-mix(in srgb, var(--paper) 4%, transparent)" }}>
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-px" style={{ background: faint }} />
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-px" style={{ background: faint }} />
         </div>
@@ -78,7 +78,7 @@ export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; to
   );
 }
 
-const selectClass = "w-full border border-ink/20 bg-white pl-3 pr-9 py-2.5 text-sm text-ink focus:outline-none focus:border-sage transition-colors appearance-none cursor-pointer";
+const selectClass = "field-control w-full border pl-3 pr-9 py-2.5 text-sm text-ink focus:outline-none transition-colors appearance-none cursor-pointer";
 
 function inRangeFor(p: Product, w: number, h: number) {
   return (p.minWidth == null || w >= p.minWidth) && (p.maxWidth == null || w <= p.maxWidth)
@@ -111,9 +111,10 @@ export function itemNeedsAttention(item: QItem): boolean {
 }
 
 // ─── Field blocks (shared by the new-item form and the MyProject card) ────────
-function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false }: {
+function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false, lockedDimension }: {
   p: Product; width: string; height: string;
   setWidth: (v: string) => void; setHeight: (v: string) => void; rail?: boolean;
+  lockedDimension?: "width" | "height";
 }) {
   const w = parseInt(width) || 0, h = parseInt(height) || 0;
   const dimsEntered = w > 0 && h > 0;
@@ -129,11 +130,11 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false 
         <div className="flex-1 space-y-3">
           <div>
             <FieldLabel>Width — horizontal (mm)</FieldLabel>
-            <Input type="number" inputMode="numeric" value={width} onChange={e => setWidth(e.target.value)} placeholder="e.g. 1810" />
+            <Input type="number" inputMode="numeric" value={width} onChange={e => setWidth(e.target.value)} placeholder="e.g. 1810" disabled={lockedDimension === "width"} />
           </div>
           <div>
             <FieldLabel>Height — vertical (mm)</FieldLabel>
-            <Input type="number" inputMode="numeric" value={height} onChange={e => setHeight(e.target.value)} placeholder="e.g. 1210" />
+            <Input type="number" inputMode="numeric" value={height} onChange={e => setHeight(e.target.value)} placeholder="e.g. 1210" disabled={lockedDimension === "height"} />
           </div>
           {dimsEntered && inRange && (
             <p className="text-sm text-ink"><Check className="w-3.5 h-3.5 inline text-sage mr-1" />You have entered: <span className="font-medium">{mm(width)} wide × {mm(height)} high</span></p>
@@ -142,19 +143,19 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false 
             <p className="text-xs text-body">Fits {mm(p.minWidth ?? 0)}–{mm(p.maxWidth ?? 0)} wide, {mm(p.minHeight ?? 0)}–{mm(p.maxHeight ?? 0)} high.</p>
           )}
           {reversed && (
-            <div className="flex items-start gap-2 bg-amber-50 border border-amber-300 px-3 py-2 text-xs text-amber-800">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-amber-600" />
+            <div className="quote-notice--warning flex items-start gap-2 border border-warning/40 px-3 py-2 text-xs">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-warning" />
               <span>Height is greater than width — these look reversed. <button onClick={() => { setWidth(height); setHeight(width); }} className="underline font-medium cursor-pointer">Swap</button></span>
             </div>
           )}
           {tooSmall && (
-            <div className="flex items-start gap-2 bg-red-50 border border-red-300 px-3 py-2 text-xs text-red-700">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-red-500" />
+            <div className="quote-notice--danger flex items-start gap-2 border border-destructive/35 px-3 py-2 text-xs">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-destructive" />
               <span>{p.name} starts at {mm(p.minWidth ?? 0)} wide and {mm(p.minHeight ?? 0)} high. Check the measurement.</span>
             </div>
           )}
           {oversize && (
-            <div className="flex items-start gap-2 border border-info/35 px-3 py-2 text-xs text-info-ink" style={{ background: "rgba(76,106,136,0.06)" }}>
+            <div className="quote-notice--info flex items-start gap-2 border border-info/35 px-3 py-2 text-xs">
               <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
               <span>
                 No single {p.name} is made this large (up to {mm(p.maxWidth ?? 0)} × {mm(p.maxHeight ?? 0)}). Openings this
@@ -178,8 +179,8 @@ const OPTION_GRID = "grid grid-cols-2 @md:grid-cols-3 @xl:grid-cols-4 gap-1.5";
 function OptionButton({ label, hex, selected, onPick }: { label: string; hex?: string; selected: boolean; onPick: () => void }) {
   return (
     <button onClick={onPick} aria-pressed={selected} title={label}
-      className={`flex items-center gap-2 px-2.5 py-2 border text-left transition-colors cursor-pointer min-w-0 ${selected ? "border-ink bg-ink/[0.04] ring-1 ring-ink" : "border-black/15 bg-white hover:border-sage"}`}>
-      {hex !== undefined && <span className="w-4 h-4 flex-shrink-0 border border-black/25" style={{ background: hex || "#ccc" }} aria-hidden="true" />}
+      className="quote-option flex items-center gap-2 px-2.5 py-2 border text-left transition-colors cursor-pointer min-w-0">
+      {hex !== undefined && <span className="w-4 h-4 flex-shrink-0 border border-black/25" style={{ backgroundColor: hex || "var(--muted)" }} aria-hidden="true" />}
       <span className="text-xs text-ink truncate flex-1">{label}</span>
       {selected && <Check className="w-3.5 h-3.5 text-sage flex-shrink-0" aria-hidden="true" />}
     </button>
@@ -236,7 +237,7 @@ function GlazingChoices({ choices, value, onPick }: { choices: GlazingChoice[]; 
   const recommended = choices[0]?.slug; // first in the ops list = the no-requirement default
   const lensBtn = (k: typeof lens, label: string) => (
     <button key={k} onClick={() => setLens(k)} aria-pressed={lens === k}
-      className={`px-2 py-1 border transition-colors cursor-pointer ${lens === k ? "border-ink bg-ink/[0.04]" : "border-black/15 bg-white hover:border-sage"}`}>{label}</button>
+      className="quote-option px-2 py-1 border transition-colors cursor-pointer">{label}</button>
   );
   return (
     <div>
@@ -250,7 +251,7 @@ function GlazingChoices({ choices, value, onPick }: { choices: GlazingChoice[]; 
           const sel = c.slug === value;
           return (
             <button key={c.slug} onClick={() => onPick(c.slug)} aria-pressed={sel}
-              className={`text-left px-2.5 py-2 border transition-colors cursor-pointer ${sel ? "border-ink bg-ink/[0.04] ring-1 ring-ink" : "border-black/15 bg-white hover:border-sage"}`}>
+              className="quote-option text-left px-2.5 py-2 border transition-colors cursor-pointer">
               <span className="flex items-center gap-2 min-w-0">
                 <span className="text-xs font-medium text-ink truncate flex-1">{c.name}</span>
                 {c.slug === recommended && <span className="text-[10px] text-sage border border-sage/40 rounded-full px-1.5 leading-tight py-0.5 whitespace-nowrap">Recommended</span>}
@@ -277,8 +278,8 @@ function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<str
   return (
     <div className="space-y-2">
       {glazing.length > 0 && (
-        <div className="border border-black/10">
-          <button onClick={() => setOpenOpt(openOpt === "glazing" ? null : "glazing")} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left cursor-pointer bg-white">
+        <div className="quote-option-list border border-line">
+          <button onClick={() => setOpenOpt(openOpt === "glazing" ? null : "glazing")} className="quote-section-trigger w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left cursor-pointer">
             <span className="min-w-0">
               <span className="text-[10px] uppercase tracking-widest text-body block">Glazing</span>
               <span className={`text-sm font-medium truncate block ${glazingName ? "text-ink" : "text-quieter"}`}>{glazingName || "Select…"}</span>
@@ -301,11 +302,11 @@ function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<str
         const swatchHex = isColour ? g.choices.find(c => c.name === val)?.hex : undefined;
         return (
           <div key={g.typeSlug} className="border border-black/10">
-            <button onClick={() => setOpenOpt(open ? null : g.typeSlug)} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left cursor-pointer bg-white">
+            <button onClick={() => setOpenOpt(open ? null : g.typeSlug)} className="quote-section-trigger w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left cursor-pointer">
               <span className="min-w-0">
                 <span className="text-[10px] uppercase tracking-widest text-body block">{g.label}{g.required && !val ? <span className="text-amber-600"> · required</span> : ""}</span>
                 <span className={`text-sm font-medium truncate flex items-center gap-1.5 ${val ? "text-ink" : "text-quieter"}`}>
-                  {isColour && val && <span className="w-3.5 h-3.5 flex-shrink-0 border border-black/25" style={{ background: swatchHex || "#ccc" }} aria-hidden="true" />}
+                  {isColour && val && <span className="w-3.5 h-3.5 flex-shrink-0 border border-black/25" style={{ backgroundColor: swatchHex || "var(--muted)" }} aria-hidden="true" />}
                   {val || "Select…"}
                 </span>
               </span>
@@ -360,7 +361,7 @@ function ProductPicker({ productSlug, onPick }: { productSlug: string; onPick: (
         <FieldLabel>Product</FieldLabel>
         <div className="relative">
           <select value={selValue} onChange={e => { if (e.target.value) onPick(e.target.value); }} disabled={!familySlug}
-            className={`${selectClass} disabled:bg-bone disabled:text-quieter disabled:cursor-not-allowed`}>
+            className={`${selectClass} disabled:cursor-not-allowed`}>
             <option value="">{familySlug ? "Choose a product…" : "Select a type first"}</option>
             {familyProducts.map(pr => <option key={pr.slug} value={pr.slug}>{pr.name}</option>)}
           </select>
@@ -379,10 +380,10 @@ function QtyLocationFields({ qty, location, setQty, setLocation }: {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <FieldLabel>Quantity — identical units</FieldLabel>
-          <div className="flex items-center border border-ink/20 h-[44px] w-full">
-            <button onClick={() => setQty(Math.max(1, qty - 1))} className="w-12 h-full flex items-center justify-center text-body hover:bg-bone cursor-pointer" aria-label="Decrease quantity"><Minus className="w-4 h-4" /></button>
+          <div className="field-control flex items-center border h-[44px] w-full">
+            <button onClick={() => setQty(Math.max(1, qty - 1))} className="w-12 h-full flex items-center justify-center text-body hover:bg-recessive cursor-pointer" aria-label="Decrease quantity"><Minus className="w-4 h-4" /></button>
             <span className="flex-1 text-center text-sm font-medium">{qty}</span>
-            <button onClick={() => setQty(qty + 1)} className="w-12 h-full flex items-center justify-center text-body hover:bg-bone cursor-pointer" aria-label="Increase quantity"><Plus className="w-4 h-4" /></button>
+            <button onClick={() => setQty(qty + 1)} className="w-12 h-full flex items-center justify-center text-body hover:bg-recessive cursor-pointer" aria-label="Increase quantity"><Plus className="w-4 h-4" /></button>
           </div>
         </div>
         <div>
@@ -401,8 +402,8 @@ function Section({ label, summary, open, onToggle, children, variant = "boxed", 
 }) {
   const boxed = variant === "boxed";
   return (
-    <div className={boxed ? `border ${attention ? "border-amber-300" : "border-black/10"}` : "border-b border-black/[0.06] last:border-b-0"}>
-      <button onClick={onToggle} aria-expanded={open} className={`w-full flex items-center justify-between gap-3 text-left cursor-pointer ${attention ? "bg-amber-50" : "bg-white"} ${boxed ? "px-4 py-3" : "px-4 py-2.5 hover:bg-bone transition-colors"}`}>
+    <div className={boxed ? `border ${attention ? "border-warning/40" : "border-line"}` : "border-b border-line last:border-b-0"}>
+      <button onClick={onToggle} aria-expanded={open} data-attention={attention ? "true" : "false"} className={`quote-section-trigger w-full flex items-center justify-between gap-3 text-left cursor-pointer ${boxed ? "px-4 py-3" : "px-4 py-2.5"}`}>
         <span className="min-w-0">
           <span className={`text-[10px] uppercase tracking-widest block flex items-center gap-1 ${attention ? "text-amber-700" : "text-body"}`}>{label}{attention && <AlertCircle className="w-3 h-3" />}</span>
           <span className="text-sm text-ink font-medium truncate block">{summary}</span>
@@ -410,13 +411,33 @@ function Section({ label, summary, open, onToggle, children, variant = "boxed", 
         <ChevronDown className={`w-4 h-4 text-body flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       <div className={`grid transition-[grid-template-rows] duration-200 ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-        <div className="overflow-hidden"><div className={`${boxed ? "px-4 pb-4 pt-1 border-t border-black/6" : "px-4 pb-4 pt-1 border-t border-black/6 bg-bone/40"}`}>{children}</div></div>
+        <div className="overflow-hidden"><div className={`quote-section-content ${boxed ? "px-4 pb-4 pt-1 border-t border-line" : "px-4 pb-4 pt-1 border-t border-line"}`}>{children}</div></div>
       </div>
     </div>
   );
 }
 
-const optionSummaryOf = (p: Product | undefined, options: Record<string, string>) => {
+/** The selected options as label/value pairs, in the same glazing-first order as
+ *  the one-line summary. A run-on "5Clear · White · Standard · None" line cannot
+ *  be scanned — the reader has to know the option order to decode which value is
+ *  which — so a reading surface wants the labels back. */
+export const optionSummaryPairs = (
+  p: Product | undefined, options: Record<string, string>,
+): { label: string; value: string }[] => {
+  if (!p) return [];
+  const pairs: { label: string; value: string }[] = [];
+  const glazing = glazingChoicesFor(p).find(g => g.slug === options.glazing)?.name;
+  if (glazing) pairs.push({ label: "Glazing", value: glazing });
+  for (const g of optionGroupsFor(p)) {
+    const value = options[g.typeSlug];
+    if (value) pairs.push({ label: g.label, value });
+  }
+  return pairs;
+};
+
+// Exported so the /quote-project read-only expansion shows the SAME summary in
+// the same order rather than reimplementing the glazing-first rule.
+export const optionSummaryOf = (p: Product | undefined, options: Record<string, string>) => {
   if (!p) return "Standard selections";
   // Lead with the chosen glazing (its own picker, not an optionGroup) so a collapsed
   // summary still says which glass — and it survives truncation as the first item.
@@ -428,7 +449,8 @@ const optionSummaryOf = (p: Product | undefined, options: Record<string, string>
 // ═══ NEW-ITEM FORM (product picker + sections + commit) ═══════════════════════
 export function ItemForm({
   lockedSlug, quote, seed, onCommit, onCancel, rail = false, submitLabel = "Save",
-  priceFn = previewPrice, scope = "item",
+  priceFn = previewPrice, scope = "item", unitAxis = "vertical", unitMode = "edit",
+  onDirtyChange, initialSection, excludeId, heading, busy = false, hideOptions = false,
 }: {
   lockedSlug?: string;
   /** Only `items` is read — for the duplicate-code check and code suggestion. It
@@ -452,11 +474,33 @@ export function ItemForm({
   }) => Promise<{ ok: boolean; total: number | null; needsProject?: boolean }>;
   /** "item" is a whole opening. "unit" is one frame INSIDE a composite opening:
    *  it has no architect tag and no room of its own — one opening, one code —
-   *  and its size across the join is set by the opening, so those fields are not
-   *  offered rather than being offered and ignored. */
+   *  and its size across the join is set by the opening, so that dimension is
+   *  shown but locked rather than being editable and then ignored. */
   scope?: "item" | "unit";
+  /** The direction in which the child units are joined. */
+  unitAxis?: "vertical" | "horizontal";
+  /** A new unit stays client-side until this form is deliberately saved. */
+  unitMode?: "edit" | "add";
+  /** Reports draft dirtiness upward. The /quote-project drawer owns its own
+   *  close affordances (X, Escape, scrim) and must be able to guard an unsaved
+   *  draft the same way this form's own Cancel does. Optional and inert for
+   *  every existing caller. */
+  onDirtyChange?: (dirty: boolean) => void;
+  /** Which detail group starts open. Defaults to dimensions. */
+  initialSection?: "dims" | "options" | "qty";
+  /** Local id of the line being edited, so its own code is not a collision. */
+  excludeId?: number;
+  /** Panel heading. Defaults to "New item" — wrong for an edit surface. */
+  heading?: string;
+  /** A caller-owned save is in flight; disables the primary against double-submit. */
+  busy?: boolean;
+  /** A composite PARENT is a schedule line, not a product in its own right — its
+   *  glazing and hardware live on the units. Hides the Options group and stops
+   *  requiring choices the parent will never carry. */
+  hideOptions?: boolean;
 }) {
   const isUnit = scope === "unit";
+  const unitHeading = unitMode === "add" ? "Add composite unit" : "Edit composite unit";
   const seedProduct = seed?.productSlug ? getProductBySlug(seed.productSlug) : undefined;
   const [familySlug, setFamilySlug] = useState(lockedSlug ? (getProductBySlug(lockedSlug)?.familySlug || "") : (seedProduct?.familySlug || ""));
   const [productSlug, setProductSlug] = useState(lockedSlug || seed?.productSlug || "");
@@ -469,7 +513,13 @@ export function ItemForm({
   const [options, setOptions] = useState<Record<string, string>>(seed?.options ? { ...seed.options } : (p ? defaultOptions(p) : {}));
   const [qty, setQty] = useState(seed?.qty || 1);
   const [location, setLocation] = useState(seed?.location || "");
-  const [open, setOpen] = useState<{ dims: boolean; options: boolean; qty: boolean }>({ dims: true, options: false, qty: false });
+  // `initialSection` lets a caller open the form AT the offending field —
+  // /quote-project's `Fix details` is a direct action, not merely an expand.
+  const [open, setOpen] = useState<{ dims: boolean; options: boolean; qty: boolean }>({
+    dims: initialSection ? initialSection === "dims" : true,
+    options: initialSection === "options",
+    qty: initialSection === "qty",
+  });
   const [confirmClose, setConfirmClose] = useState(false);
 
   const w = parseInt(width) || 0, h = parseInt(height) || 0;
@@ -497,7 +547,12 @@ export function ItemForm({
   const gstMode = useGstMode();
   // A unit carries no code, so it can neither be suggested one nor collide.
   const finalCode = isUnit ? "" : (normCode(code) || (productSlug ? suggestCode(quote.items, productSlug) : ""));
-  const duplicateCode = !isUnit && !!finalCode && quote.items.some(item => normCode(item.code) === finalCode);
+  // `excludeId` is the line being EDITED. Without it the form collides with
+  // itself — an existing opening's own code is in `quote.items`, so Save is
+  // disabled the instant the editor opens. The new-item form passes nothing and
+  // keeps comparing against every line, as before.
+  const duplicateCode = !isUnit && !!finalCode
+    && quote.items.some(item => item.id !== excludeId && normCode(item.code) === finalCode);
   const oversize = dimsEntered && !inRange && !((p?.minWidth != null && w < p.minWidth) || (p?.minHeight != null && h < p.minHeight));
   const tooSmall = dimsEntered && !inRange && !oversize;
   // Oversize is submittable, flagged; undersize is a typo and blocks.
@@ -505,7 +560,10 @@ export function ItemForm({
   // cookie is minted on save); the save itself creates the project and prices the
   // line server-side, so don't deadlock the first item on a preview we can't run.
   const priceDeferred = !!priced.needsProject;
-  const canSave = (priced.ok || priceDeferred) && !tooSmall && !duplicateCode;
+  // `busy` covers an in-flight save the CALLER owns (composite segment writes are
+  // async round-trips). Without it the primary stays enabled during the request
+  // and a second click fires the mutation twice — two units added, not one.
+  const canSave = (priced.ok || priceDeferred) && !tooSmall && !duplicateCode && !busy;
   const built: Omit<QItem, "id"> = {
     code: finalCode, productSlug, location, width, height, options, qty,
     status: oversize ? "Needs review" : "Ready",
@@ -527,29 +585,65 @@ export function ItemForm({
   const familyProducts = familySlug ? getProductsByFamily(familySlug) : [];
   const dimsSummary = dimsEntered ? `${mm(width)} × ${mm(height)}` : "Enter the opening size";
   const qtySummary = `Qty ${qty}${location ? ` · ${location}` : ""}`;
-  const issues = p ? itemIssues(p, { width, height, options }) : [];
+  // A hidden Options group must not still gate saving on a choice the user was
+  // never shown — that is an invisible disabled button.
+  const issues = (p ? itemIssues(p, { width, height, options }) : [])
+    .filter((i) => !(hideOptions && i.section === "options"));
   const hasIssue = (s: EditFocus) => issues.some(i => i.section === s);
 
   // Dismissing the draft: silent for an empty/product-only form, but a real
   // in-progress item asks first (inline — no modal, matching the page).
-  const dirty = !!productSlug && (dimsEntered || !!location.trim() || codeEdited);
+  const initialUnitState = JSON.stringify({
+    productSlug: seed?.productSlug ?? "",
+    width: seed?.width ?? "",
+    height: seed?.height ?? "",
+    options: seed?.options ?? {},
+  });
+  const currentUnitState = JSON.stringify({ productSlug, width, height, options });
+  // An EDIT (seeded) form is dirty only when it actually differs from what it
+  // was opened with. The old "has the user typed anything" heuristic reads as
+  // dirty from the first render of an existing line — which silently defeats
+  // any discard guard built on top of it. A blank ADD form keeps that heuristic:
+  // there is no seed to diff against.
+  // The baseline must use the SAME expressions the state initialisers do. A
+  // seeded line with a blank code takes a suggested one, and comparing that
+  // against "" would report the form as dirty before the user touched it —
+  // reintroducing the spurious discard prompt this diff exists to prevent.
+  const initialItemState = JSON.stringify({
+    productSlug: seed?.productSlug ?? "", width: seed?.width ?? "", height: seed?.height ?? "",
+    options: seed?.options ? { ...seed.options } : (seedProduct ? defaultOptions(seedProduct) : {}),
+    qty: seed?.qty || 1,
+    location: seed?.location ?? "",
+    code: seed?.code || (seed?.productSlug ? suggestCode(quote.items, seed.productSlug) : ""),
+  });
+  const currentItemState = JSON.stringify({ productSlug, width, height, options, qty, location, code });
+  const dirty = isUnit
+    ? currentUnitState !== initialUnitState
+    : seed
+      ? currentItemState !== initialItemState
+      : !!productSlug && (dimsEntered || !!location.trim() || codeEdited);
   const requestCancel = () => { if (dirty && !confirmClose) { setConfirmClose(true); return; } onCancel?.(); };
+  // Ref-held so an inline arrow from the caller cannot make this fire every
+  // render (which would loop through the parent's setState).
+  const dirtyCbRef = useRef(onDirtyChange);
+  dirtyCbRef.current = onDirtyChange;
+  useEffect(() => { dirtyCbRef.current?.(dirty); }, [dirty]);
 
   return (
-    <div className="card">
+    <div className="quote-panel">
       {/* Persistent header — the dismiss affordance is here from the first render,
           so an empty form (no product yet) can still be backed out of. */}
       {onCancel && (
-        <div className="flex items-center justify-between gap-3 border-b border-black/10 bg-bone px-4 md:px-5 py-2.5">
-          <p className="text-[10px] uppercase tracking-widest text-body">New item</p>
+        <div className="quote-panel-head flex items-center justify-between gap-3 px-4 md:px-5 py-2.5">
+          <p className="text-[10px] uppercase tracking-widest text-body">{isUnit ? unitHeading : (heading ?? "New item")}</p>
           {confirmClose ? (
             <span className="flex items-center gap-2 text-xs text-body">
-              Discard this item?
+              {isUnit ? (unitMode === "add" ? "Discard new unit?" : "Discard unit changes?") : (seed ? "Discard changes?" : "Discard this item?")}
               <button type="button" onClick={() => onCancel?.()} className="font-medium text-red-600 hover:text-red-700 cursor-pointer">Discard</button>
               <button type="button" onClick={() => setConfirmClose(false)} className="font-medium text-ink hover:text-sage cursor-pointer">Keep editing</button>
             </span>
           ) : (
-            <button type="button" onClick={requestCancel} aria-label="Cancel new item"
+            <button type="button" onClick={requestCancel} aria-label={isUnit ? (unitMode === "add" ? "Cancel new unit" : "Cancel unit editing") : (seed ? "Cancel editing" : "Cancel new item")}
               className="inline-flex items-center gap-1 -mr-1 px-2 py-1 text-xs font-medium text-body-soft hover:text-ink cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
               Cancel <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
@@ -596,7 +690,7 @@ export function ItemForm({
             <div>
               <FieldLabel>Product</FieldLabel>
               <div className="relative">
-                <select value={productSlug} onChange={e => pickProduct(e.target.value)} disabled={!familySlug} className={`${selectClass} disabled:bg-bone disabled:text-quieter disabled:cursor-not-allowed`}>
+                <select value={productSlug} onChange={e => pickProduct(e.target.value)} disabled={!familySlug} className={`${selectClass} disabled:cursor-not-allowed`}>
                   <option value="">{familySlug ? "Choose a product…" : "Select a type first"}</option>
                   {familyProducts.map(pr => <option key={pr.slug} value={pr.slug}>{pr.name}</option>)}
                 </select>
@@ -609,11 +703,14 @@ export function ItemForm({
         {p && (
           <div className="space-y-2">
             <Section label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open.dims} onToggle={() => setOpen(o => ({ ...o, dims: !o.dims }))}>
-              <DimensionsFields p={p} width={width} height={height} setWidth={setWidth} setHeight={setHeight} rail={rail} />
+              <DimensionsFields p={p} width={width} height={height} setWidth={setWidth} setHeight={setHeight} rail={rail}
+                lockedDimension={isUnit ? (unitAxis === "vertical" ? "height" : "width") : undefined} />
             </Section>
+            {!hideOptions && (
             <Section label="Options" summary={optionSummaryOf(p, options)} attention={hasIssue("options")} open={open.options} onToggle={() => setOpen(o => ({ ...o, options: !o.options }))}>
               <OptionsFields p={p} options={options} setOpt={setOpt} />
             </Section>
+            )}
             {/* A unit's quantity is not its own: it is the opening's quantity
                 times how many of this frame go into one opening, and composite.ts
                 is the single writer of the product. Offering a quantity box here
@@ -629,7 +726,7 @@ export function ItemForm({
       </div>
 
       {p && (
-        <div className="border-t border-black/10 bg-white px-4 md:px-5 py-4 md:static sticky bottom-0 z-30" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+        <div className="quote-panel-footer px-4 md:px-5 py-4 md:static sticky bottom-0 z-30" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
           {issues.length > 0 && (
             <p className="text-xs text-amber-800 mb-2 flex items-start gap-1.5"><AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />{issues.map(i => i.msg).join(" · ")}.</p>
           )}
@@ -678,13 +775,13 @@ function CodeField({ code, duplicate, editSignal, onCommit }: {
         onChange={e => setDraft(e.target.value.toUpperCase())}
         onBlur={commit}
         onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } else if (e.key === "Escape") { e.preventDefault(); cancel(); } }}
-        className="w-[4.75rem] h-8 border border-sage bg-white px-2 text-xs font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-sage/40"
+        className="quote-code-field w-[4.75rem] h-8 border border-sage px-2 text-xs font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-sage/40"
         style={{ fontFamily: "'DM Mono', monospace" }} />
     );
   }
   return (
     <button onClick={begin} aria-label={`Edit item ID${code ? ` ${code}` : ""}`}
-      className={`group/code inline-flex items-center gap-1 h-8 px-2 text-xs font-semibold border transition-colors cursor-pointer ${duplicate ? "border-amber-400 bg-amber-50 text-amber-800" : "border-black/15 bg-white text-ink hover:border-sage"}`}
+      data-attention={duplicate ? "true" : "false"} className="quote-code-field group/code inline-flex items-center gap-1 h-8 px-2 text-xs font-semibold border text-ink transition-colors cursor-pointer hover:border-sage"
       style={{ fontFamily: "'DM Mono', monospace" }}>
       {code || "Set code"}
       <Pencil className="w-3 h-3 text-quieter group-hover/code:text-sage" aria-hidden="true" />
@@ -720,6 +817,8 @@ export function ItemSummaryCard({
   const toggleExpanded = onToggleExpanded ?? (() => setSelfExpanded(v => !v));
   const rootRef = useRef<HTMLDivElement>(null);
   const p = getProductBySlug(item.productSlug);
+  const compositeUnits = (item.segments ?? []).reduce((count, segment) =>
+    count + Math.max(1, segment.qtyPerParent), 0);
   const basisCopy = basis ? BASIS_COPY[basis] : null;
   const pr = { total: linePriceTotal(item) };
   const displayTotal = linePriceTotal(item);
@@ -788,12 +887,12 @@ export function ItemSummaryCard({
   ].join(" · ");
   const priceLabel = priceReady ? fmt(gstAdjust(displayTotal, gstMode)) : "$-,--";
 
-  const borderTone = customerBlocking ? "border-amber-400" : technicalOnly ? "border-sky-300" : added ? "border-sage/50" : "border-black/12";
+  const itemState = customerBlocking ? "attention" : technicalOnly ? "review" : added ? "added" : "ready";
 
   return (
-    <div id={id} ref={rootRef} className={`border bg-white scroll-mt-24 ${borderTone}`}>
+    <div id={id} ref={rootRef} data-state={itemState} className="quote-item-card scroll-mt-24">
       {/* Header: product identity and the highest-priority item actions. */}
-      <div className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 bg-bone border-b border-black/[0.06] whitespace-nowrap">
+      <div className="quote-item-head flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 whitespace-nowrap">
         <span className="flex-shrink-0">
           <CodeField code={item.code} duplicate={duplicate} editSignal={codeFocusSignal} onCommit={v => update({ code: v })} />
         </span>
@@ -807,10 +906,15 @@ export function ItemSummaryCard({
             {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
           </button>
           {customerBlocking
-            ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-amber-300 bg-amber-100 text-amber-800"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">Needs </span>attention</span>
+            ? <span className="quote-chip quote-chip--attention flex-shrink-0 text-[10px] font-medium"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">Needs </span>attention</span>
             : technicalOnly
-              ? <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-sky-300 bg-sky-50 text-sky-800" title={item.review?.fit ? `Indicative price — no standard product is made at this size; ${brandSubject()} will design a composite/custom unit and confirm the price at review. You can still submit.` : `${brandSubject()} will confirm this at review — you can still submit.`}><Info className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">In </span>review</span>
-              : <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 border border-sage/30 bg-sage-wash text-sage-ink"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
+              ? <span className="quote-chip quote-chip--review flex-shrink-0 text-[10px] font-medium" title={item.review?.fit ? `Indicative price — no standard product is made at this size; ${brandSubject()} will design a composite/custom unit and confirm the price at review. You can still submit.` : `${brandSubject()} will confirm this at review — you can still submit.`}><Info className="w-2.5 h-2.5" aria-hidden="true" />Needs review</span>
+              : <span className="quote-chip quote-chip--ready flex-shrink-0 text-[10px] font-medium"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
+          {compositeUnits > 0 && (
+            <span className="quote-chip quote-chip--review flex-shrink-0 text-[10px] font-medium">
+              Composite · {compositeUnits} {p?.categorySlug === "doors" ? "doors" : "windows"}
+            </span>
+          )}
           {/* Basis chip (UX spec §5): orthogonal to status — report-backed vs
               assumption-based. Hidden on small screens; the tooltip carries the
               compliance sentence once, and doubles as the upload upsell. */}
@@ -846,7 +950,7 @@ export function ItemSummaryCard({
       </div>
 
       {item.review?.customerConfigurationChanged && onRestoreAi && (
-        <div className="px-3 sm:px-4 py-2 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-3">
+        <div className="quote-notice--warning px-3 sm:px-4 py-2 border-b border-warning/30 flex items-center justify-between gap-3">
           <p className="text-[11px] leading-snug text-amber-800">
             This edit needs a new exact price. You can restore the previous AI-priced configuration.
           </p>
@@ -866,7 +970,7 @@ export function ItemSummaryCard({
 
       {/* The compact summary is useful only while the detail groups are collapsed. */}
       {!isExpanded && (
-        <div className="px-3 sm:px-4 py-3 bg-white">
+        <div className="quote-item-body px-3 sm:px-4 py-3">
           <button onClick={toggleExpanded} aria-expanded={isExpanded}
             className="w-full text-left cursor-pointer group/summary">
             <span className="block text-[10px] uppercase tracking-widest text-quiet mb-1">Configuration</span>
@@ -874,7 +978,7 @@ export function ItemSummaryCard({
             <span className="block text-xs text-body leading-snug mt-1 truncate group-hover/summary:text-ink"><span className="text-quiet">Options:</span> {selectedOptionsSummary}</span>
           </button>
           {attention && attentionMsg && (
-            <p className={`text-xs mt-2.5 pt-2.5 border-t flex items-start gap-1.5 leading-snug ${technicalOnly ? "text-sky-800 border-sky-200" : "text-amber-700 border-amber-200"}`}>
+            <p className={`text-xs mt-2.5 pt-2.5 border-t flex items-start gap-1.5 leading-snug ${technicalOnly ? "quote-message--info" : "quote-message--warning"}`}>
               {technicalOnly
                 ? <Info className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
                 : <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />}
@@ -886,7 +990,7 @@ export function ItemSummaryCard({
 
       {/* ── Expanded detail groups — one open at a time ── */}
       {isExpanded && (
-        <div className="border-t border-black/8">
+        <div className="quote-item-body border-t border-line">
           {/* Mobile basis disclosure (UX review, blocking): the header chip is
               hidden below md, but "assumed / not a certificate" is compliance
               language and must stay reachable on phones — so the expanded body
@@ -902,7 +1006,7 @@ export function ItemSummaryCard({
               grammar as superseded revision values. What changed and to what —
               the WHY (which document) lives in the digest banner. */}
           {!!changes?.length && (
-            <div className="px-3 sm:px-4 py-2 bg-info/5 border-b border-black/[0.06]">
+            <div className="quote-notice--info px-3 sm:px-4 py-2 border-b border-line">
               <span className="block text-[10px] uppercase tracking-widest text-info mb-1">Updated from your documents</span>
               {changes.map((ch, i) => (
                 <p key={i} className="text-xs text-info-ink leading-snug">
@@ -918,7 +1022,7 @@ export function ItemSummaryCard({
               Sits ABOVE the editable detail: it is the answer to "why does my
               line look like this?", not a footnote under it. */}
           {item.segments && item.segments.length > 0 && (
-            <CompositePanel item={item} />
+            <CompositePanel item={item} quote={quote} />
           )}
           {/* Product is editable — a schedule line the parser couldn't match (or
               flagged for substitution) is re-pointed here. Changing product resets
@@ -945,7 +1049,7 @@ export function ItemSummaryCard({
               </Section>
             </>
           ) : (
-            <div className="px-4 py-3 bg-amber-50/60 border-t border-black/6 text-xs text-amber-800 flex items-start gap-1.5">
+            <div className="quote-notice--warning px-4 py-3 border-t border-line text-xs flex items-start gap-1.5">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
               <span>Choose a product above to set its dimensions, options and quantity.</span>
             </div>
@@ -969,15 +1073,65 @@ export function ItemSummaryCard({
 //
 // It is read-only by construction: a customer may not choose or edit a
 // composite, only see it and question it. There are no controls here.
-export function CompositePanel({ item }: { item: QItem }) {
+export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState }) {
   const segments = item.segments ?? [];
   const units = segments.reduce((n, s) => n + Math.max(1, s.qtyPerParent), 0);
   const openingW = parseInt(item.width) || 0;
   const openingH = parseInt(item.height) || 0;
   const brand = brandSubject();
+  const parentProduct = getProductBySlug(item.productSlug);
+  const [editingUnit, setEditingUnit] = useState<string | null>(null);
+  const [addingUnit, setAddingUnit] = useState(false);
+  const [removingUnit, setRemovingUnit] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const axis = item.compositeAxis === "horizontal" ? "horizontal" : "vertical";
+
+  const saveUnit = async (segmentId: string, built: Omit<QItem, "id">) => {
+    setBusy(true); setError("");
+    try {
+      await quote.updateSegment(segmentId, {
+        productSlug: built.productSlug,
+        options: built.options,
+        alongMm: parseInt(axis === "vertical" ? built.width : built.height) || 0,
+      });
+      setEditingUnit(null);
+    } catch {
+      setError("That unit could not be saved. Check its product, size and options, then try again.");
+    } finally { setBusy(false); }
+  };
+
+  // Opening this form is intentionally local: the customer must choose the new
+  // frame before a unit exists in the quote. No inherited product or glazing is
+  // silently saved just because they clicked Add.
+  const addUnit = () => {
+    setAddingUnit(true); setEditingUnit(null); setRemovingUnit(null); setError("");
+  };
+
+  const saveNewUnit = async (built: Omit<QItem, "id">) => {
+    if (!item.serverId) return;
+    setBusy(true); setError("");
+    try {
+      await quote.addSegment(item.serverId, {
+        productSlug: built.productSlug,
+        options: built.options,
+        alongMm: parseInt(axis === "vertical" ? built.width : built.height) || 0,
+      });
+      setAddingUnit(false);
+    } catch {
+      setError("That unit could not be added. Check its product, size and options, then try again.");
+    } finally { setBusy(false); }
+  };
+
+  const removeUnit = async (segmentId: string) => {
+    setBusy(true); setError("");
+    try { await quote.removeSegment(segmentId); setRemovingUnit(null); }
+    catch { setError("That unit could not be removed. A composite must retain at least two units."); }
+    finally { setBusy(false); }
+  };
 
   return (
-    <div className="border-t border-black/8 px-4 py-4 md:px-5" style={{ background: "rgba(76,106,136,0.04)" }}>
+    <div className="quote-composite-panel border-t border-line px-4 py-4 md:px-5">
       <div className="flex items-center gap-2 mb-3">
         <span className="w-2.5 h-2.5 border border-info flex-shrink-0" aria-hidden="true" />
         <span className="text-[10px] uppercase tracking-[0.14em] text-info" style={{ fontFamily: "'DM Mono', monospace" }}>
@@ -990,7 +1144,7 @@ export function CompositePanel({ item }: { item: QItem }) {
         on site. One opening, one price — {brand.toLowerCase() === "we" ? "we confirm" : `${brand} confirms`} the join at technical review.
       </p>
 
-      <div className="card">
+      <div className="quote-panel">
         <div className="flex items-center justify-between px-3.5 py-2 border-b border-black/8">
           <span className="text-[11px] text-quiet" style={{ fontFamily: "'DM Mono', monospace" }}>Your opening</span>
           <span className="text-[12px] text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>
@@ -998,30 +1152,88 @@ export function CompositePanel({ item }: { item: QItem }) {
           </span>
         </div>
         {segments.map((s, i) => (
-          <div key={s.id} className="flex items-baseline justify-between gap-3 px-3.5 py-2.5 border-b border-black/5 last:border-b-0">
-            <span className="text-[13px] text-ink min-w-0">
-              <span className="text-quiet mr-2" style={{ fontFamily: "'DM Mono', monospace" }}>
-                Unit {i + 1}{s.qtyPerParent > 1 ? ` ×${s.qtyPerParent}` : ""}
+          <div key={s.id} className="border-b border-black/5 last:border-b-0">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5">
+              <span className="text-[13px] text-ink min-w-0">
+                <span className="text-quiet mr-2" style={{ fontFamily: "'DM Mono', monospace" }}>
+                  Unit {i + 1}{s.qtyPerParent > 1 ? ` ×${s.qtyPerParent}` : ""}
+                </span>
+                {productLabel(s.productSlug)}
               </span>
-              {productLabel(s.productSlug)}
-            </span>
-            <span className="flex items-baseline gap-3 flex-shrink-0">
-              <span className="text-[12px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>
-                {(parseInt(s.width) || 0).toLocaleString("en-AU")} × {(parseInt(s.height) || 0).toLocaleString("en-AU")}
+              <span className="flex items-center gap-3 flex-shrink-0">
+                <span className="text-[12px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>
+                  {(parseInt(s.width) || 0).toLocaleString("en-AU")} × {(parseInt(s.height) || 0).toLocaleString("en-AU")}
+                </span>
+                <span className="text-[11px] text-quiet" style={{ fontFamily: "'DM Mono', monospace" }}>included</span>
+                <button type="button" disabled={busy} onClick={() => setEditingUnit(editingUnit === s.id ? null : s.id)}
+                  className="text-[11px] font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer">
+                  {editingUnit === s.id ? "Close" : "Edit"}
+                </button>
+                {segments.length > 2 && (removingUnit === s.id ? (
+                  <span className="inline-flex items-center gap-1.5 text-[11px]">
+                    <button type="button" disabled={busy} onClick={() => void removeUnit(s.id)} className="font-medium text-red-600 underline">Confirm</button>
+                    <button type="button" onClick={() => setRemovingUnit(null)} className="text-body underline">Keep</button>
+                  </span>
+                ) : (
+                  <button type="button" disabled={busy} onClick={() => setRemovingUnit(s.id)}
+                    className="text-[11px] text-body underline underline-offset-2 disabled:opacity-50 cursor-pointer">Remove</button>
+                ))}
               </span>
-              {/* A WORD, not a number. This is the whole double-charge defence. */}
-              <span className="text-[11px] text-quiet w-[4.5rem] text-right" style={{ fontFamily: "'DM Mono', monospace" }}>
-                included
-              </span>
-            </span>
+            </div>
+            {editingUnit === s.id && (
+              <div className="quote-composite-editor px-3.5 pb-3.5">
+                <p className="py-2 text-[11px] text-body">
+                  Unit {i + 1}. Its {axis === "vertical" ? "height" : "width"} follows the parent opening; edit the product, options and {axis === "vertical" ? "width" : "height"} here.
+                </p>
+                <ItemForm
+                  key={`${s.id}-${s.productSlug}-${s.width}-${s.height}`}
+                  scope="unit"
+                  unitAxis={axis}
+                  quote={quote}
+                  seed={{ productSlug: s.productSlug, width: s.width, height: s.height, options: s.options ?? {}, qty: s.qty }}
+                  submitLabel={busy ? "Saving…" : `Save unit ${i + 1}`}
+                  onCommit={(built) => void saveUnit(s.id, built)}
+                  onCancel={() => setEditingUnit(null)}
+                />
+              </div>
+            )}
           </div>
         ))}
       </div>
 
+      {addingUnit && (
+        <div className="quote-composite-editor mt-3 px-3.5 pb-3.5">
+          <p className="py-2 text-[11px] text-body">Choose the product, its options and the new unit's size before adding it to this opening.</p>
+          <ItemForm
+            key={"new-unit-" + (item.serverId ?? item.id)}
+            scope="unit"
+            unitAxis={axis}
+            unitMode="add"
+            quote={quote}
+            seed={{
+              width: axis === "vertical" ? "" : item.width,
+              height: axis === "vertical" ? item.height : "",
+              options: {}, qty: 1,
+            }}
+            submitLabel={busy ? "Adding…" : "Add unit"}
+            onCommit={saveNewUnit}
+            onCancel={() => setAddingUnit(false)}
+          />
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <button type="button" disabled={busy || !item.serverId || addingUnit} onClick={addUnit}
+          className="text-[12px] font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer">
+          {addingUnit ? "New unit open" : <>+ Add {parentProduct?.categorySlug === "doors" ? "door" : "window"}</>}
+        </button>
+        <span className="text-[11px] text-body">Changes are repriced now and confirmed during technical review.</span>
+      </div>
+      {error && <p role="alert" className="mt-2 text-xs text-red-700">{error}</p>}
+
       <p className="text-[12px] text-quiet leading-relaxed mt-3 max-w-[62ch]">
         Two or more units joined on site is how large openings are made. The join is an engineering
-        decision — mullion size, wind load, weather seal — so {brand.toLowerCase() === "we" ? "we design" : `${brand} designs`} and
-        prices it. It isn't something you set here.
+        decision — mullion size, wind load and weather seal — so {brand.toLowerCase() === "we" ? "we confirm" : `${brand} confirms`} the final layout during technical review.
       </p>
     </div>
   );

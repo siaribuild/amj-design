@@ -343,12 +343,13 @@
    * a page could not override the shell. Custom properties inherit from the
    * nearest ancestor that sets them, which is exactly the proximity rule this
    * needs, and it is less CSS. */
-  .ground-paper { background-color: var(--paper); --card-fill: var(--bone); }
-  .ground-bone  { background-color: var(--bone);  --card-fill: var(--paper); }
+  .ground-paper { background-color: var(--paper); --card-fill: var(--bone); --control-fill: var(--bone); }
+  .ground-bone  { background-color: var(--bone);  --card-fill: var(--paper); --control-fill: var(--paper); }
 
   .card {
     border: 1px solid var(--line);
     background-color: var(--card-fill, var(--bone));
+    --control-fill: var(--bone);
   }
 
   /* The honest hover: a sage contour. Flat, on-language, and it replaces five
@@ -394,6 +395,190 @@
   .panel-result {
     background-color: var(--sage-wash);
     border-top: 1px solid var(--line);
+  }
+}
+
+
+/* ─── Quote workspace ─────────────────────────────────────────────────────────
+ * The estimator is a working surface rather than a marketing page. Its bone
+ * ground needs a stable paper hierarchy for cards, summaries and editable
+ * controls, plus semantic state treatments that do not depend on one-off
+ * palette shades in the JSX. Every colour below is derived from the theme roles
+ * above; components choose meaning through a class/data-state only.
+ */
+@layer components {
+  .quote-page { background-color: var(--bone); --card-fill: var(--paper); }
+
+  .quote-panel,
+  .quote-item-card,
+  .quote-dialog {
+    border: 1px solid var(--line);
+    background-color: var(--paper);
+    --control-fill: var(--bone);
+  }
+
+  .quote-panel-head,
+  .quote-item-head {
+    background-color: var(--recessive);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .quote-item-card { transition: border-color 150ms ease, box-shadow 150ms ease; }
+  .quote-item-card[data-state="ready"] { border-color: var(--line); }
+  .quote-item-card[data-state="added"] {
+    border-color: color-mix(in oklab, var(--sage) 55%, var(--line));
+    box-shadow: inset 3px 0 0 var(--sage);
+  }
+  .quote-item-card[data-state="review"] {
+    border-color: color-mix(in oklab, var(--info) 48%, var(--line));
+    box-shadow: inset 3px 0 0 var(--info);
+  }
+  .quote-item-card[data-state="attention"] {
+    border-color: color-mix(in oklab, var(--warning) 58%, var(--line));
+    box-shadow: inset 3px 0 0 var(--warning);
+  }
+
+  .quote-item-body,
+  .quote-section-trigger,
+  .quote-option-list,
+  .quote-review-list { background-color: var(--paper); }
+
+  .quote-section-trigger { transition: background-color 150ms ease; }
+  .quote-section-trigger:hover,
+  .quote-section-trigger:focus-visible { background-color: var(--recessive); }
+  .quote-section-trigger[data-attention="true"] {
+    background-color: color-mix(in oklab, var(--warning) 9%, var(--paper));
+  }
+  .quote-section-content { background-color: var(--bone); }
+
+  .field-control {
+    border-color: var(--line-strong);
+    background-color: var(--control-fill, var(--paper));
+  }
+  .field-control:focus { border-color: var(--sage); background-color: var(--paper); }
+  .field-control:disabled { background-color: var(--recessive); color: var(--body); }
+
+  .quote-option { border-color: var(--line); background-color: var(--bone); }
+  .quote-option:hover,
+  .quote-option:focus-visible { border-color: var(--sage); }
+  .quote-option[aria-pressed="true"] {
+    border-color: var(--ink);
+    background-color: var(--recessive);
+    box-shadow: inset 0 0 0 1px var(--ink);
+  }
+
+  .quote-code-field,
+  .quote-title-control { border-color: var(--line); background-color: var(--paper); }
+  .quote-code-field[data-attention="true"] {
+    border-color: var(--warning);
+    background-color: color-mix(in oklab, var(--warning) 8%, var(--paper));
+    color: var(--warning-ink);
+  }
+
+  .quote-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 1px solid var(--line);
+    padding: 0.125rem 0.375rem;
+    white-space: nowrap;
+  }
+  .quote-chip--ready {
+    border-color: color-mix(in oklab, var(--sage) 34%, transparent);
+    background-color: var(--sage-wash);
+    color: var(--sage-ink);
+  }
+  .quote-chip--review {
+    border-color: color-mix(in oklab, var(--info) 38%, transparent);
+    background-color: color-mix(in oklab, var(--info) 8%, var(--paper));
+    color: var(--info-ink);
+  }
+  .quote-chip--attention {
+    border-color: color-mix(in oklab, var(--warning) 42%, transparent);
+    background-color: color-mix(in oklab, var(--warning) 12%, var(--paper));
+    color: var(--warning-ink);
+  }
+  .quote-chip--neutral { background-color: var(--bone); color: var(--body); }
+
+  .quote-notice--info,
+  .quote-composite-panel {
+    background-color: color-mix(in oklab, var(--info) 6%, var(--paper));
+    color: var(--info-ink);
+  }
+  .quote-notice--warning {
+    background-color: color-mix(in oklab, var(--warning) 9%, var(--paper));
+    color: var(--warning-ink);
+  }
+  .quote-notice--danger {
+    background-color: color-mix(in oklab, var(--destructive) 8%, var(--paper));
+    color: var(--destructive);
+  }
+  .quote-message--info {
+    border-color: color-mix(in oklab, var(--info) 32%, transparent);
+    color: var(--info-ink);
+  }
+  .quote-message--warning {
+    border-color: color-mix(in oklab, var(--warning) 32%, transparent);
+    color: var(--warning-ink);
+  }
+  .quote-panel-footer {
+    background-color: var(--recessive);
+    border-top: 1px solid var(--line);
+  }
+  .quote-composite-editor {
+    background-color: color-mix(in oklab, var(--info) 5%, var(--bone));
+  }
+
+  .quote-sticky {
+    background-color: var(--paper);
+    border-bottom: 1px solid var(--line);
+    box-shadow: 0 -10px 28px color-mix(in srgb, var(--ink) 16%, transparent);
+  }
+  .quote-sticky[data-state="ready"] { border-top-color: var(--sage); }
+  .quote-sticky[data-state="review"] { border-top-color: var(--info); }
+  .quote-sticky[data-state="attention"] { border-top-color: var(--warning); }
+  .quote-sticky[data-state="working"] { border-top-color: var(--sage-light); }
+
+  .quote-status-box {
+    border-color: var(--line);
+    background-color: var(--bone);
+    color: var(--body);
+  }
+  .quote-status-row {
+    border-color: transparent;
+    background-color: transparent;
+    color: var(--ink);
+  }
+
+  .quote-button--danger {
+    border-color: color-mix(in oklab, var(--destructive) 42%, transparent);
+    background-color: var(--paper);
+    color: var(--destructive);
+  }
+  .quote-button--danger:hover,
+  .quote-button--danger:focus-visible {
+    background-color: color-mix(in oklab, var(--destructive) 8%, var(--paper));
+  }
+
+  .quote-dialog { box-shadow: 0 20px 50px color-mix(in srgb, var(--ink) 28%, transparent); }
+
+  /* /quote-project editor shell. On desktop the list stays VISIBLE behind the
+     drawer — dimmed, not hidden — so project context survives an edit; the
+     scrim is therefore lighter than a modal's and derives from --ink rather
+     than a hard-coded black. */
+  .quote-drawer-scrim {
+    background-color: color-mix(in srgb, var(--ink) 34%, transparent);
+  }
+  .quote-drawer {
+    background-color: var(--paper);
+    --control-fill: var(--bone);
+    border-left: 1px solid var(--line);
+    box-shadow: -18px 0 46px color-mix(in srgb, var(--ink) 22%, transparent);
+    /* Full-screen below lg, so a real quote form is usable at tablet width.
+       The safe-area inset keeps the composer's sticky footer clear of the home
+       indicator; the software keyboard shrinks the viewport, and because the
+       drawer scrolls its own content the focused field stays reachable. */
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 
@@ -583,4 +768,42 @@
     object-fit: cover;
     opacity: 0.7;
   }
+}
+
+/* ─── Drawn rails ─────────────────────────────────────────────────────────────
+ * The process rail on /how-it-works scales its viewBox to the column, so every
+ * stroke scales with it — a 1px hairline drawn at 800 units wide lands at ~0.6px
+ * on a phone and ~1.6px on a wide desktop, which is the one thing a hairline may
+ * not do on a site whose structure IS its hairlines.
+ *
+ * non-scaling-stroke pins them to CSS pixels. The TRACK is exempt: it is a
+ * structural 2px member rather than a rule, and it is the element a future
+ * progress variant will animate with pathLength dash arithmetic, which
+ * non-scaling-stroke would fight.
+ */
+@layer components {
+  .process-rail [stroke] { vector-effect: non-scaling-stroke; }
+  .process-rail .rail-track { vector-effect: none; }
+
+  /* SVG text takes FILL, not color — a `text-ink` utility would do nothing
+   * here, which is why the rail's type lives as classes rather than as
+   * Tailwind on each <text>. Sizes stay on the elements (they are viewBox
+   * units and belong with the geometry); only role and family are set here. */
+  .process-rail text { font-family: 'DM Mono', monospace; }
+
+  /* Numerals inside a square — step or phase. */
+  .rail-num  { fill: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* A verb. Sans, because it is a word rather than a value. */
+  .rail-step { fill: var(--ink); font-family: 'Space Grotesk', sans-serif; font-weight: 600; }
+
+  /* The money. Same sage as .figure/.figure-sm, so a percentage reads
+   * identically whether it is drawn in the rail or set in a phase header. */
+  .rail-pct  { fill: var(--sage-deep); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* Annotation labels — PHASE 01 · QUOTE, NOTHING CHARGED. */
+  .rail-dim  { fill: var(--quiet); letter-spacing: 0.12em; }
+
+  /* A duration. Sans and quiet: it qualifies the numeral above it. */
+  .rail-sub  { fill: var(--body); font-family: 'Space Grotesk', sans-serif; }
 }

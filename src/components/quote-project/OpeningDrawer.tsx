@@ -1,0 +1,416 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// OPENING DRAWER — layer 3 of 3: change
+//
+// Plan §7.3. The ONLY place an edit happens. Responsive shell:
+//   ≥1024px  right drawer ~520px, list dimmed behind so project context survives
+//   <1024px  full-screen editor (a narrow side drawer is unusable for a real form)
+//
+// Dialog semantics apply at EVERY size — including the mobile full-screen form.
+// "It's a page now" is exactly how teams drop the focus trap and Escape. Built
+// on the Radix Dialog primitive already in dependencies (focus trap, portal,
+// inert background) restyled to bone tokens — NOT the unused shadcn sheet.tsx,
+// whose black overlay and animation classes ignore the token system.
+//
+// Editing contract:
+//  • opening the editor creates a LOCAL DRAFT; it persists nothing
+//  • Save is the only action that persists and recalculates
+//  • closing a dirty draft asks first — including via X, Escape and the scrim,
+//    which is why ItemForm reports its dirtiness upward
+//  • a new opening starts genuinely blank — nothing is copied in merely because
+//    an add form was opened
+//  • the server stays the authority on validity and submittability
+//
+// Composite: ONE drawer, two levels. Selecting a child swaps the context to
+// "W4 / Unit 2" with a Back to W4 control — never a second stacked dialog.
+// ═══════════════════════════════════════════════════════════════════════════════
+import { useEffect, useRef, useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { X, ChevronLeft, Plus } from "lucide-react";
+import { type QItem, type QuoteState, clearReviewKey, mm, productLabel } from "../../data/configurator";
+import { ItemForm } from "../ItemComposer";
+import { type DrawerTarget, type RowKey } from "./identity";
+import { unitLabel } from "./rowState";
+import { FamilyPictogram } from "./FamilyPictogram";
+
+/** Which level of the one drawer is showing. */
+type Level =
+  | { kind: "parent" }
+  | { kind: "unit"; segmentId: string }
+  | { kind: "add-unit" };
+
+export function OpeningDrawer({ target, item, quote, initialSection, onClose, onSaved }: {
+  target: DrawerTarget;
+  /** The opening being edited; null for a blank add. */
+  item: QItem | null;
+  quote: QuoteState;
+  /** `Fix details` opens the editor AT the offending field. */
+  initialSection?: "dims" | "options" | "qty";
+  /** Dismiss without persisting. */
+  onClose: () => void;
+  /** Persisted — the page runs the restore sequence (re-expand by key, restore
+   *  scroll, return focus to that row's Edit control) and owns the announcement,
+   *  because this component unmounts before its own live region could speak.
+   *  Plan §5.2. */
+  onSaved: (rowKey: RowKey | null, announcement?: string) => void;
+}) {
+  const [level, setLevel] = useState<Level>(
+    target.mode === "add-unit" ? { kind: "add-unit" }
+      : target.mode === "edit" && target.segmentId ? { kind: "unit", segmentId: target.segmentId }
+        : { kind: "parent" },
+  );
+  const [dirty, setDirty] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState<null | "close" | "back">(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [removingUnit, setRemovingUnit] = useState<string | null>(null);
+  // Outcomes are announced by the PAGE's live region, not this one: the drawer
+  // unmounts in the same commit as a successful save, so a message put in a
+  // region here would never survive long enough to be spoken.
+  const [announcement, setAnnouncement] = useState("");
+
+  const segments = item?.segments ?? [];
+  const axis = item?.compositeAxis === "horizontal" ? "horizontal" : "vertical";
+  const ref = item?.code || (target.mode === "add" ? "New opening" : "Opening");
+  const unitIndex = level.kind === "unit"
+    ? segments.findIndex((s) => s.id === level.segmentId)
+    : -1;
+  const title = level.kind === "parent" ? ref
+    : level.kind === "add-unit" ? `${ref} / New unit`
+      : unitLabel(ref, unitIndex);
+
+  const rowKey: RowKey | null = target.mode === "add" ? null : target.rowKey;
+
+  // Changing level starts a fresh draft, so stale dirtiness must not carry over.
+  // It must NOT run on mount: the child ItemForm reports its dirtiness in an
+  // effect that flushes first, and resetting over the top would leave `dirty`
+  // stuck at false for the whole session — silently disabling the discard guard.
+  const levelKey = level.kind === "unit" ? `unit:${level.segmentId}` : level.kind;
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) { mountedRef.current = true; return; }
+    setDirty(false);
+    setError("");
+  }, [levelKey]);
+
+  // ─── Close / back, both guarded by the dirty draft ──────────────────────────
+  const requestClose = () => {
+    if (dirty) { setConfirmDiscard("close"); return; }
+    onClose();
+  };
+  // "Back to W4" is NOT a close, but it still drops an unsaved unit draft, so it
+  // gets the same guard (plan §7.3).
+  const requestBack = () => {
+    if (dirty) { setConfirmDiscard("back"); return; }
+    setLevel({ kind: "parent" });
+  };
+  const confirmedDiscard = () => {
+    const what = confirmDiscard;
+    setConfirmDiscard(null);
+    setDirty(false);
+    if (what === "back") setLevel({ kind: "parent" });
+    else onClose();
+  };
+
+  // Escape precedence: reverse child → parent FIRST; only a second Escape closes.
+  const onEscape = (e: KeyboardEvent) => {
+    e.preventDefault();
+    if (confirmDiscard) { setConfirmDiscard(null); return; }
+    if (level.kind !== "parent") { requestBack(); return; }
+    requestClose();
+  };
+
+  // ─── Persistence ───────────────────────────────────────────────────────────
+  const saveParent = (built: Omit<QItem, "id">) => {
+    if (target.mode === "add") {
+      quote.add(built);
+      onSaved(null, `${built.code || "Opening"} added`);
+      return;
+    }
+    if (!item) return;
+
+    // Review reasons are provenance the technician relies on, and the composer
+    // rebuilds `review` from scratch ({fit} or null) because it was written for
+    // NEW items. Writing that straight through would silently erase glazing,
+    // substitute, material and thermal reasons — and could clear an
+    // error-severity reason the customer never addressed. Clear only what this
+    // edit actually resolved, exactly as the /quote inline editor does.
+    let review = item.review ?? null;
+    if (built.productSlug !== item.productSlug) review = clearReviewKey(review, "product");
+    if (built.width !== item.width || built.height !== item.height) review = clearReviewKey(review, "dims");
+    if (JSON.stringify(built.options) !== JSON.stringify(item.options)) review = clearReviewKey(review, "options");
+    if (built.qty !== item.qty) review = clearReviewKey(review, "qty");
+    // The oversize flag is derived from the dimensions just entered, so it is
+    // recomputed rather than preserved.
+    review = clearReviewKey(review, "fit");
+    if (built.review?.fit) review = { ...(review ?? {}), fit: built.review.fit };
+
+    // Only the fields this form owns. Spreading `built` would also overwrite
+    // status, and blank out server-owned data the form never saw.
+    quote.update(item.id, {
+      code: built.code, productSlug: built.productSlug, location: built.location,
+      width: built.width, height: built.height, options: built.options, qty: built.qty,
+      review,
+    });
+    onSaved(rowKey, `${built.code || ref} saved`);
+  };
+
+  const saveUnit = async (segmentId: string, built: Omit<QItem, "id">) => {
+    if (busy) return;
+    setBusy(true); setError("");
+    try {
+      await quote.updateSegment(segmentId, {
+        productSlug: built.productSlug,
+        options: built.options,
+        alongMm: parseInt(axis === "vertical" ? built.width : built.height) || 0,
+      });
+      setDirty(false);
+      setAnnouncement("Unit saved");
+      setLevel({ kind: "parent" });
+    } catch {
+      setError("That unit could not be saved. Check its product, size and options, then try again.");
+    } finally { setBusy(false); }
+  };
+
+  const addUnit = async (built: Omit<QItem, "id">) => {
+    if (busy || !item?.serverId) return;
+    setBusy(true); setError("");
+    try {
+      await quote.addSegment(item.serverId, {
+        productSlug: built.productSlug,
+        options: built.options,
+        alongMm: parseInt(axis === "vertical" ? built.width : built.height) || 0,
+      });
+      setDirty(false);
+      setAnnouncement("Unit added");
+      setLevel({ kind: "parent" });
+    } catch {
+      setError("That unit could not be added. Check its product, size and options, then try again.");
+    } finally { setBusy(false); }
+  };
+
+  // Parity with the control arm's composite panel, which offers per-unit
+  // removal. An A/B arm that can do LESS than the control confounds the
+  // comparison. A composite must retain at least two units, so the control is
+  // offered only above that floor — the server enforces it either way.
+  const removeUnit = async (segmentId: string) => {
+    if (busy) return;
+    setBusy(true); setError("");
+    try {
+      await quote.removeSegment(segmentId);
+      setRemovingUnit(null);
+      setAnnouncement("Unit removed");
+    } catch {
+      setRemovingUnit(null);
+      setError("That unit could not be removed. A composite must retain at least two units.");
+    } finally { setBusy(false); }
+  };
+
+  const activeSegment = level.kind === "unit" ? segments[unitIndex] : undefined;
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => { if (!open) requestClose(); }}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 quote-drawer-scrim" />
+        <Dialog.Content
+          // Focus return is the PAGE's job: it re-resolves the row by serverId
+          // after the rehydrate settles. Radix would otherwise try to restore to
+          // a trigger node that may no longer exist.
+          onCloseAutoFocus={(e) => e.preventDefault()}
+          onEscapeKeyDown={onEscape}
+          onPointerDownOutside={(e) => { e.preventDefault(); requestClose(); }}
+          onInteractOutside={(e) => e.preventDefault()}
+          aria-describedby={undefined}
+          className="quote-drawer fixed z-50 inset-0 lg:inset-y-0 lg:left-auto lg:right-0 lg:w-[520px] flex flex-col overflow-y-auto"
+        >
+          {/* 1. Header — pictogram, reference, location, close. On mobile the
+                 breadcrumb is the ONLY orientation cue, so it stays persistent. */}
+          <div className="quote-panel-head sticky top-0 z-10 flex items-center gap-2 px-4 py-3">
+            {level.kind !== "parent" && (
+              <button type="button" onClick={requestBack} aria-label={`Back to ${ref}`}
+                className="-ml-1 inline-flex items-center gap-1 px-1.5 h-9 text-xs font-medium text-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+                <ChevronLeft className="w-4 h-4" aria-hidden="true" />Back to {ref}
+              </button>
+            )}
+            {level.kind === "parent" && <FamilyPictogram productSlug={item?.productSlug ?? ""} />}
+            {/* Radix derives the dialog's accessible name from this Title. The
+                visible text is the reference alone — the suffix says what the
+                dialog IS for anyone who only hears it announced. */}
+            <Dialog.Title className="text-sm font-semibold text-ink min-w-0 truncate">
+              {title}<span className="sr-only"> — edit opening</span>
+            </Dialog.Title>
+            {level.kind === "parent" && item?.location && (
+              <span className="text-xs text-quiet truncate">{item.location}</span>
+            )}
+            <button type="button" onClick={requestClose} aria-label="Close editor"
+              className="ml-auto w-9 h-9 inline-flex items-center justify-center text-body hover:text-ink cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          {/* Outcomes announced politely; not duplicated as visible text. */}
+          <div className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</div>
+
+          <div className="flex-1 px-4 py-4 space-y-3">
+            {error && <p role="alert" className="text-xs text-red-700">{error}</p>}
+
+            {/* 4. Composite build. Above the parent's own fields, matching the
+                   established card: it answers "why does my line look like
+                   this?", which is context for the detail rather than a
+                   footnote under it. Unlike the read-only inline expansion,
+                   each unit here carries a VISIBLE affordance. */}
+            {level.kind === "parent" && segments.length > 0 && (
+              <div className="quote-composite-panel border border-line px-3 py-3">
+                <p className="text-[10px] uppercase tracking-[0.14em] text-info mb-2"
+                  style={{ fontFamily: "'DM Mono', monospace" }}>
+                  Built as {segments.reduce((n, s) => n + Math.max(1, s.qtyPerParent), 0)} units
+                </p>
+                <ul className="space-y-1">
+                  {segments.map((s, i) => (
+                    <li key={s.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                      <span className="text-quiet tabular-nums" style={{ fontFamily: "'DM Mono', monospace" }}>
+                        {unitLabel(ref, i)}{s.qtyPerParent > 1 ? ` ×${s.qtyPerParent}` : ""}
+                      </span>
+                      <span className="text-ink min-w-0 truncate">{productLabel(s.productSlug)}</span>
+                      <span className="text-body tabular-nums" style={{ fontFamily: "'DM Mono', monospace" }}>
+                        {mm(s.width)} × {mm(s.height)}
+                      </span>
+                      <span className="ml-auto flex items-center gap-2">
+                        <button type="button" disabled={busy}
+                          onClick={() => setLevel({ kind: "unit", segmentId: s.id })}
+                          aria-label={`Edit ${unitLabel(ref, i)}`}
+                          className="text-[11px] font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer">
+                          Edit unit
+                        </button>
+                        {segments.length > 2 && (removingUnit === s.id ? (
+                          <span className="inline-flex items-center gap-1.5 text-[11px]">
+                            <button type="button" disabled={busy} onClick={() => void removeUnit(s.id)}
+                              className="font-medium text-destructive underline cursor-pointer">Confirm</button>
+                            <button type="button" onClick={() => setRemovingUnit(null)}
+                              className="text-body underline cursor-pointer">Keep</button>
+                          </span>
+                        ) : (
+                          <button type="button" disabled={busy} onClick={() => setRemovingUnit(s.id)}
+                            aria-label={`Remove ${unitLabel(ref, i)}`}
+                            className="text-[11px] text-body underline underline-offset-2 disabled:opacity-50 cursor-pointer">
+                            Remove
+                          </button>
+                        ))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <button type="button" disabled={busy || !item?.serverId}
+                  onClick={() => setLevel({ kind: "add-unit" })}
+                  className="mt-2.5 inline-flex items-center gap-1 text-[12px] font-medium text-sage disabled:opacity-50 cursor-pointer">
+                  <Plus className="w-3.5 h-3.5" aria-hidden="true" />Add unit
+                </button>
+              </div>
+            )}
+
+            {/* 2/3/5/6. Essential configuration, options, indicative estimate and
+                   the explicit footer all come from the EXISTING composer — the
+                   product/options/pricing rules are not reimplemented here. Its
+                   sticky footer serves as the drawer footer, so there is never a
+                   second competing primary action. */}
+            {level.kind === "parent" && (
+              <ItemForm
+                key={target.mode === "add" ? "new-opening" : `parent-${rowKey}`}
+                quote={quote}
+                seed={item ?? undefined}
+                heading={target.mode === "add" ? "New opening" : `Edit ${ref}`}
+                excludeId={item?.id}
+                // A composite parent is the schedule line, not a product: its
+                // glazing and hardware live on the units, so offering an Options
+                // group here would invite a choice that belongs one level down.
+                hideOptions={segments.length > 0}
+                submitLabel={target.mode === "add" ? "Add opening" : "Save changes"}
+                onCommit={saveParent}
+                // The composer runs its OWN discard prompt before calling this,
+                // so closing here must not raise the drawer's as well.
+                onCancel={onClose}
+                onDirtyChange={setDirty}
+                initialSection={initialSection}
+                rail
+              />
+            )}
+
+            {level.kind === "unit" && activeSegment && (
+              <>
+                <p className="text-[11px] text-body">
+                  {unitLabel(ref, unitIndex)}. Its {axis === "vertical" ? "height" : "width"} follows the
+                  parent opening; edit the product, options and {axis === "vertical" ? "width" : "height"} here.
+                </p>
+                <ItemForm
+                  key={`unit-${activeSegment.id}`}
+                  scope="unit"
+                  unitAxis={axis}
+                  quote={quote}
+                  seed={{
+                    productSlug: activeSegment.productSlug,
+                    width: activeSegment.width,
+                    height: activeSegment.height,
+                    options: activeSegment.options ?? {},
+                    qty: activeSegment.qty,
+                  }}
+                  busy={busy}
+                  submitLabel={busy ? "Saving…" : `Save ${unitLabel(ref, unitIndex)}`}
+                  onCommit={(built) => void saveUnit(activeSegment.id, built)}
+                  onCancel={() => setLevel({ kind: "parent" })}
+                  onDirtyChange={setDirty}
+                  rail
+                />
+              </>
+            )}
+
+            {level.kind === "add-unit" && (
+              <>
+                <p className="text-[11px] text-body">
+                  Choose the product, its options and the new unit's size before adding it to this opening.
+                </p>
+                <ItemForm
+                  key={`new-unit-${item?.serverId ?? item?.id}`}
+                  scope="unit"
+                  unitAxis={axis}
+                  unitMode="add"
+                  quote={quote}
+                  seed={{
+                    width: axis === "vertical" ? "" : item?.width ?? "",
+                    height: axis === "vertical" ? item?.height ?? "" : "",
+                    options: {}, qty: 1,
+                  }}
+                  busy={busy}
+                  submitLabel={busy ? "Adding…" : "Add unit"}
+                  onCommit={(built) => void addUnit(built)}
+                  onCancel={() => setLevel({ kind: "parent" })}
+                  onDirtyChange={setDirty}
+                  rail
+                />
+              </>
+            )}
+          </div>
+
+          {/* Discard guard for the drawer's own dismiss affordances. */}
+          {/* FIXED, not absolute: Dialog.Content scrolls, and an absolutely
+              positioned child anchors to the top of the scrolled content — so on
+              a scrolled form the confirm rendered off-screen while stealing
+              focus, which reads as a frozen drawer. */}
+          {confirmDiscard && (
+            <div className="fixed inset-0 z-20 flex items-center justify-center p-4 quote-drawer-scrim">
+              <div className="quote-dialog w-full max-w-xs p-4" role="alertdialog" aria-modal="true"
+                aria-label="Discard changes">
+                <p className="text-sm text-ink font-medium mb-1">Discard changes?</p>
+                <p className="text-xs text-body mb-3">Your edits to {title} have not been saved.</p>
+                <div className="flex justify-end gap-2">
+                  <button type="button" autoFocus onClick={() => setConfirmDiscard(null)}
+                    className="card px-2.5 py-1.5 text-xs text-body cursor-pointer">Keep editing</button>
+                  <button type="button" onClick={confirmedDiscard}
+                    className="quote-button--danger border px-2.5 py-1.5 text-xs font-medium cursor-pointer">Discard</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}

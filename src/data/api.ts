@@ -1,6 +1,6 @@
 // Typed client for the OpenFrame backend Worker (/api/*). Same-origin: in prod the
 // Worker serves both the SPA and the API; in dev Vite proxies /api to :8787.
-import type { QItem } from "./configurator";
+import type { QItem, QSegment } from "./configurator";
 
 export interface ApiProject {
   id: string;
@@ -26,6 +26,8 @@ export interface ApiItem {
   origin?: "manual" | "schedule" | "ai";
   aiPriced?: boolean;
   review?: Record<string, string> | null;
+  segments?: QSegment[];
+  compositeAxis?: "vertical" | "horizontal" | null;
 }
 
 // A source file attached to a project/order (e.g. the uploaded schedule).
@@ -42,6 +44,33 @@ export interface CurrentProject {
   project: ApiProject | null;
   items: ApiItem[];
   files?: ApiScheduleFile[];
+}
+
+/** Translate durable API lines into the editable client model in one place.
+ * Keeping this boundary explicit prevents nested server-owned fields (notably
+ * composite segments) being lost in one of several hand-written mappers. */
+export function hydrateQuoteItems(items: ApiItem[], localIdSeed = Date.now(), previous: QItem[] = []): QItem[] {
+  const localIdsByServerId = new Map(previous
+    .filter((item): item is QItem & { serverId: string } => !!item.serverId)
+    .map((item) => [item.serverId, item.id]));
+  return items.map((item, index) => ({
+    id: localIdsByServerId.get(item.id) ?? localIdSeed + index,
+    serverId: item.id,
+    code: item.code,
+    productSlug: item.productSlug,
+    location: item.location,
+    width: item.width,
+    height: item.height,
+    options: item.options,
+    qty: item.qty,
+    status: item.status,
+    origin: item.origin,
+    aiPriced: item.aiPriced,
+    review: item.review ?? null,
+    lineTotal: item.lineTotal,
+    segments: item.segments?.map((segment) => ({ ...segment, options: { ...segment.options } })),
+    compositeAxis: item.compositeAxis ?? null,
+  }));
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -109,6 +138,23 @@ export const previewPrice = async (item: { productSlug: string; width: string; h
   if (!res.ok) throw new Error(`/api/projects/current/price-preview → ${res.status}`);
   return res.json() as Promise<{ ok: boolean; total: number | null }>;
 };
+
+/** Composite mutations use the same server domain operations as Ops, scoped to
+ * the caller's current draft. Units remain nested under their opening. */
+export const updateCurrentSegment = (segmentId: string, patch: {
+  productSlug: string; options: Record<string, string>; alongMm: number;
+}) => req<{ ok: boolean }>(`/api/projects/current/segments/${segmentId}`, {
+  method: "PATCH", body: JSON.stringify(patch),
+});
+
+export const addCurrentSegment = (parentLineId: string, patch: {
+  productSlug: string; options: Record<string, string>; alongMm: number;
+}) => req<{ ok: boolean; id: string }>(`/api/projects/current/lines/${parentLineId}/segments`, {
+  method: "POST", body: JSON.stringify(patch),
+});
+
+export const removeCurrentSegment = (segmentId: string) =>
+  req<{ ok: boolean }>(`/api/projects/current/segments/${segmentId}`, { method: "DELETE" });
 
 /** A specific owned project + its lines (read-only) — e.g. to review a submission. */
 export const getProject = (projectId: string) =>
@@ -360,7 +406,14 @@ export interface ExtractionRun {
   startedAt: string;
   updatedAt?: string;
   completedAt: string | null;
-  summary: { extractedLines: number; conflicts: number; energyApplied: number; cartApplied?: number; documents: number } | null;
+  summary: {
+    extractedLines: number;
+    conflicts: number;
+    energyApplied: number;
+    cartApplied?: number;
+    documents: number;
+    discrepancyWarnings?: string[];
+  } | null;
   progressStage?:
     | "queued"
     | "reading_documents"
@@ -441,5 +494,5 @@ export async function startParse(fileId: string, mode?: "replace" | "append"): P
 export const getParseQuota = () => req<{ quota: ParseQuota }>("/api/projects/current/parse-quota");
 export const getParseJob = (jobId: string) => req<{ job: { id: string; status: string; itemCount: number | null; error: string | null } }>(`/api/projects/current/parse-jobs/${jobId}`);
 
-/** Clear the whole current draft — all lines AND the attached schedule file. */
+/** Clear the whole current draft — all lines AND every attached document. */
 export const clearDraft = () => req<{ ok: boolean }>("/api/projects/current/clear", { method: "POST" });

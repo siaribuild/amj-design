@@ -66,7 +66,8 @@ test("ops tabs render (customers, pricing, audit); the retired ones are gone", a
     await expect(page.getByRole("button", { name: gone, exact: true })).toHaveCount(0);
   }
   await page.getByRole("button", { name: "Customers", exact: true }).click();
-  await expect(page.getByText("Sarah Nguyen")).toBeVisible();
+  // Desktop table and mobile cards coexist responsively; target the table copy.
+  await expect(page.getByRole("cell", { name: /Sarah Nguyen/ })).toBeVisible();
   // Catalogue became Pricing: the tab now EDITS the D1 commercial layer rather
   // than listing a build-time product artefact nobody could change.
   await page.getByRole("button", { name: "Pricing", exact: true }).click();

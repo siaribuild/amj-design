@@ -481,18 +481,45 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       // A composite cannot be whittled below two units; that is a merge.
       await requestJson(ops, `/api/ops/segments/${after[1].id}`, { method: "DELETE" }, 400);
 
-      // A CUSTOMER cannot reach the units, even on a draft project.
+      // A CUSTOMER can edit units only through the dedicated draft-owner API.
       //
-      // Their line-save endpoint addressed every quote_line row on the project,
-      // and the read route hands them segment ids, so a segment id in
-      // `removedIds` deleted the unit — leaving the opening priced for units it
-      // no longer had, with no recompute. It was unreachable only because
-      // composites happen to exist solely on submitted projects today; the AI
-      // proposal path breaks that the moment it proposes a split, because
-      // parsing happens on a DRAFT project. So the state is forced here rather
-      // than waiting for the feature that makes it ordinary.
+      // The generic line-save endpoint deliberately excludes nested segments.
+      // Draft-owner segment changes go through the same recomputing domain
+      // operations as Ops, so a customer edit cannot leave the parent stale.
       const unitIds = (await sql(`SELECT id FROM quote_line WHERE parent_line_id='${parentId}'`)).map((r) => r.id);
       await sql(`UPDATE project SET status_customer='draft' WHERE id='${projectId}'`);
+      await requestJson(cust, `/api/projects/current/segments/${unitIds[1]}`, {
+        method: "PATCH", json: { productSlug: "amj100t-fixed-window", alongMm: 650, options: {} },
+      });
+      let customerView = await requestJson(cust, "/api/projects/current");
+      assert.equal(customerView.body.items.length, 1, "units remain nested under one parent opening");
+      assert.equal(customerView.body.items[0].segments[1].productSlug, "amj100t-fixed-window");
+      assert.equal(customerView.body.items[0].segments[1].width, "650");
+      assert.ok(customerView.body.items[0].review.customerCompositeChanged);
+
+      // Adding a unit is not an auto-accepted copy of the last segment. The
+      // customer must supply its own selection and size through the unit editor.
+      await requestJson(cust, `/api/projects/current/lines/${parentId}/segments`, {
+        method: "POST", json: {},
+      }, 400);
+      let afterRejectedAdd = await requestJson(cust, "/api/projects/current");
+      assert.equal(afterRejectedAdd.body.items[0].segments.length, 2, "a blank Add click never creates a default unit");
+
+      const addedUnit = await requestJson(cust, `/api/projects/current/lines/${parentId}/segments`, {
+        method: "POST", json: { productSlug: "amj100t-fixed-window", options: {}, alongMm: 650 },
+      });
+      customerView = await requestJson(cust, "/api/projects/current");
+      assert.equal(customerView.body.items[0].segments.length, 3);
+      assert.equal(customerView.body.items[0].segments[2].productSlug, "amj100t-fixed-window");
+      assert.equal(customerView.body.items[0].segments[2].width, "650");
+      await requestJson(cust, `/api/projects/current/segments/${addedUnit.body.id}`, { method: "DELETE" });
+      await requestJson(cust, `/api/projects/current/segments/${unitIds[0]}`, { method: "DELETE" }, 400);
+      await requestJson(new Session(baseUrl), `/api/projects/current/segments/${unitIds[0]}`, {
+        method: "PATCH", json: { alongMm: 500 },
+      }, 404);
+
+      // The broad parent snapshot still cannot mutate a unit. Dedicated unit
+      // operations are the only path, so parent recomputation cannot be skipped.
       await requestJson(cust, "/api/projects/current/lines", {
         method: "PUT",
         json: { items: [], removedIds: unitIds },

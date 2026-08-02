@@ -31,7 +31,7 @@
     "test:ai-pipeline": "node --test scripts/tests/ai-pipeline.test.mjs",
     "typecheck": "node scripts/typecheck.mjs",
     "typecheck:gate": "node scripts/typecheck.mjs --fatal-only",
-    "test:composite": "node --test scripts/tests/composite.test.mjs"
+    "test:composite": "node --test scripts/tests/composite.test.mjs scripts/tests/estimator-split.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

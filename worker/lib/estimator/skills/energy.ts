@@ -10,6 +10,10 @@ import { parseModelJson } from "./json";
 export interface EnergyConstraint {
   ref: string | null;            // opening ref (W04A) — null for a type-level rule
   elementHint: string | null;    // fixed | awning | sliding | hinged | louvre | door | window
+  /** Report-listed performance type / Window ID (for example NUE-001-13 A). */
+  performanceTypeId: string | null;
+  /** The authoritative report description/build-up attached to that type. */
+  performanceDescription: string | null;
   maxUValue: number | null;
   minShgc: number | null;
   maxShgc: number | null;
@@ -34,6 +38,8 @@ export interface EnergyExtraction {
 const CONSTRAINT_PROPS = {
   ref: { type: ["string", "null"] },
   elementHint: { type: ["string", "null"] },
+  performanceTypeId: { type: ["string", "null"] },
+  performanceDescription: { type: ["string", "null"] },
   maxUValue: { type: ["number", "null"] },
   minShgc: { type: ["number", "null"] },
   maxShgc: { type: ["number", "null"] },
@@ -63,7 +69,7 @@ const HINTS = new Set(["fixed", "awning", "sliding", "hinged", "louvre", "caseme
 
 export const energyReportExtractor: Skill<{ text: string; checksum?: string | null }, EnergyExtraction> = {
   id: "energy_report_extractor",
-  promptVersion: "v3", // v3: full §4 requirement (SHGC bands, mapping, precedence statement)
+  promptVersion: "v4", // v4: retain performance-type ids/descriptions for authoritative component selection
   responseSchema: SCHEMA,
   buildPrompt: ({ text }) =>
     "TASK\n" +
@@ -73,6 +79,8 @@ export const energyReportExtractor: Skill<{ text: string; checksum?: string | nu
     "- One constraint per opening row (use its exact ref, e.g. W04A) OR per product type " +
     "(leave ref null, set elementHint: fixed|awning|sliding|hinged|louvre|casement|door|window).\n" +
     "- Capture maximum whole-window U-value (Uw), SHGC minimum/maximum tolerance band and target.\n" +
+    "- For every scheduled opening, retain the report's Window ID/performance type in performanceTypeId " +
+    "and its exact listed product/glazing description in performanceDescription.\n" +
     "- Capture room, orientation (N/NE/E/SE/S/SW/W/NW), openable percentage and stated " +
     "dimensions in millimetres where the report provides them.\n" +
     "- Copy the report's own order-of-precedence statement verbatim into precedenceStatement if present.\n" +
@@ -92,6 +100,8 @@ export const energyReportExtractor: Skill<{ text: string; checksum?: string | nu
       return {
         ref: strCap(r?.ref, 40),
         elementHint: hint && HINTS.has(hint) ? hint : null,
+        performanceTypeId: strCap(r?.performanceTypeId, 80),
+        performanceDescription: strCap(r?.performanceDescription, 300),
         // Whole-window Uw plausibly 0.5–10; SHGC 0–1.
         maxUValue: numOrNull(r?.maxUValue, 0.5, 10),
         minShgc: numOrNull(r?.minShgc, 0, 1),

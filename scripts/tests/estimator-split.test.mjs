@@ -60,6 +60,49 @@ test("comment overrides the 50/50 default", () => {
   assert.deepEqual(p1.segments.map((s) => s.widthMm), [500, 1400, 500]);
 });
 
+test("energy-report component rows are preserved exactly, including fixed lites and per-lite bands", () => {
+  const awningBand = { basis: "explicit_energy_report", maxUValue: 2.27, shgcTarget: 0.39, shgcMin: 0.37, shgcMax: 0.41, zoneType: "Media", operablePercent: 90, notes: null };
+  const fixedBand = { basis: "explicit_energy_report", maxUValue: 1.69, shgcTarget: 0.53, shgcMin: 0.50, shgcMax: 0.56, zoneType: "Media", operablePercent: 0, notes: null };
+  const hint = {
+    source: "energy_report", axis: "vertical", raw: "W4A + W4B + W4C",
+    units: [
+      { ref: "W4A", operation: "awning", count: 1, widthMm: 805, heightMm: 2100, requirement: awningBand },
+      { ref: "W4B", operation: "fixed", count: 1, widthMm: 1590, heightMm: 2100, requirement: fixedBand },
+      { ref: "W4C", operation: "awning", count: 1, widthMm: 805, heightMm: 2100, requirement: awningBand },
+    ],
+  };
+  const proposal = proposeSplit({ operationType: "awning", widthMm: 3200, heightMm: 2100 }, hint);
+  assert.equal(proposal.basis, "energy_report");
+  assert.deepEqual(proposal.segments.map((segment) => [segment.ref, segment.operation, segment.widthMm, segment.requirement.shgcMin, segment.requirement.shgcMax]), [
+    ["W4A", "awning", 805, 0.37, 0.41],
+    ["W4B", "fixed", 1590, 0.50, 0.56],
+    ["W4C", "awning", 805, 0.37, 0.41],
+  ]);
+});
+
+test("W4 mismatch: architectural size wins while the supplementary fixed lite absorbs the delta", () => {
+  const awningBand = { basis: "explicit_energy_report", maxUValue: 2.27, shgcTarget: 0.39, shgcMin: 0.37, shgcMax: 0.41, zoneType: "Media", operablePercent: 90, notes: null };
+  const fixedBand = { basis: "explicit_energy_report", maxUValue: 1.69, shgcTarget: 0.53, shgcMin: 0.50, shgcMax: 0.56, zoneType: "Media", operablePercent: 0, notes: null };
+  const hint = {
+    source: "energy_report", axis: "vertical", raw: "W4A + W4B + W4C",
+    units: [
+      { ref: "W4A", operation: "awning", count: 1, widthMm: 805, heightMm: 2100, requirement: awningBand },
+      { ref: "W4B", operation: "fixed", count: 1, widthMm: 1590, heightMm: 2100, requirement: fixedBand },
+      { ref: "W4C", operation: "awning", count: 1, widthMm: 805, heightMm: 2100, requirement: awningBand },
+    ],
+  };
+  const proposal = proposeSplit({ operationType: "awning", widthMm: 2410, heightMm: 1800 }, hint);
+  assert.deepEqual(proposal.segments.map((segment) => [segment.ref, segment.operation, segment.widthMm, segment.heightMm]), [
+    ["W4A", "awning", 805, 1800],
+    ["W4B", "fixed", 800, 1800],
+    ["W4C", "awning", 805, 1800],
+  ]);
+  assert.deepEqual(proposal.segments.map((segment) => [segment.requirement.shgcMin, segment.requirement.shgcMax]), [
+    [0.37, 0.41], [0.50, 0.56], [0.37, 0.41],
+  ], "per-component energy requirements remain authoritative");
+  assert.equal(proposal.segments.reduce((sum, segment) => sum + segment.widthMm, 0), 2410);
+});
+
 test("no comment, ≤2× oversize ⇒ even 50/50 of the requested operation", () => {
   const proposal = proposeSplit({ operationType: "sliding", widthMm: 3000, heightMm: 1500 }, null, { maxWidthMm: 2000 });
   assert.equal(proposal.basis, "default_even");
@@ -67,6 +110,21 @@ test("no comment, ≤2× oversize ⇒ even 50/50 of the requested operation", ()
     { operation: "sliding", widthMm: 1500, heightMm: 1500 },
     { operation: "sliding", widthMm: 1500, heightMm: 1500 },
   ]);
+});
+
+test("W2: 3500mm fixed opening against a 3000mm maximum becomes two fixed units", () => {
+  const proposal = proposeSplit({ operationType: "fixed", widthMm: 3500, heightMm: 700 }, null, { maxWidthMm: 3000 });
+  assert.deepEqual(proposal.segments, [
+    { operation: "fixed", widthMm: 1750, heightMm: 700 },
+    { operation: "fixed", widthMm: 1750, heightMm: 700 },
+  ]);
+});
+
+test("an opening wider than twice the fixed-product maximum becomes three or more units", () => {
+  const proposal = proposeSplit({ operationType: "fixed", widthMm: 7000, heightMm: 700 }, null, { maxWidthMm: 3000 });
+  assert.equal(proposal.segments.length, 3);
+  assert.ok(proposal.segments.every((segment) => segment.widthMm <= 3000));
+  assert.equal(proposal.segments.reduce((sum, segment) => sum + segment.widthMm, 0), 7000);
 });
 
 test("no comment, >2× oversize ⇒ 3 equal units so each fits (just maths)", () => {

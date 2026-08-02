@@ -591,11 +591,13 @@ test("r2Keys: layout is consistent and path-traversal-safe", () => {
 
 test("energy skill validate: clamps untrusted model output, never guesses", () => {
   const good = energyReportExtractor.validate(JSON.stringify({ constraints: [
-    { ref: "W04", maxUValue: 2.27, minShgc: 0.37, maxShgc: 0.41, glazingNote: "obscure", orientation: "w", room: "Media" },
+    { ref: "W04", performanceTypeId: "BRD-097-36 A", performanceDescription: "Signature Awning Window 100TB DG", maxUValue: 2.27, minShgc: 0.37, maxShgc: 0.41, glazingNote: "obscure", orientation: "w", room: "Media" },
   ], precedenceStatement: "The energy report takes precedence over plans." }));
   assert.equal(good.constraints.length, 1);
   assert.equal(good.constraints[0].maxUValue, 2.27);
   assert.equal(good.constraints[0].ref, "W04");
+  assert.equal(good.constraints[0].performanceTypeId, "BRD-097-36 A");
+  assert.match(good.constraints[0].performanceDescription, /Signature Awning/);
   assert.equal(good.constraints[0].orientation, "W", "orientation normalized to compass vocabulary");
   assert.match(good.precedenceStatement, /takes precedence/, "report's own precedence statement captured (§9.1)");
 

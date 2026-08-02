@@ -33,6 +33,10 @@ export interface QItem {
   // a value needs a human look. Drives the amber highlight; keys are dropped as the
   // customer resolves each field (see clearReviewKey).
   review?: Record<string, string> | null;
+  /** Nested physical units for a composite opening. These must survive API
+   * hydration; dropping them makes a persisted composite look like one product. */
+  segments?: QSegment[];
+  compositeAxis?: "vertical" | "horizontal" | null;
 }
 /** One unit of a composite opening. Never an item in its own right: no tag, no
  *  independent removal, and its price is display-only — the parent's lineTotal
@@ -45,6 +49,8 @@ export interface QSegment {
   qtyPerParent: number;
   qty: number;
   lineTotal: number | null;
+  options: Record<string, string>;
+  status: "Ready" | "Needs review";
 }
 
 export interface QFile {
@@ -70,16 +76,21 @@ export interface QuoteState {
   remove: (id: number) => void;
   copy: (id: number) => number | undefined;
   addFiles: (f: QFile[]) => void;
-  removeFile: (id: number) => void;
+  removeFile: (id: string | number) => void;
   // Replace the whole line set (used after a schedule parse re-hydrates from the
   // server). Assigns fresh local ids.
   setItems: (items: Omit<QItem, "id">[]) => void;
-  // Clear the whole project back to zero — lines AND the attached schedule file —
-  // both locally and on the server. The single source-file per quote is integral
-  // to an order, so it is only removable via this whole-project reset.
+  // Clear the whole project back to zero — lines AND every attached document —
+  // both locally and on the server. Local state changes only after the durable
+  // server reset succeeds, preventing a refresh ghost after a failed request.
   clearAll: () => void | Promise<void>;
-  // Re-hydrate lines + the attached file from the server (after a parse).
-  reload: () => Promise<void>;
+  // Re-hydrate lines + attached files from the server.
+  reload: (options?: { flushLocalChanges?: boolean }) => Promise<void>;
+  updateSegment: (segmentId: string, patch: {
+    productSlug: string; options: Record<string, string>; alongMm: number;
+  }) => Promise<void>;
+  addSegment: (parentServerId: string, patch: { productSlug: string; options: Record<string, string>; alongMm: number }) => Promise<void>;
+  removeSegment: (segmentId: string) => Promise<void>;
 }
 
 // Review fields that a plain edit resolves, so the estimator can drop the flag once

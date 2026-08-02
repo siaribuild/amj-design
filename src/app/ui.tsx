@@ -11,8 +11,12 @@ import { SAGE, INK as DARK, LINE } from "../styles/tokens";
 export { SAGE, INK as DARK, PAPER, BONE, LINE } from "../styles/tokens";
 
 // Client-side route identifiers. Kept here so page files can type their props.
+// `quote-project` is an INTERNAL alternative presentation of the same draft
+// shown at `quote` (docs/estimator/quote-project-implementation-brief.md). It is
+// reachable by direct navigation only — never linked from public navigation —
+// until the A/B comparison picks a winner.
 export type Page =
-  | "home" | "products" | "product-detail" | "quote"
+  | "home" | "products" | "product-detail" | "quote" | "quote-project"
   | "how-it-works" | "resources" | "contact" | "admin"
   | "approved-quote" | "trade" | "login" | "dashboard"
   | "account" | "help"
@@ -67,7 +71,7 @@ export function Btn({
   type = "button", disabled = false
 }: {
   children: ReactNode;
-  variant?: "primary" | "sage" | "outline" | "ghost" | "danger";
+  variant?: "primary" | "sage" | "outline" | "ghost" | "danger" | "warning";
   size?: "sm" | "md" | "lg";
   onClick?: () => void; className?: string;
   type?: "button" | "submit"; disabled?: boolean;
@@ -82,7 +86,8 @@ export function Btn({
     // sites left and it is the treatment that failed on the home hero: a border
     // needs a known ground, and a CMS-authored photograph is by definition not one.
     // If a secondary is ever needed on an image again it must carry its own fill.
-    danger:  "bg-red-600 text-white hover:bg-red-700",
+    danger:  "bg-destructive text-white hover:bg-destructive/90",
+    warning: "bg-warning-ink text-white hover:bg-warning",
   };
   return (
     <button type={type} onClick={onClick} disabled={disabled}
@@ -101,15 +106,15 @@ export function FieldLabel({ children }: { children: ReactNode }) {
   );
 }
 
-export function Input({ value, onChange, placeholder, type = "text", className = "", defaultValue, inputMode }: {
+export function Input({ value, onChange, placeholder, type = "text", className = "", defaultValue, inputMode, disabled }: {
   value?: string; onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string; type?: string; className?: string; defaultValue?: string;
-  inputMode?: "numeric" | "text" | "decimal";
+  inputMode?: "numeric" | "text" | "decimal"; disabled?: boolean;
 }) {
   return (
-    <input type={type} value={value} defaultValue={defaultValue} onChange={onChange}
+    <input type={type} value={value} defaultValue={defaultValue} onChange={onChange} disabled={disabled}
       placeholder={placeholder} inputMode={inputMode}
-      className={`w-full border border-ink/20 bg-white px-3 py-2.5 text-sm text-ink placeholder-quieter focus:outline-none focus:border-sage transition-colors ${className}`} />
+      className={`field-control w-full border px-3 py-2.5 text-sm text-ink placeholder-quieter focus:outline-none transition-colors disabled:cursor-not-allowed ${className}`} />
   );
 }
 

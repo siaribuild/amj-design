@@ -502,7 +502,10 @@ files.delete("/files/:id", async (c) => {
       (jobInsertIndex >= 0 && Number(committed[jobInsertIndex]?.meta?.changes ?? 0) !== 1)) {
     return c.json({ error: "project_changed_retry" }, 409);
   }
-  if (Number(committed[fileDeleteIndex]?.meta?.changes ?? 0) !== 1) {
+  // Production D1 includes FK cascade work in DELETE change counts, while local
+  // SQLite reports only the directly deleted file row. Both are successful; the
+  // guard only needs to reject zero (the file vanished between read and commit).
+  if (Number(committed[fileDeleteIndex]?.meta?.changes ?? 0) < 1) {
     return c.json({ error: "project_changed_retry" }, 409);
   }
   if (Number(committed[releaseIndex]?.meta?.changes ?? 0) !== 1) {

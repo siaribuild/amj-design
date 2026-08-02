@@ -65,6 +65,38 @@ export const family = defineType({
       of: [{ type: "string" }],
       description: "e.g. FIXED, FIXED LITE, PICTURE WINDOW — exact terms as printed on schedules. One per entry.",
     }),
+    // The family's pictogram — a restrained technical marker shown beside (never
+    // instead of) the product name in the quote list. Inline SVG markup rather
+    // than an image asset, because an asset cannot inherit the theme's ink
+    // colour: the marker has to recolour with its row state, and `currentColor`
+    // is the only thing that does that. Markup is allow-listed before it renders.
+    defineField({
+      name: "icon",
+      title: "Pictogram (inline SVG)",
+      type: "text",
+      rows: 6,
+      description:
+        "Square 24×24 viewBox, monochrome line art. Use stroke=\"currentColor\" and fill=\"none\" so it "
+        + "picks up the surrounding text colour. Show the OPERATION (how it opens), not a product likeness. "
+        + "Only svg/g/path/rect/circle/ellipse/line/polyline/polygon/title/desc survive sanitising; scripts, "
+        + "event handlers and external references are stripped.",
+      // The browser sanitises before rendering, but this catches the mistake at
+      // authoring time rather than letting unsafe markup sit in a payload every
+      // visitor downloads. Deliberately coarse — the renderer's allow-list is
+      // the authority; this is the second lock, not the first.
+      validation: (r) => r.custom((value?: string) => {
+        if (!value) return true;
+        const svg = value.trim();
+        if (!/^<svg[\s>]/i.test(svg) || !/<\/svg>\s*$/i.test(svg)) return "Must be a single <svg>…</svg> element.";
+        if (/<\?|<!\[CDATA\[/i.test(svg)) return "Processing instructions and CDATA are not allowed.";
+        if (/<\s*(script|style|foreignObject|image|use|animate|set|iframe|a)\b/i.test(svg)) {
+          return "Only plain drawing elements are allowed (no script/style/use/image/animate/foreignObject/a).";
+        }
+        if (/\son[a-z]+\s*=/i.test(svg)) return "Event handler attributes are not allowed.";
+        if (/(javascript:|xlink:href|href\s*=)/i.test(svg)) return "External or scripted references are not allowed.";
+        return true;
+      }),
+    }),
     defineField({ name: "shortDescription", type: "text", rows: 2 }),
     defineField({ name: "description", type: "text", rows: 4 }),
   ],

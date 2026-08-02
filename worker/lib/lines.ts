@@ -20,9 +20,8 @@ import { uuid } from "./util";
 // The line shape exchanged with the client. `id` is the STABLE server line id —
 // the client round-trips it as `serverId` so a save upserts (never delete+recreate)
 // and the parse_line → quote_line provenance link survives autosave and submit.
-/** One unit of a composite opening. Not a line: it never enters the customer's
- *  item list, has no architect tag of its own, and is never independently
- *  removable or editable by them. It describes HOW the parent gets built. */
+/** One unit of a composite opening. It stays nested under the architectural
+ * opening and carries no independent tag or room. */
 export interface ApiSegment {
   id: string;
   productSlug: string;
@@ -34,6 +33,8 @@ export interface ApiSegment {
   qty: number;
   /** Display-only. The parent's lineTotal is authoritative — never sum these. */
   lineTotal: number | null;
+  options: Record<string, string>;
+  status: "Ready" | "Needs review";
 }
 
 export interface ApiLine {
@@ -52,6 +53,7 @@ export interface ApiLine {
   aiPriced?: boolean;
   /** Per-field {field: reason} for parsed lines that need confirmation. */
   review?: Record<string, string> | null;
+  compositeAxis?: "vertical" | "horizontal" | null;
 }
 
 // A D1 quote_line row (columns we read back).
@@ -73,6 +75,8 @@ export interface LineRow {
   pricing_snapshot_json?: string | null;
   recommendation_basis?: string | null;
   recommendation_confidence?: string | null;
+  composite_axis?: string | null;
+  line_kind?: string | null;
 }
 
 export function rowToApiLine(r: LineRow): ApiLine {
@@ -93,6 +97,7 @@ export function rowToApiLine(r: LineRow): ApiLine {
     origin: r.origin ?? "manual",
     aiPriced: !!r.ai_proposal_line_id,
     review: review && Object.keys(review).length ? (review as Record<string, string>) : null,
+    compositeAxis: r.composite_axis === "horizontal" ? "horizontal" : r.composite_axis === "vertical" ? "vertical" : null,
   };
 }
 

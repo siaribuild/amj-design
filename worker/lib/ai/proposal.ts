@@ -305,6 +305,17 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
         .filter((reason): reason is string => typeof reason === "string" && !!reason)
         .slice(0, 20),
     )];
+    const documentReviewCopy = documentReviewReasons.filter((reason) => reason.includes(":"));
+    if (!documentReviewCopy.length) {
+      const labels: Record<string, string> = {
+        energy_requirement_ambiguous: "The energy report contains conflicting requirements for this opening; human review is required.",
+        energy_dimension_conflict: "The energy report and plan/schedule dimensions differ; the report value was used and human review is required.",
+        energy_configuration_conflict: "The energy report and plan/schedule configuration differ; the report value was used and human review is required.",
+        energy_requirement_context_mismatch: "The energy-report room or orientation does not agree with the plan; human review is required.",
+        energy_requirement_unmatched: "An energy-report requirement could not be matched to the plan/schedule; human review is required.",
+      };
+      documentReviewCopy.push(...documentReviewReasons.flatMap((reason) => labels[reason] ? [labels[reason]] : []));
+    }
     const hasScheduleCommercialOption =
       !!line.opening.scheduleRequirements?.colour ||
       line.opening.scheduleRequirements?.flyscreen != null;
@@ -337,8 +348,8 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
           : reviewRequired
             ? "We will confirm this AI-recommended configuration and any schedule-specific options during technical review."
             : null,
-        energyMapping: documentReviewReasons.length
-          ? documentReviewReasons.join(" ")
+        energyMapping: documentReviewCopy.length
+          ? documentReviewCopy.join(" ")
           : null,
       });
       stmts.push(env.DB.prepare(

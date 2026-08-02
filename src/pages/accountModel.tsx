@@ -78,7 +78,16 @@ export const initialsOf = (s: string) =>
   s.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "OF";
 
 // ── Record state vocabulary ───────────────────────────────────────────────────
-export interface RecordMeta { pill: string; tone: Tone; needsYou: boolean; next: ReactNode }
+// SCAFFOLD (needs-you-filter): the pending customer action a record carries, if
+// any — the CTA the "Needs you" tab surfaces as an enriched row. Populated in the
+// SAME switch case that sets needsYou so the count, the filter and the row's button
+// read ONE source and cannot diverge. `rank` reproduces deriveGates' six-way
+// urgency order (balance 1 → sign-off 2 → deposit 3 → answer 4 → accept 5 →
+// confirm 6) so the Needs-you list keeps the most time-critical action on top after
+// the gate stack retires. The DRAFT carries needsYou:true (for its own copy) but NO
+// action — the count/filter key on `action` presence, so the cart is excluded.
+export interface RecordAction { cta: string; when: string; rank: number }
+export interface RecordMeta { pill: string; tone: Tone; needsYou: boolean; next: ReactNode; action?: RecordAction }
 
 const b = (t: ReactNode) => <b className="text-ink font-semibold">{t}</b>;
 
@@ -86,11 +95,11 @@ export function orderMeta(o: ApiOrder): RecordMeta {
   const pay = (kind: "deposit" | "balance") => o.payments.find((p) => p.kind === kind);
   switch (o.stage) {
     case "deposit_invoiced":
-      return { pill: "Deposit due", tone: "attn", needsYou: true, next: <>pay the {b("50% deposit")} of {b(money(pay("deposit")?.amount))} to begin</> };
+      return { pill: "Deposit due", tone: "attn", needsYou: true, next: <>pay the {b("50% deposit")} of {b(money(pay("deposit")?.amount))} to begin</>, action: { cta: "Review & pay deposit", when: "Starts your order", rank: 3 } };
     case "deposit_paid":
       return { pill: "Preparing drawings", tone: "work", needsYou: false, next: <>We are preparing your shop drawings — no action needed</> };
     case "drawings_shared":
-      return { pill: "Awaiting your sign-off", tone: "attn", needsYou: true, next: <>sign off {b(`${o.lineCount ?? "your"} shop drawings`)} to release manufacturing</> };
+      return { pill: "Awaiting your sign-off", tone: "attn", needsYou: true, next: <>sign off {b(`${o.lineCount ?? "your"} shop drawings`)} to release manufacturing</>, action: { cta: "Open drawings", when: "Blocks manufacturing", rank: 2 } };
     case "drawings_signed_off":
       return { pill: "Drawings approved", tone: "work", needsYou: false, next: <>We are scheduling manufacturing — no action needed</> };
     case "manufacturing":
@@ -98,9 +107,9 @@ export function orderMeta(o: ApiOrder): RecordMeta {
     case "qa_photos_shared":
       return { pill: "Quality check", tone: "work", needsYou: false, next: <>Quality photos shared — the balance invoice follows</> };
     case "balance_invoiced":
-      return { pill: "Balance due", tone: "attn", needsYou: true, next: <>pay the final balance {b(money(pay("balance")?.amount))} to book delivery</> };
+      return { pill: "Balance due", tone: "attn", needsYou: true, next: <>pay the final balance {b(money(pay("balance")?.amount))} to book delivery</>, action: { cta: "Review & pay balance", when: "Holds despatch", rank: 1 } };
     case "balance_paid":
-      return { pill: "Confirm for despatch", tone: "attn", needsYou: true, next: <>confirm you're ready — despatch is booked on your OK</> };
+      return { pill: "Confirm for despatch", tone: "attn", needsYou: true, next: <>confirm you're ready — despatch is booked on your OK</>, action: { cta: "Confirm for despatch", when: "Books delivery", rank: 6 } };
     case "customer_confirmed":
       return { pill: "Booking delivery", tone: "work", needsYou: false, next: <>Confirmed — We are booking your delivery (~2 weeks)</> };
     case "dispatched":
@@ -125,9 +134,9 @@ export function projectMeta(p: ApiProjectSummary): RecordMeta {
     case "under_review":
       return { pill: "Being priced", tone: "work", needsYou: false, next: <>We are reviewing your specification — no action needed</> };
     case "needs_information":
-      return { pill: "Needs your answer", tone: "attn", needsYou: true, next: <>answer our question so pricing can continue</> };
+      return { pill: "Needs your answer", tone: "attn", needsYou: true, next: <>answer our question so pricing can continue</>, action: { cta: "Reply now", when: "Pauses pricing", rank: 4 } };
     case "quote_issued":
-      return { pill: `Quote ready${p.issued_revision_no ? ` · R${p.issued_revision_no}` : ""}`, tone: "attn", needsYou: true, next: <>review &amp; accept, then a {b("50% deposit")} of {b(money(depositOf(p.issued_total)))} starts your order</> };
+      return { pill: `Quote ready${p.issued_revision_no ? ` · R${p.issued_revision_no}` : ""}`, tone: "attn", needsYou: true, next: <>review &amp; accept, then a {b("50% deposit")} of {b(money(depositOf(p.issued_total)))} starts your order</>, action: { cta: "Review & accept", when: "Your decision", rank: 5 } };
     case "expired":
       return { pill: "Expired", tone: "mute", needsYou: false, next: <>This quote expired — start a new one or contact us</> };
     default: // accepted / closed — the project is Ordered; the order row carries it

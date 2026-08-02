@@ -16,6 +16,7 @@ await build({
   stdin: {
     contents: `
       export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel } from ${p("src/data/configurator.ts")};
+      export { hydrateQuoteItems } from ${p("src/data/api.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData } from ${p("src/data/catalogueQuery.ts")};
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
@@ -40,6 +41,23 @@ test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(r
 // A real, fully-specified window line for pricing.
 const slug = "amj80-series-sliding-window";
 const fullOptions = { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" };
+
+test("API hydration preserves nested composite segments", () => {
+  const segments = [
+    { id: "seg-a", productSlug: "amj100t-fixed-window", width: "1750", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 500, options: {}, status: "Ready" },
+    { id: "seg-b", productSlug: "amj100t-fixed-window", width: "1750", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 500, options: {}, status: "Ready" },
+  ];
+  const [item] = M.hydrateQuoteItems([{
+    id: "server-w2", code: "W2", productSlug: "amj100t-fixed-window", location: "Kitchen",
+    width: "3500", height: "700", options: {}, qty: 1, status: "Ready", lineTotal: 1000,
+    origin: "ai", aiPriced: true, review: null, segments,
+  }], 9000);
+
+  assert.equal(item.id, 9000);
+  assert.equal(item.serverId, "server-w2");
+  assert.deepEqual(item.segments, segments, "the API-to-UI boundary must not flatten a composite");
+  assert.notEqual(item.segments, segments, "the editable client receives its own segment array");
+});
 
 test("exact pricing option IDs are canonical, complete, and exclude technical metadata", () => {
   assert.deepEqual(M.pricingOptionSlugsFromOptions({

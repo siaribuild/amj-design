@@ -87,6 +87,13 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
           <ContinueProject draft={draft} go={go} />
 
           {/* Needs your attention */}
+          {/* SCAFFOLD (needs-you-filter): this whole gate section + GateCard + GATE_ICON +
+              deriveGates + openTarget + jumpToAttention RETIRE on completion; the "Needs you"
+              tab (added to ProjectsSection) replaces it. Kept live for now so the scaffold is
+              additive and the dashboard is unbroken during review. Completion also: lift the
+              ProjectsSection tab state so "Need you now" selects the tab (replacing this
+              section's #needs-your-attention scroll target), auto-select the tab when
+              needsYouCount > 0, and re-source the greeting/summary count off `action` presence. */}
           <section id="needs-your-attention" className="mb-[26px] scroll-mt-24">
             <div className="flex items-center gap-2.5 mb-3.5">
               <h2 className="text-[1.15rem] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Needs your attention</h2>
@@ -116,8 +123,11 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
 
 // The merged home's list: the full project list with phase-filter tabs (pipeline
 // vs order-book survives as a VIEW, not a separate destination).
-type ProjectsTab = "all" | "quotes" | "on-order" | "completed";
+type ProjectsTab = "needs-you" | "all" | "quotes" | "on-order" | "completed";
 const PROJECT_TABS: { id: ProjectsTab; label: string }[] = [
+  // SCAFFOLD (needs-you-filter): the "Needs you" tab is the future home of the
+  // "Needs your attention" gate stack, as an enriched filter of THIS one list.
+  { id: "needs-you", label: "Needs you" },
   { id: "all", label: "All" },
   { id: "quotes", label: "Active quotes" },
   { id: "on-order", label: "On order" },
@@ -127,6 +137,9 @@ const PROJECT_TABS: { id: ProjectsTab; label: string }[] = [
 function ProjectsSection({ projects, orders, setPage, onOpenRecord }: {
   projects: ApiProjectSummary[]; orders: ApiOrder[]; setPage: (p: Page) => void; onOpenRecord: OpenRecord;
 }) {
+  // SCAFFOLD (needs-you-filter): default stays "all" for now — the old "Needs your
+  // attention" section still renders above. On completion, retire that section and
+  // auto-select this tab when needsYouCount > 0 (via lifted state, see plan).
   const [tab, setTab] = useState<ProjectsTab>("all");
   // The draft (cart) lives in its own ContinueProject card at the top, not in the
   // history list — so it is excluded here and appears exactly once on the page.
@@ -134,11 +147,18 @@ function ProjectsSection({ projects, orders, setPage, onOpenRecord }: {
   const activeQuotes = allQuotes.filter((p) => p.status_customer !== "expired");
   const onOrder = orders.filter((o) => !["delivered", "after_sales"].includes(o.stage));
   const completed = orders.filter((o) => ["delivered", "after_sales"].includes(o.stage));
+  // "Needs you" = the records carrying a pending action (== the six gates). Keyed on
+  // `action` presence, NOT needsYou, so the draft is excluded exactly as the gate
+  // stack excluded it.
+  const needsYouProjects = allQuotes.filter((p) => projectMeta(p).action);
+  const needsYouOrders = orders.filter((o) => orderMeta(o).action);
   const counts: Record<ProjectsTab, number> = {
+    "needs-you": needsYouProjects.length + needsYouOrders.length,
     all: allQuotes.length + orders.length, quotes: activeQuotes.length,
     "on-order": onOrder.length, completed: completed.length,
   };
-  const view = tab === "quotes" ? { p: activeQuotes, o: [] as ApiOrder[] }
+  const view = tab === "needs-you" ? { p: needsYouProjects, o: needsYouOrders }
+    : tab === "quotes" ? { p: activeQuotes, o: [] as ApiOrder[] }
     : tab === "on-order" ? { p: [] as ApiProjectSummary[], o: onOrder }
     : tab === "completed" ? { p: [] as ApiProjectSummary[], o: completed }
     : { p: allQuotes, o: orders };
@@ -157,11 +177,16 @@ function ProjectsSection({ projects, orders, setPage, onOpenRecord }: {
         {PROJECT_TABS.map((t) => (
           <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
             className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors cursor-pointer ${tab === t.id ? "border-sage text-ink font-medium" : "border-transparent text-quiet hover:text-ink"}`}>
-            {t.label}{counts[t.id] > 0 && <span className="ml-1.5 text-[11px] text-quiet" style={{ fontFamily: "'DM Mono', monospace" }}>{counts[t.id]}</span>}
+            {t.label}{counts[t.id] > 0 && (
+              // Amber count badge for the action console; the quiet number for browse tabs.
+              t.id === "needs-you"
+                ? <span className="ml-1.5 text-[11px] text-white px-[6px]" style={{ fontFamily: "'DM Mono', monospace", background: TONE.attn.text }}>{counts[t.id]}</span>
+                : <span className="ml-1.5 text-[11px] text-quiet" style={{ fontFamily: "'DM Mono', monospace" }}>{counts[t.id]}</span>
+            )}
           </button>
         ))}
       </div>
-      <UnifiedList projects={view.p} orders={view.o} setPage={setPage} onOpenRecord={onOpenRecord} emptyNote={emptyNote} />
+      <UnifiedList projects={view.p} orders={view.o} setPage={setPage} onOpenRecord={onOpenRecord} emptyNote={emptyNote} enriched={tab === "needs-you"} />
     </section>
   );
 }
@@ -264,18 +289,22 @@ function GateCard({ gate, onOpen }: { gate: Gate; onOpen: () => void }) {
 }
 
 // Unified rows — orders and quote-stage projects in one list, attention first.
-export function UnifiedList({ projects, orders, setPage, onOpenRecord, emptyNote }: {
+export function UnifiedList({ projects, orders, setPage, onOpenRecord, emptyNote, enriched }: {
   projects: ApiProjectSummary[]; orders: ApiOrder[];
   setPage: (p: Page) => void; onOpenRecord: OpenRecord; emptyNote?: ReactNode;
+  // SCAFFOLD (needs-you-filter): when true (the Needs-you tab), action rows carry the
+  // per-action CTA chip + consequence + amber spine and sort by urgency rank. Every
+  // other tab passes false and renders standard plain rows — no tab mixes the two.
+  enriched?: boolean;
 }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  type Row = { key: string; needsYou: boolean; updated: string; node: ReactNode };
+  type Row = { key: string; needsYou: boolean; updated: string; rank: number; node: ReactNode };
   const rows: Row[] = [];
 
   for (const o of orders) {
     const m = orderMeta(o);
     rows.push({
-      key: `o-${o.id}`, needsYou: m.needsYou, updated: o.createdAt,
+      key: `o-${o.id}`, needsYou: m.needsYou, updated: o.createdAt, rank: m.action?.rank ?? 99,
       node: (
         // The project ref stays the anchor across the whole life; the order number
         // is acceptance-time meta (it lives on invoices + payment references).
@@ -283,6 +312,7 @@ export function UnifiedList({ projects, orders, setPage, onOpenRecord, emptyNote
           pill={<StatusPill tone={m.tone}>{m.pill}</StatusPill>}
           next={<>{m.needsYou && <span className="font-semibold" style={{ color: TONE.attn.text }}>Next: you</span>}{m.needsYou ? " — " : ""}{m.next}</>}
           value={money(o.total)} meta={`${o.orderNo} · ${o.lineCount ?? "—"} lines · ${paymentNote(o)}`}
+          cta={enriched ? m.action?.cta : undefined} when={enriched ? m.action?.when : undefined}
           onOpen={() => onOpenRecord({ orderId: o.id })} />
       ),
     });
@@ -291,20 +321,35 @@ export function UnifiedList({ projects, orders, setPage, onOpenRecord, emptyNote
     const m = projectMeta(p);
     const draft = p.status_customer === "draft";
     rows.push({
-      key: `p-${p.id}`, needsYou: m.needsYou, updated: p.updated_at,
+      key: `p-${p.id}`, needsYou: m.needsYou, updated: p.updated_at, rank: m.action?.rank ?? 99,
       node: (
         <RecordRow key={`p-${p.id}`} refText={draft ? "DRAFT" : (p.public_ref ?? "PROJECT")} title={p.title ?? "My Project"} draft={draft}
           pill={<StatusPill tone={m.tone}>{m.pill}</StatusPill>}
           next={<>{m.needsYou && <span className="font-semibold" style={{ color: TONE.attn.text }}>Next: you</span>}{m.needsYou ? " — " : ""}{m.next}</>}
           value={p.issued_total != null ? money(p.issued_total) : "—"}
           meta={`${p.item_count} line${p.item_count === 1 ? "" : "s"}${draft && p.draft_total ? ` · est. ${money(p.draft_total)}` : ""}`}
+          cta={enriched ? m.action?.cta : undefined} when={enriched ? m.action?.when : undefined}
           onOpen={() => draft ? go("quote") : onOpenRecord({ projectId: p.id, status: p.status_customer })} />
       ),
     });
   }
-  rows.sort((a, b) => Number(b.needsYou) - Number(a.needsYou) || b.updated.localeCompare(a.updated));
+  // Needs-you tab: most time-critical action first (rank), preserving the retired
+  // gate stack's order. Browse tabs keep the needsYou-first-then-recent sort.
+  if (enriched) rows.sort((a, b) => a.rank - b.rank || b.updated.localeCompare(a.updated));
+  else rows.sort((a, b) => Number(b.needsYou) - Number(a.needsYou) || b.updated.localeCompare(a.updated));
 
   if (rows.length === 0) {
+    // Empty Needs-you tab reuses the "all caught up" reassurance (relocated from the
+    // retiring attention section on completion); other empty tabs keep their note.
+    if (enriched) {
+      return (
+        <div className="card p-[18px] flex flex-col gap-[9px]" style={{ borderLeft: `3px solid ${TONE.pos.text}` }}>
+          <span className="w-[34px] h-[34px] grid place-items-center border" style={{ color: TONE.pos.text, borderColor: TONE.pos.bd, background: TONE.pos.bg }}><CheckCircle className="w-[18px] h-[18px]" /></span>
+          <h3 className="text-[15px] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>You're all caught up</h3>
+          <p className="text-[12.5px] text-body leading-relaxed">Nothing needs you right now — we'll email you and show it here the moment something does.</p>
+        </div>
+      );
+    }
     return (
       <div className="card p-[18px]">
         <h3 className="text-sm font-semibold text-ink mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Nothing here yet</h3>
@@ -325,12 +370,18 @@ const paymentNote = (o: ApiOrder) => {
   return o.stageLabel.toLowerCase();
 };
 
-function RecordRow({ refText, title, pill, next, value, meta, draft, onOpen }: {
-  refText: string; title: string; pill: ReactNode; next: ReactNode; value: string; meta: string; draft?: boolean; onOpen: () => void;
+function RecordRow({ refText, title, pill, next, value, meta, draft, cta, when, onOpen }: {
+  refText: string; title: string; pill: ReactNode; next: ReactNode; value: string; meta: string;
+  draft?: boolean; cta?: string; when?: string; onOpen: () => void;
 }) {
+  // SCAFFOLD (needs-you-filter): an ENRICHED (action) row = the plain row skeleton +
+  // an amber left spine + an active right rail (CTA chip + consequence) replacing the
+  // passive value/meta. Same geometry as a plain row so the list still scans.
+  const enriched = !!cta;
   return (
     <button onClick={onOpen}
-      className={`w-full text-left border border-black/10 px-5 py-[18px] grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-x-[18px] gap-y-3 items-center transition-colors cursor-pointer hover:border-sage-light ${draft ? "bg-[repeating-linear-gradient(-45deg,transparent,transparent_9px,rgba(0,0,0,.014)_9px,rgba(0,0,0,.014)_10px)] bg-white" : "bg-white"}`}>
+      className={`w-full text-left border border-black/10 px-5 py-[18px] grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-x-[18px] gap-y-3 items-center transition-colors cursor-pointer hover:border-sage-light ${draft ? "bg-[repeating-linear-gradient(-45deg,transparent,transparent_9px,rgba(0,0,0,.014)_9px,rgba(0,0,0,.014)_10px)] bg-white" : "bg-white"}`}
+      style={enriched ? { borderLeft: `3px solid ${TONE.attn.text}` } : undefined}>
       <span className="w-[38px] h-[38px] border border-black/10 grid place-items-center flex-shrink-0">
         <WindowMark size={18} color={draft ? "var(--quietest)" : SAGE} />
       </span>
@@ -343,9 +394,20 @@ function RecordRow({ refText, title, pill, next, value, meta, draft, onOpen }: {
         <span className="block text-[13.5px] text-body mt-[5px]">{next}</span>
       </span>
       <span className="col-span-2 sm:col-span-1 flex sm:flex-col items-center sm:items-end justify-between gap-2 border-t sm:border-t-0 border-black/[0.07] pt-3 sm:pt-0">
-        <span className="text-[15px] font-medium text-ink" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{value}</span>
-        <span className="text-[11.5px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{meta}</span>
-        <ChevronRight className="hidden sm:block w-[18px] h-[18px] text-sage" />
+        {enriched ? (
+          // A styled span-chip, NOT a nested <button> — the row's own onOpen is the
+          // single click target (a11y-safe; mirrors the retiring GateCard's chip).
+          <>
+            <span className="inline-flex items-center gap-2 bg-sage text-white text-[13px] font-medium px-3.5 py-[9px] whitespace-nowrap">{cta}</span>
+            {when && <span className="text-[11px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{when}</span>}
+          </>
+        ) : (
+          <>
+            <span className="text-[15px] font-medium text-ink" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{value}</span>
+            <span className="text-[11.5px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{meta}</span>
+            <ChevronRight className="hidden sm:block w-[18px] h-[18px] text-sage" />
+          </>
+        )}
       </span>
     </button>
   );

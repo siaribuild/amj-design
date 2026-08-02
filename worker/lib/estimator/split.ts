@@ -15,6 +15,7 @@
 // mullion/jamb allowances. Widths partition the opening exactly; the reviewer
 // owns the engineering.
 import type { OpeningInput } from "./types";
+import type { EnergyRequirementV1 } from "../ai/schema";
 
 // Operation vocabulary the comment parser recognises. Fixed is the passive lite
 // used to fill the remainder around operable units.
@@ -35,10 +36,19 @@ export interface SplitUnitHint {
   count: number;
   /** Explicit per-unit width from the comment, when given. */
   widthMm: number | null;
+  /** Exact height and source facts exist on report-defined components. */
+  heightMm?: number | null;
+  ref?: string | null;
+  requirement?: EnergyRequirementV1 | null;
+  performanceTypeId?: string | null;
+  performanceDescription?: string | null;
+  glazingNote?: string | null;
 }
 export interface SplitHint {
   units: SplitUnitHint[];
   raw: string;
+  source?: "schedule_comment" | "energy_report";
+  axis?: "vertical" | "horizontal";
 }
 
 /** Parse a schedule COMMENT into a split hint, or null when it describes no split.
@@ -85,12 +95,17 @@ export interface ProposedSegment {
   operation: string;
   widthMm: number;
   heightMm: number;
+  ref?: string | null;
+  requirement?: EnergyRequirementV1 | null;
+  performanceTypeId?: string | null;
+  performanceDescription?: string | null;
+  glazingNote?: string | null;
 }
 export interface SplitProposal {
   segments: ProposedSegment[];
   /** Always 'vertical' here: coupled units partition the WIDTH, full height each. */
   axis: "vertical" | "horizontal";
-  basis: "schedule_comment" | "learned" | "default_even";
+  basis: "energy_report" | "schedule_comment" | "learned" | "default_even";
   /** ALWAYS true — a proposed split is a starting point, never a final answer. */
   reviewRequired: true;
   note: string;
@@ -108,6 +123,25 @@ export function shouldPropose(opening: { widthMm?: number | null }, hint: SplitH
 /** Place operable units symmetrically with a fixed lite filling the remainder:
  *  2 awnings → awning | fixed | awning. Odd counts keep the fixed central. */
 function layoutFromHint(hint: SplitHint, totalWidthMm: number, heightMm: number, fallbackOp: string): ProposedSegment[] | null {
+  // An explicit report component schedule owns row order, operations and each
+  // component's thermal facts. Architectural documents own the total opening
+  // dimensions. Preserve primary-operation sizes where possible and absorb a
+  // size disagreement into supplementary components (for example the fixed lite
+  // in awning + fixed + awning).
+  if (hint.source === "energy_report") {
+    const expanded = hint.units.flatMap((unit) => Array.from({ length: Math.max(1, unit.count) }, () => ({
+      operation: unit.operation || fallbackOp,
+      widthMm: unit.widthMm ?? 0,
+      heightMm: unit.heightMm ?? heightMm,
+      ref: unit.ref ?? null,
+      requirement: unit.requirement ?? null,
+      performanceTypeId: unit.performanceTypeId ?? null,
+      performanceDescription: unit.performanceDescription ?? null,
+      glazingNote: unit.glazingNote ?? null,
+    })));
+    if (expanded.length < 2 || expanded.some((segment) => segment.widthMm <= 0 || segment.heightMm <= 0)) return null;
+    return fitReportComponentsToOpening(expanded, hint.axis ?? "vertical", totalWidthMm, heightMm, fallbackOp);
+  }
   // Flatten the hint's operable units (respecting count).
   const operable: { operation: string; widthMm: number | null }[] = [];
   for (const u of hint.units) {
@@ -140,6 +174,69 @@ function layoutFromHint(hint: SplitHint, totalWidthMm: number, heightMm: number,
   return operable.map((u, i) => ({ operation: u.operation === fallbackOp || u.operation ? u.operation : fallbackOp, widthMm: even[i], heightMm }));
 }
 
+/** Allocate a positive integer total proportionally, preserving the exact sum. */
+function proportionalParts(source: number[], target: number): number[] {
+  if (!source.length) return [];
+  if (target < source.length) return evenWidths(target, source.length);
+  const sourceTotal = source.reduce((sum, value) => sum + Math.max(0, value), 0);
+  if (sourceTotal <= 0) return evenWidths(target, source.length);
+  const distributable = target - source.length;
+  const shares = source.map((value, index) => {
+    const exact = distributable * Math.max(0, value) / sourceTotal;
+    return { index, whole: Math.floor(exact), fraction: exact - Math.floor(exact) };
+  });
+  const out = shares.map((share) => 1 + share.whole);
+  let remainder = target - out.reduce((sum, value) => sum + value, 0);
+  for (const share of [...shares].sort((a, b) => b.fraction - a.fraction || a.index - b.index)) {
+    if (remainder-- <= 0) break;
+    out[share.index]++;
+  }
+  return out;
+}
+
+function fitReportComponentsToOpening(
+  segments: ProposedSegment[],
+  axis: "vertical" | "horizontal",
+  openingWidthMm: number,
+  openingHeightMm: number,
+  fallbackOp: string,
+): ProposedSegment[] {
+  const along = axis === "vertical" ? "widthMm" : "heightMm";
+  const across = axis === "vertical" ? "heightMm" : "widthMm";
+  const totalAlong = axis === "vertical" ? openingWidthMm : openingHeightMm;
+  const totalAcross = axis === "vertical" ? openingHeightMm : openingWidthMm;
+  const primary = normOp(fallbackOp) ?? fallbackOp.trim().toLowerCase();
+  const sourceAlong = segments.map((segment) => segment[along]);
+  const supplementary = segments
+    .map((segment, index) => ({ index, operation: normOp(segment.operation) ?? segment.operation.trim().toLowerCase() }))
+    .filter((segment) => segment.operation !== primary)
+    .map((segment) => segment.index);
+
+  let fittedAlong = [...sourceAlong];
+  const sourceTotal = sourceAlong.reduce((sum, value) => sum + value, 0);
+  if (sourceTotal !== totalAlong) {
+    const supplementarySet = new Set(supplementary);
+    const preservedPrimaryTotal = sourceAlong.reduce((sum, value, index) =>
+      sum + (supplementarySet.has(index) ? 0 : value), 0);
+    const supplementaryTarget = totalAlong - preservedPrimaryTotal;
+    if (supplementary.length > 0 && supplementaryTarget >= supplementary.length) {
+      const adjusted = proportionalParts(supplementary.map((index) => sourceAlong[index]), supplementaryTarget);
+      supplementary.forEach((index, position) => { fittedAlong[index] = adjusted[position]; });
+    } else {
+      // If the opening is too small to retain the primary components, every
+      // component participates proportionally rather than producing zero or
+      // negative supplementary geometry.
+      fittedAlong = proportionalParts(sourceAlong, totalAlong);
+    }
+  }
+
+  return segments.map((segment, index) => ({
+    ...segment,
+    [along]: fittedAlong[index],
+    [across]: totalAcross,
+  }));
+}
+
 /** Even integer widths that sum EXACTLY to total (remainder to the last). */
 export function evenWidths(totalMm: number, count: number): number[] {
   const base = Math.floor(totalMm / count);
@@ -166,10 +263,12 @@ export function proposeSplit(
     if (segments && segments.length >= 2) {
       return {
         segments,
-        axis: "vertical",
-        basis: "schedule_comment",
+        axis: hint.axis ?? "vertical",
+        basis: hint.source === "energy_report" ? "energy_report" : "schedule_comment",
         reviewRequired: true,
-        note: `Proposed from the schedule comment "${hint.raw}" — confirm the split at review.`,
+        note: hint.source === "energy_report"
+          ? `Built from the energy report's authoritative component schedule (${hint.raw}) — confirm document discrepancies at review.`
+          : `Proposed from the schedule comment "${hint.raw}" — confirm the split at review.`,
       };
     }
   }

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
 test("catalogue query normalization and runtime hydration", async () => {
@@ -126,5 +127,32 @@ test("catalogue query normalization and runtime hydration", async () => {
     assert.equal(catalogue.colorbondColourOptions[0].name, "Test");
   } finally {
     if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir);
+  }
+});
+
+test("all fixed products inherit the approved AMJ80ST range and have exact private rate-card keys", async () => {
+  const { build: buildWers } = await import(pathToFileURL(join(projectRoot, "scripts/catalogue/import-wers.mjs")).href);
+  const frames = [
+    "AMJ100T Fixed Window", "AMJ80ST Fixed Window", "AMJ100L Fixed Window",
+    "AMJ67T Fixed Window", "AMJ150 Fixed Window",
+  ];
+  const rows = frames.map((frame, index) => ({
+    frame, glazing: `DG test ${index}`, spec: "DG", glassType: "clear",
+    windowId: `WERS-${index}`, uValue: 2, shgc: 0.5,
+    heatingStars: 1, coolingStars: 1, heatingPct: 0, coolingPct: 0,
+    tvw: 0.6, airInfiltration: 0,
+  }));
+  const out = buildWers(rows);
+  assert.equal(out.fixedProducts.length, 5);
+  for (const product of out.fixedProducts) {
+    assert.deepEqual(product.dimensionRule, {
+      minWidthMm: 400, maxWidthMm: 3000, minHeightMm: 400, maxHeightMm: 3000,
+    });
+    assert.equal(product.pricingRef, product.slug.current);
+  }
+
+  const migration = await readFile(join(projectRoot, "migrations/0040_fixed_product_rate_cards.sql"), "utf8");
+  for (const product of out.fixedProducts) {
+    assert.match(migration, new RegExp(`'${product.slug.current.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`));
   }
 });

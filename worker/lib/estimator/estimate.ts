@@ -14,6 +14,8 @@ import { publishAiProposal, type ProposalSelection } from "../ai/proposal";
 import { splitLine, type SegmentSpec } from "../composite";
 import { proposeSplit, type SplitHint } from "./split";
 import { resolveScheduleType } from "../../../src/data/scheduleMatch";
+import { defaultOptions } from "../../../src/data/configurator";
+import { getProductBySlug } from "../../../src/data/catalogue";
 
 // Schedule TYPE text → structured operation (the delivered parser records the raw
 // schedule term; the estimator needs the operation vocabulary the catalogue uses).
@@ -131,6 +133,7 @@ export interface EstimateSummary {
   selected: number;
   appliedToCart: number;
   lines: { openingId: string; externalRef: string | null; status: string; selectedProduct: string | null; total: number | null }[];
+  reviewWarnings: string[];
 }
 
 export async function runProjectEstimate(env: Env, projectId: string, proposal?: {
@@ -240,9 +243,10 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
     appliedToCart = published.appliedLines;
     // WS5: after the lines exist, materialise a review-flagged composite for any
     // opening that the schedule comment says to split, or that is oversize.
-    await materialiseSplits(env, { repo, priceFn, historical, proposalLines, splitHints: opts?.splitHints ?? new Map() });
+    const splitWarnings = await materialiseSplits(env, { repo, priceFn, historical, proposalLines, splitHints: opts?.splitHints ?? new Map() });
+    return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: splitWarnings };
   }
-  return { openings: openings.length, selected: selectedCount, appliedToCart, lines };
+  return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: [] };
 }
 
 /** For each opening with a split intent (comment or oversize), select a product
@@ -256,18 +260,32 @@ async function materialiseSplits(env: Env, ctx: {
   historical: Parameters<typeof selectForOpening>[3];
   proposalLines: ProposalSelection[];
   splitHints: Map<string, SplitHint>;
-}): Promise<void> {
+}): Promise<string[]> {
+  const reviewWarnings: string[] = [];
   for (const pl of ctx.proposalLines) {
     const parent = pl.result.selected;
-    if (!pl.quoteLineId || !parent) continue;
     const hint = (pl.externalRef && ctx.splitHints.get(pl.externalRef)) || null;
-    const oversize = (parent.outcome.filters ?? []).some((f) => f.filter === "dimensions" && f.severity === "warning");
+    const oversize = !!parent && (parent.outcome.filters ?? []).some((f) => f.filter === "dimensions" && f.severity === "warning");
     if (!hint && !oversize) continue;
+    const quoteLineId = pl.quoteLineId ?? (await env.DB.prepare(
+      "SELECT quote_line_id FROM opening_instance WHERE id=?",
+    ).bind(pl.openingId).first<{ quote_line_id: string | null }>())?.quote_line_id ?? null;
+    if (!quoteLineId) continue;
 
     // The default split uses the product's max width so a >2× opening becomes 3+
     // units, not two still-oversize halves.
-    const proposal = proposeSplit(pl.opening, hint, { maxWidthMm: parent.candidate.dimensionRule?.maxWidthMm ?? null });
+    const proposal = proposeSplit(pl.opening, hint, { maxWidthMm: parent?.candidate.dimensionRule?.maxWidthMm ?? null });
     if (proposal.segments.length < 2) continue;
+
+    const parentRow = await env.DB.prepare("SELECT options_json FROM quote_line WHERE id=?")
+      .bind(quoteLineId).first<{ options_json: string | null }>();
+    let inheritedOptions: Record<string, string> = {};
+    try {
+      const parsed = JSON.parse(parentRow?.options_json ?? "{}");
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        inheritedOptions = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value ?? "")]));
+      }
+    } catch { /* unreadable options are absent */ }
 
     const section = pl.opening.family === "doors" ? "door" : "window";
     const specs: SegmentSpec[] = [];
@@ -275,31 +293,87 @@ async function materialiseSplits(env: Env, ctx: {
       // Resolve the tradie term (e.g. "fixed") to a manufacturer operation via the
       // Sanity Family → Schedule Aliases — "fixed" is an alias on Sliding Window,
       // so a fixed lite is a sliding-window frame, not an unknown operation.
-      const operationType = resolveScheduleType(section, seg.operation).operationType ?? seg.operation;
-      const sub = { ...pl.opening, externalRef: null, operationType, widthMm: seg.widthMm, heightMm: seg.heightMm };
+      const operationType = hint?.source === "energy_report"
+        ? seg.operation
+        : resolveScheduleType(section, seg.operation).operationType ?? seg.operation;
+      const requirement = seg.requirement ? {
+        maxUValue: seg.requirement.maxUValue,
+        minShgc: seg.requirement.shgcMin,
+        maxShgc: seg.requirement.shgcMax,
+      } : pl.opening.requirements;
+      const glazingDescription = seg.performanceDescription ?? seg.glazingNote ?? pl.opening.scheduleRequirements?.glassDescription ?? null;
+      const sub = {
+        ...pl.opening,
+        externalRef: seg.ref ?? null,
+        operationType,
+        widthMm: seg.widthMm,
+        heightMm: seg.heightMm,
+        requirements: requirement,
+        thermalContext: {
+          ...(pl.opening.thermalContext ?? {}),
+          requirementBasis: seg.requirement ? "explicit_energy_report" as const : pl.opening.thermalContext?.requirementBasis,
+        },
+        scheduleRequirements: {
+          ...(pl.opening.scheduleRequirements ?? {}),
+          glassDescription: glazingDescription,
+          doubleGlazed: glazingDescription && /\bDG\b|double\s+glaz/i.test(glazingDescription)
+            ? true
+            : pl.opening.scheduleRequirements?.doubleGlazed ?? null,
+        },
+      };
       const sel = await selectForOpening(sub, ctx.repo, ctx.priceFn, ctx.historical);
+      const chosen = sel.selected;
+      if (!chosen && hint?.source === "energy_report") {
+        specs.length = 0;
+        break;
+      }
+      const productSlug = chosen?.candidate.slug ?? parent?.candidate.slug ?? "";
+      if (!productSlug) { specs.length = 0; break; }
+      const variant = chosen?.selectedVariant ?? null;
+      const displayProduct = getProductBySlug(productSlug);
+      const options = {
+        ...(displayProduct ? defaultOptions(displayProduct) : {}),
+        ...inheritedOptions,
+        glassDescription: glazingDescription ?? "",
+        performanceVariantId: variant?.variantId ?? "",
+        frameTechnology: variant?.frameTechnology ?? "unknown",
+        glazing: variant?.glazingOptionSlug ?? "",
+      };
       specs.push({
         widthMm: seg.widthMm,
         heightMm: seg.heightMm,
         // The segment's own best-fit product; only if the alias resolves to nothing
         // does it fall back to the parent's real product (never a fabricated one).
-        productSlug: sel.selected?.candidate.slug ?? parent.candidate.slug,
+        productSlug,
+        options,
+        selectedVariantId: variant?.variantId ?? null,
+        resolvedBand: requirement ? {
+          maxUValue: requirement.maxUValue ?? null,
+          minShgc: requirement.minShgc ?? null,
+          maxShgc: requirement.maxShgc ?? null,
+          shgcTarget: seg.requirement?.shgcTarget ?? null,
+        } : null,
+        requirementBasis: seg.requirement ? "explicit_energy_report" : proposal.basis,
+        thermalReview: !!chosen && (chosen.outcome.filters ?? []).some((filter) => filter.filter === "energy" && filter.severity === "warning"),
       });
     }
+    if (specs.length !== proposal.segments.length) continue;
 
-    const res = await splitLine(env, { parentId: pl.quoteLineId, segments: specs, axis: proposal.axis, origin: "ai" });
+    const res = await splitLine(env, { parentId: quoteLineId, segments: specs, axis: proposal.axis, origin: "ai" });
     if (!res.ok) continue;
 
-    // Per-segment band snapshot (migration 0036): the SAME resolved band across
-    // segments (same glass by default), always review-flagged.
-    const req = pl.opening.requirements ?? {};
+    const maxWidth = parent?.candidate.dimensionRule?.maxWidthMm ?? null;
+    const warning = proposal.basis === "energy_report"
+      ? `${pl.externalRef ?? "Opening"}: built as ${proposal.segments.length} report-defined components; confirm the document reconciliation during human review.`
+      : `${pl.externalRef ?? "Opening"}: ${pl.opening.widthMm ?? "stated"} mm width exceeds the selected product${maxWidth ? `'s ${maxWidth} mm maximum` : " range"}; proposed as ${proposal.segments.length} joined units for human review.`;
+    reviewWarnings.push(warning);
     await env.DB.prepare(
-      `UPDATE quote_line SET segment_requirements_json=?, segment_requirement_basis=?, segment_thermal_review=1
-        WHERE parent_line_id=?`,
+      `UPDATE quote_line SET status='technical_review',
+         review_json=json_patch(COALESCE(review_json,'{}'), ?), updated_at=datetime('now')
+       WHERE id=?`,
     ).bind(
-      JSON.stringify({ maxUValue: req.maxUValue ?? null, minShgc: req.minShgc ?? null, maxShgc: req.maxShgc ?? null }),
-      proposal.basis,
-      pl.quoteLineId,
-    ).run().catch(() => { /* band snapshot is advisory; never fail the run on it */ });
+      JSON.stringify({ composite: warning }), quoteLineId,
+    ).run();
   }
+  return [...new Set(reviewWarnings)];
 }

@@ -20,8 +20,10 @@ import type { Env } from "../../types";
 // 2026-07-31.2: schedule extractor emits a structured `split` from the free-text
 // comment (promptVersion v3) and the pipeline proposes a review-flagged composite
 // split. Bump so the stage idempotency key moves with the new contract.
-export const PIPELINE_VERSION = "2026-07-31.2";
-export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.0";
+// 2026-08-02.1: energy-report component rows stay separate, report geometry and
+// operation win over plan values, and reconciliation warnings reach review.
+export const PIPELINE_VERSION = "2026-08-02.1";
+export const BUILDING_MODEL_SCHEMA_VERSION = "building-model/1.1";
 
 // §13.1/§13.2 model routing. SINGLE-MODEL POLICY (owner decision 2026-07-25):
 // everything runs on the primary model; the escalation model is configured but

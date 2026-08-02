@@ -163,9 +163,19 @@ export interface OpeningV1 {
     flyscreen: boolean | null;
   };
   shading: { horizontalProjectionMm: number | null; verticalFeature: boolean | null; source: string | null } | null;
-  // SCAFFOLD WS2 (thermal rework): a single band cannot represent a composite's
-  // awning-lite vs fixed-lite bands. Add a per-component representation
-  // (components[] of {ref, elementType, band}) alongside this scalar. Plan §2/WS2.
+  /** Report-defined composite rows. Each component retains its own operation,
+   * geometry, performance type and thermal band; these are never collapsed into
+   * one impossible parent SHGC range. */
+  thermalComponents?: {
+    ref: string;
+    operationType: string | null;
+    widthMm: number;
+    heightMm: number;
+    requirement: EnergyRequirementV1;
+    performanceTypeId: string | null;
+    performanceDescription: string | null;
+    glazingNote: string | null;
+  }[];
   thermalRequirement: EnergyRequirementV1 | null;
   evidence: EvidenceItemV1[];
   confidence: Record<string, number>;   // §15.1 per-dimension (tag, dimensions, …)

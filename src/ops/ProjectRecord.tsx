@@ -723,7 +723,10 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
   };
   editable: boolean; busy: boolean;
   policy?: OpsCompositePolicy;
-  siblings: { code: string }[];
+  /** `id` is needed as well as `code`: the set includes the line being edited,
+   *  and it has to be excluded from its own duplicate-code check by IDENTITY —
+   *  excluding by code would also hide a genuine collision. */
+  siblings: { id: string; code: string }[];
   onSaved: () => void; onError: (m: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -742,7 +745,13 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
   const axis: "vertical" | "horizontal" = line.compositeAxis === "horizontal" ? "horizontal" : "vertical";
   // ItemForm reads `items` only — for the duplicate-code check. The record's own
   // lines ARE the sibling set, so a reviewer renaming W01 to W02 is told.
+  //
+  // The set includes this line, so it must also say WHICH one is being edited:
+  // without that the form collides with its own code, disables "Save line", and
+  // reports "Item ID already exist" against a code nobody touched. Identity, not
+  // code — two genuinely duplicated codes must still be caught.
   const quoteLike = { items: siblings.map((s, i) => ({ id: i, code: s.code })) } as never;
+  const selfIndex = siblings.findIndex((s) => s.id === line.id);
 
   const fail = (e: unknown, fallback: string) =>
     onError(e instanceof OpsApiError ? (ACTION_ERRORS[e.code] ?? fallback) : fallback);
@@ -968,6 +977,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
           <ItemForm
             key={configurationKey || "line-editor"}
             quote={quoteLike}
+            excludeId={selfIndex}
             priceFn={opsLinePricePreview(line.id)}
             submitLabel={saving ? "Saving…" : "Save line"}
             seed={{
@@ -1033,6 +1043,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
               </p>
               <ItemForm
                 scope="unit"
+                unitAxis={axis}
                 quote={quoteLike}
                 priceFn={opsLinePricePreview(line.id)}
                 submitLabel={saving ? "Saving…" : `Save unit ${i + 1}`}
