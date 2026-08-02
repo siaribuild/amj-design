@@ -2,19 +2,18 @@
 // CUSTOMER DASHBOARD — the attention-first hub (spec §4).
 //
 // Answers "what needs me right now?" first: greeting → summary strip (numbers only
-// where they drive action) → the priority-ordered gate stack → the unified
-// projects & orders list. Empty states guide, never dead-end (spec §8).
+// where they drive action) → the in-progress project (cart) → the unified projects
+// & orders list, whose "Needs you" tab is the action console (enriched CTA rows,
+// urgency-ordered — the successor of the old separate gate stack). Empty states
+// guide, never dead-end (spec §8).
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useState, type ReactNode } from "react";
-import {
-  ArrowRight, ArrowDown, ChevronRight, CreditCard, PenLine, FileText, Truck, Upload,
-  MessageSquare, CheckCircle,
-} from "lucide-react";
+import { ArrowRight, ArrowDown, ChevronRight, Upload, CheckCircle } from "lucide-react";
 import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
 import type { ApiProjectSummary, ApiOrder } from "../data/api";
 import {
-  useAccount, deriveGates, orderMeta, projectMeta, quoteProjects, projectAnchor,
-  money, fmtDayDate, greeting, StatusPill, TONE, type Gate, type GateTarget,
+  useAccount, orderMeta, projectMeta, quoteProjects, projectAnchor,
+  money, fmtDayDate, greeting, StatusPill, TONE,
 } from "./accountModel";
 
 type OpenRecord = (rec: { orderId?: string; projectId?: string; status?: string }) => void;
@@ -26,25 +25,34 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
 }) {
   const { projects, orders, loading } = useAccount();
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const openTarget = (t: GateTarget) => {
-    if (t.kind === "order") onOpenRecord({ orderId: t.id });
-    else if (t.kind === "project") onOpenRecord({ projectId: t.id, status: t.status });
-    else go("quote");
-  };
+  // Lifted tab state for the projects list, so "Need you now" can select the
+  // Needs-you tab. null = "not chosen yet" → resolved per render to needs-you when
+  // anything is pending, else all. Unconditional useState (before the loading
+  // return) keeps the hooks order stable.
+  const [chosenTab, setChosenTab] = useState<ProjectsTab | null>(null);
 
   if (loading) {
     return <div className="card p-8 text-sm text-body">Loading your account…</div>;
   }
   const projs = projects ?? [];
   const ords = orders ?? [];
-  const gates = deriveGates(projs, ords);
   const activeOrders = ords.filter((o) => o.stage !== "after_sales");
   const qProjects = quoteProjects(projs);
   const openQuotes = qProjects.filter((p) => p.status_customer !== "draft" && p.status_customer !== "expired").length;
   // The single draft (cart) — one per customer by invariant — powers the top
   // ContinueProject card. null ⇒ that card is the "start a new project" CTA.
   const draft = qProjects.find((p) => p.status_customer === "draft") ?? null;
-  const jumpToAttention = () => document.getElementById("needs-your-attention")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  // What needs the customer, keyed on `action` presence (NOT needsYou) so the draft
+  // is excluded — one source shared by the greeting, the summary cell, the tab
+  // badge and the tab filter, so they cannot diverge.
+  const needsYouCount =
+    ords.filter((o) => orderMeta(o).action).length +
+    qProjects.filter((p) => p.status_customer !== "draft" && projectMeta(p).action).length;
+  const tab = chosenTab ?? (needsYouCount > 0 ? "needs-you" : "all");
+  const jumpToNeedsYou = () => {
+    setChosenTab("needs-you");
+    document.getElementById("your-projects")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const payable = ords.reduce((s, o) => {
     const due = o.stage === "deposit_invoiced" ? o.payments.find((p) => p.kind === "deposit")
       : o.stage === "balance_invoiced" ? o.payments.find((p) => p.kind === "balance") : undefined;
@@ -64,7 +72,7 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
           <p className="text-sm text-body mt-[5px]">
             {brandNew
               ? "Let's get your first quote started"
-              : <>Signed in to <b className="text-ink font-semibold">{user.company || user.email}</b> · {gates.length === 0 ? "nothing needs you right now" : `${gates.length} thing${gates.length === 1 ? "" : "s"} need${gates.length === 1 ? "s" : ""} your attention today`}</>}
+              : <>Signed in to <b className="text-ink font-semibold">{user.company || user.email}</b> · {needsYouCount === 0 ? "nothing needs you right now" : `${needsYouCount} thing${needsYouCount === 1 ? "" : "s"} need${needsYouCount === 1 ? "s" : ""} your attention today`}</>}
           </p>
         </div>
         <span className="text-[12.5px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDayDate(new Date())}</span>
@@ -76,45 +84,21 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
         <>
           {/* Summary strip — numbers only where they drive action */}
           <div className="flex flex-wrap card mb-6" role="group" aria-label="Account summary">
-            <SummaryCell hot={gates.length > 0} label="Need you now" value={String(gates.length)} small="open gates" onClick={gates.length > 0 ? jumpToAttention : undefined} />
+            <SummaryCell hot={needsYouCount > 0} label="Need you now" value={String(needsYouCount)} small="to review" onClick={needsYouCount > 0 ? jumpToNeedsYou : undefined} />
             <SummaryCell hot={payable > 0} label="Payable now" value={money(payable)} />
             <SummaryCell label="On order" value={String(activeOrders.length)} />
             <SummaryCell label="Active quotes" value={String(openQuotes)} />
           </div>
 
-          {/* Your in-progress project (the cart) — its own section at the top, above the
-              attention gates, so it is always visible and never buried in history. */}
+          {/* Your in-progress project (the cart) — its own section at the top, always
+              visible and never buried in history. */}
           <ContinueProject draft={draft} go={go} />
 
-          {/* Needs your attention */}
-          {/* SCAFFOLD (needs-you-filter): this whole gate section + GateCard + GATE_ICON +
-              deriveGates + openTarget + jumpToAttention RETIRE on completion; the "Needs you"
-              tab (added to ProjectsSection) replaces it. Kept live for now so the scaffold is
-              additive and the dashboard is unbroken during review. Completion also: lift the
-              ProjectsSection tab state so "Need you now" selects the tab (replacing this
-              section's #needs-your-attention scroll target), auto-select the tab when
-              needsYouCount > 0, and re-source the greeting/summary count off `action` presence. */}
-          <section id="needs-your-attention" className="mb-[26px] scroll-mt-24">
-            <div className="flex items-center gap-2.5 mb-3.5">
-              <h2 className="text-[1.15rem] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Needs your attention</h2>
-              {gates.length > 0 && <span className="text-xs text-white px-[7px] py-0.5" style={{ fontFamily: "'DM Mono', monospace", background: TONE.attn.text }}>{gates.length}</span>}
-              <span className="ml-auto text-[13px] text-body hidden sm:inline">Ordered by urgency · each opens the exact record</span>
-            </div>
-            {gates.length === 0 ? (
-              <div className="card p-[18px] flex flex-col gap-[9px]" style={{ borderLeft: `3px solid ${TONE.pos.text}` }}>
-                <span className="w-[34px] h-[34px] grid place-items-center border" style={{ color: TONE.pos.text, borderColor: TONE.pos.bd, background: TONE.pos.bg }}><CheckCircle className="w-[18px] h-[18px]" /></span>
-                <h3 className="text-[15px] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>You're all caught up</h3>
-                <p className="text-[12.5px] text-body leading-relaxed">Nothing needs you right now — we'll email you and show it here the moment something does.</p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {gates.map((g) => <GateCard key={g.key} gate={g} onOpen={() => openTarget(g.target)} />)}
-              </div>
-            )}
-          </section>
-
-          {/* Unified project list — one object, whole life, with phase filters */}
-          <ProjectsSection projects={projs} orders={ords} setPage={setPage} onOpenRecord={onOpenRecord} />
+          {/* Unified project list — one object, whole life, with phase filters. Its
+              "Needs you" tab is the action console that replaced the separate
+              "Needs your attention" gate stack: same records, enriched with each
+              action's CTA + consequence, ordered by urgency. */}
+          <ProjectsSection projects={projs} orders={ords} setPage={setPage} onOpenRecord={onOpenRecord} tab={tab} setTab={setChosenTab} />
         </>
       )}
     </>
@@ -125,7 +109,7 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
 // vs order-book survives as a VIEW, not a separate destination).
 type ProjectsTab = "needs-you" | "all" | "quotes" | "on-order" | "completed";
 const PROJECT_TABS: { id: ProjectsTab; label: string }[] = [
-  // SCAFFOLD (needs-you-filter): the "Needs you" tab is the future home of the
+  // "Needs you" is the action console — the successor of the old separate
   // "Needs your attention" gate stack, as an enriched filter of THIS one list.
   { id: "needs-you", label: "Needs you" },
   { id: "all", label: "All" },
@@ -134,13 +118,12 @@ const PROJECT_TABS: { id: ProjectsTab; label: string }[] = [
   { id: "completed", label: "Completed" },
 ];
 
-function ProjectsSection({ projects, orders, setPage, onOpenRecord }: {
+function ProjectsSection({ projects, orders, setPage, onOpenRecord, tab, setTab }: {
   projects: ApiProjectSummary[]; orders: ApiOrder[]; setPage: (p: Page) => void; onOpenRecord: OpenRecord;
+  // Controlled: the dashboard owns the tab (auto-selects "needs-you" when anything
+  // is pending; the "Need you now" summary cell can force it).
+  tab: ProjectsTab; setTab: (t: ProjectsTab) => void;
 }) {
-  // SCAFFOLD (needs-you-filter): default stays "all" for now — the old "Needs your
-  // attention" section still renders above. On completion, retire that section and
-  // auto-select this tab when needsYouCount > 0 (via lifted state, see plan).
-  const [tab, setTab] = useState<ProjectsTab>("all");
   // The draft (cart) lives in its own ContinueProject card at the top, not in the
   // history list — so it is excluded here and appears exactly once on the page.
   const allQuotes = quoteProjects(projects).filter((p) => p.status_customer !== "draft");
@@ -168,7 +151,7 @@ function ProjectsSection({ projects, orders, setPage, onOpenRecord }: {
     : undefined;
 
   return (
-    <section>
+    <section id="your-projects" className="scroll-mt-24">
       <div className="flex items-center gap-2.5 mb-3">
         <h2 className="text-[1.15rem] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Your projects</h2>
         <span className="ml-auto text-[13px] text-body hidden sm:inline">Each shows its status and the single next step</span>
@@ -258,43 +241,13 @@ function ContinueProject({ draft, go }: { draft: ApiProjectSummary | null; go: (
   );
 }
 
-const GATE_ICON: Record<string, ReactNode> = {
-  "Balance due": <CreditCard className="w-5 h-5" />, "Deposit due": <CreditCard className="w-5 h-5" />,
-  "Sign-off": <PenLine className="w-5 h-5" />, "Quote issued": <FileText className="w-5 h-5" />,
-  "Needs information": <MessageSquare className="w-5 h-5" />, "Confirm": <Truck className="w-5 h-5" />,
-};
-
-function GateCard({ gate, onOpen }: { gate: Gate; onOpen: () => void }) {
-  return (
-    <button onClick={onOpen} aria-label={`${gate.title} — ${gate.refLabel}`}
-      className="w-full text-left card grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-x-[18px] gap-y-3 items-center px-5 py-[18px] card-link transition-all cursor-pointer"
-      style={{ borderLeft: `3px solid ${TONE.attn.text}` }}>
-      <span className="w-[42px] h-[42px] grid place-items-center border" style={{ borderColor: TONE.attn.bd, background: TONE.attn.bg, color: TONE.attn.text }}>
-        {GATE_ICON[gate.pill] ?? <FileText className="w-5 h-5" />}
-      </span>
-      <span className="min-w-0 block">
-        <span className="flex items-center gap-[9px] flex-wrap mb-[3px]">
-          <StatusPill tone="attn">{gate.pill}</StatusPill>
-          <span className="text-xs text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{gate.refLabel}</span>
-        </span>
-        <span className="block text-base font-semibold text-ink leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{gate.title}</span>
-        <span className="block text-[13.5px] text-body mt-[3px]">{gate.desc}</span>
-      </span>
-      <span className="col-span-2 sm:col-span-1 flex sm:flex-col items-center sm:items-end justify-between gap-1.5">
-        <span className="inline-flex items-center gap-2 bg-sage text-white text-[13px] font-medium px-3.5 py-[9px] whitespace-nowrap">{gate.cta}</span>
-        <span className="text-[11px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{gate.when}</span>
-      </span>
-    </button>
-  );
-}
-
 // Unified rows — orders and quote-stage projects in one list, attention first.
 export function UnifiedList({ projects, orders, setPage, onOpenRecord, emptyNote, enriched }: {
   projects: ApiProjectSummary[]; orders: ApiOrder[];
   setPage: (p: Page) => void; onOpenRecord: OpenRecord; emptyNote?: ReactNode;
-  // SCAFFOLD (needs-you-filter): when true (the Needs-you tab), action rows carry the
-  // per-action CTA chip + consequence + amber spine and sort by urgency rank. Every
-  // other tab passes false and renders standard plain rows — no tab mixes the two.
+  // When true (the Needs-you tab), action rows carry the per-action CTA chip +
+  // consequence + amber spine and sort by urgency rank. Every other tab passes
+  // false and renders standard plain rows — no tab mixes the two.
   enriched?: boolean;
 }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
@@ -339,8 +292,8 @@ export function UnifiedList({ projects, orders, setPage, onOpenRecord, emptyNote
   else rows.sort((a, b) => Number(b.needsYou) - Number(a.needsYou) || b.updated.localeCompare(a.updated));
 
   if (rows.length === 0) {
-    // Empty Needs-you tab reuses the "all caught up" reassurance (relocated from the
-    // retiring attention section on completion); other empty tabs keep their note.
+    // Empty Needs-you tab reuses the "all caught up" reassurance (relocated from
+    // the retired attention section); other empty tabs keep their note.
     if (enriched) {
       return (
         <div className="card p-[18px] flex flex-col gap-[9px]" style={{ borderLeft: `3px solid ${TONE.pos.text}` }}>
@@ -374,9 +327,9 @@ function RecordRow({ refText, title, pill, next, value, meta, draft, cta, when, 
   refText: string; title: string; pill: ReactNode; next: ReactNode; value: string; meta: string;
   draft?: boolean; cta?: string; when?: string; onOpen: () => void;
 }) {
-  // SCAFFOLD (needs-you-filter): an ENRICHED (action) row = the plain row skeleton +
-  // an amber left spine + an active right rail (CTA chip + consequence) replacing the
-  // passive value/meta. Same geometry as a plain row so the list still scans.
+  // An ENRICHED (action) row = the plain row skeleton + an amber left spine + an
+  // active right rail (CTA chip + consequence) replacing the passive value/meta.
+  // Same geometry as a plain row so the list still scans.
   const enriched = !!cta;
   return (
     <button onClick={onOpen}
@@ -396,7 +349,7 @@ function RecordRow({ refText, title, pill, next, value, meta, draft, cta, when, 
       <span className="col-span-2 sm:col-span-1 flex sm:flex-col items-center sm:items-end justify-between gap-2 border-t sm:border-t-0 border-black/[0.07] pt-3 sm:pt-0">
         {enriched ? (
           // A styled span-chip, NOT a nested <button> — the row's own onOpen is the
-          // single click target (a11y-safe; mirrors the retiring GateCard's chip).
+          // single click target (a11y-safe; mirrors the retired GateCard's chip).
           <>
             <span className="inline-flex items-center gap-2 bg-sage text-white text-[13px] font-medium px-3.5 py-[9px] whitespace-nowrap">{cta}</span>
             {when && <span className="text-[11px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{when}</span>}

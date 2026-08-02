@@ -4,9 +4,10 @@
 // Semantic status system (spec §2.1): status is expressed with a DEDICATED
 // palette — attention (amber) / positive (green) / working (slate) / muted — and
 // always rendered as pill + icon + label, never colour alone. Sage stays reserved
-// for primary CTAs. This module also derives the six customer action gates
-// (submit · accept · pay deposit · sign off · pay balance · confirm) from the
-// real project/order data, and owns the account-wide data context.
+// for primary CTAs. Each record's meta also carries its pending customer ACTION
+// (accept · pay deposit · sign off · pay balance · answer · confirm) when one
+// exists — the dashboard's "Needs you" tab renders those as enriched CTA rows.
+// This module owns the account-wide data context.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { AlertCircle, Check, Loader2, Lock, Pencil, X } from "lucide-react";
@@ -78,14 +79,14 @@ export const initialsOf = (s: string) =>
   s.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "OF";
 
 // ── Record state vocabulary ───────────────────────────────────────────────────
-// SCAFFOLD (needs-you-filter): the pending customer action a record carries, if
-// any — the CTA the "Needs you" tab surfaces as an enriched row. Populated in the
-// SAME switch case that sets needsYou so the count, the filter and the row's button
-// read ONE source and cannot diverge. `rank` reproduces deriveGates' six-way
-// urgency order (balance 1 → sign-off 2 → deposit 3 → answer 4 → accept 5 →
-// confirm 6) so the Needs-you list keeps the most time-critical action on top after
-// the gate stack retires. The DRAFT carries needsYou:true (for its own copy) but NO
-// action — the count/filter key on `action` presence, so the cart is excluded.
+// The pending customer action a record carries, if any — the CTA the "Needs you"
+// tab surfaces as an enriched row. Populated in the SAME switch case that sets
+// needsYou so the count, the filter and the row's button read ONE source and
+// cannot diverge. `rank` is the urgency order (balance 1 → sign-off 2 → deposit 3
+// → answer 4 → accept 5 → confirm 6) that keeps the most time-critical action on
+// top of the Needs-you list. The DRAFT carries needsYou:true (for its own copy)
+// but NO action — the count/filter key on `action` presence, so the cart (which
+// has its own ContinueProject section) is excluded.
 export interface RecordAction { cta: string; when: string; rank: number }
 export interface RecordMeta { pill: string; tone: Tone; needsYou: boolean; next: ReactNode; action?: RecordAction }
 
@@ -147,91 +148,6 @@ export function projectMeta(p: ApiProjectSummary): RecordMeta {
 // The permanent anchor for a record: the project reference carries identity across
 // the whole life; the order number is acceptance-time meta for financial documents.
 export const projectAnchor = (o: ApiOrder) => o.projectRef ?? o.orderNo;
-
-// ── The six customer gates (spec §7.3), ordered by urgency ────────────────────
-export type GateTarget =
-  | { kind: "order"; id: string }
-  | { kind: "project"; id: string; status: string }
-  | { kind: "quote-builder" };
-
-export interface Gate {
-  key: string;
-  pill: string;
-  tone: Tone;
-  refLabel: string;
-  title: string;
-  desc: ReactNode;
-  cta: string;
-  when: string;
-  target: GateTarget;
-}
-
-const amt = (n: number | null | undefined) => (
-  <span className="font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums", color: TONE.attn.text }}>{money(n)}</span>
-);
-
-export function deriveGates(projects: ApiProjectSummary[], orders: ApiOrder[]): Gate[] {
-  const gates: Gate[] = [];
-  const pay = (o: ApiOrder, kind: "deposit" | "balance") => o.payments.find((p) => p.kind === kind);
-  const refOf = (o: ApiOrder) => `${projectAnchor(o)}${o.projectTitle ? ` · ${o.projectTitle}` : ""}`;
-
-  for (const o of orders.filter((x) => x.stage === "balance_invoiced")) {
-    gates.push({
-      key: `bal-${o.id}`, pill: "Balance due", tone: "attn", refLabel: refOf(o),
-      title: "Pay the final 50% balance to release despatch",
-      desc: <>Quality photos shared. Balance of {amt(pay(o, "balance")?.amount)} is due before we book delivery.</>,
-      cta: "Review & pay balance", when: "Holds despatch", target: { kind: "order", id: o.id },
-    });
-  }
-  for (const o of orders.filter((x) => x.stage === "drawings_shared")) {
-    gates.push({
-      key: `sign-${o.id}`, pill: "Sign-off", tone: "attn", refLabel: refOf(o),
-      title: "Review & sign off shop drawings",
-      desc: <>{b(`${o.lineCount ?? "Your"} drawings`)} ready — check every dimension before manufacturing starts. Manufacturing is paused until you confirm.</>,
-      cta: "Open drawings", when: "Blocks manufacturing", target: { kind: "order", id: o.id },
-    });
-  }
-  for (const o of orders.filter((x) => x.stage === "deposit_invoiced")) {
-    gates.push({
-      key: `dep-${o.id}`, pill: "Deposit due", tone: "attn", refLabel: refOf(o),
-      title: "Pay the 50% deposit to begin your order",
-      desc: <>Deposit of {amt(pay(o, "deposit")?.amount)} starts shop drawings and books your build slot.</>,
-      cta: "Review & pay deposit", when: "Starts your order", target: { kind: "order", id: o.id },
-    });
-  }
-  for (const p of projects.filter((x) => x.status_customer === "needs_information")) {
-    gates.push({
-      key: `info-${p.id}`, pill: "Needs your answer", tone: "attn",
-      refLabel: `${p.public_ref ?? "Project"} · ${p.title ?? "Project"}`,
-      title: "We have a question about your project",
-      desc: <>Pricing is paused until you answer — it takes a minute and keeps your quote moving.</>,
-      cta: "Reply now", when: "Pauses pricing", target: { kind: "project", id: p.id, status: p.status_customer },
-    });
-  }
-  for (const p of projects.filter((x) => x.status_customer === "quote_issued")) {
-    const dep = p.issued_total == null ? null : Math.round(p.issued_total / 2);
-    gates.push({
-      key: `accept-${p.id}`, pill: "Quote ready", tone: "attn",
-      refLabel: `${p.public_ref ?? "Project"}${p.issued_revision_no ? ` · R${p.issued_revision_no}` : ""} · ${p.title ?? "Project"}`,
-      title: "Review & accept your reviewed quote",
-      desc: <>Reviewed quote total {amt(p.issued_total)}. Accept to start — we then issue a {b(`50% deposit invoice of ${money(dep)}`)}. Nothing is charged until you accept.</>,
-      cta: "Review & accept", when: "Your decision", target: { kind: "project", id: p.id, status: p.status_customer },
-    });
-  }
-  for (const o of orders.filter((x) => x.stage === "balance_paid")) {
-    gates.push({
-      key: `ok-${o.id}`, pill: "Confirm", tone: "attn", refLabel: refOf(o),
-      title: "Confirm you're ready for despatch",
-      desc: <>Balance received and quality photos shared — confirm to book delivery (~2 weeks).</>,
-      cta: "Confirm for despatch", when: "Books delivery", target: { kind: "order", id: o.id },
-    });
-  }
-  // The draft (cart) is NOT an attention gate — it is the customer's own unfinished
-  // work, not a business obligation. It gets its own dedicated section at the top of
-  // the dashboard (ContinueProject) so it is always visible without competing with
-  // real money/deadline gates for the same slot.
-  return gates;
-}
 
 // ── Line parsing (schedule-code anchored) ─────────────────────────────────────
 export interface ParsedLine {

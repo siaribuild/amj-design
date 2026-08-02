@@ -200,10 +200,11 @@ test("customer OTP login lands on the attention-first dashboard with real data",
   await page.goto("/login");
   await expect(page.getByText(/Sign in or register/i)).toBeVisible();
   await otpLogin(page, /your@email\.com/, DEMO_EMAIL, /verify & continue/i);
-  // Greeting + attention summary
+  // Greeting + the "Needs you" action tab on the unified list (the successor of
+  // the retired "Needs your attention" gate section)
   await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening), Demo/ })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Needs your attention" })).toBeVisible();
-  // The draft gate + the unified list (draft appears in both — gate and row)
+  await expect(page.getByRole("tab", { name: /Needs you/ })).toBeVisible();
+  // The cart section (ContinueProject) + the unified list
   await expect(page.getByText("Coburg new build").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Resume building your quote" })).toBeVisible();
   await expect(page.getByText("OF-58001").first()).toBeVisible();
