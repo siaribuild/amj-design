@@ -30,7 +30,7 @@ import { type QItem, type QuoteState, clearReviewKey, mm, productLabel } from ".
 import { ItemForm } from "../ItemComposer";
 import { type DrawerTarget, type RowKey } from "./identity";
 import { unitLabel } from "./rowState";
-import { FamilyPictogram } from "./FamilyPictogram";
+import { Elevation } from "./Elevation";
 
 /** Which level of the one drawer is showing. */
 type Level =
@@ -236,7 +236,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                 <ChevronLeft className="w-4 h-4" aria-hidden="true" />Back to {ref}
               </button>
             )}
-            {level.kind === "parent" && <FamilyPictogram productSlug={item?.productSlug ?? ""} />}
+            {level.kind === "parent" && <Elevation productSlug={item?.productSlug ?? ""} widthMm={item?.width} heightMm={item?.height} className="max-w-10 max-h-7 w-auto h-auto flex-shrink-0 text-body" />}
             {/* Radix derives the dialog's accessible name from this Title. The
                 visible text is the reference alone — the suffix says what the
                 dialog IS for anyone who only hears it announced. */}

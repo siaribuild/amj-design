@@ -30,7 +30,7 @@ import { type QItem, fmt, mm, productLabel, linePriceTotal } from "../../data/co
 // gstSuffix is deliberately not imported: the mode still ADJUSTS every line's
 // figure, it is simply no longer spelled out on each one.
 import { useGstMode, gstAdjust } from "../../data/gst";
-import { FamilyPictogram } from "./FamilyPictogram";
+import { Elevation } from "./Elevation";
 import { type RowState } from "./rowState";
 import { type RowKey, editControlId, panelId, rowId } from "./identity";
 
@@ -54,11 +54,20 @@ export function OpeningRow({
   // screen reader (plan §11).
   return (
     <div id={rowId(rowKey)} data-state={rowStateAttr(state)}
-      className="quote-row flex md:grid flex-wrap items-center gap-x-2 md:gap-x-3 gap-y-1.5 px-3 sm:px-4 py-3">
+      // Padding follows the wireframe's two treatments, not one compromise
+      // between them: below 768 this is a stacked CARD and keeps card padding;
+      // from 768 it is a table row and takes the quote editor's own cell rhythm
+      // — 6px 10px against a 44px minimum row height.
+      className="quote-row flex md:grid flex-wrap items-center gap-x-2 md:gap-x-3 gap-y-1.5
+        px-3 sm:px-4 py-3 md:px-2.5 md:py-1.5 md:min-h-[44px]">
         {/* Identity is ONE cell. The pictogram and the code were siblings, which
             is invisible in a flex row but would have consumed two grid tracks. */}
         <span className="order-1 md:col-start-1 md:row-start-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
-          <FamilyPictogram productSlug={item.productSlug} size={22} />
+          {/* 40×28, the wireframe's own box for this cell. It was a 22×22
+              square glyph — too small to read, and square regardless of whether
+              the opening is a long slot or a tall panel. */}
+          <Elevation productSlug={item.productSlug} widthMm={item.width} heightMm={item.height}
+            className="max-w-10 max-h-7 w-auto h-auto flex-shrink-0 text-body" />
           <span className="font-semibold text-ink truncate font-data t-data-sm">{ref}</span>
           {/* Below 1024 the status belongs to the identity, beside the reference
               it describes — the same place a phone puts it. It rides INSIDE this

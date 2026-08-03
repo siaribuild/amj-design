@@ -398,7 +398,12 @@ const MALICIOUS_ICON =
   + '<?x ><img src=q onerror="window.__xssFired = true">?>'
   + '<path d="M2 2h20v20H2z" stroke="currentColor" fill="none"/></svg>';
 
-test("an authored pictogram cannot smuggle script into the quote list", async ({ page }) => {
+// The row draws its own elevation now rather than rendering an authored icon, so
+// the injection surface is gone rather than newly unguarded. This still earns its
+// place: the catalogue behind it is STILL fetched from Sanity and still consumed
+// on this page, and a hostile family record must not execute anything here — the
+// day someone reintroduces an authored glyph, this fails before it ships.
+test("a hostile catalogue record cannot execute anything in the quote list", async ({ page }) => {
   // The client fetches the catalogue straight from Sanity's CDN, cross-origin —
   // so the stub has to answer the preflight and carry CORS headers, or the
   // browser discards it and the app quietly falls back to the built-in
@@ -435,10 +440,17 @@ test("an authored pictogram cannot smuggle script into the quote list", async ({
   await expect(page.locator('img[src="q"]')).toHaveCount(0);
   expect(await page.evaluate(() => document.body.innerHTML.includes("onerror"))).toBe(false);
 
-  // Positive control, asserted LAST: the harmless part of the SAME payload must
-  // still render, which is what proves the sanitiser ran on it rather than the
-  // icon never arriving and the test passing vacuously.
-  await expect(page.locator('.quote-row svg path[d="M2 2h20v20H2z"]')).toHaveCount(1);
+  // Positive control, asserted LAST, and it has to prove TWO things now:
+  //
+  //  1. the row rendered its drawing at all — otherwise an empty row would pass
+  //     every assertion above vacuously;
+  //  2. the drawing is the GENERATED elevation and not the authored payload —
+  //     the viewBox is computed from this line's own millimetres, so a hostile
+  //     record's own "0 0 24 24" reaching the DOM would fail here.
+  const box = page.locator(".quote-row svg[data-elevation]");
+  await expect(box).toHaveCount(1);
+  await expect(box).not.toHaveAttribute("viewBox", "0 0 24 24");
+  await expect(page.locator('.quote-row path[d="M2 2h20v20H2z"]')).toHaveCount(0);
 });
 
 // ─── 10. Whole-project reset ───────────────────────────────────────────────────
