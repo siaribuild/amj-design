@@ -48,25 +48,25 @@ function PostRow({ post, onOpen }: { post: Post; onOpen: (slug: string) => void 
     <button onClick={() => onOpen(post.slug)}
       className="group w-full text-left grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_280px_34px] gap-x-6 gap-y-3 items-center py-6 border-t border-line first:border-t-0 transition-colors hover:bg-sage-wash cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-inset">
       <span className="min-w-0">
-        <span className="block text-[10px] uppercase tracking-[0.14em] text-sage mb-2 font-data">
+        <span className="block text-sage mb-2 font-data t-label">
           {post.categoryTitle}
         </span>
         <span className="block text-ink mb-1.5 t-hd2">
           {post.title}
         </span>
-        <span className="block text-[13px] text-body leading-relaxed max-w-[700px]">{post.summary}</span>
+        <span className="block text-body max-w-[700px] t-cap">{post.summary}</span>
       </span>
 
       {/* The scan column. First line carries the weight — it is the file type, or
           the date when there is no file. */}
-      <span className="text-[10px] uppercase tracking-[0.07em] leading-[1.7] text-quiet md:justify-self-start font-data">
+      <span className="text-quiet md:justify-self-start font-data t-label">
         {meta.map((line, i) => (
           <span key={i} className={`block ${i === 0 ? "text-ink font-medium" : ""}`}>{line}</span>
         ))}
       </span>
 
       <span aria-hidden="true"
-        className="hidden md:block text-[22px] leading-none text-sage text-right opacity-40 group-hover:opacity-100 transition-opacity">
+        className="hidden md:block text-sage text-right opacity-40 group-hover:opacity-100 transition-opacity t-hd2">
         ↗
       </span>
     </button>
@@ -123,7 +123,7 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
   const railBlock = (
     <div className="border-t border-ink">
       <div className="py-4 border-b border-line">
-        <div className="flex items-baseline justify-between gap-3 mb-3 text-[10px] uppercase tracking-[0.1em] font-data">
+        <div className="flex items-baseline justify-between gap-3 mb-3 font-data t-label">
           <span className="text-ink">Category</span>
           <span className="text-quieter">What it is</span>
         </div>
@@ -131,7 +131,7 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
           const on = selected.includes(c.slug);
           const n = posts.filter((p) => p.categorySlug === c.slug).length;
           return (
-            <label key={c.slug} className="flex items-center justify-between gap-3 py-1.5 text-[13px] cursor-pointer group/opt">
+            <label key={c.slug} className="flex items-center justify-between gap-3 py-1.5 cursor-pointer group/opt t-cap">
               <span className="flex items-center gap-2.5">
                 {/* The tick is drawn, not relied on from the UA: appearance-none
                     removes the native glyph, and a filled square with no mark in
@@ -143,7 +143,7 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
                 </span>
                 <span className={on ? "text-ink font-medium" : "text-body group-hover/opt:text-ink"}>{c.title}</span>
               </span>
-              <span className="text-[10px] text-quieter flex-shrink-0 font-data">{n}</span>
+              <span className="text-quieter flex-shrink-0 font-data t-data-sm">{n}</span>
             </label>
           );
         })}
@@ -152,7 +152,7 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
           there is nothing to clear: a control that appears only once you have
           already acted is a control you cannot learn is there. */}
       <button onClick={clear} disabled={!filtering}
-        className="w-full text-left py-3.5 text-[10px] uppercase tracking-[0.08em] text-sage hover:text-sage-deep cursor-pointer disabled:text-quieter disabled:cursor-default disabled:hover:text-quieter font-data">
+        className="w-full text-left py-3.5 text-sage hover:text-sage-deep cursor-pointer disabled:text-quieter disabled:cursor-default disabled:hover:text-quieter font-data t-label">
         Clear search and filters
       </button>
     </div>
@@ -191,7 +191,7 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
           <div className="max-w-[62ch]">
             <div className="card p-6 md:p-8">
               <SLabel>0 published</SLabel>
-              <h2 className="text-[19px] font-semibold text-ink mb-2.5 mt-1 font-display">The library is being prepared.</h2>
+              <h2 className="font-semibold text-ink mb-2.5 mt-1 font-display t-bd-lg">The library is being prepared.</h2>
               <p className="text-body leading-relaxed mb-3">
                 We're supply-only and Australia-wide, so most of what a builder needs arrives with the quote:
                 the schedule we priced, the systems we matched, and the test reports and warranty terms for
@@ -216,7 +216,7 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
               <input type="search" value={query}
                 onChange={(e) => { setQuery(e.target.value); reset(); }}
                 placeholder="Search title, category, standard or product…" aria-label="Search resources"
-                className="w-full card pl-11 pr-11 min-h-[58px] text-[15px] text-ink placeholder:text-quieter focus:outline-none focus-visible:ring-2 focus-visible:ring-sage" />
+                className="w-full card pl-11 pr-11 min-h-[58px] text-ink placeholder:text-quieter focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-bd" />
               {query && (
                 <button onClick={() => { setQuery(""); reset(); }} aria-label="Clear search"
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-quieter hover:text-ink cursor-pointer">
@@ -232,25 +232,25 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
 
               <section>
                 <div className="flex items-center justify-between gap-5 pb-3 border-b border-ink">
-                  <p className="text-[10px] uppercase tracking-[0.09em] text-ink font-data">
+                  <p className="text-ink font-data t-label">
                     {filtered.length} {filtered.length === 1 ? "resource" : "resources"}
                     {filtered.length !== total && <span className="text-quieter"> of {total}</span>}
                   </p>
                   {/* A statement of the order, not a control that does nothing. */}
-                  <p className="text-[9px] uppercase tracking-[0.08em] text-quieter font-data">Recent first</p>
+                  <p className="text-quieter font-data t-label">Recent first</p>
                 </div>
 
                 {filtering && (
                   <div className="flex flex-wrap gap-2 mt-3">
                     {query && (
                       <button onClick={() => { setQuery(""); reset(); }}
-                        className="border border-sage bg-sage-wash text-sage text-[9px] uppercase tracking-[0.06em] px-2 py-1.5 cursor-pointer hover:bg-sage-veil font-data">
+                        className="border border-sage bg-sage-wash text-sage px-2 py-1.5 cursor-pointer hover:bg-sage-veil font-data t-label">
                         Search: {query.trim()} ×
                       </button>
                     )}
                     {selected.map((slug) => (
                       <button key={slug} onClick={() => toggle(slug)}
-                        className="border border-sage bg-sage-wash text-sage text-[9px] uppercase tracking-[0.06em] px-2 py-1.5 cursor-pointer hover:bg-sage-veil font-data">
+                        className="border border-sage bg-sage-wash text-sage px-2 py-1.5 cursor-pointer hover:bg-sage-veil font-data t-label">
                         {cats.find((c) => c.slug === slug)?.title ?? slug} ×
                       </button>
                     ))}
@@ -270,7 +270,7 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
                             <div className="h-full bg-sage transition-all"
                               style={{ width: `${Math.min(100, (shown.length / filtered.length) * 100)}%` }} />
                           </div>
-                          <p className="text-[9px] uppercase tracking-[0.08em] text-quiet mt-2 font-data">
+                          <p className="text-quiet mt-2 font-data t-label">
                             Showing {shown.length} of {filtered.length}
                           </p>
                         </div>

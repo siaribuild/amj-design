@@ -58,7 +58,7 @@ export function SLabel({ children, light = false }: { children: ReactNode; light
   return (
     <div className="flex items-center gap-2 mb-3">
       <WindowMark size={10} color={light ? "rgba(255,255,255,0.5)" : SAGE} />
-      <span className={`text-xs font-semibold uppercase tracking-widest ${light ? "text-white/50" : "text-sage"}`}>
+      <span className={`${light ? "text-white/50" : "text-sage"} t-label`}>
         {children}
       </span>
     </div>
@@ -76,7 +76,7 @@ export function Btn({
   onClick?: () => void; className?: string;
   type?: "button" | "submit"; disabled?: boolean;
 }) {
-  const sizes = { sm: "px-4 py-2 text-xs", md: "px-6 py-3 text-sm", lg: "px-8 py-4 text-sm" };
+  const sizes = { sm: "px-4 py-2 t-cap", md: "px-6 py-3 t-bd-sm", lg: "px-8 py-4 t-bd-sm" };
   const variants: Record<string, string> = {
     primary: "bg-ink text-white hover:bg-ink-hover",
     sage:    "bg-sage text-white hover:bg-sage-hover",
@@ -100,7 +100,7 @@ export function Btn({
 // ─── Form primitives ──────────────────────────────────────────────────────────
 export function FieldLabel({ children }: { children: ReactNode }) {
   return (
-    <label className="text-[10px] font-semibold text-ink-soft uppercase tracking-widest block mb-1.5">
+    <label className="text-ink-soft block mb-1.5 t-label">
       {children}
     </label>
   );
@@ -114,7 +114,7 @@ export function Input({ value, onChange, placeholder, type = "text", className =
   return (
     <input type={type} value={value} defaultValue={defaultValue} onChange={onChange} disabled={disabled}
       placeholder={placeholder} inputMode={inputMode}
-      className={`field-control w-full border px-3 py-2.5 text-sm text-ink placeholder-quieter focus:outline-none transition-colors disabled:cursor-not-allowed ${className}`} />
+      className={`field-control w-full border px-3 py-2.5 text-ink placeholder-quieter focus:outline-none transition-colors disabled:cursor-not-allowed ${className} t-bd-sm`} />
   );
 }
 
@@ -160,7 +160,7 @@ export function CtaBanner({ title, sub, onQuote, ground = "paper", cta = "Get a 
             <h2 className="text-white mb-1.5 t-hd1">
               {title}
             </h2>
-            <p className="text-white/85 text-[15px] md:text-base leading-relaxed">{sub}</p>
+            <p className="text-white/85 t-bd">{sub}</p>
           </div>
           <div className="md:flex-shrink-0">
             <Btn variant="primary" size="lg" onClick={onQuote}>

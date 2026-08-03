@@ -182,7 +182,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
         <div className="relative max-w-6xl mx-auto px-6 pt-[78px] pb-10">
           <div className="flex items-center gap-2 mb-4">
             <WindowMark size={12} color="rgba(255,255,255,0.55)" />
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/55 font-data">Contact</span>
+            <span className="text-white/55 font-data t-label">Contact</span>
           </div>
           <h1 className="text-white mb-3.5 max-w-[20ch] text-balance t-ds1">
             Tell us what you need — we'll point you the fastest way there
@@ -237,7 +237,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
           <div className="mb-[18px]">
             <div className="flex items-center gap-2 mb-2">
               <WindowMark size={12} color={SAGE} />
-              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-sage font-data">Do it here</span>
+              <span className="text-sage font-data t-label">Do it here</span>
             </div>
             <h2 id="zone-h" className="text-ink mb-1.5 t-hd2">Two things you can finish on this page</h2>
             <p className="text-body max-w-[64ch] t-bd">Both options are always shown. Pick one — the form for it opens right below.</p>
@@ -258,7 +258,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
             ) : tab === "ask" ? (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
                 <div>
-                  <p className="text-xs text-body flex items-center gap-1.5 mb-4"><Clock className="w-3.5 h-3.5 text-sage" />A real person replies within one business day — no account needed.</p>
+                  <p className="text-body flex items-center gap-1.5 mb-4 t-cap"><Clock className="w-3.5 h-3.5 text-sage" />A real person replies within one business day — no account needed.</p>
                   {errors && Object.values(errors).some(Boolean) && <ErrorSummary errors={errors} />}
                   <div className="space-y-3.5">
                     <div className="grid sm:grid-cols-2 gap-3.5">
@@ -270,48 +270,48 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                       <textarea rows={4} value={message} onChange={e => { setMessage(e.target.value); clearError("message"); }} placeholder="Rough sizes, product types or your quote reference help us reply usefully." className={`${inputCls} resize-y min-h-[104px]`} />
                     </FieldR>
                   </div>
-                  {formError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5 mt-4"><AlertCircle className="w-4 h-4" />{formError}</p>}
+                  {formError && <p role="alert" className="text-red-700 flex items-center gap-1.5 mt-4 t-bd-sm"><AlertCircle className="w-4 h-4" />{formError}</p>}
                   <Honeypot website={website} setWebsite={setWebsite} />
                   {TURNSTILE_SITE_KEY && <div ref={turnstileRef} className="mt-4" />}
                   <div className="flex flex-wrap items-center gap-3.5 mt-[18px]">
                     <Btn variant="sage" size="md" onClick={submit} className={status === "sending" || !captchaReady ? "opacity-60 pointer-events-none" : ""}>{status === "sending" ? "Sending…" : <>Send message <Send className="w-[15px] h-[15px]" /></>}</Btn>
-                    <span className="text-[11.5px] text-quieter max-w-[30ch]">Used only to reply — see our <button onClick={() => go("privacy")} className="text-sage underline">Privacy Policy</button>. We don't add you to a list.</span>
+                    <span className="text-quieter max-w-[30ch] t-cap">Used only to reply — see our <button onClick={() => go("privacy")} className="text-sage underline">Privacy Policy</button>. We don't add you to a list.</span>
                   </div>
                 </div>
                 <aside className="border border-black/10 ground-bone p-[18px]">
-                  <h4 className="text-xs uppercase tracking-[0.13em] text-sage mb-3 font-data">Helps us answer fast</h4>
+                  <h4 className="text-sage mb-3 font-data t-label">Helps us answer fast</h4>
                   <ul className="space-y-2.5">
                     {["Rough width × height for each opening", "Product type — sliding, awning, fixed, door", "Your quote reference, if you have one"].map(t => (
-                      <li key={t} className="flex gap-2.5 text-[13px] text-body leading-snug"><Check className="w-[15px] h-[15px] text-sage flex-shrink-0 mt-0.5" />{t}</li>
+                      <li key={t} className="flex gap-2.5 text-body t-cap"><Check className="w-[15px] h-[15px] text-sage flex-shrink-0 mt-0.5" />{t}</li>
                     ))}
                   </ul>
                   <div className="border-t border-black/10 my-4" />
-                  <p className="text-[12.5px] text-body">Chasing a price instead? The <button onClick={() => go("quote")} className="text-sage border-b border-sage/40">quote tool</button> is faster. Existing order? <button onClick={() => go("track-order")} className="text-sage border-b border-sage/40">Track it here</button>.</p>
+                  <p className="text-body t-cap">Chasing a price instead? The <button onClick={() => go("quote")} className="text-sage border-b border-sage/40">quote tool</button> is faster. Existing order? <button onClick={() => go("track-order")} className="text-sage border-b border-sage/40">Track it here</button>.</p>
                 </aside>
               </div>
             ) : (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
                 {/* Picker + map */}
                 <div>
-                  <p className="text-[13.5px] text-body mb-[18px] max-w-[52ch]">Pick the showroom nearest you. A representative calls to confirm a time. We show the suburb here — the exact address comes with your confirmation.</p>
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-ink-soft mb-2.5 font-data">Choose a location<span className="text-sage ml-1">*</span></div>
+                  <p className="text-body mb-[18px] max-w-[52ch] t-cap">Pick the showroom nearest you. A representative calls to confirm a time. We show the suburb here — the exact address comes with your confirmation.</p>
+                  <div className="text-ink-soft mb-2.5 font-data t-label">Choose a location<span className="text-sage ml-1">*</span></div>
                   <div className="flex flex-wrap gap-2 mb-1.5">
-                    {locations.length === 0 && <span className="text-[13px] text-quiet">Loading locations…</span>}
+                    {locations.length === 0 && <span className="text-quiet t-cap">Loading locations…</span>}
                     {locations.map(l => {
                       const sel = locationId === l.id;
                       return (
                         <button key={l.id} type="button" onClick={() => selectLocation(l.id)} aria-pressed={sel}
-                          className={`inline-flex items-center gap-1.5 px-3 py-2 text-[13px] border transition-colors cursor-pointer ${sel ? "border-sage bg-sage-wash text-sage-ink font-medium" : "border-black/12 bg-white text-body hover:border-sage/50"}`}>
-                          {sel && <Check className="w-3 h-3 text-sage" />}{l.suburb} <span className={`text-[10px] ${sel ? "text-sage" : "text-quietest"} font-data`}>{l.stateCode}</span>
+                          className={`inline-flex items-center gap-1.5 px-3 py-2 border transition-colors cursor-pointer ${sel ? "border-sage bg-sage-wash text-sage-ink font-medium" : "border-black/12 bg-white text-body hover:border-sage/50"} t-cap`}>
+                          {sel && <Check className="w-3 h-3 text-sage" />}{l.suburb} <span className={`${sel ? "text-sage" : "text-quietest"} font-data t-data-sm`}>{l.stateCode}</span>
                         </button>
                       );
                     })}
                   </div>
-                  {errors.location && <p className="text-xs text-red-600 mb-1.5">{errors.location}</p>}
+                  {errors.location && <p className="text-red-600 mb-1.5 t-cap">{errors.location}</p>}
                   <div className="my-3.5">
                     <LocationMap locations={locations} selectedId={locationId || null} onSelect={selectLocation} />
                   </div>
-                  <p className="text-[11.5px] text-quiet">Suburb shown for privacy. Exact address shared on confirmation.</p>
+                  <p className="text-quiet t-cap">Suburb shown for privacy. Exact address shared on confirmation.</p>
                 </div>
                 {/* Visit form */}
                 <div>
@@ -335,12 +335,12 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                       </select>
                     </FieldR>
                   </div>
-                  {formError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5 mt-4"><AlertCircle className="w-4 h-4" />{formError}</p>}
+                  {formError && <p role="alert" className="text-red-700 flex items-center gap-1.5 mt-4 t-bd-sm"><AlertCircle className="w-4 h-4" />{formError}</p>}
                   <Honeypot website={website} setWebsite={setWebsite} />
                   {TURNSTILE_SITE_KEY && <div ref={turnstileRef} className="mt-4" />}
                   <div className="flex flex-wrap items-center gap-3.5 mt-[18px]">
                     <Btn variant="sage" size="md" onClick={submit} className={status === "sending" || !captchaReady ? "opacity-60 pointer-events-none" : ""}>{status === "sending" ? "Sending…" : <>Request a call to book <Phone className="w-[15px] h-[15px]" /></>}</Btn>
-                    <span className="text-[11.5px] text-quieter max-w-[30ch]">No obligation — we just agree a time. No appointment is confirmed until we call.</span>
+                    <span className="text-quieter max-w-[30ch] t-cap">No obligation — we just agree a time. No appointment is confirmed until we call.</span>
                   </div>
                 </div>
               </div>
@@ -392,19 +392,19 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
 }
 
 // ─── Building blocks ──────────────────────────────────────────────────────────
-const inputCls = "w-full border border-ink/20 bg-white px-3 py-[11px] text-sm text-ink placeholder-quieter focus:outline-none focus:border-sage transition-colors";
+const inputCls = "w-full border border-ink/20 bg-white px-3 py-[11px] text-ink placeholder-quieter focus:outline-none focus:border-sage transition-colors t-bd-sm";
 const selectCls = "appearance-none pr-8 bg-[url('data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2214%22%20height=%2214%22%20viewBox=%220%200%2024%2024%22%20fill=%22none%22%20stroke=%22%235c5a56%22%20stroke-width=%222%22%3E%3Cpolyline%20points=%226%209%2012%2015%2018%209%22/%3E%3C/svg%3E')] bg-no-repeat bg-[right_12px_center]";
 
 function RouterCard({ icon, title, body, cta, tag, lead, down, onClick }: { icon: React.ReactNode; title: string; body: string; cta: string; tag?: string; lead?: boolean; down?: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} className={`group text-left flex flex-col border card-link p-[17px] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage ${lead ? "border-sage bg-paper" : "border-line bg-paper"}`}>
-      {tag && <span className="self-start text-[9.5px] tracking-[0.14em] uppercase bg-sage text-white px-2 py-[3px] mb-2.5 font-data">{tag}</span>}
+      {tag && <span className="self-start bg-sage text-white px-2 py-[3px] mb-2.5 font-data t-label">{tag}</span>}
       <div className="flex items-center gap-2.5 mb-2.5">
         <span className={`w-9 h-9 grid place-items-center border transition-colors ${lead ? "border-sage text-sage" : "border-sage/40 text-sage group-hover:bg-sage group-hover:border-sage group-hover:text-white"}`}>{icon}</span>
-        <h3 className="text-[16px] leading-tight text-ink font-semibold font-display">{title}</h3>
+        <h3 className="text-ink font-semibold font-display t-bd">{title}</h3>
       </div>
-      <p className="text-[13px] text-body leading-[1.42] flex-1">{body}</p>
-      <span className="mt-2.5 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-sage font-data">{cta} {down ? "↓" : <ArrowRight className="w-3.5 h-3.5" />}</span>
+      <p className="text-body flex-1 t-cap">{body}</p>
+      <span className="mt-2.5 inline-flex items-center gap-1.5 font-medium text-sage font-data t-data-sm">{cta} {down ? "↓" : <ArrowRight className="w-3.5 h-3.5" />}</span>
     </button>
   );
 }
@@ -415,9 +415,9 @@ function TabButton({ id, active, onSelect, icon, note, title, sub }: { id: strin
       className={`tab relative flex items-start gap-3 text-left p-4 cursor-pointer ${active ? "sm:border-b-white z-10" : ""}`}>
       <span className={`w-[38px] h-[38px] grid place-items-center border flex-shrink-0 transition-colors ${active ? "bg-sage border-sage text-white" : "border-sage/40 text-sage"}`}>{icon}</span>
       <span className="flex flex-col gap-[3px]">
-        <span className={`text-[10px] uppercase tracking-[0.14em] ${active ? "text-sage" : "text-quietest"} font-data`}>{note}</span>
-        <span className="text-[16.5px] leading-tight text-ink font-semibold font-display">{title}</span>
-        <span className="text-xs text-body leading-snug">{sub}</span>
+        <span className={`${active ? "text-sage" : "text-quietest"} font-data t-label`}>{note}</span>
+        <span className="text-ink font-semibold font-display t-bd">{title}</span>
+        <span className="text-body t-cap">{sub}</span>
       </span>
     </button>
   );
@@ -426,11 +426,11 @@ function TabButton({ id, active, onSelect, icon, note, title, sub }: { id: strin
 function FieldR({ id, label, req, opt, error, children }: { id: string; label: string; req?: boolean; opt?: boolean; error?: string; children: React.ReactNode }) {
   return (
     <div id={`field-${id}`}>
-      <label className="block text-[10px] font-semibold uppercase tracking-[0.13em] text-ink-soft mb-1.5 font-data">
+      <label className="block text-ink-soft mb-1.5 font-data t-label">
         {label}{req && <span className="text-sage ml-0.5">*</span>}{opt && <span className="text-quieter font-normal tracking-[0.08em] ml-1">(optional)</span>}
       </label>
       {children}
-      {error && <p className="text-xs text-red-600 mt-1.5">{error}</p>}
+      {error && <p className="text-red-600 mt-1.5 t-cap">{error}</p>}
     </div>
   );
 }
@@ -440,8 +440,8 @@ function ErrorSummary({ errors }: { errors: Record<string, string> }) {
   if (!list.length) return null;
   return (
     <div role="alert" className="border border-red-200 bg-red-50 p-3.5 mb-4">
-      <p className="text-sm font-semibold text-red-800 flex items-center gap-1.5"><AlertCircle className="w-4 h-4" />Please fix the following:</p>
-      <ul className="mt-1.5 space-y-1 text-sm text-red-700 list-disc pl-5">
+      <p className="font-semibold text-red-800 flex items-center gap-1.5 t-bd-sm"><AlertCircle className="w-4 h-4" />Please fix the following:</p>
+      <ul className="mt-1.5 space-y-1 text-red-700 list-disc pl-5 t-bd-sm">
         {list.map(([k, v]) => <li key={k}><a href={`#field-${k}`} className="underline">{v}</a></li>)}
       </ul>
     </div>
@@ -462,8 +462,8 @@ function Honeypot({ website, setWebsite }: { website: string; setWebsite: (v: st
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="py-5 sm:py-0 sm:px-6 first:sm:pl-0 last:sm:pr-0">
-      <div className="text-[10px] uppercase tracking-[0.13em] text-sage mb-2.5 font-data">{label}</div>
-      <div className="text-[14px] text-body leading-relaxed">{children}</div>
+      <div className="text-sage mb-2.5 font-data t-label">{label}</div>
+      <div className="text-body t-bd-sm">{children}</div>
     </div>
   );
 }
@@ -474,9 +474,9 @@ function SuccessCard({ intent, reference, name, onQuote, onAgain }: { intent: In
   return (
     <div className="max-w-xl mx-auto text-center py-4" role="status" aria-live="polite">
       <div className="w-12 h-12 border border-sage/30 bg-sage-wash flex items-center justify-center mx-auto mb-4"><CheckCircle className="w-6 h-6" style={{ color: SAGE }} /></div>
-      <h3 className="text-lg font-semibold text-ink mb-2 font-display">{appt ? "Appointment request received" : "Message received"}</h3>
-      {reference && <p className="inline-block text-xs font-mono bg-bone border border-black/10 px-2.5 py-1 mb-4">{reference}</p>}
-      <p className="text-sm text-body max-w-md mx-auto mb-6 leading-relaxed">
+      <h3 className="font-semibold text-ink mb-2 font-display t-bd-lg">{appt ? "Appointment request received" : "Message received"}</h3>
+      {reference && <p className="inline-block font-mono bg-bone border border-black/10 px-2.5 py-1 mb-4 t-cap">{reference}</p>}
+      <p className="text-body max-w-md mx-auto mb-6 t-bd-sm">
         {appt
           ? <>Thanks {first} — your request is logged as <span className="text-ink font-medium">{reference}</span>. A representative will call you to agree a suitable showroom visit time. <span className="text-ink">No appointment is confirmed yet.</span></>
           : <>Thanks {first} — your question is logged as <span className="text-ink font-medium">{reference}</span>. A real person will reply within one business day.</>}

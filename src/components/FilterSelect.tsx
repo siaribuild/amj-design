@@ -41,11 +41,11 @@ export function FilterSelect({ label, listLabel, options, value, unit = "item", 
 
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-widest text-body mb-2 font-data">{label}</p>
+      <p className="text-body mb-2 font-data t-label">{label}</p>
       <div className="relative" ref={ref}>
         <button type="button" onClick={() => setOpen((o) => !o)}
           aria-haspopup="listbox" aria-expanded={open}
-          className="w-full flex items-center justify-between gap-3 card px-4 py-3 text-sm text-ink cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2">
+          className="w-full flex items-center justify-between gap-3 card px-4 py-3 text-ink cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2 t-bd-sm">
           <span className="font-medium">{current.name}</span>
           <ChevronDown className={`w-4 h-4 text-body flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
         </button>
@@ -56,10 +56,10 @@ export function FilterSelect({ label, listLabel, options, value, unit = "item", 
               const active = o.slug === value;
               return (
                 <button key={o.slug} type="button" role="option" aria-selected={active} onClick={() => choose(o.slug)}
-                  className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left text-sm border-b border-black/6 last:border-b-0 cursor-pointer transition-colors ${active ? "bg-sage-wash text-ink font-semibold" : "text-ink hover:bg-black/[0.02]"}`}>
+                  className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left border-b border-black/6 last:border-b-0 cursor-pointer transition-colors ${active ? "bg-sage-wash text-ink font-semibold" : "text-ink hover:bg-black/[0.02]"} t-bd-sm`}>
                   <span>{o.name}</span>
                   {typeof o.count === "number" && (
-                    <span className="text-xs text-body flex-shrink-0">{o.count} {unit}{o.count === 1 ? "" : "s"}</span>
+                    <span className="text-body flex-shrink-0 t-cap">{o.count} {unit}{o.count === 1 ? "" : "s"}</span>
                   )}
                 </button>
               );

@@ -31,7 +31,7 @@ const components: PortableTextComponents = {
     h2: ({ children }) => (
       <h2 className="text-ink mt-10 mb-3 t-hd2">{children}</h2>
     ),
-    h3: ({ children }) => <h3 className="font-semibold text-ink text-[17px] mt-7 mb-2 font-display">{children}</h3>,
+    h3: ({ children }) => <h3 className="font-semibold text-ink mt-7 mb-2 font-display t-bd-lg">{children}</h3>,
   },
   list: {
     bullet: ({ children }) => <ul className="space-y-1.5 mb-5">{children}</ul>,
@@ -68,7 +68,7 @@ const components: PortableTextComponents = {
           <img src={url} alt={value?.alt ?? ""} loading="lazy" decoding="async"
             className="w-full border border-line" />
           {value?.caption && (
-            <figcaption className="text-[12.5px] text-quiet mt-2 font-data">{value.caption}</figcaption>
+            <figcaption className="text-quiet mt-2 font-data t-data-sm">{value.caption}</figcaption>
           )}
         </figure>
       );
@@ -102,7 +102,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
       <div className="ground-paper min-h-screen pt-28 pb-20">
         <div className="max-w-2xl mx-auto px-6">
           <div className="card p-8">
-            <h1 className="text-xl font-semibold text-ink mb-2 font-display">That page isn't here.</h1>
+            <h1 className="font-semibold text-ink mb-2 font-display t-hd2">That page isn't here.</h1>
             <p className="text-body mb-6">It may have been renamed or unpublished.</p>
             <button onClick={() => go("resources")} className="text-sage hover:text-sage-deep inline-flex items-center gap-1.5 cursor-pointer">
               <ChevronLeft className="w-4 h-4" aria-hidden="true" />All resources
@@ -144,13 +144,13 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
             {post.title}
           </h1>
           <p className="text-white/80 leading-relaxed split-prose t-bd">{post.summary}</p>
-          {meta && <p className="text-white/50 text-[12.5px] mt-3 font-data">{meta}</p>}
+          {meta && <p className="text-white/50 mt-3 font-data t-data-sm">{meta}</p>}
         </div>
       </section>
 
       <div className={`${shell} mx-auto px-6 py-10 md:py-14`}>
         <button onClick={() => go("resources")}
-          className="text-xs text-body hover:text-ink flex items-center gap-1 mb-6 cursor-pointer">
+          className="text-body hover:text-ink flex items-center gap-1 mb-6 cursor-pointer t-cap">
           <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" />All resources
         </button>
 
@@ -161,7 +161,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
             <aside className="lg:order-2 lg:w-[380px] lg:flex-shrink-0 lg:sticky lg:top-24 space-y-6">
               {post.attachment && (
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2 font-data">Attachment</p>
+                  <p className="text-quiet mb-2 font-data t-label">Attachment</p>
                   <div className="card">
                     {/* No onOpenPost — we are already on it. */}
                     <DocumentRow attachment={post.attachment} post={post} />
@@ -170,12 +170,12 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
               )}
               {products.length > 0 && (
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2 font-data">Applies to</p>
+                  <p className="text-quiet mb-2 font-data t-label">Applies to</p>
                   <div className="card">
                     {products.map((p) => (
                       <button key={p!.slug} onClick={() => onOpenProduct(p!.slug)}
                         className="icon-btn w-full text-left flex items-center justify-between gap-3 px-4 py-3 border-b border-black/8 last:border-0 cursor-pointer">
-                        <span className="text-sm text-ink">{p!.name}</span>
+                        <span className="text-ink t-bd-sm">{p!.name}</span>
                         <ArrowRight className="w-3.5 h-3.5 text-quieter flex-shrink-0" aria-hidden="true" />
                       </button>
                     ))}
@@ -212,7 +212,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
                 More in {post.categoryTitle}
               </h2>
               <button onClick={() => go("resources")}
-                className="text-sm text-sage hover:text-sage-deep inline-flex items-center gap-1.5 flex-shrink-0 pb-1 cursor-pointer">
+                className="text-sage hover:text-sage-deep inline-flex items-center gap-1.5 flex-shrink-0 pb-1 cursor-pointer t-bd-sm">
                 All resources <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </div>
@@ -220,9 +220,9 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
               {related.map((r) => (
                 <button key={r.slug} onClick={() => openPost(r.slug)}
                   className="card card-link p-5 text-left flex flex-col cursor-pointer">
-                  <span className="block text-[10px] uppercase tracking-[0.14em] text-sage mb-1.5 font-data">{r.categoryTitle}</span>
-                  <span className="block text-[16px] leading-tight text-ink font-semibold mb-1.5 font-display">{r.title}</span>
-                  <span className="text-sm text-body leading-relaxed line-clamp-2">{r.summary}</span>
+                  <span className="block text-sage mb-1.5 font-data t-label">{r.categoryTitle}</span>
+                  <span className="block text-ink font-semibold mb-1.5 font-display t-bd">{r.title}</span>
+                  <span className="text-body line-clamp-2 t-bd-sm">{r.summary}</span>
                 </button>
               ))}
             </div>

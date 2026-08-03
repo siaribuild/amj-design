@@ -232,7 +232,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
           <div className="quote-panel-head sticky top-0 z-10 flex items-center gap-2 px-4 py-3">
             {level.kind !== "parent" && (
               <button type="button" onClick={requestBack} aria-label={`Back to ${ref}`}
-                className="-ml-1 inline-flex items-center gap-1 px-1.5 h-9 text-xs font-medium text-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+                className="-ml-1 inline-flex items-center gap-1 px-1.5 h-9 font-medium text-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
                 <ChevronLeft className="w-4 h-4" aria-hidden="true" />Back to {ref}
               </button>
             )}
@@ -240,11 +240,11 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
             {/* Radix derives the dialog's accessible name from this Title. The
                 visible text is the reference alone — the suffix says what the
                 dialog IS for anyone who only hears it announced. */}
-            <Dialog.Title className="text-sm font-semibold text-ink min-w-0 truncate">
+            <Dialog.Title className="font-semibold text-ink min-w-0 truncate t-bd-sm">
               {title}<span className="sr-only"> — edit opening</span>
             </Dialog.Title>
             {level.kind === "parent" && item?.location && (
-              <span className="text-xs text-quiet truncate">{item.location}</span>
+              <span className="text-quiet truncate t-cap">{item.location}</span>
             )}
             <button type="button" onClick={requestClose} aria-label="Close editor"
               className="ml-auto w-9 h-9 inline-flex items-center justify-center text-body hover:text-ink cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
@@ -256,7 +256,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
           <div className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</div>
 
           <div className="flex-1 px-4 py-4 space-y-3">
-            {error && <p role="alert" className="text-xs text-red-700">{error}</p>}
+            {error && <p role="alert" className="text-red-700 t-cap">{error}</p>}
 
             {/* 4. Composite build. Above the parent's own fields, matching the
                    established card: it answers "why does my line look like
@@ -265,12 +265,12 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                    each unit here carries a VISIBLE affordance. */}
             {level.kind === "parent" && segments.length > 0 && (
               <div className="quote-composite-panel border border-line px-3 py-3">
-                <p className="text-[10px] uppercase tracking-[0.14em] text-info mb-2 font-data">
+                <p className="text-info mb-2 font-data t-label">
                   Built as {segments.reduce((n, s) => n + Math.max(1, s.qtyPerParent), 0)} units
                 </p>
                 <ul className="space-y-1">
                   {segments.map((s, i) => (
-                    <li key={s.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                    <li key={s.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 t-cap">
                       <span className="text-quiet tabular-nums font-data">
                         {unitLabel(ref, i)}{s.qtyPerParent > 1 ? ` ×${s.qtyPerParent}` : ""}
                       </span>
@@ -282,11 +282,11 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                         <button type="button" disabled={busy}
                           onClick={() => setLevel({ kind: "unit", segmentId: s.id })}
                           aria-label={`Edit ${unitLabel(ref, i)}`}
-                          className="text-[11px] font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer">
+                          className="font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer t-cap">
                           Edit unit
                         </button>
                         {segments.length > 2 && (removingUnit === s.id ? (
-                          <span className="inline-flex items-center gap-1.5 text-[11px]">
+                          <span className="inline-flex items-center gap-1.5 t-cap">
                             <button type="button" disabled={busy} onClick={() => void removeUnit(s.id)}
                               className="font-medium text-destructive underline cursor-pointer">Confirm</button>
                             <button type="button" onClick={() => setRemovingUnit(null)}
@@ -295,7 +295,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                         ) : (
                           <button type="button" disabled={busy} onClick={() => setRemovingUnit(s.id)}
                             aria-label={`Remove ${unitLabel(ref, i)}`}
-                            className="text-[11px] text-body underline underline-offset-2 disabled:opacity-50 cursor-pointer">
+                            className="text-body underline underline-offset-2 disabled:opacity-50 cursor-pointer t-cap">
                             Remove
                           </button>
                         ))}
@@ -305,7 +305,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                 </ul>
                 <button type="button" disabled={busy || !item?.serverId}
                   onClick={() => setLevel({ kind: "add-unit" })}
-                  className="mt-2.5 inline-flex items-center gap-1 text-[12px] font-medium text-sage disabled:opacity-50 cursor-pointer">
+                  className="mt-2.5 inline-flex items-center gap-1 font-medium text-sage disabled:opacity-50 cursor-pointer t-cap">
                   <Plus className="w-3.5 h-3.5" aria-hidden="true" />Add unit
                 </button>
               </div>
@@ -347,7 +347,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
 
             {level.kind === "unit" && activeSegment && (
               <>
-                <p className="text-[11px] text-body">
+                <p className="text-body t-cap">
                   {unitLabel(ref, unitIndex)}. Its {axis === "vertical" ? "height" : "width"} follows the
                   parent opening; edit the product, options and {axis === "vertical" ? "width" : "height"} here.
                 </p>
@@ -380,7 +380,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
 
             {level.kind === "add-unit" && (
               <>
-                <p className="text-[11px] text-body">
+                <p className="text-body t-cap">
                   Choose the product, its options and the new unit's size before adding it to this opening.
                 </p>
                 <ItemForm
@@ -419,13 +419,13 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
             <div className="fixed inset-0 z-20 flex items-center justify-center p-4 quote-drawer-scrim">
               <div className="quote-dialog w-full max-w-xs p-4" role="alertdialog" aria-modal="true"
                 aria-label="Discard changes">
-                <p className="text-sm text-ink font-medium mb-1">Discard changes?</p>
-                <p className="text-xs text-body mb-3">Your edits to {title} have not been saved.</p>
+                <p className="text-ink font-medium mb-1 t-bd-sm">Discard changes?</p>
+                <p className="text-body mb-3 t-cap">Your edits to {title} have not been saved.</p>
                 <div className="flex justify-end gap-2">
                   <button type="button" autoFocus onClick={() => setConfirmDiscard(null)}
-                    className="card px-2.5 py-1.5 text-xs text-body cursor-pointer">Keep editing</button>
+                    className="card px-2.5 py-1.5 text-body cursor-pointer t-cap">Keep editing</button>
                   <button type="button" onClick={confirmedDiscard}
-                    className="quote-button--danger border px-2.5 py-1.5 text-xs font-medium cursor-pointer">Discard</button>
+                    className="quote-button--danger border px-2.5 py-1.5 font-medium cursor-pointer t-cap">Discard</button>
                 </div>
               </div>
             </div>

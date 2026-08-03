@@ -208,11 +208,11 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
           {items.length > 0 && (
             <div className="flex items-center gap-2">
               <button type="button" onClick={openUpload}
-                className="card inline-flex items-center gap-1.5 px-3 min-h-[44px] text-sm font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+                className="card inline-flex items-center gap-1.5 px-3 min-h-[44px] font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-bd-sm">
                 <Upload className="w-4 h-4" aria-hidden="true" />Add document
               </button>
               <button ref={addOpeningRef} type="button" onClick={() => openDrawer({ mode: "add" })}
-                className="card inline-flex items-center gap-1.5 px-3 min-h-[44px] text-sm font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+                className="card inline-flex items-center gap-1.5 px-3 min-h-[44px] font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-bd-sm">
                 <Plus className="w-4 h-4" aria-hidden="true" />Add opening
               </button>
 
@@ -226,7 +226,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
               <span className="w-px h-6 bg-black/10 mx-1" aria-hidden="true" />
               <button ref={clearBtnRef} type="button" onClick={() => setClearConfirm(true)}
                 aria-label="Clear all items and uploaded documents"
-                className="inline-flex items-center gap-1.5 px-2.5 min-h-[44px] text-xs font-medium text-body-soft hover:text-red-600 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+                className="inline-flex items-center gap-1.5 px-2.5 min-h-[44px] font-medium text-body-soft hover:text-red-600 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
                 <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />Clear all
               </button>
             </div>
@@ -239,15 +239,15 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
           <div className="mb-4 flex flex-wrap items-center gap-2">
             {quote.files.map((f) => (
               removingFile === String(f.id) ? (
-                <div key={f.id} className="inline-flex items-center gap-2.5 border border-red-300 bg-red-50 px-3 py-1.5 text-xs max-w-full">
+                <div key={f.id} className="inline-flex items-center gap-2.5 border border-red-300 bg-red-50 px-3 py-1.5 max-w-full t-cap">
                   <span className="text-red-800 font-medium truncate max-w-[12rem]">Remove {f.name}? Its lines go too.</span>
                   <button onClick={() => void handleRemoveFile(String(f.id), f.name)}
-                    className="quote-button--danger text-xs font-medium border px-1.5 py-0.5 cursor-pointer">Remove</button>
+                    className="quote-button--danger font-medium border px-1.5 py-0.5 cursor-pointer t-cap">Remove</button>
                   <button onClick={() => setRemovingFile(null)} autoFocus
-                    className="text-xs text-body card px-1.5 py-0.5 hover:border-black/25 cursor-pointer">Keep</button>
+                    className="text-body card px-1.5 py-0.5 hover:border-black/25 cursor-pointer t-cap">Keep</button>
                 </div>
               ) : (
-                <div key={f.id} className="inline-flex items-center gap-2 card px-3 py-1.5 text-xs max-w-full">
+                <div key={f.id} className="inline-flex items-center gap-2 card px-3 py-1.5 max-w-full t-cap">
                   <Paperclip className="w-3.5 h-3.5 text-sage flex-shrink-0" aria-hidden="true" />
                   <span className="text-ink font-medium truncate max-w-[14rem]">{f.name}</span>
                   <button onClick={() => setRemovingFile(String(f.id))} aria-label={`Remove ${f.name}`}
@@ -262,7 +262,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
 
         {/* Tag collision — asked ONCE per tag; the customer's line stands either way. */}
         {collisionTags.map((tag) => (
-          <div key={tag} role="status" className="mb-3 border border-info/30 bg-info/10 px-4 py-3 text-sm text-info-ink">
+          <div key={tag} role="status" className="mb-3 border border-info/30 bg-info/10 px-4 py-3 text-info-ink t-bd-sm">
             <p className="font-medium">Your schedule also lists {tag} — you already added an opening with that code.</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <Btn variant="sage" size="sm" onClick={() => void handleCollision(tag, "linked")}>Link to schedule {tag}</Btn>
@@ -273,7 +273,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
 
         {uploadNotice && (
           <div role={uploadNotice.type === "error" ? "alert" : "status"} aria-live="polite"
-            className={`mb-3 flex items-start gap-2.5 border px-4 py-3 text-sm ${uploadNotice.type === "success" ? "border-sage/30 bg-sage-wash text-sage-ink" : "border-red-300 bg-red-50 text-red-800"}`}>
+            className={`mb-3 flex items-start gap-2.5 border px-4 py-3 ${uploadNotice.type === "success" ? "border-sage/30 bg-sage-wash text-sage-ink" : "border-red-300 bg-red-50 text-red-800"} t-bd-sm`}>
             {uploadNotice.type === "success"
               ? <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
               : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />}
@@ -288,7 +288,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
         {/* A stopped run stays honest and offers the retry, exactly as on /quote. */}
         {(aiPhase?.kind === "deferred" || aiPhase?.kind === "failed") && (
           <div role={aiPhase.kind === "failed" ? "alert" : "status"} aria-live="polite"
-            className="quote-notice--warning mb-3 flex items-start gap-2.5 border border-warning/40 px-4 py-3 text-sm">
+            className="quote-notice--warning mb-3 flex items-start gap-2.5 border border-warning/40 px-4 py-3 t-bd-sm">
             <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
             <span className="flex-1">
               {diagnosticMessage(aiPhase.diagnostic)}{" "}
@@ -311,8 +311,8 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
               <span className="w-9 h-9 mb-4 flex items-center justify-center bg-sage-wash text-sage group-hover:bg-sage group-hover:text-white transition-colors">
                 <UploadCloud className="w-5 h-5" aria-hidden="true" />
               </span>
-              <span className="block text-base font-semibold text-ink mb-1">Upload schedule or photo</span>
-              <span className="block text-sm leading-relaxed text-body">PDFs, CSV files and clear photos come back matched and priced. Plans work too.</span>
+              <span className="block font-semibold text-ink mb-1 t-bd">Upload schedule or photo</span>
+              <span className="block text-body t-bd-sm">PDFs, CSV files and clear photos come back matched and priced. Plans work too.</span>
             </button>
             {/* Also the focus fallback: from the empty state this is the only
                 control that opened the drawer, and the header's Add opening
@@ -322,8 +322,8 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
               <span className="w-9 h-9 mb-4 flex items-center justify-center bg-sage-wash text-sage group-hover:bg-sage group-hover:text-white transition-colors">
                 <Plus className="w-5 h-5" aria-hidden="true" />
               </span>
-              <span className="block text-base font-semibold text-ink mb-1">Add an opening manually</span>
-              <span className="block text-sm leading-relaxed text-body">Choose a product, then enter its dimensions and options.</span>
+              <span className="block font-semibold text-ink mb-1 t-bd">Add an opening manually</span>
+              <span className="block text-body t-bd-sm">Choose a product, then enter its dimensions and options.</span>
             </button>
           </div>
         ) : (
@@ -338,7 +338,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                 accessible name or visible label. */}
             <div aria-hidden="true"
               className="quote-table-head hidden md:grid items-center gap-x-3 px-4 py-2
-                text-[10px] uppercase tracking-[0.12em] text-quiet font-data">
+ text-quiet font-data t-label">
               <span className="col-start-1">Opening</span>
               <span className="col-start-2">Product</span>
               <span className="col-start-3 text-right">Size</span>
@@ -376,7 +376,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                   {/* Undo rides on the duplicated row itself. */}
                   {undo?.localId === item.id && (
                     <div role="status"
-                      className="flex items-center gap-2 border-t border-line bg-recessive px-3 sm:px-4 py-2 text-xs text-body">
+                      className="flex items-center gap-2 border-t border-line bg-recessive px-3 sm:px-4 py-2 text-body t-cap">
                       <span>Duplicated from {undo.fromRef}.</span>
                       <button type="button"
                         onClick={() => {
@@ -422,7 +422,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
             competes with the one thing the bar exists to offer. */}
         {items.length > 0 && (
           <button type="button" onClick={() => openDrawer({ mode: "add" })}
-            className="mt-3 w-full flex items-center justify-center gap-1.5 border border-dashed border-black/20 action-hover py-3 text-sm text-sage font-medium cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+            className="mt-3 w-full flex items-center justify-center gap-1.5 border border-dashed border-black/20 action-hover py-3 text-sage font-medium cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-bd-sm">
             <Plus className="w-4 h-4" aria-hidden="true" />Add an opening
           </button>
         )}
@@ -464,8 +464,8 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
           role="dialog" aria-modal="true" aria-label="Clear everything"
           onClick={cancelClear} onKeyDown={(e) => { if (e.key === "Escape") cancelClear(); }}>
           <div ref={clearDialogRef} onClick={(e) => e.stopPropagation()} className="quote-dialog w-full max-w-sm p-5">
-            <h3 className="text-base font-semibold text-ink mb-1.5 font-display">Clear everything?</h3>
-            <p className="text-sm text-body leading-relaxed mb-4">
+            <h3 className="font-semibold text-ink mb-1.5 font-display t-bd">Clear everything?</h3>
+            <p className="text-body mb-4 t-bd-sm">
               This removes all {quote.items.length} item{quote.items.length !== 1 ? "s" : ""} and every uploaded document and can't be undone.
             </p>
             <div className="flex justify-end gap-2">
@@ -485,10 +485,10 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
             // Focus enters on the SAFE choice; without this a keyboard user has
             // to tab in from <body> and Escape does nothing.
             ref={(el) => el?.querySelector<HTMLElement>("button")?.focus()}>
-            <h3 className="text-base font-semibold text-ink mb-1.5 font-display">
+            <h3 className="font-semibold text-ink mb-1.5 font-display t-bd">
               Delete {deleteItem.code || "this opening"}?
             </h3>
-            <p className="text-sm text-body leading-relaxed mb-4">
+            <p className="text-body mb-4 t-bd-sm">
               This removes the opening from your project and can't be undone.
             </p>
             <div className="flex justify-end gap-2">

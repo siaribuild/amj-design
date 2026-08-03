@@ -50,8 +50,8 @@ function OptionList({ pairs, dense = false }: {
       style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
       {pairs.map((p) => (
         <div key={p.label} className="min-w-0">
-          <dt className="text-[10px] uppercase tracking-[0.12em] text-quiet mb-0.5 font-data">{p.label}</dt>
-          <dd className={`${dense ? "text-[11px]" : "text-xs"} text-ink min-w-0 truncate`}>{p.value}</dd>
+          <dt className="text-quiet mb-0.5 font-data t-label">{p.label}</dt>
+          <dd className={`${dense ? "t-cap" : "t-cap"} text-ink min-w-0 truncate`}>{p.value}</dd>
         </div>
       ))}
     </dl>
@@ -62,7 +62,7 @@ function OptionList({ pairs, dense = false }: {
  *  options, units and the Edit launcher ran together as three unlabelled blocks. */
 function PanelLabel({ children }: { children: ReactNode }) {
   return (
-    <p className="text-[10px] uppercase tracking-[0.14em] text-quiet mb-2 font-data">{children}</p>
+    <p className="text-quiet mb-2 font-data t-label">{children}</p>
   );
 }
 
@@ -101,9 +101,9 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           {/* Not "Needs your input" — that is the row's chip, and repeating it
               two lines below says the same thing twice while answering nothing. */}
           <PanelLabel>What's missing</PanelLabel>
-          <p className="text-xs text-warning-ink leading-relaxed mb-2.5">{state.reason}</p>
+          <p className="text-warning-ink mb-2.5 t-cap">{state.reason}</p>
           <button type="button" onClick={onFixDetails} aria-label={`Fix details for ${ref}`}
-            className="card inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+            className="card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
             <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />Fix details
           </button>
         </div>
@@ -117,7 +117,7 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           <PanelLabel>Specification</PanelLabel>
           {pairs.length > 0
             ? <OptionList pairs={pairs} />
-            : <p className="text-xs text-quiet">No options selected</p>}
+            : <p className="text-quiet t-cap">No options selected</p>}
         </>
       )}
 
@@ -135,16 +135,16 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
               // the same data must not look interactive in both places.
               <li key={s.id} className="border border-line bg-paper px-3 py-2.5 min-w-0">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-1">
-                  <span className="text-xs font-semibold text-ink font-data">
+                  <span className="font-semibold text-ink font-data t-data-sm">
                     {unitLabel(item.code, i)}
                   </span>
-                  {s.qtyPerParent > 1 && <span className="text-[11px] text-quiet">×{s.qtyPerParent}</span>}
-                  <span className="text-[11px] text-body tabular-nums ml-auto font-data">
+                  {s.qtyPerParent > 1 && <span className="text-quiet t-cap">×{s.qtyPerParent}</span>}
+                  <span className="text-body tabular-nums ml-auto font-data t-data-sm">
                     {mm(s.width)} × {mm(s.height)}
                   </span>
                 </div>
-                <p className="text-xs text-body min-w-0 truncate mb-1.5">{productLabel(s.productSlug)}</p>
-                <span className="quote-chip quote-chip--neutral text-[10px]">Included</span>
+                <p className="text-body min-w-0 truncate mb-1.5 t-cap">{productLabel(s.productSlug)}</p>
+                <span className="quote-chip quote-chip--neutral t-cap">Included</span>
                 <SegmentOptions segment={s} />
               </li>
             ))}
@@ -158,7 +158,7 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           panel into a form. */}
       <div className="mt-3">
         <button type="button" onClick={onEdit} aria-label={`Edit opening ${ref}`}
-          className="card inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+          className="card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
           <Pencil className="w-3.5 h-3.5" aria-hidden="true" />Edit opening
         </button>
       </div>

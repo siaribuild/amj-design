@@ -18,8 +18,8 @@ const UPDATED = "19 July 2026";
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
     <section id={id} className="scroll-mt-24">
-      <h2 className="text-lg md:text-xl font-semibold text-ink mb-3 font-display">{title}</h2>
-      <div className="space-y-3 text-[15px] leading-relaxed text-body">{children}</div>
+      <h2 className="font-semibold text-ink mb-3 font-display t-bd-lg">{title}</h2>
+      <div className="space-y-3 text-body t-bd">{children}</div>
     </section>
   );
 }
@@ -40,7 +40,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
         <div className="relative max-w-5xl mx-auto px-6">
           <div className="flex items-center gap-2 mb-3">
             <WindowMark size={11} color="rgba(255,255,255,0.55)" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">Legal</span>
+            <span className="text-white/60 font-data t-label">Legal</span>
           </div>
           <h1 className="text-white mb-3 t-ds1">
             Privacy Policy
@@ -49,7 +49,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
             How OpenFrame collects, uses, stores and protects your information when
             you use this website to build quotes, place and track orders, or contact us.
           </p>
-          <p className="text-white/45 text-xs mt-4 font-data">Last updated {UPDATED}</p>
+          <p className="text-white/45 mt-4 font-data t-data-sm">Last updated {UPDATED}</p>
         </div>
       </section>
 
@@ -177,18 +177,18 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
             <Section id="contact" title="12. Contact us">
               <p>To exercise your rights or ask a question about this policy, get in touch:</p>
               <div className="card p-5 mt-2">
-                <p className="flex items-center gap-2.5 text-sm text-ink">
+                <p className="flex items-center gap-2.5 text-ink t-bd-sm">
                   <Mail className="w-4 h-4" style={{ color: SAGE }} />
                   <ObfuscatedEmail address={getSiteBrand()?.email} className="hover:underline" />
                 </p>
-                <p className="text-sm text-body mt-1.5">{[getSiteBrand()?.businessName, "Melbourne, Victoria", "Supply only"].filter(Boolean).join(" · ")}</p>
+                <p className="text-body mt-1.5 t-bd-sm">{[getSiteBrand()?.businessName, "Melbourne, Victoria", "Supply only"].filter(Boolean).join(" · ")}</p>
                 <div className="mt-4">
                   <Btn variant="outline" size="sm" onClick={() => go("contact")}>Go to contact page <ArrowRight className="w-4 h-4" /></Btn>
                 </div>
               </div>
             </Section>
 
-            <p className="text-xs text-quiet border-t border-black/8 pt-6 italic">
+            <p className="text-quiet border-t border-black/8 pt-6 italic t-cap">
               This policy is a draft prepared for the OpenFrame prototype and should be reviewed by a
               qualified legal professional before the site goes live.
             </p>

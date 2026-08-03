@@ -184,13 +184,13 @@ export function StickyQuotePanel({
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3 sm:py-3.5 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
         <div className="flex items-center justify-between gap-3 min-w-0 sm:contents">
           <div className="sm:order-2 flex flex-col min-w-0 flex-shrink-0">
-            <span className="text-[9px] uppercase tracking-[0.16em] text-body-soft leading-none mb-1">{pendingPriceCount ? "Priced subtotal" : "Estimate"}</span>
+            <span className="text-body-soft mb-1 t-label">{pendingPriceCount ? "Priced subtotal" : "Estimate"}</span>
             <span className="flex items-baseline gap-1.5">
-            <span className="text-ink text-lg sm:text-[17px] font-semibold leading-none tabular-nums font-data">{fmt(shownTotal)}</span>
-            <span className="text-body-soft text-xs whitespace-nowrap">{gstSuffix(gstMode)}</span>
+            <span className="text-ink font-semibold tabular-nums font-data t-data">{fmt(shownTotal)}</span>
+            <span className="text-body-soft whitespace-nowrap t-cap">{gstSuffix(gstMode)}</span>
             </span>
           </div>
-          <div className={`sm:order-1 sm:flex-1 flex items-center gap-1.5 min-w-0 border px-2.5 py-2 text-[13px] font-medium ${statusTone}`}>{status}</div>
+          <div className={`sm:order-1 sm:flex-1 flex items-center gap-1.5 min-w-0 border px-2.5 py-2 font-medium ${statusTone} t-cap`}>{status}</div>
         </div>
         <div className="sm:order-3">
           <Btn variant={ctaVariant} size="md" onClick={onClick} disabled={ctaDisabled}

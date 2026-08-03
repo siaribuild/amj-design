@@ -45,8 +45,8 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
     return () => { off = true; };
   }, [projectId]);
 
-  if (missing) return <div className="card p-8 text-sm text-body">We couldn't find that quote.</div>;
-  if (!data?.project || revisions === null) return <div className="card p-8 text-sm text-body">Loading your quote…</div>;
+  if (missing) return <div className="card p-8 text-body t-bd-sm">We couldn't find that quote.</div>;
+  if (!data?.project || revisions === null) return <div className="card p-8 text-body t-bd-sm">Loading your quote…</div>;
 
   const p = data.project;
   const current = revisions.find((r) => r.status === "issued");
@@ -55,7 +55,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
     return (
       <>
         <BackLink onClick={backToList} />
-        <div className="card p-8 text-sm text-body">This quote is not awaiting your decision any more — check the dashboard for its current state.</div>
+        <div className="card p-8 text-body t-bd-sm">This quote is not awaiting your decision any more — check the dashboard for its current state.</div>
       </>
     );
   }
@@ -105,16 +105,16 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
       <div className="flex justify-between items-start gap-5 flex-wrap pb-[22px] border-b border-black/10 mb-[26px]">
         <div>
           <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
-            {p.ref && <span className="text-[13px] font-medium text-sage font-data">{p.ref}</span>}
+            {p.ref && <span className="font-medium text-sage font-data t-data">{p.ref}</span>}
             <StatusPill tone="attn">Quote ready · awaiting you</StatusPill>
           </div>
           <h1 className="text-ink t-hd1">{p.title}</h1>
-          <div className="flex gap-x-4 gap-y-2 flex-wrap items-center text-[13.5px] text-body mt-2">
-            <span className="inline-flex items-center gap-1.5 border border-black/10 px-2 py-[3px] text-[11.5px] font-data">
+          <div className="flex gap-x-4 gap-y-2 flex-wrap items-center text-body mt-2 t-cap">
+            <span className="inline-flex items-center gap-1.5 border border-black/10 px-2 py-[3px] font-data t-data-sm">
               <Lock className="w-3 h-3 text-sage" />Immutable · Revision {R}
             </span>
             <span>Issued <span className="text-ink font-data">{fmtDate(current.issuedAt)}</span></span>
-            <span>Valid until <span className="text-ink font-data">{fmtDate(validUntil.toISOString())}</span> · <span style={{ fontFamily: "'Space Grotesk', sans-serif", color: TONE.attn.text }}>{daysLeft} days left</span></span>
+            <span>Valid until <span className="text-ink font-data">{fmtDate(validUntil.toISOString())}</span> · <span className="font-data" style={{ color: TONE.attn.text }}>{daysLeft} days left</span></span>
           </div>
         </div>
         <Btn variant="ghost" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }}>Message us</Btn>
@@ -125,20 +125,20 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
         <section className="p-5 border" style={{ borderColor: TONE.attn.bd, borderLeft: `3px solid ${TONE.attn.text}`, background: `linear-gradient(180deg, ${TONE.attn.bg}, rgba(178,110,15,.03))` }}>
           <div className="flex items-center gap-2 mb-2.5 flex-wrap">
             <StatusPill tone="attn">Your decision</StatusPill>
-            <span className="text-[11.5px] text-body font-data">Nothing is charged until you accept</span>
+            <span className="text-body font-data t-data-sm">Nothing is charged until you accept</span>
           </div>
-          <h2 className="text-lg font-semibold text-ink mb-1.5 font-display">Review &amp; accept quote {R}</h2>
-          <p className="text-[13.5px] text-body max-w-[60ch]">
+          <h2 className="font-semibold text-ink mb-1.5 font-display t-bd-lg">Review &amp; accept quote {R}</h2>
+          <p className="text-body max-w-[60ch] t-cap">
             Accepting starts your order. We then invoice a <b className="text-ink">50% deposit of {money(deposit)}</b> to begin — the remaining <b className="text-ink">50% ({money(balance)}) is due before despatch</b>, after we share quality photos. Accepting locks in this revision's prices and specification. <b className="text-ink">Nothing is charged until you accept.</b>
           </p>
           <div className="bg-white border p-[13px] mt-3.5" style={{ borderColor: TONE.attn.bd }}>
-            <p className="text-xs text-body mb-1.5 font-data">ON ACCEPTANCE →</p>
-            <p className="text-[13px] text-body"><b className="text-ink">Order created</b> → 50% deposit invoice → shop drawings for your sign-off → manufacturing → quality photos → 50% balance → delivery. You'll track every step on the order screen.</p>
+            <p className="text-body mb-1.5 font-data t-data-sm">ON ACCEPTANCE →</p>
+            <p className="text-body t-cap"><b className="text-ink">Order created</b> → 50% deposit invoice → shop drawings for your sign-off → manufacturing → quality photos → 50% balance → delivery. You'll track every step on the order screen.</p>
           </div>
           <div className="flex items-center gap-2.5 flex-wrap mt-[15px]">
-            <span className="inline-flex items-center gap-1.5 text-[11.5px]" style={{ fontFamily: "'Space Grotesk', sans-serif", color: TONE.pos.text }}><Check className="w-3 h-3" />No card details needed to review</span>
+            <span className="inline-flex items-center gap-1.5 t-cap font-data" style={{ color: TONE.pos.text }}><Check className="w-3 h-3" />No card details needed to review</span>
           </div>
-          {error && <p role="alert" className="text-sm text-red-700 mt-3">{error}</p>}
+          {error && <p role="alert" className="text-red-700 mt-3 t-bd-sm">{error}</p>}
 
           <ConfirmDetails
             summary={`Preview what happens when you accept ${R}`}
@@ -156,16 +156,16 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
 
           {/* Request changes — honest about the state move */}
           <details className="border bg-white mt-3.5" style={{ borderColor: TONE.work.bd }}>
-            <summary className="list-none cursor-pointer px-4 py-3 flex items-center gap-2.5 text-sm font-medium text-ink [&::-webkit-details-marker]:hidden">
+            <summary className="list-none cursor-pointer px-4 py-3 flex items-center gap-2.5 font-medium text-ink [&::-webkit-details-marker]:hidden t-bd-sm">
               <PenLine className="w-4 h-4 text-sage" />Request changes instead
               <ChevronDown className="w-4 h-4 ml-auto text-body" />
             </summary>
             <div className="px-4 pb-4 border-t border-black/[0.07]">
-              <label htmlFor="req-changes" className="block text-[13px] font-semibold text-ink mt-3">What would you like changed?</label>
+              <label htmlFor="req-changes" className="block font-semibold text-ink mt-3 t-cap">What would you like changed?</label>
               <textarea id="req-changes" value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
                 placeholder="e.g. Swap D01 to a 3-panel stacker; change W05 glazing to obscure…"
-                className="w-full card px-3 py-[11px] text-sm text-ink outline-none focus:border-sage resize-y min-h-[76px] my-2" />
-              <p className="flex items-start gap-2 text-[12.5px] text-body leading-normal">
+                className="w-full card px-3 py-[11px] text-ink outline-none focus:border-sage resize-y min-h-[76px] my-2 t-bd-sm" />
+              <p className="flex items-start gap-2 text-body t-cap">
                 <Clock className="w-[15px] h-[15px] flex-shrink-0 mt-px" style={{ color: TONE.work.text }} />
                 <span>Sending this moves the quote back to <b className="text-ink">Under review</b>. {R} stays on file, unchanged — We will issue a new revision with your changes for you to accept. No cost to request changes.</span>
               </p>
@@ -191,8 +191,8 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
             const isCurrent = r.id === current.id;
             return (
               <div key={r.id} className="flex items-center gap-[13px] px-5 py-[13px] border-b border-black/[0.07] last:border-b-0">
-                <span className={`w-[30px] font-medium text-[13px] ${isCurrent ? "text-ink" : "line-through"}`} style={{ fontFamily: "'Space Grotesk', sans-serif", color: isCurrent ? undefined : TONE.mute.text, textDecorationColor: TONE.mute.bd }}>R{r.revisionNo}</span>
-                <span className={`flex-1 text-[13px] ${isCurrent ? "text-body" : "line-through"}`} style={{ color: isCurrent ? undefined : TONE.mute.text, textDecorationColor: TONE.mute.bd }}>
+                <span className={`w-[30px] font-medium ${isCurrent ? "text-ink" : "line-through"} t-cap font-data`} style={{ color: isCurrent ? undefined : TONE.mute.text, textDecorationColor: TONE.mute.bd }}>R{r.revisionNo}</span>
+                <span className={`flex-1 ${isCurrent ? "text-body" : "line-through"} t-cap`} style={{ color: isCurrent ? undefined : TONE.mute.text, textDecorationColor: TONE.mute.bd }}>
                   {isCurrent ? `Current · issued ${fmtDate(r.issuedAt)} · ${money(r.total)}` : `Superseded · issued ${fmtDate(r.issuedAt)} — kept on file, view only`}
                 </span>
                 {isCurrent ? <StatusPill tone="attn">Awaiting you</StatusPill> : <SupersededPill />}
@@ -204,16 +204,16 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
         <FilesBlock files={files} />
         <SummaryBand>
           <div className="flex-1 basis-[250px] card p-[18px]">
-            <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5 font-data">This quote · {R}</h3>
-            <div className="flex justify-between pb-3 text-sm"><span>Total inc GST</span><span className="font-semibold text-base" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{money(total)}</span></div>
-            <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-body">Deposit to begin</span><span className="font-medium" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums", color: TONE.attn.text }}>{money(deposit)}</span></div>
-            <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-body">Balance before despatch</span><span className="font-medium" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{money(balance)}</span></div>
-            <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-body inline-flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" style={{ color: TONE.attn.text }} />Valid until {fmtDate(validUntil.toISOString())}</span><span style={{ fontFamily: "'Space Grotesk', sans-serif", color: TONE.attn.text }}>{daysLeft} days</span></div>
+            <h3 className="text-body mb-3.5 font-data t-label">This quote · {R}</h3>
+            <div className="flex justify-between pb-3 t-bd-sm"><span>Total inc GST</span><span className="font-semibold t-bd font-data">{money(total)}</span></div>
+            <div className="flex justify-between py-[9px] border-t border-black/[0.07] t-cap"><span className="text-body">Deposit to begin</span><span className="font-medium font-data" style={{ color: TONE.attn.text }}>{money(deposit)}</span></div>
+            <div className="flex justify-between py-[9px] border-t border-black/[0.07] t-cap"><span className="text-body">Balance before despatch</span><span className="font-medium font-data">{money(balance)}</span></div>
+            <div className="flex justify-between py-[9px] border-t border-black/[0.07] t-cap"><span className="text-body inline-flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" style={{ color: TONE.attn.text }} />Valid until {fmtDate(validUntil.toISOString())}</span><span className="font-data" style={{ color: TONE.attn.text }}>{daysLeft} days</span></div>
           </div>
           <ContactCard setPage={setPage} />
           <div className="flex-1 basis-[250px] card p-[18px]">
-            <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5 font-data">Good to know</h3>
-            <p className="text-[13px] text-body leading-relaxed">Issued revisions can't be edited — accepting is always against a specific revision. Requesting changes returns the quote to <b className="text-ink">Under review</b> and we issue a fresh revision. Nothing is charged until you accept.</p>
+            <h3 className="text-body mb-3.5 font-data t-label">Good to know</h3>
+            <p className="text-body t-cap">Issued revisions can't be edited — accepting is always against a specific revision. Requesting changes returns the quote to <b className="text-ink">Under review</b> and we issue a fresh revision. Nothing is charged until you accept.</p>
           </div>
         </SummaryBand>
       </div>
@@ -223,10 +223,10 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
 
 function TotalRow({ label, value, big, attn }: { label: string; value: string; big?: boolean; attn?: boolean }) {
   return (
-    <div className={`flex justify-between ${big ? "border-t border-black/10 pt-[11px] mt-0.5 text-[15.5px] font-semibold text-ink" : "text-[13.5px] text-body"}`}
+    <div className={`flex justify-between ${big ? "border-t border-black/10 pt-[11px] mt-0.5 font-semibold text-ink" : "text-body t-cap"} t-bd`}
       style={attn ? { color: TONE.attn.text } : undefined}>
       <span>{label}</span>
-      <span className={big ? "text-lg" : "font-medium"} style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums", color: attn ? TONE.attn.text : big ? undefined : "var(--ink)" }}>{value}</span>
+      <span className={`font-data ${big ? "t-bd-lg" : "font-medium"}`} style={{ color: attn ? TONE.attn.text : big ? undefined : "var(--ink)" }}>{value}</span>
     </div>
   );
 }

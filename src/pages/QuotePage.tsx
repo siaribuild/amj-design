@@ -176,7 +176,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-2.5 md:mb-4">
                 <LayoutGrid className="w-3.5 h-3.5 text-white/55" />
-                <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">Your quote</span>
+                <span className="text-white/60 font-data t-label">Your quote</span>
               </div>
               <h1 className="text-white mb-2 md:mb-3 t-ds1">
                 Build your quote
@@ -194,7 +194,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 or add products manually.
               </p>
               {/* Trust row — decorative, hidden on mobile to keep the hero shallow */}
-              <div className="hidden sm:flex flex-wrap items-center gap-x-6 gap-y-2 mt-5 text-[13px] text-white/65">
+              <div className="hidden sm:flex flex-wrap items-center gap-x-6 gap-y-2 mt-5 text-white/65 t-cap">
                 <span className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-white/50" />Supply only</span>
                 <span className="flex items-center gap-1.5"><UserCheck className="w-4 h-4 text-white/50" />Reviewed by our team</span>
                 <span className="flex items-center gap-1.5"><CheckCircle className="w-4 h-4 text-white/50" />No account needed</span>
@@ -215,7 +215,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 project list, submission and reviewed quote. */}
             <ProjectNameField value={quote.title} onCommit={quote.setTitle} />
             {quote.items.length > 0 && (
-              <span className="text-xs text-body border border-black/10 px-2 py-0.5 flex-shrink-0">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span>
+              <span className="text-body border border-black/10 px-2 py-0.5 flex-shrink-0 t-cap">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span>
             )}
             {/* Whole-project reset. Lives here — beside the scope it wipes (items +
                 schedule) — rather than on the sticky action bar, so it is findable
@@ -223,7 +223,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
             {hasContent && (
               <button ref={clearBtnRef} type="button" onClick={() => setClearConfirm(true)}
                 aria-label="Clear all items and uploaded documents"
-                className="ml-auto inline-flex items-center gap-1.5 card px-2.5 py-1 text-xs font-medium text-body-soft hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+                className="ml-auto inline-flex items-center gap-1.5 card px-2.5 py-1 font-medium text-body-soft hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
                 <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />Clear all
               </button>
             )}
@@ -251,23 +251,23 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                   // Destructive confirm replaces the whole chip — real buttons, red
                   // framing, "Keep" is the safe default (UX review 2026-07-26).
                   return (
-                    <div key={f.id} className="inline-flex items-center gap-2.5 border border-red-300 bg-red-50 px-3 py-1.5 text-xs max-w-full">
+                    <div key={f.id} className="inline-flex items-center gap-2.5 border border-red-300 bg-red-50 px-3 py-1.5 max-w-full t-cap">
                       <span className="text-red-800 font-medium truncate max-w-[12rem]">Remove {f.name}? Its lines go too.</span>
                       {/* Quiet text-scale controls — the red container carries the
                           alarm; the buttons shouldn't shout (UX review 2026-07-26). */}
                       <button onClick={() => void handleRemoveFile(String(f.id), f.name)}
-                        className="quote-button--danger text-xs font-medium border px-1.5 py-0.5 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-destructive">Remove</button>
+                        className="quote-button--danger font-medium border px-1.5 py-0.5 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-destructive t-cap">Remove</button>
                       <button onClick={() => setRemovingFile(null)} autoFocus
-                        className="text-xs text-body card px-1.5 py-0.5 hover:border-black/25 cursor-pointer">Keep</button>
+                        className="text-body card px-1.5 py-0.5 hover:border-black/25 cursor-pointer t-cap">Keep</button>
                     </div>
                   );
                 }
                 return (
-                  <div key={f.id} className="inline-flex items-center gap-2 card px-3 py-1.5 text-xs max-w-full">
+                  <div key={f.id} className="inline-flex items-center gap-2 card px-3 py-1.5 max-w-full t-cap">
                     <Paperclip className="w-3.5 h-3.5 text-sage flex-shrink-0" aria-hidden="true" />
                     <span className="text-ink font-medium truncate max-w-[14rem]">{f.name}</span>
                     {chip && (
-                      <span className={`text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 border leading-none flex-shrink-0 ${chip.tint} font-data`}>{chip.label}</span>
+                      <span className={`px-1.5 py-0.5 border flex-shrink-0 ${chip.tint} font-data t-label`}>{chip.label}</span>
                     )}
                     <span className="text-quiet flex-shrink-0">
                       {type === "supporting" ? "· Not used for pricing" : "· Attached for review"}
@@ -288,14 +288,14 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                   uploads behind a ~10s debounce), unlike manual entry, which is
                   parked. Re-adding the same file is caught in handleFiles. */}
               <button type="button" onClick={openUpload}
-                className="inline-flex items-center gap-1.5 border border-dashed border-black/25 action-hover px-3 py-1.5 text-xs font-medium text-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+                className="inline-flex items-center gap-1.5 border border-dashed border-black/25 action-hover px-3 py-1.5 font-medium text-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
                 <Upload className="w-3.5 h-3.5" aria-hidden="true" />
                 {quote.files.length > 0 ? "Add another document" : "Upload plans or a schedule"}
               </button>
             </div>
           )}
           {quote.items.length === 0 && (
-            <p className="text-body text-sm mt-1.5 max-w-lg">Add products or upload a schedule — we issue a reviewed quote before any deposit. Supply only.</p>
+            <p className="text-body mt-1.5 max-w-lg t-bd-sm">Add products or upload a schedule — we issue a reviewed quote before any deposit. Supply only.</p>
           )}
         </div>
 
@@ -305,7 +305,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
               the customer's line stands either way; Link converts it to a
               schedule line that future re-parses may refresh (edits protected). */}
           {collisionTags.map((tag) => (
-            <div key={tag} role="status" className="mb-4 border border-info/30 bg-info/10 px-4 py-3 text-sm text-info-ink">
+            <div key={tag} role="status" className="mb-4 border border-info/30 bg-info/10 px-4 py-3 text-info-ink t-bd-sm">
               <div className="flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="flex-1 min-w-0">
@@ -321,7 +321,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
           ))}
           {uploadNotice && (
             <div role={uploadNotice.type === "error" ? "alert" : "status"} aria-live="polite"
-              className={`mb-4 flex items-start gap-2.5 border px-4 py-3 text-sm ${uploadNotice.type === "success" ? "border-sage/30 bg-sage-wash text-sage-ink" : "border-red-300 bg-red-50 text-red-800"}`}>
+              className={`mb-4 flex items-start gap-2.5 border px-4 py-3 ${uploadNotice.type === "success" ? "border-sage/30 bg-sage-wash text-sage-ink" : "border-red-300 bg-red-50 text-red-800"} t-bd-sm`}>
               {uploadNotice.type === "success"
                 ? <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
                 : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />}
@@ -362,7 +362,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
             <div
               role={aiPhase.kind === "failed" ? "alert" : "status"}
               aria-live="polite"
-              className="quote-notice--warning mb-4 flex items-start gap-2.5 border border-warning/40 px-4 py-3 text-sm">
+              className="quote-notice--warning mb-4 flex items-start gap-2.5 border border-warning/40 px-4 py-3 t-bd-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
               <span className="flex-1">
                 {diagnosticMessage(aiPhase.diagnostic)}{" "}
@@ -415,7 +415,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
             </div>
           ) : processing ? (
             quote.items.length > 0 && (
-              <p className="mt-3 border border-dashed border-black/12 py-3 text-center text-sm text-quiet">
+              <p className="mt-3 border border-dashed border-black/12 py-3 text-center text-quiet t-bd-sm">
                 Adding items is paused until we finish reading.
               </p>
             )
@@ -428,21 +428,21 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                     ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" aria-hidden="true" />
                     : <UploadCloud className="w-5 h-5" aria-hidden="true" />}
                 </span>
-                <span className="block text-base font-semibold text-ink mb-1">{uploading ? "Reading schedule…" : "Upload schedule or photo"}</span>
-                <span className="block text-sm leading-relaxed text-body">PDFs, CSV files and clear photos come back matched and priced. Plans work too.</span>
+                <span className="block font-semibold text-ink mb-1 t-bd">{uploading ? "Reading schedule…" : "Upload schedule or photo"}</span>
+                <span className="block text-body t-bd-sm">PDFs, CSV files and clear photos come back matched and priced. Plans work too.</span>
               </button>
               <button onClick={() => setAdding(true)}
                 className="group min-h-32 action-tile action-hover p-5 text-left cursor-pointer">
                 <span className="w-9 h-9 mb-4 flex items-center justify-center bg-sage-wash text-sage group-hover:bg-sage group-hover:text-white transition-colors">
                   <Plus className="w-5 h-5" aria-hidden="true" />
                 </span>
-                <span className="block text-base font-semibold text-ink mb-1">Add a product manually</span>
-                <span className="block text-sm leading-relaxed text-body">Choose a product, then enter its dimensions and options.</span>
+                <span className="block font-semibold text-ink mb-1 t-bd">Add a product manually</span>
+                <span className="block text-body t-bd-sm">Choose a product, then enter its dimensions and options.</span>
               </button>
             </div>
           ) : (
             <button onClick={() => setAdding(true)}
-              className="mt-3 w-full flex items-center justify-center gap-1.5 border border-dashed border-black/20 action-hover py-3 text-sm text-sage font-medium cursor-pointer">
+              className="mt-3 w-full flex items-center justify-center gap-1.5 border border-dashed border-black/20 action-hover py-3 text-sage font-medium cursor-pointer t-bd-sm">
               <Plus className="w-4 h-4" />Add another item
             </button>
           )}
@@ -471,8 +471,8 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
           onClick={cancelClear} onKeyDown={e => { if (e.key === "Escape") cancelClear(); }}>
           <div ref={clearDialogRef} onClick={e => e.stopPropagation()}
             className="quote-dialog w-full max-w-sm p-5">
-            <h3 className="text-base font-semibold text-ink mb-1.5 font-display">Clear everything?</h3>
-            <p className="text-sm text-body leading-relaxed mb-4">This removes all {quote.items.length} item{quote.items.length !== 1 ? "s" : ""} and every uploaded document and can't be undone.</p>
+            <h3 className="font-semibold text-ink mb-1.5 font-display t-bd">Clear everything?</h3>
+            <p className="text-body mb-4 t-bd-sm">This removes all {quote.items.length} item{quote.items.length !== 1 ? "s" : ""} and every uploaded document and can't be undone.</p>
             <div className="flex justify-end gap-2">
               <Btn variant="ghost" size="md" onClick={cancelClear}>Cancel</Btn>
               <Btn variant="danger" size="md" onClick={handleClearAll}>Clear all</Btn>

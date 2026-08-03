@@ -35,7 +35,7 @@ const statusClass = (s: string) => {
 };
 
 const IntentBadge = ({ intent }: { intent: string }) => (
-  <span className="inline-flex items-center gap-1 text-xs text-body">
+  <span className="inline-flex items-center gap-1 text-body t-cap">
     {intent === "appointment_request" ? <CalendarClock className="w-3.5 h-3.5 text-sage" /> : <HelpCircle className="w-3.5 h-3.5 text-sage" />}
     {intent === "appointment_request" ? "Appointment" : "Question"}
   </span>
@@ -62,34 +62,34 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
       <div className="flex items-center gap-1 border-b border-black/8 mb-4 overflow-x-auto">
         {TABS.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors ${tab === t.id ? "border-sage text-ops font-medium" : "border-transparent text-quiet hover:text-ops"}`}>
+            className={`px-3 py-2 whitespace-nowrap border-b-2 -mb-px transition-colors ${tab === t.id ? "border-sage text-ops font-medium" : "border-transparent text-quiet hover:text-ops"} t-bd-sm`}>
             {t.label}
           </button>
         ))}
       </div>
-      {error ? <div className="bg-white border border-red-200 p-6 text-sm text-red-600">Couldn't load enquiries. {error}</div>
+      {error ? <div className="bg-white border border-red-200 p-6 text-red-600 t-bd-sm">Couldn't load enquiries. {error}</div>
         : !rows ? <Loader2 className="w-5 h-5 text-black/30 animate-spin" />
-        : !rows.length ? <div className="bg-white border border-dashed border-black/15 p-12 text-center text-sm text-body">No enquiries in this view.</div>
+        : !rows.length ? <div className="bg-white border border-dashed border-black/15 p-12 text-center text-body t-bd-sm">No enquiries in this view.</div>
         : (
           <div className="card overflow-x-auto">
-            <table className="w-full text-sm min-w-[860px]">
+            <table className="w-full min-w-[860px] t-bd-sm">
               <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wide text-quiet border-b border-black/8">
+                <tr className="text-left text-quiet border-b border-black/8 t-label">
                   {["Reference", "Type", "Customer", "Contact", "Location", "Source", "Submitted", "Owner", "Status"].map((h) => <th key={h} className="px-4 py-2.5 font-medium">{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((e) => (
                   <tr key={e.id} onClick={() => onOpen(e.id)} className="border-b border-black/5 last:border-0 hover:bg-bone cursor-pointer">
-                    <td className="px-4 py-3 font-mono text-xs text-ops whitespace-nowrap">{e.reference}</td>
+                    <td className="px-4 py-3 font-mono text-ops whitespace-nowrap t-cap">{e.reference}</td>
                     <td className="px-4 py-3"><IntentBadge intent={e.intent} /></td>
-                    <td className="px-4 py-3 text-ops">{e.name}{e.company && <span className="block text-xs text-quiet">{e.company}</span>}</td>
-                    <td className="px-4 py-3 text-body">{e.email}{e.phone && <span className="block text-xs text-quiet">{e.phone}</span>}</td>
+                    <td className="px-4 py-3 text-ops">{e.name}{e.company && <span className="block text-quiet t-cap">{e.company}</span>}</td>
+                    <td className="px-4 py-3 text-body">{e.email}{e.phone && <span className="block text-quiet t-cap">{e.phone}</span>}</td>
                     <td className="px-4 py-3 text-body">{e.locationSuburb ? `${e.locationState} – ${e.locationSuburb}` : "—"}</td>
-                    <td className="px-4 py-3"><span className="text-[11px] px-1.5 py-0.5 border border-sage/30 bg-sage-wash text-sage-ink whitespace-nowrap">OpenFrame Website</span></td>
+                    <td className="px-4 py-3"><span className="px-1.5 py-0.5 border border-sage/30 bg-sage-wash text-sage-ink whitespace-nowrap t-cap">OpenFrame Website</span></td>
                     <td className="px-4 py-3 text-quiet whitespace-nowrap">{when(e.createdAt)}</td>
                     <td className="px-4 py-3 text-body whitespace-nowrap">{e.assignedName ?? "—"}</td>
-                    <td className="px-4 py-3"><span className={`text-[11px] px-2 py-0.5 border ${statusClass(e.workflowStatus)}`}>{humanize(e.workflowStatus)}</span></td>
+                    <td className="px-4 py-3"><span className={`px-2 py-0.5 border ${statusClass(e.workflowStatus)} t-cap`}>{humanize(e.workflowStatus)}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -118,28 +118,28 @@ function Detail({ id, user, onBack }: { id: string; user: OpsUser; onBack: () =>
   };
   const logContact = async (outcome: string) => { setBusy(true); try { await opsLogContact(id, outcome); await load(); } finally { setBusy(false); } };
 
-  if (error) return <div className="bg-white border border-red-200 p-6 text-sm text-red-600">Couldn't load this enquiry.</div>;
+  if (error) return <div className="bg-white border border-red-200 p-6 text-red-600 t-bd-sm">Couldn't load this enquiry.</div>;
   if (!d) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
   const isAppt = d.intent === "appointment_request";
 
   return (
     <div className="max-w-4xl">
-      <button onClick={onBack} className="text-xs text-body hover:text-ops flex items-center gap-1 mb-4"><ChevronLeft className="w-3.5 h-3.5" />Back to enquiries</button>
+      <button onClick={onBack} className="text-body hover:text-ops flex items-center gap-1 mb-4 t-cap"><ChevronLeft className="w-3.5 h-3.5" />Back to enquiries</button>
 
       {/* Summary header */}
       <div className="card p-5 mb-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2.5">
-              <span className="font-mono text-sm text-ops">{d.reference}</span>
+              <span className="font-mono text-ops t-bd-sm">{d.reference}</span>
               <IntentBadge intent={d.intent} />
-              <span className="text-[11px] px-1.5 py-0.5 border border-sage/30 bg-sage-wash text-sage-ink">Source: OpenFrame Website</span>
+              <span className="px-1.5 py-0.5 border border-sage/30 bg-sage-wash text-sage-ink t-cap">Source: OpenFrame Website</span>
             </div>
-            <h2 className="text-lg font-semibold text-ops mt-1 font-display">{d.name}{d.company ? ` · ${d.company}` : ""}</h2>
-            <p className="text-xs text-quiet">Submitted {when(d.createdAt)}{d.assignedName ? ` · owner ${d.assignedName}` : " · unassigned"}</p>
+            <h2 className="font-semibold text-ops mt-1 font-display t-bd-lg">{d.name}{d.company ? ` · ${d.company}` : ""}</h2>
+            <p className="text-quiet t-cap">Submitted {when(d.createdAt)}{d.assignedName ? ` · owner ${d.assignedName}` : " · unassigned"}</p>
           </div>
           <div className="flex items-center gap-2">
-            {d.assignedUser !== user.id && <button onClick={() => patch({ assignedUser: user.id })} disabled={busy} className="text-xs px-3 py-1.5 border border-sage text-sage-ink hover:bg-sage-wash disabled:opacity-50">Assign to me</button>}
+            {d.assignedUser !== user.id && <button onClick={() => patch({ assignedUser: user.id })} disabled={busy} className="px-3 py-1.5 border border-sage text-sage-ink hover:bg-sage-wash disabled:opacity-50 t-cap">Assign to me</button>}
           </div>
         </div>
       </div>
@@ -167,7 +167,7 @@ function Detail({ id, user, onBack }: { id: string; user: OpsUser; onBack: () =>
             ) : (
               <>
                 {d.topic && <Row label="Topic">{d.topic}</Row>}
-                <div className="pt-1"><p className="text-[11px] uppercase tracking-wide text-quiet mb-1">Message</p><p className="text-sm text-ops whitespace-pre-wrap leading-relaxed">{d.message}</p></div>
+                <div className="pt-1"><p className="text-quiet mb-1 t-label">Message</p><p className="text-ops whitespace-pre-wrap t-bd-sm">{d.message}</p></div>
               </>
             )}
           </Panel>
@@ -176,20 +176,20 @@ function Detail({ id, user, onBack }: { id: string; user: OpsUser; onBack: () =>
           {isAppt && (
             <Panel title="Manufacturer handoff & reconciliation">
               <Row label="Handed off">{d.handedOffAt ? when(d.handedOffAt) : "—"}</Row>
-              <Row label="Acknowledged">{d.manufacturerAckAt ? when(d.manufacturerAckAt) : <button onClick={() => patch({ manufacturerAck: true })} disabled={busy} className="text-xs text-sage-ink underline disabled:opacity-50">Mark acknowledged</button>}</Row>
+              <Row label="Acknowledged">{d.manufacturerAckAt ? when(d.manufacturerAckAt) : <button onClick={() => patch({ manufacturerAck: true })} disabled={busy} className="text-sage-ink underline disabled:opacity-50 t-cap">Mark acknowledged</button>}</Row>
               <div className="grid grid-cols-2 gap-2 pt-2">
-                <label className="block"><span className="text-[10px] uppercase tracking-wide text-quiet">AMJ quote ref</span>
-                  <input value={quoteRef} onChange={(e) => setQuoteRef(e.target.value)} onBlur={() => quoteRef !== (d.manufacturerQuoteRef ?? "") && patch({ manufacturerQuoteRef: quoteRef })} placeholder="—" className="mt-0.5 w-full border border-black/15 px-2 py-1.5 text-sm outline-none focus:border-sage" /></label>
-                <label className="block"><span className="text-[10px] uppercase tracking-wide text-quiet">AMJ order ref</span>
-                  <input value={orderRef} onChange={(e) => setOrderRef(e.target.value)} onBlur={() => orderRef !== (d.manufacturerOrderRef ?? "") && patch({ manufacturerOrderRef: orderRef })} placeholder="—" className="mt-0.5 w-full border border-black/15 px-2 py-1.5 text-sm outline-none focus:border-sage" /></label>
+                <label className="block"><span className="text-quiet t-label">AMJ quote ref</span>
+                  <input value={quoteRef} onChange={(e) => setQuoteRef(e.target.value)} onBlur={() => quoteRef !== (d.manufacturerQuoteRef ?? "") && patch({ manufacturerQuoteRef: quoteRef })} placeholder="—" className="mt-0.5 w-full border border-black/15 px-2 py-1.5 outline-none focus:border-sage t-bd-sm" /></label>
+                <label className="block"><span className="text-quiet t-label">AMJ order ref</span>
+                  <input value={orderRef} onChange={(e) => setOrderRef(e.target.value)} onBlur={() => orderRef !== (d.manufacturerOrderRef ?? "") && patch({ manufacturerOrderRef: orderRef })} placeholder="—" className="mt-0.5 w-full border border-black/15 px-2 py-1.5 outline-none focus:border-sage t-bd-sm" /></label>
               </div>
-              <p className="text-[11px] text-quietest pt-1">Adding a downstream AMJ reference never changes the OpenFrame source owner.</p>
+              <p className="text-quietest pt-1 t-cap">Adding a downstream AMJ reference never changes the OpenFrame source owner.</p>
             </Panel>
           )}
 
           {/* Attribution */}
           <Panel title="Attribution">
-            <Row label="Source owner"><span className="text-ops">{d.sourceOwner}</span> <span className="text-[11px] text-quietest">(immutable)</span></Row>
+            <Row label="Source owner"><span className="text-ops">{d.sourceOwner}</span> <span className="text-quietest t-cap">(immutable)</span></Row>
             <Row label="Entry point">{d.sourceEntryPoint}</Row>
             {d.landingPath && <Row label="Landing">{d.landingPath}</Row>}
             {d.referrer && <Row label="Referrer">{d.referrer}</Row>}
@@ -199,11 +199,11 @@ function Detail({ id, user, onBack }: { id: string; user: OpsUser; onBack: () =>
 
           {/* Activity */}
           <Panel title="Activity">
-            {activity.length === 0 && <p className="text-xs text-quietest">No activity yet.</p>}
+            {activity.length === 0 && <p className="text-quietest t-cap">No activity yet.</p>}
             {activity.map((a, i) => (
-              <div key={i} className="flex items-baseline justify-between gap-3 py-1.5 border-b border-black/5 last:border-0 text-sm">
+              <div key={i} className="flex items-baseline justify-between gap-3 py-1.5 border-b border-black/5 last:border-0 t-bd-sm">
                 <span className="text-ops">{a.action}</span>
-                <span className="text-[11px] text-quiet whitespace-nowrap">{a.actor ?? "system"} · {when(a.occurred_at)}</span>
+                <span className="text-quiet whitespace-nowrap t-cap">{a.actor ?? "system"} · {when(a.occurred_at)}</span>
               </div>
             ))}
           </Panel>
@@ -212,17 +212,17 @@ function Detail({ id, user, onBack }: { id: string; user: OpsUser; onBack: () =>
         {/* Status rail */}
         <aside className="space-y-4">
           <div className="card p-4 space-y-3">
-            <p className="text-[11px] uppercase tracking-wide text-quiet">Status</p>
+            <p className="text-quiet t-label">Status</p>
             <StatusSelect label="Workflow" value={d.workflowStatus} options={WORKFLOW} disabled={busy} onChange={(v) => patch({ workflowStatus: v })} />
             <StatusSelect label="Contact" value={d.contactOutcome} options={CONTACT} disabled={busy} onChange={(v) => patch({ contactOutcome: v })} />
             {isAppt && <StatusSelect label="Appointment" value={d.appointmentStatus} options={APPOINTMENT} disabled={busy} onChange={(v) => patch({ appointmentStatus: v })} />}
             <StatusSelect label="Commercial" value={d.commercialOutcome} options={COMMERCIAL} disabled={busy} onChange={(v) => patch({ commercialOutcome: v })} />
           </div>
           <div className="card p-4">
-            <p className="text-[11px] uppercase tracking-wide text-quiet mb-2">Log a contact attempt</p>
+            <p className="text-quiet mb-2 t-label">Log a contact attempt</p>
             <div className="flex flex-wrap gap-1.5">
               {["attempted", "contacted", "no_response"].map((o) => (
-                <button key={o} onClick={() => logContact(o)} disabled={busy} className="text-xs px-2.5 py-1.5 border border-black/15 text-body hover:border-sage disabled:opacity-50">{humanize(o)}</button>
+                <button key={o} onClick={() => logContact(o)} disabled={busy} className="px-2.5 py-1.5 border border-black/15 text-body hover:border-sage disabled:opacity-50 t-cap">{humanize(o)}</button>
               ))}
             </div>
           </div>
@@ -235,15 +235,15 @@ function Detail({ id, user, onBack }: { id: string; user: OpsUser; onBack: () =>
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="card p-5">
-      <h3 className="text-[11px] uppercase tracking-wide text-quiet mb-3">{title}</h3>
+      <h3 className="text-quiet mb-3 t-label">{title}</h3>
       <div className="space-y-1.5">{children}</div>
     </div>
   );
 }
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-3 text-sm">
-      <span className="text-[11px] font-semibold uppercase tracking-widest text-quiet sm:w-28 sm:flex-shrink-0">{label}</span>
+    <div className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-3 t-bd-sm">
+      <span className="text-quiet sm:w-28 sm:flex-shrink-0 t-label">{label}</span>
       <span className="text-ops min-w-0 break-words">{children}</span>
     </div>
   );
@@ -251,9 +251,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function StatusSelect({ label, value, options, disabled, onChange }: { label: string; value: string; options: string[]; disabled: boolean; onChange: (v: string) => void }) {
   return (
     <label className="block">
-      <span className="text-[10px] uppercase tracking-wide text-quiet">{label}</span>
+      <span className="text-quiet t-label">{label}</span>
       <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}
-        className="mt-0.5 w-full card px-2 py-1.5 text-sm text-ops outline-none focus:border-sage disabled:opacity-60">
+        className="mt-0.5 w-full card px-2 py-1.5 text-ops outline-none focus:border-sage disabled:opacity-60 t-bd-sm">
         {options.map((o) => <option key={o} value={o}>{humanize(o)}</option>)}
       </select>
     </label>

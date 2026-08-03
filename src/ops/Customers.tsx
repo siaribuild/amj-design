@@ -27,9 +27,9 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
   const [rows, setRows] = useState<OpsCustomer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { opsCustomers().then(r => setRows(r.customers)).catch(e => setError(String(e?.message ?? e))); }, []);
-  if (error) return <div className="bg-white border border-red-200 p-6 text-sm text-red-600">Couldn't load customers. {error}</div>;
+  if (error) return <div className="bg-white border border-red-200 p-6 text-red-600 t-bd-sm">Couldn't load customers. {error}</div>;
   if (!rows) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
-  if (!rows.length) return <div className="bg-white border border-dashed border-black/15 p-12 text-center text-sm text-body">No registered customers yet.</div>;
+  if (!rows.length) return <div className="bg-white border border-dashed border-black/15 p-12 text-center text-body t-bd-sm">No registered customers yet.</div>;
   return (
     <>
     {/* PHONE — card per row, the same treatment Projects already had and this
@@ -43,10 +43,10 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
       {rows.map(c => (
         <button key={c.id} onClick={() => onOpen(c.id)}
           className="w-full text-left px-4 py-3 border-b border-black/8 last:border-0 active:bg-bone">
-          <p className="text-[15px] font-medium text-ops truncate">{c.name || c.email.split("@")[0]}</p>
-          <p className="text-[13px] text-body truncate">{c.email}</p>
-          {c.company && <p className="text-[13px] text-body truncate">{c.company}{c.abn ? ` · ABN ${c.abn}` : ""}</p>}
-          <p className="text-[12px] text-quiet mt-1">
+          <p className="font-medium text-ops truncate t-bd">{c.name || c.email.split("@")[0]}</p>
+          <p className="text-body truncate t-cap">{c.email}</p>
+          {c.company && <p className="text-body truncate t-cap">{c.company}{c.abn ? ` · ABN ${c.abn}` : ""}</p>}
+          <p className="text-quiet mt-1 t-cap">
             {c.projects} project{c.projects === 1 ? "" : "s"} · {c.orders} order{c.orders === 1 ? "" : "s"} · joined {fmtDate(c.created_at)}
           </p>
         </button>
@@ -54,9 +54,9 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
     </div>
 
     <div className="hidden lg:block card">
-      <table className="w-full text-sm">
+      <table className="w-full t-bd-sm">
         <thead>
-          <tr className="text-left text-[11px] uppercase tracking-wide text-quiet border-b border-black/8">
+          <tr className="text-left text-quiet border-b border-black/8 t-label">
             <th className="px-4 py-2.5 font-medium">Customer</th><th className="px-4 py-2.5 font-medium">Business</th>
             <th className="px-4 py-2.5 font-medium">Projects</th><th className="px-4 py-2.5 font-medium">Orders</th>
             <th className="px-4 py-2.5 font-medium">Registered</th><th className="px-4 py-2.5" />
@@ -65,12 +65,12 @@ function List({ onOpen }: { onOpen: (id: string) => void }) {
         <tbody>
           {rows.map(c => (
             <tr key={c.id} className="border-b border-black/5 last:border-0 hover:bg-bone">
-              <td className="px-4 py-3 font-medium text-ops">{c.name || c.email.split("@")[0]}<span className="block text-xs text-quiet font-normal">{c.email}</span></td>
-              <td className="px-4 py-3 text-body">{c.company || <span className="text-quietest">—</span>}<span className="block text-xs text-quiet">{c.abn ? `ABN ${c.abn}` : ""}</span></td>
+              <td className="px-4 py-3 font-medium text-ops">{c.name || c.email.split("@")[0]}<span className="block text-quiet font-normal t-cap">{c.email}</span></td>
+              <td className="px-4 py-3 text-body">{c.company || <span className="text-quietest">—</span>}<span className="block text-quiet t-cap">{c.abn ? `ABN ${c.abn}` : ""}</span></td>
               <td className="px-4 py-3 text-body">{c.projects}</td>
               <td className="px-4 py-3 text-body">{c.orders}</td>
               <td className="px-4 py-3 text-body">{fmtDate(c.created_at)}</td>
-              <td className="px-4 py-3 text-right"><button onClick={() => onOpen(c.id)} className="text-sm font-medium hover:underline" style={{ color: SAGE }}>Open →</button></td>
+              <td className="px-4 py-3 text-right"><button onClick={() => onOpen(c.id)} className="font-medium hover:underline t-bd-sm" style={{ color: SAGE }}>Open →</button></td>
             </tr>
           ))}
         </tbody>
@@ -88,7 +88,7 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
   const [editErr, setEditErr] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => { opsCustomer(id).then(setD).catch(() => setError(true)); }, [id]);
-  if (error) return <div className="bg-white border border-red-200 p-6 text-sm text-red-600">Couldn't load this customer.</div>;
+  if (error) return <div className="bg-white border border-red-200 p-6 text-red-600 t-bd-sm">Couldn't load this customer.</div>;
   if (!d) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
   const cu = d.customer;
   const isAdmin = viewer.role === "admin";
@@ -115,18 +115,18 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
 
   return (
     <div className="max-w-3xl">
-      <button onClick={onBack} className="text-xs text-body hover:text-ops flex items-center gap-1 mb-4"><ChevronLeft className="w-3.5 h-3.5" />Back to customers</button>
+      <button onClick={onBack} className="text-body hover:text-ops flex items-center gap-1 mb-4 t-cap"><ChevronLeft className="w-3.5 h-3.5" />Back to customers</button>
       <div className="card p-5 mb-5">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold text-ops flex items-center gap-2 font-display"><User className="w-5 h-5" style={{ color: SAGE }} />{cu.name || cu.email.split("@")[0]}</h2>
+          <h2 className="font-semibold text-ops flex items-center gap-2 font-display t-bd-lg"><User className="w-5 h-5" style={{ color: SAGE }} />{cu.name || cu.email.split("@")[0]}</h2>
           {!editing && (
-            <button onClick={startEdit} className="inline-flex items-center gap-1.5 text-xs text-body border border-black/12 px-2.5 py-1.5 hover:border-sage hover:text-sage">
+            <button onClick={startEdit} className="inline-flex items-center gap-1.5 text-body border border-black/12 px-2.5 py-1.5 hover:border-sage hover:text-sage t-cap">
               <PenLine className="w-3 h-3" />Edit details
             </button>
           )}
         </div>
         {!editing ? (
-          <div className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-body">
+          <div className="mt-2 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-body t-bd-sm">
             <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-quietest" />{cu.email}</span>
             {cu.phone && <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-quietest" />{cu.phone}</span>}
             <span className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5 text-quietest" />{cu.company || "No business name"}{cu.abn ? ` · ABN ${cu.abn}` : ""}</span>
@@ -142,36 +142,36 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
               {isAdmin ? (
                 <div className="sm:col-span-2">
                   <EditField label="Sign-in email — the customer's unique login ID" value={draft.email} type="email" onChange={(v) => setDraft({ ...draft, email: v })} />
-                  <p className="text-[11px] text-quiet mt-1">The customer signs in with the new address from their next login. Sessions and records are unaffected.</p>
+                  <p className="text-quiet mt-1 t-cap">The customer signs in with the new address from their next login. Sessions and records are unaffected.</p>
                 </div>
               ) : (
-                <p className="sm:col-span-2 text-[11px] text-quiet flex items-center gap-1.5"><Lock className="w-3 h-3" />Sign-in email ({cu.email}) can only be changed by an admin.</p>
+                <p className="sm:col-span-2 text-quiet flex items-center gap-1.5 t-cap"><Lock className="w-3 h-3" />Sign-in email ({cu.email}) can only be changed by an admin.</p>
               )}
             </div>
-            {editErr && <p className="text-xs text-red-600 mt-2">{editErr}</p>}
+            {editErr && <p className="text-red-600 mt-2 t-cap">{editErr}</p>}
             <div className="flex gap-2 mt-3">
-              <button onClick={save} disabled={busy} className="text-xs px-3.5 py-2 bg-sage text-white disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button>
-              <button onClick={() => setEditing(false)} className="text-xs px-2.5 py-2 text-body hover:text-ops">Cancel</button>
+              <button onClick={save} disabled={busy} className="px-3.5 py-2 bg-sage text-white disabled:opacity-50 t-cap">{busy ? "Saving…" : "Save changes"}</button>
+              <button onClick={() => setEditing(false)} className="px-2.5 py-2 text-body hover:text-ops t-cap">Cancel</button>
             </div>
           </div>
         )}
       </div>
 
       <Section title="Projects">
-        {d.projects.length === 0 && <p className="px-4 py-3 text-xs text-quietest">No projects.</p>}
+        {d.projects.length === 0 && <p className="px-4 py-3 text-quietest t-cap">No projects.</p>}
         {d.projects.map(p => (
-          <div key={p.id} className="flex items-center justify-between px-4 py-2.5 text-sm border-b border-black/5 last:border-0">
+          <div key={p.id} className="flex items-center justify-between px-4 py-2.5 border-b border-black/5 last:border-0 t-bd-sm">
             <span className="text-ops">{p.title ?? "Untitled"}</span>
-            <span className="text-xs px-2 py-0.5 border border-black/12 text-body">{p.status_customer}</span>
+            <span className="px-2 py-0.5 border border-black/12 text-body t-cap">{p.status_customer}</span>
           </div>
         ))}
       </Section>
 
       <Section title="Orders">
-        {d.orders.length === 0 && <p className="px-4 py-3 text-xs text-quietest">No orders.</p>}
+        {d.orders.length === 0 && <p className="px-4 py-3 text-quietest t-cap">No orders.</p>}
         {d.orders.map(o => (
-          <div key={o.id} className="flex items-center justify-between px-4 py-2.5 text-sm border-b border-black/5 last:border-0">
-            <span className="font-mono text-ops">{o.order_no}<span className="ml-2 text-xs text-quiet font-sans">{o.stage}</span></span>
+          <div key={o.id} className="flex items-center justify-between px-4 py-2.5 border-b border-black/5 last:border-0 t-bd-sm">
+            <span className="font-mono text-ops">{o.order_no}<span className="ml-2 text-quiet font-sans t-cap">{o.stage}</span></span>
             <span className="font-data">{money(o.total)}</span>
           </div>
         ))}
@@ -183,9 +183,9 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
 function EditField({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
   return (
     <label className="block">
-      <span className="block text-[10px] uppercase tracking-wide text-quiet mb-1">{label}</span>
+      <span className="block text-quiet mb-1 t-label">{label}</span>
       <input type={type} value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full border border-black/15 px-2.5 py-1.5 text-sm outline-none focus:border-sage" />
+        className="w-full border border-black/15 px-2.5 py-1.5 outline-none focus:border-sage t-bd-sm" />
     </label>
   );
 }
@@ -193,7 +193,7 @@ function EditField({ label, value, onChange, type = "text" }: { label: string; v
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <>
-      <h3 className="text-[11px] uppercase tracking-wide text-quiet mb-2">{title}</h3>
+      <h3 className="text-quiet mb-2 t-label">{title}</h3>
       <div className="card mb-5">{children}</div>
     </>
   );

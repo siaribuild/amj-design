@@ -27,7 +27,7 @@ const OPTION_TYPE_ORDER = ["Glass", "Frame colour", "Colour", "Hardware", "Flysc
 function AvailabilityBadge({ availability }: { availability: ProductOption["availability"] }) {
   const standard = availability === "standard";
   return (
-    <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 border ${standard ? "border-sage/40 text-sage bg-sage/[0.06]" : "border-black/15 text-body"} font-data`}>
+    <span className={`px-2 py-0.5 border ${standard ? "border-sage/40 text-sage bg-sage/[0.06]" : "border-black/15 text-body"} font-data t-label`}>
       {standard ? "Standard" : "Optional"}
     </span>
   );
@@ -47,16 +47,16 @@ function OverviewContent({ product, familyBlurb }: { product: Product; familyBlu
       ))}
       {familyBlurb && (
         <div className="border-l-2 border-sage/40 pl-4">
-          <p className="text-xs font-semibold text-sage uppercase tracking-wide mb-1 font-data">Best suited to</p>
-          <p className="text-sm text-body leading-relaxed">{familyBlurb}</p>
+          <p className="text-sage mb-1 font-data t-label">Best suited to</p>
+          <p className="text-body t-bd-sm">{familyBlurb}</p>
         </div>
       )}
       {inclusions.length > 0 && (
         <div>
-          <p className="text-xs font-semibold text-ink uppercase tracking-wide mb-2">Standard inclusions</p>
+          <p className="text-ink mb-2 t-label">Standard inclusions</p>
           <ul className="space-y-1.5">
             {inclusions.map(l => (
-              <li key={l} className="text-sm text-body flex gap-2">
+              <li key={l} className="text-body flex gap-2 t-bd-sm">
                 <Check className="w-3.5 h-3.5 text-sage flex-shrink-0 mt-0.5" />{l}
               </li>
             ))}
@@ -74,22 +74,22 @@ function OptionsContent({ product }: { product: Product }) {
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
   });
   if (typeNames.length === 0) {
-    return <p className="text-sm text-body">Options for this product are confirmed at technical review.</p>;
+    return <p className="text-body t-bd-sm">Options for this product are confirmed at technical review.</p>;
   }
   return (
     <div className="space-y-6">
-      <p className="text-sm text-body">Standard and selectable options for this system. Final selections are confirmed on your estimate.</p>
+      <p className="text-body t-bd-sm">Standard and selectable options for this system. Final selections are confirmed on your estimate.</p>
       {typeNames.map(tn => {
         const items = product.options
           .filter(o => o.typeName === tn)
           .sort((a, b) => (a.availability === b.availability ? 0 : a.availability === "standard" ? -1 : 1));
         return (
           <div key={tn}>
-            <p className="text-xs font-semibold text-ink uppercase tracking-wide mb-2">{tn}</p>
+            <p className="text-ink mb-2 t-label">{tn}</p>
             <div className="border border-black/8">
               {items.map((o, i) => (
                 <div key={o.name} className={`flex items-center justify-between gap-3 px-4 py-2.5 ${i > 0 ? "border-t border-black/6" : ""}`}>
-                  <span className="text-sm text-ink">{o.name}</span>
+                  <span className="text-ink t-bd-sm">{o.name}</span>
                   <AvailabilityBadge availability={o.availability} />
                 </div>
               ))}
@@ -103,11 +103,11 @@ function OptionsContent({ product }: { product: Product }) {
 
 function TechnicalContent({ product }: { product: Product }) {
   return (
-    <table className="w-full text-sm">
+    <table className="w-full t-bd-sm">
       <tbody>
         {product.specs.map(row => (
           <tr key={row.label} className="border-b border-black/6">
-            <td className="py-2.5 pr-4 text-xs text-body font-medium w-44 align-top">{row.label}</td>
+            <td className="py-2.5 pr-4 text-body font-medium w-44 align-top t-cap">{row.label}</td>
             <td className="py-2.5 text-ink">{row.value}</td>
           </tr>
         ))}
@@ -138,14 +138,14 @@ function GlazingContent({ product }: { product: Product }) {
   if (!thermal.length) return null;
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-body">
+      <p className="text-body t-bd-sm">
         Whole-window energy ratings (WERS) for each glazing available on this frame.
         Uw is insulation (lower is better); SHGC is solar heat gain.
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full t-bd-sm">
           <thead>
-            <tr className="text-xs text-body border-b border-black/10">
+            <tr className="text-body border-b border-black/10 t-cap">
               <th className="py-2 pr-4 text-left font-medium">Glazing</th>
               <th className="py-2 px-3 text-right font-medium">Uw</th>
               <th className="py-2 px-3 text-right font-medium">SHGC</th>
@@ -195,8 +195,8 @@ function DownloadsContent({ product, setPage }: { product: Product; setPage: (p:
       <div className="card p-6 flex items-start gap-3">
         <Info className="w-4 h-4 text-sage flex-shrink-0 mt-0.5" aria-hidden="true" />
         <div>
-          <p className="text-sm text-ink font-semibold mb-1.5">No documents are published for this system yet.</p>
-          <p className="text-sm text-body leading-relaxed mb-4 max-w-[54ch]">
+          <p className="text-ink font-semibold mb-1.5 t-bd-sm">No documents are published for this system yet.</p>
+          <p className="text-body mb-4 max-w-[54ch] t-bd-sm">
             Technical documents, test reports and warranty terms are issued with a reviewed quote.
             If you need something specific before then, ask and we'll send it if we have it.
           </p>
@@ -210,7 +210,7 @@ function DownloadsContent({ product, setPage }: { product: Product; setPage: (p:
     <div className="space-y-6">
       {groupDocuments(docs).map((group) => (
         <div key={group.docType}>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2 font-data">
+          <p className="text-quiet mb-2 font-data t-label">
             {group.label}
           </p>
           <div className="card">
@@ -223,7 +223,7 @@ function DownloadsContent({ product, setPage }: { product: Product; setPage: (p:
 
       {reads.length > 0 && (
         <div>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2 font-data">
+          <p className="text-quiet mb-2 font-data t-label">
             Related reading
           </p>
           <div className="card">
@@ -231,8 +231,8 @@ function DownloadsContent({ product, setPage }: { product: Product; setPage: (p:
               <button key={g.slug} onClick={() => openPost(g.slug)}
                 className="icon-btn w-full text-left flex items-start justify-between gap-3 px-4 py-3 border-b border-black/8 last:border-0 cursor-pointer">
                 <span className="min-w-0">
-                  <span className="block text-sm text-ink">{g.title}</span>
-                  <span className="block text-[12.5px] text-body mt-0.5 leading-relaxed">{g.summary}</span>
+                  <span className="block text-ink t-bd-sm">{g.title}</span>
+                  <span className="block text-body mt-0.5 t-cap">{g.summary}</span>
                 </span>
                 <ArrowRight className="w-4 h-4 text-quieter flex-shrink-0 mt-0.5" aria-hidden="true" />
               </button>
@@ -319,13 +319,13 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
     <div id="configure">
       <div className="flex items-center gap-2 mb-3">
         <WindowMark size={16} color={SAGE} />
-        <h2 className="text-base font-semibold text-ink font-display">Configure &amp; get an estimate</h2>
+        <h2 className="font-semibold text-ink font-display t-bd">Configure &amp; get an estimate</h2>
       </div>
       {liveJustAdded ? (
         <div className="space-y-3">
           <ItemSummaryCard item={liveJustAdded} added quote={quote} />
           <div className="border border-black/10 bg-bone px-4 py-4">
-            <p className="text-sm text-body mb-3">MyProject now has <span className="font-medium text-ink">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span> · estimated {fmt(gstAdjust(projectTotal, gstMode))} {gstSuffix(gstMode)}.</p>
+            <p className="text-body mb-3 t-bd-sm">MyProject now has <span className="font-medium text-ink">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span> · estimated {fmt(gstAdjust(projectTotal, gstMode))} {gstSuffix(gstMode)}.</p>
             <Btn variant="sage" size="md" onClick={() => remount({ options: liveJustAdded.options, location: liveJustAdded.location })} className="w-full justify-center"><Plus className="w-4 h-4" />Add another like this</Btn>
             <div className="grid grid-cols-2 gap-2 mt-2">
               <Btn variant="outline" size="md" onClick={() => onBack(categorySlug, product.familySlug)} className="justify-center">Another product</Btn>
@@ -352,19 +352,19 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
           <div className="max-w-2xl">
             <div className="flex items-center gap-2 mb-3">
               <WindowMark size={10} color="rgba(255,255,255,0.55)" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">{family?.name ?? category?.name ?? "Products"}</span>
+              <span className="text-white/60 font-data t-label">{family?.name ?? category?.name ?? "Products"}</span>
             </div>
             <h1 className="text-white mb-4 t-ds1">{product.name}</h1>
-            <p className="text-white/80 text-base md:text-lg leading-relaxed max-w-xl mb-5">{product.shortDescription}</p>
+            <p className="text-white/80 max-w-xl mb-5 t-bd">{product.shortDescription}</p>
             {/* Key spec chips */}
             {product.keySpecs.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-5">
                 {product.keySpecs.map(spec => (
-                  <span key={spec.label} className="border border-white/25 text-white/85 text-[12px] tracking-wide px-2.5 py-1 font-data">{spec.value}</span>
+                  <span key={spec.label} className="border border-white/25 text-white/85 tracking-wide px-2.5 py-1 font-data t-data-sm">{spec.value}</span>
                 ))}
               </div>
             )}
-            <p className="text-white/50 text-xs font-data">Indicative estimate first · Reviewed quote before deposit</p>
+            <p className="text-white/50 font-data t-data-sm">Indicative estimate first · Reviewed quote before deposit</p>
           </div>
         </div>
       </section>
@@ -373,7 +373,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
       <div id="product-sections" className="max-w-6xl mx-auto px-6 py-8 md:py-12">
         {/* Back link — top of content, where it is clearly visible on the light body */}
         <button onClick={() => onBack(categorySlug, product.familySlug)}
-          className="inline-flex items-center gap-1 text-sm text-body hover:text-ink transition-colors mb-6 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2">
+          className="inline-flex items-center gap-1 text-body hover:text-ink transition-colors mb-6 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2 t-bd-sm">
           <ChevronLeft className="w-4 h-4" />Back to products
         </button>
 
@@ -395,7 +395,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
                 {tabs.map(t => (
                   <button key={t.id} onClick={() => setTab(t.id)}
                     aria-current={tab === t.id ? "true" : undefined}
-                    className={`pb-3 text-sm border-b-2 transition-all cursor-pointer -mb-px ${tab === t.id ? "border-sage text-ink font-medium" : "border-transparent text-body hover:text-ink"}`}>
+                    className={`pb-3 border-b-2 transition-all cursor-pointer -mb-px ${tab === t.id ? "border-sage text-ink font-medium" : "border-transparent text-body hover:text-ink"} t-bd-sm`}>
                     {t.label}
                   </button>
                 ))}
@@ -414,7 +414,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
                       <button onClick={() => setOpenSection(open ? "" : t.id)}
                         aria-expanded={open}
                         className="w-full flex items-center justify-between gap-3 py-4 text-left cursor-pointer">
-                        <span className={`text-sm ${open ? "font-semibold text-ink" : "font-medium text-ink"} font-display`}>{t.label}</span>
+                        <span className={`${open ? "font-semibold text-ink" : "font-medium text-ink"} font-display t-bd-sm`}>{t.label}</span>
                         <ChevronDown className={`w-4 h-4 text-body transition-transform ${open ? "rotate-180" : ""}`} />
                       </button>
                     </h2>
@@ -458,7 +458,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
               {related.length > 0 ? `More ${family?.name ?? "products"}` : "Keep browsing"}
             </h2>
             <button onClick={() => onBack(categorySlug, product.familySlug)}
-              className="inline-flex items-center gap-1 text-sm font-medium text-sage hover:text-sage-hover transition-colors cursor-pointer flex-shrink-0">
+              className="inline-flex items-center gap-1 font-medium text-sage hover:text-sage-hover transition-colors cursor-pointer flex-shrink-0 t-bd-sm">
               <ChevronLeft className="w-3.5 h-3.5" />Back to products
             </button>
           </div>
@@ -475,8 +475,8 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
                   </div>
                   <div className="p-5 flex flex-col flex-1">
                     <h3 className="font-semibold text-ink mb-1 font-display">{r.name}</h3>
-                    <p className="text-sm text-body leading-relaxed mb-3 line-clamp-2">{r.shortDescription}</p>
-                    <span className="mt-auto inline-flex items-center gap-1.5 text-sm font-medium text-sage group-hover:gap-2.5 transition-all">
+                    <p className="text-body mb-3 line-clamp-2 t-bd-sm">{r.shortDescription}</p>
+                    <span className="mt-auto inline-flex items-center gap-1.5 font-medium text-sage group-hover:gap-2.5 transition-all t-bd-sm">
                       View product <ArrowRight className="w-3.5 h-3.5" />
                     </span>
                   </div>
@@ -485,7 +485,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
             </div>
           ) : (
             <div className="border border-black/10 bg-bone px-6 py-8 split-row is-center">
-              <p className="text-sm text-body">This is the only system in the {family?.name ?? "family"} right now. Browse the full catalogue to compare other options.</p>
+              <p className="text-body t-bd-sm">This is the only system in the {family?.name ?? "family"} right now. Browse the full catalogue to compare other options.</p>
               <Btn variant="outline" size="sm" onClick={() => onBack(categorySlug, "all")}>View all {category?.name?.toLowerCase() ?? "products"}</Btn>
             </div>
           )}
@@ -502,7 +502,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
           )}
           <figure className="max-w-5xl max-h-full flex flex-col items-center" onClick={e => e.stopPropagation()}>
             <img src={imageUrl(product.gallery[lightbox], { w: 1600 })} alt={`${product.name} — view ${lightbox + 1}`} className="max-w-full max-h-[80vh] object-contain" />
-            <figcaption className="text-white/70 text-xs mt-3 font-data">{product.name} · {lightbox + 1} / {galleryLen}</figcaption>
+            <figcaption className="text-white/70 mt-3 font-data t-data-sm">{product.name} · {lightbox + 1} / {galleryLen}</figcaption>
           </figure>
           {galleryLen > 1 && (
             <button onClick={e => { e.stopPropagation(); setLightbox(i => (i == null ? i : (i + 1) % galleryLen)); }}

@@ -59,7 +59,7 @@ export function OpeningRow({
             is invisible in a flex row but would have consumed two grid tracks. */}
         <span className="order-1 md:col-start-1 md:row-start-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
           <FamilyPictogram productSlug={item.productSlug} size={22} />
-          <span className="text-xs font-semibold text-ink truncate font-data">{ref}</span>
+          <span className="font-semibold text-ink truncate font-data t-data-sm">{ref}</span>
           {/* Below 1024 the status belongs to the identity, beside the reference
               it describes — the same place a phone puts it. It rides INSIDE this
               cell rather than as a grid sibling because at these widths it has
@@ -104,7 +104,7 @@ export function OpeningRow({
         </div>
 
         {/* The only elastic element — it truncates so the row can never scroll. */}
-        <span className="order-5 md:order-none md:col-start-2 md:row-start-1 basis-full md:basis-auto min-w-0 truncate text-sm text-ink">
+        <span className="order-5 md:order-none md:col-start-2 md:row-start-1 basis-full md:basis-auto min-w-0 truncate text-ink t-bd-sm">
           {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
           {item.location && <span className="text-quiet"> · {item.location}</span>}
         </span>
@@ -114,16 +114,16 @@ export function OpeningRow({
             different scans and a combined cell answers neither cleanly. Quantity
             folds back into the flow between 768 and 1023, where its column is
             the cheapest one to give up. */}
-        <span className="order-6 md:order-none md:col-start-3 md:row-start-1 md:text-right text-xs text-body flex-shrink-0 tabular-nums font-data">
+        <span className="order-6 md:order-none md:col-start-3 md:row-start-1 md:text-right text-body flex-shrink-0 tabular-nums font-data t-data-sm">
           {mm(item.width)} × {mm(item.height)}
           <span className="lg:hidden"> · ×{item.qty}</span>
         </span>
 
-        <span className="hidden lg:block lg:col-start-4 lg:row-start-1 lg:text-right text-xs text-body flex-shrink-0 tabular-nums font-data">
+        <span className="hidden lg:block lg:col-start-4 lg:row-start-1 lg:text-right text-body flex-shrink-0 tabular-nums font-data t-data-sm">
           ×{item.qty}
         </span>
 
-        <span className="order-7 md:order-none md:col-start-4 lg:col-start-5 md:row-start-1 md:text-right ml-auto md:ml-0 text-sm font-semibold text-ink flex-shrink-0 tabular-nums font-data">
+        <span className="order-7 md:order-none md:col-start-4 lg:col-start-5 md:row-start-1 md:text-right ml-auto md:ml-0 font-semibold text-ink flex-shrink-0 tabular-nums font-data t-data">
           {/* The number only. Repeating "inc GST" on every line states the tax
               basis twenty times to say one thing — it is a property of the
               whole quote, and the sticky summary carries it there once. */}
@@ -143,16 +143,16 @@ function RowStateBadge({ state }: { state: RowState }) {
   if (state.kind === "none") return null;
   if (state.kind === "composite") {
     return (
-      <span className="quote-chip quote-chip--neutral text-[10px]">
+      <span className="quote-chip quote-chip--neutral t-cap">
         Composite · {state.units} units
       </span>
     );
   }
   if (state.kind === "confirm-layout") {
-    return <span className="quote-chip quote-chip--review text-[10px]">Confirm layout</span>;
+    return <span className="quote-chip quote-chip--review t-cap">Confirm layout</span>;
   }
   return (
-    <span className="quote-chip quote-chip--attention text-[10px]">
+    <span className="quote-chip quote-chip--attention t-cap">
       <AlertCircle className="w-2.5 h-2.5" aria-hidden="true" />Needs your input
     </span>
   );

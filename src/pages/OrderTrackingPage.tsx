@@ -40,32 +40,29 @@ export function OrderReadout({ order }: { order: ApiOrder }) {
       </div>
       {order.files && order.files.length > 0 && (
         <div className="card p-5 mb-3">
-          <p className="text-[10px] tracking-[0.2em] text-body uppercase mb-3">Attached schedule</p>
+          <p className="text-body mb-3 t-label">Attached schedule</p>
           <ul className="space-y-2">
             {order.files.map(f => (
-              <li key={f.id} className="flex items-center gap-2.5 text-sm text-ink">
+              <li key={f.id} className="flex items-center gap-2.5 text-ink t-bd-sm">
                 <FileText className="w-4 h-4 text-sage flex-shrink-0" />
                 <span className="truncate">{f.filename}</span>
-                <a href={`/api/files/${f.id}/download`} className="ml-auto text-xs text-body hover:text-sage whitespace-nowrap" download>Download</a>
+                <a href={`/api/files/${f.id}/download`} className="ml-auto text-body hover:text-sage whitespace-nowrap t-cap" download>Download</a>
               </li>
             ))}
           </ul>
         </div>
       )}
       <div className="card p-5">
-        <p className="text-[10px] tracking-[0.2em] text-body uppercase mb-4">Progress</p>
+        <p className="text-body mb-4 t-label">Progress</p>
         <ol className="space-y-0">
           {STAGES.map(([key, label], i) => {
             const done = i < idx, active = i === idx;
             return (
               <li key={key} className="flex items-center gap-3 py-1.5">
-                <span className={`w-5 h-5 flex items-center justify-center border text-[10px] ${
-                  done ? "bg-sage border-sage text-white"
-                  : active ? "border-sage text-sage"
-                  : "border-black/15 text-black/25"}`}>
+                <span className={`w-5 h-5 flex items-center justify-center border ${ done ? "bg-sage border-sage text-white" : active ? "border-sage text-sage" : "border-black/15 text-black/25"} t-cap`}>
                   {done ? <Check className="w-3 h-3" /> : i + 1}
                 </span>
-                <span className={`text-sm ${active ? "text-ink font-medium" : done ? "text-body" : "text-black/35"}`}>{label}</span>
+                <span className={`${active ? "text-ink font-medium" : done ? "text-body" : "text-black/35"} t-bd-sm`}>{label}</span>
               </li>
             );
           })}
@@ -81,22 +78,22 @@ function PaymentCard({ title, orderNo, p }: { title: string; orderNo: string; p:
   return (
     <div className={`border p-4 ${paid ? "bg-sage/6 border-sage/25" : invoiced ? "bg-white border-black/12" : "ground-bone border-black/8"}`}>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs tracking-wide text-body uppercase">{title} · {p.percent}%</span>
-        <span className={`text-[10px] px-1.5 py-0.5 border ${paid ? "border-sage text-sage" : invoiced ? "border-amber-500 text-amber-600" : "border-black/15 text-black/40"}`}>
+        <span className="text-body t-label">{title} · {p.percent}%</span>
+        <span className={`px-1.5 py-0.5 border ${paid ? "border-sage text-sage" : invoiced ? "border-amber-500 text-amber-600" : "border-black/15 text-black/40"} t-cap`}>
           {paid ? "Paid" : invoiced ? "Due" : "Not yet due"}
         </span>
       </div>
-      <p className="text-lg text-ink font-data">{fmt(p.amount)}</p>
+      <p className="text-ink font-data t-data">{fmt(p.amount)}</p>
       {paid ? (
-        <p className="text-xs text-sage flex items-center gap-1 mt-1"><Check className="w-3 h-3" />Received{p.reference ? ` · ${p.reference}` : ""}</p>
+        <p className="text-sage flex items-center gap-1 mt-1 t-cap"><Check className="w-3 h-3" />Received{p.reference ? ` · ${p.reference}` : ""}</p>
       ) : invoiced ? (
-        <div className="text-xs text-body mt-2 space-y-0.5">
+        <div className="text-body mt-2 space-y-0.5 t-cap">
           <p className="flex items-center gap-1 text-ink font-medium"><Landmark className="w-3 h-3" />Pay by bank transfer</p>
           <p>BSB 083-000 · Acct 12 345 678</p>
           <p>Reference <span className="font-mono text-ink">{orderNo}</span></p>
         </div>
       ) : (
-        <p className="text-xs text-body mt-2 flex items-center gap-1"><FileText className="w-3 h-3" />Invoiced after quality check</p>
+        <p className="text-body mt-2 flex items-center gap-1 t-cap"><FileText className="w-3 h-3" />Invoiced after quality check</p>
       )}
     </div>
   );

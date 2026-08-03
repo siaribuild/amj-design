@@ -86,7 +86,7 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
 
   return (
     <div role="status" aria-live="polite"
-      className="border border-dashed border-sage/45 bg-sage/[0.05] px-4 py-5 text-sm">
+      className="border border-dashed border-sage/45 bg-sage/[0.05] px-4 py-5 t-bd-sm">
       {showSteps ? (
         <>
           <ol className="space-y-2">
@@ -124,7 +124,7 @@ export function DocumentProgress({ uploading, processingDocs, aiPhase, stageLog,
                     {done ? " — done" : inProgress ? " — in progress" : stalled ? " — waiting" : " — pending"}
                   </span>
                   {durMs != null && (
-                    <span className={`ml-auto tabular-nums text-xs ${inProgress ? "text-sage" : "text-quieter"}`}>
+                    <span className={`ml-auto tabular-nums ${inProgress ? "text-sage" : "text-quieter"} t-data-sm`}>
                       {fmtDur(durMs)}
                     </span>
                   )}

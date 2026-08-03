@@ -28,7 +28,7 @@ import type { TrackFocus } from "./OrderTrackingPage";
 // ── Shared bits ───────────────────────────────────────────────────────────────
 export function BackLink({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className="inline-flex items-center gap-[7px] text-[12.5px] text-body hover:text-sage mb-[18px] cursor-pointer font-data">
+    <button onClick={onClick} className="inline-flex items-center gap-[7px] text-body hover:text-sage mb-[18px] cursor-pointer font-data t-data-sm">
       <ChevronLeft className="w-3.5 h-3.5" />All projects
     </button>
   );
@@ -38,9 +38,9 @@ export function Blk({ eyebrow, title, right, children, id }: { eyebrow: string; 
   return (
     <section id={id} className="card">
       <div className="flex items-center gap-2.5 px-5 py-[15px] border-b border-black/10 flex-wrap">
-        <span className="text-[11.5px] tracking-[0.14em] uppercase text-sage font-data">{eyebrow}</span>
-        <h2 className="text-[15px] font-semibold text-ink font-display">{title}</h2>
-        {right && <span className="sm:ml-auto text-xs text-body basis-full sm:basis-auto font-data">{right}</span>}
+        <span className="text-sage font-data t-label">{eyebrow}</span>
+        <h2 className="font-semibold text-ink font-display t-bd">{title}</h2>
+        {right && <span className="sm:ml-auto text-body basis-full sm:basis-auto font-data t-data-sm">{right}</span>}
       </div>
       {children}
     </section>
@@ -54,7 +54,7 @@ export function ConfirmDetails({ summary, lines, action, busy, onConfirm, receip
 }) {
   return (
     <details className="border bg-white mt-3.5" style={{ borderColor: TONE.attn.bd }}>
-      <summary className="list-none cursor-pointer px-4 py-3 flex items-center gap-2.5 text-sm font-medium text-ink [&::-webkit-details-marker]:hidden">
+      <summary className="list-none cursor-pointer px-4 py-3 flex items-center gap-2.5 font-medium text-ink [&::-webkit-details-marker]:hidden t-bd-sm">
         <Check className="w-4 h-4 text-sage" />{summary}
         <ChevronDown className="w-4 h-4 ml-auto text-body" />
       </summary>
@@ -62,15 +62,15 @@ export function ConfirmDetails({ summary, lines, action, busy, onConfirm, receip
         {receipt && (
           <div className="flex flex-col gap-2 py-3.5">
             {receipt.map((r) => (
-              <div key={r.label} className={`flex justify-between text-[13.5px] text-body ${r.big ? "border-t border-black/10 pt-2.5 mt-0.5 text-[15px]" : ""}`}>
+              <div key={r.label} className={`flex justify-between text-body ${r.big ? "border-t border-black/10 pt-2.5 mt-0.5 t-bd" : ""} t-cap`}>
                 <span>{r.label}</span>
-                <span className={r.big ? "font-medium" : "text-ink font-medium"} style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums", color: r.big ? TONE.attn.text : undefined }}>{r.value}</span>
+                <span className={`font-data ${r.big ? "font-medium" : "text-ink font-medium"}`} style={{ color: r.big ? TONE.attn.text : undefined }}>{r.value}</span>
               </div>
             ))}
           </div>
         )}
         {lines.map((l) => (
-          <div key={l} className="flex items-start gap-[9px] text-[12.5px] text-body py-2 leading-normal">
+          <div key={l} className="flex items-start gap-[9px] text-body py-2 t-cap">
             <Check className="w-[15px] h-[15px] flex-shrink-0 mt-px" style={{ color: TONE.pos.text }} />{l}
           </div>
         ))}
@@ -86,16 +86,16 @@ function ActionGate({ pill, step, title, children }: { pill: string; step?: stri
     <section className="p-5 border" style={{ borderColor: TONE.attn.bd, borderLeft: `3px solid ${TONE.attn.text}`, background: `linear-gradient(180deg, ${TONE.attn.bg}, rgba(178,110,15,.03))` }}>
       <div className="flex items-center gap-2 mb-2.5 flex-wrap">
         <StatusPill tone="attn">{pill}</StatusPill>
-        {step && <span className="text-[11.5px] text-body font-data">{step}</span>}
+        {step && <span className="text-body font-data t-data-sm">{step}</span>}
       </div>
-      <h2 className="text-lg font-semibold text-ink mb-1.5 font-display">{title}</h2>
+      <h2 className="font-semibold text-ink mb-1.5 font-display t-bd-lg">{title}</h2>
       {children}
     </section>
   );
 }
 
 const Safe = ({ children }: { children: ReactNode }) => (
-  <span className="inline-flex items-center gap-1.5 text-[11.5px]" style={{ fontFamily: "'Space Grotesk', sans-serif", color: TONE.pos.text }}>
+  <span className="inline-flex items-center gap-1.5 t-cap font-data" style={{ color: TONE.pos.text }}>
     <Check className="w-3 h-3" />{children}
   </span>
 );
@@ -104,13 +104,13 @@ const Safe = ({ children }: { children: ReactNode }) => (
 function PayPanel({ kind, amount, orderNo }: { kind: "deposit" | "balance"; amount: number | undefined; orderNo: string }) {
   return (
     <div className="card p-4 mt-3.5">
-      <p className="flex items-center gap-2 text-sm font-medium text-ink mb-2"><Landmark className="w-4 h-4 text-sage" />Pay the {kind} by bank transfer</p>
-      <div className="text-[13px] text-body space-y-1 font-data">
+      <p className="flex items-center gap-2 font-medium text-ink mb-2 t-bd-sm"><Landmark className="w-4 h-4 text-sage" />Pay the {kind} by bank transfer</p>
+      <div className="text-body space-y-1 font-data t-data">
         <p>Amount <span className="text-ink font-medium">{money(amount)}</span></p>
         <p>BSB 083-000 · Acct 12 345 678</p>
         <p>Reference <span className="text-ink font-medium">{orderNo}</span></p>
       </div>
-      <p className="text-xs text-body mt-2.5">We confirm receipt by email and this page updates the moment the payment lands — nothing else to do here.</p>
+      <p className="text-body mt-2.5 t-cap">We confirm receipt by email and this page updates the moment the payment lands — nothing else to do here.</p>
     </div>
   );
 }
@@ -132,14 +132,14 @@ function TimelineNode({ n, last }: { n: TlNode; last: boolean }) {
       </span>
       <div className="pt-[3px] min-w-0">
         <div className="flex items-center gap-2.5 flex-wrap">
-          <h4 className={`text-[15px] font-semibold ${n.state === "locked" ? "text-quieter" : "text-ink"} font-display`}>{n.title}</h4>
+          <h4 className={`font-semibold ${n.state === "locked" ? "text-quieter" : "text-ink"} font-display t-bd`}>{n.title}</h4>
           {n.pill && (
             <StatusPill tone={n.pill.tone} icon={n.pill.pulse ? <span className="w-[7px] h-[7px] rounded-full animate-pulse" style={{ background: TONE.attn.node }} /> : undefined}>
               {n.pill.label}
             </StatusPill>
           )}
         </div>
-        <div className="text-[11.5px] text-body mt-[3px] font-data">{n.status}</div>
+        <div className="text-body mt-[3px] font-data t-data-sm">{n.status}</div>
         {n.act && <div className="mt-[11px] border p-[13px]" style={{ borderColor: TONE.attn.bd, background: TONE.attn.bg }}>{n.act}</div>}
       </div>
     </div>
@@ -220,43 +220,43 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit }: {
   const price = (value: number | null) => value == null ? "Pending final price" : money(value);
   return (
     <>
-      <div className="hidden md:grid grid-cols-[118px_1fr_110px_44px_104px_116px] gap-3.5 px-5 py-[11px] bg-sage/[0.07] border-b border-black/10 text-[10.5px] tracking-[0.08em] uppercase text-body font-data" aria-hidden="true">
+      <div className="hidden md:grid grid-cols-[118px_1fr_110px_44px_104px_116px] gap-3.5 px-5 py-[11px] bg-sage/[0.07] border-b border-black/10 text-body font-data t-label" aria-hidden="true">
         <span>Code / room</span><span>Product</span><span>Size (W×H)</span><span>Qty</span>
         <span className="text-right">{showUnit ? "Unit price" : "Line price"}</span>
         <span className="text-right">{showUnit ? "Line total" : "Status"}</span>
       </div>
-      <div className="md:hidden px-[18px] py-[11px] bg-sage/[0.07] border-b border-black/10 text-[10.5px] tracking-[0.08em] uppercase text-body font-data">
+      <div className="md:hidden px-[18px] py-[11px] bg-sage/[0.07] border-b border-black/10 text-body font-data t-label">
         {lines.length} line{lines.length === 1 ? "" : "s"} · anchored by schedule code
       </div>
       {lines.map((l, idx) => (
         <div key={`${l.code}-${idx}`} className="grid grid-cols-[1fr_auto] md:grid-cols-[118px_1fr_110px_44px_104px_116px] gap-x-3.5 gap-y-2 px-5 py-3.5 border-b border-black/[0.07] last:border-b-0 hover:bg-sage/[0.05] items-center">
           <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-ink tracking-[0.02em] font-data">{l.code}</span>
-            {l.room && <span className="text-[11px] text-body bg-black/[0.045] px-1.5 py-px w-fit">{l.room}</span>}
+            <span className="font-medium text-ink tracking-[0.02em] font-data t-data">{l.code}</span>
+            {l.room && <span className="text-body bg-black/[0.045] px-1.5 py-px w-fit t-cap">{l.room}</span>}
           </div>
           <div className="md:order-none order-3 col-span-2 md:col-span-1">
-            <span className="text-[13.5px] text-ink">{l.productName}</span>
-            {l.optionsSummary && <span className="block text-[11.5px] text-body mt-0.5 font-data">{l.optionsSummary}</span>}
+            <span className="text-ink t-cap">{l.productName}</span>
+            {l.optionsSummary && <span className="block text-body mt-0.5 font-data t-data-sm">{l.optionsSummary}</span>}
           </div>
-          <span className="hidden md:block text-[12.5px] text-body font-data">{dimsLabel(l)}</span>
-          <span className="hidden md:block text-[13px]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{l.qty}</span>
-          <span className="hidden md:block text-right text-[13.5px] font-medium" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>
+          <span className="hidden md:block text-body font-data t-data-sm">{dimsLabel(l)}</span>
+          <span className="hidden md:block t-cap">{l.qty}</span>
+          <span className="hidden md:block text-right font-medium t-cap font-data font-data">
             {showUnit ? price(l.lineTotal == null ? null : (l.qty ? l.lineTotal / l.qty : l.lineTotal)) : price(l.lineTotal)}
           </span>
           <span className="justify-self-end md:text-right">
             {showUnit
-              ? <span className="text-[13.5px] font-medium" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{price(l.lineTotal)}</span>
+              ? <span className="font-medium t-cap font-data">{price(l.lineTotal)}</span>
               : statusPill?.(l)}
           </span>
-          <span className="md:hidden col-span-2 order-4 flex items-center gap-4 text-[12.5px] text-body pt-0.5 font-data">
+          <span className="md:hidden col-span-2 order-4 flex items-center gap-4 text-body pt-0.5 font-data t-data-sm">
             {dimsLabel(l)} <span>×{l.qty}</span> <span className="font-medium text-ink">{price(l.lineTotal)}</span>
           </span>
         </div>
       ))}
       {total != null && (
-        <div className="flex justify-between items-center px-5 py-[15px] bg-sage/[0.07] border-t border-black/10 text-[13.5px]">
+        <div className="flex justify-between items-center px-5 py-[15px] bg-sage/[0.07] border-t border-black/10 t-cap">
           <small className="text-body">{footerLabel}</small>
-          <div><small className="text-body">{hasPendingPrice ? "Priced-lines subtotal " : "Order total "}</small><span className="text-[17px] font-medium" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{money(total)}</span></div>
+          <div><small className="text-body">{hasPendingPrice ? "Priced-lines subtotal " : "Order total "}</small><span className="font-medium t-bd-lg font-data">{money(total)}</span></div>
         </div>
       )}
     </>
@@ -267,19 +267,19 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit }: {
 export function FilesBlock({ files, note }: { files: ApiFile[]; note?: string }) {
   return (
     <Blk eyebrow="Documents" title="Documents" right="Everything attached to this project" id="rec-files">
-      {files.length === 0 && <p className="px-5 py-4 text-[12.5px] text-body">No files yet — quote PDFs, drawings and photos appear here as your order progresses.</p>}
+      {files.length === 0 && <p className="px-5 py-4 text-body t-cap">No files yet — quote PDFs, drawings and photos appear here as your order progresses.</p>}
       {files.map((f) => (
         <div key={f.id} className="flex items-center gap-3.5 px-5 py-[13px] border-b border-black/[0.07] last:border-b-0">
           <span className="w-[34px] h-[34px] border border-black/10 grid place-items-center text-sage flex-shrink-0"><FileText className="w-4 h-4" /></span>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-ink truncate">{f.filename}</div>
-            <div className="text-[11.5px] text-body mt-0.5 uppercase font-data">{f.kind} · {(f.size / 1024).toFixed(0)} KB</div>
+            <div className="font-medium text-ink truncate t-bd-sm">{f.filename}</div>
+            <div className="text-body mt-0.5 font-data t-label">{f.kind} · {(f.size / 1024).toFixed(0)} KB</div>
           </div>
-          <a className="ml-auto text-sage text-xs inline-flex items-center gap-1.5 hover:underline whitespace-nowrap font-data"
+          <a className="ml-auto text-sage inline-flex items-center gap-1.5 hover:underline whitespace-nowrap font-data t-data-sm"
             href={`/api/files/${f.id}/download`} target="_blank" rel="noreferrer">Open</a>
         </div>
       ))}
-      {note && <p className="px-5 pb-4 pt-2 text-[11px] text-body font-data">{note}</p>}
+      {note && <p className="px-5 pb-4 pt-2 text-body font-data t-data-sm">{note}</p>}
     </Blk>
   );
 }
@@ -292,7 +292,7 @@ export function SummaryBand({ order, children }: { order?: ApiOrder; children?: 
     <div className="flex flex-wrap gap-4 mt-0.5" aria-label="Summary">
       {order && (
         <div className="flex-1 basis-[250px] card p-[18px]">
-          <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5 font-data">Payment · 50 / 50</h3>
+          <h3 className="text-body mb-3.5 font-data t-label">Payment · 50 / 50</h3>
           <div className="flex h-2.5 border border-black/10 mb-3.5" role="img" aria-label={dep?.status === "paid" ? (bal?.status === "paid" ? "Fully paid" : "Half paid") : "Unpaid"}>
             <span className="block" style={{ width: "50%", background: dep?.status === "paid" ? TONE.pos.text : TONE.attn.bg }} />
             <span className="block border-l border-black/10" style={{ width: "50%", background: bal?.status === "paid" ? TONE.pos.text : `repeating-linear-gradient(-45deg, ${TONE.attn.bg}, ${TONE.attn.bg} 4px, transparent 4px, transparent 8px)` }} />
@@ -302,9 +302,9 @@ export function SummaryBand({ order, children }: { order?: ApiOrder; children?: 
           <PayRow label="Balance 50%" amount={bal?.amount}
             state={bal?.status === "paid" ? { tone: "pos", label: `Paid ${fmtDate(bal?.paidAt)}` }
               : { tone: order.stage === "balance_invoiced" ? "attn" : "mute", label: order.stage === "balance_invoiced" ? "Due now" : "Due before despatch" }} />
-          <div className="flex justify-between pt-3 mt-1 border-t border-black/10 text-sm">
+          <div className="flex justify-between pt-3 mt-1 border-t border-black/10 t-bd-sm">
             <span>Contract total</span>
-            <span className="font-semibold text-base" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{money(order.total)}</span>
+            <span className="font-semibold t-bd font-data">{money(order.total)}</span>
           </div>
         </div>
       )}
@@ -317,9 +317,9 @@ function PayRow({ label, amount, state }: {
   label: string; amount: number | undefined; state: { tone: Tone; label: string };
 }) {
   return (
-    <div className="flex justify-between items-center py-[9px] border-b border-black/[0.07] text-[13.5px] gap-2 flex-wrap">
+    <div className="flex justify-between items-center py-[9px] border-b border-black/[0.07] gap-2 flex-wrap t-cap">
       <span className="flex items-center gap-2 text-body">{label}<StatusPill tone={state.tone}>{state.label}</StatusPill></span>
-      <span className="font-medium text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{money(amount)}</span>
+      <span className="font-medium text-ink font-data">{money(amount)}</span>
     </div>
   );
 }
@@ -327,14 +327,14 @@ function PayRow({ label, amount, state }: {
 export function ContactCard({ setPage }: { setPage: (p: Page) => void }) {
   return (
     <div className="flex-1 basis-[250px] card p-[18px]">
-      <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5 font-data">Your contact</h3>
+      <h3 className="text-body mb-3.5 font-data t-label">Your contact</h3>
       <div className="flex items-center gap-3">
-        <span className="w-10 h-10 bg-sage/[0.07] border border-black/10 grid place-items-center text-sage text-sm flex-shrink-0 font-data">OF</span>
-        <div><div className="text-sm font-semibold text-ink">OpenFrame team</div><div className="text-xs text-body font-data">Project coordination</div></div>
+        <span className="w-10 h-10 bg-sage/[0.07] border border-black/10 grid place-items-center text-sage flex-shrink-0 font-data t-data">OF</span>
+        <div><div className="font-semibold text-ink t-bd-sm">OpenFrame team</div><div className="text-body font-data t-data-sm">Project coordination</div></div>
       </div>
       <div className="mt-3.5 flex gap-2">
         <Btn variant="outline" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }} className="flex-1 justify-center"><MessageSquare className="w-3.5 h-3.5" />Message</Btn>
-        <a href="tel:0390000000" className="inline-flex items-center gap-2 px-4 py-2 text-xs text-body hover:text-ink"><Phone className="w-3.5 h-3.5" />Call</a>
+        <a href="tel:0390000000" className="inline-flex items-center gap-2 px-4 py-2 text-body hover:text-ink t-cap"><Phone className="w-3.5 h-3.5" />Call</a>
       </div>
     </div>
   );
@@ -379,7 +379,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
   if (missing) return (
     <div className="card p-8">
       <p className="text-ink mb-1.5 font-display t-bd">We couldn't open that order.</p>
-      <p className="text-sm text-body leading-relaxed max-w-[52ch]">
+      <p className="text-body max-w-[52ch] t-bd-sm">
         Your tracking session may have ended — it lasts until you close your browser. Nothing has been lost:
         confirm it's you and it will open again.
       </p>
@@ -388,7 +388,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
       </div>
     </div>
   );
-  if (!order) return <div className="card p-8 text-sm text-body">Loading your order…</div>;
+  if (!order) return <div className="card p-8 text-body t-bd-sm">Loading your order…</div>;
 
   const m = orderMeta(order);
   const lines = (order.lines ?? []).map((l) => ({ ...parseLine(l), room: rooms[l.external_ref ?? ""] ?? null }));
@@ -403,11 +403,11 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
           {/* One project, whole life: the project ref anchors the record; the order
               number is acceptance-time meta (it lives on invoices + payments). */}
           <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
-            <span className="text-[13px] font-medium text-sage font-data">{order.projectRef ?? order.orderNo}</span>
+            <span className="font-medium text-sage font-data t-data">{order.projectRef ?? order.orderNo}</span>
             <StatusPill tone={m.tone}>{m.pill}</StatusPill>
           </div>
           <h1 className="text-ink t-hd1">{order.projectTitle ?? "Your order"}</h1>
-          <div className="flex gap-x-4 gap-y-2 flex-wrap text-[13.5px] text-body mt-2">
+          <div className="flex gap-x-4 gap-y-2 flex-wrap text-body mt-2 t-cap">
             <span>Ordered · accepted from quote <span className="text-ink font-data">{order.revisionNo ? `R${order.revisionNo}` : "—"}</span></span>
             <span>Order no. <span className="text-ink font-data">{order.orderNo}</span></span>
             <span>Ordered <span className="text-ink font-data">{fmtDate(order.createdAt)}</span></span>
@@ -423,14 +423,14 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
         {/* Current action gate */}
         {order.stage === "deposit_invoiced" && (
           <ActionGate pill="Action needed from you" step="Step 4 of 9" title="Pay the 50% deposit to begin">
-            <p className="text-[13.5px] text-body max-w-[56ch]">Your order is created and the deposit invoice is issued. <b className="text-ink">Shop drawings begin once the deposit lands</b> — the remaining 50% is due before despatch, after quality photos.</p>
+            <p className="text-body max-w-[56ch] t-cap">Your order is created and the deposit invoice is issued. <b className="text-ink">Shop drawings begin once the deposit lands</b> — the remaining 50% is due before despatch, after quality photos.</p>
             <PayPanel kind="deposit" amount={dep?.amount} orderNo={order.orderNo} />
             <div className="mt-3.5"><Safe>Nothing else is charged — the balance is invoiced only after your quality check</Safe></div>
           </ActionGate>
         )}
         {order.stage === "drawings_shared" && (
           <ActionGate pill="Action needed from you" step="Step 5 of 9" title="Review & sign off your shop drawings">
-            <p className="text-[13.5px] text-body max-w-[56ch]">We've prepared detailed drawings for all <b className="text-ink">{order.lineCount ?? lines.length} items</b> — every profile, dimension and hardware position. Check them against your site. <b className="text-ink">Manufacturing only begins once you sign off</b>, so this is the moment to catch changes. Requesting a change is free at this stage.</p>
+            <p className="text-body max-w-[56ch] t-cap">We've prepared detailed drawings for all <b className="text-ink">{order.lineCount ?? lines.length} items</b> — every profile, dimension and hardware position. Check them against your site. <b className="text-ink">Manufacturing only begins once you sign off</b>, so this is the moment to catch changes. Requesting a change is free at this stage.</p>
             <div className="flex gap-2.5 flex-wrap items-center mt-[15px]">
               <Btn variant="outline" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }}>Request a change</Btn>
               <Safe>Signing off does not charge you — the deposit is already paid</Safe>
@@ -448,13 +448,13 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
         )}
         {order.stage === "balance_invoiced" && (
           <ActionGate pill="Action needed from you" step="Step 8 of 9" title="Pay the final 50% balance to release despatch">
-            <p className="text-[13.5px] text-body max-w-[56ch]">Quality photos are shared (see Files). The balance of <b className="text-ink">{money(bal?.amount)}</b> is due before we book delivery.</p>
+            <p className="text-body max-w-[56ch] t-cap">Quality photos are shared (see Files). The balance of <b className="text-ink">{money(bal?.amount)}</b> is due before we book delivery.</p>
             <PayPanel kind="balance" amount={bal?.amount} orderNo={order.orderNo} />
           </ActionGate>
         )}
         {order.stage === "balance_paid" && (
           <ActionGate pill="Action needed from you" step="Step 8 of 9" title="Confirm you're ready for despatch">
-            <p className="text-[13.5px] text-body max-w-[56ch]">Balance received and quality photos shared. Confirm everything looks right and we book your delivery (~2 weeks).</p>
+            <p className="text-body max-w-[56ch] t-cap">Balance received and quality photos shared. Confirm everything looks right and we book your delivery (~2 weeks).</p>
             <ConfirmDetails
               summary="Preview what happens when you confirm"
               lines={[
@@ -470,8 +470,8 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
           <section className="p-5 card flex items-center gap-3" style={{ borderLeft: `3px solid ${TONE.pos.text}` }}>
             <span className="w-[34px] h-[34px] grid place-items-center border flex-shrink-0" style={{ color: TONE.pos.text, borderColor: TONE.pos.bd, background: TONE.pos.bg }}><Check className="w-[18px] h-[18px]" /></span>
             <div>
-              <h2 className="text-[15px] font-semibold text-ink font-display">On track — nothing needed from you</h2>
-              <p className="text-[12.5px] text-body">{m.next}. We'll email you the moment a step needs your OK.</p>
+              <h2 className="font-semibold text-ink font-display t-bd">On track — nothing needed from you</h2>
+              <p className="text-body t-cap">{m.next}. We'll email you the moment a step needs your OK.</p>
             </div>
           </section>
         )}
@@ -525,7 +525,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
   if (missing) return (
     <div className="card p-8">
       <p className="text-ink mb-1.5 font-display t-bd">We couldn't open that quote.</p>
-      <p className="text-sm text-body leading-relaxed max-w-[52ch]">
+      <p className="text-body max-w-[52ch] t-bd-sm">
         Your tracking session may have ended — it lasts until you close your browser. Nothing has been lost:
         confirm it's you and it will open again.
       </p>
@@ -534,7 +534,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
       </div>
     </div>
   );
-  if (!data?.project) return <div className="card p-8 text-sm text-body">Loading your quote…</div>;
+  if (!data?.project) return <div className="card p-8 text-body t-bd-sm">Loading your quote…</div>;
 
   const p = data.project;
   const st = p.status;
@@ -563,11 +563,11 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
       <div className="flex justify-between items-start gap-5 flex-wrap pb-[22px] border-b border-black/10 mb-[26px]">
         <div>
           <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
-            {p.ref && <span className="text-[13px] font-medium text-sage font-data">{p.ref}</span>}
+            {p.ref && <span className="font-medium text-sage font-data t-data">{p.ref}</span>}
             <StatusPill tone={needsInfo ? "attn" : "work"}>{needsInfo ? "Needs your answer" : "Being priced"}</StatusPill>
           </div>
           <h1 className="text-ink t-hd1">{p.title}</h1>
-          <div className="flex gap-x-4 gap-y-2 flex-wrap text-[13.5px] text-body mt-2">
+          <div className="flex gap-x-4 gap-y-2 flex-wrap text-body mt-2 t-cap">
             <span>Project · submitted for pricing <span className="text-ink font-data">{fmtDate(p.createdAt)}</span></span>
             <span><span className="text-ink font-data">{lines.length}</span> lines</span>
           </div>
@@ -581,14 +581,14 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
             <div className="card divide-y divide-black/[0.07] mt-2 mb-3">
               {thread.map((cm, i) => (
                 <div key={i} className={`px-4 py-2.5 ${cm.author_type === "internal" ? "" : "bg-sage/[0.05]"}`}>
-                  <p className="text-[10.5px] uppercase tracking-wide text-quiet mb-0.5 font-data">{cm.author_type === "internal" ? brandSubject() : "You"}</p>
-                  <p className="text-sm text-ink">{cm.body}</p>
+                  <p className="text-quiet mb-0.5 font-data t-label">{cm.author_type === "internal" ? brandSubject() : "You"}</p>
+                  <p className="text-ink t-bd-sm">{cm.body}</p>
                 </div>
               ))}
             </div>
             <div className="flex gap-2">
               <input value={reply} onChange={(e) => setReply(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendReply()}
-                placeholder="Type your answer…" className="flex-1 card px-3 py-2 text-sm outline-none focus:border-sage" />
+                placeholder="Type your answer…" className="flex-1 card px-3 py-2 outline-none focus:border-sage t-bd-sm" />
               <Btn variant="sage" size="md" onClick={sendReply} disabled={busy || !reply.trim()}><Send className="w-4 h-4" />Send</Btn>
             </div>
           </ActionGate>
@@ -596,8 +596,8 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
           <section className="p-5 card flex items-center gap-3" style={{ borderLeft: `3px solid ${TONE.work.text}` }}>
             <span className="w-[34px] h-[34px] grid place-items-center border flex-shrink-0" style={{ color: TONE.work.text, borderColor: TONE.work.bd, background: TONE.work.bg }}><Loader2 className="w-[18px] h-[18px]" /></span>
             <div>
-              <h2 className="text-[15px] font-semibold text-ink font-display">With our team — nothing needed from you</h2>
-              <p className="text-[12.5px] text-body">We are reviewing your specification and will issue a reviewed quote, usually within 2 business days. We'll email you and it appears here.</p>
+              <h2 className="font-semibold text-ink font-display t-bd">With our team — nothing needed from you</h2>
+              <p className="text-body t-cap">We are reviewing your specification and will issue a reviewed quote, usually within 2 business days. We'll email you and it appears here.</p>
             </div>
           </section>
         )}

@@ -73,14 +73,14 @@ export function DocumentRow({ attachment, post, onOpenPost }: {
         aria-label={`${attachment.label} — ${attachment.ext} download`}>
         <FileText className="w-4 h-4 text-sage flex-shrink-0 mt-0.5" aria-hidden="true" />
         <span className="flex-1 min-w-0">
-          <span className="block text-sm text-ink">{attachment.label}</span>
+          <span className="block text-ink t-bd-sm">{attachment.label}</span>
           {meta && (
-            <span className="block text-[11.5px] text-quiet mt-0.5 font-data">
+            <span className="block text-quiet mt-0.5 font-data t-data-sm">
               {meta}
             </span>
           )}
           {attachment.note && (
-            <span className="block text-[12.5px] text-body mt-1 leading-relaxed">{attachment.note}</span>
+            <span className="block text-body mt-1 t-cap">{attachment.note}</span>
           )}
         </span>
         <Download className="w-4 h-4 text-quieter group-hover:text-sage flex-shrink-0 mt-0.5 transition-colors" aria-hidden="true" />
@@ -89,7 +89,7 @@ export function DocumentRow({ attachment, post, onOpenPost }: {
           always has somewhere real to land. */}
       {onOpenPost && (
         <button onClick={() => onOpenPost(post.slug)}
-          className="inline-flex items-center gap-1.5 text-xs text-sage hover:text-sage-deep px-4 pb-3 -mt-1 cursor-pointer">
+          className="inline-flex items-center gap-1.5 text-sage hover:text-sage-deep px-4 pb-3 -mt-1 cursor-pointer t-cap">
           Read the article <ArrowRight className="w-3 h-3" aria-hidden="true" />
         </button>
       )}

@@ -20,7 +20,6 @@ import { opsProjects, type OpsProjectRow } from "./api";
 import { ProjectRecord } from "./ProjectRecord";
 
 
-const MONO = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 const money = (n: number) => `$${Math.round(n).toLocaleString("en-AU")}`;
 
 type Filter = "needs-us" | "open" | "customer" | "production" | "all";
@@ -57,7 +56,7 @@ export function Projects() {
       <div className="flex gap-2 mb-4 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap">
         {FILTERS.map((f) => (
           <button key={f.id} onClick={() => setFilter(f.id)}
-            className="text-xs px-3 py-2 border whitespace-nowrap flex-shrink-0"
+            className="px-3 py-2 border whitespace-nowrap flex-shrink-0 t-cap"
             style={{
               background: filter === f.id ? SAGE : "#fff",
               borderColor: filter === f.id ? SAGE : "rgba(0,0,0,0.12)",
@@ -71,11 +70,11 @@ export function Projects() {
       {shown.length === 0 ? (
         <div className="bg-white border border-dashed border-black/15 p-12 text-center">
           {/* An empty queue with no context reads as breakage. Say where the work is. */}
-          <p className="text-sm" style={{ color: INK }}>
+          <p className="t-bd-sm" style={{ color: INK }}>
             {filter === "needs-us" ? "Nothing is waiting on us." : "No projects match this filter."}
           </p>
           {filter === "needs-us" && withCustomer > 0 && (
-            <button onClick={() => setFilter("customer")} className="text-sm mt-1.5 underline underline-offset-2" style={{ color: SAGE }}>
+            <button onClick={() => setFilter("customer")} className="mt-1.5 underline underline-offset-2 t-bd-sm" style={{ color: SAGE }}>
               {withCustomer} project{withCustomer === 1 ? " is" : "s are"} with the customer
             </button>
           )}
@@ -91,24 +90,24 @@ export function Projects() {
             <button key={r.id} onClick={() => setOpenId(r.id)}
               className="w-full text-left px-4 py-3 border-b border-black/8 last:border-0 active:bg-bone">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-[13px]" style={{ ...MONO, color: SAGE }}>{r.ref}</span>
+                <span className="t-cap font-data" style={{ color: SAGE }}>{r.ref}</span>
                 <span className="text-right">
-                  <span className="block text-[15px]" style={{ ...MONO, color: INK }}>{money(r.value)}</span>
-                  <span className="block text-[11px]" style={{ color: MUTED }}>{r.valueBasis}</span>
+                  <span className="block t-bd font-data" style={{ color: INK }}>{money(r.value)}</span>
+                  <span className="block t-cap" style={{ color: MUTED }}>{r.valueBasis}</span>
                 </span>
               </div>
-              <p className="text-[15px] truncate mt-0.5" style={{ color: INK }}>{r.title}</p>
-              <p className="text-[13px] truncate" style={{ color: "var(--body)" }}>
+              <p className="truncate mt-0.5 t-bd" style={{ color: INK }}>{r.title}</p>
+              <p className="truncate t-cap" style={{ color: "var(--body)" }}>
                 {[r.customerName, r.org].filter(Boolean).join(" · ") || "—"}
               </p>
               <div className="flex items-baseline justify-between gap-3 mt-1">
-                <span className="text-[12px]" style={{ color: "var(--body)" }}>{r.phase} · {r.stateLabel}</span>
-                <span className="text-[12px] flex-shrink-0" style={{ color: r.waitingOn === "Us" ? INK : MUTED, fontWeight: r.waitingOn === "Us" ? 600 : 400 }}>
+                <span className="t-cap" style={{ color: "var(--body)" }}>{r.phase} · {r.stateLabel}</span>
+                <span className={`flex-shrink-0 t-cap ${r.waitingOn === "Us" ? "font-semibold" : "font-normal"}`} style={{ color: r.waitingOn === "Us" ? INK : MUTED }}>
                   {r.waitingOn} · <span className="font-data">{r.daysInStage ?? "—"}d</span>
                 </span>
               </div>
               {r.unresolved > 0 && (
-                <span className="inline-block mt-1.5 text-[11px] px-1.5 py-0.5 border" style={{ borderColor: "rgba(180,120,40,0.4)", color: "var(--warning-ink)" }}>
+                <span className="inline-block mt-1.5 px-1.5 py-0.5 border t-cap" style={{ borderColor: "rgba(180,120,40,0.4)", color: "var(--warning-ink)" }}>
                   Unpriced {r.unresolved}
                 </span>
               )}
@@ -117,9 +116,9 @@ export function Projects() {
         </div>
 
         <div className="hidden lg:block card">
-          <table className="w-full text-sm">
+          <table className="w-full t-bd-sm">
             <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wide border-b border-black/8" style={{ color: MUTED }}>
+              <tr className="text-left border-b border-black/8 t-label" style={{ color: MUTED }}>
                 <th className="px-4 py-2.5 font-medium">Ref</th>
                 <th className="px-3 py-2.5 font-medium">Project</th>
                 <th className="px-3 py-2.5 font-medium">Customer</th>
@@ -135,34 +134,34 @@ export function Projects() {
               {shown.map((r) => (
                 <tr key={r.id} onClick={() => setOpenId(r.id)}
                   className="border-b border-black/5 last:border-0 cursor-pointer hover:bg-bone">
-                  <td className="px-4 py-2.5" style={{ ...MONO, color: SAGE }}>{r.ref}</td>
+                  <td className="px-4 py-2.5 font-data" style={{ color: SAGE }}>{r.ref}</td>
                   <td className="px-3 py-2.5" style={{ color: INK }}>
                     {r.title}
-                    {r.org && <span className="block text-[11px]" style={{ color: MUTED }}>{r.org}</span>}
+                    {r.org && <span className="block t-cap" style={{ color: MUTED }}>{r.org}</span>}
                   </td>
                   <td className="px-3 py-2.5" style={{ color: MUTED }}>
                     {r.customerName ?? "—"}
-                    {r.customerEmail && <span className="block text-[11px]">{r.customerEmail}</span>}
+                    {r.customerEmail && <span className="block t-cap">{r.customerEmail}</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-right" style={{ ...MONO, color: MUTED }}>{r.lineCount}</td>
+                  <td className="px-3 py-2.5 text-right font-data" style={{ color: MUTED }}>{r.lineCount}</td>
                   <td className="px-3 py-2.5 text-right">
-                    <span className="block" style={{ ...MONO, color: INK }}>{money(r.value)}</span>
+                    <span className="block font-data" style={{ color: INK }}>{money(r.value)}</span>
                     {/* Three different meanings can sit in this column. Name which. */}
-                    <span className="block text-[11px]" style={{ color: MUTED }}>{r.valueBasis}</span>
+                    <span className="block t-cap" style={{ color: MUTED }}>{r.valueBasis}</span>
                   </td>
                   <td className="px-3 py-2.5">
-                    <span className="block text-[13px]" style={{ color: INK, fontWeight: 600 }}>{r.phase}</span>
-                    <span className="block text-[11px]" style={{ color: MUTED }}>{r.stateLabel}</span>
+                    <span className="block t-cap font-semibold" style={{ color: INK }}>{r.phase}</span>
+                    <span className="block t-cap" style={{ color: MUTED }}>{r.stateLabel}</span>
                   </td>
                   {/* Never colour alone — the word IS the value here. */}
-                  <td className="px-3 py-2.5 text-[13px]"
-                    style={{ color: r.waitingOn === "Us" ? INK : MUTED, fontWeight: r.waitingOn === "Us" ? 600 : 400 }}>
+                  <td className="px-3 py-2.5 t-cap"
+                    style={{ color: r.waitingOn === "Us" ? INK : MUTED }}>
                     {r.waitingOn}
                   </td>
-                  <td className="px-3 py-2.5 text-right" style={{ ...MONO, color: MUTED }}>{r.daysInStage ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-right font-data" style={{ color: MUTED }}>{r.daysInStage ?? "—"}</td>
                   <td className="px-4 py-2.5">
                     {r.unresolved > 0 && (
-                      <span className="text-[11px] px-1.5 py-0.5 border" style={{ borderColor: "rgba(180,120,40,0.4)", color: "var(--warning-ink)" }}>
+                      <span className="px-1.5 py-0.5 border t-cap" style={{ borderColor: "rgba(180,120,40,0.4)", color: "var(--warning-ink)" }}>
                         Unpriced {r.unresolved}
                       </span>
                     )}

@@ -61,7 +61,7 @@ export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; to
       <div className="relative" style={{ width: bw, height: bh }}>
         <div className="absolute -left-5 top-0 bottom-0 flex flex-col items-center justify-center">
           <div className="w-px flex-1" style={{ background: faint }} />
-          <span className="text-[9px] my-1" style={{ writingMode: "vertical-rl", color: stroke, fontFamily: "'Space Grotesk', sans-serif" }}>H</span>
+          <span className="my-1 t-cap font-display" style={{ writingMode: "vertical-rl", color: stroke }}>H</span>
           <div className="w-px flex-1" style={{ background: faint }} />
         </div>
         <div className="absolute inset-0 border-2" style={{ borderColor: stroke, background: tone === "sage" ? "color-mix(in srgb, var(--sage) 5%, transparent)" : "color-mix(in srgb, var(--paper) 4%, transparent)" }}>
@@ -70,7 +70,7 @@ export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; to
         </div>
         <div className="absolute -bottom-5 left-0 right-0 flex items-center justify-center gap-1">
           <div className="h-px flex-1" style={{ background: faint }} />
-          <span className="text-[9px]" style={{ color: stroke, fontFamily: "'Space Grotesk', sans-serif" }}>W</span>
+          <span className="t-cap font-display" style={{ color: stroke }}>W</span>
           <div className="h-px flex-1" style={{ background: faint }} />
         </div>
       </div>
@@ -78,7 +78,7 @@ export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; to
   );
 }
 
-const selectClass = "field-control w-full border pl-3 pr-9 py-2.5 text-sm text-ink focus:outline-none transition-colors appearance-none cursor-pointer";
+const selectClass = "field-control w-full border pl-3 pr-9 py-2.5 text-ink focus:outline-none transition-colors appearance-none cursor-pointer t-bd-sm";
 
 function inRangeFor(p: Product, w: number, h: number) {
   return (p.minWidth == null || w >= p.minWidth) && (p.maxWidth == null || w <= p.maxWidth)
@@ -137,25 +137,25 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
             <Input type="number" inputMode="numeric" value={height} onChange={e => setHeight(e.target.value)} placeholder="e.g. 1210" disabled={lockedDimension === "height"} />
           </div>
           {dimsEntered && inRange && (
-            <p className="text-sm text-ink"><Check className="w-3.5 h-3.5 inline text-sage mr-1" />You have entered: <span className="font-medium">{mm(width)} wide × {mm(height)} high</span></p>
+            <p className="text-ink t-bd-sm"><Check className="w-3.5 h-3.5 inline text-sage mr-1" />You have entered: <span className="font-medium">{mm(width)} wide × {mm(height)} high</span></p>
           )}
           {!dimsEntered && (
-            <p className="text-xs text-body">Fits {mm(p.minWidth ?? 0)}–{mm(p.maxWidth ?? 0)} wide, {mm(p.minHeight ?? 0)}–{mm(p.maxHeight ?? 0)} high.</p>
+            <p className="text-body t-cap">Fits {mm(p.minWidth ?? 0)}–{mm(p.maxWidth ?? 0)} wide, {mm(p.minHeight ?? 0)}–{mm(p.maxHeight ?? 0)} high.</p>
           )}
           {reversed && (
-            <div className="quote-notice--warning flex items-start gap-2 border border-warning/40 px-3 py-2 text-xs">
+            <div className="quote-notice--warning flex items-start gap-2 border border-warning/40 px-3 py-2 t-cap">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-warning" />
               <span>Height is greater than width — these look reversed. <button onClick={() => { setWidth(height); setHeight(width); }} className="underline font-medium cursor-pointer">Swap</button></span>
             </div>
           )}
           {tooSmall && (
-            <div className="quote-notice--danger flex items-start gap-2 border border-destructive/35 px-3 py-2 text-xs">
+            <div className="quote-notice--danger flex items-start gap-2 border border-destructive/35 px-3 py-2 t-cap">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-destructive" />
               <span>{p.name} starts at {mm(p.minWidth ?? 0)} wide and {mm(p.minHeight ?? 0)} high. Check the measurement.</span>
             </div>
           )}
           {oversize && (
-            <div className="quote-notice--info flex items-start gap-2 border border-info/35 px-3 py-2 text-xs">
+            <div className="quote-notice--info flex items-start gap-2 border border-info/35 px-3 py-2 t-cap">
               <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
               <span>
                 No single {p.name} is made this large (up to {mm(p.maxWidth ?? 0)} × {mm(p.maxHeight ?? 0)}). Openings this
@@ -181,7 +181,7 @@ function OptionButton({ label, hex, selected, onPick }: { label: string; hex?: s
     <button onClick={onPick} aria-pressed={selected} title={label}
       className="quote-option flex items-center gap-2 px-2.5 py-2 border text-left transition-colors cursor-pointer min-w-0">
       {hex !== undefined && <span className="w-4 h-4 flex-shrink-0 border border-black/25" style={{ backgroundColor: hex || "var(--muted)" }} aria-hidden="true" />}
-      <span className="text-xs text-ink truncate flex-1">{label}</span>
+      <span className="text-ink truncate flex-1 t-cap">{label}</span>
       {selected && <Check className="w-3.5 h-3.5 text-sage flex-shrink-0" aria-hidden="true" />}
     </button>
   );
@@ -199,13 +199,13 @@ function ColourChoices({ choices, value, onPick }: { choices: OptionChoice[]; va
         {popular.map(c => <OptionButton key={c.name} label={c.name} hex={c.hex} selected={value === c.name} onPick={() => onPick(c.name)} />)}
       </div>
       <button onClick={() => setShowAll(s => !s)} aria-expanded={showAll}
-        className="mt-2 flex items-center gap-1 text-xs font-medium text-sage hover:text-sage-hover cursor-pointer">
+        className="mt-2 flex items-center gap-1 font-medium text-sage hover:text-sage-hover cursor-pointer t-cap">
         {showAll ? "Hide other colours" : "Other colours"}
         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAll ? "rotate-180" : ""}`} />
       </button>
       <div className={`grid transition-[grid-template-rows] duration-200 ${showAll ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
         <div className="overflow-hidden">
-          <p className="text-[10px] uppercase tracking-widest text-body pt-2 pb-1.5">All standard colours</p>
+          <p className="text-body pt-2 pb-1.5 t-label">All standard colours</p>
           <div className={OPTION_GRID}>
             {choices.map(c => <OptionButton key={c.name} label={c.name} hex={c.hex} selected={value === c.name} onPick={() => onPick(c.name)} />)}
           </div>
@@ -241,7 +241,7 @@ function GlazingChoices({ choices, value, onPick }: { choices: GlazingChoice[]; 
   );
   return (
     <div>
-      <div className="flex items-center gap-1.5 mb-2 text-[11px] text-body">
+      <div className="flex items-center gap-1.5 mb-2 text-body t-cap">
         <span>Sort</span>
         {lensBtn("allround", "All-round")}{lensBtn("warmth", "Warmth")}{lensBtn("cooling", "Cooling")}
         <span className="ml-auto text-quieter">{choices.length} options</span>
@@ -253,11 +253,11 @@ function GlazingChoices({ choices, value, onPick }: { choices: GlazingChoice[]; 
             <button key={c.slug} onClick={() => onPick(c.slug)} aria-pressed={sel}
               className="quote-option text-left px-2.5 py-2 border transition-colors cursor-pointer">
               <span className="flex items-center gap-2 min-w-0">
-                <span className="text-xs font-medium text-ink truncate flex-1">{c.name}</span>
-                {c.slug === recommended && <span className="text-[10px] text-sage border border-sage/40 rounded-full px-1.5 leading-tight py-0.5 whitespace-nowrap">Recommended</span>}
+                <span className="font-medium text-ink truncate flex-1 t-cap">{c.name}</span>
+                {c.slug === recommended && <span className="text-sage border border-sage/40 rounded-full px-1.5 py-0.5 whitespace-nowrap t-cap">Recommended</span>}
                 {sel && <Check className="w-3.5 h-3.5 text-sage flex-shrink-0" aria-hidden="true" />}
               </span>
-              <span className="flex items-center gap-3 mt-1 text-[11px] text-body">
+              <span className="flex items-center gap-3 mt-1 text-body t-cap">
                 <span className="flex items-center gap-1"><Sun className="w-3 h-3 text-amber-500" aria-hidden="true" /><StarRating value={c.heatingStars} className="text-amber-600" /></span>
                 <span className="flex items-center gap-1"><Snowflake className="w-3 h-3 text-sky-500" aria-hidden="true" /><StarRating value={c.coolingStars} className="text-sky-600" /></span>
                 <span className="ml-auto tabular-nums text-quieter">{c.uValue != null ? `Uw ${c.uValue.toFixed(1)}` : ""}{c.shgc != null ? ` · SHGC ${c.shgc.toFixed(2)}` : ""}</span>
@@ -281,8 +281,8 @@ function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<str
         <div className="quote-option-list border border-line">
           <button onClick={() => setOpenOpt(openOpt === "glazing" ? null : "glazing")} className="quote-section-trigger w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left cursor-pointer">
             <span className="min-w-0">
-              <span className="text-[10px] uppercase tracking-widest text-body block">Glazing</span>
-              <span className={`text-sm font-medium truncate block ${glazingName ? "text-ink" : "text-quieter"}`}>{glazingName || "Select…"}</span>
+              <span className="text-body block t-label">Glazing</span>
+              <span className={`font-medium truncate block ${glazingName ? "text-ink" : "text-quieter"} t-bd-sm`}>{glazingName || "Select…"}</span>
             </span>
             <ChevronDown className={`w-4 h-4 text-body flex-shrink-0 transition-transform ${openOpt === "glazing" ? "rotate-180" : ""}`} />
           </button>
@@ -304,8 +304,8 @@ function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<str
           <div key={g.typeSlug} className="border border-black/10">
             <button onClick={() => setOpenOpt(open ? null : g.typeSlug)} className="quote-section-trigger w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left cursor-pointer">
               <span className="min-w-0">
-                <span className="text-[10px] uppercase tracking-widest text-body block">{g.label}{g.required && !val ? <span className="text-amber-600"> · required</span> : ""}</span>
-                <span className={`text-sm font-medium truncate flex items-center gap-1.5 ${val ? "text-ink" : "text-quieter"}`}>
+                <span className="text-body block t-label">{g.label}{g.required && !val ? <span className="text-amber-600"> · required</span> : ""}</span>
+                <span className={`font-medium truncate flex items-center gap-1.5 ${val ? "text-ink" : "text-quieter"} t-bd-sm`}>
                   {isColour && val && <span className="w-3.5 h-3.5 flex-shrink-0 border border-black/25" style={{ backgroundColor: swatchHex || "var(--muted)" }} aria-hidden="true" />}
                   {val || "Select…"}
                 </span>
@@ -382,7 +382,7 @@ function QtyLocationFields({ qty, location, setQty, setLocation }: {
           <FieldLabel>Quantity — identical units</FieldLabel>
           <div className="field-control flex items-center border h-[44px] w-full">
             <button onClick={() => setQty(Math.max(1, qty - 1))} className="w-12 h-full flex items-center justify-center text-body hover:bg-recessive cursor-pointer" aria-label="Decrease quantity"><Minus className="w-4 h-4" /></button>
-            <span className="flex-1 text-center text-sm font-medium">{qty}</span>
+            <span className="flex-1 text-center font-medium t-bd-sm">{qty}</span>
             <button onClick={() => setQty(qty + 1)} className="w-12 h-full flex items-center justify-center text-body hover:bg-recessive cursor-pointer" aria-label="Increase quantity"><Plus className="w-4 h-4" /></button>
           </div>
         </div>
@@ -391,7 +391,7 @@ function QtyLocationFields({ qty, location, setQty, setLocation }: {
           <Input value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Bedroom 1, north elevation" />
         </div>
       </div>
-      <p className="text-[11px] text-body mt-2"><Info className="w-3 h-3 inline mr-1" />Quantity means every unit on this line is identical. For a different size, add a separate item.</p>
+      <p className="text-body mt-2 t-cap"><Info className="w-3 h-3 inline mr-1" />Quantity means every unit on this line is identical. For a different size, add a separate item.</p>
     </div>
   );
 }
@@ -405,8 +405,8 @@ function Section({ label, summary, open, onToggle, children, variant = "boxed", 
     <div className={boxed ? `border ${attention ? "border-warning/40" : "border-line"}` : "border-b border-line last:border-b-0"}>
       <button onClick={onToggle} aria-expanded={open} data-attention={attention ? "true" : "false"} className={`quote-section-trigger w-full flex items-center justify-between gap-3 text-left cursor-pointer ${boxed ? "px-4 py-3" : "px-4 py-2.5"}`}>
         <span className="min-w-0">
-          <span className={`text-[10px] uppercase tracking-widest block flex items-center gap-1 ${attention ? "text-amber-700" : "text-body"}`}>{label}{attention && <AlertCircle className="w-3 h-3" />}</span>
-          <span className="text-sm text-ink font-medium truncate block">{summary}</span>
+          <span className={`block flex items-center gap-1 ${attention ? "text-amber-700" : "text-body"} t-label`}>{label}{attention && <AlertCircle className="w-3 h-3" />}</span>
+          <span className="text-ink font-medium truncate block t-bd-sm">{summary}</span>
         </span>
         <ChevronDown className={`w-4 h-4 text-body flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
@@ -652,16 +652,16 @@ export function ItemForm({
           so an empty form (no product yet) can still be backed out of. */}
       {onCancel && !hideHeader && (
         <div className="quote-panel-head flex items-center justify-between gap-3 px-4 md:px-5 py-2.5">
-          <p className="text-[10px] uppercase tracking-widest text-body">{isUnit ? unitHeading : (heading ?? "New item")}</p>
+          <p className="text-body t-label">{isUnit ? unitHeading : (heading ?? "New item")}</p>
           {confirmClose ? (
-            <span className="flex items-center gap-2 text-xs text-body">
+            <span className="flex items-center gap-2 text-body t-cap">
               {isUnit ? (unitMode === "add" ? "Discard new unit?" : "Discard unit changes?") : (seed ? "Discard changes?" : "Discard this item?")}
               <button type="button" onClick={() => onCancel?.()} className="font-medium text-red-600 hover:text-red-700 cursor-pointer">Discard</button>
               <button type="button" onClick={() => setConfirmClose(false)} className="font-medium text-ink hover:text-sage cursor-pointer">Keep editing</button>
             </span>
           ) : (
             <button type="button" onClick={requestCancel} aria-label={isUnit ? (unitMode === "add" ? "Cancel new unit" : "Cancel unit editing") : (seed ? "Cancel editing" : "Cancel new item")}
-              className="inline-flex items-center gap-1 -mr-1 px-2 py-1 text-xs font-medium text-body-soft hover:text-ink cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+              className="inline-flex items-center gap-1 -mr-1 px-2 py-1 font-medium text-body-soft hover:text-ink cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
               Cancel <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           )}
@@ -674,13 +674,13 @@ export function ItemForm({
               <div>
                 <FieldLabel>Item ID</FieldLabel>
                 <Input value={code} maxLength={10} onChange={e => { setCodeEdited(true); setCode(e.target.value.toUpperCase()); }} placeholder="e.g. W01" />
-                {duplicateCode && <p className="text-[11px] text-amber-700 mt-1">Item ID already exist</p>}
+                {duplicateCode && <p className="text-amber-700 mt-1 t-cap">Item ID already exist</p>}
               </div>
               <div className="flex items-center gap-2.5 min-w-0">
                 <span className="w-8 h-8 border border-sage/30 flex items-center justify-center flex-shrink-0"><WindowMark size={15} color={SAGE} /></span>
                 <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-widest text-body">Product</p>
-                  <p className="text-sm font-semibold text-ink truncate font-display">{p.name}</p>
+                  <p className="text-body t-label">Product</p>
+                  <p className="font-semibold text-ink truncate font-display t-bd-sm">{p.name}</p>
                 </div>
               </div>
             </div>
@@ -691,7 +691,7 @@ export function ItemForm({
               <div>
                 <FieldLabel>Item ID</FieldLabel>
                 <Input value={code} maxLength={10} onChange={e => { setCodeEdited(true); setCode(e.target.value.toUpperCase()); }} placeholder="e.g. W01" />
-                {duplicateCode && <p className="text-[11px] text-amber-700 mt-1">Item ID already exist</p>}
+                {duplicateCode && <p className="text-amber-700 mt-1 t-cap">Item ID already exist</p>}
               </div>
             )}
             <div>
@@ -753,17 +753,17 @@ export function ItemForm({
         <div className={`quote-panel-footer px-4 md:px-5 py-4 sticky bottom-0 z-30 ${stickyActions ? "" : "md:static"}`}
           style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
           {issues.length > 0 && (
-            <p className="text-xs text-amber-800 mb-2 flex items-start gap-1.5"><AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />{issues.map(i => i.msg).join(" · ")}.</p>
+            <p className="text-amber-800 mb-2 flex items-start gap-1.5 t-cap"><AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />{issues.map(i => i.msg).join(" · ")}.</p>
           )}
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] uppercase tracking-widest text-body">Estimated price</p>
+              <p className="text-body t-label">Estimated price</p>
               {priced.ok ? (
-                <p className="text-lg font-semibold text-ink font-data">{fmt(gstAdjust(priced.total, gstMode))} <span className="text-xs font-normal text-body">{gstSuffix(gstMode)}{qty > 1 ? ` · ${fmt(gstAdjust(priced.unit, gstMode))} ea` : ""}</span></p>
+                <p className="font-semibold text-ink font-data t-data">{fmt(gstAdjust(priced.total, gstMode))} <span className="font-normal text-body t-cap">{gstSuffix(gstMode)}{qty > 1 ? ` · ${fmt(gstAdjust(priced.unit, gstMode))} ea` : ""}</span></p>
               ) : priceDeferred ? (
-                <p className="text-sm font-medium text-body">Calculated when you add it</p>
+                <p className="font-medium text-body t-bd-sm">Calculated when you add it</p>
               ) : (
-                <p className="text-lg font-semibold text-ink font-data">—</p>
+                <p className="font-semibold text-ink font-data t-data">—</p>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -771,7 +771,7 @@ export function ItemForm({
               <Btn variant="sage" size="md" onClick={() => canSave && onCommit(built)} disabled={!canSave}><Check className="w-4 h-4" />{submitLabel}</Btn>
             </div>
           </div>
-          <p className="text-[10px] text-body mt-1.5">Confirmed on technical review before any deposit. Supply only.</p>
+          <p className="text-body mt-1.5 t-cap">Confirmed on technical review before any deposit. Supply only.</p>
         </div>
       )}
     </div>
@@ -800,12 +800,12 @@ function CodeField({ code, duplicate, editSignal, onCommit }: {
         onChange={e => setDraft(e.target.value.toUpperCase())}
         onBlur={commit}
         onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } else if (e.key === "Escape") { e.preventDefault(); cancel(); } }}
-        className="quote-code-field w-[4.75rem] h-8 border border-sage px-2 text-xs font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-sage/40 font-data" />
+        className="quote-code-field w-[4.75rem] h-8 border border-sage px-2 font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-sage/40 font-data t-data-sm" />
     );
   }
   return (
     <button onClick={begin} aria-label={`Edit item ID${code ? ` ${code}` : ""}`}
-      data-attention={duplicate ? "true" : "false"} className="quote-code-field group/code inline-flex items-center gap-1 h-8 px-2 text-xs font-semibold border text-ink transition-colors cursor-pointer hover:border-sage font-data">
+      data-attention={duplicate ? "true" : "false"} className="quote-code-field group/code inline-flex items-center gap-1 h-8 px-2 font-semibold border text-ink transition-colors cursor-pointer hover:border-sage font-data t-data-sm">
       {code || "Set code"}
       <Pencil className="w-3 h-3 text-quieter group-hover/code:text-sage" aria-hidden="true" />
     </button>
@@ -924,16 +924,16 @@ export function ItemSummaryCard({
               warning explains the caveat. Only a line with NO product at all
               shows the italic amber "Choose a product" customer action. */}
           <button onClick={toggleExpanded} aria-expanded={isExpanded}
-            className={`min-w-0 truncate text-left text-sm font-semibold leading-tight cursor-pointer hover:text-sage ${item.productSlug ? "text-ink" : "text-warning-ink italic"} font-display`}>
+            className={`min-w-0 truncate text-left font-semibold cursor-pointer hover:text-sage ${item.productSlug ? "text-ink" : "text-warning-ink italic"} font-display t-bd-sm`}>
             {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
           </button>
           {customerBlocking
-            ? <span className="quote-chip quote-chip--attention flex-shrink-0 text-[10px] font-medium"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">Needs </span>attention</span>
+            ? <span className="quote-chip quote-chip--attention flex-shrink-0 font-medium t-cap"><AlertCircle className="w-2.5 h-2.5" aria-hidden="true" /><span className="hidden sm:inline">Needs </span>attention</span>
             : technicalOnly
-              ? <span className="quote-chip quote-chip--review flex-shrink-0 text-[10px] font-medium" title={item.review?.fit ? `Indicative price — no standard product is made at this size; ${brandSubject()} will design a composite/custom unit and confirm the price at review. You can still submit.` : `${brandSubject()} will confirm this at review — you can still submit.`}><Info className="w-2.5 h-2.5" aria-hidden="true" />Needs review</span>
-              : <span className="quote-chip quote-chip--ready flex-shrink-0 text-[10px] font-medium"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
+              ? <span className="quote-chip quote-chip--review flex-shrink-0 font-medium t-cap" title={item.review?.fit ? `Indicative price — no standard product is made at this size; ${brandSubject()} will design a composite/custom unit and confirm the price at review. You can still submit.` : `${brandSubject()} will confirm this at review — you can still submit.`}><Info className="w-2.5 h-2.5" aria-hidden="true" />Needs review</span>
+              : <span className="quote-chip quote-chip--ready flex-shrink-0 font-medium t-cap"><Check className="w-2.5 h-2.5" aria-hidden="true" />Ready</span>}
           {compositeUnits > 0 && (
-            <span className="quote-chip quote-chip--review flex-shrink-0 text-[10px] font-medium">
+            <span className="quote-chip quote-chip--review flex-shrink-0 font-medium t-cap">
               Composite · {compositeUnits} {p?.categorySlug === "doors" ? "doors" : "windows"}
             </span>
           )}
@@ -941,25 +941,21 @@ export function ItemSummaryCard({
               assumption-based. Hidden on small screens; the tooltip carries the
               compliance sentence once, and doubles as the upload upsell. */}
           {basisCopy && (
-            <span className={`hidden md:inline-flex flex-shrink-0 items-center text-[10px] font-medium px-1.5 py-0.5 border ${
-              basisCopy.strong
-                ? "border-positive/30 bg-positive/10 text-positive"
-                : "border-dashed border-black/20 bg-black/[0.03] text-body-soft"
-            }`} title={basisCopy.detail.replace("{brand}", brandSubject())}>
+            <span className={`hidden md:inline-flex flex-shrink-0 items-center font-medium px-1.5 py-0.5 border ${ basisCopy.strong ? "border-positive/30 bg-positive/10 text-positive" : "border-dashed border-black/20 bg-black/[0.03] text-body-soft" } t-cap`} title={basisCopy.detail.replace("{brand}", brandSubject())}>
               {basisCopy.label}
             </span>
           )}
           {/* Updated pill (spec §3): information, not a demand — work-slate tone,
               session-scoped (decays on reload). Expanding shows the old→new rows. */}
           {!!changes?.length && (
-            <span className="flex-shrink-0 inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 border border-info/30 bg-info/10 text-info"
+            <span className="flex-shrink-0 inline-flex items-center font-medium px-1.5 py-0.5 border border-info/30 bg-info/10 text-info t-cap"
               title="This line was updated by a document you uploaded — expand to see what changed.">
               Updated
             </span>
           )}
         </span>
-        <span className={`flex-shrink-0 text-sm font-semibold ${priceReady ? "text-ink" : "text-body"} font-data`}>
-          {priceLabel}{priceReady ? <span className="hidden sm:inline text-[10px] font-normal text-body"> {gstSuffix(gstMode)}</span> : null}
+        <span className={`flex-shrink-0 font-semibold ${priceReady ? "text-ink" : "text-body"} font-data t-data`}>
+          {priceLabel}{priceReady ? <span className="hidden sm:inline font-normal text-body t-cap"> {gstSuffix(gstMode)}</span> : null}
         </span>
 
         <div className="flex items-center gap-0.5 flex-shrink-0" aria-label="Item actions">
@@ -973,7 +969,7 @@ export function ItemSummaryCard({
 
       {item.review?.customerConfigurationChanged && onRestoreAi && (
         <div className="quote-notice--warning px-3 sm:px-4 py-2 border-b border-warning/30 flex items-center justify-between gap-3">
-          <p className="text-[11px] leading-snug text-amber-800">
+          <p className="text-amber-800 t-cap">
             This edit needs a new exact price. You can restore the previous AI-priced configuration.
           </p>
           <button
@@ -983,7 +979,7 @@ export function ItemSummaryCard({
               setRestoringAi(true);
               Promise.resolve(onRestoreAi()).finally(() => setRestoringAi(false));
             }}
-            className="flex-shrink-0 text-[11px] font-semibold underline text-amber-900 disabled:opacity-50 cursor-pointer">
+            className="flex-shrink-0 font-semibold underline text-amber-900 disabled:opacity-50 cursor-pointer t-cap">
             {restoringAi ? "Restoring…" : "Restore AI selection"}
           </button>
         </div>
@@ -994,12 +990,12 @@ export function ItemSummaryCard({
         <div className="quote-item-body px-3 sm:px-4 py-3">
           <button onClick={toggleExpanded} aria-expanded={isExpanded}
             className="w-full text-left cursor-pointer group/summary">
-            <span className="block text-[10px] uppercase tracking-widest text-quiet mb-1">Configuration</span>
-            <span className="block text-xs text-body leading-snug group-hover/summary:text-ink">{summaryLine}</span>
-            <span className="block text-xs text-body leading-snug mt-1 truncate group-hover/summary:text-ink"><span className="text-quiet">Options:</span> {selectedOptionsSummary}</span>
+            <span className="block text-quiet mb-1 t-label">Configuration</span>
+            <span className="block text-body group-hover/summary:text-ink t-cap">{summaryLine}</span>
+            <span className="block text-body mt-1 truncate group-hover/summary:text-ink t-cap"><span className="text-quiet">Options:</span> {selectedOptionsSummary}</span>
           </button>
           {attention && attentionMsg && (
-            <p className={`text-xs mt-2.5 pt-2.5 border-t flex items-start gap-1.5 leading-snug ${technicalOnly ? "quote-message--info" : "quote-message--warning"}`}>
+            <p className={`mt-2.5 pt-2.5 border-t flex items-start gap-1.5 ${technicalOnly ? "quote-message--info" : "quote-message--warning"} t-cap`}>
               {technicalOnly
                 ? <Info className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
                 : <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />}
@@ -1017,9 +1013,7 @@ export function ItemSummaryCard({
               language and must stay reachable on phones — so the expanded body
               carries it inline where the chip's tooltip can't be hovered. */}
           {basisCopy && (
-            <p className={`md:hidden px-3 sm:px-4 py-2 text-[11px] leading-snug border-b border-black/[0.06] ${
-              basisCopy.strong ? "text-positive bg-positive/5" : "text-body-soft bg-black/[0.02]"
-            }`}>
+            <p className={`md:hidden px-3 sm:px-4 py-2 border-b border-black/[0.06] ${ basisCopy.strong ? "text-positive bg-positive/5" : "text-body-soft bg-black/[0.02]" } t-cap`}>
               {basisCopy.detail.replace("{brand}", brandSubject())}
             </p>
           )}
@@ -1028,9 +1022,9 @@ export function ItemSummaryCard({
               the WHY (which document) lives in the digest banner. */}
           {!!changes?.length && (
             <div className="quote-notice--info px-3 sm:px-4 py-2 border-b border-line">
-              <span className="block text-[10px] uppercase tracking-widest text-info mb-1">Updated from your documents</span>
+              <span className="block text-info mb-1 t-label">Updated from your documents</span>
               {changes.map((ch, i) => (
-                <p key={i} className="text-xs text-info-ink leading-snug">
+                <p key={i} className="text-info-ink t-cap">
                   <span className="capitalize">{ch.field === "qty" ? "Quantity" : ch.field}</span>:{" "}
                   <span className="line-through text-quiet">{ch.from}</span>
                   {" → "}
@@ -1053,7 +1047,7 @@ export function ItemSummaryCard({
               const np = getProductBySlug(slug);
               update({ productSlug: slug, options: np ? defaultOptions(np) : {}, review: clearReviewKey(item.review, "product") });
             }} />
-            {p && <p className="text-[11px] text-body mt-2"><Info className="w-3 h-3 inline mr-1" />Changing the product resets its options to the standard selections.</p>}
+            {p && <p className="text-body mt-2 t-cap"><Info className="w-3 h-3 inline mr-1" />Changing the product resets its options to the standard selections.</p>}
           </Section>
           {p ? (
             <>
@@ -1070,7 +1064,7 @@ export function ItemSummaryCard({
               </Section>
             </>
           ) : (
-            <div className="quote-notice--warning px-4 py-3 border-t border-line text-xs flex items-start gap-1.5">
+            <div className="quote-notice--warning px-4 py-3 border-t border-line flex items-start gap-1.5 t-cap">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
               <span>Choose a product above to set its dimensions, options and quantity.</span>
             </div>
@@ -1155,55 +1149,55 @@ export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState
     <div className="quote-composite-panel border-t border-line px-4 py-4 md:px-5">
       <div className="flex items-center gap-2 mb-3">
         <span className="w-2.5 h-2.5 border border-info flex-shrink-0" aria-hidden="true" />
-        <span className="text-[10px] uppercase tracking-[0.14em] text-info font-data">
+        <span className="text-info font-data t-label">
           Built as {units} units
         </span>
       </div>
 
-      <p className="text-[13.5px] text-body leading-relaxed mb-3 max-w-[62ch]">
+      <p className="text-body mb-3 max-w-[62ch] t-cap">
         No single unit is made {mm(item.width)} wide, so {item.code || "this opening"} is built as {units} units joined
         on site. One opening, one price — {brand.toLowerCase() === "we" ? "we confirm" : `${brand} confirms`} the join at technical review.
       </p>
 
       <div className="quote-panel">
         <div className="flex items-center justify-between px-3.5 py-2 border-b border-black/8">
-          <span className="text-[11px] text-quiet font-data">Your opening</span>
-          <span className="text-[12px] text-ink font-data">
+          <span className="text-quiet font-data t-data-sm">Your opening</span>
+          <span className="text-ink font-data t-data-sm">
             {openingW && openingH ? `${openingW.toLocaleString("en-AU")} × ${openingH.toLocaleString("en-AU")} mm` : "—"}
           </span>
         </div>
         {segments.map((s, i) => (
           <div key={s.id} className="border-b border-black/5 last:border-b-0">
             <div className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5">
-              <span className="text-[13px] text-ink min-w-0">
+              <span className="text-ink min-w-0 t-cap">
                 <span className="text-quiet mr-2 font-data">
                   Unit {i + 1}{s.qtyPerParent > 1 ? ` ×${s.qtyPerParent}` : ""}
                 </span>
                 {productLabel(s.productSlug)}
               </span>
               <span className="flex items-center gap-3 flex-shrink-0">
-                <span className="text-[12px] text-body font-data">
+                <span className="text-body font-data t-data-sm">
                   {(parseInt(s.width) || 0).toLocaleString("en-AU")} × {(parseInt(s.height) || 0).toLocaleString("en-AU")}
                 </span>
-                <span className="text-[11px] text-quiet font-data">included</span>
+                <span className="text-quiet font-data t-data-sm">included</span>
                 <button type="button" disabled={busy} onClick={() => setEditingUnit(editingUnit === s.id ? null : s.id)}
-                  className="text-[11px] font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer">
+                  className="font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer t-cap">
                   {editingUnit === s.id ? "Close" : "Edit"}
                 </button>
                 {segments.length > 2 && (removingUnit === s.id ? (
-                  <span className="inline-flex items-center gap-1.5 text-[11px]">
+                  <span className="inline-flex items-center gap-1.5 t-cap">
                     <button type="button" disabled={busy} onClick={() => void removeUnit(s.id)} className="font-medium text-red-600 underline">Confirm</button>
                     <button type="button" onClick={() => setRemovingUnit(null)} className="text-body underline">Keep</button>
                   </span>
                 ) : (
                   <button type="button" disabled={busy} onClick={() => setRemovingUnit(s.id)}
-                    className="text-[11px] text-body underline underline-offset-2 disabled:opacity-50 cursor-pointer">Remove</button>
+                    className="text-body underline underline-offset-2 disabled:opacity-50 cursor-pointer t-cap">Remove</button>
                 ))}
               </span>
             </div>
             {editingUnit === s.id && (
               <div className="quote-composite-editor px-3.5 pb-3.5">
-                <p className="py-2 text-[11px] text-body">
+                <p className="py-2 text-body t-cap">
                   Unit {i + 1}. Its {axis === "vertical" ? "height" : "width"} follows the parent opening; edit the product, options and {axis === "vertical" ? "width" : "height"} here.
                 </p>
                 <ItemForm
@@ -1224,7 +1218,7 @@ export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState
 
       {addingUnit && (
         <div className="quote-composite-editor mt-3 px-3.5 pb-3.5">
-          <p className="py-2 text-[11px] text-body">Choose the product, its options and the new unit's size before adding it to this opening.</p>
+          <p className="py-2 text-body t-cap">Choose the product, its options and the new unit's size before adding it to this opening.</p>
           <ItemForm
             key={"new-unit-" + (item.serverId ?? item.id)}
             scope="unit"
@@ -1245,14 +1239,14 @@ export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <button type="button" disabled={busy || !item.serverId || addingUnit} onClick={addUnit}
-          className="text-[12px] font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer">
+          className="font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer t-cap">
           {addingUnit ? "New unit open" : <>+ Add {parentProduct?.categorySlug === "doors" ? "door" : "window"}</>}
         </button>
-        <span className="text-[11px] text-body">Changes are repriced now and confirmed during technical review.</span>
+        <span className="text-body t-cap">Changes are repriced now and confirmed during technical review.</span>
       </div>
-      {error && <p role="alert" className="mt-2 text-xs text-red-700">{error}</p>}
+      {error && <p role="alert" className="mt-2 text-red-700 t-cap">{error}</p>}
 
-      <p className="text-[12px] text-quiet leading-relaxed mt-3 max-w-[62ch]">
+      <p className="text-quiet mt-3 max-w-[62ch] t-cap">
         Two or more units joined on site is how large openings are made. The join is an engineering
         decision — mullion size, wind load and weather seal — so {brand.toLowerCase() === "we" ? "we confirm" : `${brand} confirms`} the final layout during technical review.
       </p>

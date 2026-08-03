@@ -40,7 +40,7 @@ export function AccountShell({ section, setPage, user, onSignOut, children }: {
         <div className="max-w-6xl mx-auto px-6 pt-[26px] pb-[60px] grid lg:grid-cols-[1fr_236px] gap-0 lg:gap-[34px] items-start">
           <main className="min-w-0 lg:order-1 order-2">
             {/* Mobile breadcrumb — orients without the rail. */}
-            <div className="flex lg:hidden items-center gap-2 pb-4 text-[11px] uppercase tracking-[0.05em] text-body font-data">
+            <div className="flex lg:hidden items-center gap-2 pb-4 text-body font-data t-label">
               <Mark size={14} color={SAGE} />
               My Projects <span className="opacity-45">/</span> <b className="text-ink font-medium">{SECTION_LABEL[section]}</b>
             </div>
@@ -72,12 +72,11 @@ function Rail({ section, setPage, user, onSignOut }: {
     const on = section === it.key;
     return (
       <button onClick={() => go(it.page)} aria-current={on ? "page" : undefined}
-        className={`flex items-center gap-[11px] px-3 py-2.5 text-sm text-left border-l-2 transition-colors cursor-pointer ${
-          on ? "text-ink font-semibold bg-sage/[0.07] border-l-sage" : "text-body border-l-transparent hover:text-ink hover:bg-sage/[0.07]"}`}>
+        className={`flex items-center gap-[11px] px-3 py-2.5 text-left border-l-2 transition-colors cursor-pointer ${ on ? "text-ink font-semibold bg-sage/[0.07] border-l-sage" : "text-body border-l-transparent hover:text-ink hover:bg-sage/[0.07]"} t-bd-sm`}>
         <span className={on ? "text-sage" : "text-body"}>{it.icon}</span>
         {it.label}
         {it.badge != null && (
-          <span className="ml-auto text-[11px] text-body bg-black/[0.045] px-[7px] py-px font-data">{it.badge}</span>
+          <span className="ml-auto text-body bg-black/[0.045] px-[7px] py-px font-data t-data-sm">{it.badge}</span>
         )}
       </button>
     );
@@ -87,12 +86,12 @@ function Rail({ section, setPage, user, onSignOut }: {
     <aside className="hidden lg:flex flex-col sticky top-[82px] lg:order-2" aria-label="Account navigation">
       {/* Identity header — the always-on "which account / am I trade" glance. */}
       <div className="flex items-center gap-[11px] px-2.5 pb-[15px] border-b border-black/10 mb-2">
-        <span className="w-[38px] h-[38px] bg-sage text-white grid place-items-center text-sm flex-shrink-0 font-data">
+        <span className="w-[38px] h-[38px] bg-sage text-white grid place-items-center flex-shrink-0 font-data t-data">
           {initialsOf(user.company || user.name)}
         </span>
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-ink leading-tight truncate">{user.company || user.name}</div>
-          <div className="text-[10.5px] tracking-[0.05em] text-body mt-0.5 font-data">
+          <div className="font-semibold text-ink truncate t-bd-sm">{user.company || user.name}</div>
+          <div className="tracking-[0.05em] text-body mt-0.5 font-data t-data-sm">
             {(user.type ?? "customer").toUpperCase()}{user.company ? " · TRADE" : ""}
           </div>
         </div>
@@ -105,7 +104,7 @@ function Rail({ section, setPage, user, onSignOut }: {
       <div className="border-t border-black/10 mt-3 pt-3 flex flex-col gap-px">
         {account.map((it) => <Item key={it.key} it={it} />)}
         <button onClick={onSignOut}
-          className="flex items-center gap-[11px] px-3 py-2.5 text-sm text-left border-l-2 border-l-transparent text-body hover:text-ink hover:bg-sage/[0.07] transition-colors cursor-pointer">
+          className="flex items-center gap-[11px] px-3 py-2.5 text-left border-l-2 border-l-transparent text-body hover:text-ink hover:bg-sage/[0.07] transition-colors cursor-pointer t-bd-sm">
           <LogOut className="w-[17px] h-[17px]" />Sign out
         </button>
       </div>

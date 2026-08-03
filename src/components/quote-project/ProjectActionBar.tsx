@@ -45,7 +45,7 @@ export function ProjectActionBar({ summary, processing, onSubmit, onFixDetails, 
     // Honest: no ready-to-submit claim while the list is about to change.
     cta = (
       <button type="button" disabled
-        className="px-3 py-2 text-sm text-white bg-sage min-h-[44px] opacity-50 inline-flex items-center gap-1.5">
+        className="px-3 py-2 text-white bg-sage min-h-[44px] opacity-50 inline-flex items-center gap-1.5 t-bd-sm">
         Reading… <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
       </button>
     );
@@ -55,7 +55,7 @@ export function ProjectActionBar({ summary, processing, onSubmit, onFixDetails, 
     state = "working";
     cta = (
       <button type="button" onClick={onAddOpening}
-        className="px-3 py-2 text-sm text-white bg-sage min-h-[44px] cursor-pointer inline-flex items-center gap-1.5">
+        className="px-3 py-2 text-white bg-sage min-h-[44px] cursor-pointer inline-flex items-center gap-1.5 t-bd-sm">
         Add opening <ArrowRight className="w-4 h-4" aria-hidden="true" />
       </button>
     );
@@ -70,7 +70,7 @@ export function ProjectActionBar({ summary, processing, onSubmit, onFixDetails, 
     state = "attention";
     cta = (
       <button type="button" onClick={onFixDetails}
-        className="px-3 py-2 text-sm text-white bg-warning min-h-[44px] cursor-pointer inline-flex items-center gap-1.5">
+        className="px-3 py-2 text-white bg-warning min-h-[44px] cursor-pointer inline-flex items-center gap-1.5 t-bd-sm">
         Fix {attentionCount} detail{attentionCount !== 1 ? "s" : ""} <ArrowRight className="w-4 h-4" aria-hidden="true" />
       </button>
     );
@@ -96,7 +96,7 @@ export function ProjectActionBar({ summary, processing, onSubmit, onFixDetails, 
     state = technicalCount > 0 ? "review" : "ready";
     cta = (
       <button type="button" onClick={onSubmit}
-        className="px-3 py-2 text-sm text-white bg-sage min-h-[44px] cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+        className="px-3 py-2 text-white bg-sage min-h-[44px] cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap t-bd-sm">
         Submit for technical review <ArrowRight className="w-4 h-4" aria-hidden="true" />
       </button>
     );
@@ -113,15 +113,15 @@ export function ProjectActionBar({ summary, processing, onSubmit, onFixDetails, 
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
         <div className="flex items-center justify-between gap-3 min-w-0 sm:contents">
           <div className="sm:order-2 flex flex-col min-w-0 flex-shrink-0">
-            <span className="text-[9px] uppercase tracking-[0.16em] text-body-soft leading-none mb-1">
+            <span className="text-body-soft mb-1 t-label">
               {pendingPriceCount ? "Priced subtotal" : "Estimate"}
             </span>
             <span className="flex items-baseline gap-1.5">
-              <span className="text-ink text-lg sm:text-[17px] font-semibold leading-none tabular-nums font-data">{fmt(gstAdjust(total, gstMode))}</span>
-              <span className="text-body-soft text-xs whitespace-nowrap">{gstSuffix(gstMode)}</span>
+              <span className="text-ink font-semibold tabular-nums font-data t-data">{fmt(gstAdjust(total, gstMode))}</span>
+              <span className="text-body-soft whitespace-nowrap t-cap">{gstSuffix(gstMode)}</span>
             </span>
           </div>
-          <div className="sm:order-1 sm:flex-1 flex items-center gap-1.5 min-w-0 text-[13px] font-medium text-ink">
+          <div className="sm:order-1 sm:flex-1 flex items-center gap-1.5 min-w-0 font-medium text-ink t-cap">
             {status}
           </div>
         </div>

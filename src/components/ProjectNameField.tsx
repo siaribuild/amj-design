@@ -38,7 +38,7 @@ export function ProjectNameField({ value, onCommit, className = "" }: {
   const cancel = () => { setDraft(value); setEditing(false); };
   useEffect(() => { if (editing) { inputRef.current?.focus(); inputRef.current?.select(); } }, [editing]);
 
-  const type = className || "text-2xl md:text-3xl";
+  const type = className || "t-hd2";
 
   if (editing) {
     return (

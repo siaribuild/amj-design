@@ -93,7 +93,7 @@ function Select({ value, onChange, children }: {
 }) {
   return (
     <select value={value} onChange={onChange}
-      className="w-full border border-ink/20 bg-white px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-sage transition-colors">
+      className="w-full border border-ink/20 bg-white px-3 py-2.5 text-ink focus:outline-none focus:border-sage transition-colors t-bd-sm">
       {children}
     </select>
   );
@@ -171,7 +171,7 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
             {links.map(([label, p]) => (
               <button key={p} onClick={() => go(p)}
                 aria-current={isActive(p) ? "page" : undefined}
-                className={`text-sm transition-colors relative ${isActive(p) ? "text-white font-semibold" : "text-white/70 hover:text-white"}`}>
+                className={`transition-colors relative ${isActive(p) ? "text-white font-semibold" : "text-white/70 hover:text-white"} t-bd-sm`}>
                 {label}
                 {isActive(p) && <div className="absolute -bottom-0.5 left-0 right-0 h-px bg-sage" />}
               </button>
@@ -180,13 +180,13 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
           <div className="hidden xl:flex items-center gap-3 flex-shrink-0 xl:ml-auto">
             {brand?.phone && (
               <a href={`tel:${brand.phone.replace(/[^0-9+]/g, "")}`}
-                className="text-sm text-white/75 hover:text-white flex items-center gap-1.5 transition-colors">
+                className="text-white/75 hover:text-white flex items-center gap-1.5 transition-colors t-bd-sm">
                 <Phone className="w-3.5 h-3.5" />{brand.phone}
               </a>
             )}
             {!user && (
               <button onClick={() => go("login")}
-                className="text-sm text-white/75 hover:text-white cursor-pointer transition-colors ml-2">
+                className="text-white/75 hover:text-white cursor-pointer transition-colors ml-2 t-bd-sm">
                 Sign in
               </button>
             )}
@@ -196,7 +196,7 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
                  anchor, so this is the only right-hand control needed. */
               <button onClick={() => go("dashboard")}
                 aria-current={isAccountPage(page) ? "page" : undefined}
-                className="text-sm text-white font-medium cursor-pointer flex items-center gap-1.5 transition-colors border border-sage-light/50 bg-sage/30 hover:bg-sage/45 px-3 py-[7px]">
+                className="text-white font-medium cursor-pointer flex items-center gap-1.5 transition-colors border border-sage-light/50 bg-sage/30 hover:bg-sage/45 px-3 py-[7px] t-bd-sm">
                 <WindowMark size={14} color="var(--sage-light)" />My Projects
               </button>
             )}
@@ -217,7 +217,7 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
         <div className="flex items-center justify-between px-5 h-16 border-b border-white/10 flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <WindowMark size={16} color="var(--sage-light)" />
-            <span className="font-semibold text-sm text-white font-display">Menu</span>
+            <span className="font-semibold text-white font-display t-bd-sm">Menu</span>
           </div>
           <button onClick={() => setOpen(false)} className="p-2 -mr-2 text-white/65 hover:text-white hover:bg-white/10 transition-colors cursor-pointer" aria-label="Close menu">
             <X className="w-5 h-5" />
@@ -230,20 +230,20 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
           {user && (
             <>
               <div className="flex items-center gap-[11px] px-5 py-3 bg-sage/20 border-b border-white/10">
-                <span className="w-[34px] h-[34px] bg-sage text-white grid place-items-center text-[13px] flex-shrink-0 font-data">{initialsOf(user.company || user.name)}</span>
+                <span className="w-[34px] h-[34px] bg-sage text-white grid place-items-center flex-shrink-0 font-data t-data">{initialsOf(user.company || user.name)}</span>
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold text-white truncate">{user.company || user.name}</div>
-                  <div className="text-[11px] text-white/55 tracking-[0.04em] font-data">{user.type.toUpperCase()}{user.company ? " · TRADE" : ""}</div>
+                  <div className="font-semibold text-white truncate t-bd-sm">{user.company || user.name}</div>
+                  <div className="text-white/55 tracking-[0.04em] font-data t-data-sm">{user.type.toUpperCase()}{user.company ? " · TRADE" : ""}</div>
                 </div>
               </div>
-              <p className="px-5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-white/35">My account</p>
+              <p className="px-5 pt-3 pb-1 text-white/35 t-label">My account</p>
               {([
                 ["My Projects", "dashboard"], ["Account", "account"], ["Help & contact", "help"],
               ] as [string, Page][]).map(([l, p]) => {
                 const active = page === p || (p === "dashboard" && page === "order");
                 return (
                   <button key={p} onClick={() => go(p)} aria-current={active ? "page" : undefined}
-                    className={`w-full text-left px-5 py-3.5 text-sm flex items-center justify-between cursor-pointer border-l-2 ${active ? "text-white font-semibold bg-sage/25 border-l-sage-light" : "text-white/70 hover:text-white hover:bg-white/[0.06] border-l-transparent"}`}>
+                    className={`w-full text-left px-5 py-3.5 flex items-center justify-between cursor-pointer border-l-2 ${active ? "text-white font-semibold bg-sage/25 border-l-sage-light" : "text-white/70 hover:text-white hover:bg-white/[0.06] border-l-transparent"} t-bd-sm`}>
                     {l}
                     {active && <span className="w-1.5 h-1.5 bg-sage-light rounded-full" aria-hidden="true" />}
                   </button>
@@ -253,18 +253,17 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
             </>
           )}
 
-          <p className="px-5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-white/35">Menu</p>
+          <p className="px-5 pt-3 pb-1 text-white/35 t-label">Menu</p>
           {links.map(([l, p]) => (
             <button key={p} onClick={() => go(p)}
               aria-current={isActive(p) ? "page" : undefined}
-              className={`w-full text-left px-5 py-3.5 border-b border-white/[0.07] text-[15px] transition-colors flex items-center justify-between cursor-pointer
-                ${isActive(p) ? "text-white font-semibold bg-sage/25 border-l-2 border-l-sage-light" : "text-white/75 hover:text-white hover:bg-white/[0.06] border-l-2 border-l-transparent"}`}>
+              className={`w-full text-left px-5 py-3.5 border-b border-white/[0.07] transition-colors flex items-center justify-between cursor-pointer ${isActive(p) ? "text-white font-semibold bg-sage/25 border-l-2 border-l-sage-light" : "text-white/75 hover:text-white hover:bg-white/[0.06] border-l-2 border-l-transparent"} t-bd`}>
               {l}
               {isActive(p) && <span className="w-1.5 h-1.5 bg-sage-light rounded-full" aria-hidden="true" />}
             </button>
           ))}
           <button onClick={() => go("track-order")}
-            className="w-full text-left px-5 py-3.5 text-sm text-white/60 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
+            className="w-full text-left px-5 py-3.5 text-white/60 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer t-bd-sm">
             <Package className="w-4 h-4" />Track an order
           </button>
 
@@ -280,12 +279,12 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
           <div className="border-t border-white/10 mt-2 pt-2">
             {user ? (
               <button onClick={() => { apiLogout().catch(() => {}); setUser(null); setOpen(false); go("home"); }}
-                className="w-full text-left px-5 py-3.5 text-sm text-red-300 hover:text-red-200 hover:bg-red-500/10 flex items-center gap-2 cursor-pointer">
+                className="w-full text-left px-5 py-3.5 text-red-300 hover:text-red-200 hover:bg-red-500/10 flex items-center gap-2 cursor-pointer t-bd-sm">
                 <LogOut className="w-4 h-4" />Sign out
               </button>
             ) : (
               <button onClick={() => go("login")}
-                className="w-full text-left px-5 py-3.5 text-sm text-white/60 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer">
+                className="w-full text-left px-5 py-3.5 text-white/60 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer t-bd-sm">
                 <Lock className="w-4 h-4" />Sign in / Register
               </button>
             )}
@@ -293,13 +292,13 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
         </nav>
 
         <div className="px-5 py-4 border-t border-white/10 flex-shrink-0 bg-white/[0.025]">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 mb-2">Contact us</p>
+          <p className="text-white/35 mb-2 t-label">Contact us</p>
           {brand?.phone && (
-            <a href={`tel:${brand.phone.replace(/[^0-9+]/g, "")}`} className="flex items-center gap-2 text-sm text-white font-medium mb-1.5 hover:text-sage-light transition-colors">
+            <a href={`tel:${brand.phone.replace(/[^0-9+]/g, "")}`} className="flex items-center gap-2 text-white font-medium mb-1.5 hover:text-sage-light transition-colors t-bd-sm">
               <Phone className="w-4 h-4 text-sage-light" />{brand.phone}
             </a>
           )}
-          <span className="flex items-center gap-2 text-sm text-white/65">
+          <span className="flex items-center gap-2 text-white/65 t-bd-sm">
             <Mail className="w-4 h-4 text-sage-light" />
             <ObfuscatedEmail address={brand?.email} className="hover:text-sage-light transition-colors" />
           </span>
@@ -327,8 +326,8 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
             {brand?.logoUrl
               ? <img src={brand.logoUrl} alt={brand.businessName ?? ""} className="h-7 w-auto max-w-[180px] object-contain mb-4" />
               : <div className="mb-4"><WindowMark size={18} color={SAGE} /></div>}
-            {brand?.tagline && <p className="text-sm leading-relaxed mb-5">{brand.tagline}</p>}
-            <div className="text-sm space-y-2">
+            {brand?.tagline && <p className="mb-5 t-bd-sm">{brand.tagline}</p>}
+            <div className="space-y-2 t-bd-sm">
               {brand?.phone && (
                 <a href={`tel:${brand.phone.replace(/[^0-9+]/g, "")}`} className="flex items-center gap-2 hover:text-white transition-colors">
                   <Phone className="w-3.5 h-3.5 text-sage" />{brand.phone}
@@ -343,14 +342,14 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
               </span>
             </div>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-8 text-sm">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-8 t-bd-sm">
             {[
               { h: "Products", ls: [["Windows", "products"], ["Doors", "products"], ["Product detail", "product-detail"]] },
               { h: "Service",  ls: [["Get a quote", "quote"], ["Trade account", "trade"], ["How it works", "how-it-works"], ["Privacy Policy", "privacy"]] },
               { h: "Account", ls: [["Sign in", "login"], ["Track order", "track-order"], ["Resources", "resources"], ["Contact", "contact"]] },
             ].map(col => (
               <div key={col.h}>
-                <div className="text-white text-xs font-semibold uppercase tracking-wider mb-3">{col.h}</div>
+                <div className="text-white mb-3 t-label">{col.h}</div>
                 <ul className="space-y-2">
                   {col.ls.map(([l, p]) => (
                     <li key={l}><button onClick={() => go(p as Page)} className="hover:text-white transition-colors text-left">{l}</button></li>
@@ -363,7 +362,7 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
         {/* Sanity-driven: Copyright Text on the left, Legal Line (ABN) on the
             right; each falls back independently so a partial singleton never
             blanks a line. */}
-        <div className="border-t border-white/10 pt-6 flex flex-col md:flex-row justify-between gap-2 text-xs text-white/25">
+        <div className="border-t border-white/10 pt-6 flex flex-col md:flex-row justify-between gap-2 text-white/25 t-cap">
           <span>{brand?.copyrightText}</span>
           <span className="md:text-right">{brand?.legalLine}</span>
         </div>
@@ -512,8 +511,6 @@ function Meter({ paid, light = false }: { paid: "0%" | "50%" | "100%"; light?: b
 // on arrival rather than dropping the visitor on a fork it already promised past.
 function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => void }) {
   const go = (p: Page, pathOverride?: string) => { setPage(p, pathOverride); window.scrollTo(0, 0); };
-  const MONO = { fontFamily: "'Space Grotesk', sans-serif" } as const;
-  const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 
   // The sample, matched for real. Never throws the page away if the parser does:
   // an empty result renders the section without the result panel.
@@ -666,7 +663,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               <WindowMark size={11} color="rgba(255,255,255,0.55)" />
               {/* The eyebrow carries the CATEGORY now, so the headline does not
                   have to. That is what buys the headline its size. */}
-              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">
+              <span className="text-white/60 font-data t-label">
                 Aluminium windows &amp; doors · Supply only · Australia-wide
               </span>
             </div>
@@ -739,15 +736,15 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
             <Btn variant="sage" size="lg" onClick={() => go("quote", "/quote?upload=1")}>
               <Upload className="w-[18px] h-[18px]" aria-hidden="true" /> Upload your schedule
             </Btn>
-            <p className="mt-2.5 text-white/55 text-[13px] font-data">
+            <p className="mt-2.5 text-white/55 font-data t-data">
               PDF or spreadsheet, straight from your plans — no account, no cost
             </p>
             <button onClick={() => go("quote")}
-              className="mt-3 inline-flex items-center gap-1.5 text-white text-[15px] font-medium underline underline-offset-4 decoration-white/60 hover:decoration-white cursor-pointer">
+              className="mt-3 inline-flex items-center gap-1.5 text-white font-medium underline underline-offset-4 decoration-white/60 hover:decoration-white cursor-pointer t-bd">
               No schedule? Enter sizes instead <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </button>
 
-            <div className="mt-8 pt-5 border-t border-white/12 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-white/55 font-data">
+            <div className="mt-8 pt-5 border-t border-white/12 flex flex-wrap items-center gap-x-3 gap-y-2 text-white/55 font-data t-data">
               {facts.map((f, i) => (
                 <span key={f} className="flex items-center gap-3">
                   {i > 0 && <span className="w-px h-3 bg-white/20" aria-hidden="true" />}
@@ -787,7 +784,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               <div className="figure">
                 &lt; 1 min
               </div>
-              <div className="text-quiet text-[13px] mt-1.5">from upload to a matched list</div>
+              <div className="text-quiet mt-1.5 t-cap">from upload to a matched list</div>
             </div>
           </div>
 
@@ -799,16 +796,16 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                 stock imagery standing in for the real thing. */}
             <div className="relative border border-black/10 bg-ink flex flex-col min-h-[300px]">
               <div className="px-4 py-2.5 border-b border-white/12 flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-[0.14em] text-white/50 font-data">From your plans</span>
+                <span className="text-white/50 font-data t-label">From your plans</span>
                 {/* No invented sheet number: the honest label is what it is. */}
-                <span className="text-[11px] text-white/35 font-data">window &amp; door schedule</span>
+                <span className="text-white/35 font-data t-data-sm">window &amp; door schedule</span>
               </div>
               {/* Laid out as the columns it is, not as a wall of digits. Only the
                   four that matter to the claim — the item tag, its printed size,
                   and what it is. HEAD HT., GLAZING and D.GLAZE REQ. are on the
                   real sheet and are noise here. */}
               <div className="flex-1 px-4 py-3.5">
-                <table className="w-full text-[11.5px] leading-[1.9] font-data">
+                <table className="w-full font-data t-data-sm">
                   <thead>
                     <tr className="text-sage-light">
                       <th className="text-left font-normal pb-1">N°</th>
@@ -819,7 +816,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                   </thead>
                   {scheduleSections.map((sec) => (
                     <tbody key={sec.section}>
-                      <tr><td colSpan={4} className="text-sage-light/70 pt-2.5 pb-0.5 text-[10.5px] tracking-[0.1em]">{sec.section}</td></tr>
+                      <tr><td colSpan={4} className="text-sage-light/70 pt-2.5 pb-0.5 tracking-[0.1em] t-cap">{sec.section}</td></tr>
                       {sec.rows.map((r) => (
                         <tr key={r.code} className="text-white/70">
                           <td className="text-left">{r.code}</td>
@@ -848,8 +845,8 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                 pair its shape: a dark source document beside a light result. */}
             <div ref={resultRef} className="card lg:-ml-px -mt-px lg:mt-0 flex flex-col">
               <div className="panel-head px-4 py-2.5 flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-[0.14em] text-quiet font-data">What came back</span>
-                <span className="text-[11px] text-quiet font-data">{sample.lines.length} lines</span>
+                <span className="text-quiet font-data t-label">What came back</span>
+                <span className="text-quiet font-data t-data-sm">{sample.lines.length} lines</span>
               </div>
               <div className="divide-y divide-black/8 flex-1">
                 {sample.lines.map((l, i) => {
@@ -862,18 +859,18 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                         transform: revealed ? "translateY(0)" : "translateY(6px)",
                         transitionDelay: `${i * 55}ms`,
                       }}>
-                      <span className="text-sage text-[12px] w-9 flex-shrink-0 font-data">{l.code}</span>
+                      <span className="text-sage w-9 flex-shrink-0 font-data t-data-sm">{l.code}</span>
                       <span className="flex-1 min-w-0">
-                        <span className="block text-ink text-[14px] leading-tight truncate font-display">
+                        <span className="block text-ink truncate font-display t-bd-sm">
                           {product?.name ?? l.rawType ?? "Needs a product"}
                         </span>
-                        <span className="block text-quiet text-[12px] font-data">
+                        <span className="block text-quiet font-data t-data-sm">
                           {l.width} × {l.height}
                         </span>
                       </span>
                       {/* Never colour alone: the word carries the state. amber-800
                           is the review colour the quote page already uses. */}
-                      <span className={`text-[11px] flex-shrink-0 ${l.status === "Ready" ? "text-sage" : "text-amber-800"} font-data`}>
+                      <span className={`flex-shrink-0 ${l.status === "Ready" ? "text-sage" : "text-amber-800"} font-data t-data-sm`}>
                         {l.status === "Ready" ? "✓ ready" : "· to confirm"}
                       </span>
                     </div>
@@ -884,7 +881,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                   Was an inline rgba(90,122,106,0.07), i.e. alpha over an assumed
                   white ground; over the panel's new bone it composites to about
                   #E6E5DF, which is grey with the hue gone. Opaque token instead. */}
-              <div className="panel-result px-4 py-3 text-[13px] text-ink-soft">
+              <div className="panel-result px-4 py-3 text-ink-soft t-cap">
                 {/* Leads with what the machine did, then what it hands over. The
                     flags are the point, not an apology: it says which lines need a
                     decision instead of guessing and quoting the wrong frame. */}
@@ -946,7 +943,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
             <h2 className="text-ink t-ds2">
               Made to your sizes. Not the nearest standard one.
             </h2>
-            <p className="text-body text-base max-w-sm md:text-right">
+            <p className="text-body max-w-sm md:text-right t-bd">
               Every system priced to your opening, and checked by a person before anything is cut.
             </p>
           </div>
@@ -966,11 +963,11 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                     <p className="text-white/75 leading-snug max-w-md mb-4 t-bd">{s.desc}</p>
                     <div className="flex flex-wrap gap-1.5 mb-5">
                       {s.chips.map(c => (
-                        <span key={c} className="border border-white/25 text-white/80 text-[12px] tracking-wide px-2.5 py-1">{c}</span>
+                        <span key={c} className="border border-white/25 text-white/80 tracking-wide px-2.5 py-1 t-cap">{c}</span>
                       ))}
-                      {s.more && <span className="border border-white/10 text-white/45 text-[12px] tracking-wide px-2.5 py-1">More →</span>}
+                      {s.more && <span className="border border-white/10 text-white/45 tracking-wide px-2.5 py-1 t-cap">More →</span>}
                     </div>
-                    <span className="inline-flex items-center gap-2.5 text-white text-sm font-medium">
+                    <span className="inline-flex items-center gap-2.5 text-white font-medium t-bd-sm">
                       {s.cta}
                       <span className="w-6 h-6 border border-white/30 group-hover:border-sage group-hover:bg-sage flex items-center justify-center transition-all">
                         <ArrowRight className="w-3.5 h-3.5 text-white" />
@@ -996,7 +993,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               Quote, order, delivery — and you never pay ahead of the work.
             </h2>
             <button onClick={() => go("how-it-works")}
-              className="text-sm text-sage hover:text-sage-deep inline-flex items-center gap-1.5 md:flex-shrink-0 cursor-pointer">
+              className="text-sage hover:text-sage-deep inline-flex items-center gap-1.5 md:flex-shrink-0 cursor-pointer t-bd-sm">
               See every step <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </div>
@@ -1006,13 +1003,13 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               <div key={s.n}
                 className="relative card p-6 flex flex-col sm:[&:nth-child(n+2)]:-mt-px lg:[&:nth-child(n+2)]:mt-0 lg:[&:nth-child(n+2)]:-ml-px">
                 <div className="flex items-start justify-between mb-4">
-                  <span className="w-8 h-8 border border-sage/40 flex items-center justify-center text-sage text-xs font-data">{s.n}</span>
+                  <span className="w-8 h-8 border border-sage/40 flex items-center justify-center text-sage font-data t-data-sm">{s.n}</span>
                   <span className="flex items-center gap-2">
                     <Meter paid={s.paid} />
                     <span className="figure-sm">{s.paid}</span>
                   </span>
                 </div>
-                <h3 className="font-semibold text-ink text-base leading-tight mb-1.5 font-display">{s.title}</h3>
+                <h3 className="font-semibold text-ink mb-1.5 font-display t-bd">{s.title}</h3>
                 <p className="text-body leading-relaxed t-bd">{s.body}</p>
                 {i < steps.length - 1 && (
                   <ChevronRight className="hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-sage/60 bg-white z-10" aria-hidden="true" />
@@ -1069,7 +1066,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                   ? "The quote happens online. The frames do not."
                   : "Made to AS 2047 and AS 1288 — standards you can look up."}
               </h2>
-              <p className="text-white/70 text-[17px] leading-relaxed">
+              <p className="text-white/70 t-bd-lg">
                 {showrooms.length
                   ? "Book a time at a showroom and you can open a sash, check a finish and see how a frame is put together — before you order anything."
                   : "Every frame is made to these standards. Your test reports and warranty terms come with the reviewed quote — before you have paid anything."}
@@ -1082,20 +1079,20 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                 button variant in ui.tsx. */}
             {showrooms.length > 0 && (
               <div className="md:flex-shrink-0 md:w-[300px] w-full bg-white/[0.05] border border-white/15 p-6">
-                <p className="text-[11px] uppercase tracking-widest text-white/60 mb-3 font-data">Showrooms</p>
+                <p className="text-white/60 mb-3 font-data t-label">Showrooms</p>
                 <div className="divide-y divide-white/10">
                   {showrooms.map((l) => (
                     <div key={l.id} className="flex items-baseline justify-between py-2.5">
-                      <span className="text-white text-[17px] font-display">{l.suburb}</span>
-                      <span className="text-white/60 text-[12px] font-data">{l.stateCode}</span>
+                      <span className="text-white font-display t-bd-lg">{l.suburb}</span>
+                      <span className="text-white/60 font-data t-data-sm">{l.stateCode}</span>
                     </div>
                   ))}
                 </div>
-                <p className="text-white/60 text-[13px] mt-3 leading-relaxed">
+                <p className="text-white/60 mt-3 t-cap">
                   By appointment. Request a time and we confirm it.
                 </p>
                 <button onClick={() => go("contact")}
-                  className="text-sage-light hover:text-white text-sm inline-flex items-center gap-1.5 mt-4 cursor-pointer">
+                  className="text-sage-light hover:text-white inline-flex items-center gap-1.5 mt-4 cursor-pointer t-bd-sm">
                   Book a showroom visit <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
               </div>
@@ -1111,7 +1108,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               the reassurance. */}
           {showrooms.length > 0 && (
             <div className="mt-10 pt-6 border-t border-white/12 flex flex-col md:flex-row md:items-baseline gap-2 md:gap-6">
-              <p className="text-white/60 text-[13px] flex-shrink-0 font-data">AS 2047 · AS 1288</p>
+              <p className="text-white/60 flex-shrink-0 font-data t-data">AS 2047 · AS 1288</p>
               <p className="text-white/70 leading-relaxed max-w-[62ch] t-bd">
                 Every frame is made to these standards. Your test reports and warranty terms come with the reviewed quote — before you have paid anything.
               </p>
@@ -1137,11 +1134,11 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
             {questions.map((q) => (
               <div key={q.q}
                 className="card p-6 flex flex-col md:[&:nth-child(n+3)]:-mt-px md:[&:nth-child(even)]:-ml-px [&:nth-child(n+2)]:-mt-px md:[&:nth-child(2)]:mt-0">
-                <h3 className="font-semibold text-ink text-[17px] leading-tight mb-2 font-display">{q.q}</h3>
+                <h3 className="font-semibold text-ink mb-2 font-display t-bd-lg">{q.q}</h3>
                 <p className="text-body leading-relaxed flex-1 t-bd">{q.a}</p>
                 {q.link && (
                   <button onClick={() => go(q.link!.page)}
-                    className="mt-3 text-sm text-sage hover:text-sage-deep inline-flex items-center gap-1.5 self-start cursor-pointer">
+                    className="mt-3 text-sage hover:text-sage-deep inline-flex items-center gap-1.5 self-start cursor-pointer t-bd-sm">
                     {q.link.label} <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                 )}
@@ -1218,10 +1215,10 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
       <div className="w-full max-w-sm mx-auto px-6 relative">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4"><WindowMark size={32} color={SAGE} /></div>
-          <h1 className="text-2xl font-semibold text-ink font-display">
+          <h1 className="font-semibold text-ink font-display t-hd2">
             {step === "email" ? "Sign in or register" : "Enter your code"}
           </h1>
-          <p className="text-sm text-body mt-1">
+          <p className="text-body mt-1 t-bd-sm">
             {step === "email"
               ? "We'll email you a one-time code — no password needed"
               : `We sent a 6-digit code to ${email.trim()}`}
@@ -1253,7 +1250,7 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
                   placeholder="••••••" />
               </div>
               {devCode && (
-                <p className="text-xs text-sage bg-sage-wash border border-sage/20 px-2 py-1.5">
+                <p className="text-sage bg-sage-wash border border-sage/20 px-2 py-1.5 t-cap">
                   Dev mode — your code is <span className="font-mono font-semibold">{devCode}</span>
                 </p>
               )}
@@ -1262,22 +1259,22 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
                 {busy ? "Verifying…" : "Verify & continue"}
               </Btn>
               <button onClick={() => { setStep("email"); setCode(""); setError(""); }}
-                className="text-sm text-body hover:text-ink cursor-pointer">
+                className="text-body hover:text-ink cursor-pointer t-bd-sm">
                 ← Use a different email
               </button>
             </>
           )}
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          {error && <p className="text-red-600 t-cap">{error}</p>}
         </div>
         <div className="mt-4 text-center">
           <div className="border-t border-black/8 pt-4">
             <button onClick={() => go("track-order")}
-              className="text-sm text-body hover:text-ink cursor-pointer flex items-center gap-1.5 mx-auto">
+              className="text-body hover:text-ink cursor-pointer flex items-center gap-1.5 mx-auto t-bd-sm">
               <Search className="w-4 h-4" />Track an order without signing in
             </button>
           </div>
         </div>
-        <div className="mt-6 bg-bone border border-black/8 p-4 text-xs text-body">
+        <div className="mt-6 bg-bone border border-black/8 p-4 text-body t-cap">
           Your quote is saved as you go. Sign in to keep it against your account across devices — guest quotes don't require an account.
         </div>
       </div>
@@ -1322,28 +1319,28 @@ function ProfilePage({ user, setPage, setUser, authLoading, embedded }: { user: 
       {!embedded && (
         <header className="mb-8">
           <SLabel>Customer account</SLabel>
-          <h1 className="text-3xl md:text-4xl font-semibold text-ink font-display">Profile settings</h1>
+          <h1 className="font-semibold text-ink font-display t-hd1">Profile settings</h1>
         </header>
       )}
       <div className="space-y-4">
         <div className="grid lg:grid-cols-2 gap-4 items-start">
           <div className="card p-5">
-            <h3 className="font-semibold text-sm text-ink mb-4">Personal details</h3>
+            <h3 className="font-semibold text-ink mb-4 t-bd-sm">Personal details</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><FieldLabel>Full name</FieldLabel><Input value={name} onChange={e => setName(e.target.value)} /></div>
               <div><FieldLabel>Phone number</FieldLabel><Input value={phone} onChange={e => setPhone(e.target.value)} /></div>
             </div>
           </div>
           <div className="card p-5">
-            <h3 className="font-semibold text-sm text-ink mb-1">Business details</h3>
-            <p className="text-xs text-body mb-4">Shown on your quotes and orders.</p>
+            <h3 className="font-semibold text-ink mb-1 t-bd-sm">Business details</h3>
+            <p className="text-body mb-4 t-cap">Shown on your quotes and orders.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><FieldLabel>Business name</FieldLabel><Input value={company} onChange={e => setCompany(e.target.value)} placeholder="ABC Constructions" /></div>
               <div><FieldLabel>ABN</FieldLabel><Input value={abn} onChange={e => setAbn(e.target.value)} placeholder="00 000 000 000" inputMode="numeric" /></div>
             </div>
           </div>
         </div>
-        {saveError && <p role="alert" className="text-sm text-red-700 flex items-center gap-1.5"><AlertCircle className="w-4 h-4" />{saveError}</p>}
+        {saveError && <p role="alert" className="text-red-700 flex items-center gap-1.5 t-bd-sm"><AlertCircle className="w-4 h-4" />{saveError}</p>}
         <div>
           <Btn variant="sage" size="md" disabled={saving} onClick={saveProfile}>
             {saved ? <><Check className="w-4 h-4" />Saved</> : saving ? "Saving…" : "Save changes"}
@@ -1366,18 +1363,18 @@ const fmtLongDate = (s: string | null) => {
 function AccountIdentity({ user, setPage }: { user: AuthUser; setPage: (p: Page) => void }) {
   return (
     <section className="pt-2">
-      <h2 className="text-sm font-semibold text-ink uppercase tracking-wider mb-3">Sign-in</h2>
+      <h2 className="text-ink mb-3 t-label">Sign-in</h2>
       <dl className="card px-5 py-1">
         <div className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-4 py-2.5 border-b border-black/6">
-          <dt className="text-[10px] font-semibold text-ink-soft uppercase tracking-widest sm:w-40 sm:flex-shrink-0 flex items-center gap-1.5"><Lock className="w-3 h-3 text-sage" />Sign-in email</dt>
-          <dd className="text-sm text-ink">{user.email}</dd>
+          <dt className="text-ink-soft sm:w-40 sm:flex-shrink-0 flex items-center gap-1.5 t-label"><Lock className="w-3 h-3 text-sage" />Sign-in email</dt>
+          <dd className="text-ink t-bd-sm">{user.email}</dd>
         </div>
         <div className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-4 py-2.5">
-          <dt className="text-[10px] font-semibold text-ink-soft uppercase tracking-widest sm:w-40 sm:flex-shrink-0">Registered</dt>
-          <dd className="text-sm text-ink">{fmtLongDate(user.createdAt)}</dd>
+          <dt className="text-ink-soft sm:w-40 sm:flex-shrink-0 t-label">Registered</dt>
+          <dd className="text-ink t-bd-sm">{fmtLongDate(user.createdAt)}</dd>
         </div>
       </dl>
-      <p className="text-[11px] text-body mt-2">
+      <p className="text-body mt-2 t-cap">
         Your email is your sign-in ID and can't be changed here — <button onClick={() => { setPage("help"); window.scrollTo(0, 0); }} className="text-sage underline cursor-pointer">contact us</button> and we'll update it for you.
       </p>
     </section>
@@ -1417,37 +1414,37 @@ function AccountSettingsPage({ user, setPage, setUser, authLoading, embedded }: 
       {!embedded && (
         <header className="mb-8">
           <SLabel>Customer account</SLabel>
-          <h1 className="text-3xl md:text-4xl font-semibold text-ink font-display">Account settings</h1>
+          <h1 className="font-semibold text-ink font-display t-hd1">Account settings</h1>
         </header>
       )}
       <div className="space-y-4">
         <div className="grid lg:grid-cols-2 gap-4 items-start">
           <div className="card p-5">
-            <div className="flex items-center gap-2 mb-2"><Settings className="w-4 h-4 text-sage" /><h3 className="font-semibold text-sm text-ink">Price display</h3></div>
-            <p className="text-sm text-body leading-relaxed mb-4">Choose how estimates show pricing across the site. This changes the display only — quoted and invoiced totals are always GST-inclusive.</p>
+            <div className="flex items-center gap-2 mb-2"><Settings className="w-4 h-4 text-sage" /><h3 className="font-semibold text-ink t-bd-sm">Price display</h3></div>
+            <p className="text-body mb-4 t-bd-sm">Choose how estimates show pricing across the site. This changes the display only — quoted and invoiced totals are always GST-inclusive.</p>
             <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Price display">
               {gstOptions.map(o => {
                 const active = user.priceGstMode === o.mode;
                 return (
                   <button key={o.mode} role="radio" aria-checked={active} onClick={() => setGst(o.mode)}
                     className={`text-left border px-3 py-3 transition-colors cursor-pointer ${active ? "border-sage bg-sage-wash" : "border-black/12 bg-white hover:border-sage/50"}`}>
-                    <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                    <span className="flex items-center gap-1.5 font-semibold text-ink t-bd-sm">
                       {active && <Check className="w-3.5 h-3.5 text-sage" />}{o.label}
                     </span>
-                    <span className="block text-[11px] text-body mt-0.5">{o.note}</span>
+                    <span className="block text-body mt-0.5 t-cap">{o.note}</span>
                   </button>
                 );
               })}
             </div>
           </div>
           <div className="card p-5">
-            <div className="flex items-center gap-2 mb-2"><Key className="w-4 h-4 text-sage" /><h3 className="font-semibold text-sm text-ink">Sign-in &amp; security</h3></div>
-            <p className="text-sm text-body leading-relaxed">Your account is passwordless — you sign in with a one-time code emailed to <span className="text-ink">{user.email}</span>. There's no password to set or change.</p>
+            <div className="flex items-center gap-2 mb-2"><Key className="w-4 h-4 text-sage" /><h3 className="font-semibold text-ink t-bd-sm">Sign-in &amp; security</h3></div>
+            <p className="text-body t-bd-sm">Your account is passwordless — you sign in with a one-time code emailed to <span className="text-ink">{user.email}</span>. There's no password to set or change.</p>
           </div>
         </div>
         <div className="bg-white border border-red-200 p-5">
-          <h3 className="font-semibold text-sm text-red-700 mb-2">Danger zone</h3>
-          <p className="text-xs text-body mb-4">Permanently delete your account and all associated data. This cannot be undone.</p>
+          <h3 className="font-semibold text-red-700 mb-2 t-bd-sm">Danger zone</h3>
+          <p className="text-body mb-4 t-cap">Permanently delete your account and all associated data. This cannot be undone.</p>
           <Btn variant="danger" size="sm">Delete account</Btn>
         </div>
       </div>
@@ -1463,14 +1460,14 @@ function AccountPage({ user, setPage, setUser, authLoading }: { user: AuthUser |
     <div className="space-y-10">
       <header>
         <h1 className="text-ink t-hd1">Account</h1>
-        <p className="text-sm text-body mt-[5px]">Your details and preferences.</p>
+        <p className="text-body mt-[5px] t-bd-sm">Your details and preferences.</p>
       </header>
       <div>
-        <h2 className="text-lg font-semibold text-ink mb-4 font-display">Profile</h2>
+        <h2 className="font-semibold text-ink mb-4 font-display t-bd-lg">Profile</h2>
         <ProfilePage user={user} setPage={setPage} setUser={setUser} authLoading={authLoading} embedded />
       </div>
       <div className="border-t border-black/8 pt-8">
-        <h2 className="text-lg font-semibold text-ink mb-4 font-display">Settings</h2>
+        <h2 className="font-semibold text-ink mb-4 font-display t-bd-lg">Settings</h2>
         <AccountSettingsPage user={user} setPage={setPage} setUser={setUser} authLoading={authLoading} embedded />
       </div>
     </div>
@@ -1538,26 +1535,26 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
       <GhostMark size={280} opacity={0.05} pos="right-0 top-0" />
       <div className="max-w-xl mx-auto px-6 py-12 relative">
         <SLabel>Quote &amp; order tracking</SLabel>
-        <h1 className="text-3xl font-semibold text-ink mb-2 font-display">Track your quote or order</h1>
+        <h1 className="font-semibold text-ink mb-2 font-display t-hd1">Track your quote or order</h1>
         {!resuming && step !== "record" && (
-          <p className="text-body text-sm mb-8">Enter the reference from your confirmation email — a quote (OF-Q-) or an order (OF-) — with the email address you used. We'll send a one-time code to confirm it's you; no account required.</p>
+          <p className="text-body mb-8 t-bd-sm">Enter the reference from your confirmation email — a quote (OF-Q-) or an order (OF-) — with the email address you used. We'll send a one-time code to confirm it's you; no account required.</p>
         )}
 
         {/* Hold the form back until we know whether a session is already live —
             otherwise the lookup flashes up and is snatched away. */}
         {resuming && (
-          <div className="card p-6 text-sm text-body">Checking your session…</div>
+          <div className="card p-6 text-body t-bd-sm">Checking your session…</div>
         )}
         {!resuming && step === "lookup" && (
           <div className="group relative card p-6 space-y-4 overflow-hidden">
             <FrameCorners size={10} color={SAGE} show="always" />
             <div><FieldLabel>Quote or order reference</FieldLabel><Input value={ref} onChange={e => setRef(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && request()} placeholder="OF-Q-10001 or OF-58001" className="font-mono tracking-wide" /></div>
             <div><FieldLabel>Email address</FieldLabel><Input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && request()} placeholder="Email used on the quote" /></div>
-            {error && <p className="text-xs text-red-600">{error}</p>}
+            {error && <p className="text-red-600 t-cap">{error}</p>}
             <Btn variant="sage" size="md" onClick={request} className={`w-full justify-center ${!validEmail || !ref.trim() || busy ? "opacity-50 pointer-events-none" : ""}`}>
               {busy ? "Sending…" : <>Send code <Search className="w-4 h-4" /></>}
             </Btn>
-            <p className="text-xs text-body text-center">
+            <p className="text-body text-center t-cap">
               Have an account? <button onClick={() => go("login")} className="text-sage hover:underline cursor-pointer">Sign in for full history</button>
             </p>
           </div>
@@ -1566,18 +1563,18 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
         {step === "code" && (
           <div className="group relative card p-6 space-y-4 overflow-hidden">
             <FrameCorners size={10} color={SAGE} show="always" />
-            <p className="text-sm text-body">If <span className="text-ink">{ref.trim()}</span> matches a quote or order for <span className="text-ink">{email.trim()}</span>, we've sent a 6-digit code.</p>
+            <p className="text-body t-bd-sm">If <span className="text-ink">{ref.trim()}</span> matches a quote or order for <span className="text-ink">{email.trim()}</span>, we've sent a 6-digit code.</p>
             <div><FieldLabel>6-digit code</FieldLabel><Input value={code} autoFocus inputMode="numeric" maxLength={6} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={e => e.key === "Enter" && verify()} placeholder="••••••" /></div>
-            {devCode && <p className="text-xs text-sage bg-sage-wash border border-sage/20 px-2 py-1.5">Dev mode — your code is <span className="font-mono font-semibold">{devCode}</span></p>}
-            {error && <p className="text-xs text-red-600">{error}</p>}
+            {devCode && <p className="text-sage bg-sage-wash border border-sage/20 px-2 py-1.5 t-cap">Dev mode — your code is <span className="font-mono font-semibold">{devCode}</span></p>}
+            {error && <p className="text-red-600 t-cap">{error}</p>}
             <Btn variant="sage" size="md" onClick={verify} className={`w-full justify-center ${code.length !== 6 || busy ? "opacity-50 pointer-events-none" : ""}`}>{busy ? "Checking…" : "View status"}</Btn>
-            <button onClick={reset} className="text-sm text-body hover:text-ink cursor-pointer">← Start over</button>
+            <button onClick={reset} className="text-body hover:text-ink cursor-pointer t-bd-sm">← Start over</button>
           </div>
         )}
 
         {step === "record" && rec && (
           <div>
-            <button onClick={reset} className="text-xs text-body hover:text-ink flex items-center gap-1 cursor-pointer mb-5"><ChevronLeft className="w-3 h-3" />New search</button>
+            <button onClick={reset} className="text-body hover:text-ink flex items-center gap-1 cursor-pointer mb-5 t-cap"><ChevronLeft className="w-3 h-3" />New search</button>
             {rec.kind === "order"
               ? <OrderDetail orderId={rec.id} setPage={go} />
               : <ProjectDetail projectId={rec.id} status={rec.status} setPage={go} />}
@@ -1597,13 +1594,13 @@ function ApprovedQuotePage() {
     <div className="relative min-h-screen ground-bone pt-24 pb-24 overflow-hidden">
       <GhostMark size={260} opacity={0.05} pos="right-0 bottom-0" />
       <div className="max-w-2xl mx-auto px-6 relative">
-        <div className="flex items-center gap-2 mb-2"><CheckCircle className="w-4 h-4 text-sage" /><span className="text-xs text-sage font-medium uppercase tracking-wide">Human verified</span></div>
-        <h1 className="text-3xl font-semibold text-ink mb-1 font-display">Reviewed quote — OF-58712</h1>
-        <p className="text-body text-sm mb-8">Issued after manual technical review · 12 Jan 2025</p>
+        <div className="flex items-center gap-2 mb-2"><CheckCircle className="w-4 h-4 text-sage" /><span className="text-sage t-label">Human verified</span></div>
+        <h1 className="font-semibold text-ink mb-1 font-display t-hd1">Reviewed quote — OF-58712</h1>
+        <p className="text-body mb-8 t-bd-sm">Issued after manual technical review · 12 Jan 2025</p>
         <div className="group relative card p-5 mb-4 overflow-hidden">
           <FrameCorners size={10} color={SAGE} show="always" />
-          <h3 className="font-semibold text-sm text-ink mb-4">Approved line items</h3>
-          <table className="w-full text-sm"><thead><tr className="border-b border-black/8 text-[10px] text-body uppercase tracking-wide">
+          <h3 className="font-semibold text-ink mb-4 t-bd-sm">Approved line items</h3>
+          <table className="w-full t-bd-sm"><thead><tr className="border-b border-black/8 text-body t-label">
             {["Description","Dims","Qty","Total"].map(h => <th key={h} className="text-left py-2 pr-4 font-semibold">{h}</th>)}
           </tr></thead><tbody>
             {[["Alum. Sliding Door — Satin Black / DG LowE","3000×2100mm","2","[total]"],["Alum. Awning Window — Woodland Grey / DG","1200×900mm","4","[total]"],["Delivery — Preston VIC","—","1","[price]"]].map(r => (
@@ -1611,15 +1608,15 @@ function ApprovedQuotePage() {
             ))}
           </tbody></table>
           <div className="mt-4 pt-4 border-t border-black/8 flex justify-between">
-            <span className="text-sm text-body">Deposit (30%)</span>
+            <span className="text-body t-bd-sm">Deposit (30%)</span>
             <span className="font-semibold font-data">[deposit amount]</span>
           </div>
         </div>
         <div className="group relative card p-5 mb-4 space-y-3 overflow-hidden">
           <FrameCorners size={10} color={SAGE} show="always" />
-          <h3 className="font-semibold text-sm text-ink mb-1">Acknowledge before paying</h3>
+          <h3 className="font-semibold text-ink mb-1 t-bd-sm">Acknowledge before paying</h3>
           {[[t1,setT1,"Dimensions verified by a qualified builder, installer or professional."],[t2,setT2,"Supply-only order. Installation not included."],[t3,setT3,"Payment confirms the reviewed quote only. Changes after deposit may incur costs."]].map(([v,s,l],i) => (
-            <label key={i} className="flex items-start gap-3 cursor-pointer text-sm text-body">
+            <label key={i} className="flex items-start gap-3 cursor-pointer text-body t-bd-sm">
               <input type="checkbox" checked={v as boolean} onChange={e => (s as any)(e.target.checked)} className="mt-0.5 accent-sage w-4 h-4" />{l as string}
             </label>
           ))}
@@ -1649,7 +1646,7 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
         <div className="relative max-w-6xl mx-auto px-6 pb-10 w-full">
           <div className="flex items-center gap-2 mb-3">
             <WindowMark size={11} color="rgba(255,255,255,0.55)" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">Trade account</span>
+            <span className="text-white/60 font-data t-label">Trade account</span>
           </div>
           <h1 className="text-white mb-3 t-ds1">Quote more jobs. Chase fewer reps.</h1>
           <p className="text-white/70 max-w-xl leading-relaxed t-bd">Upload every schedule you're sitting on and get them priced the same day. Trade accounts get priority review, saved details, and a name to call.</p>
@@ -1667,7 +1664,7 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
             {[["Your jobs jump the queue","Trade projects are reviewed first."],["Stop re-typing","Contacts, addresses and specs carry over to the next job."],["Re-run last job's spec","Same products, new sizes, a couple of clicks."],["A name and a number","Not a general inbox."],["Send them all at once","Every schedule on your desk, one submission."]].map(([t,b]) => (
               <div key={t} className="flex gap-3">
                 <WindowMark size={10} color={SAGE} className="mt-1.5 flex-shrink-0" />
-                <div><p className="font-medium text-sm text-ink">{t}</p><p className="text-xs text-body">{b}</p></div>
+                <div><p className="font-medium text-ink t-bd-sm">{t}</p><p className="text-body t-cap">{b}</p></div>
               </div>
             ))}
           </div>
@@ -1684,7 +1681,7 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
                 reassurance, pasted onto a form that charges nothing and issues
                 no quote. Nothing on this page is paid for, so the line answered
                 a question nobody was asking here. */}
-            <p className="text-xs text-body mt-3">No cost and no obligation — we'll be in touch to set it up.</p>
+            <p className="text-body mt-3 t-cap">No cost and no obligation — we'll be in touch to set it up.</p>
           </div>
         </div>
       </section>
@@ -1716,30 +1713,30 @@ function AdminPage() {
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <WindowMark size={16} color={SAGE} />
-            <span className="font-semibold text-sm">Quote Review Dashboard</span>
-            <span className="text-[10px] bg-white/8 text-white/35 px-2 py-0.5">Internal concept</span>
+            <span className="font-semibold t-bd-sm">Quote Review Dashboard</span>
+            <span className="bg-white/8 text-white/35 px-2 py-0.5 t-cap">Internal concept</span>
           </div>
-          <div className="flex items-center gap-2 text-xs text-white/35"><Bot className="w-3.5 h-3.5 text-sage" />AI-assisted</div>
+          <div className="flex items-center gap-2 text-white/35 t-cap"><Bot className="w-3.5 h-3.5 text-sage" />AI-assisted</div>
         </div>
       </div>
       <div className="max-w-6xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-3 gap-5 relative">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-white/25 mb-3">Incoming ({quotes.length})</p>
+          <p className="text-white/25 mb-3 t-label">Incoming ({quotes.length})</p>
           {quotes.map((qt, i) => (
             <button key={qt.ref} onClick={() => setSel(i)}
               className={`group relative w-full text-left p-4 mb-2 border transition-all cursor-pointer overflow-hidden ${sel === i ? "border-sage/40 bg-sage/5" : "border-white/8 hover:border-white/20"}`}>
               <FrameCorners size={8} color={SAGE} />
               <div className="flex justify-between items-start mb-1">
-                <span className="text-[10px] text-sage font-medium font-data">{qt.ref}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 font-medium ${sc[qt.status]}`}>{qt.status}</span>
+                <span className="text-sage font-medium font-data t-data-sm">{qt.ref}</span>
+                <span className={`px-1.5 py-0.5 font-medium ${sc[qt.status]} t-cap`}>{qt.status}</span>
               </div>
-              <p className="font-medium text-sm text-white">{qt.name}</p>
-              <p className="text-[11px] text-white/25 mb-2">{qt.project} · {qt.age} ago</p>
+              <p className="font-medium text-white t-bd-sm">{qt.name}</p>
+              <p className="text-white/25 mb-2 t-cap">{qt.project} · {qt.age} ago</p>
               <div className="flex items-center gap-2">
                 <div className="flex-1 h-0.5 bg-white/10">
                   <div className={`h-0.5 ${qt.conf > 80 ? "bg-sage" : qt.conf > 60 ? "bg-amber-400" : "bg-red-400"}`} style={{ width: `${qt.conf}%` }} />
                 </div>
-                <span className="text-[10px] text-white/25">{qt.conf}%</span>
+                <span className="text-white/25 t-cap">{qt.conf}%</span>
               </div>
             </button>
           ))}
@@ -1749,20 +1746,20 @@ function AdminPage() {
             <FrameCorners size={8} color={SAGE} />
             <div className="flex items-start justify-between mb-4">
               <div>
-                <span className="text-[10px] text-sage block mb-1 font-data">{q.ref}</span>
-                <h3 className="font-semibold text-lg text-white">{q.name}</h3>
-                <p className="text-sm text-white/35">{q.type} · {q.project}</p>
+                <span className="text-sage block mb-1 font-data t-data-sm">{q.ref}</span>
+                <h3 className="font-semibold text-white t-bd-lg">{q.name}</h3>
+                <p className="text-white/35 t-bd-sm">{q.type} · {q.project}</p>
               </div>
-              <span className={`text-xs px-2 py-1 font-medium ${sc[q.status]}`}>{q.status}</span>
+              <span className={`px-2 py-1 font-medium ${sc[q.status]} t-cap`}>{q.status}</span>
             </div>
             <div className="mb-4">
-              <div className="flex items-center gap-1.5 mb-2"><Bot className="w-3.5 h-3.5 text-sage" /><span className="text-[10px] font-medium text-white/35 uppercase tracking-wide">AI extracted · indicative only</span></div>
+              <div className="flex items-center gap-1.5 mb-2"><Bot className="w-3.5 h-3.5 text-sage" /><span className="text-white/35 t-label">AI extracted · indicative only</span></div>
               {[["Alum. Sliding Door","3000×2100mm",2,92],["Awning Window","1200×900mm",4,78],["Sliding Window","?×1050mm",3,38]].map(([t,d,qty,conf],i) => (
-                <div key={i} className="flex items-center justify-between py-1.5 border-b border-white/6 last:border-0 text-sm">
+                <div key={i} className="flex items-center justify-between py-1.5 border-b border-white/6 last:border-0 t-bd-sm">
                   <span className="text-white/75">{t as string} — {d as string} ×{qty as number}</span>
                   <div className="flex items-center gap-2">
                     <div className="w-10 h-0.5 bg-white/10"><div className={`h-0.5 ${(conf as number) > 80 ? "bg-sage" : (conf as number) > 60 ? "bg-amber-400" : "bg-red-400"}`} style={{ width: `${conf}%` }} /></div>
-                    <span className="text-[10px] text-white/25">{conf as number}%</span>
+                    <span className="text-white/25 t-cap">{conf as number}%</span>
                   </div>
                 </div>
               ))}

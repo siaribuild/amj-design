@@ -1,4 +1,4 @@
-// Ops → Projects: ONE record, whole lifecycle, on one plane.
+// className="font-data" Ops → Projects: ONE record, whole lifecycle, on one plane.
 //
 // A project, the quote revisions issued from it and the order it becomes are the
 // same job at different moments — `order` is 1:1 with `project`, and every order
@@ -38,8 +38,7 @@ import {
 // implementation of product picking, option defaults and range checks.
 import { ItemForm } from "../components/ItemComposer";
 
-const MONO = { fontFamily: "'Space Grotesk', sans-serif" } as const;
-const HEAD = { fontFamily: "'Space Grotesk', sans-serif" } as const;
+const MONO = {  } as const;
 
 const money = (n: number | null | undefined) =>
   n == null ? "—" : `$${Math.round(n).toLocaleString("en-AU")}`;
@@ -163,7 +162,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
 
   return (
     <div className="max-w-[1180px]">
-      <button onClick={onBack} className="text-xs flex items-center gap-1 mb-3" style={{ color: MUTED }}>
+      <button onClick={onBack} className="flex items-center gap-1 mb-3 t-cap" style={{ color: MUTED }}>
         <ChevronLeft className="w-3.5 h-3.5" /> All projects
       </button>
 
@@ -175,18 +174,18 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
       <div className="card px-5 py-4 mb-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg leading-tight" style={{ ...HEAD, color: INK }}>
+            <h2 className="t-bd-lg font-display" style={{ color: INK }}>
               <span className="font-data">{p.publicRef ?? id.slice(0, 8)}</span>
               <span style={{ color: MUTED }}> · </span>
               {p.title}
             </h2>
-            <p className="text-sm mt-0.5" style={{ color: MUTED }}>
+            <p className="mt-0.5 t-bd-sm" style={{ color: MUTED }}>
               {[p.org, p.customerName ?? p.contactName, p.customerEmail ?? p.contactEmail].filter(Boolean).join(" · ")}
             </p>
           </div>
           <div className="text-right">
-            <div className="text-lg" style={{ ...MONO, color: INK }}>{money(total)}</div>
-            <div className="text-[11px]" style={{ color: MUTED }}>
+            <div className="t-bd-lg font-data" style={{ color: INK }}>{money(total)}</div>
+            <div className="t-cap" style={{ color: MUTED }}>
               {order ? "contract" : ws.revisions.length ? "issued" : "estimate"}
             </div>
           </div>
@@ -208,13 +207,13 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
                   <button
                     onClick={() => (a.confirm || a.id === "note" || a.id === "request-clarification" ? (setConfirming(a), setConfirmText("")) : perform(a))}
                     disabled={busy || blocked}
-                    className="text-sm px-3.5 py-2 disabled:opacity-45 disabled:cursor-not-allowed"
+                    className="px-3.5 py-2 disabled:opacity-45 disabled:cursor-not-allowed t-bd-sm"
                     style={primary
                       ? { background: SAGE, color: "#fff" }
                       : { border: "1px solid rgba(0,0,0,0.15)", color: INK, background: "#fff" }}>
                     {a.label}
                   </button>
-                  {blocked && <span className="text-[12px]" style={{ color: "var(--warning-ink)" }}>{a.blockedReason}</span>}
+                  {blocked && <span className="t-cap" style={{ color: "var(--warning-ink)" }}>{a.blockedReason}</span>}
                 </span>
               );
             })}
@@ -225,34 +224,34 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
             made. A modal would hide the very thing being decided about. */}
         {confirming && (
           <div className="mt-3 border p-4" style={{ borderColor: "rgba(90,122,106,0.35)", background: "rgba(90,122,106,0.06)" }}>
-            <p className="text-sm mb-1" style={{ color: INK }}>{confirming.label}?</p>
-            {confirming.confirm && <p className="text-xs mb-2.5" style={{ color: MUTED }}>{confirming.confirm}</p>}
+            <p className="mb-1 t-bd-sm" style={{ color: INK }}>{confirming.label}?</p>
+            {confirming.confirm && <p className="mb-2.5 t-cap" style={{ color: MUTED }}>{confirming.confirm}</p>}
             {(confirming.id.startsWith("pay:") || confirming.id === "note" || confirming.id === "request-clarification") && (
               <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} autoFocus
                 onKeyDown={(e) => { if (e.key === "Escape") setConfirming(null); }}
                 placeholder={confirming.id.startsWith("pay:") ? "Bank reference, e.g. EFT-4821"
                   : confirming.id === "note" ? "What should the file record?" : "What do you need from the customer?"}
-                className="w-full border border-black/15 px-2.5 py-1.5 text-sm bg-white mb-3"
+                className="w-full border border-black/15 px-2.5 py-1.5 bg-white mb-3 t-bd-sm"
                 style={confirming.id.startsWith("pay:") ? MONO : undefined} />
             )}
             <div className="flex items-center gap-2">
               <button onClick={() => perform(confirming)}
                 disabled={busy || ((confirming.id.startsWith("pay:") || confirming.id === "note" || confirming.id === "request-clarification") && !confirmText.trim())}
-                className="text-sm text-white px-3.5 py-2 disabled:opacity-40" style={{ background: SAGE }}>
+                className="text-white px-3.5 py-2 disabled:opacity-40 t-bd-sm" style={{ background: SAGE }}>
                 Confirm
               </button>
-              <button onClick={() => setConfirming(null)} disabled={busy} className="text-sm px-3 py-2" style={{ color: MUTED }}>Cancel</button>
+              <button onClick={() => setConfirming(null)} disabled={busy} className="px-3 py-2 t-bd-sm" style={{ color: MUTED }}>Cancel</button>
             </div>
           </div>
         )}
 
         {error && (
-          <p role="alert" aria-live="assertive" className="mt-3 text-[13px] px-3 py-2 border" style={{ background: "rgba(180,60,40,0.07)", borderColor: "rgba(180,60,40,0.28)", color: "#8a3b2a" }}>{error}</p>
+          <p role="alert" aria-live="assertive" className="mt-3 px-3 py-2 border t-cap" style={{ background: "rgba(180,60,40,0.07)", borderColor: "rgba(180,60,40,0.28)", color: "#8a3b2a" }}>{error}</p>
         )}
 
         {/* The blocker, said once, in the header — not discovered at the bottom. */}
         {p.unresolvedLineCount > 0 && (
-          <p className="mt-3 text-[13px] px-3 py-2 border" style={{ background: "rgba(180,120,40,0.09)", borderColor: "rgba(180,120,40,0.3)", color: "var(--warning-ink)" }}>
+          <p className="mt-3 px-3 py-2 border t-cap" style={{ background: "rgba(180,120,40,0.09)", borderColor: "rgba(180,120,40,0.3)", color: "var(--warning-ink)" }}>
             {p.unresolvedLineCount} line{p.unresolvedLineCount === 1 ? "" : "s"} {p.unresolvedLineCount === 1 ? "is" : "are"} unpriced or unresolved — a quote cannot be issued until {p.unresolvedLineCount === 1 ? "it is" : "they are"} settled.
           </p>
         )}
@@ -277,7 +276,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
           )}
 
           {revisionId && (
-            <div className="border border-black/10 border-b-0 px-4 py-2 text-[13px]" style={{ background: "rgba(90,122,106,0.07)", color: "var(--sage-ink)" }}>
+            <div className="border border-black/10 border-b-0 px-4 py-2 t-cap" style={{ background: "rgba(90,122,106,0.07)", color: "var(--sage-ink)" }}>
               Viewing an issued revision — read-only.{" "}
               <button onClick={() => setRevisionId(null)} className="underline underline-offset-2">Back to the live draft</button>
             </div>
@@ -285,18 +284,18 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
 
           <div className="card">
             <div className="px-4 py-2.5 border-b border-black/8 flex items-center justify-between">
-              <span className="text-[11px] uppercase tracking-[0.14em]" style={{ color: MUTED }}>
+              <span className="t-label" style={{ color: MUTED }}>
                 {revisionId ? "Issued lines" : showingContract ? "Contract lines" : "Draft lines"}
               </span>
-              <span className="text-[11px]" style={{ color: MUTED }}>{rows.length} lines</span>
+              <span className="t-cap" style={{ color: MUTED }}>{rows.length} lines</span>
             </div>
             {/* Contained rather than carded — line cards for the record plane are
                 still pending. Without this the table's min-content width widens
                 the whole document instead of scrolling inside its own panel. */}
             <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full t-bd-sm">
               <thead>
-                <tr className="text-[11px] uppercase tracking-wide" style={{ color: MUTED }}>
+                <tr className="t-label" style={{ color: MUTED }}>
                   <th className="text-left font-medium px-4 py-2">Code</th>
                   <th className="text-left font-medium px-3 py-2">Product</th>
                   <th className="text-right font-medium px-3 py-2">Size</th>
@@ -315,7 +314,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
                     beside it as loose items — the parent is the opening the
                     customer ordered and its total is authoritative. */}
                 {rows.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-6 text-center text-sm" style={{ color: MUTED }}>No lines on this project.</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-6 text-center t-bd-sm" style={{ color: MUTED }}>No lines on this project.</td></tr>
                 )}
               </tbody>
             </table>
@@ -324,14 +323,14 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
 
           {ws.revisions.length > 0 && learning.status === "loading" && (
             <Block title="Teach future estimates">
-              <p role="status" className="px-4 py-3 text-[13px]" style={{ color: MUTED }}>
+              <p role="status" className="px-4 py-3 t-cap" style={{ color: MUTED }}>
                 Loading learning decisions...
               </p>
             </Block>
           )}
           {ws.revisions.length > 0 && learning.status === "error" && (
             <Block title="Teach future estimates">
-              <div role="alert" className="px-4 py-3 text-[13px]" style={{ color: "var(--warning-ink)" }}>
+              <div role="alert" className="px-4 py-3 t-cap" style={{ color: "var(--warning-ink)" }}>
                 Learning decisions could not be loaded.{" "}
                 <button onClick={() => void load()} className="underline underline-offset-2" style={{ color: SAGE }}>
                   Try again
@@ -353,8 +352,8 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
             <Block title="Notes" icon={<FileText className="w-3.5 h-3.5" />}>
               {ws.comments.slice(0, 6).map((cm) => (
                 <div key={cm.id} className="px-4 py-2.5 border-b border-black/5 last:border-0 border-l-2" style={{ borderLeftColor: SAGE }}>
-                  <p className="text-[13px]" style={{ color: INK }}>{cm.body}</p>
-                  <p className="text-[11px] mt-0.5" style={{ ...MONO, color: MUTED }}>
+                  <p className="t-cap" style={{ color: INK }}>{cm.body}</p>
+                  <p className="mt-0.5 t-cap font-data" style={{ color: MUTED }}>
                     {cm.kind === "clarification" ? "Clarification" : "Note"} · {cm.author ?? "system"} · {when(cm.created_at)}
                   </p>
                 </div>
@@ -369,18 +368,18 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
             <Block title="Payments" meta={order.orderNo}>
               {(ws.payments ?? []).map((pay) => (
                 <div key={pay.kind} className="px-4 py-2.5 border-b border-black/5 last:border-0 flex items-baseline justify-between">
-                  <span className="text-[13px]" style={{ color: INK }}>
+                  <span className="t-cap" style={{ color: INK }}>
                     {pay.kind} <span style={{ color: MUTED }}>· {pay.percent}%</span>
-                    {pay.reference && <span className="block text-[11px]" style={{ ...MONO, color: MUTED }}>{pay.reference}</span>}
+                    {pay.reference && <span className="block t-cap font-data" style={{ color: MUTED }}>{pay.reference}</span>}
                   </span>
                   <span className="text-right">
-                    <span className="block text-[13px]" style={{ ...MONO, color: INK }}>{money(pay.amount)}</span>
-                    <span className="block text-[11px]" style={{ color: pay.status === "paid" ? SAGE : MUTED }}>{pay.status}</span>
+                    <span className="block t-cap font-data" style={{ color: INK }}>{money(pay.amount)}</span>
+                    <span className="block t-cap" style={{ color: pay.status === "paid" ? SAGE : MUTED }}>{pay.status}</span>
                   </span>
                 </div>
               ))}
               {(ws.payments ?? []).length === 0 && <Empty>No payments recorded.</Empty>}
-              <div className="px-4 py-2 text-[11px] border-t border-black/5" style={{ color: MUTED }}>
+              <div className="px-4 py-2 border-t border-black/5 t-cap" style={{ color: MUTED }}>
                 Order no. <span className="font-data">{order.orderNo}</span> · appears on invoices
               </div>
             </Block>
@@ -389,8 +388,8 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
           <Block title="Files" icon={<Paperclip className="w-3.5 h-3.5" />} meta={String(ws.files.length)}>
             {ws.files.map((f) => (
               <div key={f.id} className="px-4 py-2.5 border-b border-black/5 last:border-0 flex items-baseline justify-between gap-2">
-                <span className="text-[13px] truncate" style={{ color: INK }}>{f.filename}</span>
-                <span className="text-[11px] flex-shrink-0" style={{ ...MONO, color: f.virus_status === "clean" ? MUTED : "var(--warning)" }}>
+                <span className="truncate t-cap" style={{ color: INK }}>{f.filename}</span>
+                <span className="flex-shrink-0 t-cap font-data" style={{ color: f.virus_status === "clean" ? MUTED : "var(--warning)" }}>
                   {f.virus_status === "clean" ? `${Math.max(1, Math.round(f.size / 1024))} kB` : f.virus_status}
                 </span>
               </div>
@@ -403,14 +402,14 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
           <Block title="History" icon={<HistoryIcon className="w-3.5 h-3.5" />} meta={String(ws.activity.length)}>
             {(showAllHistory ? ws.activity : ws.activity.slice(0, 8)).map((a, i) => (
               <div key={`${a.occurred_at}-${i}`} className="px-4 py-2 border-b border-black/5 last:border-0">
-                <p className="text-[13px]" style={{ color: INK }}>{a.action}</p>
-                <p className="text-[11px]" style={{ ...MONO, color: MUTED }}>{a.actor ?? "system"} · {when(a.occurred_at)}</p>
+                <p className="t-cap" style={{ color: INK }}>{a.action}</p>
+                <p className="t-cap font-data" style={{ color: MUTED }}>{a.actor ?? "system"} · {when(a.occurred_at)}</p>
               </div>
             ))}
             {ws.activity.length === 0 && <Empty>Nothing has happened yet.</Empty>}
             {ws.activity.length > 8 && (
               <button onClick={() => setShowAllHistory((v) => !v)}
-                className="w-full px-4 py-2 text-[12px] text-left border-t border-black/5" style={{ color: SAGE }}>
+                className="w-full px-4 py-2 text-left border-t border-black/5 t-cap" style={{ color: SAGE }}>
                 {showAllHistory ? "Show less" : `Show all ${ws.activity.length} events →`}
               </button>
             )}
@@ -460,7 +459,7 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
 
   return (
     <Block title="Teach future estimates" meta={`${pending.length} decision${pending.length === 1 ? "" : "s"}`}>
-      <p className="px-4 py-3 text-[13px] border-b border-black/5" style={{ color: MUTED }}>
+      <p className="px-4 py-3 border-b border-black/5 t-cap" style={{ color: MUTED }}>
         Classify only the reason for the final human change. Product preference and thermal corrections
         are learned separately; rejecting an outcome keeps it out of future recommendations.
       </p>
@@ -473,14 +472,14 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
         const reasonId = `learning-reason-${outcome.id}`;
         return (
           <div key={outcome.id} className="px-4 py-4 border-b border-black/5 last:border-0">
-            <p className="text-sm" style={{ color: INK }}>
+            <p className="t-bd-sm" style={{ color: INK }}>
               <span className="font-data">{outcome.external_ref || "Opening"}</span>
               {" · "}{outcome.proposed_product_slug || "No AI product"}
               {outcome.proposed_variant_id ? ` / ${outcome.proposed_variant_id}` : ""}
               {" → "}{outcome.final_product_slug}
               {outcome.final_variant_id ? ` / ${outcome.final_variant_id}` : ""}
             </p>
-            <p className="text-xs mt-1" style={{ color: MUTED }}>
+            <p className="mt-1 t-cap" style={{ color: MUTED }}>
               AI {money(outcome.proposed_line_total)} · issued {money(outcome.final_line_total)}
               {outcome.price_delta != null ? ` · change ${money(outcome.price_delta)}` : ""}
             </p>
@@ -492,7 +491,7 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
                 onChange={(event) => setReasonById((current) => ({
                   ...current, [outcome.id]: event.target.value,
                 }))}
-                className="flex-1 border border-black/15 px-2.5 py-2 text-sm bg-white">
+                className="flex-1 border border-black/15 px-2.5 py-2 bg-white t-bd-sm">
                 <option value="">Why did the human change it?</option>
                 {reasons.map((reason) => (
                   <option key={reason.code} value={reason.code}>
@@ -503,7 +502,7 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
             </div>
             {selectedReason?.learnsThermalTarget && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
-                <label className="text-xs" style={{ color: MUTED }}>
+                <label className="t-cap" style={{ color: MUTED }}>
                   Maximum Uw
                   <input
                     type="number"
@@ -517,11 +516,11 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
                       ...current,
                       [outcome.id]: { ...thermal, maxUValue: event.target.value },
                     }))}
-                    className="block w-full mt-1 border border-black/15 px-2.5 py-2 text-sm bg-white"
+                    className="block w-full mt-1 border border-black/15 px-2.5 py-2 bg-white t-bd-sm"
                     placeholder="e.g. 2.6"
                   />
                 </label>
-                <label className="text-xs" style={{ color: MUTED }}>
+                <label className="t-cap" style={{ color: MUTED }}>
                   Minimum SHGC (optional)
                   <input
                     type="number"
@@ -535,11 +534,11 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
                       ...current,
                       [outcome.id]: { ...thermal, minShgc: event.target.value },
                     }))}
-                    className="block w-full mt-1 border border-black/15 px-2.5 py-2 text-sm bg-white"
+                    className="block w-full mt-1 border border-black/15 px-2.5 py-2 bg-white t-bd-sm"
                     placeholder="e.g. 0.30"
                   />
                 </label>
-                <label className="text-xs" style={{ color: MUTED }}>
+                <label className="t-cap" style={{ color: MUTED }}>
                   Maximum SHGC (optional)
                   <input
                     type="number"
@@ -553,18 +552,18 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
                       ...current,
                       [outcome.id]: { ...thermal, maxShgc: event.target.value },
                     }))}
-                    className="block w-full mt-1 border border-black/15 px-2.5 py-2 text-sm bg-white"
+                    className="block w-full mt-1 border border-black/15 px-2.5 py-2 bg-white t-bd-sm"
                     placeholder="e.g. 0.55"
                   />
                 </label>
               </div>
             )}
             {validationError && selectedReason?.learnsThermalTarget && (
-              <p role="alert" className="text-xs mt-2" style={{ color: "var(--warning-ink)" }}>{validationError}</p>
+              <p role="alert" className="mt-2 t-cap" style={{ color: "var(--warning-ink)" }}>{validationError}</p>
             )}
             {confirm ? (
               <div className="mt-3 border border-black/10 p-3" style={{ background: "rgba(90,122,106,0.06)" }}>
-                <p className="text-xs" style={{ color: INK }}>
+                <p className="t-cap" style={{ color: INK }}>
                   {confirm.action === "approve"
                     ? `Use ${humanLabel(selectedReason?.code ?? "")} as a permanent lesson for future estimates?`
                     : "Permanently exclude this adjustment from future learning?"}
@@ -584,7 +583,7 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
                               maxShgc: thermal.maxShgc === "" ? null : Number(thermal.maxShgc),
                             } : undefined,
                           }))}
-                    className="text-sm px-3 py-1.5 disabled:opacity-45"
+                    className="px-3 py-1.5 disabled:opacity-45 t-bd-sm"
                     style={{ background: SAGE, color: "#fff" }}
                   >
                     Confirm
@@ -592,7 +591,7 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
                   <button
                     disabled={busy}
                     onClick={() => setConfirming(null)}
-                    className="text-sm underline underline-offset-2 disabled:opacity-45"
+                    className="underline underline-offset-2 disabled:opacity-45 t-bd-sm"
                     style={{ color: MUTED }}
                   >
                     Cancel
@@ -604,7 +603,7 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
                 <button
                   disabled={busy || !canApprove}
                   onClick={() => setConfirming({ id: outcome.id, action: "approve" })}
-                  className="text-sm px-3 py-1.5 disabled:opacity-45"
+                  className="px-3 py-1.5 disabled:opacity-45 t-bd-sm"
                   style={{ background: SAGE, color: "#fff" }}
                 >
                   Use as a lesson
@@ -612,7 +611,7 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
                 <button
                   disabled={busy}
                   onClick={() => setConfirming({ id: outcome.id, action: "reject" })}
-                  className="text-sm underline underline-offset-2 disabled:opacity-45"
+                  className="underline underline-offset-2 disabled:opacity-45 t-bd-sm"
                   style={{ color: MUTED }}
                 >
                   Exclude from learning
@@ -639,21 +638,20 @@ function PhaseRibbon({ phase, stateLabel, waitingOn, days }: {
           const passed = i < now, current = i === now;
           return (
             <div key={ph}
-              className="flex-1 px-2.5 py-1.5 text-[11px] text-center border-r last:border-r-0"
+              className={`flex-1 px-2.5 py-1.5 text-center border-r last:border-r-0 t-cap ${current ? "font-semibold" : "font-normal"}`}
               style={{
                 background: passed ? SAGE : "transparent",
                 borderColor: "rgba(0,0,0,0.08)",
                 borderTop: `1px solid rgba(0,0,0,0.08)`,
                 borderBottom: current ? `2px solid ${SAGE}` : "1px solid rgba(0,0,0,0.08)",
                 color: passed ? "#fff" : current ? INK : MUTED,
-                fontWeight: current ? 600 : 400,
-              }}>
+                }}>
               {ph}
             </div>
           );
         })}
       </div>
-      <p className="mt-2 text-[13px]" style={{ color: MUTED }}>
+      <p className="mt-2 t-cap" style={{ color: MUTED }}>
         <span style={{ color: INK }}>Now · {stateLabel}</span>
         {" · "}waiting on {waitingOn.toLowerCase()}
         {days != null && <> · <span className="font-data">{days}</span> day{days === 1 ? "" : "s"} in this state</>}
@@ -669,10 +667,9 @@ function VersionTab({ label, meta, active, onClick }: { label: string; meta: str
       style={{
         background: active ? "#fff" : "transparent",
         borderColor: "rgba(0,0,0,0.1)",
-        color: active ? INK : MUTED,
-      }}>
-      <span className="block text-[13px]" style={{ fontWeight: active ? 600 : 400 }}>{label}</span>
-      <span className="block text-[11px]" style={{ ...MONO, color: MUTED }}>{meta}</span>
+        color: active ? INK : MUTED }}>
+      <span className={`block t-cap ${active ? "font-semibold" : "font-normal"}`}>{label}</span>
+      <span className="block t-cap font-data" style={{ color: MUTED }}>{meta}</span>
     </button>
   );
 }
@@ -681,10 +678,10 @@ function Block({ title, meta, icon, children }: { title: string; meta?: string; 
   return (
     <div className="card mt-4 lg:mt-0">
       <div className="px-4 py-2.5 border-b border-black/8 flex items-center justify-between">
-        <span className="text-[11px] uppercase tracking-[0.14em] flex items-center gap-1.5" style={{ color: MUTED }}>
+        <span className="flex items-center gap-1.5 t-label" style={{ color: MUTED }}>
           {icon}{title}
         </span>
-        {meta && <span className="text-[11px]" style={{ ...MONO, color: MUTED }}>{meta}</span>}
+        {meta && <span className="t-cap font-data" style={{ color: MUTED }}>{meta}</span>}
       </div>
       {children}
     </div>
@@ -692,7 +689,7 @@ function Block({ title, meta, icon, children }: { title: string; meta?: string; 
 }
 
 const Empty = ({ children }: { children: React.ReactNode }) =>
-  <p className="px-4 py-4 text-[13px]" style={{ color: MUTED }}>{children}</p>;
+  <p className="px-4 py-4 t-cap" style={{ color: MUTED }}>{children}</p>;
 
 /** One line — an OPENING — and, when it is a composite, the units inside it.
  *
@@ -858,33 +855,33 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
   return (
     <>
     <tr className="border-t border-black/5">
-      <td className="px-4 py-2" style={{ ...MONO, color: SAGE }}>{line.code || "—"}</td>
+      <td className="px-4 py-2 font-data" style={{ color: SAGE }}>{line.code || "—"}</td>
       <td className="px-3 py-2" style={{ color: INK }}>
         {line.productName}
-        {line.room && <span className="block text-[11px]" style={{ color: MUTED }}>{line.room}</span>}
+        {line.room && <span className="block t-cap" style={{ color: MUTED }}>{line.room}</span>}
         {line.selectedVariantId && (
-          <span className="block text-[11px]" style={{ ...MONO, color: MUTED }}>
+          <span className="block t-cap font-data" style={{ color: MUTED }}>
             configuration · {line.selectedVariantId}
           </span>
         )}
         {line.review && Object.keys(line.review).length > 0 && (
-          <ul className="text-[11px] mt-1 list-disc pl-4" style={{ color: "var(--warning-ink)" }}>
+          <ul className="mt-1 list-disc pl-4 t-cap" style={{ color: "var(--warning-ink)" }}>
             {reviewReasons(line.review).map((reason, index) => <li key={`${index}-${reason}`}>{reason}</li>)}
           </ul>
         )}
         {composite && (
-          <span className="block text-[11px]" style={{ ...MONO, color: SAGE }}>
+          <span className="block t-cap font-data" style={{ color: SAGE }}>
             composite · {line.segments.length} joined unit{line.segments.length === 1 ? "" : "s"}
             {unitNames.length > 1 && ` · ${unitNames.join(" + ")}`}
           </span>
         )}
       </td>
-      <td className="px-3 py-2 text-right" style={{ ...MONO, color: MUTED }}>
+      <td className="px-3 py-2 text-right font-data" style={{ color: MUTED }}>
         {line.width && line.height ? `${line.width} × ${line.height}` : "—"}
       </td>
-      <td className="px-3 py-2 text-right" style={{ ...MONO, color: MUTED }}>{line.qty}</td>
-      <td className="px-3 py-2 text-right" style={{ ...MONO, color: INK }}>{money(line.lineTotal)}</td>
-      <td className="px-4 py-2 text-[12px]">
+      <td className="px-3 py-2 text-right font-data" style={{ color: MUTED }}>{line.qty}</td>
+      <td className="px-3 py-2 text-right font-data" style={{ color: INK }}>{money(line.lineTotal)}</td>
+      <td className="px-4 py-2 t-cap">
         <span className="flex items-center gap-2">
           {/* Never colour alone — the word carries the state. */}
           <span style={{ color: line.status === "ready" ? SAGE : "var(--warning)" }}>
@@ -912,7 +909,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
           {(aiManaged || !!line.review) && (
             <div className="mb-4 border border-black/10 bg-white p-3">
               {aiManaged && (<>
-              <label htmlFor={`configuration-${line.id}`} className="block text-[11px] uppercase tracking-wide mb-1.5" style={{ color: MUTED }}>
+              <label htmlFor={`configuration-${line.id}`} className="block mb-1.5 t-label" style={{ color: MUTED }}>
                 Exact frame and glazing configuration
               </label>
               <select
@@ -920,7 +917,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
                 value={configurationKey}
                 onChange={(event) => setConfigurationKey(event.target.value)}
                 disabled={configurationState !== "ready"}
-                className="w-full border border-black/15 px-2.5 py-2 text-sm bg-white">
+                className="w-full border border-black/15 px-2.5 py-2 bg-white t-bd-sm">
                 <option value="">
                   {configurationState === "loading" ? "Loading eligible configurations..." : "Select a currently eligible configuration"}
                 </option>
@@ -938,7 +935,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
                 ))}
               </select>
               {configurationState === "error" && (
-                <p role="alert" className="text-xs mt-1.5" style={{ color: "var(--warning-ink)" }}>
+                <p role="alert" className="mt-1.5 t-cap" style={{ color: "var(--warning-ink)" }}>
                   Eligible configurations could not be loaded.{" "}
                   <button
                     type="button"
@@ -951,13 +948,13 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
                 </p>
               )}
               {configurationState === "ready" && configurations.length === 0 && (
-                <p className="text-xs mt-1.5" style={{ color: "var(--warning-ink)" }}>
+                <p className="mt-1.5 t-cap" style={{ color: "var(--warning-ink)" }}>
                   No eligible, exactly priceable thermal configuration is available for this opening.
                 </p>
               )}
               </>)}
               {line.review && Object.keys(line.review).length > 0 && (
-                <label className="flex gap-2 items-start mt-3 text-xs" style={{ color: INK }}>
+                <label className="flex gap-2 items-start mt-3 t-cap" style={{ color: INK }}>
                   <input
                     type="checkbox"
                     checked={resolveChecks}
@@ -983,8 +980,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
               productSlug: configurations.find((row) =>
                 `${row.productSlug}::${row.variantId}` === configurationKey)?.productSlug ?? line.productSlug,
               location: line.room,
-              width: line.width, height: line.height, options: line.options, qty: line.qty,
-            }}
+              width: line.width, height: line.height, options: line.options, qty: line.qty }}
             onCommit={(built) => saveLine(built as never)}
             onCancel={() => setEditing(false)}
           />
@@ -996,19 +992,19 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
     {composite && line.segments.map((sg, i) => (
       <Fragment key={sg.id}>
         <tr className="border-t border-black/5" style={{ background: "rgba(90,122,106,0.04)" }}>
-          <td className="px-4 py-1.5 text-right" style={{ ...MONO, color: MUTED }}>{i + 1}.</td>
-          <td className="px-3 py-1.5 text-[13px]" style={{ color: MUTED }}>
+          <td className="px-4 py-1.5 text-right font-data" style={{ color: MUTED }}>{i + 1}.</td>
+          <td className="px-3 py-1.5 t-cap" style={{ color: MUTED }}>
             {sg.productName}
             <SpecSummary unit={sg.options} opening={line.options} />
           </td>
-          <td className="px-3 py-1.5 text-right text-[13px]" style={{ ...MONO, color: MUTED }}>
+          <td className="px-3 py-1.5 text-right t-cap font-data" style={{ color: MUTED }}>
             {sg.width} × {sg.height}
           </td>
-          <td className="px-3 py-1.5 text-right text-[13px]" style={{ ...MONO, color: MUTED }}>
+          <td className="px-3 py-1.5 text-right t-cap font-data" style={{ color: MUTED }}>
             {sg.qtyPerParent}× per opening
           </td>
-          <td className="px-3 py-1.5 text-right text-[13px]" style={{ ...MONO, color: MUTED }}>{money(sg.lineTotal)}</td>
-          <td className="px-4 py-1.5 text-[12px]">
+          <td className="px-3 py-1.5 text-right t-cap font-data" style={{ color: MUTED }}>{money(sg.lineTotal)}</td>
+          <td className="px-4 py-1.5 t-cap">
             {editable && (
               confirmRemove === sg.id ? (
                 <span className="flex items-center gap-2">
@@ -1034,7 +1030,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
         {editingUnit === sg.id && (
           <tr>
             <td colSpan={6} className="px-4 py-4" style={{ background: "rgba(90,122,106,0.06)" }}>
-              <p className="text-[12px] mb-2.5" style={{ color: MUTED }}>
+              <p className="mb-2.5 t-cap" style={{ color: MUTED }}>
                 Unit {i + 1} of {line.code || "this opening"}.{" "}
                 {axis === "vertical" ? "Height" : "Width"} is set by the opening
                 ({axis === "vertical" ? line.height : line.width} mm) and cannot be changed here.
@@ -1065,12 +1061,12 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
           <span className="flex flex-wrap items-center justify-between gap-3">
             {editable ? (
               <button onClick={addUnit} disabled={saving || busy || atMaxUnits}
-                className="text-[12px] underline underline-offset-2 disabled:no-underline disabled:opacity-50"
+                className="underline underline-offset-2 disabled:no-underline disabled:opacity-50 t-cap"
                 style={{ color: atMaxUnits ? MUTED : SAGE }}>
                 {atMaxUnits ? `Maximum ${policy?.maxSegments} units` : "+ Add unit"}
               </button>
             ) : <span />}
-            <span className="text-[12px]" style={{ color: delta === 0 || Math.abs(delta) <= tolerance ? MUTED : "var(--warning)" }}>
+            <span className="t-cap" style={{ color: delta === 0 || Math.abs(delta) <= tolerance ? MUTED : "var(--warning)" }}>
               {openingAlong === 0
                 ? "The opening has no size."
                 : delta === 0
@@ -1103,7 +1099,7 @@ function SpecSummary({ unit, opening }: { unit: Record<string, string>; opening:
   const changed = keys.filter((k) => (unit?.[k] ?? "") !== (opening?.[k] ?? ""));
   if (!keys.length) return null;
   return (
-    <span className="block text-[11px]" style={{ color: MUTED }}>
+    <span className="block t-cap" style={{ color: MUTED }}>
       {changed.length === 0
         ? "Spec: as the opening"
         : `Spec: ${changed.length} changed — ${changed.map((k) => `${k} ${unit?.[k] || "none"}`).join(", ")}`}
@@ -1186,15 +1182,15 @@ function SplitPanel({ line, composite, busy, policy, onDone, onError }: {
   if (composite) {
     return (
       <div>
-        <p className="text-[13px] mb-2.5" style={{ color: INK }}>
+        <p className="mb-2.5 t-cap" style={{ color: INK }}>
           This opening is built as {line.segments.length} joined units. Edit them in the rows
           above — change a unit's product, its spec or its size, add a unit or remove one.
         </p>
-        <p className="text-[12px] mb-3" style={{ color: MUTED }}>
+        <p className="mb-3 t-cap" style={{ color: MUTED }}>
           Merging discards all {line.segments.length} units and their spec, and returns this to one opening.
         </p>
         <button onClick={merge} disabled={saving || busy}
-          className="text-sm px-3 py-2 border border-black/15" style={{ color: INK }}>
+          className="px-3 py-2 border border-black/15 t-bd-sm" style={{ color: INK }}>
           {saving ? "Merging…" : "Merge back to one"}
         </button>
       </div>
@@ -1203,12 +1199,12 @@ function SplitPanel({ line, composite, busy, policy, onDone, onError }: {
 
   return (
     <div>
-      <p className="text-[13px] mb-2.5" style={{ color: INK }}>
+      <p className="mb-2.5 t-cap" style={{ color: INK }}>
         Build this {openingW} × {openingH} mm opening as joined units.
         Each unit keeps the opening's spec — change any of them afterwards.
       </p>
       <div className="flex flex-wrap items-end gap-4 mb-2.5">
-        <span className="text-[12px]" style={{ color: MUTED }}>
+        <span className="t-cap" style={{ color: MUTED }}>
           <span className="block mb-1">Joined</span>
           <span className="flex items-center gap-3">
             {([["vertical", "Side by side"], ["horizontal", "One above another"]] as const).map(([v, label]) => (
@@ -1219,30 +1215,30 @@ function SplitPanel({ line, composite, busy, policy, onDone, onError }: {
             ))}
           </span>
         </span>
-        <label className="text-[12px]" style={{ color: MUTED }}>
+        <label className="t-cap" style={{ color: MUTED }}>
           Units
           <select value={count} onChange={(e) => setCount(Number(e.target.value))}
-            className="ml-2 border border-black/15 px-2 py-1 text-sm bg-white" style={{ color: INK }}>
+            className="ml-2 border border-black/15 px-2 py-1 bg-white t-bd-sm" style={{ color: INK }}>
             {Array.from({ length: Math.max(0, maxUnits - 1) }, (_, i) => i + 2)
               .map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
         {sizes.map((v, i) => (
-          <label key={i} className="text-[12px]" style={{ color: MUTED }}>
+          <label key={i} className="t-cap" style={{ color: MUTED }}>
             Unit {i + 1} {axis === "vertical" ? "width" : "height"}
             <input value={String(v)} inputMode="numeric"
               onChange={(e) => setSizes(sizes.map((x, j) => (j === i ? Number(e.target.value) || 0 : x)))}
-              className="ml-2 border border-black/15 px-2 py-1 text-sm w-[76px] text-right bg-white font-data" />
+              className="ml-2 border border-black/15 px-2 py-1 w-[76px] text-right bg-white font-data t-data" />
           </label>
         ))}
       </div>
-      <p className="text-[12px] mb-3" style={{ color: delta === 0 || Math.abs(delta) <= tolerance ? MUTED : "var(--warning)" }}>
+      <p className="mb-3 t-cap" style={{ color: delta === 0 || Math.abs(delta) <= tolerance ? MUTED : "var(--warning)" }}>
         {delta === 0
           ? `Units span ${spanned} mm — exactly the opening.`
           : `Units span ${spanned} mm, ${Math.abs(delta)} mm ${delta > 0 ? "more than" : "less than"} the opening. Allowed — it is recorded on the line.`}
       </p>
       <button onClick={apply} disabled={saving || busy || sizes.some((v) => !v)}
-        className="text-sm text-white px-3.5 py-2 disabled:opacity-40" style={{ background: SAGE }}>
+        className="text-white px-3.5 py-2 disabled:opacity-40 t-bd-sm" style={{ background: SAGE }}>
         {saving ? "Applying…" : "Split into units"}
       </button>
     </div>

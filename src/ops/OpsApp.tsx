@@ -53,11 +53,11 @@ function OpsLogo({ height = 24, className = "" }: { height?: number; className?:
         <img src={logo} alt={businessName ?? "Logo"} style={{ height, width: "auto" }}
           className="self-center flex-shrink-0" />
       ) : (
-        <span className="text-white font-semibold truncate" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: height * 0.62 }}>
+        <span className="text-white font-semibold truncate font-display" style={{ fontSize: height * 0.62 }}>
           {businessName ?? "OpenFrame"}
         </span>
       )}
-      <span className="text-white/45 font-medium flex-shrink-0" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: height * 0.52 }}>
+      <span className="text-white/45 font-medium flex-shrink-0 font-display" style={{ fontSize: height * 0.52 }}>
         Ops
       </span>
     </span>
@@ -149,40 +149,40 @@ function OpsLogin({ onAuthed }: { onAuthed: (u: OpsUser) => void }) {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <OpsLogo height={30} />
-          <p className="text-white/40 text-sm mt-2">Internal console — staff sign-in</p>
+          <p className="text-white/40 mt-2 t-bd-sm">Internal console — staff sign-in</p>
         </div>
         <div className="bg-ops-panel border border-white/10 p-6 space-y-4">
           {step === "email" ? (
             <>
               <label className="block">
-                <span className="text-[11px] uppercase tracking-wide text-white/40">Work email</span>
+                <span className="text-white/40 t-label">Work email</span>
                 <input type="email" value={email} autoFocus onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && send()}
                   placeholder="you@openframe.com.au"
-                  className="mt-1 w-full bg-ops border border-white/15 px-3 py-2 text-sm text-white outline-none focus:border-sage" />
+                  className="mt-1 w-full bg-ops border border-white/15 px-3 py-2 text-white outline-none focus:border-sage t-bd-sm" />
               </label>
               <button onClick={send} disabled={busy}
-                className="w-full py-2 text-sm font-medium text-white disabled:opacity-50" style={{ background: SAGE }}>
+                className="w-full py-2 font-medium text-white disabled:opacity-50 t-bd-sm" style={{ background: SAGE }}>
                 {busy ? "Sending…" : "Send code"}
               </button>
             </>
           ) : (
             <>
-              <p className="text-sm text-white/60">Enter the 6-digit code sent to <span className="text-white">{email.trim()}</span>.</p>
+              <p className="text-white/60 t-bd-sm">Enter the 6-digit code sent to <span className="text-white">{email.trim()}</span>.</p>
               <input value={code} autoFocus inputMode="numeric" maxLength={6}
                 onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={e => e.key === "Enter" && verify()}
                 placeholder="••••••"
-                className="w-full bg-ops border border-white/15 px-3 py-2 text-sm text-white tracking-[0.3em] outline-none focus:border-sage" />
-              {devCode && <p className="text-xs text-sage-light bg-sage-wash border border-sage/25 px-2 py-1.5">Dev mode — code is <span className="font-mono font-semibold">{devCode}</span></p>}
+                className="w-full bg-ops border border-white/15 px-3 py-2 text-white tracking-[0.3em] outline-none focus:border-sage t-bd-sm" />
+              {devCode && <p className="text-sage-light bg-sage-wash border border-sage/25 px-2 py-1.5 t-cap">Dev mode — code is <span className="font-mono font-semibold">{devCode}</span></p>}
               <button onClick={verify} disabled={busy}
-                className="w-full py-2 text-sm font-medium text-white disabled:opacity-50" style={{ background: SAGE }}>
+                className="w-full py-2 font-medium text-white disabled:opacity-50 t-bd-sm" style={{ background: SAGE }}>
                 {busy ? "Verifying…" : "Sign in"}
               </button>
-              <button onClick={() => { setStep("email"); setCode(""); setError(""); }} className="text-xs text-white/40 hover:text-white/70">← Change email</button>
+              <button onClick={() => { setStep("email"); setCode(""); setError(""); }} className="text-white/40 hover:text-white/70 t-cap">← Change email</button>
             </>
           )}
-          {error && <p className="text-xs text-red-400 flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" />{error}</p>}
+          {error && <p className="text-red-400 flex items-center gap-1.5 t-cap"><AlertCircle className="w-3.5 h-3.5" />{error}</p>}
         </div>
-        <p className="text-center text-white/25 text-[11px] mt-6">Authorised staff only. Access is logged.</p>
+        <p className="text-center text-white/25 mt-6 t-cap">Authorised staff only. Access is logged.</p>
       </div>
     </div>
   );
@@ -206,7 +206,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
         <nav className="flex-1 py-3 overflow-y-auto">
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`w-full flex items-center gap-2.5 px-5 py-2 text-sm transition-colors ${tab === t.id ? "text-white bg-white/[0.08] border-l-2" : "text-white/50 hover:text-white/80 border-l-2 border-transparent"}`}
+              className={`w-full flex items-center gap-2.5 px-5 py-2 transition-colors ${tab === t.id ? "text-white bg-white/[0.08] border-l-2" : "text-white/50 hover:text-white/80 border-l-2 border-transparent"} t-bd-sm`}
               style={tab === t.id ? { borderColor: SAGE } : undefined}>
               {t.icon}{t.label}
             </button>
@@ -214,10 +214,10 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
         </nav>
         <div className="border-t border-white/10 p-3">
           <div className="px-2 pb-2">
-            <p className="text-sm text-white truncate">{user.name || user.email}</p>
-            <p className="text-[11px] text-white/40 truncate">{user.email}</p>
+            <p className="text-white truncate t-bd-sm">{user.name || user.email}</p>
+            <p className="text-white/40 truncate t-cap">{user.email}</p>
           </div>
-          <button onClick={onSignOut} className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-white/50 hover:text-white">
+          <button onClick={onSignOut} className="w-full flex items-center gap-2 px-2 py-1.5 text-white/50 hover:text-white t-bd-sm">
             <LogOut className="w-4 h-4" />Sign out
           </button>
         </div>
@@ -244,7 +244,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
             aria-label="Open menu" aria-expanded={navOpen} aria-controls="ops-nav-drawer">
             <Menu className="w-5 h-5" />
           </button>
-          <h1 className="text-[15px] font-semibold text-ops capitalize flex items-center gap-2 min-w-0 flex-1 font-display">
+          <h1 className="font-semibold text-ops capitalize flex items-center gap-2 min-w-0 flex-1 font-display t-bd">
             <span className="truncate">{TABS.find(t => t.id === tab)?.label}</span>
           </h1>
           {/* The omnibox is a desktop control; on a phone it left ~200px of
@@ -339,7 +339,7 @@ function MobileNav({ open, onClose, tabs, tab, setTab, user, onSignOut }: {
         <nav className="flex-1 py-2 overflow-y-auto">
           {tabs.map((t) => (
             <button key={t.id} onClick={() => { setTab(t.id); onClose(); }}
-              className={`w-full flex items-center gap-3 px-5 h-11 text-sm border-l-2 ${tab === t.id ? "text-white bg-white/[0.08]" : "text-white/55 border-transparent active:bg-white/5"}`}
+              className={`w-full flex items-center gap-3 px-5 h-11 border-l-2 ${tab === t.id ? "text-white bg-white/[0.08]" : "text-white/55 border-transparent active:bg-white/5"} t-bd-sm`}
               style={tab === t.id ? { borderColor: SAGE } : undefined}>
               {t.icon}{t.label}
             </button>
@@ -348,11 +348,11 @@ function MobileNav({ open, onClose, tabs, tab, setTab, user, onSignOut }: {
 
         <div className="border-t border-white/10 p-3" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
           <div className="px-2 pb-2">
-            <p className="text-sm text-white truncate">{user.name || user.email}</p>
-            <p className="text-[11px] text-white/40 truncate">{user.email}</p>
+            <p className="text-white truncate t-bd-sm">{user.name || user.email}</p>
+            <p className="text-white/40 truncate t-cap">{user.email}</p>
           </div>
           {/* Separated from the list so it is never a mis-tap of a destination. */}
-          <button onClick={onSignOut} className="w-full flex items-center gap-2 px-2 h-11 text-sm text-white/55">
+          <button onClick={onSignOut} className="w-full flex items-center gap-2 px-2 h-11 text-white/55 t-bd-sm">
             <LogOut className="w-4 h-4" />Sign out
           </button>
         </div>
@@ -371,8 +371,8 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
   // zeros server-side, so this branch means the request never completed.
   if (err) return (
     <div className="bg-white border border-red-200 p-6">
-      <p className="text-sm text-red-600 font-medium">Couldn't load the summary.</p>
-      <p className="text-xs text-quiet mt-1">{err}</p>
+      <p className="text-red-600 font-medium t-bd-sm">Couldn't load the summary.</p>
+      <p className="text-quiet mt-1 t-cap">{err}</p>
     </div>
   );
   if (!s) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
@@ -393,11 +393,11 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
 
   return (
     <div className="max-w-3xl">
-      <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2">Needs us</p>
+      <p className="text-quiet mb-2 t-label">Needs us</p>
       {needsUs.length === 0 ? (
         <div className="card px-5 py-6">
-          <p className="text-sm text-ops">Nothing is waiting on us.</p>
-          <p className="text-xs text-quiet mt-1">New submissions and enquiries appear here.</p>
+          <p className="text-ops t-bd-sm">Nothing is waiting on us.</p>
+          <p className="text-quiet mt-1 t-cap">New submissions and enquiries appear here.</p>
         </div>
       ) : (
         <div className="card border-l-2 border-l-sage">
@@ -406,9 +406,9 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
             return (
               <button key={r.key} onClick={() => setTab(r.tab)}
                 className="w-full text-left px-5 py-3.5 border-b border-black/5 last:border-0 hover:bg-bone flex items-baseline gap-3">
-                <span className="text-xl font-semibold text-ops font-display">{r.count}</span>
-                <span className="text-sm text-ink-soft flex-1">{r.count === 1 ? one : many}</span>
-                <span className="text-xs text-sage">Open →</span>
+                <span className="font-semibold text-ops font-display t-hd2">{r.count}</span>
+                <span className="text-ink-soft flex-1 t-bd-sm">{r.count === 1 ? one : many}</span>
+                <span className="text-sage t-cap">Open →</span>
               </button>
             );
           })}
@@ -417,15 +417,15 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
 
       {/* The scoreboard, demoted and honestly inert. Fine for it to be a count —
           as long as it is not pretending to be work. */}
-      <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mt-7 mb-2">The shop</p>
+      <p className="text-quiet mt-7 mb-2 t-label">The shop</p>
       <div className="card flex flex-wrap">
         {[
           { label: "Active orders", value: s.activeOrders },
           { label: "Customers", value: s.customers },
         ].map(c => (
           <div key={c.label} className="px-5 py-4 border-r border-black/5 last:border-0">
-            <p className="text-[11px] uppercase tracking-wide text-quiet">{c.label}</p>
-            <p className="text-xl font-semibold text-ops mt-0.5 font-data">{c.value}</p>
+            <p className="text-quiet t-label">{c.label}</p>
+            <p className="font-semibold text-ops mt-0.5 font-data t-data">{c.value}</p>
           </div>
         ))}
       </div>
@@ -448,14 +448,14 @@ function SearchBox({ onNavigate }: { onNavigate: (t: Tab) => void }) {
     <div className="relative w-72">
       <Search className="w-4 h-4 text-quietest absolute left-2.5 top-2.5" />
       <input value={q} onChange={e => setQ(e.target.value)} onFocus={() => results.length && setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder="Search projects, orders, customers…" className="w-full border border-black/12 pl-8 pr-3 py-1.5 text-sm outline-none focus:border-sage" />
+        placeholder="Search projects, orders, customers…" className="w-full border border-black/12 pl-8 pr-3 py-1.5 outline-none focus:border-sage t-bd-sm" />
       {open && results.length > 0 && (
         <div className="absolute right-0 top-full mt-1 w-full card shadow-lg z-20 max-h-80 overflow-y-auto">
           {results.map((r, i) => (
             <button key={i} onMouseDown={() => { onNavigate(TYPE_TAB[r.type] ?? "dashboard"); setOpen(false); setQ(""); }}
               className="w-full text-left px-3 py-2 hover:bg-bone flex items-center justify-between">
-              <span className="text-sm text-ops">{r.label}<span className="ml-2 text-[10px] uppercase tracking-wide text-quietest">{r.type}</span></span>
-              <span className="text-xs text-quiet">{r.hint}</span>
+              <span className="text-ops t-bd-sm">{r.label}<span className="ml-2 text-quietest t-label">{r.type}</span></span>
+              <span className="text-quiet t-cap">{r.hint}</span>
             </button>
           ))}
         </div>
@@ -467,7 +467,7 @@ function SearchBox({ onNavigate }: { onNavigate: (t: Tab) => void }) {
 function Placeholder({ label }: { label: string }) {
   return (
     <div className="bg-white border border-dashed border-black/15 p-12 text-center">
-      <p className="text-sm text-body"><span className="font-medium text-ops">{label}</span> — coming in a later milestone.</p>
+      <p className="text-body t-bd-sm"><span className="font-medium text-ops">{label}</span> — coming in a later milestone.</p>
     </div>
   );
 }

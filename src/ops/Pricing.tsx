@@ -1,4 +1,4 @@
-// Ops → Pricing: the editor for the D1 commercial layer.
+// className="font-data" Ops → Pricing: the editor for the D1 commercial layer.
 //
 // THE BOUNDARY: ops writes the numbers, Sanity writes the words. Names,
 // descriptions, images and which options a product offers are edited in Studio;
@@ -27,9 +27,8 @@ import {
   type OpsRateCardRow, type OpsReconcileRun,
 } from "./api";
 
-const MONO = { fontFamily: "'Space Grotesk', sans-serif" } as const;
+const MONO = {  } as const;
 const INK = "var(--ops)";
-const HEAD = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 
 // The sign goes OUTSIDE the symbol — "$-3.60" reads as a currency code for a
 // moment before it reads as a debit, and this column is scanned, not read.
@@ -79,12 +78,11 @@ export function Pricing() {
       <div className="flex gap-5 border-b border-black/8 mb-5">
         {SUBS.map((s) => (
           <button key={s.id} onClick={() => setSub(s.id)}
-            className="pb-2 -mb-px text-sm"
+            className={`pb-2 -mb-px t-bd-sm ${sub === s.id ? "font-semibold" : "font-normal"}`}
             style={{
               color: sub === s.id ? SAGE : MUTED,
               borderBottom: sub === s.id ? `2px solid ${SAGE}` : "2px solid transparent",
-              fontWeight: sub === s.id ? 600 : 400,
-            }}>
+              }}>
             {s.label}
           </button>
         ))}
@@ -150,12 +148,11 @@ function HealthBanner({ run, checked, busy, onRecheck, onFix }: {
 function Banner({ tone, children }: { tone: "ok" | "warn"; children: React.ReactNode }) {
   const ok = tone === "ok";
   return (
-    <div className="text-xs px-4 py-2.5 mb-5 flex items-center justify-between gap-4 border"
+    <div className="px-4 py-2.5 mb-5 flex items-center justify-between gap-4 border t-cap"
       style={{
         background: ok ? "rgba(90,122,106,0.08)" : "rgba(180,120,40,0.09)",
         borderColor: ok ? "rgba(90,122,106,0.25)" : "rgba(180,120,40,0.3)",
-        color: ok ? "var(--sage-ink)" : "var(--warning-ink)",
-      }}>
+        color: ok ? "var(--sage-ink)" : "var(--warning-ink)" }}>
       {children}
     </div>
   );
@@ -170,11 +167,11 @@ function RateCards() {
   useEffect(load, [load]);
 
   if (open) return <RateCardDetail id={open} onBack={() => { setOpen(null); load(); }} />;
-  if (!data) return <p className="text-sm" style={{ color: MUTED }}>Loading rate cards…</p>;
+  if (!data) return <p className="t-bd-sm" style={{ color: MUTED }}>Loading rate cards…</p>;
 
   return (
     <>
-      <p className="text-xs mb-3" style={{ color: MUTED }}>
+      <p className="mb-3 t-cap" style={{ color: MUTED }}>
         A unit is <span className="font-data">perimeter(m) × perim + area(m²) × area + options</span>, then the minimum
         charge, then the rules, then rounded to $10. The example column prices a 1200 × 1200 mm opening with no
         options on each card — a mistyped rate shows up there before it reaches a customer.
@@ -183,9 +180,9 @@ function RateCards() {
           document. Pricing is a desktop surface and is still slated for an
           explicit desktop-only notice on phones. */}
       <div className="card overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full t-bd-sm">
           <thead>
-            <tr className="text-[11px] uppercase tracking-wide" style={{ color: MUTED }}>
+            <tr className="t-label" style={{ color: MUTED }}>
               <th className="text-left font-medium px-4 py-2">Product</th>
               <th className="text-right font-medium px-3 py-2">Perim $/m</th>
               <th className="text-right font-medium px-3 py-2">Area $/m²</th>
@@ -205,7 +202,7 @@ function RateCards() {
                   {c.productName
                     ? <>
                         <span>{c.productName}</span>
-                        <span className="block text-[11px]" style={{ ...MONO, color: MUTED }}>
+                        <span className="block t-cap font-data" style={{ color: MUTED }}>
                           {c.id}{c.familySlug ? ` · ${c.familySlug}` : ""}
                         </span>
                       </>
@@ -214,21 +211,21 @@ function RateCards() {
                     // Load-bearing: loadRateCard silently falls back here for any
                     // product without a card of its own, so it must not read as
                     // just another row.
-                    <span className="ml-2 text-[11px]" style={{ color: MUTED }}>← fallback for unmapped products</span>
+                    <span className="ml-2 t-cap" style={{ color: MUTED }}>← fallback for unmapped products</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right" style={{ ...MONO, color: INK }}>{c.perimRate.toFixed(2)}</td>
-                <td className="px-3 py-2 text-right" style={{ ...MONO, color: INK }}>{c.areaRate.toFixed(2)}</td>
-                <td className="px-3 py-2 text-right" style={{ ...MONO, color: c.minCharge ? INK : MUTED }}>{c.minCharge ? c.minCharge.toFixed(2) : "0.—"}</td>
-                <td className="px-3 py-2 text-right" style={{ ...MONO, color: MUTED }}>{c.modifierCount}</td>
-                <td className="px-3 py-2 text-right" style={{ ...MONO, color: INK }}>{money0(c.exampleTotal)}</td>
-                <td className="px-4 py-2 text-right" style={{ ...MONO, color: MUTED }}>{c.version}</td>
+                <td className="px-3 py-2 text-right font-data" style={{ color: INK }}>{c.perimRate.toFixed(2)}</td>
+                <td className="px-3 py-2 text-right font-data" style={{ color: INK }}>{c.areaRate.toFixed(2)}</td>
+                <td className="px-3 py-2 text-right font-data" style={{ color: c.minCharge ? INK : MUTED }}>{c.minCharge ? c.minCharge.toFixed(2) : "0.—"}</td>
+                <td className="px-3 py-2 text-right font-data" style={{ color: MUTED }}>{c.modifierCount}</td>
+                <td className="px-3 py-2 text-right font-data" style={{ color: INK }}>{money0(c.exampleTotal)}</td>
+                <td className="px-4 py-2 text-right font-data" style={{ color: MUTED }}>{c.version}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="text-xs mt-2" style={{ color: MUTED }}>
+      <p className="mt-2 t-cap" style={{ color: MUTED }}>
         {data.canEdit ? "Open a row to edit it." : "Read-only — a manager or admin can change these."}
       </p>
     </>
@@ -281,7 +278,7 @@ function RateCardDetail({ id, onBack }: { id: string; onBack: () => void }) {
     return () => clearTimeout(t);
   }, [d, id, perim, area, min, rules]);
 
-  if (!d) return <p className="text-sm" style={{ color: MUTED }}>Loading…</p>;
+  if (!d) return <p className="t-bd-sm" style={{ color: MUTED }}>Loading…</p>;
 
   const typical = preview.find((s) => s.sample.key === "typical") ?? preview[1] ?? preview[0];
   const perimM = typical ? (2 * (typical.sample.widthMm + typical.sample.heightMm)) / 1000 : 0;
@@ -313,13 +310,13 @@ function RateCardDetail({ id, onBack }: { id: string; onBack: () => void }) {
 
   return (
     <>
-      <button onClick={onBack} className="text-xs flex items-center gap-1 mb-3" style={{ color: MUTED }}>
+      <button onClick={onBack} className="flex items-center gap-1 mb-3 t-cap" style={{ color: MUTED }}>
         <ArrowLeft className="w-3.5 h-3.5" /> Rate cards
       </button>
 
       <div className="flex items-baseline justify-between mb-4">
-        <h2 className="text-lg" style={{ ...HEAD, color: INK }}>{id}</h2>
-        <span className="text-xs" style={{ ...MONO, color: MUTED }}>
+        <h2 className="t-bd-lg font-display" style={{ color: INK }}>{id}</h2>
+        <span className="t-cap font-data" style={{ color: MUTED }}>
           {d.card.version} · {d.updatedAt ? ago(d.updatedAt) : "unchanged since seed"}
         </span>
       </div>
@@ -328,14 +325,14 @@ function RateCardDetail({ id, onBack }: { id: string; onBack: () => void }) {
 
       <div className="grid md:grid-cols-2 gap-6 mb-6">
         <div>
-          <h3 className="text-xs uppercase tracking-wide mb-3" style={{ color: MUTED }}>Base rate</h3>
+          <h3 className="mb-3 t-label" style={{ color: MUTED }}>Base rate</h3>
           <Field label="Perimeter rate" suffix="/m" value={perim} onChange={setPerim} disabled={!d.canEdit} />
           <Field label="Area rate" suffix="/m²" value={area} onChange={setArea} disabled={!d.canEdit} />
           <Field label="Minimum charge" value={min} onChange={setMin} disabled={!d.canEdit} />
           {/* The unit of effect, given BEFORE anyone types. It is just the
               perimeter and area restated as money — the thing an operator cannot
               compute in their head and the thing they need. */}
-          <p className="text-xs mt-3 leading-relaxed" style={{ color: MUTED }}>
+          <p className="mt-3 t-cap" style={{ color: MUTED }}>
             +$1 on the perimeter rate moves the typical example by {money(perimM)}.<br />
             +$1 on the area rate moves it by {money(areaM2)}.
           </p>
@@ -343,17 +340,17 @@ function RateCardDetail({ id, onBack }: { id: string; onBack: () => void }) {
 
         <div>
           <div className="flex items-baseline justify-between mb-3">
-            <h3 className="text-xs uppercase tracking-wide" style={{ color: MUTED }}>Worked example</h3>
+            <h3 className="t-label" style={{ color: MUTED }}>Worked example</h3>
           </div>
           <WorkedExample priced={typical} />
-          <p className="text-xs mt-2" style={{ color: MUTED }}>
+          <p className="mt-2 t-cap" style={{ color: MUTED }}>
             {d.samplesFromHistory
               ? `Small / typical / large are the 10th, 50th and 90th percentile of the ${d.sampleLineCount} ${id} lines quoted in the last 90 days.`
               : "Not enough recent lines for this family — using standard sizes (900×600, 1200×1200, 2400×1500)."}
           </p>
           <div className="mt-3 card">
             {preview.map((p) => (
-              <div key={p.sample.key} className="flex items-center justify-between px-3 py-1.5 border-b border-black/5 last:border-0 text-xs">
+              <div key={p.sample.key} className="flex items-center justify-between px-3 py-1.5 border-b border-black/5 last:border-0 t-cap">
                 <span style={{ color: MUTED }}>{p.sample.key}</span>
                 <span style={{ ...MONO, color: MUTED }}>{p.sample.widthMm} × {p.sample.heightMm}</span>
                 <span style={{ ...MONO, color: INK }}>{money0(p.snapshot.total)}</span>
@@ -370,9 +367,9 @@ function RateCardDetail({ id, onBack }: { id: string; onBack: () => void }) {
           <button onClick={() => {
             setPerim(String(d.card.perimRate)); setArea(String(d.card.areaRate));
             setMin(String(d.card.minCharge)); setRules(d.modifiers);
-          }} className="text-xs" style={{ color: MUTED }}>Discard changes</button>
+          }} className="t-cap" style={{ color: MUTED }}>Discard changes</button>
           <button onClick={() => setConfirming(true)}
-            className="text-xs text-white px-4 py-2" style={{ background: SAGE }}>Review change →</button>
+            className="text-white px-4 py-2 t-cap" style={{ background: SAGE }}>Review change →</button>
         </div>
       )}
 
@@ -398,14 +395,14 @@ function Field({ label, value, onChange, suffix, disabled }: {
 }) {
   return (
     <label className="flex items-center justify-between gap-3 mb-2">
-      <span className="text-sm" style={{ color: INK }}>{label}</span>
+      <span className="t-bd-sm" style={{ color: INK }}>{label}</span>
       <span className="flex items-center gap-1">
         <span style={{ ...MONO, color: MUTED }}>$</span>
         <input value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}
           inputMode="decimal"
-          className="w-24 text-right border border-black/12 px-2 py-1 text-sm disabled:bg-black/[0.03]"
+          className="w-24 text-right border border-black/12 px-2 py-1 disabled:bg-black/[0.03] t-bd-sm"
           style={{ ...MONO, color: INK }} />
-        {suffix && <span className="text-xs w-6" style={{ color: MUTED }}>{suffix}</span>}
+        {suffix && <span className="w-6 t-cap" style={{ color: MUTED }}>{suffix}</span>}
       </span>
     </label>
   );
@@ -417,27 +414,27 @@ function Field({ label, value, onChange, suffix, disabled }: {
  *  of the formula on a day when nothing is wrong, so that on the day something is
  *  wrong the operator can read it. */
 function WorkedExample({ priced }: { priced: OpsPricedSample | undefined }) {
-  if (!priced) return <div className="card p-3 text-xs" style={{ color: MUTED }}>No example available.</div>;
+  if (!priced) return <div className="card p-3 t-cap" style={{ color: MUTED }}>No example available.</div>;
   const steps = priced.snapshot.steps ?? [];
   return (
     <div className="card p-3">
-      <p className="text-xs mb-2" style={{ color: MUTED }}>
+      <p className="mb-2 t-cap" style={{ color: MUTED }}>
         {priced.sample.widthMm} × {priced.sample.heightMm} mm · qty {priced.sample.qty}
       </p>
       {steps.map((s, i) => (
-        <div key={`${s.key}-${i}`} className="flex items-baseline justify-between text-xs py-0.5"
+        <div key={`${s.key}-${i}`} className="flex items-baseline justify-between py-0.5 t-cap"
           style={{ color: s.applied ? INK : MUTED }}>
           <span className="truncate pr-2">{s.label}</span>
           <span className="flex items-baseline gap-3 shrink-0 font-data">
-            {s.detail && <span className="text-[11px]" style={{ color: MUTED }}>{s.detail}</span>}
+            {s.detail && <span className="t-cap" style={{ color: MUTED }}>{s.detail}</span>}
             <span className="w-20 text-right">{s.applied && s.amount != null ? money(s.amount) : "—"}</span>
           </span>
         </div>
       ))}
-      <div className="flex items-baseline justify-between text-sm pt-2 mt-1 border-t border-black/8" style={{ color: INK }}>
+      <div className="flex items-baseline justify-between pt-2 mt-1 border-t border-black/8 t-bd-sm" style={{ color: INK }}>
         <span>Total</span><span className="font-data">{money(priced.snapshot.total)}</span>
       </div>
-      <div className="flex items-baseline justify-between text-xs" style={{ color: MUTED }}>
+      <div className="flex items-baseline justify-between t-cap" style={{ color: MUTED }}>
         <span>deposit</span><span className="font-data">{money(priced.snapshot.depositAmount)}</span>
       </div>
     </div>
@@ -460,9 +457,9 @@ function Rules({ rules, setRules, preview, canEdit }: {
   return (
     <div>
       <div className="flex items-baseline justify-between mb-2">
-        <h3 className="text-xs uppercase tracking-wide" style={{ color: MUTED }}>Pricing rules ({rules.length})</h3>
+        <h3 className="t-label" style={{ color: MUTED }}>Pricing rules ({rules.length})</h3>
         {canEdit && (
-          <button className="text-xs flex items-center gap-1" style={{ color: SAGE }}
+          <button className="flex items-center gap-1 t-cap" style={{ color: SAGE }}
             onClick={() => setRules([...rules, {
               id: "", seq: rules.length * 10, label: null,
               whenField: "width", whenOp: ">", whenValue: 0, thenType: "percent", thenValue: 0,
@@ -473,15 +470,15 @@ function Rules({ rules, setRules, preview, canEdit }: {
       </div>
 
       <div className="card">
-        {rules.length === 0 && <p className="px-4 py-3 text-xs" style={{ color: MUTED }}>No rules — the base rate is the whole price.</p>}
+        {rules.length === 0 && <p className="px-4 py-3 t-cap" style={{ color: MUTED }}>No rules — the base rate is the whole price.</p>}
         {rules.map((r, i) => {
           // "Fires for" answers "did I write what I meant?" without the operator
           // having to construct a test case.
           const fires = preview.filter((p) => p.snapshot.appliedModifiers.includes(r.id));
           return (
             <div key={r.id || `new-${i}`} className="px-4 py-3 border-b border-black/5 last:border-0">
-              <div className="flex flex-wrap items-center gap-1.5 text-sm" style={{ color: INK }}>
-                <span className="text-xs" style={{ ...MONO, color: MUTED }}>{i + 1}</span>
+              <div className="flex flex-wrap items-center gap-1.5 t-bd-sm" style={{ color: INK }}>
+                <span className="t-cap" style={{ ...MONO, color: MUTED }}>{i + 1}</span>
                 <span>When</span>
                 <Select value={r.whenField} disabled={!canEdit} onChange={(v) => patch(i, { whenField: v as OpsModifier["whenField"] })}
                   options={["width", "height", "area", "qty"]} />
@@ -490,17 +487,17 @@ function Rules({ rules, setRules, preview, canEdit }: {
                   options={[">", ">=", "<", "<=", "=="]} />
                 <input value={String(r.whenValue)} disabled={!canEdit} inputMode="decimal"
                   onChange={(e) => patch(i, { whenValue: Number(e.target.value) || 0 })}
-                  className="w-20 text-right border border-black/12 px-2 py-0.5 text-sm font-data" />
+                  className="w-20 text-right border border-black/12 px-2 py-0.5 font-data t-data" />
                 {/* The unit follows the field, so nobody has to remember that area
                     is m² while width is mm — the confusion that produces a rule
                     which never fires. */}
-                <span className="text-xs" style={{ color: MUTED }}>{FIELD_UNIT[r.whenField]}</span>
+                <span className="t-cap" style={{ color: MUTED }}>{FIELD_UNIT[r.whenField]}</span>
                 <span>→</span>
                 <Select value={r.thenType} disabled={!canEdit} onChange={(v) => patch(i, { thenType: v as OpsModifier["thenType"] })}
                   options={["percent", "fixed"]} labels={{ percent: "add %", fixed: "add $" }} />
                 <input value={String(r.thenValue)} disabled={!canEdit} inputMode="decimal"
                   onChange={(e) => patch(i, { thenValue: Number(e.target.value) || 0 })}
-                  className="w-20 text-right border border-black/12 px-2 py-0.5 text-sm font-data" />
+                  className="w-20 text-right border border-black/12 px-2 py-0.5 font-data t-data" />
                 {canEdit && (
                   <button className="ml-auto" title="Remove this rule"
                     onClick={() => setRules(rules.filter((_, j) => j !== i))}>
@@ -510,9 +507,9 @@ function Rules({ rules, setRules, preview, canEdit }: {
               </div>
               <input value={r.label ?? ""} disabled={!canEdit} placeholder="What this rule is for"
                 onChange={(e) => patch(i, { label: e.target.value || null })}
-                className="mt-1.5 w-full text-xs border-0 border-b border-black/8 pb-1 focus:outline-none"
+                className="mt-1.5 w-full border-0 border-b border-black/8 pb-1 focus:outline-none t-cap"
                 style={{ color: MUTED }} />
-              <p className="text-[11px] mt-1.5" style={{ color: MUTED }}>
+              <p className="mt-1.5 t-cap" style={{ color: MUTED }}>
                 Fires for: {preview.map((p) => (
                   <span key={p.sample.key} className="mr-3">
                     {p.sample.key} {p.snapshot.appliedModifiers.includes(r.id) ? "✓" : "—"}
@@ -529,7 +526,7 @@ function Rules({ rules, setRules, preview, canEdit }: {
           );
         })}
       </div>
-      <p className="text-xs mt-2" style={{ color: MUTED }}>
+      <p className="mt-2 t-cap" style={{ color: MUTED }}>
         Rules apply top to bottom. A percentage applies to the running total, so two 10% rules make 21%, not 20%.
       </p>
     </div>
@@ -541,7 +538,7 @@ function Select({ value, onChange, options, labels, disabled }: {
 }) {
   return (
     <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}
-      className="border border-black/12 px-1.5 py-0.5 text-sm bg-white" style={{ color: INK }}>
+      className="border border-black/12 px-1.5 py-0.5 bg-white t-bd-sm" style={{ color: INK }}>
       {options.map((o) => <option key={o} value={o}>{labels?.[o] ?? o}</option>)}
     </select>
   );
@@ -583,20 +580,20 @@ function ConfirmDialog({ family, before, after, baseline, preview, exposure, onC
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={onCancel}>
       <div className="card max-w-xl w-full p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-4">
-          <h3 className="text-base" style={{ ...HEAD, color: INK }}>Review pricing change — {family}</h3>
+          <h3 className="t-bd font-display" style={{ color: INK }}>Review pricing change — {family}</h3>
           <button onClick={onCancel}><X className="w-4 h-4" style={{ color: MUTED }} /></button>
         </div>
 
-        <div className="text-sm mb-5">
+        <div className="mb-5 t-bd-sm">
           <Delta label="Perimeter rate" before={before.perim} after={after.perim} />
           <Delta label="Area rate" before={before.area} after={after.area} />
           <Delta label="Minimum charge" before={before.min} after={after.min} />
         </div>
 
-        <p className="text-[11px] uppercase tracking-wide mb-2" style={{ color: MUTED }}>What this does to a real window</p>
-        <table className="w-full text-sm mb-4">
+        <p className="mb-2 t-label" style={{ color: MUTED }}>What this does to a real window</p>
+        <table className="w-full mb-4 t-bd-sm">
           <thead>
-            <tr className="text-[11px]" style={{ color: MUTED }}>
+            <tr className="t-cap" style={{ color: MUTED }}>
               <th className="text-left font-normal" />
               <th className="text-right font-normal">now</th>
               <th className="text-right font-normal">after</th>
@@ -607,7 +604,7 @@ function ConfirmDialog({ family, before, after, baseline, preview, exposure, onC
             {rows.map((r) => (
               <tr key={r.key}>
                 <td className="py-0.5" style={{ color: MUTED }}>
-                  {r.key} <span style={{ ...MONO, fontSize: 11 }}>{r.sample.widthMm}×{r.sample.heightMm}</span>
+                  {r.key} <span className="font-data t-data-sm">{r.sample.widthMm}×{r.sample.heightMm}</span>
                 </td>
                 <td className="text-right py-0.5" style={{ ...MONO, color: MUTED }}>{r.now == null ? "—" : money0(r.now)}</td>
                 <td className="text-right py-0.5" style={{ ...MONO, color: INK }}>{money0(r.next)}</td>
@@ -622,7 +619,7 @@ function ConfirmDialog({ family, before, after, baseline, preview, exposure, onC
         {/* The most common fear about editing prices is "have I just changed
             something a customer already agreed to?" Answer it every time, in the
             same place, in plain words. */}
-        <p className="text-xs leading-relaxed mb-4" style={{ color: MUTED }}>
+        <p className="mb-4 t-cap" style={{ color: MUTED }}>
           Takes effect immediately for every new quote line on {family}.<br />
           It does <strong>not</strong> change quotes already issued, or any order.
           {exposure.lines > 0 && (
@@ -632,7 +629,7 @@ function ConfirmDialog({ family, before, after, baseline, preview, exposure, onC
         </p>
 
         {tripwire && (
-          <div className="text-xs px-3 py-2 mb-3 border" style={{ background: "rgba(180,120,40,0.09)", borderColor: "rgba(180,120,40,0.3)", color: "var(--warning-ink)" }}>
+          <div className="px-3 py-2 mb-3 border t-cap" style={{ background: "rgba(180,120,40,0.09)", borderColor: "rgba(180,120,40,0.3)", color: "var(--warning-ink)" }}>
             <p className="mb-2">This is a {Math.round(biggest)}% change. Type the family slug to confirm.</p>
             <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={family}
               className="w-full border border-black/12 px-2 py-1 bg-white" style={{ ...MONO, color: INK }} />
@@ -641,12 +638,12 @@ function ConfirmDialog({ family, before, after, baseline, preview, exposure, onC
 
         <input value={note} onChange={(e) => setNote(e.target.value)}
           placeholder={tripwire ? "Why (required)" : "Note (optional — shows in history)"}
-          className="w-full border border-black/12 px-2 py-1.5 text-sm mb-4" style={{ color: INK }} />
+          className="w-full border border-black/12 px-2 py-1.5 mb-4 t-bd-sm" style={{ color: INK }} />
 
         <div className="flex justify-end gap-3">
-          <button onClick={onCancel} className="text-xs px-3 py-2" style={{ color: MUTED }}>Cancel</button>
+          <button onClick={onCancel} className="px-3 py-2 t-cap" style={{ color: MUTED }}>Cancel</button>
           <button onClick={() => onSave(note)} disabled={blocked}
-            className="text-xs text-white px-4 py-2 disabled:opacity-40" style={{ background: SAGE }}>
+            className="text-white px-4 py-2 disabled:opacity-40 t-cap" style={{ background: SAGE }}>
             Save new rates
           </button>
         </div>
@@ -689,24 +686,24 @@ function History({ rows, canRevert, onRevert }: {
   };
   return (
     <div className="mt-8">
-      <h3 className="text-xs uppercase tracking-wide mb-2" style={{ color: MUTED }}>Change history</h3>
+      <h3 className="mb-2 t-label" style={{ color: MUTED }}>Change history</h3>
       <div className="card">
         {rows.map((h) => (
           <div key={h.id} className="px-4 py-2.5 border-b border-black/5 last:border-0">
             <div className="flex items-baseline justify-between">
-              <span className="text-sm" style={{ color: INK }}>
+              <span className="t-bd-sm" style={{ color: INK }}>
                 <span className="font-data">{h.toVersion}</span> · {h.actor}
               </span>
               <span className="flex items-center gap-3">
-                <span className="text-xs" style={{ color: MUTED }}>{ago(h.createdAt)}</span>
+                <span className="t-cap" style={{ color: MUTED }}>{ago(h.createdAt)}</span>
                 {canRevert && h.fromVersion && (
-                  <button className="text-xs underline underline-offset-2" style={{ color: SAGE }}
+                  <button className="underline underline-offset-2 t-cap" style={{ color: SAGE }}
                     onClick={() => onRevert(h.toVersion)}>Revert to {h.fromVersion}</button>
                 )}
               </span>
             </div>
-            <p className="text-xs mt-0.5" style={{ ...MONO, color: MUTED }}>{summarise(h.before, h.after)}</p>
-            {h.note && <p className="text-xs mt-0.5 italic" style={{ color: MUTED }}>“{h.note}”</p>}
+            <p className="mt-0.5 t-cap" style={{ ...MONO, color: MUTED }}>{summarise(h.before, h.after)}</p>
+            {h.note && <p className="mt-0.5 italic t-cap" style={{ color: MUTED }}>“{h.note}”</p>}
           </div>
         ))}
       </div>
@@ -725,7 +722,7 @@ function Options({ onChanged }: { onChanged: () => void }) {
   const load = useCallback(() => { opsPricingOptions().then(setData).catch(() => setData(null)); }, []);
   useEffect(load, [load]);
 
-  if (!data) return <p className="text-sm" style={{ color: MUTED }}>Loading options…</p>;
+  if (!data) return <p className="t-bd-sm" style={{ color: MUTED }}>Loading options…</p>;
 
   const commit = async (slug: string, value: number, expectedVersion?: string) => {
     setSaving(slug);
@@ -744,8 +741,8 @@ function Options({ onChanged }: { onChanged: () => void }) {
     <>
       {missing.length > 0 && (
         <div className="mb-6">
-          <h3 className="text-sm mb-1" style={{ ...HEAD, color: INK }}>Needs a price ({missing.length})</h3>
-          <p className="text-xs mb-2" style={{ color: MUTED }}>
+          <h3 className="mb-1 t-bd-sm font-display" style={{ color: INK }}>Needs a price ({missing.length})</h3>
+          <p className="mb-2 t-cap" style={{ color: MUTED }}>
             Offered to customers in Sanity, with no price in D1. Any quote line using one refuses to price rather
             than under-charge — which is correct, and fixable here in one number.
           </p>
@@ -753,25 +750,25 @@ function Options({ onChanged }: { onChanged: () => void }) {
             {missing.map((m) => (
               <div key={m.slug} className="px-4 py-3 border-b border-black/5 last:border-0">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm" style={{ ...MONO, color: INK }}>{m.slug}</span>
+                  <span className="t-bd-sm" style={{ ...MONO, color: INK }}>{m.slug}</span>
                   <span className="flex items-center gap-2">
                     <span style={{ ...MONO, color: MUTED }}>$</span>
                     <input value={draft[m.slug] ?? ""} inputMode="decimal" disabled={!data.canEdit}
                       onChange={(e) => setDraft((d) => ({ ...d, [m.slug]: e.target.value }))}
                       onKeyDown={(e) => { if (e.key === "Enter" && draft[m.slug]) commit(m.slug, Number(draft[m.slug])); }}
-                      className="w-24 text-right border border-black/12 px-2 py-1 text-sm font-data" />
+                      className="w-24 text-right border border-black/12 px-2 py-1 font-data t-data" />
                     <button disabled={!data.canEdit || !draft[m.slug] || saving === m.slug}
                       onClick={() => commit(m.slug, Number(draft[m.slug]))}
-                      className="text-xs text-white px-3 py-1.5 disabled:opacity-40" style={{ background: SAGE }}>Save</button>
+                      className="text-white px-3 py-1.5 disabled:opacity-40 t-cap" style={{ background: SAGE }}>Save</button>
                     {/* $0 must be an explicit decision AND a row: a missing row
                         means "unknown option", which is an error, not a free one.
                         Most of these are $0, and if clearing the banner required
                         typing 0 fifty times people would start typing anything. */}
                     <button disabled={!data.canEdit || saving === m.slug} onClick={() => commit(m.slug, 0)}
-                      className="text-xs underline underline-offset-2" style={{ color: SAGE }}>Included — $0</button>
+                      className="underline underline-offset-2 t-cap" style={{ color: SAGE }}>Included — $0</button>
                   </span>
                 </div>
-                <p className="text-xs mt-1" style={{ color: MUTED }}>
+                <p className="mt-1 t-cap" style={{ color: MUTED }}>
                   offered by {m.productSlugs.length} product{m.productSlugs.length === 1 ? "" : "s"} · {m.productSlugs.slice(0, 4).join(", ")}
                   {m.productSlugs.length > 4 ? "…" : ""}
                 </p>
@@ -782,11 +779,11 @@ function Options({ onChanged }: { onChanged: () => void }) {
       )}
 
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm" style={{ ...HEAD, color: INK }}>Priced ({data.options.length})</h3>
+        <h3 className="t-bd-sm font-display" style={{ color: INK }}>Priced ({data.options.length})</h3>
         <span className="flex items-center gap-3">
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="search slug…"
-            className="border border-black/12 px-2 py-1 text-xs w-48 font-data" />
-          <label className="text-xs flex items-center gap-1.5" style={{ color: MUTED }}>
+            className="border border-black/12 px-2 py-1 w-48 font-data t-data-sm" />
+          <label className="flex items-center gap-1.5 t-cap" style={{ color: MUTED }}>
             <input type="checkbox" checked={hideZero} onChange={(e) => setHideZero(e.target.checked)} />
             hide $0
           </label>
@@ -797,9 +794,9 @@ function Options({ onChanged }: { onChanged: () => void }) {
           document. Pricing is a desktop surface and is still slated for an
           explicit desktop-only notice on phones. */}
       <div className="card overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full t-bd-sm">
           <thead>
-            <tr className="text-[11px] uppercase tracking-wide" style={{ color: MUTED }}>
+            <tr className="t-label" style={{ color: MUTED }}>
               <th className="text-left font-medium px-4 py-2">Slug</th>
               <th className="text-right font-medium px-3 py-2">Surcharge</th>
               <th className="text-right font-medium px-3 py-2">Offered by</th>
@@ -818,10 +815,10 @@ function Options({ onChanged }: { onChanged: () => void }) {
                         performance variants, not the display option list the
                         reconciler walks — so a 0 there is not "unoffered". */}
                     {o.offeredBy === 0 && o.basis !== "per_sqm" && (
-                      <span className="ml-2 text-[11px]" style={{ color: MUTED }}>◦ priced but no product offers it</span>
+                      <span className="ml-2 t-cap" style={{ color: MUTED }}>◦ priced but no product offers it</span>
                     )}
                     {o.basis === "per_sqm" && (
-                      <span className="ml-2 text-[11px]" style={{ color: MUTED }}>◦ glass, per m² of glazed area</span>
+                      <span className="ml-2 t-cap" style={{ color: MUTED }}>◦ glass, per m² of glazed area</span>
                     )}
                   </td>
                   <td className="px-3 py-1.5 text-right">
@@ -833,12 +830,12 @@ function Options({ onChanged }: { onChanged: () => void }) {
                           if (e.key === "Enter" && changed) commit(o.slug, Number(value), o.version);
                           if (e.key === "Escape") setDraft((d) => { const { [o.slug]: _drop, ...rest } = d; return rest; });
                         }}
-                        className="w-24 text-right border px-2 py-0.5 text-sm disabled:bg-transparent disabled:border-transparent"
+                        className="w-24 text-right border px-2 py-0.5 disabled:bg-transparent disabled:border-transparent t-bd-sm"
                         style={{ ...MONO, color: o.surcharge === 0 && !changed ? MUTED : INK, borderColor: changed ? SAGE : "rgba(0,0,0,0.12)" }} />
                       {/* The unit is the whole point of the basis: $/m² scales with
                           glazed area, $/unit is flat. Showing it inline stops an
                           operator reading a per-m² glass rate as a flat dollar. */}
-                      <span className="text-[11px] w-9 text-left" style={{ ...MONO, color: o.basis === "per_sqm" ? SAGE : MUTED }}
+                      <span className="w-9 text-left t-cap" style={{ ...MONO, color: o.basis === "per_sqm" ? SAGE : MUTED }}
                         title={o.basis === "per_sqm" ? "per square metre of glazed area" : "flat, per unit"}>
                         {o.basis === "per_sqm" ? "/m²" : "/unit"}
                       </span>
@@ -858,7 +855,7 @@ function Options({ onChanged }: { onChanged: () => void }) {
           </tbody>
         </table>
       </div>
-      <p className="text-xs mt-2" style={{ color: MUTED }}>
+      <p className="mt-2 t-cap" style={{ color: MUTED }}>
         {data.canEdit
           ? "Enter saves a row, Esc reverts it. /unit surcharges add once per line; /m² surcharges (glass) scale with the opening's glazed area."
           : "Read-only — a manager or admin can change these."}
@@ -876,7 +873,7 @@ function Policy() {
   useEffect(() => {
     opsPricingPolicy().then((d) => { setData(d); setDeposit(String(d.policy.depositPercent)); }).catch(() => setData(null));
   }, []);
-  if (!data) return <p className="text-sm" style={{ color: MUTED }}>Loading policy…</p>;
+  if (!data) return <p className="t-bd-sm" style={{ color: MUTED }}>Loading policy…</p>;
 
   const save = async () => {
     setError(null);
@@ -889,18 +886,18 @@ function Policy() {
 
   return (
     <div className="max-w-lg">
-      <p className="text-xs mb-4" style={{ color: MUTED }}>Admin only. Applies to every quote and order, in every family.</p>
+      <p className="mb-4 t-cap" style={{ color: MUTED }}>Admin only. Applies to every quote and order, in every family.</p>
       {error && <Banner tone="warn"><span>{error}</span><span /></Banner>}
 
       <div className="flex items-center justify-between mb-1">
-        <span className="text-sm" style={{ color: INK }}>Deposit</span>
+        <span className="t-bd-sm" style={{ color: INK }}>Deposit</span>
         <span className="flex items-center gap-1">
           <input value={deposit} onChange={(e) => setDeposit(e.target.value)} disabled={!data.canEdit} inputMode="decimal"
-            className="w-20 text-right border border-black/12 px-2 py-1 text-sm disabled:bg-black/[0.03] font-data" />
-          <span className="text-xs" style={{ color: MUTED }}>%</span>
+            className="w-20 text-right border border-black/12 px-2 py-1 disabled:bg-black/[0.03] font-data t-data" />
+          <span className="t-cap" style={{ color: MUTED }}>%</span>
         </span>
       </div>
-      <p className="text-xs mb-6" style={{ color: MUTED }}>
+      <p className="mb-6 t-cap" style={{ color: MUTED }}>
         A {money0(10000)} order asks for {money0(10000 * (Number(deposit) || 0) / 100)} up front. Changing this does
         not alter deposits already requested on existing orders.
       </p>
@@ -910,17 +907,17 @@ function Policy() {
           comes from user.price_gst_mode via gstAdjust. A control bound to it would
           appear to work and do nothing, which is worse than not having one. */}
       <div className="mb-6">
-        <span className="text-sm" style={{ color: INK }}>GST</span>
-        <p className="text-xs mt-1" style={{ color: MUTED }}>
+        <span className="t-bd-sm" style={{ color: INK }}>GST</span>
+        <p className="mt-1 t-cap" style={{ color: MUTED }}>
           Prices are stored GST-inclusive. Whether a customer sees “inc GST” or “ex GST” is their own account
           preference, not a setting here, and the rate itself is a code constant. — not editable —
         </p>
       </div>
 
       <div className="flex items-center justify-between pt-4 border-t border-black/8">
-        <span className="text-xs" style={{ ...MONO, color: MUTED }}>{data.policy.version}</span>
+        <span className="t-cap" style={{ ...MONO, color: MUTED }}>{data.policy.version}</span>
         {data.canEdit && Number(deposit) !== data.policy.depositPercent && (
-          <button onClick={save} className="text-xs text-white px-4 py-2" style={{ background: SAGE }}>Save deposit %</button>
+          <button onClick={save} className="text-white px-4 py-2 t-cap" style={{ background: SAGE }}>Save deposit %</button>
         )}
       </div>
     </div>
@@ -931,11 +928,11 @@ function Policy() {
 function CatalogueMirror() {
   const [d, setD] = useState<OpsCatalogueMirror | null>(null);
   useEffect(() => { opsCatalogueMirror().then(setD).catch(() => setD(null)); }, []);
-  if (!d) return <p className="text-sm" style={{ color: MUTED }}>Loading catalogue…</p>;
+  if (!d) return <p className="t-bd-sm" style={{ color: MUTED }}>Loading catalogue…</p>;
 
   return (
     <>
-      <div className="bg-sage-wash border border-sage/25 text-sage-ink text-xs px-4 py-2.5 mb-5">
+      <div className="bg-sage-wash border border-sage/25 text-sage-ink px-4 py-2.5 mb-5 t-cap">
         <p>
           <strong>Names, descriptions, images, and which options each product offers are edited in Sanity Studio.
             What anything costs is edited here.</strong>
@@ -956,14 +953,14 @@ function CatalogueMirror() {
 
       {d.categories.map((cat) => (
         <div key={cat.slug} className="mb-6">
-          <h3 className="text-sm font-semibold mb-2" style={{ ...HEAD, color: INK }}>{cat.name}</h3>
+          <h3 className="font-semibold mb-2 t-bd-sm font-display" style={{ color: INK }}>{cat.name}</h3>
           <div className="card">
             {cat.families.map((fam) => (
               <div key={fam.slug} className="px-4 py-2.5 border-b border-black/5 last:border-0 flex items-center justify-between">
-                <span className="text-sm" style={{ color: INK }}>
-                  {fam.name} <span className="text-xs" style={{ ...MONO, color: MUTED }}>{fam.slug}</span>
+                <span className="t-bd-sm" style={{ color: INK }}>
+                  {fam.name} <span className="t-cap" style={{ ...MONO, color: MUTED }}>{fam.slug}</span>
                 </span>
-                <span className="flex items-center gap-4 text-xs" style={{ color: MUTED }}>
+                <span className="flex items-center gap-4 t-cap" style={{ color: MUTED }}>
                   <span>{fam.productCount} product{fam.productCount === 1 ? "" : "s"}</span>
                   <span>{fam.optionCount} options</span>
                   {fam.hasRateCard

@@ -67,17 +67,17 @@ export function MoreMenu({ openingRef, isComposite, anchorEl, onClose, onDuplica
   const items = (
     <>
       <button role="menuitem" type="button" onClick={() => run(onDuplicate)}
-        className="w-full flex items-center gap-2.5 px-3 min-h-[44px] text-sm text-ink hover:bg-recessive cursor-pointer focus:outline-none focus-visible:bg-recessive">
+        className="w-full flex items-center gap-2.5 px-3 min-h-[44px] text-ink hover:bg-recessive cursor-pointer focus:outline-none focus-visible:bg-recessive t-bd-sm">
         <Copy className="w-4 h-4 text-body flex-shrink-0" aria-hidden="true" />Duplicate
       </button>
       {isComposite && (
         <button role="menuitem" type="button" onClick={() => run(onEditComposite)}
-          className="w-full flex items-center gap-2.5 px-3 min-h-[44px] text-sm text-ink hover:bg-recessive cursor-pointer focus:outline-none focus-visible:bg-recessive">
+          className="w-full flex items-center gap-2.5 px-3 min-h-[44px] text-ink hover:bg-recessive cursor-pointer focus:outline-none focus-visible:bg-recessive t-bd-sm">
           <LayoutGrid className="w-4 h-4 text-body flex-shrink-0" aria-hidden="true" />Edit composite
         </button>
       )}
       <button role="menuitem" type="button" onClick={() => run(onDelete)}
-        className="w-full flex items-center gap-2.5 px-3 min-h-[44px] text-sm text-destructive hover:bg-recessive cursor-pointer focus:outline-none focus-visible:bg-recessive">
+        className="w-full flex items-center gap-2.5 px-3 min-h-[44px] text-destructive hover:bg-recessive cursor-pointer focus:outline-none focus-visible:bg-recessive t-bd-sm">
         <Trash2 className="w-4 h-4 flex-shrink-0" aria-hidden="true" />Delete
       </button>
     </>
@@ -91,7 +91,7 @@ export function MoreMenu({ openingRef, isComposite, anchorEl, onClose, onDuplica
           onClick={(e) => e.stopPropagation()}
           className="relative w-full quote-dialog border-t py-1"
           style={{ paddingBottom: "max(8px, env(safe-area-inset-bottom))" }}>
-          <p className="px-3 py-2 text-[10px] uppercase tracking-widest text-quiet">{openingRef}</p>
+          <p className="px-3 py-2 text-quiet t-label">{openingRef}</p>
           {items}
         </div>
       </div>,

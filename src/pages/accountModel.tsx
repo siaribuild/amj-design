@@ -42,8 +42,8 @@ export function StatusPill({ tone, children, icon }: { tone: Tone; children: Rea
     ? { color: "var(--body)", background: "transparent", borderColor: "rgba(0,0,0,.10)", borderStyle: "dashed" as const }
     : { color: TONE[tone].text, background: TONE[tone].bg, borderColor: TONE[tone].bd };
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.04em] px-2 py-1 border whitespace-nowrap leading-none"
-      style={{ fontFamily: "'Space Grotesk', sans-serif", ...style }}>
+    <span className="inline-flex items-center gap-1.5 px-2 py-1 border whitespace-nowrap t-label font-display"
+      style={{ ...style }}>
       {icon ?? PILL_ICON[tone]}{children}
     </span>
   );
