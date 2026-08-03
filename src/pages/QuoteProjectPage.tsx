@@ -15,7 +15,7 @@
 //   drawer            change — the only editor
 // The operating rule is: open to inspect; edit to change.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Upload, UploadCloud, Paperclip, Trash2, X, AlertCircle, CheckCircle } from "lucide-react";
 import { type Page, SLabel, Btn } from "../app/ui";
 import { type QuoteState } from "../data/configurator";
@@ -80,6 +80,11 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
   // so reduced motion changes nothing (plan §7.4).
   const [undo, setUndo] = useState<{ localId: number; fromRef: string } | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  // Whole-project reset. Same contract as /quote: it wipes lines AND documents,
+  // server and local, so it is confirmed and never a single tap.
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const clearBtnRef = useRef<HTMLButtonElement>(null);
+  const clearDialogRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<number>(0);
   // Focus fallback when the drawer's originating row no longer exists.
   const addOpeningRef = useRef<HTMLButtonElement | null>(null);
@@ -91,8 +96,34 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
     processing, processingDocs, retryingAi, collisionTags,
     removingFile, setRemovingFile,
     fileInputRef, openUpload, handleFiles, handleRemoveFile, handleCollision,
-    handleAiRetry, diagnosticMessage,
+    handleAiRetry, diagnosticMessage, resetDocuments,
   } = useProjectDocuments(quote, user);
+
+  // Identical to /quote's, including the failure path: if the server refuses,
+  // NOTHING is reported as removed, because a reset that half-succeeded and
+  // said "done" is how a customer loses a schedule they think they still have.
+  const handleClearAll = async () => {
+    setClearConfirm(false);
+    setUploadNotice(null);
+    try {
+      await quote.clearAll();
+      resetDocuments();          // stops polling, drops every document-derived state
+      setOpenedKeys(new Set());  // no expansion may outlive the rows it belonged to
+      setCollapsedKeys(new Set());
+      setUndo(null);
+      setAnnouncement("Project cleared");
+    } catch {
+      setUploadNotice({ type: "error", message: "We couldn't clear this project. Nothing was removed; please try again." });
+    }
+  };
+  // Destructive-dialog focus: land on Cancel (the safe default), and return
+  // focus to the trigger when dismissed without acting.
+  useEffect(() => {
+    if (!clearConfirm) return;
+    const t = setTimeout(() => clearDialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus(), 0);
+    return () => clearTimeout(t);
+  }, [clearConfirm]);
+  const cancelClear = () => { setClearConfirm(false); clearBtnRef.current?.focus(); };
 
   const summary = quoteSummary(quote);
   const items = quote.items;
@@ -183,6 +214,20 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
               <button ref={addOpeningRef} type="button" onClick={() => openDrawer({ mode: "add" })}
                 className="card inline-flex items-center gap-1.5 px-3 min-h-[44px] text-sm font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
                 <Plus className="w-4 h-4" aria-hidden="true" />Add opening
+              </button>
+
+              {/* Whole-project reset. /quote's reasoning holds — it belongs beside
+                  the scope it wipes (lines + documents), never on the sticky bar
+                  where it would compete with the primary CTA and invite a
+                  mis-tap. Here the heading row IS the action row, so it needs
+                  separating from the two constructive actions it sits with:
+                  a rule, no fill, and smaller. It is rare and destructive, so it
+                  must be findable without being adjacent-and-identical to Add. */}
+              <span className="w-px h-6 bg-black/10 mx-1" aria-hidden="true" />
+              <button ref={clearBtnRef} type="button" onClick={() => setClearConfirm(true)}
+                aria-label="Clear all items and uploaded documents"
+                className="inline-flex items-center gap-1.5 px-2.5 min-h-[44px] text-xs font-medium text-body-soft hover:text-red-600 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />Clear all
               </button>
             </div>
           )}
@@ -411,6 +456,27 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
 
       {/* Deletion requires confirmation. Launched only AFTER the menu closes, so
           it is never stacked on the touch action sheet. */}
+      {/* Clear-all confirmation — the same destructive dialog /quote uses, with
+          the same counts in the same words, so the two arms cannot come to
+          describe the same irreversible action differently. */}
+      {clearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 quote-drawer-scrim"
+          role="dialog" aria-modal="true" aria-label="Clear everything"
+          onClick={cancelClear} onKeyDown={(e) => { if (e.key === "Escape") cancelClear(); }}>
+          <div ref={clearDialogRef} onClick={(e) => e.stopPropagation()} className="quote-dialog w-full max-w-sm p-5">
+            <h3 className="text-base font-semibold text-ink mb-1.5"
+              style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Clear everything?</h3>
+            <p className="text-sm text-body leading-relaxed mb-4">
+              This removes all {quote.items.length} item{quote.items.length !== 1 ? "s" : ""} and every uploaded document and can't be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" size="md" onClick={cancelClear}>Cancel</Btn>
+              <Btn variant="danger" size="md" onClick={() => void handleClearAll()}>Clear all</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmDelete && deleteItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 quote-drawer-scrim"
           role="dialog" aria-modal="true" aria-label="Delete opening"

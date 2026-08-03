@@ -109,9 +109,9 @@ test("the compact row renders identity, size, price and its direct actions", asy
   await expect(page.getByRole("button", { name: "Show details for W1" })).toBeVisible();
 });
 
-// ─── 3. Expansion is read-only, and one at a time ──────────────────────────────
+// ─── 3. Expansion is read-only, and independent per row ────────────────────────
 
-test("expansion inspects only: one row at a time, composite children priced once", async ({ page }) => {
+test("expansion inspects only; rows open independently, composite children priced once", async ({ page }) => {
   await mockProject(page, [plainItem, compositeItem]);
   await page.goto("/quote-project");
 
@@ -431,4 +431,50 @@ test("an authored pictogram cannot smuggle script into the quote list", async ({
   // still render, which is what proves the sanitiser ran on it rather than the
   // icon never arriving and the test passing vacuously.
   await expect(page.locator('.quote-row svg path[d="M2 2h20v20H2z"]')).toHaveCount(1);
+});
+
+// ─── 10. Whole-project reset ───────────────────────────────────────────────────
+
+test("clear all wipes lines and documents durably, and is never a single tap", async ({ page }) => {
+  // Against the REAL backend, not a route mock: the contract being proved is
+  // that the server forgot them, which a mocked GET would happily fake.
+  const saved = await page.request.put("/api/projects/current/lines", {
+    data: {
+      items: [{
+        code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+        width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      }],
+    },
+  });
+  expect(saved.ok()).toBeTruthy();
+  const uploaded = await page.request.post("/api/files/upload", {
+    multipart: {
+      file: { name: "qp-clear-all.txt", mimeType: "text/plain", buffer: Buffer.from("energy report") },
+      kind: "upload",
+    },
+  });
+  expect(uploaded.ok()).toBeTruthy();
+
+  await page.goto("/quote-project");
+  await expect(page.getByText("qp-clear-all.txt")).toBeVisible();
+  await expect(page.locator(".quote-row")).toHaveCount(1);
+
+  // Destructive actions are confirmed. Dismissing must change nothing.
+  await page.getByRole("button", { name: "Clear all items and uploaded documents" }).click();
+  const dialog = page.getByRole("dialog", { name: "Clear everything" });
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator(".quote-row")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Clear all items and uploaded documents" }).click();
+  await dialog.getByRole("button", { name: "Clear all" }).click();
+  await expect(page.getByText("qp-clear-all.txt")).toHaveCount(0);
+  await expect(page.locator(".quote-row")).toHaveCount(0);
+
+  // Durable, not just cleared from the view.
+  await page.reload();
+  await expect(page.getByText("qp-clear-all.txt")).toHaveCount(0);
+  const body = await (await page.request.get("/api/projects/current")).json();
+  expect(body.items).toEqual([]);
+  expect(body.files).toEqual([]);
 });
