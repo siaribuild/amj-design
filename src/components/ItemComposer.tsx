@@ -446,9 +446,9 @@ export const optionSummaryPairs = (
  *  the product cannot make would be a third kind of lie. */
 export const optionFullPairs = (
   p: Product | undefined, options: Record<string, string>,
-): { label: string; value: string; chosen: boolean }[] => {
+): { label: string; value: string; chosen: boolean; hex?: string }[] => {
   if (!p) return [];
-  const out: { label: string; value: string; chosen: boolean }[] = [];
+  const out: { label: string; value: string; chosen: boolean; hex?: string }[] = [];
   const glazing = glazingChoicesFor(p);
   if (glazing.length) {
     const name = glazing.find(g => g.slug === options.glazing)?.name;
@@ -456,7 +456,11 @@ export const optionFullPairs = (
   }
   for (const g of optionGroupsFor(p)) {
     const value = options[g.typeSlug];
-    out.push({ label: g.label, value: value || "None", chosen: !!value });
+    // The swatch comes off the CHOICE that was picked, not off a name-to-hex
+    // table of our own: Colorbond names are the catalogue's, and a second
+    // mapping here would drift the moment ops adds a colour.
+    const hex = value ? g.choices.find(c => c.name === value)?.hex : undefined;
+    out.push({ label: g.label, value: value || "None", chosen: !!value, hex });
   }
   return out;
 };

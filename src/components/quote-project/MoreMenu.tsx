@@ -2,13 +2,19 @@
 // MORE MENU — secondary row actions only
 //
 // Plan §7.4. Edit is never in here: the most common action stays directly
-// reachable on the row. This menu carries Duplicate, Delete, and Edit composite
-// when the opening already has units.
+// reachable on the row. This menu carries Duplicate and Delete.
 //
-// D3 (owner): NO "Convert to composite". Composites are authored server-side and
-// there is no client operation to turn a plain opening into one; shipping the
-// item would mean either a dead control or silent scope creep into a new API
-// and data lifecycle. Out of scope for a presentation slice.
+// "Edit composite" was removed: it called openDrawer({mode:"edit"}) — the exact
+// call the row's Edit pencil already makes — so it was a second name for a
+// control already on the row, and it appeared only for composites, which made
+// the menu's contents depend on line type for no gain.
+//
+// D3 (owner): NO "Convert to composite" / "Split". Promoting a simple line to a
+// composite parent does not exist at any layer: POST /lines/:id/segments 404s
+// unless line_kind='composite_parent', and addSegment() refuses a line with no
+// existing units ("This opening is not planned as units."). Shipping the item
+// would mean either a dead control or a new server operation, policy and
+// pricing lifecycle. Out of scope for a presentation slice.
 //
 // Two surfaces, because a popover pinned to a row is wrong under a thumb:
 //   desktop  anchored popover beside the row
@@ -18,17 +24,15 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Copy, Trash2, LayoutGrid } from "lucide-react";
+import { Copy, Trash2 } from "lucide-react";
 
-export function MoreMenu({ openingRef, isComposite, anchorEl, onClose, onDuplicate, onDelete, onEditComposite }: {
+export function MoreMenu({ openingRef, anchorEl, onClose, onDuplicate, onDelete }: {
   openingRef: string;
-  isComposite: boolean;
   /** The row's More button — used to position the popover and to restore focus. */
   anchorEl: HTMLElement | null;
   onClose: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
-  onEditComposite: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   // Coarse pointer OR small viewport gets the sheet: both mean a thumb.
@@ -70,12 +74,6 @@ export function MoreMenu({ openingRef, isComposite, anchorEl, onClose, onDuplica
         className="w-full flex items-center gap-2.5 px-3 min-h-[44px] text-ink hover:bg-recessive cursor-pointer focus:outline-none focus-visible:bg-recessive t-bd-sm">
         <Copy className="w-4 h-4 text-body flex-shrink-0" aria-hidden="true" />Duplicate
       </button>
-      {isComposite && (
-        <button role="menuitem" type="button" onClick={() => run(onEditComposite)}
-          className="w-full flex items-center gap-2.5 px-3 min-h-[44px] text-ink hover:bg-recessive cursor-pointer focus:outline-none focus-visible:bg-recessive t-bd-sm">
-          <LayoutGrid className="w-4 h-4 text-body flex-shrink-0" aria-hidden="true" />Edit composite
-        </button>
-      )}
       <button role="menuitem" type="button" onClick={() => run(onDelete)}
         className="w-full flex items-center gap-2.5 px-3 min-h-[44px] text-destructive hover:bg-recessive cursor-pointer focus:outline-none focus-visible:bg-recessive t-bd-sm">
         <Trash2 className="w-4 h-4 flex-shrink-0" aria-hidden="true" />Delete

@@ -33,7 +33,7 @@ import { ProjectNameField } from "../components/ProjectNameField";
 import {
   type DrawerTarget, type RowKey, editControlId, findByRowKey, rowKeyOf,
 } from "../components/quote-project/identity";
-import { fixTargetFor, isComposite, rowStateFor } from "../components/quote-project/rowState";
+import { fixTargetFor, rowStateFor } from "../components/quote-project/rowState";
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
 
@@ -340,13 +340,13 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
               className="quote-table-head hidden md:grid items-center gap-x-3 px-4 py-2
  text-quiet font-data t-label">
               <span className="col-start-1">Opening</span>
-              <span className="col-start-2">Product</span>
-              <span className="col-start-3 text-right">Size</span>
-              {/* Qty and Status only exist as columns from 1024 — below that they
-                  ride in the size cell and a full-width strip respectively. */}
-              <span className="hidden lg:block lg:col-start-4 text-right">Qty</span>
+              {/* Status is a column only from 1024. Below that it rides inside
+                  the identity cell, beside the reference — the same position,
+                  without a track the width cannot afford. */}
+              <span className="hidden lg:block lg:col-start-2">Status</span>
+              <span className="col-start-2 lg:col-start-3">Product</span>
+              <span className="col-start-3 lg:col-start-4 text-right">Size</span>
               <span className="col-start-4 lg:col-start-5 text-right">Price</span>
-              <span className="hidden lg:block lg:col-start-6">Status</span>
             </div>
 
             {items.map((item) => {
@@ -439,7 +439,6 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
       {menu && menuItem && (
         <MoreMenu
           openingRef={menuItem.code || "this opening"}
-          isComposite={isComposite(menuItem)}
           anchorEl={menu.anchor}
           onClose={() => setMenu(null)}
           onDuplicate={() => {
@@ -450,7 +449,6 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
             }
           }}
           onDelete={() => setConfirmDelete(menu.rowKey)}
-          onEditComposite={() => openDrawer({ mode: "edit", rowKey: menu.rowKey })}
         />
       )}
 

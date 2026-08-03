@@ -83,12 +83,12 @@ export function OpeningRow({
             is not shown is display:none, so it is out of the accessibility tree
             too and nothing is announced twice. */}
         {state.kind !== "none" && (
-          <span className="hidden lg:block lg:col-start-6 lg:row-start-1 min-w-0">
+          <span className="hidden lg:block lg:col-start-2 lg:row-start-1 min-w-0">
             <RowStateBadge state={state} />
           </span>
         )}
 
-        <div className="order-4 md:order-none md:col-start-5 lg:col-start-7 md:row-start-1 ml-auto md:ml-0 flex items-center gap-0.5 flex-shrink-0 md:justify-end">
+        <div className="order-4 md:order-none md:col-start-5 lg:col-start-6 md:row-start-1 ml-auto md:ml-0 flex items-center gap-0.5 flex-shrink-0 md:justify-end">
           {/* 44px touch targets: these three sit adjacent, and under-sizing them
               is the classic mis-tap generator on this exact pattern. */}
           <button type="button" onClick={onToggleExpanded}
@@ -114,23 +114,18 @@ export function OpeningRow({
         </div>
 
         {/* The only elastic element — it truncates so the row can never scroll. */}
-        <span className="order-5 md:order-none md:col-start-2 md:row-start-1 basis-full md:basis-auto min-w-0 truncate text-ink t-bd-sm">
+        <span className="order-5 md:order-none md:col-start-2 lg:col-start-3 md:row-start-1 basis-full md:basis-auto min-w-0 truncate text-ink t-bd-sm">
           {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
           {item.location && <span className="text-quiet"> · {item.location}</span>}
         </span>
 
-        {/* Size and quantity were one string. They are two columns now, because
-            "is anything the wrong size" and "how many of these" are two
-            different scans and a combined cell answers neither cleanly. Quantity
-            folds back into the flow between 768 and 1023, where its column is
-            the cheapest one to give up. */}
-        <span className="order-6 md:order-none md:col-start-3 md:row-start-1 md:text-right text-body flex-shrink-0 tabular-nums font-data t-data-sm">
+        {/* Size carries the quantity, at every width. Quantity had its own
+            column from 1024 up and rode in here below that; one home is worth
+            more than a dedicated track for a figure that is 1 on most lines,
+            and it buys the width that lets Status sit beside the reference. */}
+        <span className="order-6 md:order-none md:col-start-3 lg:col-start-4 md:row-start-1 md:text-right text-body flex-shrink-0 tabular-nums font-data t-data-sm">
           {mm(item.width)} × {mm(item.height)}
-          <span className="lg:hidden"> · ×{item.qty}</span>
-        </span>
-
-        <span className="hidden lg:block lg:col-start-4 lg:row-start-1 lg:text-right text-body flex-shrink-0 tabular-nums font-data t-data-sm">
-          ×{item.qty}
+          <span className="text-quiet"> · ×{item.qty}</span>
         </span>
 
         <span className="order-7 md:order-none md:col-start-4 lg:col-start-5 md:row-start-1 md:text-right ml-auto md:ml-0 font-semibold text-ink flex-shrink-0 tabular-nums font-data t-data">

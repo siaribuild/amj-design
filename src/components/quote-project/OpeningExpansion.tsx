@@ -67,13 +67,25 @@ function OptionList({ pairs, dense = false }: {
  *  checklist reflowed into four columns cannot be run down. Labels share a fixed
  *  column so the values line up in one edge; an unchosen line keeps the quiet
  *  tone AND says None, so the distinction is never carried by colour alone. */
-function OptionLines({ pairs }: { pairs: { label: string; value: string; chosen: boolean }[] }) {
+function OptionLines({ pairs }: { pairs: { label: string; value: string; chosen: boolean; hex?: string }[] }) {
   return (
     <dl className="border-t border-line">
       {pairs.map((p) => (
         <div key={p.label} className="flex items-baseline gap-3 border-b border-line py-1.5">
           <dt className="text-quiet w-24 sm:w-28 flex-shrink-0 font-data t-label">{p.label}</dt>
-          <dd className={`min-w-0 t-cap ${p.chosen ? "text-ink" : "text-quiet"}`}>{p.value}</dd>
+          <dd className={`min-w-0 flex items-center gap-2 t-cap ${p.chosen ? "text-ink" : "text-quiet"}`}>
+            {/* A swatch of the ACTUAL colour, never instead of the name: half
+                the Colorbond range is a near-neutral grey and several pairs are
+                indistinguishable at this size, so the chip locates the colour
+                and the name identifies it. Bordered because Dover White on a
+                near-white ground is otherwise an invisible chip. */}
+            {p.hex && (
+              <span aria-hidden="true"
+                className="w-3.5 h-3.5 rounded-full border border-line flex-shrink-0"
+                style={{ backgroundColor: p.hex }} />
+            )}
+            <span className="min-w-0">{p.value}</span>
+          </dd>
         </div>
       ))}
     </dl>
@@ -210,9 +222,14 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           with a word on it, so the two Edit affordances on screen at once are
           visibly different things. It opens the drawer; it never turns this
           panel into a form. */}
-      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+      {/* The SAME tracks as the drawing/specification grid above, so the note
+          starts exactly where the option values do and the panel has one left
+          edge rather than two. On a phone the grid collapses to one column and
+          order puts the note ABOVE the button: the note is reading matter and
+          the button is the way out, so the button belongs last. */}
+      <div className="mt-4 grid gap-x-6 gap-y-3 sm:grid-cols-[180px_minmax(0,1fr)] items-center">
         <button type="button" onClick={onEdit} aria-label={`Edit opening ${ref}`}
-          className="card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
+          className="order-2 sm:order-1 justify-self-start card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
           <Pencil className="w-3.5 h-3.5" aria-hidden="true" />Edit opening
         </button>
         {/* The line's own note — the editor's "Note (optional)". It reads here
@@ -222,8 +239,10 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
             Beside the Edit control is also where it is most useful: it is the
             thing most likely to be WHY you are about to open the editor.
             Read-only, like everything else in this panel. */}
-        <p className="flex items-baseline gap-2.5 min-w-0">
-          <span className="text-quiet flex-shrink-0 font-data t-label">Note</span>
+        <p className="order-1 sm:order-2 flex items-baseline gap-3 min-w-0">
+          {/* The same label column as OptionLines, so Note reads as the last
+              entry in that list rather than as a caption on the button. */}
+          <span className="text-quiet w-24 sm:w-28 flex-shrink-0 font-data t-label">Note</span>
           <span className={`min-w-0 t-cap ${item.location ? "text-ink" : "text-quiet"}`}>
             {item.location || "None"}
           </span>

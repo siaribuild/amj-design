@@ -88,10 +88,10 @@ test("the compact row renders identity, size, price and its direct actions", asy
 
   await expect(page.getByText("W1", { exact: true })).toBeVisible();
   await expect(page.getByText("AMJ80 Series Sliding Window").first()).toBeVisible();
-  // Size and quantity are two columns now, so they are two cells rather than one
-  // "1,200 mm × 900 mm · ×2" string.
-  await expect(page.getByText(/1,200 mm × 900 mm/)).toBeVisible();
-  await expect(page.getByText("×2", { exact: true })).toBeVisible();
+  // Size carries quantity at EVERY width: quantity had a column of its own from
+  // 1024 up and rode in the size cell below that, which meant the same figure
+  // had two homes depending on the window. One cell, one string.
+  await expect(page.locator(".quote-row").getByText(/1,200 mm × 900 mm · ×2/)).toBeVisible();
   // Scoped to the row: the line now shows the number ALONE, so an unscoped
   // "$800" also matches the summary bar's identical total.
   await expect(page.locator(".quote-row").getByText("$800", { exact: true })).toBeVisible();
@@ -189,12 +189,11 @@ test("saving from the drawer keeps the same opening expanded and restores focus"
   // the row is keyed on the server id, not the regenerated local one.
   await expect(page.getByRole("button", { name: /details for W01$/ })).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByRole("button", { name: "Edit W01" })).toBeFocused();
-  // Exact, because quantity renders twice: inline in the size cell below 1024px
-  // and as its own column above it. Only one is ever displayed — the other is
-  // display:none, so it is out of the accessibility tree as well — but a loose
-  // regex resolves to both and trips strict mode. The default 1280px viewport
-  // shows the column, whose text is exactly "×2".
-  await expect(page.getByText("×2", { exact: true })).toBeVisible();
+  // And the saved quantity survived the round-trip. Quantity used to render
+  // twice — inline in the size cell below 1024px and as its own column above it
+  // — which is what forced an exact-match locator here. It now renders once, in
+  // the size cell, at every width.
+  await expect(page.locator(".quote-row").getByText(/· ×2/)).toBeVisible();
 });
 
 // ─── 5. Draft safety ───────────────────────────────────────────────────────────
