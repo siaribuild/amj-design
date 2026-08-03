@@ -5,6 +5,7 @@ import type { SelectionResult } from "../estimator/select";
 import type { OpeningInput } from "../estimator/types";
 import { defaultOptions } from "../../../src/data/configurator";
 import { getProductBySlug } from "../../../src/data/catalogue";
+import { dimsJson } from "../lines";
 
 export interface ProposalSelection {
   openingId: string;
@@ -121,7 +122,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
              WHERE EXISTS (SELECT 1 FROM ai_proposal WHERE id=? AND status='building')`,
         ).bind(
           effectiveQuoteLineId, input.projectId, line.externalRef,
-          JSON.stringify({ width: line.opening.widthMm, height: line.opening.heightMm }),
+          JSON.stringify(dimsJson(line.opening.widthMm, line.opening.heightMm)),
           Math.max(1, Math.floor(line.opening.qty ?? 1)), nextPosition++,
           JSON.stringify({
             product: "We found this opening but could not select and exactly price a suitable configuration.",
@@ -221,7 +222,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       ).bind(
         effectiveQuoteLineId, input.projectId, line.externalRef, chosen.candidate.slug,
         JSON.stringify(draftOptions),
-        JSON.stringify({ width: line.opening.widthMm, height: line.opening.heightMm }),
+        JSON.stringify(dimsJson(line.opening.widthMm, line.opening.heightMm)),
         Math.max(1, Math.floor(line.opening.qty ?? 1)), chosen.price!.total, nextPosition++,
         proposalId,
       ));

@@ -640,11 +640,7 @@
    *   >=1024  qty and status rejoin the row as their own aligned columns, which
    *           is what the header labels above them promise.
    */
-  /* Size is 10.5rem, not 8: it carries "1,800 mm × 1,200 mm · ×3" at every
-   * width now that quantity has no column of its own, and at 8rem that
-   * wrapped onto a second line — which is the one thing a row this dense
-   * cannot afford. */
-  .quote-table { --qp-cols: 11.5rem minmax(0, 1fr) 10.5rem 7rem 6.75rem; }
+  .quote-table { --qp-cols: 11.5rem minmax(0, 1fr) 8rem 7rem 6.75rem; }
 
   @media (min-width: 1024px) {
     /* ID · Status · Product · Size · Price · Actions.
@@ -653,9 +649,10 @@
      * already sat below 1024 — it used to jump to the far right at 1024 and
      * back again, so the same fact had two homes depending on the window.
      *
-     * Quantity has no column of its own: it rides in the size cell as "· x2",
-     * which is what every width below 1024 already did. */
-    .quote-table { --qp-cols: 6.75rem 10rem minmax(0, 1fr) 11rem 7.5rem 7rem; }
+     * Quantity is not a column and is not shown at all: this route's model is
+     * one opening per reference (owner). The field is still stored, edited and
+     * priced — it simply has nothing to say in a list where it is always 1. */
+    .quote-table { --qp-cols: 6.75rem 10rem minmax(0, 1fr) 8.5rem 7.5rem 7rem; }
   }
 
   /* Tracks only. `display` is switched by the `lg:grid` UTILITY on the element,

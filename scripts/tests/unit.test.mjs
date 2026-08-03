@@ -257,6 +257,22 @@ test("editedFieldsAfterSave: an unchanged autosave round-trip marks NOTHING as e
   assert.equal(M.editedFieldsAfterSave(stored, incoming), null, "key-order differences never false-flag an edit");
 });
 
+test("editedFieldsAfterSave: numeric AI dims and string customer dims are the SAME dimension", () => {
+  // The bug this pins: proposal.ts wrote widthMm/heightMm straight into
+  // dims_json as NUMBERS while every customer save writes STRINGS. A
+  // type-sensitive compare called that an edit on the first autosave after a
+  // proposal, and for an ai-managed line "edited" is the branch that nulls
+  // line_total and sends it to technical review — so opening an AI-quoted
+  // project silently wiped every price on it. 19 lines in production.
+  const incoming = { product_slug: "amj100t-awning-window", options_json: "{}", dims_json: JSON.stringify({ width: "2050", height: "2100" }), qty: 1 };
+  const stored = { product_slug: incoming.product_slug, options_json: "{}", dims_json: '{"width":2050,"height":2100}', qty: 1, edited_fields: null };
+  assert.equal(M.editedFieldsAfterSave(stored, incoming), null, "2050 and \"2050\" are one dimension, not an edit");
+
+  // …and a genuine change is still caught across the same type boundary.
+  const moved = { ...incoming, dims_json: JSON.stringify({ width: "2060", height: "2100" }) };
+  assert.deepEqual(JSON.parse(M.editedFieldsAfterSave(stored, moved)), ["dims_json"]);
+});
+
 test("editedFieldsAfterSave: a real change flags exactly its field group and unions with prior edits", () => {
   const incoming = { product_slug: "amj80-series-awning-window", options_json: JSON.stringify({ colour: "black" }), dims_json: JSON.stringify({ width: "950", height: "1200" }), qty: 2 };
   const stored = { product_slug: incoming.product_slug, options_json: '{"colour":"black"}', dims_json: '{"width":"900","height":"1200"}', qty: 2, edited_fields: '["qty"]' };

@@ -88,10 +88,12 @@ test("the compact row renders identity, size, price and its direct actions", asy
 
   await expect(page.getByText("W1", { exact: true })).toBeVisible();
   await expect(page.getByText("AMJ80 Series Sliding Window").first()).toBeVisible();
-  // Size carries quantity at EVERY width: quantity had a column of its own from
-  // 1024 up and rode in the size cell below that, which meant the same figure
-  // had two homes depending on the window. One cell, one string.
-  await expect(page.locator(".quote-row").getByText(/1,200 mm × 900 mm · ×2/)).toBeVisible();
+  // Size, and ONLY size. Quantity is not listed on this route at all (owner):
+  // the model is one opening per reference, so a "×1" on every line is a column
+  // of noise. It had a column of its own from 1024 up and rode in the size cell
+  // below that — two homes for a figure that now has none.
+  await expect(page.locator(".quote-row").getByText("1,200 mm × 900 mm", { exact: true })).toBeVisible();
+  await expect(page.locator(".quote-row").getByText(/×\s*2/)).toHaveCount(0);
   // Scoped to the row: the line now shows the number ALONE, so an unscoped
   // "$800" also matches the summary bar's identical total.
   await expect(page.locator(".quote-row").getByText("$800", { exact: true })).toBeVisible();
@@ -189,11 +191,14 @@ test("saving from the drawer keeps the same opening expanded and restores focus"
   // the row is keyed on the server id, not the regenerated local one.
   await expect(page.getByRole("button", { name: /details for W01$/ })).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByRole("button", { name: "Edit W01" })).toBeFocused();
-  // And the saved quantity survived the round-trip. Quantity used to render
-  // twice — inline in the size cell below 1024px and as its own column above it
-  // — which is what forced an exact-match locator here. It now renders once, in
-  // the size cell, at every width.
-  await expect(page.locator(".quote-row").getByText(/· ×2/)).toBeVisible();
+  // The saved quantity survived the round-trip — asserted where it is now
+  // VISIBLE, which is the editor rather than the row. This route shows no
+  // quantity at all (owner): its model is one opening per reference, so the
+  // field is stored, edited and priced but never listed.
+  await expect(page.locator(".quote-row").getByText(/×\s*2/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Edit W01" }).click();
+  await page.getByRole("button", { name: /Quantity & note/i }).click();
+  await expect(page.getByRole("dialog").getByText("2", { exact: true })).toBeVisible();
 });
 
 // ─── 5. Draft safety ───────────────────────────────────────────────────────────

@@ -216,7 +216,7 @@ export async function itemFields(env: Env, raw: unknown, ownerUserId?: string | 
     room_label: String(it.location ?? "") || null,
     product_slug: productSlug,
     options_json: JSON.stringify(options),
-    dims_json: JSON.stringify({ width, height }),
+    dims_json: JSON.stringify(dimsJson(width, height)),
     qty,
     line_total: lineTotal,
     status,
@@ -251,6 +251,34 @@ const jsonEq = (a: string | null | undefined, b: string | null | undefined): boo
   try { return stable(JSON.parse(a || "null")) === stable(JSON.parse(b || "null")); } catch { return a === b; }
 };
 
+/** THE dims_json shape. Every writer goes through here so no two paths disagree
+ *  about whether 2050 is a number or a string — see dimsEq for what that cost. */
+export const dimsJson = (width: unknown, height: unknown) => ({
+  width: String(width ?? ""), height: String(height ?? ""),
+});
+
+/** Dimensions compare by VALUE, never by JSON type.
+ *
+ *  The AI proposal path wrote {"width":2050} (widthMm is a number) and every
+ *  customer save writes {"width":"2050"}, so the deep compare below found them
+ *  different and flagged dims_json as edited on the FIRST autosave after a
+ *  proposal — no customer had touched anything. For an ai-managed line that is
+ *  not a cosmetic flag: it takes the branch that nulls line_total and sends the
+ *  line to technical review, so an entire AI-quoted project lost every price the
+ *  moment it was opened. dimsJson() fixes new rows; this fixes the ones already
+ *  written, which no deploy can go back and re-serialise. */
+const dimsEq = (a: string | null | undefined, b: string | null | undefined): boolean => {
+  const norm = (s: string | null | undefined) => {
+    const o = safeParse(s || "{}");
+    const n = (v: unknown) => {
+      const x = typeof v === "number" ? v : parseFloat(String(v ?? ""));
+      return Number.isFinite(x) ? String(x) : String(v ?? "");
+    };
+    return `${n(o.width)}×${n(o.height)}`;
+  };
+  return norm(a) === norm(b);
+};
+
 export interface EditableSnapshot { product_slug: string | null; options_json: string | null; dims_json: string | null; qty: number | null; edited_fields: string | null }
 
 /** The union of previously-edited groups and whatever this save actually changed
@@ -262,7 +290,7 @@ export function editedFieldsAfterSave(stored: EditableSnapshot, incoming: Awaite
   const now = new Set(prior);
   if ((stored.product_slug ?? "") !== incoming.product_slug) now.add("product_slug");
   if (!jsonEq(stored.options_json, incoming.options_json)) now.add("options_json");
-  if (!jsonEq(stored.dims_json, incoming.dims_json)) now.add("dims_json");
+  if (!dimsEq(stored.dims_json, incoming.dims_json)) now.add("dims_json");
   if ((stored.qty ?? null) !== incoming.qty) now.add("qty");
   return now.size ? JSON.stringify([...now]) : null;
 }

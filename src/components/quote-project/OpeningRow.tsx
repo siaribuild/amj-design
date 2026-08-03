@@ -119,13 +119,13 @@ export function OpeningRow({
           {item.location && <span className="text-quiet"> · {item.location}</span>}
         </span>
 
-        {/* Size carries the quantity, at every width. Quantity had its own
-            column from 1024 up and rode in here below that; one home is worth
-            more than a dedicated track for a figure that is 1 on most lines,
-            and it buys the width that lets Status sit beside the reference. */}
+        {/* Size only. Quantity is not shown at all on this route (owner): the
+            model here is one opening per reference, so a "×1" on every line is
+            a column of noise, and any line that genuinely needs two identical
+            openings gets a second reference. The FIELD is untouched — it is
+            still stored, still editable in the drawer, and still priced. */}
         <span className="order-6 md:order-none md:col-start-3 lg:col-start-4 md:row-start-1 md:text-right text-body flex-shrink-0 tabular-nums font-data t-data-sm">
           {mm(item.width)} × {mm(item.height)}
-          <span className="text-quiet"> · ×{item.qty}</span>
         </span>
 
         <span className="order-7 md:order-none md:col-start-4 lg:col-start-5 md:row-start-1 md:text-right ml-auto md:ml-0 font-semibold text-ink flex-shrink-0 tabular-nums font-data t-data">
