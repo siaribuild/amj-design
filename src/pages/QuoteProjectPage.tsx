@@ -409,22 +409,23 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                 aiPhase={aiPhase} stageLog={stageLog} nowTick={nowTick} />
             )}
 
-            {/* Add as the LAST ROW of the table, not only in the header.
-                On a long project the header action is a full scroll away from
-                where you finish reading, and the new opening appears down here
-                anyway — so the affordance sits where its result will.
-                Deliberately NOT in the sticky bar: that is the commit surface
-                (total + submit), and an authoring action there competes with
-                the one thing the bar exists to offer.
-                The header keeps its own Add: the two answer different moments —
-                "add another before I read this" and "I have read it, one more". */}
-            <button type="button" onClick={() => openDrawer({ mode: "add" })}
-              className="w-full flex items-center gap-2 px-3 sm:px-4 py-3.5 text-sm font-medium
-                text-sage hover:bg-sage-veil transition-colors cursor-pointer
-                focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
-              <Plus className="w-4 h-4" aria-hidden="true" />Add an opening
-            </button>
           </div>
+        )}
+
+        {/* Add BELOW the list, detached from it — /quote's exact treatment: a
+            dashed outline with a gap above, so it reads as "start a new one"
+            rather than as a row of the table. Butting it onto the table made it
+            an eleventh row with no data in it.
+            It exists in addition to the header action because on a long project
+            the header is a full scroll from where you finish reading, and the
+            new opening lands down here anyway. Deliberately NOT in the sticky
+            bar: that is the commit surface, and an authoring action there
+            competes with the one thing the bar exists to offer. */}
+        {items.length > 0 && (
+          <button type="button" onClick={() => openDrawer({ mode: "add" })}
+            className="mt-3 w-full flex items-center justify-center gap-1.5 border border-dashed border-black/20 action-hover py-3 text-sm text-sage font-medium cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+            <Plus className="w-4 h-4" aria-hidden="true" />Add an opening
+          </button>
         )}
       </div>
 

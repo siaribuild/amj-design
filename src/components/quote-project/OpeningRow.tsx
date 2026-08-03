@@ -57,21 +57,24 @@ export function OpeningRow({
       className="quote-row flex md:grid flex-wrap items-center gap-x-2 md:gap-x-3 gap-y-1.5 px-3 sm:px-4 py-3">
         {/* Identity is ONE cell. The pictogram and the code were siblings, which
             is invisible in a flex row but would have consumed two grid tracks. */}
-        <span className="order-1 md:col-start-1 md:row-start-1 flex items-center gap-2 min-w-0">
+        <span className="order-1 md:col-start-1 md:row-start-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
           <FamilyPictogram productSlug={item.productSlug} size={22} />
           <span className="text-xs font-semibold text-ink truncate"
             style={{ fontFamily: "'DM Mono', monospace" }}>{ref}</span>
+          {/* Below 1024 the status belongs to the identity, beside the reference
+              it describes — the same place a phone puts it. It rides INSIDE this
+              cell rather than as a grid sibling because at these widths it has
+              no column of its own to sit in. */}
+          <span className="lg:hidden"><RowStateBadge state={state} /></span>
         </span>
 
-        {/* Status. Its own column once there is room for one (>=1024); between
-            768 and 1023 it becomes a full-width strip on a second grid row,
-            because six fixed columns at 768 leave the product name unreadable.
-            Rendered only when there IS a state — an always-present wrapper would
-            open an empty second row under every clean line. */}
+        {/* From 1024 the status is a real column under a real header. This is a
+            SECOND render of the same chip, not a moved one: the copy above is a
+            child of the identity cell and a grid item cannot be both. Whichever
+            is not shown is display:none, so it is out of the accessibility tree
+            too and nothing is announced twice. */}
         {state.kind !== "none" && (
-          <span className="order-3 md:order-none min-w-0
-            md:col-span-full md:row-start-2
-            lg:col-span-1 lg:col-start-6 lg:row-start-1">
+          <span className="hidden lg:block lg:col-start-6 lg:row-start-1 min-w-0">
             <RowStateBadge state={state} />
           </span>
         )}

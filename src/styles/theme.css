@@ -496,13 +496,16 @@
    * controls stranded at the bottom.
    *
    *   >=768   ref | product | size | price | actions
-   *           Status leaves the row and becomes a full-width strip beneath it,
-   *           the same device the wireframe uses for its reason row: at 768 six
-   *           fixed columns leave the product name about 90px, which is not a
-   *           product name.
-   *   >=1024  qty and status rejoin the row as their own columns.
+   *           Status rides INSIDE the identity cell, beside the reference, as it
+   *           does on a phone. It cannot have its own column here — six fixed
+   *           tracks at 768 leave the product name about 90px — and parking it
+   *           on a full-width second row stranded it at the bottom of the line,
+   *           detached from the opening it describes. The identity track is
+   *           widened to carry it.
+   *   >=1024  qty and status rejoin the row as their own aligned columns, which
+   *           is what the header labels above them promise.
    */
-  .quote-table { --qp-cols: 6.5rem minmax(0, 1fr) 8rem 7rem 6.75rem; }
+  .quote-table { --qp-cols: 11.5rem minmax(0, 1fr) 8rem 7rem 6.75rem; }
 
   @media (min-width: 1024px) {
     .quote-table { --qp-cols: 6.75rem minmax(0, 1fr) 8.5rem 3.25rem 7.5rem 10rem 7rem; }
@@ -647,6 +650,36 @@
      than a hard-coded black. */
   .quote-drawer-scrim {
     background-color: color-mix(in srgb, var(--ink) 34%, transparent);
+  }
+
+  /* ─── Drawer motion ─────────────────────────────────────────────────────────
+   * The same slide-out the main menu uses — in from the right, 300ms, ease-out.
+   * Reusing it is the point: they are the same gesture (a panel arrives over the
+   * page from the same edge), and appearing instantly while the menu slides made
+   * the drawer read as a different kind of object.
+   *
+   * ANIMATION, not transition. Radix keeps a closing dialog mounted until its
+   * animation ends, so the panel slides back out instead of vanishing; a
+   * transition would give an entrance and no exit.
+   *
+   * Keyed off data-state, which Radix sets on both Overlay and Content.
+   */
+  @keyframes quote-drawer-in  { from { transform: translateX(100%); } to { transform: translateX(0); } }
+  @keyframes quote-drawer-out { from { transform: translateX(0); } to { transform: translateX(100%); } }
+  @keyframes quote-scrim-in   { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes quote-scrim-out  { from { opacity: 1; } to { opacity: 0; } }
+
+  .quote-drawer[data-state="open"]        { animation: quote-drawer-in 300ms ease-out; }
+  .quote-drawer[data-state="closed"]      { animation: quote-drawer-out 200ms ease-in; }
+  .quote-drawer-scrim[data-state="open"]  { animation: quote-scrim-in 300ms ease-out; }
+  .quote-drawer-scrim[data-state="closed"]{ animation: quote-scrim-out 200ms ease-in; }
+
+  /* The panel still arrives and leaves; it simply stops travelling. Removing the
+   * animation entirely would make Radix unmount the closing dialog instantly,
+   * which is the correct outcome here. */
+  @media (prefers-reduced-motion: reduce) {
+    .quote-drawer[data-state],
+    .quote-drawer-scrim[data-state] { animation: none; }
   }
   .quote-drawer {
     background-color: var(--paper);

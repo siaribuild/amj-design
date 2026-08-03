@@ -257,16 +257,24 @@ test("customer blockers are actionable; technical-only review stays neutral", as
   await mockProject(page, [compositeItem, blockedItem]);
   await page.goto("/quote-project");
 
+  // Asserted through innerText rather than element matching: the status chip is
+  // rendered twice — beside the reference below 1024px, as its own column above
+  // — and only one is ever displayed. innerText excludes the display:none copy,
+  // so this counts what a person actually sees rather than what is in the DOM.
+  const shown = async () => (await page.locator(".quote-table").innerText());
+  const occurrences = (haystack: string, needle: string) =>
+    haystack.split(needle).length - 1;
+
   // TECHNICAL-only (`fit`): priced, submittable, and NOT dressed as a problem.
   // A neutral composite attribute is all the customer sees.
-  await expect(page.getByText("Composite · 2 units")).toBeVisible();
+  expect(occurrences(await shown(), "Composite · 2 units")).toBe(1);
   await expect(page.getByText("Needs review", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Ready", { exact: true })).toHaveCount(0);
 
   // ERROR-severity (`dims`): the one case the customer can act on. The row
   // carries the LABEL only; the reason and the action moved into the panel,
   // which opens itself for exactly this state so nothing is hidden by the move.
-  await expect(page.getByText("Needs your input", { exact: true })).toHaveCount(1);
+  expect(occurrences(await shown(), "Needs your input")).toBe(1);
   // Anchored to the disclosure specifically: "Fix details for W3" now also ends
   // in "details for W3", and a loose regex resolves to both.
   await expect(page.getByRole("button", { name: /^(Show|Hide) details for W3$/ }))
