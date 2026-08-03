@@ -163,7 +163,7 @@ function ProjectsSection({ projects, orders, setPage, onOpenRecord, tab, setTab 
             {t.label}{counts[t.id] > 0 && (
               // Amber count badge for the action console; the quiet number for browse tabs.
               t.id === "needs-you"
-                ? <span className="ml-1.5 text-[11px] text-white px-[6px]" style={{ fontFamily: "'DM Mono', monospace", background: TONE.attn.text }}>{counts[t.id]}</span>
+                ? <span className="ml-1.5 text-[11px] text-white px-[6px]" style={{ fontFamily: "'Space Grotesk', sans-serif", background: TONE.attn.text }}>{counts[t.id]}</span>
                 : <span className="ml-1.5 text-[11px] text-quiet font-data">{counts[t.id]}</span>
             )}
           </button>
@@ -356,7 +356,7 @@ function RecordRow({ refText, title, pill, next, value, meta, draft, cta, when, 
           </>
         ) : (
           <>
-            <span className="text-[15px] font-medium text-ink" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{value}</span>
+            <span className="text-[15px] font-medium text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{value}</span>
             <span className="text-[11.5px] text-body font-data">{meta}</span>
             <ChevronRight className="hidden sm:block w-[18px] h-[18px] text-sage" />
           </>

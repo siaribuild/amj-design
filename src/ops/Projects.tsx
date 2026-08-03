@@ -20,7 +20,7 @@ import { opsProjects, type OpsProjectRow } from "./api";
 import { ProjectRecord } from "./ProjectRecord";
 
 
-const MONO = { fontFamily: "'DM Mono', monospace" } as const;
+const MONO = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 const money = (n: number) => `$${Math.round(n).toLocaleString("en-AU")}`;
 
 type Filter = "needs-us" | "open" | "customer" | "production" | "all";

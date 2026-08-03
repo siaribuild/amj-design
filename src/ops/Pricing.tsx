@@ -27,7 +27,7 @@ import {
   type OpsRateCardRow, type OpsReconcileRun,
 } from "./api";
 
-const MONO = { fontFamily: "'DM Mono', monospace" } as const;
+const MONO = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 const INK = "var(--ops)";
 const HEAD = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 

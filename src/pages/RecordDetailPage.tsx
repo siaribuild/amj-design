@@ -4,7 +4,7 @@
 // One screen for both an order and a quote-stage project: header → the pinned
 // current-action gate (or the neutral "on track" state) → the live 9-node
 // lifecycle timeline → the schedule-code line list → files → the payment /
-// contact / quick-links summary band. Codes (DM Mono bold) anchor every line.
+// contact / quick-links summary band. Codes (display face, bold) anchor every line.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { brandSubject } from "../data/sanity";
 import { useEffect, useState, type ReactNode } from "react";
@@ -64,7 +64,7 @@ export function ConfirmDetails({ summary, lines, action, busy, onConfirm, receip
             {receipt.map((r) => (
               <div key={r.label} className={`flex justify-between text-[13.5px] text-body ${r.big ? "border-t border-black/10 pt-2.5 mt-0.5 text-[15px]" : ""}`}>
                 <span>{r.label}</span>
-                <span className={r.big ? "font-medium" : "text-ink font-medium"} style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums", color: r.big ? TONE.attn.text : undefined }}>{r.value}</span>
+                <span className={r.big ? "font-medium" : "text-ink font-medium"} style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums", color: r.big ? TONE.attn.text : undefined }}>{r.value}</span>
               </div>
             ))}
           </div>
@@ -95,7 +95,7 @@ function ActionGate({ pill, step, title, children }: { pill: string; step?: stri
 }
 
 const Safe = ({ children }: { children: ReactNode }) => (
-  <span className="inline-flex items-center gap-1.5 text-[11.5px]" style={{ fontFamily: "'DM Mono', monospace", color: TONE.pos.text }}>
+  <span className="inline-flex items-center gap-1.5 text-[11.5px]" style={{ fontFamily: "'Space Grotesk', sans-serif", color: TONE.pos.text }}>
     <Check className="w-3 h-3" />{children}
   </span>
 );
@@ -239,13 +239,13 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit }: {
             {l.optionsSummary && <span className="block text-[11.5px] text-body mt-0.5 font-data">{l.optionsSummary}</span>}
           </div>
           <span className="hidden md:block text-[12.5px] text-body font-data">{dimsLabel(l)}</span>
-          <span className="hidden md:block text-[13px]" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{l.qty}</span>
-          <span className="hidden md:block text-right text-[13.5px] font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>
+          <span className="hidden md:block text-[13px]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{l.qty}</span>
+          <span className="hidden md:block text-right text-[13.5px] font-medium" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>
             {showUnit ? price(l.lineTotal == null ? null : (l.qty ? l.lineTotal / l.qty : l.lineTotal)) : price(l.lineTotal)}
           </span>
           <span className="justify-self-end md:text-right">
             {showUnit
-              ? <span className="text-[13.5px] font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{price(l.lineTotal)}</span>
+              ? <span className="text-[13.5px] font-medium" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{price(l.lineTotal)}</span>
               : statusPill?.(l)}
           </span>
           <span className="md:hidden col-span-2 order-4 flex items-center gap-4 text-[12.5px] text-body pt-0.5 font-data">
@@ -256,7 +256,7 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit }: {
       {total != null && (
         <div className="flex justify-between items-center px-5 py-[15px] bg-sage/[0.07] border-t border-black/10 text-[13.5px]">
           <small className="text-body">{footerLabel}</small>
-          <div><small className="text-body">{hasPendingPrice ? "Priced-lines subtotal " : "Order total "}</small><span className="text-[17px] font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{money(total)}</span></div>
+          <div><small className="text-body">{hasPendingPrice ? "Priced-lines subtotal " : "Order total "}</small><span className="text-[17px] font-medium" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{money(total)}</span></div>
         </div>
       )}
     </>
@@ -304,7 +304,7 @@ export function SummaryBand({ order, children }: { order?: ApiOrder; children?: 
               : { tone: order.stage === "balance_invoiced" ? "attn" : "mute", label: order.stage === "balance_invoiced" ? "Due now" : "Due before despatch" }} />
           <div className="flex justify-between pt-3 mt-1 border-t border-black/10 text-sm">
             <span>Contract total</span>
-            <span className="font-semibold text-base" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{money(order.total)}</span>
+            <span className="font-semibold text-base" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{money(order.total)}</span>
           </div>
         </div>
       )}
@@ -319,7 +319,7 @@ function PayRow({ label, amount, state }: {
   return (
     <div className="flex justify-between items-center py-[9px] border-b border-black/[0.07] text-[13.5px] gap-2 flex-wrap">
       <span className="flex items-center gap-2 text-body">{label}<StatusPill tone={state.tone}>{state.label}</StatusPill></span>
-      <span className="font-medium text-ink" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{money(amount)}</span>
+      <span className="font-medium text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{money(amount)}</span>
     </div>
   );
 }

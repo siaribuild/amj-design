@@ -285,7 +285,14 @@
 :root {
   --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-data: 'DM Mono', ui-monospace, monospace;
+  /* Data is the DISPLAY face, not a third family. Space Grotesk is the
+   * proportional sibling of Space Mono — same skeleton — so references,
+   * dimensions and prices keep the drafting-table character DM Mono gave them.
+   * Alignment comes from tabular-nums, which every .t-data / .font-data rule
+   * sets: measured at zero digit-width spread, identical to a true monospace.
+   * Kept as its own token so the data role stays nameable and could diverge
+   * again without touching the ~230 call sites that reference it. */
+  --font-data: var(--font-display);
 
   --t-ds1: 56px;  --t-ds1-lh: 58px; --t-ds1-track: -1.4px;
   --t-ds2: 40px;  --t-ds2-lh: 44px; --t-ds2-track: -0.9px;

@@ -61,7 +61,7 @@ export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; to
       <div className="relative" style={{ width: bw, height: bh }}>
         <div className="absolute -left-5 top-0 bottom-0 flex flex-col items-center justify-center">
           <div className="w-px flex-1" style={{ background: faint }} />
-          <span className="text-[9px] my-1" style={{ writingMode: "vertical-rl", color: stroke, fontFamily: "'DM Mono', monospace" }}>H</span>
+          <span className="text-[9px] my-1" style={{ writingMode: "vertical-rl", color: stroke, fontFamily: "'Space Grotesk', sans-serif" }}>H</span>
           <div className="w-px flex-1" style={{ background: faint }} />
         </div>
         <div className="absolute inset-0 border-2" style={{ borderColor: stroke, background: tone === "sage" ? "color-mix(in srgb, var(--sage) 5%, transparent)" : "color-mix(in srgb, var(--paper) 4%, transparent)" }}>
@@ -70,7 +70,7 @@ export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; to
         </div>
         <div className="absolute -bottom-5 left-0 right-0 flex items-center justify-center gap-1">
           <div className="h-px flex-1" style={{ background: faint }} />
-          <span className="text-[9px]" style={{ color: stroke, fontFamily: "'DM Mono', monospace" }}>W</span>
+          <span className="text-[9px]" style={{ color: stroke, fontFamily: "'Space Grotesk', sans-serif" }}>W</span>
           <div className="h-px flex-1" style={{ background: faint }} />
         </div>
       </div>

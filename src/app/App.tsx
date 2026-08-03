@@ -512,7 +512,7 @@ function Meter({ paid, light = false }: { paid: "0%" | "50%" | "100%"; light?: b
 // on arrival rather than dropping the visitor on a fork it already promised past.
 function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => void }) {
   const go = (p: Page, pathOverride?: string) => { setPage(p, pathOverride); window.scrollTo(0, 0); };
-  const MONO = { fontFamily: "'DM Mono', monospace" } as const;
+  const MONO = { fontFamily: "'Space Grotesk', sans-serif" } as const;
   const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 
   // The sample, matched for real. Never throws the page away if the parser does:

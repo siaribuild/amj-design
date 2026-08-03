@@ -38,7 +38,7 @@ import {
 // implementation of product picking, option defaults and range checks.
 import { ItemForm } from "../components/ItemComposer";
 
-const MONO = { fontFamily: "'DM Mono', monospace" } as const;
+const MONO = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 const HEAD = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 
 const money = (n: number | null | undefined) =>

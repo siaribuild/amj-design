@@ -114,7 +114,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
               <Lock className="w-3 h-3 text-sage" />Immutable · Revision {R}
             </span>
             <span>Issued <span className="text-ink font-data">{fmtDate(current.issuedAt)}</span></span>
-            <span>Valid until <span className="text-ink font-data">{fmtDate(validUntil.toISOString())}</span> · <span style={{ fontFamily: "'DM Mono', monospace", color: TONE.attn.text }}>{daysLeft} days left</span></span>
+            <span>Valid until <span className="text-ink font-data">{fmtDate(validUntil.toISOString())}</span> · <span style={{ fontFamily: "'Space Grotesk', sans-serif", color: TONE.attn.text }}>{daysLeft} days left</span></span>
           </div>
         </div>
         <Btn variant="ghost" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }}>Message us</Btn>
@@ -136,7 +136,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
             <p className="text-[13px] text-body"><b className="text-ink">Order created</b> → 50% deposit invoice → shop drawings for your sign-off → manufacturing → quality photos → 50% balance → delivery. You'll track every step on the order screen.</p>
           </div>
           <div className="flex items-center gap-2.5 flex-wrap mt-[15px]">
-            <span className="inline-flex items-center gap-1.5 text-[11.5px]" style={{ fontFamily: "'DM Mono', monospace", color: TONE.pos.text }}><Check className="w-3 h-3" />No card details needed to review</span>
+            <span className="inline-flex items-center gap-1.5 text-[11.5px]" style={{ fontFamily: "'Space Grotesk', sans-serif", color: TONE.pos.text }}><Check className="w-3 h-3" />No card details needed to review</span>
           </div>
           {error && <p role="alert" className="text-sm text-red-700 mt-3">{error}</p>}
 
@@ -191,7 +191,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
             const isCurrent = r.id === current.id;
             return (
               <div key={r.id} className="flex items-center gap-[13px] px-5 py-[13px] border-b border-black/[0.07] last:border-b-0">
-                <span className={`w-[30px] font-medium text-[13px] ${isCurrent ? "text-ink" : "line-through"}`} style={{ fontFamily: "'DM Mono', monospace", color: isCurrent ? undefined : TONE.mute.text, textDecorationColor: TONE.mute.bd }}>R{r.revisionNo}</span>
+                <span className={`w-[30px] font-medium text-[13px] ${isCurrent ? "text-ink" : "line-through"}`} style={{ fontFamily: "'Space Grotesk', sans-serif", color: isCurrent ? undefined : TONE.mute.text, textDecorationColor: TONE.mute.bd }}>R{r.revisionNo}</span>
                 <span className={`flex-1 text-[13px] ${isCurrent ? "text-body" : "line-through"}`} style={{ color: isCurrent ? undefined : TONE.mute.text, textDecorationColor: TONE.mute.bd }}>
                   {isCurrent ? `Current · issued ${fmtDate(r.issuedAt)} · ${money(r.total)}` : `Superseded · issued ${fmtDate(r.issuedAt)} — kept on file, view only`}
                 </span>
@@ -205,10 +205,10 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
         <SummaryBand>
           <div className="flex-1 basis-[250px] card p-[18px]">
             <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5 font-data">This quote · {R}</h3>
-            <div className="flex justify-between pb-3 text-sm"><span>Total inc GST</span><span className="font-semibold text-base" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{money(total)}</span></div>
-            <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-body">Deposit to begin</span><span className="font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums", color: TONE.attn.text }}>{money(deposit)}</span></div>
-            <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-body">Balance before despatch</span><span className="font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{money(balance)}</span></div>
-            <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-body inline-flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" style={{ color: TONE.attn.text }} />Valid until {fmtDate(validUntil.toISOString())}</span><span style={{ fontFamily: "'DM Mono', monospace", color: TONE.attn.text }}>{daysLeft} days</span></div>
+            <div className="flex justify-between pb-3 text-sm"><span>Total inc GST</span><span className="font-semibold text-base" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{money(total)}</span></div>
+            <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-body">Deposit to begin</span><span className="font-medium" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums", color: TONE.attn.text }}>{money(deposit)}</span></div>
+            <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-body">Balance before despatch</span><span className="font-medium" style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums" }}>{money(balance)}</span></div>
+            <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-body inline-flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" style={{ color: TONE.attn.text }} />Valid until {fmtDate(validUntil.toISOString())}</span><span style={{ fontFamily: "'Space Grotesk', sans-serif", color: TONE.attn.text }}>{daysLeft} days</span></div>
           </div>
           <ContactCard setPage={setPage} />
           <div className="flex-1 basis-[250px] card p-[18px]">
@@ -226,7 +226,7 @@ function TotalRow({ label, value, big, attn }: { label: string; value: string; b
     <div className={`flex justify-between ${big ? "border-t border-black/10 pt-[11px] mt-0.5 text-[15.5px] font-semibold text-ink" : "text-[13.5px] text-body"}`}
       style={attn ? { color: TONE.attn.text } : undefined}>
       <span>{label}</span>
-      <span className={big ? "text-lg" : "font-medium"} style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums", color: attn ? TONE.attn.text : big ? undefined : "var(--ink)" }}>{value}</span>
+      <span className={big ? "text-lg" : "font-medium"} style={{ fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: "tabular-nums", color: attn ? TONE.attn.text : big ? undefined : "var(--ink)" }}>{value}</span>
     </div>
   );
 }

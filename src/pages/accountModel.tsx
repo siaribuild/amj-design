@@ -43,7 +43,7 @@ export function StatusPill({ tone, children, icon }: { tone: Tone; children: Rea
     : { color: TONE[tone].text, background: TONE[tone].bg, borderColor: TONE[tone].bd };
   return (
     <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.04em] px-2 py-1 border whitespace-nowrap leading-none"
-      style={{ fontFamily: "'DM Mono', monospace", ...style }}>
+      style={{ fontFamily: "'Space Grotesk', sans-serif", ...style }}>
       {icon ?? PILL_ICON[tone]}{children}
     </span>
   );
@@ -56,11 +56,11 @@ export const SupersededPill = () => (
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const aud = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" });
-/** Money with cents in tabular DM Mono contexts: $41,600.00 */
+/** Money with cents in tabular data contexts: $41,600.00 */
 export const money = (n: number | null | undefined) => (n == null ? "—" : aud.format(n));
 
 const asDate = (s: string) => new Date(s.includes("T") ? s : s.replace(" ", "T") + "Z");
-/** "21 JUL 2026" (DM Mono contexts). */
+/** "21 JUL 2026" (data-face contexts). */
 export const fmtDate = (s: string | null | undefined) => {
   if (!s) return "—";
   const d = asDate(s);

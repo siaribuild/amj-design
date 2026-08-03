@@ -1,1 +1,20 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap');
+/* Two faces, three weights each — 6 files, down from 10.
+ *
+ * Space Grotesk  display, labels AND data. It is the proportional sibling of
+ *                Space Mono, drawn from the same skeleton, so it keeps the
+ *                technical character DM Mono was providing without a third
+ *                family. Numeric columns align on font-variant-numeric:
+ *                tabular-nums — measured at zero digit-width spread, same as a
+ *                true monospace.
+ * Inter          running text and UI.
+ *
+ * DM Mono is gone. It was the only face in a different genre — a typewriter
+ * beside two geometric sans — which is why it read as unrelated rather than as
+ * a third tier, and why it drew the question.
+ *
+ * Weights are exactly what the app references: 400, 500, 600. Nothing uses 300
+ * or 700. Inter 600 is NEW and not a trim: 148 font-semibold call sites land on
+ * Inter, which was loaded only at 300/400/500, so the browser was synthesising
+ * that weight. Faux bold has uneven stems and reads as a rendering fault.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500;600&display=swap');
