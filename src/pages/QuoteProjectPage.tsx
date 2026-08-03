@@ -29,6 +29,7 @@ import { OpeningExpansion } from "../components/quote-project/OpeningExpansion";
 import { OpeningDrawer } from "../components/quote-project/OpeningDrawer";
 import { MoreMenu } from "../components/quote-project/MoreMenu";
 import { ProjectActionBar } from "../components/quote-project/ProjectActionBar";
+import { ProjectNameField } from "../components/ProjectNameField";
 import {
   type DrawerTarget, type RowKey, editControlId, findByRowKey, rowKeyOf,
 } from "../components/quote-project/identity";
@@ -50,7 +51,26 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
   // Transient UI identity keys on serverId, never the local array id — the local
   // id is regenerated on rehydrate, which is exactly when the user is most likely
   // to be mid-inspection (plan §5).
-  const [expandedKey, setExpandedKey] = useState<RowKey | null>(null);
+  // Expansion is no longer one-at-a-time. A row the customer must act on opens
+  // BY DEFAULT, because its reason and its Fix-details action now live in the
+  // panel rather than in the row — leaving those rows shut would hide the only
+  // explanation of what is wrong. With several blocked lines, "one at a time"
+  // would mean reading them one reopen at a time.
+  //
+  // Two sets rather than one, so a default-open row the customer has closed
+  // STAYS closed: derived-open minus explicitly-collapsed, plus explicitly-
+  // opened. A single `expanded` set would be re-seeded by every rehydrate and
+  // spring back open under them.
+  const [openedKeys, setOpenedKeys] = useState<ReadonlySet<RowKey>>(new Set());
+  const [collapsedKeys, setCollapsedKeys] = useState<ReadonlySet<RowKey>>(new Set());
+  const expandedFor = (key: RowKey, needsAction: boolean) =>
+    openedKeys.has(key) || (needsAction && !collapsedKeys.has(key));
+  const toggleExpanded = (key: RowKey, isOpen: boolean) => {
+    const drop = <T,>(s: ReadonlySet<T>, k: T) => { const n = new Set(s); n.delete(k); return n; };
+    const add = <T,>(s: ReadonlySet<T>, k: T) => new Set(s).add(k);
+    if (isOpen) { setOpenedKeys((s) => drop(s, key)); setCollapsedKeys((s) => add(s, key)); }
+    else { setCollapsedKeys((s) => drop(s, key)); setOpenedKeys((s) => add(s, key)); }
+  };
   const [drawer, setDrawer] = useState<DrawerTarget | null>(null);
   const [drawerSection, setDrawerSection] = useState<"dims" | "options" | "qty" | undefined>();
   const [menu, setMenu] = useState<{ rowKey: RowKey; anchor: HTMLElement } | null>(null);
@@ -90,7 +110,12 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
   const closeDrawer = (rowKey: RowKey | null, saidWhat?: string) => {
     setDrawer(null);
     setDrawerSection(undefined);
-    if (rowKey) setExpandedKey(rowKey);
+    // Explicitly OPEN, and clear any prior collapse: after a save the customer
+    // is looking at the row they just edited and expects to see the result.
+    if (rowKey) {
+      setOpenedKeys((s) => new Set(s).add(rowKey));
+      setCollapsedKeys((s) => { const n = new Set(s); n.delete(rowKey); return n; });
+    }
     if (saidWhat) setAnnouncement(saidWhat);
     requestAnimationFrame(() => {
       window.scrollTo(0, scrollRef.current);
@@ -143,10 +168,9 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
         <div className="mb-5 flex items-end justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <SLabel>Your project</SLabel>
-            <h1 className="text-2xl md:text-3xl font-semibold text-ink leading-tight"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-              {quote.title}
-            </h1>
+            {/* Renameable, like /quote. A customer with two projects cannot tell
+                them apart while both are called "My Project". */}
+            <h1><ProjectNameField value={quote.title} onCommit={quote.setTitle} /></h1>
           </div>
           {/* Add opening is a visible list-header action — never a row action and
               never hidden in an overflow menu. */}
@@ -277,27 +301,32 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
               {/* Qty and Status only exist as columns from 1024 — below that they
                   ride in the size cell and a full-width strip respectively. */}
               <span className="hidden lg:block lg:col-start-4 text-right">Qty</span>
-              <span className="col-start-4 lg:col-start-5 text-right">Indicative</span>
+              <span className="col-start-4 lg:col-start-5 text-right">Price</span>
               <span className="hidden lg:block lg:col-start-6">Status</span>
             </div>
 
             {items.map((item) => {
               const key = rowKeyOf(item);
-              const expanded = expandedKey === key;
+              const state = rowStateFor(item, items);
+              // Only a line the CUSTOMER must act on opens itself. Composite and
+              // confirm-layout are attributes, not exceptions — auto-opening
+              // those would re-create the per-line noise this route exists to
+              // remove (rowState.ts, "the governing rule").
+              const needsAction = state.kind === "needs-input";
+              const expanded = expandedFor(key, needsAction);
+              const fixDetails = () => openDrawer(
+                { mode: "edit", rowKey: key },
+                sectionFor(fixTargetFor(item, items)),
+              );
               return (
                 <div key={key}>
                   <OpeningRow
                     item={item}
                     rowKey={key}
-                    state={rowStateFor(item, items)}
+                    state={state}
                     expanded={expanded}
-                    // One row expanded at a time, at every breakpoint.
-                    onToggleExpanded={() => setExpandedKey(expanded ? null : key)}
+                    onToggleExpanded={() => toggleExpanded(key, expanded)}
                     onEdit={() => openDrawer({ mode: "edit", rowKey: key })}
-                    onFixDetails={() => openDrawer(
-                      { mode: "edit", rowKey: key },
-                      sectionFor(fixTargetFor(item, items)),
-                    )}
                     onOpenMenu={(anchor) => setMenu({ rowKey: key, anchor })}
                   />
                   {/* Undo rides on the duplicated row itself. */}
@@ -321,8 +350,9 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                     </div>
                   )}
                   {expanded && (
-                    <OpeningExpansion item={item} rowKey={key}
-                      onEdit={() => openDrawer({ mode: "edit", rowKey: key })} />
+                    <OpeningExpansion item={item} rowKey={key} state={state}
+                      onEdit={() => openDrawer({ mode: "edit", rowKey: key })}
+                      onFixDetails={fixDetails} />
                   )}
                 </div>
               );
@@ -333,6 +363,22 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
               <DocumentProgress uploading={uploading} processingDocs={processingDocs}
                 aiPhase={aiPhase} stageLog={stageLog} nowTick={nowTick} />
             )}
+
+            {/* Add as the LAST ROW of the table, not only in the header.
+                On a long project the header action is a full scroll away from
+                where you finish reading, and the new opening appears down here
+                anyway — so the affordance sits where its result will.
+                Deliberately NOT in the sticky bar: that is the commit surface
+                (total + submit), and an authoring action there competes with
+                the one thing the bar exists to offer.
+                The header keeps its own Add: the two answer different moments —
+                "add another before I read this" and "I have read it, one more". */}
+            <button type="button" onClick={() => openDrawer({ mode: "add" })}
+              className="w-full flex items-center gap-2 px-3 sm:px-4 py-3.5 text-sm font-medium
+                text-sage hover:bg-sage-veil transition-colors cursor-pointer
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+              <Plus className="w-4 h-4" aria-hidden="true" />Add an opening
+            </button>
           </div>
         )}
       </div>
@@ -386,7 +432,10 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
               <Btn variant="danger" size="md" onClick={() => {
                 const ref = deleteItem.code || "Opening";
                 quote.remove(deleteItem.id);
-                if (expandedKey === confirmDelete) setExpandedKey(null);
+                // Forget the deleted row in BOTH sets, or a later row that
+                // reuses the key inherits its expansion.
+                setOpenedKeys((s) => { const n = new Set(s); n.delete(confirmDelete); return n; });
+                setCollapsedKeys((s) => { const n = new Set(s); n.delete(confirmDelete); return n; });
                 if (undo?.localId === deleteItem.id) setUndo(null);
                 setConfirmDelete(null);
                 setAnnouncement(`${ref} deleted`);

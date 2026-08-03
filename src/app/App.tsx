@@ -2271,7 +2271,11 @@ export default function App() {
       <Nav page={page} setPage={navigateTo} user={user} setUser={setUser} viewHasHero={viewHasHero} />
       <main>{renderPage()}</main>
       {page !== "admin" && <Footer setPage={navigateTo} />}
-      {!["home", "quote", "admin", "product-detail", "dashboard", "account", "help", "order"].includes(page) && (
+      {/* "quote-project" belongs here for the same reason "quote" does: it IS the
+          quote builder, and a fixed "Get a quote" bar there covers the project's
+          own sticky summary with an invitation to the page you are already on.
+          It was missing only because the route was added after this list. */}
+      {!["home", "quote", "quote-project", "admin", "product-detail", "dashboard", "account", "help", "order"].includes(page) && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-4 py-3 bg-white border-t border-black/8"
           style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
           <Btn variant="sage" size="md" onClick={() => navigateTo("quote")} className="w-full justify-center">Get a quote →</Btn>

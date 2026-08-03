@@ -220,7 +220,13 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
           onPointerDownOutside={(e) => { e.preventDefault(); requestClose(); }}
           onInteractOutside={(e) => e.preventDefault()}
           aria-describedby={undefined}
-          className="quote-drawer fixed z-50 inset-0 lg:inset-y-0 lg:left-auto lg:right-0 lg:w-[520px] flex flex-col overflow-y-auto"
+          // Side panel from 768px, matching the main menu's slide-out rather
+          // than taking the whole screen: on a tablet a full-screen editor
+          // throws away the project context the drawer exists to preserve, and
+          // there is ample room beside it. Width follows the menu's idiom —
+          // min(88vw, …) — so it never crowds the list it is dimming.
+          // Full-screen stays below 768, where a side panel is unusable.
+          className="quote-drawer fixed z-50 inset-0 md:inset-y-0 md:left-auto md:right-0 md:w-[min(88vw,520px)] flex flex-col overflow-y-auto"
         >
           {/* 1. Header — pictogram, reference, location, close. On mobile the
                  breadcrumb is the ONLY orientation cue, so it stays persistent. */}
@@ -325,12 +331,19 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                 hideOptions={segments.length > 0}
                 submitLabel={target.mode === "add" ? "Add opening" : "Save changes"}
                 onCommit={saveParent}
-                // The composer runs its OWN discard prompt before calling this,
-                // so closing here must not raise the drawer's as well.
-                onCancel={onClose}
+                // The drawer header already carries the reference AND the close
+                // control, so the composer's own title + "Cancel ✕" strip sat
+                // directly beneath as a second title and a second dismiss. With
+                // the strip gone the composer no longer runs its own discard
+                // prompt either, so Cancel routes through requestClose and the
+                // drawer's guard is the ONLY one — previously each owned a
+                // prompt and which one you got depended on which control you hit.
+                onCancel={requestClose}
                 onDirtyChange={setDirty}
                 initialSection={initialSection}
                 rail
+                stickyActions
+                hideHeader
               />
             )}
 
@@ -355,9 +368,14 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                   busy={busy}
                   submitLabel={busy ? "Saving…" : `Save ${unitLabel(ref, unitIndex)}`}
                   onCommit={(built) => void saveUnit(activeSegment.id, built)}
-                  onCancel={() => setLevel({ kind: "parent" })}
+                  // requestBack, not a bare setLevel: abandoning a dirty unit is
+                  // the same loss as closing, and the drawer owns the single
+                  // discard prompt now.
+                  onCancel={requestBack}
                   onDirtyChange={setDirty}
                   rail
+                  stickyActions
+                  hideHeader
                 />
               </>
             )}
@@ -381,9 +399,14 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                   busy={busy}
                   submitLabel={busy ? "Adding…" : "Add unit"}
                   onCommit={(built) => void addUnit(built)}
-                  onCancel={() => setLevel({ kind: "parent" })}
+                  // requestBack, not a bare setLevel: abandoning a dirty unit is
+                  // the same loss as closing, and the drawer owns the single
+                  // discard prompt now.
+                  onCancel={requestBack}
                   onDirtyChange={setDirty}
                   rail
+                  stickyActions
+                  hideHeader
                 />
               </>
             )}

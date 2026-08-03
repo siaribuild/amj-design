@@ -27,13 +27,15 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { ChevronDown, AlertCircle, MoreHorizontal, Pencil } from "lucide-react";
 import { type QItem, fmt, mm, productLabel, linePriceTotal } from "../../data/configurator";
-import { useGstMode, gstAdjust, gstSuffix } from "../../data/gst";
+// gstSuffix is deliberately not imported: the mode still ADJUSTS every line's
+// figure, it is simply no longer spelled out on each one.
+import { useGstMode, gstAdjust } from "../../data/gst";
 import { FamilyPictogram } from "./FamilyPictogram";
 import { type RowState } from "./rowState";
 import { type RowKey, editControlId, panelId, rowId } from "./identity";
 
 export function OpeningRow({
-  item, rowKey, state, expanded, onToggleExpanded, onEdit, onFixDetails, onOpenMenu,
+  item, rowKey, state, expanded, onToggleExpanded, onEdit, onOpenMenu,
 }: {
   item: QItem;
   rowKey: RowKey;
@@ -41,7 +43,6 @@ export function OpeningRow({
   expanded: boolean;
   onToggleExpanded: () => void;
   onEdit: () => void;
-  onFixDetails: () => void;
   onOpenMenu: (anchor: HTMLElement) => void;
 }) {
   const gstMode = useGstMode();
@@ -71,7 +72,7 @@ export function OpeningRow({
           <span className="order-3 md:order-none min-w-0
             md:col-span-full md:row-start-2
             lg:col-span-1 lg:col-start-6 lg:row-start-1">
-            <RowStateBadge state={state} onFixDetails={onFixDetails} openingRef={ref} />
+            <RowStateBadge state={state} />
           </span>
         )}
 
@@ -124,17 +125,22 @@ export function OpeningRow({
 
         <span className="order-7 md:order-none md:col-start-4 lg:col-start-5 md:row-start-1 md:text-right ml-auto md:ml-0 text-sm font-semibold text-ink flex-shrink-0 tabular-nums"
           style={{ fontFamily: "'DM Mono', monospace" }}>
+          {/* The number only. Repeating "inc GST" on every line states the tax
+              basis twenty times to say one thing — it is a property of the
+              whole quote, and the sticky summary carries it there once. */}
           {priced ? fmt(gstAdjust(linePriceTotal(item), gstMode)) : "$-,--"}
-          <span className="text-[10px] font-normal text-body"> {gstSuffix(gstMode)}</span>
         </span>
     </div>
   );
 }
 
-/** Status is text + icon + colour, never colour alone (plan §10). */
-function RowStateBadge({ state, onFixDetails, openingRef }: {
-  state: RowState; onFixDetails: () => void; openingRef: string;
-}) {
+/** Status is text + icon + colour, never colour alone (plan §10).
+ *
+ *  The LABEL ONLY. The reason and its Fix-details action used to sit beside the
+ *  chip, which is what made a blocked row two or three lines tall and left the
+ *  column ragged — the one thing a table is for. Both moved into the expansion,
+ *  and a row in this state opens by default so nothing is hidden by the move. */
+function RowStateBadge({ state }: { state: RowState }) {
   if (state.kind === "none") return null;
   if (state.kind === "composite") {
     return (
@@ -144,29 +150,11 @@ function RowStateBadge({ state, onFixDetails, openingRef }: {
     );
   }
   if (state.kind === "confirm-layout") {
-    return (
-      <span className="quote-chip quote-chip--review text-[10px]">
-        Confirm layout
-      </span>
-    );
+    return <span className="quote-chip quote-chip--review text-[10px]">Confirm layout</span>;
   }
   return (
-    <span className="flex items-center gap-1.5 min-w-0 flex-wrap">
-      <span className="quote-chip quote-chip--attention text-[10px]">
-        <AlertCircle className="w-2.5 h-2.5" aria-hidden="true" />Needs your input
-      </span>
-      {/* The reason is VISIBLE text, not a title attribute: a tooltip cannot be
-          hovered on a phone and is not part of the accessible name, so the badge
-          would otherwise say something is wrong without saying what. */}
-      <span className="text-[11px] text-warning-ink min-w-0 truncate">{state.reason}</span>
-      {/* A direct action, not merely an expand: it opens the drawer AT the field. */}
-      {/* Sized for a thumb where touch is expected; an inline link at desktop.
-          This is the customer's primary action on a blocked line, so it is the
-          last control that should be hard to hit. */}
-      <button type="button" onClick={onFixDetails} aria-label={`Fix details for ${openingRef}`}
-        className="inline-flex items-center min-h-[44px] lg:min-h-0 text-[11px] font-medium text-sage underline underline-offset-2 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
-        Fix details
-      </button>
+    <span className="quote-chip quote-chip--attention text-[10px]">
+      <AlertCircle className="w-2.5 h-2.5" aria-hidden="true" />Needs your input
     </span>
   );
 }

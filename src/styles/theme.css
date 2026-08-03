@@ -523,9 +523,20 @@
    * and a surface that lights up under the cursor is the most reliable way to
    * tell someone it is. The state stripe is the only thing a row says at rest. */
   .quote-row { background-color: var(--paper); }
-  .quote-row[data-state="added"]     { box-shadow: inset 3px 0 0 var(--sage); }
-  .quote-row[data-state="review"]    { box-shadow: inset 3px 0 0 var(--info); }
-  .quote-row[data-state="attention"] { box-shadow: inset 3px 0 0 var(--warning); }
+
+  /* The stripe is shared by the row and by its expansion panel, so an opened
+   * blocked row keeps its coloured edge all the way down instead of stopping at
+   * the row and leaving the panel looking unrelated.
+   *
+   * The panel gets its OWN class rather than borrowing .quote-row: that class
+   * is what identifies a row, to the grid and to the specs, and putting it on
+   * the panel made every row-count assertion count panels too. */
+  .quote-row[data-state="added"],
+  .quote-rowexp[data-state="added"]     { box-shadow: inset 3px 0 0 var(--sage); }
+  .quote-row[data-state="review"],
+  .quote-rowexp[data-state="review"]    { box-shadow: inset 3px 0 0 var(--info); }
+  .quote-row[data-state="attention"],
+  .quote-rowexp[data-state="attention"] { box-shadow: inset 3px 0 0 var(--warning); }
 
   /* The column header. Recessive, like every other panel head on the site, so
    * the table reads as one object with a label strip rather than as a row that

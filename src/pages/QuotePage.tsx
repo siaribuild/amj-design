@@ -20,44 +20,13 @@ import { restoreAiLine, type SubmitContact, type SubmitResult } from "../data/ap
 // second copy. Behaviour here is unchanged by that move.
 import { useProjectDocuments } from "../data/useProjectDocuments";
 import { quoteSummary } from "../data/quoteSummary";
-import { type QuoteState, hasDuplicateCode, DEFAULT_PROJECT_TITLE } from "../data/configurator";
+import { type QuoteState, hasDuplicateCode } from "../data/configurator";
 import { useGstMode } from "../data/gst";
+// Inline-editable project name. Moved to a shared component so /quote-project
+// renames the same way rather than not at all.
+import { ProjectNameField } from "../components/ProjectNameField";
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
-
-// Inline-editable project name — same interaction as the item code (CodeField):
-// a framed value + pencil, click to edit into a framed field, Enter/blur commits,
-// Escape cancels. Empty falls back to the default title.
-function ProjectNameField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const begin = () => { setDraft(value); setEditing(true); };
-  const commit = () => { setEditing(false); const v = draft.trim() || DEFAULT_PROJECT_TITLE; if (v !== value) onCommit(v); };
-  const cancel = () => { setDraft(value); setEditing(false); };
-  useEffect(() => { if (editing) { inputRef.current?.focus(); inputRef.current?.select(); } }, [editing]);
-
-  if (editing) {
-    return (
-      <input ref={inputRef} value={draft} maxLength={120} aria-label="Project name"
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } else if (e.key === "Escape") { e.preventDefault(); cancel(); } }}
-        size={Math.max(draft.length, 12)}
-        className="quote-title-control text-2xl md:text-3xl font-semibold text-ink leading-tight border border-sage px-2 py-0.5 max-w-full focus:outline-none focus:ring-2 focus:ring-sage/40"
-        style={{ fontFamily: "'Space Grotesk', sans-serif" }} />
-    );
-  }
-  return (
-    <button onClick={begin} aria-label={`Rename project${value ? ` (${value})` : ""}`}
-      className="quote-title-control group/name inline-flex items-center gap-2 text-2xl md:text-3xl font-semibold text-ink leading-tight border action-hover px-2 py-0.5 max-w-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage"
-      style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-      <span className="truncate">{value}</span>
-      <Pencil className="w-4 h-4 text-quieter group-hover/name:text-sage flex-shrink-0" aria-hidden="true" />
-    </button>
-  );
-}
 
 export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   setPage: (p: Page) => void; user: QuoteUser; quote: QuoteState;

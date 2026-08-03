@@ -19,12 +19,19 @@
 // Expanding performs NO network write and does NOT open the drawer.
 // ═══════════════════════════════════════════════════════════════════════════════
 import type { ReactNode } from "react";
-import { Pencil } from "lucide-react";
+import { AlertCircle, Pencil } from "lucide-react";
 import { type QItem, type QSegment, mm, productLabel } from "../../data/configurator";
 import { getProductBySlug } from "../../data/catalogue";
 import { optionSummaryPairs } from "../ItemComposer";
 import { type RowKey, panelId } from "./identity";
-import { unitLabel } from "./rowState";
+import { type RowState, unitLabel } from "./rowState";
+
+/** The same mapping OpeningRow uses, so the stripe cannot disagree with the row
+ *  it hangs beneath. */
+const stripeFor = (state: RowState): string =>
+  state.kind === "needs-input" ? "attention"
+    : state.kind === "confirm-layout" ? "review"
+      : "ready";
 
 /** Options as labelled lines. A run-on "5Clear · White · Standard · None" can
  *  only be decoded by someone who already knows the option order.
@@ -61,10 +68,13 @@ function PanelLabel({ children }: { children: ReactNode }) {
   );
 }
 
-export function OpeningExpansion({ item, rowKey, onEdit }: {
+export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: {
   item: QItem;
   rowKey: RowKey;
+  /** Drives the inherited state stripe and the reason block. */
+  state: RowState;
   onEdit: () => void;
+  onFixDetails: () => void;
 }) {
   const product = getProductBySlug(item.productSlug);
   const segments = item.segments ?? [];
@@ -77,7 +87,29 @@ export function OpeningExpansion({ item, rowKey, onEdit }: {
     // it with only a hairline between, so an opened row read as two rows rather
     // than as one row showing its inside. Dropping the ground is what makes the
     // disclosure legible as nesting.
-    <div id={panelId(rowKey)} className="bg-recessive border-t border-line px-3 sm:px-4 py-4">
+    // data-state carries the row's stripe down the panel. An opened blocked row
+    // otherwise lost its marker at exactly the point the customer is reading why
+    // it is blocked — the coloured edge stopped at the row and the panel below
+    // looked like an unrelated block.
+    <div id={panelId(rowKey)} data-state={stripeFor(state)}
+      className="quote-rowexp bg-recessive border-t border-line px-3 sm:px-4 py-4">
+      {/* The reason, and the action that resolves it. Both used to sit inline in
+          the row beside the chip, where they made a blocked line two or three
+          lines tall. Here they have room to be a sentence rather than a truncated
+          fragment, and Fix details still opens the drawer AT the offending
+          field rather than merely expanding something. */}
+      {state.kind === "needs-input" && (
+        <div className="mb-4">
+          {/* Not "Needs your input" — that is the row's chip, and repeating it
+              two lines below says the same thing twice while answering nothing. */}
+          <PanelLabel>What's missing</PanelLabel>
+          <p className="text-xs text-warning-ink leading-relaxed mb-2.5">{state.reason}</p>
+          <button type="button" onClick={onFixDetails} aria-label={`Fix details for ${ref}`}
+            className="card inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+            <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />Fix details
+          </button>
+        </div>
+      )}
       {/* A composite PARENT carries no options of its own — it is the schedule
           line, not a product. The glazing and hardware belong to the units, and
           showing the parent's stored option row here would assert a

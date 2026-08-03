@@ -92,9 +92,15 @@ test("the compact row renders identity, size, price and its direct actions", asy
   // "1,200 mm × 900 mm · ×2" string.
   await expect(page.getByText(/1,200 mm × 900 mm/)).toBeVisible();
   await expect(page.getByText("×2", { exact: true })).toBeVisible();
-  await expect(page.getByText("$800", { exact: true })).toBeVisible();
-  // Guests always see GST-inclusive pricing.
-  await expect(page.getByText("inc GST").first()).toBeVisible();
+  // Scoped to the row: the line now shows the number ALONE, so an unscoped
+  // "$800" also matches the summary bar's identical total.
+  await expect(page.locator(".quote-row").getByText("$800", { exact: true })).toBeVisible();
+  // Guests always see GST-inclusive pricing — stated once, on the summary,
+  // rather than repeated on every line.
+  // .first(): the bar states it visibly AND in its polite live region.
+  const summary = page.getByRole("region", { name: "Project summary and actions" });
+  await expect(summary.getByText("inc GST").first()).toBeVisible();
+  await expect(page.locator(".quote-row").getByText(/GST/)).toHaveCount(0);
 
   // Every action names its opening — 20 identical "Edit" buttons are unusable
   // with a screen reader even though they each technically have a name.
@@ -121,8 +127,14 @@ test("expansion inspects only: one row at a time, composite children priced once
   await expect(page.getByText("Colour", { exact: true })).toBeVisible();
   await expect(page.getByText("Dover White", { exact: true })).toBeVisible();
 
-  // Opening another closes the first — one expanded row at every breakpoint.
+  // Expansion is no longer one-at-a-time: a row's reason and its Fix-details
+  // action now live in the panel, so several blocked lines have to be readable
+  // without reopening them one by one. Opening a second leaves the first open.
   await w2.click();
+  await expect(w2).toHaveAttribute("aria-expanded", "true");
+  await expect(w1).toHaveAttribute("aria-expanded", "true");
+  // Closing is still explicit and independent.
+  await w1.click();
   await expect(w1).toHaveAttribute("aria-expanded", "false");
   await expect(w2).toHaveAttribute("aria-expanded", "true");
 
@@ -251,8 +263,15 @@ test("customer blockers are actionable; technical-only review stays neutral", as
   await expect(page.getByText("Needs review", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Ready", { exact: true })).toHaveCount(0);
 
-  // ERROR-severity (`dims`): the one case the customer can act on.
+  // ERROR-severity (`dims`): the one case the customer can act on. The row
+  // carries the LABEL only; the reason and the action moved into the panel,
+  // which opens itself for exactly this state so nothing is hidden by the move.
   await expect(page.getByText("Needs your input", { exact: true })).toHaveCount(1);
+  // Anchored to the disclosure specifically: "Fix details for W3" now also ends
+  // in "details for W3", and a loose regex resolves to both.
+  await expect(page.getByRole("button", { name: /^(Show|Hide) details for W3$/ }))
+    .toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByText("We couldn't read the size for this opening.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Fix details for W3" })).toBeVisible();
 
   // The bar counts only the blocker, and offers the fix rather than submission.
@@ -290,19 +309,24 @@ test("desktop gets a side drawer, mobile a full-screen editor, neither scrolls s
     expect(overflow, `horizontal overflow at ${w}px`).toBeLessThanOrEqual(1);
   }
 
-  // <1024px the editor is full-screen; a narrow side drawer is unusable for a
-  // real quote form at tablet width.
+  // Below 768 the editor is full-screen — a side panel there is unusable for a
+  // real quote form. From 768 up it is a slide-out panel like the main menu, so
+  // the project context the drawer exists to preserve stays on screen.
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/quote-project");
   await page.getByRole("button", { name: "Edit W1" }).click();
   const mobileBox = await page.getByRole("dialog").boundingBox();
   expect(mobileBox!.width).toBeGreaterThan(360);
 
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/quote-project");
-  await page.getByRole("button", { name: "Edit W1" }).click();
-  const deskBox = await page.getByRole("dialog").boundingBox();
-  expect(deskBox!.width).toBeLessThan(700);   // the list stays visible beside it
+  for (const [w, h] of [[768, 1024], [1440, 900]] as const) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto("/quote-project");
+    await page.getByRole("button", { name: "Edit W1" }).click();
+    const box = await page.getByRole("dialog").boundingBox();
+    // Narrower than the viewport, so the list it dims stays visible beside it.
+    expect(box!.width, `drawer is a panel at ${w}px`).toBeLessThan(w - 80);
+    expect(box!.width).toBeLessThan(700);
+  }
 });
 
 // ─── 9. Accessibility ──────────────────────────────────────────────────────────

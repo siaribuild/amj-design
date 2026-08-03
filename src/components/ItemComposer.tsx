@@ -451,6 +451,7 @@ export function ItemForm({
   lockedSlug, quote, seed, onCommit, onCancel, rail = false, submitLabel = "Save",
   priceFn = previewPrice, scope = "item", unitAxis = "vertical", unitMode = "edit",
   onDirtyChange, initialSection, excludeId, heading, busy = false, hideOptions = false,
+  stickyActions = false, hideHeader = false,
 }: {
   lockedSlug?: string;
   /** Only `items` is read — for the duplicate-code check and code suggestion. It
@@ -462,6 +463,17 @@ export function ItemForm({
   onCommit: (built: Omit<QItem, "id">) => void;
   onCancel?: () => void;
   rail?: boolean;
+  /** Keep the action footer pinned at EVERY width. For a host that is its own
+   *  scroll container — the opening drawer — where a footer in page flow simply
+   *  scrolls away. In page flow it would hover over unrelated content, so it is
+   *  off by default. */
+  stickyActions?: boolean;
+  /** Drop the form's own title + Cancel strip. For a host that already renders
+   *  both — again the drawer, whose dialog header carries the reference and the
+   *  close control, so the form's strip sat directly beneath as a second title
+   *  and a second dismiss. When set, Cancel does NOT raise this form's inline
+   *  discard prompt: the host owns that guard, or there would be two. */
+  hideHeader?: boolean;
   submitLabel?: string;
   /** How the live figure is obtained. Defaults to the customer preview, which is
    *  scoped to the signed-in visitor's own project. Ops must override it: a
@@ -622,7 +634,12 @@ export function ItemForm({
     : seed
       ? currentItemState !== initialItemState
       : !!productSlug && (dimsEntered || !!location.trim() || codeEdited);
-  const requestCancel = () => { if (dirty && !confirmClose) { setConfirmClose(true); return; } onCancel?.(); };
+  // With the header hidden there is nowhere to render the inline confirm, and
+  // the host that hid it owns the discard guard — raising both would ask twice.
+  const requestCancel = () => {
+    if (!hideHeader && dirty && !confirmClose) { setConfirmClose(true); return; }
+    onCancel?.();
+  };
   // Ref-held so an inline arrow from the caller cannot make this fire every
   // render (which would loop through the parent's setState).
   const dirtyCbRef = useRef(onDirtyChange);
@@ -633,7 +650,7 @@ export function ItemForm({
     <div className="quote-panel">
       {/* Persistent header — the dismiss affordance is here from the first render,
           so an empty form (no product yet) can still be backed out of. */}
-      {onCancel && (
+      {onCancel && !hideHeader && (
         <div className="quote-panel-head flex items-center justify-between gap-3 px-4 md:px-5 py-2.5">
           <p className="text-[10px] uppercase tracking-widest text-body">{isUnit ? unitHeading : (heading ?? "New item")}</p>
           {confirmClose ? (
@@ -725,8 +742,16 @@ export function ItemForm({
         )}
       </div>
 
+      {/* `md:static` is right for a composer in PAGE FLOW — a card whose footer
+          has no reason to follow the viewport, and which would otherwise hover
+          over the page as you scrolled past it. It is wrong inside the drawer,
+          which is its own scroll container at every width: the actions scrolled
+          out of reach on any form long enough to need scrolling, which is most
+          of them. NOT keyed off `rail` — that means "narrow column", and the
+          product page passes it for a form that sits in page flow. */}
       {p && (
-        <div className="quote-panel-footer px-4 md:px-5 py-4 md:static sticky bottom-0 z-30" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
+        <div className={`quote-panel-footer px-4 md:px-5 py-4 sticky bottom-0 z-30 ${stickyActions ? "" : "md:static"}`}
+          style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
           {issues.length > 0 && (
             <p className="text-xs text-amber-800 mb-2 flex items-start gap-1.5"><AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />{issues.map(i => i.msg).join(" · ")}.</p>
           )}
