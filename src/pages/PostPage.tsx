@@ -143,7 +143,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
           <h1 className="text-white mb-3 max-w-[24ch] t-ds2">
             {post.title}
           </h1>
-          <p className="text-white/80 text-[15px] md:text-base leading-relaxed split-prose">{post.summary}</p>
+          <p className="text-white/80 leading-relaxed split-prose t-bd">{post.summary}</p>
           {meta && <p className="text-white/50 text-[12.5px] mt-3 font-data">{meta}</p>}
         </div>
       </section>
@@ -205,7 +205,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
       </div>
 
       {related.length > 0 && (
-        <section className="ground-bone border-t border-black/8 py-14 md:py-[68px]">
+        <section className="ground-bone border-t border-black/8 section-pad">
           <div className="max-w-6xl mx-auto px-6">
             <div className="flex items-end justify-between gap-4 mb-6">
               <h2 className="text-ink t-hd1">

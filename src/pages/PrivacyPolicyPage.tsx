@@ -45,7 +45,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
           <h1 className="text-white mb-3 t-ds1">
             Privacy Policy
           </h1>
-          <p className="text-white/70 max-w-xl text-[15px] leading-relaxed">
+          <p className="text-white/70 max-w-xl leading-relaxed t-bd">
             How OpenFrame collects, uses, stores and protects your information when
             you use this website to build quotes, place and track orders, or contact us.
           </p>
@@ -54,7 +54,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
       </section>
 
       {/* ─── Content ─────────────────────────────────────────────────────────── */}
-      <section className="max-w-3xl mx-auto px-6 py-12 md:py-16">
+      <section className="max-w-3xl mx-auto px-6 section-pad">
           {/* Policy body */}
           <div className="space-y-10">
             <Section id="who-we-are" title="1. Who we are">

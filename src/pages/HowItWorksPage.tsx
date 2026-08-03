@@ -218,7 +218,7 @@ function StepRow({ s, brand }: { s: Step; brand: string }) {
         <h3 className={`font-semibold leading-tight mb-1.5 ${yours ? "text-ink text-[18px] md:text-[19px]" : "text-ink-soft text-[16px]"} font-display`}>
           {s.title}
         </h3>
-        <p className="text-body text-[14.5px] leading-relaxed split-prose">{s.body}</p>
+        <p className="text-body leading-relaxed split-prose t-bd">{s.body}</p>
       </div>
     </li>
   );
@@ -229,7 +229,7 @@ function PhaseSection({ p, brand, onQuote, children }: {
   p: Phase; brand: string; onQuote: () => void; children?: ReactNode;
 }) {
   return (
-    <section id={p.id} aria-labelledby={`${p.id}-h`} className="relative ground-bone py-12 md:py-20 overflow-hidden">
+    <section id={p.id} aria-labelledby={`${p.id}-h`} className="relative ground-bone overflow-hidden section-pad">
       <GhostMark size={300} opacity={0.04} pos="right-0 bottom-0" />
       <div className="max-w-6xl mx-auto px-6 relative">
         <div className="split-row mb-9">
@@ -238,7 +238,7 @@ function PhaseSection({ p, brand, onQuote, children }: {
             <h2 id={`${p.id}-h`} className="text-ink t-hd1">
               {p.heading}
             </h2>
-            {p.intro && <p className="text-body text-[15.5px] leading-relaxed mt-2.5">{p.intro}</p>}
+            {p.intro && <p className="text-body leading-relaxed mt-2.5 t-bd">{p.intro}</p>}
           </div>
           {/* Money, in the same place in every phase header. */}
           <div className="md:text-right flex-shrink-0">
@@ -321,13 +321,13 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
       </section>
 
       {/* ── The shape of it — the whole page in one drawing ───────────────── */}
-      <section className="relative ground-paper border-t border-black/8 py-10 md:py-16" style={GRID_BG}>
+      <section className="relative ground-paper border-t border-black/8 section-pad" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>The shape of it</SLabel>
           <h2 className="text-ink mb-3 max-w-[20ch] t-hd1">
             Three phases, and what each one asks of you.
           </h2>
-          <p className="text-body text-[15.5px] leading-relaxed split-prose mb-8">
+          <p className="text-body leading-relaxed split-prose mb-8 t-bd">
             Numbered steps below are yours. Everything between them is {brandSubject() === "We" ? "ours" : `${brand}'s`}.
           </p>
 
@@ -370,7 +370,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
           Bone above, night here, bone below: no two like grounds meet, and the
           break is the hardest on the page, which is correct — it is the only
           threshold that changes what you owe. */}
-      <section id="the-line" aria-labelledby="the-line-h" className="relative bg-night overflow-hidden py-14 md:py-20">
+      <section id="the-line" aria-labelledby="the-line-h" className="relative bg-night overflow-hidden section-pad">
         <span className="absolute inset-x-0 top-0 h-0.5 bg-sage" aria-hidden="true" />
         <GhostMark size={320} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
         <div className="relative max-w-6xl mx-auto px-6">
@@ -378,7 +378,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
           <h2 id="the-line-h" className="text-white mb-4 max-w-[20ch] t-hd1">
             Everything above this line is free.
           </h2>
-          <p className="text-white/70 leading-relaxed max-w-[58ch] text-[15.5px] md:text-base">
+          <p className="text-white/70 leading-relaxed max-w-[58ch] t-bd">
             You have paid nothing and you owe nothing. Walk away here and that stays true. Below the line you have accepted a reviewed quote — and only then does an invoice exist.
           </p>
           {/* The money marker, centred in a rule that spans the band. The
@@ -410,7 +410,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
       <PhaseSection p={PHASES[1]} brand={brand} onQuote={() => go("quote")} />
 
       {/* ── Before despatch — the card section between phases ─────────────── */}
-      <section className="relative ground-paper border-t border-black/8 py-12 md:py-16" style={GRID_BG}>
+      <section className="relative ground-paper border-t border-black/8 section-pad" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Before despatch</SLabel>
           <h2 className="text-ink mb-7 max-w-[20ch] t-hd1">
@@ -436,7 +436,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
                     <c.icon className="w-4 h-4" aria-hidden="true" />
                   </span>
                   <h3 className="font-semibold text-ink text-[17px] leading-tight mb-1.5 font-display">{c.t}</h3>
-                  <p className="text-body text-[14.5px] leading-relaxed">{c.p}</p>
+                  <p className="text-body leading-relaxed t-bd">{c.p}</p>
                 </div>
               ))}
             </div>

@@ -378,7 +378,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
 
   if (missing) return (
     <div className="card p-8">
-      <p className="text-[15px] text-ink mb-1.5 font-display">We couldn't open that order.</p>
+      <p className="text-ink mb-1.5 font-display t-bd">We couldn't open that order.</p>
       <p className="text-sm text-body leading-relaxed max-w-[52ch]">
         Your tracking session may have ended — it lasts until you close your browser. Nothing has been lost:
         confirm it's you and it will open again.
@@ -524,7 +524,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
 
   if (missing) return (
     <div className="card p-8">
-      <p className="text-[15px] text-ink mb-1.5 font-display">We couldn't open that quote.</p>
+      <p className="text-ink mb-1.5 font-display t-bd">We couldn't open that quote.</p>
       <p className="text-sm text-body leading-relaxed max-w-[52ch]">
         Your tracking session may have ended — it lasts until you close your browser. Nothing has been lost:
         confirm it's you and it will open again.

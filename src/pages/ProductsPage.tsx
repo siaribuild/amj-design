@@ -232,7 +232,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
                 ("Explore our range… and find the right solution"), restating the
                 sub and describing the act of browsing to someone already
                 browsing. The catalogue itself is the argument on this page. */}
-            <p className="text-white/85 text-[15px] md:text-lg leading-relaxed max-w-[44ch] mb-6">{hero.sub}</p>
+            <p className="text-white/85 md:text-lg leading-relaxed max-w-[44ch] mb-6 t-bd">{hero.sub}</p>
             {/* "Upload a schedule", not "Start a quote": it is the specific,
                 higher-signal version of the action, it is exactly what the two
                 deleted mid-page panels were offering — so that ask survives once,
@@ -322,7 +322,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
               <h2 className="text-ink t-hd1">{heading}</h2>
               <p className="text-[13px] text-quiet flex-shrink-0 pb-1 font-data">{list.length} system{list.length === 1 ? "" : "s"}</p>
             </div>
-            <p className="text-body text-[15px] leading-relaxed max-w-2xl mb-8">{description}</p>
+            <p className="text-body leading-relaxed max-w-2xl mb-8 t-bd">{description}</p>
 
             {/* Product grid / empty state */}
             {list.length > 0 ? (
@@ -366,7 +366,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
           only makes it louder. Every line below is stated elsewhere on the site
           — the two-day review and the $0/50% terms on home, supply-only in the
           same section — so nothing here is a new claim. */}
-      <section className="ground-bone border-t border-black/8 py-14 md:py-[68px]">
+      <section className="ground-bone border-t border-black/8 section-pad">
         <div className="max-w-6xl mx-auto px-6">
           <SLabel>What you get</SLabel>
           <h2 className="text-ink mb-8 t-hd1">
@@ -378,7 +378,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
             {TRUST_ITEMS.map((t, i) => (
               <div key={t.title} className={`py-5 sm:py-0 ${i === 0 ? "sm:pr-6" : "sm:px-6"} ${i === TRUST_ITEMS.length - 1 ? "sm:pr-0" : ""}`}>
                 <t.Icon className="w-4 h-4 text-sage mb-2.5" aria-hidden="true" />
-                <p className="text-[15px] font-semibold text-ink leading-snug mb-1 font-display">{t.title}</p>
+                <p className="font-semibold text-ink leading-snug mb-1 font-display t-bd">{t.title}</p>
                 <p className="text-[13.5px] text-body leading-relaxed">{t.sub}</p>
               </div>
             ))}

@@ -178,7 +178,7 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
           <h1 className="text-white mb-2 t-ds1">
             Resources
           </h1>
-          <p className="text-white/70 text-[15px] leading-relaxed max-w-[62ch]">
+          <p className="text-white/70 leading-relaxed max-w-[62ch] t-bd">
             Find a method, standard, drawing or product document — without browsing a catalogue of empty thumbnails.
           </p>
         </div>

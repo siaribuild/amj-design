@@ -310,7 +310,17 @@
   /* The comfortable measure. 68ch is the wireframe's; the site had 44/46/52/54/
      56/58/60/64ch in play, which is the same decision made eight times. */
   --measure: 68ch;
+
+  /* Vertical rhythm between sections, the wireframe's values. This is the other
+     half of why the mock reads airier than the site: line-height and measure
+     already matched almost exactly, but sections were breathing at 64–80px
+     against the mock's 96px, across NINE different py- pairings doing one job. */
+  --section-gap: 96px;
 }
+
+@media (max-width: 1199px) { :root { --section-gap: 72px; } }
+@media (max-width: 1023px) { :root { --section-gap: 56px; } }
+@media (max-width: 767px)  { :root { --section-gap: 48px; } }
 
 @media (max-width: 1199px) {
   :root { --t-ds1: 44px; --t-ds1-lh: 48px; --t-ds2: 34px; --t-ds2-lh: 40px; }
@@ -359,6 +369,10 @@
   .t-data-sm { font: 500 var(--t-datsm)/var(--t-datsm-lh) var(--font-data); font-variant-numeric: tabular-nums; }
 
   .t-measure { max-width: var(--measure); }
+
+  /* One section rhythm, stepped by the same breakpoints as the type scale so a
+   * page tightens as a whole rather than in two unrelated directions. */
+  .section-pad { padding-block: var(--section-gap); }
 
   /* Family-only helpers, for the places that set a face but keep a local size —
      the SVG rail labels, a numeral inside a chip. These replace inline

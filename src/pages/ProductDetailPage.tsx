@@ -428,7 +428,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
       </div>
       {/* ─── GALLERY ─────────────────────────────────────────────────────────── */}
       {product.gallery.length > 0 && (
-        <section className="border-t border-black/8 bg-bone py-12 md:py-16">
+        <section className="border-t border-black/8 bg-bone section-pad">
           <div className="max-w-6xl mx-auto px-6">
             <h2 className="text-ink mb-6 t-hd1">Gallery</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -451,7 +451,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
       )}
 
       {/* ─── RELATED PRODUCTS / BACK TO FAMILY ───────────────────────────────── */}
-      <section className="border-t border-black/8 py-12 md:py-16">
+      <section className="border-t border-black/8 section-pad">
         <div className="max-w-6xl mx-auto px-6">
           <div className="flex items-end justify-between gap-4 mb-6">
             <h2 className="text-ink t-hd1">

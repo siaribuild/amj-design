@@ -189,7 +189,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                   just sold. The review-before-deposit reassurance moves off the
                   hero — it is stated at the point it matters, on submit, and a
                   hero is not where a deposit is on anyone's mind. */}
-              <p className="text-white/80 text-[15px] leading-relaxed max-w-[46ch]">
+              <p className="text-white/80 leading-relaxed max-w-[46ch] t-bd">
                 Upload a PDF, CSV or clear photo and every line comes back priced in about a minute —
                 or add products manually.
               </p>

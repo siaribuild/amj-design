@@ -197,7 +197,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
       <section className="relative ground-paper border-t border-black/8" style={GRID_BG} aria-labelledby="route-h">
         <div className="max-w-6xl mx-auto px-6 pt-11 pb-9">
           <h2 id="route-h" className="text-ink mb-1.5 t-hd2">What do you need?</h2>
-          <p className="text-body text-[15px] mb-6 max-w-[60ch]">Everything lives on this page — pick the one that matches what you came for.</p>
+          <p className="text-body mb-6 max-w-[60ch] t-bd">Everything lives on this page — pick the one that matches what you came for.</p>
 
           {/* FOUR routes, not three plus a footnote. Tracking an order was a
               QuickLink in an "Or jump to" strip below, which made it a smaller
@@ -240,7 +240,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
               <span className="text-xs font-semibold uppercase tracking-[0.2em] text-sage font-data">Do it here</span>
             </div>
             <h2 id="zone-h" className="text-ink mb-1.5 t-hd2">Two things you can finish on this page</h2>
-            <p className="text-body text-[14.5px] max-w-[64ch]">Both options are always shown. Pick one — the form for it opens right below.</p>
+            <p className="text-body max-w-[64ch] t-bd">Both options are always shown. Pick one — the form for it opens right below.</p>
           </div>
 
           {/* Tabs */}
@@ -359,7 +359,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
           alternates against the bone above it, and the three facts sit as
           hairline-divided columns rather than a card — they are a reference, not
           an object to press. */}
-      <section className="ground-paper border-t border-black/8 py-14 md:py-[68px]" aria-labelledby="practicals-h">
+      <section className="ground-paper border-t border-black/8 section-pad" aria-labelledby="practicals-h">
         <div className="max-w-6xl mx-auto px-6">
           <SLabel>The practicals</SLabel>
           <h2 id="practicals-h" className="text-ink mb-8 t-hd1">

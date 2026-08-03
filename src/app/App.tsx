@@ -766,7 +766,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           matcher the product runs; nothing here is drawn by hand.
           No dollar figures anywhere: rate cards are commercial D1 data, so a
           price on this page would be either invented or published margin. */}
-      <section className="relative ground-paper border-t border-black/8 py-14 md:py-[68px]" style={GRID_BG}>
+      <section className="relative ground-paper border-t border-black/8 section-pad" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>The minute</SLabel>
           <div className="split-row mb-8">
@@ -774,7 +774,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               <h2 className="text-ink mb-2.5 t-ds2">
                 It's already drawn. Stop typing it out twice.
               </h2>
-              <p className="text-body text-[15px] md:text-base leading-relaxed">
+              <p className="text-body leading-relaxed t-bd">
                 Item numbers, sizes, glazing, door material — your draftsperson already drew it.
                 Upload the PDF and every row comes back matched to a system. Nothing retyped, nothing
                 re-measured, nothing lost between the plans and the price.
@@ -938,7 +938,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           Every other white-to-white boundary here is separated by a rule; this one
           was relying on a 1.5% luminance step. Do NOT darken bone to force the
           contrast instead — bone is what separates Systems from Process below it. */}
-      <section className="relative ground-paper py-14 md:py-[68px] border-t border-black/8 overflow-hidden">
+      <section className="relative ground-paper border-t border-black/8 overflow-hidden section-pad">
         <GhostMark size={300} opacity={0.04} pos="right-0 bottom-0" />
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Systems</SLabel>
@@ -963,7 +963,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                   <div className="absolute inset-3 border border-white/12 group-hover:border-white/25 transition-colors pointer-events-none" />
                   <div className="absolute inset-0 p-6 md:p-7 flex flex-col justify-end">
                     <h3 className="text-white mb-1.5 t-hd1">{s.title}</h3>
-                    <p className="text-white/75 text-[15px] leading-snug max-w-md mb-4">{s.desc}</p>
+                    <p className="text-white/75 leading-snug max-w-md mb-4 t-bd">{s.desc}</p>
                     <div className="flex flex-wrap gap-1.5 mb-5">
                       {s.chips.map(c => (
                         <span key={c} className="border border-white/25 text-white/80 text-[12px] tracking-wide px-2.5 py-1">{c}</span>
@@ -988,7 +988,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           THREE phases, named and numbered exactly as /how-it-works names them.
           The percentages turn three identical-looking cards into a visible money
           arc, and every one of them is a fact rather than decoration. */}
-      <section className="relative ground-bone py-14 md:py-[68px] border-t border-black/8 overflow-hidden" style={GRID_BG}>
+      <section className="relative ground-bone border-t border-black/8 overflow-hidden section-pad" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Process</SLabel>
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-8">
@@ -1013,7 +1013,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                   </span>
                 </div>
                 <h3 className="font-semibold text-ink text-base leading-tight mb-1.5 font-display">{s.title}</h3>
-                <p className="text-body text-[15px] leading-relaxed">{s.body}</p>
+                <p className="text-body leading-relaxed t-bd">{s.body}</p>
                 {i < steps.length - 1 && (
                   <ChevronRight className="hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-sage/60 bg-white z-10" aria-hidden="true" />
                 )}
@@ -1023,7 +1023,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
 
           <div className="mt-4 border border-black/10 bg-bone px-5 py-4 flex items-start gap-3">
             <Truck className="w-4 h-4 text-sage flex-shrink-0 mt-0.5" aria-hidden="true" />
-            <p className="text-[15px] text-ink">
+            <p className="text-ink t-bd">
               Supply only — installation is arranged by your builder or installer.
             </p>
           </div>
@@ -1054,7 +1054,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
 
           The row is GENERATED from the registry, one cell per showroom with
           identical fields, so "three subjects in one slot" cannot recur. */}
-      <section className="relative bg-night py-14 md:py-[68px] overflow-hidden">
+      <section className="relative bg-night overflow-hidden section-pad">
         <img src={IMG.doors} alt="" aria-hidden="true" loading="lazy" decoding="async"
           className="absolute inset-0 w-full h-full object-cover opacity-25" />
         <div className="absolute inset-0" aria-hidden="true"
@@ -1112,7 +1112,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           {showrooms.length > 0 && (
             <div className="mt-10 pt-6 border-t border-white/12 flex flex-col md:flex-row md:items-baseline gap-2 md:gap-6">
               <p className="text-white/60 text-[13px] flex-shrink-0 font-data">AS 2047 · AS 1288</p>
-              <p className="text-white/70 text-[15px] leading-relaxed max-w-[62ch]">
+              <p className="text-white/70 leading-relaxed max-w-[62ch] t-bd">
                 Every frame is made to these standards. Your test reports and warranty terms come with the reviewed quote — before you have paid anything.
               </p>
             </div>
@@ -1126,7 +1126,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           accordion would hide content on a page already criticised for being
           blank. The 2×2 hairline-collapsed grid is the site's card track, not a
           table: prose blocks with headings, no header row, no column runs. */}
-      <section className="relative ground-bone py-14 md:py-[68px] border-t border-black/8" style={GRID_BG}>
+      <section className="relative ground-bone border-t border-black/8 section-pad" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Good to know</SLabel>
           <h2 className="text-ink mb-8 t-ds2">
@@ -1138,7 +1138,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               <div key={q.q}
                 className="card p-6 flex flex-col md:[&:nth-child(n+3)]:-mt-px md:[&:nth-child(even)]:-ml-px [&:nth-child(n+2)]:-mt-px md:[&:nth-child(2)]:mt-0">
                 <h3 className="font-semibold text-ink text-[17px] leading-tight mb-2 font-display">{q.q}</h3>
-                <p className="text-body text-[15px] leading-relaxed flex-1">{q.a}</p>
+                <p className="text-body leading-relaxed flex-1 t-bd">{q.a}</p>
                 {q.link && (
                   <button onClick={() => go(q.link!.page)}
                     className="mt-3 text-sm text-sage hover:text-sage-deep inline-flex items-center gap-1.5 self-start cursor-pointer">
@@ -1652,12 +1652,12 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
             <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">Trade account</span>
           </div>
           <h1 className="text-white mb-3 t-ds1">Quote more jobs. Chase fewer reps.</h1>
-          <p className="text-white/70 max-w-xl text-[15px] leading-relaxed">Upload every schedule you're sitting on and get them priced the same day. Trade accounts get priority review, saved details, and a name to call.</p>
+          <p className="text-white/70 max-w-xl leading-relaxed t-bd">Upload every schedule you're sitting on and get them priced the same day. Trade accounts get priority review, saved details, and a name to call.</p>
         </div>
       </section>
 
       {/* ─── Content ──────────────────────────────────────────────────────────── */}
-      <section className="max-w-6xl mx-auto px-6 py-12 md:py-16">
+      <section className="max-w-6xl mx-auto px-6 section-pad">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
           <div className="space-y-4">
             {/* Outcome first, mechanism second. The previous list named the
