@@ -52,22 +52,23 @@ export function OpeningRow({
   // "Edit"/"More" buttons pass a shallow a11y scan and are unusable with a
   // screen reader (plan §11).
   return (
-    <div id={rowId(rowKey)} className="quote-item-card" data-state={rowStateAttr(state)}>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3 sm:px-4 py-3">
-        <span className="order-1 flex items-center" >
+    <div id={rowId(rowKey)} data-state={rowStateAttr(state)}
+      className="quote-row flex lg:grid flex-wrap items-center gap-x-2 lg:gap-x-3 gap-y-1.5 px-3 sm:px-4 py-3">
+        {/* Identity is ONE cell. The pictogram and the code were siblings, which
+            is invisible in a flex row but would have consumed two grid tracks. */}
+        <span className="order-1 lg:col-start-1 lg:row-start-1 flex items-center gap-2 min-w-0">
           <FamilyPictogram productSlug={item.productSlug} />
+          <span className="text-xs font-semibold text-ink truncate"
+            style={{ fontFamily: "'DM Mono', monospace" }}>{ref}</span>
         </span>
-
-        <span className="order-2 text-xs font-semibold text-ink flex-shrink-0"
-          style={{ fontFamily: "'DM Mono', monospace" }}>{ref}</span>
 
         {/* State sits beside the reference on a phone (where it is scanned) and
             beside the actions on a wide row (where it precedes what to do). */}
-        <span className="order-3 md:order-6 min-w-0">
+        <span className="order-3 md:order-6 lg:col-start-6 lg:row-start-1 min-w-0">
           <RowStateBadge state={state} onFixDetails={onFixDetails} openingRef={ref} />
         </span>
 
-        <div className="order-4 md:order-7 ml-auto flex items-center gap-0.5 flex-shrink-0">
+        <div className="order-4 md:order-7 lg:col-start-7 lg:row-start-1 ml-auto lg:ml-0 flex items-center gap-0.5 flex-shrink-0 lg:justify-end">
           {/* 44px touch targets: these three sit adjacent, and under-sizing them
               is the classic mis-tap generator on this exact pattern. */}
           <button type="button" onClick={onToggleExpanded}
@@ -93,7 +94,7 @@ export function OpeningRow({
         </div>
 
         {/* The only elastic element — it truncates so the row can never scroll. */}
-        <span className="order-5 md:order-3 basis-full md:basis-auto md:flex-1 min-w-0 truncate text-sm text-ink">
+        <span className="order-5 md:order-3 lg:col-start-2 lg:row-start-1 basis-full md:basis-auto md:flex-1 min-w-0 truncate text-sm text-ink">
           {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
           {item.location && <span className="text-quiet"> · {item.location}</span>}
         </span>
@@ -104,17 +105,24 @@ export function OpeningRow({
             would sort ahead of every explicitly ordered sibling. */}
         <span aria-hidden="true" className="hidden md:block lg:hidden basis-full order-5 md:order-3" />
 
-        <span className="order-6 md:order-4 text-xs text-body flex-shrink-0 tabular-nums"
+        {/* Size and quantity were one string. They are two columns now, because
+            "is anything the wrong size" and "how many of these" are two
+            different scans and a combined cell answers neither cleanly. */}
+        <span className="order-6 md:order-4 lg:col-start-3 lg:row-start-1 lg:text-right text-xs text-body flex-shrink-0 tabular-nums"
           style={{ fontFamily: "'DM Mono', monospace" }}>
-          {mm(item.width)} × {mm(item.height)} · ×{item.qty}
+          {mm(item.width)} × {mm(item.height)}
         </span>
 
-        <span className="order-7 md:order-5 ml-auto md:ml-0 text-sm font-semibold text-ink flex-shrink-0 tabular-nums"
+        <span className="order-6 md:order-4 lg:col-start-4 lg:row-start-1 lg:text-right text-xs text-body flex-shrink-0 tabular-nums"
+          style={{ fontFamily: "'DM Mono', monospace" }}>
+          ×{item.qty}
+        </span>
+
+        <span className="order-7 md:order-5 lg:col-start-5 lg:row-start-1 lg:text-right ml-auto md:ml-0 text-sm font-semibold text-ink flex-shrink-0 tabular-nums"
           style={{ fontFamily: "'DM Mono', monospace" }}>
           {priced ? fmt(gstAdjust(linePriceTotal(item), gstMode)) : "$-,--"}
           <span className="text-[10px] font-normal text-body"> {gstSuffix(gstMode)}</span>
         </span>
-      </div>
     </div>
   );
 }

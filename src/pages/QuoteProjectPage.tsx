@@ -258,7 +258,27 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
             </button>
           </div>
         ) : (
-          <div className="space-y-2">
+          // ONE table, not twenty cards. The gaps between separate cards were
+          // the thing stopping a column of dimensions or prices from being
+          // scanned vertically; rows now share hairlines inside a single frame.
+          <div className="quote-table quote-panel divide-y divide-line">
+            {/* Column labels, ≥1024px only — the width where the row becomes a
+                grid. Below that the row is a stacked card and a header strip
+                would be labelling columns that do not exist. aria-hidden: these
+                are presentational, and every cell below already carries its own
+                accessible name or visible label. */}
+            <div aria-hidden="true"
+              className="quote-table-head hidden lg:grid items-center gap-x-3 px-4 py-2
+                text-[10px] uppercase tracking-[0.12em] text-quiet"
+              style={{ fontFamily: "'DM Mono', monospace" }}>
+              <span className="col-start-1">Opening</span>
+              <span className="col-start-2">Product</span>
+              <span className="col-start-3 text-right">Size</span>
+              <span className="col-start-4 text-right">Qty</span>
+              <span className="col-start-5 text-right">Indicative</span>
+              <span className="col-start-6">Status</span>
+            </div>
+
             {items.map((item) => {
               const key = rowKeyOf(item);
               const expanded = expandedKey === key;
@@ -281,7 +301,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                   {/* Undo rides on the duplicated row itself. */}
                   {undo?.localId === item.id && (
                     <div role="status"
-                      className="flex items-center gap-2 border border-t-0 border-line bg-recessive px-3 sm:px-4 py-2 text-xs text-body">
+                      className="flex items-center gap-2 border-t border-line bg-recessive px-3 sm:px-4 py-2 text-xs text-body">
                       <span>Duplicated from {undo.fromRef}.</span>
                       <button type="button"
                         onClick={() => {

@@ -467,6 +467,60 @@
     box-shadow: inset 0 0 0 1px var(--ink);
   }
 
+  /* ─── The opening table ─────────────────────────────────────────────────────
+   * The openings list reads as ONE table, not twenty cards with gaps between
+   * them. A tradesperson scanning twenty openings for the wrong dimension or the
+   * missing price is comparing values DOWN a column, and separate cards put
+   * every value at a different x-position, so the comparison has to be made one
+   * row at a time from memory.
+   *
+   * Not a <table>. The row is a disclosure with a state stripe, an expansion
+   * panel and a three-control cluster, and it has to become a stacked card below
+   * 1024px — a real table would need either a second DOM (which is what the
+   * wireframe does, and it costs the single reading order that OpeningRow's
+   * header comment is built around) or display:block overrides that strip the
+   * table semantics anyway. A grid keeps ONE DOM at every width.
+   *
+   * Every track is a FIXED length except the product name. That is the whole
+   * mechanism: each row is its own grid, so an `auto` track would size to its
+   * own row's content and the columns would drift apart by a few pixels each.
+   * Identical explicit tracks + identical container width = aligned columns,
+   * which is the same reason the wireframe sets table-layout:fixed.
+   *
+   * Product is the only elastic column and it truncates, so the row can never
+   * scroll sideways.
+   */
+  .quote-table {
+    --qp-cols: 6.75rem minmax(0, 1fr) 8.5rem 3.25rem 7.5rem 10rem 7rem;
+  }
+
+  /* Tracks only. `display` is switched by the `lg:grid` UTILITY on the element,
+   * because Tailwind's utility layer outranks this components layer — a `flex`
+   * utility here would win over `display:grid` declared in CSS and the row would
+   * silently stay a flex row at every width. grid-template-columns is inert
+   * until something turns the grid on, so it is safe to declare unconditionally. */
+  .quote-row,
+  .quote-table-head { grid-template-columns: var(--qp-cols); }
+
+  /* The row's own surface. No border — the list's divider hairlines draw every
+   * edge, so a per-row border would double them into a 2px rule.
+   *
+   * NO hover fill, deliberately. The row body is not clickable (OpeningRow D1),
+   * and a surface that lights up under the cursor is the most reliable way to
+   * tell someone it is. The state stripe is the only thing a row says at rest. */
+  .quote-row { background-color: var(--paper); }
+  .quote-row[data-state="added"]     { box-shadow: inset 3px 0 0 var(--sage); }
+  .quote-row[data-state="review"]    { box-shadow: inset 3px 0 0 var(--info); }
+  .quote-row[data-state="attention"] { box-shadow: inset 3px 0 0 var(--warning); }
+
+  /* The column header. Recessive, like every other panel head on the site, so
+   * the table reads as one object with a label strip rather than as a row that
+   * happens to be bold. */
+  .quote-table-head {
+    background-color: var(--recessive);
+    border-bottom: 1px solid var(--line);
+  }
+
   .quote-code-field,
   .quote-title-control { border-color: var(--line); background-color: var(--paper); }
   .quote-code-field[data-attention="true"] {

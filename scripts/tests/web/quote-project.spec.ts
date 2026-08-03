@@ -75,6 +75,7 @@ test("/quote-project loads the same current project, and /quote is unchanged", a
   // project — the A/B compares presentation, not data.
   await page.goto("/quote");
   await expect(page.getByRole("heading", { name: "Build your quote" })).toBeVisible();
+  // The A arm keeps its own card class — only /quote-project became a table.
   await expect(page.locator(".quote-item-card")).toHaveCount(1);
   await expect(page.locator(".quote-sticky")).toBeVisible();
 });
@@ -87,7 +88,10 @@ test("the compact row renders identity, size, price and its direct actions", asy
 
   await expect(page.getByText("W1", { exact: true })).toBeVisible();
   await expect(page.getByText("AMJ80 Series Sliding Window").first()).toBeVisible();
-  await expect(page.getByText(/1,200 mm × 900 mm · ×2/)).toBeVisible();
+  // Size and quantity are two columns now, so they are two cells rather than one
+  // "1,200 mm × 900 mm · ×2" string.
+  await expect(page.getByText(/1,200 mm × 900 mm/)).toBeVisible();
+  await expect(page.getByText("×2", { exact: true })).toBeVisible();
   await expect(page.getByText("$800", { exact: true })).toBeVisible();
   // Guests always see GST-inclusive pricing.
   await expect(page.getByText("inc GST").first()).toBeVisible();
@@ -180,7 +184,7 @@ test("saving from the drawer keeps the same opening expanded and restores focus"
 test("Add opening creates nothing until an explicit save", async ({ page }) => {
   await mockProject(page, [plainItem]);
   await page.goto("/quote-project");
-  await expect(page.locator(".quote-item-card")).toHaveCount(1);
+  await expect(page.locator(".quote-row")).toHaveCount(1);
 
   await page.getByRole("button", { name: "Add opening" }).first().click();
   const drawer = page.getByRole("dialog");
@@ -190,7 +194,7 @@ test("Add opening creates nothing until an explicit save", async ({ page }) => {
 
   await page.getByRole("button", { name: "Close editor" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.locator(".quote-item-card")).toHaveCount(1);   // still nothing created
+  await expect(page.locator(".quote-row")).toHaveCount(1);   // still nothing created
 });
 
 test("add component creates nothing until the unit is explicitly added", async ({ page }) => {
@@ -218,15 +222,15 @@ test("add component creates nothing until the unit is explicitly added", async (
 test("duplicate is an intentional copy and Undo restores the previous list", async ({ page }) => {
   await mockProject(page, [plainItem]);
   await page.goto("/quote-project");
-  await expect(page.locator(".quote-item-card")).toHaveCount(1);
+  await expect(page.locator(".quote-row")).toHaveCount(1);
 
   await page.getByRole("button", { name: "Actions for W1" }).click();
   await page.getByRole("menuitem", { name: "Duplicate" }).click();
-  await expect(page.locator(".quote-item-card")).toHaveCount(2);
+  await expect(page.locator(".quote-row")).toHaveCount(2);
 
   await expect(page.getByText(/Duplicated from W1/)).toBeVisible();
   await page.getByRole("button", { name: "Undo" }).click();
-  await expect(page.locator(".quote-item-card")).toHaveCount(1);
+  await expect(page.locator(".quote-row")).toHaveCount(1);
 });
 
 // ─── 7. State mapping preserves the submit gate (plan §6) ──────────────────────
@@ -274,7 +278,7 @@ test("desktop gets a side drawer, mobile a full-screen editor, neither scrolls s
   for (const [w, h] of [[1440, 900], [1024, 800], [768, 1024], [375, 812]] as const) {
     await page.setViewportSize({ width: w, height: h });
     await page.goto("/quote-project");
-    await expect(page.locator(".quote-item-card").first()).toBeVisible();
+    await expect(page.locator(".quote-row").first()).toBeVisible();
     const overflow = await page.evaluate(() =>
       document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, `horizontal overflow at ${w}px`).toBeLessThanOrEqual(1);
@@ -385,7 +389,7 @@ test("an authored pictogram cannot smuggle script into the quote list", async ({
   });
   await mockProject(page, [plainItem]);
   await page.goto("/quote-project");
-  await expect(page.locator(".quote-item-card")).toHaveCount(1);
+  await expect(page.locator(".quote-row")).toHaveCount(1);
 
   // Give any deferred handler a chance to fire before asserting it did not.
   await page.waitForTimeout(600);
@@ -396,5 +400,5 @@ test("an authored pictogram cannot smuggle script into the quote list", async ({
   // Positive control, asserted LAST: the harmless part of the SAME payload must
   // still render, which is what proves the sanitiser ran on it rather than the
   // icon never arriving and the test passing vacuously.
-  await expect(page.locator('.quote-item-card svg path[d="M2 2h20v20H2z"]')).toHaveCount(1);
+  await expect(page.locator('.quote-row svg path[d="M2 2h20v20H2z"]')).toHaveCount(1);
 });
