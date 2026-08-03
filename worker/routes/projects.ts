@@ -9,7 +9,7 @@ import { itemToInsert, itemFields, incomingServerId, editedFieldsAfterSave, rowT
 import { ownedProject, resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 import { uuid } from "../lib/util";
-import { addSegment, recomputeComposite, removeSegment, updateSegment } from "../lib/composite";
+import { addSegment, loadCompositePolicy, recomputeComposite, removeSegment, updateSegment } from "../lib/composite";
 import { logEvent } from "../lib/activity";
 
 export const projects = new Hono<{ Bindings: Env }>();
@@ -81,6 +81,11 @@ export async function loadLines(env: Env, projectId: string) {
     product_slug: string; dims_json: string; options_json: string; qty: number; line_total: number | null; status: string;
   }>();
 
+  // The TOLERANCE stays on the server. It is ops pricing/policy data, and the
+  // browser only needs the verdict — so the line carries "these units do not add
+  // up to this opening", not the number it would take to decide that for itself.
+  const policy = await loadCompositePolicy(env);
+
   const byParent = new Map<string, ApiSegment[]>();
   for (const s of segRows) {
     const dims = safeParse(s.dims_json);
@@ -100,7 +105,13 @@ export async function loadLines(env: Env, projectId: string) {
     });
     byParent.set(s.parent_line_id, list);
   }
-  return items.map((it) => (byParent.has(it.id) ? { ...it, segments: byParent.get(it.id) } : it));
+  return items.map((it) => (byParent.has(it.id)
+    ? {
+      ...it,
+      segments: byParent.get(it.id),
+      coverageOutOfTolerance: Math.abs(it.coverageDeltaMm ?? 0) > policy.toleranceMm,
+    }
+    : it));
 }
 
 // Source files attached to a project (the uploaded schedule). The bytes stay in

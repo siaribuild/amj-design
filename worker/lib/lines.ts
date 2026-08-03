@@ -54,6 +54,10 @@ export interface ApiLine {
   /** Per-field {field: reason} for parsed lines that need confirmation. */
   review?: Record<string, string> | null;
   compositeAxis?: "vertical" | "horizontal" | null;
+  /** Units-minus-opening along the split axis, in mm. Parents only. */
+  coverageDeltaMm?: number | null;
+  /** Server verdict on that delta against the ops tolerance. Parents only. */
+  coverageOutOfTolerance?: boolean;
 }
 
 // A D1 quote_line row (columns we read back).
@@ -77,6 +81,7 @@ export interface LineRow {
   recommendation_confidence?: string | null;
   composite_axis?: string | null;
   line_kind?: string | null;
+  coverage_delta_mm?: number | null;
 }
 
 export function rowToApiLine(r: LineRow): ApiLine {
@@ -98,6 +103,12 @@ export function rowToApiLine(r: LineRow): ApiLine {
     aiPriced: !!r.ai_proposal_line_id,
     review: review && Object.keys(review).length ? (review as Record<string, string>) : null,
     compositeAxis: r.composite_axis === "horizontal" ? "horizontal" : r.composite_axis === "vertical" ? "vertical" : null,
+    // How far the units' sizes sum from the opening they were split out of,
+    // along the split axis. recomputeComposite() has always derived this on
+    // every segment mutation; it simply never left the server, so the customer
+    // could not be told when their units stopped adding up to their opening.
+    // Positive = the units overrun the opening, negative = they fall short.
+    coverageDeltaMm: typeof r.coverage_delta_mm === "number" ? r.coverage_delta_mm : null,
   };
 }
 

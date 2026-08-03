@@ -37,6 +37,12 @@ export interface QItem {
    * hydration; dropping them makes a persisted composite look like one product. */
   segments?: QSegment[];
   compositeAxis?: "vertical" | "horizontal" | null;
+  /** Units-minus-opening along the split axis, in mm — the server derives it on
+   *  every segment mutation. Parents only. */
+  coverageDeltaMm?: number | null;
+  /** The server's verdict on that delta against the ops tolerance, so the
+   *  browser never holds a copy of composite policy. Parents only. */
+  coverageOutOfTolerance?: boolean;
 }
 /** One unit of a composite opening. Never an item in its own right: no tag, no
  *  independent removal, and its price is display-only — the parent's lineTotal

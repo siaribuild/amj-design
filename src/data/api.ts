@@ -28,6 +28,8 @@ export interface ApiItem {
   review?: Record<string, string> | null;
   segments?: QSegment[];
   compositeAxis?: "vertical" | "horizontal" | null;
+  coverageDeltaMm?: number | null;
+  coverageOutOfTolerance?: boolean;
 }
 
 // A source file attached to a project/order (e.g. the uploaded schedule).
@@ -70,6 +72,8 @@ export function hydrateQuoteItems(items: ApiItem[], localIdSeed = Date.now(), pr
     lineTotal: item.lineTotal,
     segments: item.segments?.map((segment) => ({ ...segment, options: { ...segment.options } })),
     compositeAxis: item.compositeAxis ?? null,
+    coverageDeltaMm: item.coverageDeltaMm ?? null,
+    coverageOutOfTolerance: !!item.coverageOutOfTolerance,
   }));
 }
 

@@ -28,7 +28,7 @@ export type RowState =
   /** Neutral attribute, not a warning. */
   | { kind: "composite"; units: number }
   /** A generated arrangement the customer should confirm. See O1 below. */
-  | { kind: "confirm-layout"; units: number };
+  | { kind: "confirm-layout"; units: number; deltaMm?: number | null };
 
 // ─── O1: the `Confirm layout` trigger, deliberately inert ─────────────────────
 // The brief reserves `Confirm layout` for "a generated composite that conflicts
@@ -87,9 +87,19 @@ export function rowStateFor(item: QItem, items: QItem[]): RowState {
 
   const units = compositeUnitCount(item);
   if (units > 0) {
-    const flagged = Object.keys(item.review ?? {})
-      .some((k) => CONFIRM_LAYOUT_REASON_KEYS.includes(k));
-    return flagged ? { kind: "confirm-layout", units } : { kind: "composite", units };
+    // O1's missing trigger, now supplied: the units no longer add up to the
+    // opening they were split out of. This is the reason code the state was
+    // reserved for and could not previously name — it is not `fit` (which fires
+    // for every oversized opening and would badge most composites), it is a
+    // reconciliation failure between the dimensions that were set or parsed and
+    // the sum of the parts, which is exactly what manual splitting and adding or
+    // removing units can break. The server owns the tolerance and sends the
+    // verdict; a well-formed split reads 0 and never badges.
+    const flagged = item.coverageOutOfTolerance
+      || Object.keys(item.review ?? {}).some((k) => CONFIRM_LAYOUT_REASON_KEYS.includes(k));
+    return flagged
+      ? { kind: "confirm-layout", units, deltaMm: item.coverageDeltaMm ?? null }
+      : { kind: "composite", units };
   }
 
   // Everything else — including every warning-severity reason (glazing, material,

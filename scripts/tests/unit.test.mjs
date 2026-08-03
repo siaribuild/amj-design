@@ -26,6 +26,7 @@ await build({
       export { editedFieldsAfterSave } from ${p("worker/lib/lines.ts")};
       export { pricingOptionSlugsFromOptions } from ${p("worker/lib/estimator/estimate.ts")};
       export { staffDomains, isStaffEmail } from ${p("worker/lib/staff.ts")};
+      export { rowStateFor, unitLabel } from ${p("src/components/quote-project/rowState.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -317,4 +318,43 @@ test("lineBlocksSubmission derives from severity: errors block, warnings never d
   // AI lines: an error blocks regardless of price.
   assert.equal(M.lineBlocksSubmission({ ...priceable, origin: "ai", lineTotal: 900, review: { dims: "unreadable" } }), true);
   assert.equal(M.lineBlocksSubmission({ ...priceable, origin: "ai", lineTotal: null, review: { customerConfigurationChanged: "edited" } }), false);
+});
+
+// ── Composite reconciliation: the units must add up to the opening ────────────
+const composite = (over, delta) => ({
+  id: 1, code: "W1", productSlug: "amj80-series-awning-window", location: "",
+  width: "2050", height: "2100", options: {}, qty: 1, status: "Ready",
+  lineTotal: 1200, review: null, compositeAxis: "vertical",
+  coverageDeltaMm: delta, coverageOutOfTolerance: over,
+  segments: [
+    { id: "s1", productSlug: "amj80-series-awning-window", width: "1025", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 600, options: {}, status: "Ready" },
+    { id: "s2", productSlug: "amj80-series-awning-window", width: "1025", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 600, options: {}, status: "Ready" },
+  ],
+});
+
+test("rowStateFor: a composite whose units add up is an ATTRIBUTE, not a warning", () => {
+  const state = M.rowStateFor(composite(false, 0), []);
+  assert.equal(state.kind, "composite", "a well-formed split must never badge");
+  assert.equal(state.units, 2);
+});
+
+test("rowStateFor: units that no longer sum to the opening ask for confirmation", () => {
+  // The reconciliation the owner cares about: the dimensions set or parsed
+  // initially, against the sum of the children. Manual splitting and adding or
+  // removing units can break it, and until now nothing said so.
+  const state = M.rowStateFor(composite(true, -180), []);
+  assert.equal(state.kind, "confirm-layout");
+  assert.equal(state.deltaMm, -180, "the shortfall is carried, so the panel can state it");
+});
+
+test("rowStateFor: a blocked composite is a BLOCKER first — the only state it can act on", () => {
+  const item = { ...composite(true, -180), lineTotal: null };
+  assert.equal(M.rowStateFor(item, []).kind, "needs-input");
+});
+
+test("unitLabel: children are W1A, W1B … and spreadsheet-style past Z", () => {
+  assert.equal(M.unitLabel("W1", 0), "W1A");
+  assert.equal(M.unitLabel("W1", 1), "W1B");
+  assert.equal(M.unitLabel("W1", 26), "W1AA");
+  assert.equal(M.unitLabel("", 0), "Unit 1", "an untagged opening still labels its units");
 });
