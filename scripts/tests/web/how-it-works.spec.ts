@@ -19,29 +19,12 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { test, expect, type Page } from "@playwright/test";
 
-const STEPS = ["Upload", "Submit", "Accept", "Sign off", "Pay", "Confirm"];
 const PHASES = ["phase-quote", "phase-order", "phase-delivery"];
 
-/** Which rail orientations are actually displayed, in viewBox terms. */
-const shownRails = (page: Page) =>
-  page.evaluate(() =>
-    [...document.querySelectorAll(".process-rail svg")]
-      .filter((s) => s.getBoundingClientRect().width > 0)
-      .map((s) => s.getAttribute("viewBox")),
-  );
-
-test("the hero states the promise, the four facts and both actions", async ({ page }) => {
+test("the hero states the promise and both actions", async ({ page }) => {
   await page.goto("/how-it-works");
 
   await expect(page.getByRole("heading", { name: /Nothing gets made until you sign it off/i })).toBeVisible();
-
-  // The facts are a definition list — value as the term, what it counts as the
-  // definition. Scoped, because "50%" also appears in a phase header and on the
-  // line marker further down.
-  const stats = page.locator("dl").first();
-  for (const value of ["$0", "~1 minute", "50%", "Supply only"]) {
-    await expect(stats.getByText(value, { exact: true })).toBeVisible();
-  }
 
   // One filled action and one text link — never two competing fills on a hero.
   const hero = page.locator("section").first();
@@ -49,47 +32,14 @@ test("the hero states the promise, the four facts and both actions", async ({ pa
   await expect(hero.getByRole("button", { name: /Ask a question/ })).toBeVisible();
 });
 
-test("the rail carries the whole process in text, and shows one orientation at a time", async ({ page }) => {
+test("each phase is a real anchor on the page", async ({ page }) => {
   await page.goto("/how-it-works");
 
-  const rail = page.locator(".process-rail");
-  await expect(rail).toBeVisible();
-
-  // The diagram is never the only telling: its accessible name is a sentence.
-  const name = await rail.locator("svg").first().getAttribute("aria-labelledby");
-  expect(name).toBeTruthy();
-  const described = await rail.locator("title").first().textContent();
-  expect(described).toContain("Three phases");
-  for (const s of STEPS) expect(described).toContain(s);
-  expect(described).toContain("Nothing is charged before you accept a reviewed quote");
-
-  // Six verbs and three percentages, drawn as real text. Compared as SETS: both
-  // orientations are in the DOM, so every label legitimately appears twice, and
-  // asserting on positions would be pinning draw order rather than content.
-  expect([...new Set(await rail.locator(".rail-step").allTextContents())]).toEqual(STEPS);
-  expect([...new Set(await rail.locator(".rail-pct").allTextContents())]).toEqual(["0%", "50%", "100%"]);
-
-  // The threshold is labelled on both sides.
-  const dim = await rail.locator(".rail-dim").allTextContents();
-  expect(dim).toContain("NOTHING CHARGED");
-  expect(dim).toContain("INVOICE EXISTS");
-
-  // Exactly one orientation is displayed at each width — both are in the DOM.
-  await page.setViewportSize({ width: 1280, height: 900 });
-  expect(await shownRails(page)).toEqual(["0 0 800 186"]);
-  await page.setViewportSize({ width: 375, height: 812 });
-  expect(await shownRails(page)).toEqual(["0 0 320 546"]);
-});
-
-test("each phase is an anchor the jump tiles actually reach", async ({ page }) => {
-  await page.goto("/how-it-works");
-
-  for (const id of PHASES) {
-    await expect(page.locator(`#${id}`)).toHaveCount(1);
-    await expect(page.locator(`a[href="#${id}"]`)).toHaveCount(1);
-  }
-  // Three phases, three jump tiles, three headings — no fourth invented anywhere.
-  await expect(page.locator('a[href^="#phase-"]')).toHaveCount(3);
+  // The summary section that linked to these is gone, but the anchors are still
+  // the page structure and are still linked to from elsewhere on the site.
+  for (const id of PHASES) await expect(page.locator(`#${id}`)).toHaveCount(1);
+  // Three phases, three headings — no fourth invented anywhere.
+  await expect(page.locator("section[id^=phase-]")).toHaveCount(3);
 });
 
 test("ownership is structural: your steps are numbered and announced, ours are not", async ({ page }) => {
@@ -141,17 +91,15 @@ test("phase 01 offers the quote in the brand action colour", async ({ page }) =>
   await expect(cta).toHaveCSS("background-color", "rgb(90, 122, 106)");
 });
 
-test("the phase-01 clock is stated once and the rail agrees with it", async ({ page }) => {
+test("the phase-01 clock reads as a duration, and the review step keeps its own", async ({ page }) => {
   await page.goto("/how-it-works");
 
-  // HowItWorksPage and ProcessRail each declare this number and each carries a
-  // comment saying to keep the two in step. This is that comment, enforced.
-  await expect(page.locator("#phase-quote")).toContainText("about 1 minute");
-  const railText = await page.locator(".process-rail .rail-sub").allTextContents();
-  expect(railText).toContain("about 1 minute");
+  // "takes" — without the verb the two halves read as one list of facts and the
+  // duration looked like a second payment note.
+  await expect(page.locator("#phase-quote")).toContainText("nothing charged · takes about 1 minute");
 
   // The two business days belong to the review STEP inside the phase, and are
-  // still stated there — the phase clock is what it costs you in waiting.
+  // still stated there — the phase clock is what it costs YOU in waiting.
   await expect(page.locator("#phase-quote")).toContainText("about 2 business days");
 });
 

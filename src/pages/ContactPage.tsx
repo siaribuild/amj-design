@@ -16,7 +16,7 @@ import {
   FileText, HelpCircle, MapPin, Phone, Send, Check, ArrowRight, Clock,
   Truck, AlertCircle, CheckCircle,
 } from "lucide-react";
-import { type Page, SAGE, WindowMark, GhostMark, SLabel, Btn, CtaBanner } from "../app/ui";
+import { type Page, SAGE, WindowMark, SLabel, Btn, CtaBanner } from "../app/ui";
 import { getPage, imageUrl } from "../data/catalogue";
 import { submitEnquiry, getLocations, type ApiLocation, type EnquiryPayload } from "../data/api";
 import { LocationMap } from "../components/LocationMap";
@@ -28,10 +28,6 @@ type Tab = "ask" | "visit";
 type ContactUser = { name: string; email: string; phone: string; company: string; type?: string } | null;
 
 const BEST_TIMES = [["anytime", "Anytime, business hours"], ["morning", "Morning (8am–12pm)"], ["afternoon", "Afternoon (12–5pm)"]];
-const GRID_BG = {
-  backgroundImage: "linear-gradient(to right,rgba(90,122,106,.05) 1px,transparent 1px),linear-gradient(to bottom,rgba(90,122,106,.05) 1px,transparent 1px)",
-  backgroundSize: "72px 72px",
-};
 
 // Render a Cloudflare Turnstile widget into the active tab's container. Re-runs on
 // `dep` (the current tab) so switching panels re-mounts the widget in the newly
@@ -178,23 +174,27 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
             wash rather than a photograph. */}
         {heroImg && <img src={heroImg} alt="" aria-hidden="true" className="hero-img" />}
         {heroImg && <div className="hero-scrim" aria-hidden="true" />}
-        <GhostMark size={340} opacity={0.05} color="#fff" pos="right-0 top-0" />
         <div className="relative max-w-6xl mx-auto px-6 pt-[78px] pb-10">
           <div className="flex items-center gap-2 mb-4">
             <WindowMark size={12} color="rgba(255,255,255,0.55)" />
             <span className="text-white/55 font-data t-label">Contact</span>
           </div>
-          <h1 className="text-white mb-3.5 max-w-[20ch] text-balance t-ds1">
-            Tell us what you need — we'll point you the fastest way there
+          {/* Two lines each, deliberately. At t-ds1 (56px) the old headline ran
+              to three, and the sub to three more — six lines of orientation
+              before a single option. The dropped half, "pick the closest match
+              below and we'll route you straight to it", is said again by the
+              router section's own heading and dek immediately underneath. */}
+          <h1 className="text-white mb-3.5 max-w-[16ch] text-balance t-ds1">
+            Tell us what you need
           </h1>
           <p className="text-white/70 max-w-[46ch] t-bd-lg">
-            Pricing, a product question, an existing order, or a showroom visit. <b className="text-white font-medium">Pick the closest match below</b> and we'll route you straight to it.
+            Pricing, a product question, an existing order, or a showroom visit.
           </p>
         </div>
       </section>
 
       {/* ─── ROUTER — every intent at a glance ─────────────────────────────────── */}
-      <section className="relative ground-paper border-t border-black/8" style={GRID_BG} aria-labelledby="route-h">
+      <section className="relative ground-bone border-t border-black/8" aria-labelledby="route-h">
         <div className="max-w-6xl mx-auto px-6 pt-11 pb-9">
           <h2 id="route-h" className="text-ink mb-1.5 t-hd2">What do you need?</h2>
           <p className="text-body mb-6 max-w-[60ch] t-bd">Everything lives on this page — pick the one that matches what you came for.</p>
@@ -228,6 +228,20 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
               while the Reach us panel below showed the brand's real number from
               Sanity, so the page published two different phone numbers. The one
               that survives is the one the CMS actually holds. */}
+        </div>
+      </section>
+
+      <section className="ground-paper border-t border-black/8 section-pad" aria-labelledby="practicals-h">
+        <div className="max-w-6xl mx-auto px-6">
+          <SLabel>The practicals</SLabel>
+          <h2 id="practicals-h" className="text-ink mb-8 t-hd1">
+            Where to find us, and what we do.
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black/10">
+            <Fact label="Reach us">{brandContact?.phone && <><a href={`tel:${brandContact.phone.replace(/[^0-9+]/g, "")}`} className="border-b border-black/10 hover:text-ink hover:border-sage">{brandContact.phone}</a>{" · "}</>}<ObfuscatedEmail address={brandContact?.email} className="border-b border-black/10 hover:text-ink hover:border-sage" /></Fact>
+            <Fact label="Hours"><span className="text-ink font-semibold">Mon–Fri 8am–5pm</span> · Sat by appointment · Sun closed</Fact>
+            <Fact label="Good to know"><b className="text-ink font-semibold font-display">Supply only.</b> Your builder or installer fits the frames — we make and deliver them.</Fact>
+          </div>
         </div>
       </section>
 
@@ -359,30 +373,16 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
           alternates against the bone above it, and the three facts sit as
           hairline-divided columns rather than a card — they are a reference, not
           an object to press. */}
-      <section className="ground-paper border-t border-black/8 section-pad" aria-labelledby="practicals-h">
-        <div className="max-w-6xl mx-auto px-6">
-          <SLabel>The practicals</SLabel>
-          <h2 id="practicals-h" className="text-ink mb-8 t-hd1">
-            Where to find us, and what we do.
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black/10">
-            <Fact label="Reach us">{brandContact?.phone && <><a href={`tel:${brandContact.phone.replace(/[^0-9+]/g, "")}`} className="border-b border-black/10 hover:text-ink hover:border-sage">{brandContact.phone}</a>{" · "}</>}<ObfuscatedEmail address={brandContact?.email} className="border-b border-black/10 hover:text-ink hover:border-sage" /></Fact>
-            <Fact label="Hours"><span className="text-ink font-semibold">Mon–Fri 8am–5pm</span> · Sat by appointment · Sun closed</Fact>
-            <Fact label="Good to know"><b className="text-ink font-semibold font-display">Supply only.</b> Your builder or installer fits the frames — we make and deliver them.</Fact>
-          </div>
-        </div>
-      </section>
 
       {/* ─── CLOSING CTA ─────────────────────────────────────────────────────
           The shared banner. This one had a GhostMark, its own max-width, and
           pt-2/pb-16 — the asymmetry that made the page look bottom-heavy. */}
-      {/* ground="bone": the practicals section above it is paper, and the
-          banner's paper default would put two paper sections back to back —
-          the seam disappearing, which is the thing the ground system exists to
-          stop. On other pages the banner follows a bone section, so the default
-          is right there and wrong here. */}
+      {/* ground="paper": the section above it is bone, so the default is right
+          again. It had to be forced to bone while the practicals section (paper)
+          sat directly above; moving practicals up to second restored the
+          alternation, and with it the seam. */}
       <CtaBanner
-        ground="bone"
+        ground="paper"
         title="Already know your sizes?"
         sub="Skip the back-and-forth — get an indicative estimate in about a minute. No account required."
         onQuote={() => go("quote")}

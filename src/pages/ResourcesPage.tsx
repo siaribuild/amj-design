@@ -172,7 +172,6 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
         {heroUrl && <img src={heroUrl} alt="" aria-hidden="true" loading="lazy" decoding="async" className="hero-img" />}
         {heroUrl && <div className="hero-scrim" aria-hidden="true" />}
         {/* The site's own decorative device, in place of the mock's linework. */}
-        <GhostMark size={260} opacity={0.05} color="#fff" pos="right-0 bottom-0" />
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-24 pb-8">
           <SLabel light>Articles, guides &amp; documentation</SLabel>
           <h1 className="text-white mb-2 t-ds1">

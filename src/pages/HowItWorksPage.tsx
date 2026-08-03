@@ -1,17 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // HOW IT WORKS — the buying process
 //
-// SCAFFOLD. The section ladder, the data and the routing are in place. Three
-// blocks are still stubbed and marked TODO(scaffold): the hero stat strip, the
-// two-actor step row, and the homeowner cards. <ProcessRail> carries its own
-// TODOs. Everything the plan marked "unchanged" is here verbatim.
-//
 // GROUND: bone is the page. Sections alternate bone → paper so every seam is a
 // change of surface rather than a rule drawn on one:
 //
-//   night hero → paper (the shape) → bone (phase 01 + homeowner) → paper (the
-//   line) → bone (phase 02) → paper (before despatch) → bone (phase 03) →
-//   paper (the shared CtaBanner, which always follows a bone section)
+//   night hero → bone (phase 01) → night (the line) → bone (phase 02) →
+//   paper (before despatch) → bone (phase 03) → paper (the shared CtaBanner)
+//
+// The page opens straight into Phase 01. It used to carry a "shape of it"
+// summary first — an overview heading, a drawn rail and three jump tiles — which
+// told the whole story before the story, so the phases below it were a second
+// telling of something already read.
 //
 // Two axes have to survive without a grid:
 //
@@ -22,36 +21,20 @@
 //    alone, and none of them dependent on a two-column layout. The card track
 //    this replaces needed four columns to say the same thing and had nowhere to
 //    put them at 375px.
-//  • MONEY is drawn once, by <ProcessRail>, and then restated as a numeral in
-//    the same position in three phase headers. The rail is the reason the page
-//    no longer needs a separate strip of six verbs above it: six labelled nodes
-//    are six by inspection, which is the self-verification the old verb line
-//    existed to provide.
+//  • MONEY is a numeral in the same position in all three phase headers, so
+//    scrolling turns the 0 → 50 → 100% arc into a rhythm rather than a column
+//    nobody reaches.
 //
 // No total step count is stated anywhere — three artefacts have already drifted
 // on a hand-written count.
 // ═══════════════════════════════════════════════════════════════════════════════
 import type { ReactNode } from "react";
 import { ArrowRight, Camera, Info, Send, Truck } from "lucide-react";
-import { GhostMark, SLabel, Btn, CtaBanner, type Page } from "../app/ui";
-import { ProcessRail } from "../components/ProcessRail";
+import { SLabel, Btn, CtaBanner, type Page } from "../app/ui";
 import { getPage, imageUrl, products } from "../data/catalogue";
-import { brandName, brandSubject } from "../data/sanity";
+import { brandName } from "../data/sanity";
 
-const GRID_BG = {
-  backgroundImage: "linear-gradient(to right,rgba(90,122,106,0.045) 1px,transparent 1px),linear-gradient(to bottom,rgba(90,122,106,0.045) 1px,transparent 1px)",
-  backgroundSize: "64px 64px",
-};
 
-// The four facts, split into the number and what it counts. They were one inline
-// mono run, which reads as a sentence fragment; as value-over-caption pairs the
-// numbers line up and can be scanned without being read.
-const HERO_STATS: { value: string; caption: string }[] = [
-  { value: "$0", caption: "to get a quote" },
-  { value: "~1 minute", caption: "with a schedule" },
-  { value: "50%", caption: "first payment" },
-  { value: "Supply only", caption: "" },
-];
 
 type Step = {
   side: "you" | "us";
@@ -83,7 +66,7 @@ const PHASES: Phase[] = [
     // The phase clock is what the phase COSTS YOU in waiting, which is about a
     // minute — the schedule prices itself and you are done. The two business
     // days belong to the review step below, where they are stated, and they run
-    // without you. ProcessRail states this same number; keep the two in step.
+    // without you.
     paid: "0%", paidNote: "nothing charged", duration: "about 1 minute",
     steps: [
       { side: "you", n: "01", title: "Price it yourself", meta: "about a minute with a schedule",
@@ -137,37 +120,6 @@ const FOOTNOTE = "Supply only — your builder or installer fits the frames. We 
 function Meter({ paid }: { paid: "0%" | "50%" | "100%" }) {
   const cell = (on: boolean) => <span className={`block w-2.5 h-2.5 border ${on ? "bg-ink border-ink" : "border-black/25"}`} />;
   return <span className="flex gap-1" aria-hidden="true">{cell(paid !== "0%")}{cell(paid === "100%")}</span>;
-}
-
-// ─── Hero stat strip ──────────────────────────────────────────────────────────
-// Hairline-divided cells, never boxed: four boxes butted under a hero is the
-// strongest table-echo a page can make above the fold, and nothing else on this
-// site is tabular. Rules only, so the strip reads as a continuation of the hero
-// rather than as an object sitting on it.
-//
-// A <dl>, because that is what this is: four terms and their definitions. The
-// value is the term and the caption defines it, which is also the order they
-// are read in.
-function StatStrip() {
-  return (
-    <dl className="mt-9 md:mt-10 grid grid-cols-2 sm:grid-cols-4 border-t border-b border-white/15">
-      {HERO_STATS.map((s, i) => (
-        <div key={s.value}
-          className={`py-4 pr-5 sm:pr-6 ${
-            // The divider belongs to the cell on its LEFT edge, so the first
-            // cell in each row must lose it — otherwise a rule floats at the
-            // start of row two once the grid wraps to 2-up.
-            i > 0 ? "sm:border-l sm:border-l-white/15 sm:pl-6" : ""
-          } ${i % 2 === 1 ? "border-l border-l-white/15 pl-5 sm:pl-6" : ""} ${
-            // Row two needs its own top rule at the 2-up breakpoint only.
-            i >= 2 ? "border-t border-t-white/15 sm:border-t-0" : ""
-          }`}>
-          <dt className="text-white font-data t-data">{s.value}</dt>
-          {s.caption && <dd className="text-white/55 mt-0.5 t-cap">{s.caption}</dd>}
-        </div>
-      ))}
-    </dl>
-  );
 }
 
 // ─── One step ─────────────────────────────────────────────────────────────────
@@ -230,7 +182,6 @@ function PhaseSection({ p, brand, onQuote, children }: {
 }) {
   return (
     <section id={p.id} aria-labelledby={`${p.id}-h`} className="relative ground-bone overflow-hidden section-pad">
-      <GhostMark size={300} opacity={0.04} pos="right-0 bottom-0" />
       <div className="max-w-6xl mx-auto px-6 relative">
         <div className="split-row mb-9">
           <div className="max-w-[46ch]">
@@ -247,7 +198,9 @@ function PhaseSection({ p, brand, onQuote, children }: {
               <Meter paid={p.paid} />
               <span className="figure">{p.paid}</span>
             </div>
-            <div className="text-body mt-1 font-data t-data-sm">{p.paidNote} · {p.duration}</div>
+            {/* "takes" — without the verb the two halves read as one list of
+                facts, and the duration looked like a second payment note. */}
+            <div className="text-body mt-1 font-data t-data-sm">{p.paidNote} · takes {p.duration}</div>
           </div>
         </div>
 
@@ -316,38 +269,6 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
               </button>
             </div>
           </div>
-          <StatStrip />
-        </div>
-      </section>
-
-      {/* ── The shape of it — the whole page in one drawing ───────────────── */}
-      <section className="relative ground-paper border-t border-black/8 section-pad" style={GRID_BG}>
-        <div className="max-w-6xl mx-auto px-6 relative">
-          <SLabel>The shape of it</SLabel>
-          <h2 className="text-ink mb-3 max-w-[20ch] t-hd1">
-            Three phases, and what each one asks of you.
-          </h2>
-          <p className="text-body leading-relaxed split-prose mb-8 t-bd">
-            Numbered steps below are yours. Everything between them is {brandSubject() === "We" ? "ours" : `${brand}'s`}.
-          </p>
-
-          <ProcessRail className="mb-9" />
-
-          {/* 3-across at every breakpoint, 375px included: the money arc has to
-              be readable in one glance before any detail is read. */}
-          <div className="grid grid-cols-3 border-l border-black/10">
-            {PHASES.map((p) => (
-              <a key={p.id} href={`#${p.id}`}
-                className="border-r border-y border-black/10 bg-white px-3 py-4 md:px-5 md:py-5 hover:bg-sage-veil transition-colors">
-                <div className="text-quiet mb-1 font-data t-label">{p.label.replace(" — ", " · ")}</div>
-                <div className="flex items-baseline gap-2 mb-1.5">
-                  <span className="figure">{p.paid}</span>
-                </div>
-                <div className="mb-2"><Meter paid={p.paid} /></div>
-                <div className="text-body font-data t-data-sm">{p.duration}</div>
-              </a>
-            ))}
-          </div>
         </div>
       </section>
 
@@ -372,7 +293,6 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
           threshold that changes what you owe. */}
       <section id="the-line" aria-labelledby="the-line-h" className="relative bg-night overflow-hidden section-pad">
         <span className="absolute inset-x-0 top-0 h-0.5 bg-sage" aria-hidden="true" />
-        <GhostMark size={320} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
         <div className="relative max-w-6xl mx-auto px-6">
           <SLabel light>The line</SLabel>
           <h2 id="the-line-h" className="text-white mb-4 max-w-[20ch] t-hd1">
@@ -410,7 +330,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
       <PhaseSection p={PHASES[1]} brand={brand} onQuote={() => go("quote")} />
 
       {/* ── Before despatch — the card section between phases ─────────────── */}
-      <section className="relative ground-paper border-t border-black/8 section-pad" style={GRID_BG}>
+      <section className="relative ground-paper border-t border-black/8 section-pad">
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Before despatch</SLabel>
           <h2 className="text-ink mb-7 max-w-[20ch] t-hd1">

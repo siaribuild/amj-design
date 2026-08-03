@@ -7,7 +7,7 @@ import {
   Send, Eye, LogOut, Package, LayoutDashboard,
   Search, Lock, Key, Bell, Settings, ExternalLink
 } from "lucide-react";
-import { type Page, SAGE, DARK, WindowMark, GhostMark, SLabel, Btn, CtaBanner, FieldLabel, Input } from "./ui";
+import { type Page, SAGE, DARK, WindowMark, SLabel, Btn, CtaBanner, FieldLabel, Input } from "./ui";
 import { getSiteBrand, brandName } from "../data/sanity";
 import { ObfuscatedEmail } from "../components/ObfuscatedEmail";
 import { ProductsPage } from "../pages/ProductsPage";
@@ -317,7 +317,6 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
   // normal-length page there is no free space and it does nothing.
   return (
     <footer className="relative bg-ink text-white/55 pt-16 pb-10 overflow-hidden flex-1">
-      <GhostMark size={360} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
       <div className="max-w-6xl mx-auto px-6 relative">
         <div className="flex flex-col md:flex-row justify-between gap-10 mb-10">
           <div className="max-w-xs">
@@ -763,7 +762,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           matcher the product runs; nothing here is drawn by hand.
           No dollar figures anywhere: rate cards are commercial D1 data, so a
           price on this page would be either invented or published margin. */}
-      <section className="relative ground-paper border-t border-black/8 section-pad" style={GRID_BG}>
+      <section className="relative ground-paper border-t border-black/8 section-pad">
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>The minute</SLabel>
           <div className="split-row mb-8">
@@ -936,7 +935,6 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           was relying on a 1.5% luminance step. Do NOT darken bone to force the
           contrast instead — bone is what separates Systems from Process below it. */}
       <section className="relative ground-paper border-t border-black/8 overflow-hidden section-pad">
-        <GhostMark size={300} opacity={0.04} pos="right-0 bottom-0" />
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Systems</SLabel>
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-8">
@@ -985,7 +983,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           THREE phases, named and numbered exactly as /how-it-works names them.
           The percentages turn three identical-looking cards into a visible money
           arc, and every one of them is a fact rather than decoration. */}
-      <section className="relative ground-bone border-t border-black/8 overflow-hidden section-pad" style={GRID_BG}>
+      <section className="relative ground-bone border-t border-black/8 overflow-hidden section-pad">
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Process</SLabel>
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-8">
@@ -1056,7 +1054,6 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           className="absolute inset-0 w-full h-full object-cover opacity-25" />
         <div className="absolute inset-0" aria-hidden="true"
           style={{ background: "linear-gradient(to right, rgba(12,12,10,0.94) 0%, rgba(12,12,10,0.78) 45%, rgba(12,12,10,0.6) 100%)" }} />
-        <GhostMark size={280} opacity={0.025} color="#fff" pos="right-0 bottom-0" />
         <div className="max-w-6xl mx-auto px-6 relative">
           <div className="split-row is-top">
             <div className="split-prose">
@@ -1123,7 +1120,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           accordion would hide content on a page already criticised for being
           blank. The 2×2 hairline-collapsed grid is the site's card track, not a
           table: prose blocks with headings, no header row, no column runs. */}
-      <section className="relative ground-bone border-t border-black/8 section-pad" style={GRID_BG}>
+      <section className="relative ground-bone border-t border-black/8 section-pad">
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Good to know</SLabel>
           <h2 className="text-ink mb-8 t-ds2">
@@ -1210,8 +1207,7 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
   };
 
   return (
-    <div className="relative min-h-screen ground-bone flex items-center justify-center pt-16 pb-24 overflow-hidden">
-      <GhostMark size={320} opacity={0.05} pos="right-0 bottom-0" />
+    <div className="relative min-h-screen ground-bone flex items-center justify-center pt-16 pb-24 deco-mark">
       <div className="w-full max-w-sm mx-auto px-6 relative">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4"><WindowMark size={32} color={SAGE} /></div>
@@ -1531,8 +1527,7 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
   };
 
   return (
-    <div className="relative min-h-screen ground-bone pt-16 pb-24 overflow-hidden">
-      <GhostMark size={280} opacity={0.05} pos="right-0 top-0" />
+    <div className="relative min-h-screen ground-bone pt-16 pb-24 deco-mark">
       <div className="max-w-xl mx-auto px-6 py-12 relative">
         <SLabel>Quote &amp; order tracking</SLabel>
         <h1 className="font-semibold text-ink mb-2 font-display t-hd1">Track your quote or order</h1>
@@ -1591,8 +1586,7 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
 function ApprovedQuotePage() {
   const [t1, setT1] = useState(false); const [t2, setT2] = useState(false); const [t3, setT3] = useState(false);
   return (
-    <div className="relative min-h-screen ground-bone pt-24 pb-24 overflow-hidden">
-      <GhostMark size={260} opacity={0.05} pos="right-0 bottom-0" />
+    <div className="relative min-h-screen ground-bone pt-24 pb-24 deco-mark">
       <div className="max-w-2xl mx-auto px-6 relative">
         <div className="flex items-center gap-2 mb-2"><CheckCircle className="w-4 h-4 text-sage" /><span className="text-sage t-label">Human verified</span></div>
         <h1 className="font-semibold text-ink mb-1 font-display t-hd1">Reviewed quote — OF-58712</h1>
@@ -1642,7 +1636,6 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
         <img src={IMG.hero} alt="Aluminium-framed façade on a contemporary Australian build at dusk"
           className="hero-img hero-zoom" />
         <div className="hero-scrim" aria-hidden="true" />
-        <GhostMark size={300} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
         <div className="relative max-w-6xl mx-auto px-6 pb-10 w-full">
           <div className="flex items-center gap-2 mb-3">
             <WindowMark size={11} color="rgba(255,255,255,0.55)" />
@@ -1707,8 +1700,7 @@ function AdminPage() {
   const q = quotes[sel];
   const sc: Record<string,string> = { "Review required":"text-amber-400 bg-amber-400/10","More info needed":"text-red-400 bg-red-400/10","Ready":"text-sage bg-sage-wash" };
   return (
-    <div className="relative bg-night min-h-screen pt-16 text-white overflow-hidden">
-      <GhostMark size={400} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
+    <div className="relative bg-night min-h-screen pt-16 text-white deco-mark">
       <div className="border-b border-white/8 px-6 py-3">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">

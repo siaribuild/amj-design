@@ -12,7 +12,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useState } from "react";
 import { ChevronLeft, AlertCircle, CheckCircle, Send } from "lucide-react";
-import { SAGE, WindowMark, GhostMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
+import { SAGE, WindowMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import {
   type QuoteState, linePriceTotal, fmt, mm, productLabel, lineBlocksSubmission,
 } from "../data/configurator";
@@ -28,7 +28,6 @@ export function QuoteSubmitted({ email, user, onGo }: {
 }) {
   return (
     <div className="quote-page relative min-h-screen ground-bone pt-24 pb-24 overflow-hidden">
-      <GhostMark size={300} opacity={0.05} pos="right-0 bottom-0" />
       <div className="max-w-md w-full mx-auto px-6 text-center relative">
         <div className="w-14 h-14 border border-sage/30 bg-sage-wash flex items-center justify-center mx-auto mb-6"><WindowMark size={24} color={SAGE} /></div>
         <h2 className="font-semibold text-ink mb-2 font-display t-hd2">Quote submitted</h2>

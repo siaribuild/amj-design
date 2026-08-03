@@ -311,6 +311,10 @@
      56/58/60/64ch in play, which is the same decision made eight times. */
   --measure: 68ch;
 
+  /* The 4-pane window mark, as a mask. Same geometry as <WindowMark> in ui.tsx —
+     the logo motif — so the watermark and the logo cannot drift apart. */
+  --window-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='1' y='1' width='18' height='18' fill='none' stroke='black' stroke-width='0.5'/%3E%3Cline x1='10' y1='1' x2='10' y2='19' stroke='black' stroke-width='0.5'/%3E%3Cline x1='1' y1='10' x2='19' y2='10' stroke='black' stroke-width='0.5'/%3E%3C/svg%3E");
+
   /* Vertical rhythm between sections, the wireframe's values. This is the other
      half of why the mock reads airier than the site: line-height and measure
      already matched almost exactly, but sections were breathing at 64–80px
@@ -683,6 +687,65 @@
     background-color: var(--recessive);
     border-bottom: 1px solid var(--line);
   }
+
+  /* ─── Section decoration ────────────────────────────────────────────────────
+   * One rule, carried by the GROUND rather than by each page remembering:
+   *
+   *   paper (white)  a faint square grid — drafting paper
+   *   bone           the window mark, bottom right
+   *   night (black)  the same mark, in white
+   *
+   * It was JS before: a GRID_BG object spread into style={} on some sections and
+   * a <GhostMark> element dropped into others, which is why only about half of
+   * the 23 grounded sections carried anything — 8 grids and 14 marks, several of
+   * those on things that are not sections at all. Attaching it to the ground
+   * means a new section is decorated by existing, not by remembering.
+   *
+   * Pseudo-elements, so no page needs a wrapper or an extra DOM node, and
+   * `section` in the selector keeps it off page roots and panels that share the
+   * same ground classes.
+   */
+  section.ground-paper { position: relative; }
+  section.ground-paper::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgba(90, 122, 106, 0.045) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(90, 122, 106, 0.045) 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+
+  /* The mark is a MASK, not an image, so one shape serves both grounds and the
+   * colour is a normal token rather than a second exported asset. */
+  /* `.deco-mark` is the opt-in for surfaces that are not <section> but read as
+   * one — the full-page bone/night grounds behind login, the account shell and
+   * the trade page. Same implementation, so there is still only one mark. */
+  section.ground-bone,
+  section.bg-night,
+  .deco-mark { position: relative; overflow: hidden; }
+  section.ground-bone::after,
+  section.bg-night::after,
+  .deco-mark::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 300px;
+    height: 300px;
+    pointer-events: none;
+    -webkit-mask-image: var(--window-mark);
+    mask-image: var(--window-mark);
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+  }
+  section.ground-bone::after,
+  .deco-mark.ground-bone::after { background-color: var(--ink); opacity: 0.04; }
+  section.bg-night::after,
+  .deco-mark.bg-night::after { background-color: #fff; opacity: 0.06; }
 
   .quote-code-field,
   .quote-title-control { border-color: var(--line); background-color: var(--paper); }

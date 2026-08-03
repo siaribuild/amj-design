@@ -124,10 +124,13 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
       {composite && (
         <div>
           <PanelLabel>Included units</PanelLabel>
-          {/* Each unit is its own object on paper, against the panel's recessive
-              ground. As flat bordered-left lines they were indistinguishable
-              from the option rows directly above them. */}
-          <ul className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+          {/* ROWS, one per unit. A composite is an ordered stack — W1A above
+              W1B above W1C, in the order they are built — and columns reorder
+              that into reading-left-to-right, which is not how the opening is
+              assembled. Each unit is still its own object on paper against the
+              panel's recessive ground, so it does not read as another option
+              line; it simply stacks. */}
+          <ul className="space-y-2">
             {segments.map((s, i) => (
               // No price and no affordance, deliberately. The parent owns the
               // total; separate numbers here would read as separate charges. The

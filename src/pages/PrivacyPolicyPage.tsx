@@ -9,7 +9,7 @@
 import { ObfuscatedEmail } from "../components/ObfuscatedEmail";
 import { getSiteBrand } from "../data/sanity";
 import { Mail, ArrowRight } from "lucide-react";
-import { type Page, SAGE, WindowMark, GhostMark, Btn } from "../app/ui";
+import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
 import { getPage, imageUrl } from "../data/catalogue";
 
 const UPDATED = "19 July 2026";
@@ -36,7 +36,6 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
           <img src={imageUrl(getPage("privacy")?.heroImage, { w: 1920, h: 600 })} alt="" aria-hidden="true"
             className="absolute inset-0 w-full h-full object-cover opacity-40" />
         )}
-        <GhostMark size={280} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
         <div className="relative max-w-5xl mx-auto px-6">
           <div className="flex items-center gap-2 mb-3">
             <WindowMark size={11} color="rgba(255,255,255,0.55)" />
