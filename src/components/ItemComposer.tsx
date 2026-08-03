@@ -435,6 +435,32 @@ export const optionSummaryPairs = (
   return pairs;
 };
 
+/** EVERY option the product offers, chosen or not, in the same glazing-first
+ *  order — for the expansion, which is the one place answering "what did I end
+ *  up with" rather than "what is notable about this line".
+ *
+ *  optionSummaryPairs omits what was not chosen, which is right for a summary
+ *  and wrong here: an absent flyscreen reads as an oversight in a list that
+ *  never mentions flyscreens, and as a decision in one that says None. Glazing
+ *  appears only for products that actually offer a build-up — listing a choice
+ *  the product cannot make would be a third kind of lie. */
+export const optionFullPairs = (
+  p: Product | undefined, options: Record<string, string>,
+): { label: string; value: string; chosen: boolean }[] => {
+  if (!p) return [];
+  const out: { label: string; value: string; chosen: boolean }[] = [];
+  const glazing = glazingChoicesFor(p);
+  if (glazing.length) {
+    const name = glazing.find(g => g.slug === options.glazing)?.name;
+    out.push({ label: "Glazing", value: name ?? "None", chosen: !!name });
+  }
+  for (const g of optionGroupsFor(p)) {
+    const value = options[g.typeSlug];
+    out.push({ label: g.label, value: value || "None", chosen: !!value });
+  }
+  return out;
+};
+
 // Exported so the /quote-project read-only expansion shows the SAME summary in
 // the same order rather than reimplementing the glazing-first rule.
 export const optionSummaryOf = (p: Product | undefined, options: Record<string, string>) => {

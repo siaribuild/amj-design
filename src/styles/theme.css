@@ -676,6 +676,30 @@
   .quote-row[data-state="attention"],
   .quote-rowexp[data-state="attention"] { box-shadow: inset 3px 0 0 var(--warning); }
 
+  /* ─── Elevation drawing ──────────────────────────────────────────────────
+   * Dimension text is a DATA figure — the same tabular, slashed-zero treatment
+   * every other number on the site gets, so 700 and 7OO cannot be confused on
+   * a drawing someone is checking against a wall.
+   *
+   * Strokes do NOT scale with the drawing: a 0.75-unit leader on a viewBox
+   * scaled to 130px would land under half a pixel and disappear on the axis
+   * the drawing happens to be short on. */
+  svg[data-elevation] { display: block; }
+  svg[data-elevation] [stroke] { vector-effect: non-scaling-stroke; }
+  svg[data-elevation] .elev-dim {
+    font-family: var(--font-data);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums slashed-zero;
+    vector-effect: none;
+  }
+  /* The break-line says "this drawing is not to scale across its width". It is
+   * only true once the drawing has been squeezed, so it appears at the width
+   * where that happens and not before — the wireframe's own rule. */
+  svg[data-elevation] .elev-break { display: none; }
+  @media (max-width: 767px) {
+    svg[data-elevation][data-wide="1"] .elev-break { display: block; }
+  }
+
   /* The column header. Recessive, like every other panel head on the site, so
    * the table reads as one object with a label strip rather than as a row that
    * happens to be bold. */

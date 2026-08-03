@@ -63,11 +63,12 @@ export function OpeningRow({
         {/* Identity is ONE cell. The pictogram and the code were siblings, which
             is invisible in a flex row but would have consumed two grid tracks. */}
         <span className="order-1 md:col-start-1 md:row-start-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
-          {/* 40×28, the wireframe's own box for this cell. It was a 22×22
-              square glyph — too small to read, and square regardless of whether
-              the opening is a long slot or a tall panel. */}
+          {/* Square and uniform, 28×28. The list is scanned down a column, and a
+              per-line proportion gives that column no edge to read against —
+              it also shrinks a 3500×700 line to a sliver at this size. The true
+              proportion is drawn in the expansion, where it is the subject. */}
           <Elevation productSlug={item.productSlug} widthMm={item.width} heightMm={item.height}
-            className="max-w-10 max-h-7 w-auto h-auto flex-shrink-0 text-body" />
+            square className="w-7 h-7 flex-shrink-0 text-body" />
           <span className="font-semibold text-ink truncate font-data t-data-sm">{ref}</span>
           {/* Below 1024 the status belongs to the identity, beside the reference
               it describes — the same place a phone puts it. It rides INSIDE this

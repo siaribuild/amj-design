@@ -22,7 +22,8 @@ import type { ReactNode } from "react";
 import { AlertCircle, Pencil } from "lucide-react";
 import { type QItem, type QSegment, mm, productLabel } from "../../data/configurator";
 import { getProductBySlug } from "../../data/catalogue";
-import { optionSummaryPairs } from "../ItemComposer";
+import { optionSummaryPairs, optionFullPairs } from "../ItemComposer";
+import { Elevation } from "./Elevation";
 import { type RowKey, panelId } from "./identity";
 import { type RowState, unitLabel } from "./rowState";
 
@@ -58,6 +59,27 @@ function OptionList({ pairs, dense = false }: {
   );
 }
 
+/** The full specification, one option per LINE — every option the product
+ *  offers, chosen or not.
+ *
+ *  Not the auto-fit grid above it: this set is complete rather than selective,
+ *  so it is read as a checklist ("did I say anything about flyscreens?") and a
+ *  checklist reflowed into four columns cannot be run down. Labels share a fixed
+ *  column so the values line up in one edge; an unchosen line keeps the quiet
+ *  tone AND says None, so the distinction is never carried by colour alone. */
+function OptionLines({ pairs }: { pairs: { label: string; value: string; chosen: boolean }[] }) {
+  return (
+    <dl className="border-t border-line">
+      {pairs.map((p) => (
+        <div key={p.label} className="flex items-baseline gap-3 border-b border-line py-1.5">
+          <dt className="text-quiet w-24 sm:w-28 flex-shrink-0 font-data t-label">{p.label}</dt>
+          <dd className={`min-w-0 t-cap ${p.chosen ? "text-ink" : "text-quiet"}`}>{p.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /** A micro-heading inside the panel. The expansion carried no structure at all —
  *  options, units and the Edit launcher ran together as three unlabelled blocks. */
 function PanelLabel({ children }: { children: ReactNode }) {
@@ -78,7 +100,10 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
   const segments = item.segments ?? [];
   const composite = segments.length > 0;
   const ref = item.code || "this opening";
-  const pairs = optionSummaryPairs(product, item.options);
+  // The complete set for a single opening; the composite branch below still uses
+  // the selective summary, because a unit list is scanned for what DIFFERS
+  // between units, not audited option by option.
+  const fullPairs = optionFullPairs(product, item.options);
 
   return (
     // Recessive, not paper. The panel sat on the same surface as the row above
@@ -112,13 +137,34 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           line, not a product. The glazing and hardware belong to the units, and
           showing the parent's stored option row here would assert a
           specification the customer never chose at this level. */}
+      {/* Drawing left, specification right — the Edit Line form's arrangement.
+          The column is sized to the drawing rather than to a percentage: at
+          `sm` the generator's viewBox units are ≈ screen pixels, which is what
+          keeps the leader numbers at a legible 9px, so stretching the column
+          would either shrink the text or leave the drawing marooned in it. */}
       {!composite && (
-        <>
-          <PanelLabel>Specification</PanelLabel>
-          {pairs.length > 0
-            ? <OptionList pairs={pairs} />
-            : <p className="text-quiet t-cap">No options selected</p>}
-        </>
+        <div className="grid gap-4 sm:gap-6 sm:grid-cols-[auto_minmax(0,1fr)] items-start">
+          {/* Fixed at the size's own widest viewBox rather than shrink-to-fit:
+              an auto column is as wide as whichever opening it holds, so the
+              specification beside it started at a different x on every row and
+              the panel could not be read down. The drawing sits left in it. */}
+          <div className="sm:w-[152px] max-w-full">
+            {/* Here the proportion IS the point, and it carries its own
+                dimensions: this is the one view where the customer checks the
+                shape and the size of what they ordered against the hole in the
+                wall, so the numbers belong ON the drawing rather than in a
+                caption under it. */}
+            <Elevation productSlug={item.productSlug} widthMm={item.width} heightMm={item.height}
+              size="sm" className="max-w-full text-body" />
+            <p className="text-quiet mt-1 t-label">Viewed from outside</p>
+          </div>
+          <div className="min-w-0">
+            <PanelLabel>Specification</PanelLabel>
+            {fullPairs.length > 0
+              ? <OptionLines pairs={fullPairs} />
+              : <p className="text-quiet t-cap">This product has no options to choose.</p>}
+          </div>
+        </div>
       )}
 
       {composite && (
