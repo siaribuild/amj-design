@@ -742,10 +742,20 @@
     -webkit-mask-size: contain;
     mask-size: contain;
   }
+  /* 0.025 on BOTH grounds, and it is not a new judgement — it is the value the
+   * site has always actually painted. <GhostMark> clamped every caller with
+   * `Math.min(opacity, 0.025)` under the comment "never distracting, always
+   * subordinate to content", so the 0.04–0.06 that call sites passed was dead
+   * argument. Reading those props as effective would make the mark 1.6–2.4×
+   * more prominent than it has ever been.
+   *
+   * Same figure on bone and on night, because the clamp applied to both — the
+   * two grounds have never differed here, and inventing a differential now
+   * would be a change of design smuggled in as a port. */
   section.ground-bone::after,
-  .deco-mark.ground-bone::after { background-color: var(--ink); opacity: 0.04; }
+  .deco-mark.ground-bone::after { background-color: var(--ink); opacity: 0.025; }
   section.bg-night::after,
-  .deco-mark.bg-night::after { background-color: #fff; opacity: 0.06; }
+  .deco-mark.bg-night::after { background-color: #fff; opacity: 0.025; }
 
   .quote-code-field,
   .quote-title-control { border-color: var(--line); background-color: var(--paper); }
