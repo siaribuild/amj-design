@@ -311,10 +311,6 @@
      56/58/60/64ch in play, which is the same decision made eight times. */
   --measure: 68ch;
 
-  /* The 4-pane window mark, as a mask. Same geometry as <WindowMark> in ui.tsx —
-     the logo motif — so the watermark and the logo cannot drift apart. */
-  --window-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='1' y='1' width='18' height='18' fill='none' stroke='black' stroke-width='0.5'/%3E%3Cline x1='10' y1='1' x2='10' y2='19' stroke='black' stroke-width='0.5'/%3E%3Cline x1='1' y1='10' x2='19' y2='10' stroke='black' stroke-width='0.5'/%3E%3C/svg%3E");
-
   /* Vertical rhythm between sections, the wireframe's values. This is the other
      half of why the mock reads airier than the site: line-height and measure
      already matched almost exactly, but sections were breathing at 64–80px
@@ -717,45 +713,11 @@
     background-size: 64px 64px;
   }
 
-  /* The mark is a MASK, not an image, so one shape serves both grounds and the
-   * colour is a normal token rather than a second exported asset. */
-  /* `.deco-mark` is the opt-in for surfaces that are not <section> but read as
-   * one — the full-page bone/night grounds behind login, the account shell and
-   * the trade page. Same implementation, so there is still only one mark. */
-  section.ground-bone,
-  section.bg-night,
-  .deco-mark { position: relative; overflow: hidden; }
-  section.ground-bone::after,
-  section.bg-night::after,
-  .deco-mark::after {
-    content: "";
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    width: 300px;
-    height: 300px;
-    pointer-events: none;
-    -webkit-mask-image: var(--window-mark);
-    mask-image: var(--window-mark);
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-    -webkit-mask-size: contain;
-    mask-size: contain;
-  }
-  /* 0.025 on BOTH grounds, and it is not a new judgement — it is the value the
-   * site has always actually painted. <GhostMark> clamped every caller with
-   * `Math.min(opacity, 0.025)` under the comment "never distracting, always
-   * subordinate to content", so the 0.04–0.06 that call sites passed was dead
-   * argument. Reading those props as effective would make the mark 1.6–2.4×
-   * more prominent than it has ever been.
-   *
-   * Same figure on bone and on night, because the clamp applied to both — the
-   * two grounds have never differed here, and inventing a differential now
-   * would be a change of design smuggled in as a port. */
-  section.ground-bone::after,
-  .deco-mark.ground-bone::after { background-color: var(--ink); opacity: 0.025; }
-  section.bg-night::after,
-  .deco-mark.bg-night::after { background-color: #fff; opacity: 0.025; }
+  /* Bone and night carry NO watermark. The window mark used to sit bottom-right
+   * on both; it is gone by request, and with it the .deco-mark opt-in and the
+   * --window-mark asset. The grid on paper is the only section decoration left,
+   * which is also the only one that was ever doing structural work — it reads as
+   * drafting paper rather than as a logo repeated behind the copy. */
 
   .quote-code-field,
   .quote-title-control { border-color: var(--line); background-color: var(--paper); }

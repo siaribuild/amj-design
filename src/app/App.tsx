@@ -1207,7 +1207,7 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
   };
 
   return (
-    <div className="relative min-h-screen ground-bone flex items-center justify-center pt-16 pb-24 deco-mark">
+    <div className="relative min-h-screen ground-bone flex items-center justify-center pt-16 pb-24 overflow-hidden">
       <div className="w-full max-w-sm mx-auto px-6 relative">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4"><WindowMark size={32} color={SAGE} /></div>
@@ -1527,7 +1527,7 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
   };
 
   return (
-    <div className="relative min-h-screen ground-bone pt-16 pb-24 deco-mark">
+    <div className="relative min-h-screen ground-bone pt-16 pb-24 overflow-hidden">
       <div className="max-w-xl mx-auto px-6 py-12 relative">
         <SLabel>Quote &amp; order tracking</SLabel>
         <h1 className="font-semibold text-ink mb-2 font-display t-hd1">Track your quote or order</h1>
@@ -1586,7 +1586,7 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
 function ApprovedQuotePage() {
   const [t1, setT1] = useState(false); const [t2, setT2] = useState(false); const [t3, setT3] = useState(false);
   return (
-    <div className="relative min-h-screen ground-bone pt-24 pb-24 deco-mark">
+    <div className="relative min-h-screen ground-bone pt-24 pb-24 overflow-hidden">
       <div className="max-w-2xl mx-auto px-6 relative">
         <div className="flex items-center gap-2 mb-2"><CheckCircle className="w-4 h-4 text-sage" /><span className="text-sage t-label">Human verified</span></div>
         <h1 className="font-semibold text-ink mb-1 font-display t-hd1">Reviewed quote — OF-58712</h1>
@@ -1700,7 +1700,7 @@ function AdminPage() {
   const q = quotes[sel];
   const sc: Record<string,string> = { "Review required":"text-amber-400 bg-amber-400/10","More info needed":"text-red-400 bg-red-400/10","Ready":"text-sage bg-sage-wash" };
   return (
-    <div className="relative bg-night min-h-screen pt-16 text-white deco-mark">
+    <div className="relative bg-night min-h-screen pt-16 text-white overflow-hidden">
       <div className="border-b border-white/8 px-6 py-3">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
