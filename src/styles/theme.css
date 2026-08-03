@@ -490,8 +490,22 @@
    * Product is the only elastic column and it truncates, so the row can never
    * scroll sideways.
    */
-  .quote-table {
-    --qp-cols: 6.75rem minmax(0, 1fr) 8.5rem 3.25rem 7.5rem 10rem 7rem;
+  /* Columns are dropped as width runs out, rather than the whole table
+   * collapsing back into a stacked card at the first squeeze — which is what a
+   * single 1024px switch did, and it left tablet with a multi-line card and its
+   * controls stranded at the bottom.
+   *
+   *   >=768   ref | product | size | price | actions
+   *           Status leaves the row and becomes a full-width strip beneath it,
+   *           the same device the wireframe uses for its reason row: at 768 six
+   *           fixed columns leave the product name about 90px, which is not a
+   *           product name.
+   *   >=1024  qty and status rejoin the row as their own columns.
+   */
+  .quote-table { --qp-cols: 6.5rem minmax(0, 1fr) 8rem 7rem 6.75rem; }
+
+  @media (min-width: 1024px) {
+    .quote-table { --qp-cols: 6.75rem minmax(0, 1fr) 8.5rem 3.25rem 7.5rem 10rem 7rem; }
   }
 
   /* Tracks only. `display` is switched by the `lg:grid` UTILITY on the element,

@@ -18,6 +18,7 @@
 //
 // Expanding performs NO network write and does NOT open the drawer.
 // ═══════════════════════════════════════════════════════════════════════════════
+import type { ReactNode } from "react";
 import { Pencil } from "lucide-react";
 import { type QItem, type QSegment, mm, productLabel } from "../../data/configurator";
 import { getProductBySlug } from "../../data/catalogue";
@@ -26,20 +27,37 @@ import { type RowKey, panelId } from "./identity";
 import { unitLabel } from "./rowState";
 
 /** Options as labelled lines. A run-on "5Clear · White · Standard · None" can
- *  only be decoded by someone who already knows the option order. */
+ *  only be decoded by someone who already knows the option order.
+ *
+ *  The label sits ABOVE its value rather than inline before it. Inline pairs
+ *  gave every row a different indent — the value started wherever the label
+ *  happened to end — so the specification could not be read down the column it
+ *  was already laid out in. auto-fit tracks let the set reflow from four across
+ *  to one without a breakpoint per width. */
 function OptionList({ pairs, dense = false }: {
   pairs: { label: string; value: string }[]; dense?: boolean;
 }) {
   if (!pairs.length) return null;
   return (
-    <dl className={`grid gap-x-4 gap-y-1 ${dense ? "text-[11px]" : "text-xs"} sm:grid-cols-2`}>
+    <dl className="grid gap-x-6 gap-y-3"
+      style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
       {pairs.map((p) => (
-        <div key={p.label} className="flex gap-1.5 min-w-0">
-          <dt className="text-quiet flex-shrink-0">{p.label}:</dt>
-          <dd className="text-ink min-w-0 truncate">{p.value}</dd>
+        <div key={p.label} className="min-w-0">
+          <dt className="text-[10px] uppercase tracking-[0.12em] text-quiet mb-0.5"
+            style={{ fontFamily: "'DM Mono', monospace" }}>{p.label}</dt>
+          <dd className={`${dense ? "text-[11px]" : "text-xs"} text-ink min-w-0 truncate`}>{p.value}</dd>
         </div>
       ))}
     </dl>
+  );
+}
+
+/** A micro-heading inside the panel. The expansion carried no structure at all —
+ *  options, units and the Edit launcher ran together as three unlabelled blocks. */
+function PanelLabel({ children }: { children: ReactNode }) {
+  return (
+    <p className="text-[10px] uppercase tracking-[0.14em] text-quiet mb-2"
+      style={{ fontFamily: "'DM Mono', monospace" }}>{children}</p>
   );
 }
 
@@ -55,40 +73,48 @@ export function OpeningExpansion({ item, rowKey, onEdit }: {
   const pairs = optionSummaryPairs(product, item.options);
 
   return (
-    <div id={panelId(rowKey)} className="quote-item-body border-t border-line px-3 sm:px-4 py-3">
+    // Recessive, not paper. The panel sat on the same surface as the row above
+    // it with only a hairline between, so an opened row read as two rows rather
+    // than as one row showing its inside. Dropping the ground is what makes the
+    // disclosure legible as nesting.
+    <div id={panelId(rowKey)} className="bg-recessive border-t border-line px-3 sm:px-4 py-4">
       {/* A composite PARENT carries no options of its own — it is the schedule
           line, not a product. The glazing and hardware belong to the units, and
           showing the parent's stored option row here would assert a
           specification the customer never chose at this level. */}
       {!composite && (
-        pairs.length > 0
-          ? <OptionList pairs={pairs} />
-          : <p className="text-xs text-quiet">No options selected</p>
+        <>
+          <PanelLabel>Specification</PanelLabel>
+          {pairs.length > 0
+            ? <OptionList pairs={pairs} />
+            : <p className="text-xs text-quiet">No options selected</p>}
+        </>
       )}
 
       {composite && (
         <div>
-          <p className="text-[10px] uppercase tracking-widest text-quiet mb-2">
-            Included units
-          </p>
-          <ul className="space-y-2.5">
+          <PanelLabel>Included units</PanelLabel>
+          {/* Each unit is its own object on paper, against the panel's recessive
+              ground. As flat bordered-left lines they were indistinguishable
+              from the option rows directly above them. */}
+          <ul className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
             {segments.map((s, i) => (
               // No price and no affordance, deliberately. The parent owns the
               // total; separate numbers here would read as separate charges. The
               // drawer's child list is the one that gets an Edit affordance —
               // the same data must not look interactive in both places.
-              <li key={s.id} className="border-l-2 border-line pl-2.5">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                  <span className="font-semibold text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>
+              <li key={s.id} className="border border-line bg-paper px-3 py-2.5 min-w-0">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-1">
+                  <span className="text-xs font-semibold text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>
                     {unitLabel(item.code, i)}
                   </span>
-                  {s.qtyPerParent > 1 && <span className="text-quiet">×{s.qtyPerParent}</span>}
-                  <span className="text-body min-w-0 truncate">{productLabel(s.productSlug)}</span>
-                  <span className="text-body tabular-nums" style={{ fontFamily: "'DM Mono', monospace" }}>
+                  {s.qtyPerParent > 1 && <span className="text-[11px] text-quiet">×{s.qtyPerParent}</span>}
+                  <span className="text-[11px] text-body tabular-nums ml-auto" style={{ fontFamily: "'DM Mono', monospace" }}>
                     {mm(s.width)} × {mm(s.height)}
                   </span>
-                  <span className="quote-chip quote-chip--neutral text-[10px]">Included</span>
                 </div>
+                <p className="text-xs text-body min-w-0 truncate mb-1.5">{productLabel(s.productSlug)}</p>
+                <span className="quote-chip quote-chip--neutral text-[10px]">Included</span>
                 <SegmentOptions segment={s} />
               </li>
             ))}

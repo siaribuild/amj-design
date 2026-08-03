@@ -268,15 +268,17 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                 are presentational, and every cell below already carries its own
                 accessible name or visible label. */}
             <div aria-hidden="true"
-              className="quote-table-head hidden lg:grid items-center gap-x-3 px-4 py-2
+              className="quote-table-head hidden md:grid items-center gap-x-3 px-4 py-2
                 text-[10px] uppercase tracking-[0.12em] text-quiet"
               style={{ fontFamily: "'DM Mono', monospace" }}>
               <span className="col-start-1">Opening</span>
               <span className="col-start-2">Product</span>
               <span className="col-start-3 text-right">Size</span>
-              <span className="col-start-4 text-right">Qty</span>
-              <span className="col-start-5 text-right">Indicative</span>
-              <span className="col-start-6">Status</span>
+              {/* Qty and Status only exist as columns from 1024 — below that they
+                  ride in the size cell and a full-width strip respectively. */}
+              <span className="hidden lg:block lg:col-start-4 text-right">Qty</span>
+              <span className="col-start-4 lg:col-start-5 text-right">Indicative</span>
+              <span className="hidden lg:block lg:col-start-6">Status</span>
             </div>
 
             {items.map((item) => {

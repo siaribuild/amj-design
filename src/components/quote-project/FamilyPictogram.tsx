@@ -82,7 +82,7 @@ function sanitizeSvg(markup: string): string | null {
   return root.innerHTML ? root.outerHTML : null;
 }
 
-export function FamilyPictogram({ productSlug, size = 18 }: {
+export function FamilyPictogram({ productSlug, size = 22 }: {
   /** The opening's product; its family selects the marker. */
   productSlug: string;
   size?: number;
@@ -103,8 +103,12 @@ export function FamilyPictogram({ productSlug, size = 18 }: {
     );
   }
   return (
+    // text-body, not text-quiet. These are 1px line drawings at ~22px: at the
+    // quiet role's contrast the frame and the operation mark were both there and
+    // neither was legible, which makes the marker cost a column and return
+    // nothing. It is still subordinate to the product name beside it.
     <span aria-hidden="true" style={box}
-      className="inline-flex items-center justify-center flex-shrink-0 text-quiet [&>svg]:w-full [&>svg]:h-full"
+      className="inline-flex items-center justify-center flex-shrink-0 text-body [&>svg]:w-full [&>svg]:h-full"
       // Sanitised above through a tag/attribute allow-list.
       dangerouslySetInnerHTML={{ __html: markup }} />
   );

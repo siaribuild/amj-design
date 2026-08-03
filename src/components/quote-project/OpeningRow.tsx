@@ -53,22 +53,29 @@ export function OpeningRow({
   // screen reader (plan §11).
   return (
     <div id={rowId(rowKey)} data-state={rowStateAttr(state)}
-      className="quote-row flex lg:grid flex-wrap items-center gap-x-2 lg:gap-x-3 gap-y-1.5 px-3 sm:px-4 py-3">
+      className="quote-row flex md:grid flex-wrap items-center gap-x-2 md:gap-x-3 gap-y-1.5 px-3 sm:px-4 py-3">
         {/* Identity is ONE cell. The pictogram and the code were siblings, which
             is invisible in a flex row but would have consumed two grid tracks. */}
-        <span className="order-1 lg:col-start-1 lg:row-start-1 flex items-center gap-2 min-w-0">
-          <FamilyPictogram productSlug={item.productSlug} />
+        <span className="order-1 md:col-start-1 md:row-start-1 flex items-center gap-2 min-w-0">
+          <FamilyPictogram productSlug={item.productSlug} size={22} />
           <span className="text-xs font-semibold text-ink truncate"
             style={{ fontFamily: "'DM Mono', monospace" }}>{ref}</span>
         </span>
 
-        {/* State sits beside the reference on a phone (where it is scanned) and
-            beside the actions on a wide row (where it precedes what to do). */}
-        <span className="order-3 md:order-6 lg:col-start-6 lg:row-start-1 min-w-0">
-          <RowStateBadge state={state} onFixDetails={onFixDetails} openingRef={ref} />
-        </span>
+        {/* Status. Its own column once there is room for one (>=1024); between
+            768 and 1023 it becomes a full-width strip on a second grid row,
+            because six fixed columns at 768 leave the product name unreadable.
+            Rendered only when there IS a state — an always-present wrapper would
+            open an empty second row under every clean line. */}
+        {state.kind !== "none" && (
+          <span className="order-3 md:order-none min-w-0
+            md:col-span-full md:row-start-2
+            lg:col-span-1 lg:col-start-6 lg:row-start-1">
+            <RowStateBadge state={state} onFixDetails={onFixDetails} openingRef={ref} />
+          </span>
+        )}
 
-        <div className="order-4 md:order-7 lg:col-start-7 lg:row-start-1 ml-auto lg:ml-0 flex items-center gap-0.5 flex-shrink-0 lg:justify-end">
+        <div className="order-4 md:order-none md:col-start-5 lg:col-start-7 md:row-start-1 ml-auto md:ml-0 flex items-center gap-0.5 flex-shrink-0 md:justify-end">
           {/* 44px touch targets: these three sit adjacent, and under-sizing them
               is the classic mis-tap generator on this exact pattern. */}
           <button type="button" onClick={onToggleExpanded}
@@ -94,31 +101,28 @@ export function OpeningRow({
         </div>
 
         {/* The only elastic element — it truncates so the row can never scroll. */}
-        <span className="order-5 md:order-3 lg:col-start-2 lg:row-start-1 basis-full md:basis-auto md:flex-1 min-w-0 truncate text-sm text-ink">
+        <span className="order-5 md:order-none md:col-start-2 md:row-start-1 basis-full md:basis-auto min-w-0 truncate text-sm text-ink">
           {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
           {item.location && <span className="text-quiet"> · {item.location}</span>}
         </span>
 
-        {/* Forces the 768–1023px two-band split, immediately after the product
-            name; absent at both extremes. It needs the SAME order as the product
-            to sit behind it — an un-ordered flex item defaults to order:0 and
-            would sort ahead of every explicitly ordered sibling. */}
-        <span aria-hidden="true" className="hidden md:block lg:hidden basis-full order-5 md:order-3" />
-
         {/* Size and quantity were one string. They are two columns now, because
             "is anything the wrong size" and "how many of these" are two
-            different scans and a combined cell answers neither cleanly. */}
-        <span className="order-6 md:order-4 lg:col-start-3 lg:row-start-1 lg:text-right text-xs text-body flex-shrink-0 tabular-nums"
+            different scans and a combined cell answers neither cleanly. Quantity
+            folds back into the flow between 768 and 1023, where its column is
+            the cheapest one to give up. */}
+        <span className="order-6 md:order-none md:col-start-3 md:row-start-1 md:text-right text-xs text-body flex-shrink-0 tabular-nums"
           style={{ fontFamily: "'DM Mono', monospace" }}>
           {mm(item.width)} × {mm(item.height)}
+          <span className="lg:hidden"> · ×{item.qty}</span>
         </span>
 
-        <span className="order-6 md:order-4 lg:col-start-4 lg:row-start-1 lg:text-right text-xs text-body flex-shrink-0 tabular-nums"
+        <span className="hidden lg:block lg:col-start-4 lg:row-start-1 lg:text-right text-xs text-body flex-shrink-0 tabular-nums"
           style={{ fontFamily: "'DM Mono', monospace" }}>
           ×{item.qty}
         </span>
 
-        <span className="order-7 md:order-5 lg:col-start-5 lg:row-start-1 lg:text-right ml-auto md:ml-0 text-sm font-semibold text-ink flex-shrink-0 tabular-nums"
+        <span className="order-7 md:order-none md:col-start-4 lg:col-start-5 md:row-start-1 md:text-right ml-auto md:ml-0 text-sm font-semibold text-ink flex-shrink-0 tabular-nums"
           style={{ fontFamily: "'DM Mono', monospace" }}>
           {priced ? fmt(gstAdjust(linePriceTotal(item), gstMode)) : "$-,--"}
           <span className="text-[10px] font-normal text-body"> {gstSuffix(gstMode)}</span>

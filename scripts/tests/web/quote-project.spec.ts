@@ -116,8 +116,9 @@ test("expansion inspects only: one row at a time, composite children priced once
   await w1.click();
   await expect(w1).toHaveAttribute("aria-expanded", "true");
   // Options read as labelled lines, not a run-on list: the value alone cannot
-  // be decoded without already knowing the option order.
-  await expect(page.getByText("Colour:", { exact: true })).toBeVisible();
+  // be decoded without already knowing the option order. The label now sits
+  // ABOVE its value as a block, so it no longer carries a trailing colon.
+  await expect(page.getByText("Colour", { exact: true })).toBeVisible();
   await expect(page.getByText("Dover White", { exact: true })).toBeVisible();
 
   // Opening another closes the first — one expanded row at every breakpoint.
@@ -176,7 +177,12 @@ test("saving from the drawer keeps the same opening expanded and restores focus"
   // the row is keyed on the server id, not the regenerated local one.
   await expect(page.getByRole("button", { name: /details for W01$/ })).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByRole("button", { name: "Edit W01" })).toBeFocused();
-  await expect(page.getByText(/×2/)).toBeVisible();
+  // Exact, because quantity renders twice: inline in the size cell below 1024px
+  // and as its own column above it. Only one is ever displayed — the other is
+  // display:none, so it is out of the accessibility tree as well — but a loose
+  // regex resolves to both and trips strict mode. The default 1280px viewport
+  // shows the column, whose text is exactly "×2".
+  await expect(page.getByText("×2", { exact: true })).toBeVisible();
 });
 
 // ─── 5. Draft safety ───────────────────────────────────────────────────────────
