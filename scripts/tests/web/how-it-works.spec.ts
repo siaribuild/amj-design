@@ -3,15 +3,17 @@
 //
 // These guard the things the rebuild could plausibly break, not the copy:
 //
-//  • the four commercial facts and the two hero actions;
-//  • the drawn ProcessRail — that it carries the whole process in TEXT as well
-//    as geometry, and that exactly one orientation is ever displayed;
+//  • the hero's promise and its two actions;
+//  • the three phase anchors, which the rest of the site links to;
 //  • ownership expressed structurally (a numeral and an announced step number on
 //    your moments, neither on ours) rather than by colour alone;
 //  • THE LINE being a change of ground rather than a second copy of the closing
 //    banner, which is the mistake the rebuild set out to correct;
-//  • the phase-01 clock agreeing between the page and the rail, which two source
-//    files each declare and a comment in both says to keep in step.
+//  • the phase-01 clock reading as a duration, with the review step keeping its
+//    own two business days.
+//
+// The drawn ProcessRail and the jump tiles it sat with are gone, along with the
+// summary section that held them, so their specs went too.
 //
 // Copy itself is deliberately not asserted beyond the load-bearing headline: it
 // is CMS-adjacent marketing text and pinning every sentence makes the suite an
