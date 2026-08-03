@@ -86,7 +86,11 @@ const tick = (x: number, y: number, len: number) =>
 function DimGroups({ F, S, wMm, hMm }: { F: Box; S: typeof SIZES[ElevationSize]; wMm: number; hMm: number }) {
   const fs = S.font;
   const by = F.y + F.h;
-  const dimY = by + S.pad.b * 0.55;
+  // 0.68, not the wireframe's 0.55. At 0.55 the leader number's ascender lands
+  // ~0.5 units under the frame — invisible at md and lg, where the wireframe
+  // draws, and a collision at sm, where this one does. The witness lines are
+  // shortened to +4 to match, so the group still clears the bottom gutter.
+  const dimY = by + S.pad.b * 0.68;
   const dimX = F.x - S.pad.l * 0.41;
   const witX = F.x - S.pad.l * 0.65;
   const textX = dimX - 3;
@@ -102,11 +106,11 @@ function DimGroups({ F, S, wMm, hMm }: { F: Box; S: typeof SIZES[ElevationSize];
     <>
       <g>
         <path {...rule} d={
-          `M${q(F.x)} ${q(by + 2)} V${q(dimY + 6)} `
-          + `M${q(F.x + F.w)} ${q(by + 2)} V${q(dimY + 6)} `
+          `M${q(F.x)} ${q(by + 2)} V${q(dimY + 4)} `
+          + `M${q(F.x + F.w)} ${q(by + 2)} V${q(dimY + 4)} `
           + `M${q(F.x)} ${q(dimY)} H${q(F.x + F.w)} `
           + tick(F.x, dimY, 3.5) + tick(F.x + F.w, dimY, 3.5)} />
-        <text {...text} className="elev-dim" x={q(F.x + F.w / 2)} y={q(dimY - 4)} textAnchor="middle">{fmtMm(wMm)}</text>
+        <text {...text} className="elev-dim" x={q(F.x + F.w / 2)} y={q(dimY - 3)} textAnchor="middle">{fmtMm(wMm)}</text>
         {/* Break-line for a very wide opening — hidden until the drawing is
             narrow enough that the leader would otherwise read as a dimension
             drawn to scale. CSS owns that breakpoint, as in the wireframe. */}

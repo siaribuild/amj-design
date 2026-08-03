@@ -144,19 +144,24 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           would either shrink the text or leave the drawing marooned in it. */}
       {!composite && (
         <div className="grid gap-4 sm:gap-6 sm:grid-cols-[auto_minmax(0,1fr)] items-start">
-          {/* Fixed at the size's own widest viewBox rather than shrink-to-fit:
-              an auto column is as wide as whichever opening it holds, so the
-              specification beside it started at a different x on every row and
-              the panel could not be read down. The drawing sits left in it. */}
-          <div className="sm:w-[152px] max-w-full">
-            {/* Here the proportion IS the point, and it carries its own
+          {/* A fixed 180 square rather than shrink-to-fit. An auto column is as
+              wide as whichever opening it happens to hold, so the specification
+              beside it started at a different x on every row and the panel
+              could not be read down. */}
+          <div className="w-[180px] max-w-full">
+            {/* The drawing FILLS this square and preserveAspectRatio centres it
+                inside — which is also what scales it up: the generator's
+                intrinsic size is ~152 units, and letting it fit 180 grows the
+                leader text with it rather than shrinking it, the failure the
+                size table exists to prevent.
+
+                Here the proportion IS the point, and it carries its own
                 dimensions: this is the one view where the customer checks the
-                shape and the size of what they ordered against the hole in the
-                wall, so the numbers belong ON the drawing rather than in a
-                caption under it. */}
+                shape and size of what they ordered against the hole in the
+                wall, so the numbers belong ON the drawing, not in a caption. */}
             <Elevation productSlug={item.productSlug} widthMm={item.width} heightMm={item.height}
-              size="sm" className="max-w-full text-body" />
-            <p className="text-quiet mt-1 t-label">Viewed from outside</p>
+              size="sm" className="w-[180px] h-[180px] max-w-full text-body" />
+            <p className="text-quiet mt-1 text-center t-label">Viewed from outside</p>
           </div>
           <div className="min-w-0">
             <PanelLabel>Specification</PanelLabel>
@@ -205,11 +210,24 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           with a word on it, so the two Edit affordances on screen at once are
           visibly different things. It opens the drawer; it never turns this
           panel into a form. */}
-      <div className="mt-3">
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
         <button type="button" onClick={onEdit} aria-label={`Edit opening ${ref}`}
           className="card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
           <Pencil className="w-3.5 h-3.5" aria-hidden="true" />Edit opening
         </button>
+        {/* The line's own note — the editor's "Note (optional)". It reads here
+            rather than in the specification list above because it is free text
+            the customer wrote, not a choice they made from a set, and a
+            sentence in a column of one-word values makes the column ragged.
+            Beside the Edit control is also where it is most useful: it is the
+            thing most likely to be WHY you are about to open the editor.
+            Read-only, like everything else in this panel. */}
+        <p className="flex items-baseline gap-2.5 min-w-0">
+          <span className="text-quiet flex-shrink-0 font-data t-label">Note</span>
+          <span className={`min-w-0 t-cap ${item.location ? "text-ink" : "text-quiet"}`}>
+            {item.location || "None"}
+          </span>
+        </p>
       </div>
 
       {/* Deliberately absent (brief, "content boundary"): price breakdown,
