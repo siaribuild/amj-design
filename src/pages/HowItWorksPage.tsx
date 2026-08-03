@@ -164,7 +164,7 @@ function StatStrip() {
             // Row two needs its own top rule at the 2-up breakpoint only.
             i >= 2 ? "border-t border-t-white/15 sm:border-t-0" : ""
           }`}>
-          <dt className="text-white text-[15px] md:text-base" style={MONO}>{s.value}</dt>
+          <dt className="text-white text-[15px] md:text-base font-data">{s.value}</dt>
           {s.caption && <dd className="text-white/55 text-[13px] leading-snug mt-0.5">{s.caption}</dd>}
         </div>
       ))}
@@ -196,7 +196,7 @@ function StepRow({ s, brand }: { s: Step; brand: string }) {
       yours ? "" : "ml-6 md:ml-12 px-4 md:px-5 bg-recessive border-l-[3px] border-l-black/15"
     }`}>
       {yours ? (
-        <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center border border-sage/40 bg-sage-wash text-sage-deep text-[15px]" style={MONO}>
+        <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center border border-sage/40 bg-sage-wash text-sage-deep text-[15px] font-data">
           {s.n}
         </span>
       ) : (
@@ -208,16 +208,16 @@ function StepRow({ s, brand }: { s: Step; brand: string }) {
         {/* Baseline-aligned so the timing sits on the actor word's baseline
             rather than hanging off the cap-height of a 10px label. */}
         <p className="flex items-baseline flex-wrap gap-x-4 gap-y-1 mb-1.5">
-          <span className={`text-[10px] uppercase tracking-[0.14em] ${yours ? "text-sage" : "text-quiet"}`} style={MONO}>
+          <span className={`text-[10px] uppercase tracking-[0.14em] ${yours ? "text-sage" : "text-quiet"} font-data`}>
             {yours ? "You" : brand}
           </span>
           {/* Announced, not drawn: the numeral beside it is a graphic to a
               screen reader, and "01" alone does not say what it counts. Kept
               OUT of the label span above, whose uppercase would shout it. */}
           {yours && <span className="sr-only">step {s.n}</span>}
-          {s.meta && <span className="text-[11px] text-quiet" style={MONO}>{s.meta}</span>}
+          {s.meta && <span className="text-[11px] text-quiet font-data">{s.meta}</span>}
         </p>
-        <h3 className={`font-semibold leading-tight mb-1.5 ${yours ? "text-ink text-[18px] md:text-[19px]" : "text-ink-soft text-[16px]"}`} style={DISPLAY}>
+        <h3 className={`font-semibold leading-tight mb-1.5 ${yours ? "text-ink text-[18px] md:text-[19px]" : "text-ink-soft text-[16px]"} font-display`}>
           {s.title}
         </h3>
         <p className="text-body text-[14.5px] leading-relaxed split-prose">{s.body}</p>
@@ -244,12 +244,12 @@ function PhaseSection({ p, brand, onQuote, children }: {
           </div>
           {/* Money, in the same place in every phase header. */}
           <div className="md:text-right flex-shrink-0">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-quiet mb-1.5" style={MONO}>Paid so far</div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-quiet mb-1.5 font-data">Paid so far</div>
             <div className="flex md:justify-end items-center gap-2">
               <Meter paid={p.paid} />
               <span className="figure">{p.paid}</span>
             </div>
-            <div className="text-[12px] text-body mt-1" style={MONO}>{p.paidNote} · {p.duration}</div>
+            <div className="text-[12px] text-body mt-1 font-data">{p.paidNote} · {p.duration}</div>
           </div>
         </div>
 
@@ -341,12 +341,12 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
             {PHASES.map((p) => (
               <a key={p.id} href={`#${p.id}`}
                 className="border-r border-y border-black/10 bg-white px-3 py-4 md:px-5 md:py-5 hover:bg-sage-veil transition-colors">
-                <div className="text-[10px] uppercase tracking-[0.12em] text-quiet mb-1" style={MONO}>{p.label.replace(" — ", " · ")}</div>
+                <div className="text-[10px] uppercase tracking-[0.12em] text-quiet mb-1 font-data">{p.label.replace(" — ", " · ")}</div>
                 <div className="flex items-baseline gap-2 mb-1.5">
                   <span className="figure">{p.paid}</span>
                 </div>
                 <div className="mb-2"><Meter paid={p.paid} /></div>
-                <div className="text-[11.5px] md:text-[12.5px] text-body leading-snug" style={MONO}>{p.duration}</div>
+                <div className="text-[11.5px] md:text-[12.5px] text-body leading-snug font-data">{p.duration}</div>
               </a>
             ))}
           </div>
@@ -390,7 +390,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
               meaning is never carried by the glyph alone. */}
           <div className="mt-9 md:mt-11 flex items-center gap-4 md:gap-6">
             <span className="flex-1 h-px bg-white/15" aria-hidden="true" />
-            <span className="flex items-center gap-3 flex-shrink-0 text-sage-light text-[13px] md:text-sm" style={MONO}>
+            <span className="flex items-center gap-3 flex-shrink-0 text-sage-light text-[13px] md:text-sm font-data">
               <span className="flex items-center gap-2">
                 <span className="flex gap-1" aria-hidden="true">
                   <span className="block w-2.5 h-2.5 border border-white/40" />
@@ -425,7 +425,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
           <div className="grid grid-cols-1 md:grid-cols-[1.1fr_1fr] card">
             <div className="relative min-h-[220px] md:min-h-[300px] bg-night overflow-hidden">
               {qaShot && <img src={qaShot} alt="A finished aluminium window unit, photographed before despatch" className="absolute inset-0 w-full h-full object-cover" />}
-              <span className="absolute left-4 bottom-4 bg-ink/85 text-white text-[11px] uppercase tracking-[0.14em] px-2.5 py-1.5" style={MONO}>
+              <span className="absolute left-4 bottom-4 bg-ink/85 text-white text-[11px] uppercase tracking-[0.14em] px-2.5 py-1.5 font-data">
                 Pre-despatch QA
               </span>
             </div>
@@ -438,7 +438,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
                   <span className="w-8 h-8 mb-3 flex items-center justify-center border border-sage/40 text-sage">
                     <c.icon className="w-4 h-4" aria-hidden="true" />
                   </span>
-                  <h3 className="font-semibold text-ink text-[17px] leading-tight mb-1.5" style={DISPLAY}>{c.t}</h3>
+                  <h3 className="font-semibold text-ink text-[17px] leading-tight mb-1.5 font-display">{c.t}</h3>
                   <p className="text-body text-[14.5px] leading-relaxed">{c.p}</p>
                 </div>
               ))}

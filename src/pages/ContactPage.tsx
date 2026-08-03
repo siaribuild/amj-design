@@ -182,7 +182,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
         <div className="relative max-w-6xl mx-auto px-6 pt-[78px] pb-10">
           <div className="flex items-center gap-2 mb-4">
             <WindowMark size={12} color="rgba(255,255,255,0.55)" />
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/55" style={{ fontFamily: "'DM Mono', monospace" }}>Contact</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/55 font-data">Contact</span>
           </div>
           <h1 className="text-white font-semibold leading-[1.04] tracking-tight mb-3.5 max-w-[20ch] text-balance" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2.1rem,4.4vw,3.05rem)" }}>
             Tell us what you need — we'll point you the fastest way there
@@ -237,7 +237,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
           <div className="mb-[18px]">
             <div className="flex items-center gap-2 mb-2">
               <WindowMark size={12} color={SAGE} />
-              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-sage" style={{ fontFamily: "'DM Mono', monospace" }}>Do it here</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-sage font-data">Do it here</span>
             </div>
             <h2 id="zone-h" className="text-ink font-semibold mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.3rem,2.4vw,1.5rem)" }}>Two things you can finish on this page</h2>
             <p className="text-body text-[14.5px] max-w-[64ch]">Both options are always shown. Pick one — the form for it opens right below.</p>
@@ -279,7 +279,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                   </div>
                 </div>
                 <aside className="border border-black/10 ground-bone p-[18px]">
-                  <h4 className="text-xs uppercase tracking-[0.13em] text-sage mb-3" style={{ fontFamily: "'DM Mono', monospace" }}>Helps us answer fast</h4>
+                  <h4 className="text-xs uppercase tracking-[0.13em] text-sage mb-3 font-data">Helps us answer fast</h4>
                   <ul className="space-y-2.5">
                     {["Rough width × height for each opening", "Product type — sliding, awning, fixed, door", "Your quote reference, if you have one"].map(t => (
                       <li key={t} className="flex gap-2.5 text-[13px] text-body leading-snug"><Check className="w-[15px] h-[15px] text-sage flex-shrink-0 mt-0.5" />{t}</li>
@@ -294,7 +294,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                 {/* Picker + map */}
                 <div>
                   <p className="text-[13.5px] text-body mb-[18px] max-w-[52ch]">Pick the showroom nearest you. A representative calls to confirm a time. We show the suburb here — the exact address comes with your confirmation.</p>
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-ink-soft mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>Choose a location<span className="text-sage ml-1">*</span></div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-ink-soft mb-2.5 font-data">Choose a location<span className="text-sage ml-1">*</span></div>
                   <div className="flex flex-wrap gap-2 mb-1.5">
                     {locations.length === 0 && <span className="text-[13px] text-quiet">Loading locations…</span>}
                     {locations.map(l => {
@@ -302,7 +302,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                       return (
                         <button key={l.id} type="button" onClick={() => selectLocation(l.id)} aria-pressed={sel}
                           className={`inline-flex items-center gap-1.5 px-3 py-2 text-[13px] border transition-colors cursor-pointer ${sel ? "border-sage bg-sage-wash text-sage-ink font-medium" : "border-black/12 bg-white text-body hover:border-sage/50"}`}>
-                          {sel && <Check className="w-3 h-3 text-sage" />}{l.suburb} <span className={`text-[10px] ${sel ? "text-sage" : "text-quietest"}`} style={{ fontFamily: "'DM Mono', monospace" }}>{l.stateCode}</span>
+                          {sel && <Check className="w-3 h-3 text-sage" />}{l.suburb} <span className={`text-[10px] ${sel ? "text-sage" : "text-quietest"} font-data`}>{l.stateCode}</span>
                         </button>
                       );
                     })}
@@ -369,7 +369,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
           <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black/10">
             <Fact label="Reach us">{brandContact?.phone && <><a href={`tel:${brandContact.phone.replace(/[^0-9+]/g, "")}`} className="border-b border-black/10 hover:text-ink hover:border-sage">{brandContact.phone}</a>{" · "}</>}<ObfuscatedEmail address={brandContact?.email} className="border-b border-black/10 hover:text-ink hover:border-sage" /></Fact>
             <Fact label="Hours"><span className="text-ink font-semibold">Mon–Fri 8am–5pm</span> · Sat by appointment · Sun closed</Fact>
-            <Fact label="Good to know"><b className="text-ink font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Supply only.</b> Your builder or installer fits the frames — we make and deliver them.</Fact>
+            <Fact label="Good to know"><b className="text-ink font-semibold font-display">Supply only.</b> Your builder or installer fits the frames — we make and deliver them.</Fact>
           </div>
         </div>
       </section>
@@ -399,13 +399,13 @@ const selectCls = "appearance-none pr-8 bg-[url('data:image/svg+xml,%3Csvg%20xml
 function RouterCard({ icon, title, body, cta, tag, lead, down, onClick }: { icon: React.ReactNode; title: string; body: string; cta: string; tag?: string; lead?: boolean; down?: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} className={`group text-left flex flex-col border card-link p-[17px] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage ${lead ? "border-sage bg-paper" : "border-line bg-paper"}`}>
-      {tag && <span className="self-start text-[9.5px] tracking-[0.14em] uppercase bg-sage text-white px-2 py-[3px] mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>{tag}</span>}
+      {tag && <span className="self-start text-[9.5px] tracking-[0.14em] uppercase bg-sage text-white px-2 py-[3px] mb-2.5 font-data">{tag}</span>}
       <div className="flex items-center gap-2.5 mb-2.5">
         <span className={`w-9 h-9 grid place-items-center border transition-colors ${lead ? "border-sage text-sage" : "border-sage/40 text-sage group-hover:bg-sage group-hover:border-sage group-hover:text-white"}`}>{icon}</span>
-        <h3 className="text-[16px] leading-tight text-ink font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</h3>
+        <h3 className="text-[16px] leading-tight text-ink font-semibold font-display">{title}</h3>
       </div>
       <p className="text-[13px] text-body leading-[1.42] flex-1">{body}</p>
-      <span className="mt-2.5 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-sage" style={{ fontFamily: "'DM Mono', monospace" }}>{cta} {down ? "↓" : <ArrowRight className="w-3.5 h-3.5" />}</span>
+      <span className="mt-2.5 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-sage font-data">{cta} {down ? "↓" : <ArrowRight className="w-3.5 h-3.5" />}</span>
     </button>
   );
 }
@@ -416,8 +416,8 @@ function TabButton({ id, active, onSelect, icon, note, title, sub }: { id: strin
       className={`tab relative flex items-start gap-3 text-left p-4 cursor-pointer ${active ? "sm:border-b-white z-10" : ""}`}>
       <span className={`w-[38px] h-[38px] grid place-items-center border flex-shrink-0 transition-colors ${active ? "bg-sage border-sage text-white" : "border-sage/40 text-sage"}`}>{icon}</span>
       <span className="flex flex-col gap-[3px]">
-        <span className={`text-[10px] uppercase tracking-[0.14em] ${active ? "text-sage" : "text-quietest"}`} style={{ fontFamily: "'DM Mono', monospace" }}>{note}</span>
-        <span className="text-[16.5px] leading-tight text-ink font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</span>
+        <span className={`text-[10px] uppercase tracking-[0.14em] ${active ? "text-sage" : "text-quietest"} font-data`}>{note}</span>
+        <span className="text-[16.5px] leading-tight text-ink font-semibold font-display">{title}</span>
         <span className="text-xs text-body leading-snug">{sub}</span>
       </span>
     </button>
@@ -427,7 +427,7 @@ function TabButton({ id, active, onSelect, icon, note, title, sub }: { id: strin
 function FieldR({ id, label, req, opt, error, children }: { id: string; label: string; req?: boolean; opt?: boolean; error?: string; children: React.ReactNode }) {
   return (
     <div id={`field-${id}`}>
-      <label className="block text-[10px] font-semibold uppercase tracking-[0.13em] text-ink-soft mb-1.5" style={{ fontFamily: "'DM Mono', monospace" }}>
+      <label className="block text-[10px] font-semibold uppercase tracking-[0.13em] text-ink-soft mb-1.5 font-data">
         {label}{req && <span className="text-sage ml-0.5">*</span>}{opt && <span className="text-quieter font-normal tracking-[0.08em] ml-1">(optional)</span>}
       </label>
       {children}
@@ -463,7 +463,7 @@ function Honeypot({ website, setWebsite }: { website: string; setWebsite: (v: st
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="py-5 sm:py-0 sm:px-6 first:sm:pl-0 last:sm:pr-0">
-      <div className="text-[10px] uppercase tracking-[0.13em] text-sage mb-2.5" style={{ fontFamily: "'DM Mono', monospace" }}>{label}</div>
+      <div className="text-[10px] uppercase tracking-[0.13em] text-sage mb-2.5 font-data">{label}</div>
       <div className="text-[14px] text-body leading-relaxed">{children}</div>
     </div>
   );
@@ -475,7 +475,7 @@ function SuccessCard({ intent, reference, name, onQuote, onAgain }: { intent: In
   return (
     <div className="max-w-xl mx-auto text-center py-4" role="status" aria-live="polite">
       <div className="w-12 h-12 border border-sage/30 bg-sage-wash flex items-center justify-center mx-auto mb-4"><CheckCircle className="w-6 h-6" style={{ color: SAGE }} /></div>
-      <h3 className="text-lg font-semibold text-ink mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{appt ? "Appointment request received" : "Message received"}</h3>
+      <h3 className="text-lg font-semibold text-ink mb-2 font-display">{appt ? "Appointment request received" : "Message received"}</h3>
       {reference && <p className="inline-block text-xs font-mono bg-bone border border-black/10 px-2.5 py-1 mb-4">{reference}</p>}
       <p className="text-sm text-body max-w-md mx-auto mb-6 leading-relaxed">
         {appt

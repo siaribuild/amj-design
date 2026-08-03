@@ -145,7 +145,7 @@ function OpsLogin({ onAuthed }: { onAuthed: (u: OpsUser) => void }) {
   };
 
   return (
-    <div className="min-h-screen bg-ops flex items-center justify-center px-6" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="min-h-screen bg-ops flex items-center justify-center px-6 font-body">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <OpsLogo height={30} />
@@ -195,7 +195,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
   const [tab, setTab] = useState<Tab>(TABS[0]?.id ?? "dashboard");
   const [navOpen, setNavOpen] = useState(false);
   return (
-    <div className="min-h-screen ground-bone flex" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="min-h-screen ground-bone flex font-body">
       {/* Sidebar — desktop and tablet only. Below md it is a fixed 224px rail on
           a 375px screen, and with the content's own p-8 that left 87px of usable
           width: 375 − 224 − 64. A nine-column table was rendering into that. */}
@@ -244,7 +244,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
             aria-label="Open menu" aria-expanded={navOpen} aria-controls="ops-nav-drawer">
             <Menu className="w-5 h-5" />
           </button>
-          <h1 className="text-[15px] font-semibold text-ops capitalize flex items-center gap-2 min-w-0 flex-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+          <h1 className="text-[15px] font-semibold text-ops capitalize flex items-center gap-2 min-w-0 flex-1 font-display">
             <span className="truncate">{TABS.find(t => t.id === tab)?.label}</span>
           </h1>
           {/* The omnibox is a desktop control; on a phone it left ~200px of
@@ -406,7 +406,7 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
             return (
               <button key={r.key} onClick={() => setTab(r.tab)}
                 className="w-full text-left px-5 py-3.5 border-b border-black/5 last:border-0 hover:bg-bone flex items-baseline gap-3">
-                <span className="text-xl font-semibold text-ops" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{r.count}</span>
+                <span className="text-xl font-semibold text-ops font-display">{r.count}</span>
                 <span className="text-sm text-ink-soft flex-1">{r.count === 1 ? one : many}</span>
                 <span className="text-xs text-sage">Open →</span>
               </button>
@@ -425,7 +425,7 @@ function Dashboard({ setTab }: { setTab: (t: Tab) => void }) {
         ].map(c => (
           <div key={c.label} className="px-5 py-4 border-r border-black/5 last:border-0">
             <p className="text-[11px] uppercase tracking-wide text-quiet">{c.label}</p>
-            <p className="text-xl font-semibold text-ops mt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>{c.value}</p>
+            <p className="text-xl font-semibold text-ops mt-0.5 font-data">{c.value}</p>
           </div>
         ))}
       </div>

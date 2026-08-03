@@ -175,7 +175,7 @@ function RateCards() {
   return (
     <>
       <p className="text-xs mb-3" style={{ color: MUTED }}>
-        A unit is <span style={MONO}>perimeter(m) × perim + area(m²) × area + options</span>, then the minimum
+        A unit is <span className="font-data">perimeter(m) × perim + area(m²) × area + options</span>, then the minimum
         charge, then the rules, then rounded to $10. The example column prices a 1200 × 1200 mm opening with no
         options on each card — a mistyped rate shows up there before it reaches a customer.
       </p>
@@ -209,7 +209,7 @@ function RateCards() {
                           {c.id}{c.familySlug ? ` · ${c.familySlug}` : ""}
                         </span>
                       </>
-                    : <span style={MONO}>{c.id}</span>}
+                    : <span className="font-data">{c.id}</span>}
                   {c.id === "default" && (
                     // Load-bearing: loadRateCard silently falls back here for any
                     // product without a card of its own, so it must not read as
@@ -428,17 +428,17 @@ function WorkedExample({ priced }: { priced: OpsPricedSample | undefined }) {
         <div key={`${s.key}-${i}`} className="flex items-baseline justify-between text-xs py-0.5"
           style={{ color: s.applied ? INK : MUTED }}>
           <span className="truncate pr-2">{s.label}</span>
-          <span className="flex items-baseline gap-3 shrink-0" style={MONO}>
+          <span className="flex items-baseline gap-3 shrink-0 font-data">
             {s.detail && <span className="text-[11px]" style={{ color: MUTED }}>{s.detail}</span>}
             <span className="w-20 text-right">{s.applied && s.amount != null ? money(s.amount) : "—"}</span>
           </span>
         </div>
       ))}
       <div className="flex items-baseline justify-between text-sm pt-2 mt-1 border-t border-black/8" style={{ color: INK }}>
-        <span>Total</span><span style={MONO}>{money(priced.snapshot.total)}</span>
+        <span>Total</span><span className="font-data">{money(priced.snapshot.total)}</span>
       </div>
       <div className="flex items-baseline justify-between text-xs" style={{ color: MUTED }}>
-        <span>deposit</span><span style={MONO}>{money(priced.snapshot.depositAmount)}</span>
+        <span>deposit</span><span className="font-data">{money(priced.snapshot.depositAmount)}</span>
       </div>
     </div>
   );
@@ -490,7 +490,7 @@ function Rules({ rules, setRules, preview, canEdit }: {
                   options={[">", ">=", "<", "<=", "=="]} />
                 <input value={String(r.whenValue)} disabled={!canEdit} inputMode="decimal"
                   onChange={(e) => patch(i, { whenValue: Number(e.target.value) || 0 })}
-                  className="w-20 text-right border border-black/12 px-2 py-0.5 text-sm" style={MONO} />
+                  className="w-20 text-right border border-black/12 px-2 py-0.5 text-sm font-data" />
                 {/* The unit follows the field, so nobody has to remember that area
                     is m² while width is mm — the confusion that produces a rule
                     which never fires. */}
@@ -500,7 +500,7 @@ function Rules({ rules, setRules, preview, canEdit }: {
                   options={["percent", "fixed"]} labels={{ percent: "add %", fixed: "add $" }} />
                 <input value={String(r.thenValue)} disabled={!canEdit} inputMode="decimal"
                   onChange={(e) => patch(i, { thenValue: Number(e.target.value) || 0 })}
-                  className="w-20 text-right border border-black/12 px-2 py-0.5 text-sm" style={MONO} />
+                  className="w-20 text-right border border-black/12 px-2 py-0.5 text-sm font-data" />
                 {canEdit && (
                   <button className="ml-auto" title="Remove this rule"
                     onClick={() => setRules(rules.filter((_, j) => j !== i))}>
@@ -661,7 +661,7 @@ function Delta({ label, before, after }: { label: string; before: number; after:
   return (
     <div className="flex items-baseline justify-between py-0.5">
       <span style={{ color: MUTED }}>{label}</span>
-      <span style={MONO}>
+      <span className="font-data">
         <span style={{ color: MUTED }}>{money(before)}</span>
         <span style={{ color: MUTED }}> → </span>
         <span style={{ color: INK }}>{money(after)}</span>
@@ -695,7 +695,7 @@ function History({ rows, canRevert, onRevert }: {
           <div key={h.id} className="px-4 py-2.5 border-b border-black/5 last:border-0">
             <div className="flex items-baseline justify-between">
               <span className="text-sm" style={{ color: INK }}>
-                <span style={MONO}>{h.toVersion}</span> · {h.actor}
+                <span className="font-data">{h.toVersion}</span> · {h.actor}
               </span>
               <span className="flex items-center gap-3">
                 <span className="text-xs" style={{ color: MUTED }}>{ago(h.createdAt)}</span>
@@ -759,7 +759,7 @@ function Options({ onChanged }: { onChanged: () => void }) {
                     <input value={draft[m.slug] ?? ""} inputMode="decimal" disabled={!data.canEdit}
                       onChange={(e) => setDraft((d) => ({ ...d, [m.slug]: e.target.value }))}
                       onKeyDown={(e) => { if (e.key === "Enter" && draft[m.slug]) commit(m.slug, Number(draft[m.slug])); }}
-                      className="w-24 text-right border border-black/12 px-2 py-1 text-sm" style={MONO} />
+                      className="w-24 text-right border border-black/12 px-2 py-1 text-sm font-data" />
                     <button disabled={!data.canEdit || !draft[m.slug] || saving === m.slug}
                       onClick={() => commit(m.slug, Number(draft[m.slug]))}
                       className="text-xs text-white px-3 py-1.5 disabled:opacity-40" style={{ background: SAGE }}>Save</button>
@@ -785,7 +785,7 @@ function Options({ onChanged }: { onChanged: () => void }) {
         <h3 className="text-sm" style={{ ...HEAD, color: INK }}>Priced ({data.options.length})</h3>
         <span className="flex items-center gap-3">
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="search slug…"
-            className="border border-black/12 px-2 py-1 text-xs w-48" style={MONO} />
+            className="border border-black/12 px-2 py-1 text-xs w-48 font-data" />
           <label className="text-xs flex items-center gap-1.5" style={{ color: MUTED }}>
             <input type="checkbox" checked={hideZero} onChange={(e) => setHideZero(e.target.checked)} />
             hide $0
@@ -896,7 +896,7 @@ function Policy() {
         <span className="text-sm" style={{ color: INK }}>Deposit</span>
         <span className="flex items-center gap-1">
           <input value={deposit} onChange={(e) => setDeposit(e.target.value)} disabled={!data.canEdit} inputMode="decimal"
-            className="w-20 text-right border border-black/12 px-2 py-1 text-sm disabled:bg-black/[0.03]" style={MONO} />
+            className="w-20 text-right border border-black/12 px-2 py-1 text-sm disabled:bg-black/[0.03] font-data" />
           <span className="text-xs" style={{ color: MUTED }}>%</span>
         </span>
       </div>
@@ -945,7 +945,7 @@ function CatalogueMirror() {
               hydrates from Sanity, so it could show something other than what
               production prices against. `source` makes that legible. */}
           Showing the catalogue as the pricing engine loaded it —{" "}
-          <span style={MONO}>{d.source === "sanity" ? `Sanity, ${ago(d.loadedAt)}` : "built-in fallback (Sanity not loaded)"}</span> ·
+          <span className="font-data">{d.source === "sanity" ? `Sanity, ${ago(d.loadedAt)}` : "built-in fallback (Sanity not loaded)"}</span> ·
           {" "}{d.productCount} products
           <a href="https://apertly-catalogue.sanity.studio" target="_blank" rel="noreferrer"
             className="inline-flex items-center gap-1 underline underline-offset-2">

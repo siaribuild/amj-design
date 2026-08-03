@@ -105,16 +105,16 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
       <div className="flex justify-between items-start gap-5 flex-wrap pb-[22px] border-b border-black/10 mb-[26px]">
         <div>
           <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
-            {p.ref && <span className="text-[13px] font-medium text-sage" style={{ fontFamily: "'DM Mono', monospace" }}>{p.ref}</span>}
+            {p.ref && <span className="text-[13px] font-medium text-sage font-data">{p.ref}</span>}
             <StatusPill tone="attn">Quote ready · awaiting you</StatusPill>
           </div>
           <h1 className="font-semibold text-ink leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.55rem,3.4vw,2rem)" }}>{p.title}</h1>
           <div className="flex gap-x-4 gap-y-2 flex-wrap items-center text-[13.5px] text-body mt-2">
-            <span className="inline-flex items-center gap-1.5 border border-black/10 px-2 py-[3px] text-[11.5px]" style={{ fontFamily: "'DM Mono', monospace" }}>
+            <span className="inline-flex items-center gap-1.5 border border-black/10 px-2 py-[3px] text-[11.5px] font-data">
               <Lock className="w-3 h-3 text-sage" />Immutable · Revision {R}
             </span>
-            <span>Issued <span className="text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDate(current.issuedAt)}</span></span>
-            <span>Valid until <span className="text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDate(validUntil.toISOString())}</span> · <span style={{ fontFamily: "'DM Mono', monospace", color: TONE.attn.text }}>{daysLeft} days left</span></span>
+            <span>Issued <span className="text-ink font-data">{fmtDate(current.issuedAt)}</span></span>
+            <span>Valid until <span className="text-ink font-data">{fmtDate(validUntil.toISOString())}</span> · <span style={{ fontFamily: "'DM Mono', monospace", color: TONE.attn.text }}>{daysLeft} days left</span></span>
           </div>
         </div>
         <Btn variant="ghost" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }}>Message us</Btn>
@@ -125,14 +125,14 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
         <section className="p-5 border" style={{ borderColor: TONE.attn.bd, borderLeft: `3px solid ${TONE.attn.text}`, background: `linear-gradient(180deg, ${TONE.attn.bg}, rgba(178,110,15,.03))` }}>
           <div className="flex items-center gap-2 mb-2.5 flex-wrap">
             <StatusPill tone="attn">Your decision</StatusPill>
-            <span className="text-[11.5px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>Nothing is charged until you accept</span>
+            <span className="text-[11.5px] text-body font-data">Nothing is charged until you accept</span>
           </div>
-          <h2 className="text-lg font-semibold text-ink mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Review &amp; accept quote {R}</h2>
+          <h2 className="text-lg font-semibold text-ink mb-1.5 font-display">Review &amp; accept quote {R}</h2>
           <p className="text-[13.5px] text-body max-w-[60ch]">
             Accepting starts your order. We then invoice a <b className="text-ink">50% deposit of {money(deposit)}</b> to begin — the remaining <b className="text-ink">50% ({money(balance)}) is due before despatch</b>, after we share quality photos. Accepting locks in this revision's prices and specification. <b className="text-ink">Nothing is charged until you accept.</b>
           </p>
           <div className="bg-white border p-[13px] mt-3.5" style={{ borderColor: TONE.attn.bd }}>
-            <p className="text-xs text-body mb-1.5" style={{ fontFamily: "'DM Mono', monospace" }}>ON ACCEPTANCE →</p>
+            <p className="text-xs text-body mb-1.5 font-data">ON ACCEPTANCE →</p>
             <p className="text-[13px] text-body"><b className="text-ink">Order created</b> → 50% deposit invoice → shop drawings for your sign-off → manufacturing → quality photos → 50% balance → delivery. You'll track every step on the order screen.</p>
           </div>
           <div className="flex items-center gap-2.5 flex-wrap mt-[15px]">
@@ -204,7 +204,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
         <FilesBlock files={files} />
         <SummaryBand>
           <div className="flex-1 basis-[250px] card p-[18px]">
-            <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>This quote · {R}</h3>
+            <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5 font-data">This quote · {R}</h3>
             <div className="flex justify-between pb-3 text-sm"><span>Total inc GST</span><span className="font-semibold text-base" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{money(total)}</span></div>
             <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-body">Deposit to begin</span><span className="font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums", color: TONE.attn.text }}>{money(deposit)}</span></div>
             <div className="flex justify-between py-[9px] border-t border-black/[0.07] text-[13.5px]"><span className="text-body">Balance before despatch</span><span className="font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{money(balance)}</span></div>
@@ -212,7 +212,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
           </div>
           <ContactCard setPage={setPage} />
           <div className="flex-1 basis-[250px] card p-[18px]">
-            <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>Good to know</h3>
+            <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5 font-data">Good to know</h3>
             <p className="text-[13px] text-body leading-relaxed">Issued revisions can't be edited — accepting is always against a specific revision. Requesting changes returns the quote to <b className="text-ink">Under review</b> and we issue a fresh revision. Nothing is charged until you accept.</p>
           </div>
         </SummaryBand>

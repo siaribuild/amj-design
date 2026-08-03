@@ -41,8 +41,7 @@ export function FilterSelect({ label, listLabel, options, value, unit = "item", 
 
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-widest text-body mb-2"
-        style={{ fontFamily: "'DM Mono', monospace" }}>{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-widest text-body mb-2 font-data">{label}</p>
       <div className="relative" ref={ref}>
         <button type="button" onClick={() => setOpen((o) => !o)}
           aria-haspopup="listbox" aria-expanded={open}

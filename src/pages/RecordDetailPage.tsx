@@ -28,7 +28,7 @@ import type { TrackFocus } from "./OrderTrackingPage";
 // ── Shared bits ───────────────────────────────────────────────────────────────
 export function BackLink({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className="inline-flex items-center gap-[7px] text-[12.5px] text-body hover:text-sage mb-[18px] cursor-pointer" style={{ fontFamily: "'DM Mono', monospace" }}>
+    <button onClick={onClick} className="inline-flex items-center gap-[7px] text-[12.5px] text-body hover:text-sage mb-[18px] cursor-pointer font-data">
       <ChevronLeft className="w-3.5 h-3.5" />All projects
     </button>
   );
@@ -38,9 +38,9 @@ export function Blk({ eyebrow, title, right, children, id }: { eyebrow: string; 
   return (
     <section id={id} className="card">
       <div className="flex items-center gap-2.5 px-5 py-[15px] border-b border-black/10 flex-wrap">
-        <span className="text-[11.5px] tracking-[0.14em] uppercase text-sage" style={{ fontFamily: "'DM Mono', monospace" }}>{eyebrow}</span>
-        <h2 className="text-[15px] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</h2>
-        {right && <span className="sm:ml-auto text-xs text-body basis-full sm:basis-auto" style={{ fontFamily: "'DM Mono', monospace" }}>{right}</span>}
+        <span className="text-[11.5px] tracking-[0.14em] uppercase text-sage font-data">{eyebrow}</span>
+        <h2 className="text-[15px] font-semibold text-ink font-display">{title}</h2>
+        {right && <span className="sm:ml-auto text-xs text-body basis-full sm:basis-auto font-data">{right}</span>}
       </div>
       {children}
     </section>
@@ -86,9 +86,9 @@ function ActionGate({ pill, step, title, children }: { pill: string; step?: stri
     <section className="p-5 border" style={{ borderColor: TONE.attn.bd, borderLeft: `3px solid ${TONE.attn.text}`, background: `linear-gradient(180deg, ${TONE.attn.bg}, rgba(178,110,15,.03))` }}>
       <div className="flex items-center gap-2 mb-2.5 flex-wrap">
         <StatusPill tone="attn">{pill}</StatusPill>
-        {step && <span className="text-[11.5px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{step}</span>}
+        {step && <span className="text-[11.5px] text-body font-data">{step}</span>}
       </div>
-      <h2 className="text-lg font-semibold text-ink mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</h2>
+      <h2 className="text-lg font-semibold text-ink mb-1.5 font-display">{title}</h2>
       {children}
     </section>
   );
@@ -105,7 +105,7 @@ function PayPanel({ kind, amount, orderNo }: { kind: "deposit" | "balance"; amou
   return (
     <div className="card p-4 mt-3.5">
       <p className="flex items-center gap-2 text-sm font-medium text-ink mb-2"><Landmark className="w-4 h-4 text-sage" />Pay the {kind} by bank transfer</p>
-      <div className="text-[13px] text-body space-y-1" style={{ fontFamily: "'DM Mono', monospace" }}>
+      <div className="text-[13px] text-body space-y-1 font-data">
         <p>Amount <span className="text-ink font-medium">{money(amount)}</span></p>
         <p>BSB 083-000 · Acct 12 345 678</p>
         <p>Reference <span className="text-ink font-medium">{orderNo}</span></p>
@@ -132,14 +132,14 @@ function TimelineNode({ n, last }: { n: TlNode; last: boolean }) {
       </span>
       <div className="pt-[3px] min-w-0">
         <div className="flex items-center gap-2.5 flex-wrap">
-          <h4 className={`text-[15px] font-semibold ${n.state === "locked" ? "text-quieter" : "text-ink"}`} style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{n.title}</h4>
+          <h4 className={`text-[15px] font-semibold ${n.state === "locked" ? "text-quieter" : "text-ink"} font-display`}>{n.title}</h4>
           {n.pill && (
             <StatusPill tone={n.pill.tone} icon={n.pill.pulse ? <span className="w-[7px] h-[7px] rounded-full animate-pulse" style={{ background: TONE.attn.node }} /> : undefined}>
               {n.pill.label}
             </StatusPill>
           )}
         </div>
-        <div className="text-[11.5px] text-body mt-[3px]" style={{ fontFamily: "'DM Mono', monospace" }}>{n.status}</div>
+        <div className="text-[11.5px] text-body mt-[3px] font-data">{n.status}</div>
         {n.act && <div className="mt-[11px] border p-[13px]" style={{ borderColor: TONE.attn.bd, background: TONE.attn.bg }}>{n.act}</div>}
       </div>
     </div>
@@ -220,25 +220,25 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit }: {
   const price = (value: number | null) => value == null ? "Pending final price" : money(value);
   return (
     <>
-      <div className="hidden md:grid grid-cols-[118px_1fr_110px_44px_104px_116px] gap-3.5 px-5 py-[11px] bg-sage/[0.07] border-b border-black/10 text-[10.5px] tracking-[0.08em] uppercase text-body" style={{ fontFamily: "'DM Mono', monospace" }} aria-hidden="true">
+      <div className="hidden md:grid grid-cols-[118px_1fr_110px_44px_104px_116px] gap-3.5 px-5 py-[11px] bg-sage/[0.07] border-b border-black/10 text-[10.5px] tracking-[0.08em] uppercase text-body font-data" aria-hidden="true">
         <span>Code / room</span><span>Product</span><span>Size (W×H)</span><span>Qty</span>
         <span className="text-right">{showUnit ? "Unit price" : "Line price"}</span>
         <span className="text-right">{showUnit ? "Line total" : "Status"}</span>
       </div>
-      <div className="md:hidden px-[18px] py-[11px] bg-sage/[0.07] border-b border-black/10 text-[10.5px] tracking-[0.08em] uppercase text-body" style={{ fontFamily: "'DM Mono', monospace" }}>
+      <div className="md:hidden px-[18px] py-[11px] bg-sage/[0.07] border-b border-black/10 text-[10.5px] tracking-[0.08em] uppercase text-body font-data">
         {lines.length} line{lines.length === 1 ? "" : "s"} · anchored by schedule code
       </div>
       {lines.map((l, idx) => (
         <div key={`${l.code}-${idx}`} className="grid grid-cols-[1fr_auto] md:grid-cols-[118px_1fr_110px_44px_104px_116px] gap-x-3.5 gap-y-2 px-5 py-3.5 border-b border-black/[0.07] last:border-b-0 hover:bg-sage/[0.05] items-center">
           <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-ink tracking-[0.02em]" style={{ fontFamily: "'DM Mono', monospace" }}>{l.code}</span>
+            <span className="text-sm font-medium text-ink tracking-[0.02em] font-data">{l.code}</span>
             {l.room && <span className="text-[11px] text-body bg-black/[0.045] px-1.5 py-px w-fit">{l.room}</span>}
           </div>
           <div className="md:order-none order-3 col-span-2 md:col-span-1">
             <span className="text-[13.5px] text-ink">{l.productName}</span>
-            {l.optionsSummary && <span className="block text-[11.5px] text-body mt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>{l.optionsSummary}</span>}
+            {l.optionsSummary && <span className="block text-[11.5px] text-body mt-0.5 font-data">{l.optionsSummary}</span>}
           </div>
-          <span className="hidden md:block text-[12.5px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{dimsLabel(l)}</span>
+          <span className="hidden md:block text-[12.5px] text-body font-data">{dimsLabel(l)}</span>
           <span className="hidden md:block text-[13px]" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{l.qty}</span>
           <span className="hidden md:block text-right text-[13.5px] font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>
             {showUnit ? price(l.lineTotal == null ? null : (l.qty ? l.lineTotal / l.qty : l.lineTotal)) : price(l.lineTotal)}
@@ -248,7 +248,7 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit }: {
               ? <span className="text-[13.5px] font-medium" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{price(l.lineTotal)}</span>
               : statusPill?.(l)}
           </span>
-          <span className="md:hidden col-span-2 order-4 flex items-center gap-4 text-[12.5px] text-body pt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>
+          <span className="md:hidden col-span-2 order-4 flex items-center gap-4 text-[12.5px] text-body pt-0.5 font-data">
             {dimsLabel(l)} <span>×{l.qty}</span> <span className="font-medium text-ink">{price(l.lineTotal)}</span>
           </span>
         </div>
@@ -273,13 +273,13 @@ export function FilesBlock({ files, note }: { files: ApiFile[]; note?: string })
           <span className="w-[34px] h-[34px] border border-black/10 grid place-items-center text-sage flex-shrink-0"><FileText className="w-4 h-4" /></span>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium text-ink truncate">{f.filename}</div>
-            <div className="text-[11.5px] text-body mt-0.5 uppercase" style={{ fontFamily: "'DM Mono', monospace" }}>{f.kind} · {(f.size / 1024).toFixed(0)} KB</div>
+            <div className="text-[11.5px] text-body mt-0.5 uppercase font-data">{f.kind} · {(f.size / 1024).toFixed(0)} KB</div>
           </div>
-          <a className="ml-auto text-sage text-xs inline-flex items-center gap-1.5 hover:underline whitespace-nowrap" style={{ fontFamily: "'DM Mono', monospace" }}
+          <a className="ml-auto text-sage text-xs inline-flex items-center gap-1.5 hover:underline whitespace-nowrap font-data"
             href={`/api/files/${f.id}/download`} target="_blank" rel="noreferrer">Open</a>
         </div>
       ))}
-      {note && <p className="px-5 pb-4 pt-2 text-[11px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{note}</p>}
+      {note && <p className="px-5 pb-4 pt-2 text-[11px] text-body font-data">{note}</p>}
     </Blk>
   );
 }
@@ -292,7 +292,7 @@ export function SummaryBand({ order, children }: { order?: ApiOrder; children?: 
     <div className="flex flex-wrap gap-4 mt-0.5" aria-label="Summary">
       {order && (
         <div className="flex-1 basis-[250px] card p-[18px]">
-          <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>Payment · 50 / 50</h3>
+          <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5 font-data">Payment · 50 / 50</h3>
           <div className="flex h-2.5 border border-black/10 mb-3.5" role="img" aria-label={dep?.status === "paid" ? (bal?.status === "paid" ? "Fully paid" : "Half paid") : "Unpaid"}>
             <span className="block" style={{ width: "50%", background: dep?.status === "paid" ? TONE.pos.text : TONE.attn.bg }} />
             <span className="block border-l border-black/10" style={{ width: "50%", background: bal?.status === "paid" ? TONE.pos.text : `repeating-linear-gradient(-45deg, ${TONE.attn.bg}, ${TONE.attn.bg} 4px, transparent 4px, transparent 8px)` }} />
@@ -327,10 +327,10 @@ function PayRow({ label, amount, state }: {
 export function ContactCard({ setPage }: { setPage: (p: Page) => void }) {
   return (
     <div className="flex-1 basis-[250px] card p-[18px]">
-      <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5" style={{ fontFamily: "'DM Mono', monospace" }}>Your contact</h3>
+      <h3 className="text-[13px] tracking-[0.1em] uppercase text-body font-medium mb-3.5 font-data">Your contact</h3>
       <div className="flex items-center gap-3">
-        <span className="w-10 h-10 bg-sage/[0.07] border border-black/10 grid place-items-center text-sage text-sm flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>OF</span>
-        <div><div className="text-sm font-semibold text-ink">OpenFrame team</div><div className="text-xs text-body" style={{ fontFamily: "'DM Mono', monospace" }}>Project coordination</div></div>
+        <span className="w-10 h-10 bg-sage/[0.07] border border-black/10 grid place-items-center text-sage text-sm flex-shrink-0 font-data">OF</span>
+        <div><div className="text-sm font-semibold text-ink">OpenFrame team</div><div className="text-xs text-body font-data">Project coordination</div></div>
       </div>
       <div className="mt-3.5 flex gap-2">
         <Btn variant="outline" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }} className="flex-1 justify-center"><MessageSquare className="w-3.5 h-3.5" />Message</Btn>
@@ -378,7 +378,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
 
   if (missing) return (
     <div className="card p-8">
-      <p className="text-[15px] text-ink mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>We couldn't open that order.</p>
+      <p className="text-[15px] text-ink mb-1.5 font-display">We couldn't open that order.</p>
       <p className="text-sm text-body leading-relaxed max-w-[52ch]">
         Your tracking session may have ended — it lasts until you close your browser. Nothing has been lost:
         confirm it's you and it will open again.
@@ -403,15 +403,15 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
           {/* One project, whole life: the project ref anchors the record; the order
               number is acceptance-time meta (it lives on invoices + payments). */}
           <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
-            <span className="text-[13px] font-medium text-sage" style={{ fontFamily: "'DM Mono', monospace" }}>{order.projectRef ?? order.orderNo}</span>
+            <span className="text-[13px] font-medium text-sage font-data">{order.projectRef ?? order.orderNo}</span>
             <StatusPill tone={m.tone}>{m.pill}</StatusPill>
           </div>
           <h1 className="font-semibold text-ink leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.55rem,3.4vw,2rem)" }}>{order.projectTitle ?? "Your order"}</h1>
           <div className="flex gap-x-4 gap-y-2 flex-wrap text-[13.5px] text-body mt-2">
-            <span>Ordered · accepted from quote <span className="text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{order.revisionNo ? `R${order.revisionNo}` : "—"}</span></span>
-            <span>Order no. <span className="text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{order.orderNo}</span></span>
-            <span>Ordered <span className="text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDate(order.createdAt)}</span></span>
-            <span><span className="text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{order.lineCount ?? lines.length}</span> lines</span>
+            <span>Ordered · accepted from quote <span className="text-ink font-data">{order.revisionNo ? `R${order.revisionNo}` : "—"}</span></span>
+            <span>Order no. <span className="text-ink font-data">{order.orderNo}</span></span>
+            <span>Ordered <span className="text-ink font-data">{fmtDate(order.createdAt)}</span></span>
+            <span><span className="text-ink font-data">{order.lineCount ?? lines.length}</span> lines</span>
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -470,7 +470,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
           <section className="p-5 card flex items-center gap-3" style={{ borderLeft: `3px solid ${TONE.pos.text}` }}>
             <span className="w-[34px] h-[34px] grid place-items-center border flex-shrink-0" style={{ color: TONE.pos.text, borderColor: TONE.pos.bd, background: TONE.pos.bg }}><Check className="w-[18px] h-[18px]" /></span>
             <div>
-              <h2 className="text-[15px] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>On track — nothing needed from you</h2>
+              <h2 className="text-[15px] font-semibold text-ink font-display">On track — nothing needed from you</h2>
               <p className="text-[12.5px] text-body">{m.next}. We'll email you the moment a step needs your OK.</p>
             </div>
           </section>
@@ -524,7 +524,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
 
   if (missing) return (
     <div className="card p-8">
-      <p className="text-[15px] text-ink mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>We couldn't open that quote.</p>
+      <p className="text-[15px] text-ink mb-1.5 font-display">We couldn't open that quote.</p>
       <p className="text-sm text-body leading-relaxed max-w-[52ch]">
         Your tracking session may have ended — it lasts until you close your browser. Nothing has been lost:
         confirm it's you and it will open again.
@@ -563,13 +563,13 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
       <div className="flex justify-between items-start gap-5 flex-wrap pb-[22px] border-b border-black/10 mb-[26px]">
         <div>
           <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
-            {p.ref && <span className="text-[13px] font-medium text-sage" style={{ fontFamily: "'DM Mono', monospace" }}>{p.ref}</span>}
+            {p.ref && <span className="text-[13px] font-medium text-sage font-data">{p.ref}</span>}
             <StatusPill tone={needsInfo ? "attn" : "work"}>{needsInfo ? "Needs your answer" : "Being priced"}</StatusPill>
           </div>
           <h1 className="font-semibold text-ink leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.55rem,3.4vw,2rem)" }}>{p.title}</h1>
           <div className="flex gap-x-4 gap-y-2 flex-wrap text-[13.5px] text-body mt-2">
-            <span>Project · submitted for pricing <span className="text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDate(p.createdAt)}</span></span>
-            <span><span className="text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{lines.length}</span> lines</span>
+            <span>Project · submitted for pricing <span className="text-ink font-data">{fmtDate(p.createdAt)}</span></span>
+            <span><span className="text-ink font-data">{lines.length}</span> lines</span>
           </div>
         </div>
         <Btn variant="ghost" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }}>Message us</Btn>
@@ -581,7 +581,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
             <div className="card divide-y divide-black/[0.07] mt-2 mb-3">
               {thread.map((cm, i) => (
                 <div key={i} className={`px-4 py-2.5 ${cm.author_type === "internal" ? "" : "bg-sage/[0.05]"}`}>
-                  <p className="text-[10.5px] uppercase tracking-wide text-quiet mb-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>{cm.author_type === "internal" ? brandSubject() : "You"}</p>
+                  <p className="text-[10.5px] uppercase tracking-wide text-quiet mb-0.5 font-data">{cm.author_type === "internal" ? brandSubject() : "You"}</p>
                   <p className="text-sm text-ink">{cm.body}</p>
                 </div>
               ))}
@@ -596,7 +596,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
           <section className="p-5 card flex items-center gap-3" style={{ borderLeft: `3px solid ${TONE.work.text}` }}>
             <span className="w-[34px] h-[34px] grid place-items-center border flex-shrink-0" style={{ color: TONE.work.text, borderColor: TONE.work.bd, background: TONE.work.bg }}><Loader2 className="w-[18px] h-[18px]" /></span>
             <div>
-              <h2 className="text-[15px] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>With our team — nothing needed from you</h2>
+              <h2 className="text-[15px] font-semibold text-ink font-display">With our team — nothing needed from you</h2>
               <p className="text-[12.5px] text-body">We are reviewing your specification and will issue a reviewed quote, usually within 2 business days. We'll email you and it appears here.</p>
             </div>
           </section>

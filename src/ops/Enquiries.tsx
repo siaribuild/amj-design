@@ -135,7 +135,7 @@ function Detail({ id, user, onBack }: { id: string; user: OpsUser; onBack: () =>
               <IntentBadge intent={d.intent} />
               <span className="text-[11px] px-1.5 py-0.5 border border-sage/30 bg-sage-wash text-sage-ink">Source: OpenFrame Website</span>
             </div>
-            <h2 className="text-lg font-semibold text-ops mt-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{d.name}{d.company ? ` · ${d.company}` : ""}</h2>
+            <h2 className="text-lg font-semibold text-ops mt-1 font-display">{d.name}{d.company ? ` · ${d.company}` : ""}</h2>
             <p className="text-xs text-quiet">Submitted {when(d.createdAt)}{d.assignedName ? ` · owner ${d.assignedName}` : " · unassigned"}</p>
           </div>
           <div className="flex items-center gap-2">

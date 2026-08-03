@@ -86,7 +86,7 @@ function PaymentCard({ title, orderNo, p }: { title: string; orderNo: string; p:
           {paid ? "Paid" : invoiced ? "Due" : "Not yet due"}
         </span>
       </div>
-      <p className="text-lg text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(p.amount)}</p>
+      <p className="text-lg text-ink font-data">{fmt(p.amount)}</p>
       {paid ? (
         <p className="text-xs text-sage flex items-center gap-1 mt-1"><Check className="w-3 h-3" />Received{p.reference ? ` · ${p.reference}` : ""}</p>
       ) : invoiced ? (

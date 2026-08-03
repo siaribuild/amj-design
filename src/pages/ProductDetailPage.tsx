@@ -27,8 +27,7 @@ const OPTION_TYPE_ORDER = ["Glass", "Frame colour", "Colour", "Hardware", "Flysc
 function AvailabilityBadge({ availability }: { availability: ProductOption["availability"] }) {
   const standard = availability === "standard";
   return (
-    <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 border ${standard ? "border-sage/40 text-sage bg-sage/[0.06]" : "border-black/15 text-body"}`}
-      style={{ fontFamily: "'DM Mono', monospace" }}>
+    <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 border ${standard ? "border-sage/40 text-sage bg-sage/[0.06]" : "border-black/15 text-body"} font-data`}>
       {standard ? "Standard" : "Optional"}
     </span>
   );
@@ -48,8 +47,7 @@ function OverviewContent({ product, familyBlurb }: { product: Product; familyBlu
       ))}
       {familyBlurb && (
         <div className="border-l-2 border-sage/40 pl-4">
-          <p className="text-xs font-semibold text-sage uppercase tracking-wide mb-1"
-            style={{ fontFamily: "'DM Mono', monospace" }}>Best suited to</p>
+          <p className="text-xs font-semibold text-sage uppercase tracking-wide mb-1 font-data">Best suited to</p>
           <p className="text-sm text-body leading-relaxed">{familyBlurb}</p>
         </div>
       )}
@@ -212,7 +210,7 @@ function DownloadsContent({ product, setPage }: { product: Product; setPage: (p:
     <div className="space-y-6">
       {groupDocuments(docs).map((group) => (
         <div key={group.docType}>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2" style={{ fontFamily: "'DM Mono', monospace" }}>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2 font-data">
             {group.label}
           </p>
           <div className="card">
@@ -225,7 +223,7 @@ function DownloadsContent({ product, setPage }: { product: Product; setPage: (p:
 
       {reads.length > 0 && (
         <div>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2" style={{ fontFamily: "'DM Mono', monospace" }}>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2 font-data">
             Related reading
           </p>
           <div className="card">
@@ -321,7 +319,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
     <div id="configure">
       <div className="flex items-center gap-2 mb-3">
         <WindowMark size={16} color={SAGE} />
-        <h2 className="text-base font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Configure &amp; get an estimate</h2>
+        <h2 className="text-base font-semibold text-ink font-display">Configure &amp; get an estimate</h2>
       </div>
       {liveJustAdded ? (
         <div className="space-y-3">
@@ -354,8 +352,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
           <div className="max-w-2xl">
             <div className="flex items-center gap-2 mb-3">
               <WindowMark size={10} color="rgba(255,255,255,0.55)" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60"
-                style={{ fontFamily: "'DM Mono', monospace" }}>{family?.name ?? category?.name ?? "Products"}</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">{family?.name ?? category?.name ?? "Products"}</span>
             </div>
             <h1 className="font-semibold text-white leading-[1.04] tracking-tight mb-4"
               style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2rem, 4.6vw, 3.1rem)" }}>{product.name}</h1>
@@ -364,12 +361,11 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
             {product.keySpecs.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-5">
                 {product.keySpecs.map(spec => (
-                  <span key={spec.label} className="border border-white/25 text-white/85 text-[12px] tracking-wide px-2.5 py-1"
-                    style={{ fontFamily: "'DM Mono', monospace" }}>{spec.value}</span>
+                  <span key={spec.label} className="border border-white/25 text-white/85 text-[12px] tracking-wide px-2.5 py-1 font-data">{spec.value}</span>
                 ))}
               </div>
             )}
-            <p className="text-white/50 text-xs" style={{ fontFamily: "'DM Mono', monospace" }}>Indicative estimate first · Reviewed quote before deposit</p>
+            <p className="text-white/50 text-xs font-data">Indicative estimate first · Reviewed quote before deposit</p>
           </div>
         </div>
       </section>
@@ -419,8 +415,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
                       <button onClick={() => setOpenSection(open ? "" : t.id)}
                         aria-expanded={open}
                         className="w-full flex items-center justify-between gap-3 py-4 text-left cursor-pointer">
-                        <span className={`text-sm ${open ? "font-semibold text-ink" : "font-medium text-ink"}`}
-                          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{t.label}</span>
+                        <span className={`text-sm ${open ? "font-semibold text-ink" : "font-medium text-ink"} font-display`}>{t.label}</span>
                         <ChevronDown className={`w-4 h-4 text-body transition-transform ${open ? "rotate-180" : ""}`} />
                       </button>
                     </h2>
@@ -482,7 +477,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
                     <div className="absolute inset-2 border border-white/10 group-hover:border-white/28 transition-all pointer-events-none" />
                   </div>
                   <div className="p-5 flex flex-col flex-1">
-                    <h3 className="font-semibold text-ink mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{r.name}</h3>
+                    <h3 className="font-semibold text-ink mb-1 font-display">{r.name}</h3>
                     <p className="text-sm text-body leading-relaxed mb-3 line-clamp-2">{r.shortDescription}</p>
                     <span className="mt-auto inline-flex items-center gap-1.5 text-sm font-medium text-sage group-hover:gap-2.5 transition-all">
                       View product <ArrowRight className="w-3.5 h-3.5" />
@@ -510,7 +505,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
           )}
           <figure className="max-w-5xl max-h-full flex flex-col items-center" onClick={e => e.stopPropagation()}>
             <img src={imageUrl(product.gallery[lightbox], { w: 1600 })} alt={`${product.name} — view ${lightbox + 1}`} className="max-w-full max-h-[80vh] object-contain" />
-            <figcaption className="text-white/70 text-xs mt-3" style={{ fontFamily: "'DM Mono', monospace" }}>{product.name} · {lightbox + 1} / {galleryLen}</figcaption>
+            <figcaption className="text-white/70 text-xs mt-3 font-data">{product.name} · {lightbox + 1} / {galleryLen}</figcaption>
           </figure>
           {galleryLen > 1 && (
             <button onClick={e => { e.stopPropagation(); setLightbox(i => (i == null ? i : (i + 1) % galleryLen)); }}

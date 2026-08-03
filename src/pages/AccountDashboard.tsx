@@ -75,7 +75,7 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
               : <>Signed in to <b className="text-ink font-semibold">{user.company || user.email}</b> · {needsYouCount === 0 ? "nothing needs you right now" : `${needsYouCount} thing${needsYouCount === 1 ? "" : "s"} need${needsYouCount === 1 ? "s" : ""} your attention today`}</>}
           </p>
         </div>
-        <span className="text-[12.5px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{fmtDayDate(new Date())}</span>
+        <span className="text-[12.5px] text-body font-data">{fmtDayDate(new Date())}</span>
       </div>
 
       {brandNew ? (
@@ -153,7 +153,7 @@ function ProjectsSection({ projects, orders, setPage, onOpenRecord, tab, setTab 
   return (
     <section id="your-projects" className="scroll-mt-24">
       <div className="flex items-center gap-2.5 mb-3">
-        <h2 className="text-[1.15rem] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Your projects</h2>
+        <h2 className="text-[1.15rem] font-semibold text-ink font-display">Your projects</h2>
         <span className="ml-auto text-[13px] text-body hidden sm:inline">Each shows its status and the single next step</span>
       </div>
       <div className="flex items-center gap-1 border-b border-black/10 mb-4 overflow-x-auto" role="tablist" aria-label="Filter projects">
@@ -164,7 +164,7 @@ function ProjectsSection({ projects, orders, setPage, onOpenRecord, tab, setTab 
               // Amber count badge for the action console; the quiet number for browse tabs.
               t.id === "needs-you"
                 ? <span className="ml-1.5 text-[11px] text-white px-[6px]" style={{ fontFamily: "'DM Mono', monospace", background: TONE.attn.text }}>{counts[t.id]}</span>
-                : <span className="ml-1.5 text-[11px] text-quiet" style={{ fontFamily: "'DM Mono', monospace" }}>{counts[t.id]}</span>
+                : <span className="ml-1.5 text-[11px] text-quiet font-data">{counts[t.id]}</span>
             )}
           </button>
         ))}
@@ -178,9 +178,9 @@ function SummaryCell({ label, value, small, hot, onClick }: { label: string; val
   const cls = "flex-1 min-w-[150px] px-5 py-[15px] flex flex-col gap-[3px] border-r border-black/[0.07] last:border-r-0";
   const body = (
     <>
-      <span className="text-[11px] tracking-[0.09em] uppercase text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{label}</span>
+      <span className="text-[11px] tracking-[0.09em] uppercase text-body font-data">{label}</span>
       <span className="text-2xl font-semibold flex items-baseline gap-2" style={{ fontFamily: "'Space Grotesk', sans-serif", color: hot ? TONE.attn.text : "var(--ink)" }}>
-        {value}{small && <small className="text-[12.5px] font-medium text-body" style={{ fontFamily: "'Inter', sans-serif" }}>{small}</small>}
+        {value}{small && <small className="text-[12.5px] font-medium text-body font-body">{small}</small>}
         {onClick && <ArrowDown className="w-[15px] h-[15px] self-center" style={{ color: hot ? TONE.attn.text : "var(--body)" }} aria-hidden="true" />}
       </span>
     </>
@@ -207,7 +207,7 @@ function ContinueProject({ draft, go }: { draft: ApiProjectSummary | null; go: (
   return (
     <section className="mb-[26px]">
       <div className="flex items-center gap-2.5 mb-3.5">
-        <h2 className="text-[1.15rem] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+        <h2 className="text-[1.15rem] font-semibold text-ink font-display">
           {hasLines ? "Continue your project" : "Start a new project"}
         </h2>
         <span className="ml-auto text-[13px] text-body hidden sm:inline">{hasLines ? "Your in-progress quote — pick up where you left off" : "Price it in minutes, then submit for a reviewed quote"}</span>
@@ -219,12 +219,12 @@ function ContinueProject({ draft, go }: { draft: ApiProjectSummary | null; go: (
           <span className="w-[42px] h-[42px] grid place-items-center border border-black/10 flex-shrink-0"><WindowMark size={20} color={SAGE} /></span>
           <span className="min-w-0 block">
             <span className="flex items-center gap-[9px] flex-wrap mb-[3px]"><StatusPill tone="draft">Draft — not submitted</StatusPill></span>
-            <span className="block text-base font-semibold text-ink leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{draft!.title ?? "Your quote in progress"}</span>
+            <span className="block text-base font-semibold text-ink leading-tight font-display">{draft!.title ?? "Your quote in progress"}</span>
             <span className="block text-[13.5px] text-body mt-[3px]"><b className="font-semibold text-ink">{draft!.item_count} line{draft!.item_count === 1 ? "" : "s"}</b> · finish and submit for a full reviewed quote.</span>
           </span>
           <span className="col-span-2 sm:col-span-1 flex sm:flex-col items-center sm:items-end justify-between gap-1.5">
             <span className="inline-flex items-center gap-2 bg-sage text-white text-[13px] font-medium px-3.5 py-[9px] whitespace-nowrap">Resume building <ArrowRight className="w-4 h-4" /></span>
-            {draft!.draft_total ? <span className="text-[11px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>Estimate {money(draft!.draft_total)} · not submitted for pricing</span> : null}
+            {draft!.draft_total ? <span className="text-[11px] text-body font-data">Estimate {money(draft!.draft_total)} · not submitted for pricing</span> : null}
           </span>
         </button>
       ) : (
@@ -298,14 +298,14 @@ export function UnifiedList({ projects, orders, setPage, onOpenRecord, emptyNote
       return (
         <div className="card p-[18px] flex flex-col gap-[9px]" style={{ borderLeft: `3px solid ${TONE.pos.text}` }}>
           <span className="w-[34px] h-[34px] grid place-items-center border" style={{ color: TONE.pos.text, borderColor: TONE.pos.bd, background: TONE.pos.bg }}><CheckCircle className="w-[18px] h-[18px]" /></span>
-          <h3 className="text-[15px] font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>You're all caught up</h3>
+          <h3 className="text-[15px] font-semibold text-ink font-display">You're all caught up</h3>
           <p className="text-[12.5px] text-body leading-relaxed">Nothing needs you right now — we'll email you and show it here the moment something does.</p>
         </div>
       );
     }
     return (
       <div className="card p-[18px]">
-        <h3 className="text-sm font-semibold text-ink mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Nothing here yet</h3>
+        <h3 className="text-sm font-semibold text-ink mb-1.5 font-display">Nothing here yet</h3>
         <p className="text-[12.5px] text-body leading-relaxed">{emptyNote ?? <>Start a quote and it will appear here as it moves from estimate to delivered order.</>}</p>
       </div>
     );
@@ -340,8 +340,8 @@ function RecordRow({ refText, title, pill, next, value, meta, draft, cta, when, 
       </span>
       <span className="min-w-0 block">
         <span className="flex items-center gap-2.5 flex-wrap">
-          <span className="text-[12.5px] font-medium text-sage" style={{ fontFamily: "'DM Mono', monospace" }}>{refText}</span>
-          <span className="text-[16.5px] font-semibold text-ink leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</span>
+          <span className="text-[12.5px] font-medium text-sage font-data">{refText}</span>
+          <span className="text-[16.5px] font-semibold text-ink leading-tight font-display">{title}</span>
           {pill}
         </span>
         <span className="block text-[13.5px] text-body mt-[5px]">{next}</span>
@@ -352,12 +352,12 @@ function RecordRow({ refText, title, pill, next, value, meta, draft, cta, when, 
           // single click target (a11y-safe; mirrors the retired GateCard's chip).
           <>
             <span className="inline-flex items-center gap-2 bg-sage text-white text-[13px] font-medium px-3.5 py-[9px] whitespace-nowrap">{cta}</span>
-            {when && <span className="text-[11px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{when}</span>}
+            {when && <span className="text-[11px] text-body font-data">{when}</span>}
           </>
         ) : (
           <>
             <span className="text-[15px] font-medium text-ink" style={{ fontFamily: "'DM Mono', monospace", fontVariantNumeric: "tabular-nums" }}>{value}</span>
-            <span className="text-[11.5px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>{meta}</span>
+            <span className="text-[11.5px] text-body font-data">{meta}</span>
             <ChevronRight className="hidden sm:block w-[18px] h-[18px] text-sage" />
           </>
         )}
@@ -371,13 +371,13 @@ function EmptyHub({ go }: { go: (p: Page) => void }) {
   return (
     <div className="max-w-xl card p-8 flex flex-col items-center text-center gap-3">
       <span className="w-12 h-12 border border-black/10 grid place-items-center"><WindowMark size={26} color={SAGE} /></span>
-      <h2 className="text-lg font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Start your first project</h2>
+      <h2 className="text-lg font-semibold text-ink font-display">Start your first project</h2>
       <p className="text-[13px] text-body max-w-[36ch]">Price your windows and doors in minutes, then submit the project for a full reviewed quote.</p>
       <div className="flex flex-col sm:flex-row gap-2.5 w-full justify-center pt-1">
         <Btn variant="sage" size="md" onClick={() => go("quote")}>Start an instant estimate <ArrowRight className="w-4 h-4" /></Btn>
         <Btn variant="outline" size="md" onClick={() => go("quote")}><Upload className="w-4 h-4" />Upload a schedule</Btn>
       </div>
-      <p className="w-full text-[11px] text-body leading-relaxed border-t border-black/[0.07] pt-3.5 mt-1" style={{ fontFamily: "'DM Mono', monospace" }}>
+      <p className="w-full text-[11px] text-body leading-relaxed border-t border-black/[0.07] pt-3.5 mt-1 font-data">
         After you submit, we review it and issue a final quote — usually within 2 business days. We'll email you and it'll appear here.
       </p>
     </div>

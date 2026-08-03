@@ -104,7 +104,7 @@ export function Projects() {
               <div className="flex items-baseline justify-between gap-3 mt-1">
                 <span className="text-[12px]" style={{ color: "var(--body)" }}>{r.phase} · {r.stateLabel}</span>
                 <span className="text-[12px] flex-shrink-0" style={{ color: r.waitingOn === "Us" ? INK : MUTED, fontWeight: r.waitingOn === "Us" ? 600 : 400 }}>
-                  {r.waitingOn} · <span style={MONO}>{r.daysInStage ?? "—"}d</span>
+                  {r.waitingOn} · <span className="font-data">{r.daysInStage ?? "—"}d</span>
                 </span>
               </div>
               {r.unresolved > 0 && (

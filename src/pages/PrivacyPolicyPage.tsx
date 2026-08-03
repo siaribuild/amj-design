@@ -18,7 +18,7 @@ const UPDATED = "19 July 2026";
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
     <section id={id} className="scroll-mt-24">
-      <h2 className="text-lg md:text-xl font-semibold text-ink mb-3" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</h2>
+      <h2 className="text-lg md:text-xl font-semibold text-ink mb-3 font-display">{title}</h2>
       <div className="space-y-3 text-[15px] leading-relaxed text-body">{children}</div>
     </section>
   );
@@ -40,7 +40,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
         <div className="relative max-w-5xl mx-auto px-6">
           <div className="flex items-center gap-2 mb-3">
             <WindowMark size={11} color="rgba(255,255,255,0.55)" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60" style={{ fontFamily: "'DM Mono', monospace" }}>Legal</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">Legal</span>
           </div>
           <h1 className="font-semibold text-white leading-tight tracking-tight mb-3"
             style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2rem, 4.5vw, 3rem)" }}>
@@ -50,7 +50,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
             How OpenFrame collects, uses, stores and protects your information when
             you use this website to build quotes, place and track orders, or contact us.
           </p>
-          <p className="text-white/45 text-xs mt-4" style={{ fontFamily: "'DM Mono', monospace" }}>Last updated {UPDATED}</p>
+          <p className="text-white/45 text-xs mt-4 font-data">Last updated {UPDATED}</p>
         </div>
       </section>
 

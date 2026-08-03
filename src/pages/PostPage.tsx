@@ -34,7 +34,7 @@ const components: PortableTextComponents = {
       <h2 className="font-semibold text-ink mt-10 mb-3"
         style={{ ...DISPLAY, fontSize: "clamp(1.3rem, 2.2vw, 1.6rem)" }}>{children}</h2>
     ),
-    h3: ({ children }) => <h3 className="font-semibold text-ink text-[17px] mt-7 mb-2" style={DISPLAY}>{children}</h3>,
+    h3: ({ children }) => <h3 className="font-semibold text-ink text-[17px] mt-7 mb-2 font-display">{children}</h3>,
   },
   list: {
     bullet: ({ children }) => <ul className="space-y-1.5 mb-5">{children}</ul>,
@@ -71,7 +71,7 @@ const components: PortableTextComponents = {
           <img src={url} alt={value?.alt ?? ""} loading="lazy" decoding="async"
             className="w-full border border-line" />
           {value?.caption && (
-            <figcaption className="text-[12.5px] text-quiet mt-2" style={MONO}>{value.caption}</figcaption>
+            <figcaption className="text-[12.5px] text-quiet mt-2 font-data">{value.caption}</figcaption>
           )}
         </figure>
       );
@@ -105,7 +105,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
       <div className="ground-paper min-h-screen pt-28 pb-20">
         <div className="max-w-2xl mx-auto px-6">
           <div className="card p-8">
-            <h1 className="text-xl font-semibold text-ink mb-2" style={DISPLAY}>That page isn't here.</h1>
+            <h1 className="text-xl font-semibold text-ink mb-2 font-display">That page isn't here.</h1>
             <p className="text-body mb-6">It may have been renamed or unpublished.</p>
             <button onClick={() => go("resources")} className="text-sage hover:text-sage-deep inline-flex items-center gap-1.5 cursor-pointer">
               <ChevronLeft className="w-4 h-4" aria-hidden="true" />All resources
@@ -148,7 +148,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
             {post.title}
           </h1>
           <p className="text-white/80 text-[15px] md:text-base leading-relaxed split-prose">{post.summary}</p>
-          {meta && <p className="text-white/50 text-[12.5px] mt-3" style={MONO}>{meta}</p>}
+          {meta && <p className="text-white/50 text-[12.5px] mt-3 font-data">{meta}</p>}
         </div>
       </section>
 
@@ -165,7 +165,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
             <aside className="lg:order-2 lg:w-[380px] lg:flex-shrink-0 lg:sticky lg:top-24 space-y-6">
               {post.attachment && (
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2" style={MONO}>Attachment</p>
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2 font-data">Attachment</p>
                   <div className="card">
                     {/* No onOpenPost — we are already on it. */}
                     <DocumentRow attachment={post.attachment} post={post} />
@@ -174,7 +174,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
               )}
               {products.length > 0 && (
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2" style={MONO}>Applies to</p>
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-quiet mb-2 font-data">Applies to</p>
                   <div className="card">
                     {products.map((p) => (
                       <button key={p!.slug} onClick={() => onOpenProduct(p!.slug)}
@@ -225,8 +225,8 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
               {related.map((r) => (
                 <button key={r.slug} onClick={() => openPost(r.slug)}
                   className="card card-link p-5 text-left flex flex-col cursor-pointer">
-                  <span className="block text-[10px] uppercase tracking-[0.14em] text-sage mb-1.5" style={MONO}>{r.categoryTitle}</span>
-                  <span className="block text-[16px] leading-tight text-ink font-semibold mb-1.5" style={DISPLAY}>{r.title}</span>
+                  <span className="block text-[10px] uppercase tracking-[0.14em] text-sage mb-1.5 font-data">{r.categoryTitle}</span>
+                  <span className="block text-[16px] leading-tight text-ink font-semibold mb-1.5 font-display">{r.title}</span>
                   <span className="text-sm text-body leading-relaxed line-clamp-2">{r.summary}</span>
                 </button>
               ))}

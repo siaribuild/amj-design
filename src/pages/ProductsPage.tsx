@@ -73,8 +73,7 @@ function CategoryTile({ label, count, icon, active, onClick }: {
     <button onClick={onClick} aria-pressed={active}
       className="tab text-left p-4 w-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2">
       <div className="mb-2.5">{icon}</div>
-      <p className={`text-sm mb-0.5 ${active ? "font-semibold text-ink" : "font-medium text-ink"}`}
-        style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{label}</p>
+      <p className={`text-sm mb-0.5 ${active ? "font-semibold text-ink" : "font-medium text-ink"} font-display`}>{label}</p>
       <p className="text-xs text-body">{count} system types</p>
     </button>
   );
@@ -110,15 +109,13 @@ function ProductCard({ product, category, onView }: { product: Product; category
           className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500" />
       </div>
       <div className="p-5 flex flex-col flex-1">
-        <h3 className="font-semibold text-ink text-[19px] leading-tight tracking-[-0.01em] mb-1.5"
-          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{product.name}</h3>
+        <h3 className="font-semibold text-ink text-[19px] leading-tight tracking-[-0.01em] mb-1.5 font-display">{product.name}</h3>
         <p className="text-sm text-body leading-relaxed mb-3 line-clamp-2">{product.shortDescription}</p>
         {/* One unboxed line. The chips' own border was black/10, which over bone
             composites to about #D8D5D1 — a barely-visible box around 11px grey
             mono, which reads as tentative rather than as detail. */}
         {meta && (
-          <p className="text-[11.5px] text-quiet tracking-wide mb-4"
-            style={{ fontFamily: "'DM Mono', monospace" }}>{meta}</p>
+          <p className="text-[11.5px] text-quiet tracking-wide mb-4 font-data">{meta}</p>
         )}
         <span className="mt-auto inline-flex items-center gap-1.5 text-sm font-medium text-sage group-hover:gap-2.5 transition-all">
           View product <ArrowRight className="w-3.5 h-3.5" />
@@ -155,8 +152,7 @@ function MobileFamilySelector({ category, families, family, onSelect }: {
 
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-widest text-body mb-2"
-        style={{ fontFamily: "'DM Mono', monospace" }}>Browse by family</p>
+      <p className="text-xs font-semibold uppercase tracking-widest text-body mb-2 font-data">Browse by family</p>
       <div className="relative" ref={ref}>
         <button type="button" onClick={() => setOpen(o => !o)}
           aria-haspopup="listbox" aria-expanded={open}
@@ -227,8 +223,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
           <div className="max-w-xl">
             <div className="flex items-center gap-2 mb-4">
               <WindowMark size={10} color="rgba(255,255,255,0.55)" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60"
-                style={{ fontFamily: "'DM Mono', monospace" }}>Products</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">Products</span>
             </div>
             <h1 className="font-semibold text-white leading-[1.05] tracking-tight mb-3"
               style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2rem, 4.4vw, 3rem)" }}>{hero.headline}</h1>
@@ -259,8 +254,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
           {/* ─── MOBILE — category cards + family scroll rail ───────────────── */}
           <div className="lg:hidden mb-8 space-y-5">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-body mb-2"
-                style={{ fontFamily: "'DM Mono', monospace" }}>Category</p>
+              <p className="text-xs font-semibold uppercase tracking-widest text-body mb-2 font-data">Category</p>
               <div className="grid grid-cols-2 gap-3">
                 <CategoryTile label="Windows" count={windowCount} icon={<WindowMark size={20} color={category === "windows" ? SAGE : "var(--quieter)"} />} active={category === "windows"} onClick={() => onSelectCategory("windows")} />
                 <CategoryTile label="Doors" count={doorCount} icon={<IconDoorCat size={20} color={category === "doors" ? SAGE : "var(--quieter)"} />} active={category === "doors"} onClick={() => onSelectCategory("doors")} />
@@ -273,8 +267,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
           <aside className="hidden lg:block">
             <div className="lg:sticky lg:top-24 space-y-8">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-body mb-3"
-                  style={{ fontFamily: "'DM Mono', monospace" }}>Category</p>
+                <p className="text-xs font-semibold uppercase tracking-widest text-body mb-3 font-data">Category</p>
                 <div className="space-y-2">
                   <CategoryTile label="Windows" count={windowCount} icon={<WindowMark size={20} color={category === "windows" ? SAGE : "var(--quieter)"} />} active={category === "windows"} onClick={() => onSelectCategory("windows")} />
                   <CategoryTile label="Doors" count={doorCount} icon={<IconDoorCat size={20} color={category === "doors" ? SAGE : "var(--quieter)"} />} active={category === "doors"} onClick={() => onSelectCategory("doors")} />
@@ -282,8 +275,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
               </div>
 
               <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-body mb-2"
-                  style={{ fontFamily: "'DM Mono', monospace" }}>{category === "windows" ? "Window systems" : "Door systems"}</p>
+                <p className="text-xs font-semibold uppercase tracking-widest text-body mb-2 font-data">{category === "windows" ? "Window systems" : "Door systems"}</p>
                 <div className="flex flex-col">
                   <button onClick={() => onSelectFamily("all")} aria-pressed={family === "all"}
                     className={`text-left px-3 py-2.5 text-sm border-l-2 transition-colors cursor-pointer ${family === "all" ? "border-sage text-ink font-semibold bg-sage-wash" : "border-transparent text-body hover:text-ink hover:bg-black/[0.02]"}`}>
@@ -330,8 +322,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
             <div className="flex items-end justify-between gap-4 mb-2">
               <h2 className="font-semibold text-ink leading-tight"
                 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.6rem, 2.8vw, 2.1rem)" }}>{heading}</h2>
-              <p className="text-[13px] text-quiet flex-shrink-0 pb-1"
-                style={{ fontFamily: "'DM Mono', monospace" }}>{list.length} system{list.length === 1 ? "" : "s"}</p>
+              <p className="text-[13px] text-quiet flex-shrink-0 pb-1 font-data">{list.length} system{list.length === 1 ? "" : "s"}</p>
             </div>
             <p className="text-body text-[15px] leading-relaxed max-w-2xl mb-8">{description}</p>
 
@@ -390,8 +381,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
             {TRUST_ITEMS.map((t, i) => (
               <div key={t.title} className={`py-5 sm:py-0 ${i === 0 ? "sm:pr-6" : "sm:px-6"} ${i === TRUST_ITEMS.length - 1 ? "sm:pr-0" : ""}`}>
                 <t.Icon className="w-4 h-4 text-sage mb-2.5" aria-hidden="true" />
-                <p className="text-[15px] font-semibold text-ink leading-snug mb-1"
-                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{t.title}</p>
+                <p className="text-[15px] font-semibold text-ink leading-snug mb-1 font-display">{t.title}</p>
                 <p className="text-[13.5px] text-body leading-relaxed">{t.sub}</p>
               </div>
             ))}
@@ -402,7 +392,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
               sample placeholders, so repeating that sentence here would double
               an assertion the destination does not yet support. */}
           <p className="mt-8 pt-5 border-t border-black/8 text-sm text-body flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span className="text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>AS 2047 · AS 1288</span>
+            <span className="text-ink font-data">AS 2047 · AS 1288</span>
             <span>The Australian standards for windows, doors and glazing in buildings.</span>
             <button onClick={() => go("resources")}
               className="text-sage hover:text-sage-deep inline-flex items-center gap-1.5 cursor-pointer">

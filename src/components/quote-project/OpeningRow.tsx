@@ -59,8 +59,7 @@ export function OpeningRow({
             is invisible in a flex row but would have consumed two grid tracks. */}
         <span className="order-1 md:col-start-1 md:row-start-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
           <FamilyPictogram productSlug={item.productSlug} size={22} />
-          <span className="text-xs font-semibold text-ink truncate"
-            style={{ fontFamily: "'DM Mono', monospace" }}>{ref}</span>
+          <span className="text-xs font-semibold text-ink truncate font-data">{ref}</span>
           {/* Below 1024 the status belongs to the identity, beside the reference
               it describes — the same place a phone puts it. It rides INSIDE this
               cell rather than as a grid sibling because at these widths it has
@@ -115,19 +114,16 @@ export function OpeningRow({
             different scans and a combined cell answers neither cleanly. Quantity
             folds back into the flow between 768 and 1023, where its column is
             the cheapest one to give up. */}
-        <span className="order-6 md:order-none md:col-start-3 md:row-start-1 md:text-right text-xs text-body flex-shrink-0 tabular-nums"
-          style={{ fontFamily: "'DM Mono', monospace" }}>
+        <span className="order-6 md:order-none md:col-start-3 md:row-start-1 md:text-right text-xs text-body flex-shrink-0 tabular-nums font-data">
           {mm(item.width)} × {mm(item.height)}
           <span className="lg:hidden"> · ×{item.qty}</span>
         </span>
 
-        <span className="hidden lg:block lg:col-start-4 lg:row-start-1 lg:text-right text-xs text-body flex-shrink-0 tabular-nums"
-          style={{ fontFamily: "'DM Mono', monospace" }}>
+        <span className="hidden lg:block lg:col-start-4 lg:row-start-1 lg:text-right text-xs text-body flex-shrink-0 tabular-nums font-data">
           ×{item.qty}
         </span>
 
-        <span className="order-7 md:order-none md:col-start-4 lg:col-start-5 md:row-start-1 md:text-right ml-auto md:ml-0 text-sm font-semibold text-ink flex-shrink-0 tabular-nums"
-          style={{ fontFamily: "'DM Mono', monospace" }}>
+        <span className="order-7 md:order-none md:col-start-4 lg:col-start-5 md:row-start-1 md:text-right ml-auto md:ml-0 text-sm font-semibold text-ink flex-shrink-0 tabular-nums font-data">
           {/* The number only. Repeating "inc GST" on every line states the tax
               basis twenty times to say one thing — it is a property of the
               whole quote, and the sticky summary carries it there once. */}

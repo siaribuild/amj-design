@@ -176,7 +176,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg leading-tight" style={{ ...HEAD, color: INK }}>
-              <span style={MONO}>{p.publicRef ?? id.slice(0, 8)}</span>
+              <span className="font-data">{p.publicRef ?? id.slice(0, 8)}</span>
               <span style={{ color: MUTED }}> · </span>
               {p.title}
             </h2>
@@ -381,7 +381,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
               ))}
               {(ws.payments ?? []).length === 0 && <Empty>No payments recorded.</Empty>}
               <div className="px-4 py-2 text-[11px] border-t border-black/5" style={{ color: MUTED }}>
-                Order no. <span style={MONO}>{order.orderNo}</span> · appears on invoices
+                Order no. <span className="font-data">{order.orderNo}</span> · appears on invoices
               </div>
             </Block>
           )}
@@ -474,7 +474,7 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
         return (
           <div key={outcome.id} className="px-4 py-4 border-b border-black/5 last:border-0">
             <p className="text-sm" style={{ color: INK }}>
-              <span style={MONO}>{outcome.external_ref || "Opening"}</span>
+              <span className="font-data">{outcome.external_ref || "Opening"}</span>
               {" · "}{outcome.proposed_product_slug || "No AI product"}
               {outcome.proposed_variant_id ? ` / ${outcome.proposed_variant_id}` : ""}
               {" → "}{outcome.final_product_slug}
@@ -657,7 +657,7 @@ function PhaseRibbon({ phase, stateLabel, waitingOn, days }: {
       <p className="mt-2 text-[13px]" style={{ color: MUTED }}>
         <span style={{ color: INK }}>Now · {stateLabel}</span>
         {" · "}waiting on {waitingOn.toLowerCase()}
-        {days != null && <> · <span style={MONO}>{days}</span> day{days === 1 ? "" : "s"} in this state</>}
+        {days != null && <> · <span className="font-data">{days}</span> day{days === 1 ? "" : "s"} in this state</>}
       </p>
     </div>
   );
@@ -1234,7 +1234,7 @@ function SplitPanel({ line, composite, busy, policy, onDone, onError }: {
             Unit {i + 1} {axis === "vertical" ? "width" : "height"}
             <input value={String(v)} inputMode="numeric"
               onChange={(e) => setSizes(sizes.map((x, j) => (j === i ? Number(e.target.value) || 0 : x)))}
-              className="ml-2 border border-black/15 px-2 py-1 text-sm w-[76px] text-right bg-white" style={MONO} />
+              className="ml-2 border border-black/15 px-2 py-1 text-sm w-[76px] text-right bg-white font-data" />
           </label>
         ))}
       </div>

@@ -338,8 +338,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                 accessible name or visible label. */}
             <div aria-hidden="true"
               className="quote-table-head hidden md:grid items-center gap-x-3 px-4 py-2
-                text-[10px] uppercase tracking-[0.12em] text-quiet"
-              style={{ fontFamily: "'DM Mono', monospace" }}>
+                text-[10px] uppercase tracking-[0.12em] text-quiet font-data">
               <span className="col-start-1">Opening</span>
               <span className="col-start-2">Product</span>
               <span className="col-start-3 text-right">Size</span>
@@ -465,8 +464,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
           role="dialog" aria-modal="true" aria-label="Clear everything"
           onClick={cancelClear} onKeyDown={(e) => { if (e.key === "Escape") cancelClear(); }}>
           <div ref={clearDialogRef} onClick={(e) => e.stopPropagation()} className="quote-dialog w-full max-w-sm p-5">
-            <h3 className="text-base font-semibold text-ink mb-1.5"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Clear everything?</h3>
+            <h3 className="text-base font-semibold text-ink mb-1.5 font-display">Clear everything?</h3>
             <p className="text-sm text-body leading-relaxed mb-4">
               This removes all {quote.items.length} item{quote.items.length !== 1 ? "s" : ""} and every uploaded document and can't be undone.
             </p>
@@ -487,8 +485,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
             // Focus enters on the SAFE choice; without this a keyboard user has
             // to tab in from <body> and Escape does nothing.
             ref={(el) => el?.querySelector<HTMLElement>("button")?.focus()}>
-            <h3 className="text-base font-semibold text-ink mb-1.5"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+            <h3 className="text-base font-semibold text-ink mb-1.5 font-display">
               Delete {deleteItem.code || "this opening"}?
             </h3>
             <p className="text-sm text-body leading-relaxed mb-4">

@@ -176,8 +176,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-2.5 md:mb-4">
                 <LayoutGrid className="w-3.5 h-3.5 text-white/55" />
-                <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60"
-                  style={{ fontFamily: "'DM Mono', monospace" }}>Your quote</span>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">Your quote</span>
               </div>
               <h1 className="font-semibold text-white leading-[1.03] tracking-tight mb-2 md:mb-3"
                 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.9rem, 4.2vw, 3rem)" }}>
@@ -269,8 +268,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                     <Paperclip className="w-3.5 h-3.5 text-sage flex-shrink-0" aria-hidden="true" />
                     <span className="text-ink font-medium truncate max-w-[14rem]">{f.name}</span>
                     {chip && (
-                      <span className={`text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 border leading-none flex-shrink-0 ${chip.tint}`}
-                        style={{ fontFamily: "'DM Mono', monospace" }}>{chip.label}</span>
+                      <span className={`text-[10px] uppercase tracking-[0.08em] px-1.5 py-0.5 border leading-none flex-shrink-0 ${chip.tint} font-data`}>{chip.label}</span>
                     )}
                     <span className="text-quiet flex-shrink-0">
                       {type === "supporting" ? "· Not used for pricing" : "· Attached for review"}
@@ -475,7 +473,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
           onClick={cancelClear} onKeyDown={e => { if (e.key === "Escape") cancelClear(); }}>
           <div ref={clearDialogRef} onClick={e => e.stopPropagation()}
             className="quote-dialog w-full max-w-sm p-5">
-            <h3 className="text-base font-semibold text-ink mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Clear everything?</h3>
+            <h3 className="text-base font-semibold text-ink mb-1.5 font-display">Clear everything?</h3>
             <p className="text-sm text-body leading-relaxed mb-4">This removes all {quote.items.length} item{quote.items.length !== 1 ? "s" : ""} and every uploaded document and can't be undone.</p>
             <div className="flex justify-end gap-2">
               <Btn variant="ghost" size="md" onClick={cancelClear}>Cancel</Btn>

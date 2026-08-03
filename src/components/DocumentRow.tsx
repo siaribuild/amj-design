@@ -75,7 +75,7 @@ export function DocumentRow({ attachment, post, onOpenPost }: {
         <span className="flex-1 min-w-0">
           <span className="block text-sm text-ink">{attachment.label}</span>
           {meta && (
-            <span className="block text-[11.5px] text-quiet mt-0.5" style={{ fontFamily: "'DM Mono', monospace" }}>
+            <span className="block text-[11.5px] text-quiet mt-0.5 font-data">
               {meta}
             </span>
           )}

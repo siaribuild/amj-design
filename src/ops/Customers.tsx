@@ -118,7 +118,7 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
       <button onClick={onBack} className="text-xs text-body hover:text-ops flex items-center gap-1 mb-4"><ChevronLeft className="w-3.5 h-3.5" />Back to customers</button>
       <div className="card p-5 mb-5">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold text-ops flex items-center gap-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><User className="w-5 h-5" style={{ color: SAGE }} />{cu.name || cu.email.split("@")[0]}</h2>
+          <h2 className="text-lg font-semibold text-ops flex items-center gap-2 font-display"><User className="w-5 h-5" style={{ color: SAGE }} />{cu.name || cu.email.split("@")[0]}</h2>
           {!editing && (
             <button onClick={startEdit} className="inline-flex items-center gap-1.5 text-xs text-body border border-black/12 px-2.5 py-1.5 hover:border-sage hover:text-sage">
               <PenLine className="w-3 h-3" />Edit details
@@ -172,7 +172,7 @@ function Detail({ id, viewer, onBack }: { id: string; viewer: OpsUser; onBack: (
         {d.orders.map(o => (
           <div key={o.id} className="flex items-center justify-between px-4 py-2.5 text-sm border-b border-black/5 last:border-0">
             <span className="font-mono text-ops">{o.order_no}<span className="ml-2 text-xs text-quiet font-sans">{o.stage}</span></span>
-            <span style={{ fontFamily: "'DM Mono', monospace" }}>{money(o.total)}</span>
+            <span className="font-data">{money(o.total)}</span>
           </div>
         ))}
       </Section>

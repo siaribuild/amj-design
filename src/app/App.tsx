@@ -217,8 +217,7 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
         <div className="flex items-center justify-between px-5 h-16 border-b border-white/10 flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <WindowMark size={16} color="var(--sage-light)" />
-            <span className="font-semibold text-sm text-white"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Menu</span>
+            <span className="font-semibold text-sm text-white font-display">Menu</span>
           </div>
           <button onClick={() => setOpen(false)} className="p-2 -mr-2 text-white/65 hover:text-white hover:bg-white/10 transition-colors cursor-pointer" aria-label="Close menu">
             <X className="w-5 h-5" />
@@ -231,10 +230,10 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
           {user && (
             <>
               <div className="flex items-center gap-[11px] px-5 py-3 bg-sage/20 border-b border-white/10">
-                <span className="w-[34px] h-[34px] bg-sage text-white grid place-items-center text-[13px] flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>{initialsOf(user.company || user.name)}</span>
+                <span className="w-[34px] h-[34px] bg-sage text-white grid place-items-center text-[13px] flex-shrink-0 font-data">{initialsOf(user.company || user.name)}</span>
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-white truncate">{user.company || user.name}</div>
-                  <div className="text-[11px] text-white/55 tracking-[0.04em]" style={{ fontFamily: "'DM Mono', monospace" }}>{user.type.toUpperCase()}{user.company ? " · TRADE" : ""}</div>
+                  <div className="text-[11px] text-white/55 tracking-[0.04em] font-data">{user.type.toUpperCase()}{user.company ? " · TRADE" : ""}</div>
                 </div>
               </div>
               <p className="px-5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-white/35">My account</p>
@@ -667,7 +666,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               <WindowMark size={11} color="rgba(255,255,255,0.55)" />
               {/* The eyebrow carries the CATEGORY now, so the headline does not
                   have to. That is what buys the headline its size. */}
-              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60" style={MONO}>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">
                 Aluminium windows &amp; doors · Supply only · Australia-wide
               </span>
             </div>
@@ -742,7 +741,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
             <Btn variant="sage" size="lg" onClick={() => go("quote", "/quote?upload=1")}>
               <Upload className="w-[18px] h-[18px]" aria-hidden="true" /> Upload your schedule
             </Btn>
-            <p className="mt-2.5 text-white/55 text-[13px]" style={MONO}>
+            <p className="mt-2.5 text-white/55 text-[13px] font-data">
               PDF or spreadsheet, straight from your plans — no account, no cost
             </p>
             <button onClick={() => go("quote")}
@@ -750,7 +749,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               No schedule? Enter sizes instead <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </button>
 
-            <div className="mt-8 pt-5 border-t border-white/12 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-white/55" style={MONO}>
+            <div className="mt-8 pt-5 border-t border-white/12 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-white/55 font-data">
               {facts.map((f, i) => (
                 <span key={f} className="flex items-center gap-3">
                   {i > 0 && <span className="w-px h-3 bg-white/20" aria-hidden="true" />}
@@ -803,16 +802,16 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                 stock imagery standing in for the real thing. */}
             <div className="relative border border-black/10 bg-ink flex flex-col min-h-[300px]">
               <div className="px-4 py-2.5 border-b border-white/12 flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-[0.14em] text-white/50" style={MONO}>From your plans</span>
+                <span className="text-[11px] uppercase tracking-[0.14em] text-white/50 font-data">From your plans</span>
                 {/* No invented sheet number: the honest label is what it is. */}
-                <span className="text-[11px] text-white/35" style={MONO}>window &amp; door schedule</span>
+                <span className="text-[11px] text-white/35 font-data">window &amp; door schedule</span>
               </div>
               {/* Laid out as the columns it is, not as a wall of digits. Only the
                   four that matter to the claim — the item tag, its printed size,
                   and what it is. HEAD HT., GLAZING and D.GLAZE REQ. are on the
                   real sheet and are noise here. */}
               <div className="flex-1 px-4 py-3.5">
-                <table className="w-full text-[11.5px] leading-[1.9]" style={MONO}>
+                <table className="w-full text-[11.5px] leading-[1.9] font-data">
                   <thead>
                     <tr className="text-sage-light">
                       <th className="text-left font-normal pb-1">N°</th>
@@ -852,8 +851,8 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                 pair its shape: a dark source document beside a light result. */}
             <div ref={resultRef} className="card lg:-ml-px -mt-px lg:mt-0 flex flex-col">
               <div className="panel-head px-4 py-2.5 flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-[0.14em] text-quiet" style={MONO}>What came back</span>
-                <span className="text-[11px] text-quiet" style={MONO}>{sample.lines.length} lines</span>
+                <span className="text-[11px] uppercase tracking-[0.14em] text-quiet font-data">What came back</span>
+                <span className="text-[11px] text-quiet font-data">{sample.lines.length} lines</span>
               </div>
               <div className="divide-y divide-black/8 flex-1">
                 {sample.lines.map((l, i) => {
@@ -866,18 +865,18 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                         transform: revealed ? "translateY(0)" : "translateY(6px)",
                         transitionDelay: `${i * 55}ms`,
                       }}>
-                      <span className="text-sage text-[12px] w-9 flex-shrink-0" style={MONO}>{l.code}</span>
+                      <span className="text-sage text-[12px] w-9 flex-shrink-0 font-data">{l.code}</span>
                       <span className="flex-1 min-w-0">
-                        <span className="block text-ink text-[14px] leading-tight truncate" style={DISPLAY}>
+                        <span className="block text-ink text-[14px] leading-tight truncate font-display">
                           {product?.name ?? l.rawType ?? "Needs a product"}
                         </span>
-                        <span className="block text-quiet text-[12px]" style={MONO}>
+                        <span className="block text-quiet text-[12px] font-data">
                           {l.width} × {l.height}
                         </span>
                       </span>
                       {/* Never colour alone: the word carries the state. amber-800
                           is the review colour the quote page already uses. */}
-                      <span className={`text-[11px] flex-shrink-0 ${l.status === "Ready" ? "text-sage" : "text-amber-800"}`} style={MONO}>
+                      <span className={`text-[11px] flex-shrink-0 ${l.status === "Ready" ? "text-sage" : "text-amber-800"} font-data`}>
                         {l.status === "Ready" ? "✓ ready" : "· to confirm"}
                       </span>
                     </div>
@@ -1013,13 +1012,13 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               <div key={s.n}
                 className="relative card p-6 flex flex-col sm:[&:nth-child(n+2)]:-mt-px lg:[&:nth-child(n+2)]:mt-0 lg:[&:nth-child(n+2)]:-ml-px">
                 <div className="flex items-start justify-between mb-4">
-                  <span className="w-8 h-8 border border-sage/40 flex items-center justify-center text-sage text-xs" style={MONO}>{s.n}</span>
+                  <span className="w-8 h-8 border border-sage/40 flex items-center justify-center text-sage text-xs font-data">{s.n}</span>
                   <span className="flex items-center gap-2">
                     <Meter paid={s.paid} />
                     <span className="figure-sm">{s.paid}</span>
                   </span>
                 </div>
-                <h3 className="font-semibold text-ink text-base leading-tight mb-1.5" style={DISPLAY}>{s.title}</h3>
+                <h3 className="font-semibold text-ink text-base leading-tight mb-1.5 font-display">{s.title}</h3>
                 <p className="text-body text-[15px] leading-relaxed">{s.body}</p>
                 {i < steps.length - 1 && (
                   <ChevronRight className="hidden lg:block absolute -right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-sage/60 bg-white z-10" aria-hidden="true" />
@@ -1090,12 +1089,12 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                 button variant in ui.tsx. */}
             {showrooms.length > 0 && (
               <div className="md:flex-shrink-0 md:w-[300px] w-full bg-white/[0.05] border border-white/15 p-6">
-                <p className="text-[11px] uppercase tracking-widest text-white/60 mb-3" style={MONO}>Showrooms</p>
+                <p className="text-[11px] uppercase tracking-widest text-white/60 mb-3 font-data">Showrooms</p>
                 <div className="divide-y divide-white/10">
                   {showrooms.map((l) => (
                     <div key={l.id} className="flex items-baseline justify-between py-2.5">
-                      <span className="text-white text-[17px]" style={DISPLAY}>{l.suburb}</span>
-                      <span className="text-white/60 text-[12px]" style={MONO}>{l.stateCode}</span>
+                      <span className="text-white text-[17px] font-display">{l.suburb}</span>
+                      <span className="text-white/60 text-[12px] font-data">{l.stateCode}</span>
                     </div>
                   ))}
                 </div>
@@ -1119,7 +1118,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
               the reassurance. */}
           {showrooms.length > 0 && (
             <div className="mt-10 pt-6 border-t border-white/12 flex flex-col md:flex-row md:items-baseline gap-2 md:gap-6">
-              <p className="text-white/60 text-[13px] flex-shrink-0" style={MONO}>AS 2047 · AS 1288</p>
+              <p className="text-white/60 text-[13px] flex-shrink-0 font-data">AS 2047 · AS 1288</p>
               <p className="text-white/70 text-[15px] leading-relaxed max-w-[62ch]">
                 Every frame is made to these standards. Your test reports and warranty terms come with the reviewed quote — before you have paid anything.
               </p>
@@ -1146,7 +1145,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
             {questions.map((q) => (
               <div key={q.q}
                 className="card p-6 flex flex-col md:[&:nth-child(n+3)]:-mt-px md:[&:nth-child(even)]:-ml-px [&:nth-child(n+2)]:-mt-px md:[&:nth-child(2)]:mt-0">
-                <h3 className="font-semibold text-ink text-[17px] leading-tight mb-2" style={DISPLAY}>{q.q}</h3>
+                <h3 className="font-semibold text-ink text-[17px] leading-tight mb-2 font-display">{q.q}</h3>
                 <p className="text-body text-[15px] leading-relaxed flex-1">{q.a}</p>
                 {q.link && (
                   <button onClick={() => go(q.link!.page)}
@@ -1227,8 +1226,7 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
       <div className="w-full max-w-sm mx-auto px-6 relative">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4"><WindowMark size={32} color={SAGE} /></div>
-          <h1 className="text-2xl font-semibold text-ink"
-            style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+          <h1 className="text-2xl font-semibold text-ink font-display">
             {step === "email" ? "Sign in or register" : "Enter your code"}
           </h1>
           <p className="text-sm text-body mt-1">
@@ -1332,7 +1330,7 @@ function ProfilePage({ user, setPage, setUser, authLoading, embedded }: { user: 
       {!embedded && (
         <header className="mb-8">
           <SLabel>Customer account</SLabel>
-          <h1 className="text-3xl md:text-4xl font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Profile settings</h1>
+          <h1 className="text-3xl md:text-4xl font-semibold text-ink font-display">Profile settings</h1>
         </header>
       )}
       <div className="space-y-4">
@@ -1427,7 +1425,7 @@ function AccountSettingsPage({ user, setPage, setUser, authLoading, embedded }: 
       {!embedded && (
         <header className="mb-8">
           <SLabel>Customer account</SLabel>
-          <h1 className="text-3xl md:text-4xl font-semibold text-ink" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Account settings</h1>
+          <h1 className="text-3xl md:text-4xl font-semibold text-ink font-display">Account settings</h1>
         </header>
       )}
       <div className="space-y-4">
@@ -1476,11 +1474,11 @@ function AccountPage({ user, setPage, setUser, authLoading }: { user: AuthUser |
         <p className="text-sm text-body mt-[5px]">Your details and preferences.</p>
       </header>
       <div>
-        <h2 className="text-lg font-semibold text-ink mb-4" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Profile</h2>
+        <h2 className="text-lg font-semibold text-ink mb-4 font-display">Profile</h2>
         <ProfilePage user={user} setPage={setPage} setUser={setUser} authLoading={authLoading} embedded />
       </div>
       <div className="border-t border-black/8 pt-8">
-        <h2 className="text-lg font-semibold text-ink mb-4" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Settings</h2>
+        <h2 className="text-lg font-semibold text-ink mb-4 font-display">Settings</h2>
         <AccountSettingsPage user={user} setPage={setPage} setUser={setUser} authLoading={authLoading} embedded />
       </div>
     </div>
@@ -1548,8 +1546,7 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
       <GhostMark size={280} opacity={0.05} pos="right-0 top-0" />
       <div className="max-w-xl mx-auto px-6 py-12 relative">
         <SLabel>Quote &amp; order tracking</SLabel>
-        <h1 className="text-3xl font-semibold text-ink mb-2"
-          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Track your quote or order</h1>
+        <h1 className="text-3xl font-semibold text-ink mb-2 font-display">Track your quote or order</h1>
         {!resuming && step !== "record" && (
           <p className="text-body text-sm mb-8">Enter the reference from your confirmation email — a quote (OF-Q-) or an order (OF-) — with the email address you used. We'll send a one-time code to confirm it's you; no account required.</p>
         )}
@@ -1609,8 +1606,7 @@ function ApprovedQuotePage() {
       <GhostMark size={260} opacity={0.05} pos="right-0 bottom-0" />
       <div className="max-w-2xl mx-auto px-6 relative">
         <div className="flex items-center gap-2 mb-2"><CheckCircle className="w-4 h-4 text-sage" /><span className="text-xs text-sage font-medium uppercase tracking-wide">Human verified</span></div>
-        <h1 className="text-3xl font-semibold text-ink mb-1"
-          style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Reviewed quote — OF-58712</h1>
+        <h1 className="text-3xl font-semibold text-ink mb-1 font-display">Reviewed quote — OF-58712</h1>
         <p className="text-body text-sm mb-8">Issued after manual technical review · 12 Jan 2025</p>
         <div className="group relative card p-5 mb-4 overflow-hidden">
           <FrameCorners size={10} color={SAGE} show="always" />
@@ -1624,7 +1620,7 @@ function ApprovedQuotePage() {
           </tbody></table>
           <div className="mt-4 pt-4 border-t border-black/8 flex justify-between">
             <span className="text-sm text-body">Deposit (30%)</span>
-            <span className="font-semibold" style={{ fontFamily: "'DM Mono', monospace" }}>[deposit amount]</span>
+            <span className="font-semibold font-data">[deposit amount]</span>
           </div>
         </div>
         <div className="group relative card p-5 mb-4 space-y-3 overflow-hidden">
@@ -1661,7 +1657,7 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
         <div className="relative max-w-6xl mx-auto px-6 pb-10 w-full">
           <div className="flex items-center gap-2 mb-3">
             <WindowMark size={11} color="rgba(255,255,255,0.55)" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60" style={{ fontFamily: "'DM Mono', monospace" }}>Trade account</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">Trade account</span>
           </div>
           <h1 className="font-semibold text-white leading-[1.05] tracking-tight mb-3"
             style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2rem, 4.5vw, 3rem)" }}>Quote more jobs. Chase fewer reps.</h1>
@@ -1743,7 +1739,7 @@ function AdminPage() {
               className={`group relative w-full text-left p-4 mb-2 border transition-all cursor-pointer overflow-hidden ${sel === i ? "border-sage/40 bg-sage/5" : "border-white/8 hover:border-white/20"}`}>
               <FrameCorners size={8} color={SAGE} />
               <div className="flex justify-between items-start mb-1">
-                <span className="text-[10px] text-sage font-medium" style={{ fontFamily: "'DM Mono', monospace" }}>{qt.ref}</span>
+                <span className="text-[10px] text-sage font-medium font-data">{qt.ref}</span>
                 <span className={`text-[10px] px-1.5 py-0.5 font-medium ${sc[qt.status]}`}>{qt.status}</span>
               </div>
               <p className="font-medium text-sm text-white">{qt.name}</p>
@@ -1762,7 +1758,7 @@ function AdminPage() {
             <FrameCorners size={8} color={SAGE} />
             <div className="flex items-start justify-between mb-4">
               <div>
-                <span className="text-[10px] text-sage block mb-1" style={{ fontFamily: "'DM Mono', monospace" }}>{q.ref}</span>
+                <span className="text-[10px] text-sage block mb-1 font-data">{q.ref}</span>
                 <h3 className="font-semibold text-lg text-white">{q.name}</h3>
                 <p className="text-sm text-white/35">{q.type} · {q.project}</p>
               </div>
@@ -2254,7 +2250,10 @@ export default function App() {
 
   return (
     <GstContext.Provider value={user?.priceGstMode ?? "inc"}>
-    <div className="min-h-screen ground-bone flex flex-col" style={{ fontFamily: "'Inter', sans-serif" }}>
+    {/* The body face is a base contract in theme.css now, not an inline style on
+        one div — a portal or dialog rendered outside this tree used to fall back
+        to the OS font. */}
+    <div className="min-h-screen ground-bone flex flex-col">
       <Seo {...seoProps} />
       <style>{`
         * { -webkit-font-smoothing: antialiased; }

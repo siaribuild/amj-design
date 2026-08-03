@@ -31,7 +31,7 @@ export function QuoteSubmitted({ email, user, onGo }: {
       <GhostMark size={300} opacity={0.05} pos="right-0 bottom-0" />
       <div className="max-w-md w-full mx-auto px-6 text-center relative">
         <div className="w-14 h-14 border border-sage/30 bg-sage-wash flex items-center justify-center mx-auto mb-6"><WindowMark size={24} color={SAGE} /></div>
-        <h2 className="text-2xl font-semibold text-ink mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Quote submitted</h2>
+        <h2 className="text-2xl font-semibold text-ink mb-2 font-display">Quote submitted</h2>
         <p className="text-sm text-body leading-relaxed mb-8 mt-2">We've received your project and emailed a confirmation to <span className="text-ink">{email || "your email"}</span>. We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote with its reference. Expect a response within 1–2 business days.</p>
         <p className="text-xs text-body mb-6">No payment at this stage. Deposit only after you approve the reviewed quote.</p>
         <div className="flex gap-3 justify-center">
@@ -96,7 +96,7 @@ export function QuoteReviewSubmit({
       <div className="max-w-2xl mx-auto px-6 py-10">
         <button onClick={onBack} className="text-body hover:text-ink text-sm mb-5 flex items-center gap-1 cursor-pointer"><ChevronLeft className="w-4 h-4" />{backLabel}</button>
         <SLabel>Review quote</SLabel>
-        <h1 className="text-3xl font-semibold text-ink mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Review and submit</h1>
+        <h1 className="text-3xl font-semibold text-ink mb-2 font-display">Review and submit</h1>
         <p className="text-body text-sm mb-6">No payment at this stage. A reviewed quote is issued after manual technical review.</p>
         <div className="quote-panel p-5 mb-4">
           <SLabel>Your quote</SLabel>
@@ -104,7 +104,7 @@ export function QuoteReviewSubmit({
             {quote.items.map((it, i) => (
               <div key={it.id} className="flex justify-between gap-3 text-sm border-b border-black/6 last:border-0 py-1.5">
                 <span className="text-ink min-w-0 truncate">{String(i + 1).padStart(2, "0")} · {productLabel(it.productSlug)} — {mm(it.width)} × {mm(it.height)} ×{it.qty}</span>
-                <span className="text-body flex-shrink-0" style={{ fontFamily: "'DM Mono', monospace" }}>
+                <span className="text-body flex-shrink-0 font-data">
                   {it.review?.customerConfigurationChanged && (typeof it.lineTotal !== "number" || !Number.isFinite(it.lineTotal))
                     ? "Pending final price"
                     : lineBlocksSubmission(it) ? "Review" : fmt(gstAdjust(linePriceTotal(it), gstMode))}
@@ -113,7 +113,7 @@ export function QuoteReviewSubmit({
             ))}
             {quote.files.length > 0 && <p className="text-xs text-body pt-1">+ {quote.files.length} uploaded file{quote.files.length !== 1 ? "s" : ""} for review</p>}
           </div>
-          <div className="flex justify-between border-t border-black/8 pt-3 text-sm"><span className="text-body">{pendingPriceCount ? "Priced-items subtotal" : "Estimated total"}</span><span className="font-semibold text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
+          <div className="flex justify-between border-t border-black/8 pt-3 text-sm"><span className="text-body">{pendingPriceCount ? "Priced-items subtotal" : "Estimated total"}</span><span className="font-semibold text-ink font-data">{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
           {pendingPriceCount > 0 && <p className="mt-2 text-xs text-amber-800">{pendingPriceCount} customer-changed configuration{pendingPriceCount === 1 ? "" : "s"} will be added after we confirm the exact product and price.</p>}
         </div>
         <div className="quote-panel p-5 space-y-4 mb-4">

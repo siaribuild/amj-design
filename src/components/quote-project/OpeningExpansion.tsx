@@ -50,8 +50,7 @@ function OptionList({ pairs, dense = false }: {
       style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
       {pairs.map((p) => (
         <div key={p.label} className="min-w-0">
-          <dt className="text-[10px] uppercase tracking-[0.12em] text-quiet mb-0.5"
-            style={{ fontFamily: "'DM Mono', monospace" }}>{p.label}</dt>
+          <dt className="text-[10px] uppercase tracking-[0.12em] text-quiet mb-0.5 font-data">{p.label}</dt>
           <dd className={`${dense ? "text-[11px]" : "text-xs"} text-ink min-w-0 truncate`}>{p.value}</dd>
         </div>
       ))}
@@ -63,8 +62,7 @@ function OptionList({ pairs, dense = false }: {
  *  options, units and the Edit launcher ran together as three unlabelled blocks. */
 function PanelLabel({ children }: { children: ReactNode }) {
   return (
-    <p className="text-[10px] uppercase tracking-[0.14em] text-quiet mb-2"
-      style={{ fontFamily: "'DM Mono', monospace" }}>{children}</p>
+    <p className="text-[10px] uppercase tracking-[0.14em] text-quiet mb-2 font-data">{children}</p>
   );
 }
 
@@ -137,11 +135,11 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
               // the same data must not look interactive in both places.
               <li key={s.id} className="border border-line bg-paper px-3 py-2.5 min-w-0">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-1">
-                  <span className="text-xs font-semibold text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>
+                  <span className="text-xs font-semibold text-ink font-data">
                     {unitLabel(item.code, i)}
                   </span>
                   {s.qtyPerParent > 1 && <span className="text-[11px] text-quiet">×{s.qtyPerParent}</span>}
-                  <span className="text-[11px] text-body tabular-nums ml-auto" style={{ fontFamily: "'DM Mono', monospace" }}>
+                  <span className="text-[11px] text-body tabular-nums ml-auto font-data">
                     {mm(s.width)} × {mm(s.height)}
                   </span>
                 </div>

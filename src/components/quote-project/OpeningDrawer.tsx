@@ -266,18 +266,17 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                    each unit here carries a VISIBLE affordance. */}
             {level.kind === "parent" && segments.length > 0 && (
               <div className="quote-composite-panel border border-line px-3 py-3">
-                <p className="text-[10px] uppercase tracking-[0.14em] text-info mb-2"
-                  style={{ fontFamily: "'DM Mono', monospace" }}>
+                <p className="text-[10px] uppercase tracking-[0.14em] text-info mb-2 font-data">
                   Built as {segments.reduce((n, s) => n + Math.max(1, s.qtyPerParent), 0)} units
                 </p>
                 <ul className="space-y-1">
                   {segments.map((s, i) => (
                     <li key={s.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                      <span className="text-quiet tabular-nums" style={{ fontFamily: "'DM Mono', monospace" }}>
+                      <span className="text-quiet tabular-nums font-data">
                         {unitLabel(ref, i)}{s.qtyPerParent > 1 ? ` ×${s.qtyPerParent}` : ""}
                       </span>
                       <span className="text-ink min-w-0 truncate">{productLabel(s.productSlug)}</span>
-                      <span className="text-body tabular-nums" style={{ fontFamily: "'DM Mono', monospace" }}>
+                      <span className="text-body tabular-nums font-data">
                         {mm(s.width)} × {mm(s.height)}
                       </span>
                       <span className="ml-auto flex items-center gap-2">

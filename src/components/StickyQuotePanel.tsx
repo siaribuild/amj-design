@@ -186,8 +186,7 @@ export function StickyQuotePanel({
           <div className="sm:order-2 flex flex-col min-w-0 flex-shrink-0">
             <span className="text-[9px] uppercase tracking-[0.16em] text-body-soft leading-none mb-1">{pendingPriceCount ? "Priced subtotal" : "Estimate"}</span>
             <span className="flex items-baseline gap-1.5">
-            <span className="text-ink text-lg sm:text-[17px] font-semibold leading-none tabular-nums"
-              style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(shownTotal)}</span>
+            <span className="text-ink text-lg sm:text-[17px] font-semibold leading-none tabular-nums font-data">{fmt(shownTotal)}</span>
             <span className="text-body-soft text-xs whitespace-nowrap">{gstSuffix(gstMode)}</span>
             </span>
           </div>

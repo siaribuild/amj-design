@@ -680,7 +680,7 @@ export function ItemForm({
                 <span className="w-8 h-8 border border-sage/30 flex items-center justify-center flex-shrink-0"><WindowMark size={15} color={SAGE} /></span>
                 <div className="min-w-0">
                   <p className="text-[10px] uppercase tracking-widest text-body">Product</p>
-                  <p className="text-sm font-semibold text-ink truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{p.name}</p>
+                  <p className="text-sm font-semibold text-ink truncate font-display">{p.name}</p>
                 </div>
               </div>
             </div>
@@ -759,11 +759,11 @@ export function ItemForm({
             <div>
               <p className="text-[10px] uppercase tracking-widest text-body">Estimated price</p>
               {priced.ok ? (
-                <p className="text-lg font-semibold text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>{fmt(gstAdjust(priced.total, gstMode))} <span className="text-xs font-normal text-body">{gstSuffix(gstMode)}{qty > 1 ? ` · ${fmt(gstAdjust(priced.unit, gstMode))} ea` : ""}</span></p>
+                <p className="text-lg font-semibold text-ink font-data">{fmt(gstAdjust(priced.total, gstMode))} <span className="text-xs font-normal text-body">{gstSuffix(gstMode)}{qty > 1 ? ` · ${fmt(gstAdjust(priced.unit, gstMode))} ea` : ""}</span></p>
               ) : priceDeferred ? (
                 <p className="text-sm font-medium text-body">Calculated when you add it</p>
               ) : (
-                <p className="text-lg font-semibold text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>—</p>
+                <p className="text-lg font-semibold text-ink font-data">—</p>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -800,14 +800,12 @@ function CodeField({ code, duplicate, editSignal, onCommit }: {
         onChange={e => setDraft(e.target.value.toUpperCase())}
         onBlur={commit}
         onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); commit(); } else if (e.key === "Escape") { e.preventDefault(); cancel(); } }}
-        className="quote-code-field w-[4.75rem] h-8 border border-sage px-2 text-xs font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-sage/40"
-        style={{ fontFamily: "'DM Mono', monospace" }} />
+        className="quote-code-field w-[4.75rem] h-8 border border-sage px-2 text-xs font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-sage/40 font-data" />
     );
   }
   return (
     <button onClick={begin} aria-label={`Edit item ID${code ? ` ${code}` : ""}`}
-      data-attention={duplicate ? "true" : "false"} className="quote-code-field group/code inline-flex items-center gap-1 h-8 px-2 text-xs font-semibold border text-ink transition-colors cursor-pointer hover:border-sage"
-      style={{ fontFamily: "'DM Mono', monospace" }}>
+      data-attention={duplicate ? "true" : "false"} className="quote-code-field group/code inline-flex items-center gap-1 h-8 px-2 text-xs font-semibold border text-ink transition-colors cursor-pointer hover:border-sage font-data">
       {code || "Set code"}
       <Pencil className="w-3 h-3 text-quieter group-hover/code:text-sage" aria-hidden="true" />
     </button>
@@ -926,8 +924,7 @@ export function ItemSummaryCard({
               warning explains the caveat. Only a line with NO product at all
               shows the italic amber "Choose a product" customer action. */}
           <button onClick={toggleExpanded} aria-expanded={isExpanded}
-            className={`min-w-0 truncate text-left text-sm font-semibold leading-tight cursor-pointer hover:text-sage ${item.productSlug ? "text-ink" : "text-warning-ink italic"}`}
-            style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+            className={`min-w-0 truncate text-left text-sm font-semibold leading-tight cursor-pointer hover:text-sage ${item.productSlug ? "text-ink" : "text-warning-ink italic"} font-display`}>
             {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
           </button>
           {customerBlocking
@@ -961,7 +958,7 @@ export function ItemSummaryCard({
             </span>
           )}
         </span>
-        <span className={`flex-shrink-0 text-sm font-semibold ${priceReady ? "text-ink" : "text-body"}`} style={{ fontFamily: "'DM Mono', monospace" }}>
+        <span className={`flex-shrink-0 text-sm font-semibold ${priceReady ? "text-ink" : "text-body"} font-data`}>
           {priceLabel}{priceReady ? <span className="hidden sm:inline text-[10px] font-normal text-body"> {gstSuffix(gstMode)}</span> : null}
         </span>
 
@@ -1159,7 +1156,7 @@ export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState
     <div className="quote-composite-panel border-t border-line px-4 py-4 md:px-5">
       <div className="flex items-center gap-2 mb-3">
         <span className="w-2.5 h-2.5 border border-info flex-shrink-0" aria-hidden="true" />
-        <span className="text-[10px] uppercase tracking-[0.14em] text-info" style={{ fontFamily: "'DM Mono', monospace" }}>
+        <span className="text-[10px] uppercase tracking-[0.14em] text-info font-data">
           Built as {units} units
         </span>
       </div>
@@ -1171,8 +1168,8 @@ export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState
 
       <div className="quote-panel">
         <div className="flex items-center justify-between px-3.5 py-2 border-b border-black/8">
-          <span className="text-[11px] text-quiet" style={{ fontFamily: "'DM Mono', monospace" }}>Your opening</span>
-          <span className="text-[12px] text-ink" style={{ fontFamily: "'DM Mono', monospace" }}>
+          <span className="text-[11px] text-quiet font-data">Your opening</span>
+          <span className="text-[12px] text-ink font-data">
             {openingW && openingH ? `${openingW.toLocaleString("en-AU")} × ${openingH.toLocaleString("en-AU")} mm` : "—"}
           </span>
         </div>
@@ -1180,16 +1177,16 @@ export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState
           <div key={s.id} className="border-b border-black/5 last:border-b-0">
             <div className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5">
               <span className="text-[13px] text-ink min-w-0">
-                <span className="text-quiet mr-2" style={{ fontFamily: "'DM Mono', monospace" }}>
+                <span className="text-quiet mr-2 font-data">
                   Unit {i + 1}{s.qtyPerParent > 1 ? ` ×${s.qtyPerParent}` : ""}
                 </span>
                 {productLabel(s.productSlug)}
               </span>
               <span className="flex items-center gap-3 flex-shrink-0">
-                <span className="text-[12px] text-body" style={{ fontFamily: "'DM Mono', monospace" }}>
+                <span className="text-[12px] text-body font-data">
                   {(parseInt(s.width) || 0).toLocaleString("en-AU")} × {(parseInt(s.height) || 0).toLocaleString("en-AU")}
                 </span>
-                <span className="text-[11px] text-quiet" style={{ fontFamily: "'DM Mono', monospace" }}>included</span>
+                <span className="text-[11px] text-quiet font-data">included</span>
                 <button type="button" disabled={busy} onClick={() => setEditingUnit(editingUnit === s.id ? null : s.id)}
                   className="text-[11px] font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer">
                   {editingUnit === s.id ? "Close" : "Edit"}

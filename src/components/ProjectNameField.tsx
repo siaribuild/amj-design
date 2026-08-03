@@ -50,14 +50,12 @@ export function ProjectNameField({ value, onCommit, className = "" }: {
           else if (e.key === "Escape") { e.preventDefault(); cancel(); }
         }}
         size={Math.max(draft.length, 12)}
-        className={`quote-title-control ${type} font-semibold text-ink leading-tight border border-sage px-2 py-0.5 max-w-full focus:outline-none focus:ring-2 focus:ring-sage/40`}
-        style={{ fontFamily: "'Space Grotesk', sans-serif" }} />
+        className={`quote-title-control ${type} font-semibold text-ink leading-tight border border-sage px-2 py-0.5 max-w-full focus:outline-none focus:ring-2 focus:ring-sage/40 font-display`} />
     );
   }
   return (
     <button onClick={begin} aria-label={`Rename project${value ? ` (${value})` : ""}`}
-      className={`quote-title-control group/name inline-flex items-center gap-2 ${type} font-semibold text-ink leading-tight border action-hover px-2 py-0.5 max-w-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage`}
-      style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+      className={`quote-title-control group/name inline-flex items-center gap-2 ${type} font-semibold text-ink leading-tight border action-hover px-2 py-0.5 max-w-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage font-display`}>
       <span className="truncate">{value}</span>
       <Pencil className="w-4 h-4 text-quieter group-hover/name:text-sage flex-shrink-0" aria-hidden="true" />
     </button>
