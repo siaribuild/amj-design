@@ -872,14 +872,16 @@
    * there so the meaning is never colour or shape alone, which is a smaller job
    * than a display numeral was doing. */
   .figure {
-    font-family: 'DM Mono', monospace;
+    font-family: var(--font-data);
+    font-variant-numeric: tabular-nums;
     font-weight: 600;
     line-height: 1;
     color: var(--sage-deep);
     font-size: clamp(1.7rem, 4.5vw, 2.4rem);
   }
   .figure-sm {
-    font-family: 'DM Mono', monospace;
+    font-family: var(--font-data);
+    font-variant-numeric: tabular-nums;
     font-weight: 600;
     line-height: 1;
     color: var(--sage-deep);
