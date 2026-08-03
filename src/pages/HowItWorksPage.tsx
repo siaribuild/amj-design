@@ -38,8 +38,6 @@ import { ProcessRail } from "../components/ProcessRail";
 import { getPage, imageUrl, products } from "../data/catalogue";
 import { brandName, brandSubject } from "../data/sanity";
 
-const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
-const MONO = { fontFamily: "'DM Mono', monospace" } as const;
 const GRID_BG = {
   backgroundImage: "linear-gradient(to right,rgba(90,122,106,0.045) 1px,transparent 1px),linear-gradient(to bottom,rgba(90,122,106,0.045) 1px,transparent 1px)",
   backgroundSize: "64px 64px",
@@ -237,7 +235,7 @@ function PhaseSection({ p, brand, onQuote, children }: {
         <div className="split-row mb-9">
           <div className="max-w-[46ch]">
             <SLabel>{p.label}</SLabel>
-            <h2 id={`${p.id}-h`} className="font-semibold text-ink leading-[1.08] tracking-tight" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
+            <h2 id={`${p.id}-h`} className="text-ink t-hd1">
               {p.heading}
             </h2>
             {p.intro && <p className="text-body text-[15.5px] leading-relaxed mt-2.5">{p.intro}</p>}
@@ -304,7 +302,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-32 pb-14 md:pt-36 md:pb-16">
           <div className="max-w-2xl">
             <SLabel light>How it works</SLabel>
-            <h1 className="font-semibold text-white leading-[1.03] tracking-tight mb-4 max-w-[15ch]" style={{ ...DISPLAY, fontSize: "clamp(2.1rem, 5vw, 3.5rem)" }}>
+            <h1 className="text-white mb-4 max-w-[15ch] t-ds1">
               Nothing gets made until you sign it off.
             </h1>
             <p className="text-white/70 leading-relaxed max-w-xl text-base md:text-lg">
@@ -326,7 +324,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
       <section className="relative ground-paper border-t border-black/8 py-10 md:py-16" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>The shape of it</SLabel>
-          <h2 className="font-semibold text-ink leading-[1.08] tracking-tight mb-3 max-w-[20ch]" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
+          <h2 className="text-ink mb-3 max-w-[20ch] t-hd1">
             Three phases, and what each one asks of you.
           </h2>
           <p className="text-body text-[15.5px] leading-relaxed split-prose mb-8">
@@ -377,8 +375,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
         <GhostMark size={320} opacity={0.06} color="#fff" pos="right-0 bottom-0" />
         <div className="relative max-w-6xl mx-auto px-6">
           <SLabel light>The line</SLabel>
-          <h2 id="the-line-h" className="font-semibold text-white leading-[1.06] tracking-tight mb-4 max-w-[20ch]"
-            style={{ ...DISPLAY, fontSize: "clamp(1.7rem, 3.6vw, 2.3rem)" }}>
+          <h2 id="the-line-h" className="text-white mb-4 max-w-[20ch] t-hd1">
             Everything above this line is free.
           </h2>
           <p className="text-white/70 leading-relaxed max-w-[58ch] text-[15.5px] md:text-base">
@@ -416,7 +413,7 @@ export function HowItWorksPage({ setPage }: { setPage?: (p: Page, path?: string)
       <section className="relative ground-paper border-t border-black/8 py-12 md:py-16" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Before despatch</SLabel>
-          <h2 className="font-semibold text-ink leading-[1.08] tracking-tight mb-7 max-w-[20ch]" style={{ ...DISPLAY, fontSize: "clamp(1.55rem, 3.2vw, 2.05rem)" }}>
+          <h2 className="text-ink mb-7 max-w-[20ch] t-hd1">
             You see it before it ships.
           </h2>
           {/* A real photograph of a real unit — this section is literally about

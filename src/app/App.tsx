@@ -680,8 +680,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                 lines, and shorter overall.
                 The minimum goes 2.15rem → 2.75rem; the vw term and the desktop
                 maximum are unchanged, so nothing above ~460px moves. */}
-            <h1 className="font-semibold text-white leading-[1.02] tracking-tight mb-5"
-              style={{ ...DISPLAY, fontSize: "clamp(2.75rem, 6vw, 4.25rem)" }}>
+            <h1 className="text-white mb-5 t-ds1">
               {/* Not italic — the mock's device: same weight, sage. The only sage
                   above the fold, and it lands on the claim that matters. */}
               {/* White, like every other hero on the site.
@@ -715,8 +714,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                 no comparative claim about other suppliers, which would need
                 substantiation under the ACL and buys nothing the negation
                 doesn't already imply. */}
-            <p className="text-white/80 leading-relaxed mb-8 max-w-[52ch]"
-              style={{ fontSize: "clamp(1rem, 1.4vw, 1.125rem)" }}>
+            <p className="text-white/80 mb-8 max-w-[52ch] t-bd-lg">
               No rep, no callback, no waiting on a quote email. Upload your schedule
               and every line comes back matched and costed.
             </p>
@@ -773,8 +771,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           <SLabel>The minute</SLabel>
           <div className="split-row mb-8">
             <div className="split-prose">
-              <h2 className="font-semibold text-ink leading-tight mb-2.5"
-                style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
+              <h2 className="text-ink mb-2.5 t-ds2">
                 It's already drawn. Stop typing it out twice.
               </h2>
               <p className="text-body text-[15px] md:text-base leading-relaxed">
@@ -946,8 +943,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Systems</SLabel>
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-8">
-            <h2 className="font-semibold text-ink leading-tight"
-              style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
+            <h2 className="text-ink t-ds2">
               Made to your sizes. Not the nearest standard one.
             </h2>
             <p className="text-body text-base max-w-sm md:text-right">
@@ -966,8 +962,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                   <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/45 to-transparent" />
                   <div className="absolute inset-3 border border-white/12 group-hover:border-white/25 transition-colors pointer-events-none" />
                   <div className="absolute inset-0 p-6 md:p-7 flex flex-col justify-end">
-                    <h3 className="text-white font-semibold mb-1.5"
-                      style={{ ...DISPLAY, fontSize: "clamp(1.5rem, 2.6vw, 2rem)" }}>{s.title}</h3>
+                    <h3 className="text-white mb-1.5 t-hd1">{s.title}</h3>
                     <p className="text-white/75 text-[15px] leading-snug max-w-md mb-4">{s.desc}</p>
                     <div className="flex flex-wrap gap-1.5 mb-5">
                       {s.chips.map(c => (
@@ -997,8 +992,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Process</SLabel>
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-8">
-            <h2 className="font-semibold text-ink leading-tight"
-              style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
+            <h2 className="text-ink t-ds2">
               Quote, order, delivery — and you never pay ahead of the work.
             </h2>
             <button onClick={() => go("how-it-works")}
@@ -1070,8 +1064,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
           <div className="split-row is-top">
             <div className="split-prose">
               <SLabel light>{showrooms.length ? "In person" : "Standards"}</SLabel>
-              <h2 className="font-semibold text-white leading-tight mb-4 max-w-[24ch]"
-                style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
+              <h2 className="text-white mb-4 max-w-[24ch] t-ds2">
                 {showrooms.length
                   ? "The quote happens online. The frames do not."
                   : "Made to AS 2047 and AS 1288 — standards you can look up."}
@@ -1136,8 +1129,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
       <section className="relative ground-bone py-14 md:py-[68px] border-t border-black/8" style={GRID_BG}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Good to know</SLabel>
-          <h2 className="font-semibold text-ink leading-tight mb-8"
-            style={{ ...DISPLAY, fontSize: "clamp(1.9rem, 3.4vw, 2.5rem)" }}>
+          <h2 className="text-ink mb-8 t-ds2">
             The questions people ask before they hit upload.
           </h2>
 
@@ -1470,7 +1462,7 @@ function AccountPage({ user, setPage, setUser, authLoading }: { user: AuthUser |
   return (
     <div className="space-y-10">
       <header>
-        <h1 className="font-semibold text-ink leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.7rem,3.6vw,2.15rem)" }}>Account</h1>
+        <h1 className="text-ink t-hd1">Account</h1>
         <p className="text-sm text-body mt-[5px]">Your details and preferences.</p>
       </header>
       <div>
@@ -1659,8 +1651,7 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
             <WindowMark size={11} color="rgba(255,255,255,0.55)" />
             <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">Trade account</span>
           </div>
-          <h1 className="font-semibold text-white leading-[1.05] tracking-tight mb-3"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2rem, 4.5vw, 3rem)" }}>Quote more jobs. Chase fewer reps.</h1>
+          <h1 className="text-white mb-3 t-ds1">Quote more jobs. Chase fewer reps.</h1>
           <p className="text-white/70 max-w-xl text-[15px] leading-relaxed">Upload every schedule you're sitting on and get them priced the same day. Trade accounts get priority review, saved details, and a name to call.</p>
         </div>
       </section>

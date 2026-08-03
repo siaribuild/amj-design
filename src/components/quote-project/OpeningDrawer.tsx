@@ -226,8 +226,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
           // there is ample room beside it. Width follows the menu's idiom —
           // min(88vw, …) — so it never crowds the list it is dimming.
           // Full-screen stays below 768, where a side panel is unusable.
-          className="quote-drawer fixed z-50 inset-0 md:inset-y-0 md:left-auto md:right-0 md:w-[min(88vw,520px)] flex flex-col overflow-y-auto"
-        >
+          className="quote-drawer fixed z-50 inset-0 md:inset-y-0 md:left-auto md:right-0 md:w-[min(88vw,520px)] flex flex-col overflow-y-auto">
           {/* 1. Header — pictogram, reference, location, close. On mobile the
                  breadcrumb is the ONLY orientation cue, so it stays persistent. */}
           <div className="quote-panel-head sticky top-0 z-10 flex items-center gap-2 px-4 py-3">

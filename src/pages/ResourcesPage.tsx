@@ -24,8 +24,6 @@ import { posts, postCategories, imageUrl, getPage, postDate, type Post } from ".
 import { fileSize, docDate } from "../components/DocumentRow";
 import { pathForPage } from "../app/routes";
 
-const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
-const MONO = { fontFamily: "'DM Mono', monospace" } as const;
 
 // Twelve at a time, per the wireframe. Load more rather than pagination (which
 // measurably suppresses how much of a list people see) and rather than infinite
@@ -53,8 +51,7 @@ function PostRow({ post, onOpen }: { post: Post; onOpen: (slug: string) => void 
         <span className="block text-[10px] uppercase tracking-[0.14em] text-sage mb-2 font-data">
           {post.categoryTitle}
         </span>
-        <span className="block text-ink font-semibold leading-[1.16] mb-1.5"
-          style={{ ...DISPLAY, fontSize: "clamp(1.2rem, 1.8vw, 1.44rem)" }}>
+        <span className="block text-ink mb-1.5 t-hd2">
           {post.title}
         </span>
         <span className="block text-[13px] text-body leading-relaxed max-w-[700px]">{post.summary}</span>
@@ -178,8 +175,7 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
         <GhostMark size={260} opacity={0.05} color="#fff" pos="right-0 bottom-0" />
         <div className="relative w-full max-w-6xl mx-auto px-6 pt-24 pb-8">
           <SLabel light>Articles, guides &amp; documentation</SLabel>
-          <h1 className="font-semibold text-white leading-[1.0] tracking-tight mb-2"
-            style={{ ...DISPLAY, fontSize: "clamp(2.1rem, 4vw, 3.1rem)" }}>
+          <h1 className="text-white mb-2 t-ds1">
             Resources
           </h1>
           <p className="text-white/70 text-[15px] leading-relaxed max-w-[62ch]">
@@ -287,8 +283,7 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
                 ) : (
                   <div className="py-12 border-b border-ink">
                     <SLabel>No matching resources</SLabel>
-                    <p className="text-ink mt-3 mb-6 leading-tight"
-                      style={{ ...DISPLAY, fontSize: "clamp(1.4rem, 2.4vw, 1.75rem)" }}>
+                    <p className="text-ink mt-3 mb-6 t-hd1">
                       Try a broader term or clear a filter.
                     </p>
                     <div className="flex flex-wrap gap-2.5">

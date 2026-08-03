@@ -406,7 +406,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
             <span className="text-[13px] font-medium text-sage font-data">{order.projectRef ?? order.orderNo}</span>
             <StatusPill tone={m.tone}>{m.pill}</StatusPill>
           </div>
-          <h1 className="font-semibold text-ink leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.55rem,3.4vw,2rem)" }}>{order.projectTitle ?? "Your order"}</h1>
+          <h1 className="text-ink t-hd1">{order.projectTitle ?? "Your order"}</h1>
           <div className="flex gap-x-4 gap-y-2 flex-wrap text-[13.5px] text-body mt-2">
             <span>Ordered · accepted from quote <span className="text-ink font-data">{order.revisionNo ? `R${order.revisionNo}` : "—"}</span></span>
             <span>Order no. <span className="text-ink font-data">{order.orderNo}</span></span>
@@ -566,7 +566,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
             {p.ref && <span className="text-[13px] font-medium text-sage font-data">{p.ref}</span>}
             <StatusPill tone={needsInfo ? "attn" : "work"}>{needsInfo ? "Needs your answer" : "Being priced"}</StatusPill>
           </div>
-          <h1 className="font-semibold text-ink leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.55rem,3.4vw,2rem)" }}>{p.title}</h1>
+          <h1 className="text-ink t-hd1">{p.title}</h1>
           <div className="flex gap-x-4 gap-y-2 flex-wrap text-[13.5px] text-body mt-2">
             <span>Project · submitted for pricing <span className="text-ink font-data">{fmtDate(p.createdAt)}</span></span>
             <span><span className="text-ink font-data">{lines.length}</span> lines</span>

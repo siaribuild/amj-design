@@ -66,7 +66,7 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
       {/* Greeting */}
       <div className="flex justify-between items-end gap-5 flex-wrap mb-[22px]">
         <div>
-          <h1 className="font-semibold text-ink leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.7rem,3.6vw,2.15rem)" }}>
+          <h1 className="text-ink t-hd1">
             {brandNew ? `Welcome, ${first}` : `${greeting()}, ${first}`}
           </h1>
           <p className="text-sm text-body mt-[5px]">

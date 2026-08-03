@@ -108,7 +108,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
             {p.ref && <span className="text-[13px] font-medium text-sage font-data">{p.ref}</span>}
             <StatusPill tone="attn">Quote ready · awaiting you</StatusPill>
           </div>
-          <h1 className="font-semibold text-ink leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.55rem,3.4vw,2rem)" }}>{p.title}</h1>
+          <h1 className="text-ink t-hd1">{p.title}</h1>
           <div className="flex gap-x-4 gap-y-2 flex-wrap items-center text-[13.5px] text-body mt-2">
             <span className="inline-flex items-center gap-1.5 border border-black/10 px-2 py-[3px] text-[11.5px] font-data">
               <Lock className="w-3 h-3 text-sage" />Immutable · Revision {R}

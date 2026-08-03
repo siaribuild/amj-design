@@ -21,8 +21,6 @@ import { DocumentRow, docDate } from "../components/DocumentRow";
 import { fetchPostBody } from "../data/sanity";
 import { pathForPage } from "../app/routes";
 
-const DISPLAY = { fontFamily: "'Space Grotesk', sans-serif" } as const;
-const MONO = { fontFamily: "'DM Mono', monospace" } as const;
 
 // The renderer map matches the authoring block set exactly — the schema offers
 // paragraph, heading, subheading, two list kinds, bold, emphasis, link and
@@ -31,8 +29,7 @@ const components: PortableTextComponents = {
   block: {
     normal: ({ children }) => <p className="text-body leading-relaxed mb-5">{children}</p>,
     h2: ({ children }) => (
-      <h2 className="font-semibold text-ink mt-10 mb-3"
-        style={{ ...DISPLAY, fontSize: "clamp(1.3rem, 2.2vw, 1.6rem)" }}>{children}</h2>
+      <h2 className="text-ink mt-10 mb-3 t-hd2">{children}</h2>
     ),
     h3: ({ children }) => <h3 className="font-semibold text-ink text-[17px] mt-7 mb-2 font-display">{children}</h3>,
   },
@@ -143,8 +140,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
         <div className={`relative w-full ${shell} mx-auto px-6 pt-24 pb-10 md:pt-28 md:pb-12`}>
           {/* Both axes, same order as the index row. */}
           <SLabel light>{post.categoryTitle}</SLabel>
-          <h1 className="font-semibold text-white leading-[1.05] tracking-tight mb-3 max-w-[24ch]"
-            style={{ ...DISPLAY, fontSize: "clamp(1.8rem, 3.6vw, 2.6rem)" }}>
+          <h1 className="text-white mb-3 max-w-[24ch] t-ds2">
             {post.title}
           </h1>
           <p className="text-white/80 text-[15px] md:text-base leading-relaxed split-prose">{post.summary}</p>
@@ -212,8 +208,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
         <section className="ground-bone border-t border-black/8 py-14 md:py-[68px]">
           <div className="max-w-6xl mx-auto px-6">
             <div className="flex items-end justify-between gap-4 mb-6">
-              <h2 className="font-semibold text-ink leading-tight"
-                style={{ ...DISPLAY, fontSize: "clamp(1.4rem, 2.4vw, 1.8rem)" }}>
+              <h2 className="text-ink t-hd1">
                 More in {post.categoryTitle}
               </h2>
               <button onClick={() => go("resources")}

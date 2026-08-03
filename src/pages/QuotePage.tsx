@@ -178,8 +178,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
                 <LayoutGrid className="w-3.5 h-3.5 text-white/55" />
                 <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">Your quote</span>
               </div>
-              <h1 className="font-semibold text-white leading-[1.03] tracking-tight mb-2 md:mb-3"
-                style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.9rem, 4.2vw, 3rem)" }}>
+              <h1 className="text-white mb-2 md:mb-3 t-ds1">
                 Build your quote
               </h1>
               {/* Was 201 characters at 13px — the most text in the smallest type
@@ -363,8 +362,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
             <div
               role={aiPhase.kind === "failed" ? "alert" : "status"}
               aria-live="polite"
-              className="quote-notice--warning mb-4 flex items-start gap-2.5 border border-warning/40 px-4 py-3 text-sm"
-            >
+              className="quote-notice--warning mb-4 flex items-start gap-2.5 border border-warning/40 px-4 py-3 text-sm">
               <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
               <span className="flex-1">
                 {diagnosticMessage(aiPhase.diagnostic)}{" "}

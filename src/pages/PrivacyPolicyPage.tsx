@@ -42,8 +42,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
             <WindowMark size={11} color="rgba(255,255,255,0.55)" />
             <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">Legal</span>
           </div>
-          <h1 className="font-semibold text-white leading-tight tracking-tight mb-3"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2rem, 4.5vw, 3rem)" }}>
+          <h1 className="text-white mb-3 t-ds1">
             Privacy Policy
           </h1>
           <p className="text-white/70 max-w-xl text-[15px] leading-relaxed">

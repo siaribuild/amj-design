@@ -983,8 +983,7 @@ export function ItemSummaryCard({
               setRestoringAi(true);
               Promise.resolve(onRestoreAi()).finally(() => setRestoringAi(false));
             }}
-            className="flex-shrink-0 text-[11px] font-semibold underline text-amber-900 disabled:opacity-50 cursor-pointer"
-          >
+            className="flex-shrink-0 text-[11px] font-semibold underline text-amber-900 disabled:opacity-50 cursor-pointer">
             {restoringAi ? "Restoring…" : "Restore AI selection"}
           </button>
         </div>

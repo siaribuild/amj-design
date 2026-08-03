@@ -225,8 +225,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
               <WindowMark size={10} color="rgba(255,255,255,0.55)" />
               <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">Products</span>
             </div>
-            <h1 className="font-semibold text-white leading-[1.05] tracking-tight mb-3"
-              style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2rem, 4.4vw, 3rem)" }}>{hero.headline}</h1>
+            <h1 className="text-white mb-3 t-ds1">{hero.headline}</h1>
             {/* One supporting line, not two. The hero carried headline + sub +
                 body — three stacked text blocks, 182 characters of support under
                 a 25-character headline — and `body` was filler either way
@@ -320,8 +319,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
             {/* Count on the heading's baseline, the site's established heading-row
                 pattern (home Systems, Process). */}
             <div className="flex items-end justify-between gap-4 mb-2">
-              <h2 className="font-semibold text-ink leading-tight"
-                style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.6rem, 2.8vw, 2.1rem)" }}>{heading}</h2>
+              <h2 className="text-ink t-hd1">{heading}</h2>
               <p className="text-[13px] text-quiet flex-shrink-0 pb-1 font-data">{list.length} system{list.length === 1 ? "" : "s"}</p>
             </div>
             <p className="text-body text-[15px] leading-relaxed max-w-2xl mb-8">{description}</p>
@@ -371,8 +369,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
       <section className="ground-bone border-t border-black/8 py-14 md:py-[68px]">
         <div className="max-w-6xl mx-auto px-6">
           <SLabel>What you get</SLabel>
-          <h2 className="font-semibold text-ink leading-tight mb-8"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.6rem, 2.8vw, 2.1rem)" }}>
+          <h2 className="text-ink mb-8 t-hd1">
             Made to your schedule, supplied to your site.
           </h2>
           {/* One column at 375: two columns there gave each item ~156px for a

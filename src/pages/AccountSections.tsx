@@ -13,7 +13,7 @@ export function HelpPage({ setPage }: { setPage: (p: Page) => void }) {
   return (
     <>
       <header className="mb-[22px]">
-        <h1 className="font-semibold text-ink leading-[1.05]" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.7rem,3.6vw,2.15rem)" }}>Help &amp; contact</h1>
+        <h1 className="text-ink t-hd1">Help &amp; contact</h1>
         <p className="text-sm text-body mt-[5px]">A person, not a ticket queue — reach the team working on your project.</p>
       </header>
       <div className="grid sm:grid-cols-2 gap-4 max-w-3xl">

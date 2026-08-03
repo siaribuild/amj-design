@@ -492,8 +492,7 @@ function LearningReview({ outcomes, reasons, busy, onRun }: {
                 onChange={(event) => setReasonById((current) => ({
                   ...current, [outcome.id]: event.target.value,
                 }))}
-                className="flex-1 border border-black/15 px-2.5 py-2 text-sm bg-white"
-              >
+                className="flex-1 border border-black/15 px-2.5 py-2 text-sm bg-white">
                 <option value="">Why did the human change it?</option>
                 {reasons.map((reason) => (
                   <option key={reason.code} value={reason.code}>
@@ -921,8 +920,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
                 value={configurationKey}
                 onChange={(event) => setConfigurationKey(event.target.value)}
                 disabled={configurationState !== "ready"}
-                className="w-full border border-black/15 px-2.5 py-2 text-sm bg-white"
-              >
+                className="w-full border border-black/15 px-2.5 py-2 text-sm bg-white">
                 <option value="">
                   {configurationState === "loading" ? "Loading eligible configurations..." : "Select a currently eligible configuration"}
                 </option>

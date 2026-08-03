@@ -354,8 +354,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
               <WindowMark size={10} color="rgba(255,255,255,0.55)" />
               <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/60 font-data">{family?.name ?? category?.name ?? "Products"}</span>
             </div>
-            <h1 className="font-semibold text-white leading-[1.04] tracking-tight mb-4"
-              style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2rem, 4.6vw, 3.1rem)" }}>{product.name}</h1>
+            <h1 className="text-white mb-4 t-ds1">{product.name}</h1>
             <p className="text-white/80 text-base md:text-lg leading-relaxed max-w-xl mb-5">{product.shortDescription}</p>
             {/* Key spec chips */}
             {product.keySpecs.length > 0 && (
@@ -386,7 +385,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
           <div className="lg:order-1 lg:flex-1 min-w-0">
             {/* Overview — standalone, outside the tabs */}
             <section className="mb-8">
-              <h2 className="font-semibold text-ink leading-tight mb-4" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.3rem, 2.2vw, 1.6rem)" }}>Overview</h2>
+              <h2 className="text-ink mb-4 t-hd2">Overview</h2>
               <OverviewContent product={product} familyBlurb={familyBlurb} />
             </section>
 
@@ -431,8 +430,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
       {product.gallery.length > 0 && (
         <section className="border-t border-black/8 bg-bone py-12 md:py-16">
           <div className="max-w-6xl mx-auto px-6">
-            <h2 className="font-semibold text-ink leading-tight mb-6"
-              style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.4rem, 2.4vw, 1.8rem)" }}>Gallery</h2>
+            <h2 className="text-ink mb-6 t-hd1">Gallery</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {product.gallery.map((src, i) => (
                 <button key={i} onClick={() => setLightbox(i)}
@@ -456,8 +454,7 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
       <section className="border-t border-black/8 py-12 md:py-16">
         <div className="max-w-6xl mx-auto px-6">
           <div className="flex items-end justify-between gap-4 mb-6">
-            <h2 className="font-semibold text-ink leading-tight"
-              style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.4rem, 2.4vw, 1.8rem)" }}>
+            <h2 className="text-ink t-hd1">
               {related.length > 0 ? `More ${family?.name ?? "products"}` : "Keep browsing"}
             </h2>
             <button onClick={() => onBack(categorySlug, product.familySlug)}

@@ -157,8 +157,7 @@ export function CtaBanner({ title, sub, onQuote, ground = "paper", cta = "Get a 
       <div className="max-w-6xl mx-auto px-6">
         <div className="bg-sage px-6 sm:px-10 py-10 split-row is-center">
           <div className="split-prose">
-            <h2 className="text-white font-semibold leading-tight mb-1.5"
-              style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.4rem, 2.4vw, 1.9rem)" }}>
+            <h2 className="text-white mb-1.5 t-hd1">
               {title}
             </h2>
             <p className="text-white/85 text-[15px] md:text-base leading-relaxed">{sub}</p>

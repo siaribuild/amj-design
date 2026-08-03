@@ -27,8 +27,8 @@ import {
   type OpsRateCardRow, type OpsReconcileRun,
 } from "./api";
 
-const INK = "var(--ops)";
 const MONO = { fontFamily: "'DM Mono', monospace" } as const;
+const INK = "var(--ops)";
 const HEAD = { fontFamily: "'Space Grotesk', sans-serif" } as const;
 
 // The sign goes OUTSIDE the symbol — "$-3.60" reads as a currency code for a

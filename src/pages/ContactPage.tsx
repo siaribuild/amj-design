@@ -184,10 +184,10 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
             <WindowMark size={12} color="rgba(255,255,255,0.55)" />
             <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/55 font-data">Contact</span>
           </div>
-          <h1 className="text-white font-semibold leading-[1.04] tracking-tight mb-3.5 max-w-[20ch] text-balance" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(2.1rem,4.4vw,3.05rem)" }}>
+          <h1 className="text-white mb-3.5 max-w-[20ch] text-balance t-ds1">
             Tell us what you need — we'll point you the fastest way there
           </h1>
-          <p className="text-white/70 max-w-[46ch] leading-relaxed" style={{ fontSize: "clamp(1rem,1.35vw,1.12rem)" }}>
+          <p className="text-white/70 max-w-[46ch] t-bd-lg">
             Pricing, a product question, an existing order, or a showroom visit. <b className="text-white font-medium">Pick the closest match below</b> and we'll route you straight to it.
           </p>
         </div>
@@ -196,7 +196,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
       {/* ─── ROUTER — every intent at a glance ─────────────────────────────────── */}
       <section className="relative ground-paper border-t border-black/8" style={GRID_BG} aria-labelledby="route-h">
         <div className="max-w-6xl mx-auto px-6 pt-11 pb-9">
-          <h2 id="route-h" className="text-ink font-semibold mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.3rem,2.4vw,1.5rem)" }}>What do you need?</h2>
+          <h2 id="route-h" className="text-ink mb-1.5 t-hd2">What do you need?</h2>
           <p className="text-body text-[15px] mb-6 max-w-[60ch]">Everything lives on this page — pick the one that matches what you came for.</p>
 
           {/* FOUR routes, not three plus a footnote. Tracking an order was a
@@ -239,7 +239,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
               <WindowMark size={12} color={SAGE} />
               <span className="text-xs font-semibold uppercase tracking-[0.2em] text-sage font-data">Do it here</span>
             </div>
-            <h2 id="zone-h" className="text-ink font-semibold mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.3rem,2.4vw,1.5rem)" }}>Two things you can finish on this page</h2>
+            <h2 id="zone-h" className="text-ink mb-1.5 t-hd2">Two things you can finish on this page</h2>
             <p className="text-body text-[14.5px] max-w-[64ch]">Both options are always shown. Pick one — the form for it opens right below.</p>
           </div>
 
@@ -362,8 +362,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
       <section className="ground-paper border-t border-black/8 py-14 md:py-[68px]" aria-labelledby="practicals-h">
         <div className="max-w-6xl mx-auto px-6">
           <SLabel>The practicals</SLabel>
-          <h2 id="practicals-h" className="font-semibold text-ink leading-tight mb-8"
-            style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(1.6rem, 2.8vw, 2.1rem)" }}>
+          <h2 id="practicals-h" className="text-ink mb-8 t-hd1">
             Where to find us, and what we do.
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black/10">
