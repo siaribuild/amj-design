@@ -26,7 +26,7 @@
 // it truncates.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { ChevronDown, AlertCircle, MoreHorizontal, Pencil } from "lucide-react";
-import { type QItem, fmt, mm, productLabel, linePriceTotal } from "../../data/configurator";
+import { type QItem, fmt, sizePhrase, productLabel, linePriceTotal } from "../../data/configurator";
 // gstSuffix is deliberately not imported: the mode still ADJUSTS every line's
 // figure, it is simply no longer spelled out on each one.
 import { useGstMode, gstAdjust } from "../../data/gst";
@@ -69,7 +69,11 @@ export function OpeningRow({
               proportion is drawn in the expansion, where it is the subject. */}
           <Elevation productSlug={item.productSlug} widthMm={item.width} heightMm={item.height}
             square className="w-7 h-7 flex-shrink-0 text-body" />
-          <span className="font-semibold text-ink truncate font-data t-data-sm">{ref}</span>
+          {/* 14px too (owner): once Size rose, a 12px reference became the
+              smallest cell in the row. The whole row now sits at 14px and
+              WEIGHT alone carries the hierarchy — 400 product, 500 size, 600
+              reference and price. */}
+          <span className="font-semibold text-ink truncate font-data t-data">{ref}</span>
           {/* Below 1024 the status belongs to the identity, beside the reference
               it describes — the same place a phone puts it. It rides INSIDE this
               cell rather than as a grid sibling because at these widths it has
@@ -124,8 +128,14 @@ export function OpeningRow({
             a column of noise, and any line that genuinely needs two identical
             openings gets a second reference. The FIELD is untouched — it is
             still stored, still editable in the drawer, and still priced. */}
-        <span className="order-6 md:order-none md:col-start-3 lg:col-start-4 md:row-start-1 md:text-right text-body flex-shrink-0 tabular-nums font-data t-data-sm">
-          {mm(item.width)} × {mm(item.height)}
+        {/* 14px/500 (owner). Size was the SMALLEST and lightest cell in the row
+            at 12px/500, below both the product name and the price — backwards
+            for a schedule, where an opening is identified by its size as much
+            as by its code. It now matches Price's size at one weight lower, so
+            Price stays the row's single bold figure and the eye keeps one
+            anchor when scanning a long list. */}
+        <span className="order-6 md:order-none md:col-start-3 lg:col-start-4 md:row-start-1 md:text-right text-body flex-shrink-0 tabular-nums font-data t-data">
+          {sizePhrase(item.width, item.height)}
         </span>
 
         <span className="order-7 md:order-none md:col-start-4 lg:col-start-5 md:row-start-1 md:text-right ml-auto md:ml-0 font-semibold text-ink flex-shrink-0 tabular-nums font-data t-data">

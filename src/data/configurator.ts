@@ -336,6 +336,22 @@ export const mm = (v: string | number) => {
   const n = typeof v === "string" ? parseInt(v) : v;
   return n ? `${n.toLocaleString("en-AU")} mm` : "—";
 };
+/** An opening's size as ONE phrase: "1,200 × 900 mm".
+ *
+ *  Not mm(w) + " × " + mm(h), which says the unit twice — 38 redundant glyphs in
+ *  a 19-row list, and the reason the size column was already wrapping at 12px on
+ *  4-digit openings. One trailing unit costs about the same width at 14px as two
+ *  did at 12px, which is what pays for the larger type.
+ *
+ *  The unit is omitted entirely when either dimension is unknown: "— × — mm"
+ *  would attach a unit to nothing. */
+export const sizePhrase = (w: string | number, h: string | number) => {
+  const n = (v: string | number) => (typeof v === "string" ? parseInt(v) : v) || 0;
+  const a = n(w), b = n(h);
+  const fmtOne = (v: number) => (v ? v.toLocaleString("en-AU") : "—");
+  return a && b ? `${fmtOne(a)} × ${fmtOne(b)} mm` : `${fmtOne(a)} × ${fmtOne(b)}`;
+};
+
 export const productLabel = (slug: string) => getProductBySlug(slug)?.name ?? "Product";
 
 // ─── Two-field product picker (quote-page composer) ───────────────────────────

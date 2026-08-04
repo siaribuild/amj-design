@@ -22,7 +22,7 @@
 //    chips under a Ready parent is noise.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { ChevronDown, Pencil } from "lucide-react";
-import { type QSegment, mm, productLabel } from "../../data/configurator";
+import { type QSegment, sizePhrase, productLabel } from "../../data/configurator";
 import { Elevation } from "./Elevation";
 
 export function UnitRow({
@@ -52,7 +52,7 @@ export function UnitRow({
         <span className="quote-unit-tree" aria-hidden="true" />
         <Elevation productSlug={segment.productSlug} widthMm={segment.width} heightMm={segment.height}
           square className="w-7 h-7 flex-shrink-0 text-body" />
-        <span className="font-semibold text-ink truncate font-data t-data-sm">{label}</span>
+        <span className="font-semibold text-ink truncate font-data t-data">{label}</span>
         {needsReview && (
           <span className="lg:hidden quote-chip quote-chip--attention t-cap">Needs review</span>
         )}
@@ -91,8 +91,8 @@ export function UnitRow({
       </span>
 
       <span className="order-6 md:order-none md:col-start-3 lg:col-start-4 md:row-start-1 md:text-right
-        text-body flex-shrink-0 tabular-nums font-data t-data-sm">
-        {mm(segment.width)} × {mm(segment.height)}
+        text-body flex-shrink-0 tabular-nums font-data t-data">
+        {sizePhrase(segment.width, segment.height)}
       </span>
 
       {/* Price column, deliberately empty — see the header note. The cell still

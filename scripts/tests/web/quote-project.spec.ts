@@ -92,7 +92,8 @@ test("the compact row renders identity, size, price and its direct actions", asy
   // the model is one opening per reference, so a "×1" on every line is a column
   // of noise. It had a column of its own from 1024 up and rode in the size cell
   // below that — two homes for a figure that now has none.
-  await expect(page.locator(".quote-row").getByText("1,200 mm × 900 mm", { exact: true })).toBeVisible();
+  // One trailing unit: "1,200 × 900 mm", not "1,200 mm × 900 mm" (owner).
+  await expect(page.locator(".quote-row").getByText("1,200 × 900 mm", { exact: true })).toBeVisible();
   await expect(page.locator(".quote-row").getByText(/×\s*2/)).toHaveCount(0);
   // Scoped to the row: the line now shows the number ALONE, so an unscoped
   // "$800" also matches the summary bar's identical total.
@@ -630,4 +631,43 @@ test("an opening with no size is drawn as a shape and carries no measurements", 
   await expect(sized).not.toHaveAttribute("data-unsized", "");
   await expect(sized.locator("text")).toHaveText(["1200", "900"]);
   await expect(page.locator(".quote-rowexp").last().getByText("Viewed from outside")).toBeVisible();
+});
+
+// ─── 14. Size carries the weight a schedule gives it ──────────────────────────
+// Size used to be the SMALLEST and lightest cell in the row — 12px/500, below
+// both the product name (14/400) and the price (14/600). Backwards for a window
+// schedule, where an opening is identified by its size as much as by its code.
+// The row now sits at one size and WEIGHT alone carries the hierarchy (owner).
+test("the row's type hierarchy is carried by weight, not size", async ({ page }) => {
+  await mockProject(page, [plainItem]);
+  await page.goto("/quote-project");
+  const row = page.locator(".quote-row").first();
+
+  const type = (l: ReturnType<typeof page.locator>) =>
+    l.evaluate((e) => { const s = getComputedStyle(e); return `${s.fontSize}/${s.fontWeight}`; });
+
+  expect(await type(row.locator("span.font-semibold.truncate"))).toBe("14px/600");   // reference
+  expect(await type(row.getByText("AMJ80 Series Sliding Window"))).toBe("14px/400"); // product
+  expect(await type(row.getByText(/×.*mm/))).toBe("14px/500");                       // size
+  expect(await type(row.getByText("$800", { exact: true }))).toBe("14px/600");       // price
+
+  // ONE trailing unit, not two. Saying "mm" on both figures is what made the
+  // column wrap at 12px, and it is what paid for the larger type.
+  await expect(row.getByText("1,200 × 900 mm", { exact: true })).toBeVisible();
+  await expect(row.getByText(/mm ×/)).toHaveCount(0);
+});
+
+test("size never wraps at any realistic opening, on any width", async ({ page }) => {
+  const wide = { ...plainItem, id: "line-wide", code: "W9", width: "6000", height: "2700" };
+  await mockProject(page, [plainItem, wide]);
+  for (const w of [1280, 1024, 900, 768, 375]) {
+    await page.setViewportSize({ width: w, height: 950 });
+    await page.goto("/quote-project");
+    await expect(page.locator(".quote-row").first()).toBeVisible();
+    const worst = await page.evaluate(() => Math.max(...[...document.querySelectorAll<HTMLElement>(".quote-row")]
+      .map((r) => [...r.querySelectorAll<HTMLElement>("span")]
+        .find((s) => /×/.test(s.textContent ?? "") && s.children.length === 0))
+      .map((s) => Math.round(s?.getBoundingClientRect().height ?? 0))));
+    expect(worst, `size cell stays one line at ${w}px`).toBeLessThanOrEqual(24);
+  }
 });
