@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estimator page — escaped stripe + contained child group</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Real tokens from src/styles/theme.css — NOT the exploration's brighter palette. */
+:root{
+  --paper:#FFFFFF; --bone:#FBFAF8; --recessive:#F5F3F0;
+  --line:rgba(19,19,17,.18); --connector:rgba(19,19,17,.45);
+  --ink:#131311; --body:#5c5a56; --quiet:#8b8880; --quieter:#9a9894;
+  --sage:#5A7A6A; --sage-wash:#F3F6F5; --sage-ink:#355344; --sage-hover:#4a6858;
+  --warning:#8a6a2a; --warning-ink:#7a5410;
+  --info:#4C6A88; --info-ink:#31485f;
+  --fd:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --fb:'Inter',ui-sans-serif,system-ui,sans-serif;
+  --pad:10px;
+  --kid-l:26px;                 /* the child group steps in this far */
+  --kid-r:8px;                  /* and stops this far short on the right */
+  --stripe:4px;                 /* the exploration's 4px, not our 3px */
+  --t1:9.5rem;
+  --qp-cols:var(--t1) 10rem minmax(0,1fr) 8.5rem 7.5rem 7rem;
+  /* Child rows sit inside a box inset L+R, so track 1 absorbs the left inset
+     and the LAST track absorbs the right one — otherwise Actions drifts. */
+  --qp-cols-kid:calc(var(--t1) - var(--kid-l) - 1px) 10rem minmax(0,1fr) 8.5rem 7.5rem calc(7rem - var(--kid-r) - 1px);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bone);color:var(--ink);font:400 16px/26px var(--fb);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:32px 24px 80px}
+h1{font:600 22px/28px var(--fd);letter-spacing:-.3px;margin:0}
+.slabel{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet)}
+.sec{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:34px 0 10px}
+.rev{max-width:80ch;font-size:14px;line-height:22px;color:var(--body)}
+.rev b{color:var(--ink)}
+.rev ul{padding-left:18px;margin:8px 0 18px}
+.rev li{margin-bottom:7px}
+.callout{border:1px solid var(--line);background:var(--paper);padding:16px 18px;margin:0 0 24px}
+.callout h3{font:600 15px/21px var(--fd);margin:0 0 6px}
+.note{font-size:13px;line-height:19px;color:var(--body);max-width:82ch;margin:12px 0 0;padding-left:12px;border-left:2px solid var(--line)}
+.note b{color:var(--ink)}
+.good{border-left-color:rgba(90,122,106,.55)}
+.warn{border-left-color:rgba(178,110,15,.5)}
+
+/* ── page chrome ───────────────────────────────────────────────────────────── */
+.pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:0 0 18px}
+.btn{border:1px solid var(--line);background:var(--paper);display:inline-flex;align-items:center;gap:6px;
+  padding:0 12px;min-height:44px;font:500 14px/21px var(--fb);color:var(--sage);cursor:pointer}
+.btn.quiet{border:none;background:none;color:var(--body)}
+.pencil{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;color:var(--quieter)}
+
+/* ── the list ──────────────────────────────────────────────────────────────── */
+.panel{border:1px solid var(--line);background:var(--paper)}
+.head,.row{display:grid;grid-template-columns:var(--qp-cols);align-items:center;column-gap:12px}
+.head{background:var(--recessive);border-bottom:1px solid var(--line);padding:8px var(--pad);
+  font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet)}
+.head .r{text-align:right}
+.rec{position:relative}
+.rec+.rec{border-top:1px solid var(--line)}
+.row{position:relative;background:var(--paper);padding:6px var(--pad);min-height:44px}
+
+/* THE ESCAPED STRIPE — the exploration's idea. A child row sits inside a box
+   inset by --kid-l, but its stripe is pulled back out to the RECORD's x=0, so
+   one scan down the left edge finds every exception at any nesting level. */
+.row[data-s]::before,.exp[data-s]::before{
+  content:"";position:absolute;top:0;bottom:0;left:var(--esc,0px);width:var(--stripe);
+}
+.row[data-s="attn"]::before,.exp[data-s="attn"]::before{background:var(--warning)}
+.row[data-s="rev"]::before,.exp[data-s="rev"]::before{background:var(--info)}
+.kidgroup .row,.kidgroup .exp{--esc:calc(-1 * (var(--kid-l) + 1px))}
+
+.id{display:flex;align-items:center;gap:8px;min-width:0}
+.ref{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink)}
+.prod{font:400 14px/21px var(--fb);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.size{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+.price{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+.acts{display:flex;justify-content:flex-end;gap:2px;color:var(--body)}
+.acts i{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:13px}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);padding:2px 6px;
+  font:400 13px/18px var(--fb);white-space:nowrap}
+.chip.a{border-color:rgba(138,106,42,.42);background:rgba(138,106,42,.12);color:var(--warning-ink)}
+.chip.i{border-color:rgba(76,106,136,.38);background:rgba(76,106,136,.08);color:var(--info-ink)}
+.unit .prod,.unit .ref{color:var(--body)}
+.unit .size{font-weight:500;color:var(--body)}
+svg.el{display:block;flex:none;color:var(--body)}
+
+/* the contained child group */
+.kidgroup{margin:2px var(--kid-r) 8px var(--kid-l);border:1px solid var(--line);
+  border-left:1px solid var(--connector);background:var(--paper)}
+.kidgroup .row{grid-template-columns:var(--qp-cols-kid)}
+.kidgroup .row+.row{border-top:1px solid var(--line)}
+
+/* expansions */
+.exp{position:relative;background:var(--recessive);border-top:1px solid var(--line);padding:12px 16px 14px}
+.exp .lbl{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin-bottom:3px}
+.exp .val{font:400 13px/19px var(--fb);color:var(--body)}
+
+/* sticky bar */
+.bar{border-top:3px solid var(--warning);background:var(--paper);margin-top:0;
+  padding:12px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.bar .est{display:flex;flex-direction:column}
+.cta{background:var(--warning);color:#fff;border:none;padding:0 14px;min-height:44px;
+  font:500 14px/21px var(--fb);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+
+/* ── phone ─────────────────────────────────────────────────────────────────── */
+.phone{width:375px}
+.phone .stage{border:1px solid var(--line);background:var(--bone);padding:0}
+.phone .head{display:none}
+.phone .panel{border:none;background:none}
+.phone .rec{background:var(--paper);border:1px solid var(--line);margin:8px}
+.phone .rec+.rec{border-top:1px solid var(--line)}
+.phone .row{grid-template-columns:1fr;row-gap:4px;padding:10px 12px;min-height:0}
+.phone .kidgroup .row{grid-template-columns:1fr}
+.phone .m1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.phone .m3{display:flex;justify-content:space-between;gap:10px}
+.phone .size,.phone .price{text-align:left}
+.phone .kidgroup{margin:2px 8px 8px var(--kid-l)}
+.phone .exp{padding:10px 12px 12px}
+.phones{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1 style="font-size:30px;line-height:36px;margin-bottom:8px">The estimator page, built on your exploration’s approach</h1>
+<p class="rev" style="margin-bottom:26px">Your document contributes two ideas. One of them solves the problem I said was the
+cost of containing a child. Both are adopted below and re-expressed in the project’s real tokens, type
+scale and column tracks — the exploration used a different palette (<code>#fa5252</code>, <code>#40c057</code>)
+and no columns, because it was a phone sketch.</p>
+
+<div class="callout">
+  <h3>What the exploration gets right</h3>
+  <div class="rev">
+  <ul>
+    <li><b>The escaped stripe.</b> <code>.status-stripe { left: -26px }</code> on a child inside a box that is
+      itself <code>margin-left: 26px</code>. The child is contained, but its state marker is pulled back out
+      to the record’s x=0. <b>This is the answer to the objection I raised against B and C</b> — that
+      containing a child moves its stripe off the scan line. It does not have to. I did not think of it.</li>
+    <li><b>The child group as one contained box with a left spine</b> — <code>border-left</code> plus a right
+      margin, no left radius. It reads as a bounded sub-object rather than a band, which is the “different
+      context view” you have been describing since the start.</li>
+    <li><b>Mobile first.</b> The whole sketch is 375px. Every prior round of this discussion, mine included,
+      designed at desktop and asked what happens to the phone afterwards.</li>
+  </ul>
+  <h3 style="margin-top:14px">What I have changed, and why</h3>
+  <ul>
+    <li><b>No green “OK” stripe on clean children.</b> The sketch marks healthy rows green and neutral rows
+      grey. This route’s rule is that a row says nothing at rest — a column of green under a clean parent is
+      the per-line noise the whole design removes. Clean rows get no stripe; the eye then reads the left
+      edge as <i>exceptions only</i>.</li>
+    <li><b>Muted state colours.</b> <code>--warning #8a6a2a</code> and <code>--info #4C6A88</code>, not
+      red-500/amber-500. The palette is warm and low-chroma throughout; a pure red would be the loudest
+      thing on the page by a wide margin.</li>
+    <li><b>Two states, not one.</b> The sketch paints everything red. A coverage fault (“units don’t sum to
+      the opening”) is <i>ours to confirm</i> and reads <code>--info</code>; something the customer must
+      supply reads <code>--warning</code>. Case 4 below shows both in one record.</li>
+    <li><b>Never overflow-hidden on the child group.</b> The sketch has it on case 2/3 — which would clip
+      the escaped stripe it just invented.</li>
+    <li><b>Columns.</b> A phone has none, so the sketch is silent. On desktop the child box is inset on both
+      sides, so track 1 absorbs the left inset and the LAST track absorbs the right one, or Actions drifts.
+      Measured below.</li>
+  </ul>
+  </div>
+</div>
+
+<div class="sec">Desktop · the actual page</div>
+<div id="desk"></div>
+<p class="note good" id="m-desk"></p>
+
+<div class="sec">375px · the same page</div>
+<div class="phones"><div class="phone"><div class="stage" id="ph"></div></div>
+  <div style="max-width:38ch"><p class="note" style="border:none;padding:0;margin-top:0">
+  The record is a card on the bone ground; the child group is a contained box stepped in 26px with a left
+  spine; and every stripe — parent or child — sits on the record’s left edge. On a phone you see two or
+  three records at once, so the bounded record does most of the work and the spine tells you the rest.
+  </p></div>
+</div>
+
+</div>
+
+<script>
+function el(kind,parts){
+  const S=28,P=2,iw=S-P*2,t=3,g={x:P+t,y:P+t,w:iw-t*2,h:iw-t*2};
+  let sym='';
+  if(parts){const tot=parts.reduce((s,p)=>s+p.mm,0);let at=0;
+    parts.forEach((p,i)=>{const pw=g.w*(p.mm/tot);sym+=symbol(p.kind,{x:g.x+at,y:g.y,w:pw,h:g.h});at+=pw;
+      if(i<parts.length-1)sym+='<path d="M'+(g.x+at).toFixed(1)+' '+g.y+' V'+(g.y+g.h)+'" stroke="currentColor" stroke-width="1.4" opacity=".75" fill="none"/>';});
+  } else sym=symbol(kind,g);
+  return '<svg class="el" width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">'
+    +'<rect x="2" y="2" width="24" height="24" rx="1" stroke="currentColor" stroke-width="1.4"/>'
+    +'<rect x="'+g.x+'" y="'+g.y+'" width="'+g.w+'" height="'+g.h+'" rx=".5" stroke="currentColor" stroke-width=".8"/>'+sym+'</svg>';
+}
+function symbol(k,p){
+  const i=2.2,L=p.x+i,R=p.x+p.w-i,T=p.y+i,B=p.y+p.h-i,cx=(L+R)/2,cy=(T+B)/2;
+  if(R-L<3||B-T<3)return '';
+  const S='stroke="currentColor" stroke-width="1.1" fill="none"';
+  if(k==='awning')return '<path d="M'+L+' '+B+' L'+cx+' '+T+' L'+R+' '+B+'" '+S+'/>';
+  if(k==='sliding')return '<path d="M'+(L+1)+' '+cy+' H'+(R-1)+' M'+(R-3)+' '+(cy-2)+' L'+(R-1)+' '+cy+' L'+(R-3)+' '+(cy+2)+'" '+S+'/>';
+  if(k==='casement')return '<path d="M'+R+' '+T+' L'+L+' '+cy+' L'+R+' '+B+'" '+S+'/>';
+  return '';
+}
+const A3='<span class="acts"><i>⌄</i><i>✎</i><i>⋯</i></span>';
+const A2='<span class="acts"><i>⌄</i><i>✎</i><i style="width:34px"></i></span>';
+
+const D=[
+  {ref:'W1',prod:'AMJ100T Fixed Window',size:'2,100 × 2,100 mm',price:'$2,240',icon:el('fixed')},
+  {ref:'W2',prod:'AMJ80 Series Awning Window',size:'900 × 1,200 mm',price:'$780',icon:el('awning')},
+  /* CASE 1 — lone opening flagged, panel auto-opens */
+  {ref:'W3',prod:'AMJ80 Series Sliding Window',size:'— × —',price:'$-,--',icon:el('sliding'),
+   s:'attn',chip:'<span class="chip a">⚠ Incomplete</span>',
+   exp:{lbl:"What's missing",val:"We couldn't read the size for this opening."}},
+  /* a childless opening EXPANDED — its panel is full-bleed */
+  {ref:'W4',prod:'AMJ100T Fixed Window',size:'2,400 × 1,800 mm',price:'$2,980',icon:el('fixed'),
+   exp:{lbl:'Specification',val:'Glazing · Double Glazed Low-E Argon &nbsp;·&nbsp; Colour · Dover White &nbsp;·&nbsp; Flyscreen · Fibreglass mesh'}},
+  /* CASE 2 — parent CLEAN, one child flagged; and a unit expanded */
+  {ref:'W5',prod:'Composite Window',size:'3,440 × 1,200 mm',price:'$3,120',
+   icon:el(null,[{kind:'sliding',mm:2400},{kind:'casement',mm:1040}]),
+   units:[{ref:'W5A',prod:'AMJ100T Sliding Window',size:'2,400 × 1,200 mm',icon:el('sliding'),
+           exp:{lbl:'Specification',val:'Glazing · Single Glazed Low-E &nbsp;·&nbsp; Colour · Monument &nbsp;·&nbsp; Hardware · Standard'}},
+          {ref:'W5B',prod:'AMJ100T Casement Window',size:'1,040 × 1,600 mm',icon:el('casement'),
+           s:'attn',chip:'<span class="chip a">⚠ Check size</span>'}]},
+  /* CASE 3 — whole GROUP flagged, units individually fine */
+  {ref:'W6',prod:'Composite Window',size:'3,500 × 700 mm',price:'$1,560',
+   icon:el(null,[{kind:'fixed',mm:1750},{kind:'fixed',mm:1750}]),
+   s:'rev',chip:'<span class="chip i">Check sizes</span>',
+   exp:{lbl:'Check the layout',val:'The units add up to 400 mm less than this opening (3,500 × 700 mm). Check each unit’s size.'},
+   units:[{ref:'W6A',prod:'AMJ100T Fixed Window',size:'1,550 × 700 mm',icon:el('fixed')},
+          {ref:'W6B',prod:'AMJ100T Fixed Window',size:'1,550 × 700 mm',icon:el('fixed')}]},
+  /* CASE 4 — parent AND child flagged, DIFFERENT states */
+  {ref:'W7',prod:'Composite Window',size:'2,050 × 2,100 mm',price:'$2,450',
+   icon:el(null,[{kind:'awning',mm:700},{kind:'fixed',mm:1350}]),
+   s:'rev',chip:'<span class="chip i">Check sizes</span>',
+   units:[{ref:'W7A',prod:'AMJ80 Series Awning Window',size:'700 × 2,100 mm',icon:el('awning')},
+          {ref:'W7B',prod:'AMJ100T Fixed Window',size:'1,350 × 2,400 mm',icon:el('casement'),
+           s:'attn',chip:'<span class="chip a">⚠ Incomplete</span>'}]},
+];
+
+function row(o,kid){
+  const s=o.s?' data-s="'+o.s+'"':'';
+  return '<div class="row'+(kid?' unit':'')+'"'+s+'>'
+    +'<span class="id">'+o.icon+'<span class="ref">'+o.ref+'</span></span>'
+    +'<span>'+(o.chip||'')+'</span><span class="prod">'+o.prod+'</span>'
+    +'<span class="size">'+o.size+'</span><span class="price">'+(kid?'':(o.price||''))+'</span>'
+    +(kid?A2:A3)+'</div>';
+}
+function mrow(o,kid){
+  const s=o.s?' data-s="'+o.s+'"':'';
+  return '<div class="row'+(kid?' unit':'')+'"'+s+'>'
+    +'<span class="m1">'+o.icon+'<span class="ref">'+o.ref+'</span>'+(o.chip||'')+(kid?'':A3)+'</span>'
+    +'<span class="prod">'+o.prod+'</span>'
+    +'<span class="m3"><span class="size">'+o.size+'</span><span class="price">'+(kid?'':(o.price||''))+'</span></span></div>';
+}
+function panel(e,s){return '<div class="exp"'+(s?' data-s="'+s+'"':'')+'><div class="lbl">'+e.lbl+'</div><div class="val">'+e.val+'</div></div>';}
+
+function record(o,mobile){
+  const R=mobile?mrow:row;
+  let h=R(o,false);
+  if(o.exp)h+=panel(o.exp,o.s);
+  if(o.units){
+    let inner='';
+    o.units.forEach(u=>{inner+=R(u,true);if(u.exp)inner+=panel(u.exp,u.s);});
+    h+='<div class="kidgroup">'+inner+'</div>';
+  }
+  return '<div class="rec">'+h+'</div>';
+}
+const HEAD='<div class="head"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>';
+
+document.getElementById('desk').innerHTML =
+  '<div class="pagehead"><div><div class="slabel">Your project</div>'
+  +'<h1 style="display:inline-flex;align-items:center;gap:2px">Coburg new build<span class="pencil">✎</span></h1></div>'
+  +'<div style="display:flex;gap:8px;align-items:center"><button class="btn">⬆ Add document</button>'
+  +'<button class="btn">＋ Add opening</button><span style="width:1px;height:24px;background:rgba(0,0,0,.1)"></span>'
+  +'<button class="btn quiet">🗑 Clear all</button></div></div>'
+  + '<div class="panel">'+HEAD+D.map(o=>record(o,false)).join('')+'</div>'
+  + '<div class="bar"><span class="chip" style="border-color:var(--line)">7 openings</span>'
+  + '<span class="chip a">⚠ 1 detail needs your input</span>'
+  + '<span style="flex:1"></span><span class="est"><span class="slabel">Estimate</span>'
+  + '<span style="font:600 14px/20px var(--fd)">$13,130 <span style="font-weight:400;color:var(--body);font-size:13px">inc GST</span></span></span>'
+  + '<button class="cta">Fix 1 detail →</button></div>';
+
+document.getElementById('ph').innerHTML = '<div class="panel">'+D.map(o=>record(o,true)).join('')+'</div>';
+
+/* Measure: does the escaped stripe reach the record edge, and do columns hold? */
+(function(){
+  const rec=[...document.querySelectorAll('#desk .rec')].find(r=>r.querySelector('.kidgroup .row[data-s]'));
+  const kidRow=rec.querySelector('.kidgroup .row[data-s]');
+  const parentFlagged=document.querySelector('#desk .rec > .row[data-s]');
+  const sx=e=>Math.round(e.getBoundingClientRect().left);
+  const stripeX=e=>{const cs=getComputedStyle(e,'::before');return Math.round(sx(e)+parseFloat(cs.left));};
+  const head=document.querySelector('#desk .head');
+  const hx=[...head.children].map(sx);
+  const kx=[...kidRow.children].map(sx);
+  const drift=hx.slice(1).map((v,i)=>Math.abs(v-(kx[i+1]??v)));
+  document.getElementById('m-desk').innerHTML =
+    '<b>Measured.</b> Escaped stripe: a flagged CHILD’s stripe sits at x='+stripeX(kidRow)
+    +', a flagged PARENT’s at x='+stripeX(parentFlagged)+' — same left edge, so one scan finds both. '
+    +'Columns: worst drift on tracks 2–6 between the header and a child row is '+Math.max(...drift)+'px.';
+})();
+</script>
+</body>
+</html>
