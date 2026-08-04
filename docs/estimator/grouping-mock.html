@@ -109,6 +109,21 @@ svg.el [stroke]{vector-effect:non-scaling-stroke}
 .graded > .row + .grp,.graded > .row + .row{border-top:1px solid var(--line-strong)}
 .graded .grp > .row + .row{border-top:none}
 
+
+/* ── E: children OUTDENT past the parent ───────────────────────────────────── */
+.outdent > .grp > .row:first-child{padding-left:34px}
+.outdent > .grp > .row + .row{padding-left:10px}
+.outdent > .grp + .grp,.outdent > .grp + .row,
+.outdent > .row + .grp,.outdent > .row + .row{margin-top:10px}
+.outdent > .row{padding-left:34px}
+.outdent .tree{display:none}
+.outdent .unit{border-left:3px solid var(--line)}
+
+/* ── F: no indent at all ───────────────────────────────────────────────────── */
+.flush .tree{display:none}
+.flush > .grp + .grp,.flush > .grp + .row,
+.flush > .row + .grp,.flush > .row + .row{margin-top:10px}
+
 .legend{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 0;
   font-size:12px;line-height:17px;color:var(--quiet)}
 .legend b{color:var(--body);font-weight:500}
@@ -223,6 +238,40 @@ blocked unit so each option can be judged with a state stripe in play.</p>
     a cue that is sometimes imperceptible is a partial fix.</p>
 </section>
 
+
+<!-- ══ E ══════════════════════════════════════════════════════════════════ -->
+<section class="opt">
+  <div class="opt-head"><span class="opt-tag">E · reading 1</span><h2>Children outdent — the parent steps in, the units sit out</h2></div>
+  <p class="opt-why">The inverse of the usual nesting. The <em>parent</em> is indented and its units sit
+    further left, flush to the record's edge, carrying a left bar. The opening reads as a title above its
+    parts rather than as a peer of them.</p>
+  <div class="panel" style="padding:6px 0">
+    <div class="head" style="border-bottom:none;margin:-6px 0 4px"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
+    <div class="outdent" id="listE"></div>
+  </div>
+  <p class="verdict"><b>What it buys:</b> the parent stops being a peer — indenting the thing that
+    <em>names</em> the record is a strong signal it is a header. <b>What it costs:</b> the reference
+    column no longer starts at one x. W1 begins 24px right of W1A, so the one column a builder scans
+    down — the schedule codes — becomes ragged, and the left bar lands in the state stripe's slot.</p>
+</section>
+
+<!-- ══ F ══════════════════════════════════════════════════════════════════ -->
+<section class="opt">
+  <div class="opt-head"><span class="opt-tag">F · reading 2</span><h2>No indent — containment does all the work</h2></div>
+  <p class="opt-why">Children shift left until they are flush with the parent. Nothing is indented; a unit
+    is told apart by its recessive fill, its lighter type and its empty price cell alone.</p>
+  <div class="panel" style="padding:6px 0">
+    <div class="head" style="border-bottom:none;margin:-6px 0 4px"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
+    <div class="flush" id="listF"></div>
+  </div>
+  <p class="verdict good"><b>What it buys, and this is the surprise:</b> every reference lines up on one
+    x, so the code column is finally straight — and the indent is what forced the reference track to
+    9.5rem in the first place. Removing it hands ~24px back to the product column and un-squeezes the
+    unit chip budget that item 3 was fighting. <b>What it costs:</b> nesting is now carried by fill alone,
+    so a unit and a parent differ only in tone — and the recessive fill is already used for the header
+    strip and expansions, so it is not exclusively a "child" signal.</p>
+</section>
+
 </div>
 
 <script>
@@ -299,7 +348,7 @@ function render(id,mode){
     return `<div class="grp">${body}</div>`;
   }).join('');
 }
-render('listA','flat');render('listB','cards');render('listC','grp');render('listD','grp');
+render('listE','grp');render('listF','grp');render('listA','flat');render('listB','cards');render('listC','grp');render('listD','grp');
 </script>
 </body>
 </html>
