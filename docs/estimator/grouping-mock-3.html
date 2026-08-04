@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estimator — the shifted child card</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FFFFFF; --bone:#FBFAF8; --recessive:#F5F3F0;
+  --line:rgba(19,19,17,.18); --connector:rgba(19,19,17,.45);
+  --ink:#131311; --body:#5c5a56; --quiet:#8b8880;
+  --sage:#5A7A6A; --sage-wash:#F3F6F5; --sage-ink:#355344;
+  --warning:#8a6a2a; --warning-ink:#7a5410;
+  --info:#4C6A88; --info-ink:#31485f;
+  --fd:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --fb:'Inter',ui-sans-serif,system-ui,sans-serif;
+  --pad:10px;
+  --shift:26px;                 /* how far a child card steps in */
+  --t1:9.5rem;                  /* the reference track */
+  --qp-cols:var(--t1) 10rem minmax(0,1fr) 8.5rem 7.5rem 7rem;
+  /* Child card: shifted right, and its FIRST track shrinks by exactly the shift
+     plus its own border+padding, so tracks 2..6 stay on the parent's x. */
+  --qp-cols-child:calc(var(--t1) - var(--shift) - 1px - var(--pad) + var(--pad)) 10rem minmax(0,1fr) 8.5rem 7.5rem 7rem;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bone);color:var(--ink);font:400 16px/26px var(--fb);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:36px 24px 90px}
+h1{font:600 30px/36px var(--fd);letter-spacing:-.6px;margin:0 0 8px}
+.lede{color:var(--body);font-size:15px;max-width:76ch;margin:0 0 6px}
+.lede b{color:var(--ink)}
+.small{color:var(--quiet);font-size:13px;line-height:19px;max-width:80ch;margin:0 0 34px}
+.prop{margin:0 0 60px}
+.prop-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 6px}
+.tag{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);border:1px solid var(--line);padding:3px 7px}
+.prop-h h2{font:600 20px/26px var(--fd);letter-spacing:-.2px;margin:0}
+.prop-p{color:var(--body);font-size:14px;line-height:21px;max-width:82ch;margin:0 0 16px}
+.note{font-size:13px;line-height:19px;color:var(--body);max-width:82ch;margin:14px 0 0;padding-left:12px;border-left:2px solid var(--line)}
+.note b{color:var(--ink)}
+.win{border-left-color:rgba(90,122,106,.55)}
+.warn{border-left-color:rgba(178,110,15,.5)}
+.sec{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:24px 0 8px}
+
+/* ── grammar ───────────────────────────────────────────────────────────────── */
+.head,.row{display:grid;grid-template-columns:var(--qp-cols);align-items:center;column-gap:12px}
+.head{background:var(--recessive);border:1px solid var(--line);font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);padding:8px var(--pad)}
+.head .r{text-align:right}
+.row{background:var(--paper);padding:6px var(--pad);min-height:44px}
+.id{display:flex;align-items:center;gap:8px;min-width:0}
+.ref{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink)}
+.prod{font:400 14px/21px var(--fb);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.size{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+.price{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+.acts{display:flex;justify-content:flex-end;gap:2px;color:var(--body)}
+.acts i{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:14px}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);padding:2px 6px;font:400 13px/18px var(--fb);white-space:nowrap}
+.chip.a{border-color:rgba(138,106,42,.42);background:rgba(138,106,42,.12);color:var(--warning-ink)}
+.chip.i{border-color:rgba(76,106,136,.38);background:rgba(76,106,136,.08);color:var(--info-ink)}
+.unit .prod,.unit .ref{color:var(--body)}
+.unit .size{font-weight:500;color:var(--body)}
+svg.el{display:block;flex:none;color:var(--body)}
+.row[data-s="attn"]{box-shadow:inset 3px 0 0 var(--warning)}
+.row[data-s="rev"]{box-shadow:inset 3px 0 0 var(--info)}
+.exp[data-s="attn"]{box-shadow:inset 3px 0 0 var(--warning)}
+.exp{background:var(--recessive);padding:12px 16px 14px}
+.exp .lbl{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin-bottom:3px}
+.exp .val{font:400 13px/19px var(--fb);color:var(--body)}
+
+.rec{border:1px solid var(--line);background:var(--paper)}
+.rec+.rec{margin-top:8px}
+.list{margin-top:8px}
+
+/* ── A · FLUSH: children are rows inside the parent's card ─────────────────── */
+.flush .kid{padding-left:calc(var(--pad) + var(--shift))}
+.flush .kid .id{margin-left:-0px}
+.flush .kidexp{padding-left:calc(16px + var(--shift))}
+
+/* ── B · SHIFTED CHILD CARD: each child is its own card, stepped in ────────── */
+.shift .kidwrap{padding:0 0 0 var(--shift)}
+.shift .kidcard{border:1px solid var(--line);border-right:none;background:var(--paper)}
+.shift .kidcard+.kidcard{margin-top:6px}
+.shift .kidwrap{padding-bottom:6px;padding-top:2px}
+.shift .kidcard .row{grid-template-columns:var(--qp-cols-child)}
+.shift .kidcard .exp{margin:0}
+
+/* ── C · ONE SHIFTED GROUP CARD holding all the children ──────────────────── */
+.groupcard .kidwrap{padding:2px 0 6px var(--shift)}
+.groupcard .kidcard{border:1px solid var(--line);border-right:none;background:var(--paper)}
+.groupcard .kidcard .row{grid-template-columns:var(--qp-cols-child)}
+.groupcard .kidcard .row+.row{border-top:1px solid var(--line)}
+
+.rule{height:1px;background:var(--line)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>The shifted child card</h1>
+<p class="lede">Three readings of the thing I kept failing to draw: a child that is <b>its own card,
+stepped in from its parent</b> — not a row indented inside the parent's card. Each is shown with a unit
+<b>expanded</b>, because that is the case that motivates the shift.</p>
+<p class="small">Column alignment is preserved deliberately: a child card's FIRST track shrinks by exactly
+the shift, so Status, Product, Size and Price stay on the parent's and the header's x. That is the real
+cost of the idea — it needs a second track list — and it is measured at the bottom of each section.</p>
+
+<div id="out"></div>
+</div>
+
+<script>
+function el(kind,parts){
+  const S=28,P=2,iw=S-P*2,t=3,g={x:P+t,y:P+t,w:iw-t*2,h:iw-t*2};
+  let sym='';
+  if(parts){const tot=parts.reduce((s,p)=>s+p.mm,0);let at=0;
+    parts.forEach((p,i)=>{const pw=g.w*(p.mm/tot);sym+=symbol(p.kind,{x:g.x+at,y:g.y,w:pw,h:g.h});at+=pw;
+      if(i<parts.length-1)sym+='<path d="M'+(g.x+at).toFixed(1)+' '+g.y+' V'+(g.y+g.h)+'" stroke="currentColor" stroke-width="1.4" opacity=".75" fill="none"/>';});
+  } else sym=symbol(kind,g);
+  return '<svg class="el" width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">'
+    +'<rect x="2" y="2" width="24" height="24" rx="1" stroke="currentColor" stroke-width="1.4"/>'
+    +'<rect x="'+g.x+'" y="'+g.y+'" width="'+g.w+'" height="'+g.h+'" rx=".5" stroke="currentColor" stroke-width=".8"/>'+sym+'</svg>';
+}
+function symbol(k,p){
+  const i=2.2,L=p.x+i,R=p.x+p.w-i,T=p.y+i,B=p.y+p.h-i,cx=(L+R)/2,cy=(T+B)/2;
+  if(R-L<3||B-T<3)return '';
+  const S='stroke="currentColor" stroke-width="1.1" fill="none"';
+  if(k==='awning')return '<path d="M'+L+' '+B+' L'+cx+' '+T+' L'+R+' '+B+'" '+S+'/>';
+  if(k==='sliding')return '<path d="M'+(L+1)+' '+cy+' H'+(R-1)+' M'+(R-3)+' '+(cy-2)+' L'+(R-1)+' '+cy+' L'+(R-3)+' '+(cy+2)+'" '+S+'/>';
+  if(k==='casement')return '<path d="M'+R+' '+T+' L'+L+' '+cy+' L'+R+' '+B+'" '+S+'/>';
+  return '';
+}
+const A3='<span class="acts"><i>⌄</i><i>✎</i><i>⋯</i></span>';
+const A2='<span class="acts"><i>⌄</i><i>✎</i><i style="width:34px"></i></span>';
+const HEAD='<div class="head"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>';
+
+const SPEC={lbl:'Specification',val:'Glazing · Single Glazed Low-E &nbsp;·&nbsp; Colour · Monument &nbsp;·&nbsp; Hardware · Standard &nbsp;·&nbsp; Flyscreen · None'};
+const PSPEC={lbl:'Specification',val:'Glazing · Double Glazed Low-E Argon &nbsp;·&nbsp; Colour · Dover White &nbsp;·&nbsp; Flyscreen · Fibreglass mesh'};
+
+const D=[
+  {ref:'W1',prod:'AMJ100T Fixed Window',size:'2,400 × 1,800 mm',price:'$2,980',icon:el('fixed'),
+   exp:PSPEC, note:'a childless opening, EXPANDED'},
+  {ref:'W2',prod:'Composite Window',size:'3,440 × 1,200 mm',price:'$3,120',
+   icon:el(null,[{kind:'sliding',mm:2400},{kind:'casement',mm:1040}]),
+   units:[{ref:'W2A',prod:'AMJ100T Sliding Window',size:'2,400 × 1,200 mm',icon:el('sliding'),exp:SPEC},
+          {ref:'W2B',prod:'AMJ100T Casement Window',size:'1,040 × 1,200 mm',icon:el('casement')}],
+   note:'a composite with a UNIT expanded — the case the shift exists for'},
+  {ref:'W3',prod:'Composite Window',size:'2,050 × 2,100 mm',price:'$2,450',
+   icon:el(null,[{kind:'awning',mm:700},{kind:'fixed',mm:1350}]),
+   s:'rev',chip:'<span class="chip i">Check sizes</span>',
+   units:[{ref:'W3A',prod:'AMJ80 Series Awning Window',size:'700 × 2,100 mm',icon:el('awning')},
+          {ref:'W3B',prod:'AMJ100T Fixed Window',size:'1,350 × 2,400 mm',icon:el('casement'),
+           s:'attn',chip:'<span class="chip a">⚠ Incomplete</span>'}],
+   note:'parent AND child flagged, two states in one record'},
+];
+
+function row(o,kid){
+  const s=o.s?' data-s="'+o.s+'"':'';
+  return '<div class="row'+(kid?' unit kid':'')+'"'+s+'>'
+    +'<span class="id">'+o.icon+'<span class="ref">'+o.ref+'</span></span>'
+    +'<span>'+(o.chip||'')+'</span><span class="prod">'+o.prod+'</span>'
+    +'<span class="size">'+o.size+'</span><span class="price">'+(kid?'':(o.price||''))+'</span>'
+    +(kid?A2:A3)+'</div>';
+}
+function panel(e,cls,s){return '<div class="exp '+(cls||'')+'"'+(s?' data-s="'+s+'"':'')+'><div class="lbl">'+e.lbl+'</div><div class="val">'+e.val+'</div></div>';}
+
+/* A — children are rows inside the parent card */
+function recFlush(o){
+  let h=row(o,false);
+  if(o.exp)h+=panel(o.exp,'',o.s);
+  (o.units||[]).forEach(u=>{h+=row(u,true);if(u.exp)h+=panel(u.exp,'kidexp',u.s);});
+  return '<div class="rec">'+h+'</div>';
+}
+/* B — each child is its own shifted card */
+function recShift(o){
+  let h=row(o,false);
+  if(o.exp)h+=panel(o.exp,'',o.s);
+  if(o.units){
+    h+='<div class="kidwrap">'+o.units.map(u=>{
+      let k=row(u,false);
+      if(u.exp)k+=panel(u.exp,'',u.s);
+      return '<div class="kidcard">'+k+'</div>';
+    }).join('')+'</div>';
+  }
+  return '<div class="rec">'+h+'</div>';
+}
+/* C — one shifted card holds all the children */
+function recGroup(o){
+  let h=row(o,false);
+  if(o.exp)h+=panel(o.exp,'',o.s);
+  if(o.units){
+    let inner='';
+    o.units.forEach(u=>{inner+=row(u,false);if(u.exp)inner+=panel(u.exp,'',u.s);});
+    h+='<div class="kidwrap"><div class="kidcard">'+inner+'</div></div>';
+  }
+  return '<div class="rec">'+h+'</div>';
+}
+
+const SKINS=[
+  {k:'flush',fn:recFlush,tag:'A · flush',t:'Children as indented ROWS inside the parent card',
+   p:'What I have been drawing. The child is a row; its expansion is a tinted band inside the same card. This is the version you are describing as reading like two separated white tables once something expands — judge W2 against B and C below.',
+   n:'<b>Your objection, drawn:</b> in W2 the unit row, its expansion and the next unit all sit on one continuous card edge. Nothing says the expansion belongs to W2A rather than to the record.',cls:'warn'},
+  {k:'shift',fn:recShift,tag:'B · your shift',t:'Each child is its OWN card, stepped in',
+   p:'The child has its own left edge, stepped in by 26px, and its expansion lives INSIDE that card. The expansion is therefore bounded at the child\'s level, not the record\'s — which is the "different context view" you described.',
+   n:'<b>Measured alignment:</b> <span id="m-shift"></span>',cls:'win'},
+  {k:'groupcard',fn:recGroup,tag:'C · one group card',t:'All the children share one stepped-in card',
+   p:'The same shift, but the units live together in a single nested card divided by hairlines, rather than each having its own. Fewer edges; the group reads as one object inside the record.',
+   n:'<b>Measured alignment:</b> <span id="m-group"></span>'},
+];
+
+let html='';
+SKINS.forEach(s=>{
+  html+='<section class="prop '+s.k+'"><div class="prop-h"><span class="tag">'+s.tag+'</span><h2>'+s.t+'</h2></div>'
+    +'<p class="prop-p">'+s.p+'</p><div class="sec">Desktop</div>'
+    +HEAD+'<div class="list">'+D.map(s.fn).join('')+'</div>'
+    +'<p class="note '+(s.cls||'')+'">'+s.n+'</p></section>';
+});
+document.getElementById('out').innerHTML=html;
+
+function measure(sel,into){
+  const sec=document.querySelector('section.'+sel);
+  const head=document.querySelector('section.'+sel+' .head');
+  const kid=sec.querySelector('.kidcard .row')||sec.querySelector('.kid');
+  if(!head||!kid){document.getElementById(into).textContent='n/a';return;}
+  const hx=[...head.children].map(c=>Math.round(c.getBoundingClientRect().left));
+  const kx=[...kid.children].map(c=>Math.round(c.getBoundingClientRect().left));
+  const drift=hx.slice(1).map((v,i)=>Math.abs(v-(kx[i+1]??v)));
+  document.getElementById(into).textContent =
+    'header x ['+hx.join(', ')+'] · child cell x ['+kx.join(', ')+'] — worst drift on tracks 2–6: '
+    + Math.max(...drift) + 'px (track 1 shifts by design).';
+}
+measure('shift','m-shift');
+measure('groupcard','m-group');
+</script>
+</body>
+</html>
