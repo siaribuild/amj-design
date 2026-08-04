@@ -204,7 +204,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
             <SLabel>Your project</SLabel>
             {/* Renameable, like /quote. A customer with two projects cannot tell
                 them apart while both are called "My Project". */}
-            <h1><ProjectNameField value={quote.title} onCommit={quote.setTitle} /></h1>
+            <ProjectNameField value={quote.title} onCommit={quote.setTitle} heading />
           </div>
           {/* Add opening is a visible list-header action — never a row action and
               never hidden in an overflow menu. */}

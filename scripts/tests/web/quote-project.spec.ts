@@ -521,3 +521,54 @@ test("clear all wipes lines and documents durably, and is never a single tap", a
   expect(body.items).toEqual([]);
   expect(body.files).toEqual([]);
 });
+
+// ─── 11. Renaming the project ─────────────────────────────────────────────────
+// Two owner corrections, both about the title behaving unlike the rest of the
+// page: it was an input-shaped control at rest sitting beside 44px buttons, and
+// it saved on Enter-or-blur when every other edit here needs a button.
+test("the project title is a heading at rest and saves only when told to", async ({ page }) => {
+  await mockProject(page, [plainItem]);
+  await page.goto("/quote-project");
+
+  // At rest: text, not a field. Exactly one h1, and it holds the NAME — while
+  // the editor is open the heading must not become "Save Cancel".
+  await expect(page.locator("input[aria-label='Project name']")).toHaveCount(0);
+  await expect(page.locator("h1")).toHaveText("Quote project regression");
+
+  const saves: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "PUT" && r.url().includes("/api/projects/current/lines")) saves.push(r.url());
+  });
+
+  await page.getByRole("button", { name: /^Rename project/ }).click();
+  const field = page.locator("input[aria-label='Project name']");
+  await expect(field).toBeFocused();
+  await expect(page.locator("h1")).toHaveText("Quote project regression");
+  // The editor matches the action buttons it sits beside — the mismatch was the
+  // original complaint, so the sizes are asserted rather than eyeballed.
+  const [fieldH, addH] = await Promise.all([
+    field.evaluate((e) => Math.round(e.getBoundingClientRect().height)),
+    page.getByRole("button", { name: /Add opening/ }).evaluate((e) => Math.round(e.getBoundingClientRect().height)),
+  ]);
+  expect(fieldH).toBe(addH);
+
+  // Clicking away commits NOTHING and closes nothing. Blur-to-save was the
+  // inconsistency: it made the title the one field that wrote to the server
+  // without being told to.
+  await field.fill("Renamed by blur");
+  await page.locator(".quote-row").first().click();
+  await expect(field).toHaveCount(1);
+  expect(saves, "blur must not write").toHaveLength(0);
+
+  // Cancel restores the previous name and writes nothing.
+  await page.getByRole("button", { name: "Cancel renaming" }).click();
+  await expect(page.locator("h1")).toHaveText("Quote project regression");
+  expect(saves, "cancel must not write").toHaveLength(0);
+
+  // Save is the only thing that commits.
+  await page.getByRole("button", { name: /^Rename project/ }).click();
+  await page.locator("input[aria-label='Project name']").fill("Coburg new build");
+  await page.getByRole("button", { name: "Save project name" }).click();
+  await expect(page.locator("h1")).toHaveText("Coburg new build");
+  await expect(page.getByRole("button", { name: /^Rename project/ })).toBeFocused();
+});
