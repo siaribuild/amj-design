@@ -74,20 +74,24 @@ svg.el{display:block;flex:none;color:var(--body)}
 .exp .val{font:400 13px/19px var(--fb);color:var(--body)}
 
 /* ── E, fully specified ────────────────────────────────────────────────────── */
-.rec{border:1px solid var(--line);background:var(--paper)}
-.rec+.rec{margin-top:8px}
-.list{margin-top:8px}
+/* TABLE-LIKE: one frame around the whole list; records are ADJACENT, sharing a
+   hairline. No per-record box, no gaps between openings. */
+.list{border:1px solid var(--line);border-top:none;background:var(--paper)}
+.rec+.rec{border-top:1px solid var(--line)}
 
 /* RULE 2 — the parent has a bottom border whenever it heads a group. */
 .rec[data-grp] > .row:first-child{border-bottom:1px solid var(--line)}
 
 /* RULE 3 — the whole list of children is a box, inset left AND right.
-   RULE 4 — and it leaves a margin below, so the last child is not pressed against
-   the record's closing edge and, through it, the next parent. The bottom margin
-   is deliberately larger than the top: above, the parent's own bottom border
-   already separates; below, this margin plus the record gap is the ONLY thing
-   between the last child and the next opening. */
-.kids{margin:8px var(--inset-r) 14px var(--inset);border:1px solid var(--line);background:var(--paper)}
+   DOCKED: no top margin and no top border. The parent's own bottom border IS
+   the block's top edge, so the children hang off the parent rather than
+   floating below it — and there is no doubled 2px line where they meet. The
+   block is therefore a U: left, right and bottom.
+   RULE 4 — a margin below. With records now adjacent this is the ONLY
+   separation between the last child and the next opening, so it carries real
+   weight rather than decorating. */
+.kids{margin:0 var(--inset-r) 14px var(--inset);border:1px solid var(--line);
+  border-top:none;background:var(--paper)}
 .kids .row{grid-template-columns:var(--qp-cols-child)}
 .kids > .row + .row{border-top:1px solid var(--line)}
 .kids > .exp + .row{border-top:1px solid var(--line)}
@@ -103,13 +107,14 @@ svg.el{display:block;flex:none;color:var(--body)}
 .phone{width:375px}
 .phone .cap{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:0 0 6px}
 .phone .stage{background:var(--bone);padding:10px;border:1px solid var(--line)}
+.phone .list{border:1px solid var(--line);border-top:1px solid var(--line)}
 .phone .row{grid-template-columns:1fr;row-gap:4px;padding:10px 12px;min-height:0}
 .phone .kids .row{grid-template-columns:1fr}
 .phone .head{display:none}
 .phone .m1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .phone .m3{display:flex;justify-content:space-between;gap:10px}
 .phone .size,.phone .price{text-align:left}
-.phone .kids{margin:8px 8px 8px 14px}
+.phone .kids{margin:0 8px 12px 14px}
 .phone .kids > .exp{margin:0 6px 8px 10px}
 .phones{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
 </style>
@@ -118,10 +123,10 @@ svg.el{display:block;flex:none;color:var(--body)}
 <div class="wrap">
 
 <h1>E · contained panel — fully specified</h1>
-<p class="lede">Your three rules, built: <b>1</b> a child’s panel is a box inset on both sides,
+<p class="lede">Your rules, built: <b>1</b> a child’s panel is a box inset on both sides,
 <b>2</b> a parent that heads a group carries a bottom border, <b>3</b> the whole list of children is a box inset left and right, and
 <b>4</b> it leaves a margin below so the last child is not pressed against the next parent.</p>
-<p class="small">Shown across every case: a childless opening expanded, a unit expanded, a group flagged,
+<p class="small">One continuous view, no section titles. Records are ADJACENT — table-like, not separate panels — and a composite’s children are DOCKED to their parent, hanging off its bottom border as a U. Shown across every case: a childless opening expanded, a unit expanded, a group flagged,
 a single child flagged, and parent-and-child both flagged. Then 375px. Column drift is measured in the
 page — see the note under the desktop list.</p>
 
@@ -226,7 +231,7 @@ function labelled(o,m){
 }
 
 document.getElementById('head').innerHTML=HEAD;
-document.getElementById('out').innerHTML=D.map(o=>labelled(o,false)).join('');
+document.getElementById('out').innerHTML=D.map(o=>rec(o,false)).join('');
 document.getElementById('mout').innerHTML=D.slice(1,7).map(o=>rec(o,true)).join('');
 
 /* Measure: which columns hold, and exactly how far the actions move. */
