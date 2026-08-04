@@ -91,6 +91,11 @@ svg.el{display:block;flex:none;color:var(--body)}
 .groupcard .kidcard .row{grid-template-columns:var(--qp-cols-child)}
 .groupcard .kidcard .row+.row{border-top:1px solid var(--line)}
 
+
+/* ── D · PANEL SHIFT: child ROWS stay flush, only the PANEL steps in ───────── */
+.panelshift .kid{padding-left:calc(var(--pad) + var(--shift))}
+.panelshift .kidexp{margin-left:var(--shift);border-left:1px solid var(--connector);
+  border-bottom:1px solid var(--line)}
 .rule{height:1px;background:var(--line)}
 </style>
 </head>
@@ -202,6 +207,9 @@ const SKINS=[
   {k:'shift',fn:recShift,tag:'B · your shift',t:'Each child is its OWN card, stepped in',
    p:'The child has its own left edge, stepped in by 26px, and its expansion lives INSIDE that card. The expansion is therefore bounded at the child\'s level, not the record\'s — which is the "different context view" you described.',
    n:'<b>Measured alignment:</b> <span id="m-shift"></span>',cls:'win'},
+  {k:'panelshift',fn:recFlush,tag:'D · panel shift',t:'Child ROWS stay flush — only the child’s PANEL steps in',
+   p:'The verdict from the second review. The child keeps a full-width row, so its state stripe stays at x=0 with every other exception. Only the expansion moves: inset 26px with a left rule and a closing bottom rule, so it is bounded at the child’s level exactly as B does — but nothing is boxed at rest, and no second track list is needed because the panel has no columns.',
+   n:'<b>Compare W2 against B.</b> The panel is bounded the same way. The difference is what it costs when nothing is expanded — which is all of the time, on ~30 collapsed units in a 19-opening list.',cls:'win'},
   {k:'groupcard',fn:recGroup,tag:'C · one group card',t:'All the children share one stepped-in card',
    p:'The same shift, but the units live together in a single nested card divided by hairlines, rather than each having its own. Fewer edges; the group reads as one object inside the record.',
    n:'<b>Measured alignment:</b> <span id="m-group"></span>'},
