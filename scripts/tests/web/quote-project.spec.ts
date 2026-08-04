@@ -572,3 +572,37 @@ test("the project title is a heading at rest and saves only when told to", async
   await expect(page.locator("h1")).toHaveText("Coburg new build");
   await expect(page.getByRole("button", { name: /^Rename project/ })).toBeFocused();
 });
+
+// ─── 12. One launcher per panel ───────────────────────────────────────────────
+// A blocked row used to offer THREE routes to the same drawer: the row's pencil,
+// "Fix details" in the panel, and "Edit opening" at its foot. The last two are
+// openDrawer({mode:"edit"}) either way, differing only in which accordion group
+// opens — and for the common blockers (duplicate id, no product, no size)
+// sectionFor collapses to "dims", which is what passing nothing already does.
+test("the expansion offers one launcher, and its label follows the row's state", async ({ page }) => {
+  await mockProject(page, [blockedItem, plainItem]);
+  await page.goto("/quote-project");
+
+  // A blocked row opens by default and states its reason.
+  const blocked = page.locator(".quote-rowexp").first();
+  await expect(blocked.getByText("We couldn't read the size for this opening.")).toBeVisible();
+
+  // Fix details, and ONLY Fix details.
+  await expect(blocked.getByRole("button", { name: /Fix details/ })).toBeVisible();
+  await expect(blocked.getByRole("button", { name: /Edit opening/ })).toHaveCount(0);
+
+  // It sits on the reason's own row, right after the sentence — not stacked
+  // beneath it and not flushed to the panel's far edge (owner).
+  const box = async (l: ReturnType<typeof page.locator>) =>
+    l.evaluate((e) => { const r = e.getBoundingClientRect(); return { top: r.top, left: r.left, right: r.right }; });
+  const reason = await box(blocked.getByText("We couldn't read the size for this opening."));
+  const fix = await box(blocked.getByRole("button", { name: /Fix details/ }));
+  expect(Math.abs(reason.top - fix.top), "same row as the reason").toBeLessThan(24);
+  expect(fix.left - reason.right, "trails the sentence, not the panel edge").toBeLessThan(48);
+
+  // A row with nothing blocking gets the other label, and equally only one.
+  await page.getByRole("button", { name: "Show details for W1", exact: true }).click();
+  const ready = page.locator(".quote-rowexp").last();
+  await expect(ready.getByRole("button", { name: /Edit opening/ })).toBeVisible();
+  await expect(ready.getByRole("button", { name: /Fix details/ })).toHaveCount(0);
+});

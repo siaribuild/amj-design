@@ -166,11 +166,17 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           {/* Not "Needs your input" — that is the row's chip, and repeating it
               two lines below says the same thing twice while answering nothing. */}
           <PanelLabel>What's missing</PanelLabel>
-          <p className="text-warning-ink mb-2.5 t-cap">{state.reason}</p>
-          <button type="button" onClick={onFixDetails} aria-label={`Fix details for ${ref}`}
-            className="card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
-            <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />Fix details
-          </button>
+          {/* The action sits on the reason's own row, immediately after the
+              sentence (owner). Not flushed to the panel's right edge: on a
+              1180px panel that puts ~600px between the problem and the button
+              that resolves it, which reads worse than stacking did. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="text-warning-ink t-cap">{state.reason}</span>
+            <button type="button" onClick={onFixDetails} aria-label={`Fix details for ${ref}`}
+              className="card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
+              <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />Fix details
+            </button>
+          </div>
         </div>
       )}
       {/* A composite PARENT carries no options of its own — it is the schedule
@@ -217,10 +223,22 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           order puts the note ABOVE the button: the note is reading matter and
           the button is the way out, so the button belongs last. */}
       <div className="mt-4 grid gap-x-6 gap-y-3 sm:grid-cols-[180px_minmax(0,1fr)] items-center">
-        <button type="button" onClick={onEdit} aria-label={`Edit opening ${ref}`}
-          className="order-2 sm:order-1 justify-self-start card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
-          <Pencil className="w-3.5 h-3.5" aria-hidden="true" />Edit opening
-        </button>
+        {/* ONE worded launcher per panel, and its label follows the row's state
+            (owner). A blocked row already carries "Fix details" above, and the
+            two were the same control under two names — openDrawer({mode:"edit"})
+            either way, differing only in which accordion group the drawer opens.
+            Showing both put THREE routes to one editor on a blocked row: this
+            button, that one, and the row's pencil.
+            The pencil stays as the shortcut from a COLLAPSED row; the panel
+            keeps a framed, worded control because an expansion that offers only
+            a pencil is the expand-into-editor model this route exists to
+            replace (plan §7.2). */}
+        {state.kind !== "needs-input" && (
+          <button type="button" onClick={onEdit} aria-label={`Edit opening ${ref}`}
+            className="order-2 sm:order-1 justify-self-start card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
+            <Pencil className="w-3.5 h-3.5" aria-hidden="true" />Edit opening
+          </button>
+        )}
         {/* The line's own note — the editor's "Note (optional)". It reads here
             rather than in the specification list above because it is free text
             the customer wrote, not a choice they made from a set, and a
@@ -228,7 +246,10 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
             Beside the Edit control is also where it is most useful: it is the
             thing most likely to be WHY you are about to open the editor.
             Read-only, like everything else in this panel. */}
-        <p className="order-1 sm:order-2 flex items-baseline gap-3 min-w-0">
+        {/* col-start-2 explicitly: with no launcher beside it the note would
+            otherwise fall into the launcher's column and stop lining up with
+            the specification above it. */}
+        <p className="order-1 sm:order-2 sm:col-start-2 flex items-baseline gap-3 min-w-0">
           {/* The same label column as OptionLines, so Note reads as the last
               entry in that list rather than as a caption on the button. */}
           <span className="text-quiet w-24 sm:w-28 flex-shrink-0 font-data t-label">Note</span>
