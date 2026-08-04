@@ -782,6 +782,65 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(staff, `/api/ops/projects/${pid}/issue-revision`, { method: "POST", json: {} }, 409);
     });
 
+    await t.test("editing an AI-priced line reprices it — it does not lose its price", async () => {
+      // Reported from production: one project's W1–W11 all carried a price and
+      // W12 — the only line the customer had touched — was NULL, with
+      // edited_fields ["options_json"]. The row read "$-,--", the project
+      // estimate silently under-counted by that amount, and because
+      // customerConfigurationChanged is a WARNING the row carried no badge to
+      // say why. Nothing the customer could do brought it back.
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "ai-reprice@example.com");
+      const line = {
+        code: "W12", location: "Study", productSlug: "amj80-series-awning-window",
+        width: "900", height: "1200", qty: 1,
+        options: { colour: "Monument", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      };
+      const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
+      const pid = saved.body.project.id;
+      const serverId = saved.body.items[0].id;
+      const before = saved.body.items[0].lineTotal;
+      assert.ok(before > 0, "the line prices before anything is AI-managed");
+
+      // Make it AI-managed, exactly as the proposal path leaves it.
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command",
+        // origin alone: aiManaged is `origin === 'ai' || ai_proposal_line_id`,
+        // and the id column carries a foreign key to a proposal row this test
+        // has no reason to fabricate.
+        `UPDATE quote_line SET origin='ai' WHERE id='${serverId}';`,
+      ], { env: wranglerEnv });
+
+      // A material edit: change the colour. The AI's exact configuration
+      // snapshot is genuinely void, but the line is now an ordinary configured
+      // line and the same engine that prices every manual line can price it.
+      const edited = await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { items: [{ ...line, serverId, options: { ...line.options, colour: "Dover White" } }] },
+      });
+      const after = edited.body.items[0];
+      assert.ok(typeof after.lineTotal === "number" && after.lineTotal > 0,
+        `an edited AI line keeps a price (got ${JSON.stringify(after.lineTotal)})`);
+      // …and staff still confirm it. The review reason and the status survive;
+      // what changed is that they now confirm a priced line, not a blank one.
+      assert.equal(after.status, "Needs review");
+      assert.ok(after.review?.customerConfigurationChanged, "the technical flag is still raised");
+
+      // The REPAIR path: a line already broken by the old behaviour heals on the
+      // next autosave rather than needing a migration or a second edit.
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `UPDATE quote_line SET line_total=NULL WHERE id='${serverId}';`,
+      ], { env: wranglerEnv });
+      const healed = await requestJson(buyer, "/api/projects/current/lines", {
+        method: "PUT",
+        json: { items: [{ ...line, serverId, options: { ...line.options, colour: "Dover White" } }] },
+      });
+      assert.ok(healed.body.items[0].lineTotal > 0, "a stranded NULL is refilled by the next save");
+      assert.ok(pid, "project resolved");
+    });
+
     // The role-based RBAC test that lived here is gone. Roles were flattened
     // (owner decision, 2026-07-28): a role-less staffer is no longer blocked from
     // payments, PII or files, so asserting that they are would assert the opposite

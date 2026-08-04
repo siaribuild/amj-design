@@ -276,7 +276,7 @@ projects.put("/current/lines", async (c) => {
   type StoredRow = EditableSnapshot & {
     id: string; origin: string | null; ai_proposal_line_id: string | null;
     pricing_snapshot_json: string | null; configuration_snapshot_json: string | null;
-    selected_variant_id: string | null;
+    selected_variant_id: string | null; line_total: number | null;
   };
   // parent_line_id IS NULL — OPENINGS only, matching the read route, which
   // returns segments nested inside their parent rather than as items.
@@ -297,7 +297,7 @@ projects.put("/current/lines", async (c) => {
   const storedRows = ((await c.env.DB.prepare(
     `SELECT id, origin, edited_fields, product_slug, options_json, dims_json, qty,
             ai_proposal_line_id, pricing_snapshot_json, configuration_snapshot_json,
-            selected_variant_id
+            selected_variant_id, line_total
        FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL`,
   ).bind(project.id).all<StoredRow>()).results ?? []);
   const existing = new Map(storedRows.map((r) => [r.id, r]));
@@ -344,27 +344,61 @@ projects.put("/current/lines", async (c) => {
       const aiManaged = stored.origin === "ai" || !!stored.ai_proposal_line_id;
       if (aiManaged && edited === stored.edited_fields) {
         // A reload followed by autosave must not replace the AI configuration's
-        // private server price with the browser's legacy deterministic estimate.
+        // private server price with a second opinion — hence external_ref and
+        // room_label only, and COALESCE rather than an assignment below.
+        //
+        // The COALESCE is a REPAIR, and it can only ever fill a NULL. Lines
+        // edited before the fix below were left permanently unpriced: the
+        // material-edit branch nulled line_total, and every autosave after that
+        // landed HERE, where nothing repriced them. They healed only if the
+        // customer happened to edit a different field group. Restricted to rows
+        // that have actually been edited, so an AI line the AI itself could not
+        // price keeps its honest NULL rather than being quietly papered over
+        // with a deterministic figure.
+        const heal = stored.line_total == null && stored.edited_fields != null;
         stmts.push(c.env.DB.prepare(
           `UPDATE quote_line SET external_ref=?, room_label=?,
+             line_total=COALESCE(line_total, ?),
+             status=CASE WHEN line_total IS NULL AND ? IS NOT NULL
+                         THEN 'technical_review' ELSE status END,
              position=?, edit_version=edit_version+1, updated_at=datetime('now')
            WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
              AND EXISTS (
                SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                  AND quote_edit_version=? AND quote_mutation_token=?
              )`,
-        ).bind(f.external_ref, f.room_label, i, id, project.id, project.id, nextQuoteVersion, mutationToken));
+        ).bind(
+          f.external_ref, f.room_label,
+          heal ? f.line_total : null, heal ? f.line_total : null,
+          i, id, project.id, project.id, nextQuoteVersion, mutationToken,
+        ));
         continue;
       }
       if (aiManaged) {
-        // A customer may change an AI suggestion, but cannot replace its private
-        // CPQ price or clear server-owned technical review state from the browser.
-        // Material edits invalidate the exact configuration snapshot and remain
-        // explicitly unpriced until staff confirms/reprices them.
+        // A customer may change an AI suggestion, but cannot clear server-owned
+        // technical review state from the browser, and a material edit voids the
+        // exact configuration snapshot the AI priced — variant, pricing snapshot
+        // and configuration snapshot all go with it.
+        //
+        // It USED TO void the price as well, and that was the bug: the line read
+        // "$-,--" from the moment the customer touched it, the project estimate
+        // silently under-counted by that amount, and because
+        // `customerConfigurationChanged` is a WARNING the row carried no badge to
+        // say why. Nothing the customer could do brought it back. Proven in
+        // production: one project's W1–W11 all priced, W12 — the only line edited
+        // — NULL with edited_fields ["options_json"].
+        //
+        // f.line_total is not "the browser's estimate": itemFields() computed it
+        // server-side through priceItem → priceLine, the same engine and the same
+        // rate cards every manual and schedule line goes through. Once the
+        // customer has changed the configuration the line IS an ordinary
+        // configured line, and that engine is exactly the right pricer for it.
+        // The technical_review status and the review reason both stay, so staff
+        // still confirm it; they now confirm a priced line instead of a blank.
         stmts.push(c.env.DB.prepare(
           `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?,
-             options_json=?, dims_json=?, qty=?, line_total=NULL,
-             status='technical_review', position=?,
+             options_json=?, dims_json=?, qty=?, line_total=?,
+             status=?, position=?,
              review_json=json_patch(COALESCE(review_json,'{}'), ?),
              edited_fields=?,
              recommendation_basis=NULL, recommendation_confidence=NULL,
@@ -378,7 +412,13 @@ projects.put("/current/lines", async (c) => {
              )`,
         ).bind(
           f.external_ref, f.room_label, f.product_slug, f.options_json, f.dims_json,
-          f.qty, i,
+          f.qty, f.line_total,
+          // An edit that leaves the line unpriceable — no product, no size — is
+          // the customer's to fix and must still block submission, which
+          // 'technical_review' would not: customerConfigurationChanged is a
+          // warning, and a warning excuses an absent price.
+          f.line_total == null ? "incomplete" : "technical_review",
+          i,
           JSON.stringify({
             customerConfigurationChanged: "You changed an AI-priced configuration; we will confirm its thermal suitability and price.",
           }),
