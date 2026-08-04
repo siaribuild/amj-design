@@ -96,6 +96,21 @@ svg.el{display:block;flex:none;color:var(--body)}
 .panelshift .kid{padding-left:calc(var(--pad) + var(--shift))}
 .panelshift .kidexp{margin-left:var(--shift);border-left:1px solid var(--connector);
   border-bottom:1px solid var(--line)}
+
+/* ── E · CONTAINED PANEL: inset on BOTH sides, bordered all round ──────────── */
+.contained .kid{padding-left:calc(var(--pad) + var(--shift))}
+.contained .kidexp{margin:0 var(--pad) 8px var(--shift);border:1px solid var(--line);
+  border-left:1px solid var(--connector)}
+/* a parent's own panel stays full-bleed, so the two are different objects.
+   :not(.kidexp) matters — a unit's panel is ALSO a direct child of .rec, so
+   without it this rule (0,3,0) beats the .kidexp rule (0,2,0) and un-boxes it. */
+.contained .rec > .exp:not(.kidexp){margin:0;border:none;border-top:1px solid var(--line)}
+
+/* ── F · CONTAINED CHILD CARD: B, but inset on the right too ───────────────── */
+.contained2 .kidwrap{padding:2px var(--pad) 6px var(--shift)}
+.contained2 .kidcard{border:1px solid var(--line);background:var(--paper)}
+.contained2 .kidcard+.kidcard{margin-top:6px}
+.contained2 .kidcard .row{grid-template-columns:var(--qp-cols-child)}
 .rule{height:1px;background:var(--line)}
 </style>
 </head>
@@ -210,6 +225,12 @@ const SKINS=[
   {k:'panelshift',fn:recFlush,tag:'D · panel shift',t:'Child ROWS stay flush — only the child’s PANEL steps in',
    p:'The verdict from the second review. The child keeps a full-width row, so its state stripe stays at x=0 with every other exception. Only the expansion moves: inset 26px with a left rule and a closing bottom rule, so it is bounded at the child’s level exactly as B does — but nothing is boxed at rest, and no second track list is needed because the panel has no columns.',
    n:'<b>Compare W2 against B.</b> The panel is bounded the same way. The difference is what it costs when nothing is expanded — which is all of the time, on ~30 collapsed units in a 19-opening list.',cls:'win'},
+  {k:'contained',fn:recFlush,tag:'E · contained panel',t:'The child’s panel is a box — inset on BOTH sides',
+   p:'Your question, drawn. In D the panel steps in on the left but its background still runs to the record’s right edge. Here it is inset on both sides and bordered all round, so it reads as a contained object nested inside the record rather than a band across it. A PARENT’s panel deliberately stays full-bleed — that contrast is what makes the two different objects rather than two sizes of the same one. Costs nothing: SpecPanel has no columns, so its right edge is free to move.',
+   n:'<b>Compare W1 and W2A.</b> W1 is a childless opening: its panel is full width. W2A is a unit: its panel is a box. One glance tells you which level you are reading.',cls:'win'},
+  {k:'contained2',fn:recShift,tag:'F · contained child card',t:'Your card, inset on the right as well',
+   p:'The same question applied to B. The child card is now a genuine box, inset on both sides. Look at the ACTIONS column: the chevron and pencil no longer line up with the parent’s, because the card’s right edge pulls them in. That is the price of containing a row rather than a panel — a row has columns, a panel does not.',
+   n:'<b>The cost, visible:</b> a child’s controls sit left of every parent’s. The panel in E gets containment for free precisely because it has nothing to align.',cls:'warn'},
   {k:'groupcard',fn:recGroup,tag:'C · one group card',t:'All the children share one stepped-in card',
    p:'The same shift, but the units live together in a single nested card divided by hairlines, rather than each having its own. Fewer edges; the group reads as one object inside the record.',
    n:'<b>Measured alignment:</b> <span id="m-group"></span>'},
