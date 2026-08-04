@@ -419,7 +419,9 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                           expanded={uExpanded}
                           onToggleExpanded={() => toggleExpanded(uKey, uExpanded)}
                           onEdit={() => openDrawer({ mode: "edit", rowKey: key, segmentId: s.id })}
-                          panelId={panelId(uKey)} controlId={editControlId(uKey)} />
+                          panelId={panelId(uKey)} controlId={editControlId(uKey)}
+                          axis={item.compositeAxis}
+                          acrossMm={item.compositeAxis === "horizontal" ? item.width : item.height} />
                         {uExpanded && (
                           <div id={panelId(uKey)}
                             className="quote-rowexp quote-unitexp bg-recessive border-t border-line px-3 sm:px-4 py-4">

@@ -354,6 +354,25 @@ export const sizePhrase = (w: string | number, h: string | number) => {
 
 export const productLabel = (slug: string) => getProductBySlug(slug)?.name ?? "Product";
 
+/** What a COMPOSITE opening is called, derived from the units it is made of.
+ *
+ *  A composite parent is the schedule line, not a product — it is an opening we
+ *  build out of two or more frames, and those frames can be different products
+ *  from each other. Printing one of their names on the parent row states
+ *  something untrue: "AMJ100T Series Awning Window" reads as a single awning
+ *  when the line is actually two frames, possibly neither of them an awning.
+ *
+ *  The noun comes from the CHILDREN rather than being hardcoded, so a door line
+ *  is not labelled a window and a mixed opening claims neither. */
+export const compositeLabel = (segments: { productSlug: string }[]): string => {
+  const cats = new Set(
+    segments.map((s) => getProductBySlug(s.productSlug)?.categorySlug).filter(Boolean),
+  );
+  if (cats.size === 1 && cats.has("doors")) return "Composite Door";
+  if (cats.size === 1 && cats.has("windows")) return "Composite Window";
+  return "Composite Opening";
+};
+
 // ─── Two-field product picker (quote-page composer) ───────────────────────────
 // Field 1 = product type (family, grouped by category); field 2 = product.
 export interface FamilyGroup { category: string; families: { slug: string; name: string }[] }

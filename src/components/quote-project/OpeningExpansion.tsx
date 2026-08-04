@@ -83,11 +83,15 @@ const sizeKnown = (w?: string | null, h?: string | null) =>
  *
  *  `pairs: null` means this thing has no options OF ITS OWN to state, which is
  *  different from having none chosen. */
-export function SpecPanel({ productSlug, widthMm, heightMm, pairs }: {
+export function SpecPanel({ productSlug, widthMm, heightMm, pairs, parts, axis }: {
   productSlug: string;
   widthMm?: string | null;
   heightMm?: string | null;
   pairs: { label: string; value: string; chosen: boolean; hex?: string }[] | null;
+  /** A composite's units, so the big drawing shows what is actually made
+   *  rather than a panel count guessed from one family. */
+  parts?: { productSlug: string; alongMm: string | number; qty?: number }[];
+  axis?: "vertical" | "horizontal" | null;
 }) {
   return (
     <div className="grid gap-4 sm:gap-6 sm:grid-cols-[auto_minmax(0,1fr)] items-start">
@@ -101,6 +105,7 @@ export function SpecPanel({ productSlug, widthMm, heightMm, pairs }: {
             and size of what they ordered against the hole in the wall, so the
             numbers belong ON the drawing rather than in a caption. */}
         <Elevation productSlug={productSlug} widthMm={widthMm} heightMm={heightMm}
+          parts={parts} axis={axis}
           size="sm" className="w-[180px] h-[180px] max-w-full text-body" />
         {/* The caption carries what the drawing cannot assert. With no size the
             shape is a square stand-in, so saying "viewed from outside" — a
@@ -214,7 +219,13 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
         // line, not a product. The glazing and hardware belong to the units, so
         // showing the parent's stored option row would assert a specification
         // the customer never chose at this level.
-        pairs={composite ? null : fullPairs} />
+        pairs={composite ? null : fullPairs}
+        parts={composite ? segments.map((s) => ({
+          productSlug: s.productSlug,
+          alongMm: item.compositeAxis === "horizontal" ? s.height : s.width,
+          qty: s.qtyPerParent,
+        })) : undefined}
+        axis={item.compositeAxis} />
 
       {/* A launcher, not the row's inline pencil: this one is a framed control
           with a word on it, so the two Edit affordances on screen at once are

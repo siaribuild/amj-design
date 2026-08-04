@@ -26,7 +26,7 @@
 // it truncates.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { ChevronDown, AlertCircle, MoreHorizontal, Pencil } from "lucide-react";
-import { type QItem, fmt, sizePhrase, productLabel, linePriceTotal } from "../../data/configurator";
+import { type QItem, fmt, sizePhrase, productLabel, compositeLabel, linePriceTotal } from "../../data/configurator";
 // gstSuffix is deliberately not imported: the mode still ADJUSTS every line's
 // figure, it is simply no longer spelled out on each one.
 import { useGstMode, gstAdjust } from "../../data/gst";
@@ -48,6 +48,23 @@ export function OpeningRow({
   const gstMode = useGstMode();
   const ref = item.code || "—";
   const priced = typeof item.lineTotal === "number" && Number.isFinite(item.lineTotal);
+  const segments = item.segments ?? [];
+  const composite = segments.length > 0;
+
+  // WHICH state chip a composite parent shows, and why it usually shows none
+  // (owner). Its name already says it is built as units, so the "composite"
+  // chip restates the product cell. And when the blocker belongs to a UNIT, the
+  // unit carries it — the offending row sits directly beneath with its own chip,
+  // so repeating it on the parent marks the same fault twice.
+  //
+  // Two things survive, because no child can express either: a fault that is the
+  // parent's own (nothing beneath it is flagged), and Check sizes, which is
+  // precisely the statement that the units do NOT add up to this opening.
+  const childFlagged = segments.some(
+    (s) => !(typeof s.lineTotal === "number" && Number.isFinite(s.lineTotal)));
+  const showBadge = !composite
+    || state.kind === "confirm-layout"
+    || (state.kind === "needs-input" && !childFlagged);
 
   // Every accessible name carries the opening reference. Twenty identical
   // "Edit"/"More" buttons pass a shallow a11y scan and are unusable with a
@@ -67,7 +84,16 @@ export function OpeningRow({
               per-line proportion gives that column no edge to read against —
               it also shrinks a 3500×700 line to a sliver at this size. The true
               proportion is drawn in the expansion, where it is the subject. */}
+          {/* A composite is drawn from its UNITS — proportional panels, each
+              with its own family's symbol, joins where the frames really meet.
+              Anything else draws a picture of a product this line is not. */}
           <Elevation productSlug={item.productSlug} widthMm={item.width} heightMm={item.height}
+            parts={composite ? segments.map((s) => ({
+              productSlug: s.productSlug,
+              alongMm: item.compositeAxis === "horizontal" ? s.height : s.width,
+              qty: s.qtyPerParent,
+            })) : undefined}
+            axis={item.compositeAxis}
             square className="w-7 h-7 flex-shrink-0 text-body" />
           {/* 14px too (owner): once Size rose, a 12px reference became the
               smallest cell in the row. The whole row now sits at 14px and
@@ -78,7 +104,7 @@ export function OpeningRow({
               it describes — the same place a phone puts it. It rides INSIDE this
               cell rather than as a grid sibling because at these widths it has
               no column of its own to sit in. */}
-          <span className="lg:hidden"><RowStateBadge state={state} /></span>
+          <span className="lg:hidden">{showBadge && <RowStateBadge state={state} />}</span>
         </span>
 
         {/* From 1024 the status is a real column under a real header. This is a
@@ -86,7 +112,7 @@ export function OpeningRow({
             child of the identity cell and a grid item cannot be both. Whichever
             is not shown is display:none, so it is out of the accessibility tree
             too and nothing is announced twice. */}
-        {state.kind !== "none" && (
+        {state.kind !== "none" && showBadge && (
           <span className="hidden lg:block lg:col-start-2 lg:row-start-1 min-w-0">
             <RowStateBadge state={state} />
           </span>
@@ -119,7 +145,13 @@ export function OpeningRow({
 
         {/* The only elastic element — it truncates so the row can never scroll. */}
         <span className="order-5 md:order-none md:col-start-2 lg:col-start-3 md:row-start-1 basis-full md:basis-auto min-w-0 truncate text-ink t-bd-sm">
-          {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
+          {/* A composite parent does not name a product (owner). It is the
+              schedule line, not a frame, and its units may be different
+              products from each other — printing one of their names asserts
+              the line IS that product. The noun is derived from the children,
+              so a door line is never called a window. */}
+          {composite ? compositeLabel(segments)
+            : item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
           {item.location && <span className="text-quiet"> · {item.location}</span>}
         </span>
 
@@ -156,19 +188,26 @@ export function OpeningRow({
  *  and a row in this state opens by default so nothing is hidden by the move. */
 function RowStateBadge({ state }: { state: RowState }) {
   if (state.kind === "none") return null;
+  // "Composite · N units" (124px) never renders now — the product cell says
+  // "Composite Window" — but the state still exists, so it keeps a label rather
+  // than returning null and hiding a fact if the row ever shows it again.
   if (state.kind === "composite") {
     return (
-      <span className="quote-chip quote-chip--neutral t-cap">
-        Composite · {state.units} units
-      </span>
+      <span className="quote-chip quote-chip--neutral t-cap">{state.units} units</span>
     );
   }
+  // "Check sizes", not "Confirm layout" (99px, and on the knife-edge of the
+  // identity cell). It also names the actual fault: the units do not sum to the
+  // opening. "Confirm layout" says something is wrong without saying what.
   if (state.kind === "confirm-layout") {
-    return <span className="quote-chip quote-chip--review t-cap">Confirm layout</span>;
+    return <span className="quote-chip quote-chip--review t-cap">Check sizes</span>;
   }
+  // "Incomplete", not "Needs your input" (127px — the label that wrapped under
+  // the reference between 768 and 1023). "your" does no work on the customer's
+  // own quote, and the sticky bar already phrases the instruction.
   return (
     <span className="quote-chip quote-chip--attention t-cap">
-      <AlertCircle className="w-2.5 h-2.5" aria-hidden="true" />Needs your input
+      <AlertCircle className="w-2.5 h-2.5" aria-hidden="true" />Incomplete
     </span>
   );
 }

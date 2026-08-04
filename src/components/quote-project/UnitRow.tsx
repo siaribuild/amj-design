@@ -26,10 +26,13 @@ import { type QSegment, sizePhrase, productLabel } from "../../data/configurator
 import { Elevation } from "./Elevation";
 
 export function UnitRow({
-  segment, parentCode, label, expanded, onToggleExpanded, onEdit, panelId, controlId,
+  segment, parentCode, label, expanded, onToggleExpanded, onEdit, panelId, controlId, acrossMm, axis,
 }: {
   segment: QSegment;
   parentCode: string;
+  /** The opening dimension ACROSS the split — every unit must match it exactly. */
+  acrossMm?: string | null;
+  axis?: "vertical" | "horizontal" | null;
   /** W1A, W1B … derived by the caller from the parent's code and this index. */
   label: string;
   expanded: boolean;
@@ -38,10 +41,37 @@ export function UnitRow({
   panelId: string;
   controlId: string;
 }) {
-  const needsReview = segment.status !== "Ready";
+  // "Needs review" told the customer nothing (owner). The segment DTO collapses
+  // D1's `incomplete` and `technical_review` into one "Needs review", and those
+  // are opposites here: unpriceable is THEIRS to fix, flagged-for-review is
+  // OURS to resolve — the same category ruled out of the sticky bar.
+  //
+  // lineTotal separates them without a server change: no price ⇒ incomplete ⇒
+  // actionable. A priced-but-flagged unit shows nothing, and the parent's price
+  // still carries the caveat where it belongs.
+  const incomplete = !(typeof segment.lineTotal === "number" && Number.isFinite(segment.lineTotal));
+
+  // A size fault this unit can be BLAMED for (owner). Two ways a composite's
+  // sizes go wrong, and only one of them has a culprit:
+  //
+  //   ALONG the split axis  the units must SUM to the opening. A shortfall
+  //                         belongs to no single unit, so the parent carries it
+  //                         ("Check sizes") and nothing is marked here.
+  //   ACROSS it             every unit must match the opening's other dimension
+  //                         exactly — a 900-high unit in a 700-high opening is
+  //                         plainly the wrong one. That is attributable, so this
+  //                         row says so as well.
+  //
+  // Same rule the server applies at split time: validateSplit errors on
+  // `s[across] !== opening[across]` while treating the along-axis delta as
+  // coverage. Zero means unknown, not a mismatch — an unsized unit is already
+  // covered by `incomplete`.
+  const across = parseInt(acrossMm ?? "") || 0;
+  const mine = parseInt((axis === "horizontal" ? segment.width : segment.height) || "") || 0;
+  const wrongSize = !incomplete && across > 0 && mine > 0 && mine !== across;
 
   return (
-    <div data-unit="" data-state={needsReview ? "attention" : "ready"}
+    <div data-unit="" data-state={incomplete || wrongSize ? "attention" : "ready"}
       className="quote-row quote-unitrow flex md:grid flex-wrap items-center
         gap-x-2 md:gap-x-3 gap-y-1.5 px-3 sm:px-4 py-3 md:px-2.5 md:py-1.5 md:min-h-[44px]">
 
@@ -53,14 +83,12 @@ export function UnitRow({
         <Elevation productSlug={segment.productSlug} widthMm={segment.width} heightMm={segment.height}
           square className="w-7 h-7 flex-shrink-0 text-body" />
         <span className="font-semibold text-ink truncate font-data t-data">{label}</span>
-        {needsReview && (
-          <span className="lg:hidden quote-chip quote-chip--attention t-cap">Needs review</span>
-        )}
+        <span className="lg:hidden"><UnitChip incomplete={incomplete} wrongSize={wrongSize} /></span>
       </span>
 
-      {needsReview && (
+      {(incomplete || wrongSize) && (
         <span className="hidden lg:block lg:col-start-2 lg:row-start-1 min-w-0">
-          <span className="quote-chip quote-chip--attention t-cap">Needs review</span>
+          <UnitChip incomplete={incomplete} wrongSize={wrongSize} />
         </span>
       )}
 
@@ -102,4 +130,16 @@ export function UnitRow({
       <span className="sr-only">Included in {parentCode || "the opening"}</span>
     </div>
   );
+}
+
+/** Incomplete outranks a size fault: a unit with no price cannot be judged for
+ *  fit either, and two chips on one row is the noise this route removes. */
+function UnitChip({ incomplete, wrongSize }: { incomplete: boolean; wrongSize: boolean }) {
+  if (incomplete) {
+    return <span className="quote-chip quote-chip--attention t-cap">Incomplete</span>;
+  }
+  if (wrongSize) {
+    return <span className="quote-chip quote-chip--attention t-cap">Check size</span>;
+  }
+  return null;
 }

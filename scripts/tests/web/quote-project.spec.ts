@@ -284,15 +284,20 @@ test("customer blockers are actionable; technical-only review stays neutral", as
     haystack.split(needle).length - 1;
 
   // TECHNICAL-only (`fit`): priced, submittable, and NOT dressed as a problem.
-  // A neutral composite attribute is all the customer sees.
-  expect(occurrences(await shown(), "Composite · 2 units")).toBe(1);
+  // The composite carries NO chip at all now (owner): its product cell says
+  // "Composite Window", which states the same fact where the product name would
+  // otherwise have claimed the line is a single frame.
+  expect(occurrences(await shown(), "Composite Window")).toBe(1);
+  await expect(page.getByText(/Composite · \d+ units/)).toHaveCount(0);
   await expect(page.getByText("Needs review", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Ready", { exact: true })).toHaveCount(0);
 
   // ERROR-severity (`dims`): the one case the customer can act on. The row
   // carries the LABEL only; the reason and the action moved into the panel,
   // which opens itself for exactly this state so nothing is hidden by the move.
-  expect(occurrences(await shown(), "Needs your input")).toBe(1);
+  // "Incomplete", not "Needs your input" — 127px was what wrapped it under the
+  // reference between 768 and 1023 (owner).
+  expect(occurrences(await shown(), "Incomplete")).toBe(1);
   // Anchored to the disclosure specifically: "Fix details for W3" now also ends
   // in "details for W3", and a loose regex resolves to both.
   await expect(page.getByRole("button", { name: /^(Show|Hide) details for W3$/ }))
@@ -670,4 +675,102 @@ test("size never wraps at any realistic opening, on any width", async ({ page })
       .map((s) => Math.round(s?.getBoundingClientRect().height ?? 0))));
     expect(worst, `size cell stays one line at ${w}px`).toBeLessThanOrEqual(24);
   }
+});
+
+// ─── 15. A composite parent is not a product ──────────────────────────────────
+// It is the schedule line: an opening we build out of two or more frames, which
+// can be different products from each other. The row used to print one of their
+// names, which asserts the line IS that product, and drew a panel count guessed
+// from that one family (owner).
+test("a composite is named and drawn from its units, and carries no chip", async ({ page }) => {
+  const AWN = "amj80-series-awning-window";
+  const uneven = {
+    id: "line-c", code: "W7", productSlug: AWN, location: "", width: "3500", height: "700",
+    qty: 1, status: "Ready", lineTotal: 1000, options: {}, compositeAxis: "vertical",
+    segments: [
+      { id: "u1", productSlug: SLIDING, width: "2600", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 600, options: {}, status: "Ready" },
+      { id: "u2", productSlug: AWN, width: "900", height: "700", qtyPerParent: 1, qty: 1, lineTotal: null, options: {}, status: "Needs review" },
+    ],
+  };
+  await mockProject(page, [uneven, plainItem]);
+  await page.goto("/quote-project");
+  const parent = page.locator(".quote-row").first();
+
+  // Named from the CHILDREN, so a door line is never called a window.
+  await expect(parent.getByText("Composite Window")).toBeVisible();
+  await expect(parent.getByText(/AMJ80 Series/)).toHaveCount(0);
+  // No chip: the name says it is built as units, and a unit carries its own state.
+  await expect(parent.locator(".quote-chip")).toHaveCount(0);
+
+  // The drawing is built from the units: the join sits at the REAL split, not
+  // at the midpoint a two-panel default would use. 2600 of 3500 is 74.3%.
+  const join = await parent.locator("svg[data-elevation] path[opacity='0.75']").getAttribute("d");
+  const at = Number(/M([\d.]+)/.exec(join ?? "")?.[1]);
+  const glass = await parent.locator("svg[data-elevation] rect").nth(1)
+    .evaluate((r) => ({ x: Number(r.getAttribute("x")), w: Number(r.getAttribute("width")) }));
+  const fraction = (at - glass.x) / glass.w;
+  expect(fraction, "the join is proportional to the units, not centred").toBeGreaterThan(0.68);
+  expect(fraction).toBeLessThan(0.80);
+
+  // Only the unpriced unit is flagged, and it says what it means. A unit that is
+  // priced but flagged for OUR technical review shows nothing (owner).
+  const units = page.locator("[data-unit]");
+  await expect(units).toHaveCount(2);
+  await expect(units.nth(0).locator(".quote-chip")).toHaveCount(0);
+  // innerText, not element matching: the chip is rendered twice (beside the
+  // reference below 1024, as its own column above) and only one is displayed.
+  expect(await units.nth(1).innerText()).toContain("Incomplete");
+  await expect(page.getByText("Needs review")).toHaveCount(0);
+});
+
+// ─── 16. Two kinds of size fault, and only one has a culprit ──────────────────
+// Owner's model, and the server's: ALONG the split axis the units must SUM to
+// the opening, and a shortfall belongs to no single unit — so the parent says
+// "Check sizes" and no child is accused. ACROSS it, every unit must match the
+// opening's other dimension exactly, which IS attributable, so that unit is
+// marked as well. validateSplit draws the same line: it errors on
+// `s[across] !== opening[across]` and treats the along-axis delta as coverage.
+const unit = (id: string, w: string, h: string, total: number | null) =>
+  ({ id, productSlug: SLIDING, width: w, height: h, qtyPerParent: 1, qty: 1, lineTotal: total, options: {}, status: "Ready" });
+
+test("a shortfall accuses the opening; a wrong-across unit accuses itself", async ({ page }) => {
+  // ACROSS fault: 900 high in a 700-high opening. Widths sum exactly, so
+  // coverage is clean and only the culprit is marked.
+  await mockProject(page, [{
+    id: "line-c1", code: "W5", productSlug: SLIDING, location: "", width: "3500", height: "700",
+    qty: 1, status: "Ready", lineTotal: 1000, options: {}, compositeAxis: "vertical",
+    coverageDeltaMm: 0, coverageOutOfTolerance: false,
+    segments: [unit("s1", "2600", "700", 600), unit("s2", "900", "900", 400)],
+  }]);
+  await page.goto("/quote-project");
+  await expect(page.locator(".quote-row").first()).toBeVisible();
+
+  await expect(page.locator(".quote-row").first().locator(".quote-chip")).toHaveCount(0);
+  const units = page.locator("[data-unit]");
+  await expect(units.nth(0)).toHaveAttribute("data-state", "ready");
+  await expect(units.nth(1)).toHaveAttribute("data-state", "attention");
+  expect(await units.nth(1).innerText()).toContain("Check size");
+
+  // ALONG fault: the units are short of the opening. Nothing about either unit
+  // is wrong on its own, so the OPENING carries it and neither child is accused.
+  await mockProject(page, [{
+    id: "line-c2", code: "W6", productSlug: SLIDING, location: "", width: "3500", height: "700",
+    qty: 1, status: "Ready", lineTotal: 1000, options: {}, compositeAxis: "vertical",
+    coverageDeltaMm: -400, coverageOutOfTolerance: true,
+    segments: [unit("s3", "1550", "700", 500), unit("s4", "1550", "700", 500)],
+  }]);
+  await page.goto("/quote-project");
+  await expect(page.locator(".quote-row").first()).toBeVisible();
+
+  expect(await page.locator(".quote-row").first().innerText()).toContain("Check sizes");
+  for (const i of [0, 1]) {
+    await expect(page.locator("[data-unit]").nth(i)).toHaveAttribute("data-state", "ready");
+    await expect(page.locator("[data-unit]").nth(i).locator(".quote-chip")).toHaveCount(0);
+  }
+  // And the panel states the shortfall in MILLIMETRES rather than merely
+  // asserting one — "400 mm short" says which unit to go and look at, where
+  // "doesn't add up" sends someone hunting. Only needs-input opens itself, so
+  // this one is opened explicitly.
+  await page.getByRole("button", { name: "Show details for W6", exact: true }).click();
+  await expect(page.getByText(/400 mm less than this opening/)).toBeVisible();
 });

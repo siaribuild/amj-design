@@ -295,7 +295,7 @@ function openingSymbol(kind: string, p: Box, hand: Hand, o: { inset: number; sw:
   }
 }
 
-export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square = false, dims, className = "" }: {
+export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square = false, dims, parts, axis, className = "" }: {
   productSlug: string;
   /** The opening's real dimensions. Absent or unreadable falls back to 1200×1200,
    *  which draws a square — honest for a line whose size we do not yet know. */
@@ -312,6 +312,14 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
    *  says what the thing DOES, just not how tall it is. Proportion belongs where
    *  the drawing is the subject: the expansion. */
   square?: boolean;
+  /** The units this opening is actually made of. Given two or more, the drawing
+   *  is built from THEM — proportional panels, per-unit symbols, joins where the
+   *  frames really meet — instead of a panel count guessed from one family.
+   *  `alongMm` is the size along the split axis; `qty` repeats an identical unit. */
+  parts?: { productSlug: string; alongMm: string | number; qty?: number }[];
+  /** Which way the units are stacked. Vertical splits the WIDTH (side by side),
+   *  horizontal splits the HEIGHT. Matches quote_line.composite_axis. */
+  axis?: "vertical" | "horizontal" | null;
   /** Draw the width and height leaders. Defaults to the size's own answer —
    *  false at xs, true from sm up — because a 34px glyph has nowhere to put a
    *  number and a drawing big enough to be the subject should be dimensioned. */
@@ -364,11 +372,47 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
   const symOpts = { inset: S.inset, sw: S.sw.sym, blades: S.blades, folds: S.folds };
   const pw = G.w / panels;
 
-  const mullions = panels > 1
-    ? Array.from({ length: panels - 1 }, (_, i) => `M${q(G.x + pw * (i + 1))} ${q(G.y)} V${q(G.y + G.h)}`).join(" ")
-    : "";
+  // ─── Composite: draw the CHILDREN, not a guess ──────────────────────────────
+  // A composite parent is not a product — it is an opening we make out of two or
+  // more frames, and those frames can be different products from each other. The
+  // ordinary path here derives a panel count from ONE family and gives every
+  // panel the same symbol, which draws a picture of something that does not
+  // exist. Given the parts, the drawing states what is actually being made:
+  // one panel per unit, each panel's WIDTH in proportion to that unit's real
+  // size (a 2400 + 600 split must not look like two halves), each panel's SYMBOL
+  // from that unit's own family, and a mullion at every real join.
+  const composite = (parts ?? []).flatMap((p) =>
+    Array.from({ length: Math.max(1, Math.floor(p.qty ?? 1)) }, () => p));
+  const alongTotal = composite.reduce((sum, p) => sum + pos(p.alongMm, 0), 0);
+  const stacked = axis === "horizontal";
 
-  const symbols = panels === 1 || WHOLE_OPENING[kind]
+  const compositeGeometry = composite.length >= 2 && alongTotal > 0
+    ? composite.reduce<{ boxes: Box[]; joins: string[]; at: number }>((acc, p, i) => {
+      const share = (pos(p.alongMm, 0) / alongTotal) * (stacked ? G.h : G.w);
+      acc.boxes.push(stacked
+        ? { x: G.x, y: G.y + acc.at, w: G.w, h: share }
+        : { x: G.x + acc.at, y: G.y, w: share, h: G.h });
+      acc.at += share;
+      if (i < composite.length - 1) {
+        acc.joins.push(stacked
+          ? `M${q(G.x)} ${q(G.y + acc.at)} H${q(G.x + G.w)}`
+          : `M${q(G.x + acc.at)} ${q(G.y)} V${q(G.y + G.h)}`);
+      }
+      return acc;
+    }, { boxes: [], joins: [], at: 0 })
+    : null;
+
+  const symbols = compositeGeometry
+    ? compositeGeometry.boxes.map((box, i) => {
+      const part = composite[i];
+      const fam = getFamily(getProductBySlug(part.productSlug)?.familySlug ?? "");
+      const partKind = kindFor(fam?.operation || fam?.slug || part.productSlug);
+      // Hand alternates so two casements beside each other open away from the
+      // join rather than into one another, which is how they are actually hung.
+      const hand: Hand = i < compositeGeometry.boxes.length / 2 ? "ltr" : "rtl";
+      return <g key={`c${i}`}>{openingSymbol(partKind, box, hand, symOpts)}</g>;
+    })
+    : panels === 1 || WHOLE_OPENING[kind]
     ? openingSymbol(kind === "bi-fold" ? kind : kind, G, "ltr",
         kind === "bi-fold" ? { ...symOpts, folds: panels } : symOpts)
     : pattern.split("").map((ch, i) => {
@@ -378,6 +422,14 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
         else if (kind === "sliding" || kind === "lift-slide" || kind === "slim-slide") ph = travelHand(pattern, i);
         return <g key={i}>{openingSymbol(kind, { x: G.x + pw * i, y: G.y, w: pw, h: G.h }, ph, symOpts)}</g>;
       });
+
+  // A composite's joins are where the units actually meet, so they replace the
+  // evenly-spaced mullions the single-family path would have drawn.
+  const mullions = compositeGeometry
+    ? compositeGeometry.joins.join(" ")
+    : panels > 1
+      ? Array.from({ length: panels - 1 }, (_, i) => `M${q(G.x + pw * (i + 1))} ${q(G.y)} V${q(G.y + G.h)}`).join(" ")
+      : "";
 
   return (
     // data-elevation marks this as the generated drawing. The rows it sits in
