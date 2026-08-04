@@ -128,6 +128,8 @@ svg.el{display:block;flex:none;color:var(--body)}
 .phone .size,.phone .price{text-align:left}
 .phone .kids{margin:0 8px 20px 14px}
 .phone .kids > .exp{margin:0}
+.inverted .rec > .row{background:#F9F7F4}
+.inverted .kids{background:var(--paper)}
 .phones{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
 </style>
 </head>
@@ -251,25 +253,30 @@ document.getElementById('out').innerHTML=D.map(o=>rec(o,false)).join('');
 document.getElementById('mout').innerHTML=D.slice(1,7).map(o=>rec(o,true)).join('');
 
 
-/* Same composite drawn at three candidate tints, so the step is chosen by eye. */
+
+/* Two readings of "a shade toward the white", drawn rather than guessed. */
 (function(){
-  const CANDS=[
-    ['#FBFAF8','--bone — 1.6% off paper. This is the PAGE ground; it reads as background, not as a nested surface.'],
-    ['#F9F7F4','proposed --nest — about 3% off paper. Perceptible as a surface, still quiet.'],
-    ['#F6F4F1','a 4% step — clearly a surface, but now within a whisker of --recessive (#F5F3F0), which is the expansion panel.'],
+  const LIGHTER=[
+    ['#FDFCFB','0.8% off paper — below the threshold most screens resolve. Almost certainly invisible.'],
+    ['#FBFAF8','1.6% — this is --bone, the page ground. Rejected already as too faint.'],
+    ['#FAF8F6','2.2% — the lightest step that still reads as a surface.'],
+    ['#F9F7F4','3% — the previous proposal, for reference.'],
   ];
   const src=D[3];
-  document.getElementById('shades').innerHTML = CANDS.map(([hex,why])=>
-    '<div style="margin:0 0 14px">'
-    + '<p style="font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:0 0 4px">'
-    + hex + ' — ' + why + '</p>'
-    + '<div class="list" style="--nest:'+hex+';border-top:1px solid var(--line)">' + rec(src,false) + '</div></div>').join('');
+  document.getElementById('shades').innerHTML =
+    '<p style="font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:0 0 8px">Reading 1 — children stay light, stepping toward white</p>'
+    + LIGHTER.map(([hex,why])=>
+      '<div style="margin:0 0 12px">'
+      + '<p style="font:400 12px/17px var(--fb);color:var(--quiet);margin:0 0 4px"><b style="color:var(--body)">'+hex+'</b> — '+why+'</p>'
+      + '<div class="list" style="--nest:'+hex+';border-top:1px solid var(--line)">' + rec(src,false) + '</div></div>').join('')
+    + '<p style="font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:26px 0 8px">Reading 2 — INVERTED: the opening is tinted, the children are white</p>'
+    + '<p style="font:400 12px/17px var(--fb);color:var(--quiet);margin:0 0 4px">Children become the LIGHTEST surface and panels the darkest, so a unit can never be mistaken for an expansion — it is on the opposite side of the parent, not the same side.</p>'
+    + '<div class="list inverted" style="border-top:1px solid var(--line)">' + rec(src,false) + rec(D[0],false) + '</div>';
   document.getElementById('shadenote').innerHTML =
-    '<b>The constraint.</b> The tint has to sit clear of TWO existing values: --bone #FBFAF8, which is the '
-    + 'page ground, and --recessive #F5F3F0, which is the expansion panel — the panel inside each block '
-    + 'below is that colour, so watch how close the third candidate gets to it. Anything at or past '
-    + '--recessive makes a unit row and a panel the same surface, which is the collision that killed '
-    + 'tinting children in the first place.';
+    '<b>The floor.</b> --recessive is #F5F3F0, about 4% off paper, and that is the panel. Anything you '
+    + 'put on the children has to be lighter than that AND heavy enough to see — and the tokens call '
+    + '1.6% "deliberately barely there". That leaves roughly 2–3% to work in, which is reading 1. '
+    + 'Reading 2 sidesteps the squeeze entirely by moving the children to the other side of paper.';
 })();
 
 /* Measure: which columns hold, and exactly how far the actions move. */
