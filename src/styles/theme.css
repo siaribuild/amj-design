@@ -652,7 +652,49 @@
      * Quantity is not a column and is not shown at all: this route's model is
      * one opening per reference (owner). The field is still stored, edited and
      * priced — it simply has nothing to say in a list where it is always 1. */
-    .quote-table { --qp-cols: 6.75rem 10rem minmax(0, 1fr) 8.5rem 7.5rem 7rem; }
+    .quote-table { --qp-cols: 9.5rem 10rem minmax(0, 1fr) 8.5rem 7.5rem 7rem; }
+  }
+
+  /* ─── A composite's units, as rows ───────────────────────────────────────
+   * The REF track above is 9.5rem rather than the 6.75 a parent alone needs:
+   * it has to hold the indent, the connector and "W1A" without pushing Status
+   * out of the column it shares with every parent. Aligning Status IS the
+   * reason for the extra width — the whole point of rows over a nested panel
+   * is that one eye-line reads down the table.
+   *
+   * The unit sits on the recessive ground, not paper: a parent is an opening
+   * the customer submitted and a unit is a frame we make, so they are two
+   * kinds of thing and the ground says so before the indent does. */
+  .quote-unitrow { background-color: var(--recessive); }
+
+  /* The connector: a corner, drawn in one element. The vertical arm runs up to
+   * the row above (parent or previous unit), the horizontal arm points at the
+   * drawing. `border` rather than a glyph, so it inherits the hairline token
+   * and cannot drift from every other rule on the page. */
+  .quote-unit-tree {
+    position: relative;
+    display: block;
+    inline-size: 1.25rem;
+    block-size: 1.75rem;
+    flex: none;
+    margin-inline-start: 0.375rem;
+  }
+  .quote-unit-tree::before {
+    content: "";
+    position: absolute;
+    inset-block-start: -0.5rem;
+    inset-inline-start: 0;
+    inline-size: 0.625rem;
+    block-size: 1.375rem;
+    border-inline-start: 1px solid var(--line);
+    border-block-end: 1px solid var(--line);
+  }
+  /* The LAST unit's arm must not continue past its own corner into the row
+   * below, which would point at an unrelated opening. */
+  .quote-unitrow:last-of-type .quote-unit-tree::before { border-end-start-radius: 2px; }
+
+  @media (min-width: 768px) {
+    .quote-unit-tree { inline-size: 1.5rem; margin-inline-start: 0.5rem; }
   }
 
   /* Tracks only. `display` is switched by the `lg:grid` UTILITY on the element,
@@ -851,8 +893,24 @@
      drawer — dimmed, not hidden — so project context survives an edit; the
      scrim is therefore lighter than a modal's and derives from --ink rather
      than a hard-coded black. */
-  .quote-drawer-scrim {
-    background-color: color-mix(in srgb, var(--ink) 34%, transparent);
+  /* ─── THE scrim ─────────────────────────────────────────────────────────────
+   * One class for every panel that arrives over the page — the main menu and
+   * the line editor are the same gesture, so they get the same treatment.
+   *
+   * It was two treatments: the menu used bg-black/80 with a 3px blur written
+   * inline, the drawer 34% ink with none. At 34% the page behind stayed legible
+   * enough to keep competing for attention, which is the opposite of what a
+   * scrim is for — the editor is modal and should look it.
+   *
+   * --night rather than pure black so the value comes from the palette; the
+   * difference against black/80 is ~1.6% luminance and invisible in place. */
+  .scrim {
+    background-color: color-mix(in srgb, var(--night) 80%, transparent);
+    /* Standard property ONLY. Hand-writing the -webkit- alias after it made
+       Lightning collapse the pair to the prefixed form alone, which this
+       browser does not implement — so the blur silently vanished. The build
+       adds whatever prefixes browserslist actually calls for. */
+    backdrop-filter: blur(3px);
   }
 
   /* ─── Drawer motion ─────────────────────────────────────────────────────────

@@ -106,9 +106,9 @@ test("the compact row renders identity, size, price and its direct actions", asy
 
   // Every action names its opening — 20 identical "Edit" buttons are unusable
   // with a screen reader even though they each technically have a name.
-  await expect(page.getByRole("button", { name: "Edit W1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit W1", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Actions for W1" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Show details for W1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show details for W1", exact: true })).toBeVisible();
 });
 
 // ─── 3. Expansion is read-only, and independent per row ────────────────────────
@@ -140,16 +140,23 @@ test("expansion inspects only; rows open independently, composite children price
   await expect(w1).toHaveAttribute("aria-expanded", "false");
   await expect(w2).toHaveAttribute("aria-expanded", "true");
 
-  // Composite children are listed as INCLUDED and carry no price of their own:
-  // the parent owns the total, and three numbers would read as three charges.
-  await expect(page.getByText("Included units")).toBeVisible();
-  await expect(page.getByText("Included", { exact: true })).toHaveCount(2);
-  // Units are named from the parent, not numbered independently.
+  // The units are ROWS now, not a list inside the parent's panel, and they are
+  // ALWAYS shown — a composite has no collapsed state, because the thing most
+  // worth checking is that the parts add up to the opening and that cannot be
+  // checked from behind a chevron. They are named from the parent.
+  await expect(page.locator("[data-unit]")).toHaveCount(2);
   await expect(page.getByText("W2A", { exact: true })).toBeVisible();
   await expect(page.getByText("W2B", { exact: true })).toBeVisible();
+  await expect(page.getByText("Included units")).toHaveCount(0);
+
+  // A unit carries NO price of its own: the parent owns the total, and separate
+  // numbers would read as separate charges.
+  await expect(page.getByText("$500")).toHaveCount(0);
+  // Nor a More menu — Duplicate and Delete were its only entries and both are
+  // gone with the unit-count decision, so an empty trigger would be left over.
+  await expect(page.getByRole("button", { name: /Actions for W2A/ })).toHaveCount(0);
   // A composite parent is not a product: it shows no options of its own.
   await expect(page.getByText("No options selected")).toHaveCount(0);
-  await expect(page.getByText("$500")).toHaveCount(0);
 
   // The panel is for reading. No inputs, no selects — editing is the drawer's job.
   const panel = page.locator("[id^='qp-panel-']");
@@ -178,7 +185,7 @@ test("saving from the drawer keeps the same opening expanded and restores focus"
   await page.getByRole("button", { name: /details for W01$/ }).click();
   await expect(page.getByRole("button", { name: /details for W01$/ })).toHaveAttribute("aria-expanded", "true");
 
-  await page.getByRole("button", { name: "Edit W01" }).click();
+  await page.getByRole("button", { name: "Edit W01", exact: true }).click();
   const drawer = page.getByRole("dialog");
   await expect(drawer).toBeVisible();
 
@@ -190,13 +197,13 @@ test("saving from the drawer keeps the same opening expanded and restores focus"
   // Still the same opening, still open, and focus is back on its Edit control —
   // the row is keyed on the server id, not the regenerated local one.
   await expect(page.getByRole("button", { name: /details for W01$/ })).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByRole("button", { name: "Edit W01" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Edit W01", exact: true })).toBeFocused();
   // The saved quantity survived the round-trip — asserted where it is now
   // VISIBLE, which is the editor rather than the row. This route shows no
   // quantity at all (owner): its model is one opening per reference, so the
   // field is stored, edited and priced but never listed.
   await expect(page.locator(".quote-row").getByText(/×\s*2/)).toHaveCount(0);
-  await page.getByRole("button", { name: "Edit W01" }).click();
+  await page.getByRole("button", { name: "Edit W01", exact: true }).click();
   await page.getByRole("button", { name: /Quantity & note/i }).click();
   await expect(page.getByRole("dialog").getByText("2", { exact: true })).toBeVisible();
 });
@@ -223,7 +230,7 @@ test("the customer may change what a unit IS, but not how many there are", async
   await mockProject(page, [compositeItem]);
   await page.goto("/quote-project");
 
-  await page.getByRole("button", { name: "Edit W2" }).click();
+  await page.getByRole("button", { name: "Edit W2", exact: true }).click();
   const drawer = page.getByRole("dialog");
   await expect(drawer).toBeVisible();
   await expect(page.getByText("Built as 2 units")).toBeVisible();
@@ -332,14 +339,14 @@ test("desktop gets a side drawer, mobile a full-screen editor, neither scrolls s
   // the project context the drawer exists to preserve stays on screen.
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/quote-project");
-  await page.getByRole("button", { name: "Edit W1" }).click();
+  await page.getByRole("button", { name: "Edit W1", exact: true }).click();
   const mobileBox = await page.getByRole("dialog").boundingBox();
   expect(mobileBox!.width).toBeGreaterThan(360);
 
   for (const [w, h] of [[768, 1024], [1440, 900]] as const) {
     await page.setViewportSize({ width: w, height: h });
     await page.goto("/quote-project");
-    await page.getByRole("button", { name: "Edit W1" }).click();
+    await page.getByRole("button", { name: "Edit W1", exact: true }).click();
     const box = await page.getByRole("dialog").boundingBox();
     // Narrower than the viewport, so the list it dims stays visible beside it.
     expect(box!.width, `drawer is a panel at ${w}px`).toBeLessThan(w - 80);
@@ -353,7 +360,7 @@ test("the drawer behaves as a dialog: Escape steps back, then closes, and focus 
   await mockProject(page, [compositeItem]);
   await page.goto("/quote-project");
 
-  await page.getByRole("button", { name: "Edit W2" }).click();
+  await page.getByRole("button", { name: "Edit W2", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
 
   // Into a child: the drawer swaps context rather than stacking a second dialog.
@@ -370,7 +377,7 @@ test("the drawer behaves as a dialog: Escape steps back, then closes, and focus 
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   // Focus goes back where it came from.
-  await expect(page.getByRole("button", { name: "Edit W2" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Edit W2", exact: true })).toBeFocused();
 });
 
 test("row disclosure exposes accurate state and unique labels", async ({ page }) => {
@@ -378,16 +385,16 @@ test("row disclosure exposes accurate state and unique labels", async ({ page })
   await page.goto("/quote-project");
 
   // Unique per-row names, so a screen-reader list is navigable.
-  await expect(page.getByRole("button", { name: "Edit W1" })).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Edit W2" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Edit W1", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Edit W2", exact: true })).toHaveCount(1);
 
-  const toggle = page.getByRole("button", { name: "Show details for W2" });
+  const toggle = page.getByRole("button", { name: "Show details for W2", exact: true });
   const panelId = await toggle.getAttribute("aria-controls");
   expect(panelId).toBeTruthy();
   await toggle.click();
   // aria-controls must point at a node that actually exists once expanded.
   await expect(page.locator(`#${panelId}`)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Hide details for W2" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Hide details for W2", exact: true })).toBeVisible();
 });
 
 // ─── 10. Pictogram sanitiser ───────────────────────────────────────────────────

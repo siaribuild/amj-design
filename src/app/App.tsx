@@ -208,7 +208,10 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
       </header>
 
       {/* Backdrop */}
-      <div className={`fixed inset-0 z-[55] bg-black/80 backdrop-blur-[3px] transition-opacity duration-300 xl:hidden ${open ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+      {/* .scrim, not bg-black/80 + backdrop-blur written inline: the menu and the
+          line editor are the same gesture and now share one class, so the
+          treatment cannot drift between them again. */}
+      <div className={`fixed inset-0 z-[55] scrim transition-opacity duration-300 xl:hidden ${open ? "opacity-100" : "opacity-0 pointer-events-none"}`}
         onClick={() => setOpen(false)} />
 
       {/* Slide-out panel */}

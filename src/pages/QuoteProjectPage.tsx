@@ -25,15 +25,18 @@ import { useProjectDocuments } from "../data/useProjectDocuments";
 import { DocumentProgress } from "../components/DocumentProgress";
 import { QuoteReviewSubmit, QuoteSubmitted } from "../components/QuoteReviewSubmit";
 import { OpeningRow } from "../components/quote-project/OpeningRow";
-import { OpeningExpansion } from "../components/quote-project/OpeningExpansion";
+import { OpeningExpansion, SpecPanel } from "../components/quote-project/OpeningExpansion";
+import { UnitRow } from "../components/quote-project/UnitRow";
+import { optionFullPairs } from "../components/ItemComposer";
+import { getProductBySlug } from "../data/catalogue";
 import { OpeningDrawer } from "../components/quote-project/OpeningDrawer";
 import { MoreMenu } from "../components/quote-project/MoreMenu";
 import { ProjectActionBar } from "../components/quote-project/ProjectActionBar";
 import { ProjectNameField } from "../components/ProjectNameField";
 import {
-  type DrawerTarget, type RowKey, editControlId, findByRowKey, rowKeyOf,
+  type DrawerTarget, type RowKey, editControlId, findByRowKey, panelId, rowKeyOf, unitKey,
 } from "../components/quote-project/identity";
-import { fixTargetFor, rowStateFor } from "../components/quote-project/rowState";
+import { fixTargetFor, rowStateFor, unitLabel } from "../components/quote-project/rowState";
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
 
@@ -398,6 +401,35 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                       onEdit={() => openDrawer({ mode: "edit", rowKey: key })}
                       onFixDetails={fixDetails} />
                   )}
+
+                  {/* The units, ALWAYS shown — a composite has no collapsed
+                      state. It is one line the customer submitted and several
+                      frames we make, and the thing most worth checking is that
+                      the parts add up to the opening; that cannot be checked
+                      from behind a chevron. Each unit still has its own
+                      disclosure for its specification. */}
+                  {(item.segments ?? []).map((s, i) => {
+                    const uKey = unitKey(s.id);
+                    const uExpanded = expandedFor(uKey, false);
+                    const label = unitLabel(item.code, i);
+                    return (
+                      <div key={s.id}>
+                        <UnitRow
+                          segment={s} parentCode={item.code} label={label}
+                          expanded={uExpanded}
+                          onToggleExpanded={() => toggleExpanded(uKey, uExpanded)}
+                          onEdit={() => openDrawer({ mode: "edit", rowKey: key, segmentId: s.id })}
+                          panelId={panelId(uKey)} controlId={editControlId(uKey)} />
+                        {uExpanded && (
+                          <div id={panelId(uKey)}
+                            className="quote-rowexp quote-unitexp bg-recessive border-t border-line px-3 sm:px-4 py-4">
+                            <SpecPanel productSlug={s.productSlug} widthMm={s.width} heightMm={s.height}
+                              pairs={optionFullPairs(getProductBySlug(s.productSlug), s.options ?? {})} />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}

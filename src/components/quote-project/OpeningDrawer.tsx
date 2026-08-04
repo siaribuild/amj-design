@@ -174,7 +174,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
   return (
     <Dialog.Root open onOpenChange={(open) => { if (!open) requestClose(); }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 quote-drawer-scrim" />
+        <Dialog.Overlay className="fixed inset-0 z-50 scrim quote-drawer-scrim" />
         <Dialog.Content
           // Focus return is the PAGE's job: it re-resolves the row by serverId
           // after the rehydrate settles. Radix would otherwise try to restore to
@@ -337,7 +337,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
               a scrolled form the confirm rendered off-screen while stealing
               focus, which reads as a frozen drawer. */}
           {confirmDiscard && (
-            <div className="fixed inset-0 z-20 flex items-center justify-center p-4 quote-drawer-scrim">
+            <div className="fixed inset-0 z-20 flex items-center justify-center p-4 scrim quote-drawer-scrim">
               <div className="quote-dialog w-full max-w-xs p-4" role="alertdialog" aria-modal="true"
                 aria-label="Discard changes">
                 <p className="text-ink font-medium mb-1 t-bd-sm">Discard changes?</p>

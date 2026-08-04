@@ -49,6 +49,11 @@ export const editControlId = (key: RowKey): string =>
 export const rowId = (key: RowKey): string => `qp-row-${cssSafe(key)}`;
 export const panelId = (key: RowKey): string => `qp-panel-${cssSafe(key)}`;
 
+/** A unit's own disclosure key. Segment ids are server-issued and stable, so a
+ *  unit's expansion survives a rehydrate exactly as an opening's does — the
+ *  local array index would not. */
+export const unitKey = (segmentId: string): RowKey => `unit:${segmentId}`;
+
 /** Server ids are opaque strings; make them safe for use inside a DOM id. */
 function cssSafe(key: string): string {
   return key.replace(/[^a-zA-Z0-9_-]/g, "_");

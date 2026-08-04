@@ -9,12 +9,14 @@
 // control already on the row, and it appeared only for composites, which made
 // the menu's contents depend on line type for no gain.
 //
-// D3 (owner): NO "Convert to composite" / "Split". Promoting a simple line to a
-// composite parent does not exist at any layer: POST /lines/:id/segments 404s
-// unless line_kind='composite_parent', and addSegment() refuses a line with no
-// existing units ("This opening is not planned as units."). Shipping the item
-// would mean either a dead control or a new server operation, policy and
-// pricing lifecycle. Out of scope for a presentation slice.
+// D3 (owner): NO "Split". The ENGINE exists — splitLine() in lib/composite.ts,
+// with validateSplit and the composite policy — but it is reachable only from
+// Ops, deliberately: whether an opening must be split is a manufacturing
+// constraint, not a customer preference. Customers lost add-unit and
+// remove-unit for the same reason (2026-08-04), so an item here would be the
+// one customer route to a decision every other path denies them. Split, merge
+// and the coverage validation that should gate all three come back together as
+// a platform capability, ops first.
 //
 // Two surfaces, because a popover pinned to a row is wrong under a thumb:
 //   desktop  anchored popover beside the row
@@ -84,7 +86,7 @@ export function MoreMenu({ openingRef, anchorEl, onClose, onDuplicate, onDelete 
   if (sheet) {
     return createPortal(
       <div className="fixed inset-0 z-50 flex items-end" onClick={dismiss}>
-        <div className="absolute inset-0 quote-drawer-scrim" aria-hidden="true" />
+        <div className="absolute inset-0 scrim quote-drawer-scrim" aria-hidden="true" />
         <div ref={menuRef} role="menu" aria-label={`Actions for ${openingRef}`}
           onClick={(e) => e.stopPropagation()}
           className="relative w-full quote-dialog border-t py-1"

@@ -20,12 +20,12 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import type { ReactNode } from "react";
 import { AlertCircle, Pencil } from "lucide-react";
-import { type QItem, type QSegment, mm, productLabel } from "../../data/configurator";
+import { type QItem, mm } from "../../data/configurator";
 import { getProductBySlug } from "../../data/catalogue";
-import { optionSummaryPairs, optionFullPairs } from "../ItemComposer";
+import { optionFullPairs } from "../ItemComposer";
 import { Elevation } from "./Elevation";
 import { type RowKey, panelId } from "./identity";
-import { type RowState, unitLabel } from "./rowState";
+import { type RowState } from "./rowState";
 
 /** The same mapping OpeningRow uses, so the stripe cannot disagree with the row
  *  it hangs beneath. */
@@ -33,31 +33,6 @@ const stripeFor = (state: RowState): string =>
   state.kind === "needs-input" ? "attention"
     : state.kind === "confirm-layout" ? "review"
       : "ready";
-
-/** Options as labelled lines. A run-on "5Clear · White · Standard · None" can
- *  only be decoded by someone who already knows the option order.
- *
- *  The label sits ABOVE its value rather than inline before it. Inline pairs
- *  gave every row a different indent — the value started wherever the label
- *  happened to end — so the specification could not be read down the column it
- *  was already laid out in. auto-fit tracks let the set reflow from four across
- *  to one without a breakpoint per width. */
-function OptionList({ pairs, dense = false }: {
-  pairs: { label: string; value: string }[]; dense?: boolean;
-}) {
-  if (!pairs.length) return null;
-  return (
-    <dl className="grid gap-x-6 gap-y-3"
-      style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-      {pairs.map((p) => (
-        <div key={p.label} className="min-w-0">
-          <dt className="text-quiet mb-0.5 font-data t-label">{p.label}</dt>
-          <dd className={`${dense ? "t-cap" : "t-cap"} text-ink min-w-0 truncate`}>{p.value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
 
 /** The full specification, one option per LINE — every option the product
  *  offers, chosen or not.
@@ -89,6 +64,59 @@ function OptionLines({ pairs }: { pairs: { label: string; value: string; chosen:
         </div>
       ))}
     </dl>
+  );
+}
+
+/** Drawing left, specification right — the Edit Line form's arrangement, shared
+ *  by an opening's panel and a unit's.
+ *
+ *  The column is a fixed 180 square rather than shrink-to-fit or a percentage.
+ *  At `sm` the generator's viewBox units are ≈ screen pixels, which is what
+ *  keeps the leader numbers at a legible 9px, and an auto column is as wide as
+ *  whichever opening it happens to hold — so the specification beside it started
+ *  at a different x on every row and the panel could not be read down.
+ *
+ *  `pairs: null` means this thing has no options OF ITS OWN to state, which is
+ *  different from having none chosen. */
+export function SpecPanel({ productSlug, widthMm, heightMm, pairs }: {
+  productSlug: string;
+  widthMm?: string | null;
+  heightMm?: string | null;
+  pairs: { label: string; value: string; chosen: boolean; hex?: string }[] | null;
+}) {
+  return (
+    <div className="grid gap-4 sm:gap-6 sm:grid-cols-[auto_minmax(0,1fr)] items-start">
+      <div className="w-[180px] max-w-full">
+        {/* The drawing FILLS this square and preserveAspectRatio centres it —
+            which is also what scales it up: the generator's intrinsic size is
+            ~152 units, and letting it fit 180 grows the leader text with it
+            rather than shrinking it, the failure the size table exists to
+            prevent. Here the proportion IS the point, and it carries its own
+            dimensions: this is the one view where the customer checks the shape
+            and size of what they ordered against the hole in the wall, so the
+            numbers belong ON the drawing rather than in a caption. */}
+        <Elevation productSlug={productSlug} widthMm={widthMm} heightMm={heightMm}
+          size="sm" className="w-[180px] h-[180px] max-w-full text-body" />
+        <p className="text-quiet mt-1 text-center t-label">Viewed from outside</p>
+      </div>
+      <div className="min-w-0">
+        {pairs === null
+          ? (
+            <p className="text-quiet t-cap">
+              This opening is built as separate units. Each one carries its own
+              glazing, colour and hardware — open a unit below to see them.
+            </p>
+          )
+          : (
+            <>
+              <PanelLabel>Specification</PanelLabel>
+              {pairs.length > 0
+                ? <OptionLines pairs={pairs} />
+                : <p className="text-quiet t-cap">This product has no options to choose.</p>}
+            </>
+          )}
+      </div>
+    </div>
   );
 }
 
@@ -154,69 +182,30 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           `sm` the generator's viewBox units are ≈ screen pixels, which is what
           keeps the leader numbers at a legible 9px, so stretching the column
           would either shrink the text or leave the drawing marooned in it. */}
-      {!composite && (
-        <div className="grid gap-4 sm:gap-6 sm:grid-cols-[auto_minmax(0,1fr)] items-start">
-          {/* A fixed 180 square rather than shrink-to-fit. An auto column is as
-              wide as whichever opening it happens to hold, so the specification
-              beside it started at a different x on every row and the panel
-              could not be read down. */}
-          <div className="w-[180px] max-w-full">
-            {/* The drawing FILLS this square and preserveAspectRatio centres it
-                inside — which is also what scales it up: the generator's
-                intrinsic size is ~152 units, and letting it fit 180 grows the
-                leader text with it rather than shrinking it, the failure the
-                size table exists to prevent.
-
-                Here the proportion IS the point, and it carries its own
-                dimensions: this is the one view where the customer checks the
-                shape and size of what they ordered against the hole in the
-                wall, so the numbers belong ON the drawing, not in a caption. */}
-            <Elevation productSlug={item.productSlug} widthMm={item.width} heightMm={item.height}
-              size="sm" className="w-[180px] h-[180px] max-w-full text-body" />
-            <p className="text-quiet mt-1 text-center t-label">Viewed from outside</p>
-          </div>
-          <div className="min-w-0">
-            <PanelLabel>Specification</PanelLabel>
-            {fullPairs.length > 0
-              ? <OptionLines pairs={fullPairs} />
-              : <p className="text-quiet t-cap">This product has no options to choose.</p>}
-          </div>
+      {/* The units no longer appear in here. They are ROWS in the list now, one
+          per unit, indented under their parent — so repeating them inside the
+          parent's own panel would state the same stack twice, in two different
+          shapes, on one screen. */}
+      {state.kind === "confirm-layout" && typeof state.deltaMm === "number" && state.deltaMm !== 0 && (
+        <div className="mb-4">
+          <PanelLabel>Check the layout</PanelLabel>
+          <p className="text-info-ink t-cap">
+            {/* The number, not just the fact. "Doesn't add up" sends someone
+                hunting; "160 mm short" tells them which unit to look at. */}
+            The units add up to {Math.abs(state.deltaMm)} mm
+            {state.deltaMm > 0 ? " more" : " less"} than this opening
+            {" "}({mm(item.width)} × {mm(item.height)}). Check each unit's size.
+          </p>
         </div>
       )}
 
-      {composite && (
-        <div>
-          <PanelLabel>Included units</PanelLabel>
-          {/* ROWS, one per unit. A composite is an ordered stack — W1A above
-              W1B above W1C, in the order they are built — and columns reorder
-              that into reading-left-to-right, which is not how the opening is
-              assembled. Each unit is still its own object on paper against the
-              panel's recessive ground, so it does not read as another option
-              line; it simply stacks. */}
-          <ul className="space-y-2">
-            {segments.map((s, i) => (
-              // No price and no affordance, deliberately. The parent owns the
-              // total; separate numbers here would read as separate charges. The
-              // drawer's child list is the one that gets an Edit affordance —
-              // the same data must not look interactive in both places.
-              <li key={s.id} className="border border-line bg-paper px-3 py-2.5 min-w-0">
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-1">
-                  <span className="font-semibold text-ink font-data t-data-sm">
-                    {unitLabel(item.code, i)}
-                  </span>
-                  {s.qtyPerParent > 1 && <span className="text-quiet t-cap">×{s.qtyPerParent}</span>}
-                  <span className="text-body tabular-nums ml-auto font-data t-data-sm">
-                    {mm(s.width)} × {mm(s.height)}
-                  </span>
-                </div>
-                <p className="text-body min-w-0 truncate mb-1.5 t-cap">{productLabel(s.productSlug)}</p>
-                <span className="quote-chip quote-chip--neutral t-cap">Included</span>
-                <SegmentOptions segment={s} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <SpecPanel
+        productSlug={item.productSlug} widthMm={item.width} heightMm={item.height}
+        // A composite PARENT carries no options of its own — it is the schedule
+        // line, not a product. The glazing and hardware belong to the units, so
+        // showing the parent's stored option row would assert a specification
+        // the customer never chose at this level.
+        pairs={composite ? null : fullPairs} />
 
       {/* A launcher, not the row's inline pencil: this one is a framed control
           with a word on it, so the two Edit affordances on screen at once are
@@ -254,13 +243,4 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           fields, and any alternative child editor. */}
     </div>
   );
-}
-
-/** A unit's own options — for a composite this is where the specification
- *  actually lives, so it is the only place worth reading it. */
-function SegmentOptions({ segment }: { segment: QSegment }) {
-  const product = getProductBySlug(segment.productSlug);
-  const pairs = optionSummaryPairs(product, segment.options ?? {});
-  if (!pairs.length) return null;
-  return <div className="mt-1"><OptionList pairs={pairs} dense /></div>;
 }
