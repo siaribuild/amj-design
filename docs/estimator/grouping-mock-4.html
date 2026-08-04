@@ -18,6 +18,11 @@
   --fd:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
   --fb:'Inter',ui-sans-serif,system-ui,sans-serif;
 
+  /* NEW: the nested-surface tint. Deliberately NOT --bone (that is the page
+     ground, so it reads as background) and NOT --recessive (that is the
+     expansion panel, and reusing it makes a unit row and a panel the same
+     tone). Sits between them: about a 3% step off paper. */
+  --nest:#F9F7F4;
   --pad:10px;          /* row padding, both sides */
   --inset:26px;        /* how far the CHILDREN BLOCK steps in on the left */
   --inset-r:10px;      /* and on the right */
@@ -90,14 +95,21 @@ svg.el{display:block;flex:none;color:var(--body)}
    RULE 4 — a margin below. With records now adjacent this is the ONLY
    separation between the last child and the next opening, so it carries real
    weight rather than decorating. */
-.kids{margin:0 var(--inset-r) 14px var(--inset);border:1px solid var(--line);
-  border-top:none;background:var(--paper)}
-.kids .row{grid-template-columns:var(--qp-cols-child)}
+/* SHADE — the children block takes --bone, NOT --recessive. Three steps, each
+   with one meaning: paper = an opening, bone = its units, recessive = a panel.
+   Reusing recessive here would make a unit row and an expansion the same tone,
+   which is the collision that killed the earlier tinting. The child rows are
+   transparent so the block's shade is what shows. */
+.kids{margin:0 var(--inset-r) var(--inset) var(--inset);border:1px solid var(--line);
+  border-top:none;background:var(--nest)}
+.kids .row{grid-template-columns:var(--qp-cols-child);background:transparent}
 .kids > .row + .row{border-top:1px solid var(--line)}
 .kids > .exp + .row{border-top:1px solid var(--line)}
 
-/* RULE 1 — a CHILD's panel is a box, inset on both sides inside the block. */
-.kids > .exp{margin:0 var(--pad) 8px calc(var(--inset) - 4px);border:1px solid var(--line)}
+/* RULE 1 — a child's panel fills the CHILD's full width. It is already inset
+   from the record, because the block it lives in is; insetting it again inside
+   the block made it a box within a box for no extra meaning. */
+.kids > .exp{margin:0;border-top:1px solid var(--line)}
 
 /* A PARENT's own panel stays full-bleed — that contrast is what makes the two
    different objects rather than two sizes of the same one. */
@@ -114,8 +126,8 @@ svg.el{display:block;flex:none;color:var(--body)}
 .phone .m1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .phone .m3{display:flex;justify-content:space-between;gap:10px}
 .phone .size,.phone .price{text-align:left}
-.phone .kids{margin:0 8px 12px 14px}
-.phone .kids > .exp{margin:0 6px 8px 10px}
+.phone .kids{margin:0 8px 20px 14px}
+.phone .kids > .exp{margin:0}
 .phones{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
 </style>
 </head>
@@ -134,6 +146,10 @@ page — see the note under the desktop list.</p>
 <div id="head"></div>
 <div class="list" id="out"></div>
 <p class="note win" id="verdict"></p>
+
+<div class="sec">The shade — pick the step</div>
+<div id="shades"></div>
+<p class="note" id="shadenote"></p>
 
 <div class="sec">375px</div>
 <div class="phones"><div class="phone"><p class="cap">E on a phone</p><div class="stage"><div id="mout"></div></div></div></div>
@@ -233,6 +249,28 @@ function labelled(o,m){
 document.getElementById('head').innerHTML=HEAD;
 document.getElementById('out').innerHTML=D.map(o=>rec(o,false)).join('');
 document.getElementById('mout').innerHTML=D.slice(1,7).map(o=>rec(o,true)).join('');
+
+
+/* Same composite drawn at three candidate tints, so the step is chosen by eye. */
+(function(){
+  const CANDS=[
+    ['#FBFAF8','--bone — 1.6% off paper. This is the PAGE ground; it reads as background, not as a nested surface.'],
+    ['#F9F7F4','proposed --nest — about 3% off paper. Perceptible as a surface, still quiet.'],
+    ['#F6F4F1','a 4% step — clearly a surface, but now within a whisker of --recessive (#F5F3F0), which is the expansion panel.'],
+  ];
+  const src=D[3];
+  document.getElementById('shades').innerHTML = CANDS.map(([hex,why])=>
+    '<div style="margin:0 0 14px">'
+    + '<p style="font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:0 0 4px">'
+    + hex + ' — ' + why + '</p>'
+    + '<div class="list" style="--nest:'+hex+';border-top:1px solid var(--line)">' + rec(src,false) + '</div></div>').join('');
+  document.getElementById('shadenote').innerHTML =
+    '<b>The constraint.</b> The tint has to sit clear of TWO existing values: --bone #FBFAF8, which is the '
+    + 'page ground, and --recessive #F5F3F0, which is the expansion panel — the panel inside each block '
+    + 'below is that colour, so watch how close the third candidate gets to it. Anything at or past '
+    + '--recessive makes a unit row and a panel the same surface, which is the collision that killed '
+    + 'tinting children in the first place.';
+})();
 
 /* Measure: which columns hold, and exactly how far the actions move. */
 (function(){
