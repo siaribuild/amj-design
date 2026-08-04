@@ -86,6 +86,17 @@
   --positive:    #2c7a54;
   --warning:     #8a6a2a;
   --warning-ink: #7a5410;
+  /* ATTENTION — the customer-blocking state, distinct from a warning.
+   *
+   * It used to BE --warning, and the two are not the same thing. A warning on
+   * this site is ours to resolve and does not stop anyone: an oversized opening
+   * priced best-fit, a timber schedule matched to aluminium. Attention is the
+   * opposite — the line cannot be quoted until the customer changes something —
+   * and rendered in the same amber/brown it read as a note sitting beside the
+   * genuine notes. Red, at the weight the destructive control already uses, so
+   * the one state that stops the quote is the one state that looks like it. */
+  --attention:     #C0392B;
+  --attention-ink: #96271B;
   --info:        #4C6A88;  /* composite / informational */
   --info-ink:    #31485f;  /* text on an info panel */
   --ink-hover:   #2a2a27;  /* the primary button, hovered */
@@ -214,6 +225,8 @@
   --color-positive: var(--positive);
   --color-warning: var(--warning);
   --color-warning-ink: var(--warning-ink);
+  --color-attention: var(--attention);
+  --color-attention-ink: var(--attention-ink);
   --color-info: var(--info);
   --color-info-ink: var(--info-ink);
   --color-ink-hover: var(--ink-hover);
@@ -569,8 +582,8 @@
     box-shadow: inset 3px 0 0 var(--info);
   }
   .quote-item-card[data-state="attention"] {
-    border-color: color-mix(in oklab, var(--warning) 58%, var(--line));
-    box-shadow: inset 3px 0 0 var(--warning);
+    border-color: color-mix(in oklab, var(--attention) 58%, var(--line));
+    box-shadow: inset 3px 0 0 var(--attention);
   }
 
   .quote-item-body,
@@ -582,7 +595,7 @@
   .quote-section-trigger:hover,
   .quote-section-trigger:focus-visible { background-color: var(--recessive); }
   .quote-section-trigger[data-attention="true"] {
-    background-color: color-mix(in oklab, var(--warning) 9%, var(--paper));
+    background-color: color-mix(in oklab, var(--attention) 7%, var(--paper));
   }
   .quote-section-content { background-color: var(--bone); }
 
@@ -850,7 +863,7 @@
   .quote-row[data-state="review"],
   .quote-rowexp[data-state="review"]    { box-shadow: inset 3px 0 0 var(--info); }
   .quote-row[data-state="attention"],
-  .quote-rowexp[data-state="attention"] { box-shadow: inset 3px 0 0 var(--warning); }
+  .quote-rowexp[data-state="attention"] { box-shadow: inset 3px 0 0 var(--attention); }
 
   /* ─── Elevation drawing ──────────────────────────────────────────────────
    * Dimension text is a DATA figure — the same tabular, slashed-zero treatment
@@ -927,9 +940,9 @@
   .quote-code-field,
   .quote-title-control { border-color: var(--line); background-color: var(--paper); }
   .quote-code-field[data-attention="true"] {
-    border-color: var(--warning);
-    background-color: color-mix(in oklab, var(--warning) 8%, var(--paper));
-    color: var(--warning-ink);
+    border-color: var(--attention);
+    background-color: color-mix(in oklab, var(--attention) 7%, var(--paper));
+    color: var(--attention-ink);
   }
 
   .quote-chip {
@@ -951,9 +964,9 @@
     color: var(--info-ink);
   }
   .quote-chip--attention {
-    border-color: color-mix(in oklab, var(--warning) 42%, transparent);
-    background-color: color-mix(in oklab, var(--warning) 12%, var(--paper));
-    color: var(--warning-ink);
+    border-color: color-mix(in oklab, var(--attention) 42%, transparent);
+    background-color: color-mix(in oklab, var(--attention) 10%, var(--paper));
+    color: var(--attention-ink);
   }
   .quote-chip--neutral { background-color: var(--bone); color: var(--body); }
 
@@ -993,7 +1006,7 @@
   }
   .quote-sticky[data-state="ready"] { border-top-color: var(--sage); }
   .quote-sticky[data-state="review"] { border-top-color: var(--info); }
-  .quote-sticky[data-state="attention"] { border-top-color: var(--warning); }
+  .quote-sticky[data-state="attention"] { border-top-color: var(--attention); }
   .quote-sticky[data-state="working"] { border-top-color: var(--sage-light); }
 
   .quote-status-box {

@@ -295,7 +295,7 @@ function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<str
           <div key={g.typeSlug} className="border border-black/10">
             <button onClick={() => setOpenOpt(open ? null : g.typeSlug)} className="quote-section-trigger w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left cursor-pointer">
               <span className="min-w-0">
-                <span className="text-body block t-label">{g.label}{g.required && !val ? <span className="text-amber-600"> · required</span> : ""}</span>
+                <span className="text-body block t-label">{g.label}{g.required && !val ? <span className="text-attention"> · required</span> : ""}</span>
                 <span className={`font-medium truncate flex items-center gap-1.5 ${val ? "text-ink" : "text-quieter"} t-bd-sm`}>
                   {isColour && val && <span className="w-3.5 h-3.5 flex-shrink-0 border border-black/25" style={{ backgroundColor: swatchHex || "var(--muted)" }} aria-hidden="true" />}
                   {val || "Select…"}
@@ -406,7 +406,7 @@ function Section({ label, summary, open, onToggle, children, variant = "boxed", 
     <div className={boxed ? `border ${attention ? "border-warning/40" : "border-line"}` : "border-b border-line last:border-b-0"}>
       <button onClick={onToggle} aria-expanded={open} data-attention={attention ? "true" : "false"} className={`quote-section-trigger w-full flex items-center justify-between gap-3 text-left cursor-pointer ${boxed ? "px-4 py-3" : "px-4 py-2.5"}`}>
         <span className="min-w-0">
-          <span className={`block flex items-center gap-1 ${attention ? "text-amber-700" : "text-body"} t-label`}>{label}{attention && <AlertCircle className="w-3 h-3" />}</span>
+          <span className={`block flex items-center gap-1 ${attention ? "text-attention-ink" : "text-body"} t-label`}>{label}{attention && <AlertCircle className="w-3 h-3" />}</span>
           <span className="text-ink font-medium truncate block t-bd-sm">{summary}</span>
         </span>
         <ChevronDown className={`w-4 h-4 text-body flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
@@ -720,7 +720,7 @@ export function ItemForm({
               <div>
                 <FieldLabel>Item ID</FieldLabel>
                 <Input value={code} maxLength={10} onChange={e => { setCodeEdited(true); setCode(e.target.value.toUpperCase()); }} placeholder="e.g. W01" />
-                {duplicateCode && <p className="text-amber-700 mt-1 t-cap">Item ID already exist</p>}
+                {duplicateCode && <p className="text-attention-ink mt-1 t-cap">Item ID already exist</p>}
               </div>
               <div className="flex items-center gap-2.5 min-w-0">
                 <span className="w-8 h-8 border border-sage/30 flex items-center justify-center flex-shrink-0"><WindowMark size={15} color={SAGE} /></span>
@@ -741,7 +741,7 @@ export function ItemForm({
               <div>
                 <FieldLabel>Item ID</FieldLabel>
                 <Input value={code} maxLength={10} onChange={e => { setCodeEdited(true); setCode(e.target.value.toUpperCase()); }} placeholder="e.g. W01" />
-                {duplicateCode && <p className="text-amber-700 mt-1 t-cap">Item ID already exist</p>}
+                {duplicateCode && <p className="text-attention-ink mt-1 t-cap">Item ID already exist</p>}
               </div>
             )}
             {/* A composite PARENT gets no product picker at all (owner) — just
@@ -784,7 +784,13 @@ export function ItemForm({
             <Section label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open.dims} onToggle={() => setOpen(o => ({ ...o, dims: !o.dims }))}>
               <DimensionsFields p={p ?? null} opening={hideProduct} width={width} height={height}
                 setWidth={setWidth} setHeight={setHeight} rail={rail}
-                lockedDimension={isUnit ? (unitAxis === "vertical" ? "height" : "width") : undefined}
+                // A unit's across-axis dimension is EDITABLE (owner). It used to
+                // be locked to the opening's, which reads as a safety rail and
+                // behaves as a trap: correct an opening's parsed height and
+                // every unit is left at the old figure with its only repair
+                // field greyed out. A mismatch is reported — on the unit and on
+                // the opening — rather than prevented.
+                lockedDimension={undefined}
                 // The note is the OPENING's, so a unit does not carry one: one
                 // opening, one location.
                 location={isUnit ? undefined : location}
@@ -810,7 +816,7 @@ export function ItemForm({
         <div className={`quote-panel-footer px-4 md:px-5 py-4 sticky bottom-0 z-30 ${stickyActions ? "" : "md:static"}`}
           style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
           {issues.length > 0 && (
-            <p className="text-amber-800 mb-2 flex items-start gap-1.5 t-cap"><AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />{issues.map(i => i.msg).join(" · ")}.</p>
+            <p className="text-attention-ink mb-2 flex items-start gap-1.5 t-cap"><AlertCircle className="w-3.5 h-3.5 text-attention flex-shrink-0 mt-0.5" />{issues.map(i => i.msg).join(" · ")}.</p>
           )}
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -986,7 +992,7 @@ export function ItemSummaryCard({
               warning explains the caveat. Only a line with NO product at all
               shows the italic amber "Choose a product" customer action. */}
           <button onClick={toggleExpanded} aria-expanded={isExpanded}
-            className={`min-w-0 truncate text-left font-semibold cursor-pointer hover:text-sage ${item.productSlug ? "text-ink" : "text-warning-ink italic"} font-display t-bd-sm`}>
+            className={`min-w-0 truncate text-left font-semibold cursor-pointer hover:text-sage ${item.productSlug ? "text-ink" : "text-attention-ink italic"} font-display t-bd-sm`}>
             {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
           </button>
           {customerBlocking

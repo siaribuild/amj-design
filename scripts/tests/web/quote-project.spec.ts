@@ -744,6 +744,12 @@ test("a composite is named and drawn from its units, and carries no chip", async
 // opening's other dimension exactly, which IS attributable, so that unit is
 // marked as well. validateSplit draws the same line: it errors on
 // `s[across] !== opening[across]` and treats the along-axis delta as coverage.
+//
+// The OPENING is marked for an across fault as well (owner). Marking only the
+// culprit is right when you can see the culprit, and every record starts
+// collapsed — so the one row on screen was the one row saying nothing was wrong,
+// while the sticky bar counted the project ready. Attribution decides WHICH rows
+// are marked, not whether the opening is one of them.
 const unit = (id: string, w: string, h: string, total: number | null) =>
   ({ id, productSlug: SLIDING, width: w, height: h, qtyPerParent: 1, qty: 1, lineTotal: total, options: {}, status: "Ready" });
 
@@ -759,7 +765,14 @@ test("a shortfall accuses the opening; a wrong-across unit accuses itself", asyn
   await page.goto("/quote-project");
   await expect(page.locator(".quote-row").first()).toBeVisible();
 
-  await expect(page.locator(".quote-row").first().locator(".quote-chip")).toHaveCount(0);
+  // The opening is flagged BEFORE it is opened — collapsed, it is all there is.
+  const parent = page.locator(".quote-row").first();
+  await expect(parent).toHaveAttribute("data-state", "attention");
+  expect(await parent.innerText()).toContain("Incomplete");
+  // …and the bar stops calling the project ready.
+  const bar = page.getByRole("region", { name: "Project summary and actions" });
+  await expect(bar).toHaveAttribute("data-state", "attention");
+
   await page.getByRole("button", { name: "Show details for W5", exact: true }).click();
   const units = page.locator("[data-unit]");
   await expect(units.nth(0)).toHaveAttribute("data-state", "ready");

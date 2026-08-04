@@ -147,6 +147,9 @@ export const previewPrice = async (item: { productSlug: string; width: string; h
  * the caller's current draft. Units remain nested under their opening. */
 export const updateCurrentSegment = (segmentId: string, patch: {
   productSlug: string; options: Record<string, string>; alongMm: number;
+  /** The dimension ACROSS the split. Sent since it became editable — the server
+   *  used to default it to the opening's, which quietly healed real mismatches. */
+  acrossMm?: number;
 }) => req<{ ok: boolean }>(`/api/projects/current/segments/${segmentId}`, {
   method: "PATCH", body: JSON.stringify(patch),
 });

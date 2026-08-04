@@ -159,6 +159,10 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
         productSlug: built.productSlug,
         options: built.options,
         alongMm: parseInt(axis === "vertical" ? built.width : built.height) || 0,
+        // Sent now that the field is editable. Without it the server kept
+        // defaulting the across dimension to the opening's, so saving a unit for
+        // any reason at all silently healed a real mismatch.
+        acrossMm: parseInt(axis === "vertical" ? built.height : built.width) || 0,
       });
       setDirty(false);
       setAnnouncement("Unit saved");

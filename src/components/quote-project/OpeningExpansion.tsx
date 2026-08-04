@@ -210,7 +210,7 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           <PanelLabel>What's missing</PanelLabel>
           {/* The reason states the problem; the button that resolves it is the
               panel's single launcher at the foot, NOT a second control here. */}
-          <p className="text-warning-ink t-cap">{state.reason}</p>
+          <p className="text-attention-ink t-cap">{state.reason}</p>
         </div>
       )}
       {/* A composite PARENT carries no options of its own — it is the schedule

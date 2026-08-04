@@ -89,7 +89,7 @@ export function ProjectActionBar({ summary, processing, onSubmit, onFixDetails, 
     state = "attention";
     cta = (
       <button type="button" onClick={onFixDetails}
-        className="px-3 py-2 text-white bg-warning min-h-[44px] cursor-pointer inline-flex items-center gap-1.5 t-bd-sm">
+        className="px-3 py-2 text-white bg-attention min-h-[44px] cursor-pointer inline-flex items-center gap-1.5 t-bd-sm">
         Fix {attentionCount} detail{attentionCount !== 1 ? "s" : ""} <ArrowRight className="w-4 h-4" aria-hidden="true" />
       </button>
     );

@@ -321,12 +321,24 @@ export async function loadSegment(env: Env, segmentId: string): Promise<
 
 /** Change one unit. Only the fields named in `patch` move; everything else on
  *  the unit is left alone, which is what makes this safe to call for a one-field
- *  correction. The ACROSS-axis dimension is not settable — validateSplit makes a
- *  mismatch there a hard error rather than a coverage allowance, so it is forced
- *  to the opening and cannot be typed into an unbuildable state. */
+ *  correction.
+ *
+ *  The ACROSS-axis dimension used to be unsettable: it was forced to the
+ *  opening's, so a mismatch could not be typed. That looked like a safety rail
+ *  and behaved like a shredder. When an opening's parsed height is corrected —
+ *  2100 to 2110, say — every unit is left at the old figure and the customer's
+ *  only route to fixing them is the field that was locked; worse, saving a unit
+ *  for any other reason SNAPPED its height to the opening and made the
+ *  disagreement disappear without anyone deciding it. Editable now, and a
+ *  mismatch is reported the same way coverage is: on the unit AND on the
+ *  opening, never silently reconciled. Report, do not veto — the same rule the
+ *  coverage delta has always followed. */
 export async function updateSegment(env: Env, args: {
   segmentId: string;
-  patch: { productSlug?: string; options?: Record<string, string>; alongMm?: number; qtyPerParent?: number };
+  patch: {
+    productSlug?: string; options?: Record<string, string>;
+    alongMm?: number; acrossMm?: number; qtyPerParent?: number;
+  };
 }): Promise<{ ok: true } | { ok: false; errors: string[] }> {
   const loaded = await loadSegment(env, args.segmentId);
   if (!loaded) return { ok: false, errors: ["That unit no longer exists."] };
@@ -342,9 +354,15 @@ export async function updateSegment(env: Env, args: {
   const along = args.patch.alongMm !== undefined
     ? Math.floor(args.patch.alongMm)
     : (axis === "vertical" ? dims.widthMm : dims.heightMm);
+  // Falls back to what the unit ALREADY stores, not to the opening. Defaulting
+  // to the opening is what silently healed a real mismatch on any unrelated
+  // save; the unit keeps its own figure until someone types a new one.
+  const across = args.patch.acrossMm !== undefined
+    ? Math.floor(args.patch.acrossMm)
+    : (axis === "vertical" ? dims.heightMm : dims.widthMm) || (axis === "vertical" ? opening.heightMm : opening.widthMm);
 
-  const widthMm = axis === "vertical" ? along : opening.widthMm;
-  const heightMm = axis === "vertical" ? opening.heightMm : along;
+  const widthMm = axis === "vertical" ? along : across;
+  const heightMm = axis === "vertical" ? across : along;
 
   if (!productSlug) return { ok: false, errors: ["This unit has no product selected."] };
   if (!(widthMm > 0)) return { ok: false, errors: ["This unit needs a width."] };

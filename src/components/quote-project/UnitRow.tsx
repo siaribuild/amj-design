@@ -22,7 +22,7 @@
 //    chips under a Ready parent is noise.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { ChevronRight } from "lucide-react";
-import { type QSegment, sizePhrase, productLabel } from "../../data/configurator";
+import { type QSegment, sizePhrase, productLabel, acrossMismatch } from "../../data/configurator";
 import { Elevation } from "./Elevation";
 
 export function UnitRow({
@@ -49,24 +49,13 @@ export function UnitRow({
   // still carries the caveat where it belongs.
   const incomplete = !(typeof segment.lineTotal === "number" && Number.isFinite(segment.lineTotal));
 
-  // A size fault this unit can be BLAMED for (owner). Two ways a composite's
-  // sizes go wrong, and only one of them has a culprit:
-  //
-  //   ALONG the split axis  the units must SUM to the opening. A shortfall
-  //                         belongs to no single unit, so the parent carries it
-  //                         ("Check sizes") and nothing is marked here.
-  //   ACROSS it             every unit must match the opening's other dimension
-  //                         exactly — a 900-high unit in a 700-high opening is
-  //                         plainly the wrong one. That is attributable, so this
-  //                         row says so as well.
-  //
-  // Same rule the server applies at split time: validateSplit errors on
-  // `s[across] !== opening[across]` while treating the along-axis delta as
-  // coverage. Zero means unknown, not a mismatch — an unsized unit is already
-  // covered by `incomplete`.
-  const across = parseInt(acrossMm ?? "") || 0;
-  const mine = parseInt((axis === "horizontal" ? segment.width : segment.height) || "") || 0;
-  const wrongSize = !incomplete && across > 0 && mine > 0 && mine !== across;
+  // A size fault this unit can be BLAMED for (owner) — the ACROSS-axis one. The
+  // rule and its reasoning now live in ONE place, unitAcrossMismatch, shared
+  // with the opening's own row state and with the submission gate: three
+  // readings of the same geometry had drifted into disagreeing about the same
+  // pair of numbers.
+  const wrongSize = !incomplete
+    && acrossMismatch(acrossMm, axis === "horizontal" ? segment.width : segment.height);
 
   return (
     <div data-unit="" data-state={incomplete || wrongSize ? "attention" : "ready"}

@@ -135,9 +135,14 @@ test("a persisted composite survives current-project hydration and renders its u
   await expect(page.getByRole("button", { name: "Save unit 1" })).toBeVisible();
   await expect(page.locator(".quote-composite-panel")).toBeVisible();
   await expect(page.locator(".quote-composite-editor .quote-panel")).toBeVisible();
+  // BOTH dimensions are editable (owner). The across-axis one used to be locked
+  // to the opening's, which reads as a safety rail and behaves as a trap: correct
+  // an opening's parsed height and every unit is left at the old figure with its
+  // only repair field greyed out. A mismatch is reported now — on the unit and on
+  // the opening — rather than prevented.
   const unitEditor = page.getByText("Edit composite unit", { exact: true }).locator("..").locator("..");
   await expect(unitEditor.locator('input[type="number"]').nth(0)).toBeEnabled();
-  await expect(unitEditor.locator('input[type="number"]').nth(1)).toBeDisabled();
+  await expect(unitEditor.locator('input[type="number"]').nth(1)).toBeEnabled();
 });
 
 test("resolved document dimension conflicts do not create a quote-level warning", async ({ page }) => {

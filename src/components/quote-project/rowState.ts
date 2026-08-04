@@ -18,6 +18,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import {
   type QItem, hasDuplicateCode, lineBlocksSubmission, severityOf,
+  compositeAcrossFault,
 } from "../../data/configurator";
 
 export type RowState =
@@ -87,6 +88,9 @@ export function rowStateFor(item: QItem, items: QItem[]): RowState {
 
   const units = compositeUnitCount(item);
   if (units > 0) {
+    // A size fault reaches the needs-input branch above via
+    // lineBlocksSubmission, so by here the composite reconciles. What is left is
+    // the layout question the state was reserved for.
     // O1's missing trigger, now supplied: the units no longer add up to the
     // opening they were split out of. This is the reason code the state was
     // reserved for and could not previously name — it is not `fit` (which fires
@@ -116,6 +120,13 @@ function blockingReason(item: QItem, duplicate: boolean): string {
     .filter(([key]) => severityOf(key) === "error")
     .map(([, reason]) => reason);
   if (errors.length) return errors[0];
+  // Named before the generic fallbacks, and named as geometry rather than as a
+  // process: "the units do not fit" is checkable against the numbers on screen.
+  if (compositeAcrossFault(item)) {
+    return item.compositeAxis === "horizontal"
+      ? "A unit is a different width to this opening"
+      : "A unit is a different height to this opening";
+  }
   if (!item.productSlug) return "Choose a product";
   if (!parseInt(item.width) || !parseInt(item.height)) return "Enter the opening size";
   return "We need a little more detail to price this";

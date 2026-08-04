@@ -93,7 +93,7 @@ export interface QuoteState {
   // Re-hydrate lines + attached files from the server.
   reload: (options?: { flushLocalChanges?: boolean }) => Promise<void>;
   updateSegment: (segmentId: string, patch: {
-    productSlug: string; options: Record<string, string>; alongMm: number;
+    productSlug: string; options: Record<string, string>; alongMm: number; acrossMm?: number;
   }) => Promise<void>;
 }
 
@@ -167,13 +167,74 @@ export function reviewClass(review: Record<string, string> | null | undefined): 
 // A warning-flagged line is priced best-fit (indicative) and stays submittable —
 // submission is exactly how a technical decision gets made. This is the
 // single source of truth shared by the client submit gate and the server.
+/** Does a composite's units still add up to the opening they belong to?
+ *
+ *  ONE predicate, used by the unit row, by its opening's row and by the
+ *  submission gate — they were three separate readings of the same geometry and
+ *  they disagreed. Changing an opening from 2050×2100 to 2060×2110 flagged both
+ *  children, left the parent clean and let the sticky bar report the project
+ *  ready, all at once.
+ *
+ *  Two faults, and only one of them has a culprit (owner):
+ *
+ *    ACROSS the split axis  every unit must match the opening exactly. A unit
+ *                           2100 high in a 2110 opening is plainly the wrong
+ *                           one, so it is attributable — the UNIT is marked, and
+ *                           the opening with it, because the opening is what the
+ *                           customer is looking at when the units are collapsed.
+ *    ALONG it               the units must SUM to the opening. A shortfall
+ *                           belongs to no single unit, so only the OPENING
+ *                           carries it. The tolerance is ops data, so the
+ *                           server's verdict is used rather than a second
+ *                           opinion computed here.
+ *
+ *  An unsized unit is not a mismatch — it is already `incomplete`, and zero
+ *  means unknown rather than wrong. */
+export function acrossMismatch(openingAcross: string | null | undefined, unitAcross: string | null | undefined): boolean {
+  const a = parseInt(openingAcross ?? "") || 0;
+  const b = parseInt(unitAcross ?? "") || 0;
+  return a > 0 && b > 0 && a !== b;
+}
+
+/** The same question asked of a whole opening and one of its units. */
+export function unitAcrossMismatch(
+  item: { width: string; height: string; compositeAxis?: "vertical" | "horizontal" | null },
+  segment: { width: string; height: string },
+): boolean {
+  const horizontal = item.compositeAxis === "horizontal";
+  return acrossMismatch(horizontal ? item.width : item.height, horizontal ? segment.width : segment.height);
+}
+
+/** True when ANY of this opening's units disagrees with it across the split.
+ *
+ *  Deliberately NOT the coverage delta as well. The two faults are different
+ *  kinds of thing and keep their different treatments: a shortfall along the
+ *  axis is REPORTED, never vetoed — coupled frames carry real mullion and jamb
+ *  allowances and the reviewer is the engineering authority, which is why it
+ *  reads "Check sizes" rather than blocking. An across mismatch has no such
+ *  allowance: the unit simply is not the height of the hole. */
+export function compositeAcrossFault(it: {
+  width: string; height: string;
+  compositeAxis?: "vertical" | "horizontal" | null;
+  segments?: { width: string; height: string }[] | null;
+}): boolean {
+  return (it.segments ?? []).some((s) => unitAcrossMismatch(it, s));
+}
+
 export function lineBlocksSubmission(it: {
   productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;
   origin?: string; aiPriced?: boolean; lineTotal?: number | null;
   review?: Record<string, string> | null;
+  compositeAxis?: "vertical" | "horizontal" | null;
+  segments?: { width: string; height: string }[] | null;
 }): boolean {
   const severity = reviewSeverity(it.review);
   if (severity === "error") return true;
+  // A unit that is not the height of its own opening is the customer's to
+  // resolve: they typed the sizes, and no price we could put on it would be for
+  // the thing being built. It has to reach the sticky bar, which read "20
+  // openings" in green while two of the three rows on screen were flagged.
+  if (compositeAcrossFault(it)) return true;
   // Priced-ness is the SERVER's answer, for every origin. The browser holds no
   // rate data and must not form a second opinion about whether a line can be
   // sold — that is how the two engines diverged in the first place.

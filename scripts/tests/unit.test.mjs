@@ -15,7 +15,7 @@ const outfile = join(runDir, "unit-bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel } from ${p("src/data/configurator.ts")};
+      export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
@@ -350,6 +350,55 @@ test("rowStateFor: units that no longer sum to the opening ask for confirmation"
 test("rowStateFor: a blocked composite is a BLOCKER first — the only state it can act on", () => {
   const item = { ...composite(true, -180), lineTotal: null };
   assert.equal(M.rowStateFor(item, []).kind, "needs-input");
+});
+
+// The owner's own test case, end to end. W1 2050x2100 split into 700 and 1350,
+// both 2100 high. Correct the opening to 2060x2110 — a parsing correction — and
+// three things must agree that were three separate readings of the same numbers:
+// the units say so, the OPENING says so (it is all that is visible when the
+// group is collapsed), and the sticky bar stops calling the project ready.
+const w1 = (openingW, openingH) => ({
+  id: 9, code: "W1", productSlug: "amj80-series-awning-window", location: "",
+  width: String(openingW), height: String(openingH), options: {}, qty: 1, status: "Ready",
+  lineTotal: 1200, review: null, compositeAxis: "vertical",
+  coverageDeltaMm: 2050 - openingW, coverageOutOfTolerance: false,
+  segments: [
+    { id: "a", productSlug: "amj80-series-awning-window", width: "700", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 500, options: {}, status: "Ready" },
+    { id: "b", productSlug: "amj80-series-awning-window", width: "1350", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 700, options: {}, status: "Ready" },
+  ],
+});
+
+test("a unit that is the wrong height for its opening flags the OPENING too", () => {
+  const ok = w1(2050, 2100);
+  assert.equal(M.compositeAcrossFault(ok), false, "a well-formed split never flags");
+  assert.equal(M.lineBlocksSubmission(ok), false);
+  assert.equal(M.rowStateFor(ok, []).kind, "composite");
+
+  // The correction: the opening grows, the units do not follow.
+  const bad = w1(2060, 2110);
+  assert.equal(M.acrossMismatch("2110", "2100"), true, "the unit rows' own test");
+  assert.equal(M.compositeAcrossFault(bad), true, "and the opening's");
+  assert.equal(M.lineBlocksSubmission(bad), true, "and the sticky bar's");
+  const state = M.rowStateFor(bad, []);
+  assert.equal(state.kind, "needs-input", "the parent is red, not merely its children");
+  assert.equal(state.reason, "A unit is a different height to this opening");
+});
+
+test("across is measured on the axis the split runs along", () => {
+  // Horizontal split: the units stack, so they must match the opening's WIDTH.
+  const horiz = { ...w1(2050, 2100), compositeAxis: "horizontal" };
+  assert.equal(M.compositeAcrossFault(horiz), true, "700 wide in a 2050 opening");
+  assert.equal(M.rowStateFor(horiz, []).reason, "A unit is a different width to this opening");
+});
+
+test("an unsized unit is incomplete, never a mismatch — zero means unknown", () => {
+  const partial = w1(2060, 2110);
+  partial.segments = [{ ...partial.segments[0], height: "" }, partial.segments[1]];
+  assert.equal(M.acrossMismatch("2110", ""), false);
+  // The SECOND unit still mismatches, so the opening is still flagged.
+  assert.equal(M.compositeAcrossFault(partial), true);
+  partial.segments = [{ ...partial.segments[0], height: "" }];
+  assert.equal(M.compositeAcrossFault(partial), false, "nothing measurable, nothing asserted");
 });
 
 test("unitLabel: children are W1A, W1B … and spreadsheet-style past Z", () => {

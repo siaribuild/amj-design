@@ -210,7 +210,7 @@ projects.patch("/current/segments/:id", async (c) => {
   const segment = await currentDraftSegment(c.env, c.req.raw, c.req.param("id"));
   if (!segment) return c.json({ error: "not_found" }, 404);
   const body = await c.req.json().catch(() => ({}));
-  const patch: { productSlug?: string; options?: Record<string, string>; alongMm?: number } = {};
+  const patch: { productSlug?: string; options?: Record<string, string>; alongMm?: number; acrossMm?: number } = {};
   if (body?.productSlug !== undefined) patch.productSlug = String(body.productSlug);
   if (body?.options && typeof body.options === "object" && !Array.isArray(body.options)) {
     patch.options = Object.fromEntries(
@@ -218,6 +218,9 @@ projects.patch("/current/segments/:id", async (c) => {
     );
   }
   if (body?.alongMm !== undefined) patch.alongMm = Number(body.alongMm) || 0;
+  // The across dimension is the customer's now, not forced to the opening. A
+  // mismatch is reported on the unit and on the opening rather than prevented.
+  if (body?.acrossMm !== undefined) patch.acrossMm = Number(body.acrossMm) || 0;
   const result = await updateSegment(c.env, { segmentId: segment.id, patch });
   if ("errors" in result) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
   await markCustomerCompositeEdit(c.env, segment.project_id, segment.parent_line_id, segment.id);
@@ -276,7 +279,7 @@ projects.put("/current/lines", async (c) => {
   type StoredRow = EditableSnapshot & {
     id: string; origin: string | null; ai_proposal_line_id: string | null;
     pricing_snapshot_json: string | null; configuration_snapshot_json: string | null;
-    selected_variant_id: string | null; line_total: number | null;
+    selected_variant_id: string | null; line_total: number | null; line_kind: string | null;
   };
   // parent_line_id IS NULL — OPENINGS only, matching the read route, which
   // returns segments nested inside their parent rather than as items.
@@ -297,7 +300,7 @@ projects.put("/current/lines", async (c) => {
   const storedRows = ((await c.env.DB.prepare(
     `SELECT id, origin, edited_fields, product_slug, options_json, dims_json, qty,
             ai_proposal_line_id, pricing_snapshot_json, configuration_snapshot_json,
-            selected_variant_id, line_total
+            selected_variant_id, line_total, line_kind
        FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL`,
   ).bind(project.id).all<StoredRow>()).results ?? []);
   const existing = new Map(storedRows.map((r) => [r.id, r]));
@@ -331,6 +334,8 @@ projects.put("/current/lines", async (c) => {
       ).bind(id, project.id, project.id, nextQuoteVersion, mutationToken));
     }
   }
+  // Composite parents whose derived fields must be rebuilt once the batch lands.
+  const recomputeParents: string[] = [];
   for (const { raw, i, id } of resolved) {
     const f = await itemFields(c.env, raw, project.owner_user_id);
     if (id) {
@@ -341,6 +346,38 @@ projects.put("/current/lines", async (c) => {
       const edited = stored.origin === "schedule" || stored.origin === "ai"
         ? editedFieldsAfterSave(stored, f)
         : stored.edited_fields;
+      // A COMPOSITE PARENT IS NOT AN ORDINARY LINE, and this route used to treat
+      // it as one. Two things went wrong every time a customer resized one:
+      //
+      //   * line_total was overwritten with priceItem() of the parent's OWN
+      //     product slug — a single frame's price standing in for the sum of the
+      //     units, silently.
+      //   * coverage_delta_mm was left untouched. It is derived from the opening
+      //     and the units' sizes, so after a resize it described a plan that no
+      //     longer existed — which is why changing W1 from 2050 to 2060 flagged
+      //     both children (the browser compares live) and left the parent clean.
+      //
+      // Only the fields the customer actually owns on an opening are written
+      // here — its reference, its note and its size. Everything derived comes
+      // back from recomputeComposite after the batch commits, which is already
+      // the single writer of parent total, status and coverage everywhere else.
+      if (stored.line_kind === "composite_parent") {
+        recomputeParents.push(id);
+        stmts.push(c.env.DB.prepare(
+          `UPDATE quote_line SET external_ref=?, room_label=?, dims_json=?, position=?,
+             review_json=?, edited_fields=?, edit_version=edit_version+1,
+             updated_at=datetime('now')
+           WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
+             AND EXISTS (
+               SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+                 AND quote_edit_version=? AND quote_mutation_token=?
+             )`,
+        ).bind(
+          f.external_ref, f.room_label, f.dims_json, i, f.review_json, edited,
+          id, project.id, project.id, nextQuoteVersion, mutationToken,
+        ));
+        continue;
+      }
       const aiManaged = stored.origin === "ai" || !!stored.ai_proposal_line_id;
       if (aiManaged && edited === stored.edited_fields) {
         // A reload followed by autosave must not replace the AI configuration's
@@ -465,6 +502,11 @@ projects.put("/current/lines", async (c) => {
       Number(committed[committed.length - 1]?.meta?.changes ?? 0) !== 1) {
     return c.json({ error: "project_changed_reload_required" }, 409);
   }
+
+  // AFTER the batch, so it reads the opening the customer just saved rather than
+  // the one it is replacing. Sequential and small: a project has few composites,
+  // and each one's units are already loaded by id.
+  for (const parentId of recomputeParents) await recomputeComposite(c.env, parentId);
 
   if (cookie) c.header("Set-Cookie", cookie);
   return c.json({ project: projectDto(project), items: await loadLines(c.env, project.id) });
