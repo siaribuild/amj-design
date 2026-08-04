@@ -18,17 +18,18 @@
   --fd:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
   --fb:'Inter',ui-sans-serif,system-ui,sans-serif;
 
-  /* NEW: the nested-surface tint. Deliberately NOT --bone (that is the page
-     ground, so it reads as background) and NOT --recessive (that is the
-     expansion panel, and reusing it makes a unit row and a panel the same
-     tone). Sits between them: about a 3% step off paper. */
-  --nest:#F9F7F4;
+  /* NO TINT. Parent and child are both paper. Every shade in the 2–3% band
+     between --bone and --recessive was either invisible or read as an
+     expansion panel; the separation is carried by the inset box, its border
+     and the margin below it instead. --recessive stays reserved for panels,
+     which is now the ONLY off-paper surface in the list. */
   --pad:10px;          /* row padding, both sides */
   --inset:26px;        /* how far the CHILDREN BLOCK steps in on the left */
   --inset-r:10px;      /* and on the right */
-  --t1:9.5rem;
+  --t1:11rem;          /* twisty + icon + ref */
+  --t6:5rem;           /* actions: pencil + more (the twisty has left) */
 
-  --qp-cols:var(--t1) 10rem minmax(0,1fr) 8.5rem 7.5rem 7rem;
+  --qp-cols:var(--t1) 10rem minmax(0,1fr) 8.5rem 7.5rem var(--t6);
 
   /* The children block is a bordered box inset on BOTH sides, so a child row
      loses (inset + 1px border) on the left and (inset-r + 1px) on the right.
@@ -37,7 +38,7 @@
      header's x. Only the ACTIONS cluster moves, and only by the right inset. */
   --qp-cols-child:
     calc(var(--t1) - var(--inset) - 1px) 10rem minmax(0,1fr) 8.5rem 7.5rem
-    calc(7rem - var(--inset-r) - 1px);
+    calc(var(--t6) - var(--inset-r) - 1px);
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bone);color:var(--ink);font:400 16px/26px var(--fb);-webkit-font-smoothing:antialiased}
@@ -59,6 +60,16 @@ h1{font:600 30px/36px var(--fd);letter-spacing:-.6px;margin:0 0 8px}
 .head .r{text-align:right}
 .row{background:var(--paper);padding:6px var(--pad);min-height:44px}
 .id{display:flex;align-items:center;gap:8px;min-width:0}
+
+/* The twisty leads the row: it is the first thing on the line, left of the
+   product icon, so the whole column of them scans as one rail — and on a
+   composite that rail steps in with the children block, which is exactly the
+   parent/child relationship stated once more. */
+.tw{flex:none;width:22px;height:22px;margin-right:-2px;display:inline-flex;align-items:center;
+  justify-content:center;border:0;background:none;padding:0;color:var(--quiet);cursor:pointer}
+.tw svg{display:block;transition:transform .12s ease}
+.tw[aria-expanded="true"]{color:var(--ink)}
+.tw[aria-expanded="true"] svg{transform:rotate(90deg)}
 .ref{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink)}
 .prod{font:400 14px/21px var(--fb);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .size{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
@@ -95,13 +106,10 @@ svg.el{display:block;flex:none;color:var(--body)}
    RULE 4 — a margin below. With records now adjacent this is the ONLY
    separation between the last child and the next opening, so it carries real
    weight rather than decorating. */
-/* SHADE — the children block takes --bone, NOT --recessive. Three steps, each
-   with one meaning: paper = an opening, bone = its units, recessive = a panel.
-   Reusing recessive here would make a unit row and an expansion the same tone,
-   which is the collision that killed the earlier tinting. The child rows are
-   transparent so the block's shade is what shows. */
+/* SHADE — none. Paper for openings, paper for units, --recessive for panels.
+   The block's own border plus the white gap below it does the separating. */
 .kids{margin:0 var(--inset-r) var(--inset) var(--inset);border:1px solid var(--line);
-  border-top:none;background:var(--nest)}
+  border-top:none;background:var(--paper)}
 .kids .row{grid-template-columns:var(--qp-cols-child);background:transparent}
 .kids > .row + .row{border-top:1px solid var(--line)}
 .kids > .exp + .row{border-top:1px solid var(--line)}
@@ -128,8 +136,6 @@ svg.el{display:block;flex:none;color:var(--body)}
 .phone .size,.phone .price{text-align:left}
 .phone .kids{margin:0 8px 20px 14px}
 .phone .kids > .exp{margin:0}
-.inverted .rec > .row{background:#F9F7F4}
-.inverted .kids{background:var(--paper)}
 .phones{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
 </style>
 </head>
@@ -140,18 +146,17 @@ svg.el{display:block;flex:none;color:var(--body)}
 <p class="lede">Your rules, built: <b>1</b> a child’s panel is a box inset on both sides,
 <b>2</b> a parent that heads a group carries a bottom border, <b>3</b> the whole list of children is a box inset left and right, and
 <b>4</b> it leaves a margin below so the last child is not pressed against the next parent.</p>
-<p class="small">One continuous view, no section titles. Records are ADJACENT — table-like, not separate panels — and a composite’s children are DOCKED to their parent, hanging off its bottom border as a U. Shown across every case: a childless opening expanded, a unit expanded, a group flagged,
-a single child flagged, and parent-and-child both flagged. Then 375px. Column drift is measured in the
-page — see the note under the desktop list.</p>
+<p class="small">No tint anywhere: parent and child are both paper, and <b>--recessive is now the only off-paper
+surface in the list</b> — it means “panel”, and nothing else. The <b>twisty leads every row</b>, left of the product
+icon, and is state-aware: › closed, ⌄ open. It has left the actions cluster, which is why Actions is narrower.
+Records are ADJACENT — table-like, not separate panels — and a composite’s children are DOCKED to their parent,
+hanging off its bottom border as a U. Shown across every case: a childless opening expanded, a unit expanded, a
+group flagged, a single child flagged, and parent-and-child both flagged. Then 375px. Measured in the page below.</p>
 
 <div class="sec">Desktop · every scenario</div>
 <div id="head"></div>
 <div class="list" id="out"></div>
 <p class="note win" id="verdict"></p>
-
-<div class="sec">The shade — pick the step</div>
-<div id="shades"></div>
-<p class="note" id="shadenote"></p>
 
 <div class="sec">375px</div>
 <div class="phones"><div class="phone"><p class="cap">E on a phone</p><div class="stage"><div id="mout"></div></div></div></div>
@@ -180,8 +185,16 @@ function symbol(k,p){
   if(k==='casement')return '<path d="M'+R+' '+T+' L'+L+' '+cy+' L'+R+' '+B+'" '+S+'/>';
   return '';
 }
-const A3='<span class="acts"><i>⌄</i><i>✎</i><i>⋯</i></span>';
-const A2='<span class="acts"><i>⌄</i><i>✎</i><i style="width:34px"></i></span>';
+/* The twisty. Leads the row; state-aware — › closed, rotated to ⌄ when open. */
+function tw(open){
+  return '<button class="tw" aria-expanded="'+(open?'true':'false')+'" '
+    +'aria-label="'+(open?'Collapse':'Expand')+'">'
+    +'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">'
+    +'<path d="M5 2.5 L9.5 7 L5 11.5" stroke="currentColor" stroke-width="1.6" '
+    +'stroke-linecap="round" stroke-linejoin="round"/></svg></button>';
+}
+const A3='<span class="acts"><i>✎</i><i>⋯</i></span>';
+const A2='<span class="acts"><i>✎</i><i style="width:34px"></i></span>';
 const HEAD='<div class="head"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>';
 
 const SPEC={lbl:'Specification',val:'Glazing · Single Glazed Low-E &nbsp;·&nbsp; Colour · Monument &nbsp;·&nbsp; Hardware · Standard &nbsp;·&nbsp; Flyscreen · None'};
@@ -222,12 +235,16 @@ const D=[
 
 function row(o,kid,m){
   const s=o.s?' data-s="'+o.s+'"':'';
+  /* Open when the row is showing what it contains — a spec panel for a plain
+     opening, the children block for a composite. Rendering a composite closed
+     while its units are on screen would make the rail lie. */
+  const T=tw(!!o.exp||!!o.units);
   if(m) return '<div class="row'+(kid?' unit':'')+'"'+s+'>'
-    +'<span class="m1">'+o.icon+'<span class="ref">'+o.ref+'</span>'+(o.chip||'')+(kid?'':A3)+'</span>'
+    +'<span class="m1">'+T+o.icon+'<span class="ref">'+o.ref+'</span>'+(o.chip||'')+(kid?'':A3)+'</span>'
     +'<span class="prod">'+o.prod+'</span>'
     +'<span class="m3"><span class="size">'+o.size+'</span><span class="price">'+(kid?'':(o.price||''))+'</span></span></div>';
   return '<div class="row'+(kid?' unit':'')+'"'+s+'>'
-    +'<span class="id">'+o.icon+'<span class="ref">'+o.ref+'</span></span>'
+    +'<span class="id">'+T+o.icon+'<span class="ref">'+o.ref+'</span></span>'
     +'<span>'+(o.chip||'')+'</span><span class="prod">'+o.prod+'</span>'
     +'<span class="size">'+o.size+'</span><span class="price">'+(kid?'':(o.price||''))+'</span>'
     +(kid?A2:A3)+'</div>';
@@ -254,31 +271,6 @@ document.getElementById('mout').innerHTML=D.slice(1,7).map(o=>rec(o,true)).join(
 
 
 
-/* Two readings of "a shade toward the white", drawn rather than guessed. */
-(function(){
-  const LIGHTER=[
-    ['#FDFCFB','0.8% off paper — below the threshold most screens resolve. Almost certainly invisible.'],
-    ['#FBFAF8','1.6% — this is --bone, the page ground. Rejected already as too faint.'],
-    ['#FAF8F6','2.2% — the lightest step that still reads as a surface.'],
-    ['#F9F7F4','3% — the previous proposal, for reference.'],
-  ];
-  const src=D[3];
-  document.getElementById('shades').innerHTML =
-    '<p style="font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:0 0 8px">Reading 1 — children stay light, stepping toward white</p>'
-    + LIGHTER.map(([hex,why])=>
-      '<div style="margin:0 0 12px">'
-      + '<p style="font:400 12px/17px var(--fb);color:var(--quiet);margin:0 0 4px"><b style="color:var(--body)">'+hex+'</b> — '+why+'</p>'
-      + '<div class="list" style="--nest:'+hex+';border-top:1px solid var(--line)">' + rec(src,false) + '</div></div>').join('')
-    + '<p style="font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:26px 0 8px">Reading 2 — INVERTED: the opening is tinted, the children are white</p>'
-    + '<p style="font:400 12px/17px var(--fb);color:var(--quiet);margin:0 0 4px">Children become the LIGHTEST surface and panels the darkest, so a unit can never be mistaken for an expansion — it is on the opposite side of the parent, not the same side.</p>'
-    + '<div class="list inverted" style="border-top:1px solid var(--line)">' + rec(src,false) + rec(D[0],false) + '</div>';
-  document.getElementById('shadenote').innerHTML =
-    '<b>The floor.</b> --recessive is #F5F3F0, about 4% off paper, and that is the panel. Anything you '
-    + 'put on the children has to be lighter than that AND heavy enough to see — and the tokens call '
-    + '1.6% "deliberately barely there". That leaves roughly 2–3% to work in, which is reading 1. '
-    + 'Reading 2 sidesteps the squeeze entirely by moving the children to the other side of paper.';
-})();
-
 /* Measure: which columns hold, and exactly how far the actions move. */
 (function(){
   const head=document.querySelector('.head');
@@ -294,8 +286,14 @@ document.getElementById('mout').innerHTML=D.slice(1,7).map(o=>rec(o,true)).join(
   // not the inset.
   const pActs=document.querySelector('.rec > .row .acts').getBoundingClientRect();
   const kActs=document.querySelector('.kids .row .acts').getBoundingClientRect();
+  const pTw=document.querySelector('.rec > .row .tw').getBoundingClientRect();
+  const kTw=document.querySelector('.kids .row .tw').getBoundingClientRect();
   document.getElementById('verdict').innerHTML =
-    '<b>Measured.</b> Header x ['+hx.join(', ')+']<br>'
+    '<b>The twisty rail.</b> A parent’s twisty starts at x '+Math.round(pTw.left)+', a child’s at '
+    +Math.round(kTw.left)+' — a '+Math.round(kTw.left-pTw.left)+'px step, which is the inset plus its '
+    +'border. Every openable thing in the list now begins with the same control, and the only thing '
+    +'that moves it is depth.<br><br>'
+    +'<b>Measured.</b> Header x ['+hx.join(', ')+']<br>'
     +'Parent row x ['+px.join(', ')+']<br>'
     +'Child row x ['+kx.join(', ')+']<br>'
     +'<b>Status, Product, Size and Price drift: '+Math.max(...drift)+'px</b> — they stay locked to the header. '
