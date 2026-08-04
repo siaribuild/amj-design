@@ -30,7 +30,6 @@ import { type QItem, type QuoteState, clearReviewKey, mm, productLabel } from ".
 import { ItemForm } from "../ItemComposer";
 import { type DrawerTarget, type RowKey } from "./identity";
 import { unitLabel } from "./rowState";
-import { Elevation } from "./Elevation";
 
 /** Which level of the one drawer is showing. */
 type Level =
@@ -65,9 +64,6 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
   // unmounts in the same commit as a successful save, so a message put in a
   // region here would never survive long enough to be spoken.
   const [announcement, setAnnouncement] = useState("");
-  // What the form currently holds, for the live drawing. Null until the form
-  // reports — so the first paint draws the SAVED opening rather than a blank.
-  const [preview, setPreview] = useState<{ productSlug: string; width: string; height: string } | null>(null);
 
   const segments = item?.segments ?? [];
   const axis = item?.compositeAxis === "horizontal" ? "horizontal" : "vertical";
@@ -78,15 +74,6 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
   const title = level.kind === "parent" ? ref
       : unitLabel(ref, unitIndex);
 
-  // What the drawing falls back to before the form has reported: the UNIT when
-  // one is open, otherwise the opening. A blank add has neither, and the
-  // generator's own 1200×1200 fallback is the honest answer there.
-  const openUnit = unitIndex >= 0 ? segments[unitIndex] : undefined;
-  const draftSource = {
-    productSlug: openUnit?.productSlug ?? item?.productSlug ?? "",
-    width: openUnit?.width ?? item?.width ?? "",
-    height: openUnit?.height ?? item?.height ?? "",
-  };
 
   const rowKey: RowKey | null = target.mode === "add" ? null : target.rowKey;
 
@@ -234,19 +221,6 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
           <div className="flex-1 px-4 py-4 space-y-3">
             {error && <p role="alert" className="text-red-700 t-cap">{error}</p>}
 
-            {/* The SAME drawing the expansion shows, at the same size and with
-                the same dimension leaders — and LIVE: it redraws from the fields
-                as they are typed, so the customer sees the shape they are
-                describing rather than the one they started with. That is the
-                whole reason to spend 180px of a 520px drawer on it; a static
-                copy of the saved opening would just be the row's icon again. */}
-            <div className="flex justify-center pb-1">
-              <Elevation
-                productSlug={preview?.productSlug || draftSource.productSlug}
-                widthMm={preview ? preview.width : draftSource.width}
-                heightMm={preview ? preview.height : draftSource.height}
-                size="sm" className="w-[180px] h-[180px] text-body" />
-            </div>
 
             {/* 4. Composite build. Above the parent's own fields, matching the
                    established card: it answers "why does my line look like
@@ -315,7 +289,6 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                 // prompt and which one you got depended on which control you hit.
                 onCancel={requestClose}
                 onDirtyChange={setDirty}
-                  onPreviewChange={setPreview}
                 initialSection={initialSection}
                 rail
                 stickyActions
@@ -349,7 +322,6 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                   // discard prompt now.
                   onCancel={requestBack}
                   onDirtyChange={setDirty}
-                  onPreviewChange={setPreview}
                   rail
                   stickyActions
                   hideHeader

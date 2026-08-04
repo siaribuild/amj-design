@@ -254,3 +254,41 @@ test("contact page: showroom visit tab + chip↔form location sync", async ({ pa
 // seed and the current placeholders, and would have raced the same 60s per
 // email+reference rate limiter that the other file deliberately serialises
 // around. One flow, one test.
+
+// ─── Hydration is keyed on IDENTITY, not on mount ─────────────────────────────
+// The bug: getCurrentProject() ran once with [] deps, so the current project was
+// resolved exactly as often as the page was loaded. resolveCurrentProject
+// answers differently before and after sign-in — anonymous follows the claim
+// cookie, signed-in returns the user's own draft — so a tab that loaded while
+// signed out kept showing the anonymous project until a hard refresh, while the
+// dashboard (which queries D1 directly) showed the real one. They disagreed on
+// screen, and only a full reload reconciled them.
+test("signing in re-resolves the current project without a reload", async ({ page }) => {
+  const currentCalls: number[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "GET" && /\/api\/projects\/current(\?|$)/.test(r.url())) {
+      currentCalls.push(Date.now());
+    }
+  });
+
+  await page.goto("/quote-project");
+  await expect(page.getByRole("region", { name: "Project summary and actions" })).toBeVisible();
+  const beforeLogin = currentCalls.length;
+  expect(beforeLogin, "the builder resolves a project on load").toBeGreaterThan(0);
+
+  // Sign in WITHOUT reloading — the SPA stays mounted the whole time.
+  await page.goto("/login");
+  await otpLogin(page, /your@email\.com/, DEMO_EMAIL, /verify & continue/i);
+  await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening), Demo/ })).toBeVisible();
+
+  await expect
+    .poll(() => currentCalls.length, { message: "identity change must re-resolve the current project" })
+    .toBeGreaterThan(beforeLogin);
+
+  // And the builder now shows the signed-in customer's seeded draft — the same
+  // project the dashboard just listed — with no hard refresh in between.
+  // Arm-agnostic: /quote draws cards, /quote-project draws rows, and which one
+  // Resume lands on is not what this test is about.
+  await page.getByRole("button", { name: "Resume building your quote" }).click();
+  await expect(page.locator(".quote-row, .quote-item-card").first()).toBeVisible();
+});

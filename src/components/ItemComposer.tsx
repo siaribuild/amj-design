@@ -20,6 +20,7 @@ import {
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 import { previewPrice } from "../data/api";
 import { brandSubject } from "../data/sanity";
+import { Elevation } from "./quote-project/Elevation";
 
 export type EditFocus = "product" | "dims" | "options" | "qty";
 
@@ -46,37 +47,6 @@ const BASIS_COPY: Record<string, { label: string; detail: string; strong?: boole
     detail: "Price includes a likely frame and glazing configuration based on the building information available. {brand} will confirm it during technical review.",
   },
 };
-
-// ─── Product-frame diagram — responds to entered aspect ratio ─────────────────
-export function FrameDiagram({ w, h, tone = "sage" }: { w: number; h: number; tone?: "sage" | "light" }) {
-  const ratio = (w > 0 && h > 0) ? Math.min(2.8, Math.max(0.3, w / h)) : 1.5;
-  const MAXW = 190, MAXH = 130;
-  let bw: number, bh: number;
-  if (ratio >= 1) { bw = MAXW; bh = MAXW / ratio; if (bh > MAXH) { bh = MAXH; bw = MAXH * ratio; } }
-  else { bh = MAXH; bw = MAXH * ratio; if (bw > MAXW) { bw = MAXW; bh = MAXW / ratio; } }
-  const stroke = tone === "sage" ? "var(--sage)" : "color-mix(in srgb, var(--paper) 55%, transparent)";
-  const faint = tone === "sage" ? "color-mix(in srgb, var(--sage) 35%, transparent)" : "color-mix(in srgb, var(--paper) 24%, transparent)";
-  return (
-    <div className="flex items-end justify-center py-1" style={{ minHeight: MAXH + 30 }} aria-hidden="true">
-      <div className="relative" style={{ width: bw, height: bh }}>
-        <div className="absolute -left-5 top-0 bottom-0 flex flex-col items-center justify-center">
-          <div className="w-px flex-1" style={{ background: faint }} />
-          <span className="my-1 t-cap font-display" style={{ writingMode: "vertical-rl", color: stroke }}>H</span>
-          <div className="w-px flex-1" style={{ background: faint }} />
-        </div>
-        <div className="absolute inset-0 border-2" style={{ borderColor: stroke, background: tone === "sage" ? "color-mix(in srgb, var(--sage) 5%, transparent)" : "color-mix(in srgb, var(--paper) 4%, transparent)" }}>
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-px" style={{ background: faint }} />
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-px" style={{ background: faint }} />
-        </div>
-        <div className="absolute -bottom-5 left-0 right-0 flex items-center justify-center gap-1">
-          <div className="h-px flex-1" style={{ background: faint }} />
-          <span className="t-cap font-display" style={{ color: stroke }}>W</span>
-          <div className="h-px flex-1" style={{ background: faint }} />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 const selectClass = "field-control w-full border pl-3 pr-9 py-2.5 text-ink focus:outline-none transition-colors appearance-none cursor-pointer t-bd-sm";
 
@@ -126,7 +96,18 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
   return (
     <div>
       <div className={`flex gap-4 ${rail ? "flex-col" : "flex-col md:flex-row"}`}>
-        <div className={rail ? "w-full" : "md:w-44 flex-shrink-0"}><FrameDiagram w={w} h={h} /></div>
+        {/* The drawing IS the dimension field's feedback, and it REPLACES the
+            old FrameDiagram rather than sitting above it. That was a plain
+            rectangle with the letters W and H: it knew the aspect ratio and
+            nothing else — not the product, not the panel count, not which way
+            the sash opens — and it labelled the sides "W" and "H" instead of
+            showing the numbers being typed.
+            Live by construction: `width` and `height` ARE these fields' state,
+            so there is no callback and no second copy of the values. */}
+        <div className={`${rail ? "w-full" : "md:w-44 flex-shrink-0"} flex justify-center`}>
+          <Elevation productSlug={p.slug} widthMm={width} heightMm={height}
+            size="sm" className="w-[180px] h-[180px] max-w-full text-body" />
+        </div>
         <div className="flex-1 space-y-3">
           <div>
             <FieldLabel>Width — horizontal (mm)</FieldLabel>
@@ -480,7 +461,7 @@ export const optionSummaryOf = (p: Product | undefined, options: Record<string, 
 export function ItemForm({
   lockedSlug, quote, seed, onCommit, onCancel, rail = false, submitLabel = "Save",
   priceFn = previewPrice, scope = "item", unitAxis = "vertical", unitMode = "edit",
-  onDirtyChange, onPreviewChange, initialSection, excludeId, heading, busy = false, hideOptions = false,
+  onDirtyChange, initialSection, excludeId, heading, busy = false, hideOptions = false,
   stickyActions = false, hideHeader = false,
 }: {
   lockedSlug?: string;
@@ -528,8 +509,6 @@ export function ItemForm({
    *  draft the same way this form's own Cancel does. Optional and inert for
    *  every existing caller. */
   onDirtyChange?: (dirty: boolean) => void;
-  /** Live product + dimensions, for a caller drawing the opening as it is typed. */
-  onPreviewChange?: (draft: { productSlug: string; width: string; height: string }) => void;
   /** Which detail group starts open. Defaults to dimensions. */
   initialSection?: "dims" | "options" | "qty";
   /** Local id of the line being edited, so its own code is not a collision. */
@@ -677,16 +656,6 @@ export function ItemForm({
   const dirtyCbRef = useRef(onDirtyChange);
   dirtyCbRef.current = onDirtyChange;
   useEffect(() => { dirtyCbRef.current?.(dirty); }, [dirty]);
-
-  // The three fields a drawing is made of, reported upward as they change, so a
-  // caller can draw the opening the customer is typing rather than the one they
-  // started with. Ref-held for the same reason as the dirty callback: an inline
-  // arrow from the caller must not make this fire on every render.
-  const previewCbRef = useRef(onPreviewChange);
-  previewCbRef.current = onPreviewChange;
-  useEffect(() => {
-    previewCbRef.current?.({ productSlug, width, height });
-  }, [productSlug, width, height]);
 
   return (
     <div className="quote-panel">

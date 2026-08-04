@@ -1952,7 +1952,36 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
+  // Hydration is keyed on IDENTITY, not on mount.
+  //
+  // It used to run once with [] deps, which meant the current project was
+  // resolved exactly as often as the page was loaded. `resolveCurrentProject`
+  // answers differently before and after sign-in — anonymous returns whatever
+  // the claim cookie points at, signed-in returns the user's own draft — so a
+  // tab that loaded while signed out kept showing the anonymous project after
+  // login, until a hard refresh. The dashboard, which queries D1 directly, kept
+  // showing the real one, and the two disagreed on screen.
+  //
+  // The first fetch fires at MOUNT and is deliberately not gated on authLoading,
+  // even though gating would save a request for signed-in users. Other effects
+  // key on `user?.email` and read state this one populates — the extraction
+  // resume in useProjectDocuments reads quote.files.length the moment the
+  // session resolves — so delaying hydration to the same tick makes it a race,
+  // and a queued document run silently stops reporting itself. Fetching twice
+  // on a signed-in load is the cheaper of the two mistakes.
+  //
+  // Adopting the server's answer wholesale is safe on a change of identity
+  // BECAUSE the server has already merged: signing in moves the anonymous
+  // draft's lines into the user's draft and deletes the anon project
+  // (claimAnonProjectForUser). So there is no local-only work to protect here —
+  // what comes back already contains it.
+  const hydratedIdentityRef = useRef<string | null>(null);
   useEffect(() => {
+    const identity = user?.email ?? "anon";
+    const changed = hydratedIdentityRef.current !== null
+      && hydratedIdentityRef.current !== identity;
+    hydratedIdentityRef.current = identity;
+
     let cancelled = false;
     getCurrentProject()
       .then(r => {
@@ -1961,16 +1990,30 @@ export default function App() {
         // project must not populate the builder (nor become the submit target) — the
         // customer starts a fresh draft instead. The tracking page reads such
         // projects through its own call.
-        if (!r.project || r.project.status !== "draft") return;
+        if (!r.project || r.project.status !== "draft") {
+          // On a CHANGE of identity an absent draft is itself the answer: signing
+          // out must not leave the previous user's openings in the builder.
+          if (changed) {
+            skipNextSaveRef.current = true;
+            setProjectId(null);
+            setQuoteItems([]);
+            setQuoteFiles([]);
+          }
+          return;
+        }
         skipNextSaveRef.current = true; // don't echo the just-loaded data straight back
         setProjectId(r.project.id);
         if (r.project.title) setProjectTitle(r.project.title);
-        if (r.items.length) {
+        // The emptiness guard applies to the FIRST hydrate only, where it stops a
+        // server with nothing from wiping work done before the first save. Once
+        // the identity changes the server is authoritative for the new one, and
+        // keeping the old identity's lines would be the bug, not the safeguard.
+        if (r.items.length || changed) {
           setQuoteItems(hydrateQuoteItems(r.items));
         }
         // Surface the attached schedule file (integral to the quote/order).
-        if (r.files?.length) {
-          setQuoteFiles(r.files.map((f) => ({
+        if (r.files?.length || changed) {
+          setQuoteFiles((r.files ?? []).map((f) => ({
             id: f.id, name: f.filename, kind: f.kind, size: f.size,
             status: "Uploaded" as const, docType: f.doc_type ?? null,
           })));
@@ -1979,7 +2022,7 @@ export default function App() {
       .catch(() => { /* offline / API down — keep working in-memory */ })
       .finally(() => { if (!cancelled) hydratedRef.current = true; });
     return () => { cancelled = true; };
-  }, []);
+  }, [user?.email]);
 
   useEffect(() => {
     if (!hydratedRef.current) return;                 // ignore the pre-hydrate initial state
