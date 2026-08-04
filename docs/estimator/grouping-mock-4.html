@@ -35,13 +35,19 @@
      symmetrical about it, so the chevron sits in the middle of the space the
      children step into rather than at its edge. */
   --inset:calc(var(--pad) * 2 + var(--twf));
-  --inset-r:10px;      /* and on the right */
+  /* The right has no rule to inherit. The left inset is centred on the chevron
+     because the chevron is what opens the block; nothing on the right opens
+     anything, so mirroring the left's arithmetic would be symmetry for its own
+     sake. What the right inset does have is a price: it is paid for entirely
+     out of the ACTIONS column — every px moves a child's action icons left of
+     its parent's, and that column is the one that has to stay scannable. So it
+     is the smallest step that still reads as a contained box. */
+  --inset-r:10px;
 
   /* The gap below the block was tracking --inset. At 42px that is a hole, not
      a separation — the block already ends in a border, so the gap only has to
-     say "this group is over" before the next opening's own hairline. It is its
-     own token now, and deliberately smaller than the inset. */
-  --gapb:16px;
+     say "this group is over" before the next opening's own hairline. */
+  --gapb:24px;
   --t1:11rem;          /* twisty + icon + ref */
   --t6:5rem;           /* actions: pencil + more (the twisty has left) */
 
@@ -185,7 +191,7 @@ group flagged, a single child flagged, and parent-and-child both flagged. Then 3
 <div class="list" id="out"></div>
 <p class="note win" id="verdict"></p>
 
-<div class="sec">The gap below the children — how much</div>
+<div class="sec">The right inset — and what it costs</div>
 <div id="insets"></div>
 
 <div class="sec">375px</div>
@@ -304,17 +310,27 @@ document.getElementById('mout').innerHTML=D.slice(1,7).map(o=>rec(o,true)).join(
 /* Three depths, so "one whole twisty" can be judged against its neighbours. */
 (function(){
   const OPTS=[
-    ['8px','the block’s border does almost all the work — tight, and W1 crowds the last child.'],
-    ['16px','← current. Enough to close the group without leaving a hole.'],
-    ['24px','airier; starts to read as a deliberate space rather than a break.'],
-    ['42px','what it was when it tracked --inset — the hole that prompted this.'],
+    ['0px','flush — the block stops being a box and becomes a left-indented run. It also '
+      +'contradicts the rule that it is contained on BOTH sides.'],
+    ['10px','← current. A hairline’s worth of air; the box closes, the actions barely move.'],
+    ['16px','a touch more deliberate.'],
+    ['24px','matches the gap below, so the block is framed evenly on right and bottom.'],
+    ['42px','mirrors the left inset exactly. Symmetrical — and the actions column pays for all of it.'],
   ];
   document.getElementById('insets').innerHTML = OPTS.map(([px,why])=>
-    '<div style="margin:0 0 16px">'
+    '<div style="margin:0 0 16px" data-r="'+px+'">'
     + '<p style="font:400 12px/17px var(--fb);color:var(--quiet);margin:0 0 4px">'
-    + '<b style="color:var(--body)">'+px+'</b> — '+why+'</p>'
-    + '<div class="list" style="--gapb:'+px+';border-top:1px solid var(--line)">'
+    + '<b style="color:var(--body)">'+px+'</b> — '+why+' <b class="cost" style="color:var(--warning-ink)"></b></p>'
+    + '<div class="list" style="--inset-r:'+px+';border-top:1px solid var(--line)">'
     + rec(D[3],false) + rec(D[0],false) + '</div></div>').join('');
+
+  /* Price each one in the only currency it spends: how far a child's action
+     icons end up left of its parent's. */
+  document.querySelectorAll('#insets [data-r]').forEach(box=>{
+    const p=box.querySelector('.rec > .row .acts').getBoundingClientRect();
+    const k=box.querySelector('.kids .row .acts').getBoundingClientRect();
+    box.querySelector('.cost').textContent='Actions shift '+Math.round(p.right-k.right)+'px.';
+  });
 })();
 
 /* Measure: which columns hold, and exactly how far the actions move. */
