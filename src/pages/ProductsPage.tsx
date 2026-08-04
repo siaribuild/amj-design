@@ -204,17 +204,28 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
     : (activeFamily?.name ?? "");
   const description = familyDescription(category, family);
 
-  // ground-paper, and the CARDS carry the fill. Bone as a full-page ground was
-  // tried first and read as a wash of warm grey behind photography — the images
-  // are the figure on a catalogue and a tinted field competes with them.
+  // THE PAGE IS BONE; THE CATALOGUE ESCAPES TO PAPER AS ITS OWN BAND.
   //
-  // Inverting it keeps the derivation rule intact (the card still takes the
-  // other surface, it is just the other way round now) and fixes the original
-  // complaint the same way: a product tile is a bone body under a dark image on
-  // a white page, so the gutters between tiles read and the text below each
-  // photograph is bounded instead of floating.
+  // The page ground was paper, because full-page bone had been tried and
+  // reverted: it read as a wash of warm grey behind photography, and on a
+  // catalogue the images are the figure — a tinted field competes with them.
+  // That judgement still holds and is not being overturned. What changes is the
+  // level it applies at.
+  //
+  // Bone is the page (owner), and the alternation the rest of the site uses
+  // carries it: night → paper → bone → paper. The catalogue is a full-bleed
+  // ground-paper SECTION inside the bone page, so the grid keeps exactly the
+  // surface it has today and a product tile is still a bone body under a dark
+  // image on a white field — gutters read, and the caption under each
+  // photograph is bounded rather than floating.
+  //
+  // Do NOT flip that band to bone to make the page look more bone. It turns
+  // every tile paper and reproduces precisely the state that was reverted. The
+  // home page's Systems section — the site's only other photographic tile grid
+  // — is ground-paper for the same reason, and says outright not to darken bone
+  // to force the contrast.
   return (
-    <div className="ground-paper min-h-screen">
+    <div className="ground-bone min-h-screen">
       {/* ─── HERO — contextual to selected category, header overlays it ─────── */}
       <section className="relative h-[360px] md:h-[440px] flex items-end bg-night overflow-hidden">
         <img src={imageUrl(getPage("products")?.heroImage, { w: 1920, h: 1080 })} alt={hero.alt} className="hero-img hero-zoom" />
@@ -247,7 +258,16 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
         </div>
       </section>
 
-      <div className="max-w-6xl mx-auto px-6">
+      {/* The catalogue band. No border-t: it meets the night hero, and a hairline
+          on black is invisible — the phase sections on How it works do the same.
+          No section-pad either: 96px of white above the taxonomy rail is the
+          opposite of what this page is for, so it keeps its working rhythm.
+          `relative` on the inner wrapper is REQUIRED, not decoration: the
+          drafting-grid pseudo-element on section.ground-paper is absolutely
+          positioned with no z-index, so without a positioned wrapper it paints
+          OVER the product photographs. */}
+      <section className="ground-paper">
+      <div className="max-w-6xl mx-auto px-6 relative">
         <div className="lg:grid lg:grid-cols-[272px_1fr] lg:gap-10 py-8 md:py-10">
 
           {/* ─── MOBILE — category cards + family scroll rail ───────────────── */}
@@ -326,13 +346,13 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
 
             {/* Product grid / empty state */}
             {list.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {list.map(p => (
                   <ProductCard key={p.id} product={p} category={category} onView={() => onOpenProduct(p.slug)} />
                 ))}
               </div>
             ) : (
-              <div className="card p-8 text-center mb-10">
+              <div className="card p-8 text-center">
                 <AlertCircle className="w-6 h-6 text-sage mx-auto mb-3" />
                 <p className="text-ink font-medium mb-1">No systems found for this selection.</p>
                 <p className="text-body mb-5 t-bd-sm">Try another family or upload your schedule and we'll help identify the right product.</p>
@@ -351,6 +371,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
         </div>
 
       </div>
+      </section>
 
       {/* ─── WHAT YOU GET ──────────────────────────────────────────────────────
           Was four icons in a grid INSIDE the max-w-6xl content wrapper, held up

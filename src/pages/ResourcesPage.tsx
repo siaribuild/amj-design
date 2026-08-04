@@ -19,7 +19,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useMemo, useState } from "react";
 import { Check, Search, X } from "lucide-react";
-import { type Page, SLabel, Btn, CtaBanner, GhostMark } from "../app/ui";
+import { type Page, SLabel, Btn, CtaBanner } from "../app/ui";
 import { posts, postCategories, imageUrl, getPage, postDate, type Post } from "../data/catalogue";
 import { fileSize, docDate } from "../components/DocumentRow";
 import { pathForPage } from "../app/routes";
@@ -158,8 +158,17 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
     </div>
   );
 
+  // Bone is the page (owner), and the alternation the rest of the site uses
+  // carries it: night → bone → paper. Nothing on this page is a photograph, so
+  // the objection that kept the catalogue on paper does not apply here — and
+  // every .card on it improves. The search field is a CONTROL, and ground-bone
+  // publishes --control-fill: paper precisely so a control lifts off the page;
+  // on paper it was the inverse, a bone box recessed into white. The zero-state
+  // panel becomes one white sheet on a tinted page instead of white-on-white
+  // held by a hairline. The result rows are not cards at all — hairlines only —
+  // so they are unaffected and go on reading as records ON the page.
   return (
-    <div className="ground-paper">
+    <div className="ground-bone">
       {/* A BAND, not a hero. The wireframe argues the point and it is right: at a
           laptop viewport a 360px title block consumes the useful first screen
           and pushes the first real record below it. ~210px orients, then gets
@@ -297,8 +306,12 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
         )}
       </div>
 
+      {/* Paper, the default. It was pinned to bone to differ from a paper
+          page; with the page now bone that pin makes the closing section the
+          same surface as the body above it and the seam vanishes — the exact
+          drift the prop exists to prevent. Paper-after-bone at the close is
+          what How it works, Products and a post all do. */}
       <CtaBanner
-        ground="bone"
         title="Need a document tied to a specific product?"
         sub="Send the product family, drawing reference or standard and a person will locate the current issue."
         onQuote={() => go("contact")}
