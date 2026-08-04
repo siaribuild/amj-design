@@ -110,19 +110,22 @@ svg.el [stroke]{vector-effect:non-scaling-stroke}
 .graded .grp > .row + .row{border-top:none}
 
 
-/* ── E: children OUTDENT past the parent ───────────────────────────────────── */
-.outdent > .grp > .row:first-child{padding-left:34px}
-.outdent > .grp > .row + .row{padding-left:10px}
-.outdent > .grp + .grp,.outdent > .grp + .row,
-.outdent > .row + .grp,.outdent > .row + .row{margin-top:10px}
-.outdent > .row{padding-left:34px}
-.outdent .tree{display:none}
-.outdent .unit{border-left:3px solid var(--line)}
-
 /* ── F: no indent at all ───────────────────────────────────────────────────── */
 .flush .tree{display:none}
 .flush > .grp + .grp,.flush > .grp + .row,
 .flush > .row + .grp,.flush > .row + .row{margin-top:10px}
+
+
+/* ── G: the card, with the stripe PROMOTED to the record's own left edge ───── */
+.recs{display:flex;flex-direction:column;gap:10px}
+.recs .rec{border:1px solid var(--line);border-left:3px solid var(--line);background:var(--paper)}
+.recs .rec[data-state="attention"]{border-left-color:var(--warning)}
+.recs .rec[data-state="review"]{border-left-color:var(--info)}
+.recs .rec > .row{box-shadow:none}          /* no inset stripe: the record carries it */
+.recs .rec > .row + .row{border-top:none}   /* no rule INSIDE a record */
+.recs .rec .tree{display:none}              /* flush: the card is the containment */
+.recs .rec .unit{background:var(--recessive)}
+.recs .rec > .row{padding-left:10px}
 
 .legend{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 0;
   font-size:12px;line-height:17px;color:var(--quiet)}
@@ -239,22 +242,6 @@ blocked unit so each option can be judged with a state stripe in play.</p>
 </section>
 
 
-<!-- ══ E ══════════════════════════════════════════════════════════════════ -->
-<section class="opt">
-  <div class="opt-head"><span class="opt-tag">E · reading 1</span><h2>Children outdent — the parent steps in, the units sit out</h2></div>
-  <p class="opt-why">The inverse of the usual nesting. The <em>parent</em> is indented and its units sit
-    further left, flush to the record's edge, carrying a left bar. The opening reads as a title above its
-    parts rather than as a peer of them.</p>
-  <div class="panel" style="padding:6px 0">
-    <div class="head" style="border-bottom:none;margin:-6px 0 4px"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
-    <div class="outdent" id="listE"></div>
-  </div>
-  <p class="verdict"><b>What it buys:</b> the parent stops being a peer — indenting the thing that
-    <em>names</em> the record is a strong signal it is a header. <b>What it costs:</b> the reference
-    column no longer starts at one x. W1 begins 24px right of W1A, so the one column a builder scans
-    down — the schedule codes — becomes ragged, and the left bar lands in the state stripe's slot.</p>
-</section>
-
 <!-- ══ F ══════════════════════════════════════════════════════════════════ -->
 <section class="opt">
   <div class="opt-head"><span class="opt-tag">F · reading 2</span><h2>No indent — containment does all the work</h2></div>
@@ -270,6 +257,25 @@ blocked unit so each option can be judged with a state stripe in play.</p>
     unit chip budget that item 3 was fighting. <b>What it costs:</b> nesting is now carried by fill alone,
     so a unit and a parent differ only in tone — and the recessive fill is already used for the header
     strip and expansions, so it is not exclusively a "child" signal.</p>
+</section>
+
+
+<!-- ══ G ══════════════════════════════════════════════════════════════════ -->
+<section class="opt">
+  <div class="opt-head"><span class="opt-tag">G · your card, fixed</span><h2>Bordered record, and the state stripe becomes its left edge</h2></div>
+  <p class="opt-why">Your sketch with the one real objection removed. Every record is a bordered block —
+    drawn, not toned, so W3 and W4 can never merge. The state stripe stops being an inset shadow on a row
+    and becomes the <em>record's</em> left border at 3px, so there is no doubling: one edge, one colour.
+    Inside a record there are no rules and no indent — the card is the containment, so the reference column
+    is straight.</p>
+  <div class="head" style="border:1px solid var(--line);border-left-width:3px;border-bottom:none"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
+  <div class="recs" id="listG" style="margin-top:10px"></div>
+  <p class="verdict good"><b>What it resolves:</b> no 1px-outboard-of-3px doubled edge; no reliance on a
+    1.6 ΔL* paper-on-bone step; no ragged code column; and the indent that forced the reference track to
+    9.5rem is gone. Two adjacent childless records are unambiguously two records.
+    <b>What is left to decide:</b> a record has ONE left edge but its rows can disagree — W4's unit needs
+    attention while its opening does not. Drawn here as "the record shows the most severe state inside it",
+    with the chip still naming which row. That is a real decision, not a detail.</p>
 </section>
 
 </div>
@@ -340,6 +346,13 @@ function unitRow(u){
     <span class="size">${u.size}</span>
     <span></span>${UACTS}</div>`;
 }
+function renderRecords(id){
+  document.getElementById(id).innerHTML=DATA.map(o=>{
+    const attn=(o.units||[]).some(u=>u.attn)||o.attn;
+    const body=parentRow(o)+(o.units||[]).map(u=>unitRow({...u,attn:false})).join('');
+    return '<div class="rec" data-state="' + (attn?'attention':'ready') + '">' + body + '</div>';
+  }).join('');
+}
 function render(id,mode){
   document.getElementById(id).innerHTML=DATA.map(o=>{
     if(!o.units)return mode==='cards'?`<div class="card">${parentRow(o)}</div>`:parentRow(o);
@@ -348,7 +361,7 @@ function render(id,mode){
     return `<div class="grp">${body}</div>`;
   }).join('');
 }
-render('listE','grp');render('listF','grp');render('listA','flat');render('listB','cards');render('listC','grp');render('listD','grp');
+renderRecords('listG');render('listF','grp');render('listA','flat');render('listB','cards');render('listC','grp');render('listD','grp');
 </script>
 </body>
 </html>
