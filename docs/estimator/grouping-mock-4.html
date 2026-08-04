@@ -27,13 +27,21 @@
   --twf:22px;          /* the twisty's own box */
   --twgap:8px;         /* and the gap between it and the product icon */
 
-  /* THE INSET = one whole twisty. Stepping in by the arrow's full width plus
-     the gap that follows it (less the block's 1px border) lands a child's
-     twisty exactly on the x of its parent's product ICON. The children are
-     therefore inset by precisely one control — the depth of the nesting is
-     the width of the thing that opened it. */
-  --inset:calc(var(--twf) + var(--twgap) - 1px);
+  /* THE INSET = the twisty's COLUMN, centred on the twisty.
+     The previous attempt measured the arrow from its own left edge and forgot
+     the row's padding, so the band ended one whole --pad short and the block's
+     edge landed hard against the end of the arrow. Measured from the record's
+     edge the arrow's centre is (--pad + --twf/2); doubling that makes the band
+     symmetrical about it, so the chevron sits in the middle of the space the
+     children step into rather than at its edge. */
+  --inset:calc(var(--pad) * 2 + var(--twf));
   --inset-r:10px;      /* and on the right */
+
+  /* The gap below the block was tracking --inset. At 42px that is a hole, not
+     a separation — the block already ends in a border, so the gap only has to
+     say "this group is over" before the next opening's own hairline. It is its
+     own token now, and deliberately smaller than the inset. */
+  --gapb:16px;
   --t1:11rem;          /* twisty + icon + ref */
   --t6:5rem;           /* actions: pencil + more (the twisty has left) */
 
@@ -116,7 +124,7 @@ svg.el{display:block;flex:none;color:var(--body)}
    weight rather than decorating. */
 /* SHADE — none. Paper for openings, paper for units, --recessive for panels.
    The block's own border plus the white gap below it does the separating. */
-.kids{margin:0 var(--inset-r) var(--inset) var(--inset);border:1px solid var(--line);
+.kids{margin:0 var(--inset-r) var(--gapb) var(--inset);border:1px solid var(--line);
   border-top:none;background:var(--paper)}
 .kids .row{grid-template-columns:var(--qp-cols-child);background:transparent}
 .kids > .row + .row{border-top:1px solid var(--line)}
@@ -131,18 +139,29 @@ svg.el{display:block;flex:none;color:var(--body)}
    different objects rather than two sizes of the same one. */
 .rec > .exp{border-top:1px solid var(--line)}
 
+/* GAUGE — tints the inset band and draws its centre line, so "is the chevron
+   centred over the inset" is something you can see rather than take on trust. */
+.gauge{position:relative}
+.gauge::before{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--inset);
+  background:rgba(76,106,136,.09);pointer-events:none;z-index:2}
+.gauge::after{content:"";position:absolute;top:0;bottom:0;left:calc(var(--inset) / 2);
+  width:1px;background:rgba(76,106,136,.8);pointer-events:none;z-index:3}
+
 /* ── mobile ────────────────────────────────────────────────────────────────── */
 .phone{width:375px}
 .phone .cap{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:0 0 6px}
 .phone .stage{background:var(--bone);padding:10px;border:1px solid var(--line)}
 .phone .list{border:1px solid var(--line);border-top:1px solid var(--line)}
-.phone .row{grid-template-columns:1fr;row-gap:4px;padding:10px 12px;min-height:0}
+/* --pad is redefined here, and --inset is a calc() over it, so the mobile
+   inset re-derives itself from the mobile padding — the rule travels. */
+.phone{--pad:12px}
+.phone .row{grid-template-columns:1fr;row-gap:4px;padding:10px var(--pad);min-height:0}
 .phone .kids .row{grid-template-columns:1fr}
 .phone .head{display:none}
 .phone .m1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .phone .m3{display:flex;justify-content:space-between;gap:10px}
 .phone .size,.phone .price{text-align:left}
-.phone .kids{margin:0 8px 20px 14px}
+.phone .kids{margin:0 8px var(--gapb) var(--inset)}
 .phone .kids > .exp{margin:0}
 .phones{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
 </style>
@@ -166,9 +185,8 @@ group flagged, a single child flagged, and parent-and-child both flagged. Then 3
 <div class="list" id="out"></div>
 <p class="note win" id="verdict"></p>
 
-<div class="sec">The inset — how far in</div>
+<div class="sec">The gap below the children — how much</div>
 <div id="insets"></div>
-<p class="note" id="insetnote"></p>
 
 <div class="sec">375px</div>
 <div class="phones"><div class="phone"><p class="cap">E on a phone</p><div class="stage"><div id="mout"></div></div></div></div>
@@ -286,15 +304,16 @@ document.getElementById('mout').innerHTML=D.slice(1,7).map(o=>rec(o,true)).join(
 /* Three depths, so "one whole twisty" can be judged against its neighbours. */
 (function(){
   const OPTS=[
-    ['21px','calc(var(--twf) - 1px)','the ARROW BOX only — a child’s twisty stops short of the parent’s icon'],
-    ['29px','calc(var(--twf) + var(--twgap) - 1px)','ONE WHOLE TWISTY — arrow plus its gap. A child’s twisty lands exactly on the parent’s icon. ← current'],
-    ['47px','calc(var(--twf) + var(--twgap) + 28px - 2px)','arrow AND icon — a child’s twisty lands on the parent’s REF'],
+    ['8px','the block’s border does almost all the work — tight, and W1 crowds the last child.'],
+    ['16px','← current. Enough to close the group without leaving a hole.'],
+    ['24px','airier; starts to read as a deliberate space rather than a break.'],
+    ['42px','what it was when it tracked --inset — the hole that prompted this.'],
   ];
-  document.getElementById('insets').innerHTML = OPTS.map(([px,expr,why])=>
-    '<div style="margin:0 0 14px">'
+  document.getElementById('insets').innerHTML = OPTS.map(([px,why])=>
+    '<div style="margin:0 0 16px">'
     + '<p style="font:400 12px/17px var(--fb);color:var(--quiet);margin:0 0 4px">'
     + '<b style="color:var(--body)">'+px+'</b> — '+why+'</p>'
-    + '<div class="list" style="--inset:'+expr+';border-top:1px solid var(--line)">'
+    + '<div class="list" style="--gapb:'+px+';border-top:1px solid var(--line)">'
     + rec(D[3],false) + rec(D[0],false) + '</div></div>').join('');
 })();
 
@@ -315,14 +334,18 @@ document.getElementById('mout').innerHTML=D.slice(1,7).map(o=>rec(o,true)).join(
   const kActs=document.querySelector('.kids .row .acts').getBoundingClientRect();
   const pTw=document.querySelector('.rec > .row .tw').getBoundingClientRect();
   const kTw=document.querySelector('.kids .row .tw').getBoundingClientRect();
-  const pIc=document.querySelector('.rec > .row svg.el').getBoundingClientRect();
-  const off=Math.round(kTw.left-pIc.left);
+  const kids=document.querySelector('.kids').getBoundingClientRect();
+  const listL=document.querySelector('#out').getBoundingClientRect().left+1; // inside the border
+  const band=kids.left-listL;                       // the inset band
+  const twMid=pTw.left+pTw.width/2-listL;           // the chevron's centre
+  const off=Math.round(twMid-band/2);
   document.getElementById('verdict').innerHTML =
-    '<b>The inset is one whole twisty.</b> A parent’s twisty starts at x '+Math.round(pTw.left)
-    +', a child’s at '+Math.round(kTw.left)+' — a '+Math.round(kTw.left-pTw.left)+'px step. '
-    +'The parent’s product ICON starts at x '+Math.round(pIc.left)+', so the child’s twisty lands '
-    +(off===0?'<b>exactly on it (0px)</b>':'<b>'+off+'px off it</b>')+'. The children step in by '
-    +'precisely one control: the depth of the nesting is the width of the thing that opened it.<br><br>'
+    '<b>The chevron is centred over the inset.</b> The band the children step into runs 0 → '
+    +Math.round(band)+'px, so its centre is '+Math.round(band/2)+'. The chevron’s centre is at '
+    +Math.round(twMid)+' — '+(off===0?'<b>dead on (0px)</b>':'<b>'+off+'px off</b>')
+    +'. The earlier 29px missed by exactly one row padding: it was measured from the arrow’s own '
+    +'left edge, not from the record’s. A child’s twisty starts at x '+Math.round(kTw.left)
+    +' against the parent’s '+Math.round(pTw.left)+'.<br><br>'
     +'<b>Measured.</b> Header x ['+hx.join(', ')+']<br>'
     +'Parent row x ['+px.join(', ')+']<br>'
     +'Child row x ['+kx.join(', ')+']<br>'
