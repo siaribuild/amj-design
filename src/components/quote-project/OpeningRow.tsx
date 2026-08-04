@@ -25,7 +25,7 @@
 // Never horizontal scrolling: the product name is the only elastic element and
 // it truncates.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { ChevronDown, AlertCircle, MoreHorizontal, Pencil } from "lucide-react";
+import { ChevronRight, AlertCircle, MoreHorizontal, Pencil } from "lucide-react";
 import { type QItem, fmt, sizePhrase, productLabel, compositeLabel, linePriceTotal } from "../../data/configurator";
 // gstSuffix is deliberately not imported: the mode still ADJUSTS every line's
 // figure, it is simply no longer spelled out on each one.
@@ -71,15 +71,23 @@ export function OpeningRow({
   // screen reader (plan §11).
   return (
     <div id={rowId(rowKey)} data-state={rowStateAttr(state)}
-      // Padding follows the wireframe's two treatments, not one compromise
-      // between them: below 768 this is a stacked CARD and keeps card padding;
-      // from 768 it is a table row and takes the quote editor's own cell rhythm
-      // — 6px 10px against a 44px minimum row height.
-      className="quote-row flex md:grid flex-wrap items-center gap-x-2 md:gap-x-3 gap-y-1.5
-        px-3 sm:px-4 py-3 md:px-2.5 md:py-1.5 md:min-h-[44px]">
+      // Padding and row height live in .quote-row: --qp-inset is computed from
+      // that padding, so it cannot be stated twice.
+      className="quote-row flex md:grid flex-wrap items-center gap-x-2 md:gap-x-3 gap-y-1.5">
         {/* Identity is ONE cell. The pictogram and the code were siblings, which
             is invisible in a flex row but would have consumed two grid tracks. */}
         <span className="order-1 md:col-start-1 md:row-start-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+          {/* The disclosure LEADS the row (owner). It is the first thing on the
+              line, left of the drawing, so every openable thing in the list
+              begins with the same control and the column of them reads as one
+              rail. A composite's children step in by exactly this control's
+              width, which is what makes the rail state the nesting. */}
+          <button type="button" onClick={onToggleExpanded}
+            aria-expanded={expanded} aria-controls={panelId(rowKey)}
+            aria-label={`${expanded ? "Hide" : "Show"} details for ${ref}`}
+            className="quote-twisty icon-btn focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+            <ChevronRight className="w-4 h-4" aria-hidden="true" />
+          </button>
           {/* Square and uniform, 28×28. The list is scanned down a column, and a
               per-line proportion gives that column no edge to read against —
               it also shrinks a 3500×700 line to a sliver at this size. The true
@@ -119,18 +127,12 @@ export function OpeningRow({
         )}
 
         <div className="order-4 md:order-none md:col-start-5 lg:col-start-6 md:row-start-1 ml-auto md:ml-0 flex items-center gap-0.5 flex-shrink-0 md:justify-end">
-          {/* 44px touch targets: these three sit adjacent, and under-sizing them
-              is the classic mis-tap generator on this exact pattern. */}
-          <button type="button" onClick={onToggleExpanded}
-            aria-expanded={expanded} aria-controls={panelId(rowKey)}
-            aria-label={`${expanded ? "Hide" : "Show"} details for ${ref}`}
-            className="w-11 h-11 lg:w-9 lg:h-9 inline-flex items-center justify-center text-body hover:text-ink icon-btn cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
-            <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden="true" />
-          </button>
-          {/* A pictogram, matched to the chevron and More either side of it:
-              three controls in one cluster read as one kind of thing, and a lone
-              text label among two glyphs reads as something else. The accessible
-              name still carries the opening reference. */}
+          {/* 44px touch targets: these sit adjacent, and under-sizing them is
+              the classic mis-tap generator on this exact pattern. */}
+          {/* A pictogram, matched to the More beside it: controls in one cluster
+              read as one kind of thing, and a lone text label among glyphs reads
+              as something else. The accessible name still carries the opening
+              reference. */}
           <button type="button" id={editControlId(rowKey)} onClick={onEdit}
             aria-label={`Edit ${ref}`} title={`Edit ${ref}`}
             className="w-11 h-11 lg:w-9 lg:h-9 inline-flex items-center justify-center text-sage hover:text-sage-hover icon-btn cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">

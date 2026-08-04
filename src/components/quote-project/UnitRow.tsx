@@ -2,15 +2,15 @@
 // UNIT ROW — a composite's child, in the list rather than buried in a panel
 //
 // A composite opening is one line the customer submitted and several frames we
-// make. It used to render as a single row whose units were only visible after
-// opening it, which hid the thing most worth checking: that the parts add up to
-// the opening. Units are rows now, indented under their parent, ALWAYS shown —
-// there is no collapsed state for the stack itself.
+// make. Units are rows, not a nested panel, and they live in a box inset under
+// their parent — the parent's disclosure is what opens it (owner), so a
+// composite opens into its children the way any other opening opens into its
+// detail.
 //
-// It shares .quote-row and the same grid tracks as OpeningRow, so Status,
-// Product and Size land in one column down the whole table. That is the reason
-// the REF track is wider than a parent alone would need: it has to hold the
-// indent, the connector and W1A without pushing Status out of line.
+// It shares .quote-row and the same grid tracks as OpeningRow. The block's
+// tracks give up the inset on the left and the right and leave the middle ones
+// alone, so Status, Product, Size and Price land on exactly the same x as the
+// parent's and the header's — one eye-line reads down the whole table.
 //
 // What a unit does NOT get, and why:
 //  • no PRICE. The parent owns the total; per-unit figures do not sum to it and
@@ -21,7 +21,7 @@
 //  • no state chip of its own unless it has something to say — a row of Ready
 //    chips under a Ready parent is noise.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { ChevronDown, Pencil } from "lucide-react";
+import { ChevronRight, Pencil } from "lucide-react";
 import { type QSegment, sizePhrase, productLabel } from "../../data/configurator";
 import { Elevation } from "./Elevation";
 
@@ -72,14 +72,19 @@ export function UnitRow({
 
   return (
     <div data-unit="" data-state={incomplete || wrongSize ? "attention" : "ready"}
-      className="quote-row quote-unitrow flex md:grid flex-wrap items-center
-        gap-x-2 md:gap-x-3 gap-y-1.5 px-3 sm:px-4 py-3 md:px-2.5 md:py-1.5 md:min-h-[44px]">
+      className="quote-row flex md:grid flex-wrap items-center gap-x-2 md:gap-x-3 gap-y-1.5">
 
-      {/* Identity: indent, connector, drawing, reference. One cell, so it
-          occupies one track — the connector is drawn by the cell rather than
-          added as a sibling, which would have cost a column. */}
+      {/* Identity: disclosure, drawing, reference. One cell, so it occupies one
+          track. No connector: the block this row sits in is inset and bordered
+          along its whole height, which states the same relationship — an elbow
+          inside it would point at an edge two pixels away. */}
       <span className="order-1 md:col-start-1 md:row-start-1 flex items-center gap-x-2 min-w-0">
-        <span className="quote-unit-tree" aria-hidden="true" />
+        <button type="button" onClick={onToggleExpanded}
+          aria-expanded={expanded} aria-controls={panelId}
+          aria-label={`${expanded ? "Hide" : "Show"} details for ${label}`}
+          className="quote-twisty icon-btn focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+          <ChevronRight className="w-4 h-4" aria-hidden="true" />
+        </button>
         <Elevation productSlug={segment.productSlug} widthMm={segment.width} heightMm={segment.height}
           square className="w-7 h-7 flex-shrink-0 text-body" />
         <span className="font-semibold text-ink truncate font-data t-data">{label}</span>
@@ -94,20 +99,17 @@ export function UnitRow({
 
       <div className="order-4 md:order-none md:col-start-5 lg:col-start-6 md:row-start-1 ml-auto md:ml-0
         flex items-center gap-0.5 flex-shrink-0 md:justify-end">
-        <button type="button" onClick={onToggleExpanded}
-          aria-expanded={expanded} aria-controls={panelId}
-          aria-label={`${expanded ? "Hide" : "Show"} details for ${label}`}
-          className="w-11 h-11 lg:w-9 lg:h-9 inline-flex items-center justify-center text-body hover:text-ink icon-btn cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
-          <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden="true" />
-        </button>
         <button type="button" id={controlId} onClick={onEdit}
           aria-label={`Edit ${label}`} title={`Edit ${label}`}
           className="w-11 h-11 lg:w-9 lg:h-9 inline-flex items-center justify-center text-sage hover:text-sage-hover icon-btn cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
           <Pencil className="w-4 h-4" aria-hidden="true" />
         </button>
-        {/* The third slot a parent fills with More is left EMPTY rather than
-            collapsed, so the chevron and pencil stay under their parent's. */}
-        <span className="w-11 lg:w-9" aria-hidden="true" />
+        {/* The slot a parent fills with More is left EMPTY rather than
+            collapsed, so the pencil stays under its parent's — but only from
+            768, where there IS a column to stay under. On a phone the row is a
+            card with nothing to align to, and 44px of reserved blank is what
+            tips a flagged unit's actions onto a second line. */}
+        <span className="hidden md:inline-block md:w-11 lg:w-9" aria-hidden="true" />
       </div>
 
       <span className="order-5 md:order-none md:col-start-2 lg:col-start-3 md:row-start-1

@@ -143,6 +143,30 @@ function PanelLabel({ children }: { children: ReactNode }) {
   );
 }
 
+/** The shortfall, in millimetres.
+ *
+ *  A composite parent no longer HAS a panel of its own — it opens into its
+ *  units (owner) — so this rides at the head of the children block, which is
+ *  where it belongs anyway: it is a statement about how those units add up, and
+ *  it now sits directly above the rows it is asking someone to check. A
+ *  childless opening can still reach confirm-layout, so the panel keeps it too. */
+export function CoverageNotice({ item, state }: { item: QItem; state: RowState }) {
+  if (state.kind !== "confirm-layout") return null;
+  if (typeof state.deltaMm !== "number" || state.deltaMm === 0) return null;
+  return (
+    <div className="quote-coverage">
+      <PanelLabel>Check the layout</PanelLabel>
+      <p className="text-info-ink t-cap">
+        {/* The number, not just the fact. "Doesn't add up" sends someone
+            hunting; "160 mm short" tells them which unit to look at. */}
+        The units add up to {Math.abs(state.deltaMm)} mm
+        {state.deltaMm > 0 ? " more" : " less"} than this opening
+        {" "}({mm(item.width)} × {mm(item.height)}). Check each unit's size.
+      </p>
+    </div>
+  );
+}
+
 export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: {
   item: QItem;
   rowKey: RowKey;
@@ -170,8 +194,10 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
     // otherwise lost its marker at exactly the point the customer is reading why
     // it is blocked — the coloured edge stopped at the row and the panel below
     // looked like an unrelated block.
-    <div id={panelId(rowKey)} data-state={stripeFor(state)}
-      className="quote-rowexp bg-recessive border-t border-line px-3 sm:px-4 py-4">
+    // Ground, hairline and padding all come from .quote-rowexp now, so the two
+    // panels on this route — an opening's and a unit's — cannot drift apart,
+    // and the panel's text registers with the row's above it.
+    <div id={panelId(rowKey)} data-state={stripeFor(state)} className="quote-rowexp">
       {/* The reason, and the action that resolves it. Both used to sit inline in
           the row beside the chip, where they made a blocked line two or three
           lines tall. Here they have room to be a sentence rather than a truncated
@@ -200,18 +226,7 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           per unit, indented under their parent — so repeating them inside the
           parent's own panel would state the same stack twice, in two different
           shapes, on one screen. */}
-      {state.kind === "confirm-layout" && typeof state.deltaMm === "number" && state.deltaMm !== 0 && (
-        <div className="mb-4">
-          <PanelLabel>Check the layout</PanelLabel>
-          <p className="text-info-ink t-cap">
-            {/* The number, not just the fact. "Doesn't add up" sends someone
-                hunting; "160 mm short" tells them which unit to look at. */}
-            The units add up to {Math.abs(state.deltaMm)} mm
-            {state.deltaMm > 0 ? " more" : " less"} than this opening
-            {" "}({mm(item.width)} × {mm(item.height)}). Check each unit's size.
-          </p>
-        </div>
-      )}
+      <CoverageNotice item={item} state={state} />
 
       <SpecPanel
         productSlug={item.productSlug} widthMm={item.width} heightMm={item.height}

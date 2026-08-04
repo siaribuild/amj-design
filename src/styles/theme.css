@@ -640,7 +640,60 @@
    *   >=1024  qty and status rejoin the row as their own aligned columns, which
    *           is what the header labels above them promise.
    */
-  .quote-table { --qp-cols: 11.5rem minmax(0, 1fr) 8rem 7rem 6.75rem; }
+  /* ─── The nesting metrics ─────────────────────────────────────────────────
+   * A composite's units live in a bordered box inset under their parent, and
+   * the inset is DERIVED rather than chosen: it is the disclosure control's
+   * own column, centred on the control.
+   *
+   *   --qp-inset = (--qp-pad + --qp-twisty/2) × 2
+   *
+   * Measured from the record's edge the twisty's centre is (pad + twisty/2);
+   * doubling that makes the band symmetrical about it, so the chevron sits in
+   * the MIDDLE of the space its children step into rather than at its edge.
+   * The children are inset by exactly one control — the depth of the nesting
+   * is the width of the thing that opened it, and it re-derives itself
+   * wherever the padding or the control size changes.
+   *
+   * The RIGHT inset has no rule to inherit: nothing on the right opens
+   * anything, so mirroring the left's arithmetic would be symmetry for its own
+   * sake. What it has is a price — it comes out of the ACTIONS column, moving
+   * a child's icons left of its parent's — so it is the smallest step that
+   * still reads as a contained box (owner: 16px, measured at a 17px shift).
+   *
+   * The gap BELOW is its own token. It once tracked --qp-inset, which is fine
+   * at 26px and a hole at 56px: the block already ends in a border, so the gap
+   * only has to say the group is over before the next opening's hairline.
+   */
+  .quote-table {
+    --qp-pad: 0.75rem;      /* px-3, the card's own padding */
+    --qp-twisty: 2.75rem;   /* the 44px touch target */
+    /* On a 375px card a band centred on a 44px control would take 18% of the
+     * screen. Below the table breakpoint it stops at the twisty's CENTRE
+     * instead of surrounding it — the same landmark, half the cost. */
+    --qp-inset: calc(var(--qp-pad) + var(--qp-twisty) / 2);
+    --qp-inset-r: 1rem;
+    --qp-gapb: 1.5rem;
+
+    --qp-t1: 11.5rem;       /* identity: twisty, drawing, reference, status  */
+    --qp-tz: 6.75rem;       /* actions: edit + more                          */
+    --qp-cols: var(--qp-t1) minmax(0, 1fr) 8rem 7rem var(--qp-tz);
+  }
+  @media (min-width: 640px) { .quote-table { --qp-pad: 1rem; } }
+
+  @media (min-width: 768px) {
+    /* The row is a table from here, so the inset takes the full centred rule.
+     * The twisty drops to 2.25rem at the same breakpoint: it is no longer in
+     * the action cluster, so it is free to be a table control rather than a
+     * touch target, and 44px of chrome before every reference is a column of
+     * empty space in a list read by scanning. */
+    .quote-table {
+      --qp-pad: 0.625rem;
+      --qp-twisty: 2.25rem;
+      --qp-inset: calc((var(--qp-pad) + var(--qp-twisty) / 2) * 2);
+      --qp-t1: 14.5rem;
+      --qp-tz: 5.75rem;
+    }
+  }
 
   @media (min-width: 1024px) {
     /* ID · Status · Product · Size · Price · Actions.
@@ -652,49 +705,108 @@
      * Quantity is not a column and is not shown at all: this route's model is
      * one opening per reference (owner). The field is still stored, edited and
      * priced — it simply has nothing to say in a list where it is always 1. */
-    .quote-table { --qp-cols: 9.5rem 10rem minmax(0, 1fr) 8.5rem 7.5rem 7rem; }
+    .quote-table {
+      --qp-t1: 12.5rem;
+      --qp-tz: 4.75rem;
+      --qp-cols: var(--qp-t1) 10rem minmax(0, 1fr) 8.5rem 7.5rem var(--qp-tz);
+    }
   }
 
-  /* ─── A composite's units, as rows ───────────────────────────────────────
-   * The REF track above is 9.5rem rather than the 6.75 a parent alone needs:
-   * it has to hold the indent, the connector and "W1A" without pushing Status
-   * out of the column it shares with every parent. Aligning Status IS the
-   * reason for the extra width — the whole point of rows over a nested panel
-   * is that one eye-line reads down the table.
+  /* ─── A composite's units, in a contained box ────────────────────────────
+   * The block is DOCKED to its parent: no top margin and no top border. The
+   * parent's own bottom border is the block's top edge, so the units hang off
+   * the opening rather than floating below it, and there is no doubled 2px
+   * line where they meet. The block is therefore a U — left, right, bottom.
    *
-   * The unit sits on the recessive ground, not paper: a parent is an opening
-   * the customer submitted and a unit is a frame we make, so they are two
-   * kinds of thing and the ground says so before the indent does. */
-  .quote-unitrow { background-color: var(--recessive); }
+   * NO TINT. Parent and unit are both paper. Every shade in the 2–3% band
+   * between --bone and --recessive was either invisible or read as an
+   * expansion panel; --recessive is now the only off-paper surface in the
+   * list, which gives it one unambiguous meaning. The box, its border and the
+   * gap below it do the separating.
+   */
+  .quote-kids {
+    margin-inline-start: var(--qp-inset);
+    margin-inline-end: var(--qp-inset-r);
+    margin-block-end: var(--qp-gapb);
+    border: 1px solid var(--line);
+    border-block-start: none;
+    background-color: var(--paper);
+  }
 
-  /* The connector: a corner, drawn in one element. The vertical arm runs up to
-   * the row above (parent or previous unit), the horizontal arm points at the
-   * drawing. `border` rather than a glyph, so it inherits the hairline token
-   * and cannot drift from every other rule on the page. */
-  .quote-unit-tree {
-    position: relative;
-    display: block;
-    inline-size: 1.25rem;
-    block-size: 1.75rem;
+  /* The parent's bottom border only exists while it HEADS a group. Collapsed,
+   * it is an ordinary row and the list's own divider draws its edge. */
+  .quote-rec[data-group="open"] > .quote-row { border-block-end: 1px solid var(--line); }
+
+  /* Units share hairlines with each other the way records do in the list. */
+  .quote-kids > * + * { border-block-start: 1px solid var(--line); }
+
+  /* The coverage notice, at the head of the block. Recessive, because it is a
+   * panel — a statement about the units rather than one of them. */
+  .quote-coverage {
+    background-color: var(--recessive);
+    padding: 0.75rem var(--qp-pad);
+  }
+  /* Inside the expansion panel it is already on that ground and only needs the
+   * space below it. */
+  .quote-rowexp .quote-coverage { background-color: transparent; padding: 0 0 1rem; }
+
+  /* The child's tracks. Track 1 gives up the left inset, the last track gives
+   * up the right one (plus the block's border on each side); the tracks in
+   * between are UNTOUCHED, so Status, Product, Size and Price stay on exactly
+   * the same x as the parent's and the header's. Only the actions cluster
+   * moves, and only by the right inset. */
+  .quote-kids {
+    --qp-cols:
+      calc(var(--qp-t1) - var(--qp-inset) - 1px) minmax(0, 1fr) 8rem 7rem
+      calc(var(--qp-tz) - var(--qp-inset-r) - 1px);
+  }
+  @media (min-width: 1024px) {
+    .quote-kids {
+      --qp-cols:
+        calc(var(--qp-t1) - var(--qp-inset) - 1px) 10rem minmax(0, 1fr) 8.5rem 7.5rem
+        calc(var(--qp-tz) - var(--qp-inset-r) - 1px);
+    }
+  }
+
+  /* The expansion panel, for a childless opening and for a unit alike. It was
+   * a string of utilities on two different elements; one class so the two
+   * cannot drift, and so --recessive is stated once as "this is a panel". */
+  .quote-rowexp {
+    background-color: var(--recessive);
+    border-block-start: 1px solid var(--line);
+    padding: 1rem var(--qp-pad);
+  }
+  /* A unit's panel fills the CHILD's full width. It is already inset from the
+   * record, because the block it lives in is; insetting it again inside the
+   * block made it a box within a box for no extra meaning.
+   *
+   * The indent CONNECTOR is gone with it — the elbow that used to run from a
+   * parent down to each unit. The box states the same relationship along its
+   * whole height instead of re-drawing it once per row, and a connector inside
+   * an already-inset box points at an edge two pixels away. */
+
+  /* ─── The disclosure ─────────────────────────────────────────────────────
+   * It LEADS the row, left of the drawing, and has left the action cluster.
+   * Every openable thing in the list now begins with the same control, so the
+   * column of them scans as one rail — and on a composite that rail steps in
+   * with the children block, which is the parent/child relationship stated
+   * once more by position rather than by a second piece of chrome. */
+  .quote-twisty {
+    inline-size: var(--qp-twisty);
+    block-size: var(--qp-twisty);
     flex: none;
-    margin-inline-start: 0.375rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--body);
+    cursor: pointer;
   }
-  .quote-unit-tree::before {
-    content: "";
-    position: absolute;
-    inset-block-start: -0.5rem;
-    inset-inline-start: 0;
-    inline-size: 0.625rem;
-    block-size: 1.375rem;
-    border-inline-start: 1px solid var(--line);
-    border-block-end: 1px solid var(--line);
-  }
-  /* The LAST unit's arm must not continue past its own corner into the row
-   * below, which would point at an unrelated opening. */
-  .quote-unitrow:last-of-type .quote-unit-tree::before { border-end-start-radius: 2px; }
-
-  @media (min-width: 768px) {
-    .quote-unit-tree { inline-size: 1.5rem; margin-inline-start: 0.5rem; }
+  .quote-twisty:hover { color: var(--ink); }
+  .quote-twisty[aria-expanded="true"] { color: var(--ink); }
+  .quote-twisty svg { transition: transform 150ms ease; }
+  .quote-twisty[aria-expanded="true"] svg { transform: rotate(90deg); }
+  @media (prefers-reduced-motion: reduce) {
+    .quote-twisty svg { transition: none; }
   }
 
   /* Tracks only. `display` is switched by the `lg:grid` UTILITY on the element,
@@ -711,7 +823,20 @@
    * NO hover fill, deliberately. The row body is not clickable (OpeningRow D1),
    * and a surface that lights up under the cursor is the most reliable way to
    * tell someone it is. The state stripe is the only thing a row says at rest. */
-  .quote-row { background-color: var(--paper); }
+  /* Padding is declared HERE, not as utilities on the element, because
+   * --qp-inset is computed from it. Left in the markup, the two would be free
+   * to drift and the inset arithmetic would quietly become a fiction.
+   * Below 768 this is a stacked CARD and keeps card padding; from 768 it is a
+   * table row and takes the quote editor's own cell rhythm against a 44px
+   * minimum row height. */
+  .quote-row {
+    background-color: var(--paper);
+    padding-inline: var(--qp-pad);
+    padding-block: 0.75rem;
+  }
+  @media (min-width: 768px) {
+    .quote-row { padding-block: 0.375rem; min-block-size: 2.75rem; }
+  }
 
   /* The stripe is shared by the row and by its expansion panel, so an opened
    * blocked row keeps its coloured edge all the way down instead of stopping at
@@ -761,6 +886,7 @@
   .quote-table-head {
     background-color: var(--recessive);
     border-bottom: 1px solid var(--line);
+    padding-inline: var(--qp-pad);
   }
 
   /* ─── Section decoration ────────────────────────────────────────────────────

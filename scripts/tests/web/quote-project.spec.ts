@@ -293,15 +293,19 @@ test("customer blockers are actionable; technical-only review stays neutral", as
   await expect(page.getByText("Ready", { exact: true })).toHaveCount(0);
 
   // ERROR-severity (`dims`): the one case the customer can act on. The row
-  // carries the LABEL only; the reason and the action moved into the panel,
-  // which opens itself for exactly this state so nothing is hidden by the move.
+  // carries the LABEL only; the reason and the action live in the panel.
   // "Incomplete", not "Needs your input" — 127px was what wrapped it under the
   // reference between 768 and 1023 (owner).
   expect(occurrences(await shown(), "Incomplete")).toBe(1);
-  // Anchored to the disclosure specifically: "Fix details for W3" now also ends
-  // in "details for W3", and a loose regex resolves to both.
-  await expect(page.getByRole("button", { name: /^(Show|Hide) details for W3$/ }))
-    .toHaveAttribute("aria-expanded", "true");
+  // Every record starts COLLAPSED (owner). A blocked row used to open itself,
+  // which made the lines needing attention the tallest things on a list whose
+  // job is to be scanned. The chip and the stripe say so at rest; the reason is
+  // one click away. Anchored to the disclosure specifically: "Fix details for
+  // W3" also ends in "details for W3", and a loose regex resolves to both.
+  const w3 = page.getByRole("button", { name: /^(Show|Hide) details for W3$/ });
+  await expect(w3).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByText("We couldn't read the size for this opening.")).toHaveCount(0);
+  await w3.click();
   await expect(page.getByText("We couldn't read the size for this opening.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Fix details for W3" })).toBeVisible();
 
@@ -593,8 +597,9 @@ test("the expansion offers one launcher, always at the foot, labelled for the st
   await mockProject(page, [blockedItem, plainItem]);
   await page.goto("/quote-project");
 
-  // A blocked row opens by default and states its reason — with no button of
-  // its own beside it.
+  // Opened by hand: nothing opens itself any more (owner). The blocked row
+  // states its reason — with no button of its own beside it.
+  await page.getByRole("button", { name: "Show details for W3", exact: true }).click();
   const blocked = page.locator(".quote-rowexp").first();
   await expect(blocked.getByText("We couldn't read the size for this opening.")).toBeVisible();
   await expect(blocked.getByRole("button", { name: /Fix details/ })).toHaveCount(1);
@@ -624,6 +629,7 @@ test("an opening with no size is drawn as a shape and carries no measurements", 
   // generator falls back to 1200×1200 for the SHAPE, which is honest, but once
   // leaders existed it printed "1200" twice as a measurement on the one line
   // whose problem is that nobody could read its size.
+  await page.getByRole("button", { name: "Show details for W3", exact: true }).click();
   const unsized = page.locator(".quote-rowexp").first().locator("svg[data-elevation]");
   await expect(unsized).toHaveAttribute("data-unsized", "");
   await expect(unsized.locator("text")).toHaveCount(0);
@@ -716,6 +722,10 @@ test("a composite is named and drawn from its units, and carries no chip", async
 
   // Only the unpriced unit is flagged, and it says what it means. A unit that is
   // priced but flagged for OUR technical review shows nothing (owner).
+  // The units live behind the parent's own disclosure now: a composite opens
+  // into its children, exactly as a childless opening opens into its detail.
+  await expect(page.locator("[data-unit]")).toHaveCount(0);
+  await page.getByRole("button", { name: "Show details for W7", exact: true }).click();
   const units = page.locator("[data-unit]");
   await expect(units).toHaveCount(2);
   await expect(units.nth(0).locator(".quote-chip")).toHaveCount(0);
@@ -748,6 +758,7 @@ test("a shortfall accuses the opening; a wrong-across unit accuses itself", asyn
   await expect(page.locator(".quote-row").first()).toBeVisible();
 
   await expect(page.locator(".quote-row").first().locator(".quote-chip")).toHaveCount(0);
+  await page.getByRole("button", { name: "Show details for W5", exact: true }).click();
   const units = page.locator("[data-unit]");
   await expect(units.nth(0)).toHaveAttribute("data-state", "ready");
   await expect(units.nth(1)).toHaveAttribute("data-state", "attention");
@@ -765,15 +776,15 @@ test("a shortfall accuses the opening; a wrong-across unit accuses itself", asyn
   await expect(page.locator(".quote-row").first()).toBeVisible();
 
   expect(await page.locator(".quote-row").first().innerText()).toContain("Check sizes");
+  await page.getByRole("button", { name: "Show details for W6", exact: true }).click();
   for (const i of [0, 1]) {
     await expect(page.locator("[data-unit]").nth(i)).toHaveAttribute("data-state", "ready");
     await expect(page.locator("[data-unit]").nth(i).locator(".quote-chip")).toHaveCount(0);
   }
-  // And the panel states the shortfall in MILLIMETRES rather than merely
-  // asserting one — "400 mm short" says which unit to go and look at, where
-  // "doesn't add up" sends someone hunting. Only needs-input opens itself, so
-  // this one is opened explicitly.
-  await page.getByRole("button", { name: "Show details for W6", exact: true }).click();
+  // And the shortfall is stated in MILLIMETRES rather than merely asserted —
+  // "400 mm short" says which unit to go and look at, where "doesn't add up"
+  // sends someone hunting. It rides on the composite's coverage notice, which
+  // sits with the units the parent opened into.
   await expect(page.getByText(/400 mm less than this opening/)).toBeVisible();
 });
 
@@ -800,6 +811,7 @@ test("a unit's size stays lighter than its opening's", async ({ page }) => {
   // the indent would be the only thing separating them down the column.
   await mockProject(page, [compositeItem]);
   await page.goto("/quote-project");
+  await page.getByRole("button", { name: "Show details for W2", exact: true }).click();
   const weight = (l: ReturnType<typeof page.locator>) =>
     l.evaluate((e) => getComputedStyle(e).fontWeight);
   const parentSize = page.locator(".quote-row").first().getByText(/×.*mm/);

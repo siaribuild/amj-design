@@ -25,7 +25,7 @@ import { useProjectDocuments } from "../data/useProjectDocuments";
 import { DocumentProgress } from "../components/DocumentProgress";
 import { QuoteReviewSubmit, QuoteSubmitted } from "../components/QuoteReviewSubmit";
 import { OpeningRow } from "../components/quote-project/OpeningRow";
-import { OpeningExpansion, SpecPanel } from "../components/quote-project/OpeningExpansion";
+import { OpeningExpansion, SpecPanel, CoverageNotice } from "../components/quote-project/OpeningExpansion";
 import { UnitRow } from "../components/quote-project/UnitRow";
 import { optionFullPairs } from "../components/ItemComposer";
 import { getProductBySlug } from "../data/catalogue";
@@ -54,25 +54,23 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
   // Transient UI identity keys on serverId, never the local array id — the local
   // id is regenerated on rehydrate, which is exactly when the user is most likely
   // to be mid-inspection (plan §5).
-  // Expansion is no longer one-at-a-time. A row the customer must act on opens
-  // BY DEFAULT, because its reason and its Fix-details action now live in the
-  // panel rather than in the row — leaving those rows shut would hide the only
-  // explanation of what is wrong. With several blocked lines, "one at a time"
-  // would mean reading them one reopen at a time.
+  // EVERY record starts collapsed (owner). Rows the customer had to act on used
+  // to open themselves, which took a list of twenty openings and made the ones
+  // needing attention the tallest things on the page — the opposite of a list
+  // you scan. The row still carries its state chip and its stripe at rest; the
+  // reason and the Fix-details action are one click away in the panel.
   //
-  // Two sets rather than one, so a default-open row the customer has closed
-  // STAYS closed: derived-open minus explicitly-collapsed, plus explicitly-
-  // opened. A single `expanded` set would be re-seeded by every rehydrate and
-  // spring back open under them.
+  // One set, not two: with nothing derived-open there is no "closed a row that
+  // opens itself" case left to remember, so the state is simply which keys the
+  // customer opened. Expansion is not one-at-a-time — several may be open.
   const [openedKeys, setOpenedKeys] = useState<ReadonlySet<RowKey>>(new Set());
-  const [collapsedKeys, setCollapsedKeys] = useState<ReadonlySet<RowKey>>(new Set());
-  const expandedFor = (key: RowKey, needsAction: boolean) =>
-    openedKeys.has(key) || (needsAction && !collapsedKeys.has(key));
+  const expandedFor = (key: RowKey) => openedKeys.has(key);
   const toggleExpanded = (key: RowKey, isOpen: boolean) => {
-    const drop = <T,>(s: ReadonlySet<T>, k: T) => { const n = new Set(s); n.delete(k); return n; };
-    const add = <T,>(s: ReadonlySet<T>, k: T) => new Set(s).add(k);
-    if (isOpen) { setOpenedKeys((s) => drop(s, key)); setCollapsedKeys((s) => add(s, key)); }
-    else { setCollapsedKeys((s) => drop(s, key)); setOpenedKeys((s) => add(s, key)); }
+    setOpenedKeys((s) => {
+      const n = new Set(s);
+      if (isOpen) n.delete(key); else n.add(key);
+      return n;
+    });
   };
   const [drawer, setDrawer] = useState<DrawerTarget | null>(null);
   const [drawerSection, setDrawerSection] = useState<"dims" | "options" | "qty" | undefined>();
@@ -112,7 +110,6 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
       await quote.clearAll();
       resetDocuments();          // stops polling, drops every document-derived state
       setOpenedKeys(new Set());  // no expansion may outlive the rows it belonged to
-      setCollapsedKeys(new Set());
       setUndo(null);
       setAnnouncement("Project cleared");
     } catch {
@@ -144,12 +141,9 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
   const closeDrawer = (rowKey: RowKey | null, saidWhat?: string) => {
     setDrawer(null);
     setDrawerSection(undefined);
-    // Explicitly OPEN, and clear any prior collapse: after a save the customer
-    // is looking at the row they just edited and expects to see the result.
-    if (rowKey) {
-      setOpenedKeys((s) => new Set(s).add(rowKey));
-      setCollapsedKeys((s) => { const n = new Set(s); n.delete(rowKey); return n; });
-    }
+    // Explicitly OPEN: after a save the customer is looking at the row they
+    // just edited and expects to see the result.
+    if (rowKey) setOpenedKeys((s) => new Set(s).add(rowKey));
     if (saidWhat) setAnnouncement(saidWhat);
     requestAnimationFrame(() => {
       window.scrollTo(0, scrollRef.current);
@@ -340,7 +334,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                 are presentational, and every cell below already carries its own
                 accessible name or visible label. */}
             <div aria-hidden="true"
-              className="quote-table-head hidden md:grid items-center gap-x-3 px-4 py-2
+              className="quote-table-head hidden md:grid items-center gap-x-3 py-2
  text-quiet font-data t-label">
               <span className="col-start-1">Opening</span>
               {/* Status is a column only from 1024. Below that it rides inside
@@ -355,18 +349,29 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
             {items.map((item) => {
               const key = rowKeyOf(item);
               const state = rowStateFor(item, items);
-              // Only a line the CUSTOMER must act on opens itself. Composite and
-              // confirm-layout are attributes, not exceptions — auto-opening
-              // those would re-create the per-line noise this route exists to
-              // remove (rowState.ts, "the governing rule").
-              const needsAction = state.kind === "needs-input";
-              const expanded = expandedFor(key, needsAction);
+              const expanded = expandedFor(key);
+              // WHAT A PARENT OPENS INTO (owner). One control, two contents,
+              // chosen by whether the opening has children:
+              //
+              //   composite   its units, in a box docked under the row
+              //   otherwise   its own specification and its edit launcher
+              //
+              // Never both. A composite line is not a product — it is the
+              // schedule line, and its units carry the specifications — so a
+              // spec panel above the units would describe nothing.
+              const units = item.segments ?? [];
+              const composite = units.length > 0;
               const fixDetails = () => openDrawer(
                 { mode: "edit", rowKey: key },
                 sectionFor(fixTargetFor(item, items)),
               );
               return (
-                <div key={key}>
+                // data-group is what draws the parent's bottom border, and it
+                // is set only while the group is actually showing: collapsed,
+                // the parent is an ordinary row and the list's own divider
+                // already draws its edge.
+                <div key={key} className="quote-rec"
+                  data-group={composite && expanded ? "open" : undefined}>
                   <OpeningRow
                     item={item}
                     rowKey={key}
@@ -396,42 +401,47 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                       </button>
                     </div>
                   )}
-                  {expanded && (
+                  {expanded && !composite && (
                     <OpeningExpansion item={item} rowKey={key} state={state}
                       onEdit={() => openDrawer({ mode: "edit", rowKey: key })}
                       onFixDetails={fixDetails} />
                   )}
 
-                  {/* The units, ALWAYS shown — a composite has no collapsed
-                      state. It is one line the customer submitted and several
-                      frames we make, and the thing most worth checking is that
-                      the parts add up to the opening; that cannot be checked
-                      from behind a chevron. Each unit still has its own
-                      disclosure for its specification. */}
-                  {(item.segments ?? []).map((s, i) => {
-                    const uKey = unitKey(s.id);
-                    const uExpanded = expandedFor(uKey, false);
-                    const label = unitLabel(item.code, i);
-                    return (
-                      <div key={s.id}>
-                        <UnitRow
-                          segment={s} parentCode={item.code} label={label}
-                          expanded={uExpanded}
-                          onToggleExpanded={() => toggleExpanded(uKey, uExpanded)}
-                          onEdit={() => openDrawer({ mode: "edit", rowKey: key, segmentId: s.id })}
-                          panelId={panelId(uKey)} controlId={editControlId(uKey)}
-                          axis={item.compositeAxis}
-                          acrossMm={item.compositeAxis === "horizontal" ? item.width : item.height} />
-                        {uExpanded && (
-                          <div id={panelId(uKey)}
-                            className="quote-rowexp quote-unitexp bg-recessive border-t border-line px-3 sm:px-4 py-4">
-                            <SpecPanel productSlug={s.productSlug} widthMm={s.width} heightMm={s.height}
-                              pairs={optionFullPairs(getProductBySlug(s.productSlug), s.options ?? {})} />
+                  {/* The units, in a box inset under their parent and docked to
+                      it — no top border of its own, because the parent's bottom
+                      border is its top edge. Each unit keeps its own disclosure
+                      for its specification, so the block nests one level and
+                      only one. */}
+                  {expanded && composite && (
+                    <div id={panelId(key)} className="quote-kids">
+                      {/* At the HEAD of the block, above the rows it is asking
+                          someone to check. */}
+                      <CoverageNotice item={item} state={state} />
+                      {units.map((s, i) => {
+                        const uKey = unitKey(s.id);
+                        const uExpanded = expandedFor(uKey);
+                        const label = unitLabel(item.code, i);
+                        return (
+                          <div key={s.id}>
+                            <UnitRow
+                              segment={s} parentCode={item.code} label={label}
+                              expanded={uExpanded}
+                              onToggleExpanded={() => toggleExpanded(uKey, uExpanded)}
+                              onEdit={() => openDrawer({ mode: "edit", rowKey: key, segmentId: s.id })}
+                              panelId={panelId(uKey)} controlId={editControlId(uKey)}
+                              axis={item.compositeAxis}
+                              acrossMm={item.compositeAxis === "horizontal" ? item.width : item.height} />
+                            {uExpanded && (
+                              <div id={panelId(uKey)} className="quote-rowexp quote-unitexp">
+                                <SpecPanel productSlug={s.productSlug} widthMm={s.width} heightMm={s.height}
+                                  pairs={optionFullPairs(getProductBySlug(s.productSlug), s.options ?? {})} />
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -528,10 +538,9 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
               <Btn variant="danger" size="md" onClick={() => {
                 const ref = deleteItem.code || "Opening";
                 quote.remove(deleteItem.id);
-                // Forget the deleted row in BOTH sets, or a later row that
-                // reuses the key inherits its expansion.
+                // Forget the deleted row, or a later row that reuses the key
+                // inherits its expansion.
                 setOpenedKeys((s) => { const n = new Set(s); n.delete(confirmDelete); return n; });
-                setCollapsedKeys((s) => { const n = new Set(s); n.delete(confirmDelete); return n; });
                 if (undo?.localId === deleteItem.id) setUndo(null);
                 setConfirmDelete(null);
                 setAnnouncement(`${ref} deleted`);
