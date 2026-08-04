@@ -17,8 +17,8 @@ await build({
     contents: `
       export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
-      export { getProductBySlug, products, getCategories, getFamiliesByCategory } from ${p("src/data/catalogue.ts")};
-      export { toCatalogueData } from ${p("src/data/catalogueQuery.ts")};
+      export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories } from ${p("src/data/catalogue.ts")};
+      export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
       export { normEmail, isEmail, sixDigit, sha256hex, userDto } from ${p("worker/lib/auth.ts")};
       export { normalizePhone, enquiryReference, validateEnquiry } from ${p("worker/lib/enquiry.ts")};
@@ -357,4 +357,47 @@ test("unitLabel: children are W1A, W1B … and spreadsheet-style past Z", () => 
   assert.equal(M.unitLabel("W1", 1), "W1B");
   assert.equal(M.unitLabel("W1", 26), "W1AA");
   assert.equal(M.unitLabel("", 0), "Unit 1", "an untagged opening still labels its units");
+});
+
+// ── Category order is ops-managed, and Windows comes first ───────────────────
+// Alphabetical put Doors ahead of Windows everywhere the catalogue is grouped —
+// the two-field product picker most visibly, where a builder adding a window
+// scrolled past every door first (owner). Sanity now carries a display order.
+test("toCatalogueData orders categories by the ops-set order, then by name", () => {
+  const raw = {
+    categories: [
+      { id: "d", slug: "doors", name: "Doors", order: 2, shortDescription: "", description: "" },
+      { id: "w", slug: "windows", name: "Windows", order: 1, shortDescription: "", description: "" },
+    ],
+    families: [], products: [], colours: [], pages: [],
+  };
+  assert.deepEqual(M.toCatalogueData(raw).categories.map((c) => c.name), ["Windows", "Doors"]);
+
+  // An unordered category sorts AFTER every ordered one — never to the front —
+  // and alphabetically among its own kind. A new category someone forgets to
+  // order must not silently displace Windows.
+  const withNew = {
+    ...raw,
+    categories: [
+      { id: "z", slug: "louvres", name: "Louvres", shortDescription: "", description: "" },
+      ...raw.categories,
+      { id: "a", slug: "awnings", name: "Awnings", shortDescription: "", description: "" },
+    ],
+  };
+  assert.deepEqual(M.toCatalogueData(withNew).categories.map((c) => c.name),
+    ["Windows", "Doors", "Awnings", "Louvres"]);
+});
+
+test("the catalogue query asks Sanity for that same order", () => {
+  // Belt and braces: the client sorts too, but a query that stops projecting
+  // `order` would make every category tie at 999 and quietly revert to
+  // alphabetical on the server side.
+  assert.match(M.CATALOGUE_QUERY, /order\(coalesce\(order, 999\) asc, name asc\)/);
+  assert.match(M.CATALOGUE_QUERY, /"categories"[\s\S]{0,400}?\border\b/);
+});
+
+test("the built-in fallback catalogue is already Windows-first", () => {
+  // A browser that never reaches Sanity still gets the intended order.
+  assert.deepEqual(M.categories.map((c) => c.name), ["Windows", "Doors"]);
+  assert.equal(M.categories[0].order, 1);
 });

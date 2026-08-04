@@ -160,13 +160,14 @@ export function OpeningRow({
             a column of noise, and any line that genuinely needs two identical
             openings gets a second reference. The FIELD is untouched — it is
             still stored, still editable in the drawer, and still priced. */}
-        {/* 14px/500 (owner). Size was the SMALLEST and lightest cell in the row
-            at 12px/500, below both the product name and the price — backwards
-            for a schedule, where an opening is identified by its size as much
-            as by its code. It now matches Price's size at one weight lower, so
-            Price stays the row's single bold figure and the eye keeps one
-            anchor when scanning a long list. */}
-        <span className="order-6 md:order-none md:col-start-3 lg:col-start-4 md:row-start-1 md:text-right text-body flex-shrink-0 tabular-nums font-data t-data">
+        {/* 14px/600 — the SAME treatment as price (owner). Size was the smallest
+            and lightest cell in the row at 12px/500, below both the product name
+            and the price, which is backwards for a schedule: an opening is
+            identified by its size as much as by its code.
+            Parents only. A unit's size stays 500, so a child never outweighs the
+            opening it belongs to, and the indent is not the only thing telling
+            the two apart when scanning down the column. */}
+        <span className="order-6 md:order-none md:col-start-3 lg:col-start-4 md:row-start-1 md:text-right font-semibold text-ink flex-shrink-0 tabular-nums font-data t-data">
           {sizePhrase(item.width, item.height)}
         </span>
 

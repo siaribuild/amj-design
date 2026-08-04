@@ -653,7 +653,9 @@ test("the row's type hierarchy is carried by weight, not size", async ({ page })
 
   expect(await type(row.locator("span.font-semibold.truncate"))).toBe("14px/600");   // reference
   expect(await type(row.getByText("AMJ80 Series Sliding Window"))).toBe("14px/400"); // product
-  expect(await type(row.getByText(/×.*mm/))).toBe("14px/500");                       // size
+  // Size carries the SAME weight as price on a parent row (owner) — an opening
+  // is identified by its size as much as by its code.
+  expect(await type(row.getByText(/×.*mm/))).toBe("14px/600");                       // size
   expect(await type(row.getByText("$800", { exact: true }))).toBe("14px/600");       // price
 
   // ONE trailing unit, not two. Saying "mm" on both figures is what made the
@@ -773,4 +775,35 @@ test("a shortfall accuses the opening; a wrong-across unit accuses itself", asyn
   // this one is opened explicitly.
   await page.getByRole("button", { name: "Show details for W6", exact: true }).click();
   await expect(page.getByText(/400 mm less than this opening/)).toBeVisible();
+});
+
+// ─── 17. The product picker leads with Windows ────────────────────────────────
+// Category order was alphabetical, so "Doors" preceded "Windows" everywhere the
+// catalogue is grouped — and the picker is where it cost the most: a builder
+// adding a window scrolled past every door first. Sanity now carries a display
+// order (category.order) that ops manages; the client sorts by it as well.
+test("the product-type picker lists Windows before Doors", async ({ page }) => {
+  await mockProject(page, [plainItem]);
+  await page.goto("/quote-project");
+  await page.getByRole("button", { name: "Edit W1", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+
+  const groups = await page.getByRole("dialog").locator("select optgroup")
+    .evaluateAll((els) => els.map((e) => e.getAttribute("label")));
+  expect(groups[0], "Windows leads the picker").toBe("Windows");
+  expect(groups).toEqual(["Windows", "Doors"]);
+});
+
+test("a unit's size stays lighter than its opening's", async ({ page }) => {
+  // Parents bold, children not (owner: "non-child records"). Without that a
+  // unit's size would carry the same weight as the opening it belongs to, and
+  // the indent would be the only thing separating them down the column.
+  await mockProject(page, [compositeItem]);
+  await page.goto("/quote-project");
+  const weight = (l: ReturnType<typeof page.locator>) =>
+    l.evaluate((e) => getComputedStyle(e).fontWeight);
+  const parentSize = page.locator(".quote-row").first().getByText(/×.*mm/);
+  const unitSize = page.locator("[data-unit]").first().getByText(/×.*mm/);
+  expect(await weight(parentSize)).toBe("600");
+  expect(await weight(unitSize)).toBe("500");
 });

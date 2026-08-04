@@ -24,8 +24,13 @@ export const SEO_PROJECTION = `seo{
 // non-standard option costs (pricing_option_surcharge). The catalogue is served
 // publicly to every browser, so a price here is a published price list.
 export const CATALOGUE_QUERY = `{
-  "categories": *[_type=="category"]|order(name asc){
-    "id":_id, "slug":slug.current, name, shortDescription, description
+  // ORDER, then name. Alphabetical alone put Doors ahead of Windows everywhere
+  // the catalogue is grouped — the product picker most visibly, where a builder
+  // adding a window had to scroll past the doors first. The field is optional,
+  // so a category nobody has ordered yet sorts after the ones that are, and
+  // then alphabetically among its peers rather than jumping to the front.
+  "categories": *[_type=="category"]|order(coalesce(order, 999) asc, name asc){
+    "id":_id, "slug":slug.current, name, order, shortDescription, description
   },
   "families": *[_type=="family"]|order(name asc){
     "id":_id, "slug":slug.current, "categorySlug":category->slug.current, name, operation, aliases, icon, shortDescription, description
@@ -241,7 +246,13 @@ function normalizeLocation(l: any): ShowroomLocation {
 
 export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
   return {
-    categories: raw.categories ?? [],
+    // Sorted here as well as in the GROQ, deliberately. The query orders what
+    // Sanity sends, but the ordering is a CONTRACT of the catalogue rather than
+    // a property of one transport — the built-in fallback, a cached payload and
+    // any future caller all have to honour it, and a category picker that lists
+    // Doors first is the kind of regression nobody notices for a month.
+    categories: [...(raw.categories ?? [])].sort((a, b) =>
+      (a.order ?? 999) - (b.order ?? 999) || a.name.localeCompare(b.name)),
     families: raw.families ?? [],
     products: (raw.products ?? []).map(normalizeProduct),
     colours: (raw.colours ?? []).map((c) => ({

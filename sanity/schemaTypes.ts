@@ -27,6 +27,21 @@ export const category = defineType({
   fields: [
     defineField({ name: "name", type: "string", validation: (r) => r.required() }),
     defineField({ name: "slug", type: "slug", options: { source: "name" }, validation: (r) => r.required() }),
+    // Display order wherever the catalogue is GROUPED by category — the two-field
+    // product picker above all, where a builder adding a window should not have
+    // to scroll past the doors first. Alphabetical was doing that, because
+    // "Doors" precedes "Windows".
+    //
+    // Low numbers first; leave it empty and the category sorts after every
+    // ordered one, then alphabetically among its peers. Ops manages the order
+    // here rather than it being a constant in the app.
+    defineField({
+      name: "order",
+      title: "Display order",
+      type: "number",
+      description: "Lowest first. Leave empty to sort last, alphabetically.",
+      validation: (r) => r.integer().positive(),
+    }),
     defineField({ name: "shortDescription", type: "text", rows: 2 }),
     defineField({ name: "description", type: "text", rows: 4 }),
   ],

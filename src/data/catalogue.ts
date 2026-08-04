@@ -11,6 +11,10 @@ export interface Category {
   id: string;
   slug: string;
   name: string;
+  /** Display order wherever the catalogue is grouped. Ops-managed in Sanity;
+   *  absent sorts last. The built-in fallback carries it too, so a browser that
+   *  never reaches Sanity still gets Windows before Doors. */
+  order?: number | null;
   shortDescription: string;
   description: string;
 }
@@ -148,8 +152,8 @@ export let colorbondColourOptions: ProductOption[] = [
 ];
 
 export let categories: Category[] = [
-  { id: "1", slug: "windows", name: "Windows", shortDescription: `Aluminium window systems for renovation and new-build projects, from compact ventilation units to higher-performance architectural openings.`, description: `The window range covers the major residential opening types used in renovation and new-build work: sliding, awning, casement, louvre, tilt-turn, sashless double hung and single hung. The category is designed to support practical trade selection, with each product defined by size limits, glass make-up, profile thickness, hardware and performance ratings where available. Use this category when the project requires repeatable aluminium window systems with clear configuration choices and a supply-only workflow.` },
-  { id: "2", slug: "doors", name: "Doors", shortDescription: `Aluminium door systems for indoor-outdoor living, entries and wide façade openings, available across sliding, hinged, folding and premium large-panel formats.`, description: `The door range is focused on aluminium-framed access and façade systems for residential projects, from practical sliding and hinged doors through to bi-fold, pivot, slim-frame and lift-slide formats. The category supports both everyday renovation openings and premium indoor-outdoor connections, with product selection driven by opening width, panel operation, glass specification, hardware and exposure rating. Use this category when the project requires configurable aluminium doors for builder-led supply, manual review and confirmed production before delivery.` },
+  { id: "1", slug: "windows", name: "Windows", order: 1, shortDescription: `Aluminium window systems for renovation and new-build projects, from compact ventilation units to higher-performance architectural openings.`, description: `The window range covers the major residential opening types used in renovation and new-build work: sliding, awning, casement, louvre, tilt-turn, sashless double hung and single hung. The category is designed to support practical trade selection, with each product defined by size limits, glass make-up, profile thickness, hardware and performance ratings where available. Use this category when the project requires repeatable aluminium window systems with clear configuration choices and a supply-only workflow.` },
+  { id: "2", slug: "doors", name: "Doors", order: 2, shortDescription: `Aluminium door systems for indoor-outdoor living, entries and wide façade openings, available across sliding, hinged, folding and premium large-panel formats.`, description: `The door range is focused on aluminium-framed access and façade systems for residential projects, from practical sliding and hinged doors through to bi-fold, pivot, slim-frame and lift-slide formats. The category supports both everyday renovation openings and premium indoor-outdoor connections, with product selection driven by opening width, panel operation, glass specification, hardware and exposure rating. Use this category when the project requires configurable aluminium doors for builder-led supply, manual review and confirmed production before delivery.` },
 ];
 
 export let families: Family[] = [
