@@ -71,7 +71,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
   // WARNING-severity lines are counted separately from errors so the sticky
   // panel can show both without the gate ever depending on warnings.
   const {
-    total, attentionCount, pendingPriceCount, technicalCount, hasContent, itemBlocked,
+    total, attentionCount, pendingPriceCount, technicalCount, pricedCount, hasContent, itemBlocked,
   } = quoteSummary(quote);
   // Lines render in the order they were added, manual and document-derived
   // alike — a manual line at #1 stays at #1 when five parsed lines append to
@@ -456,6 +456,7 @@ export function QuotePage({ setPage, user, quote, onSubmit, onHeroChange }: {
         attentionCount={attentionCount}
         pendingPriceCount={pendingPriceCount}
         technicalCount={technicalCount}
+        pricedCount={pricedCount}
         total={total}
         editingItem={adding}
         uploading={uploading}

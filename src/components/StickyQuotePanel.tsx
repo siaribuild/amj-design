@@ -19,6 +19,8 @@ export type StickyQuotePanelProps = {
    *  decision. Shown alongside errors but NEVER part of the submit gate. */
   technicalCount?: number;
   pendingPriceCount?: number;    // submitted for staff exact pricing
+  /** How many lines the server actually priced; 0 ⇒ show no figure at all. */
+  pricedCount?: number;
   total: number;
   editingItem: boolean;          // a new item is being composed but not yet saved
   uploading?: boolean;           // a schedule is being read/parsed right now
@@ -32,7 +34,7 @@ export type StickyQuotePanelProps = {
 };
 
 export function StickyQuotePanel({
-  itemCount, attentionCount, technicalCount = 0, pendingPriceCount = 0, total, editingItem, uploading = false, readingDocs = 0,
+  itemCount, attentionCount, technicalCount = 0, pendingPriceCount = 0, pricedCount = 0, total, editingItem, uploading = false, readingDocs = 0,
   onReviewQuote, onReviewIssues, onFinishItem,
 }: StickyQuotePanelProps) {
   const readyCount = Math.max(0, itemCount - attentionCount - pendingPriceCount - technicalCount);
@@ -179,15 +181,27 @@ export function StickyQuotePanel({
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
       {/* Polite, atomic summary for assistive tech — not the whole panel. */}
       <div className="sr-only" aria-live="polite" aria-atomic="true">
-        {pendingPriceCount ? "Priced-items subtotal" : "Indicative estimate"} {fmt(shownTotal)} {gstSuffix(gstMode)}. {live}.
+        {pricedCount === 0
+          ? "No estimate yet — we price it once the details are complete."
+          : `${pendingPriceCount ? "Priced-items subtotal" : "Indicative estimate"} ${fmt(shownTotal)} ${gstSuffix(gstMode)}.`} {live}.
       </div>
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3 sm:py-3.5 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
         <div className="flex items-center justify-between gap-3 min-w-0 sm:contents">
           <div className="sm:order-2 flex flex-col min-w-0 flex-shrink-0">
-            <span className="text-body-soft mb-1 t-label">{pendingPriceCount ? "Priced subtotal" : "Estimate"}</span>
+            {/* Nothing priced ⇒ no figure. "$0" is not a rounded truth here, it
+                is a price we never quoted — see quoteSummary.pricedCount. */}
+            <span className="text-body-soft mb-1 t-label">
+              {pricedCount > 0 && pendingPriceCount ? "Priced subtotal" : "Estimate"}
+            </span>
             <span className="flex items-baseline gap-1.5">
-            <span className="text-ink font-semibold tabular-nums font-data t-data">{fmt(shownTotal)}</span>
-            <span className="text-body-soft whitespace-nowrap t-cap">{gstSuffix(gstMode)}</span>
+            {pricedCount === 0 ? (
+              <span className="text-body-soft t-cap">Once details are complete</span>
+            ) : (
+              <>
+                <span className="text-ink font-semibold tabular-nums font-data t-data">{fmt(shownTotal)}</span>
+                <span className="text-body-soft whitespace-nowrap t-cap">{gstSuffix(gstMode)}</span>
+              </>
+            )}
             </span>
           </div>
           <div className={`sm:order-1 sm:flex-1 flex items-center gap-1.5 min-w-0 border px-2.5 py-2 font-medium ${statusTone} t-cap`}>{status}</div>

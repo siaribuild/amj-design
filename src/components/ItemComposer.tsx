@@ -480,7 +480,7 @@ export const optionSummaryOf = (p: Product | undefined, options: Record<string, 
 export function ItemForm({
   lockedSlug, quote, seed, onCommit, onCancel, rail = false, submitLabel = "Save",
   priceFn = previewPrice, scope = "item", unitAxis = "vertical", unitMode = "edit",
-  onDirtyChange, initialSection, excludeId, heading, busy = false, hideOptions = false,
+  onDirtyChange, onPreviewChange, initialSection, excludeId, heading, busy = false, hideOptions = false,
   stickyActions = false, hideHeader = false,
 }: {
   lockedSlug?: string;
@@ -528,6 +528,8 @@ export function ItemForm({
    *  draft the same way this form's own Cancel does. Optional and inert for
    *  every existing caller. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Live product + dimensions, for a caller drawing the opening as it is typed. */
+  onPreviewChange?: (draft: { productSlug: string; width: string; height: string }) => void;
   /** Which detail group starts open. Defaults to dimensions. */
   initialSection?: "dims" | "options" | "qty";
   /** Local id of the line being edited, so its own code is not a collision. */
@@ -675,6 +677,16 @@ export function ItemForm({
   const dirtyCbRef = useRef(onDirtyChange);
   dirtyCbRef.current = onDirtyChange;
   useEffect(() => { dirtyCbRef.current?.(dirty); }, [dirty]);
+
+  // The three fields a drawing is made of, reported upward as they change, so a
+  // caller can draw the opening the customer is typing rather than the one they
+  // started with. Ref-held for the same reason as the dirty callback: an inline
+  // arrow from the caller must not make this fire on every render.
+  const previewCbRef = useRef(onPreviewChange);
+  previewCbRef.current = onPreviewChange;
+  useEffect(() => {
+    previewCbRef.current?.({ productSlug, width, height });
+  }, [productSlug, width, height]);
 
   return (
     <div className="quote-panel">

@@ -65,6 +65,9 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
   // unmounts in the same commit as a successful save, so a message put in a
   // region here would never survive long enough to be spoken.
   const [announcement, setAnnouncement] = useState("");
+  // What the form currently holds, for the live drawing. Null until the form
+  // reports — so the first paint draws the SAVED opening rather than a blank.
+  const [preview, setPreview] = useState<{ productSlug: string; width: string; height: string } | null>(null);
 
   const segments = item?.segments ?? [];
   const axis = item?.compositeAxis === "horizontal" ? "horizontal" : "vertical";
@@ -74,6 +77,16 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
     : -1;
   const title = level.kind === "parent" ? ref
       : unitLabel(ref, unitIndex);
+
+  // What the drawing falls back to before the form has reported: the UNIT when
+  // one is open, otherwise the opening. A blank add has neither, and the
+  // generator's own 1200×1200 fallback is the honest answer there.
+  const openUnit = unitIndex >= 0 ? segments[unitIndex] : undefined;
+  const draftSource = {
+    productSlug: openUnit?.productSlug ?? item?.productSlug ?? "",
+    width: openUnit?.width ?? item?.width ?? "",
+    height: openUnit?.height ?? item?.height ?? "",
+  };
 
   const rowKey: RowKey | null = target.mode === "add" ? null : target.rowKey;
 
@@ -200,7 +213,6 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                 <ChevronLeft className="w-4 h-4" aria-hidden="true" />Back to {ref}
               </button>
             )}
-            {level.kind === "parent" && <Elevation productSlug={item?.productSlug ?? ""} widthMm={item?.width} heightMm={item?.height} className="max-w-10 max-h-7 w-auto h-auto flex-shrink-0 text-body" />}
             {/* Radix derives the dialog's accessible name from this Title. The
                 visible text is the reference alone — the suffix says what the
                 dialog IS for anyone who only hears it announced. */}
@@ -221,6 +233,20 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
 
           <div className="flex-1 px-4 py-4 space-y-3">
             {error && <p role="alert" className="text-red-700 t-cap">{error}</p>}
+
+            {/* The SAME drawing the expansion shows, at the same size and with
+                the same dimension leaders — and LIVE: it redraws from the fields
+                as they are typed, so the customer sees the shape they are
+                describing rather than the one they started with. That is the
+                whole reason to spend 180px of a 520px drawer on it; a static
+                copy of the saved opening would just be the row's icon again. */}
+            <div className="flex justify-center pb-1">
+              <Elevation
+                productSlug={preview?.productSlug || draftSource.productSlug}
+                widthMm={preview ? preview.width : draftSource.width}
+                heightMm={preview ? preview.height : draftSource.height}
+                size="sm" className="w-[180px] h-[180px] text-body" />
+            </div>
 
             {/* 4. Composite build. Above the parent's own fields, matching the
                    established card: it answers "why does my line look like
@@ -289,6 +315,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                 // prompt and which one you got depended on which control you hit.
                 onCancel={requestClose}
                 onDirtyChange={setDirty}
+                  onPreviewChange={setPreview}
                 initialSection={initialSection}
                 rail
                 stickyActions
@@ -322,6 +349,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                   // discard prompt now.
                   onCancel={requestBack}
                   onDirtyChange={setDirty}
+                  onPreviewChange={setPreview}
                   rail
                   stickyActions
                   hideHeader

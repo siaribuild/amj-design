@@ -20,6 +20,11 @@ export interface QuoteSummary {
    *  applied by the renderer via gstAdjust — never baked in here. */
   total: number;
   itemCount: number;
+  /** How many lines the SERVER actually priced. When this is 0, `total` is 0
+   *  because nothing has a figure — not because the quote is worth nothing, and
+   *  a panel that prints "$0" in that state is stating a price we never quoted.
+   *  Both panels use it to show "—" instead. */
+  pricedCount: number;
   /** ERROR-severity lines: the customer must fix these before submitting. */
   attentionCount: number;
   /** Customer-changed AI configurations awaiting an exact price. */
@@ -40,6 +45,8 @@ export function quoteSummary(quote: Pick<QuoteState, "items" | "files">): QuoteS
   return {
     total: items.reduce((sum, it) => sum + linePriceTotal(it), 0),
     itemCount: items.length,
+    pricedCount: items.filter((it) =>
+      typeof it.lineTotal === "number" && Number.isFinite(it.lineTotal)).length,
     attentionCount: items.filter(itemBlocked).length,
     pendingPriceCount: items.filter((it) =>
       (it.origin === "ai" || it.aiPriced)

@@ -313,7 +313,13 @@ test("with no blockers the bar offers submission and never invents a stage", asy
   await mockProject(page, [compositeItem]);
   await page.goto("/quote-project");
   const bar = page.getByRole("region", { name: "Project summary and actions" });
-  await expect(bar).toHaveAttribute("data-state", "review");
+  // "ready", not "review". A technical caveat no longer tones the whole bar
+  // down (owner): it is priced, submittable and ours to resolve, so nothing the
+  // customer can act on distinguishes this from a clean quote. The bar states
+  // the openings and offers submission — and states no count they cannot use.
+  await expect(bar).toHaveAttribute("data-state", "ready");
+  await expect(bar.getByText(/we'll confirm/)).toHaveCount(0);
+  await expect(bar.getByText(/pending final price/)).toHaveCount(0);
   await expect(bar.getByRole("button", { name: /Submit for technical review/ })).toBeVisible();
 
   await bar.getByRole("button", { name: /Submit for technical review/ }).click();
