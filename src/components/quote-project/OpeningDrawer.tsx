@@ -278,6 +278,10 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                 // glazing and hardware live on the units, so offering an Options
                 // group here would invite a choice that belongs one level down.
                 hideOptions={segments.length > 0}
+                // …and no product picker either (owner). A composite parent is
+                // an OPENING: its ID and its size are the whole of what it owns,
+                // and the panel above lists the units that are the products.
+                hideProduct={segments.length > 0}
                 submitLabel={target.mode === "add" ? "Add opening" : "Save changes"}
                 onCommit={saveParent}
                 // The drawer header already carries the reference AND the close

@@ -64,8 +64,17 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
   // opens itself" case left to remember, so the state is simply which keys the
   // customer opened. Expansion is not one-at-a-time — several may be open.
   const [openedKeys, setOpenedKeys] = useState<ReadonlySet<RowKey>>(new Set());
+  // .disclose animates by TRANSITION, which needs the content to still be there
+  // while it shuts — a row that unmounted its panel would snap closed and only
+  // animate on the way in. `touchedKeys` is what a row has ever opened: its
+  // panel stays mounted from then on, so closing animates exactly as opening
+  // does. A row nobody has opened renders nothing, so twenty untouched lines
+  // still cost twenty rows rather than twenty drawings and option lists.
+  const [touchedKeys, setTouchedKeys] = useState<ReadonlySet<RowKey>>(new Set());
   const expandedFor = (key: RowKey) => openedKeys.has(key);
+  const mountedFor = (key: RowKey) => openedKeys.has(key) || touchedKeys.has(key);
   const toggleExpanded = (key: RowKey, isOpen: boolean) => {
+    setTouchedKeys((s) => new Set(s).add(key));
     setOpenedKeys((s) => {
       const n = new Set(s);
       if (isOpen) n.delete(key); else n.add(key);
@@ -401,10 +410,14 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                       </button>
                     </div>
                   )}
-                  {expanded && !composite && (
-                    <OpeningExpansion item={item} rowKey={key} state={state}
-                      onEdit={() => openDrawer({ mode: "edit", rowKey: key })}
-                      onFixDetails={fixDetails} />
+                  {mountedFor(key) && !composite && (
+                    <div className="disclose" data-open={expanded ? "true" : "false"}>
+                      <div>
+                        <OpeningExpansion item={item} rowKey={key} state={state}
+                          onEdit={() => openDrawer({ mode: "edit", rowKey: key })}
+                          onFixDetails={fixDetails} />
+                      </div>
+                    </div>
                   )}
 
                   {/* The units, in a box inset under their parent and docked to
@@ -412,34 +425,41 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                       border is its top edge. Each unit keeps its own disclosure
                       for its specification, so the block nests one level and
                       only one. */}
-                  {expanded && composite && (
-                    <div id={panelId(key)} className="quote-kids">
-                      {/* At the HEAD of the block, above the rows it is asking
-                          someone to check. */}
-                      <CoverageNotice item={item} state={state} />
-                      {units.map((s, i) => {
-                        const uKey = unitKey(s.id);
-                        const uExpanded = expandedFor(uKey);
-                        const label = unitLabel(item.code, i);
-                        return (
-                          <div key={s.id}>
-                            <UnitRow
-                              segment={s} parentCode={item.code} label={label}
-                              expanded={uExpanded}
-                              onToggleExpanded={() => toggleExpanded(uKey, uExpanded)}
-                              onEdit={() => openDrawer({ mode: "edit", rowKey: key, segmentId: s.id })}
-                              panelId={panelId(uKey)} controlId={editControlId(uKey)}
-                              axis={item.compositeAxis}
-                              acrossMm={item.compositeAxis === "horizontal" ? item.width : item.height} />
-                            {uExpanded && (
-                              <div id={panelId(uKey)} className="quote-rowexp quote-unitexp">
-                                <SpecPanel productSlug={s.productSlug} widthMm={s.width} heightMm={s.height}
-                                  pairs={optionFullPairs(getProductBySlug(s.productSlug), s.options ?? {})} />
+                  {mountedFor(key) && composite && (
+                    <div className="disclose" data-open={expanded ? "true" : "false"}>
+                      <div>
+                        <div id={panelId(key)} className="quote-kids">
+                          {/* At the HEAD of the block, above the rows it is
+                              asking someone to check. */}
+                          <CoverageNotice item={item} state={state} />
+                          {units.map((s, i) => {
+                            const uKey = unitKey(s.id);
+                            const uExpanded = expandedFor(uKey);
+                            const label = unitLabel(item.code, i);
+                            return (
+                              <div key={s.id}>
+                                <UnitRow
+                                  segment={s} parentCode={item.code} label={label}
+                                  expanded={uExpanded}
+                                  onToggleExpanded={() => toggleExpanded(uKey, uExpanded)}
+                                  panelId={panelId(uKey)}
+                                  axis={item.compositeAxis}
+                                  acrossMm={item.compositeAxis === "horizontal" ? item.width : item.height} />
+                                {mountedFor(uKey) && (
+                                  <div className="disclose" data-open={uExpanded ? "true" : "false"}>
+                                    <div>
+                                      <div id={panelId(uKey)} className="quote-rowexp quote-unitexp">
+                                        <SpecPanel productSlug={s.productSlug} widthMm={s.width} heightMm={s.height}
+                                          pairs={optionFullPairs(getProductBySlug(s.productSlug), s.options ?? {})} />
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

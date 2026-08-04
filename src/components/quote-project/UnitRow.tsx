@@ -21,12 +21,12 @@
 //  • no state chip of its own unless it has something to say — a row of Ready
 //    chips under a Ready parent is noise.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { ChevronRight, Pencil } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { type QSegment, sizePhrase, productLabel } from "../../data/configurator";
 import { Elevation } from "./Elevation";
 
 export function UnitRow({
-  segment, parentCode, label, expanded, onToggleExpanded, onEdit, panelId, controlId, acrossMm, axis,
+  segment, parentCode, label, expanded, onToggleExpanded, panelId, acrossMm, axis,
 }: {
   segment: QSegment;
   parentCode: string;
@@ -37,9 +37,7 @@ export function UnitRow({
   label: string;
   expanded: boolean;
   onToggleExpanded: () => void;
-  onEdit: () => void;
   panelId: string;
-  controlId: string;
 }) {
   // "Needs review" told the customer nothing (owner). The segment DTO collapses
   // D1's `incomplete` and `technical_review` into one "Needs review", and those
@@ -97,20 +95,13 @@ export function UnitRow({
         </span>
       )}
 
-      <div className="order-4 md:order-none md:col-start-5 lg:col-start-6 md:row-start-1 ml-auto md:ml-0
-        flex items-center gap-0.5 flex-shrink-0 md:justify-end">
-        <button type="button" id={controlId} onClick={onEdit}
-          aria-label={`Edit ${label}`} title={`Edit ${label}`}
-          className="w-11 h-11 lg:w-9 lg:h-9 inline-flex items-center justify-center text-sage hover:text-sage-hover icon-btn cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
-          <Pencil className="w-4 h-4" aria-hidden="true" />
-        </button>
-        {/* The slot a parent fills with More is left EMPTY rather than
-            collapsed, so the pencil stays under its parent's — but only from
-            768, where there IS a column to stay under. On a phone the row is a
-            card with nothing to align to, and 44px of reserved blank is what
-            tips a flagged unit's actions onto a second line. */}
-        <span className="hidden md:inline-block md:w-11 lg:w-9" aria-hidden="true" />
-      </div>
+      {/* NO EDIT CONTROL (owner). A unit is reached through its opening: the
+          parent's pencil opens the drawer, which lists the units and offers
+          "Edit unit" on each. Two routes to the same editor put the same action
+          in two places and made the child row's cluster a lone pencil under a
+          parent's pair — the one place in the list where a column staggered for
+          a reason nobody could see. The unit keeps its own DISCLOSURE, which
+          inspects rather than changes. */}
 
       <span className="order-5 md:order-none md:col-start-2 lg:col-start-3 md:row-start-1
         basis-full md:basis-auto min-w-0 truncate text-body t-bd-sm">

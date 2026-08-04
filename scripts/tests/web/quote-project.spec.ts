@@ -190,8 +190,11 @@ test("saving from the drawer keeps the same opening expanded and restores focus"
   const drawer = page.getByRole("dialog");
   await expect(drawer).toBeVisible();
 
-  await page.getByRole("button", { name: /Quantity & note/i }).click();
-  await page.getByRole("button", { name: "Increase quantity" }).click();
+  // The NOTE is the mutation now: quantity is gone from the editor (owner) —
+  // one opening per reference, so the field is stored and priced but has no
+  // control. Note lives in the Dimensions group, which opens by default.
+  const note = page.getByPlaceholder("e.g. Bedroom 1, north elevation");
+  await note.fill("North elevation");
   await page.getByRole("button", { name: /Save changes/i }).click();
 
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -199,14 +202,13 @@ test("saving from the drawer keeps the same opening expanded and restores focus"
   // the row is keyed on the server id, not the regenerated local one.
   await expect(page.getByRole("button", { name: /details for W01$/ })).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByRole("button", { name: "Edit W01", exact: true })).toBeFocused();
-  // The saved quantity survived the round-trip — asserted where it is now
-  // VISIBLE, which is the editor rather than the row. This route shows no
-  // quantity at all (owner): its model is one opening per reference, so the
-  // field is stored, edited and priced but never listed.
-  await expect(page.locator(".quote-row").getByText(/×\s*2/)).toHaveCount(0);
+  // The edit survived the round-trip: on the row beside the product name, and
+  // back in the editor it was typed into. Quantity is not listed and no longer
+  // editable — the model is one opening per reference.
+  await expect(page.locator(".quote-row").first().getByText("North elevation")).toBeVisible();
   await page.getByRole("button", { name: "Edit W01", exact: true }).click();
-  await page.getByRole("button", { name: /Quantity & note/i }).click();
-  await expect(page.getByRole("dialog").getByText("2", { exact: true })).toBeVisible();
+  await expect(page.getByPlaceholder("e.g. Bedroom 1, north elevation")).toHaveValue("North elevation");
+  await expect(page.getByRole("dialog").getByRole("button", { name: /Quantity/i })).toHaveCount(0);
 });
 
 // ─── 5. Draft safety ───────────────────────────────────────────────────────────

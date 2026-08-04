@@ -295,8 +295,19 @@ function openingSymbol(kind: string, p: Box, hand: Hand, o: { inset: number; sw:
   }
 }
 
-export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square = false, dims, parts, axis, className = "" }: {
+export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square = false, dims, parts, axis, opening = false, className = "" }: {
   productSlug: string;
+  /** Draw an OPENING rather than a product: the frame and its glass, with no
+   *  sash symbol and no mullions — a fixed-window square, which is what a hole
+   *  in a wall looks like before anything is chosen to fill it.
+   *
+   *  A composite parent is a schedule line, not a product (owner), so in the
+   *  editor it has no product picker and must not be drawn as whichever family
+   *  happens to sit in its slug. Explicit rather than leaning on kindFor()'s
+   *  "fixed" fallback for an empty string: the fallback is what an UNKNOWN slug
+   *  gets, and this is a positive statement that there is nothing to know.
+   *  `parts` still wins — a composite with units is drawn from them. */
+  opening?: boolean;
   /** The opening's real dimensions. Absent or unreadable falls back to 1200×1200,
    *  which draws a square — honest for a line whose size we do not yet know. */
   widthMm?: string | number | null;
@@ -326,8 +337,8 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
   dims?: boolean;
   className?: string;
 }) {
-  const family = getFamily(getProductBySlug(productSlug)?.familySlug ?? "");
-  const kind = kindFor(family?.operation || family?.slug || productSlug);
+  const family = opening ? undefined : getFamily(getProductBySlug(productSlug)?.familySlug ?? "");
+  const kind = opening ? "fixed" : kindFor(family?.operation || family?.slug || productSlug);
 
   const wMm = pos(widthMm, 1200);
   const hMm = pos(heightMm, 1200);
@@ -442,6 +453,7 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
     // and taking the leader text out of its designed 9–13px with it. A caller
     // that wants a different size overrides via className; CSS beats these.
     <svg data-elevation="" data-unsized={sized ? undefined : ""}
+      data-opening={opening && !compositeGeometry ? "" : undefined}
       data-wide={wMm / hMm > 2.4 ? "1" : undefined}
       viewBox={`0 0 ${q(vbw)} ${q(vbh)}`} width={q(vbw)} height={q(vbh)}
       className={className} aria-hidden="true" fill="none"

@@ -81,17 +81,25 @@ export function itemNeedsAttention(item: QItem): boolean {
 }
 
 // ─── Field blocks (shared by the new-item form and the MyProject card) ────────
-function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false, lockedDimension }: {
-  p: Product; width: string; height: string;
+function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false, lockedDimension,
+  location, setLocation, opening = false }: {
+  /** Null for an OPENING with no product of its own — a composite parent. There
+   *  is no size range to state and no family to draw, so the range copy and the
+   *  drawing's symbols fall away with it. */
+  p: Product | null; width: string; height: string;
   setWidth: (v: string) => void; setHeight: (v: string) => void; rail?: boolean;
   lockedDimension?: "width" | "height";
+  /** The note rides in THIS group now (owner). It was the back half of a
+   *  "Quantity & note" section whose front half is gone, and a group holding
+   *  one optional text field is a disclosure that never earns its click. */
+  location?: string; setLocation?: (v: string) => void;
+  opening?: boolean;
 }) {
   const w = parseInt(width) || 0, h = parseInt(height) || 0;
   const dimsEntered = w > 0 && h > 0;
-  const inRange = inRangeFor(p, w, h);
-  const tooSmall = dimsEntered && ((p.minWidth != null && w < p.minWidth) || (p.minHeight != null && h < p.minHeight));
-  const oversize = dimsEntered && !inRange && !tooSmall;
-  const wideFamily = p.categorySlug === "doors" || p.familySlug === "sliding-window";
+  const inRange = !!p && inRangeFor(p, w, h);
+  const tooSmall = !!p && dimsEntered && ((p.minWidth != null && w < p.minWidth) || (p.minHeight != null && h < p.minHeight));
+  const wideFamily = !!p && (p.categorySlug === "doors" || p.familySlug === "sliding-window");
   const reversed = wideFamily && dimsEntered && h > w * 1.1 && inRange;
   return (
     <div>
@@ -105,7 +113,7 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
             Live by construction: `width` and `height` ARE these fields' state,
             so there is no callback and no second copy of the values. */}
         <div className={`${rail ? "w-full" : "md:w-44 flex-shrink-0"} flex justify-center`}>
-          <Elevation productSlug={p.slug} widthMm={width} heightMm={height}
+          <Elevation productSlug={p?.slug ?? ""} opening={opening} widthMm={width} heightMm={height}
             size="sm" className="w-[180px] h-[180px] max-w-full text-body" />
         </div>
         <div className="flex-1 space-y-3">
@@ -120,7 +128,7 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
           {dimsEntered && inRange && (
             <p className="text-ink t-bd-sm"><Check className="w-3.5 h-3.5 inline text-sage mr-1" />You have entered: <span className="font-medium">{mm(width)} wide × {mm(height)} high</span></p>
           )}
-          {!dimsEntered && (
+          {!dimsEntered && p && (
             <p className="text-body t-cap">Fits {mm(p.minWidth ?? 0)}–{mm(p.maxWidth ?? 0)} wide, {mm(p.minHeight ?? 0)}–{mm(p.maxHeight ?? 0)} high.</p>
           )}
           {reversed && (
@@ -129,20 +137,22 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
               <span>Height is greater than width — these look reversed. <button onClick={() => { setWidth(height); setHeight(width); }} className="underline font-medium cursor-pointer">Swap</button></span>
             </div>
           )}
-          {tooSmall && (
+          {tooSmall && p && (
             <div className="quote-notice--danger flex items-start gap-2 border border-destructive/35 px-3 py-2 t-cap">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-destructive" />
               <span>{p.name} starts at {mm(p.minWidth ?? 0)} wide and {mm(p.minHeight ?? 0)} high. Check the measurement.</span>
             </div>
           )}
-          {oversize && (
-            <div className="quote-notice--info flex items-start gap-2 border border-info/35 px-3 py-2 t-cap">
-              <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-              <span>
-                No single {p.name} is made this large (up to {mm(p.maxWidth ?? 0)} × {mm(p.maxHeight ?? 0)}). Openings this
-                size are built as two or more units joined on site. <strong className="font-medium">Keep your real size</strong> — we design
-                the join and confirm the price at technical review.
-              </span>
+          {/* The oversize notice is GONE (owner). It explained our manufacturing
+              limit and what we would do about it — "no single X is made this
+              large … built as two or more units joined on site" — to a customer
+              who cannot change the size of their wall and has no decision to
+              make. The line still carries its technical `fit` flag, so the
+              constraint reaches the people it is actually for. */}
+          {setLocation && (
+            <div>
+              <FieldLabel>Note (optional)</FieldLabel>
+              <Input value={location ?? ""} onChange={e => setLocation(e.target.value)} placeholder="e.g. Bedroom 1, north elevation" />
             </div>
           )}
         </div>
@@ -184,8 +194,8 @@ function ColourChoices({ choices, value, onPick }: { choices: OptionChoice[]; va
         {showAll ? "Hide other colours" : "Other colours"}
         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAll ? "rotate-180" : ""}`} />
       </button>
-      <div className={`grid transition-[grid-template-rows] duration-200 ${showAll ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-        <div className="overflow-hidden">
+      <div className="disclose" data-open={showAll ? "true" : "false"}>
+        <div>
           <p className="text-body pt-2 pb-1.5 t-label">All standard colours</p>
           <div className={OPTION_GRID}>
             {choices.map(c => <OptionButton key={c.name} label={c.name} hex={c.hex} selected={value === c.name} onPick={() => onPick(c.name)} />)}
@@ -267,8 +277,8 @@ function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<str
             </span>
             <ChevronDown className={`w-4 h-4 text-body flex-shrink-0 transition-transform ${openOpt === "glazing" ? "rotate-180" : ""}`} />
           </button>
-          <div className={`grid transition-[grid-template-rows] duration-200 ${openOpt === "glazing" ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-            <div className="overflow-hidden">
+          <div className="disclose" data-open={openOpt === "glazing" ? "true" : "false"}>
+            <div>
               <div className="@container px-4 pb-3 pt-2 border-t border-black/6">
                 <GlazingChoices choices={glazing} value={options.glazing ?? ""} onPick={v => setOpt("glazing", v)} />
               </div>
@@ -293,8 +303,8 @@ function OptionsFields({ p, options, setOpt }: { p: Product; options: Record<str
               </span>
               <ChevronDown className={`w-4 h-4 text-body flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
             </button>
-            <div className={`grid transition-[grid-template-rows] duration-200 ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-              <div className="overflow-hidden">
+            <div className="disclose" data-open={open ? "true" : "false"}>
+              <div>
                 <div className="@container px-4 pb-3 pt-2 border-t border-black/6">
                   {isColour ? (
                     <ColourChoices choices={g.choices} value={val} onPick={v => setOpt(g.typeSlug, v)} />
@@ -353,6 +363,16 @@ function ProductPicker({ productSlug, onPick }: { productSlug: string; onPick: (
   );
 }
 
+// Quantity is GONE from the composer form (owner): /quote-project's model is one
+// opening per reference — the field is still stored, still priced, and
+// permanently 1 — so a stepper offered a decision that does not exist and a
+// caption ("every unit on this line is identical") explained a rule nobody can
+// break. The note moved into Dimensions, leaving two groups there: Dimensions
+// and Options.
+//
+// This block survives for ONE caller: the MyProject card on /quote, which is the
+// legacy arm and is explicitly not held to parity. Changing it would be a change
+// to an area this work was told to leave alone.
 function QtyLocationFields({ qty, location, setQty, setLocation }: {
   qty: number; location: string; setQty: (v: number) => void; setLocation: (v: string) => void;
 }) {
@@ -391,8 +411,8 @@ function Section({ label, summary, open, onToggle, children, variant = "boxed", 
         </span>
         <ChevronDown className={`w-4 h-4 text-body flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-      <div className={`grid transition-[grid-template-rows] duration-200 ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-        <div className="overflow-hidden"><div className={`quote-section-content ${boxed ? "px-4 pb-4 pt-1 border-t border-line" : "px-4 pb-4 pt-1 border-t border-line"}`}>{children}</div></div>
+      <div className="disclose" data-open={open ? "true" : "false"}>
+        <div><div className={`quote-section-content ${boxed ? "px-4 pb-4 pt-1 border-t border-line" : "px-4 pb-4 pt-1 border-t border-line"}`}>{children}</div></div>
       </div>
     </div>
   );
@@ -462,7 +482,7 @@ export function ItemForm({
   lockedSlug, quote, seed, onCommit, onCancel, rail = false, submitLabel = "Save",
   priceFn = previewPrice, scope = "item", unitAxis = "vertical", unitMode = "edit",
   onDirtyChange, initialSection, excludeId, heading, busy = false, hideOptions = false,
-  stickyActions = false, hideHeader = false,
+  hideProduct = false, stickyActions = false, hideHeader = false,
 }: {
   lockedSlug?: string;
   /** Only `items` is read — for the duplicate-code check and code suggestion. It
@@ -521,6 +541,9 @@ export function ItemForm({
    *  glazing and hardware live on the units. Hides the Options group and stops
    *  requiring choices the parent will never carry. */
   hideOptions?: boolean;
+  /** …and it is not a product either, so it gets no type/product selectors —
+   *  just its ID and its size (owner). The drawing becomes a plain opening. */
+  hideProduct?: boolean;
 }) {
   const isUnit = scope === "unit";
   const unitHeading = unitMode === "add" ? "Add composite unit" : "Edit composite unit";
@@ -534,14 +557,18 @@ export function ItemForm({
   const [width, setWidth] = useState(seed?.width || "");
   const [height, setHeight] = useState(seed?.height || "");
   const [options, setOptions] = useState<Record<string, string>>(seed?.options ? { ...seed.options } : (p ? defaultOptions(p) : {}));
-  const [qty, setQty] = useState(seed?.qty || 1);
+  // Read, never written: one opening per reference, so the value is whatever the
+  // line already carries (1) and there is no control that can change it.
+  const qty = seed?.qty || 1;
   const [location, setLocation] = useState(seed?.location || "");
   // `initialSection` lets a caller open the form AT the offending field —
   // /quote-project's `Fix details` is a direct action, not merely an expand.
-  const [open, setOpen] = useState<{ dims: boolean; options: boolean; qty: boolean }>({
-    dims: initialSection ? initialSection === "dims" : true,
+  // Two groups now, so anything that is not Options opens Dimensions — including
+  // a "qty" fix target, which the server can still emit from a review flag and
+  // which no longer has a group of its own to land in.
+  const [open, setOpen] = useState<{ dims: boolean; options: boolean }>({
+    dims: initialSection !== "options",
     options: initialSection === "options",
-    qty: initialSection === "qty",
   });
   const [confirmClose, setConfirmClose] = useState(false);
 
@@ -576,8 +603,10 @@ export function ItemForm({
   // keeps comparing against every line, as before.
   const duplicateCode = !isUnit && !!finalCode
     && quote.items.some(item => item.id !== excludeId && normCode(item.code) === finalCode);
-  const oversize = dimsEntered && !inRange && !((p?.minWidth != null && w < p.minWidth) || (p?.minHeight != null && h < p.minHeight));
-  const tooSmall = dimsEntered && !inRange && !oversize;
+  // An OPENING has no product, so it has no size range to be outside of.
+  const oversize = !!p && dimsEntered && !inRange
+    && !((p.minWidth != null && w < p.minWidth) || (p.minHeight != null && h < p.minHeight));
+  const tooSmall = !!p && dimsEntered && !inRange && !oversize;
   // Oversize is submittable, flagged; undersize is a typo and blocks.
   // Before the first save there is no project to price-preview against (the claim
   // cookie is minted on save); the save itself creates the project and prices the
@@ -586,7 +615,13 @@ export function ItemForm({
   // `busy` covers an in-flight save the CALLER owns (composite segment writes are
   // async round-trips). Without it the primary stays enabled during the request
   // and a second click fires the mutation twice — two units added, not one.
-  const canSave = (priced.ok || priceDeferred) && !tooSmall && !duplicateCode && !busy;
+  // A composite parent's total is the sum of its units and is computed by the
+  // server, so gating its Save on a preview of the parent's own slug would keep
+  // the button dead on exactly the line whose price this form cannot produce.
+  // Its size and its ID are the whole of what it can be saved with.
+  const canSave = hideProduct
+    ? dimsEntered && !duplicateCode && !busy
+    : (priced.ok || priceDeferred) && !tooSmall && !duplicateCode && !busy;
   const built: Omit<QItem, "id"> = {
     code: finalCode, productSlug, location, width, height, options, qty,
     status: oversize ? "Needs review" : "Ready",
@@ -606,8 +641,8 @@ export function ItemForm({
 
   const famGroups = familyGroups();
   const familyProducts = familySlug ? getProductsByFamily(familySlug) : [];
-  const dimsSummary = dimsEntered ? `${mm(width)} × ${mm(height)}` : "Enter the opening size";
-  const qtySummary = `Qty ${qty}${location ? ` · ${location}` : ""}`;
+  const dimsSummary = (dimsEntered ? `${mm(width)} × ${mm(height)}` : "Enter the opening size")
+    + (location ? ` · ${location}` : "");
   // A hidden Options group must not still gate saving on a choice the user was
   // never shown — that is an invisible disabled button.
   const issues = (p ? itemIssues(p, { width, height, options }) : [])
@@ -697,7 +732,11 @@ export function ItemForm({
             </div>
           )
         ) : (
-          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${isUnit ? "md:grid-cols-2" : "md:grid-cols-[10rem_minmax(0,1fr)_minmax(0,1fr)]"}`}>
+          // TWO ROWS (owner): ID 30% + Family 70%, then Product across the full
+          // width. Three fields on one line gave the product name — the longest
+          // string in the form and the one being read — the narrowest third of
+          // it; "AMJ80 Series Sliding Window" had nowhere to go.
+          <div className="grid grid-cols-1 sm:grid-cols-[3fr_7fr] gap-3">
             {!isUnit && (
               <div>
                 <FieldLabel>Item ID</FieldLabel>
@@ -705,49 +744,56 @@ export function ItemForm({
                 {duplicateCode && <p className="text-amber-700 mt-1 t-cap">Item ID already exist</p>}
               </div>
             )}
-            <div>
-              <FieldLabel>Product type</FieldLabel>
-              <div className="relative">
-                <select value={familySlug} onChange={e => pickFamily(e.target.value)} className={selectClass}>
-                  <option value="">Choose a type…</option>
-                  {famGroups.map(g => <optgroup key={g.category} label={g.category}>{g.families.map(f => <option key={f.slug} value={f.slug}>{f.name}</option>)}</optgroup>)}
-                </select>
-                <ChevronDown className="w-4 h-4 text-body absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
-            </div>
-            <div>
-              <FieldLabel>Product</FieldLabel>
-              <div className="relative">
-                <select value={productSlug} onChange={e => pickProduct(e.target.value)} disabled={!familySlug} className={`${selectClass} disabled:cursor-not-allowed`}>
-                  <option value="">{familySlug ? "Choose a product…" : "Select a type first"}</option>
-                  {familyProducts.map(pr => <option key={pr.slug} value={pr.slug}>{pr.name}</option>)}
-                </select>
-                <ChevronDown className="w-4 h-4 text-body absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
-            </div>
+            {/* A composite PARENT gets no product picker at all (owner) — just
+                its ID. It is the schedule line, not a frame: its units are the
+                products, they can be different products from each other, and
+                offering one selector here asks the customer to name a thing
+                that does not exist. */}
+            {!hideProduct && (
+              <>
+                <div>
+                  <FieldLabel>Product type</FieldLabel>
+                  <div className="relative">
+                    <select value={familySlug} onChange={e => pickFamily(e.target.value)} className={selectClass}>
+                      <option value="">Choose a type…</option>
+                      {famGroups.map(g => <optgroup key={g.category} label={g.category}>{g.families.map(f => <option key={f.slug} value={f.slug}>{f.name}</option>)}</optgroup>)}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-body absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
+                <div className="sm:col-span-2">
+                  <FieldLabel>Product</FieldLabel>
+                  <div className="relative">
+                    <select value={productSlug} onChange={e => pickProduct(e.target.value)} disabled={!familySlug} className={`${selectClass} disabled:cursor-not-allowed`}>
+                      <option value="">{familySlug ? "Choose a product…" : "Select a type first"}</option>
+                      {familyProducts.map(pr => <option key={pr.slug} value={pr.slug}>{pr.name}</option>)}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-body absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
-        {p && (
+        {/* An opening with no product still has a size, so the gate is "product
+            OR opening" rather than product alone — otherwise hiding the picker
+            from a composite parent would hide its dimensions with it. */}
+        {(p || hideProduct) && (
           <div className="space-y-2">
             <Section label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open.dims} onToggle={() => setOpen(o => ({ ...o, dims: !o.dims }))}>
-              <DimensionsFields p={p} width={width} height={height} setWidth={setWidth} setHeight={setHeight} rail={rail}
-                lockedDimension={isUnit ? (unitAxis === "vertical" ? "height" : "width") : undefined} />
+              <DimensionsFields p={p ?? null} opening={hideProduct} width={width} height={height}
+                setWidth={setWidth} setHeight={setHeight} rail={rail}
+                lockedDimension={isUnit ? (unitAxis === "vertical" ? "height" : "width") : undefined}
+                // The note is the OPENING's, so a unit does not carry one: one
+                // opening, one location.
+                location={isUnit ? undefined : location}
+                setLocation={isUnit ? undefined : setLocation} />
             </Section>
-            {!hideOptions && (
+            {!hideOptions && p && (
             <Section label="Options" summary={optionSummaryOf(p, options)} attention={hasIssue("options")} open={open.options} onToggle={() => setOpen(o => ({ ...o, options: !o.options }))}>
               <OptionsFields p={p} options={options} setOpt={setOpt} />
             </Section>
-            )}
-            {/* A unit's quantity is not its own: it is the opening's quantity
-                times how many of this frame go into one opening, and composite.ts
-                is the single writer of the product. Offering a quantity box here
-                would let a reviewer type a number the next recompute overwrites.
-                The room is the opening's too — one opening, one location. */}
-            {!isUnit && (
-              <Section label="Quantity & note" summary={qtySummary} open={open.qty} onToggle={() => setOpen(o => ({ ...o, qty: !o.qty }))}>
-                <QtyLocationFields qty={qty} location={location} setQty={setQty} setLocation={setLocation} />
-              </Section>
             )}
           </div>
         )}
@@ -760,7 +806,7 @@ export function ItemForm({
           out of reach on any form long enough to need scrolling, which is most
           of them. NOT keyed off `rail` — that means "narrow column", and the
           product page passes it for a form that sits in page flow. */}
-      {p && (
+      {(p || hideProduct) && (
         <div className={`quote-panel-footer px-4 md:px-5 py-4 sticky bottom-0 z-30 ${stickyActions ? "" : "md:static"}`}
           style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
           {issues.length > 0 && (
@@ -769,7 +815,12 @@ export function ItemForm({
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-body t-label">Estimated price</p>
-              {priced.ok ? (
+              {/* A composite's figure is the sum of its units, worked out by the
+                  server on save — this form can only preview a single product,
+                  and the parent is not one. */}
+              {hideProduct ? (
+                <p className="font-medium text-body t-bd-sm">Priced from its units</p>
+              ) : priced.ok ? (
                 <p className="font-semibold text-ink font-data t-data">{fmt(gstAdjust(priced.total, gstMode))} <span className="font-normal text-body t-cap">{gstSuffix(gstMode)}{qty > 1 ? ` · ${fmt(gstAdjust(priced.unit, gstMode))} ea` : ""}</span></p>
               ) : priceDeferred ? (
                 <p className="font-medium text-body t-bd-sm">Calculated when you add it</p>

@@ -1237,6 +1237,48 @@
   .icon-btn:focus-visible { background-color: var(--recessive); }
 }
 
+/* ─── Disclosure ──────────────────────────────────────────────────────────────
+ * ONE behaviour for everything that opens and closes: the composer's field
+ * groups, its option accordions, and the estimator's row expansions and unit
+ * blocks. It was four hand-copied strings of the same four utilities, which is
+ * how a duration or an easing drifts between two surfaces that are meant to
+ * feel like one product.
+ *
+ * A single-track grid transitioned 0fr <-> 1fr — the only way to animate
+ * content of unknown height in CSS alone. The child must clip and must be
+ * allowed below its content height, or the track collapses and the content
+ * simply spills out of it.
+ *
+ * A TRANSITION, not a keyframe, which is what makes it symmetrical: the
+ * element stays mounted while shut, so closing animates exactly as opening
+ * does. A caller that renders its content conditionally gets a one-way reveal
+ * instead — correct for something opened once, wrong for a disclosure.
+ */
+@layer components {
+  .disclose {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 200ms ease;
+  }
+  .disclose[data-open="false"] { grid-template-rows: 0fr; }
+  .disclose > * { min-block-size: 0; overflow: hidden; }
+
+  /* A shut disclosure is not merely zero pixels tall: clipped content stays in
+   * the accessibility tree and in the tab order, so a screen reader walks the
+   * specification of every closed row. visibility takes it out of both — and
+   * DELAYED by the same 200ms on the way out, so it is still there to be seen
+   * for the whole of the closing animation and only vanishes once the fold has
+   * finished. Opening reverses instantly, which is what you want: the content
+   * should be there from the first frame it has room in. */
+  .disclose > * { visibility: visible; transition: visibility 0s; }
+  .disclose[data-open="false"] > * { visibility: hidden; transition-delay: 200ms; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .disclose { transition: none; }
+    .disclose[data-open="false"] > * { transition-delay: 0s; }
+  }
+}
+
 @layer components {
   /* An argument beside a panel. The panel is taller than the heading, and
      flex-end would drag the heading's baseline down to meet its bottom. */
