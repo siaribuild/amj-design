@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estimator — E, fully specified</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FFFFFF; --bone:#FBFAF8; --recessive:#F5F3F0;
+  --line:rgba(19,19,17,.18); --connector:rgba(19,19,17,.45);
+  --ink:#131311; --body:#5c5a56; --quiet:#8b8880;
+  --sage:#5A7A6A; --sage-wash:#F3F6F5; --sage-ink:#355344;
+  --warning:#8a6a2a; --warning-ink:#7a5410;
+  --info:#4C6A88; --info-ink:#31485f;
+  --fd:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --fb:'Inter',ui-sans-serif,system-ui,sans-serif;
+
+  --pad:10px;          /* row padding, both sides */
+  --inset:26px;        /* how far the CHILDREN BLOCK steps in on the left */
+  --inset-r:10px;      /* and on the right */
+  --t1:9.5rem;
+
+  --qp-cols:var(--t1) 10rem minmax(0,1fr) 8.5rem 7.5rem 7rem;
+
+  /* The children block is a bordered box inset on BOTH sides, so a child row
+     loses (inset + 1px border) on the left and (inset-r + 1px) on the right.
+     Track 1 gives up the left; track 6 gives up the right. Tracks 2–5 — Status,
+     Product, Size, Price — therefore stay exactly on the parent's and the
+     header's x. Only the ACTIONS cluster moves, and only by the right inset. */
+  --qp-cols-child:
+    calc(var(--t1) - var(--inset) - 1px) 10rem minmax(0,1fr) 8.5rem 7.5rem
+    calc(7rem - var(--inset-r) - 1px);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bone);color:var(--ink);font:400 16px/26px var(--fb);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:36px 24px 90px}
+h1{font:600 30px/36px var(--fd);letter-spacing:-.6px;margin:0 0 8px}
+.lede{color:var(--body);font-size:15px;max-width:78ch;margin:0 0 6px}
+.lede b{color:var(--ink)}
+.small{color:var(--quiet);font-size:13px;line-height:19px;max-width:82ch;margin:0 0 30px}
+.sec{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:30px 0 8px}
+.note{font-size:13px;line-height:19px;color:var(--body);max-width:84ch;margin:14px 0 0;padding-left:12px;border-left:2px solid var(--line)}
+.note b{color:var(--ink)}
+.win{border-left-color:rgba(90,122,106,.55)}
+.warn{border-left-color:rgba(178,110,15,.5)}
+.why{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:0 0 4px}
+
+/* ── grammar ───────────────────────────────────────────────────────────────── */
+.head,.row{display:grid;grid-template-columns:var(--qp-cols);align-items:center;column-gap:12px}
+.head{background:var(--recessive);border:1px solid var(--line);font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);padding:8px var(--pad)}
+.head .r{text-align:right}
+.row{background:var(--paper);padding:6px var(--pad);min-height:44px}
+.id{display:flex;align-items:center;gap:8px;min-width:0}
+.ref{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink)}
+.prod{font:400 14px/21px var(--fb);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.size{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+.price{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+.acts{display:flex;justify-content:flex-end;gap:2px;color:var(--body)}
+.acts i{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:14px}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);padding:2px 6px;font:400 13px/18px var(--fb);white-space:nowrap}
+.chip.a{border-color:rgba(138,106,42,.42);background:rgba(138,106,42,.12);color:var(--warning-ink)}
+.chip.i{border-color:rgba(76,106,136,.38);background:rgba(76,106,136,.08);color:var(--info-ink)}
+.unit .prod,.unit .ref{color:var(--body)}
+.unit .size{font-weight:500;color:var(--body)}
+svg.el{display:block;flex:none;color:var(--body)}
+.row[data-s="attn"]{box-shadow:inset 3px 0 0 var(--warning)}
+.row[data-s="rev"]{box-shadow:inset 3px 0 0 var(--info)}
+
+.exp{background:var(--recessive);padding:12px 16px 14px}
+.exp .lbl{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin-bottom:3px}
+.exp .val{font:400 13px/19px var(--fb);color:var(--body)}
+
+/* ── E, fully specified ────────────────────────────────────────────────────── */
+.rec{border:1px solid var(--line);background:var(--paper)}
+.rec+.rec{margin-top:8px}
+.list{margin-top:8px}
+
+/* RULE 2 — the parent has a bottom border whenever it heads a group. */
+.rec[data-grp] > .row:first-child{border-bottom:1px solid var(--line)}
+
+/* RULE 3 — the whole list of children is a box, inset left AND right.
+   RULE 4 — and it leaves a margin below, so the last child is not pressed against
+   the record's closing edge and, through it, the next parent. The bottom margin
+   is deliberately larger than the top: above, the parent's own bottom border
+   already separates; below, this margin plus the record gap is the ONLY thing
+   between the last child and the next opening. */
+.kids{margin:8px var(--inset-r) 14px var(--inset);border:1px solid var(--line);background:var(--paper)}
+.kids .row{grid-template-columns:var(--qp-cols-child)}
+.kids > .row + .row{border-top:1px solid var(--line)}
+.kids > .exp + .row{border-top:1px solid var(--line)}
+
+/* RULE 1 — a CHILD's panel is a box, inset on both sides inside the block. */
+.kids > .exp{margin:0 var(--pad) 8px calc(var(--inset) - 4px);border:1px solid var(--line)}
+
+/* A PARENT's own panel stays full-bleed — that contrast is what makes the two
+   different objects rather than two sizes of the same one. */
+.rec > .exp{border-top:1px solid var(--line)}
+
+/* ── mobile ────────────────────────────────────────────────────────────────── */
+.phone{width:375px}
+.phone .cap{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:0 0 6px}
+.phone .stage{background:var(--bone);padding:10px;border:1px solid var(--line)}
+.phone .row{grid-template-columns:1fr;row-gap:4px;padding:10px 12px;min-height:0}
+.phone .kids .row{grid-template-columns:1fr}
+.phone .head{display:none}
+.phone .m1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.phone .m3{display:flex;justify-content:space-between;gap:10px}
+.phone .size,.phone .price{text-align:left}
+.phone .kids{margin:8px 8px 8px 14px}
+.phone .kids > .exp{margin:0 6px 8px 10px}
+.phones{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>E · contained panel — fully specified</h1>
+<p class="lede">Your three rules, built: <b>1</b> a child’s panel is a box inset on both sides,
+<b>2</b> a parent that heads a group carries a bottom border, <b>3</b> the whole list of children is a box inset left and right, and
+<b>4</b> it leaves a margin below so the last child is not pressed against the next parent.</p>
+<p class="small">Shown across every case: a childless opening expanded, a unit expanded, a group flagged,
+a single child flagged, and parent-and-child both flagged. Then 375px. Column drift is measured in the
+page — see the note under the desktop list.</p>
+
+<div class="sec">Desktop · every scenario</div>
+<div id="head"></div>
+<div class="list" id="out"></div>
+<p class="note win" id="verdict"></p>
+
+<div class="sec">375px</div>
+<div class="phones"><div class="phone"><p class="cap">E on a phone</p><div class="stage"><div id="mout"></div></div></div></div>
+<p class="note" id="mnote"></p>
+
+</div>
+
+<script>
+function el(kind,parts){
+  const S=28,P=2,iw=S-P*2,t=3,g={x:P+t,y:P+t,w:iw-t*2,h:iw-t*2};
+  let sym='';
+  if(parts){const tot=parts.reduce((s,p)=>s+p.mm,0);let at=0;
+    parts.forEach((p,i)=>{const pw=g.w*(p.mm/tot);sym+=symbol(p.kind,{x:g.x+at,y:g.y,w:pw,h:g.h});at+=pw;
+      if(i<parts.length-1)sym+='<path d="M'+(g.x+at).toFixed(1)+' '+g.y+' V'+(g.y+g.h)+'" stroke="currentColor" stroke-width="1.4" opacity=".75" fill="none"/>';});
+  } else sym=symbol(kind,g);
+  return '<svg class="el" width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">'
+    +'<rect x="2" y="2" width="24" height="24" rx="1" stroke="currentColor" stroke-width="1.4"/>'
+    +'<rect x="'+g.x+'" y="'+g.y+'" width="'+g.w+'" height="'+g.h+'" rx=".5" stroke="currentColor" stroke-width=".8"/>'+sym+'</svg>';
+}
+function symbol(k,p){
+  const i=2.2,L=p.x+i,R=p.x+p.w-i,T=p.y+i,B=p.y+p.h-i,cx=(L+R)/2,cy=(T+B)/2;
+  if(R-L<3||B-T<3)return '';
+  const S='stroke="currentColor" stroke-width="1.1" fill="none"';
+  if(k==='awning')return '<path d="M'+L+' '+B+' L'+cx+' '+T+' L'+R+' '+B+'" '+S+'/>';
+  if(k==='sliding')return '<path d="M'+(L+1)+' '+cy+' H'+(R-1)+' M'+(R-3)+' '+(cy-2)+' L'+(R-1)+' '+cy+' L'+(R-3)+' '+(cy+2)+'" '+S+'/>';
+  if(k==='casement')return '<path d="M'+R+' '+T+' L'+L+' '+cy+' L'+R+' '+B+'" '+S+'/>';
+  return '';
+}
+const A3='<span class="acts"><i>⌄</i><i>✎</i><i>⋯</i></span>';
+const A2='<span class="acts"><i>⌄</i><i>✎</i><i style="width:34px"></i></span>';
+const HEAD='<div class="head"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>';
+
+const SPEC={lbl:'Specification',val:'Glazing · Single Glazed Low-E &nbsp;·&nbsp; Colour · Monument &nbsp;·&nbsp; Hardware · Standard &nbsp;·&nbsp; Flyscreen · None'};
+const PSPEC={lbl:'Specification',val:'Glazing · Double Glazed Low-E Argon &nbsp;·&nbsp; Colour · Dover White &nbsp;·&nbsp; Flyscreen · Fibreglass mesh'};
+
+const D=[
+  {why:'simple opening, clean',ref:'W1',prod:'AMJ100T Fixed Window',size:'2,100 × 2,100 mm',price:'$2,240',icon:el('fixed')},
+  {why:'a CHILDLESS opening, expanded — its panel is full-bleed',
+   ref:'W2',prod:'AMJ100T Fixed Window',size:'2,400 × 1,800 mm',price:'$2,980',icon:el('fixed'),exp:PSPEC},
+  {why:'lone parent flagged',ref:'W3',prod:'AMJ80 Series Sliding Window',size:'— × —',price:'$-,--',
+   icon:el('sliding'),s:'attn',chip:'<span class="chip a">⚠ Incomplete</span>',
+   exp:{lbl:"What's missing",val:"We couldn't read the size for this opening."}},
+  {why:'a UNIT expanded — its panel is a contained box inside the children block',
+   ref:'W4',prod:'Composite Window',size:'3,440 × 1,200 mm',price:'$3,120',
+   icon:el(null,[{kind:'sliding',mm:2400},{kind:'casement',mm:1040}]),
+   units:[{ref:'W4A',prod:'AMJ100T Sliding Window',size:'2,400 × 1,200 mm',icon:el('sliding'),exp:SPEC},
+          {ref:'W4B',prod:'AMJ100T Casement Window',size:'1,040 × 1,200 mm',icon:el('casement')}]},
+  {why:'whole GROUP flagged — no child to blame',
+   ref:'W5',prod:'Composite Window',size:'3,500 × 700 mm',price:'$1,560',
+   icon:el(null,[{kind:'fixed',mm:1750},{kind:'fixed',mm:1750}]),
+   s:'rev',chip:'<span class="chip i">Check sizes</span>',
+   units:[{ref:'W5A',prod:'AMJ100T Fixed Window',size:'1,550 × 700 mm',icon:el('fixed')},
+          {ref:'W5B',prod:'AMJ100T Fixed Window',size:'1,550 × 700 mm',icon:el('fixed')}]},
+  {why:'parent CLEAN, one child flagged',
+   ref:'W6',prod:'Composite Window',size:'2,400 × 1,600 mm',price:'$2,180',
+   icon:el(null,[{kind:'awning',mm:1200},{kind:'awning',mm:1200}]),
+   units:[{ref:'W6A',prod:'AMJ80 Series Awning Window',size:'1,200 × 1,600 mm',icon:el('awning')},
+          {ref:'W6B',prod:'AMJ80 Series Awning Window',size:'1,200 × 1,900 mm',icon:el('awning'),
+           s:'attn',chip:'<span class="chip a">⚠ Check size</span>'}]},
+  {why:'parent AND child flagged — two states, one record',
+   ref:'W7',prod:'Composite Window',size:'2,050 × 2,100 mm',price:'$2,450',
+   icon:el(null,[{kind:'awning',mm:700},{kind:'fixed',mm:1350}]),
+   s:'rev',chip:'<span class="chip i">Check sizes</span>',
+   units:[{ref:'W7A',prod:'AMJ80 Series Awning Window',size:'700 × 2,100 mm',icon:el('awning')},
+          {ref:'W7B',prod:'AMJ100T Fixed Window',size:'1,350 × 2,400 mm',icon:el('casement'),
+           s:'attn',chip:'<span class="chip a">⚠ Incomplete</span>'}]},
+];
+
+function row(o,kid,m){
+  const s=o.s?' data-s="'+o.s+'"':'';
+  if(m) return '<div class="row'+(kid?' unit':'')+'"'+s+'>'
+    +'<span class="m1">'+o.icon+'<span class="ref">'+o.ref+'</span>'+(o.chip||'')+(kid?'':A3)+'</span>'
+    +'<span class="prod">'+o.prod+'</span>'
+    +'<span class="m3"><span class="size">'+o.size+'</span><span class="price">'+(kid?'':(o.price||''))+'</span></span></div>';
+  return '<div class="row'+(kid?' unit':'')+'"'+s+'>'
+    +'<span class="id">'+o.icon+'<span class="ref">'+o.ref+'</span></span>'
+    +'<span>'+(o.chip||'')+'</span><span class="prod">'+o.prod+'</span>'
+    +'<span class="size">'+o.size+'</span><span class="price">'+(kid?'':(o.price||''))+'</span>'
+    +(kid?A2:A3)+'</div>';
+}
+function panel(e){return '<div class="exp"><div class="lbl">'+e.lbl+'</div><div class="val">'+e.val+'</div></div>';}
+
+function rec(o,m){
+  let h=row(o,false,m);
+  if(o.exp)h+=panel(o.exp);
+  if(o.units){
+    let inner='';
+    o.units.forEach(u=>{inner+=row(u,true,m);if(u.exp)inner+=panel(u.exp);});
+    h+='<div class="kids">'+inner+'</div>';
+  }
+  return '<div class="rec"'+(o.units?' data-grp':'')+'>'+h+'</div>';
+}
+function labelled(o,m){
+  return '<p class="why">'+o.why+'</p>'+rec(o,m);
+}
+
+document.getElementById('head').innerHTML=HEAD;
+document.getElementById('out').innerHTML=D.map(o=>labelled(o,false)).join('');
+document.getElementById('mout').innerHTML=D.slice(1,7).map(o=>rec(o,true)).join('');
+
+/* Measure: which columns hold, and exactly how far the actions move. */
+(function(){
+  const head=document.querySelector('.head');
+  const parentRow=document.querySelector('.rec .row');
+  const kidRow=document.querySelector('.kids .row');
+  const hx=[...head.children].map(c=>Math.round(c.getBoundingClientRect().left));
+  const px=[...parentRow.children].map(c=>Math.round(c.getBoundingClientRect().left));
+  const kx=[...kidRow.children].map(c=>Math.round(c.getBoundingClientRect().left));
+  // tracks 2..5 are Status, Product, Size, Price — these must not move
+  const drift=[1,2,3,4].map(i=>Math.abs(px[i]-kx[i]));
+  // Compare the SAME edge on both: the actions cell's own right edge. Comparing
+  // a parent's third icon with a child's second measures the missing More menu,
+  // not the inset.
+  const pActs=document.querySelector('.rec > .row .acts').getBoundingClientRect();
+  const kActs=document.querySelector('.kids .row .acts').getBoundingClientRect();
+  document.getElementById('verdict').innerHTML =
+    '<b>Measured.</b> Header x ['+hx.join(', ')+']<br>'
+    +'Parent row x ['+px.join(', ')+']<br>'
+    +'Child row x ['+kx.join(', ')+']<br>'
+    +'<b>Status, Product, Size and Price drift: '+Math.max(...drift)+'px</b> — they stay locked to the header. '
+    +'Track 1 steps in by design. The one real consequence of insetting on the RIGHT: a child’s action '
+    +'icons end '+Math.round(pActs.right-kActs.right)+'px left of a parent’s. That is the price of '
+    +'containing a row rather than a panel — a row has columns, a panel does not.';
+})();
+</script>
+</body>
+</html>
