@@ -24,7 +24,15 @@
      and the margin below it instead. --recessive stays reserved for panels,
      which is now the ONLY off-paper surface in the list. */
   --pad:10px;          /* row padding, both sides */
-  --inset:26px;        /* how far the CHILDREN BLOCK steps in on the left */
+  --twf:22px;          /* the twisty's own box */
+  --twgap:8px;         /* and the gap between it and the product icon */
+
+  /* THE INSET = one whole twisty. Stepping in by the arrow's full width plus
+     the gap that follows it (less the block's 1px border) lands a child's
+     twisty exactly on the x of its parent's product ICON. The children are
+     therefore inset by precisely one control — the depth of the nesting is
+     the width of the thing that opened it. */
+  --inset:calc(var(--twf) + var(--twgap) - 1px);
   --inset-r:10px;      /* and on the right */
   --t1:11rem;          /* twisty + icon + ref */
   --t6:5rem;           /* actions: pencil + more (the twisty has left) */
@@ -59,13 +67,13 @@ h1{font:600 30px/36px var(--fd);letter-spacing:-.6px;margin:0 0 8px}
 .head{background:var(--recessive);border:1px solid var(--line);font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);padding:8px var(--pad)}
 .head .r{text-align:right}
 .row{background:var(--paper);padding:6px var(--pad);min-height:44px}
-.id{display:flex;align-items:center;gap:8px;min-width:0}
+.id{display:flex;align-items:center;gap:var(--twgap);min-width:0}
 
 /* The twisty leads the row: it is the first thing on the line, left of the
    product icon, so the whole column of them scans as one rail — and on a
    composite that rail steps in with the children block, which is exactly the
    parent/child relationship stated once more. */
-.tw{flex:none;width:22px;height:22px;margin-right:-2px;display:inline-flex;align-items:center;
+.tw{flex:none;width:var(--twf);height:var(--twf);display:inline-flex;align-items:center;
   justify-content:center;border:0;background:none;padding:0;color:var(--quiet);cursor:pointer}
 .tw svg{display:block;transition:transform .12s ease}
 .tw[aria-expanded="true"]{color:var(--ink)}
@@ -157,6 +165,10 @@ group flagged, a single child flagged, and parent-and-child both flagged. Then 3
 <div id="head"></div>
 <div class="list" id="out"></div>
 <p class="note win" id="verdict"></p>
+
+<div class="sec">The inset — how far in</div>
+<div id="insets"></div>
+<p class="note" id="insetnote"></p>
 
 <div class="sec">375px</div>
 <div class="phones"><div class="phone"><p class="cap">E on a phone</p><div class="stage"><div id="mout"></div></div></div></div>
@@ -271,6 +283,21 @@ document.getElementById('mout').innerHTML=D.slice(1,7).map(o=>rec(o,true)).join(
 
 
 
+/* Three depths, so "one whole twisty" can be judged against its neighbours. */
+(function(){
+  const OPTS=[
+    ['21px','calc(var(--twf) - 1px)','the ARROW BOX only — a child’s twisty stops short of the parent’s icon'],
+    ['29px','calc(var(--twf) + var(--twgap) - 1px)','ONE WHOLE TWISTY — arrow plus its gap. A child’s twisty lands exactly on the parent’s icon. ← current'],
+    ['47px','calc(var(--twf) + var(--twgap) + 28px - 2px)','arrow AND icon — a child’s twisty lands on the parent’s REF'],
+  ];
+  document.getElementById('insets').innerHTML = OPTS.map(([px,expr,why])=>
+    '<div style="margin:0 0 14px">'
+    + '<p style="font:400 12px/17px var(--fb);color:var(--quiet);margin:0 0 4px">'
+    + '<b style="color:var(--body)">'+px+'</b> — '+why+'</p>'
+    + '<div class="list" style="--inset:'+expr+';border-top:1px solid var(--line)">'
+    + rec(D[3],false) + rec(D[0],false) + '</div></div>').join('');
+})();
+
 /* Measure: which columns hold, and exactly how far the actions move. */
 (function(){
   const head=document.querySelector('.head');
@@ -288,11 +315,14 @@ document.getElementById('mout').innerHTML=D.slice(1,7).map(o=>rec(o,true)).join(
   const kActs=document.querySelector('.kids .row .acts').getBoundingClientRect();
   const pTw=document.querySelector('.rec > .row .tw').getBoundingClientRect();
   const kTw=document.querySelector('.kids .row .tw').getBoundingClientRect();
+  const pIc=document.querySelector('.rec > .row svg.el').getBoundingClientRect();
+  const off=Math.round(kTw.left-pIc.left);
   document.getElementById('verdict').innerHTML =
-    '<b>The twisty rail.</b> A parent’s twisty starts at x '+Math.round(pTw.left)+', a child’s at '
-    +Math.round(kTw.left)+' — a '+Math.round(kTw.left-pTw.left)+'px step, which is the inset plus its '
-    +'border. Every openable thing in the list now begins with the same control, and the only thing '
-    +'that moves it is depth.<br><br>'
+    '<b>The inset is one whole twisty.</b> A parent’s twisty starts at x '+Math.round(pTw.left)
+    +', a child’s at '+Math.round(kTw.left)+' — a '+Math.round(kTw.left-pTw.left)+'px step. '
+    +'The parent’s product ICON starts at x '+Math.round(pIc.left)+', so the child’s twisty lands '
+    +(off===0?'<b>exactly on it (0px)</b>':'<b>'+off+'px off it</b>')+'. The children step in by '
+    +'precisely one control: the depth of the nesting is the width of the thing that opened it.<br><br>'
     +'<b>Measured.</b> Header x ['+hx.join(', ')+']<br>'
     +'Parent row x ['+px.join(', ')+']<br>'
     +'Child row x ['+kx.join(', ')+']<br>'
