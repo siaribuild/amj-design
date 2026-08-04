@@ -127,6 +127,36 @@ svg.el [stroke]{vector-effect:non-scaling-stroke}
 .recs .rec .unit{background:var(--recessive)}
 .recs .rec > .row{padding-left:10px}
 
+
+/* ── H: G, with the indent KEPT ────────────────────────────────────────────── */
+.recs2{display:flex;flex-direction:column;gap:10px}
+.recs2 .rec{border:1px solid var(--line);border-left:3px solid var(--line);background:var(--paper)}
+.recs2 .rec[data-state="attention"]{border-left-color:var(--warning)}
+.recs2 .rec > .row{box-shadow:none}
+.recs2 .rec > .row + .row{border-top:none}
+.recs2 .rec .unit{background:var(--recessive)}
+.recs2 .rec > .row{padding-left:10px}
+/* The expansion takes the SAME tint as a unit row — which is the collision. */
+.recs2 .exp{background:var(--recessive);border-top:1px solid var(--line);padding:14px 16px;
+  font:400 var(--t-cap)/18px var(--font-body);color:var(--body)}
+.recs2 .exp b{display:block;margin-bottom:4px;
+  font:600 var(--t-lbl)/14px var(--font-display);letter-spacing:1px;text-transform:uppercase;color:var(--quiet)}
+.recs2 .exp.deep{margin-left:34px}
+
+
+/* ── I: children UNSHADED; tint means expansion, and only that ─────────────── */
+.recs3{display:flex;flex-direction:column;gap:10px}
+.recs3 .rec{border:1px solid var(--line);border-left:3px solid var(--line);background:var(--paper)}
+.recs3 .rec[data-state="attention"]{border-left-color:var(--warning)}
+.recs3 .rec > .row{box-shadow:none;padding-left:10px}
+.recs3 .rec > .row + .row{border-top:none}
+.recs3 .rec .unit{background:var(--paper)}
+.recs3 .exp{background:var(--recessive);border-top:1px solid var(--line);padding:14px 16px;
+  font:400 var(--t-cap)/18px var(--font-body);color:var(--body)}
+.recs3 .exp b{color:var(--ink);font-weight:600;display:block;margin-bottom:4px;
+  font:600 var(--t-lbl)/14px var(--font-display);letter-spacing:1px;text-transform:uppercase;color:var(--quiet)}
+.recs3 .exp.deep{margin-left:34px}
+
 .legend{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 0;
   font-size:12px;line-height:17px;color:var(--quiet)}
 .legend b{color:var(--body);font-weight:500}
@@ -278,6 +308,46 @@ blocked unit so each option can be judged with a state stripe in play.</p>
     with the chip still naming which row. That is a real decision, not a detail.</p>
 </section>
 
+
+<!-- ══ H ══════════════════════════════════════════════════════════════════ -->
+<section class="opt">
+  <div class="opt-head"><span class="opt-tag">H · G, indent kept</span><h2>Card separates records, indent expresses subordination</h2></div>
+  <p class="opt-why">Identical to G, except the units keep their indent and connector. Two devices doing
+    two different jobs: the border says <em>where a record starts and ends</em>, the indent says
+    <em>this one is part of that one</em>. Nothing is asked of the fill except tone.</p>
+  <div class="head" style="border:1px solid var(--line);border-left-width:3px;border-bottom:none"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
+  <div class="recs2" id="listH" style="margin-top:10px"></div>
+  <p class="verdict good"><b>Why this is probably the answer:</b> the indent is the only subordination cue
+    that works with no colour at all — which matters precisely because you showed fill cannot be trusted to
+    carry hierarchy. G asked the fill to do that job alone. <b>What it still costs:</b> the ~24px in the
+    reference track, so the code column stays ragged and a unit chip keeps the tighter budget. That is a
+    real price, but it is paid for a cue that never fails.</p>
+  <div class="legend">
+    <span><b>border</b> = record boundary</span>
+    <span><b>left edge colour</b> = state, no doubling</span>
+    <span><b>indent + connector</b> = subordination</span>
+    <span><b>fill</b> = still doing two jobs — see I</span>
+  </div>
+</section>
+
+<!-- ══ I ══════════════════════════════════════════════════════════════════ -->
+<section class="opt">
+  <div class="opt-head"><span class="opt-tag">I · one job each</span><h2>Children unshaded — tint means “expansion”, and nothing else</h2></div>
+  <p class="opt-why">The same as H, with the units returned to paper. <code>--recessive</code> was carrying
+    three meanings at once — header strip, unit row, <em>and</em> expansion panel — so a plain opening that
+    expanded produced a tinted block indistinguishable from a child, and a unit that expanded put tint under
+    tint. Here the tint is reserved for expansions. Both mocks below have panels open: W3 (a childless
+    opening) and W1A (a unit), so the collision and its absence are visible rather than argued.</p>
+  <div class="head" style="border:1px solid var(--line);border-left-width:3px;border-bottom:none"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
+  <div class="recs3" id="listI" style="margin-top:10px"></div>
+  <p class="verdict good"><b>Every device now has exactly one job:</b> the border says where a record starts
+    and ends; its left edge colour says the record’s state; the indent and connector say which rows are
+    subordinate; the tint says “this is an expansion”. Nothing is asked to mean two things, which is what
+    made both of the problems you spotted possible.
+    <b>What to check:</b> with units back on paper, a unit differs from its opening only by indent,
+    connector, lighter type and an empty price cell. Compare it against H above and decide whether that is
+    enough separation, or whether the units want something quieter than a fill — a hairline, say.</p>
+</section>
 </div>
 
 <script>
@@ -346,12 +416,22 @@ function unitRow(u){
     <span class="size">${u.size}</span>
     <span></span>${UACTS}</div>`;
 }
-function renderRecords(id){
+function renderRecords(id,opts){
+  const o2=opts||{};
   document.getElementById(id).innerHTML=DATA.map(o=>{
     const attn=(o.units||[]).some(u=>u.attn)||o.attn;
-    const body=parentRow(o)+(o.units||[]).map(u=>unitRow({...u,attn:false})).join('');
+    let body=parentRow(o);
+    // Show a real expansion so the tint collision is visible rather than argued.
+    if(o2.expand==='parent'&&o.ref==='W3')body+=exp('Specification','Glazing · Double Glazed Low-E Argon &nbsp;·&nbsp; Colour · Monument &nbsp;·&nbsp; Flyscreen · None');
+    (o.units||[]).forEach((u,i)=>{
+      body+=unitRow({...u,attn:false});
+      if(o2.expand==='parent'&&o.ref==='W1'&&i===0)body+=exp('Specification','Glazing · Single Glazed Clear &nbsp;·&nbsp; Colour · Dover White',true);
+    });
     return '<div class="rec" data-state="' + (attn?'attention':'ready') + '">' + body + '</div>';
   }).join('');
+}
+function exp(label,text,deep){
+  return '<div class="exp' + (deep?' deep':'') + '"><b>' + label + '</b>' + text + '</div>';
 }
 function render(id,mode){
   document.getElementById(id).innerHTML=DATA.map(o=>{
@@ -361,7 +441,7 @@ function render(id,mode){
     return `<div class="grp">${body}</div>`;
   }).join('');
 }
-renderRecords('listG');render('listF','grp');render('listA','flat');render('listB','cards');render('listC','grp');render('listD','grp');
+renderRecords('listG');renderRecords('listH',{expand:'parent'});renderRecords('listI',{expand:'parent'});render('listF','grp');render('listA','flat');render('listB','cards');render('listC','grp');render('listD','grp');
 </script>
 </body>
 </html>
