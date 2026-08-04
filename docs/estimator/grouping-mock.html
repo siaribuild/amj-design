@@ -116,18 +116,6 @@ svg.el [stroke]{vector-effect:non-scaling-stroke}
 .flush > .row + .grp,.flush > .row + .row{margin-top:10px}
 
 
-/* ── G: the card, with the stripe PROMOTED to the record's own left edge ───── */
-.recs{display:flex;flex-direction:column;gap:10px}
-.recs .rec{border:1px solid var(--line);border-left:3px solid var(--line);background:var(--paper)}
-.recs .rec[data-state="attention"]{border-left-color:var(--warning)}
-.recs .rec[data-state="review"]{border-left-color:var(--info)}
-.recs .rec > .row{box-shadow:none}          /* no inset stripe: the record carries it */
-.recs .rec > .row + .row{border-top:none}   /* no rule INSIDE a record */
-.recs .rec .tree{display:none}              /* flush: the card is the containment */
-.recs .rec .unit{background:var(--recessive)}
-.recs .rec > .row{padding-left:10px}
-
-
 /* ── H: G, with the indent KEPT ────────────────────────────────────────────── */
 .recs2{display:flex;flex-direction:column;gap:10px}
 .recs2 .rec{border:1px solid var(--line);border-left:3px solid var(--line);background:var(--paper)}
@@ -178,7 +166,7 @@ code{font:500 12px/1.4 var(--font-display);background:var(--recessive);padding:1
 <div class="wrap">
 
 <h1>Estimator list — separating a record from its parts</h1>
-<p class="sub">Four treatments of the same data, drawn with the live design tokens, type scale and column
+<p class="sub">Treatments of the same data, drawn with the live design tokens, type scale and column
 tracks. The goal in each: make it obvious where one opening ends and the next begins, and that
 W1A/W1B belong to W1.</p>
 <p class="note">Rows show the CURRENT build — a composite reads “Composite Window”, carries no chip, and its
@@ -272,68 +260,34 @@ blocked unit so each option can be judged with a state stripe in play.</p>
 </section>
 
 
-<!-- ══ F ══════════════════════════════════════════════════════════════════ -->
-<section class="opt">
-  <div class="opt-head"><span class="opt-tag">F · reading 2</span><h2>No indent — containment does all the work</h2></div>
-  <p class="opt-why">Children shift left until they are flush with the parent. Nothing is indented; a unit
-    is told apart by its recessive fill, its lighter type and its empty price cell alone.</p>
-  <div class="panel" style="padding:6px 0">
-    <div class="head" style="border-bottom:none;margin:-6px 0 4px"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
-    <div class="flush" id="listF"></div>
-  </div>
-  <p class="verdict good"><b>What it buys, and this is the surprise:</b> every reference lines up on one
-    x, so the code column is finally straight — and the indent is what forced the reference track to
-    9.5rem in the first place. Removing it hands ~24px back to the product column and un-squeezes the
-    unit chip budget that item 3 was fighting. <b>What it costs:</b> nesting is now carried by fill alone,
-    so a unit and a parent differ only in tone — and the recessive fill is already used for the header
-    strip and expansions, so it is not exclusively a "child" signal.</p>
-</section>
-
-
-<!-- ══ G ══════════════════════════════════════════════════════════════════ -->
-<section class="opt">
-  <div class="opt-head"><span class="opt-tag">G · your card, fixed</span><h2>Bordered record, and the state stripe becomes its left edge</h2></div>
-  <p class="opt-why">Your sketch with the one real objection removed. Every record is a bordered block —
-    drawn, not toned, so W3 and W4 can never merge. The state stripe stops being an inset shadow on a row
-    and becomes the <em>record's</em> left border at 3px, so there is no doubling: one edge, one colour.
-    Inside a record there are no rules and no indent — the card is the containment, so the reference column
-    is straight.</p>
-  <div class="head" style="border:1px solid var(--line);border-left-width:3px;border-bottom:none"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
-  <div class="recs" id="listG" style="margin-top:10px"></div>
-  <p class="verdict good"><b>What it resolves:</b> no 1px-outboard-of-3px doubled edge; no reliance on a
-    1.6 ΔL* paper-on-bone step; no ragged code column; and the indent that forced the reference track to
-    9.5rem is gone. Two adjacent childless records are unambiguously two records.
-    <b>What is left to decide:</b> a record has ONE left edge but its rows can disagree — W4's unit needs
-    attention while its opening does not. Drawn here as "the record shows the most severe state inside it",
-    with the chip still naming which row. That is a real decision, not a detail.</p>
-</section>
-
-
 <!-- ══ H ══════════════════════════════════════════════════════════════════ -->
 <section class="opt">
-  <div class="opt-head"><span class="opt-tag">H · G, indent kept</span><h2>Card separates records, indent expresses subordination</h2></div>
-  <p class="opt-why">Identical to G, except the units keep their indent and connector. Two devices doing
+  <div class="opt-head"><span class="opt-tag">E · your card, resolved</span><h2>Your card — border for the record, your indent for subordination</h2></div>
+  <p class="opt-why">Your sketch, with its one real objection removed. The units keep YOUR indent and connector. Two devices doing
     two different jobs: the border says <em>where a record starts and ends</em>, the indent says
     <em>this one is part of that one</em>. Nothing is asked of the fill except tone.</p>
   <div class="head" style="border:1px solid var(--line);border-left-width:3px;border-bottom:none"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
   <div class="recs2" id="listH" style="margin-top:10px"></div>
-  <p class="verdict good"><b>Why this is probably the answer:</b> the indent is the only subordination cue
-    that works with no colour at all — which matters precisely because you showed fill cannot be trusted to
-    carry hierarchy. G asked the fill to do that job alone. <b>What it still costs:</b> the ~24px in the
-    reference track, so the code column stays ragged and a unit chip keeps the tighter budget. That is a
-    real price, but it is paid for a cue that never fails.</p>
+  <p class="verdict good"><b>Why the indent is right, not a compromise:</b> it is the only subordination cue that
+    works with NO colour at all — which matters exactly because fill turned out to be untrustworthy for
+    hierarchy. And the objection I had been repeating, that it leaves the reference column ragged, does not
+    hold: that only counts if the ideal is a flat table of peers. These rows are not peers. The offset IS
+    the information, the same way a file tree or a bill of materials indents.
+    <b>The one real consequence</b> is a sizing decision, not an argument: the indent is why the reference
+    track went 6.75rem → 9.5rem, which leaves a unit chip ~74px against a parent’s ~100px. Widen the track
+    or keep unit labels short — either is fine.</p>
   <div class="legend">
     <span><b>border</b> = record boundary</span>
     <span><b>left edge colour</b> = state, no doubling</span>
     <span><b>indent + connector</b> = subordination</span>
-    <span><b>fill</b> = still doing two jobs — see I</span>
+    <span><b>fill</b> = still doing two jobs — see F</span>
   </div>
 </section>
 
 <!-- ══ I ══════════════════════════════════════════════════════════════════ -->
 <section class="opt">
-  <div class="opt-head"><span class="opt-tag">I · one job each</span><h2>Children unshaded — tint means “expansion”, and nothing else</h2></div>
-  <p class="opt-why">The same as H, with the units returned to paper. <code>--recessive</code> was carrying
+  <div class="opt-head"><span class="opt-tag">F · one job each</span><h2>Children unshaded — tint means “expansion”, and nothing else</h2></div>
+  <p class="opt-why">The same as E, with the units returned to paper. <code>--recessive</code> was carrying
     three meanings at once — header strip, unit row, <em>and</em> expansion panel — so a plain opening that
     expanded produced a tinted block indistinguishable from a child, and a unit that expanded put tint under
     tint. Here the tint is reserved for expansions. Both mocks below have panels open: W3 (a childless
@@ -345,7 +299,7 @@ blocked unit so each option can be judged with a state stripe in play.</p>
     subordinate; the tint says “this is an expansion”. Nothing is asked to mean two things, which is what
     made both of the problems you spotted possible.
     <b>What to check:</b> with units back on paper, a unit differs from its opening only by indent,
-    connector, lighter type and an empty price cell. Compare it against H above and decide whether that is
+    connector, lighter type and an empty price cell. Compare it against E above and decide whether that is
     enough separation, or whether the units want something quieter than a fill — a hairline, say.</p>
 </section>
 </div>
@@ -441,7 +395,7 @@ function render(id,mode){
     return `<div class="grp">${body}</div>`;
   }).join('');
 }
-renderRecords('listG');renderRecords('listH',{expand:'parent'});renderRecords('listI',{expand:'parent'});render('listF','grp');render('listA','flat');render('listB','cards');render('listC','grp');render('listD','grp');
+renderRecords('listH',{expand:'parent'});renderRecords('listI',{expand:'parent'});render('listA','flat');render('listB','cards');render('listC','grp');render('listD','grp');
 </script>
 </body>
 </html>
