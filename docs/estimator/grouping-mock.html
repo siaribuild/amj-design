@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estimator list — parent/child grouping options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── Real tokens, lifted from src/styles/theme.css ─────────────────────────── */
+:root{
+  --paper:#FFFFFF; --bone:#FBFAF8; --recessive:#F5F3F0;
+  --line:rgba(19,19,17,.18); --line-strong:rgba(19,19,17,.28);
+  --ink:#131311; --body:#5c5a56; --quiet:#8b8880;
+  --sage:#5A7A6A; --sage-wash:#F3F6F5; --sage-ink:#355344;
+  --warning:#8a6a2a; --warning-ink:#7a5410;
+  --info:#4C6A88; --info-ink:#31485f;
+  --font-display:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --font-body:'Inter',ui-sans-serif,system-ui,sans-serif;
+  --t-dat:14px; --t-datsm:12px; --t-bdsm:14px; --t-cap:13px; --t-lbl:11px;
+  /* The live grid tracks at >=1024px */
+  --qp-cols:9.5rem 10rem minmax(0,1fr) 8.5rem 7.5rem 7rem;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bone); color:var(--ink);
+  font:400 16px/26px var(--font-body);
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 24px 96px}
+
+h1{font:600 30px/36px var(--font-display);letter-spacing:-.6px;margin:0 0 6px}
+.sub{color:var(--body);font-size:15px;max-width:68ch;margin:0 0 8px}
+.note{color:var(--quiet);font-size:13px;max-width:68ch;margin:0 0 40px}
+
+.opt{margin:0 0 56px}
+.opt-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 4px}
+.opt-tag{
+  font:600 var(--t-lbl)/14px var(--font-display);letter-spacing:1px;text-transform:uppercase;
+  color:var(--quiet);border:1px solid var(--line);padding:3px 7px;
+}
+.opt-head h2{font:600 19px/25px var(--font-display);letter-spacing:-.2px;margin:0}
+.opt-why{color:var(--body);font-size:14px;line-height:21px;max-width:74ch;margin:0 0 16px}
+.verdict{font-size:13px;line-height:19px;max-width:74ch;margin:14px 0 0;padding-left:12px;border-left:2px solid var(--line)}
+.verdict b{color:var(--ink)}
+.bad{border-left-color:rgba(178,110,15,.5)}
+.good{border-left-color:rgba(90,122,106,.55)}
+
+/* ── The list, as built today ──────────────────────────────────────────────── */
+.panel{border:1px solid var(--line);background:var(--paper)}
+.head,.row{display:grid;grid-template-columns:var(--qp-cols);align-items:center;column-gap:12px}
+.head{
+  background:var(--recessive);border-bottom:1px solid var(--line);
+  padding:8px 10px;   /* mock uses the ROW's padding — see defect note */
+  font:600 var(--t-lbl)/14px var(--font-display);letter-spacing:1px;
+  text-transform:uppercase;color:var(--quiet);
+}
+.head .r{text-align:right}
+.row{background:var(--paper);padding:6px 10px;min-height:44px}
+.divided > .row + .row,
+.divided > .grp + .grp,
+.divided > .row + .grp,
+.divided > .grp + .row{border-top:1px solid var(--line)}
+
+.id{display:flex;align-items:center;gap:8px;min-width:0}
+.ref{font:600 var(--t-dat)/20px var(--font-display);font-variant-numeric:tabular-nums;color:var(--ink)}
+.prod{font:400 var(--t-bdsm)/21px var(--font-body);color:var(--ink);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.size{font:600 var(--t-dat)/20px var(--font-display);font-variant-numeric:tabular-nums;
+  color:var(--ink);text-align:right}
+.price{font:600 var(--t-dat)/20px var(--font-display);font-variant-numeric:tabular-nums;
+  color:var(--ink);text-align:right}
+.acts{display:flex;justify-content:flex-end;gap:2px;color:var(--body)}
+.acts span{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);
+  padding:2px 6px;font:400 var(--t-cap)/18px var(--font-body);white-space:nowrap}
+.chip.attn{border-color:rgba(138,106,42,.42);background:rgba(138,106,42,.12);color:var(--warning-ink)}
+.chip.rev{border-color:rgba(76,106,136,.38);background:rgba(76,106,136,.08);color:var(--info-ink)}
+
+/* unit rows */
+.unit{background:var(--recessive)}
+.unit .prod,.unit .ref{color:var(--body)}
+.unit .size{font-weight:500;color:var(--body)}
+.tree{position:relative;display:block;width:24px;height:28px;flex:none;margin-left:8px}
+.tree::before{content:"";position:absolute;top:-8px;left:0;width:10px;height:22px;
+  border-left:1px solid var(--line);border-bottom:1px solid var(--line)}
+.state-attn{box-shadow:inset 3px 0 0 var(--warning)}
+
+svg.el{display:block;flex:none;color:var(--body)}
+svg.el [stroke]{vector-effect:non-scaling-stroke}
+
+/* ── B: cards ──────────────────────────────────────────────────────────────── */
+.cards{display:flex;flex-direction:column;gap:8px}
+.cards .card{border:1px solid var(--line);background:var(--paper)}
+.cards .card > .row + .row{border-top:1px solid var(--line)}
+
+/* ── C: gap + group rail ───────────────────────────────────────────────────── */
+.railed > .grp,.railed > .row{position:relative}
+.railed > .grp + .grp,.railed > .grp + .row,
+.railed > .row + .grp,.railed > .row + .row{margin-top:10px}
+.railed > .grp::before{
+  content:"";position:absolute;left:14px;top:34px;bottom:22px;width:1px;background:var(--line);
+}
+.railed .unit .tree::before{border-left:none}
+
+/* ── D: graded dividers ────────────────────────────────────────────────────── */
+.graded > .grp + .grp,.graded > .grp + .row,
+.graded > .row + .grp,.graded > .row + .row{border-top:1px solid var(--line-strong)}
+.graded .grp > .row + .row{border-top:none}
+
+.legend{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 0;
+  font-size:12px;line-height:17px;color:var(--quiet)}
+.legend b{color:var(--body);font-weight:500}
+
+.defects{border:1px solid var(--line);background:var(--paper);padding:20px 22px;margin:0 0 48px}
+.defects h2{font:600 17px/24px var(--font-display);margin:0 0 10px}
+.defects ol{margin:0;padding-left:20px}
+.defects li{font-size:14px;line-height:22px;color:var(--body);margin-bottom:8px}
+.defects b{color:var(--ink);font-weight:600}
+code{font:500 12px/1.4 var(--font-display);background:var(--recessive);padding:1px 5px;color:var(--ink)}
+
+@media (max-width:900px){
+  :root{--qp-cols:7rem 8rem minmax(0,1fr) 7.5rem 6rem 5rem}
+  .wrap{padding:24px 14px 64px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Estimator list — separating a record from its parts</h1>
+<p class="sub">Four treatments of the same data, drawn with the live design tokens, type scale and column
+tracks. The goal in each: make it obvious where one opening ends and the next begins, and that
+W1A/W1B belong to W1.</p>
+<p class="note">Rows show the CURRENT build — a composite reads “Composite Window”, carries no chip, and its
+icon is drawn from its units. Your sketch predates those changes. W4 is deliberately shown with a
+blocked unit so each option can be judged with a state stripe in play.</p>
+
+<div class="defects">
+  <h2>Three defects the review turned up, independent of which option you pick</h2>
+  <ol>
+    <li><b>Column headers are 6px out of register.</b> The header strip uses <code>px-4</code> while
+      rows use <code>md:px-2.5</code> from 768px up, so every label sits 6px left of the column it
+      names. This mock uses the row’s padding for both, which is why its headers line up and the live
+      page’s don’t.</li>
+    <li><b>The connector’s end-cap rule never matches what it means.</b>
+      <code>.quote-unitrow:last-of-type</code> — but each unit is wrapped in its own
+      <code>&lt;div&gt;</code>, so it matches <em>every</em> collapsed unit and no expanded one.</li>
+    <li><b>The only non-visual cue that a unit belongs to its opening is in the wrong place.</b>
+      The “Included in W1” string is the row’s last node, so it is announced after all the data it
+      qualifies, and never at all when tabbing.</li>
+  </ol>
+</div>
+
+<!-- ══ A ══════════════════════════════════════════════════════════════════ -->
+<section class="opt">
+  <div class="opt-head"><span class="opt-tag">A · today</span><h2>Continuous table, hairline per row</h2></div>
+  <p class="opt-why">One frame, one divider weight everywhere. A unit is distinguished by indent, connector
+    and the recessive fill — but the parent sits on paper like every unrelated row, so it does not read
+    as the head of anything.</p>
+
+  <div class="panel">
+    <div class="head"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
+    <div class="divided" id="listA"></div>
+  </div>
+  <p class="verdict bad"><b>Where it falls short:</b> every boundary carries identical weight, so
+    “end of W1’s units” and “start of W2” look the same. That is exactly the complaint.</p>
+</section>
+
+<!-- ══ B ══════════════════════════════════════════════════════════════════ -->
+<section class="opt">
+  <div class="opt-head"><span class="opt-tag">B · your sketch</span><h2>One bounded card per opening</h2></div>
+  <p class="opt-why">Each opening becomes a card; its units sit inside it; the header stays outside and
+    still governs the columns.</p>
+
+  <div class="head" style="border:1px solid var(--line);border-bottom:none"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
+  <div class="cards" id="listB" style="margin-top:8px"></div>
+  <p class="verdict bad"><b>What the review found:</b> the card genuinely helps in one way nobody
+    expected — it puts the <b>parent inside the group it heads</b>, which A never does. But look at W4:
+    the 1px card border sits outboard of the 3px state stripe, giving 4px of doubled edge — the exact
+    thing <code>.quote-row</code>’s comment forbids. State is per-row while a border is per-record, so a
+    record whose parent and unit disagree has no honest border colour. And a composite nests four fills
+    (bone → paper → recessive → recessive), against the rule that past three levels the answer is a rule,
+    not another tint. Cost: +13% scroll at this gap, +37% with card padding.</p>
+</section>
+
+<!-- ══ C ══════════════════════════════════════════════════════════════════ -->
+<section class="opt">
+  <div class="opt-head"><span class="opt-tag">C · recommended</span><h2>Gap between records, rail through the group</h2></div>
+  <p class="opt-why">No borders and no wrapper. A gap separates records; <em>within</em> a record there is
+    no divider at all; and the connector’s vertical arm extends up through the parent, so a composite reads
+    as one bracketed group headed by its opening.</p>
+
+  <div class="panel" style="padding:6px 0">
+    <div class="head" style="border-bottom:none;margin:-6px 0 4px"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
+    <div class="railed" id="listC"></div>
+  </div>
+  <p class="verdict good"><b>Why this one:</b> it gets the card’s real benefit — the parent visibly heads
+    its group — without a border to collide with the state stripe, without a fourth tint, without a wrapper
+    element, and without the columns desyncing from a header left outside. A gap is also the one cue that
+    survives zoom, greyscale and a daylit site-office monitor. Cost is roughly a third of B’s.</p>
+  <div class="legend">
+    <span><b>gap</b> = record boundary</span>
+    <span><b>no rule</b> inside a record</span>
+    <span><b>rail</b> = parent + its units are one group</span>
+  </div>
+</section>
+
+<!-- ══ D ══════════════════════════════════════════════════════════════════ -->
+<section class="opt">
+  <div class="opt-head"><span class="opt-tag">D · cheapest</span><h2>Graded dividers only</h2></div>
+  <p class="opt-why">Keep the table exactly as it is; give the boundary <em>between</em> openings the
+    stronger hairline and remove the one <em>within</em> a composite. Zero extra pixels.</p>
+
+  <div class="panel">
+    <div class="head"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>
+    <div class="graded" id="listD"></div>
+  </div>
+  <p class="verdict"><b>Trade-off:</b> costs nothing and reads well on this screen. But it asks an
+    18%-black hairline to be told apart from a 28%-black one — a distinction that flattens under zoom,
+    greyscale, or a cheap monitor in daylight. If the complaint is “I can’t tell where a record ends”,
+    a cue that is sometimes imperceptible is a partial fix.</p>
+</section>
+
+</div>
+
+<script>
+/* Elevation stand-ins — real geometry rules, simplified: frame + glass + the
+   opening symbol, and for a composite one proportional panel per unit. */
+function el(kind, w, h, parts){
+  const S=28, P=2, iw=S-P*2, ih=S-P*2, t=3;
+  const g={x:P+t,y:P+t,w:iw-t*2,h:ih-t*2};
+  let sym='';
+  if(parts){
+    const tot=parts.reduce((s,p)=>s+p.mm,0); let at=0;
+    parts.forEach((p,i)=>{
+      const pw=g.w*(p.mm/tot);
+      sym+=symbol(p.kind,{x:g.x+at,y:g.y,w:pw,h:g.h});
+      at+=pw;
+      if(i<parts.length-1)sym+=`<path d="M${(g.x+at).toFixed(1)} ${g.y} V${g.y+g.h}" stroke="currentColor" stroke-width="1.4" opacity=".75" fill="none"/>`;
+    });
+  } else sym=symbol(kind,g);
+  return `<svg class="el" width="${S}" height="${S}" viewBox="0 0 ${S} ${S}" fill="none" aria-hidden="true">
+    <rect x="${P}" y="${P}" width="${iw}" height="${ih}" rx="1" stroke="currentColor" stroke-width="1.4"/>
+    <rect x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" rx=".5" stroke="currentColor" stroke-width=".8"/>
+    ${sym}</svg>`;
+}
+function symbol(kind,p){
+  const i=2.2,L=p.x+i,R=p.x+p.w-i,T=p.y+i,B=p.y+p.h-i,cx=(L+R)/2,cy=(T+B)/2;
+  if(R-L<3||B-T<3)return '';
+  const S='stroke="currentColor" stroke-width="1.1" fill="none" stroke-linejoin="miter"';
+  if(kind==='awning')  return `<path d="M${L} ${B} L${cx} ${T} L${R} ${B}" ${S}/>`;
+  if(kind==='sliding') return `<path d="M${L+1} ${cy} H${R-1} M${R-3} ${cy-2} L${R-1} ${cy} L${R-3} ${cy+2}" ${S}/>`;
+  if(kind==='casement')return `<path d="M${R} ${T} L${L} ${cy} L${R} ${B}" ${S}/>`;
+  return ''; /* fixed = unmarked */
+}
+
+const DATA=[
+  {ref:'W1',prod:'Composite Window',size:'2,050 × 2,100 mm',price:'$2,450',
+   icon:el(null,0,0,[{kind:'awning',mm:700},{kind:'fixed',mm:1350}]),
+   units:[{ref:'W1A',prod:'AMJ80 Series Awning Window',size:'700 × 2,100 mm',icon:el('awning')},
+          {ref:'W1B',prod:'AMJ100T Fixed Window',size:'1,350 × 2,100 mm',icon:el('fixed')}]},
+  {ref:'W2',prod:'Composite Window',size:'3,500 × 700 mm',price:'$1,560',
+   icon:el(null,0,0,[{kind:'fixed',mm:1750},{kind:'fixed',mm:1750}]),
+   units:[{ref:'W2A',prod:'AMJ100T Fixed Window',size:'1,750 × 700 mm',icon:el('fixed')},
+          {ref:'W2B',prod:'AMJ100T Fixed Window',size:'1,750 × 700 mm',icon:el('fixed')}]},
+  {ref:'W3',prod:'AMJ100T Fixed Window',size:'2,100 × 2,100 mm',price:'$2,240',icon:el('fixed')},
+  {ref:'W4',prod:'Composite Window',size:'3,440 × 1,200 mm',price:'$3,120',
+   icon:el(null,0,0,[{kind:'sliding',mm:2400},{kind:'casement',mm:1040}]),
+   units:[{ref:'W4A',prod:'AMJ100T Sliding Window',size:'2,400 × 1,200 mm',icon:el('sliding')},
+          {ref:'W4B',prod:'AMJ100T Casement Window',size:'2,400 × 1,200 mm',icon:el('casement'),
+           chip:'<span class="chip attn">Check size</span>',attn:true}]},
+];
+const ACTS='<span class="acts"><span>⌄</span><span>✎</span><span>⋯</span></span>';
+const UACTS='<span class="acts"><span>⌄</span><span>✎</span><span style="width:36px"></span></span>';
+
+function parentRow(o,extra){
+  return `<div class="row ${extra||''}">
+    <span class="id">${o.icon}<span class="ref">${o.ref}</span></span>
+    <span>${o.chip||''}</span>
+    <span class="prod">${o.prod}</span>
+    <span class="size">${o.size}</span>
+    <span class="price">${o.price}</span>${ACTS}</div>`;
+}
+function unitRow(u){
+  return `<div class="row unit ${u.attn?'state-attn':''}">
+    <span class="id"><span class="tree"></span>${u.icon}<span class="ref">${u.ref}</span></span>
+    <span>${u.chip||''}</span>
+    <span class="prod">${u.prod}</span>
+    <span class="size">${u.size}</span>
+    <span></span>${UACTS}</div>`;
+}
+function render(id,mode){
+  document.getElementById(id).innerHTML=DATA.map(o=>{
+    if(!o.units)return mode==='cards'?`<div class="card">${parentRow(o)}</div>`:parentRow(o);
+    const body=parentRow(o)+o.units.map(unitRow).join('');
+    if(mode==='cards')return `<div class="card">${body}</div>`;
+    return `<div class="grp">${body}</div>`;
+  }).join('');
+}
+render('listA','flat');render('listB','cards');render('listC','grp');render('listD','grp');
+</script>
+</body>
+</html>
