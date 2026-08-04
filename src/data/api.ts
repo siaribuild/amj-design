@@ -151,14 +151,9 @@ export const updateCurrentSegment = (segmentId: string, patch: {
   method: "PATCH", body: JSON.stringify(patch),
 });
 
-export const addCurrentSegment = (parentLineId: string, patch: {
-  productSlug: string; options: Record<string, string>; alongMm: number;
-}) => req<{ ok: boolean; id: string }>(`/api/projects/current/lines/${parentLineId}/segments`, {
-  method: "POST", body: JSON.stringify(patch),
-});
-
-export const removeCurrentSegment = (segmentId: string) =>
-  req<{ ok: boolean }>(`/api/projects/current/segments/${segmentId}`, { method: "DELETE" });
+// There is deliberately no addCurrentSegment / removeCurrentSegment (owner,
+// 2026-08-04). The server routes behind them are gone: the unit COUNT is the
+// split decision, and the customer does not make that decision.
 
 /** A specific owned project + its lines (read-only) — e.g. to review a submission. */
 export const getProject = (projectId: string) =>

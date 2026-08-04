@@ -123,17 +123,12 @@ test("a persisted composite survives current-project hydration and renders its u
   await expect(page.getByText("Unit 1", { exact: true })).toBeVisible();
   await expect(page.getByText("Unit 2", { exact: true })).toBeVisible();
 
-  // Add opens a local, blank editor. It does not collapse the parent or create
-  // an inherited/default segment until the customer makes and saves choices.
-  const addUnit = page.getByRole("button", { name: "+ Add window" });
-  await expect(addUnit).toBeVisible();
-  await addUnit.click();
-  await expect(page.getByText("Add composite unit", { exact: true })).toBeVisible();
-  const draftUnit = page.getByText("Add composite unit", { exact: true }).locator("..").locator("..");
-  await expect(draftUnit.locator("select")).toHaveCount(2);
-  await expect(page.getByText("Built as 2 units", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Cancel new unit" }).click();
-  await expect(page.getByText("Add composite unit", { exact: true })).toHaveCount(0);
+  // The unit COUNT is not the customer's to change (owner, 2026-08-04): they can
+  // neither create a composite nor merge one back, so adding and removing units
+  // was the same power by another route. Both controls are gone from BOTH arms,
+  // and the server routes behind them with them.
+  await expect(page.getByRole("button", { name: /Add window|Add door|Add unit/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Remove", exact: true })).toHaveCount(0);
 
   await expect(page.getByRole("button", { name: "Edit", exact: true })).toHaveCount(2);
   await page.getByRole("button", { name: "Edit", exact: true }).first().click();

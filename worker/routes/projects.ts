@@ -9,7 +9,7 @@ import { itemToInsert, itemFields, incomingServerId, editedFieldsAfterSave, rowT
 import { ownedProject, resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
 import { uuid } from "../lib/util";
-import { addSegment, loadCompositePolicy, recomputeComposite, removeSegment, updateSegment } from "../lib/composite";
+import { loadCompositePolicy, recomputeComposite, updateSegment } from "../lib/composite";
 import { logEvent } from "../lib/activity";
 
 export const projects = new Hono<{ Bindings: Env }>();
@@ -150,18 +150,6 @@ projects.post("/current/price-preview", async (c) => {
   return c.json({ ok: f.line_total != null, total: f.line_total });
 });
 
-type DraftCompositeParent = { id: string; project_id: string };
-
-async function currentDraftCompositeParent(env: Env, req: Request, lineId: string): Promise<DraftCompositeParent | null> {
-  const { project } = await resolveCurrentProject(env, req);
-  if (!project || project.status_customer !== "draft") return null;
-  return env.DB.prepare(
-    `SELECT id, project_id FROM quote_line
-      WHERE id=? AND project_id=? AND revision_id IS NULL
-        AND parent_line_id IS NULL AND line_kind='composite_parent'`,
-  ).bind(lineId, project.id).first<DraftCompositeParent>();
-}
-
 async function currentDraftSegment(env: Env, req: Request, segmentId: string): Promise<{
   id: string; parent_line_id: string; project_id: string;
 } | null> {
@@ -201,9 +189,23 @@ async function markCustomerCompositeEdit(env: Env, projectId: string, parentId: 
   ]);
 }
 
-// Draft-owner composite editing. These are ownership wrappers around the same
-// domain functions used by Ops; pricing, coverage, quantity derivation and the
-// two-unit minimum therefore cannot drift between the two surfaces.
+// Draft-owner composite editing — ONE route, and deliberately only one.
+//
+// WHETHER an opening is split is a manufacturing constraint (no frame is made
+// that wide), so it is not the customer's decision: there is no customer route
+// wrapping splitLine, and none wrapping mergeComposite either. HOW the units are
+// arranged is theirs, so they may change a unit's product, its options and its
+// size along the split axis.
+//
+// Adding and removing units used to be here too, and that was the hole: the unit
+// COUNT is the split decision, so a customer who could not make a composite could
+// still turn a two-unit one into four, or four into two. Both routes are gone.
+// (Owner, 2026-08-04. The capability comes back properly — split, merge and the
+// coverage validation to go with them — as a platform feature, ops first and
+// customers after.)
+//
+// What remains is an ownership wrapper around the same domain function Ops uses,
+// so pricing, coverage and quantity derivation cannot drift between the two.
 projects.patch("/current/segments/:id", async (c) => {
   const segment = await currentDraftSegment(c.env, c.req.raw, c.req.param("id"));
   if (!segment) return c.json({ error: "not_found" }, 404);
@@ -226,36 +228,9 @@ projects.patch("/current/segments/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-projects.post("/current/lines/:id/segments", async (c) => {
-  const parent = await currentDraftCompositeParent(c.env, c.req.raw, c.req.param("id"));
-  if (!parent) return c.json({ error: "not_found" }, 404);
-  const body = await c.req.json<Record<string, unknown>>().catch(() => null);
-  const productSlug = typeof body?.productSlug === "string" ? body.productSlug : "";
-  const options = body?.options && typeof body.options === "object" && !Array.isArray(body.options)
-    ? body.options as Record<string, string> : {};
-  const alongMm = Math.round(Number(body?.alongMm));
-  const result = await addSegment(c.env, parent.id, "manual", { productSlug, options, alongMm });
-  if ("errors" in result) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
-  await markCustomerCompositeEdit(c.env, parent.project_id, parent.id, result.id);
-  await logEvent(c.env, {
-    entityType: "project", entityId: parent.project_id, action: "customer.line.unit.add",
-    after: { lineId: parent.id, unitId: result.id },
-  });
-  return c.json({ ok: true, id: result.id });
-});
 
-projects.delete("/current/segments/:id", async (c) => {
-  const segment = await currentDraftSegment(c.env, c.req.raw, c.req.param("id"));
-  if (!segment) return c.json({ error: "not_found" }, 404);
-  const result = await removeSegment(c.env, segment.id);
-  if ("errors" in result) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
-  await markCustomerCompositeEdit(c.env, segment.project_id, result.parentId);
-  await logEvent(c.env, {
-    entityType: "project", entityId: segment.project_id, action: "customer.line.unit.remove",
-    after: { lineId: result.parentId, unitId: segment.id },
-  });
-  return c.json({ ok: true });
-});
+
+
 
 // GET /api/projects/:id — a specific owned project + its draft lines (read-only).
 // Scoped to the signed-in owner so a customer can review exactly what they

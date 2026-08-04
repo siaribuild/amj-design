@@ -32,9 +32,10 @@ export type DrawerTarget =
   /** Editing an existing opening, or one of its units when segmentId is set. */
   | { mode: "edit"; rowKey: RowKey; segmentId?: string }
   /** A blank new opening. Creates nothing until Save (plan §7.3 editing contract). */
-  | { mode: "add" }
-  /** A blank new unit inside an existing composite. Creates nothing until Add unit. */
-  | { mode: "add-unit"; rowKey: RowKey };
+  | { mode: "add" };
+// There is deliberately no "add-unit" mode (owner, 2026-08-04): adding a unit
+// changes how MANY units an opening has, which is the split decision, and the
+// customer does not make that decision.
 
 /** Where focus returns after the drawer closes. Deliberately ONE canonical
  *  target — the row's Edit control — regardless of whether the drawer was opened

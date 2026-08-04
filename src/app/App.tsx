@@ -33,7 +33,7 @@ import { matchSchedule } from "../data/scheduleMatch";
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
-import { getCurrentProject, hydrateQuoteItems, saveLines, submitProject, updateProfile, clearDraft, updateCurrentSegment, addCurrentSegment, removeCurrentSegment, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
+import { getCurrentProject, hydrateQuoteItems, saveLines, submitProject, updateProfile, clearDraft, updateCurrentSegment, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
 import { GstContext, type GstMode } from "../data/gst";
 import { SAGE_LIGHT as SAGE_LT } from "../styles/tokens";
 
@@ -1924,18 +1924,9 @@ export default function App() {
       skipNextSaveRef.current = true;
       setQuoteItems(prev => hydrateQuoteItems(r.items ?? [], Date.now(), prev));
     },
-    addSegment: async (parentServerId, patch) => {
-      await addCurrentSegment(parentServerId, patch);
-      const r = await getCurrentProject();
-      skipNextSaveRef.current = true;
-      setQuoteItems(prev => hydrateQuoteItems(r.items ?? [], Date.now(), prev));
-    },
-    removeSegment: async (segmentId) => {
-      await removeCurrentSegment(segmentId);
-      const r = await getCurrentProject();
-      skipNextSaveRef.current = true;
-      setQuoteItems(prev => hydrateQuoteItems(r.items ?? [], Date.now(), prev));
-    },
+    // No addSegment / removeSegment (owner, 2026-08-04): the unit COUNT is the
+    // split decision and the customer does not make it. updateSegment stays —
+    // what each unit IS remains theirs.
   };
   // ── Persistence (M2): hydrate the anon project on load, snapshot-save on change ──
   // The client store above stays the source of truth for the UI; persistence is a

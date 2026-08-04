@@ -95,8 +95,6 @@ export interface QuoteState {
   updateSegment: (segmentId: string, patch: {
     productSlug: string; options: Record<string, string>; alongMm: number;
   }) => Promise<void>;
-  addSegment: (parentServerId: string, patch: { productSlug: string; options: Record<string, string>; alongMm: number }) => Promise<void>;
-  removeSegment: (segmentId: string) => Promise<void>;
 }
 
 // Review fields that a plain edit resolves, so the estimator can drop the flag once

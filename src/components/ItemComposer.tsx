@@ -1126,8 +1126,6 @@ export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState
   const brand = brandSubject();
   const parentProduct = getProductBySlug(item.productSlug);
   const [editingUnit, setEditingUnit] = useState<string | null>(null);
-  const [addingUnit, setAddingUnit] = useState(false);
-  const [removingUnit, setRemovingUnit] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const axis = item.compositeAxis === "horizontal" ? "horizontal" : "vertical";
@@ -1146,34 +1144,11 @@ export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState
     } finally { setBusy(false); }
   };
 
-  // Opening this form is intentionally local: the customer must choose the new
-  // frame before a unit exists in the quote. No inherited product or glazing is
-  // silently saved just because they clicked Add.
-  const addUnit = () => {
-    setAddingUnit(true); setEditingUnit(null); setRemovingUnit(null); setError("");
-  };
+  // Adding and removing units are NOT here (owner, 2026-08-04). The unit COUNT
+  // is the split decision, and the split decision is not the customer's — see
+  // the note on the customer segment route. They may change what each unit IS;
+  // they may not change how many there are.
 
-  const saveNewUnit = async (built: Omit<QItem, "id">) => {
-    if (!item.serverId) return;
-    setBusy(true); setError("");
-    try {
-      await quote.addSegment(item.serverId, {
-        productSlug: built.productSlug,
-        options: built.options,
-        alongMm: parseInt(axis === "vertical" ? built.width : built.height) || 0,
-      });
-      setAddingUnit(false);
-    } catch {
-      setError("That unit could not be added. Check its product, size and options, then try again.");
-    } finally { setBusy(false); }
-  };
-
-  const removeUnit = async (segmentId: string) => {
-    setBusy(true); setError("");
-    try { await quote.removeSegment(segmentId); setRemovingUnit(null); }
-    catch { setError("That unit could not be removed. A composite must retain at least two units."); }
-    finally { setBusy(false); }
-  };
 
   return (
     <div className="quote-composite-panel border-t border-line px-4 py-4 md:px-5">
@@ -1214,15 +1189,6 @@ export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState
                   className="font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer t-cap">
                   {editingUnit === s.id ? "Close" : "Edit"}
                 </button>
-                {segments.length > 2 && (removingUnit === s.id ? (
-                  <span className="inline-flex items-center gap-1.5 t-cap">
-                    <button type="button" disabled={busy} onClick={() => void removeUnit(s.id)} className="font-medium text-red-600 underline">Confirm</button>
-                    <button type="button" onClick={() => setRemovingUnit(null)} className="text-body underline">Keep</button>
-                  </span>
-                ) : (
-                  <button type="button" disabled={busy} onClick={() => setRemovingUnit(s.id)}
-                    className="text-body underline underline-offset-2 disabled:opacity-50 cursor-pointer t-cap">Remove</button>
-                ))}
               </span>
             </div>
             {editingUnit === s.id && (
@@ -1246,34 +1212,7 @@ export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState
         ))}
       </div>
 
-      {addingUnit && (
-        <div className="quote-composite-editor mt-3 px-3.5 pb-3.5">
-          <p className="py-2 text-body t-cap">Choose the product, its options and the new unit's size before adding it to this opening.</p>
-          <ItemForm
-            key={"new-unit-" + (item.serverId ?? item.id)}
-            scope="unit"
-            unitAxis={axis}
-            unitMode="add"
-            quote={quote}
-            seed={{
-              width: axis === "vertical" ? "" : item.width,
-              height: axis === "vertical" ? item.height : "",
-              options: {}, qty: 1,
-            }}
-            submitLabel={busy ? "Adding…" : "Add unit"}
-            onCommit={saveNewUnit}
-            onCancel={() => setAddingUnit(false)}
-          />
-        </div>
-      )}
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <button type="button" disabled={busy || !item.serverId || addingUnit} onClick={addUnit}
-          className="font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer t-cap">
-          {addingUnit ? "New unit open" : <>+ Add {parentProduct?.categorySlug === "doors" ? "door" : "window"}</>}
-        </button>
-        <span className="text-body t-cap">Changes are repriced now and confirmed during technical review.</span>
-      </div>
+      <p className="mt-3 text-body t-cap">Changes are repriced now and confirmed during technical review.</p>
       {error && <p role="alert" className="mt-2 text-red-700 t-cap">{error}</p>}
 
       <p className="text-quiet mt-3 max-w-[62ch] t-cap">

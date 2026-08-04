@@ -25,7 +25,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, ChevronLeft, Plus } from "lucide-react";
+import { X, ChevronLeft } from "lucide-react";
 import { type QItem, type QuoteState, clearReviewKey, mm, productLabel } from "../../data/configurator";
 import { ItemForm } from "../ItemComposer";
 import { type DrawerTarget, type RowKey } from "./identity";
@@ -35,8 +35,7 @@ import { Elevation } from "./Elevation";
 /** Which level of the one drawer is showing. */
 type Level =
   | { kind: "parent" }
-  | { kind: "unit"; segmentId: string }
-  | { kind: "add-unit" };
+  | { kind: "unit"; segmentId: string };
 
 export function OpeningDrawer({ target, item, quote, initialSection, onClose, onSaved }: {
   target: DrawerTarget;
@@ -54,15 +53,14 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
   onSaved: (rowKey: RowKey | null, announcement?: string) => void;
 }) {
   const [level, setLevel] = useState<Level>(
-    target.mode === "add-unit" ? { kind: "add-unit" }
-      : target.mode === "edit" && target.segmentId ? { kind: "unit", segmentId: target.segmentId }
-        : { kind: "parent" },
+    target.mode === "edit" && target.segmentId
+      ? { kind: "unit", segmentId: target.segmentId }
+      : { kind: "parent" },
   );
   const [dirty, setDirty] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState<null | "close" | "back">(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [removingUnit, setRemovingUnit] = useState<string | null>(null);
   // Outcomes are announced by the PAGE's live region, not this one: the drawer
   // unmounts in the same commit as a successful save, so a message put in a
   // region here would never survive long enough to be spoken.
@@ -75,7 +73,6 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
     ? segments.findIndex((s) => s.id === level.segmentId)
     : -1;
   const title = level.kind === "parent" ? ref
-    : level.kind === "add-unit" ? `${ref} / New unit`
       : unitLabel(ref, unitIndex);
 
   const rowKey: RowKey | null = target.mode === "add" ? null : target.rowKey;
@@ -171,39 +168,6 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
     } finally { setBusy(false); }
   };
 
-  const addUnit = async (built: Omit<QItem, "id">) => {
-    if (busy || !item?.serverId) return;
-    setBusy(true); setError("");
-    try {
-      await quote.addSegment(item.serverId, {
-        productSlug: built.productSlug,
-        options: built.options,
-        alongMm: parseInt(axis === "vertical" ? built.width : built.height) || 0,
-      });
-      setDirty(false);
-      setAnnouncement("Unit added");
-      setLevel({ kind: "parent" });
-    } catch {
-      setError("That unit could not be added. Check its product, size and options, then try again.");
-    } finally { setBusy(false); }
-  };
-
-  // Parity with the control arm's composite panel, which offers per-unit
-  // removal. An A/B arm that can do LESS than the control confounds the
-  // comparison. A composite must retain at least two units, so the control is
-  // offered only above that floor — the server enforces it either way.
-  const removeUnit = async (segmentId: string) => {
-    if (busy) return;
-    setBusy(true); setError("");
-    try {
-      await quote.removeSegment(segmentId);
-      setRemovingUnit(null);
-      setAnnouncement("Unit removed");
-    } catch {
-      setRemovingUnit(null);
-      setError("That unit could not be removed. A composite must retain at least two units.");
-    } finally { setBusy(false); }
-  };
 
   const activeSegment = level.kind === "unit" ? segments[unitIndex] : undefined;
 
@@ -285,29 +249,16 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                           className="font-medium text-sage underline underline-offset-2 disabled:opacity-50 cursor-pointer t-cap">
                           Edit unit
                         </button>
-                        {segments.length > 2 && (removingUnit === s.id ? (
-                          <span className="inline-flex items-center gap-1.5 t-cap">
-                            <button type="button" disabled={busy} onClick={() => void removeUnit(s.id)}
-                              className="font-medium text-destructive underline cursor-pointer">Confirm</button>
-                            <button type="button" onClick={() => setRemovingUnit(null)}
-                              className="text-body underline cursor-pointer">Keep</button>
-                          </span>
-                        ) : (
-                          <button type="button" disabled={busy} onClick={() => setRemovingUnit(s.id)}
-                            aria-label={`Remove ${unitLabel(ref, i)}`}
-                            className="text-body underline underline-offset-2 disabled:opacity-50 cursor-pointer t-cap">
-                            Remove
-                          </button>
-                        ))}
                       </span>
                     </li>
                   ))}
                 </ul>
-                <button type="button" disabled={busy || !item?.serverId}
-                  onClick={() => setLevel({ kind: "add-unit" })}
-                  className="mt-2.5 inline-flex items-center gap-1 font-medium text-sage disabled:opacity-50 cursor-pointer t-cap">
-                  <Plus className="w-3.5 h-3.5" aria-hidden="true" />Add unit
-                </button>
+                {/* No Add unit and no Remove (owner, 2026-08-04). The unit COUNT
+                    is the split decision, and the customer does not make that
+                    decision — they cannot create a composite or merge one back,
+                    so being able to turn a two-unit opening into four was the
+                    same power by another route. What each unit IS stays theirs.
+                    Parity with the control arm holds: /quote lost both too. */}
               </div>
             )}
 
@@ -378,36 +329,6 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
               </>
             )}
 
-            {level.kind === "add-unit" && (
-              <>
-                <p className="text-body t-cap">
-                  Choose the product, its options and the new unit's size before adding it to this opening.
-                </p>
-                <ItemForm
-                  key={`new-unit-${item?.serverId ?? item?.id}`}
-                  scope="unit"
-                  unitAxis={axis}
-                  unitMode="add"
-                  quote={quote}
-                  seed={{
-                    width: axis === "vertical" ? "" : item?.width ?? "",
-                    height: axis === "vertical" ? item?.height ?? "" : "",
-                    options: {}, qty: 1,
-                  }}
-                  busy={busy}
-                  submitLabel={busy ? "Adding…" : "Add unit"}
-                  onCommit={(built) => void addUnit(built)}
-                  // requestBack, not a bare setLevel: abandoning a dirty unit is
-                  // the same loss as closing, and the drawer owns the single
-                  // discard prompt now.
-                  onCancel={requestBack}
-                  onDirtyChange={setDirty}
-                  rail
-                  stickyActions
-                  hideHeader
-                />
-              </>
-            )}
           </div>
 
           {/* Discard guard for the drawer's own dismiss affordances. */}

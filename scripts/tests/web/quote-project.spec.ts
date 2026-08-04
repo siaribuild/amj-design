@@ -219,7 +219,7 @@ test("Add opening creates nothing until an explicit save", async ({ page }) => {
   await expect(page.locator(".quote-row")).toHaveCount(1);   // still nothing created
 });
 
-test("add component creates nothing until the unit is explicitly added", async ({ page }) => {
+test("the customer may change what a unit IS, but not how many there are", async ({ page }) => {
   await mockProject(page, [compositeItem]);
   await page.goto("/quote-project");
 
@@ -229,14 +229,20 @@ test("add component creates nothing until the unit is explicitly added", async (
   await expect(page.getByText("Built as 2 units")).toBeVisible();
   // The parent is the schedule line, not a product: no Options group is offered
   // at this level, because glazing and hardware belong to the units.
-  await expect(page.getByRole("dialog").getByText("Options", { exact: true })).toHaveCount(0);
+  await expect(drawer.getByText("Options", { exact: true })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Add unit" }).click();
-  // A blank component draft: no product chosen, so nothing exists yet.
-  await expect(page.getByText(/Choose the product, its options/)).toBeVisible();
-  await page.getByRole("button", { name: "Back to W2" }).click();
-  await expect(drawer).toBeVisible();
-  await expect(page.getByText("Built as 2 units")).toBeVisible();
+  // Owner, 2026-08-04. Whether an opening is split is a manufacturing
+  // constraint and not the customer's call — there is no route to create a
+  // composite and none to merge one back. Add and Remove let them reach the
+  // same outcome sideways, turning a two-unit opening into four, so both are
+  // gone from the drawer and from the server.
+  await expect(drawer.getByRole("button", { name: "Add unit" })).toHaveCount(0);
+  await expect(drawer.getByRole("button", { name: /^Remove W2/ })).toHaveCount(0);
+
+  // What each unit IS remains editable — the capability that was never in doubt.
+  await expect(drawer.getByRole("button", { name: "Edit W2A" })).toBeVisible();
+  await drawer.getByRole("button", { name: "Edit W2A" }).click();
+  await expect(page.getByRole("button", { name: "Back to W2" })).toBeVisible();
 });
 
 // ─── 6. Duplicate is deliberate, and undoable ──────────────────────────────────

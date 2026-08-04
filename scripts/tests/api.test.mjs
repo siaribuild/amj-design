@@ -497,23 +497,21 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.equal(customerView.body.items[0].segments[1].width, "650");
       assert.ok(customerView.body.items[0].review.customerCompositeChanged);
 
-      // Adding a unit is not an auto-accepted copy of the last segment. The
-      // customer must supply its own selection and size through the unit editor.
+      // The customer cannot change how MANY units an opening has (owner,
+      // 2026-08-04). They can neither create a composite nor merge one back, so
+      // being able to add and remove units was the same power by another route —
+      // a two-unit opening could become four. Both endpoints are gone, and 404
+      // is asserted rather than assumed: a removed route that silently still
+      // answers is the failure this guards.
       await requestJson(cust, `/api/projects/current/lines/${parentId}/segments`, {
-        method: "POST", json: {},
-      }, 400);
-      let afterRejectedAdd = await requestJson(cust, "/api/projects/current");
-      assert.equal(afterRejectedAdd.body.items[0].segments.length, 2, "a blank Add click never creates a default unit");
-
-      const addedUnit = await requestJson(cust, `/api/projects/current/lines/${parentId}/segments`, {
         method: "POST", json: { productSlug: "amj100t-fixed-window", options: {}, alongMm: 650 },
-      });
-      customerView = await requestJson(cust, "/api/projects/current");
-      assert.equal(customerView.body.items[0].segments.length, 3);
-      assert.equal(customerView.body.items[0].segments[2].productSlug, "amj100t-fixed-window");
-      assert.equal(customerView.body.items[0].segments[2].width, "650");
-      await requestJson(cust, `/api/projects/current/segments/${addedUnit.body.id}`, { method: "DELETE" });
-      await requestJson(cust, `/api/projects/current/segments/${unitIds[0]}`, { method: "DELETE" }, 400);
+      }, 404);
+      await requestJson(cust, `/api/projects/current/segments/${unitIds[1]}`, { method: "DELETE" }, 404);
+      const afterBlockedCount = await requestJson(cust, "/api/projects/current");
+      assert.equal(afterBlockedCount.body.items[0].segments.length, 2, "the unit count is not the customer's to change");
+
+      // Editing a unit remains theirs, and still only through the dedicated
+      // operation — a stranger's session gets nothing.
       await requestJson(new Session(baseUrl), `/api/projects/current/segments/${unitIds[0]}`, {
         method: "PATCH", json: { alongMm: 500 },
       }, 404);
