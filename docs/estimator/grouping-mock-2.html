@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estimator list — grouping, round 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── Live tokens, from src/styles/theme.css ────────────────────────────────── */
+:root{
+  --paper:#FFFFFF; --bone:#FBFAF8; --recessive:#F5F3F0;
+  --line:rgba(19,19,17,.18); --line-strong:rgba(19,19,17,.28);
+  --connector:rgba(19,19,17,.45);
+  --ink:#131311; --body:#5c5a56; --quiet:#8b8880;
+  --sage:#5A7A6A; --sage-wash:#F3F6F5; --sage-ink:#355344;
+  --warning:#8a6a2a; --warning-ink:#7a5410;
+  --info:#4C6A88; --info-ink:#31485f;
+  --fd:'Space Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --fb:'Inter',ui-sans-serif,system-ui,sans-serif;
+  --qp-cols:9.5rem 10rem minmax(0,1fr) 8.5rem 7.5rem 7rem;
+  --pad:10px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bone);color:var(--ink);font:400 16px/26px var(--fb);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:36px 24px 90px}
+h1{font:600 30px/36px var(--fd);letter-spacing:-.6px;margin:0 0 8px}
+.lede{color:var(--body);font-size:15px;max-width:74ch;margin:0 0 6px}
+.lede b{color:var(--ink)}
+.small{color:var(--quiet);font-size:13px;line-height:19px;max-width:78ch;margin:0 0 34px}
+
+.prop{margin:0 0 64px;scroll-margin-top:20px}
+.prop-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 6px}
+.tag{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);border:1px solid var(--line);padding:3px 7px}
+.prop-h h2{font:600 20px/26px var(--fd);letter-spacing:-.2px;margin:0}
+.prop-p{color:var(--body);font-size:14px;line-height:21px;max-width:80ch;margin:0 0 18px}
+.sec{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:26px 0 8px}
+.note{font-size:13px;line-height:19px;color:var(--body);max-width:80ch;margin:12px 0 0;padding-left:12px;border-left:2px solid var(--line)}
+.note b{color:var(--ink)}
+.win{border-left-color:rgba(90,122,106,.55)}
+.warn{border-left-color:rgba(178,110,15,.5)}
+
+/* ── Shared row grammar ────────────────────────────────────────────────────── */
+.head,.row{display:grid;grid-template-columns:var(--qp-cols);align-items:center;column-gap:12px}
+.head{background:var(--recessive);font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);padding:8px var(--pad)}
+.head .r{text-align:right}
+.row{background:var(--paper);padding:6px var(--pad);min-height:44px}
+.id{display:flex;align-items:center;gap:8px;min-width:0}
+.ref{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink)}
+.prod{font:400 14px/21px var(--fb);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.size{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+.price{font:600 14px/20px var(--fd);font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+.acts{display:flex;justify-content:flex-end;gap:2px;color:var(--body)}
+.acts i{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:14px}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);padding:2px 6px;font:400 13px/18px var(--fb);white-space:nowrap}
+.chip.a{border-color:rgba(138,106,42,.42);background:rgba(138,106,42,.12);color:var(--warning-ink)}
+.chip.i{border-color:rgba(76,106,136,.38);background:rgba(76,106,136,.08);color:var(--info-ink)}
+.unit .prod,.unit .ref{color:var(--body)}
+.unit .size{font-weight:500;color:var(--body)}
+.tree{position:relative;display:block;width:24px;height:28px;flex:none;margin-left:8px}
+.tree::before{content:"";position:absolute;top:-9px;left:0;width:10px;height:23px;border-left:1px solid var(--connector);border-bottom:1px solid var(--connector)}
+svg.el{display:block;flex:none;color:var(--body)}
+
+/* state stripe, per row */
+.row[data-s="attn"]{box-shadow:inset 3px 0 0 var(--warning)}
+.row[data-s="rev"]{box-shadow:inset 3px 0 0 var(--info)}
+.exp[data-s="attn"]{box-shadow:inset 3px 0 0 var(--warning)}
+.exp[data-s="rev"]{box-shadow:inset 3px 0 0 var(--info)}
+
+/* expansion panel — the ONLY tinted thing */
+.exp{background:var(--recessive);padding:12px 16px 14px}
+.exp .lbl{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin-bottom:3px}
+.exp .val{font:400 13px/19px var(--fb);color:var(--body)}
+.exp.deep{padding-left:52px}
+
+/* ══ SKIN 1 · CARD (built properly: uniform chrome, header matched) ═════════ */
+.card .head{border:1px solid var(--line)}
+.card .rec{border:1px solid var(--line);background:var(--paper)}
+.card .rec+.rec{margin-top:8px}
+.card .list{margin-top:8px}
+
+/* ══ SKIN 2 · CARD, stripe inset off the border ════════════════════════════ */
+.card2 .head{border:1px solid var(--line)}
+.card2 .rec{border:1px solid var(--line);background:var(--paper)}
+.card2 .rec+.rec{margin-top:8px}
+.card2 .list{margin-top:8px}
+.card2 .row[data-s],.card2 .exp[data-s]{box-shadow:none;position:relative}
+.card2 .row[data-s]::before,.card2 .exp[data-s]::before{content:"";position:absolute;left:4px;top:3px;bottom:3px;width:3px;background:var(--warning)}
+.card2 .row[data-s="rev"]::before,.card2 .exp[data-s="rev"]::before{background:var(--info)}
+.card2 .row[data-s],.card2 .exp[data-s]{padding-left:calc(var(--pad) + 4px)}
+
+/* ══ SKIN 3 · RULE + RAIL (workflow recommendation) ════════════════════════ */
+.rail .panel{border:1px solid var(--line);background:var(--paper)}
+.rail .rec{position:relative}
+.rail .rec+.rec{border-top:1px solid var(--line)}
+.rail .rec[data-grp]::before{content:"";position:absolute;left:18px;top:36px;bottom:0;width:1px;background:var(--connector)}
+.rail .exp{border-top:none}
+
+/* ══ SKIN 4 · PARENT AS HEADER BAND ════════════════════════════════════════ */
+.band .panel{border:1px solid var(--line);background:var(--paper)}
+.band .rec+.rec{border-top:1px solid var(--line)}
+.band .rec[data-grp] .row:first-child{background:var(--sage-wash);border-bottom:1px solid rgba(90,122,106,.22)}
+.band .rec[data-grp] .row:first-child .ref{color:var(--sage-ink)}
+
+/* ── mobile frames ─────────────────────────────────────────────────────────── */
+.phones{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+.phone{width:375px;flex:none}
+.phone .cap{font:600 11px/14px var(--fd);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin:0 0 6px}
+.phone .stage{background:var(--bone);padding:10px;border:1px solid var(--line)}
+.phone .row{grid-template-columns:1fr;row-gap:4px;padding:10px 12px;min-height:0}
+.phone .head{display:none}
+.phone .m1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.phone .m2{font:400 14px/21px var(--fb)}
+.phone .m3{display:flex;justify-content:space-between;gap:10px}
+.phone .size,.phone .price{text-align:left}
+/* the fix: the WHOLE unit box indents on mobile, not just band 1 */
+.phone .unit{padding-left:34px}
+.phone .tree{display:none}
+.phone .exp.deep{padding-left:44px}
+.phone.rail .rec[data-grp]::before{left:18px;top:40px}
+.phone.card .rec+.rec,.phone.card2 .rec+.rec{margin-top:8px}
+
+.bad-demo .unit{padding-left:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Grouping, round 2 — drawn, not described</h1>
+<p class="lede">Four proposals, each shown across <b>every scenario that matters</b>: a simple opening, two
+adjacent childless openings, a composite, an expanded parent with no children, an expanded unit, and all
+five error cases. Then all four at 375px.</p>
+<p class="small">Built with the live tokens, type scale and <code>--qp-cols</code> tracks. The card skins
+apply <b>identical border and padding to every record AND to the header strip</b>, so columns align — the
+desync in the earlier critique was an artefact of a quick mock, not a property of the idea. Column
+alignment is measured, not asserted; see the note under skin 1.</p>
+
+<div id="out"></div>
+
+</div>
+
+<script>
+/* ── Elevation stand-ins ───────────────────────────────────────────────────── */
+function el(kind,parts){
+  const S=28,P=2,iw=S-P*2,t=3,g={x:P+t,y:P+t,w:iw-t*2,h:iw-t*2};
+  let sym='';
+  if(parts){
+    const tot=parts.reduce((s,p)=>s+p.mm,0);let at=0;
+    parts.forEach((p,i)=>{const pw=g.w*(p.mm/tot);sym+=symbol(p.kind,{x:g.x+at,y:g.y,w:pw,h:g.h});at+=pw;
+      if(i<parts.length-1)sym+='<path d="M'+(g.x+at).toFixed(1)+' '+g.y+' V'+(g.y+g.h)+'" stroke="currentColor" stroke-width="1.4" opacity=".75" fill="none"/>';});
+  } else sym=symbol(kind,g);
+  return '<svg class="el" width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">'
+    +'<rect x="2" y="2" width="24" height="24" rx="1" stroke="currentColor" stroke-width="1.4"/>'
+    +'<rect x="'+g.x+'" y="'+g.y+'" width="'+g.w+'" height="'+g.h+'" rx=".5" stroke="currentColor" stroke-width=".8"/>'+sym+'</svg>';
+}
+function symbol(k,p){
+  const i=2.2,L=p.x+i,R=p.x+p.w-i,T=p.y+i,B=p.y+p.h-i,cx=(L+R)/2,cy=(T+B)/2;
+  if(R-L<3||B-T<3)return '';
+  const S='stroke="currentColor" stroke-width="1.1" fill="none"';
+  if(k==='awning')return '<path d="M'+L+' '+B+' L'+cx+' '+T+' L'+R+' '+B+'" '+S+'/>';
+  if(k==='sliding')return '<path d="M'+(L+1)+' '+cy+' H'+(R-1)+' M'+(R-3)+' '+(cy-2)+' L'+(R-1)+' '+cy+' L'+(R-3)+' '+(cy+2)+'" '+S+'/>';
+  if(k==='casement')return '<path d="M'+R+' '+T+' L'+L+' '+cy+' L'+R+' '+B+'" '+S+'/>';
+  return '';
+}
+
+/* ── Scenario data: every case the owner listed ────────────────────────────── */
+const D=[
+  {ref:'W1',prod:'AMJ100T Fixed Window',size:'2,100 × 2,100 mm',price:'$2,240',icon:el('fixed'),
+   why:'simple, clean'},
+  {ref:'W2',prod:'AMJ80 Series Awning Window',size:'900 × 1,200 mm',price:'$780',icon:el('awning'),
+   why:'simple, clean — adjacent to W1, the two-childless test'},
+  {ref:'W3',prod:'AMJ80 Series Sliding Window',size:'— × —',price:'$-,--',icon:el('sliding'),
+   s:'attn',chip:'<span class="chip a">⚠ Incomplete</span>',
+   exp:{lbl:"What's missing",val:"We couldn't read the size for this opening."},
+   why:'CASE 1 — lone parent flagged, panel auto-opens'},
+  {ref:'W4',prod:'AMJ100T Fixed Window',size:'2,400 × 1,800 mm',price:'$2,980',icon:el('fixed'),
+   exp:{lbl:'Specification',val:'Glazing · Double Glazed Low-E Argon &nbsp;·&nbsp; Colour · Monument &nbsp;·&nbsp; Flyscreen · None'},
+   why:'a childless parent EXPANDED — the tint must not read as a child'},
+  {ref:'W5',prod:'Composite Window',size:'3,500 × 700 mm',price:'$1,560',
+   icon:el(null,[{kind:'fixed',mm:1750},{kind:'fixed',mm:1750}]),
+   s:'rev',chip:'<span class="chip i">Check sizes</span>',
+   units:[{ref:'W5A',prod:'AMJ100T Fixed Window',size:'1,550 × 700 mm',icon:el('fixed')},
+          {ref:'W5B',prod:'AMJ100T Fixed Window',size:'1,550 × 700 mm',icon:el('fixed')}],
+   why:'CASE 2 — whole GROUP flagged, no child to blame'},
+  {ref:'W6',prod:'Composite Window',size:'3,440 × 1,200 mm',price:'$3,120',
+   icon:el(null,[{kind:'sliding',mm:2400},{kind:'casement',mm:1040}]),
+   units:[{ref:'W6A',prod:'AMJ100T Sliding Window',size:'2,400 × 1,200 mm',icon:el('sliding'),
+           exp:{lbl:'Specification',val:'Glazing · Single Glazed Clear &nbsp;·&nbsp; Colour · Dover White'}},
+          {ref:'W6B',prod:'AMJ100T Casement Window',size:'1,040 × 1,600 mm',icon:el('casement'),
+           s:'attn',chip:'<span class="chip a">⚠ Check size</span>'}],
+   why:'CASE 3 + CASE 5 — parent CLEAN, one child flagged; and a UNIT expanded'},
+  {ref:'W7',prod:'Composite Window',size:'2,050 × 2,100 mm',price:'$2,450',
+   icon:el(null,[{kind:'awning',mm:700},{kind:'fixed',mm:1350}]),
+   s:'rev',chip:'<span class="chip i">Check sizes</span>',
+   units:[{ref:'W7A',prod:'AMJ80 Series Awning Window',size:'700 × 2,100 mm',icon:el('awning')},
+          {ref:'W7B',prod:'AMJ100T Fixed Window',size:'1,350 × 2,400 mm',icon:el('casement'),
+           s:'attn',chip:'<span class="chip a">⚠ Incomplete</span>'}],
+   why:'CASE 4 — parent AND child flagged, two different states in one record'},
+];
+
+const HEAD='<div class="head"><span>Opening</span><span>Status</span><span>Product</span><span class="r">Size</span><span class="r">Price</span><span></span></div>';
+const A3='<span class="acts"><i>⌄</i><i>✎</i><i>⋯</i></span>';
+const A2='<span class="acts"><i>⌄</i><i>✎</i><i style="width:34px"></i></span>';
+
+function row(o,isUnit){
+  const s=o.s?' data-s="'+o.s+'"':'';
+  return '<div class="row'+(isUnit?' unit':'')+'"'+s+'>'
+    +'<span class="id">'+(isUnit?'<span class="tree"></span>':'')+o.icon+'<span class="ref">'+o.ref+'</span></span>'
+    +'<span>'+(o.chip||'')+'</span>'
+    +'<span class="prod">'+o.prod+'</span>'
+    +'<span class="size">'+o.size+'</span>'
+    +'<span class="price">'+(isUnit?'':(o.price||''))+'</span>'+(isUnit?A2:A3)+'</div>';
+}
+function panel(e,deep,s){
+  return '<div class="exp'+(deep?' deep':'')+'"'+(s?' data-s="'+s+'"':'')+'>'
+    +'<div class="lbl">'+e.lbl+'</div><div class="val">'+e.val+'</div></div>';
+}
+function record(o){
+  let h=row(o,false);
+  if(o.exp)h+=panel(o.exp,false,o.s);
+  (o.units||[]).forEach(u=>{h+=row(u,true);if(u.exp)h+=panel(u.exp,true,u.s);});
+  return '<div class="rec"'+(o.units?' data-grp':'')+'>'+h+'</div>';
+}
+function list(){return D.map(record).join('');}
+
+/* ── mobile row ────────────────────────────────────────────────────────────── */
+function mrow(o,isUnit){
+  const s=o.s?' data-s="'+o.s+'"':'';
+  return '<div class="row'+(isUnit?' unit':'')+'"'+s+'>'
+    +'<span class="m1">'+o.icon+'<span class="ref">'+o.ref+'</span>'+(o.chip||'')+(isUnit?'':A3)+'</span>'
+    +'<span class="m2 prod">'+o.prod+'</span>'
+    +'<span class="m3"><span class="size">'+o.size+'</span><span class="price">'+(isUnit?'':(o.price||''))+'</span></span>'
+    +'</div>';
+}
+function mrecord(o){
+  let h=mrow(o,false);
+  if(o.exp)h+=panel(o.exp,false,o.s);
+  (o.units||[]).forEach(u=>{h+=mrow(u,true);if(u.exp)h+=panel(u.exp,true,u.s);});
+  return '<div class="rec"'+(o.units?' data-grp':'')+'>'+h+'</div>';
+}
+function mlist(){return D.slice(2,7).map(mrecord).join('');}
+
+/* ── Build the page ────────────────────────────────────────────────────────── */
+const SKINS=[
+  {k:'card',tag:'1 · your card',t:'Bounded record, built properly',
+   p:'Every record is a bordered block with identical padding, and the header strip carries the same border and padding — so the columns align exactly. State stays a 3px inset stripe on the ROW, so a parent and its child can hold different states. Look at the left edge of W3, W5 and W7: the card border and the stripe sit adjacent. Judge whether that reads as a doubled edge or simply as a marked record.',
+   n:'<b>Measured:</b> <span id="m-card"></span>',cls:'win'},
+  {k:'card2',tag:'2 · card, stripe inset',t:'Same, with the stripe held off the border',
+   p:'Identical to 1, except the state stripe is drawn 4px inboard so it never touches the card border. Removes any doubled-edge question at the cost of the stripe no longer being flush with the record edge.',
+   n:'Compare the left edge of W3 and W7 against skin 1.'},
+  {k:'rail',tag:'3 · rule + rail',t:'One frame, a rule between records, a rail through each group',
+   p:'No per-record box. One hairline between records; a vertical rail hangs off the record wrapper and runs from the parent through its units and their panels to the closing rule. State stays a per-row stripe.',
+   n:'This is what the 15-agent review recommended. It is the cheapest and the quietest — and it is the one with no closed shape anywhere.'},
+  {k:'band',tag:'4 · header band',t:'The parent reads as the head of its group',
+   p:'No box and no rail. A composite\'s parent row takes a faint sage wash and a closing hairline, so it reads as a header over its units; a childless opening is a plain row. Grouping is carried by the parent looking different from what follows it.',
+   n:'Alternative proposal — the one device none of the earlier rounds tried.',cls:'warn'},
+];
+
+let html='';
+SKINS.forEach(s=>{
+  html+='<section class="prop '+s.k+'"><div class="prop-h"><span class="tag">'+s.tag+'</span><h2>'+s.t+'</h2></div>'
+    +'<p class="prop-p">'+s.p+'</p>'
+    +'<div class="sec">Desktop · every scenario</div>'
+    +(s.k==='card'||s.k==='card2'?HEAD+'<div class="list">'+list()+'</div>':'<div class="panel">'+HEAD+list()+'</div>')
+    +'<p class="note '+(s.cls||'')+'">'+s.n+'</p></section>';
+});
+
+html+='<section class="prop"><div class="prop-h"><span class="tag">375px</span><h2>All four on a phone</h2></div>'
+ +'<p class="prop-p">The width neither exploration showed. Every skin here also carries the mobile fix: the '
+ +'<b>whole unit row</b> indents, not just its first band. The rightmost frame shows what ships today for '
+ +'comparison — a child whose product name and size sit flush with its parent\'s.</p><div class="phones">';
+SKINS.forEach(s=>{
+  html+='<div class="phone '+s.k+'"><p class="cap">'+s.tag+'</p><div class="stage">'
+    +(s.k==='card'||s.k==='card2'?'<div class="list">'+mlist()+'</div>':'<div class="panel">'+mlist()+'</div>')
+    +'</div></div>';
+});
+html+='<div class="phone rail bad-demo"><p class="cap">today — the defect</p><div class="stage"><div class="panel">'+mlist()+'</div></div></div>';
+html+='</div></section>';
+
+document.getElementById('out').innerHTML=html;
+
+/* Measure column alignment in the card skin: header label vs the cell beneath */
+(function(){
+  const sec=document.querySelector('section.card');
+  const head=sec.querySelector('.head');
+  const firstRow=sec.querySelector('.rec .row');
+  const hx=[...head.children].map(c=>Math.round(c.getBoundingClientRect().left));
+  const rx=[...firstRow.children].map(c=>Math.round(c.getBoundingClientRect().left));
+  const worst=Math.max(...hx.map((v,i)=>Math.abs(v-(rx[i]??v))));
+  document.getElementById('m-card').textContent =
+    'header label x = ['+hx.join(', ')+'], row cell x = ['+rx.join(', ')+'] — worst offset '+worst+'px.';
+})();
+</script>
+</body>
+</html>
