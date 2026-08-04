@@ -746,6 +746,10 @@
   /* The break-line says "this drawing is not to scale across its width". It is
    * only true once the drawing has been squeezed, so it appears at the width
    * where that happens and not before — the wireframe's own rule. */
+  /* A drawing with no size is a stand-in, and says so quietly as well as in its
+   * caption — it must not read with the same authority as a measured one. */
+  svg[data-elevation][data-unsized] { opacity: 0.55; }
+
   svg[data-elevation] .elev-break { display: none; }
   @media (max-width: 767px) {
     svg[data-elevation][data-wide="1"] .elev-break { display: block; }

@@ -573,36 +573,61 @@ test("the project title is a heading at rest and saves only when told to", async
   await expect(page.getByRole("button", { name: /^Rename project/ })).toBeFocused();
 });
 
-// ─── 12. One launcher per panel ───────────────────────────────────────────────
+// ─── 12. One launcher per panel, in one place ─────────────────────────────────
 // A blocked row used to offer THREE routes to the same drawer: the row's pencil,
 // "Fix details" in the panel, and "Edit opening" at its foot. The last two are
 // openDrawer({mode:"edit"}) either way, differing only in which accordion group
 // opens — and for the common blockers (duplicate id, no product, no size)
 // sectionFor collapses to "dims", which is what passing nothing already does.
-test("the expansion offers one launcher, and its label follows the row's state", async ({ page }) => {
+//
+// The launcher stays in ONE position and only its LABEL changes (owner). Moving
+// it beside the reason when blocked would relocate the control according to what
+// is wrong with the line, so the customer would have to find it twice.
+test("the expansion offers one launcher, always at the foot, labelled for the state", async ({ page }) => {
   await mockProject(page, [blockedItem, plainItem]);
   await page.goto("/quote-project");
 
-  // A blocked row opens by default and states its reason.
+  // A blocked row opens by default and states its reason — with no button of
+  // its own beside it.
   const blocked = page.locator(".quote-rowexp").first();
   await expect(blocked.getByText("We couldn't read the size for this opening.")).toBeVisible();
-
-  // Fix details, and ONLY Fix details.
-  await expect(blocked.getByRole("button", { name: /Fix details/ })).toBeVisible();
+  await expect(blocked.getByRole("button", { name: /Fix details/ })).toHaveCount(1);
   await expect(blocked.getByRole("button", { name: /Edit opening/ })).toHaveCount(0);
 
-  // It sits on the reason's own row, right after the sentence — not stacked
-  // beneath it and not flushed to the panel's far edge (owner).
-  const box = async (l: ReturnType<typeof page.locator>) =>
-    l.evaluate((e) => { const r = e.getBoundingClientRect(); return { top: r.top, left: r.left, right: r.right }; });
-  const reason = await box(blocked.getByText("We couldn't read the size for this opening."));
-  const fix = await box(blocked.getByRole("button", { name: /Fix details/ }));
-  expect(Math.abs(reason.top - fix.top), "same row as the reason").toBeLessThan(24);
-  expect(fix.left - reason.right, "trails the sentence, not the panel edge").toBeLessThan(48);
+  // Both labels appear in the SAME place: the panel's last control, below the
+  // drawing and specification rather than up beside the reason.
+  const y = async (l: ReturnType<typeof page.locator>) => l.evaluate((e) => e.getBoundingClientRect().top);
+  const reasonY = await y(blocked.getByText("We couldn't read the size for this opening."));
+  const fixY = await y(blocked.getByRole("button", { name: /Fix details/ }));
+  const specY = await y(blocked.locator("dl").first());
+  expect(fixY, "the launcher sits below the specification, not beside the reason").toBeGreaterThan(specY);
+  expect(fixY - reasonY, "and well clear of the reason line").toBeGreaterThan(100);
 
-  // A row with nothing blocking gets the other label, and equally only one.
   await page.getByRole("button", { name: "Show details for W1", exact: true }).click();
   const ready = page.locator(".quote-rowexp").last();
-  await expect(ready.getByRole("button", { name: /Edit opening/ })).toBeVisible();
+  await expect(ready.getByRole("button", { name: /Edit opening/ })).toHaveCount(1);
   await expect(ready.getByRole("button", { name: /Fix details/ })).toHaveCount(0);
+});
+
+// ─── 13. A drawing may be indicative; a dimension may not ─────────────────────
+test("an opening with no size is drawn as a shape and carries no measurements", async ({ page }) => {
+  await mockProject(page, [blockedItem, plainItem]);
+  await page.goto("/quote-project");
+
+  // blockedItem has width: "" and height: "" — the row says "— × —". The
+  // generator falls back to 1200×1200 for the SHAPE, which is honest, but once
+  // leaders existed it printed "1200" twice as a measurement on the one line
+  // whose problem is that nobody could read its size.
+  const unsized = page.locator(".quote-rowexp").first().locator("svg[data-elevation]");
+  await expect(unsized).toHaveAttribute("data-unsized", "");
+  await expect(unsized.locator("text")).toHaveCount(0);
+  await expect(page.locator(".quote-rowexp").first().getByText(/size not set/i)).toBeVisible();
+
+  // A line that HAS a size is unchanged: leaders, and the caption that asserts
+  // the drawing is a real elevation.
+  await page.getByRole("button", { name: "Show details for W1", exact: true }).click();
+  const sized = page.locator(".quote-rowexp").last().locator("svg[data-elevation]");
+  await expect(sized).not.toHaveAttribute("data-unsized", "");
+  await expect(sized.locator("text")).toHaveText(["1200", "900"]);
+  await expect(page.locator(".quote-rowexp").last().getByText("Viewed from outside")).toBeVisible();
 });

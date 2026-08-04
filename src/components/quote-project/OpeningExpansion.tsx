@@ -67,6 +67,11 @@ function OptionLines({ pairs }: { pairs: { label: string; value: string; chosen:
   );
 }
 
+/** Does this thing have a size at all? A parsed line whose dimensions could not
+ *  be read has neither, and must not be captioned as though it did. */
+const sizeKnown = (w?: string | null, h?: string | null) =>
+  (parseInt(String(w ?? "")) || 0) > 0 && (parseInt(String(h ?? "")) || 0) > 0;
+
 /** Drawing left, specification right — the Edit Line form's arrangement, shared
  *  by an opening's panel and a unit's.
  *
@@ -97,7 +102,12 @@ export function SpecPanel({ productSlug, widthMm, heightMm, pairs }: {
             numbers belong ON the drawing rather than in a caption. */}
         <Elevation productSlug={productSlug} widthMm={widthMm} heightMm={heightMm}
           size="sm" className="w-[180px] h-[180px] max-w-full text-body" />
-        <p className="text-quiet mt-1 text-center t-label">Viewed from outside</p>
+        {/* The caption carries what the drawing cannot assert. With no size the
+            shape is a square stand-in, so saying "viewed from outside" — a
+            statement about an accurate elevation — would dress up a guess. */}
+        <p className="text-quiet mt-1 text-center t-label">
+          {sizeKnown(widthMm, heightMm) ? "Viewed from outside" : "Shape only — size not set"}
+        </p>
       </div>
       <div className="min-w-0">
         {pairs === null
@@ -144,6 +154,7 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
   // the selective summary, because a unit list is scanned for what DIFFERS
   // between units, not audited option by option.
   const fullPairs = optionFullPairs(product, item.options);
+  const blocked = state.kind === "needs-input";
 
   return (
     // Recessive, not paper. The panel sat on the same surface as the row above
@@ -166,17 +177,9 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           {/* Not "Needs your input" — that is the row's chip, and repeating it
               two lines below says the same thing twice while answering nothing. */}
           <PanelLabel>What's missing</PanelLabel>
-          {/* The action sits on the reason's own row, immediately after the
-              sentence (owner). Not flushed to the panel's right edge: on a
-              1180px panel that puts ~600px between the problem and the button
-              that resolves it, which reads worse than stacking did. */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <span className="text-warning-ink t-cap">{state.reason}</span>
-            <button type="button" onClick={onFixDetails} aria-label={`Fix details for ${ref}`}
-              className="card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
-              <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />Fix details
-            </button>
-          </div>
+          {/* The reason states the problem; the button that resolves it is the
+              panel's single launcher at the foot, NOT a second control here. */}
+          <p className="text-warning-ink t-cap">{state.reason}</p>
         </div>
       )}
       {/* A composite PARENT carries no options of its own — it is the schedule
@@ -223,17 +226,25 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
           order puts the note ABOVE the button: the note is reading matter and
           the button is the way out, so the button belongs last. */}
       <div className="mt-4 grid gap-x-6 gap-y-3 sm:grid-cols-[180px_minmax(0,1fr)] items-center">
-        {/* ONE worded launcher per panel, and its label follows the row's state
-            (owner). A blocked row already carries "Fix details" above, and the
-            two were the same control under two names — openDrawer({mode:"edit"})
-            either way, differing only in which accordion group the drawer opens.
-            Showing both put THREE routes to one editor on a blocked row: this
-            button, that one, and the row's pencil.
+        {/* ONE launcher, in ONE place (owner). It always sits here, at the foot
+            of the panel; only its LABEL follows the row's state. Putting the
+            blocked variant up beside the reason instead would move the control
+            depending on what is wrong with the line — the customer would have
+            to find it twice.
+            The two were the same control under two names anyway:
+            openDrawer({mode:"edit"}) either way, differing only in which
+            accordion group opens, and for the common blockers not even that.
+            Showing both put THREE routes to one editor on a blocked row.
             The pencil stays as the shortcut from a COLLAPSED row; the panel
             keeps a framed, worded control because an expansion that offers only
             a pencil is the expand-into-editor model this route exists to
             replace (plan §7.2). */}
-        {state.kind !== "needs-input" && (
+        {blocked ? (
+          <button type="button" onClick={onFixDetails} aria-label={`Fix details for ${ref}`}
+            className="order-2 sm:order-1 justify-self-start card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
+            <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />Fix details
+          </button>
+        ) : (
           <button type="button" onClick={onEdit} aria-label={`Edit opening ${ref}`}
             className="order-2 sm:order-1 justify-self-start card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
             <Pencil className="w-3.5 h-3.5" aria-hidden="true" />Edit opening

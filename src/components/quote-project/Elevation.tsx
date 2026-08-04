@@ -332,7 +332,15 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
   // Leaders are the size's own default, overridable per call. Without them the
   // gutters collapse to the plain margin the drawing needs — the asymmetric pad
   // exists only to hold dimension text.
-  const showDims = (dims ?? S.dims) && S.font > 0;
+  //
+  // AND never when the size is unknown. The 1200×1200 fallback is fine as a
+  // SHAPE — a square is an honest stand-in for an opening we cannot measure —
+  // but the moment leaders were added it started printing "1200" twice as if
+  // measured, on precisely the lines whose stated problem is "we couldn't read
+  // the size for this opening". A drawing may be indicative; a dimension may
+  // not.
+  const sized = pos(widthMm, 0) > 0 && pos(heightMm, 0) > 0;
+  const showDims = (dims ?? S.dims) && S.font > 0 && sized;
   const pad = showDims ? S.pad : { l: S.pad.r, r: S.pad.r, t: S.pad.r, b: S.pad.r };
 
   // True relative proportion — the same scale on both axes. In square mode the
@@ -381,7 +389,8 @@ export function Elevation({ productSlug, widthMm, heightMm, size = "xs", square 
     // 700×1800 panel to three times the height of a 3500×700 slot beside it,
     // and taking the leader text out of its designed 9–13px with it. A caller
     // that wants a different size overrides via className; CSS beats these.
-    <svg data-elevation="" data-wide={wMm / hMm > 2.4 ? "1" : undefined}
+    <svg data-elevation="" data-unsized={sized ? undefined : ""}
+      data-wide={wMm / hMm > 2.4 ? "1" : undefined}
       viewBox={`0 0 ${q(vbw)} ${q(vbh)}`} width={q(vbw)} height={q(vbh)}
       className={className} aria-hidden="true" fill="none"
       preserveAspectRatio="xMidYMid meet">
