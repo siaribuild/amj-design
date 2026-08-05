@@ -150,6 +150,8 @@ export const updateCurrentSegment = (segmentId: string, patch: {
   /** The dimension ACROSS the split. Sent since it became editable — the server
    *  used to default it to the opening's, which quietly healed real mismatches. */
   acrossMm?: number;
+  /** Free text on the unit, stored in the same column an opening's note uses. */
+  note?: string;
 }) => req<{ ok: boolean }>(`/api/projects/current/segments/${segmentId}`, {
   method: "PATCH", body: JSON.stringify(patch),
 });

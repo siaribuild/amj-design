@@ -776,6 +776,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
   }, [editing, aiManaged, line.id, line.productSlug, line.selectedVariantId, configurationReload]);
 
   const saveLine = async (built: { productSlug: string; width: string; height: string; options: Record<string, string>; qty: number; code: string; location: string }) => {
+    if (saving) return;              // no re-entrancy guard existed; Save stays live during the request
     setSaving(true);
     try {
       const chosen = aiManaged
@@ -806,17 +807,22 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
     finally { setSaving(false); }
   };
 
-  const saveUnit = async (segId: string, built: { productSlug: string; width: string; height: string; options: Record<string, string> }) => {
+  const saveUnit = async (segId: string, built: { productSlug: string; width: string; height: string; options: Record<string, string>; location?: string }) => {
+    if (saving) return;              // no re-entrancy guard existed; Save stays live during the request
     setSaving(true);
     try {
-      // Only the along-axis dimension is sent. Across the join the unit must span
-      // the opening exactly — validateSplit treats a mismatch as a hard error,
-      // not a coverage allowance — so the server derives it and the form's value
-      // for it is ignored rather than being able to produce an unbuildable unit.
+      // BOTH dimensions are sent. The comment that stood here said the server
+      // derives the across-axis one and ignores the form's value; it did not —
+      // the route had no such parameter at any layer, so the field was rendered
+      // editable, captioned as locked, and its value silently dropped. An across
+      // mismatch is a hard submission blocker for the customer, which made this
+      // the estimator's only repair and it was inert.
       await opsPatchSegment(segId, {
         productSlug: built.productSlug,
         options: built.options,
         alongMm: parseInt(axis === "vertical" ? built.width : built.height) || 0,
+        acrossMm: parseInt(axis === "vertical" ? built.height : built.width) || 0,
+        note: built.location ?? "",
       });
       setEditingUnit(null);
       onSaved();
@@ -973,6 +979,18 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
             key={configurationKey || "line-editor"}
             quote={quoteLike}
             excludeId={selfIndex}
+            busy={saving}
+            // A COMPOSITE PARENT IS NOT A PRODUCT (owner) — the same rule the
+            // customer drawer already applied, now applied here too. It is the
+            // schedule line, not a frame: the units are the products, they can
+            // be different products from each other, and its price is the sum
+            // of theirs. Staff had a product picker and an Options group whose
+            // values PATCH /ops/lines/:id genuinely writes onto a row whose
+            // price is never computed from them — a setting that looks like a
+            // decision and is inert. Both come off; every unit stays editable,
+            // which is where the glazing and hardware actually live.
+            hideProduct={composite}
+            hideOptions={composite}
             priceFn={opsLinePricePreview(line.id)}
             submitLabel={saving ? "Saving…" : "Save line"}
             seed={{
@@ -1030,18 +1048,28 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
         {editingUnit === sg.id && (
           <tr>
             <td colSpan={6} className="px-4 py-4" style={{ background: "rgba(90,122,106,0.06)" }}>
+              {/* The caption used to assert that the across-axis dimension "is
+                  set by the opening and cannot be changed here". It was not and
+                  it is not: the field is editable and now actually persists.
+                  It states the opening's figure so a reviewer can see what the
+                  unit has to match, and says nothing about a lock. */}
               <p className="mb-2.5 t-cap" style={{ color: MUTED }}>
-                Unit {i + 1} of {line.code || "this opening"}.{" "}
-                {axis === "vertical" ? "Height" : "Width"} is set by the opening
-                ({axis === "vertical" ? line.height : line.width} mm) and cannot be changed here.
+                Unit {i + 1} of {line.code || "this opening"}. The opening is{" "}
+                {axis === "vertical" ? line.height : line.width} mm{" "}
+                {axis === "vertical" ? "high" : "wide"} — every unit must match it.
               </p>
               <ItemForm
+                // key: this mount had none, and ItemForm has no seed→state sync
+                // effect, so its state initialisers ran once and a segment that
+                // changed underneath left a stale draft.
+                key={`ops-unit-${sg.id}`}
                 scope="unit"
                 unitAxis={axis}
                 quote={quoteLike}
+                busy={saving}
                 priceFn={opsLinePricePreview(line.id)}
                 submitLabel={saving ? "Saving…" : `Save unit ${i + 1}`}
-                seed={{ productSlug: sg.productSlug, width: sg.width, height: sg.height, options: sg.options, qty: sg.qty }}
+                seed={{ productSlug: sg.productSlug, width: sg.width, height: sg.height, options: sg.options, qty: sg.qty, location: sg.note }}
                 onCommit={(built) => saveUnit(sg.id, built as never)}
                 onCancel={() => setEditingUnit(null)}
               />

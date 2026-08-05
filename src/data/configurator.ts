@@ -57,6 +57,11 @@ export interface QSegment {
   lineTotal: number | null;
   options: Record<string, string>;
   status: "Ready" | "Needs review";
+  /** Free text on the unit — the same field, meaning and storage an opening
+   *  uses (QItem.location → quote_line.room_label). A unit carries the same
+   *  kind of information as a childless opening; the only difference is that it
+   *  has a parent (owner). */
+  note: string;
 }
 
 export interface QFile {
@@ -93,7 +98,8 @@ export interface QuoteState {
   // Re-hydrate lines + attached files from the server.
   reload: (options?: { flushLocalChanges?: boolean }) => Promise<void>;
   updateSegment: (segmentId: string, patch: {
-    productSlug: string; options: Record<string, string>; alongMm: number; acrossMm?: number;
+    productSlug: string; options: Record<string, string>; alongMm: number;
+    acrossMm?: number; note?: string;
   }) => Promise<void>;
 }
 

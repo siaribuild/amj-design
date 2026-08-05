@@ -163,6 +163,8 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
         // defaulting the across dimension to the opening's, so saving a unit for
         // any reason at all silently healed a real mismatch.
         acrossMm: parseInt(axis === "vertical" ? built.height : built.width) || 0,
+        // A unit's own note. Same field and same column as an opening's.
+        note: built.location ?? "",
       });
       setDirty(false);
       setAnnouncement("Unit saved");
@@ -306,9 +308,13 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
 
             {level.kind === "unit" && activeSegment && (
               <>
+                {/* The caption used to say the across-axis dimension "follows
+                    the parent opening", which stopped being true when the field
+                    became editable. It states the figure to match instead. */}
                 <p className="text-body t-cap">
-                  {unitLabel(ref, unitIndex)}. Its {axis === "vertical" ? "height" : "width"} follows the
-                  parent opening; edit the product, options and {axis === "vertical" ? "width" : "height"} here.
+                  {unitLabel(ref, unitIndex)}. The opening is{" "}
+                  {axis === "vertical" ? item?.height : item?.width} mm{" "}
+                  {axis === "vertical" ? "high" : "wide"} — every unit must match it.
                 </p>
                 <ItemForm
                   key={`unit-${activeSegment.id}`}
@@ -321,6 +327,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                     height: activeSegment.height,
                     options: activeSegment.options ?? {},
                     qty: activeSegment.qty,
+                    location: activeSegment.note ?? "",
                   }}
                   busy={busy}
                   submitLabel={busy ? "Saving…" : `Save ${unitLabel(ref, unitIndex)}`}

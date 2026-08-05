@@ -82,7 +82,7 @@ export function itemNeedsAttention(item: QItem): boolean {
 
 // ─── Field blocks (shared by the new-item form and the MyProject card) ────────
 function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false, lockedDimension,
-  location, setLocation, opening = false }: {
+  location, setLocation, isUnit = false, opening = false }: {
   /** Null for an OPENING with no product of its own — a composite parent. There
    *  is no size range to state and no family to draw, so the range copy and the
    *  drawing's symbols fall away with it. */
@@ -91,8 +91,13 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
   lockedDimension?: "width" | "height";
   /** The note rides in THIS group now (owner). It was the back half of a
    *  "Quantity & note" section whose front half is gone, and a group holding
-   *  one optional text field is a disclosure that never earns its click. */
+   *  one optional text field is a disclosure that never earns its click.
+   *
+   *  Present on openings AND units. Only the placeholder differs: an opening's
+   *  asks for a location in the building, which a unit sitting inside one
+   *  opening has already been told. */
   location?: string; setLocation?: (v: string) => void;
+  isUnit?: boolean;
   opening?: boolean;
 }) {
   const w = parseInt(width) || 0, h = parseInt(height) || 0;
@@ -152,7 +157,12 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
           {setLocation && (
             <div>
               <FieldLabel>Note (optional)</FieldLabel>
-              <Input value={location ?? ""} onChange={e => setLocation(e.target.value)} placeholder="e.g. Bedroom 1, north elevation" />
+              {/* One label, so it reads as the same field wherever it appears.
+                  Different placeholder on a unit: a unit sits inside one
+                  opening, so asking it for a room re-asks a question the
+                  opening already answered. */}
+              <Input value={location ?? ""} onChange={e => setLocation(e.target.value)}
+                placeholder={isUnit ? "e.g. left leaf, obscure glass here" : "e.g. Bedroom 1, north elevation"} />
             </div>
           )}
         </div>
@@ -403,7 +413,7 @@ function Section({ label, summary, open, onToggle, children, variant = "boxed", 
 }) {
   const boxed = variant === "boxed";
   return (
-    <div className={boxed ? `border ${attention ? "border-warning/40" : "border-line"}` : "border-b border-line last:border-b-0"}>
+    <div className={boxed ? `border ${attention ? "border-attention/40" : "border-line"}` : "border-b border-line last:border-b-0"}>
       <button onClick={onToggle} aria-expanded={open} data-attention={attention ? "true" : "false"} className={`quote-section-trigger w-full flex items-center justify-between gap-3 text-left cursor-pointer ${boxed ? "px-4 py-3" : "px-4 py-2.5"}`}>
         <span className="min-w-0">
           <span className={`block flex items-center gap-1 ${attention ? "text-attention-ink" : "text-body"} t-label`}>{label}{attention && <AlertCircle className="w-3 h-3" />}</span>
@@ -791,10 +801,15 @@ export function ItemForm({
                 // field greyed out. A mismatch is reported — on the unit and on
                 // the opening — rather than prevented.
                 lockedDimension={undefined}
-                // The note is the OPENING's, so a unit does not carry one: one
-                // opening, one location.
-                location={isUnit ? undefined : location}
-                setLocation={isUnit ? undefined : setLocation} />
+                // The note is on UNITS too (owner). "Note is a note — it may
+                // serve for location, it may serve for anything else that is
+                // notable", and from the customer's side a unit carries exactly
+                // the same kind of information as a childless opening; the only
+                // difference is that it has a parent. It persists in the same
+                // column an opening's does (quote_line.room_label).
+                location={location}
+                setLocation={setLocation}
+                isUnit={isUnit} />
             </Section>
             {!hideOptions && p && (
             <Section label="Options" summary={optionSummaryOf(p, options)} attention={hasIssue("options")} open={open.options} onToggle={() => setOpen(o => ({ ...o, options: !o.options }))}>
@@ -885,11 +900,16 @@ function CodeField({ code, duplicate, editSignal, onCommit }: {
 // expanding reveals the three detail groups (one open at a time). Item code, status
 // and line price stay visible in every state.
 export function ItemSummaryCard({
-  item, added, quote, onDuplicate, onRemove, initialFocus, id, focusSignal,
+  item, added, quote, onDuplicate, onRemove, initialFocus, id, focusSignal, panelParity = false,
   expanded, onToggleExpanded, duplicate, codeFocusSignal, basis, changes, onRestoreAi,
 }: {
   item: QItem; added?: boolean; quote: QuoteState;
   onDuplicate?: () => void; onRemove?: () => void; initialFocus?: EditFocus;
+  /** Match the /quote-project edit panel (owner): no Quantity group, and the
+   *  note inside Dimensions. Opt-in, not default, purely so the legacy /quote
+   *  card is unchanged while the old-vs-new comparison is being run. It dies
+   *  with /quote — at which point this becomes the only arrangement. */
+  panelParity?: boolean;
   id?: string; focusSignal?: number;
   expanded?: boolean; onToggleExpanded?: () => void; duplicate?: boolean; codeFocusSignal?: number;
   /** Requirement basis for the trust chip (UX spec §5) — status ("is anything
@@ -911,10 +931,14 @@ export function ItemSummaryCard({
   const compositeUnits = (item.segments ?? []).reduce((count, segment) =>
     count + Math.max(1, segment.qtyPerParent), 0);
   const basisCopy = basis ? BASIS_COPY[basis] : null;
-  const pr = { total: linePriceTotal(item) };
+  // linePriceTotal() returns the SERVER figure, or 0 when there is none — so
+  // "is there a price" is a question about item.lineTotal, not about the
+  // formatted number. This read used to be pr.ok on an object with no such
+  // property: always undefined, so every manually configured line rendered
+  // "$-,--" while a real total sat one field away.
   const displayTotal = linePriceTotal(item);
   const aiPriced = item.origin === "ai" || !!item.aiPriced;
-  const priceReady = aiPriced ? typeof item.lineTotal === "number" : pr.ok;
+  const priceReady = typeof item.lineTotal === "number" && Number.isFinite(item.lineTotal);
   const gstMode = useGstMode();
   const w = parseInt(item.width) || 0, h = parseInt(item.height) || 0;
   const issues = p && !aiPriced ? itemIssues(p, item) : [];
@@ -990,7 +1014,7 @@ export function ItemSummaryCard({
         <span className="flex-1 min-w-0 flex items-center gap-1.5">
           {/* A warned line still names its (best-fit / substituted) product — the
               warning explains the caveat. Only a line with NO product at all
-              shows the italic amber "Choose a product" customer action. */}
+              shows the italic "Choose a product" customer action, in the attention red. */}
           <button onClick={toggleExpanded} aria-expanded={isExpanded}
             className={`min-w-0 truncate text-left font-semibold cursor-pointer hover:text-sage ${item.productSlug ? "text-ink" : "text-attention-ink italic"} font-display t-bd-sm`}>
             {item.productSlug ? productLabel(item.productSlug) : "Choose a product"}
@@ -1122,14 +1146,25 @@ export function ItemSummaryCard({
               <Section variant="row" label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open === "dims"} onToggle={() => toggle("dims")}>
                 <DimensionsFields p={p} width={item.width} height={item.height}
                   setWidth={v => update({ width: v, review: clearReviewKey(item.review, "dims") })}
-                  setHeight={v => update({ height: v, review: clearReviewKey(item.review, "dims") })} />
+                  setHeight={v => update({ height: v, review: clearReviewKey(item.review, "dims") })}
+                  // Under panel parity the note lives HERE, as it does in the
+                  // estimator's panel — a group holding one optional text field
+                  // is a disclosure that never earns its click.
+                  location={panelParity ? item.location : undefined}
+                  setLocation={panelParity ? (v => update({ location: v })) : undefined} />
               </Section>
               <Section variant="row" label="Options" summary={optionSummaryOf(p, item.options)} attention={hasIssue("options")} open={open === "options"} onToggle={() => toggle("options")}>
                 <OptionsFields p={p} options={item.options} setOpt={(t, v) => update({ options: { ...item.options, [t]: v }, review: clearReviewKey(item.review, "options") })} />
               </Section>
-              <Section variant="row" label="Quantity & note" summary={qtySummary} open={open === "qty"} onToggle={() => toggle("qty")}>
-                <QtyLocationFields qty={item.qty} location={item.location} setQty={v => update({ qty: v })} setLocation={v => update({ location: v })} />
-              </Section>
+              {/* Quantity is gone under panel parity (owner): the estimator's
+                  model is one opening per reference, so a stepper offers a
+                  decision that does not exist. The legacy card keeps it until
+                  /quote retires — see panelParity. */}
+              {!panelParity && (
+                <Section variant="row" label="Quantity & note" summary={qtySummary} open={open === "qty"} onToggle={() => toggle("qty")}>
+                  <QtyLocationFields qty={item.qty} location={item.location} setQty={v => update({ qty: v })} setLocation={v => update({ location: v })} />
+                </Section>
+              )}
             </>
           ) : (
             <div className="quote-notice--warning px-4 py-3 border-t border-line flex items-start gap-1.5 t-cap">

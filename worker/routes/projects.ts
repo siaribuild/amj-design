@@ -74,11 +74,12 @@ export async function loadLines(env: Env, projectId: string) {
 
   const placeholders = parentIds.map(() => "?").join(",");
   const { results: segRows } = await env.DB.prepare(
-    `SELECT id, parent_line_id, segment_seq, qty_per_parent, product_slug, dims_json, options_json, qty, line_total, status
+    `SELECT id, parent_line_id, segment_seq, qty_per_parent, product_slug, dims_json, options_json, qty, line_total, status, room_label
        FROM quote_line WHERE parent_line_id IN (${placeholders}) ORDER BY segment_seq`,
   ).bind(...parentIds).all<{
     id: string; parent_line_id: string; segment_seq: number; qty_per_parent: number;
     product_slug: string; dims_json: string; options_json: string; qty: number; line_total: number | null; status: string;
+    room_label: string | null;
   }>();
 
   // The TOLERANCE stays on the server. It is ops pricing/policy data, and the
@@ -102,6 +103,7 @@ export async function loadLines(env: Env, projectId: string) {
       lineTotal: s.line_total,
       options: safeParse(s.options_json) as Record<string, string>,
       status: s.status === "ready" ? "Ready" : "Needs review",
+      note: s.room_label ?? "",
     });
     byParent.set(s.parent_line_id, list);
   }
@@ -210,7 +212,10 @@ projects.patch("/current/segments/:id", async (c) => {
   const segment = await currentDraftSegment(c.env, c.req.raw, c.req.param("id"));
   if (!segment) return c.json({ error: "not_found" }, 404);
   const body = await c.req.json().catch(() => ({}));
-  const patch: { productSlug?: string; options?: Record<string, string>; alongMm?: number; acrossMm?: number } = {};
+  const patch: {
+    productSlug?: string; options?: Record<string, string>;
+    alongMm?: number; acrossMm?: number; note?: string;
+  } = {};
   if (body?.productSlug !== undefined) patch.productSlug = String(body.productSlug);
   if (body?.options && typeof body.options === "object" && !Array.isArray(body.options)) {
     patch.options = Object.fromEntries(
@@ -221,6 +226,10 @@ projects.patch("/current/segments/:id", async (c) => {
   // The across dimension is the customer's now, not forced to the opening. A
   // mismatch is reported on the unit and on the opening rather than prevented.
   if (body?.acrossMm !== undefined) patch.acrossMm = Number(body.acrossMm) || 0;
+  // A unit carries a note of its own (owner). Same field, same meaning, same
+  // column as an opening's — the only thing a unit has that a childless opening
+  // does not is a parent.
+  if (body?.note !== undefined) patch.note = String(body.note ?? "");
   const result = await updateSegment(c.env, { segmentId: segment.id, patch });
   if ("errors" in result) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
   await markCustomerCompositeEdit(c.env, segment.project_id, segment.parent_line_id, segment.id);

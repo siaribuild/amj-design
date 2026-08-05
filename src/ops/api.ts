@@ -460,6 +460,10 @@ export interface OpsSegment {
    *  with their surcharges — and the console could not display or set them. */
   options: Record<string, string>;
   status: string;
+  /** Free text on the unit — the same field, meaning and column an opening
+   *  uses. A unit carries the same kind of information as a childless opening;
+   *  the only difference is that it has a parent (owner). */
+  note: string;
 }
 
 /** The split rules, from D1. The console used to hardcode a unit count of
@@ -472,7 +476,12 @@ export interface OpsCompositePolicy {
  *  absent — it is derived from the opening, and composite.ts owns it. */
 export const opsPatchSegment = (segmentId: string, patch: Partial<{
   productSlug: string; options: Record<string, string>;
-  alongMm: number; qtyPerParent: number;
+  alongMm: number;
+  /** ACROSS the split. The route accepts it now; it previously had no such
+   *  parameter at any layer while the console rendered the field editable and
+   *  captioned it as locked. */
+  acrossMm: number;
+  qtyPerParent: number; note: string;
 }>) => req<{ ok: boolean }>(`/api/ops/segments/${segmentId}`, { method: "PATCH", body: JSON.stringify(patch) });
 
 /** Append a unit, inheriting product and spec from the last one. */

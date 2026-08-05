@@ -35,6 +35,11 @@ export interface ApiSegment {
   lineTotal: number | null;
   options: Record<string, string>;
   status: "Ready" | "Needs review";
+  /** Free text on the unit, stored in room_label — the same column an opening
+   *  uses. From the customer's side a unit carries exactly the same kind of
+   *  information as a childless opening; the only difference is that it has a
+   *  parent (owner). */
+  note: string;
 }
 
 export interface ApiLine {

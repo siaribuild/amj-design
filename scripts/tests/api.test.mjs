@@ -497,6 +497,44 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.equal(customerView.body.items[0].segments[1].width, "650");
       assert.ok(customerView.body.items[0].review.customerCompositeChanged);
 
+      // A UNIT CARRIES A NOTE, on both paths, in the same column an opening's
+      // note uses (owner: "a child record is carrying exactly the same
+      // information as a childless parent, except that it has a linked parent
+      // — so reuse whatever is used there"). No migration: room_label already
+      // existed on segment rows, bound as a literal NULL by both INSERT paths.
+      assert.equal(customerView.body.items[0].segments[1].note, "", "a unit starts with no note");
+      await requestJson(cust, `/api/projects/current/segments/${unitIds[1]}`, {
+        method: "PATCH", json: { note: "left leaf, obscure glass" },
+      });
+      customerView = await requestJson(cust, "/api/projects/current");
+      assert.equal(customerView.body.items[0].segments[1].note, "left leaf, obscure glass");
+      assert.equal(customerView.body.items[0].segments[0].note, "", "its sibling is untouched");
+      // Absent ⇒ unchanged; blank ⇒ cleared. Clearing a note is an edit.
+      await requestJson(cust, `/api/projects/current/segments/${unitIds[1]}`, {
+        method: "PATCH", json: { alongMm: 655 },
+      });
+      customerView = await requestJson(cust, "/api/projects/current");
+      assert.equal(customerView.body.items[0].segments[1].note, "left leaf, obscure glass",
+        "an unrelated edit does not drop the note");
+      // …and ops sees the same field, and can write it.
+      const opsUnitView = await requestJson(ops, `/api/ops/projects/${projectId}`);
+      assert.equal(opsUnitView.body.lines[0].segments[1].note, "left leaf, obscure glass");
+
+      // ACROSS the split is settable from OPS as well as from the customer.
+      // The route had no such parameter at any layer while the console rendered
+      // the field editable and captioned it as locked, so a reviewer's
+      // correction was accepted, saved, and silently discarded.
+      const acrossBefore = await sql(`SELECT dims_json FROM quote_line WHERE id='${unitIds[1]}'`);
+      assert.equal(JSON.parse(acrossBefore[0].dims_json).height, "900");
+      await requestJson(ops, `/api/ops/segments/${unitIds[1]}`, {
+        method: "PATCH", json: { acrossMm: 910 },
+      });
+      const acrossAfter = await sql(`SELECT dims_json FROM quote_line WHERE id='${unitIds[1]}'`);
+      assert.equal(JSON.parse(acrossAfter[0].dims_json).height, "910", "ops can repair an across mismatch");
+      assert.equal(JSON.parse(acrossAfter[0].dims_json).width, "655", "and the along axis is untouched");
+      // Put it back, so the assertions below still describe a well-formed split.
+      await requestJson(ops, `/api/ops/segments/${unitIds[1]}`, { method: "PATCH", json: { acrossMm: 900 } });
+
       // The customer cannot change how MANY units an opening has (owner,
       // 2026-08-04). They can neither create a composite nor merge one back, so
       // being able to add and remove units was the same power by another route —

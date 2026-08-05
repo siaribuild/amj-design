@@ -301,6 +301,9 @@ export interface SegmentRow {
   id: string; parent_line_id: string; project_id: string;
   product_slug: string; options_json: string; dims_json: string;
   qty_per_parent: number; segment_seq: number;
+  /** Optional because only loadSegment selects it, and loadSegment is its only
+   *  reader. The other SELECTs typed as SegmentRow predate the unit note. */
+  room_label?: string | null;
 }
 
 /** Load a segment together with the opening it belongs to. */
@@ -309,7 +312,7 @@ export async function loadSegment(env: Env, segmentId: string): Promise<
 > {
   const segment = await env.DB.prepare(
     `SELECT id, parent_line_id, project_id, product_slug, options_json, dims_json,
-            qty_per_parent, segment_seq
+            qty_per_parent, segment_seq, room_label
        FROM quote_line WHERE id=? AND parent_line_id IS NOT NULL`,
   ).bind(segmentId).first<SegmentRow>();
   if (!segment) return null;
@@ -338,6 +341,12 @@ export async function updateSegment(env: Env, args: {
   patch: {
     productSlug?: string; options?: Record<string, string>;
     alongMm?: number; acrossMm?: number; qtyPerParent?: number;
+    /** Free text on the unit. Stored in room_label — the same column an opening
+     *  uses, because from the customer's side a unit carries exactly the same
+     *  kind of information as a childless opening; the only difference is that
+     *  it has a parent (owner). The column already exists on every segment row:
+     *  both INSERT paths bind it as a literal NULL. */
+    note?: string;
   };
 }): Promise<{ ok: true } | { ok: false; errors: string[] }> {
   const loaded = await loadSegment(env, args.segmentId);
@@ -368,6 +377,13 @@ export async function updateSegment(env: Env, args: {
   if (!(widthMm > 0)) return { ok: false, errors: ["This unit needs a width."] };
   if (!(heightMm > 0)) return { ok: false, errors: ["This unit needs a height."] };
 
+  // Only the fields named in the patch move, so an ABSENT note keeps whatever
+  // the unit already carries. Blank is a legitimate value — clearing a note is
+  // an edit — so this normalises rather than reading "" as absent.
+  const note = args.patch.note !== undefined
+    ? args.patch.note.trim()
+    : (segment.room_label ?? "");
+
   const qty = Math.max(1, parent.qty) * qtyPerParent;
   const total = await priceItem(env, {
     productSlug, width: String(widthMm), height: String(heightMm), options, qty,
@@ -375,11 +391,11 @@ export async function updateSegment(env: Env, args: {
 
   await env.DB.prepare(
     `UPDATE quote_line SET product_slug=?, options_json=?, dims_json=?, qty_per_parent=?,
-       line_total=?, status=?, updated_at=datetime('now') WHERE id=?`,
+       room_label=?, line_total=?, status=?, updated_at=datetime('now') WHERE id=?`,
   ).bind(
     productSlug, JSON.stringify(options),
     JSON.stringify({ width: String(widthMm), height: String(heightMm) }),
-    qtyPerParent, total, total == null ? "incomplete" : "ready", segment.id,
+    qtyPerParent, note || null, total, total == null ? "incomplete" : "ready", segment.id,
   ).run();
 
   await recomputeComposite(env, parent.id);

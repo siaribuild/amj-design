@@ -373,7 +373,7 @@ ops.get("/projects/:id", async (c) => {
   const compositePolicy = await loadCompositePolicy(c.env);
   const { results: segments } = await c.env.DB.prepare(
     `SELECT id, parent_line_id, product_slug, options_json, dims_json,
-            qty_per_parent, qty, line_total, status, segment_seq
+            qty_per_parent, qty, line_total, status, segment_seq, room_label
        FROM quote_line
       WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NOT NULL
       ORDER BY parent_line_id, segment_seq`,
@@ -443,6 +443,7 @@ ops.get("/projects/:id", async (c) => {
           productName: getProductBySlug(s2.product_slug)?.name ?? s2.product_slug,
           width: String(d.width ?? ""), height: String(d.height ?? ""),
           qtyPerParent: s2.qty_per_parent ?? 1, qty: s2.qty, lineTotal: s2.line_total,
+          note: s2.room_label ?? "",
           // Without these the console could not show what a unit IS — only its
           // size and its price. A reviewer checking that unit 2 is the right
           // colour had nothing to read, and no way to tell an unpriced unit from
@@ -923,7 +924,7 @@ ops.patch("/segments/:id", async (c) => {
 
   const patch: {
     productSlug?: string; options?: Record<string, string>;
-    alongMm?: number; qtyPerParent?: number;
+    alongMm?: number; acrossMm?: number; qtyPerParent?: number; note?: string;
   } = {};
   if (body?.productSlug !== undefined) patch.productSlug = String(body.productSlug);
   if (body?.options && typeof body.options === "object" && !Array.isArray(body.options)) {
@@ -932,7 +933,16 @@ ops.patch("/segments/:id", async (c) => {
     );
   }
   if (body?.alongMm !== undefined) patch.alongMm = Number(body.alongMm) || 0;
+  // ACROSS the split, accepted here as it already is on the customer route.
+  // Ops rendered this field editable, captioned it "cannot be changed here",
+  // and then had nowhere to send it — the parameter did not exist at any layer.
+  // An across mismatch is a hard submission blocker for the customer, so this
+  // was the estimator's only repair and it was inert. updateSegment falls back
+  // to what the unit already stores, so accepting it changes nothing for a
+  // caller that omits it.
+  if (body?.acrossMm !== undefined) patch.acrossMm = Number(body.acrossMm) || 0;
   if (body?.qtyPerParent !== undefined) patch.qtyPerParent = Number(body.qtyPerParent) || 1;
+  if (body?.note !== undefined) patch.note = String(body.note ?? "");
 
   const result = await updateSegment(c.env, { segmentId: seg.id, patch });
   if (!result.ok) return c.json({ error: "invalid_segment", errors: result.errors }, 400);

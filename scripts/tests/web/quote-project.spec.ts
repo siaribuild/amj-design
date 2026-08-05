@@ -253,6 +253,22 @@ test("the customer may change what a unit IS, but not how many there are", async
   await expect(drawer.getByRole("button", { name: "Edit W2A" })).toBeVisible();
   await drawer.getByRole("button", { name: "Edit W2A" }).click();
   await expect(page.getByRole("button", { name: "Back to W2" })).toBeVisible();
+
+  // A UNIT CARRIES A NOTE (owner): "a child record is carrying exactly the same
+  // information as a childless parent, except that it has a linked parent." Same
+  // label as an opening's so it reads as the same field; a different placeholder,
+  // because a unit sits inside one opening and has already been told the room.
+  // It persists in the same column — see the round-trip in api.test.mjs.
+  await expect(drawer.getByText("Note (optional)")).toBeVisible();
+  await expect(drawer.getByPlaceholder("e.g. left leaf, obscure glass here")).toBeVisible();
+
+  // BOTH dimensions are editable. The across-axis one used to be locked to the
+  // opening's, which is a trap rather than a rail: correct an opening's parsed
+  // height and every unit is left at the old figure with its only repair field
+  // greyed out.
+  const numbers = drawer.locator('input[type="number"]');
+  await expect(numbers.nth(0)).toBeEnabled();
+  await expect(numbers.nth(1)).toBeEnabled();
 });
 
 // ─── 6. Duplicate is deliberate, and undoable ──────────────────────────────────

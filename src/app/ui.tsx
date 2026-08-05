@@ -106,14 +106,19 @@ export function FieldLabel({ children }: { children: ReactNode }) {
   );
 }
 
-export function Input({ value, onChange, placeholder, type = "text", className = "", defaultValue, inputMode, disabled }: {
+export function Input({ value, onChange, placeholder, type = "text", className = "", defaultValue, inputMode, disabled, maxLength }: {
   value?: string; onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string; type?: string; className?: string; defaultValue?: string;
   inputMode?: "numeric" | "text" | "decimal"; disabled?: boolean;
+  /** Two callers passed this and it was silently dropped — the prop did not
+   *  exist, so the 10-character item-code cap held on the legacy card (which
+   *  uses a raw input) and not on the composer, which is where codes are
+   *  actually created. */
+  maxLength?: number;
 }) {
   return (
     <input type={type} value={value} defaultValue={defaultValue} onChange={onChange} disabled={disabled}
-      placeholder={placeholder} inputMode={inputMode}
+      placeholder={placeholder} inputMode={inputMode} maxLength={maxLength}
       className={`field-control w-full border px-3 py-2.5 text-ink placeholder-quieter focus:outline-none transition-colors disabled:cursor-not-allowed ${className} t-bd-sm`} />
   );
 }
