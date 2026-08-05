@@ -18,14 +18,19 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import {
   type QItem, hasDuplicateCode, lineBlocksSubmission, severityOf,
-  compositeAcrossFault,
+  compositeAcrossFault, missingRequiredOptions,
 } from "../../data/configurator";
 
 export type RowState =
   /** Priced/complete, or carrying only technical flags. No badge, no action. */
   | { kind: "none" }
-  /** The customer must supply something before this line can be quoted. */
-  | { kind: "needs-input"; reason: string }
+  /** The customer must supply something before this line can be quoted.
+   *  `label` is the CHIP; `reason` is the sentence in the panel. They are two
+   *  different lengths of the same statement, and the chip is not always
+   *  "Incomplete": an opening whose unit is the wrong size is not incomplete,
+   *  it is inconsistent — and its child says "Check size", so the parent saying
+   *  something else made one fault read as two. */
+  | { kind: "needs-input"; label: string; reason: string }
   /** Neutral attribute, not a warning. */
   | { kind: "composite"; units: number }
   /** A generated arrangement the customer should confirm. See O1 below. */
@@ -83,7 +88,7 @@ export const isComposite = (item: QItem): boolean => compositeUnitCount(item) > 
 export function rowStateFor(item: QItem, items: QItem[]): RowState {
   const duplicate = hasDuplicateCode(items, item.id, item.code);
   if (lineBlocksSubmission(item) || duplicate) {
-    return { kind: "needs-input", reason: blockingReason(item, duplicate) };
+    return { kind: "needs-input", ...blockingFault(item, duplicate) };
   }
 
   const units = compositeUnitCount(item);
@@ -112,24 +117,41 @@ export function rowStateFor(item: QItem, items: QItem[]): RowState {
   return { kind: "none" };
 }
 
-/** A concise reason for the `Needs your input` badge. Reuses the estimator's own
- *  per-field wording where it exists rather than inventing customer copy. */
-function blockingReason(item: QItem, duplicate: boolean): string {
-  if (duplicate) return "Item ID already used";
+/** The chip and the sentence, together, so the two can never disagree about
+ *  which fault they are describing. Reuses the estimator's own per-field wording
+ *  where it exists rather than inventing customer copy. */
+function blockingFault(item: QItem, duplicate: boolean): { label: string; reason: string } {
+  const incomplete = (reason: string) => ({ label: "Incomplete", reason });
+  if (duplicate) return incomplete("Item ID already used");
   const errors = Object.entries(item.review ?? {})
     .filter(([key]) => severityOf(key) === "error")
     .map(([, reason]) => reason);
-  if (errors.length) return errors[0];
+  if (errors.length) return incomplete(errors[0]);
+  // Name the option, not the fact that one is missing. "Choose a colour" is
+  // actionable from the row; "we need a little more detail" sends someone into
+  // the editor to find out what.
+  const missing = missingRequiredOptions(item);
+  if (missing.length) {
+    return incomplete(missing.length === 1
+      ? `Choose ${missing[0].toLowerCase()}`
+      : `Choose ${missing.slice(0, -1).map((m) => m.toLowerCase()).join(", ")} and ${missing[missing.length - 1].toLowerCase()}`);
+  }
   // Named before the generic fallbacks, and named as geometry rather than as a
   // process: "the units do not fit" is checkable against the numbers on screen.
+  // "Check size", NOT "Incomplete" — the same words its child uses, because it
+  // is the same fault seen from one level up. Nothing about this opening is
+  // missing; a unit disagrees with it about a number.
   if (compositeAcrossFault(item)) {
-    return item.compositeAxis === "horizontal"
-      ? "A unit is a different width to this opening"
-      : "A unit is a different height to this opening";
+    return {
+      label: "Check sizes",
+      reason: item.compositeAxis === "horizontal"
+        ? "A unit is a different width to this opening"
+        : "A unit is a different height to this opening",
+    };
   }
-  if (!item.productSlug) return "Choose a product";
-  if (!parseInt(item.width) || !parseInt(item.height)) return "Enter the opening size";
-  return "We need a little more detail to price this";
+  if (!item.productSlug) return incomplete("Choose a product");
+  if (!parseInt(item.width) || !parseInt(item.height)) return incomplete("Enter the opening size");
+  return incomplete("We need a little more detail to price this");
 }
 
 /** Which drawer field `Fix details` should land on, so the action opens the

@@ -227,6 +227,35 @@ export function compositeAcrossFault(it: {
   return (it.segments ?? []).some((s) => unitAcrossMismatch(it, s));
 }
 
+/** Required options with nothing chosen.
+ *
+ *  A gap in the catalogue rather than a decision the customer declined: a
+ *  product whose colour group is required but carries no default in Sanity
+ *  arrives with no colour, prices perfectly well (an unchosen option simply
+ *  contributes no surcharge) and is therefore invisible to every priced-ness
+ *  check. The editor showed an amber line and left Save enabled; the list row
+ *  showed nothing at all; the sticky bar counted the project ready.
+ *
+ *  Returns the group LABELS, so a caller can name what is missing rather than
+ *  saying that something is. */
+export function missingRequiredOptions(it: {
+  productSlug: string; options: Record<string, string>;
+  segments?: { width: string; height: string }[] | null;
+}): string[] {
+  // A COMPOSITE PARENT has no options of its own — it is the schedule line, not
+  // a frame, and its glazing and hardware live one level down. Asking it for a
+  // colour would block every composite on a choice it is not offered and does
+  // not carry. Its units are checked where they are edited, not here: they are
+  // not items, so they never reach this predicate. Known gap, deliberately left
+  // rather than widened mid-flight.
+  if ((it.segments ?? []).length > 0) return [];
+  const product = getProductBySlug(it.productSlug);
+  if (!product) return [];
+  return optionGroupsFor(product)
+    .filter((g) => g.required && !it.options[g.typeSlug])
+    .map((g) => g.label);
+}
+
 export function lineBlocksSubmission(it: {
   productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;
   origin?: string; aiPriced?: boolean; lineTotal?: number | null;
@@ -241,6 +270,11 @@ export function lineBlocksSubmission(it: {
   // the thing being built. It has to reach the sticky bar, which read "20
   // openings" in green while two of the three rows on screen were flagged.
   if (compositeAcrossFault(it)) return true;
+  // A required option with nothing chosen. NOT covered by priced-ness: an
+  // unchosen option contributes no surcharge, so the line prices cleanly and
+  // every other check waves it through. The editor's own issue list has always
+  // said so; it just said it to nobody the list or the bar was listening to.
+  if (missingRequiredOptions(it).length > 0) return true;
   // Priced-ness is the SERVER's answer, for every origin. The browser holds no
   // rate data and must not form a second opinion about whether a line can be
   // sold — that is how the two engines diverged in the first place.

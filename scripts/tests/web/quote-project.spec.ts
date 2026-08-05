@@ -784,7 +784,11 @@ test("a shortfall accuses the opening; a wrong-across unit accuses itself", asyn
   // The opening is flagged BEFORE it is opened — collapsed, it is all there is.
   const parent = page.locator(".quote-row").first();
   await expect(parent).toHaveAttribute("data-state", "attention");
-  expect(await parent.innerText()).toContain("Incomplete");
+  // "Check sizes", the SAME words its unit uses one row below. The chip was
+  // hardcoded "Incomplete", so one fault read as two different words depending
+  // on which row you looked at — and an opening whose unit is the wrong height
+  // is not incomplete, it is inconsistent.
+  expect(await parent.innerText()).toContain("Check sizes");
   // …and the bar stops calling the project ready.
   const bar = page.getByRole("region", { name: "Project summary and actions" });
   await expect(bar).toHaveAttribute("data-state", "attention");

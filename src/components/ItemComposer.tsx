@@ -130,9 +130,11 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
             <FieldLabel>Height — vertical (mm)</FieldLabel>
             <Input type="number" inputMode="numeric" value={height} onChange={e => setHeight(e.target.value)} placeholder="e.g. 1210" disabled={lockedDimension === "height"} />
           </div>
-          {dimsEntered && inRange && (
-            <p className="text-ink t-bd-sm"><Check className="w-3.5 h-3.5 inline text-sage mr-1" />You have entered: <span className="font-medium">{mm(width)} wide × {mm(height)} high</span></p>
-          )}
+          {/* "You have entered: 1810 wide × 1210 high" is gone (owner). The
+              drawing directly above now carries both figures as dimension
+              leaders, measured off the same state these inputs hold — so the
+              line restated, in words, two numbers already shown twice: once in
+              the fields being typed into and once on the elevation. */}
           {!dimsEntered && p && (
             <p className="text-body t-cap">Fits {mm(p.minWidth ?? 0)}–{mm(p.maxWidth ?? 0)} wide, {mm(p.minHeight ?? 0)}–{mm(p.maxHeight ?? 0)} high.</p>
           )}
@@ -629,9 +631,22 @@ export function ItemForm({
   // server, so gating its Save on a preview of the parent's own slug would keep
   // the button dead on exactly the line whose price this form cannot produce.
   // Its size and its ID are the whole of what it can be saved with.
+  // A hidden Options group must not still gate saving on a choice the user was
+  // never shown — that is an invisible disabled button.
+  const issues = (p ? itemIssues(p, { width, height, options }) : [])
+    .filter((i) => !(hideOptions && i.section === "options"));
+  const hasIssue = (s: EditFocus) => issues.some(i => i.section === s);
+
+  // `issues` gates SAVE now, not just the amber line above it. A required option
+  // with nothing chosen was listed in the footer and then saved anyway — and
+  // because an unchosen option contributes no surcharge, the line priced
+  // cleanly and reached the list looking finished. The one thing that must not
+  // gate is an issue for a group this instance never showed, which is what the
+  // hideOptions filter below already handles.
+  const blockingIssues = issues.length > 0;
   const canSave = hideProduct
     ? dimsEntered && !duplicateCode && !busy
-    : (priced.ok || priceDeferred) && !tooSmall && !duplicateCode && !busy;
+    : (priced.ok || priceDeferred) && !tooSmall && !duplicateCode && !blockingIssues && !busy;
   const built: Omit<QItem, "id"> = {
     code: finalCode, productSlug, location, width, height, options, qty,
     status: oversize ? "Needs review" : "Ready",
@@ -653,11 +668,6 @@ export function ItemForm({
   const familyProducts = familySlug ? getProductsByFamily(familySlug) : [];
   const dimsSummary = (dimsEntered ? `${mm(width)} × ${mm(height)}` : "Enter the opening size")
     + (location ? ` · ${location}` : "");
-  // A hidden Options group must not still gate saving on a choice the user was
-  // never shown — that is an invisible disabled button.
-  const issues = (p ? itemIssues(p, { width, height, options }) : [])
-    .filter((i) => !(hideOptions && i.section === "options"));
-  const hasIssue = (s: EditFocus) => issues.some(i => i.section === s);
 
   // Dismissing the draft: silent for an empty/product-only form, but a real
   // in-progress item asks first (inline — no modal, matching the page).

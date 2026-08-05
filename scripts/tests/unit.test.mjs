@@ -15,7 +15,7 @@ const outfile = join(runDir, "unit-bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault } from ${p("src/data/configurator.ts")};
+      export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
@@ -382,6 +382,10 @@ test("a unit that is the wrong height for its opening flags the OPENING too", ()
   const state = M.rowStateFor(bad, []);
   assert.equal(state.kind, "needs-input", "the parent is red, not merely its children");
   assert.equal(state.reason, "A unit is a different height to this opening");
+  // The CHIP matches what the unit one row below says. It was hardcoded
+  // "Incomplete", so one fault read as two different words depending on which
+  // row you looked at — and the opening is not incomplete, it is inconsistent.
+  assert.equal(state.label, "Check sizes");
 });
 
 test("across is measured on the axis the split runs along", () => {
@@ -399,6 +403,42 @@ test("an unsized unit is incomplete, never a mismatch — zero means unknown", (
   assert.equal(M.compositeAcrossFault(partial), true);
   partial.segments = [{ ...partial.segments[0], height: "" }];
   assert.equal(M.compositeAcrossFault(partial), false, "nothing measurable, nothing asserted");
+});
+
+// ── A required option with nothing chosen ─────────────────────────────────────
+// W3 arrived with no colour: the product's colour group is required but nothing
+// in the catalogue supplied a default. It PRICES cleanly — an unchosen option
+// contributes no surcharge — so priced-ness waved it through, the editor showed
+// an amber line and saved anyway, the list row said nothing, and the bar counted
+// the project ready. Three readings of one fact again.
+const noColour = () => ({
+  id: 3, code: "W3", productSlug: slug, location: "",
+  width: "1200", height: "900", qty: 1, status: "Ready", lineTotal: 800, review: null,
+  options: { hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+});
+
+test("a required option with nothing chosen blocks, and the row names it", () => {
+  const bad = noColour();
+  assert.deepEqual(M.missingRequiredOptions(bad), ["Colour"]);
+  assert.equal(M.lineBlocksSubmission(bad), true, "it must reach the sticky bar");
+  const state = M.rowStateFor(bad, []);
+  assert.equal(state.kind, "needs-input");
+  assert.equal(state.reason, "Choose colour", "the row names the option, not the fact that one is missing");
+  assert.equal(state.label, "Incomplete", "a missing choice IS incompleteness");
+
+  const good = { ...bad, options: { ...bad.options, colour: "Dover White" } };
+  assert.deepEqual(M.missingRequiredOptions(good), []);
+  assert.equal(M.lineBlocksSubmission(good), false);
+  assert.equal(M.rowStateFor(good, []).kind, "none");
+});
+
+test("two missing options read as a sentence, and an unknown product asserts nothing", () => {
+  const bad = { ...noColour(), options: { flyscreen: "None", installation: "Sub Sill & Head" } };
+  assert.deepEqual(M.missingRequiredOptions(bad).sort(), ["Colour", "Hardware"]);
+  assert.match(M.rowStateFor(bad, []).reason, /^Choose (colour and hardware|hardware and colour)$/);
+  // A product the catalogue does not know has no groups to be missing. The
+  // no-product case is already blocked by its own branch.
+  assert.deepEqual(M.missingRequiredOptions({ productSlug: "nope", options: {} }), []);
 });
 
 test("unitLabel: children are W1A, W1B … and spreadsheet-style past Z", () => {

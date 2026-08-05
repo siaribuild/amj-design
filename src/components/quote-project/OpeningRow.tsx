@@ -205,12 +205,18 @@ function RowStateBadge({ state }: { state: RowState }) {
   if (state.kind === "confirm-layout") {
     return <span className="quote-chip quote-chip--review t-cap">Check sizes</span>;
   }
+  // The label comes FROM the state, so an opening and its unit say the same
+  // word about the same fault. It was hardcoded "Incomplete", which is right
+  // for a missing size or an unchosen option and wrong for a unit that is the
+  // wrong height: the opening is not incomplete, it is inconsistent — and its
+  // child was already saying "Check size" one row below.
+  //
   // "Incomplete", not "Needs your input" (127px — the label that wrapped under
   // the reference between 768 and 1023). "your" does no work on the customer's
   // own quote, and the sticky bar already phrases the instruction.
   return (
     <span className="quote-chip quote-chip--attention t-cap">
-      <AlertCircle className="w-2.5 h-2.5" aria-hidden="true" />Incomplete
+      <AlertCircle className="w-2.5 h-2.5" aria-hidden="true" />{state.label}
     </span>
   );
 }
