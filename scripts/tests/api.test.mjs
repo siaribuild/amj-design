@@ -741,6 +741,44 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       const response = await fetch(`${baseUrl}/api/projects/p_draft/issue-revision`, { method: "POST" });
       assert.equal(response.status, 403);
     });
+
+    await t.test("thermal audit: every stored line appears, with or without a target", async () => {
+      // Staff only — the audit exposes what the machine decided and why, which is
+      // an internal surface.
+      const anon = await fetch(`${baseUrl}/api/ops/projects/p_draft/thermal`);
+      assert.equal(anon.status, 403, "an unauthenticated caller cannot read the audit");
+
+      const projectId = "p_thermal_audit";
+      await sql(`INSERT INTO project (id, title, status_customer) VALUES ('${projectId}','Thermal audit fixture','draft')`);
+      // (1) An AI line WITH a target its glass cannot meet.
+      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin) VALUES ('ql_miss','${projectId}','W1','amj100t-series-awning-window','{}','{"width":850,"height":1800}',1,730,'technical_review',0,'ai')`);
+      await sql(`INSERT INTO opening_instance (id, project_id, quote_line_id, external_ref, family, operation_type, width_mm, height_mm, requirements_json, requirement_basis, status) VALUES ('open_miss','${projectId}','ql_miss','W1','windows','awning',850,1800,'{"maxUValue":2.27,"minShgc":0.37,"maxShgc":0.41}','explicit_energy_report','commercial_only_estimate')`);
+      await sql(`INSERT INTO ai_runs (id, project_id, pipeline_version) VALUES ('run_ta','${projectId}','test')`);
+      await sql(`INSERT INTO ai_proposal (id, project_id, ai_run_id, source_generation, source_manifest_hash, pipeline_version) VALUES ('prop_ta','${projectId}','run_ta',1,'h','test')`);
+      await sql(`INSERT INTO ai_proposal_line (id, proposal_id, project_id, opening_id, quote_line_id, quantity, dimensions_json, ranking_context_json, product_id, product_slug, catalogue_revision, configuration_json, performance_json, price_snapshot_json, recommendation_basis, confidence_band, review_required, applied_to_cart, created_at) VALUES ('apl_miss','prop_ta','${projectId}','open_miss','ql_miss',1,'{}','{}','prod','amj100t-series-awning-window','rev1','{}','{"uw":3.6,"shgc":0.42,"source":"certified","certified":true}','{"total":730}','energy_report','medium',1,1,datetime('now'))`);
+      await sql(`UPDATE quote_line SET ai_proposal_line_id='apl_miss' WHERE id='ql_miss'`);
+      // (2) A schedule-only line: no opening_instance, so no target was ever derived.
+      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin) VALUES ('ql_none','${projectId}','W2','amj80-series-awning-window','{}','{"width":900,"height":1200}',1,500,'ready',1,'schedule')`);
+
+      const audit = await requestJson(ops, `/api/ops/projects/${projectId}/thermal`);
+      const byRef = Object.fromEntries(audit.body.rows.map((r) => [r.ref, r]));
+
+      const missed = byRef.W1;
+      assert.equal(missed.verdict, "missed", "3.6 against a 2.27 cap is a miss, not a pass");
+      assert.equal(missed.target.maxUValue, 2.27, "the parsed target is reported as parsed");
+      assert.equal(missed.target.basis, "explicit_energy_report");
+      assert.equal(missed.proposed.uw, 3.6, "the proposed glass's own performance sits beside the target");
+      // The SIZE of the miss is what distinguishes a rounding argument from a redesign.
+      assert.equal(missed.miss.uw, 1.33, "Uw overshoot is reported, not just the fact of it");
+      assert.equal(missed.miss.shgc, 0.01, "the SHGC overshoot is reported on its own axis");
+
+      const noTarget = byRef.W2;
+      assert.equal(noTarget.verdict, "no_target", "a line that never went through derivation says so");
+      assert.equal(noTarget.target, null);
+      assert.ok(audit.body.rows.length >= 2, "a schedule-only line is listed, never silently omitted");
+      assert.equal(audit.body.counts.missed, 1);
+      assert.equal(audit.body.counts.noTarget, 1);
+    });
   } finally {
     await stop(server);
     await removeRunDir(runDir);

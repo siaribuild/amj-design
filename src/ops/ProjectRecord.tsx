@@ -28,9 +28,10 @@ import {
   opsSplitLine, opsMergeComposite,
   opsPatchSegment, opsAddSegment, opsRemoveSegment, opsLinePricePreview,
   opsLineConfigurations, opsRecommendationOutcomes, opsAdjudicateRecommendationOutcome,
+  opsThermal,
   OPS_PHASES, type OpsWorkspace, type OpsPhase, type OpsRecordAction, type OpsSegment,
   type OpsCompositePolicy, type OpsExactConfiguration, type OpsRecommendationOutcome,
-  type OpsRecommendationReason,
+  type OpsRecommendationReason, type OpsThermalRow, type OpsThermalCounts,
 } from "./api";
 // The SAME editor the customer configures an opening with. Ops hydrates the same
 // Sanity catalogue (src/ops/main.tsx), so product and option metadata are already
@@ -100,6 +101,11 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
     reasonOptions: OpsRecommendationReason[];
     status: "loading" | "ready" | "error";
   }>({ outcomes: [], reasonOptions: [], status: "loading" });
+  const [thermal, setThermal] = useState<{
+    rows: OpsThermalRow[];
+    counts: OpsThermalCounts | null;
+    status: "loading" | "ready" | "error";
+  }>({ rows: [], counts: null, status: "loading" });
 
   const load = async () => {
     try {
@@ -114,6 +120,15 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
       setLearning({ ...result, status: "ready" });
     } catch {
       setLearning((current) => ({ ...current, status: "error" }));
+    }
+    // Independent of the learning fetch: the audit is the surface you reach for
+    // when something looks wrong, so one failing does not blank the other.
+    setThermal((current) => ({ ...current, status: "loading" }));
+    try {
+      const result = await opsThermal(id);
+      setThermal({ rows: result.rows, counts: result.counts, status: "ready" });
+    } catch {
+      setThermal((current) => ({ ...current, status: "error" }));
     }
   };
   useEffect(() => { load(); }, [id]);
@@ -320,6 +335,27 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
             </table>
             </div>
           </div>
+
+          {thermal.status === "loading" && (
+            <Block title="Thermal audit">
+              <p role="status" className="px-4 py-3 t-cap" style={{ color: MUTED }}>
+                Loading thermal targets...
+              </p>
+            </Block>
+          )}
+          {thermal.status === "error" && (
+            <Block title="Thermal audit">
+              <div role="alert" className="px-4 py-3 t-cap" style={{ color: "var(--warning-ink)" }}>
+                Thermal targets could not be loaded.{" "}
+                <button onClick={() => void load()} className="underline underline-offset-2" style={{ color: SAGE }}>
+                  Try again
+                </button>
+              </div>
+            </Block>
+          )}
+          {thermal.status === "ready" && thermal.counts && (
+            <ThermalAudit rows={thermal.rows} counts={thermal.counts} />
+          )}
 
           {ws.revisions.length > 0 && learning.status === "loading" && (
             <Block title="Teach future estimates">
@@ -671,6 +707,124 @@ function VersionTab({ label, meta, active, onClick }: { label: string; meta: str
       <span className={`block t-cap ${active ? "font-semibold" : "font-normal"}`}>{label}</span>
       <span className="block t-cap font-data" style={{ color: MUTED }}>{meta}</span>
     </button>
+  );
+}
+
+/** THERMAL AUDIT — what was asked of each line, and what we proposed for it.
+ *
+ *  Validation surface, not a control: nothing here edits. It answers one
+ *  question per line — "was the glass we proposed capable of the target the
+ *  documents set?" — so a wrong recommendation can be spotted without querying
+ *  D1 by hand.
+ *
+ *  A line with no derived target is SHOWN, not hidden. Schedule-only and
+ *  anonymous projects produce lines that never went through thermal derivation
+ *  at all, and silently dropping them would make the table read as complete
+ *  when it is not.
+ */
+function ThermalAudit({ rows, counts }: { rows: OpsThermalRow[]; counts: OpsThermalCounts }) {
+  const meta = [
+    counts.missed ? `${counts.missed} missed` : "",
+    counts.met ? `${counts.met} met` : "",
+    counts.noTarget ? `${counts.noTarget} no target` : "",
+    counts.unknown ? `${counts.unknown} unknown` : "",
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <Block title="Thermal audit" meta={meta || `${counts.total} line${counts.total === 1 ? "" : "s"}`}>
+      {rows.length === 0 ? (
+        <Empty>No parsed lines on this project yet.</Empty>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full t-bd-sm">
+            <thead>
+              <tr className="t-label" style={{ color: MUTED }}>
+                <th className="text-left font-medium px-4 py-2">Line</th>
+                <th className="text-right font-medium px-3 py-2">Size</th>
+                <th className="text-left font-medium px-3 py-2">Target</th>
+                <th className="text-left font-medium px-3 py-2">Basis</th>
+                <th className="text-left font-medium px-3 py-2">Proposed</th>
+                <th className="text-left font-medium px-3 py-2">Achieved</th>
+                <th className="text-left font-medium px-4 py-2">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.lineId} className="border-t border-black/5 align-top">
+                  <td className="px-4 py-2" style={{ color: INK }}>
+                    <span className="font-data">{r.ref ?? "—"}</span>
+                    {r.kind === "segment" && <span className="ml-1 t-cap" style={{ color: MUTED }}>lite</span>}
+                    {r.operation && <div className="t-cap" style={{ color: MUTED }}>{r.operation}</div>}
+                  </td>
+                  <td className="px-3 py-2 text-right font-data" style={{ color: MUTED }}>
+                    {r.widthMm && r.heightMm ? `${r.widthMm}×${r.heightMm}` : "—"}
+                  </td>
+                  <td className="px-3 py-2 font-data" style={{ color: INK }}>{bandText(r.target)}</td>
+                  <td className="px-3 py-2 t-cap" style={{ color: MUTED }}>
+                    {r.target?.basis ? humanLabel(r.target.basis) : "—"}
+                  </td>
+                  <td className="px-3 py-2" style={{ color: INK }}>
+                    {r.proposed?.productSlug ?? "—"}
+                    {r.proposed?.variantId && (
+                      <div className="t-cap font-data" style={{ color: MUTED }}>{r.proposed.variantId}</div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 font-data" style={{ color: INK }}>
+                    {perfText(r.proposed)}
+                    {r.proposed?.source === "estimated" && (
+                      <div className="t-cap" style={{ color: MUTED }}>estimated</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-2">
+                    <ThermalVerdict row={r} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Block>
+  );
+}
+
+/** Uw ≤ 2.27 · SHGC 0.37–0.41 — only the axes that were actually constrained. */
+function bandText(t: OpsThermalRow["target"]): string {
+  if (!t) return "—";
+  const parts: string[] = [];
+  if (t.maxUValue != null) parts.push(`Uw ≤ ${t.maxUValue}`);
+  if (t.minShgc != null && t.maxShgc != null) parts.push(`SHGC ${t.minShgc}–${t.maxShgc}`);
+  else if (t.minShgc != null) parts.push(`SHGC ≥ ${t.minShgc}`);
+  else if (t.maxShgc != null) parts.push(`SHGC ≤ ${t.maxShgc}`);
+  return parts.length ? parts.join(" · ") : "—";
+}
+
+function perfText(p: OpsThermalRow["proposed"]): string {
+  if (!p || (p.uw == null && p.shgc == null)) return "—";
+  return [p.uw != null ? `Uw ${p.uw}` : null, p.shgc != null ? `SHGC ${p.shgc}` : null]
+    .filter(Boolean).join(" · ");
+}
+
+/** The verdict carries the SIZE of the miss, not just the fact of it — "0.01 over"
+ *  and "1.33 over" are the difference between a rounding argument and a redesign. */
+function ThermalVerdict({ row }: { row: OpsThermalRow }) {
+  if (row.verdict === "no_target") {
+    return <span className="t-cap" style={{ color: MUTED }}>No target derived</span>;
+  }
+  if (row.verdict === "unknown") {
+    return <span className="t-cap" style={{ color: MUTED }}>Not comparable</span>;
+  }
+  if (row.verdict === "met") {
+    return <span className="t-cap" style={{ color: SAGE }}>Meets target</span>;
+  }
+  const over = [
+    row.miss?.uw != null ? `Uw +${row.miss.uw}` : null,
+    row.miss?.shgc != null ? `SHGC ${row.miss.shgc > 0 ? "+" : ""}${row.miss.shgc}` : null,
+  ].filter(Boolean).join(" · ");
+  return (
+    <span className="t-cap" style={{ color: "var(--warning-ink)" }}>
+      Misses target{over && <span className="font-data"> ({over})</span>}
+    </span>
   );
 }
 

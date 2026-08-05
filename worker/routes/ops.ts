@@ -1453,6 +1453,148 @@ ops.get("/projects/:id/building-model", async (c) => {
     evidence: evidence ?? [],
   });
 });
+// GET /api/ops/projects/:id/thermal — the THERMAL AUDIT for one project: per
+// line, the thermal target that was calculated from the source documents next to
+// the product and glass that were actually proposed for it.
+//
+// Read-only over what selection already stored — it computes nothing and changes
+// nothing, so it can be opened on a live draft mid-parse without disturbing it.
+//
+// Driven from quote_line, not opening_instance, deliberately: a schedule-only or
+// anonymous project has quote_line rows and NO opening_instance, so an
+// opening-driven query would report those positions as absent rather than as
+// "no target was derived" — the more misleading of the two. Every stored line
+// appears; the ones with nothing to say say so.
+ops.get("/projects/:id/thermal", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+  const projectId = c.req.param("id");
+
+  const project = await c.env.DB.prepare(
+    "SELECT id, public_ref, title FROM project WHERE id = ?",
+  ).bind(projectId).first<{ id: string; public_ref: string | null; title: string | null }>();
+  if (!project) return c.json({ error: "not_found" }, 404);
+
+  // The live draft only (revision_id IS NULL) — an issued revision snapshots the
+  // chosen configuration, not the target it was chosen against, so including
+  // revision lines would show a proposal with no requirement beside it.
+  const { results } = await c.env.DB.prepare(
+    `SELECT ql.id, ql.external_ref, ql.product_slug, ql.selected_variant_id, ql.status,
+            ql.line_kind, ql.parent_line_id, ql.origin, ql.position, ql.segment_seq, ql.dims_json,
+            ql.segment_requirements_json, ql.segment_requirement_basis, ql.segment_thermal_review,
+            o.requirements_json, o.requirement_basis, o.family, o.operation_type,
+            o.width_mm, o.height_mm, o.status AS opening_status, o.source_generation,
+            apl.performance_json, apl.recommendation_basis, apl.confidence_band
+       FROM quote_line ql
+       LEFT JOIN opening_instance o ON o.quote_line_id = ql.id
+       LEFT JOIN ai_proposal_line apl ON apl.id = ql.ai_proposal_line_id
+      WHERE ql.project_id = ? AND ql.revision_id IS NULL
+      ORDER BY ql.position, ql.segment_seq, ql.id`,
+  ).bind(projectId).all<any>();
+
+  const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const s = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
+  const refById = new Map<string, string | null>();
+  for (const r of results ?? []) refById.set(r.id, r.external_ref);
+
+  const rows = (results ?? []).map((r) => {
+    const dims = safeParse(r.dims_json ?? "{}") as Record<string, unknown>;
+    // A lite carries its own band and no external_ref of its own — label it from
+    // the parent it belongs to so the row is identifiable on screen.
+    const isSegment = r.line_kind === "segment";
+    const parentRef = isSegment && r.parent_line_id ? refById.get(r.parent_line_id) ?? null : null;
+    const openingBand = r.requirements_json ? safeParse(r.requirements_json) as Record<string, unknown> : null;
+    const segmentBand = r.segment_requirements_json ? safeParse(r.segment_requirements_json) as Record<string, unknown> : null;
+    const band = isSegment ? (segmentBand ?? openingBand) : (openingBand ?? segmentBand);
+    const basis = isSegment
+      ? s(r.segment_requirement_basis) ?? s(r.requirement_basis)
+      : s(r.requirement_basis) ?? s(r.segment_requirement_basis);
+
+    const target = band ? {
+      maxUValue: n(band.maxUValue),
+      minShgc: n(band.minShgc),
+      maxShgc: n(band.maxShgc),
+      shgcTarget: n(band.shgcTarget),
+      basis,
+    } : null;
+    const hasTarget = !!target && (target.maxUValue != null || target.minShgc != null || target.maxShgc != null);
+
+    const perf = r.performance_json ? safeParse(r.performance_json) as Record<string, unknown> : null;
+    const proposed = r.product_slug ? {
+      productSlug: s(r.product_slug),
+      variantId: s(r.selected_variant_id),
+      uw: perf ? n(perf.uw) : null,
+      shgc: perf ? n(perf.shgc) : null,
+      certified: perf && typeof perf.certified === "boolean" ? perf.certified : null,
+      source: perf ? s(perf.source) : null,          // certified | estimated
+      basis: s(r.recommendation_basis),
+      confidence: s(r.confidence_band),
+    } : null;
+
+    // How far outside the band the proposed glass sits, on each axis. Null means
+    // that axis was not constrained or could not be compared — never zero, which
+    // would read as "exactly on target".
+    let verdict: "met" | "missed" | "no_target" | "unknown" = "unknown";
+    let miss: { uw: number | null; shgc: number | null } | null = null;
+    if (!hasTarget) verdict = "no_target";
+    else if (!proposed || (proposed.uw == null && proposed.shgc == null)) verdict = "unknown";
+    else {
+      const uwOver = target!.maxUValue != null && proposed.uw != null && proposed.uw > target!.maxUValue
+        ? Math.round((proposed.uw - target!.maxUValue) * 1000) / 1000 : null;
+      let shgcOff: number | null = null;
+      if (proposed.shgc != null) {
+        if (target!.minShgc != null && proposed.shgc < target!.minShgc) shgcOff = Math.round((proposed.shgc - target!.minShgc) * 1000) / 1000;
+        else if (target!.maxShgc != null && proposed.shgc > target!.maxShgc) shgcOff = Math.round((proposed.shgc - target!.maxShgc) * 1000) / 1000;
+      }
+      // Unknown, not met: an unmeasured axis against a real constraint cannot be
+      // called a pass.
+      const uwUnknown = target!.maxUValue != null && proposed.uw == null;
+      const shgcUnknown = (target!.minShgc != null || target!.maxShgc != null) && proposed.shgc == null;
+      if (uwOver != null || shgcOff != null) { verdict = "missed"; miss = { uw: uwOver, shgc: shgcOff }; }
+      else verdict = uwUnknown || shgcUnknown ? "unknown" : "met";
+    }
+
+    return {
+      lineId: r.id,
+      ref: s(r.external_ref) ?? (parentRef ? `${parentRef}·${(r.segment_seq ?? 0) + 1}` : null),
+      kind: isSegment ? "segment" : r.line_kind === "composite_parent" ? "composite" : "line",
+      parentRef,
+      origin: s(r.origin),
+      family: s(r.family),
+      operation: s(r.operation_type),
+      widthMm: n(r.width_mm) ?? n(dims.width) ?? n(dims.widthMm),
+      heightMm: n(r.height_mm) ?? n(dims.height) ?? n(dims.heightMm),
+      generation: n(r.source_generation),
+      target,
+      proposed,
+      verdict,
+      miss,
+      thermalReview: r.segment_thermal_review === 1,
+      status: s(r.status),
+      openingStatus: s(r.opening_status),
+    };
+  });
+
+  const counts = rows.reduce((acc, row) => {
+    acc[row.verdict] = (acc[row.verdict] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  return c.json({
+    quote: project.public_ref,
+    title: project.title,
+    rows,
+    counts: {
+      total: rows.length,
+      met: counts.met ?? 0,
+      missed: counts.missed ?? 0,
+      noTarget: counts.no_target ?? 0,
+      unknown: counts.unknown ?? 0,
+    },
+  });
+});
+
 // The Estimator review workspace and its reviewer-correction capture were
 // removed (2026-07-27, owner decision). They served a stage that does not exist:
 // the AI proposal is built into the CUSTOMER's draft, so there is no staff review

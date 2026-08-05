@@ -201,6 +201,47 @@ export const opsAdjudicateRecommendationOutcome = (
 // The pipeline runs automatically on upload; ops is a review-only surface, so
 // there is no client-side run trigger. (POST /ai-runs remains server-side as the
 // support lever for AI_EXTRACTION_MODE='manual'.)
+// ── Thermal audit ────────────────────────────────────────────────────────────
+// Per line: the thermal target calculated from the source documents, next to the
+// product and glass actually proposed for it. Read-only; nothing here writes.
+export interface OpsThermalTarget {
+  maxUValue: number | null; minShgc: number | null; maxShgc: number | null;
+  shgcTarget: number | null; basis: string | null;
+}
+export interface OpsThermalProposed {
+  productSlug: string | null; variantId: string | null;
+  uw: number | null; shgc: number | null;
+  certified: boolean | null; source: string | null;
+  basis: string | null; confidence: string | null;
+}
+export interface OpsThermalRow {
+  lineId: string;
+  ref: string | null;
+  kind: "line" | "composite" | "segment";
+  parentRef: string | null;
+  origin: string | null;
+  family: string | null;
+  operation: string | null;
+  widthMm: number | null;
+  heightMm: number | null;
+  generation: number | null;
+  target: OpsThermalTarget | null;
+  proposed: OpsThermalProposed | null;
+  /** missed = outside the band; no_target = none was derived; unknown = not comparable. */
+  verdict: "met" | "missed" | "no_target" | "unknown";
+  /** Signed distance outside the band per axis; null where that axis is fine or unconstrained. */
+  miss: { uw: number | null; shgc: number | null } | null;
+  thermalReview: boolean;
+  status: string | null;
+  openingStatus: string | null;
+}
+export interface OpsThermalCounts {
+  total: number; met: number; missed: number; noTarget: number; unknown: number;
+}
+export const opsThermal = (projectId: string) =>
+  req<{ quote: string | null; title: string | null; rows: OpsThermalRow[]; counts: OpsThermalCounts }>(
+    `/api/ops/projects/${projectId}/thermal`);
+
 export const opsBuildingModel = (projectId: string) =>
   req<{ id: string; status: string; run: { status: string; pipelineVersion: string; primaryModel: string }; model: any; evidence: any[] }>(
     `/api/ops/projects/${projectId}/building-model`);
