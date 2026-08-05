@@ -15,7 +15,7 @@ const outfile = join(runDir, "unit-bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions } from ${p("src/data/configurator.ts")};
+      export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions, unitMissingRequiredOptions } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
@@ -327,8 +327,8 @@ const composite = (over, delta) => ({
   lineTotal: 1200, review: null, compositeAxis: "vertical",
   coverageDeltaMm: delta, coverageOutOfTolerance: over,
   segments: [
-    { id: "s1", productSlug: "amj80-series-awning-window", width: "1025", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 600, options: {}, status: "Ready" },
-    { id: "s2", productSlug: "amj80-series-awning-window", width: "1025", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 600, options: {}, status: "Ready" },
+    { id: "s1", productSlug: "amj80-series-awning-window", width: "1025", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 600, options: fullOptions, status: "Ready" },
+    { id: "s2", productSlug: "amj80-series-awning-window", width: "1025", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 600, options: fullOptions, status: "Ready" },
   ],
 });
 
@@ -363,8 +363,8 @@ const w1 = (openingW, openingH) => ({
   lineTotal: 1200, review: null, compositeAxis: "vertical",
   coverageDeltaMm: 2050 - openingW, coverageOutOfTolerance: false,
   segments: [
-    { id: "a", productSlug: "amj80-series-awning-window", width: "700", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 500, options: {}, status: "Ready" },
-    { id: "b", productSlug: "amj80-series-awning-window", width: "1350", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 700, options: {}, status: "Ready" },
+    { id: "a", productSlug: "amj80-series-awning-window", width: "700", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 500, options: fullOptions, status: "Ready" },
+    { id: "b", productSlug: "amj80-series-awning-window", width: "1350", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 700, options: fullOptions, status: "Ready" },
   ],
 });
 
@@ -430,6 +430,37 @@ test("a required option with nothing chosen blocks, and the row names it", () =>
   assert.deepEqual(M.missingRequiredOptions(good), []);
   assert.equal(M.lineBlocksSubmission(good), false);
   assert.equal(M.rowStateFor(good, []).kind, "none");
+});
+
+test("a UNIT with an unchosen required option blocks through its opening", () => {
+  // A unit IS an item (owner): a real frame that gets made and delivered, which
+  // shares an opening with its siblings instead of having one to itself. So a
+  // gap here is exactly as blocking as one on a childless opening — and it was
+  // invisible, because a unit prices cleanly without its colour and nothing
+  // walked into the segments to look.
+  const seg = (options) => ({ id: "s", productSlug: slug, width: "1025", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 600, options, status: "Ready" });
+  const parent = (segs) => ({
+    id: 7, code: "W7", productSlug: slug, location: "", width: "2050", height: "2100",
+    options: {}, qty: 1, status: "Ready", lineTotal: 1200, review: null,
+    compositeAxis: "vertical", coverageDeltaMm: 0, coverageOutOfTolerance: false, segments: segs,
+  });
+
+  const clean = parent([seg(fullOptions), seg(fullOptions)]);
+  assert.deepEqual(M.missingRequiredOptions(clean), [], "units carrying their options never flag");
+  assert.equal(M.lineBlocksSubmission(clean), false);
+  assert.equal(M.rowStateFor(clean, []).kind, "composite");
+
+  // The parent itself has options:{} in both cases — it is never asked, because
+  // a composite parent is not a frame and holds none of its own.
+  const gap = { ...fullOptions };
+  delete gap.colour;
+  const bad = parent([seg(fullOptions), seg(gap)]);
+  assert.deepEqual(M.missingRequiredOptions(bad), ["Colour"], "the OPENING carries its unit’s gap");
+  assert.equal(M.lineBlocksSubmission(bad), true, "and it reaches the bar");
+  assert.equal(M.rowStateFor(bad, []).reason, "Choose colour");
+  // The unit says which one.
+  assert.deepEqual(M.unitMissingRequiredOptions(seg(gap)), ["Colour"]);
+  assert.deepEqual(M.unitMissingRequiredOptions(seg(fullOptions)), []);
 });
 
 test("two missing options read as a sentence, and an unknown product asserts nothing", () => {

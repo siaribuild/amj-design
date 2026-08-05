@@ -15,6 +15,14 @@ function seedEmail(userId: string): string {
 }
 const DEMO_EMAIL = seedEmail("u_demo");
 
+/** A unit IS an item — a real frame that is made and delivered, sharing an
+ *  opening with its siblings instead of having one to itself (owner). So a mock
+ *  unit with no options is a unit that would genuinely block on its missing
+ *  colour, which is not what these fixtures are testing. Production agrees:
+ *  splitLine inherits the opening's options, and all 23 live units carry them. */
+const SEGMENT_OPTIONS = { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" };
+
+
 // Read the dev-mode OTP the Worker surfaces in non-prod, and complete a two-step
 // email login form.
 async function otpLogin(page: Page, emailPlaceholder: RegExp, email: string, verifyName: RegExp) {
@@ -88,8 +96,8 @@ test("a persisted composite survives current-project hydration and renders its u
           width: "3500", height: "700", options: {}, qty: 1, status: "Ready", lineTotal: 1000,
           origin: "ai", aiPriced: true, review: { fit: "Composite layout requires technical confirmation." }, compositeAxis: "vertical",
           segments: [
-            { id: "segment-w2-a", productSlug: "amj80-series-sliding-window", width: "1750", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 500, options: {}, status: "Ready" },
-            { id: "segment-w2-b", productSlug: "amj80-series-sliding-window", width: "1750", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 500, options: {}, status: "Ready" },
+            { id: "segment-w2-a", productSlug: "amj80-series-sliding-window", width: "1750", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 500, options: SEGMENT_OPTIONS, status: "Ready" },
+            { id: "segment-w2-b", productSlug: "amj80-series-sliding-window", width: "1750", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 500, options: SEGMENT_OPTIONS, status: "Ready" },
           ],
         }],
       }),

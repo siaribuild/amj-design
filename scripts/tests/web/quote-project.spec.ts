@@ -13,6 +13,14 @@ import { test, expect, type Page } from "@playwright/test";
 
 const SLIDING = "amj80-series-sliding-window";
 
+/** A unit IS an item — a real frame that is made and delivered, sharing an
+ *  opening with its siblings instead of having one to itself (owner). So a mock
+ *  unit with no options is a unit that would genuinely block on its missing
+ *  colour, which is not what these fixtures are testing. Production agrees:
+ *  splitLine inherits the opening's options, and all 23 live units carry them. */
+const SEGMENT_OPTIONS = { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" };
+
+
 type MockItem = Record<string, unknown>;
 
 /** Serve one exact hydrated project, leaving writes to the real backend. */
@@ -42,8 +50,8 @@ const compositeItem: MockItem = {
   origin: "ai", aiPriced: true, review: { fit: "Composite layout requires technical confirmation." },
   compositeAxis: "vertical",
   segments: [
-    { id: "segment-w2-a", productSlug: SLIDING, width: "1750", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 500, options: {}, status: "Ready" },
-    { id: "segment-w2-b", productSlug: SLIDING, width: "1750", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 500, options: {}, status: "Ready" },
+    { id: "segment-w2-a", productSlug: SLIDING, width: "1750", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 500, options: SEGMENT_OPTIONS, status: "Ready" },
+    { id: "segment-w2-b", productSlug: SLIDING, width: "1750", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 500, options: SEGMENT_OPTIONS, status: "Ready" },
   ],
 };
 
@@ -714,7 +722,7 @@ test("a composite is named and drawn from its units, and carries no chip", async
     id: "line-c", code: "W7", productSlug: AWN, location: "", width: "3500", height: "700",
     qty: 1, status: "Ready", lineTotal: 1000, options: {}, compositeAxis: "vertical",
     segments: [
-      { id: "u1", productSlug: SLIDING, width: "2600", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 600, options: {}, status: "Ready" },
+      { id: "u1", productSlug: SLIDING, width: "2600", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 600, options: SEGMENT_OPTIONS, status: "Ready" },
       { id: "u2", productSlug: AWN, width: "900", height: "700", qtyPerParent: 1, qty: 1, lineTotal: null, options: {}, status: "Needs review" },
     ],
   };
@@ -767,7 +775,7 @@ test("a composite is named and drawn from its units, and carries no chip", async
 // while the sticky bar counted the project ready. Attribution decides WHICH rows
 // are marked, not whether the opening is one of them.
 const unit = (id: string, w: string, h: string, total: number | null) =>
-  ({ id, productSlug: SLIDING, width: w, height: h, qtyPerParent: 1, qty: 1, lineTotal: total, options: {}, status: "Ready" });
+  ({ id, productSlug: SLIDING, width: w, height: h, qtyPerParent: 1, qty: 1, lineTotal: total, options: SEGMENT_OPTIONS, status: "Ready" });
 
 test("a shortfall accuses the opening; a wrong-across unit accuses itself", async ({ page }) => {
   // ACROSS fault: 900 high in a 700-high opening. Widths sum exactly, so

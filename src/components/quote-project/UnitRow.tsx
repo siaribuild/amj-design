@@ -22,7 +22,7 @@
 //    chips under a Ready parent is noise.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { ChevronRight } from "lucide-react";
-import { type QSegment, sizePhrase, productLabel, acrossMismatch } from "../../data/configurator";
+import { type QSegment, sizePhrase, productLabel, acrossMismatch, unitMissingRequiredOptions } from "../../data/configurator";
 import { Elevation } from "./Elevation";
 
 export function UnitRow({
@@ -57,8 +57,16 @@ export function UnitRow({
   const wrongSize = !incomplete
     && acrossMismatch(acrossMm, axis === "horizontal" ? segment.width : segment.height);
 
+  // A required option with nothing chosen. A unit IS an item (owner) — a real
+  // frame that gets made and delivered, sharing an opening with its siblings
+  // instead of having one to itself — so a gap here is exactly as blocking as
+  // one on a childless opening. It prices cleanly, which is why nothing saw it.
+  // Its OPENING carries the same fault, because that is the only row on screen
+  // while the group is collapsed; this says WHICH unit.
+  const missingOptions = unitMissingRequiredOptions(segment).length > 0;
+
   return (
-    <div data-unit="" data-state={incomplete || wrongSize ? "attention" : "ready"}
+    <div data-unit="" data-state={incomplete || wrongSize || missingOptions ? "attention" : "ready"}
       className="quote-row flex md:grid flex-wrap items-center gap-x-2 md:gap-x-3 gap-y-1.5">
 
       {/* Identity: disclosure, drawing, reference. One cell, so it occupies one
@@ -75,12 +83,12 @@ export function UnitRow({
         <Elevation productSlug={segment.productSlug} widthMm={segment.width} heightMm={segment.height}
           square className="w-7 h-7 flex-shrink-0 text-body" />
         <span className="font-semibold text-ink truncate font-data t-data">{label}</span>
-        <span className="lg:hidden"><UnitChip incomplete={incomplete} wrongSize={wrongSize} /></span>
+        <span className="lg:hidden"><UnitChip incomplete={incomplete} wrongSize={wrongSize} missingOptions={missingOptions} /></span>
       </span>
 
-      {(incomplete || wrongSize) && (
+      {(incomplete || wrongSize || missingOptions) && (
         <span className="hidden lg:block lg:col-start-2 lg:row-start-1 min-w-0">
-          <UnitChip incomplete={incomplete} wrongSize={wrongSize} />
+          <UnitChip incomplete={incomplete} wrongSize={wrongSize} missingOptions={missingOptions} />
         </span>
       )}
 
@@ -116,8 +124,10 @@ export function UnitRow({
 
 /** Incomplete outranks a size fault: a unit with no price cannot be judged for
  *  fit either, and two chips on one row is the noise this route removes. */
-function UnitChip({ incomplete, wrongSize }: { incomplete: boolean; wrongSize: boolean }) {
-  if (incomplete) {
+function UnitChip({ incomplete, wrongSize, missingOptions }: { incomplete: boolean; wrongSize: boolean; missingOptions: boolean }) {
+  // An unchosen required option IS incompleteness — the same word the opening
+  // uses for it, so one fault reads as one fault at both levels.
+  if (incomplete || missingOptions) {
     return <span className="quote-chip quote-chip--attention t-cap">Incomplete</span>;
   }
   if (wrongSize) {

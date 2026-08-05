@@ -240,15 +240,28 @@ export function compositeAcrossFault(it: {
  *  saying that something is. */
 export function missingRequiredOptions(it: {
   productSlug: string; options: Record<string, string>;
-  segments?: { width: string; height: string }[] | null;
+  segments?: { productSlug: string; options: Record<string, string> }[] | null;
 }): string[] {
-  // A COMPOSITE PARENT has no options of its own — it is the schedule line, not
-  // a frame, and its glazing and hardware live one level down. Asking it for a
-  // colour would block every composite on a choice it is not offered and does
-  // not carry. Its units are checked where they are edited, not here: they are
-  // not items, so they never reach this predicate. Known gap, deliberately left
-  // rather than widened mid-flight.
-  if ((it.segments ?? []).length > 0) return [];
+  // A COMPOSITE PARENT is not a frame and holds no options of its own, so it is
+  // not asked for any. Its UNITS are, and the answer surfaces here — on the
+  // opening — because that is the only row on screen while the group is
+  // collapsed.
+  //
+  // A unit IS an item (owner): a real frame that gets made and delivered, which
+  // simply shares an opening with its siblings instead of having one to itself.
+  // So a unit missing a required option is exactly as broken as an opening
+  // missing one, and it was previously invisible to every check — it prices
+  // cleanly, and nothing walked into the segments to look.
+  const units = it.segments ?? [];
+  if (units.length > 0) {
+    const seen = new Set<string>();
+    for (const u of units) for (const label of requiredGapsFor(u)) seen.add(label);
+    return [...seen];
+  }
+  return requiredGapsFor(it);
+}
+
+function requiredGapsFor(it: { productSlug: string; options: Record<string, string> }): string[] {
   const product = getProductBySlug(it.productSlug);
   if (!product) return [];
   return optionGroupsFor(product)
@@ -256,12 +269,25 @@ export function missingRequiredOptions(it: {
     .map((g) => g.label);
 }
 
+/** The same question asked of ONE unit, for its own row. The opening carries the
+ *  fault so it is visible collapsed; the unit carries it so the customer knows
+ *  which frame to open. Attribution decides which rows are marked, not whether
+ *  the opening is one of them. */
+export function unitMissingRequiredOptions(
+  segment: { productSlug: string; options: Record<string, string> },
+): string[] {
+  return requiredGapsFor(segment);
+}
+
 export function lineBlocksSubmission(it: {
   productSlug: string; width: string; height: string; options: Record<string, string>; qty: number;
   origin?: string; aiPriced?: boolean; lineTotal?: number | null;
   review?: Record<string, string> | null;
   compositeAxis?: "vertical" | "horizontal" | null;
-  segments?: { width: string; height: string }[] | null;
+  segments?: {
+    width: string; height: string;
+    productSlug: string; options: Record<string, string>;
+  }[] | null;
 }): boolean {
   const severity = reviewSeverity(it.review);
   if (severity === "error") return true;
