@@ -230,6 +230,31 @@ test("M2: toCandidate reads the shared thermal profile, preferring it over legac
   assert.equal(catalogueCandidateReadiness(c).ready, true, "a certified multi-glazing profile is ready");
 });
 
+test("low-E survives EITHER spelling — `double_low_e` (WERS import) and `double_lowe` (seed) are one class", () => {
+  // Regression: the WERS importer writes `double_low_e`, the allow-list held only
+  // `double_lowe`, so every imported low-E cell was dropped at map time — deleting
+  // exactly the glass that can meet a thermal band, and leaving clear/toned glass
+  // to be recommended against a Uw cap it cannot reach.
+  const c = toCandidate({
+    ...awning,
+    performanceVariants: [],
+    thermalProfile: {
+      frameTechnology: "thermally_broken",
+      rows: [
+        { glazingOptionSlug: "wers-lowe", glazingClass: "double_low_e", uValue: 3.1, shgc: 0.37, certified: true, certificationRef: "WERS-1", published: true },
+        { glazingOptionSlug: "seed-lowe", glazingClass: "double_lowe", uValue: 2.9, shgc: 0.21, certified: true, certificationRef: "WERS-2", published: true },
+        { glazingOptionSlug: "clear", glazingClass: "double_clear", uValue: 4.6, shgc: 0.47, certified: true, certificationRef: "WERS-3", published: true },
+        { glazingOptionSlug: "junk", glazingClass: "not_a_real_class", uValue: 4, shgc: 0.3, certified: true, certificationRef: "W", published: true },
+      ],
+    },
+  });
+  assert.deepEqual(c.performanceVariants.map((v) => v.variantId).sort(), ["clear", "seed-lowe", "wers-lowe"],
+    "both low-E spellings map through; only the genuinely unknown class is dropped");
+  // Canonical form downstream, so the `_lowe$` low-E tests in rules/configuration hit.
+  assert.deepEqual(c.performanceVariants.filter((v) => /_lowe$/.test(v.glazingClass)).map((v) => v.variantId).sort(),
+    ["seed-lowe", "wers-lowe"], "an imported low-E cell reads as low-E, not as an unclassified variant");
+});
+
 test("M4: compliance blends axes — a cell adverse on two axes scores strictly lower than one", () => {
   const band = { maxUValue: 3.0, minShgc: null, maxShgc: 0.4, shgcTarget: null };
   const overU = { glassOptionSlug: "a", variantId: "a", uValue: 3.6, shgc: 0.4, certified: true, pricingOptionSlugs: [] };

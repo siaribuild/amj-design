@@ -73,6 +73,15 @@ const VALID_GLAZING_CLASSES = new Set([
   "triple_clear", "triple_toned", "triple_lowe",
 ]);
 
+// Two spellings of the low-E suffix are authored in the wild and they mean the same
+// glass: the WERS importer derives `double_low_e` from the export's "Low-E" glass
+// type, the hand-seeded options carry `double_lowe`. Canonicalise here rather than
+// let a spelling difference decide whether a row EXISTS — an unrecognised class is
+// dropped at map time, which silently deleted every imported low-E cell, i.e.
+// precisely the high-performance glass a thermal band needs to be met. Downstream
+// `_lowe$` tests (rules.ts, configuration.ts) read the canonical form.
+const canonicalGlazingClass = (cls: string) => cls.replace(/_low_e$/, "_lowe");
+
 const coerceFrameTech = (v: unknown): "conventional" | "thermally_broken" | "unknown" =>
   v === "conventional" || v === "thermally_broken" ? v : "unknown";
 
@@ -86,7 +95,7 @@ function profileRowsToVariants(profile: any): any[] {
   return rows.flatMap((r: any) => {
     const slug = typeof r?.glazingOptionSlug === "string" && r.glazingOptionSlug ? r.glazingOptionSlug : null;
     if (!slug || seen.has(slug)) return [];
-    const cls = typeof r?.glazingClass === "string" && r.glazingClass ? r.glazingClass : null;
+    const cls = typeof r?.glazingClass === "string" && r.glazingClass ? canonicalGlazingClass(r.glazingClass) : null;
     if (cls && !VALID_GLAZING_CLASSES.has(cls)) return []; // reject unknown class
     seen.add(slug);
     return [{
@@ -130,7 +139,7 @@ export function toCandidate(row: any): CatalogueCandidate | null {
       // the glass identity and its technicalValue (glazingClass) is the single/
       // double/low-e classification — no longer parsed from a free-text build-up.
       glazingOptionSlug: typeof v?.glazingOptionSlug === "string" && v.glazingOptionSlug ? v.glazingOptionSlug : null,
-      glazingClass: typeof v?.glazingClass === "string" && v.glazingClass ? v.glazingClass : null,
+      glazingClass: typeof v?.glazingClass === "string" && v.glazingClass ? canonicalGlazingClass(v.glazingClass) : null,
       uValue,
       shgc,
       frameType: v?.frameType ?? null,
