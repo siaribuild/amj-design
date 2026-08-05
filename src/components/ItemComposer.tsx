@@ -83,7 +83,7 @@ export function itemNeedsAttention(item: QItem): boolean {
 
 // ─── Field blocks (shared by the new-item form and the MyProject card) ────────
 function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false, lockedDimension,
-  location, setLocation, isUnit = false, opening = false }: {
+  location, setLocation, isUnit = false, opening = false, parts, axis }: {
   /** Null for an OPENING with no product of its own — a composite parent. There
    *  is no size range to state and no family to draw, so the range copy and the
    *  drawing's symbols fall away with it. */
@@ -100,6 +100,13 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
   location?: string; setLocation?: (v: string) => void;
   isUnit?: boolean;
   opening?: boolean;
+  /** A composite's units, so the editor draws the opening that is actually
+   *  being made — proportional panels, each unit's own symbol, mullions at the
+   *  real joins — exactly as the list row does. Without them a composite parent
+   *  fell back to the plain `opening` square, which is right for an opening with
+   *  nothing in it and wrong for one built from two frames (owner). */
+  parts?: { productSlug: string; alongMm: string | number; qty?: number }[];
+  axis?: "vertical" | "horizontal" | null;
 }) {
   const w = parseInt(width) || 0, h = parseInt(height) || 0;
   const dimsEntered = w > 0 && h > 0;
@@ -122,7 +129,11 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
             Live by construction: `width` and `height` ARE these fields' state,
             so there is no callback and no second copy of the values. */}
         <div className={`${rail ? "w-full" : "md:w-44 flex-shrink-0"} flex justify-center`}>
-          <Elevation productSlug={p?.slug ?? ""} opening={opening} widthMm={width} heightMm={height}
+          {/* parts wins over opening: a composite draws what it is built from,
+              and the plain square is only for an opening with nothing in it yet.
+              Elevation applies the same precedence. */}
+          <Elevation productSlug={p?.slug ?? ""} opening={opening} parts={parts} axis={axis}
+            widthMm={width} heightMm={height}
             size="sm" className="w-[180px] h-[180px] max-w-full text-body" />
         </div>
         <div className="flex-1 space-y-3">
@@ -475,12 +486,22 @@ export const optionFullPairs = (
     out.push({ label: "Glazing", value: name ?? "None", chosen: !!name });
   }
   for (const g of optionGroupsFor(p)) {
-    const value = options[g.typeSlug];
-    // The swatch comes off the CHOICE that was picked, not off a name-to-hex
-    // table of our own: Colorbond names are the catalogue's, and a second
-    // mapping here would drift the moment ops adds a colour.
+    const chosen = options[g.typeSlug];
+    // NOTHING CHOSEN FALLS BACK TO THE STANDARD, not to "None" (owner).
+    // "None" said the line had no colour; it has one — the product's standard is
+    // what gets made and what the price already assumes, since a standard option
+    // carries no surcharge. Printing "None" beside a figure that includes Dover
+    // White was simply inaccurate.
+    //
+    // `chosen` stays false either way, so the panel keeps rendering an inherited
+    // value in its quiet tone: the customer can still see, at a glance, which
+    // lines they decided and which the product decided for them.
+    const value = chosen || g.choices.find(c => c.standard)?.name || "";
+    // The swatch comes off the CHOICE, not off a name-to-hex table of our own:
+    // Colorbond names are the catalogue's, and a second mapping here would drift
+    // the moment ops adds a colour.
     const hex = value ? g.choices.find(c => c.name === value)?.hex : undefined;
-    out.push({ label: g.label, value: value || "None", chosen: !!value, hex });
+    out.push({ label: g.label, value: value || "None", chosen: !!chosen, hex });
   }
   return out;
 };
@@ -501,7 +522,7 @@ export function ItemForm({
   lockedSlug, quote, seed, onCommit, onCancel, rail = false, submitLabel = "Save",
   priceFn = previewPrice, scope = "item", unitAxis = "vertical", unitMode = "edit",
   onDirtyChange, initialSection, excludeId, heading, busy = false, hideOptions = false,
-  hideProduct = false, stickyActions = false, hideHeader = false, quietUntilTouched = false,
+  hideProduct = false, stickyActions = false, hideHeader = false, quietUntilTouched = false, parts,
 }: {
   lockedSlug?: string;
   /** Only `items` is read — for the duplicate-code check and code suggestion. It
@@ -577,6 +598,10 @@ export function ItemForm({
    *  line that already exists is describing a real fault in real data, and must
    *  say so immediately. */
   quietUntilTouched?: boolean;
+  /** A composite parent's units. The editor then draws the opening that is
+   *  actually being made, the same way the list row does, instead of the plain
+   *  square meant for an opening with nothing in it (owner). */
+  parts?: { productSlug: string; alongMm: string | number; qty?: number }[];
 }) {
   const isUnit = scope === "unit";
   const unitHeading = unitMode === "add" ? "Add composite unit" : "Edit composite unit";
@@ -834,7 +859,7 @@ export function ItemForm({
         {(p || hideProduct) && (
           <div className="space-y-2">
             <Section label="Dimensions" summary={dimsSummary} attention={hasIssue("dims")} open={open.dims} onToggle={() => setOpen(o => ({ ...o, dims: !o.dims }))}>
-              <DimensionsFields p={p ?? null} opening={hideProduct} width={width} height={height}
+              <DimensionsFields p={p ?? null} opening={hideProduct} parts={parts} axis={unitAxis} width={width} height={height}
                 setWidth={setWidth} setHeight={setHeight} rail={rail}
                 // A unit's across-axis dimension is EDITABLE (owner). It used to
                 // be locked to the opening's, which reads as a safety rail and

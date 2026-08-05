@@ -580,13 +580,13 @@ const productDefinitions: Product[] = [
   },
 ];
 
-export let products: Product[] = productDefinitions.map(product => ({
-  ...product,
-  options: [
-    ...product.options.filter(option => option.typeSlug !== "colour"),
-    ...colorbondColourOptions,
-  ],
-}));
+// A product's own colours are KEPT. This used to strip them and splice the
+// shared Colorbond palette into every product, which made "does this product
+// name its own colour range?" unanswerable — the answer was always yes, and
+// always the same list. productColours() applies the palette as a FALLBACK now,
+// for a product that configures none, so the injection happens where the
+// question is asked rather than in the data.
+export let products: Product[] = productDefinitions;
 
 // ─── Selectors (future GROQ query boundary) ──────────────────────────────────
 export const getCategories = (): Category[] => categories;

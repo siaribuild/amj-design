@@ -300,6 +300,18 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                 // an OPENING: its ID and its size are the whole of what it owns,
                 // and the panel above lists the units that are the products.
                 hideProduct={segments.length > 0}
+                // The composite icon, built from the units — the same drawing
+                // the list row shows. The plain square is for an opening with
+                // nothing in it, not for one made of two frames (owner).
+                parts={segments.length > 0 ? segments.map((s) => ({
+                  productSlug: s.productSlug,
+                  alongMm: axis === "horizontal" ? s.height : s.width,
+                  qty: s.qtyPerParent,
+                })) : undefined}
+                // Which way the units are joined. unitAxis is the composite
+                // axis — the parent form never passed it, so a horizontal
+                // split would have been drawn side by side.
+                unitAxis={axis}
                 submitLabel={target.mode === "add" ? "Add opening" : "Save changes"}
                 onCommit={saveParent}
                 // The drawer header already carries the reference AND the close

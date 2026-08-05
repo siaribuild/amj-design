@@ -11,7 +11,8 @@
 // "width > 1200mm ⇒ +10%" rule silently never applied to manual or schedule
 // lines, only to AI ones.
 import type { Env } from "../types";
-import { colorbondColourOptions, getProductBySlug } from "../../src/data/catalogue";
+import { getProductBySlug } from "../../src/data/catalogue";
+import { productColours } from "../../src/data/configurator";
 import { ensureCatalogue } from "./catalogue";
 import { pricingOptionSlugsFromOptions } from "./estimator/estimate";
 import { priceLine } from "./estimator/pricing";
@@ -139,8 +140,12 @@ function chargeableOptionSlugs(productSlug: string, options: Record<string, stri
   for (const [typeSlug, value] of Object.entries(options)) {
     if (!value || typeof value !== "string") continue;
     if (typeSlug === "glazing") continue;              // the glass is handled below as a per-m² identity
+    // Colour resolves through the SAME rule the editor offers: the product's own
+    // range when it names one, the shared palette when it does not. Reaching
+    // straight for the global list would price a finish the picker never showed
+    // — and, worse, accept one.
     const match = typeSlug === "colour"
-      ? colorbondColourOptions.find((o) => o.name === value)
+      ? productColours(product).find((o) => o.name === value)
       : product?.options.find((o) => o.typeSlug === typeSlug && o.name === value);
     if (!match) {
       // Reconciliation: the catalogue does not offer this option for this

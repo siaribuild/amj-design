@@ -15,9 +15,9 @@ const outfile = join(runDir, "unit-bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions, unitMissingRequiredOptions } from ${p("src/data/configurator.ts")};
+      export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions, unitMissingRequiredOptions, productColours } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
-      export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories } from ${p("src/data/catalogue.ts")};
+      export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories, colorbondColourOptions } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
       export { normEmail, isEmail, sixDigit, sha256hex, userDto } from ${p("worker/lib/auth.ts")};
@@ -101,13 +101,25 @@ test("normCode + hasDuplicateCode", () => {
   assert.equal(M.hasDuplicateCode(items, 1, ""), false, "empty is never a duplicate");
 });
 
-test("optionGroupsFor: injects shared Colorbond palette; standards preselected", () => {
+test("colour is PRODUCT-AWARE: its own range when it names one, the palette when it does not", () => {
+  // Owner: a product that configures no colours may be made in any of them; a
+  // product that configures some may be made in THOSE only. Colour used to be
+  // global by construction — every product's own entries were discarded and the
+  // shared palette spliced in, so the question could not even be asked.
   const product = M.getProductBySlug(slug);
-  const groups = M.optionGroupsFor(product);
-  const colour = groups.find((g) => g.typeSlug === "colour");
-  assert.ok(colour, "colour group injected");
-  assert.ok(colour.choices.length >= 20, "full Colorbond palette");
-  assert.ok(colour.choices.every((c) => c.add === 0), "all colours included in base price");
+  const own = product.options.filter((o) => o.typeSlug === "colour");
+  assert.ok(own.length > 0, "this fixture names its own range");
+  assert.deepEqual(M.productColours(product).map((o) => o.name), own.map((o) => o.name),
+    "its own range, not the palette");
+  const colour = M.optionGroupsFor(product).find((g) => g.typeSlug === "colour");
+  assert.equal(colour.choices.length, own.length, "the picker offers exactly what is configured");
+
+  // Configuring none falls back to every colour there is.
+  const bare = { ...product, options: product.options.filter((o) => o.typeSlug !== "colour") };
+  assert.deepEqual(M.productColours(bare).map((o) => o.name),
+    M.colorbondColourOptions.map((o) => o.name), "the full palette is the fallback");
+  assert.ok(M.colorbondColourOptions.length >= 20);
+
   const defaults = M.defaultOptions(product);
   assert.ok(defaults.colour && defaults.hardware, "standards preselected");
 });

@@ -991,6 +991,13 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
             // which is where the glazing and hardware actually live.
             hideProduct={composite}
             hideOptions={composite}
+            // …and it draws what it is built from, as the customer's list does.
+            parts={composite ? line.segments.map((sg) => ({
+              productSlug: sg.productSlug,
+              alongMm: axis === "horizontal" ? sg.height : sg.width,
+              qty: sg.qtyPerParent,
+            })) : undefined}
+            unitAxis={axis}
             priceFn={opsLinePricePreview(line.id)}
             submitLabel={saving ? "Saving…" : "Save line"}
             seed={{

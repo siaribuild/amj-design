@@ -11,7 +11,7 @@
 // NOTE: there is no "configuration/panel" concept — that is not in the product
 // data yet. When it exists it will live with the dimensions, not as an invented field.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { type Product, getProductBySlug, getCategories, getFamiliesByCategory, colorbondColourOptions } from "./catalogue";
+import { type Product, type ProductOption, getProductBySlug, getCategories, getFamiliesByCategory, colorbondColourOptions } from "./catalogue";
 
 // ─── Quote (MyProject) state ──────────────────────────────────────────────────
 export interface QItem {
@@ -391,17 +391,45 @@ const TYPE_ORDER = ["colour", "hardware", "flyscreen", "installation"];
 // Every option a product offers must be chosen before the item can be saved or
 // submitted — each group is required and starts with a default (see defaultOptions).
 
+/** The colours a product may actually be made in.
+ *
+ *  ONE resolver, so the picker, the specification panel and the pricing check
+ *  cannot disagree about which finishes exist for a given frame. Colour used to
+ *  be global by construction: every product's own colour entries were discarded
+ *  and the shared palette injected in their place, so a product that named its
+ *  own range was quietly offered the full Colorbond list instead. */
+export function productColours(p: Product | undefined): ProductOption[] {
+  const own = (p?.options ?? []).filter((o) => o.typeSlug === "colour");
+  return own.length ? own : colorbondColourOptions;
+}
+
 export function optionGroupsFor(p: Product): OptionGroup[] {
   const byType = new Map<string, { label: string; choices: OptionChoice[] }>();
   for (const o of p.options) {
-    if (o.typeSlug === "colour") continue; // colour uses the shared Colorbond palette below
+    if (o.typeSlug === "colour") continue; // handled below — see productColours
     if (!byType.has(o.typeSlug)) byType.set(o.typeSlug, { label: o.typeName, choices: [] });
     byType.get(o.typeSlug)!.choices.push({ name: o.name, add: optionAdd(o), standard: o.availability === "standard" });
   }
-  // Colour: the standard Colorbond range (name + swatch), all included in the base price.
+  // COLOUR IS PRODUCT-AWARE (owner):
+  //
+  //   no colour configured on the product   every colour is available to it —
+  //                                         the shared palette, which is what
+  //                                         every product got unconditionally
+  //                                         before, configured or not.
+  //   one or more configured                use, show and validate against
+  //                                         THOSE only. A product that names
+  //                                         its own range has named it for a
+  //                                         reason, and offering the full
+  //                                         Colorbond list beside it quotes a
+  //                                         finish we may not make.
+  //
+  // The same list therefore drives the picker, the specification panel and the
+  // pricing check — see chargeableOptionSlugs, which resolves colour the same
+  // way rather than always reaching for the global list.
+  const own = productColours(p);
   byType.set("colour", {
     label: "Colour",
-    choices: colorbondColourOptions.map(o => ({ name: o.name, add: o.price ?? 0, standard: o.availability === "standard", hex: o.hex })),
+    choices: own.map(o => ({ name: o.name, add: o.price ?? 0, standard: o.availability === "standard", hex: o.hex })),
   });
   const groups: OptionGroup[] = [];
   for (const [typeSlug, { label, choices }] of byType) {
