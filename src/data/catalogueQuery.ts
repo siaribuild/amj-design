@@ -33,7 +33,15 @@ export const CATALOGUE_QUERY = `{
     "id":_id, "slug":slug.current, name, order, shortDescription, description
   },
   "families": *[_type=="family"]|order(name asc){
-    "id":_id, "slug":slug.current, "categorySlug":category->slug.current, name, operation, aliases, icon, shortDescription, description
+    "id":_id, "slug":slug.current, "categorySlug":category->slug.current, name, operation, aliases, icon, shortDescription, description,
+    // What goes NEXT to this window when an opening is too wide for one frame.
+    // The infill is dereferenced to its SLUG: the estimator resolves candidates
+    // by family slug, and shipping a Sanity document id would make the browser
+    // hold a reference it cannot follow.
+    "defaultSplit": defaultSplit{
+      "infillFamilySlug": infillFamily->slug.current,
+      placement, maxOperable, operableEveryMm, minInfillMm
+    }
   },
   "products": *[_type=="product"]|order(featuredOrder asc){
     "id":_id, "slug":slug.current, name,

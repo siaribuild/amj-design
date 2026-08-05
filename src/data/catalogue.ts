@@ -19,6 +19,30 @@ export interface Category {
   description: string;
 }
 
+/** The family-level answer to "what goes next to this window when the opening is
+ *  too wide for one frame?" — authored in Sanity by whoever maintains the range.
+ *
+ *  Keyed on the FAMILY rather than the operation because operation is ambiguous:
+ *  `sliding` is claimed by three families, two of them doors. A rule keyed on the
+ *  operation would leak a window's pairing onto a door, where the infill family
+ *  resolves to nothing and the fallback would price a fixed panel as a whole
+ *  sliding door. */
+export interface FamilyDefaultSplit {
+  /** The family supplying the non-opening panel — normally the fixed lite.
+   *  Null or absent means DO NOT PAIR, which is every family's default. */
+  infillFamilySlug?: string | null;
+  /** Where the opening sashes sit, left to right. */
+  placement?: "outer" | "centre" | "left" | "right" | null;
+  /** However wide the opening, never more than this many opening sashes. */
+  maxOperable?: number | null;
+  /** A second sash only past this width, a third past twice it, up to the cap.
+   *  Null means exactly one sash however wide the opening is. */
+  operableEveryMm?: number | null;
+  /** Below this, abandon the pairing rather than propose a sliver of glass
+   *  nobody would build, and fall back to equal units. */
+  minInfillMm?: number | null;
+}
+
 export interface Family {
   id: string;
   slug: string;
@@ -29,6 +53,18 @@ export interface Family {
    *  the schedule matcher and estimator both read it, and products inherit it
    *  unless they set their own Configuration → Operation types to override. */
   operation?: string;
+  /** How an opening TOO WIDE for any single frame in this family is made up.
+   *
+   *  A FALLBACK, and the weakest claim in the precedence chain — an energy
+   *  report's components, a split read from submitted plans, and a schedule
+   *  comment all override it. It exists for the case where none of those are
+   *  available, which includes the common one: a photographed schedule page,
+   *  which carries no geometry and never will.
+   *
+   *  Absent, or present with no infill family, means today's behaviour: N equal
+   *  units of this same family. That is the default for every family until an
+   *  editor states otherwise, so the field is inert until it is filled. */
+  defaultSplit?: FamilyDefaultSplit | null;
   /** Inline SVG markup for the family's pictogram, authored in Sanity. Rendered
    *  through an allow-list sanitiser (components/quote-project/FamilyPictogram).
    *  Absent until an editor authors one — no built-in stand-in is substituted,

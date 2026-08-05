@@ -80,6 +80,87 @@ export const family = defineType({
       of: [{ type: "string" }],
       description: "e.g. FIXED, FIXED LITE, PICTURE WINDOW — exact terms as printed on schedules. One per entry.",
     }),
+    // ─── What goes NEXT to this window when the opening is too wide for one ───
+    //
+    // An opening wider than any single frame in this family is built as coupled
+    // units. Left to itself the estimator divides it into N equal units of the
+    // SAME operation — a 3600mm awning opening becomes three 1200mm awnings,
+    // because the widest awning made is 1300. The builder's correction: "there's
+    // no point to offer 3 awning windows next to each other when we know with
+    // great certainty that it shall be Awning + Fixed."
+    //
+    // This is a FALLBACK and it is overridden by anything that actually states
+    // the layout — an energy report's component schedule, a split read from the
+    // submitted plans, or a schedule comment. It exists for the case where none
+    // of those are available, which includes the common one: a photographed
+    // schedule page, which carries no geometry and never will.
+    //
+    // Keyed on the FAMILY, not the operation: "sliding" is claimed by three
+    // families, two of them doors, so an operation key would leak a window rule
+    // onto a door — where the infill family resolves to nothing and the fallback
+    // would price a fixed panel as a whole sliding door.
+    defineField({
+      name: "defaultSplit",
+      title: "Default split pairing",
+      type: "object",
+      description:
+        "How an opening too wide for one frame in this family is made up. Leave the infill "
+        + "family empty to keep today's behaviour (equal units of this family).",
+      fields: [
+        defineField({
+          name: "infillFamily",
+          title: "Passive infill family",
+          type: "reference",
+          to: [{ type: "family" }],
+          description:
+            "The family supplying the non-opening panel — normally Fixed Window. "
+            + "EMPTY MEANS DO NOT PAIR, which is the default for every family.",
+        }),
+        defineField({
+          name: "placement",
+          title: "Where the opening sashes sit",
+          type: "string",
+          options: {
+            list: [
+              { title: "Outer — sash | infill | sash", value: "outer" },
+              { title: "Centre — infill | sash | infill", value: "centre" },
+              { title: "Left — sashes to the left", value: "left" },
+              { title: "Right — sashes to the right", value: "right" },
+            ],
+            layout: "radio",
+          },
+          initialValue: "outer",
+        }),
+        defineField({
+          name: "maxOperable",
+          title: "Most opening sashes, ever",
+          type: "number",
+          description: "The builder's cap. However wide the opening, never more than this many sashes.",
+          initialValue: 2,
+          validation: (r) => r.min(1).max(6),
+        }),
+        defineField({
+          name: "operableEveryMm",
+          title: "Allow another sash every (mm)",
+          type: "number",
+          description:
+            "A second sash only past this width, a third past twice it, up to the cap. "
+            + "Leave empty for exactly one sash however wide the opening is.",
+          validation: (r) => r.min(600),
+        }),
+        defineField({
+          name: "minInfillMm",
+          title: "Smallest infill panel worth making (mm)",
+          type: "number",
+          description:
+            "Below this the pairing is abandoned and the opening falls back to equal units, "
+            + "rather than proposing a sliver of glass nobody would build.",
+          initialValue: 400,
+          validation: (r) => r.min(0),
+        }),
+      ],
+      options: { collapsible: true, collapsed: true },
+    }),
     // The family's pictogram — a restrained technical marker shown beside (never
     // instead of) the product name in the quote list. Inline SVG markup rather
     // than an image asset, because an asset cannot inherit the theme's ink

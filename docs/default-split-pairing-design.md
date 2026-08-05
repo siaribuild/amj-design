@@ -4,6 +4,57 @@
 
 ---
 
+## DECIDED BY THE OWNER — 2026-08-05
+
+Recorded here at the top because this spans two designs and is exactly the kind
+of decision that gets lost between them.
+
+**The pairing rule lives in SANITY, on the PRODUCT FAMILY.** This supersedes §7
+Q5's recommendation of a D1 table with a Sanity reference for the frame partner.
+One home, one owner, one key — and the key was already established as the right
+one: family is unambiguous where operation is not (`sliding` is claimed by three
+families, two of them doors). The catalogue editor who maintains a family also
+states what goes beside it.
+
+*Answers §7 Q2 (per family, not per product or global) and §7 Q5 (Sanity, not the
+ops/catalogue split I proposed). Q1, Q3, Q4, Q6–Q10 remain open — but Q1 (where
+the lite sits) and Q4 (how many sashes) become EDITOR CHOICES under this decision
+rather than questions blocking the build, so the schema carries fields for both
+with seeded defaults.*
+
+**The rule is a FALLBACK, and the drawings override it.** Full precedence, across
+both features:
+
+```
+energy report component schedule      authoritative, unchanged
+  ↓
+drawing-derived split                 read from the plans + elevations
+  ↓
+schedule comment ("2x 600 AWNINGS")   architect's words
+  ↓
+family default pairing  ← THIS        awning ⇒ awning + fixed
+  ↓
+even split                            today's N equal units
+```
+
+**Why this reorders the work.** The owner's point: *"This would allow to parse
+window schedules better (a photo of a page, for example) by default. But would be
+overridden / not used when proper plans are submitted."*
+
+That makes the family default the piece that pays off **first and alone**. A
+photographed schedule page carries no geometry and never will; it is precisely
+the case where nothing can be read from a drawing, and it is common. Under
+today's code that opening becomes N equal operable units — for a 3600mm awning
+opening, three 1200mm awnings, which is the complaint that started this. With the
+family default it becomes awning + fixed with no drawing, no vector extraction
+and no model call.
+
+So the family default is **not** a degraded mode waiting on the drawing work. It
+is the baseline the drawing work improves on, it ships independently, and it
+raises the floor for every schedule-only job — which is most of them.
+
+---
+
 ## 1. THE DIRECT ANSWER
 
 **No. This is not learning data today, and it cannot be — not because the corpus is empty, but because the learning layer has no vocabulary for a layout, and because a default has to work at zero observations.**
