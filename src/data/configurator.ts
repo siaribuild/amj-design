@@ -407,8 +407,25 @@ export function optionGroupsFor(p: Product): OptionGroup[] {
   for (const [typeSlug, { label, choices }] of byType) {
     // Keep the Colorbond palette in its curated order; sort every other group as before.
     if (typeSlug !== "colour") choices.sort((a, b) => (a.standard === b.standard ? a.add - b.add : a.standard ? -1 : 1));
-    const def = choices.find(c => c.standard)?.name ?? choices[0]?.name ?? "";
-    groups.push({ typeSlug, label, required: true, choices, defaultName: def });
+    const std = choices.find(c => c.standard);
+    const def = std?.name ?? choices[0]?.name ?? "";
+    // REQUIRED is derived, not asserted. It used to be hardcoded true for every
+    // group, which made any unset value a fault regardless of what the catalogue
+    // said — so a re-parsed line was flagged for a colour and a flyscreen it was
+    // never asked to choose.
+    //
+    // A group is the CUSTOMER's to answer only when we cannot answer it:
+    //
+    //   no choices at all   not an option in the first place (owner). Requiring
+    //                       it demands something nothing can satisfy.
+    //   a STANDARD exists   the product already says what it is. AMJ100T Awning
+    //                       Window marks flyscreen "None" standard and colour
+    //                       carries a default, so neither was ever a question —
+    //                       and pricing agrees: a standard option contributes no
+    //                       surcharge, so an unset one costs exactly the same.
+    //   otherwise           a real decision with no default. On that same
+    //                       product, Installation: four options, none standard.
+    groups.push({ typeSlug, label, required: choices.length > 0 && !std, choices, defaultName: def });
   }
   groups.sort((a, b) => {
     const ia = TYPE_ORDER.indexOf(a.typeSlug), ib = TYPE_ORDER.indexOf(b.typeSlug);

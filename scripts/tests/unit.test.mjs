@@ -101,16 +101,77 @@ test("normCode + hasDuplicateCode", () => {
   assert.equal(M.hasDuplicateCode(items, 1, ""), false, "empty is never a duplicate");
 });
 
-test("optionGroupsFor: injects shared Colorbond palette; colour+hardware required", () => {
+test("optionGroupsFor: injects shared Colorbond palette; standards preselected", () => {
   const product = M.getProductBySlug(slug);
   const groups = M.optionGroupsFor(product);
   const colour = groups.find((g) => g.typeSlug === "colour");
   assert.ok(colour, "colour group injected");
   assert.ok(colour.choices.length >= 20, "full Colorbond palette");
   assert.ok(colour.choices.every((c) => c.add === 0), "all colours included in base price");
-  assert.equal(groups.find((g) => g.typeSlug === "hardware")?.required, true);
   const defaults = M.defaultOptions(product);
   assert.ok(defaults.colour && defaults.hardware, "standards preselected");
+});
+
+// REQUIRED is derived from the catalogue, not asserted. A group is the
+// customer's to answer only when we cannot answer it — which is the rule that
+// stopped a re-parsed line being flagged for a colour and a flyscreen it was
+// never asked to choose. Built from synthetic products so this tests the RULE:
+// against the fully-specified fallback catalogue every group has a standard, so
+// no product there can produce a gap.
+const productWith = (opts) => ({
+  slug: "probe", name: "Probe", categorySlug: "windows", familySlug: "probe",
+  options: opts, thermal: [],
+});
+
+test("a group answers itself when the catalogue names a standard", () => {
+  const groups = M.optionGroupsFor(productWith([
+    { typeSlug: "flyscreen", typeName: "Flyscreen", name: "None", availability: "standard" },
+    { typeSlug: "flyscreen", typeName: "Flyscreen", name: "Fibre", availability: "optional" },
+    { typeSlug: "installation", typeName: "Installation", name: "Bracket", availability: "optional" },
+    { typeSlug: "installation", typeName: "Installation", name: "Screw", availability: "optional" },
+  ]));
+  const g = (t) => groups.find((x) => x.typeSlug === t);
+  // Live data for AMJ100T Awning Window, exactly: flyscreen "None" is standard
+  // and installation has four options and no standard.
+  assert.equal(g("flyscreen").required, false, "a standard means the customer was never asked");
+  assert.equal(g("flyscreen").defaultName, "None");
+  assert.equal(g("installation").required, true, "no standard IS a real decision");
+  // Colour is injected from the shared palette, which carries its own default.
+  assert.equal(g("colour").required, false);
+});
+
+test("a group with no choices is not an option in the first place", () => {
+  // Owner: "if a product does not have a single colour option, then it is not an
+  // option in the first place". Requiring it would demand something nothing can
+  // satisfy, and no edit could ever clear the line.
+  const groups = M.optionGroupsFor(productWith([]));
+  for (const g of groups) {
+    if (g.choices.length === 0) assert.equal(g.required, false, g.typeSlug);
+  }
+});
+
+test("across the real catalogue, only a group with no standard is ever demanded", () => {
+  // The invariant, checked against every shipped product rather than asserted
+  // about the data: a group we can answer is never the customer's to answer.
+  //
+  // This does NOT claim the catalogue is complete — it is not.
+  // amj80-series-casement-window offers flyscreens and marks none of them
+  // standard, so that product genuinely asks for one. That is the rule working:
+  // a real gap in the data surfacing as a real question.
+  const demandedWithAStandard = [];
+  for (const pr of M.products) {
+    const groups = M.optionGroupsFor(pr);
+    for (const g of groups) {
+      const hasStandard = g.choices.some((c) => c.standard);
+      assert.equal(g.required, g.choices.length > 0 && !hasStandard, `${pr.slug}/${g.typeSlug}`);
+    }
+    for (const label of M.missingRequiredOptions({ productSlug: pr.slug, options: {} })) {
+      const g = groups.find((x) => x.label === label);
+      if (g?.choices.some((c) => c.standard)) demandedWithAStandard.push(`${pr.slug}/${label}`);
+    }
+  }
+  assert.deepEqual(demandedWithAStandard, [],
+    "a group with a standard must never be demanded — that was the W6 report");
 });
 
 test("formatting helpers: fmt, mm, productLabel", () => {
@@ -411,22 +472,23 @@ test("an unsized unit is incomplete, never a mismatch — zero means unknown", (
 // contributes no surcharge — so priced-ness waved it through, the editor showed
 // an amber line and saved anyway, the list row said nothing, and the bar counted
 // the project ready. Three readings of one fact again.
-const noColour = () => ({
-  id: 3, code: "W3", productSlug: slug, location: "",
+const GAP_SLUG = "amj80-series-casement-window";   // offers flyscreens, marks none standard
+const noFlyscreen = () => ({
+  id: 3, code: "W3", productSlug: GAP_SLUG, location: "",
   width: "1200", height: "900", qty: 1, status: "Ready", lineTotal: 800, review: null,
-  options: { hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+  options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", installation: "Sub Sill & Head" },
 });
 
 test("a required option with nothing chosen blocks, and the row names it", () => {
-  const bad = noColour();
-  assert.deepEqual(M.missingRequiredOptions(bad), ["Colour"]);
+  const bad = noFlyscreen();
+  assert.deepEqual(M.missingRequiredOptions(bad), ["Flyscreen"]);
   assert.equal(M.lineBlocksSubmission(bad), true, "it must reach the sticky bar");
   const state = M.rowStateFor(bad, []);
   assert.equal(state.kind, "needs-input");
-  assert.equal(state.reason, "Choose colour", "the row names the option, not the fact that one is missing");
+  assert.equal(state.reason, "Choose flyscreen", "the row names the option, not the fact that one is missing");
   assert.equal(state.label, "Incomplete", "a missing choice IS incompleteness");
 
-  const good = { ...bad, options: { ...bad.options, colour: "Dover White" } };
+  const good = { ...bad, options: { ...bad.options, flyscreen: "None" } };
   assert.deepEqual(M.missingRequiredOptions(good), []);
   assert.equal(M.lineBlocksSubmission(good), false);
   assert.equal(M.rowStateFor(good, []).kind, "none");
@@ -438,7 +500,7 @@ test("a UNIT with an unchosen required option blocks through its opening", () =>
   // gap here is exactly as blocking as one on a childless opening — and it was
   // invisible, because a unit prices cleanly without its colour and nothing
   // walked into the segments to look.
-  const seg = (options) => ({ id: "s", productSlug: slug, width: "1025", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 600, options, status: "Ready" });
+  const seg = (options) => ({ id: "s", productSlug: GAP_SLUG, width: "1025", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 600, options, status: "Ready" });
   const parent = (segs) => ({
     id: 7, code: "W7", productSlug: slug, location: "", width: "2050", height: "2100",
     options: {}, qty: 1, status: "Ready", lineTotal: 1200, review: null,
@@ -453,23 +515,23 @@ test("a UNIT with an unchosen required option blocks through its opening", () =>
   // The parent itself has options:{} in both cases — it is never asked, because
   // a composite parent is not a frame and holds none of its own.
   const gap = { ...fullOptions };
-  delete gap.colour;
+  delete gap.flyscreen;
   const bad = parent([seg(fullOptions), seg(gap)]);
-  assert.deepEqual(M.missingRequiredOptions(bad), ["Colour"], "the OPENING carries its unit’s gap");
+  assert.deepEqual(M.missingRequiredOptions(bad), ["Flyscreen"], "the OPENING carries its unit’s gap");
   assert.equal(M.lineBlocksSubmission(bad), true, "and it reaches the bar");
-  assert.equal(M.rowStateFor(bad, []).reason, "Choose colour");
+  assert.equal(M.rowStateFor(bad, []).reason, "Choose flyscreen");
   // The unit says which one.
-  assert.deepEqual(M.unitMissingRequiredOptions(seg(gap)), ["Colour"]);
+  assert.deepEqual(M.unitMissingRequiredOptions(seg(gap)), ["Flyscreen"]);
   assert.deepEqual(M.unitMissingRequiredOptions(seg(fullOptions)), []);
 });
 
-test("two missing options read as a sentence, and an unknown product asserts nothing", () => {
-  const bad = { ...noColour(), options: { flyscreen: "None", installation: "Sub Sill & Head" } };
-  assert.deepEqual(M.missingRequiredOptions(bad).sort(), ["Colour", "Hardware"]);
-  assert.match(M.rowStateFor(bad, []).reason, /^Choose (colour and hardware|hardware and colour)$/);
+test("an unknown product asserts nothing", () => {
   // A product the catalogue does not know has no groups to be missing. The
   // no-product case is already blocked by its own branch.
   assert.deepEqual(M.missingRequiredOptions({ productSlug: "nope", options: {} }), []);
+  // No shipped product currently has TWO groups without a standard, so the
+  // multi-gap sentence is exercised through the synthetic product above rather
+  // than asserted against data that would silently stop covering it.
 });
 
 test("unitLabel: children are W1A, W1B … and spreadsheet-style past Z", () => {

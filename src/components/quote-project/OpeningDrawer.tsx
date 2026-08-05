@@ -283,6 +283,18 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                 // A composite parent is the schedule line, not a product: its
                 // glazing and hardware live on the units, so offering an Options
                 // group here would invite a choice that belongs one level down.
+                // A blank ADD form is not a form with mistakes in it (owner).
+                // It opened flagging Dimensions and listing faults before the
+                // customer had typed anything — the same complaint as the
+                // product page's widget, and the same answer. Issues still gate
+                // Save from the first render; they are simply not announced
+                // until the draft has been touched once.
+                //
+                // EDIT is deliberately excluded: an editor opened on a line
+                // that already exists is describing a real fault in real data,
+                // and must say so immediately — that is the whole point of
+                // "Fix details" landing on the offending group.
+                quietUntilTouched={target.mode === "add"}
                 hideOptions={segments.length > 0}
                 // …and no product picker either (owner). A composite parent is
                 // an OPENING: its ID and its size are the whole of what it owns,
