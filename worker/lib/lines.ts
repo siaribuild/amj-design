@@ -15,7 +15,7 @@ import { colorbondColourOptions, getProductBySlug } from "../../src/data/catalog
 import { ensureCatalogue } from "./catalogue";
 import { pricingOptionSlugsFromOptions } from "./estimator/estimate";
 import { priceLine } from "./estimator/pricing";
-import { uuid } from "./util";
+import { uuid, normNote } from "./util";
 
 // The line shape exchanged with the client. `id` is the STABLE server line id —
 // the client round-trips it as `serverId` so a save upserts (never delete+recreate)
@@ -229,7 +229,7 @@ export async function itemFields(env: Env, raw: unknown, ownerUserId?: string | 
 
   return {
     external_ref: String(it.code ?? "") || null,
-    room_label: String(it.location ?? "") || null,
+    room_label: normNote(it.location) || null,
     product_slug: productSlug,
     options_json: JSON.stringify(options),
     dims_json: JSON.stringify(dimsJson(width, height)),

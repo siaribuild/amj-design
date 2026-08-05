@@ -48,6 +48,39 @@ test("catalogue drives the products list and detail pages", async ({ page }) => 
   await expect(page.getByRole("heading", { name: "AMJ80 Series Sliding Window" })).toBeVisible();
 });
 
+test("the product page editor says nothing until the visitor touches it", async ({ page }) => {
+  // A blank form is not a form with mistakes in it (owner). This editor is the
+  // first thing a visitor meets, with no size entered because they have not
+  // entered one — and it opened flagging Dimensions and Options in red and
+  // listing two faults above the button.
+  await page.goto("/products/amj80-series-sliding-window");
+  const form = page.locator(".quote-panel").first();
+  await expect(form).toBeVisible();
+  // No section is flagged, and the footer lists no faults. ("Enter the opening
+  // size" still appears as the Dimensions SUMMARY — that is the section saying
+  // what it is for, not an accusation.)
+  await expect(form.locator('[data-attention="true"]')).toHaveCount(0);
+  await expect(form.locator(".quote-panel-footer").getByText(/Enter the opening size/)).toHaveCount(0);
+  // The fault is REAL from the first render and still holds the button.
+  await expect(form.getByRole("button", { name: /Add to MyProject/ })).toBeDisabled();
+
+  // One keystroke and it starts talking.
+  await form.getByPlaceholder("e.g. 1810").fill("1200");
+  await expect(form.locator('[data-attention="true"]')).not.toHaveCount(0);
+});
+
+test("the size fields never accuse a tall opening of being reversed", async ({ page }) => {
+  // A tall sliding window is an ordinary building. The notice called it a
+  // problem on no evidence beyond an aspect ratio, and offered a button that
+  // rewrote two measurements the customer had just read off a wall (owner).
+  await page.goto("/products/amj80-series-sliding-window");
+  const form = page.locator(".quote-panel").first();
+  await form.getByPlaceholder("e.g. 1810").fill("1000");
+  await form.getByPlaceholder("e.g. 1210").fill("2000");
+  await expect(page.getByText(/these look reversed/i)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Swap" })).toHaveCount(0);
+});
+
 test("clear all removes uploaded documents durably across a browser refresh", async ({ page }) => {
   const saved = await page.request.put("/api/projects/current/lines", {
     data: {

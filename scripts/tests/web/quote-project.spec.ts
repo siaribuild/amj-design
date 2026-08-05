@@ -267,7 +267,9 @@ test("the customer may change what a unit IS, but not how many there are", async
   // label as an opening's so it reads as the same field; a different placeholder,
   // because a unit sits inside one opening and has already been told the room.
   // It persists in the same column — see the round-trip in api.test.mjs.
-  await expect(drawer.getByText("Note (optional)")).toBeVisible();
+  // "(optional)" is gone from the label (owner): optionality is expressed by
+  // not being validated as required, not by a word.
+  await expect(drawer.getByText("Note", { exact: true })).toBeVisible();
   await expect(drawer.getByPlaceholder("e.g. left leaf, obscure glass here")).toBeVisible();
 
   // BOTH dimensions are editable. The across-axis one used to be locked to the

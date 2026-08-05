@@ -16,6 +16,7 @@ import {
   type QItem, type QuoteState, type OptionChoice, type GlazingChoice,
   optionGroupsFor, defaultOptions, linePriceTotal, familyGroups, glazingChoicesFor,
   fmt, mm, productLabel, POPULAR_COLOURS, normCode, suggestCode, clearReviewKey, lineBlocksSubmission,
+  NOTE_MAX,
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 import { previewPrice } from "../data/api";
@@ -104,8 +105,11 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
   const dimsEntered = w > 0 && h > 0;
   const inRange = !!p && inRangeFor(p, w, h);
   const tooSmall = !!p && dimsEntered && ((p.minWidth != null && w < p.minWidth) || (p.minHeight != null && h < p.minHeight));
-  const wideFamily = !!p && (p.categorySlug === "doors" || p.familySlug === "sliding-window");
-  const reversed = wideFamily && dimsEntered && h > w * 1.1 && inRange;
+  // The "these look reversed — Swap" notice is GONE (owner). A tall sliding
+  // window or a door taller than it is wide is an ordinary building, and the
+  // notice called it a problem on no evidence beyond an aspect ratio — it was
+  // dressed as a warning and offered a button that silently rewrote two
+  // measurements the customer had just read off a wall.
   return (
     <div>
       <div className={`flex gap-4 ${rail ? "flex-col" : "flex-col md:flex-row"}`}>
@@ -138,12 +142,6 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
           {!dimsEntered && p && (
             <p className="text-body t-cap">Fits {mm(p.minWidth ?? 0)}–{mm(p.maxWidth ?? 0)} wide, {mm(p.minHeight ?? 0)}–{mm(p.maxHeight ?? 0)} high.</p>
           )}
-          {reversed && (
-            <div className="quote-notice--warning flex items-start gap-2 border border-warning/40 px-3 py-2 t-cap">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-warning" />
-              <span>Height is greater than width — these look reversed. <button onClick={() => { setWidth(height); setHeight(width); }} className="underline font-medium cursor-pointer">Swap</button></span>
-            </div>
-          )}
           {tooSmall && p && (
             <div className="quote-notice--danger flex items-start gap-2 border border-destructive/35 px-3 py-2 t-cap">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-destructive" />
@@ -158,12 +156,21 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
               constraint reaches the people it is actually for. */}
           {setLocation && (
             <div>
-              <FieldLabel>Note (optional)</FieldLabel>
+              <FieldLabel>Note</FieldLabel>
               {/* One label, so it reads as the same field wherever it appears.
                   Different placeholder on a unit: a unit sits inside one
                   opening, so asking it for a room re-asks a question the
                   opening already answered. */}
-              <Input value={location ?? ""} onChange={e => setLocation(e.target.value)}
+              {/* "(optional)" is gone (owner): optionality is expressed by not
+                  being validated as required, not by a word in the label. The
+                  field IS validated — capped at NOTE_MAX, the same 500 the ops
+                  note has always used, enforced here and again on the server.
+                  Injection is not a length question: every write is a
+                  parameterised D1 bind and every render is React-escaped text,
+                  so the gap this closes is an unbounded string, not a quoting
+                  one. */}
+              <Input value={location ?? ""} maxLength={NOTE_MAX}
+                onChange={e => setLocation(e.target.value.slice(0, NOTE_MAX))}
                 placeholder={isUnit ? "e.g. left leaf, obscure glass here" : "e.g. Bedroom 1, north elevation"} />
             </div>
           )}
@@ -494,7 +501,7 @@ export function ItemForm({
   lockedSlug, quote, seed, onCommit, onCancel, rail = false, submitLabel = "Save",
   priceFn = previewPrice, scope = "item", unitAxis = "vertical", unitMode = "edit",
   onDirtyChange, initialSection, excludeId, heading, busy = false, hideOptions = false,
-  hideProduct = false, stickyActions = false, hideHeader = false,
+  hideProduct = false, stickyActions = false, hideHeader = false, quietUntilTouched = false,
 }: {
   lockedSlug?: string;
   /** Only `items` is read — for the duplicate-code check and code suggestion. It
@@ -556,6 +563,20 @@ export function ItemForm({
   /** …and it is not a product either, so it gets no type/product selectors —
    *  just its ID and its size (owner). The drawing becomes a plain opening. */
   hideProduct?: boolean;
+  /** Say nothing until the customer has typed something.
+   *
+   *  A blank form is not a form with mistakes in it. On the product page the
+   *  editor is the FIRST thing a visitor meets, with no size entered because
+   *  they have not entered one yet — and it opened flagging Dimensions and
+   *  Options in red and listing two faults above the button, before anyone had
+   *  touched anything. Issues still gate Save from the first render; they are
+   *  simply not SHOUTED until the draft has been edited once, which is when
+   *  they stop being an assumption about the visitor and start being feedback.
+   *
+   *  A state variation for that surface only (owner). An editor opened on a
+   *  line that already exists is describing a real fault in real data, and must
+   *  say so immediately. */
+  quietUntilTouched?: boolean;
 }) {
   const isUnit = scope === "unit";
   const unitHeading = unitMode === "add" ? "Add composite unit" : "Edit composite unit";
@@ -566,13 +587,19 @@ export function ItemForm({
   const [code, setCode] = useState(seed?.code || (productSlug ? suggestCode(quote.items, productSlug) : ""));
   const [codeEdited, setCodeEdited] = useState(!!seed?.code);
 
-  const [width, setWidth] = useState(seed?.width || "");
-  const [height, setHeight] = useState(seed?.height || "");
+  // Has the customer touched this draft at all? Only quietUntilTouched reads it,
+  // and only to decide whether issues are ANNOUNCED — never whether they exist.
+  const [touched, setTouched] = useState(false);
+  const [width, setWidthRaw] = useState(seed?.width || "");
+  const [height, setHeightRaw] = useState(seed?.height || "");
+  const setWidth = (v: string) => { setTouched(true); setWidthRaw(v); };
+  const setHeight = (v: string) => { setTouched(true); setHeightRaw(v); };
   const [options, setOptions] = useState<Record<string, string>>(seed?.options ? { ...seed.options } : (p ? defaultOptions(p) : {}));
   // Read, never written: one opening per reference, so the value is whatever the
   // line already carries (1) and there is no control that can change it.
   const qty = seed?.qty || 1;
-  const [location, setLocation] = useState(seed?.location || "");
+  const [location, setLocationRaw] = useState(seed?.location || "");
+  const setLocation = (v: string) => { setTouched(true); setLocationRaw(v); };
   // `initialSection` lets a caller open the form AT the offending field —
   // /quote-project's `Fix details` is a direct action, not merely an expand.
   // Two groups now, so anything that is not Options opens Dimensions — including
@@ -635,7 +662,12 @@ export function ItemForm({
   // never shown — that is an invisible disabled button.
   const issues = (p ? itemIssues(p, { width, height, options }) : [])
     .filter((i) => !(hideOptions && i.section === "options"));
-  const hasIssue = (s: EditFocus) => issues.some(i => i.section === s);
+  // SHOWN issues, which is not the same set as the issues that gate Save. A
+  // blank form on the product page is not a form with mistakes in it; the faults
+  // are real from the first render and still hold the button, they are just not
+  // announced until the visitor has touched the draft once (owner).
+  const shownIssues = quietUntilTouched && !touched ? [] : issues;
+  const hasIssue = (s: EditFocus) => shownIssues.some(i => i.section === s);
 
   // `issues` gates SAVE now, not just the amber line above it. A required option
   // with nothing chosen was listed in the footer and then saved anyway — and
@@ -662,7 +694,7 @@ export function ItemForm({
     setOptions(np ? defaultOptions(np) : {});
     if (!codeEdited) setCode(slug ? suggestCode(quote.items, slug) : "");
   };
-  const setOpt = (typeSlug: string, v: string) => setOptions(o => ({ ...o, [typeSlug]: v }));
+  const setOpt = (typeSlug: string, v: string) => { setTouched(true); setOptions(o => ({ ...o, [typeSlug]: v })); };
 
   const famGroups = familyGroups();
   const familyProducts = familySlug ? getProductsByFamily(familySlug) : [];
@@ -739,7 +771,7 @@ export function ItemForm({
             <div className={`grid gap-3 ${rail ? "grid-cols-1" : "sm:grid-cols-[10rem_minmax(0,1fr)] sm:items-end"}`}>
               <div>
                 <FieldLabel>Item ID</FieldLabel>
-                <Input value={code} maxLength={10} onChange={e => { setCodeEdited(true); setCode(e.target.value.toUpperCase()); }} placeholder="e.g. W01" />
+                <Input value={code} maxLength={10} onChange={e => { setTouched(true); setCodeEdited(true); setCode(e.target.value.toUpperCase()); }} placeholder="e.g. W01" />
                 {duplicateCode && <p className="text-attention-ink mt-1 t-cap">Item ID already exist</p>}
               </div>
               <div className="flex items-center gap-2.5 min-w-0">
@@ -760,7 +792,7 @@ export function ItemForm({
             {!isUnit && (
               <div>
                 <FieldLabel>Item ID</FieldLabel>
-                <Input value={code} maxLength={10} onChange={e => { setCodeEdited(true); setCode(e.target.value.toUpperCase()); }} placeholder="e.g. W01" />
+                <Input value={code} maxLength={10} onChange={e => { setTouched(true); setCodeEdited(true); setCode(e.target.value.toUpperCase()); }} placeholder="e.g. W01" />
                 {duplicateCode && <p className="text-attention-ink mt-1 t-cap">Item ID already exist</p>}
               </div>
             )}
@@ -840,8 +872,8 @@ export function ItemForm({
       {(p || hideProduct) && (
         <div className={`quote-panel-footer px-4 md:px-5 py-4 sticky bottom-0 z-30 ${stickyActions ? "" : "md:static"}`}
           style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}>
-          {issues.length > 0 && (
-            <p className="text-attention-ink mb-2 flex items-start gap-1.5 t-cap"><AlertCircle className="w-3.5 h-3.5 text-attention flex-shrink-0 mt-0.5" />{issues.map(i => i.msg).join(" · ")}.</p>
+          {shownIssues.length > 0 && (
+            <p className="text-attention-ink mb-2 flex items-start gap-1.5 t-cap"><AlertCircle className="w-3.5 h-3.5 text-attention flex-shrink-0 mt-0.5" />{shownIssues.map(i => i.msg).join(" · ")}.</p>
           )}
           <div className="flex items-center justify-between gap-3">
             <div>

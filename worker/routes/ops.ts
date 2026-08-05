@@ -20,7 +20,7 @@ import {
 import { orderDto, applyTransition, markPaid, availableActions, STAGE_LABEL, type Stage, type OrderRow } from "../lib/orders";
 import { lifecycleOf, daysSince } from "../lib/lifecycle";
 import { actionsFor } from "../lib/ops-actions";
-import { uuid } from "../lib/util";
+import { uuid, normNote } from "../lib/util";
 import { scanFile } from "../lib/scan";
 import {
   pricingOptionSlugsFromOptions, runProjectEstimate, toOpeningInput, type OpeningRow,
@@ -942,7 +942,7 @@ ops.patch("/segments/:id", async (c) => {
   // caller that omits it.
   if (body?.acrossMm !== undefined) patch.acrossMm = Number(body.acrossMm) || 0;
   if (body?.qtyPerParent !== undefined) patch.qtyPerParent = Number(body.qtyPerParent) || 1;
-  if (body?.note !== undefined) patch.note = String(body.note ?? "");
+  if (body?.note !== undefined) patch.note = normNote(body.note);
 
   const result = await updateSegment(c.env, { segmentId: seg.id, patch });
   if (!result.ok) return c.json({ error: "invalid_segment", errors: result.errors }, 400);

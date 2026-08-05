@@ -337,6 +337,13 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
         </div>
       ) : (
         <ItemForm key={`${product.slug}-${composerKey}`} lockedSlug={product.slug} quote={quote} seed={seed} rail
+          // This editor is the first thing a visitor meets on the product page,
+          // with no size entered because they have not entered one — so it
+          // opened flagging Dimensions and Options and listing two faults above
+          // the button before anyone had done anything. The faults are real and
+          // still hold Save from the first render; they are simply not
+          // announced until the draft has been touched once (owner).
+          quietUntilTouched
           submitLabel="Add to MyProject" onCommit={handleAdded} />
       )}
     </div>

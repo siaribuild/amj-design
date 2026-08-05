@@ -316,6 +316,19 @@ export function linePriceTotal(it: { lineTotal?: number | null }): number {
   return typeof it.lineTotal === "number" && Number.isFinite(it.lineTotal) ? it.lineTotal : 0;
 }
 
+/** Free-text note cap, client and server. 500 is not a new number — it is what
+ *  worker/routes/ops.ts has always applied to its own note, and one cap for one
+ *  kind of field is the point.
+ *
+ *  This is a LENGTH bound, and length is the only part of "validated" that was
+ *  actually missing here: every write is a parameterised D1 bind, so quoting is
+ *  structurally not a question, and every render is React-escaped text, so
+ *  markup is not either. What was unbounded was the string itself. */
+export const NOTE_MAX = 500;
+
+/** The one normaliser both ends use. */
+export const normNote = (v: unknown): string => String(v ?? "").trim().slice(0, NOTE_MAX);
+
 // ─── Item codes (schedule/builder references) ─────────────────────────────────
 export const normCode = (c: string) => (c || "").trim().toUpperCase();
 

@@ -8,7 +8,7 @@ import type { Env } from "../types";
 import { itemToInsert, itemFields, incomingServerId, editedFieldsAfterSave, rowToApiLine, type ApiSegment, type LineRow, type EditableSnapshot } from "../lib/lines";
 import { ownedProject, resolveCurrentProject, resolveOrCreateCurrentProject, type ProjectRow } from "../lib/access";
 import { resolveUser } from "../lib/auth";
-import { uuid } from "../lib/util";
+import { uuid, normNote } from "../lib/util";
 import { loadCompositePolicy, recomputeComposite, updateSegment } from "../lib/composite";
 import { logEvent } from "../lib/activity";
 
@@ -229,7 +229,7 @@ projects.patch("/current/segments/:id", async (c) => {
   // A unit carries a note of its own (owner). Same field, same meaning, same
   // column as an opening's — the only thing a unit has that a childless opening
   // does not is a parent.
-  if (body?.note !== undefined) patch.note = String(body.note ?? "");
+  if (body?.note !== undefined) patch.note = normNote(body.note);
   const result = await updateSegment(c.env, { segmentId: segment.id, patch });
   if ("errors" in result) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
   await markCustomerCompositeEdit(c.env, segment.project_id, segment.parent_line_id, segment.id);
