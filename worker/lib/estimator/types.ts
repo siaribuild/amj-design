@@ -1,5 +1,11 @@
 // Shared estimator types (spec §4.2 candidate payload, §7 opening model).
 // Kept dependency-free so the rules engine + tests import them without the Worker.
+//
+// The one import is a TYPE, from the catalogue module that already owns the
+// shape an editor authors in Sanity. Re-declaring it here would be a second
+// definition of the same contract, free to drift from the projection that fills
+// it — the exact failure this whole feature is recovering from.
+import type { FamilyDefaultSplit } from "../../../src/data/catalogue";
 
 export interface PerformanceVariant {
   variantId: string;
@@ -34,6 +40,11 @@ export interface CatalogueCandidate {
   configuration: {
     operationTypes: string[];
   } | null;
+  /** The family's answer to "what goes next to this when the opening is too wide
+   *  for one frame". Null on every family an editor has not authored, which is
+   *  the do-not-pair default and the reason this is nullable rather than filled
+   *  in with assumptions here. */
+  defaultSplit: FamilyDefaultSplit | null;
   dimensionRule: {
     minWidthMm: number | null;
     maxWidthMm: number | null;

@@ -379,3 +379,92 @@ test("evenWidths refuses a degenerate count instead of building a hole", () => {
   assert.deepEqual(evenWidths(3200, -1), []);
   assert.deepEqual(evenWidths(3200, Infinity), []);
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// THE FAMILY'S DEFAULT PAIRING, REACHABLE AT LAST
+//
+// W1 of a real plan set — 2050 × 2100, an awning against a 1300mm maximum — was
+// delivered as TWO 1025mm awnings. The rule that says otherwise had been
+// authored in Sanity (awning-window → fixed-window) and was correct; the
+// estimator simply never received it. Three links were missing: the candidate
+// query did not project it, proposeSplit had no parameter for it, and nothing
+// called the pairing module. These pin the wiring, not the arithmetic —
+// pairing.test.mjs owns the arithmetic.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Exactly what the owner authored: an infill family and nothing else. Every
+// other knob is absent on purpose, so these also prove the defaults hold.
+const AUTHORED = { infillFamilySlug: "fixed-window", infillOperation: "fixed" };
+const LIVE = { infillMaxWidthMm: 3000, maxSegments: 4 };
+const paired = (widthMm, opts = {}) => proposeSplit(
+  { operationType: "awning", widthMm, heightMm: 2100 }, null,
+  { maxWidthMm: 1300, pairing: { rule: AUTHORED, ...LIVE, ...opts } },
+);
+
+test("W1: 2050 becomes an awning and a lite, not two awnings", () => {
+  const p = paired(2050);
+  assert.equal(p.basis, "default_pairing");
+  assert.deepEqual(p.segments.map((s) => `${s.operation}:${s.widthMm}`), ["awning:1300", "fixed:750"]);
+  assert.equal(p.segments.reduce((n, s) => n + s.widthMm, 0), 2050, "partitions the opening exactly");
+  assert.equal(p.reviewRequired, true, "a proposal is always a starting point");
+});
+
+test("the role becomes the INFILL family's operation, never the opening's", () => {
+  // The pairing module names roles and knows nothing about the catalogue; this
+  // is the one place a role becomes an operation. Getting it wrong would price a
+  // fixed lite as another awning — invisible, because the geometry looks right.
+  const seg = paired(2050).segments;
+  assert.equal(seg[0].operation, "awning", "the opening's own operation");
+  assert.equal(seg[1].operation, "fixed", "the operation of the family the rule names");
+});
+
+test("a document still outranks the family", () => {
+  // The pairing is the WEAKEST claim. W4 of the same set carried a comment, and
+  // that comment must survive the arrival of a family default beneath it.
+  const p = proposeSplit({ operationType: "awning", widthMm: 3200, heightMm: 2100 },
+    parseSplitHint("2x 600mm WIDE AWNINGS"),
+    { maxWidthMm: 1300, pairing: { rule: AUTHORED, ...LIVE } });
+  assert.equal(p.basis, "schedule_comment");
+  assert.deepEqual(p.segments.map((s) => s.widthMm), [600, 2000, 600]);
+});
+
+test("an unauthored family is left exactly as it was", () => {
+  // Every family but one. This is the no-op that lets the feature ship without
+  // changing anything an editor has not asked for.
+  for (const rule of [null, undefined, {}, { infillFamilySlug: "fixed-window" }]) {
+    const p = proposeSplit({ operationType: "awning", widthMm: 2050, heightMm: 2100 }, null,
+      { maxWidthMm: 1300, pairing: { rule, ...LIVE } });
+    assert.equal(p.basis, "default_even", JSON.stringify(rule));
+  }
+  // `infillOperation` missing is the one that would look authored but cannot be
+  // acted on — a role could not be turned into an operation.
+  assert.equal(paired(2050, {}).basis, "default_pairing");
+});
+
+test("no pairing information at all is the old behaviour, untouched", () => {
+  const p = proposeSplit({ operationType: "awning", widthMm: 2050, heightMm: 2100 }, null, { maxWidthMm: 1300 });
+  assert.equal(p.basis, "default_even");
+  assert.deepEqual(p.segments.map((s) => s.widthMm), [1025, 1025]);
+});
+
+test("the pairing needs the infill family's width, and declines without it", () => {
+  // The rule names a family; it cannot size that family's panel. Without the
+  // width the arithmetic has no floor, so it must not guess.
+  assert.equal(paired(2050, { infillMaxWidthMm: null }).basis, "default_even");
+  assert.equal(paired(2050, { infillMaxWidthMm: 0 }).basis, "default_even");
+});
+
+test("the composite cap is the policy's, not the proposer's safety bound", () => {
+  // A pairing that exceeds the real cap would be built here and then refused by
+  // validateSplit, which reads to the customer as no split at all.
+  const p = paired(2050, { maxSegments: 1 });
+  assert.equal(p.basis, "default_even", "one unit cannot hold a pairing");
+});
+
+test("an opening that fits one frame is still not split", () => {
+  const p = proposeSplit({ operationType: "awning", widthMm: 1200, heightMm: 2100 }, null,
+    { maxWidthMm: 1300, pairing: { rule: AUTHORED, ...LIVE } });
+  // proposeSplit always returns a proposal; the caller drops it below 2 segments.
+  // What matters is that the family default did not manufacture a reason to split.
+  assert.equal(p.basis, "default_even");
+});

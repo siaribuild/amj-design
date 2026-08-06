@@ -24,6 +24,17 @@ const CANDIDATE_QUERY = defineQuery(`*[_type == "product" && defined(name) && de
   "family": category->slug.current,
   "series": family->slug.current,
   "seriesOperation": family->operation,
+  // What goes NEXT to this product when an opening is too wide for one frame.
+  // Authored once per family; the estimator reads it off whichever product it
+  // picked, so an opening never has to look the family up separately.
+  // infillOperation rides along because the split proposal speaks operations,
+  // not family slugs — without it the caller would need a second round trip
+  // purely to learn that "fixed-window" performs "fixed".
+  "defaultSplit": family->defaultSplit{
+    "infillFamilySlug": infillFamily->slug.current,
+    "infillOperation": infillFamily->operation,
+    minInfillMm
+  },
   dimensionRule,
   // The product's glazing × thermal matrix comes from its shared frame profile
   // (M2/D5). Preferred over the legacy per-product performanceVariants below,
@@ -170,6 +181,10 @@ export function toCandidate(row: any): CatalogueCandidate | null {
     family: row.family ?? null,
     series: row.series ?? null,
     configuration,
+    // Absent on every family but the ones an editor has authored — which is the
+    // "do not pair" default, and is why this is passed through as-is rather than
+    // defaulted here. proposePairedLayout owns what a missing knob means.
+    defaultSplit: row.defaultSplit?.infillFamilySlug ? row.defaultSplit : null,
     dimensionRule: row.dimensionRule ?? null,
     performanceVariants: variants,
     optionGroups: Array.isArray(row.optionGroups) ? [...new Set(row.optionGroups.filter(Boolean))] as string[] : [],

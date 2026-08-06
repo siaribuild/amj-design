@@ -11,7 +11,7 @@ import { uuid } from "../util";
 import type { CatalogueCandidate, OpeningInput } from "./types";
 import type { PerformanceVariant } from "./types";
 import { publishAiProposal, type ProposalSelection } from "../ai/proposal";
-import { splitLine, type SegmentSpec } from "../composite";
+import { splitLine, loadCompositePolicy, type SegmentSpec } from "../composite";
 import { proposeSplit, type SplitHint } from "./split";
 import { resolveScheduleType } from "../../../src/data/scheduleMatch";
 import { defaultOptions } from "../../../src/data/configurator";
@@ -262,6 +262,9 @@ async function materialiseSplits(env: Env, ctx: {
   splitHints: Map<string, SplitHint>;
 }): Promise<string[]> {
   const reviewWarnings: string[] = [];
+  // Read once per run, not per opening: it is one small D1 row and every
+  // proposal below is measured against the same cap.
+  const policy = await loadCompositePolicy(env);
   for (const pl of ctx.proposalLines) {
     const parent = pl.result.selected;
     const hint = (pl.externalRef && ctx.splitHints.get(pl.externalRef)) || null;
@@ -272,9 +275,37 @@ async function materialiseSplits(env: Env, ctx: {
     ).bind(pl.openingId).first<{ quote_line_id: string | null }>())?.quote_line_id ?? null;
     if (!quoteLineId) continue;
 
+    // The family's authored pairing, when it has one. Two things are needed and
+    // neither is on the parent product: the rule (which family supplies the
+    // infill) and the widest frame THAT family makes — a panel cannot be sized
+    // without it. The infill family's products come from the same cached
+    // candidate query the selection already uses, so this is a cache hit in
+    // every realistic project rather than a second round trip per opening.
+    const rule = parent?.candidate.defaultSplit ?? null;
+    let infillMaxWidthMm: number | null = null;
+    if (rule?.infillFamilySlug && rule.infillOperation) {
+      const infill = await ctx.repo.queryCandidates(parent!.candidate.family, rule.infillOperation);
+      const widths = infill
+        .filter((c) => c.series === rule.infillFamilySlug)
+        .map((c) => c.dimensionRule?.maxWidthMm)
+        .filter((w): w is number => typeof w === "number" && w > 0);
+      // The WIDEST frame the family makes: the pairing asks "can one panel cover
+      // this", and answering with a narrower product would invent an extra
+      // mullion the manufacturer would not build.
+      infillMaxWidthMm = widths.length ? Math.max(...widths) : null;
+    }
+
     // The default split uses the product's max width so a >2× opening becomes 3+
     // units, not two still-oversize halves.
-    const proposal = proposeSplit(pl.opening, hint, { maxWidthMm: parent?.candidate.dimensionRule?.maxWidthMm ?? null });
+    const proposal = proposeSplit(pl.opening, hint, {
+      maxWidthMm: parent?.candidate.dimensionRule?.maxWidthMm ?? null,
+      // maxSegments is the REAL policy cap, not the proposer's safety bound: a
+      // pairing that exceeds it would be built here and then refused by
+      // validateSplit below, which reads to the customer as no split at all.
+      pairing: {
+        rule, infillMaxWidthMm, maxSegments: policy.maxSegments,
+      },
+    });
     if (proposal.segments.length < 2) continue;
 
     // The plan decided the geometry; the report is the only document carrying a

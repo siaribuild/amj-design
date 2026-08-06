@@ -104,8 +104,9 @@ export const family = defineType({
       title: "Default split pairing",
       type: "object",
       description:
-        "How an opening too wide for one frame in this family is made up. Leave the infill "
-        + "family empty to keep today's behaviour (equal units of this family).",
+        "How an opening too wide for one frame in this family is made up: one window of this "
+        + "family, and the rest filled by the family named below. Leave the infill family empty "
+        + "to keep today's behaviour (equal units of this family).",
       fields: [
         defineField({
           name: "infillFamily",
@@ -145,39 +146,13 @@ export const family = defineType({
               : true;
           }),
         }),
-        defineField({
-          name: "placement",
-          title: "Where the opening sashes sit",
-          type: "string",
-          options: {
-            list: [
-              { title: "Outer — sash | infill | sash", value: "outer" },
-              { title: "Centre — infill | sash | infill", value: "centre" },
-              { title: "Left — sashes to the left", value: "left" },
-              { title: "Right — sashes to the right", value: "right" },
-            ],
-            layout: "radio",
-          },
-          initialValue: "outer",
-        }),
-        defineField({
-          name: "maxOperable",
-          title: "Most opening sashes, ever",
-          type: "number",
-          description: "The builder's cap. However wide the opening, never more than this many sashes.",
-          initialValue: 2,
-          validation: (r) => r.min(1).max(6),
-        }),
-        defineField({
-          name: "operableEveryMm",
-          title: "One opening sash per (mm) of opening",
-          type: "number",
-          description:
-            "One sash for each FULL multiple of this width, up to the cap — 3000 gives one "
-            + "sash up to 5999mm and two from 6000mm. Leave empty for exactly one sash "
-            + "however wide the opening is.",
-          validation: (r) => r.min(600),
-        }),
+        // Placement, a cap on opening units, and a width that earns another one
+        // were fields here. Removed by the owner, 2026-08-06: a unit is a whole
+        // WINDOW — frame included, which is what its dimensions describe — so
+        // coupling two already produces the mullion between them and there is no
+        // separate sash to place or count. Which side the opening window sits on
+        // is in the drawings and nowhere else; a family-level default cannot
+        // invent it. None had ever been authored, so nothing was lost.
         defineField({
           name: "minInfillMm",
           title: "Smallest infill panel worth making (mm)",

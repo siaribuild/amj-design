@@ -40,7 +40,7 @@ export const CATALOGUE_QUERY = `{
     // hold a reference it cannot follow.
     "defaultSplit": defaultSplit{
       "infillFamilySlug": infillFamily->slug.current,
-      placement, maxOperable, operableEveryMm, minInfillMm
+      minInfillMm
     }
   },
   "products": *[_type=="product"]|order(featuredOrder asc){

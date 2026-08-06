@@ -31,13 +31,10 @@ export interface FamilyDefaultSplit {
   /** The family supplying the non-opening panel — normally the fixed lite.
    *  Null or absent means DO NOT PAIR, which is every family's default. */
   infillFamilySlug?: string | null;
-  /** Where the opening sashes sit, left to right. */
-  placement?: "outer" | "centre" | "left" | "right" | null;
-  /** However wide the opening, never more than this many opening sashes. */
-  maxOperable?: number | null;
-  /** A second sash only past this width, a third past twice it, up to the cap.
-   *  Null means exactly one sash however wide the opening is. */
-  operableEveryMm?: number | null;
+  /** The infill family's operation ("fixed"). Carried beside the slug because a
+   *  split proposal names operations, not families; only the estimator's
+   *  candidate projection fills it, so it is absent on the display catalogue. */
+  infillOperation?: string | null;
   /** Below this, abandon the pairing rather than propose a sliver of glass
    *  nobody would build, and fall back to equal units. */
   minInfillMm?: number | null;

@@ -2,8 +2,17 @@
 // catalogue's dimensions rather than invented ones.
 //
 // The numbers below are live: the widest awning AMJ makes is 1300mm and every
-// fixed window runs 400–3000mm. So "three 1200mm awnings" is not a hypothetical
-// failure, it is what a 3600mm awning opening produces today.
+// fixed window runs 400–3000mm. So "two awnings side by side" is not a
+// hypothetical failure, it is what a 2050mm awning opening produced in
+// production before this existed.
+//
+// The rule is deliberately one sentence: if the opening is wider than the widest
+// frame the family makes, take the alternative family named in Sanity and fill
+// the remainder with it. Placement, an opening-unit cap and a width that earns
+// another unit were all authored knobs once; the owner removed them, because a
+// unit is a whole window — frame included — so coupling two already produces the
+// mullion between them, and which side the opening window sits on is in the
+// drawings, not in a family default.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
@@ -24,14 +33,9 @@ await build({
 const M = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
 
-// The builder's stated rule, as it would be authored on the Awning Window family.
-const AWNING_RULE = {
-  infillFamilySlug: "fixed-window",
-  placement: "outer",
-  maxOperable: 2,
-  operableEveryMm: 3000,
-  minInfillMm: 400,
-};
+// Exactly what the owner authored on Awning Window: an infill family, and
+// nothing else. Every case below therefore also proves the defaults hold.
+const AWNING_RULE = { infillFamilySlug: "fixed-window" };
 
 const call = (width, rule = AWNING_RULE, over = {}) => M.proposePairedLayout({
   openingWidthMm: width,
@@ -45,45 +49,59 @@ const call = (width, rule = AWNING_RULE, over = {}) => M.proposePairedLayout({
 const shape = (layout) => layout.units.map((u) => `${u.role}:${u.widthMm}`).join(" | ");
 const sums = (layout) => layout.units.reduce((n, u) => n + u.widthMm, 0);
 
-test("the builder's case: 3600mm gets ONE sash and glass, not three awnings", () => {
-  // Today this opening becomes awning 1200 | awning 1200 | awning 1200, because
-  // ceil(3600/1300) = 3 and every unit inherits the parent's operation.
-  const out = call(3600);
+test("W1, the opening that started this: 2050 is one awning and a lite", () => {
+  // Production delivered awning 1025 | awning 1025.
+  const out = call(2050);
   assert.ok(out, "the family names an infill, so there is an opinion to give");
-  assert.equal(shape(out), "operable:1300 | infill:2300");
-  assert.equal(sums(out), 3600, "the units partition the opening exactly");
+  assert.equal(shape(out), "operable:1300 | infill:750");
+  assert.equal(sums(out), 2050, "the units partition the opening exactly");
 });
 
-test("a modest overflow still pairs rather than halving", () => {
-  // 1950 is barely over one frame. Halving gives two 975mm awnings — two sashes
+test("a modest overflow pairs rather than halving", () => {
+  // 1950 is barely over one frame. Halving gives two 975mm awnings — two windows
   // where one and a lite is what gets built.
   const out = call(1950);
   assert.equal(shape(out), "operable:1300 | infill:650");
   assert.equal(sums(out), 1950);
 });
 
-test("a wide opening earns a second sash, and the glass sits between them", () => {
-  // 6000 / 3000 = 2 sashes earned, cap is 2. Placement "outer" puts the sashes at
-  // the jambs — the shape an explicit "AWNING + FIXED + AWNING" comment already
-  // produces, so the default and a stated layout agree rather than contradict.
-  const out = call(6000);
-  assert.equal(out.units[0].role, "operable");
-  assert.equal(out.units[out.units.length - 1].role, "operable");
-  assert.equal(out.units.filter((u) => u.role === "operable").length, 2);
-  assert.equal(sums(out), 6000);
-  assert.ok(out.units.length <= 4, "inside the composite cap");
+test("the opening window is always exactly one, however wide the hole", () => {
+  // The cap and the width-trigger that used to add more are gone. A 6m opening
+  // is one opening window and a wall of glass; a reviewer widens it if the
+  // ventilation is wrong, which is a judgement a default should not make.
+  for (const width of [2050, 3600, 6000, 9000]) {
+    const out = call(width);
+    assert.ok(out, String(width));
+    assert.equal(out.units.filter((u) => u.role === "operable").length, 1, String(width));
+    assert.equal(sums(out), width, String(width));
+  }
 });
 
-test("giving up a sash beats giving up the pairing when the cap bites", () => {
-  // 9000 earns 3 sashes but the cap is 2; even 2 needs 2 sashes + 3 lites = 5
-  // units, over the 4-unit maximum. One sash and a wall of glass is still the
-  // right shape and is what the manufacturer would build.
+test("the opening window comes first, and takes its full width", () => {
+  // An ORDER, not a claim about handedness — which jamb it sits against is in
+  // the drawings. It takes its full width because it is the size-constrained
+  // unit: leaving it narrower would only ask for more glass.
+  const out = call(3600);
+  assert.equal(out.units[0].role, "operable");
+  assert.equal(out.units[0].widthMm, 1300);
+  assert.ok(out.units.slice(1).every((u) => u.role === "infill"));
+});
+
+test("glass wider than one fixed frame becomes several panels", () => {
+  // 9000 leaves 7700mm of glass against a 3000mm maximum: three panels, none
+  // oversize, four units in total — exactly the composite cap.
   const out = call(9000);
-  assert.ok(out, "the pairing survives");
-  assert.ok(out.units.length <= 4, `got ${out.units.length} units`);
-  assert.equal(out.units.filter((u) => u.role === "operable").length, 1);
-  assert.equal(sums(out), 9000, "still partitions exactly");
-  assert.match(out.note, /Limited to 1 by the 4-unit maximum/);
+  assert.equal(shape(out), "operable:1300 | infill:2566 | infill:2566 | infill:2568");
+  assert.equal(sums(out), 9000);
+  assert.ok(out.units.every((u) => u.role === "operable" || u.widthMm <= 3000));
+});
+
+test("past the composite cap it declines rather than proposing a refused plan", () => {
+  // 12000 needs 1 + 4 panels = 5 units against a 4-unit maximum. Returning null
+  // hands the opening back to the even split; proposing it would build a plan
+  // validateSplit then refuses, which reads to the customer as no split at all.
+  assert.equal(call(12000), null);
+  assert.ok(call(12000, AWNING_RULE, { maxSegments: 5 }), "a higher cap accepts it");
 });
 
 test("no infill family means no opinion — today's behaviour, untouched", () => {
@@ -101,11 +119,14 @@ test("an opening that fits one frame is not a composite at all", () => {
 });
 
 test("a sliver of glass is refused, and the opening falls back to even units", () => {
-  // 1350 leaves 50mm beside a 1300 sash. Nobody builds a 50mm lite; returning
+  // 1350 leaves 50mm beside a 1300 frame. Nobody builds a 50mm lite; returning
   // null hands the opening back to the even split rather than proposing a joke.
   assert.equal(call(1350), null);
   // …and the threshold is the authored one, not a constant.
   assert.ok(call(1350, { ...AWNING_RULE, minInfillMm: 40 }), "a practice may set it lower");
+  // The default is 400, so this is the boundary either side of it.
+  assert.equal(call(1699), null, "399mm of glass");
+  assert.ok(call(1700), "400mm exactly");
 });
 
 test("unknown dimensions produce no opinion rather than a guess", () => {
@@ -113,114 +134,13 @@ test("unknown dimensions produce no opinion rather than a guess", () => {
   // maximum would invent a manufacturing constraint.
   assert.equal(call(3600, AWNING_RULE, { operableMaxWidthMm: 0 }), null);
   assert.equal(call(3600, AWNING_RULE, { infillMaxWidthMm: 0 }), null);
-});
-
-test("with no width trigger it is exactly one sash, however wide the hole", () => {
-  const oneSash = { ...AWNING_RULE, operableEveryMm: null };
-  const out = call(6000, oneSash);
-  assert.equal(out.units.filter((u) => u.role === "operable").length, 1);
-  assert.equal(sums(out), 6000);
-});
-
-test("placement is the editor's choice, and every option partitions exactly", () => {
-  for (const placement of ["outer", "centre", "left", "right"]) {
-    const out = call(6000, { ...AWNING_RULE, placement });
-    assert.ok(out, placement);
-    assert.equal(sums(out), 6000, `${placement} partitions exactly`);
-    assert.ok(out.units.length <= 4, `${placement} respects the cap`);
-    assert.equal(out.units.filter((u) => u.role === "operable").length, 2, placement);
-  }
-  // The shapes genuinely differ — this is a real choice, not a cosmetic one.
-  assert.equal(call(6000, { ...AWNING_RULE, placement: "left" }).units[0].role, "operable");
-  assert.equal(call(6000, { ...AWNING_RULE, placement: "right" }).units[0].role, "infill");
-  assert.equal(call(6000, { ...AWNING_RULE, placement: "centre" }).units[0].role, "infill");
-});
-
-// ── The cases the first suite was blind to ───────────────────────────────────
-// Twelve tests passed while two placement defects shipped, because every
-// placement was exercised at 6000mm ONLY — where k=2 for all four options and
-// both faults are invisible.
-
-test("outer keeps a sash at BOTH jambs and spreads the glass between them", () => {
-  // The old arrangement appended surplus sashes AFTER the glass, so three
-  // sashes came out as sash | glass | glass | sash | sash — all the glass
-  // bunched at one end and two sashes adjacent at the other.
-  const out = M.proposePairedLayout({
-    openingWidthMm: 6000, operableMaxWidthMm: 1300, infillMaxWidthMm: 1100,
-    maxSegments: 6,
-    rule: { ...AWNING_RULE, maxOperable: 3, operableEveryMm: 1500 },
-  });
-  assert.equal(shape(out), "operable:1300 | infill:1050 | operable:1300 | infill:1050 | operable:1300");
-  assert.equal(sums(out), 6000);
-});
-
-test("outer alternates cleanly at four sashes too", () => {
-  const out = M.proposePairedLayout({
-    openingWidthMm: 8000, operableMaxWidthMm: 1300, infillMaxWidthMm: 1100,
-    maxSegments: 8,
-    rule: { ...AWNING_RULE, maxOperable: 4, operableEveryMm: 1500 },
-  });
-  // The WHOLE shape, not the two ends. Asserting only the jambs and the sum is
-  // the projection under which the original defect was invisible: the buggy
-  // arrangement (all glass bunched, surplus sashes appended) satisfies both.
-  assert.equal(shape(out), "operable:1300 | infill:933 | operable:1300 | infill:933 | operable:1300 | infill:934 | operable:1300");
-  assert.equal(sums(out), 8000);
-});
-
-test("outer with fewer panels than gaps still puts sashes at the jambs", () => {
-  // Three sashes and one panel: two sashes MUST be adjacent somewhere. The
-  // promise "outer" makes is the jambs, and it is still kept — but assert where
-  // the panel actually LANDS, since "sash at each end" alone cannot tell the
-  // correct answer from the defect it replaced.
-  const out = call(6000, { ...AWNING_RULE, maxOperable: 3, operableEveryMm: 1500 });
-  assert.equal(shape(out), "operable:1300 | infill:2100 | operable:1300 | operable:1300");
-  assert.equal(sums(out), 6000);
-});
-
-test("centre puts glass at BOTH jambs, even when the maths wants one panel", () => {
-  // 3600 leaves 2300mm of glass and a fixed maxes at 3000, so the arithmetic
-  // wants ONE panel — which cannot express "centre" and used to come out as
-  // infill | operable, indistinguishable from placement "right".
-  const out = call(3600, { ...AWNING_RULE, placement: "centre" });
-  assert.equal(shape(out), "infill:1150 | operable:1300 | infill:1150");
-  assert.equal(sums(out), 3600);
-  assert.equal(out.units[0].role, "infill");
-  assert.equal(out.units[out.units.length - 1].role, "infill");
-});
-
-test("every placement is distinguishable from every other, at k=2 AND k=3", () => {
-  const seen = new Map();
-  for (const placement of ["outer", "centre", "left", "right"]) {
-    for (const rule of [
-      { ...AWNING_RULE, placement },
-      { ...AWNING_RULE, placement, maxOperable: 3, operableEveryMm: 1500 },
-    ]) {
-      const out = call(6000, rule);
-      assert.ok(out, placement);
-      assert.equal(sums(out), 6000, placement);
-      assert.ok(out.units.length <= 4, placement);
-      const key = `k${rule.maxOperable}`;
-      const bucket = seen.get(key) ?? new Set();
-      // The full role sequence, not the two jambs — four placements must differ
-      // in the INTERIOR too, and a first/last signature cannot see that.
-      bucket.add(out.units.map((u) => u.role[0]).join(""));
-      seen.set(key, bucket);
-    }
-  }
-  // outer=o/o, centre=i/i, left=o/i, right=i/o — four distinct jamb signatures,
-  // which is the whole point of offering the choice.
-  for (const [k, bucket] of seen) {
-    assert.equal(bucket.size, 4, `${k}: every placement must produce a distinct pair of jambs`);
-  }
-});
-test("the cap is honoured even when a practice authors a high one", () => {
-  const greedy = { ...AWNING_RULE, maxOperable: 6, operableEveryMm: 800 };
-  const out = call(6000, greedy);
-  assert.ok(out.units.length <= 4, `got ${out.units.length}`);
-  assert.equal(sums(out), 6000);
+  assert.equal(call(0), null);
 });
 
 test("the note explains itself, because a reviewer should not need the code", () => {
-  assert.match(call(3600).note, /1 opening sash with 1 fixed panel/);
-  assert.match(call(6000).note, /2 opening sashes/);
+  assert.match(call(2050).note, /1 opening unit with 1 fixed panel/);
+  assert.match(call(9000).note, /1 opening unit with 3 fixed panels/);
+  // "sash" is not the platform's word for a unit: a unit is a whole window,
+  // frame included, and the owner corrected this vocabulary deliberately.
+  assert.doesNotMatch(call(2050).note, /sash/i);
 });

@@ -15,6 +15,8 @@
 // mullion/jamb allowances. Widths partition the opening exactly; the reviewer
 // owns the engineering.
 import type { OpeningInput } from "./types";
+import type { FamilyDefaultSplit } from "../../../src/data/catalogue";
+import { proposePairedLayout } from "./pairing";
 import type { EnergyRequirementV1 } from "../ai/schema";
 
 // Operation vocabulary the comment parser recognises. Fixed is the passive lite
@@ -218,7 +220,7 @@ export interface SplitProposal {
   segments: ProposedSegment[];
   /** Always 'vertical' here: coupled units partition the WIDTH, full height each. */
   axis: "vertical" | "horizontal";
-  basis: "energy_report" | "schedule_comment" | "learned" | "default_even";
+  basis: "energy_report" | "schedule_comment" | "learned" | "default_pairing" | "default_even";
   /** ALWAYS true — a proposed split is a starting point, never a final answer. */
   reviewRequired: true;
   note: string;
@@ -416,14 +418,25 @@ export function evenWidths(totalMm: number, count: number): number[] {
   return out;
 }
 
-/** Propose a split for an opening. Comment-authoritative, else an even split into
- *  the minimum number of equal units that each FIT the product's max width (so a
- *  >2× oversize opening becomes 3+, not two still-oversize halves — "just maths").
- *  With no max width known it falls back to a 50/50 two-way split. */
+/** Propose a split for an opening. Comment-authoritative, then the family's own
+ *  default pairing, then an even split into the minimum number of equal units
+ *  that each FIT the product's max width (so a >2× oversize opening becomes 3+,
+ *  not two still-oversize halves — "just maths"). With no max width known it
+ *  falls back to a 50/50 two-way split. */
 export function proposeSplit(
   opening: OpeningInput,
   hint: SplitHint | null,
-  opts?: { maxWidthMm?: number | null },
+  opts?: {
+    maxWidthMm?: number | null;
+    /** The opening family's authored pairing rule, and the widest frame the
+     *  infill family makes. Both or neither — the rule alone cannot size a
+     *  panel. Absent means "no opinion", which is every unauthored family. */
+    pairing?: {
+      rule: FamilyDefaultSplit | null;
+      infillMaxWidthMm: number | null;
+      maxSegments?: number | null;
+    } | null;
+  },
 ): SplitProposal {
   const width = Math.max(0, Math.round(opening.widthMm ?? 0));
   const height = Math.max(0, Math.round(opening.heightMm ?? 0));
@@ -440,6 +453,46 @@ export function proposeSplit(
         note: hint.source === "energy_report"
           ? `Built from the energy report's authoritative component schedule (${hint.raw}) — confirm document discrepancies at review.`
           : `Proposed from the schedule comment "${hint.raw}" — confirm the split at review.`,
+      };
+    }
+  }
+
+  // THE FAMILY'S OWN ANSWER, beneath anything a document actually said.
+  //
+  // An opening too wide for one frame is not N of that frame. A 2050mm awning
+  // against a 1300mm maximum was delivered as two 1025mm awnings — two chain
+  // winders where the manufacturer builds one sash and a lite. The rule that
+  // says so is authored per family in Sanity and is a weaker claim than any
+  // document, which is why it sits here and not above the hint.
+  const pairingRule = opts?.pairing?.rule ?? null;
+  const infillMax = opts?.pairing?.infillMaxWidthMm ?? null;
+  const infillOp = pairingRule?.infillOperation?.trim() || null;
+  if (pairingRule && infillOp && infillMax && opts?.maxWidthMm) {
+    const paired = proposePairedLayout({
+      openingWidthMm: width,
+      operableMaxWidthMm: opts.maxWidthMm,
+      infillMaxWidthMm: infillMax,
+      // The composite policy's own cap, when the caller knows it. MAX_HINT_UNITS
+      // is a safety bound, not a policy — a plan that exceeds the real cap is
+      // refused by validateSplit later, and refusing it HERE instead keeps the
+      // pairing from being silently dropped for a reason nobody sees.
+      maxSegments: opts.pairing?.maxSegments ?? MAX_HINT_UNITS,
+      rule: pairingRule,
+    });
+    if (paired) {
+      return {
+        segments: paired.units.map((u) => ({
+          // A role becomes an operation here and nowhere else: the pairing module
+          // is deliberately catalogue-free, so it names roles and this is the one
+          // place that knows which family fills them.
+          operation: u.role === "infill" ? infillOp : fallbackOp,
+          widthMm: u.widthMm,
+          heightMm: height,
+        })),
+        axis: "vertical",
+        basis: "default_pairing",
+        reviewRequired: true,
+        note: paired.note,
       };
     }
   }
