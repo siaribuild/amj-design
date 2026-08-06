@@ -55,6 +55,49 @@ consumer cannot tell it apart from a real one.
 
 Three decimals is enough and more is false precision: at 2050mm, 0.001 is 2mm.
 
+#### The ratio is a measurement, so it is approximate
+
+Treat it as guidance for sizing, never as a claim. The authoritative figures are
+the opening's own dimensions, from the schedule table. What the drawing
+contributes with certainty is the **operations and their order**; the proportions
+are how it guides the sizes.
+
+A printed dimension is not a measurement and is not covered by this — it is a
+stated fact and outranks the ratio.
+
+#### Turning ratios into sizes: round all but the last
+
+Sizes land on a configurable step, default **5mm** — no window is made ending in
+anything but 0 or 5. Along the division axis, given the opening dimension `D` and
+ordered ratios `r₁…rₙ`:
+
+```
+size(i)  = round(D × rᵢ / step) × step      for i = 1 … n-1
+size(n)  = D − Σ size(i)                     the last unit takes what is left
+```
+
+The last unit absorbs the rounding, so the units **always** partition the opening
+exactly and the rule can never fail to produce an answer. Exact partition is an
+invariant the platform enforces — `validateSplit` computes a coverage delta and
+flags it — so a rule that snapped *every* unit to the step would break it
+whenever the opening itself is not a multiple of the step.
+
+Worked: opening 2050, ratios 0.634 / 0.366, step 5 →
+`round(1299.7/5)×5 = 1300`, remainder `750`. Opening 2047 → `1300`, remainder
+`747`. Both partition exactly; only the last unit carries a non-round figure,
+which is correct — it is the piece cut to fit.
+
+**This applies to the height too**, whenever `divisionAxis` is horizontal.
+
+**Where the step is configured:** it is a property of what can be manufactured,
+not of a drawing, so it does not belong to the parse. `composite_policy` in D1
+already holds the composite rules (`max_segments`, `tolerance_mm`,
+`default_joiner_mm`) and is already loaded at the point the split is proposed —
+that is the cheapest correct home for it, ops-editable, one number. If a family
+ever has a different granularity, a per-product `dimensionRule.stepMm` can
+override it, beside the min and max widths where the other manufacturing limits
+live.
+
 **Order matters and is not decoration.** `awning | fixed` and `fixed | awning` are
 different windows. If the drawings show which side the opening unit sits on, that
 is the most valuable thing on the sheet after the composition itself — because no
