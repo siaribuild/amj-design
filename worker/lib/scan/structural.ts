@@ -56,6 +56,11 @@ export function sniffType(bytes: Uint8Array): string | null {
 // PDF active-content markers. /OpenAction and /AA are deliberately absent: they
 // are overwhelmingly benign (page zoom, view prefs) and flagging them would
 // reject ordinary architectural exports.
+/** Page-action inspection is per-page work on the upload path, so it is bounded.
+ *  A weaponised PDF hides its payload where a viewer will reach it — the first
+ *  pages — and a 200-page set must not turn an upload into a timeout. */
+const PARSER_PAGE_LIMIT = 30;
+
 const PDF_ACTIVE: { token: string; reason: string }[] = [
   { token: "/JavaScript", reason: "pdf_javascript" },
   { token: "/JS", reason: "pdf_javascript" },
@@ -65,17 +70,62 @@ const PDF_ACTIVE: { token: string; reason: string }[] = [
   { token: "/XFA", reason: "pdf_xfa" },
 ];
 
+/** The bytes OUTSIDE every `stream…endstream` span, joined by a separator that
+ *  cannot itself complete a token.
+ *
+ *  THE RAW PASS MUST NOT READ STREAM CONTENT. A stream body is compressed image
+ *  and content data — arbitrary bytes — and searching it for a three-character
+ *  token is searching noise for a needle that noise contains. A real 5.9 MB
+ *  architectural PDF was refused as "infected" on a single `/JS` at byte
+ *  5,606,079, sitting inside an 80 KB compressed stream at 38% printable, in a
+ *  document pdf.js confirms has no JavaScript anywhere: no document actions, no
+ *  page actions, no annotation actions.
+ *
+ *  It is not a rare accident. A specific 3-byte sequence appears by chance about
+ *  once per 16.7 MB, so the odds of a spurious `/JS` are ~8% at 2 MB, ~23% at
+ *  6 MB and ~49% at the 15 MB upload cap. Bigger plan sets — the ones from real
+ *  builders — were the most likely to be blocked.
+ *
+ *  Object dictionaries live outside streams, which is what this pass is for. A
+ *  dictionary compressed INTO an object stream (PDF 1.5+) is invisible here by
+ *  construction, and that is precisely the parser pass's job below. */
+function outsideStreams(text: string): string {
+  const parts: string[] = [];
+  const re = /\bstream\r\n|\bstream\n|\bstream\r|\bendstream\b/g;
+  let cursor = 0;
+  let openedAt: number | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m[0].startsWith("endstream")) {
+      if (openedAt === null) continue;       // stray endstream; ignore
+      cursor = m.index;
+      openedAt = null;
+    } else if (openedAt === null) {
+      parts.push(text.slice(cursor, m.index + m[0].length));
+      openedAt = m.index;
+    }
+  }
+  // An unterminated stream runs to EOF — deliberately NOT appended, so a
+  // truncated file cannot smuggle a dictionary past this by omitting endstream.
+  if (openedAt === null) parts.push(text.slice(cursor));
+  return parts.join("\n");
+}
+
 async function scanPdf(bytes: Uint8Array): Promise<ScanResult | null> {
-  // Raw-byte pass — catches uncompressed dictionaries.
-  const text = new TextDecoder("latin1").decode(bytes);
+  // Raw-byte pass — uncompressed dictionaries ONLY. See outsideStreams above for
+  // why stream bodies are excluded rather than searched.
+  const structure = outsideStreams(new TextDecoder("latin1").decode(bytes));
   for (const { token, reason } of PDF_ACTIVE) {
     // Token must be followed by a PDF delimiter so /JS doesn't match /JSName.
     const re = new RegExp(`${token.replace("/", "\\/")}(?![A-Za-z0-9])`);
-    if (re.test(text)) {
+    if (re.test(structure)) {
       return { verdict: "infected", engine: "structural", reason, detail: `PDF contains ${token}` };
     }
   }
-  // Parser pass — catches the same content hidden in compressed object streams.
+  // Parser pass — the authority, and the only thing that sees inside compressed
+  // object streams. It now covers embedded files as well as scripts, because the
+  // raw pass above no longer reaches a dictionary that has been compressed into
+  // an object stream.
   try {
     // pdf.js takes ownership of the array it is given and DETACHES the underlying
     // buffer. Hand it a copy, or the caller's bytes are zero-length afterwards —
@@ -84,6 +134,19 @@ async function scanPdf(bytes: Uint8Array): Promise<ScanResult | null> {
     const actions = typeof pdf.getJSActions === "function" ? await pdf.getJSActions() : null;
     if (actions && Object.keys(actions).length > 0) {
       return { verdict: "infected", engine: "structural", reason: "pdf_javascript", detail: "PDF declares document-level JavaScript" };
+    }
+    const attachments = typeof pdf.getAttachments === "function" ? await pdf.getAttachments() : null;
+    if (attachments && Object.keys(attachments).length > 0) {
+      return { verdict: "infected", engine: "structural", reason: "pdf_embedded_file", detail: "PDF carries an embedded file" };
+    }
+    // Page-level and annotation-level actions are a separate hiding place from
+    // the document catalogue, and both are reachable only through the parser.
+    for (let n = 1; n <= Math.min(pdf.numPages ?? 0, PARSER_PAGE_LIMIT); n++) {
+      const page: any = await pdf.getPage(n);
+      const pageActions = typeof page.getJSActions === "function" ? await page.getJSActions() : null;
+      if (pageActions && Object.keys(pageActions).length > 0) {
+        return { verdict: "infected", engine: "structural", reason: "pdf_javascript", detail: `PDF page ${n} declares JavaScript` };
+      }
     }
   } catch {
     // An unreadable/encrypted PDF is not a verdict — fail closed.

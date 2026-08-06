@@ -147,6 +147,88 @@ test("scanning leaves the caller's bytes intact", async () => {
   assert.deepEqual(Array.from(pdf.subarray(0, 8)), Array.from(copy.subarray(0, 8)));
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// A STREAM BODY IS NOT A DICTIONARY
+//
+// A real 5.9 MB architectural plan set was refused as "infected" on a single
+// `/JS` at byte 5,606,079 — inside an 80 KB compressed stream, at 38% printable,
+// in a document pdf.js confirms has no JavaScript anywhere: no document actions,
+// no page actions, no annotation actions. The customer was told their drawings
+// "contain embedded scripts".
+//
+// It was never going to be rare. A specific three-byte sequence turns up by
+// chance about once per 16.7 MB of arbitrary bytes, so a spurious `/JS` runs at
+// roughly 8% for a 2 MB PDF, 23% at 6 MB and 49% at the 15 MB upload cap — and
+// the biggest files are real builders' plan sets.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test("an active-content token inside a compressed stream is not a verdict", async () => {
+  // The exact shape of the production false positive: the token sits in the
+  // content stream, where compressed image data lives, not in any dictionary.
+  const r = await scan(minimalPdf("", "(x) Tj \x8a\x1f/JS\x00\x93q"));
+  assert.equal(r.verdict, "clean", "a byte coincidence in stream data is not active content");
+  assert.equal(r.reason, "type_pdf");
+});
+
+test("the same token in a DICTIONARY is still infected", async () => {
+  // The pass exists for this and must keep doing it — the fix narrows where it
+  // looks, never what it looks for.
+  for (const [extra, reason] of [
+    ["/Names << /JavaScript 6 0 R >> ", "pdf_javascript"],
+    ["/OpenAction << /S /JavaScript /JS (app.alert\\(1\\)) >> ", "pdf_javascript"],
+    ["/OpenAction << /S /Launch /F (cmd.exe) >> ", "pdf_launch_action"],
+    ["/AcroForm << /XFA 6 0 R >> ", "pdf_xfa"],
+  ]) {
+    const r = await scan(minimalPdf(extra));
+    assert.equal(r.verdict, "infected", extra);
+    assert.equal(r.reason, reason, extra);
+  }
+});
+
+test("a truncated stream cannot smuggle a dictionary past the scan", async () => {
+  // outsideStreams drops everything after an unterminated `stream`, so omitting
+  // `endstream` hides the tail from the raw pass. It must not become a bypass:
+  // pdf.js then fails to parse and the scan fails CLOSED.
+  const truncated = bytes("%PDF-1.4\n1 0 obj << /Length 9 >>\nstream\n/JS (app.alert\\(1\\))");
+  const r = await scan(truncated);
+  assert.notEqual(r.verdict, "clean", "an unparseable PDF is never clean");
+});
+
+test("a PDF carrying an attached file is still refused", async () => {
+  // A real attachment: a filespec pointing at an /Type /EmbeddedFile stream,
+  // reachable from the catalogue's EmbeddedFiles name tree. The subtype sits in
+  // an object DICTIONARY — outside any stream — so the narrowed raw pass still
+  // sees it.
+  //
+  // Note the token is `/EmbeddedFile`, the stream subtype, not `/EmbeddedFiles`,
+  // the name-tree key: the trailing `s` fails the delimiter lookahead, which is
+  // correct and is why this fixture carries the real object rather than just the
+  // name tree.
+  const objs = [
+    "<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(payload.txt) 6 0 R] >> >> >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>",
+    "<< /Length 20 >>\nstream\nBT (hi) Tj ET\nendstream",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    "<< /Type /Filespec /F (payload.txt) /EF << /F 7 0 R >> >>",
+    "<< /Type /EmbeddedFile /Length 5 >>\nstream\nhello\nendstream",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [];
+  for (let i = 0; i < objs.length; i++) {
+    offsets.push(Buffer.byteLength(pdf, "latin1"));
+    pdf += `${i + 1} 0 obj\n${objs[i]}\nendobj\n`;
+  }
+  const xref = Buffer.byteLength(pdf, "latin1");
+  pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+  for (const off of offsets) pdf += `${String(off).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+
+  const r = await scan(bytes(pdf));
+  assert.equal(r.verdict, "infected");
+  assert.equal(r.reason, "pdf_embedded_file");
+});
+
 test("statusForVerdict maps onto the virus_status CHECK constraint", () => {
   assert.equal(statusForVerdict("clean"), "clean");
   assert.equal(statusForVerdict("infected"), "infected");

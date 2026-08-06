@@ -23,15 +23,26 @@ const ANON_UPLOAD_BYTES_PER_DAY = 150 * 1024 * 1024;
 const USER_UPLOAD_BYTES_PER_DAY = 1024 * 1024 * 1024;
 const GLOBAL_UPLOAD_BYTES_PER_HOUR = 5 * 1024 * 1024 * 1024;
 
-async function rejectUploadReservation(env: Env, id: string, projectId: string): Promise<void> {
+/** Refuse a reservation, RECORDING WHY.
+ *
+ *  The reason used to be returned to the browser and then dropped, so "why was
+ *  my file rejected?" could not be answered from the database — it had to be
+ *  reconstructed by re-running the scanner against a copy of the file the
+ *  customer still happened to have. Both figures exist at the moment of refusal;
+ *  now they are kept (migration 0041). */
+async function rejectUploadReservation(
+  env: Env, id: string, projectId: string,
+  reason?: string | null, detail?: string | null,
+): Promise<void> {
   await env.DB.batch([
     env.DB.prepare(
       "DELETE FROM file_asset WHERE id=? AND project_id=? AND virus_status='pending'",
     ).bind(id, projectId),
     env.DB.prepare(
-      `UPDATE upload_reservation SET status='rejected', completed_at=datetime('now')
+      `UPDATE upload_reservation SET status='rejected', completed_at=datetime('now'),
+              reason=?, detail=?
         WHERE id=? AND project_id=? AND status='reserved'`,
-    ).bind(id, projectId),
+    ).bind(reason ?? null, detail ?? null, id, projectId),
   ]).catch(() => { /* pending row remains fail-closed and customer-removable */ });
 }
 
@@ -182,7 +193,7 @@ files.post("/files/upload", async (c) => {
     id: string; filename: string; kind: string; size: number | null;
   }>();
   if (duplicate) {
-    await rejectUploadReservation(c.env, id, project.id);
+    await rejectUploadReservation(c.env, id, project.id, "duplicate", duplicate.filename);
     return c.json({
       file: {
         id: duplicate.id,
@@ -200,15 +211,15 @@ files.post("/files/upload", async (c) => {
       bytes, filename: file.name, contentType: file.type || "application/octet-stream",
     });
   } catch {
-    await rejectUploadReservation(c.env, id, project.id);
+    await rejectUploadReservation(c.env, id, project.id, "scanner_error", "The scanner threw");
     return c.json({ error: "scan_unavailable", reason: "scanner_error" }, 503);
   }
   if (verdict.verdict === "infected") {
-    await rejectUploadReservation(c.env, id, project.id);
+    await rejectUploadReservation(c.env, id, project.id, verdict.reason ?? "rejected", verdict.detail ?? null);
     return c.json({ error: "file_rejected", reason: verdict.reason ?? "rejected", detail: verdict.detail ?? null }, 422);
   }
   if (verdict.verdict !== "clean") {
-    await rejectUploadReservation(c.env, id, project.id);
+    await rejectUploadReservation(c.env, id, project.id, verdict.reason ?? "unknown", verdict.detail ?? null);
     return c.json({ error: "scan_unavailable", reason: verdict.reason ?? "unknown" }, 503);
   }
 
@@ -217,7 +228,7 @@ files.post("/files/upload", async (c) => {
       httpMetadata: { contentType: file.type || "application/octet-stream" },
     });
   } catch {
-    await rejectUploadReservation(c.env, id, project.id);
+    await rejectUploadReservation(c.env, id, project.id, "storage_unavailable", null);
     return c.json({ error: "storage_unavailable" }, 503);
   }
 
@@ -228,7 +239,7 @@ files.post("/files/upload", async (c) => {
   ).bind(project.id).first<{ quote_edit_version: number; ai_generation: number }>();
   if (!finalizeState) {
     await c.env.FILES.delete(r2Key).catch(() => {});
-    await rejectUploadReservation(c.env, id, project.id);
+    await rejectUploadReservation(c.env, id, project.id, "project_changed_retry", null);
     return c.json({ error: "project_changed_retry" }, 409);
   }
   const finalizedVersion = finalizeState.quote_edit_version + 1;
@@ -316,7 +327,7 @@ files.post("/files/upload", async (c) => {
       (aiJobIndex >= 0 && Number(finalized[aiJobIndex]?.meta?.changes ?? 0) !== 1) ||
       Number(finalized[finalizeReleaseIndex]?.meta?.changes ?? 0) !== 1) {
     await c.env.FILES.delete(r2Key).catch(() => {});
-    await rejectUploadReservation(c.env, id, project.id);
+    await rejectUploadReservation(c.env, id, project.id, "project_changed_retry", null);
     return c.json({ error: "project_changed_retry" }, 409);
   }
 
