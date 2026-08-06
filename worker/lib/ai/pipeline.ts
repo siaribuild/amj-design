@@ -546,8 +546,14 @@ export async function runAiExtraction(
   // materialises the composite (parent + priced segments) for comment and
   // oversize openings.
   const splitHints = new Map<string, SplitHint>();
+  // The schedule's TYPE text, verbatim and per tag. operation_type is stored
+  // normalised — operationFrom() maps "OFFSET AWNING" to plain "awning" — so
+  // without this the family default cannot tell a centred make-up from an
+  // offset one, and the estimator has no other copy of the wording.
+  const scheduleTypes = new Map<string, string>();
   for (const l of merged.lines) {
     if (!l.tag || l.widthMm == null || l.heightMm == null) continue;
+    if (l.typeText) scheduleTypes.set(l.tag, l.typeText);
     const hint: SplitHint | null = l.split?.operable?.length
       ? { units: l.split.operable, raw: l.notes ?? "", source: "schedule_comment" }
       : parseSplitHint(l.notes);
@@ -813,7 +819,7 @@ export async function runAiExtraction(
     sourceGeneration,
     sourceManifestHash,
     processingToken: opts.processingToken,
-  }, { splitHints });
+  }, { splitHints, scheduleTypes });
 
   phase("estimate_and_pricing", {
     openings: estimate.openings,

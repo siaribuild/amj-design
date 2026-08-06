@@ -163,6 +163,32 @@ export const family = defineType({
           initialValue: 400,
           validation: (r) => r.min(0),
         }),
+        // A RATIO, not a width. It is what a drawing states, and what the plan
+        // parse returns — so when drawings land they replace these numbers in
+        // place and nothing downstream changes shape. Sizing snaps every unit
+        // but the last to 5mm and gives the last what is left, so the units
+        // always partition the opening exactly.
+        defineField({
+          name: "operableRatio",
+          title: "Opening unit's share of the opening",
+          type: "number",
+          description:
+            "0–1. Half is the typical make-up: a 2050mm opening becomes a 1025mm opening unit "
+            + "beside a 1025mm panel. Leave blank for a half.",
+          initialValue: 0.5,
+          validation: (r) => r.min(0.05).max(0.95),
+        }),
+        defineField({
+          name: "offsetOperableRatio",
+          title: "Opening unit's share when the schedule says OFFSET",
+          type: "number",
+          description:
+            "0–1, used when the schedule calls the opening an OFFSET unit — the opening pane is "
+            + "deliberately the smaller part, nearer a third. Both spellings resolve to this same "
+            + "family, so only the schedule's wording distinguishes them. Blank falls back to the share above.",
+          initialValue: 0.3,
+          validation: (r) => r.min(0.05).max(0.95),
+        }),
       ],
       options: { collapsible: true, collapsed: true },
     }),

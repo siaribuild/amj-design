@@ -147,6 +147,13 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
    *  proposes + materialises a review-flagged composite for these and for oversize
    *  openings (WS5). Absent ⇒ no auto-split. */
   splitHints?: Map<string, SplitHint>;
+  /** Per-opening (external_ref) schedule TYPE text, verbatim. Carried separately
+   *  because operation_type is stored normalised — pipeline writes
+   *  operationFrom(familyRequested), so "OFFSET AWNING" reaches the estimator as
+   *  plain "awning" and the family default cannot tell the two make-ups apart.
+   *  Not a split hint: a hint means a document stated a layout, and stating one
+   *  here would force a proposal onto openings that fit in a single frame. */
+  scheduleTypes?: Map<string, string>;
 }): Promise<EstimateSummary> {
   // Extraction source #1: if the project has parsed schedule lines but no
   // openings yet, bridge them first (idempotent).
@@ -243,7 +250,8 @@ export async function runProjectEstimate(env: Env, projectId: string, proposal?:
     appliedToCart = published.appliedLines;
     // WS5: after the lines exist, materialise a review-flagged composite for any
     // opening that the schedule comment says to split, or that is oversize.
-    const splitWarnings = await materialiseSplits(env, { repo, priceFn, historical, proposalLines, splitHints: opts?.splitHints ?? new Map() });
+    const splitWarnings = await materialiseSplits(env, { repo, priceFn, historical, proposalLines,
+      splitHints: opts?.splitHints ?? new Map(), scheduleTypes: opts?.scheduleTypes ?? new Map() });
     return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: splitWarnings };
   }
   return { openings: openings.length, selected: selectedCount, appliedToCart, lines, reviewWarnings: [] };
@@ -260,6 +268,7 @@ async function materialiseSplits(env: Env, ctx: {
   historical: Parameters<typeof selectForOpening>[3];
   proposalLines: ProposalSelection[];
   splitHints: Map<string, SplitHint>;
+  scheduleTypes: Map<string, string>;
 }): Promise<string[]> {
   const reviewWarnings: string[] = [];
   // Read once per run, not per opening: it is one small D1 row and every
@@ -304,6 +313,10 @@ async function materialiseSplits(env: Env, ctx: {
       // validateSplit below, which reads to the customer as no split at all.
       pairing: {
         rule, infillMaxWidthMm, maxSegments: policy.maxSegments,
+        // The schedule's own wording, not the stored operation: "OFFSET AWNING"
+        // and "AWNING" resolve to one family and one operation_type, so this is
+        // the only place the difference still exists.
+        offset: /\boffset\b/i.test(pl.externalRef ? ctx.scheduleTypes.get(pl.externalRef) ?? "" : ""),
       },
     });
     if (proposal.segments.length < 2) continue;

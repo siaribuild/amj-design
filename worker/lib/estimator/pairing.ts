@@ -60,12 +60,30 @@ export interface PairingInput {
   /** The composite policy cap — a composite may not exceed this many units. */
   maxSegments: number;
   rule: FamilyDefaultSplit | null | undefined;
+  /** The schedule called this an OFFSET unit, so the opening pane is the
+   *  smaller part. Read from the schedule's own wording rather than the family:
+   *  "AWNING" and "OFFSET AWNING" resolve to the same family and only the
+   *  schedule tells them apart. */
+  offset?: boolean;
 }
 
 /** Below this an infill panel is a sliver nobody would build. Overridable per
  *  family; it is the one remaining knob because it is a manufacturing fact
  *  about the panel, not a preference about layout. */
 const DEFAULT_MIN_INFILL_MM = 400;
+
+/** A straight half is the typical make-up; an OFFSET unit's opening pane is the
+ *  smaller part, nearer a third. Both are overridable per family. */
+const DEFAULT_OPERABLE_RATIO = 0.5;
+const DEFAULT_OFFSET_RATIO = 0.3;
+
+/** No window is made ending in anything but 0 or 5 — nobody builds a 1027mm
+ *  unit. Every unit but the closing one lands on this step. */
+const STEP_MM = 5;
+const snap = (mm: number) => Math.round(mm / STEP_MM) * STEP_MM;
+/** Down to the step — a cap must never be rounded UP past the maximum it caps. */
+const floorStep = (mm: number) => Math.floor(mm / STEP_MM) * STEP_MM;
+const clampRatio = (r: number) => (Number.isFinite(r) && r > 0 && r < 1 ? r : DEFAULT_OPERABLE_RATIO);
 
 /**
  * Propose the layout, or null to leave the even split alone.
@@ -89,10 +107,33 @@ export function proposePairedLayout(input: PairingInput): PairedLayout | null {
 
   const minInfill = Math.max(0, rule?.minInfillMm ?? DEFAULT_MIN_INFILL_MM);
 
-  // The opening window takes its full width: it is the expensive, size-
-  // constrained one, so making it as large as the family allows leaves the least
-  // to fill and never asks for a second one.
-  const remaining = width - operableMaxWidthMm;
+  // A RATIO, not "the widest frame the family makes".
+  //
+  // Maxing the opening pane put a 1300mm sash beside a 750mm panel on a 2050mm
+  // opening — 63/37, on a range whose typical make-up is a straight half and
+  // whose OFFSET units sit nearer 30/70. It optimised for the panel being small,
+  // which is not a thing anybody asked for. The ratio is also the shape the
+  // drawings state and the plan parse will return, so when that lands it
+  // replaces this number in place and the arithmetic below is unchanged.
+  const ratio = clampRatio(input.offset
+    ? rule?.offsetOperableRatio ?? rule?.operableRatio ?? DEFAULT_OFFSET_RATIO
+    : rule?.operableRatio ?? DEFAULT_OPERABLE_RATIO);
+
+  // Every unit but the last snaps to the step; the last takes what is left, so
+  // the units always partition the opening EXACTLY. Snapping all of them would
+  // break that invariant whenever the opening itself is not a multiple of the
+  // step — and validateSplit flags a coverage delta, so an inexact partition is
+  // a defect, not a rounding detail. Only the closing piece carries an unround
+  // figure, which is correct: it is the one cut to fit.
+  // The ratio is a preference; the frame's maximum is a fact. Half of a 3600mm
+  // opening is an 1800mm awning nobody makes — and DECLINING there would hand it
+  // back to the even split, which is three awnings, the exact outcome this rule
+  // exists to prevent. So the opening unit takes its share or the widest frame
+  // the family builds, whichever is smaller, and the glass absorbs the rest.
+  const operableWidth = Math.min(snap(width * ratio), floorStep(operableMaxWidthMm));
+  if (operableWidth <= 0) return null;
+
+  const remaining = width - operableWidth;
   if (remaining < minInfill) return null;                // a sliver, not a panel
 
   // Enough infill panels that none exceeds the infill family's own maximum.
@@ -106,7 +147,7 @@ export function proposePairedLayout(input: PairingInput): PairedLayout | null {
   // handedness — which jamb the opening window sits against is in the drawings
   // and nowhere else, and the reviewer confirms it.
   const units: PairedUnit[] = [
-    { role: "operable", widthMm: operableMaxWidthMm },
+    { role: "operable", widthMm: operableWidth },
     ...infillWidths.map((widthMm) => ({ role: "infill" as const, widthMm })),
   ];
   if (units.length > maxSegments) return null;

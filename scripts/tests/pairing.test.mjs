@@ -49,11 +49,56 @@ const call = (width, rule = AWNING_RULE, over = {}) => M.proposePairedLayout({
 const shape = (layout) => layout.units.map((u) => `${u.role}:${u.widthMm}`).join(" | ");
 const sums = (layout) => layout.units.reduce((n, u) => n + u.widthMm, 0);
 
+
+// ── The RATIO, and how it becomes millimetres ────────────────────────────────
+test("a half is the default make-up, not the widest frame the family makes", () => {
+  // Maxing the opening pane gave 1300 | 750 on this opening — 63/37 — which is
+  // not what the range is built as. The owner's measured typical is a straight
+  // half.
+  const layout = call(2050);
+  assert.equal(shape(layout), "operable:1025 | infill:1025");
+  assert.equal(sums(layout), 2050, "the units partition the opening exactly");
+});
+
+test("an OFFSET unit puts the opening pane on the smaller side, near a third", () => {
+  // W1 in the owner's own test parses as "W1 OFFSET AWNING 2050x2100", and both
+  // spellings resolve to the one family — so only the schedule tells them apart.
+  const layout = call(2050, AWNING_RULE, { offset: true });
+  assert.equal(shape(layout), "operable:615 | infill:1435");
+  assert.equal(sums(layout), 2050);
+});
+
+test("every unit but the last lands on 5mm; the last takes what is left", () => {
+  // Nobody builds a window ending in 1, 2, 3 or 4. Snapping ALL of them would
+  // break the exact partition whenever the opening is not itself a multiple of
+  // the step — and an inexact partition is a coverage defect, not a rounding
+  // detail. So the closing piece carries the odd figure: it is the one cut to fit.
+  const odd = call(2047);
+  assert.equal(odd.units[0].widthMm % 5, 0, "the opening unit is a round size");
+  assert.equal(sums(odd), 2047, "and the opening is still covered exactly");
+  assert.equal(shape(odd), "operable:1025 | infill:1022");
+});
+
+test("a share the family cannot build is capped, not abandoned", () => {
+  // Half of 3000 is a 1500mm awning against a 1300mm maximum. Declining would
+  // hand the opening to the even split — three awnings — which is the outcome
+  // this rule exists to prevent, so the unit takes the widest frame instead.
+  assert.equal(shape(call(3000)), "operable:1300 | infill:1700");
+});
+
+test("an authored ratio overrides the default, offset falls back to it", () => {
+  const rule = { infillFamilySlug: "fixed-window", operableRatio: 0.4 };
+  assert.equal(shape(call(2000, rule)), "operable:800 | infill:1200");
+  // No offset ratio authored ⇒ the standard share, never a hardcoded third.
+  assert.equal(shape(call(2000, rule, { offset: true })), "operable:800 | infill:1200");
+});
+
 test("W1, the opening that started this: 2050 is one awning and a lite", () => {
-  // Production delivered awning 1025 | awning 1025.
+  // Production delivered awning 1025 | awning 1025. The pairing makes the second
+  // one glass; the RATIO decides how the width is shared, and half is typical.
   const out = call(2050);
   assert.ok(out, "the family names an infill, so there is an opinion to give");
-  assert.equal(shape(out), "operable:1300 | infill:750");
+  assert.equal(shape(out), "operable:1025 | infill:1025");
   assert.equal(sums(out), 2050, "the units partition the opening exactly");
 });
 
@@ -61,7 +106,7 @@ test("a modest overflow pairs rather than halving", () => {
   // 1950 is barely over one frame. Halving gives two 975mm awnings — two windows
   // where one and a lite is what gets built.
   const out = call(1950);
-  assert.equal(shape(out), "operable:1300 | infill:650");
+  assert.equal(shape(out), "operable:975 | infill:975");
   assert.equal(sums(out), 1950);
 });
 
@@ -77,10 +122,10 @@ test("the opening window is always exactly one, however wide the hole", () => {
   }
 });
 
-test("the opening window comes first, and takes its full width", () => {
+test("the opening window comes first, and is capped by what the family builds", () => {
   // An ORDER, not a claim about handedness — which jamb it sits against is in
-  // the drawings. It takes its full width because it is the size-constrained
-  // unit: leaving it narrower would only ask for more glass.
+  // the drawings. Half of 3600 would be an 1800mm awning, so the cap binds here
+  // and the glass absorbs the rest.
   const out = call(3600);
   assert.equal(out.units[0].role, "operable");
   assert.equal(out.units[0].widthMm, 1300);
@@ -119,14 +164,19 @@ test("an opening that fits one frame is not a composite at all", () => {
 });
 
 test("a sliver of glass is refused, and the opening falls back to even units", () => {
-  // 1350 leaves 50mm beside a 1300 frame. Nobody builds a 50mm lite; returning
-  // null hands the opening back to the even split rather than proposing a joke.
-  assert.equal(call(1350), null);
+  // A half never leaves a sliver, so the case now arises from an authored ratio
+  // that hands almost everything to the opening unit. 0.95 of 1350 is 1280mm,
+  // leaving 70mm of glass — nobody builds that, so the opening goes back to the
+  // even split rather than being proposed as a joke.
+  const greedy = { ...AWNING_RULE, operableRatio: 0.95 };
+  assert.equal(call(1350, greedy), null);
   // …and the threshold is the authored one, not a constant.
-  assert.ok(call(1350, { ...AWNING_RULE, minInfillMm: 40 }), "a practice may set it lower");
-  // The default is 400, so this is the boundary either side of it.
-  assert.equal(call(1699), null, "399mm of glass");
-  assert.ok(call(1700), "400mm exactly");
+  assert.ok(call(1350, { ...greedy, minInfillMm: 40 }), "a practice may set it lower");
+  // The default is 400, so these are the widths either side of it at a three-
+  // quarter share — below the 1300 cap, so the RATIO governs and not the frame.
+  const threeQuarters = { ...AWNING_RULE, operableRatio: 0.75 };
+  assert.equal(call(1580, threeQuarters), null, "1185 + 395mm of glass");
+  assert.ok(call(1600, threeQuarters), "1200 + 400mm exactly");
 });
 
 test("unknown dimensions produce no opinion rather than a guess", () => {

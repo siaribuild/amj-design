@@ -38,6 +38,18 @@ export interface FamilyDefaultSplit {
   /** Below this, abandon the pairing rather than propose a sliver of glass
    *  nobody would build, and fall back to equal units. */
   minInfillMm?: number | null;
+  /** The opening unit's share of the opening, 0–1. Typical is a straight half.
+   *  A RATIO rather than a width because that is what the drawings state and
+   *  what the plan parse will return — so when drawings land they replace this
+   *  number in place, and the same arithmetic turns either into millimetres.
+   *  Absent ⇒ 0.5. */
+  operableRatio?: number | null;
+  /** The same share for an OFFSET unit, where the opening pane is deliberately
+   *  the smaller part — measured nearer 0.3 in practice. Selected by the
+   *  schedule's own wording ("OFFSET AWNING"), not by the family, because both
+   *  spellings resolve to one family and only the schedule distinguishes them.
+   *  Absent ⇒ operableRatio. */
+  offsetOperableRatio?: number | null;
 }
 
 export interface Family {

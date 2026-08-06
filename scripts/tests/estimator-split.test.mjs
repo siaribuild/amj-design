@@ -404,7 +404,9 @@ const paired = (widthMm, opts = {}) => proposeSplit(
 test("W1: 2050 becomes an awning and a lite, not two awnings", () => {
   const p = paired(2050);
   assert.equal(p.basis, "default_pairing");
-  assert.deepEqual(p.segments.map((s) => `${s.operation}:${s.widthMm}`), ["awning:1300", "fixed:750"]);
+  // A half, which is the range's measured typical make-up — not the widest
+  // frame the family makes, which put 1300 beside 750 and asked nobody.
+  assert.deepEqual(p.segments.map((s) => `${s.operation}:${s.widthMm}`), ["awning:1025", "fixed:1025"]);
   assert.equal(p.segments.reduce((n, s) => n + s.widthMm, 0), 2050, "partitions the opening exactly");
   assert.equal(p.reviewRequired, true, "a proposal is always a starting point");
 });
