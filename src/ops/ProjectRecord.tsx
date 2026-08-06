@@ -31,7 +31,7 @@ import {
   opsThermal,
   OPS_PHASES, type OpsWorkspace, type OpsPhase, type OpsRecordAction, type OpsSegment,
   type OpsCompositePolicy, type OpsExactConfiguration, type OpsRecommendationOutcome,
-  type OpsRecommendationReason, type OpsThermalRow, type OpsThermalCounts,
+  type OpsRecommendationReason, type OpsThermalRow,
 } from "./api";
 // The SAME editor the customer configures an opening with. Ops hydrates the same
 // Sanity catalogue (src/ops/main.tsx), so product and option metadata are already
@@ -103,9 +103,8 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
   }>({ outcomes: [], reasonOptions: [], status: "loading" });
   const [thermal, setThermal] = useState<{
     rows: OpsThermalRow[];
-    counts: OpsThermalCounts | null;
     status: "loading" | "ready" | "error";
-  }>({ rows: [], counts: null, status: "loading" });
+  }>({ rows: [], status: "loading" });
 
   const load = async () => {
     try {
@@ -126,7 +125,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
     setThermal((current) => ({ ...current, status: "loading" }));
     try {
       const result = await opsThermal(id);
-      setThermal({ rows: result.rows, counts: result.counts, status: "ready" });
+      setThermal({ rows: result.rows, status: "ready" });
     } catch {
       setThermal((current) => ({ ...current, status: "error" }));
     }
@@ -353,9 +352,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
               </div>
             </Block>
           )}
-          {thermal.status === "ready" && thermal.counts && (
-            <ThermalAudit rows={thermal.rows} counts={thermal.counts} />
-          )}
+          {thermal.status === "ready" && <ThermalAudit rows={thermal.rows} />}
 
           {ws.revisions.length > 0 && learning.status === "loading" && (
             <Block title="Teach future estimates">
@@ -722,16 +719,9 @@ function VersionTab({ label, meta, active, onClick }: { label: string; meta: str
  *  at all, and silently dropping them would make the table read as complete
  *  when it is not.
  */
-function ThermalAudit({ rows, counts }: { rows: OpsThermalRow[]; counts: OpsThermalCounts }) {
-  const meta = [
-    counts.missed ? `${counts.missed} missed` : "",
-    counts.met ? `${counts.met} met` : "",
-    counts.noTarget ? `${counts.noTarget} no target` : "",
-    counts.unknown ? `${counts.unknown} unknown` : "",
-  ].filter(Boolean).join(" · ");
-
+function ThermalAudit({ rows }: { rows: OpsThermalRow[] }) {
   return (
-    <Block title="Thermal audit" meta={meta || `${counts.total} line${counts.total === 1 ? "" : "s"}`}>
+    <Block title="Thermal audit" meta={`${rows.length} line${rows.length === 1 ? "" : "s"}`}>
       {rows.length === 0 ? (
         <Empty>No parsed lines on this project yet.</Empty>
       ) : (
@@ -761,10 +751,12 @@ function ThermalAudit({ rows, counts }: { rows: OpsThermalRow[]; counts: OpsTher
                     {r.widthMm && r.heightMm ? `${r.widthMm}×${r.heightMm}` : "—"}
                   </td>
                   <td className="px-3 py-2 font-data" style={{ color: INK }}>{bandText(r.target)}</td>
+                  {/* The recorded basis is always shown. An inherited target is
+                      noted BESIDE it, never in place of it — substituting the note
+                      for the basis threw away the one provenance fact the row has. */}
                   <td className="px-3 py-2 t-cap" style={{ color: MUTED }}>
-                    {r.targetInherited
-                      ? "Inherited from opening"
-                      : r.target?.basis ? humanLabel(r.target.basis) : "—"}
+                    {r.target?.basis ? humanLabel(r.target.basis) : "—"}
+                    {r.targetInherited && <div className="t-cap">Inherited from opening</div>}
                   </td>
                   <td className="px-3 py-2" style={{ color: INK }}>
                     {r.verdict === "header"
@@ -772,17 +764,6 @@ function ThermalAudit({ rows, counts }: { rows: OpsThermalRow[]; counts: OpsTher
                       : r.proposed?.productSlug ?? "—"}
                     {r.verdict !== "header" && r.proposed?.variantId && (
                       <div className="t-cap font-data" style={{ color: MUTED }}>{r.proposed.variantId}</div>
-                    )}
-                    {/* The line has since been changed by a person. Shown so the row
-                        is not read as describing what will be built — but never
-                        judged: this surface validates the parse, not the person. */}
-                    {r.current?.diverged && (
-                      <div className="t-cap" style={{ color: MUTED }}>
-                        now: {r.current.productSlug} <span style={{ color: "var(--warning-ink)" }}>· changed by hand</span>
-                      </div>
-                    )}
-                    {!r.current?.diverged && r.current?.edited && (
-                      <div className="t-cap" style={{ color: MUTED }}>edited by hand</div>
                     )}
                   </td>
                   <td className="px-3 py-2 font-data" style={{ color: INK }}>

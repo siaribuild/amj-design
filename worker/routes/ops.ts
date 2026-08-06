@@ -1454,72 +1454,72 @@ ops.get("/projects/:id/building-model", async (c) => {
   });
 });
 // GET /api/ops/projects/:id/thermal — the THERMAL AUDIT for one project: per
-// line, the thermal target that was calculated from the source documents next to
-// the product and glass that were actually proposed for it.
+// line, the thermal target that was parsed from the source documents, next to the
+// product and glass the machine proposed for it.
 //
-// Read-only over what selection already stored — it computes nothing and changes
-// nothing, so it can be opened on a live draft mid-parse without disturbing it.
+// A SNAPSHOT OF THE PARSE. Every value here is read from a record no later action
+// can move — not the live line, not the live catalogue:
+//
+//   target    ai_proposal_line.ranking_context_json.requirements  (the band as it
+//             stood when the decision was made), or for a unit the matched
+//             building_models component's own requirement. Both are INSERT-only.
+//   proposal  ai_proposal_line — append-only across the whole worker.
+//   labels    building_models.model_json component refs, matched by the stored
+//             segment_seq. No product lookup, so no catalogue and no edited slug.
+//
+// It follows that a human edit cannot change what this returns, and neither can a
+// WERS re-import or a product being withdrawn. That is the whole point: it records
+// what the parse decided, not what the order looks like today.
 //
 // Driven from quote_line, not opening_instance, deliberately: a schedule-only or
 // anonymous project has quote_line rows and NO opening_instance, so an
 // opening-driven query would report those positions as absent rather than as
-// "no target was derived" — the more misleading of the two. Every stored line
-// appears; the ones with nothing to say say so.
+// never having been thermally parsed at all.
 ops.get("/projects/:id/thermal", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
   if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const projectId = c.req.param("id");
 
-  const project = await c.env.DB.prepare(
-    "SELECT id, public_ref, title FROM project WHERE id = ?",
-  ).bind(projectId).first<{ id: string; public_ref: string | null; title: string | null }>();
+  const project = await c.env.DB.prepare("SELECT id FROM project WHERE id = ?")
+    .bind(projectId).first<{ id: string }>();
   if (!project) return c.json({ error: "not_found" }, 404);
 
   // The live draft only (revision_id IS NULL) — an issued revision snapshots the
-  // chosen configuration, not the target it was chosen against, so including
-  // revision lines would show a proposal with no requirement beside it.
+  // chosen configuration, not the target it was chosen against.
   const { results } = await c.env.DB.prepare(
-    `SELECT ql.id, ql.external_ref, ql.product_slug, ql.selected_variant_id, ql.status,
-            ql.line_kind, ql.parent_line_id, ql.origin, ql.position, ql.segment_seq, ql.dims_json,
-            ql.segment_requirements_json, ql.segment_requirement_basis, ql.segment_thermal_review,
-            ql.edited_fields,
-            o.requirements_json, o.requirement_basis, o.family, o.operation_type,
-            o.width_mm, o.height_mm, o.status AS opening_status, o.source_generation,
-            apl.performance_json, apl.recommendation_basis, apl.confidence_band,
-            -- ALIASED, and it must stay aliased: apl.product_slug collides with
-            -- ql.product_slug and D1 resolves a duplicate result name last-wins,
-            -- which would silently overwrite the human's slug with the machine's
-            -- and hide the very divergence this column exists to expose.
+    `SELECT ql.id, ql.external_ref, ql.line_kind, ql.parent_line_id, ql.segment_seq, ql.dims_json,
+            o.requirements_json, o.requirement_basis, o.operation_type, o.width_mm, o.height_mm,
+            apl.performance_json, apl.ranking_context_json,
+            -- ALIASED, and it must stay aliased: apl.product_slug collides with a
+            -- quote_line column of the same name and D1 resolves a duplicate result
+            -- name last-wins, which would silently substitute one for the other.
             apl.product_slug AS ai_product_slug, apl.performance_variant_id AS ai_variant_id
        FROM quote_line ql
        LEFT JOIN opening_instance o ON o.quote_line_id = ql.id
        LEFT JOIN ai_proposal_line apl ON apl.id = ql.ai_proposal_line_id
-      WHERE ql.project_id = ? AND ql.revision_id IS NULL
-      ORDER BY ql.position, ql.segment_seq, ql.id`,
+      WHERE ql.project_id = ? AND ql.revision_id IS NULL`,
   ).bind(projectId).all<any>();
 
-  const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
   const s = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
-  const refById = new Map<string, string | null>();
-  const unitsByParent = new Map<string, number>();
-  for (const r of results ?? []) {
-    refById.set(r.id, r.external_ref);
-    if (r.line_kind === "segment" && r.parent_line_id) {
-      unitsByParent.set(r.parent_line_id, (unitsByParent.get(r.parent_line_id) ?? 0) + 1);
-    }
-  }
+  const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  // Dimensions are written as STRINGS by every quote_line writer ({"width":"905"}),
+  // so a number-only coercion silently blanked the size of every unit and every
+  // schedule line. Accept both shapes.
+  const dim = (v: unknown): number | null => {
+    if (typeof v === "number") return Number.isFinite(v) ? v : null;
+    if (typeof v === "string" && v.trim()) { const p = Number(v); return Number.isFinite(p) ? p : null; }
+    return null;
+  };
 
-  // A unit's own code comes from the SOURCE where the source named it. The energy
-  // report's component schedule carries refs like W7A/W7B; nothing writes them
-  // onto the segment row, so they are read back off the building model and matched
-  // by operation + size. Only a split WE invented for manufacturing reasons falls
-  // back to a positional W7·1 label — because in that case no such code exists in
-  // any document, and inventing a letter would look like it came from the report.
+  // ── the parse's own component schedule ──────────────────────────────────────
+  // Where the energy report named the units of a composite it also gave them their
+  // OWN codes and OWN bands. Nothing writes either onto the segment row, so both
+  // are read back off the building model, which is INSERT-only.
   const bm = await c.env.DB.prepare(
     "SELECT model_json FROM building_models WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
   ).bind(projectId).first<{ model_json: string }>();
-  type Component = { ref: string; operationType: string | null; widthMm: number | null; heightMm: number | null };
+  type Component = { ref: string; operationType: string | null; requirement: any };
   const componentsByOpening = new Map<string, Component[]>();
   if (bm?.model_json) {
     const model = safeParse(bm.model_json) as any;
@@ -1529,69 +1529,77 @@ ops.get("/projects/:id/thermal", async (c) => {
         componentsByOpening.set(String(o.externalRef), comps.map((cp: any) => ({
           ref: String(cp?.ref ?? ""),
           operationType: s(cp?.operationType),
-          widthMm: n(cp?.widthMm),
-          heightMm: n(cp?.heightMm),
+          requirement: cp?.requirement ?? null,
         })).filter((cp: Component) => cp.ref));
       }
     }
   }
-  const operationOfProduct = (slug: string | null): string | null => {
-    if (!slug) return null;
-    const product = getProductBySlug(slug);
-    if (!product) return null;
-    return families.find((f) => f.slug === product.familySlug)?.operation ?? null;
-  };
-  // Claim each component at most once: two lites of identical size differing only
-  // by operation (the common awning+fixed pair) must not both match the same row.
-  const claimed = new Set<string>();
-  const componentFor = (parentRef: string | null, productSlug: string | null, w: number | null, h: number | null): Component | null => {
+  // Units are matched to components POSITIONALLY, on the stored segment_seq. The
+  // split is built from the component schedule in its own order, so position is
+  // the correspondence the parse itself created. It was previously matched on the
+  // unit's current product — which made a label move when someone changed that
+  // product, and let two units swap codes while their frozen bands stayed put.
+  const componentFor = (parentRef: string | null, seq: number | null): Component | null => {
     const comps = parentRef ? componentsByOpening.get(parentRef) : null;
-    if (!comps?.length) return null;
-    const operation = operationOfProduct(productSlug);
-    const free = comps.filter((cp) => !claimed.has(`${parentRef}:${cp.ref}`));
-    const match =
-      free.find((cp) => cp.operationType === operation && cp.widthMm === w && cp.heightMm === h) ??
-      free.find((cp) => cp.operationType === operation) ??
-      (free.length === 1 ? free[0] : null);
-    if (match) claimed.add(`${parentRef}:${match.ref}`);
-    return match ?? null;
+    if (!comps?.length || seq == null) return null;
+    return comps[seq] ?? null;
   };
+
+  const refById = new Map<string, string | null>();
+  const unitsByParent = new Map<string, number>();
+  for (const r of results ?? []) {
+    refById.set(r.id, r.external_ref);
+    if (r.line_kind === "segment" && r.parent_line_id) {
+      unitsByParent.set(r.parent_line_id, (unitsByParent.get(r.parent_line_id) ?? 0) + 1);
+    }
+  }
+
+  const bandOf = (raw: any, basis: string | null) => {
+    if (!raw || typeof raw !== "object") return null;
+    const maxUValue = n(raw.maxUValue);
+    // The building model spells its SHGC bounds shgcMin/shgcMax; the estimator's
+    // own band spells them minShgc/maxShgc. Read both rather than lose one.
+    const minShgc = n(raw.minShgc) ?? n(raw.shgcMin);
+    const maxShgc = n(raw.maxShgc) ?? n(raw.shgcMax);
+    if (maxUValue == null && minShgc == null && maxShgc == null) return null;
+    return { maxUValue, minShgc, maxShgc, basis: s(raw.basis) ?? basis };
+  };
+
+  // An opening's OWN band: the one the proposal was actually ranked against,
+  // falling back to the opening row. ranking_context_json is preferred because the
+  // pipeline rewrites requirements_json on every re-run — reading only the latter
+  // could pit a newer target against an older, frozen proposal.
+  const ownBand = (r: any) => {
+    const ctx = r.ranking_context_json ? safeParse(r.ranking_context_json) as any : null;
+    return bandOf(ctx?.requirements, s(r.requirement_basis))
+      ?? bandOf(safeParse(r.requirements_json ?? "null"), s(r.requirement_basis));
+  };
+  const bandByLine = new Map<string, ReturnType<typeof bandOf>>();
+  for (const r of results ?? []) if (r.line_kind !== "segment") bandByLine.set(r.id, ownBand(r));
 
   const rows = (results ?? []).map((r) => {
     const dims = safeParse(r.dims_json ?? "{}") as Record<string, unknown>;
-    // A lite carries its own band and no external_ref of its own — label it from
-    // the parent it belongs to so the row is identifiable on screen.
     const isSegment = r.line_kind === "segment";
     const parentRef = isSegment && r.parent_line_id ? refById.get(r.parent_line_id) ?? null : null;
-    const openingBand = r.requirements_json ? safeParse(r.requirements_json) as Record<string, unknown> : null;
-    const segmentBand = r.segment_requirements_json ? safeParse(r.segment_requirements_json) as Record<string, unknown> : null;
-    const band = isSegment ? (segmentBand ?? openingBand) : (openingBand ?? segmentBand);
-    const basis = isSegment
-      ? s(r.segment_requirement_basis) ?? s(r.requirement_basis)
-      : s(r.requirement_basis) ?? s(r.segment_requirement_basis);
+    const component = isSegment ? componentFor(parentRef, r.segment_seq) : null;
 
-    const target = band ? {
-      maxUValue: n(band.maxUValue),
-      minShgc: n(band.minShgc),
-      maxShgc: n(band.maxShgc),
-      shgcTarget: n(band.shgcTarget),
-      basis,
-    } : null;
-    const hasTarget = !!target && (target.maxUValue != null || target.minShgc != null || target.maxShgc != null);
+    // ── target ────────────────────────────────────────────────────────────────
+    // A unit the report NAMED takes the band the report gave it. A unit we split
+    // ourselves takes the band of the opening it came out of — the owner's rule:
+    // the split is our manufacturing constraint, so it must not become a weaker
+    // requirement on the customer's job. Neither is read from the unit row, whose
+    // segment_requirements_json is deleted and rewritten by every re-split.
+    const target = isSegment
+      ? (component ? bandOf(component.requirement, "explicit_energy_report") : null)
+        ?? (r.parent_line_id ? bandByLine.get(r.parent_line_id) ?? null : null)
+      : ownBand(r);
+    const hasTarget = !!target;
 
-    // THE PROPOSAL IS READ FROM THE MACHINE'S OWN RECORD, NEVER FROM THE LINE.
-    //
-    // ai_proposal_line is append-only (two INSERTs and an applied_to_cart flag in
-    // the whole worker, no DELETE), so what it holds is what the parse decided and
-    // cannot be moved by a later edit, a re-price, or a catalogue re-import. The
-    // live quote_line is none of those things: a human edit overwrites its product
-    // and NULLs its glass while deliberately keeping ai_proposal_line_id, so
-    // reading the product from one side and the performance from the other
-    // manufactured a row that never existed — a swapped product wearing the old
-    // product's Uw, rendered as "Meets target".
-    //
-    // The catalogue is not consulted either. Its ratings are current, not frozen:
-    // re-importing WERS data would retroactively change a past parse's verdict.
+    // ── proposal ──────────────────────────────────────────────────────────────
+    // From the machine's own frozen record, never from the line: a human edit
+    // overwrites the line's product and drops its glass while deliberately keeping
+    // the pointer to this row, so reading the product from one and the performance
+    // from the other manufactured a window that never existed.
     const perf = r.performance_json ? safeParse(r.performance_json) as Record<string, unknown> : null;
     const aiProductSlug = s(r.ai_product_slug);
     const proposed = aiProductSlug ? {
@@ -1599,36 +1607,15 @@ ops.get("/projects/:id/thermal", async (c) => {
       variantId: s(r.ai_variant_id),
       uw: perf ? n(perf.uw) : null,
       shgc: perf ? n(perf.shgc) : null,
-      certified: perf && typeof perf.certified === "boolean" ? perf.certified : null,
       source: perf ? s(perf.source) : null,          // certified | estimated
-      basis: s(r.recommendation_basis),
-      confidence: s(r.confidence_band),
     } : null;
 
-    // What the line carries NOW, for context only — never judged, never compared.
-    // A row whose current product differs from the proposed one is a human
-    // decision, and this surface validates the machine, not the person.
-    const edited = (() => {
-      const v = r.edited_fields ? safeParse(r.edited_fields) : null;
-      return Array.isArray(v) && v.length > 0;
-    })();
-    const current = {
-      productSlug: s(r.product_slug),
-      variantId: s(r.selected_variant_id),
-      edited,
-      diverged: !!aiProductSlug && !!r.product_slug && aiProductSlug !== r.product_slug,
-    };
-
-    // How far outside the band the proposed glass sits, on each axis. Null means
-    // that axis was not constrained or could not be compared — never zero, which
-    // would read as "exactly on target".
+    // ── verdict ───────────────────────────────────────────────────────────────
     let verdict: "met" | "missed" | "no_target" | "unknown" | "no_record" = "unknown";
     let miss: { uw: number | null; shgc: number | null } | null = null;
-    // A composite unit has no ai_proposal_line at all (the segment INSERT omits the
-    // column), so there is no frozen record of what was proposed for it — and its
-    // band is destroyed and rewritten by every re-split. Saying so is the only
-    // honest option: resolving it live would produce a figure that changes under
-    // the reader, which is the one thing this surface must not do.
+    // A unit has no ai_proposal_line — the segment INSERT omits the column — so
+    // there is no frozen record of what was proposed for it. Saying so beats
+    // resolving it live, which would give a figure that moves under the reader.
     if (isSegment && !proposed) verdict = "no_record";
     else if (!hasTarget) verdict = "no_target";
     else if (!proposed || (proposed.uw == null && proposed.shgc == null)) verdict = "unknown";
@@ -1640,24 +1627,17 @@ ops.get("/projects/:id/thermal", async (c) => {
         if (target!.minShgc != null && proposed.shgc < target!.minShgc) shgcOff = Math.round((proposed.shgc - target!.minShgc) * 1000) / 1000;
         else if (target!.maxShgc != null && proposed.shgc > target!.maxShgc) shgcOff = Math.round((proposed.shgc - target!.maxShgc) * 1000) / 1000;
       }
-      // Unknown, not met: an unmeasured axis against a real constraint cannot be
-      // called a pass.
+      // Unknown, not met: an unmeasured axis against a real constraint is not a pass.
       const uwUnknown = target!.maxUValue != null && proposed.uw == null;
       const shgcUnknown = (target!.minShgc != null || target!.maxShgc != null) && proposed.shgc == null;
       if (uwOver != null || shgcOff != null) { verdict = "missed"; miss = { uw: uwOver, shgc: shgcOff }; }
       else verdict = uwUnknown || shgcUnknown ? "unknown" : "met";
     }
 
-    const widthMm = n(r.width_mm) ?? n(dims.width) ?? n(dims.widthMm);
-    const heightMm = n(r.height_mm) ?? n(dims.height) ?? n(dims.heightMm);
-    const component = isSegment ? componentFor(parentRef, r.product_slug, widthMm, heightMm) : null;
-
-    // A composite PARENT is a grouping header, not a proposal. Its product is the
-    // pre-split single unit the AI first chose, which is not what gets built — and
-    // its band is a lossy collapse of the components' (strictest Uw, and an SHGC
-    // pair silently dropped when the components' ranges do not overlap). Showing a
-    // verdict on it would be a pass/fail on a window that does not exist, sitting
-    // above the rows that describe what does.
+    // A composite parent groups its units; it never proposes. Its own product is
+    // the pre-split single unit that is not being built, and its band is a lossy
+    // collapse of the components' — strictest Uw, and the SHGC pair dropped when
+    // the components' ranges cannot both hold.
     const unitCount = unitsByParent.get(r.id) ?? 0;
     const isHeader = r.line_kind === "composite_parent" && unitCount > 0;
 
@@ -1665,53 +1645,56 @@ ops.get("/projects/:id/thermal", async (c) => {
       lineId: r.id,
       ref: s(r.external_ref) ?? component?.ref ?? (parentRef ? `${parentRef}·${(r.segment_seq ?? 0) + 1}` : null),
       kind: isSegment ? "segment" : isHeader ? "composite" : "line",
-      parentRef,
       unitCount,
-      origin: s(r.origin),
-      family: s(r.family),
-      operation: s(r.operation_type) ?? operationOfProduct(r.product_slug),
-      widthMm,
-      heightMm,
-      generation: n(r.source_generation),
+      operation: component?.operationType ?? s(r.operation_type),
+      widthMm: n(r.width_mm) ?? dim(dims.width) ?? dim(dims.widthMm),
+      heightMm: n(r.height_mm) ?? dim(dims.height) ?? dim(dims.heightMm),
       target,
-      // A unit whose target came from the opening rather than from a component the
-      // report named. It is the CONSERVATIVE reading — every unit must meet what
-      // the whole opening was asked to meet — so a miss here is a flag to check,
-      // not proof of non-compliance: the assembly can still average out.
-      targetInherited: isSegment && !!target && !component,
+      // The report did not name this unit, so it takes what the whole opening was
+      // asked to meet. The CONSERVATIVE reading — a miss here is a flag to check,
+      // not proof: the assembly can still average out.
+      targetInherited: isSegment && hasTarget && !component,
       proposed: isHeader ? null : proposed,
-      current: isHeader ? null : current,
       verdict: isHeader ? "header" : verdict,
       miss: isHeader ? null : miss,
-      thermalReview: r.segment_thermal_review === 1,
-      status: s(r.status),
-      openingStatus: s(r.opening_status),
+      // Sort keys only; stripped before the response.
+      _parentId: isSegment ? r.parent_line_id : null,
+      _seq: r.segment_seq ?? 0,
     };
   });
 
-  const counts = rows.reduce((acc, row) => {
-    acc[row.verdict] = (acc[row.verdict] ?? 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  // ── order by ID ─────────────────────────────────────────────────────────────
+  // By the item's own code, naturally sorted, with a composite's units directly
+  // under their parent. quote_line.position cannot do this: it is a project-wide
+  // counter for a line but a per-parent index for a unit, so ordering by it
+  // interleaved units into unrelated openings.
+  const naturalKey = (ref: string | null): [string, number, string] => {
+    const m = /^([A-Za-z]*)(\d*)(.*)$/.exec((ref ?? "").trim());
+    return [(m?.[1] ?? "").toUpperCase(), m?.[2] ? Number(m[2]) : Number.MAX_SAFE_INTEGER, (m?.[3] ?? "").toUpperCase()];
+  };
+  const byRef = (a: typeof rows[number], b: typeof rows[number]) => {
+    const [ap, an, as_] = naturalKey(a.ref), [bp, bn, bs] = naturalKey(b.ref);
+    return ap.localeCompare(bp) || an - bn || as_.localeCompare(bs) || a.lineId.localeCompare(b.lineId);
+  };
+  const unitsOf = new Map<string, typeof rows>();
+  for (const row of rows) {
+    if (!row._parentId) continue;
+    const list = unitsOf.get(row._parentId) ?? [];
+    list.push(row);
+    unitsOf.set(row._parentId, list);
+  }
+  const ordered = rows
+    .filter((row) => !row._parentId)
+    .sort(byRef)
+    .flatMap((row) => [row, ...(unitsOf.get(row.lineId) ?? []).sort((a, b) => a._seq - b._seq || byRef(a, b))]);
+  // A unit whose parent is missing from the set would otherwise vanish.
+  const seen = new Set(ordered.map((row) => row.lineId));
+  const orphans = rows.filter((row) => !seen.has(row.lineId)).sort(byRef);
 
   return c.json({
-    quote: project.public_ref,
-    title: project.title,
-    rows,
-    counts: {
-      total: rows.length,
-      met: counts.met ?? 0,
-      missed: counts.missed ?? 0,
-      noTarget: counts.no_target ?? 0,
-      unknown: counts.unknown ?? 0,
-      noRecord: counts.no_record ?? 0,
-      // Composite headers group units rather than being judged, so they are
-      // counted out — otherwise the parts never sum to the total.
-      headers: counts.header ?? 0,
-    },
+    rows: [...ordered, ...orphans].map(({ _parentId, _seq, ...row }) => row),
   });
 });
-
 // The Estimator review workspace and its reviewer-correction capture were
 // removed (2026-07-27, owner decision). They served a stage that does not exist:
 // the AI proposal is built into the CUSTOMER's draft, so there is no staff review

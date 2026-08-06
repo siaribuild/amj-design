@@ -202,60 +202,39 @@ export const opsAdjudicateRecommendationOutcome = (
 // there is no client-side run trigger. (POST /ai-runs remains server-side as the
 // support lever for AI_EXTRACTION_MODE='manual'.)
 // ── Thermal audit ────────────────────────────────────────────────────────────
-// Per line: the thermal target calculated from the source documents, next to the
-// product and glass actually proposed for it. Read-only; nothing here writes.
+// A snapshot of the PARSE: per line, the thermal target parsed from the source
+// documents beside the product and glass the machine proposed for it. Every value
+// comes from an INSERT-only record, so nothing here moves when a person edits the
+// order, a product is withdrawn, or WERS data is re-imported.
 export interface OpsThermalTarget {
   maxUValue: number | null; minShgc: number | null; maxShgc: number | null;
-  shgcTarget: number | null; basis: string | null;
+  basis: string | null;
 }
-/** The machine's own frozen record of what it proposed — read from ai_proposal_line,
- *  which is append-only. Never sourced from the live line or the live catalogue. */
 export interface OpsThermalProposed {
   productSlug: string | null; variantId: string | null;
   uw: number | null; shgc: number | null;
-  certified: boolean | null; source: string | null;
-  basis: string | null; confidence: string | null;
-}
-/** What the line carries now. Context only — never judged against the target. */
-export interface OpsThermalCurrent {
-  productSlug: string | null; variantId: string | null;
-  edited: boolean;
-  /** The line no longer carries the product the machine proposed. */
-  diverged: boolean;
+  source: string | null;                     // certified | estimated
 }
 export interface OpsThermalRow {
   lineId: string;
   ref: string | null;
-  kind: "line" | "composite" | "segment";
-  parentRef: string | null;
+  kind: 'line' | 'composite' | 'segment';
   /** Units inside a composite parent; 0 for anything that is not one. */
   unitCount: number;
-  origin: string | null;
-  family: string | null;
   operation: string | null;
   widthMm: number | null;
   heightMm: number | null;
-  generation: number | null;
   target: OpsThermalTarget | null;
-  /** The unit inherited the opening's target — the report did not name it. */
+  /** The unit took the opening's target — the report did not name it. */
   targetInherited: boolean;
   proposed: OpsThermalProposed | null;
-  current: OpsThermalCurrent | null;
   /** header = a composite parent, groups units. no_record = a unit with no frozen proposal. */
-  verdict: "met" | "missed" | "no_target" | "unknown" | "header" | "no_record";
+  verdict: 'met' | 'missed' | 'no_target' | 'unknown' | 'header' | 'no_record';
   /** Signed distance outside the band per axis; null where that axis is fine or unconstrained. */
   miss: { uw: number | null; shgc: number | null } | null;
-  thermalReview: boolean;
-  status: string | null;
-  openingStatus: string | null;
-}
-export interface OpsThermalCounts {
-  total: number; met: number; missed: number; noTarget: number; unknown: number;
-  noRecord: number; headers: number;
 }
 export const opsThermal = (projectId: string) =>
-  req<{ quote: string | null; title: string | null; rows: OpsThermalRow[]; counts: OpsThermalCounts }>(
-    `/api/ops/projects/${projectId}/thermal`);
+  req<{ rows: OpsThermalRow[] }>(`/api/ops/projects/${projectId}/thermal`);
 
 export const opsBuildingModel = (projectId: string) =>
   req<{ id: string; status: string; run: { status: string; pipelineVersion: string; primaryModel: string }; model: any; evidence: any[] }>(

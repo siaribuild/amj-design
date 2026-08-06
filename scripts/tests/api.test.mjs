@@ -220,7 +220,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
             options_json, qty, line_total)
          VALUES
            ('rl_accept_change_race','rev_accept_change_race','W01',
-            '{"slug":"amj80-series-awning-window"}','{"width":900,"height":1200}',
+            '{"slug":"amj80-series-awning-window"}','{"width":"900","height":"1200"}',
             '{}',1,1250);
          UPDATE project SET current_revision_id='rev_accept_change_race'
           WHERE id='p_accept_change_race';`,
@@ -751,14 +751,14 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       const projectId = "p_thermal_audit";
       await sql(`INSERT INTO project (id, title, status_customer) VALUES ('${projectId}','Thermal audit fixture','draft')`);
       // (1) An AI line WITH a target its glass cannot meet.
-      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin) VALUES ('ql_miss','${projectId}','W1','amj100t-series-awning-window','{}','{"width":850,"height":1800}',1,730,'technical_review',0,'ai')`);
+      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin) VALUES ('ql_miss','${projectId}','W1','amj100t-series-awning-window','{}','{"width":"850","height":"1800"}',1,730,'technical_review',0,'ai')`);
       await sql(`INSERT INTO opening_instance (id, project_id, quote_line_id, external_ref, family, operation_type, width_mm, height_mm, requirements_json, requirement_basis, status) VALUES ('open_miss','${projectId}','ql_miss','W1','windows','awning',850,1800,'{"maxUValue":2.27,"minShgc":0.37,"maxShgc":0.41}','explicit_energy_report','commercial_only_estimate')`);
       await sql(`INSERT INTO ai_runs (id, project_id, pipeline_version) VALUES ('run_ta','${projectId}','test')`);
       await sql(`INSERT INTO ai_proposal (id, project_id, ai_run_id, source_generation, source_manifest_hash, pipeline_version) VALUES ('prop_ta','${projectId}','run_ta',1,'h','test')`);
       await sql(`INSERT INTO ai_proposal_line (id, proposal_id, project_id, opening_id, quote_line_id, quantity, dimensions_json, ranking_context_json, product_id, product_slug, catalogue_revision, configuration_json, performance_json, price_snapshot_json, recommendation_basis, confidence_band, review_required, applied_to_cart, created_at) VALUES ('apl_miss','prop_ta','${projectId}','open_miss','ql_miss',1,'{}','{}','prod','amj100t-series-awning-window','rev1','{}','{"uw":3.6,"shgc":0.42,"source":"certified","certified":true}','{"total":730}','energy_report','medium',1,1,datetime('now'))`);
       await sql(`UPDATE quote_line SET ai_proposal_line_id='apl_miss' WHERE id='ql_miss'`);
       // (2) A schedule-only line: no opening_instance, so no target was ever derived.
-      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin) VALUES ('ql_none','${projectId}','W2','amj80-series-awning-window','{}','{"width":900,"height":1200}',1,500,'ready',1,'schedule')`);
+      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin) VALUES ('ql_none','${projectId}','W2','amj80-series-awning-window','{}','{"width":"900","height":"1200"}',1,500,'ready',1,'schedule')`);
 
       const audit = await requestJson(ops, `/api/ops/projects/${projectId}/thermal`);
       const byRef = Object.fromEntries(audit.body.rows.map((r) => [r.ref, r]));
@@ -776,8 +776,13 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.equal(noTarget.verdict, "no_target", "a line that never went through derivation says so");
       assert.equal(noTarget.target, null);
       assert.ok(audit.body.rows.length >= 2, "a schedule-only line is listed, never silently omitted");
-      assert.equal(audit.body.counts.missed, 1);
-      assert.equal(audit.body.counts.noTarget, 1);
+      assert.equal(audit.body.rows.filter((r) => r.verdict === "missed").length, 1);
+      assert.equal(audit.body.rows.filter((r) => r.verdict === "no_target").length, 1);
+      // Every quote_line writer stores dimensions as STRINGS. A number-only
+      // coercion blanked the size of every unit and every schedule line in
+      // production while numeric fixtures kept the tests green.
+      assert.equal(missed.widthMm, 850, "a string dimension is still a dimension");
+      assert.equal(missed.heightMm, 1800);
     });
 
     await t.test("thermal audit: a composite groups its units, and each unit is judged", async () => {
@@ -790,22 +795,27 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
         openings: [{
           externalRef: "W7",
           thermalComponents: [
-            { ref: "W7A", operationType: "awning", widthMm: 905, heightMm: 854 },
-            { ref: "W7B", operationType: "sliding", widthMm: 905, heightMm: 854 },
+            // A real building model carries each component's own parsed band —
+            // this is where a unit's frozen target comes from.
+            { ref: "W7A", operationType: "awning", widthMm: 905, heightMm: 854,
+              requirement: { basis: "explicit_energy_report", maxUValue: 2.27, shgcMin: 0.37, shgcMax: 0.41 } },
+            { ref: "W7B", operationType: "sliding", widthMm: 905, heightMm: 854,
+              requirement: { basis: "explicit_energy_report", maxUValue: 1.69, shgcMin: 0.5, shgcMax: 0.56 } },
           ],
         }],
       }).replace(/'/g, "''");
       await sql(`INSERT INTO building_models (id, project_id, ai_run_id, schema_version, model_json, confidence_json) VALUES ('bm_tc','${projectId}','run_tc','building-model/1.1','${model}','{}')`);
 
-      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind) VALUES ('ql_p7','${projectId}','W7','amj80-series-awning-window','{}','{"width":1810,"height":854}',1,900,'ready',0,'ai','composite_parent')`);
+      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind) VALUES ('ql_p7','${projectId}','W7','amj80-series-awning-window','{}','{"width":"1810","height":"854"}',1,900,'ready',0,'ai','composite_parent')`);
       await sql(`INSERT INTO opening_instance (id, project_id, quote_line_id, external_ref, family, operation_type, width_mm, height_mm, requirements_json, requirement_basis, status) VALUES ('op_p7','${projectId}','ql_p7','W7','windows','awning',1810,854,'{"maxUValue":1.69,"minShgc":null,"maxShgc":null}','explicit_energy_report','ready')`);
-      await sql(`INSERT INTO quote_line (id, project_id, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind, parent_line_id, segment_seq, segment_requirements_json, segment_requirement_basis) VALUES ('ql_s7a','${projectId}','amj80-series-awning-window','{}','{"width":905,"height":854}',1,450,'ready',1,'ai','segment','ql_p7',0,'{"maxUValue":2.27,"minShgc":0.37,"maxShgc":0.41}','explicit_energy_report')`);
-      await sql(`INSERT INTO quote_line (id, project_id, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind, parent_line_id, segment_seq, segment_requirements_json, segment_requirement_basis) VALUES ('ql_s7b','${projectId}','amj80-series-sliding-window','{}','{"width":905,"height":854}',1,450,'ready',2,'ai','segment','ql_p7',1,'{"maxUValue":1.69,"minShgc":0.5,"maxShgc":0.56}','explicit_energy_report')`);
+      await sql(`INSERT INTO quote_line (id, project_id, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind, parent_line_id, segment_seq, segment_requirements_json, segment_requirement_basis) VALUES ('ql_s7a','${projectId}','amj80-series-awning-window','{}','{"width":"905","height":"854"}',1,450,'ready',1,'ai','segment','ql_p7',0,'{"maxUValue":2.27,"minShgc":0.37,"maxShgc":0.41}','explicit_energy_report')`);
+      await sql(`INSERT INTO quote_line (id, project_id, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind, parent_line_id, segment_seq, segment_requirements_json, segment_requirement_basis) VALUES ('ql_s7b','${projectId}','amj80-series-sliding-window','{}','{"width":"905","height":"854"}',1,450,'ready',2,'ai','segment','ql_p7',1,'{"maxUValue":1.69,"minShgc":0.5,"maxShgc":0.56}','explicit_energy_report')`);
 
       // W9 — a split WE made for dimensional reasons: the unit inherits the
       // opening's band and has no code of its own in any document.
-      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind) VALUES ('ql_p9','${projectId}','W9','amj80-series-awning-window','{}','{"width":1600,"height":900}',1,800,'ready',3,'ai','composite_parent')`);
-      await sql(`INSERT INTO quote_line (id, project_id, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind, parent_line_id, segment_seq, segment_requirements_json, segment_requirement_basis) VALUES ('ql_s9','${projectId}','amj80-series-awning-window','{}','{"width":800,"height":900}',1,400,'ready',4,'ai','segment','ql_p9',0,'{"maxUValue":2.2,"minShgc":null,"maxShgc":null}','default_even')`);
+      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind) VALUES ('ql_p9','${projectId}','W9','amj80-series-awning-window','{}','{"width":"1600","height":"900"}',1,800,'ready',3,'ai','composite_parent')`);
+      await sql(`INSERT INTO opening_instance (id, project_id, quote_line_id, external_ref, family, operation_type, width_mm, height_mm, requirements_json, requirement_basis, status) VALUES ('op_p9','${projectId}','ql_p9','W9','windows','awning',1600,900,'{"maxUValue":2.2,"minShgc":null,"maxShgc":null}','explicit_energy_report','ready')`);
+      await sql(`INSERT INTO quote_line (id, project_id, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind, parent_line_id, segment_seq, segment_requirements_json, segment_requirement_basis) VALUES ('ql_s9','${projectId}','amj80-series-awning-window','{}','{"width":"800","height":"900"}',1,400,'ready',4,'ai','segment','ql_p9',0,'{"maxUValue":2.2,"minShgc":null,"maxShgc":null}','default_even')`);
 
       const audit = await requestJson(ops, `/api/ops/projects/${projectId}/thermal`);
       const byRef = Object.fromEntries(audit.body.rows.map((r) => [r.ref, r]));
@@ -847,7 +857,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       await sql(`INSERT INTO project (id, title, status_customer) VALUES ('${projectId}','Edited line fixture','draft')`);
       await sql(`INSERT INTO ai_runs (id, project_id, pipeline_version) VALUES ('run_te','${projectId}','test')`);
       await sql(`INSERT INTO ai_proposal (id, project_id, ai_run_id, source_generation, source_manifest_hash, pipeline_version) VALUES ('prop_te','${projectId}','run_te',1,'h','test')`);
-      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin) VALUES ('ql_e','${projectId}','W1','amj80-series-awning-window','{}','{"width":900,"height":1200}',1,500,'ready',0,'ai')`);
+      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin) VALUES ('ql_e','${projectId}','W1','amj80-series-awning-window','{}','{"width":"900","height":"1200"}',1,500,'ready',0,'ai')`);
       await sql(`INSERT INTO opening_instance (id, project_id, quote_line_id, external_ref, family, operation_type, width_mm, height_mm, requirements_json, requirement_basis, status) VALUES ('op_e','${projectId}','ql_e','W1','windows','awning',900,1200,'{"maxUValue":2.27,"minShgc":null,"maxShgc":null}','explicit_energy_report','ready')`);
       // The machine proposed the 80-series with glass that MEETS 2.27.
       await sql(`INSERT INTO ai_proposal_line (id, proposal_id, project_id, opening_id, quote_line_id, quantity, dimensions_json, ranking_context_json, product_id, product_slug, performance_variant_id, catalogue_revision, configuration_json, performance_json, price_snapshot_json, recommendation_basis, confidence_band, review_required, applied_to_cart, created_at) VALUES ('apl_e','prop_te','${projectId}','op_e','ql_e',1,'{}','{}','p','amj80-series-awning-window','glz-lowe-x','r1','{}','{"uw":2.1,"shgc":0.39,"source":"certified","certified":true}','{"total":500}','energy_report','high',0,1,datetime('now'))`);
@@ -867,10 +877,9 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.equal(row.proposed.uw, 2.1, "paired with the performance of that same product");
       assert.equal(row.verdict, "met", "the machine's proposal did meet the band, and still reads as such");
 
-      // The divergence is surfaced, not silently absorbed.
-      assert.equal(row.current.diverged, true, "the row declares the line has moved since the parse");
-      assert.equal(row.current.productSlug, "amj100t-series-awning-window", "and what it moved to");
-      assert.equal(row.current.edited, true);
+      // The human decision is authoritative and is simply not this surface's
+      // subject. Nothing about the edit is reported, annotated or judged.
+      assert.equal(row.current, undefined, "the audit says nothing about what a person did");
     });
   } finally {
     await stop(server);
