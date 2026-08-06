@@ -117,7 +117,7 @@ export function OpeningRow({
               it describes — the same place a phone puts it. It rides INSIDE this
               cell rather than as a grid sibling because at these widths it has
               no column of its own to sit in. */}
-          <span className="lg:hidden">{showBadge && <RowStateBadge state={state} />}</span>
+          {!readOnly && <span className="lg:hidden">{showBadge && <RowStateBadge state={state} />}</span>}
         </span>
 
         {/* From 1024 the status is a real column under a real header. This is a
@@ -125,12 +125,15 @@ export function OpeningRow({
             child of the identity cell and a grid item cannot be both. Whichever
             is not shown is display:none, so it is out of the accessibility tree
             too and nothing is announced twice. */}
-        {state.kind !== "none" && showBadge && (
+        {!readOnly && state.kind !== "none" && showBadge && (
           <span className="hidden lg:block lg:col-start-2 lg:row-start-1 min-w-0">
             <RowStateBadge state={state} />
           </span>
         )}
 
+        {/* Dropped entirely on a record: an empty cluster would still hold
+            its 4.75rem track open beside rows that have nothing to press. */}
+        {!readOnly && (
         <div className="order-4 md:order-none md:col-start-5 lg:col-start-6 md:row-start-1 ml-auto md:ml-0 flex items-center gap-0.5 flex-shrink-0 md:justify-end">
           {/* 44px touch targets: these sit adjacent, and under-sizing them is
               the classic mis-tap generator on this exact pattern. */}
@@ -138,8 +141,7 @@ export function OpeningRow({
               read as one kind of thing, and a lone text label among glyphs reads
               as something else. The accessible name still carries the opening
               reference. */}
-          {!readOnly && (
-            <>
+          <>
               <button type="button" id={editControlId(rowKey)} onClick={onEdit}
                 aria-label={`Edit ${ref}`} title={`Edit ${ref}`}
                 className="w-11 h-11 lg:w-9 lg:h-9 inline-flex items-center justify-center text-sage hover:text-sage-hover icon-btn cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
@@ -151,11 +153,11 @@ export function OpeningRow({
                 <MoreHorizontal className="w-4 h-4" aria-hidden="true" />
               </button>
             </>
-          )}
         </div>
+        )}
 
         {/* The only elastic element — it truncates so the row can never scroll. */}
-        <span className="order-5 md:order-none md:col-start-2 lg:col-start-3 md:row-start-1 basis-full md:basis-auto min-w-0 truncate text-ink t-bd-sm">
+        <span className={`order-5 md:order-none md:col-start-2 ${readOnly ? "lg:col-start-2" : "lg:col-start-3"} md:row-start-1 basis-full md:basis-auto min-w-0 truncate text-ink t-bd-sm`}>
           {/* A composite parent does not name a product (owner). It is the
               schedule line, not a frame, and its units may be different
               products from each other — printing one of their names asserts
@@ -178,11 +180,11 @@ export function OpeningRow({
             Parents only. A unit's size stays 500, so a child never outweighs the
             opening it belongs to, and the indent is not the only thing telling
             the two apart when scanning down the column. */}
-        <span className="order-6 md:order-none md:col-start-3 lg:col-start-4 md:row-start-1 md:text-right font-semibold text-ink flex-shrink-0 tabular-nums font-data t-data">
+        <span className={`order-6 md:order-none md:col-start-3 ${readOnly ? "lg:col-start-3" : "lg:col-start-4"} md:row-start-1 md:text-right font-semibold text-ink flex-shrink-0 tabular-nums font-data t-data`}>
           {sizePhrase(item.width, item.height)}
         </span>
 
-        <span className="order-7 md:order-none md:col-start-4 lg:col-start-5 md:row-start-1 md:text-right ml-auto md:ml-0 font-semibold text-ink flex-shrink-0 tabular-nums font-data t-data">
+        <span className={`order-7 md:order-none md:col-start-4 ${readOnly ? "lg:col-start-4" : "lg:col-start-5"} md:row-start-1 md:text-right ml-auto md:ml-0 font-semibold text-ink flex-shrink-0 tabular-nums font-data t-data`}>
           {/* The number only. Repeating "inc GST" on every line states the tax
               basis twenty times to say one thing — it is a property of the
               whole quote, and the sticky summary carries it there once. */}

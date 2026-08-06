@@ -65,7 +65,12 @@ export function OpeningList({ items, actions, undoSlot, trailing }: {
     // ONE table, not twenty cards. The gaps between separate cards were
     // the thing stopping a column of dimensions or prices from being
     // scanned vertically; rows now share hairlines inside a single frame.
-    <div className="quote-table quote-panel divide-y divide-line">
+    // data-record drops the Status and actions tracks: on a record neither has
+    // anything in it, and 10rem of empty column is the width a product name or a
+    // size wants. The cells shift left to match (OpeningRow), so nothing is
+    // merely hidden behind a track that still holds its ground.
+    <div className="quote-table quote-panel divide-y divide-line"
+      data-record={actions ? undefined : "true"}>
       {/* Column labels, ≥1024px only — the width where the row becomes a
           grid. Below that the row is a stacked card and a header strip
           would be labelling columns that do not exist. aria-hidden: these
@@ -77,11 +82,13 @@ export function OpeningList({ items, actions, undoSlot, trailing }: {
         <span className="col-start-1">Opening</span>
         {/* Status is a column only from 1024. Below that it rides inside
             the identity cell, beside the reference — the same position,
-            without a track the width cannot afford. */}
-        <span className="hidden lg:block lg:col-start-2">Status</span>
-        <span className="col-start-2 lg:col-start-3">Product</span>
-        <span className="col-start-3 lg:col-start-4 text-right">Size</span>
-        <span className="col-start-4 lg:col-start-5 text-right">Price</span>
+            without a track the width cannot afford. A record shows it at
+            neither width: every line on a submitted job carries the same
+            state, so the column states nothing and costs 10rem doing it. */}
+        {actions && <span className="hidden lg:block lg:col-start-2">Status</span>}
+        <span className={`col-start-2 ${actions ? "lg:col-start-3" : "lg:col-start-2"}`}>Product</span>
+        <span className={`col-start-3 ${actions ? "lg:col-start-4" : "lg:col-start-3"} text-right`}>Size</span>
+        <span className={`col-start-4 ${actions ? "lg:col-start-5" : "lg:col-start-4"} text-right`}>Price</span>
       </div>
 
       {items.map((item) => {

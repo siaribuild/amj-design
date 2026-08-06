@@ -242,6 +242,14 @@ test("the record draws a composite as the builder does, with nothing to press", 
   await expect(page.getByText("X1B", { exact: true })).toBeVisible();
   await expect(page.locator("svg[data-elevation]").first()).toBeVisible();
 
+  // No Status column, at either width. Every line on a submitted job carries the
+  // same state, so the column states nothing — and it costs 10rem doing it, which
+  // is width the product name and the size want. The track is dropped, not merely
+  // emptied: the remaining cells shift left onto it.
+  await expect(page.locator(".quote-table[data-record='true']")).toBeVisible();
+  await expect(page.locator(".quote-table-head").getByText("Status")).toHaveCount(0);
+  await expect(page.locator(".quote-row .quote-chip")).toHaveCount(0);
+
   // Machine fields stay out. options carries performanceVariantId,
   // frameTechnology, glassBuildUp and glazing beside the customer's real
   // choices; the specification is derived from the PRODUCT's option types, so

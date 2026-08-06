@@ -691,6 +691,11 @@
     --qp-tz: 6.75rem;       /* actions: edit + more                          */
     --qp-cols: var(--qp-t1) minmax(0, 1fr) 8rem 7rem var(--qp-tz);
   }
+  /* Below 1024 the status already rides inside the identity cell, so only the
+   * actions track is reclaimed here. */
+  .quote-table[data-record="true"] {
+    --qp-cols: var(--qp-t1) minmax(0, 1fr) 8rem 7rem;
+  }
   @media (min-width: 640px) { .quote-table { --qp-pad: 1rem; } }
 
   @media (min-width: 768px) {
@@ -722,6 +727,14 @@
       --qp-t1: 12.5rem;
       --qp-tz: 4.75rem;
       --qp-cols: var(--qp-t1) 10rem minmax(0, 1fr) 8.5rem 7.5rem var(--qp-tz);
+    }
+    /* A RECORD has neither a status to report nor anything to press, so both
+     * tracks go rather than standing empty — 10rem of status and 4.75rem of
+     * actions is width the product name and the size actually want. The row's
+     * cells shift left to match, so this is a narrower table and not a wider
+     * one with holes in it. */
+    .quote-table[data-record="true"] {
+      --qp-cols: var(--qp-t1) minmax(0, 1fr) 8.5rem 7.5rem;
     }
   }
 
