@@ -1,248 +1,295 @@
 # Reading the drawings — design and plan
 
 **Status:** design for owner review. Nothing implemented.
-**Output contract:** [plan-parse-output-spec.md](plan-parse-output-spec.md). Settled; not
-redesigned here.
-**Acceptance fixture:** W1 of `20016_Lot 312 Banjo Boulevard_Plans.pdf` →
-`awning ~675 | fixed ~1375`, vertical division, no transom, awning on the left viewed from
-outside. Ratio ≈ 0.33. An agent using the pdf-reading skill produced this at 100% accuracy,
-so **feasibility is proven and is not what this design is de-risking.**
+**Output contract:** [plan-parse-output-spec.md](plan-parse-output-spec.md). Settled; conformed
+to, not redesigned.
+
+**Headline.** W1's composition is in the document's **vector line-work**, and it reads out in
+110 ms using `unpdf` — the dependency the Worker already has. No rasteriser, no canvas, no
+WASM, no container, no model call. Three independently written decoders returned the same eight
+coordinates. **Rasterisation is not on the critical path.** It is the fallback for a document we
+have not yet received.
+
+---
+
+## What the previous version of this document got wrong
+
+It is worth recording, because the errors were confident and they were mine.
+
+1. **"The container touches pixels, nothing else."** There is nothing for it to touch. This is a
+   vector set with a clean text layer on all 14 pages; the only raster anywhere is a 149×149
+   logo in the title block.
+2. **"The hard part is finding the elevation via the tag circle."** Elevations carry **zero**
+   window tags — exact-token scanning finds `W`-tags on pages 4 and 5 only. `W1/S08` routes
+   from the plan, but the elevation itself is unlabelled, so matching a drawing to a schedule
+   row is a *geometric* problem (match the frame's measured size to the row's dimensions), not
+   a text join. My routing design was solving a problem the document does not have and missing
+   the one it does.
+3. **"Feasibility is proven, so stage 1 should de-risk routing."** Both halves wrong. What
+   needed proving was whether *we* could extract it in *our* runtime — and that has now been
+   done, in this session, rather than planned.
 
 ---
 
 ## 1. The method being reproduced
 
-From SKILL.md, six steps, in order:
+SKILL.md's six steps, unchanged: inventory cheaply → choose a strategy → text extraction for
+data → **rasterise only what matters and look at it** → do both when precision matters → manage
+tokens explicitly.
 
-1. **Content inventory, cheaply first** — page count, is there a text layer, sample the text,
-   list images, list attachments. This decides the strategy before any spend.
-2. **Choose a strategy** from that inventory — text-heavy / scanned / data-heavy.
-3. **Text extraction for data** — layout-preserving, with coordinates.
-4. **Rasterise only the pages that matter** and look at them, because "text extraction is
-   blind to charts, diagrams, figures, layout".
-5. **When precision matters, do both** for the same page — text for data, image for context.
-6. **Manage token cost explicitly** — ~200–400 tokens/page text, ~1,600/page image.
+Five of the six map onto `unpdf` in the Worker. Only step 4 changes, and the reason is not that
+we cannot rasterise — the investigation proved we can, three separate ways. It is that **for a
+vector drawing, the geometry is more precise than any image of it.** A mullion position to the
+millimetre is the entire deliverable; a model reading a 150-DPI raster estimates it, while the
+path operators state it.
 
-Steps 1, 3 and 6 are why the agent succeeded cheaply. Step 4 is why it succeeded at all: a
-window elevation is a drawing, and no amount of text extraction sees it.
+The platform has no step 2 at all today. It runs one path for everything, and that path is text.
 
 ---
 
-## 2. Where each step runs
+## 2. The evidence
 
-The tools in SKILL.md are poppler-utils and Python. Neither exists in a V8 isolate. Cloudflare
-Containers (GA) runs them literally. So the design is not an *equivalent* of the method — it is
-the method, split across two runtimes by what each is good at.
+All measured against the real `20016_Lot 312 Banjo Boulevard_Plans.pdf`.
 
-| Step | Runs in | Using |
-|---|---|---|
-| Inventory: pages, size, metadata | **Worker** | `unpdf` — already used in `ingest.ts` |
-| Inventory: is there a text layer | **Worker** | `unpdf` text extraction per page |
-| Text + coordinates (`pdftotext -layout`, `pdfplumber`) | **Worker** | pdf.js text items carry transform matrices |
-| Schedule table parse | **Worker** | already built — `skills/schedule.ts` |
-| Tag positions, region prediction | **Worker** | text coordinates, pure arithmetic |
-| **Rasterise a page or a region** | **Container** | `pdftoppm`, the actual tool |
-| Vision read of a crop | **Worker** | existing model-call plumbing |
-| Reconcile, persist, evidence | **Worker** | existing estimator + `evidence_items` |
-
-**The boundary rule: the container touches pixels, nothing else.** Everything that is text or
-arithmetic stays in the Worker, where it already lives and costs nothing.
-
-### Why the container must not make the model calls
-
-Containers bill **provisioned** memory and disk for as long as the instance is awake; only CPU
-bills on actual use. A container waiting on a vision call bills 1 GiB-second every second at
-zero CPU. Waiting is free in a Worker and expensive in a container — so the container renders,
-writes PNGs to R2, and sleeps.
-
-As a pure rasteriser on `basic` (¼ vCPU, 1 GiB, 4 GB), a 14-page set is roughly 60s awake:
-~60 GiB-s and ~20 vCPU-s. The $5 Workers Paid inclusions (375 vCPU-min, 25 GiB-h, 200 GB-h)
-cover **on the order of 1,000 plan sets a month**. Holding it open across the model calls
-roughly quadruples memory-seconds and buys nothing.
-
-`basic`, not `lite`: an A1 sheet at 300 dpi grayscale is ~70 MB before poppler's overhead,
-which is uncomfortable in 256 MiB. Image size is capped by instance disk (4 GB on `basic`), and
-image size drives the 1–3s cold start, so the image stays lean.
-
----
-
-## 3. The part that is actually hard
-
-Not "can a model read a window elevation" — that is proven. **It is finding the elevation
-without a human.**
-
-The agent that scored 100% was pointed at a document and asked about W1. It could look at whole
-sheets and search. Our pipeline gets no such help: for 19 openings it must decide, unaided,
-which page carries each one's elevation and where on that page it is drawn. Everything else in
-this design is plumbing around that one problem.
-
-What the document gives us to work with, from the ground truth: W1 is **tagged `W1/S08` on the
-ground floor plan** — a tag circle carrying the window number over a sheet reference. That is
-the routing mechanism, and it is exactly what the earlier `looksLikeSheetRef` helper was for.
-That helper is deleted (it answered true for `WD12`, a real door prefix), but the concept is
-load-bearing and gets rebuilt properly here.
-
-So region prediction is:
-
-1. Harvest tag circles from the plan pages: a window tag over a sheet reference.
-2. The sheet reference routes to the page carrying that opening's elevation.
-3. On that page, locate the tag's label in the text layer; the elevation is the drawing it
-   annotates.
-4. Predict a rect in **PDF points** around it, generously. When uncertain, widen the rect —
-   never raise the dpi.
-
-Every step is text and coordinates, so all of it is Worker-side and free. If it fails for an
-opening, that opening is *unrouted* — a safe, reportable state, not a guess.
-
----
-
-## 4. The pipeline, end to end
-
-One Cloudflare Workflow instance per uploaded plan set. Durable, per-step retries, resumable
-across deploys. Steps pass **R2 keys, never bytes**.
+**W1, decoded from page 6 (Elevation A):**
 
 ```
-ingest         PDF already in R2 (exists today: file_asset.r2_key)
-phase0_index   Worker  page count, sizes, text-layer presence per page,
-                       sheet titles → sheetIndex
-phase1_schedule Worker the schedule table (exists today: skills/schedule.ts)
-phase2_tags    Worker  tag circles + text positions → per-tag geometry
-phase3_predict Worker  route tag → elevation sheet → predicted rect, in points
-phase4_overview Container+Worker  one 120 dpi grayscale render per elevation sheet,
-                       one vision call, to confirm the sheet is what we think
-phase4_read[tag] Container+Worker  one clipped 300 dpi crop per opening → R2,
-                       one vision call, reconcile → record.  Retryable per opening.
-phase5_assemble Worker merge → the output contract → opening records
+FRAME at pt(684.4, 533.8)   measured 2048.9 × 2104.0 mm   (schedule says 2050 × 2100)
+verticals, mm from left:  0 | 25.4 | 50.8 | 698.5 | 723.9 | 740.8 | 2027.8 | 2048.9
+diagonals: 2 — apex at the bottom of the left leaf only
+
+left leaf   25.4 → 723.9  =  698.5 mm   one V symbol   → awning
+mullion    723.9 → 740.8  =   16.9 mm
+right leaf 740.8 → 2027.8 = 1287.0 mm   no symbol      → fixed
 ```
 
-Per-opening isolation in phase 4 is the point: a failed vision call retries one crop, not the
-document. It is also the unit of failure the output spec demands — an unreadable sheet must not
-void the set.
+**The method validates against ground truth the drafter wrote himself.** W4 is the only opening
+whose make-up appears both in words and in line-work. Its comment says `2x 600mm WIDE AWNINGS`;
+the decode measures leaves of **596.9** and **601.1**. The drawing agrees with the human to
+within 3 mm, without being told the answer.
 
-**Reused, not built:** `runStage` and `ai_stage_runs` for stage records and retries; the
-existing multimodal path that already sends `imageDataUrl` for photo uploads; `evidence_items`
-for provenance; the extraction-status route the document list already polls; R2 for everything.
+W14 and W16 reproduce W1's internal structure exactly — same eight verticals, same two
+diagonals.
 
-**Built:** the container image and its binding; tag-circle harvesting; region prediction; the
-symbol-reading skill and its schema; the per-page progress counter.
+**Cost:** page 6 is 31,082 operators → 5,928 segments in 110 ms; page 7 is 36,415 → 8,924 in
+70 ms. Peak heap for the whole job, text plus both elevations: **34 MB** in node.
 
-### Evidence
+---
 
-Adopting the improvement from the Workers instructions — coordinates in **PDF points**
-(resolution-independent) plus an R2 key to the exact crop the model judged:
+## 3. The cheap route is dead — proven, not assumed
+
+The printed schedule has eight columns and the shipped parser already reads all eight:
+
+```
+W N° | HEIGHT | WIDTH | HEAD HT. | GLAZING | D.GLAZE REQ. | WINDOW TYPE | COMMENTS
+```
+
+Run against the real file it returns 19 rows, zero warnings, and for W1:
+`{itemNo:"1", heightMm:2100, widthMm:2050, headHtMm:2400, glazing:"CLEAR", doubleGlaze:true,
+typeText:"OFFSET AWNING", comments:null}`.
+
+There is no unread column. `comments` is genuinely null for W1, W14 and W16. The sheet's own
+legend says the schedule *"nominates window sizes and head heights"* — sizes, not make-up.
+`OFFSET AWNING` names a family, not a split.
+
+**So it is the drawings or nothing.**
+
+---
+
+## 4. A live defect, shipping today, independent of all of this
+
+The page router selects the wrong pages. Running the shipped `classifyPageRoles`
+(`worker/lib/ai/ingest.ts:110`) against the real document:
+
+```
+ROLES {"schedule":[4,5,7], "energy_report":[], "plans":[12,14]}
+
+ 4  floor plan, tags W1–W6          ← not selected as plans
+ 5  floor plan, tags W7–W16         ← not selected
+ 6  ELEVATIONS A & B  (W1 lives here) ← not selected
+ 7  ELEVATIONS C & D + the schedule   ← not selected
+12  1:20 construction details        ← SELECTED
+14  NCC compliance sheet             ← SELECTED
+```
+
+`ingest.ts:143` requires two plan signals; the four real drawing sheets score one. Root cause:
+`/\bscale\s*1\s*:/` never matches, because the title block emits the label "Scale" about forty
+characters from the value "1 : 100". Pages 12 and 14 match only because they carry the inline
+prose "SCALE 1:20". Downstream, `pipeline.ts:461` reads `doc.roleText.plans ?? doc.markdown` —
+and because `rolePages.plans` is non-empty, the fallback to full text never fires.
+
+**The plan skill is fed a stair detail on every architectural set.** That is why it returned
+zero openings and zero rooms. Worth fixing whether or not the drawing reader is ever built.
+
+---
+
+## 5. Design
+
+**Stage 1 — Inventory** *(extend existing)*. `ingest.ts:287` already opens the document and
+reads the text layer. On the same proxy add: page count, per-page size and rotation, text-item
+count, image-XObject census, attachments, form fields. ~30 ms + 1 ms/page. Persist it — it is
+what makes a bad parse diagnosable a month later.
+
+**Stage 2 — Strategy** *(new, small, pure)*. From the inventory: text items ≥ ~50/page and
+image area < 50% → `text_vector` (this document); text over a full-page image → `text_raster`;
+no text layer → `scanned`, which **stops and emits a named gap rather than guessing.** This is
+the cheapest item on the list and it converts a silent wrong answer into a reportable one.
+
+**Stage 3 — Page selection** *(fix the defect above, then extend)*. Tier A: an elevation
+callout. Tier B: a floor-plan title plus ≥3 distinct `W\d{1,2}` tags. Tier C: a schedule header
+where the text parse found no rows. Validated at 4/14 on this document with zero false
+positives.
+
+> **Hard rule: never call `getOperatorList` on an unselected page.** Page 3 (the landscape
+> plan) alone is 348,687 operators and 56 MB of heap. Page selection is a correctness
+> requirement here, not an optimisation.
+
+**Stage 4 — Geometry** *(drawing Stage A — the only unimplemented stage)*. `getOperatorList`
+per selected page; decode `constructPath`; compose the CTM through save/restore/transform;
+bucket into vertical / horizontal / diagonal; `page.cleanup()` between pages. Scale from the
+title block's `1 : 100`.
+
+**Stage 5 — Frames** *(drawing Stage C)*. Find the rectangle matching each schedule row's
+dimensions, then read internal full-height verticals as mullions and count diagonals per leaf.
+**Rejection is the work, not extraction** — a strict matcher searching for W1's 2050×2100 also
+returned the title-block logo border as a 2091×2091 mm "window". Codified rules: a real frame
+contains at least one leaf whose head and sill rails span the same x-range; a candidate whose
+measured size differs from the schedule row by >2% is not that window.
+
+**Stage 6 — Tags and join** *(drawing Stages B and D)*. Tags come from `getTextContent` on the
+floor plans — no operator list needed. Two verified traps: every tag is an octagon carrying
+**two** lines (`W1` over `S08`), so a single-token reader mis-segments; and a legend decoy `W1`
+sits at (975, 486) on both plan pages, distinguishable because its second line reads `S7`.
+Association is the genuinely unsolved sub-problem — elevations carry no tags and W14/W16 are
+identical drawings, so the resolution is ordering along the wall from plan-view tag positions.
+
+**Stage 7 — Output.** Conforms to the spec. For W1:
 
 ```json
-"evidence": {
-  "sheet": "S08", "pdfPage": 7,
-  "region": { "x0Pt": 228, "y0Pt": 115, "x1Pt": 360, "y1Pt": 192, "dpi": 300 },
-  "r2Key": "jobs/{id}/evidence/W1.png"
-}
+{ "tag": "W1", "divisionAxis": "vertical",
+  "composition": [ { "operation": "awning", "ratio": 0.352 },
+                   { "operation": "fixed",  "ratio": 0.648 } ],
+  "wallOrientation": null, "wallOrientationState": "not_read",
+  "dimensionAgreement": { "drawnWidthMm": 2049, "drawnHeightMm": 2104, "agrees": true },
+  "evidence": { "pageNo": 6, "sheetRef": "A5", "region": [0.575, 0.634, 0.624, 0.705] } }
 ```
 
-dpi is recorded only so the stored PNG can be reproduced exactly. A reviewer sees the pixels
-the machine judged from, which is the only mechanism that catches a systematic misread.
+No `widthMm` on either unit — this sheet does not dimension them and the spec forbids
+back-calculating (§1.2). No orientation value: the north point is a symbol on the site plan,
+and there is no compass word anywhere near the elevations, so this is **not read**, never
+"not stated" (§4).
 
-### Progress
+**The ratio convention, decided by measurement.** Two candidates, tested against W4 where the
+drafter wrote the answer down:
 
-The document list already polls `extraction-status` and renders a `progressStage`. Rasterising
-is the first step long enough that a stage-level label is not enough, so the stage record gains
-a page counter — "sheet 3 of 4", "opening 7 of 19" — surfaced in the component that already
-exists. Small, and it is the owner's stated requirement.
+| convention | W4 → | stated | error |
+|---|---|---|---|
+| joiner centreline over outer width | 635 \| 1935 \| 635 | 600 \| 2000 \| 600 | 35 mm |
+| **leaf-span normalised** | **615 \| 1970 \| 615** | 600 \| 2000 \| 600 | **15 mm** |
 
----
+Use leaf-span normalisation: it distributes the joiner and frame material pro rata rather than
+dumping it on the outer units. For W1 that gives 0.352 / 0.648, which through the spec's
+rounding rule at the schedule's 2050 yields **720 | 1330**, partitioning exactly. Residual
+accuracy ±2.5%, which the spec already anticipates.
 
-## 5. What the model is asked, and what it is not
+**Stage 8 — Into the estimator** *(drawing Stage E)*. A drawing-derived hint is a new **source**,
+not a new mechanism: `SplitHint.source` gains `"drawing"`, `SplitUnitHint` gains an optional
+`ratio`. `pairing.ts` already lists `drawing-derived split` in its precedence chain and its own
+comment anticipates this. Evidence columns (`page_no`, `sheet_ref`, `region_json`) already exist
+in migration 0016 and every writer passes `null` today — the frame's bounding box fills all
+three with no schema work.
 
-The ground truth shows the agent **measured the split by eye** — "roughly a third", quoted as a
-range, 650–700mm. That was accurate enough: against the authoritative 2050, ⅓ rounds to
-`675 | 1375`, and the acceptance fixture is satisfied.
-
-So the model is asked for two things per opening: **the ordered operations** ("awning then
-fixed, left to right, viewed from outside") and **the approximate ratio**. It is not asked for
-millimetres. The opening's true size comes from the schedule; the ratio is scaled against it and
-rounded by the rule in the output spec.
-
-The Workers instructions propose going further — deriving mullion positions in code from a
-column-darkness profile over the grayscale crop, demoting vision to pure symbol classification.
-That is a real idea and it removes a hallucination surface. **It is not in stage 1**, because
-the ground truth says eyeballed ratios already met the bar, and a darkness profile has its own
-failure modes (dimension lines, hatching, leaders, and the frame itself all read as dark
-columns). It goes in the plan as a measured improvement, after there is something to measure it
-against.
-
----
-
-## 6. What could make this fail
-
-| Failure | Cost | How it is detected |
-|---|---|---|
-| The set is scanned, no text layer | Region prediction has nothing to work from | Phase 0 sees no fonts; the whole document falls back to overview reads or is reported unreadable |
-| No elevations in the set | Nothing to read | Phase 3 routes nothing; every opening is *unrouted* and the fallback stands |
-| Tag routing wrong — crop shows the wrong window | **A confident wrong answer.** The worst case. | Only by a human looking at the stored crop. Mitigated by asking the overview pass to confirm the sheet, and by putting the tag in the crop so the model can report a mismatch |
-| Sheet too large to read at usable dpi | Symbol unreadable | Crop, don't downscale — cropping is what makes this tractable on A1 |
-| Model reads a chevron confidently and wrongly | Wrong operation, wrong price | Reconciliation against the schedule's type column; disagreement is a flag, never a silent overwrite |
-| Convention differs by practice | Awning read as hopper | `DEFAULT_PROFILE.confirmed = true` currently makes the "don't name a family until the practice is confirmed" guard vacuous. **Open question 1.** |
+**No model call on the primary path.** The geometry produces exact numbers, costs no tokens and
+fits well inside the job deadline. The model earns its place at escalation only: when Stage 5
+rejects every candidate or Stage 6 cannot disambiguate, rasterise **that frame's region** and
+ask. `frame_decomposition_uncertain` already exists for it.
 
 ---
 
-## 7. Plan
+## 6. A landmine to defuse first
 
-Each stage ships independently and is independently useful. **Nothing past stage 1 is committed
-to until stage 1 answers its question.**
+`worker/lib/drawing/profile.ts` ships `DEFAULT_PROFILE = { apexMeans: "hinge", confirmed: true }`,
+and `refineOperable` maps a bottom apex to **hopper**. Every operable sash measured in this set
+has its apex at the bottom, and the schedule calls all of them **AWNING**. This practice draws
+apex = opening edge, the inverse of the shipped default — so `refineOperable` would name every
+operable panel in this job a hopper, at full confidence, because `confirmed: true` makes the
+guard vacuous.
 
-### Stage 1 — Prove the routing, not the reading (no pipeline)
-
-The reading is proven; the routing is not. A script, run locally against the real PDF:
-
-- extract text with coordinates per page
-- harvest tag circles and their sheet references
-- for W1, W14, W16 and W4: predict the elevation page and a rect
-- crop those rects with `pdftoppm` and look at them
-
-**Pass:** the crop for W1 contains W1's elevation and nothing confusing. **Fail:** the tag
-circles do not route, or the elevations are not where the routing says.
-
-A fail here changes the design fundamentally — it would mean elevations must be found by
-looking rather than by reading, which is a different and more expensive pipeline. Better to
-learn it from a script than from a Workflow.
-
-### Stage 2 — The container
-
-`basic` instance, poppler only, one endpoint: given an R2 key, a page and a rect in points,
-render grayscale at a given dpi and write a PNG back to R2. Stateless, no model, sleeps
-immediately. Verified by rendering stage 1's rects through it and getting identical images.
-
-### Stage 3 — One opening, end to end
-
-W1 only, through the real Workflow: predict → crop → vision → reconcile → record, with evidence
-stored. Verified against the acceptance fixture: `awning ~675 | fixed ~1375`, in that order.
-
-### Stage 4 — The whole set
-
-All 19 openings, per-opening retries, the progress counter, the unrouted state. Verified by
-comparing every opening against the schedule and reviewing the crops by hand once.
-
-### Stage 5 — Precedence and rollout
-
-Wire the drawing-derived hint above the schedule comment and the family default, per the
-precedence table. Ship behind a flag; compare against the fallback on real uploads before it
-becomes the default.
-
-### Later, once there is a baseline
-
-Deterministic mullion measurement; the practice-profile question; scanned-set OCR.
+Inert today (nothing imports the module but its test), and the `MISMATCH_QUORUM = 3` safeguard
+would catch it against twelve disagreeing sashes. But the default is empirically wrong for the
+practice that produced the document this exercise exists to fix.
 
 ---
 
-## 8. Open questions
+## 7. Where a container still earns its place
 
-1. **`DEFAULT_PROFILE.confirmed = true`.** Today the first job from an unassessed architect gets
-   its operations named at full confidence, which contradicts the design doc's own mitigation.
-   Do we gate family naming on a confirmed practice profile, or accept the risk and rely on
-   reconciliation against the schedule's type column?
-2. **Overview pass — keep it?** It costs one vision call per elevation sheet and exists only to
-   confirm the routing is on the right sheet. If stage 1 shows routing is reliable, it can go.
-3. **Where does the drawing-derived hint sit against a schedule comment?** The precedence table
-   says the drawings win. W4 has both — a comment saying "2x 600mm wide awnings" and an
-   elevation. If they disagree, is that a conflict for review, or does the drawing simply win
-   silently?
+Cloudflare Containers are GA, run the literal SKILL.md toolchain, and cost roughly $0.00016 per
+job beyond an allowance of ~4,500. **They are the right answer to a question this document does
+not ask.** What they buy that the isolate cannot: **OCR for genuinely scanned sets** — and that
+is the only one. PDFium WASM was also proven to work in workerd (+2.51 MB gzip), but it gives
+pixels without OCR, which is the wrong half.
+
+So: **provision a container when a document reports a gap the isolate cannot close, and not
+before.** `GeometryGap = "raster_page"` already exists in `worker/lib/drawing/types.ts` as the
+trigger. Until it fires, ship nothing.
+
+---
+
+## 8. Plan
+
+### Stage 0 — The proof. **Done, in this session. It passed.**
+
+Read W1's composition from the real document with no pipeline: 110 ms, 34 MB, eight
+coordinates, reproduced independently three times, and calibrated against W4 where the drafter
+stated the answer.
+
+### Stage 1 — Complete the proof. The only thing to do next.
+
+**1a. Does it run inside workerd, in 128 MB?** The same script as a temporary route or a
+miniflare test at production compat settings, reporting identical coordinates and peak memory.
+**Miniflare does not enforce the 128 MB cap** — it allowed a 1600 MB allocation without
+complaint — so a green miniflare run is not proof. Needs a real deploy behind a flag, or an
+explicit heap cap in node.
+
+**1b. Does it generalise to a second, unrelated plan set?** Everything above is calibrated on
+n=1: one drafter, one CAD chain ("Microsoft: Print To PDF"). Deliverable: the hit rate and
+false-positive count over one more real builder's set.
+
+If 1a fails, the host changes to a container. If 1b comes back low, the primary path becomes
+model-assisted rather than geometric. **Both rewrite everything after, which is why nothing
+past here is planned in detail.**
+
+### Stage 2 — Fix page selection. Independently shippable, valuable today.
+
+Unaffected by Stage 1's outcome. Right now the plan skill reads a stair detail on every
+architectural upload.
+
+### Stage 3 — Defuse the symbol profile. Small, and must land before anything reads a symbol.
+
+### Stages 4+ — Outline only; host decided by Stage 1.
+
+Geometry → frames → tags and join → `splitHints` with `source: "drawing"` → escalation →
+progress detail. Each independently shippable and inert until the next lands.
+
+---
+
+## 9. Open questions
+
+1. **When a drawing and a stated dimension disagree, which wins?** Spec §6 says the drawings win
+   on composition. But W4's comment states `600 | 2000 | 600` exactly and the drawing measures
+   `615 | 1970 | 615` — so §6 read literally replaces an exact stated figure with a ±2.5%
+   measurement on a case we currently get right. **Recommendation: split it** — the drawing wins
+   *operations, order and count*; a stated dimension wins *widths*. That matches §1.2's "a
+   printed dimension outranks a measured proportion", but it is a change to §6 as written.
+2. **`wallOrientation` is unreadable on this set.** The north point is a symbol on the site
+   plan; no compass word appears near any elevation. Report *not read* and accept the
+   Uw-cap-only path, build a north-arrow reader (a separate project), or ask the builder once at
+   review? **Recommendation: report not-read now, ask at review soon.**
+3. **`DEFAULT_PROFILE.confirmed`** — flip the convention and re-confirm it, or set
+   `confirmed: false` so the schedule's type text wins? See §6.
+4. **Is ±2.5% good enough to ship unreviewed?** Every proposed split already carries "confirm
+   the configuration at review". If drawing-derived splits stay behind that gate the question is
+   moot; if they are to flow through unreviewed, ±2.5% at 2050 mm is ±50 mm and needs sign-off.
+5. **Who owns a practice's symbol profile?** An ops screen someone fills in, or inferred and
+   confirmed once per practice on first encounter? It decides whether §6 is a code change or a
+   data model.
