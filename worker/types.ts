@@ -66,6 +66,10 @@ export interface Env {
    *  only GATE, the AI tier interprets). 'manual': ops-triggered only (tests,
    *  or an emergency spend kill-switch). */
   AI_EXTRACTION_MODE?: string;
+  /** 'on' restores the stage replay archive. Anything else (the default) forces
+   *  every stage to call the model, so a re-parse tests extraction rather than
+   *  returning the previous run's answer. */
+  AI_STAGE_CACHE?: string;
   /** Shared secret for the admin/debug thermal-log endpoint (/api/debug/thermal).
    *  Unset ⇒ the endpoint is disabled (404). Set via `wrangler secret put`. */
   THERMAL_DEBUG_KEY?: string;

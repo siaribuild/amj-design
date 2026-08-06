@@ -69,12 +69,24 @@ export async function runStage<I, O>(env: Env, args: StageArgs<I, O>): Promise<S
   });
 
   // ── Idempotent replay: any completed run of this project with the same hash ──
-  const hit = await env.DB.prepare(
+  //
+  // OFF BY DEFAULT (owner, 2026-08-06): accurate testing beats saved spend while
+  // extraction is being actively changed. A replay is invisible in the product —
+  // the run completes in milliseconds and reports the same numbers — so a test of
+  // "did extraction improve?" silently answers with the previous answer. Clearing
+  // the project does not help: the archive is keyed on document content, prompt
+  // version, model and pipeline version, scoped to the project and nothing else,
+  // so deleting and re-uploading the same bytes hits the same entry.
+  //
+  // The mechanism is kept, not deleted: set AI_STAGE_CACHE='on' to restore it once
+  // extraction settles and the saved model spend is worth more than the certainty.
+  const replayEnabled = String(env.AI_STAGE_CACHE ?? "").toLowerCase() === "on";
+  const hit = replayEnabled ? await env.DB.prepare(
     `SELECT s.id, s.result_r2_key FROM ai_stage_runs s
        JOIN ai_runs r ON r.id = s.ai_run_id
       WHERE r.project_id = ? AND s.stage = ? AND s.input_hash = ? AND s.status = 'completed'
       ORDER BY s.created_at DESC LIMIT 1`,
-  ).bind(projectId, skill.id, inputHash).first<CachedRow>().catch(() => null);
+  ).bind(projectId, skill.id, inputHash).first<CachedRow>().catch(() => null) : null;
   if (hit?.result_r2_key) {
     const obj = await env.FILES.get(hit.result_r2_key).catch(() => null);
     if (obj) {

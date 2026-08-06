@@ -296,6 +296,7 @@ test("stage: idempotent replay from R2 archive makes ZERO model calls and re-val
   const { env, aiCalls, r2 } = fakeEnv({
     responses: [],
     stageHit: { id: "prev-stage", result_r2_key: "projects/prj1/runs/run0/raw/test_skill.json" },
+    vars: { AI_STAGE_CACHE: "on" },
   });
   r2.set("projects/prj1/runs/run0/raw/test_skill.json", JSON.stringify({ value: 11 }));
   const res = await runStage(env, { aiRunId: "run1", projectId: "prj1", skill: testSkill, input: { d: 1 } });
@@ -305,10 +306,32 @@ test("stage: idempotent replay from R2 archive makes ZERO model calls and re-val
   assert.equal(aiCalls.length, 0, "no spend on an unchanged input");
 });
 
+test("stage: replay is OFF by default — a re-parse tests extraction, not the archive", async () => {
+  // Owner rule, 2026-08-06. A replay is invisible in the product: the run
+  // completes in milliseconds reporting the previous answer, so "did extraction
+  // improve?" is answered by the run that predates the change. Clearing the
+  // project does not help either — the archive is keyed on document content,
+  // prompt version, model and pipeline version, so re-uploading identical bytes
+  // hits the same entry. Accurate testing outranks saved spend until extraction
+  // settles; AI_STAGE_CACHE='on' restores it.
+  const { env, aiCalls, r2 } = fakeEnv({
+    responses: [good(7)],
+    stageHit: { id: "prev-stage", result_r2_key: "projects/prj1/runs/run0/raw/test_skill.json" },
+  });
+  r2.set("projects/prj1/runs/run0/raw/test_skill.json", JSON.stringify({ value: 11 }));
+  const res = await runStage(env, { aiRunId: "run1", projectId: "prj1", skill: testSkill, input: { d: 1 } });
+  assert.ok(res.ok);
+  assert.equal(res.cached, false, "a perfectly good archive is ignored");
+  assert.deepEqual(res.data, { value: 7 }, "the model answered, not the archive");
+  assert.equal(aiCalls.length, 1, "the whole point: the provider is actually called");
+  assert.deepEqual(res.warnings, [], "and nothing claims a replay happened");
+});
+
 test("stage: corrupt R2 archive falls through to a fresh model run (storage is not a trust boundary)", async () => {
   const { env, aiCalls, r2 } = fakeEnv({
     responses: [good(4)],
     stageHit: { id: "prev-stage", result_r2_key: "projects/prj1/runs/run0/raw/test_skill.json" },
+    vars: { AI_STAGE_CACHE: "on" },
   });
   r2.set("projects/prj1/runs/run0/raw/test_skill.json", "corrupted ]]] payload");
   const res = await runStage(env, { aiRunId: "run1", projectId: "prj1", skill: testSkill, input: { d: 1 } });
