@@ -57,6 +57,25 @@ test("normalizeSheetId collapses the tag's second line to the title block's", ()
   assert.equal(M.normalizeSheetId("BED 3"), null);
 });
 
+test("looksLikeSheetRef accepts the form normalizeSheetId itself emits", () => {
+  // It required TWO digits, so it answered false for "S8" — the exact canonical
+  // output of normalizeSheetId("S08"). The one guard against reading a sheet
+  // reference as a window tag rejected its own output.
+  assert.equal(M.looksLikeSheetRef("S8"), true);
+  assert.equal(M.looksLikeSheetRef("S08"), true);
+  assert.equal(M.looksLikeSheetRef("A101"), true);
+  assert.equal(M.looksLikeSheetRef("BED 3"), false);
+});
+
+test("a sheet reference is ALSO a well-formed tag — position is the real test", () => {
+  // Pinning the ambiguity rather than pretending it away: both text runs inside
+  // a tag circle parse as tags, and the discriminator is that the sheet
+  // reference is the LOWER of the two. Any harvester that reaches for the
+  // strings alone will get this wrong.
+  assert.equal(M.normalizeTag("S08"), "S8");
+  assert.equal(M.normalizeSheetId("S08"), "S8");
+});
+
 test("azimuthToOrientation lands in the vocabulary the platform already uses", () => {
   assert.equal(M.azimuthToOrientation(0), "N");
   assert.equal(M.azimuthToOrientation(90), "E");

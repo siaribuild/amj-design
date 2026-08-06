@@ -136,6 +136,79 @@ test("placement is the editor's choice, and every option partitions exactly", ()
   assert.equal(call(6000, { ...AWNING_RULE, placement: "centre" }).units[0].role, "infill");
 });
 
+// ── The cases the first suite was blind to ───────────────────────────────────
+// Twelve tests passed while two placement defects shipped, because every
+// placement was exercised at 6000mm ONLY — where k=2 for all four options and
+// both faults are invisible.
+
+test("outer keeps a sash at BOTH jambs and spreads the glass between them", () => {
+  // The old arrangement appended surplus sashes AFTER the glass, so three
+  // sashes came out as sash | glass | glass | sash | sash — all the glass
+  // bunched at one end and two sashes adjacent at the other.
+  const out = M.proposePairedLayout({
+    openingWidthMm: 6000, operableMaxWidthMm: 1300, infillMaxWidthMm: 1100,
+    maxSegments: 6,
+    rule: { ...AWNING_RULE, maxOperable: 3, operableEveryMm: 1500 },
+  });
+  assert.equal(shape(out), "operable:1300 | infill:1050 | operable:1300 | infill:1050 | operable:1300");
+  assert.equal(sums(out), 6000);
+});
+
+test("outer alternates cleanly at four sashes too", () => {
+  const out = M.proposePairedLayout({
+    openingWidthMm: 8000, operableMaxWidthMm: 1300, infillMaxWidthMm: 1100,
+    maxSegments: 8,
+    rule: { ...AWNING_RULE, maxOperable: 4, operableEveryMm: 1500 },
+  });
+  assert.equal(out.units[0].role, "operable");
+  assert.equal(out.units[out.units.length - 1].role, "operable");
+  assert.equal(sums(out), 8000);
+});
+
+test("outer with fewer panels than gaps still puts sashes at the jambs", () => {
+  // Three sashes and one panel: two sashes MUST be adjacent somewhere. The
+  // promise "outer" makes is the jambs, and it is still kept.
+  const out = call(6000, { ...AWNING_RULE, maxOperable: 3, operableEveryMm: 1500 });
+  assert.equal(out.units[0].role, "operable");
+  assert.equal(out.units[out.units.length - 1].role, "operable");
+  assert.equal(sums(out), 6000);
+});
+
+test("centre puts glass at BOTH jambs, even when the maths wants one panel", () => {
+  // 3600 leaves 2300mm of glass and a fixed maxes at 3000, so the arithmetic
+  // wants ONE panel — which cannot express "centre" and used to come out as
+  // infill | operable, indistinguishable from placement "right".
+  const out = call(3600, { ...AWNING_RULE, placement: "centre" });
+  assert.equal(shape(out), "infill:1150 | operable:1300 | infill:1150");
+  assert.equal(sums(out), 3600);
+  assert.equal(out.units[0].role, "infill");
+  assert.equal(out.units[out.units.length - 1].role, "infill");
+});
+
+test("every placement is distinguishable from every other, at k=2 AND k=3", () => {
+  const seen = new Map();
+  for (const placement of ["outer", "centre", "left", "right"]) {
+    for (const rule of [
+      { ...AWNING_RULE, placement },
+      { ...AWNING_RULE, placement, maxOperable: 3, operableEveryMm: 1500 },
+    ]) {
+      const out = call(6000, rule);
+      assert.ok(out, placement);
+      assert.equal(sums(out), 6000, placement);
+      assert.ok(out.units.length <= 4, placement);
+      const key = `k${rule.maxOperable}`;
+      const bucket = seen.get(key) ?? new Set();
+      const last = out.units[out.units.length - 1];
+      bucket.add(`${out.units[0].role}/${last.role}`);
+      seen.set(key, bucket);
+    }
+  }
+  // outer=o/o, centre=i/i, left=o/i, right=i/o — four distinct jamb signatures,
+  // which is the whole point of offering the choice.
+  for (const [k, bucket] of seen) {
+    assert.equal(bucket.size, 4, `${k}: every placement must produce a distinct pair of jambs`);
+  }
+});
 test("the cap is honoured even when a practice authors a high one", () => {
   const greedy = { ...AWNING_RULE, maxOperable: 6, operableEveryMm: 800 };
   const out = call(6000, greedy);

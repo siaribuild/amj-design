@@ -74,7 +74,14 @@ export function parseSplitHint(comment: string | null | undefined): SplitHint | 
   // Pattern A found nothing — otherwise the explicit widths win.
   if (!units.length && /[+/,]/.test(hay)) {
     for (const part of hay.split(/[+/,]|\band\b/)) {
-      const op = normOp(part.replace(/\d+\s*mm?/g, "").replace(/wide/g, ""));
+      // `mm` is OPTIONAL, not "m with an optional second m". The old
+      // /\d+\s*mm?/ required at least one letter, so a bare width was never
+      // stripped: "AWNING 900 + FIXED + AWNING 900" left "awning 900", normOp
+      // matches on the whole cleaned token and failed, and both awnings were
+      // silently discarded — leaving a one-unit hint that fell through to an
+      // even split. Found while fixing the layout collapse below; the same
+      // class of fault, one layer earlier.
+      const op = normOp(part.replace(/\d+\s*(?:mm)?/g, "").replace(/wide/g, ""));
       if (op) units.push({ operation: op, count: 1, widthMm: null });
     }
   }
@@ -142,12 +149,47 @@ function layoutFromHint(hint: SplitHint, totalWidthMm: number, heightMm: number,
     if (expanded.length < 2 || expanded.some((segment) => segment.widthMm <= 0 || segment.heightMm <= 0)) return null;
     return fitReportComponentsToOpening(expanded, hint.axis ?? "vertical", totalWidthMm, heightMm, fallbackOp);
   }
-  // Flatten the hint's operable units (respecting count).
-  const operable: { operation: string; widthMm: number | null }[] = [];
+  // Flatten in the order the comment STATED, keeping every unit including fixed.
+  //
+  // The fixed used to be dropped here on the reasoning that it is "derived, not
+  // placed" — true when the comment names only the operable units ("2x 600mm
+  // WIDE AWNINGS"), and wrong when it names the whole sequence. The consequence
+  // was that saying the answer out loud produced a worse plan than saying
+  // nothing: on a 3200mm opening, "AWNING + FIXED + AWNING" yielded two 1600mm
+  // awnings and no lite, while "2x 600mm WIDE AWNINGS" correctly yielded
+  // awning | fixed | awning. An architect who spells out the make-up must not be
+  // punished for it.
+  const stated: { operation: string; widthMm: number | null }[] = [];
   for (const u of hint.units) {
-    if (u.operation === "fixed") continue; // fixed is derived, not placed as operable
-    for (let i = 0; i < u.count; i++) operable.push({ operation: u.operation, widthMm: u.widthMm });
+    for (let i = 0; i < Math.max(1, u.count); i++) {
+      stated.push({ operation: u.operation, widthMm: u.widthMm });
+    }
   }
+  const statesFixed = stated.some((u) => u.operation === "fixed");
+  const operable = stated.filter((u) => u.operation !== "fixed");
+
+  // THE COMMENT NAMED THE WHOLE SEQUENCE. Honour it verbatim: the order is the
+  // architect's, and a stated width is theirs too. Only the unstated widths are
+  // ours to fill, and they take the remainder evenly.
+  if (statesFixed) {
+    const specified = stated.reduce((s, u) => s + (u.widthMm ?? 0), 0);
+    const unstated = stated.filter((u) => u.widthMm == null).length;
+    if (!unstated) {
+      // Every width given. Trust them; a total that disagrees with the opening
+      // is the coverage delta the estimator already reports, not ours to fudge.
+      return stated.map((u) => ({ operation: u.operation, widthMm: u.widthMm!, heightMm }));
+    }
+    const remainder = totalWidthMm - specified;
+    if (remainder < unstated) return null;          // nothing left to share out
+    const share = evenWidths(remainder, unstated);
+    let n = 0;
+    return stated.map((u) => ({
+      operation: u.operation,
+      widthMm: u.widthMm ?? share[n++],
+      heightMm,
+    }));
+  }
+
   if (!operable.length) {
     // A fixed-only or unrecognised hint → fall back to the caller's default.
     return null;

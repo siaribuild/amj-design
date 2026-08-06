@@ -62,9 +62,16 @@ export function normalizeSheetId(raw: string | null | undefined): string | null 
  *  it is deliberately conservative and the caller should prefer geometry. */
 export function looksLikeSheetRef(raw: string): boolean {
   const s = raw.trim().toUpperCase();
-  // Sheet numbers in Australian residential sets are overwhelmingly S/A/WD
-  // prefixed with two or three digits; window tags are W/D with one or two.
-  return /^(S|A|DA|WD)[\s._-]*\d{2,3}$/.test(s);
+  // ONE to three digits. It required two, which made it fail on the very form
+  // normalizeSheetId itself emits: normalizeSheetId("S08") is "S8", and
+  // looksLikeSheetRef("S8") answered false — so the one guard against reading a
+  // sheet reference as a window tag rejected its own canonical output.
+  //
+  // This is a WEAK hint and callers must prefer geometry. "S8" is a perfectly
+  // well-formed window tag under normalizeTag too; inside a tag circle the
+  // discriminator is POSITION — the sheet reference is the lower of the two
+  // runs — and this exists only for the cases where position is unavailable.
+  return /^(S|A|DA|WD)[\s._-]*\d{1,3}$/.test(s);
 }
 
 /** Compass azimuth (degrees clockwise from north) → the eight-point name the

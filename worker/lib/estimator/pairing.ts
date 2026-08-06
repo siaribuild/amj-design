@@ -85,10 +85,18 @@ export function proposePairedLayout(input: PairingInput): PairedLayout | null {
   const minInfill = Math.max(0, rule?.minInfillMm ?? DEFAULTS.minInfillMm);
   const everyMm = rule?.operableEveryMm && rule.operableEveryMm > 0 ? rule.operableEveryMm : null;
 
-  // How many opening sashes this opening earns. "No point offering 3 awnings" is
-  // a statement about a CAP, not a constant — a 6m opening with a single 1.3m
-  // sash is under-ventilated and a reviewer would correct it every time. With no
-  // width trigger authored, it is exactly one sash however wide the hole.
+  // How many opening sashes this opening earns: ONE PER FULL MULTIPLE of the
+  // authored width. At 3000, an opening gets one sash up to 5999 and two from
+  // 6000 — which is what makes the builder's own case (3600 ⇒ one sash and a
+  // lite) come out right, and is what the field's description now says. It
+  // previously described a second sash "past 3000", which the arithmetic never
+  // did; the description was corrected rather than this, because the 3600 case
+  // is the one he actually stated.
+  //
+  // "No point offering 3 awnings" is a statement about a CAP, not a constant —
+  // a 6m opening with a single 1.3m sash is under-ventilated and a reviewer
+  // would correct it every time. With no width authored, it is exactly one sash
+  // however wide the hole.
   const earned = everyMm ? Math.floor(width / everyMm) : 1;
   let k = clampInt(earned, 1, maxOperable);
 
@@ -119,9 +127,16 @@ function layout(
   const remaining = width - operableTotal;
   if (remaining < minInfill) return null;                 // a sliver, not a panel
 
-  // Enough infill panels that none exceeds the infill family's own maximum.
-  const infillCount = Math.max(1, Math.ceil(remaining / infillMax));
+  // Enough infill panels that none exceeds the infill family's own maximum —
+  // and never fewer than the placement itself requires. `centre` puts glass at
+  // BOTH jambs, so a single panel cannot express it: with one panel the result
+  // was indistinguishable from `right`, which is a different instruction.
+  const minPanels = placement === "centre" ? 2 : 1;
+  const infillCount = Math.max(minPanels, Math.ceil(remaining / infillMax));
   const infillWidths = evenly(remaining, infillCount);
+  // The last panel takes the remainder so it is the widest; checking every one
+  // therefore checks the narrowest. A placement that cannot be built at this
+  // width returns null and the caller drops a sash and tries again.
   if (infillWidths.some((w) => w < minInfill)) return null;
 
   const sash = (): PairedUnit => ({ role: "operable", widthMm: operableMax });
@@ -130,18 +145,37 @@ function layout(
   if (placement === "left") return [...times(k, sash), ...infillWidths.map(glass)];
   if (placement === "right") return [...infillWidths.map(glass), ...times(k, sash)];
   if (placement === "centre") {
-    // infill | sashes | infill — the glass goes to the jambs.
-    const [head, ...tail] = infillWidths;
-    return [glass(head), ...times(k, sash), ...tail.map(glass)];
+    // Glass to the jambs, sashes together in the middle.
+    const half = Math.ceil(infillWidths.length / 2);
+    return [
+      ...infillWidths.slice(0, half).map(glass),
+      ...times(k, sash),
+      ...infillWidths.slice(half).map(glass),
+    ];
   }
-  // "outer" — sashes to the jambs, glass in the middle. This is the shape the
-  // schedule-comment path already produces from an explicit "AWNING + FIXED +
-  // AWNING", so a stated layout and the default agree rather than contradict.
+
+  // "outer" — a sash at EACH jamb and the glass distributed between them. This
+  // is the shape an explicit "AWNING + FIXED + AWNING" comment produces, so a
+  // stated layout and the family default agree rather than contradict.
+  //
+  // The panels are spread across the k-1 interior gaps rather than all dumped
+  // into the first one: the earlier version appended the surplus sashes after
+  // the glass, so three sashes came out as sash | glass | sash | sash — two
+  // sashes adjacent at one jamb and none of the promised symmetry.
   if (k === 1) return [sash(), ...infillWidths.map(glass)];
-  const first = sash();
-  const last = sash();
-  const middleSashes = times(k - 2, sash);
-  return [first, ...infillWidths.map(glass), ...middleSashes, last];
+  const gaps = k - 1;
+  const out: PairedUnit[] = [];
+  let taken = 0;
+  for (let i = 0; i < k; i++) {
+    out.push(sash());
+    if (i >= gaps) continue;
+    // Largest-remainder spread, so n panels over m gaps never loses or repeats
+    // one. Fewer panels than gaps simply leaves some sashes adjacent, which is
+    // still sashes-at-the-jambs and is the honest answer at that width.
+    const upto = Math.round(((i + 1) * infillWidths.length) / gaps);
+    while (taken < upto) out.push(glass(infillWidths[taken++]));
+  }
+  return out;
 }
 
 /** Split `total` into `n` whole millimetres that sum EXACTLY to it. The remainder

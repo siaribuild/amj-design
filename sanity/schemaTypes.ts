@@ -115,6 +115,35 @@ export const family = defineType({
           description:
             "The family supplying the non-opening panel — normally Fixed Window. "
             + "EMPTY MEANS DO NOT PAIR, which is the default for every family.",
+          // The picker offers only families that could actually BE the infill.
+          //
+          // Without this an editor can point Awning at Awning, which produces
+          // awning + awning — the exact outcome this feature exists to prevent,
+          // delivered by the mechanism built to prevent it. Pointing a window
+          // family at a door family is the other trap: the estimator resolves
+          // candidates within the opening's own category, finds none, and the
+          // pairing silently degrades to an even split with no explanation.
+          options: {
+            filter: ({ document }) => {
+              const id = String((document as { _id?: string })?._id ?? "");
+              const self = id.replace(/^drafts\./, "");
+              const cat = (document as { category?: { _ref?: string } })?.category?._ref ?? null;
+              return {
+                filter: "_id != $self && _id != $selfDraft && category._ref == $cat",
+                params: { self, selfDraft: `drafts.${self}`, cat },
+              };
+            },
+          },
+          // Belt as well as braces: the filter shapes the PICKER, and a value
+          // set before the filter existed — or pasted in — would sail past it.
+          validation: (r) => r.custom((value, context) => {
+            const ref = (value as { _ref?: string } | undefined)?._ref;
+            if (!ref) return true;
+            const self = String(context.document?._id ?? "").replace(/^drafts\./, "");
+            return ref === self || ref === `drafts.${self}`
+              ? "A family cannot be its own infill — that would pair a window with itself."
+              : true;
+          }),
         }),
         defineField({
           name: "placement",
@@ -141,11 +170,12 @@ export const family = defineType({
         }),
         defineField({
           name: "operableEveryMm",
-          title: "Allow another sash every (mm)",
+          title: "One opening sash per (mm) of opening",
           type: "number",
           description:
-            "A second sash only past this width, a third past twice it, up to the cap. "
-            + "Leave empty for exactly one sash however wide the opening is.",
+            "One sash for each FULL multiple of this width, up to the cap — 3000 gives one "
+            + "sash up to 5999mm and two from 6000mm. Leave empty for exactly one sash "
+            + "however wide the opening is.",
           validation: (r) => r.min(600),
         }),
         defineField({

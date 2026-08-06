@@ -166,3 +166,43 @@ test("composite Uw is area-weighted across the segments (same glass by default)"
 test("composite Uw is null when no segment carries a Uw", () => {
   assert.equal(compositeAveragedUw([{ widthMm: 600, heightMm: 2100, uValue: null }]), null);
 });
+
+// ── An architect who spells out the make-up must not be punished for it ──────
+// layoutFromHint dropped every `fixed` unit on the reasoning that the lite is
+// "derived, not placed". True when the comment names only the operable units;
+// wrong when it names the whole sequence. The result was that saying the answer
+// out loud produced a WORSE plan than saying nothing.
+
+test("a stated fixed lite survives into the layout, in the stated order", () => {
+  const h = parseSplitHint("AWNING + FIXED + AWNING");
+  const p = proposeSplit({ widthMm: 3200, heightMm: 1200, operationType: "awning" }, h, { maxWidthMm: 1300 });
+  assert.equal(p.basis, "schedule_comment");
+  assert.deepEqual(p.segments.map((s) => s.operation), ["awning", "fixed", "awning"],
+    "three units, in the order written — it used to yield two awnings and no lite");
+  assert.equal(p.segments.reduce((n, s) => n + s.widthMm, 0), 3200, "partitions the opening exactly");
+});
+
+test("naming only the operable units still derives the lite, as before", () => {
+  // The behaviour that already worked must not regress: this comment says
+  // nothing about a fixed panel, so the remainder becomes one.
+  const p = proposeSplit({ widthMm: 3200, heightMm: 1200, operationType: "awning" },
+    parseSplitHint("2x 600mm WIDE AWNINGS"), { maxWidthMm: 1300 });
+  assert.deepEqual(p.segments.map((s) => `${s.operation}:${s.widthMm}`),
+    ["awning:600", "fixed:2000", "awning:600"]);
+});
+
+test("a bare width no longer erases the unit it belongs to", () => {
+  // `\d+\s*mm?` required at least one letter, so "AWNING 900" kept its number,
+  // failed the whole-token operation match and was discarded — leaving a
+  // one-unit hint that fell through to an even split of the wrong thing.
+  const h = parseSplitHint("AWNING 900 + FIXED + AWNING 900");
+  assert.deepEqual(h.units.map((u) => u.operation), ["awning", "fixed", "awning"]);
+  assert.deepEqual(parseSplitHint("AWNING 900mm + FIXED + AWNING 900mm").units.map((u) => u.operation),
+    ["awning", "fixed", "awning"], "and the mm form still works");
+});
+
+test("a fixed-only comment still declines, leaving the caller's default", () => {
+  const p = proposeSplit({ widthMm: 3200, heightMm: 1200, operationType: "awning" },
+    parseSplitHint("FIXED"), { maxWidthMm: 1300 });
+  assert.equal(p.basis, "default_even", "one unit is not a split");
+});
