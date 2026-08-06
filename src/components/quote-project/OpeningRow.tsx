@@ -35,15 +35,20 @@ import { type RowState } from "./rowState";
 import { type RowKey, editControlId, panelId, rowId } from "./identity";
 
 export function OpeningRow({
-  item, rowKey, state, expanded, onToggleExpanded, onEdit, onOpenMenu,
+  item, rowKey, state, expanded, onToggleExpanded, onEdit, onOpenMenu, readOnly = false,
 }: {
   item: QItem;
   rowKey: RowKey;
   state: RowState;
   expanded: boolean;
   onToggleExpanded: () => void;
-  onEdit: () => void;
-  onOpenMenu: (anchor: HTMLElement) => void;
+  onEdit?: () => void;
+  onOpenMenu?: (anchor: HTMLElement) => void;
+  /** A record of what was ordered, not a thing to change. Drops Edit and the
+   *  More menu; the chevron stays, because inspecting is still the point. Used
+   *  by the account record, which showed a flat legacy table that could not
+   *  express a composite at all. */
+  readOnly?: boolean;
 }) {
   const gstMode = useGstMode();
   const ref = item.code || "—";
@@ -133,16 +138,20 @@ export function OpeningRow({
               read as one kind of thing, and a lone text label among glyphs reads
               as something else. The accessible name still carries the opening
               reference. */}
-          <button type="button" id={editControlId(rowKey)} onClick={onEdit}
-            aria-label={`Edit ${ref}`} title={`Edit ${ref}`}
-            className="w-11 h-11 lg:w-9 lg:h-9 inline-flex items-center justify-center text-sage hover:text-sage-hover icon-btn cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
-            <Pencil className="w-4 h-4" aria-hidden="true" />
-          </button>
-          <button type="button" onClick={(e) => onOpenMenu(e.currentTarget)}
-            aria-label={`Actions for ${ref}`} aria-haspopup="menu"
-            className="w-11 h-11 lg:w-9 lg:h-9 inline-flex items-center justify-center text-body hover:text-ink icon-btn cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
-            <MoreHorizontal className="w-4 h-4" aria-hidden="true" />
-          </button>
+          {!readOnly && (
+            <>
+              <button type="button" id={editControlId(rowKey)} onClick={onEdit}
+                aria-label={`Edit ${ref}`} title={`Edit ${ref}`}
+                className="w-11 h-11 lg:w-9 lg:h-9 inline-flex items-center justify-center text-sage hover:text-sage-hover icon-btn cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+                <Pencil className="w-4 h-4" aria-hidden="true" />
+              </button>
+              <button type="button" onClick={(e) => onOpenMenu?.(e.currentTarget)}
+                aria-label={`Actions for ${ref}`} aria-haspopup="menu"
+                className="w-11 h-11 lg:w-9 lg:h-9 inline-flex items-center justify-center text-body hover:text-ink icon-btn cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage">
+                <MoreHorizontal className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* The only elastic element — it truncates so the row can never scroll. */}

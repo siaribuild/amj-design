@@ -8,6 +8,8 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { brandSubject } from "../data/sanity";
 import { useEffect, useState, type ReactNode } from "react";
+import { RecordLineList } from "./RecordLineList";
+import { hydrateQuoteItems } from "../data/api";
 import {
   ChevronLeft, ChevronDown, Check, PenLine, FileText,
   Landmark, MessageSquare, Phone, Loader2, Lock, Send,
@@ -605,8 +607,11 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
         <Blk eyebrow="Lifecycle" title="Quote → order journey" id="rec-timeline"><Timeline nodes={timeline} /></Blk>
 
         <Blk eyebrow="Schedule" title="Submitted lines" right="As you submitted them" id="rec-lines">
-          <LineList lines={lines} total={total} footerLabel="Estimates — your reviewed quote may differ after technical review"
-            />
+          {/* The builder's own rows, read-only. The flat table here could not
+              express a composite at all: an opening built as two units showed as
+              one product and one size, which is not what is made. */}
+          <RecordLineList items={hydrateQuoteItems(data.items)} total={total}
+            footerLabel="Estimates — your reviewed quote may differ after technical review" />
         </Blk>
 
         <FilesBlock files={files} />

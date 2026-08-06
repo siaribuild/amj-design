@@ -189,6 +189,54 @@ test("customer OTP login lands on the attention-first dashboard with real data",
   await expect(page.getByText("Order lines")).toBeVisible();
 });
 
+test("the record draws a composite as the builder does, with nothing to press", async ({ page }) => {
+  // The account showed a flat table with no way to express a composite: an
+  // opening built as an awning and a lite appeared as one product and one size,
+  // which is not what is made. It now reuses the builder's own row, which names a
+  // composite from its UNITS and draws the join at the real split.
+  const COMPOSITE = {
+    id: "line-x1", code: "X1", productSlug: "amj80-series-awning-window",
+    location: "Living", width: "2050", height: "2100", qty: 1, status: "Ready",
+    lineTotal: 900, options: {}, compositeAxis: "vertical",
+    segments: [
+      { id: "x1a", productSlug: "amj80-series-awning-window", width: "1025", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 500, options: {}, status: "Ready" },
+      { id: "x1b", productSlug: "amj80-series-sliding-window", width: "1025", height: "2100", qtyPerParent: 1, qty: 1, lineTotal: 400, options: {}, status: "Ready" },
+    ],
+  };
+  // Records open from the dashboard, not a URL, so the list must offer one.
+  await page.route("**/api/projects", (route) =>
+    route.request().method() !== "GET" ? route.continue() : route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ projects: [{
+        id: "p_composite", public_ref: "OF-Q-19900", title: "Composite record",
+        status_customer: "submitted", updated_at: new Date().toISOString(),
+        created_at: new Date().toISOString(), item_count: 1, draft_total: 900,
+        issued_revision_id: null, issued_revision_no: null,
+      }] }),
+    }));
+  await page.route("**/api/projects/p_composite*", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      project: { id: "p_composite", ref: "OF-Q-19900", title: "Composite record", status: "submitted", createdAt: new Date().toISOString() },
+      items: [COMPOSITE], files: [],
+    }) }));
+
+  await page.goto("/login");
+  await otpLogin(page, /your@email.com/, DEMO_EMAIL, /verify & continue/i);
+  await page.getByRole("button", { name: /OF-Q-19900/ }).click();
+
+  const row = page.locator(".quote-row").first();
+  await expect(row).toBeVisible();
+  // Named from the units, exactly as the builder does — never the parent's own
+  // frame, which is the pre-split product and is not what gets built.
+  await expect(row.getByText("Composite Window")).toBeVisible();
+  // A record is not a thing to change.
+  await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Actions for / })).toHaveCount(0);
+  // …but it still opens, and the drawing shows the real make-up.
+  await row.getByRole("button", { name: /details for X1/ }).click();
+  await expect(page.locator("svg[data-elevation]").last()).toBeVisible();
+});
+
 test("contact page: question enquiry issues an OpenFrame reference", async ({ page }) => {
   // Distinct source IP so the per-IP submit throttle doesn't collide with the
   // appointment test's submission.
