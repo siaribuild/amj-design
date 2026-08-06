@@ -253,18 +253,40 @@ ask. `frame_decomposition_uncertain` already exists for it.
 
 ---
 
-## 6. A landmine to defuse first
+## 6. The symbol never names a family — DECIDED, owner 2026-08-07
 
-`worker/lib/drawing/profile.ts` ships `DEFAULT_PROFILE = { apexMeans: "hinge", confirmed: true }`,
+`worker/lib/drawing/profile.ts` ships `DEFAULT_PROFILE = { apexMeans: "hinge", confirmed: true }`
 and `refineOperable` maps a bottom apex to **hopper**. Every operable sash measured in this set
-has its apex at the bottom, and the schedule calls all of them **AWNING**. This practice draws
-apex = opening edge, the inverse of the shipped default — so `refineOperable` would name every
-operable panel in this job a hopper, at full confidence, because `confirmed: true` makes the
-guard vacuous.
+has its apex at the bottom while the schedule calls all of them **AWNING**, so on this
+practice's convention `refineOperable` would name every operable panel a hopper, at full
+confidence, because `confirmed: true` makes the "don't name a family until confirmed" guard
+vacuous.
 
-Inert today (nothing imports the module but its test), and the `MISMATCH_QUORUM = 3` safeguard
-would catch it against twelve disagreeing sashes. But the default is empirically wrong for the
-practice that produced the document this exercise exists to fix.
+**The whole machinery is unnecessary, because AMJ does not make a hopper.** An awning is hinged
+at the top and opens outward; a hopper is hinged at the bottom and opens inward — different
+windows, drawn with the same chevron, distinguished only by which end the apex points at. The
+catalogue has fourteen families and none is a hopper; `OPERATIONS` in `split.ts` does not list
+one either. Distinguishing awning from hopper is a distinction this product range cannot
+express.
+
+So the rule, and it removes an entire class of risk:
+
+> **Geometry claims `operable` or `not operable`. It never claims a family.**
+> The operable leaves take the family the SCHEDULE states — which is authoritative and already
+> extracted. The passive leaves are fixed.
+
+For W1: the schedule says `OFFSET AWNING`, the drawing says the left leaf carries a symbol and
+the right does not ⇒ `awning | fixed`. No convention is consulted, so no convention can be
+wrong.
+
+`refineOperable`, `apexMeans` and the practice-profile model are **not used in v1** and should
+stay unreferenced rather than be corrected. They become relevant only if the catalogue ever
+carries two families that share a symbol and differ by hinge edge.
+
+*Residual limitation, stated:* an opening whose leaves are genuinely different operable families
+— an awning beside a casement — cannot be told apart this way, because the schedule states one
+type. Nothing in this document does that, and if it appears it is a review flag, not a silent
+guess.
 
 ---
 
@@ -328,18 +350,27 @@ harvesting exists at all. On this document that is 17 of 19 openings.
 
 ## 9. Open questions
 
-1. **When a drawing and a stated dimension disagree, which wins?** Spec §6 says the drawings win
-   on composition. But W4's comment states `600 | 2000 | 600` exactly and the drawing measures
-   `615 | 1970 | 615` — so §6 read literally replaces an exact stated figure with a ±2.5%
-   measurement on a case we currently get right. **Recommendation: split it** — the drawing wins
-   *operations, order and count*; a stated dimension wins *widths*. That matches §1.2's "a
-   printed dimension outranks a measured proportion", but it is a change to §6 as written.
+1. ~~When a drawing and a stated dimension disagree, which wins?~~ **DECIDED, owner 2026-08-07:
+   the comment wins.** W4's comment states `600 | 2000 | 600`; the drawing measures
+   `615 | 1970 | 615`. A person wrote the comment and meant it exactly; the drawing is a ±2.5%
+   measurement of it. So a stated dimension is never replaced by a measured one.
+
+   Precisely: **the drawing wins operations, order, count and division axis; a stated dimension
+   wins widths.** Where a comment states widths for only some units, the stated ones stand and
+   the rest are scaled to the remainder. Where the two disagree on the *count* — a comment
+   naming two units against a drawing showing three — that is a conflict for review, not an
+   arithmetic problem, because the comment cannot be applied to a make-up it does not describe.
+
+   This amends [plan-parse-output-spec.md](plan-parse-output-spec.md) §6, whose precedence row
+   reads "composition, division axis, order — the drawings win" without the width caveat.
 2. **`wallOrientation` is unreadable on this set.** The north point is a symbol on the site
    plan; no compass word appears near any elevation. Report *not read* and accept the
    Uw-cap-only path, build a north-arrow reader (a separate project), or ask the builder once at
    review? **Recommendation: report not-read now, ask at review soon.**
-3. **`DEFAULT_PROFILE.confirmed`** — flip the convention and re-confirm it, or set
-   `confirmed: false` so the schedule's type text wins? See §6.
+3. ~~`DEFAULT_PROFILE.confirmed`~~ **RESOLVED, owner 2026-08-07.** AMJ makes no hopper, so the
+   awning/hopper distinction the convention exists to draw cannot be expressed by the catalogue.
+   Geometry claims operable-or-not; the schedule names the family. `refineOperable` is unused in
+   v1. See §6.
 4. **Is ±2.5% good enough to ship unreviewed?** Every proposed split already carries "confirm
    the configuration at review". If drawing-derived splits stay behind that gate the question is
    moot; if they are to flow through unreviewed, ±2.5% at 2050 mm is ±50 mm and needs sign-off.

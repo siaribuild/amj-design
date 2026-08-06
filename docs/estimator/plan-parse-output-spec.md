@@ -198,11 +198,23 @@ first and they are what the builder is building.
 
 | Fact | Authority |
 |---|---|
-| Composition, division axis, order | **The drawings win** — above the schedule comment, above the energy report. |
+| Composition, division axis, order, **count** | **The drawings win** — above the schedule comment, above the energy report. |
+| **A unit width that someone STATED** | **The comment wins** (owner, 2026-08-07). See below. |
 | Opening width and height | The drawings win; a schedule disagreement is a flagged conflict. |
 | Thermal targets (Uw, SHGC) | The **energy report** wins. Plans do not carry them. |
 | Specification — glass, colour, hardware | The **schedule table** wins. |
 | Orientation | The drawings, the only document showing the building on its site. |
+
+**Why a stated width beats a measured one.** W4's comment says `2x 600mm WIDE AWNINGS`; the
+drawing of the same window measures 596.9 and 601.1. A person wrote 600 and meant exactly 600 —
+the drawing is a ±2.5% measurement of that intent, not a better source for it. So the drawing
+supplies the *shape* (which units, in what order, how many, and which axis) and a stated
+dimension supplies the *size*.
+
+Where a comment states widths for only some units, the stated ones stand and the rest scale to
+the remainder. Where the comment and the drawing disagree on the **count**, that is a conflict
+for review rather than an arithmetic problem: a comment describing two units cannot be applied
+to a drawing showing three.
 
 ---
 
