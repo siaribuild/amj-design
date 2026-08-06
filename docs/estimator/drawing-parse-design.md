@@ -250,6 +250,22 @@ Note step 3 makes the elevation letter unnecessary: the floor plan gives the wal
 `ELEVATION A`…`D` carry no face name in the text anyway *(verified — page 6 has "FRONT ELEVATION
 MATERIALS TABLE", which is a materials table, not an elevation title)*.
 
+**Corroborated independently, on two openings from different levels.** The agent that read this
+set reported W1 as "the front (west-facing) wall of the Study… Elevation A" and W9 as "the
+right-hand (east-facing) wall serving Bed 3… Elevation C". So `A = west`, `C = east` — opposite
+faces, consistent with the 88°/268° axis the bearings give. Two openings, two levels, two
+elevations, one coherent compass frame, arrived at without reading a north arrow.
+
+"Right-hand" is the tell for the route: it is a plan-view relative term, so that agent located
+the window on the floor plan and mapped right→east through the site plan. Steps 3 and 4, by a
+human-shaped path.
+
+**The consequence for the design: orientation is ONE determination per building, not one per
+opening.** Fix the compass frame once from the bearings, and every window inherits it from its
+wall position on the floor plan. The elevation letters then become a cross-check — if the frame
+says a window is on the east wall and it is drawn on the elevation that other windows place to
+the west, something is wrong and both should be flagged.
+
 **This is a separate workstream from composition and should not be bundled with it.** It shares
 the geometry machinery but nothing else, it serves a different consumer (the thermal band's
 SHGC cap), and it can ship later without holding up the split.
