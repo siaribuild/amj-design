@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { brandSubject } from "../data/sanity";
 import { useEffect, useState, type ReactNode } from "react";
-import { RecordLineList } from "./RecordLineList";
+import { OpeningList } from "../components/quote-project/OpeningList";
 import { hydrateQuoteItems } from "../data/api";
 import {
   ChevronLeft, ChevronDown, Check, PenLine, FileText,
@@ -606,12 +606,17 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
 
         <Blk eyebrow="Lifecycle" title="Quote → order journey" id="rec-timeline"><Timeline nodes={timeline} /></Blk>
 
-        <Blk eyebrow="Schedule" title="Submitted lines" right="As you submitted them" id="rec-lines">
-          {/* The builder's own rows, read-only. The flat table here could not
-              express a composite at all: an opening built as two units showed as
-              one product and one size, which is not what is made. */}
-          <RecordLineList items={hydrateQuoteItems(data.items)} total={total}
-            footerLabel="Estimates — your reviewed quote may differ after technical review" />
+        <Blk eyebrow="Schedule" title="Submitted lines"
+          right={`${money(total)} · estimates, and your reviewed quote may differ`} id="rec-lines">
+          {/* THE SAME LIST the builder draws, with nothing to press — not a
+              second one that resembles it. The flat table here could not express
+              a composite at all: an opening built as two units showed as one
+              product and one size, and the product it named was the parent's
+              pre-split frame, which is not what gets made. The total moves to the
+              block header because the list itself has no footer — in the builder
+              the action bar carries it, and adding one here would be a difference
+              nobody asked for. */}
+          <OpeningList items={hydrateQuoteItems(data.items)} />
         </Blk>
 
         <FilesBlock files={files} />

@@ -28,7 +28,7 @@ import { quoteSummary } from "../data/quoteSummary";
 import { useProjectDocuments } from "../data/useProjectDocuments";
 import { DocumentProgress } from "../components/DocumentProgress";
 import { QuoteReviewSubmit, QuoteSubmitted } from "../components/QuoteReviewSubmit";
-import { OpeningRow } from "../components/quote-project/OpeningRow";
+import { OpeningList } from "../components/quote-project/OpeningList";
 import { OpeningExpansion, SpecPanel, CoverageNotice } from "../components/quote-project/OpeningExpansion";
 import { UnitRow } from "../components/quote-project/UnitRow";
 import { optionFullPairs } from "../components/ItemComposer";
@@ -340,143 +340,43 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
           // ONE table, not twenty cards. The gaps between separate cards were
           // the thing stopping a column of dimensions or prices from being
           // scanned vertically; rows now share hairlines inside a single frame.
-          <div className="quote-table quote-panel divide-y divide-line">
-            {/* Column labels, ≥1024px only — the width where the row becomes a
-                grid. Below that the row is a stacked card and a header strip
-                would be labelling columns that do not exist. aria-hidden: these
-                are presentational, and every cell below already carries its own
-                accessible name or visible label. */}
-            <div aria-hidden="true"
-              className="quote-table-head hidden md:grid items-center gap-x-3 py-2
- text-quiet font-data t-label">
-              <span className="col-start-1">Opening</span>
-              {/* Status is a column only from 1024. Below that it rides inside
-                  the identity cell, beside the reference — the same position,
-                  without a track the width cannot afford. */}
-              <span className="hidden lg:block lg:col-start-2">Status</span>
-              <span className="col-start-2 lg:col-start-3">Product</span>
-              <span className="col-start-3 lg:col-start-4 text-right">Size</span>
-              <span className="col-start-4 lg:col-start-5 text-right">Price</span>
-            </div>
-
-            {items.map((item) => {
-              const key = rowKeyOf(item);
-              const state = rowStateFor(item, items);
-              const expanded = expandedFor(key);
-              // WHAT A PARENT OPENS INTO (owner). One control, two contents,
-              // chosen by whether the opening has children:
-              //
-              //   composite   its units, in a box docked under the row
-              //   otherwise   its own specification and its edit launcher
-              //
-              // Never both. A composite line is not a product — it is the
-              // schedule line, and its units carry the specifications — so a
-              // spec panel above the units would describe nothing.
-              const units = item.segments ?? [];
-              const composite = units.length > 0;
-              const fixDetails = () => openDrawer(
+          <OpeningList
+            items={items}
+            actions={{
+              onEdit: (key) => openDrawer({ mode: "edit", rowKey: key }),
+              onOpenMenu: (key, anchor) => setMenu({ rowKey: key, anchor }),
+              onFixDetails: (item, key) => openDrawer(
                 { mode: "edit", rowKey: key },
                 sectionFor(fixTargetFor(item, items)),
-              );
-              return (
-                // data-group is what draws the parent's bottom border, and it
-                // is set only while the group is actually showing: collapsed,
-                // the parent is an ordinary row and the list's own divider
-                // already draws its edge.
-                <div key={key} className="quote-rec"
-                  data-group={composite && expanded ? "open" : undefined}>
-                  <OpeningRow
-                    item={item}
-                    rowKey={key}
-                    state={state}
-                    expanded={expanded}
-                    onToggleExpanded={() => toggleExpanded(key, expanded)}
-                    onEdit={() => openDrawer({ mode: "edit", rowKey: key })}
-                    onOpenMenu={(anchor) => setMenu({ rowKey: key, anchor })}
-                  />
-                  {/* Undo rides on the duplicated row itself. */}
-                  {undo?.localId === item.id && (
-                    <div role="status"
-                      className="flex items-center gap-2 border-t border-line bg-recessive px-3 sm:px-4 py-2 text-body t-cap">
-                      <span>Duplicated from {undo.fromRef}.</span>
-                      <button type="button"
-                        onClick={() => {
-                          quote.remove(item.id);
-                          setUndo(null);
-                          setAnnouncement("Duplicate removed");
-                        }}
-                        className="font-medium text-sage underline underline-offset-2 cursor-pointer">
-                        Undo
-                      </button>
-                      <button type="button" onClick={() => setUndo(null)} aria-label="Dismiss duplicate notice"
-                        className="ml-auto text-quiet hover:text-ink cursor-pointer">
-                        <X className="w-3.5 h-3.5" aria-hidden="true" />
-                      </button>
-                    </div>
-                  )}
-                  {mountedFor(key) && !composite && (
-                    <div className="disclose" data-open={expanded ? "true" : "false"}>
-                      <div>
-                        <OpeningExpansion item={item} rowKey={key} state={state}
-                          onEdit={() => openDrawer({ mode: "edit", rowKey: key })}
-                          onFixDetails={fixDetails} />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* The units, in a box inset under their parent and docked to
-                      it — no top border of its own, because the parent's bottom
-                      border is its top edge. Each unit keeps its own disclosure
-                      for its specification, so the block nests one level and
-                      only one. */}
-                  {mountedFor(key) && composite && (
-                    <div className="disclose" data-open={expanded ? "true" : "false"}>
-                      <div>
-                        <div id={panelId(key)} className="quote-kids">
-                          {/* At the HEAD of the block, above the rows it is
-                              asking someone to check. */}
-                          <CoverageNotice item={item} state={state} />
-                          {units.map((s, i) => {
-                            const uKey = unitKey(s.id);
-                            const uExpanded = expandedFor(uKey);
-                            const label = unitLabel(item.code, i);
-                            return (
-                              <div key={s.id}>
-                                <UnitRow
-                                  segment={s} parentCode={item.code} label={label}
-                                  expanded={uExpanded}
-                                  onToggleExpanded={() => toggleExpanded(uKey, uExpanded)}
-                                  panelId={panelId(uKey)}
-                                  axis={item.compositeAxis}
-                                  acrossMm={item.compositeAxis === "horizontal" ? item.width : item.height} />
-                                {mountedFor(uKey) && (
-                                  <div className="disclose" data-open={uExpanded ? "true" : "false"}>
-                                    <div>
-                                      <div id={panelId(uKey)} className="quote-rowexp quote-unitexp">
-                                        <SpecPanel productSlug={s.productSlug} widthMm={s.width} heightMm={s.height}
-                                          pairs={optionFullPairs(getProductBySlug(s.productSlug), s.options ?? {})} />
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* The work is happening HERE, where the results will land. */}
-            {processing && (
+              ),
+            }}
+            // Undo rides on the duplicated row itself.
+            undoSlot={(item) => undo?.localId === item.id ? (
+              <div role="status"
+                className="flex items-center gap-2 border-t border-line bg-recessive px-3 sm:px-4 py-2 text-body t-cap">
+                <span>Duplicated from {undo.fromRef}.</span>
+                <button type="button"
+                  onClick={() => {
+                    quote.remove(item.id);
+                    setUndo(null);
+                    setAnnouncement("Duplicate removed");
+                  }}
+                  className="font-medium text-sage underline underline-offset-2 cursor-pointer">
+                  Undo
+                </button>
+                <button type="button" onClick={() => setUndo(null)} aria-label="Dismiss duplicate notice"
+                  className="ml-auto text-quiet hover:text-ink cursor-pointer">
+                  <X className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
+            // The work is happening HERE, where the results will land.
+            trailing={processing ? (
               <DocumentProgress uploading={uploading} processingDocs={processingDocs}
                 aiPhase={aiPhase} stageLog={stageLog} nowTick={nowTick} />
-            )}
+            ) : null}
+          />
 
-          </div>
         )}
 
         {/* Add BELOW the list, detached from it — /quote's exact treatment: a

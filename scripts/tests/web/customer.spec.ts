@@ -234,10 +234,14 @@ test("the record draws a composite as the builder does, with nothing to press", 
   await expect(page.getByRole("button", { name: /^Actions for / })).toHaveCount(0);
   // …but it still opens, and the drawing shows the real make-up.
   await row.getByRole("button", { name: /details for X1/ }).click();
-  await expect(page.locator("svg[data-elevation]").last()).toBeVisible();
 
-  // The expansion is the BUILDER's, not a lookalike. Two things prove it:
-  //
+  // A composite expands into its UNITS, exactly as the builder does — lettered
+  // off the parent, each with its own drawing and specification. The record is
+  // the same list, so this is not a second behaviour to keep in step.
+  await expect(page.getByText("X1A", { exact: true })).toBeVisible();
+  await expect(page.getByText("X1B", { exact: true })).toBeVisible();
+  await expect(page.locator("svg[data-elevation]").first()).toBeVisible();
+
   // Machine fields stay out. options carries performanceVariantId,
   // frameTechnology, glassBuildUp and glazing beside the customer's real
   // choices; the specification is derived from the PRODUCT's option types, so
@@ -246,11 +250,6 @@ test("the record draws a composite as the builder does, with nothing to press", 
   for (const machineField of ["performanceVariantId", "frameTechnology", "glassBuildUp"]) {
     await expect(page.getByText(machineField, { exact: false })).toHaveCount(0);
   }
-  // And a composite parent asserts NO specification of its own — it is the
-  // schedule line, not a product, and its glazing and hardware belong to the
-  // units. Showing the parent's stored options would claim a specification the
-  // customer never chose at this level.
-  await expect(page.getByText(/built as separate units/i)).toBeVisible();
 });
 
 test("contact page: question enquiry issues an OpenFrame reference", async ({ page }) => {
