@@ -773,6 +773,17 @@ function ThermalAudit({ rows, counts }: { rows: OpsThermalRow[]; counts: OpsTher
                     {r.verdict !== "header" && r.proposed?.variantId && (
                       <div className="t-cap font-data" style={{ color: MUTED }}>{r.proposed.variantId}</div>
                     )}
+                    {/* The line has since been changed by a person. Shown so the row
+                        is not read as describing what will be built — but never
+                        judged: this surface validates the parse, not the person. */}
+                    {r.current?.diverged && (
+                      <div className="t-cap" style={{ color: MUTED }}>
+                        now: {r.current.productSlug} <span style={{ color: "var(--warning-ink)" }}>· changed by hand</span>
+                      </div>
+                    )}
+                    {!r.current?.diverged && r.current?.edited && (
+                      <div className="t-cap" style={{ color: MUTED }}>edited by hand</div>
+                    )}
                   </td>
                   <td className="px-3 py-2 font-data" style={{ color: INK }}>
                     {r.verdict === "header" ? "—" : perfText(r.proposed)}
@@ -814,6 +825,9 @@ function perfText(p: OpsThermalRow["proposed"]): string {
  *  and "1.33 over" are the difference between a rounding argument and a redesign. */
 function ThermalVerdict({ row }: { row: OpsThermalRow }) {
   if (row.verdict === "header") return <span className="t-cap" style={{ color: MUTED }}>—</span>;
+  if (row.verdict === "no_record") {
+    return <span className="t-cap" style={{ color: MUTED }}>No parse record</span>;
+  }
   if (row.verdict === "no_target") {
     return <span className="t-cap" style={{ color: MUTED }}>No target derived</span>;
   }

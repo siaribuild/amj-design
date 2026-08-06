@@ -1483,9 +1483,15 @@ ops.get("/projects/:id/thermal", async (c) => {
     `SELECT ql.id, ql.external_ref, ql.product_slug, ql.selected_variant_id, ql.status,
             ql.line_kind, ql.parent_line_id, ql.origin, ql.position, ql.segment_seq, ql.dims_json,
             ql.segment_requirements_json, ql.segment_requirement_basis, ql.segment_thermal_review,
+            ql.edited_fields,
             o.requirements_json, o.requirement_basis, o.family, o.operation_type,
             o.width_mm, o.height_mm, o.status AS opening_status, o.source_generation,
-            apl.performance_json, apl.recommendation_basis, apl.confidence_band
+            apl.performance_json, apl.recommendation_basis, apl.confidence_band,
+            -- ALIASED, and it must stay aliased: apl.product_slug collides with
+            -- ql.product_slug and D1 resolves a duplicate result name last-wins,
+            -- which would silently overwrite the human's slug with the machine's
+            -- and hide the very divergence this column exists to expose.
+            apl.product_slug AS ai_product_slug, apl.performance_variant_id AS ai_variant_id
        FROM quote_line ql
        LEFT JOIN opening_instance o ON o.quote_line_id = ql.id
        LEFT JOIN ai_proposal_line apl ON apl.id = ql.ai_proposal_line_id
@@ -1573,38 +1579,58 @@ ops.get("/projects/:id/thermal", async (c) => {
     } : null;
     const hasTarget = !!target && (target.maxUValue != null || target.minShgc != null || target.maxShgc != null);
 
-    // A segment has no ai_proposal_line, so no stored performance snapshot — but it
-    // does store the GLASS it was given, and the catalogue knows what that glass
-    // does on that frame. Resolving it here is what lets a lite carry a verdict at
-    // all. The figure is the catalogue's CURRENT rating for the pair, not a
-    // snapshot taken at selection time; they agree unless the WERS data is
-    // re-imported between the estimate and the audit being read.
+    // THE PROPOSAL IS READ FROM THE MACHINE'S OWN RECORD, NEVER FROM THE LINE.
+    //
+    // ai_proposal_line is append-only (two INSERTs and an applied_to_cart flag in
+    // the whole worker, no DELETE), so what it holds is what the parse decided and
+    // cannot be moved by a later edit, a re-price, or a catalogue re-import. The
+    // live quote_line is none of those things: a human edit overwrites its product
+    // and NULLs its glass while deliberately keeping ai_proposal_line_id, so
+    // reading the product from one side and the performance from the other
+    // manufactured a row that never existed — a swapped product wearing the old
+    // product's Uw, rendered as "Meets target".
+    //
+    // The catalogue is not consulted either. Its ratings are current, not frozen:
+    // re-importing WERS data would retroactively change a past parse's verdict.
     const perf = r.performance_json ? safeParse(r.performance_json) as Record<string, unknown> : null;
-    let uw = perf ? n(perf.uw) : null;
-    let shgc = perf ? n(perf.shgc) : null;
-    let fromCatalogue = false;
-    if (uw == null && shgc == null && r.product_slug && r.selected_variant_id) {
-      const spec = getProductBySlug(r.product_slug)?.thermal?.find((t) => t.slug === r.selected_variant_id);
-      if (spec) { uw = n(spec.uValue); shgc = n(spec.shgc); fromCatalogue = true; }
-    }
-    const proposed = r.product_slug ? {
-      productSlug: s(r.product_slug),
-      variantId: s(r.selected_variant_id),
-      uw,
-      shgc,
+    const aiProductSlug = s(r.ai_product_slug);
+    const proposed = aiProductSlug ? {
+      productSlug: aiProductSlug,
+      variantId: s(r.ai_variant_id),
+      uw: perf ? n(perf.uw) : null,
+      shgc: perf ? n(perf.shgc) : null,
       certified: perf && typeof perf.certified === "boolean" ? perf.certified : null,
       source: perf ? s(perf.source) : null,          // certified | estimated
-      fromCatalogue,
       basis: s(r.recommendation_basis),
       confidence: s(r.confidence_band),
     } : null;
 
+    // What the line carries NOW, for context only — never judged, never compared.
+    // A row whose current product differs from the proposed one is a human
+    // decision, and this surface validates the machine, not the person.
+    const edited = (() => {
+      const v = r.edited_fields ? safeParse(r.edited_fields) : null;
+      return Array.isArray(v) && v.length > 0;
+    })();
+    const current = {
+      productSlug: s(r.product_slug),
+      variantId: s(r.selected_variant_id),
+      edited,
+      diverged: !!aiProductSlug && !!r.product_slug && aiProductSlug !== r.product_slug,
+    };
+
     // How far outside the band the proposed glass sits, on each axis. Null means
     // that axis was not constrained or could not be compared — never zero, which
     // would read as "exactly on target".
-    let verdict: "met" | "missed" | "no_target" | "unknown" = "unknown";
+    let verdict: "met" | "missed" | "no_target" | "unknown" | "no_record" = "unknown";
     let miss: { uw: number | null; shgc: number | null } | null = null;
-    if (!hasTarget) verdict = "no_target";
+    // A composite unit has no ai_proposal_line at all (the segment INSERT omits the
+    // column), so there is no frozen record of what was proposed for it — and its
+    // band is destroyed and rewritten by every re-split. Saying so is the only
+    // honest option: resolving it live would produce a figure that changes under
+    // the reader, which is the one thing this surface must not do.
+    if (isSegment && !proposed) verdict = "no_record";
+    else if (!hasTarget) verdict = "no_target";
     else if (!proposed || (proposed.uw == null && proposed.shgc == null)) verdict = "unknown";
     else {
       const uwOver = target!.maxUValue != null && proposed.uw != null && proposed.uw > target!.maxUValue
@@ -1654,6 +1680,7 @@ ops.get("/projects/:id/thermal", async (c) => {
       // not proof of non-compliance: the assembly can still average out.
       targetInherited: isSegment && !!target && !component,
       proposed: isHeader ? null : proposed,
+      current: isHeader ? null : current,
       verdict: isHeader ? "header" : verdict,
       miss: isHeader ? null : miss,
       thermalReview: r.segment_thermal_review === 1,
@@ -1677,6 +1704,10 @@ ops.get("/projects/:id/thermal", async (c) => {
       missed: counts.missed ?? 0,
       noTarget: counts.no_target ?? 0,
       unknown: counts.unknown ?? 0,
+      noRecord: counts.no_record ?? 0,
+      // Composite headers group units rather than being judged, so they are
+      // counted out — otherwise the parts never sum to the total.
+      headers: counts.header ?? 0,
     },
   });
 });

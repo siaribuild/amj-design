@@ -208,13 +208,20 @@ export interface OpsThermalTarget {
   maxUValue: number | null; minShgc: number | null; maxShgc: number | null;
   shgcTarget: number | null; basis: string | null;
 }
+/** The machine's own frozen record of what it proposed — read from ai_proposal_line,
+ *  which is append-only. Never sourced from the live line or the live catalogue. */
 export interface OpsThermalProposed {
   productSlug: string | null; variantId: string | null;
   uw: number | null; shgc: number | null;
   certified: boolean | null; source: string | null;
-  /** Performance resolved from the catalogue (a unit has no stored snapshot). */
-  fromCatalogue: boolean;
   basis: string | null; confidence: string | null;
+}
+/** What the line carries now. Context only — never judged against the target. */
+export interface OpsThermalCurrent {
+  productSlug: string | null; variantId: string | null;
+  edited: boolean;
+  /** The line no longer carries the product the machine proposed. */
+  diverged: boolean;
 }
 export interface OpsThermalRow {
   lineId: string;
@@ -233,8 +240,9 @@ export interface OpsThermalRow {
   /** The unit inherited the opening's target — the report did not name it. */
   targetInherited: boolean;
   proposed: OpsThermalProposed | null;
-  /** header = a composite parent, which groups units rather than proposing one. */
-  verdict: "met" | "missed" | "no_target" | "unknown" | "header";
+  current: OpsThermalCurrent | null;
+  /** header = a composite parent, groups units. no_record = a unit with no frozen proposal. */
+  verdict: "met" | "missed" | "no_target" | "unknown" | "header" | "no_record";
   /** Signed distance outside the band per axis; null where that axis is fine or unconstrained. */
   miss: { uw: number | null; shgc: number | null } | null;
   thermalReview: boolean;
@@ -243,6 +251,7 @@ export interface OpsThermalRow {
 }
 export interface OpsThermalCounts {
   total: number; met: number; missed: number; noTarget: number; unknown: number;
+  noRecord: number; headers: number;
 }
 export const opsThermal = (projectId: string) =>
   req<{ quote: string | null; title: string | null; rows: OpsThermalRow[]; counts: OpsThermalCounts }>(

@@ -832,6 +832,45 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.ok(ours, "a unit the report never named is labelled positionally");
       assert.equal(ours.targetInherited, true, "and its target is marked as inherited from the opening");
       assert.equal(ours.target.maxUValue, 2.2, "inheriting means the opening's number, unchanged");
+      // A unit has no ai_proposal_line, so no frozen record of what was proposed.
+      // Saying so beats resolving it live from a catalogue that can change.
+      assert.equal(ours.verdict, "no_record", "a unit with no parse record claims nothing");
+    });
+
+    await t.test("thermal audit: a human edit never becomes the machine's proposal", async () => {
+      // THE FALSE PASS. A human swaps the product; the line keeps pointing at the
+      // machine's proposal row. Reading the product from the LINE and the numbers
+      // from the PROPOSAL renders a window that never existed — the new product
+      // wearing the old one's Uw — and calls it compliant. The audit must show the
+      // frozen proposal, and mark that the line has since moved.
+      const projectId = "p_thermal_edit";
+      await sql(`INSERT INTO project (id, title, status_customer) VALUES ('${projectId}','Edited line fixture','draft')`);
+      await sql(`INSERT INTO ai_runs (id, project_id, pipeline_version) VALUES ('run_te','${projectId}','test')`);
+      await sql(`INSERT INTO ai_proposal (id, project_id, ai_run_id, source_generation, source_manifest_hash, pipeline_version) VALUES ('prop_te','${projectId}','run_te',1,'h','test')`);
+      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin) VALUES ('ql_e','${projectId}','W1','amj80-series-awning-window','{}','{"width":900,"height":1200}',1,500,'ready',0,'ai')`);
+      await sql(`INSERT INTO opening_instance (id, project_id, quote_line_id, external_ref, family, operation_type, width_mm, height_mm, requirements_json, requirement_basis, status) VALUES ('op_e','${projectId}','ql_e','W1','windows','awning',900,1200,'{"maxUValue":2.27,"minShgc":null,"maxShgc":null}','explicit_energy_report','ready')`);
+      // The machine proposed the 80-series with glass that MEETS 2.27.
+      await sql(`INSERT INTO ai_proposal_line (id, proposal_id, project_id, opening_id, quote_line_id, quantity, dimensions_json, ranking_context_json, product_id, product_slug, performance_variant_id, catalogue_revision, configuration_json, performance_json, price_snapshot_json, recommendation_basis, confidence_band, review_required, applied_to_cart, created_at) VALUES ('apl_e','prop_te','${projectId}','op_e','ql_e',1,'{}','{}','p','amj80-series-awning-window','glz-lowe-x','r1','{}','{"uw":2.1,"shgc":0.39,"source":"certified","certified":true}','{"total":500}','energy_report','high',0,1,datetime('now'))`);
+      await sql(`UPDATE quote_line SET ai_proposal_line_id='apl_e' WHERE id='ql_e'`);
+
+      // Now the human swaps the PRODUCT, exactly as the customer editor does:
+      // product changes, glass is dropped, the proposal pointer is deliberately kept.
+      await sql(`UPDATE quote_line SET product_slug='amj100t-series-awning-window', selected_variant_id=NULL, edited_fields='["product_slug"]' WHERE id='ql_e'`);
+
+      const audit = await requestJson(ops, `/api/ops/projects/${projectId}/thermal`);
+      const row = audit.body.rows.find((r) => r.ref === "W1");
+
+      assert.equal(row.proposed.productSlug, "amj80-series-awning-window",
+        "the audit reports the product the MACHINE chose, not the one a human later typed");
+      assert.equal(row.proposed.variantId, "glz-lowe-x",
+        "and the machine's glass, which the edit NULLed on the line");
+      assert.equal(row.proposed.uw, 2.1, "paired with the performance of that same product");
+      assert.equal(row.verdict, "met", "the machine's proposal did meet the band, and still reads as such");
+
+      // The divergence is surfaced, not silently absorbed.
+      assert.equal(row.current.diverged, true, "the row declares the line has moved since the parse");
+      assert.equal(row.current.productSlug, "amj100t-series-awning-window", "and what it moved to");
+      assert.equal(row.current.edited, true);
     });
   } finally {
     await stop(server);
