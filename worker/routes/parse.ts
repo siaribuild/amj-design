@@ -197,6 +197,29 @@ parse.post("/projects/current/clear", async (c) => {
             AND quote_edit_version=? AND ai_generation=? AND quote_mutation_token=?
         )`,
     ).bind(project.id, project.id, nextQuoteVersion, nextAiGeneration, mutationToken),
+    // A draft is a LIVING document; clearing it means start over. Openings are AI
+    // working state, not the record — what is submitted is snapshotted, and an
+    // issued quote is the formal artefact — so nothing here is worth keeping.
+    //
+    // Leaving them was not caution, it corrupted the next parse. opening_instance
+    // is upserted by external_ref and was deleted NOWHERE in the worker, so a ref
+    // that stopped appearing kept its old dimensions, target and status forever,
+    // and bridgeParseLinesToOpenings refuses to run at all while any row survives.
+    // Measured on one draft: 36 orphans across two generations, one dated a week
+    // before the run whose number it carried.
+    //
+    // This cascades ai_proposal_line, selection_run (and its candidate_result) and
+    // opening_evidence for those openings. Deliberate: they are per-opening
+    // machine reasoning for a draft the customer has just thrown away. What was
+    // extracted still survives per run in building_models.model_json, which is
+    // INSERT-only and keyed on the project rather than the opening.
+    c.env.DB.prepare(
+      `DELETE FROM opening_instance
+        WHERE project_id=? AND EXISTS (
+          SELECT 1 FROM project WHERE id=? AND status_customer='draft'
+            AND quote_edit_version=? AND ai_generation=? AND quote_mutation_token=?
+        )`,
+    ).bind(project.id, project.id, nextQuoteVersion, nextAiGeneration, mutationToken),
     c.env.DB.prepare(
       `UPDATE ai_job_claim SET status='superseded', updated_at=datetime('now')
         WHERE project_id=? AND source_generation<?
@@ -219,8 +242,11 @@ parse.post("/projects/current/clear", async (c) => {
           AND quote_mutation_token=?`,
     ).bind(project.id, nextQuoteVersion, nextAiGeneration, mutationToken),
   ]);
+  // First and LAST statements: the token claim and its release. The last index
+  // moves whenever a statement is added to the batch — it is the release that
+  // proves the whole batch ran against the project we claimed, so it must track.
   if (Number(committed[0]?.meta?.changes ?? 0) !== 1 ||
-      Number(committed[5]?.meta?.changes ?? 0) !== 1) {
+      Number(committed[committed.length - 1]?.meta?.changes ?? 0) !== 1) {
     return c.json({ error: "project_changed_reload_required" }, 409);
   }
   await c.env.KV.delete(`aidebounce:${project.id}`).catch(() => {});

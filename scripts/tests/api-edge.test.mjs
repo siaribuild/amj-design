@@ -168,7 +168,23 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
         "--command", `INSERT INTO ai_job_claim (project_id,source_generation,debounce_token,status,attempts) VALUES ('${projectId}',${oldGeneration},'clear-test','scheduled',0)`,
       ], { env: wranglerEnv });
 
+      // Openings are AI working state on a draft the customer is throwing away.
+      // Left behind they are not inert: opening_instance is upserted by
+      // external_ref, so a ref that stops appearing keeps its old dimensions and
+      // target forever, and bridgeParseLinesToOpenings refuses to run while any
+      // row survives. Measured on one real draft before this: 36 orphans.
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", `INSERT INTO opening_instance (id,project_id,external_ref,family,operation_type,width_mm,height_mm) VALUES ('op_clear_1','${projectId}','W1','windows','awning',900,1200)`,
+      ], { env: wranglerEnv });
+
       await requestJson(buyer, "/api/projects/current/clear", { method: "POST" });
+      const openingsAfter = await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--json", "--command", `SELECT count(*) AS n FROM opening_instance WHERE project_id='${projectId}'`,
+      ], { env: wranglerEnv });
+      assert.equal(JSON.parse(openingsAfter.stdout)[0].results[0].n, 0,
+        "a cleared draft keeps no openings — they would poison the next parse");
       const refreshed = await requestJson(buyer, "/api/projects/current");
       assert.equal(refreshed.body.items.length, 0, "cleared lines cannot return after refresh");
       assert.equal(refreshed.body.files.length, 0, "non-schedule uploads cannot return after refresh");

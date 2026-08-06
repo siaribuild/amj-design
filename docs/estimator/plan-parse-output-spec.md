@@ -29,15 +29,31 @@ silently.
 An **ordered** list, left to right (top to bottom for a stacked opening), of the
 units the opening is built from. Per unit:
 
-| field | notes |
-|---|---|
-| `operation` | awning, fixed, sliding, casement, hinged, louvre, stacker, bifold, double-hung, tilt-turn |
-| `widthMm` | the unit's own width; units sum to the opening's width |
-| `heightMm` | only when the division is horizontal; otherwise every unit is full height |
+| field | required | notes |
+|---|---|---|
+| `operation` | yes | awning, fixed, sliding, casement, hinged, louvre, stacker, bifold, double-hung, tilt-turn |
+| `ratio` | yes | this unit's share of the opening **along the division axis**, 0–1, three decimals. The ratios sum to 1. |
+| `widthMm` | only if drawn | the unit's own dimension, **only when the drawing prints it**. Absent otherwise — never back-calculated. |
 
 **Consumer:** `proposeSplit` → `materialiseSplits` → the priced composite.
 **Decision:** the entire make-up of the opening. W1 (2050 × 2100) shipped as two
 1025mm awnings because nothing stated its composition.
+
+**Why the ratio is the primary and the millimetres are the exception.** The
+authoritative overall size comes from the schedule table, not the drawing — the
+drawing's job is to say how that size *divides*. A proportion is also the more
+robust reading: it survives an uncertain scale, where an absolute figure does not.
+And the exact partition is already ours to do — units must sum to the opening
+exactly, and `proportionalParts` in `split.ts` allocates a total across shares by
+largest remainder, which is precisely the shape ratio-plus-total wants.
+
+So: report `ratio` always. Report `widthMm` **only when the sheet dimensions that
+unit**, because a printed dimension is a stated fact and outranks a measured
+proportion. Do not derive one from the other in either direction — a
+back-calculated millimetre figure claims an authority it does not have, and the
+consumer cannot tell it apart from a real one.
+
+Three decimals is enough and more is false precision: at 2050mm, 0.001 is 2mm.
 
 **Order matters and is not decoration.** `awning | fixed` and `fixed | awning` are
 different windows. If the drawings show which side the opening unit sits on, that
@@ -166,12 +182,25 @@ Wanted from the drawings:
 
 ```
 tag:             W1
-composition:     [ { operation, widthMm }, { operation, widthMm }, … ]   ← in drawn order
+composition:     [ { operation, ratio, widthMm? }, … ]   ← in drawn order, ratios sum to 1
 divisionAxis:    vertical | horizontal
 wallOrientation: one of N NE E SE S SW W NW
 roomLabel:       free text, or not stated
 evidence:        sheet + page + region, for the composition
 ```
+
+If W1 turns out to be an opening unit against one jamb with a lite beside it, and
+the sheet does not dimension them, that reads:
+
+```
+composition: [ { operation: "awning", ratio: 0.634 },
+               { operation: "fixed",  ratio: 0.366 } ]
+```
+
+and the estimator multiplies by the schedule's 2050 to get 1300 | 750, partitioned
+exactly. Note this is also how we learn the handedness that no fallback can infer:
+the fallback happens to produce the same two widths, but always puts the opening
+unit first.
 
 That is the whole deliverable for W1 — five fields and a pointer.
 
