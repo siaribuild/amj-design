@@ -235,6 +235,22 @@ test("the record draws a composite as the builder does, with nothing to press", 
   // …but it still opens, and the drawing shows the real make-up.
   await row.getByRole("button", { name: /details for X1/ }).click();
   await expect(page.locator("svg[data-elevation]").last()).toBeVisible();
+
+  // The expansion is the BUILDER's, not a lookalike. Two things prove it:
+  //
+  // Machine fields stay out. options carries performanceVariantId,
+  // frameTechnology, glassBuildUp and glazing beside the customer's real
+  // choices; the specification is derived from the PRODUCT's option types, so
+  // those never reach the screen. A hand-rolled panel that mapped options
+  // straight to rows printed them verbatim.
+  for (const machineField of ["performanceVariantId", "frameTechnology", "glassBuildUp"]) {
+    await expect(page.getByText(machineField, { exact: false })).toHaveCount(0);
+  }
+  // And a composite parent asserts NO specification of its own — it is the
+  // schedule line, not a product, and its glazing and hardware belong to the
+  // units. Showing the parent's stored options would claim a specification the
+  // customer never chose at this level.
+  await expect(page.getByText(/built as separate units/i)).toBeVisible();
 });
 
 test("contact page: question enquiry issues an OpenFrame reference", async ({ page }) => {

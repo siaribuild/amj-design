@@ -13,23 +13,10 @@
 // the make-up, so expanding a row states it without listing children.
 import { useState } from "react";
 import { OpeningRow } from "../components/quote-project/OpeningRow";
-import { SpecPanel } from "../components/quote-project/OpeningExpansion";
+import { OpeningExpansion } from "../components/quote-project/OpeningExpansion";
 import { rowStateFor } from "../components/quote-project/rowState";
-import { getProductBySlug } from "../data/catalogue";
 import type { QItem } from "../data/configurator";
 import { money } from "./accountModel";
-
-/** The units, in the shape SpecPanel draws them. Empty for a simple opening,
- *  which then draws its own single frame. */
-function partsOf(item: QItem) {
-  const segments = item.segments ?? [];
-  if (!segments.length) return undefined;
-  return segments.map((s) => ({
-    productSlug: s.productSlug,
-    alongMm: (item.compositeAxis ?? "vertical") === "vertical" ? s.width : s.height,
-    qty: s.qtyPerParent ?? 1,
-  }));
-}
 
 export function RecordLineList({ items, total, footerLabel }: {
   items: QItem[];
@@ -50,7 +37,6 @@ export function RecordLineList({ items, total, footerLabel }: {
       </div>
       {items.map((item) => {
         const open = expanded.has(item.id);
-        const product = getProductBySlug(item.productSlug);
         return (
           <div key={item.id} className="quote-rec">
             <OpeningRow
@@ -63,25 +49,9 @@ export function RecordLineList({ items, total, footerLabel }: {
             />
             {open && (
               <div className="disclose" data-open="true">
-                <div className="px-3 sm:px-4 py-3 border-t border-line bg-recessive">
-                  <SpecPanel
-                    productSlug={item.productSlug}
-                    widthMm={item.width}
-                    heightMm={item.height}
-                    // Chosen options, read as a list. `chosen` is what the panel
-                    // uses to tell a selection from an available alternative, and
-                    // on a record every one of them was selected.
-                    pairs={Object.entries(item.options ?? {})
-                      .filter(([, value]) => !!value)
-                      .map(([label, value]) => ({ label, value: String(value), chosen: true }))}
-                    parts={partsOf(item)}
-                    axis={item.compositeAxis ?? null}
-                  />
-                  {!product && (
-                    <p className="mt-2 text-body t-cap">
-                      This product is no longer in the catalogue — the record keeps what was ordered.
-                    </p>
-                  )}
+                <div>
+                  <OpeningExpansion item={item} rowKey={String(item.id)}
+                    state={rowStateFor(item, items)} readOnly />
                 </div>
               </div>
             )}

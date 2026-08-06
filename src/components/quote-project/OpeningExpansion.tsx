@@ -167,13 +167,17 @@ export function CoverageNotice({ item, state }: { item: QItem; state: RowState }
   );
 }
 
-export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: {
+export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails, readOnly = false }: {
   item: QItem;
   rowKey: RowKey;
   /** Drives the inherited state stripe and the reason block. */
   state: RowState;
-  onEdit: () => void;
-  onFixDetails: () => void;
+  onEdit?: () => void;
+  onFixDetails?: () => void;
+  /** A record of what was asked for, not a thing to change. Drops the editing
+   *  control; everything that STATES the opening — the drawing, the derived
+   *  specification, the coverage notice, the customer's own note — stays. */
+  readOnly?: boolean;
 }) {
   const product = getProductBySlug(item.productSlug);
   const segments = item.segments ?? [];
@@ -265,7 +269,7 @@ export function OpeningExpansion({ item, rowKey, state, onEdit, onFixDetails }: 
             keeps a framed, worded control because an expansion that offers only
             a pencil is the expand-into-editor model this route exists to
             replace (plan §7.2). */}
-        {blocked ? (
+        {readOnly ? null : blocked ? (
           <button type="button" onClick={onFixDetails} aria-label={`Fix details for ${ref}`}
             className="order-2 sm:order-1 justify-self-start card inline-flex items-center gap-1.5 px-3 py-2 font-medium text-sage hover:border-sage cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage t-cap">
             <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />Fix details
