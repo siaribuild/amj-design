@@ -1489,6 +1489,7 @@ ops.get("/projects/:id/thermal", async (c) => {
   // chosen configuration, not the target it was chosen against.
   const { results } = await c.env.DB.prepare(
     `SELECT ql.id, ql.external_ref, ql.line_kind, ql.parent_line_id, ql.segment_seq, ql.dims_json,
+            ql.configuration_snapshot_json,
             o.requirements_json, o.requirement_basis, o.operation_type, o.width_mm, o.height_mm,
             apl.performance_json, apl.ranking_context_json,
             -- ALIASED, and it must stay aliased: apl.product_slug collides with a
@@ -1539,6 +1540,15 @@ ops.get("/projects/:id/thermal", async (c) => {
   // the correspondence the parse itself created. It was previously matched on the
   // unit's current product — which made a label move when someone changed that
   // product, and let two units swap codes while their frozen bands stayed put.
+  // A, B, C… — the convention a schedule uses for the units of one opening, so a
+  // split we invented reads the way the trade writes it. The previous positional
+  // form (W1·1) was an attempt not to imply the report had named the unit; the
+  // basis column already says whether a document did, and a dot-number is not a
+  // code anybody uses.
+  const unitLetter = (seq: number | null): string => {
+    const i = Math.max(0, seq ?? 0);
+    return i < 26 ? String.fromCharCode(65 + i) : `-${i + 1}`;
+  };
   const componentFor = (parentRef: string | null, seq: number | null): Component | null => {
     const comps = parentRef ? componentsByOpening.get(parentRef) : null;
     if (!comps?.length || seq == null) return null;
@@ -1600,14 +1610,24 @@ ops.get("/projects/:id/thermal", async (c) => {
     // overwrites the line's product and drops its glass while deliberately keeping
     // the pointer to this row, so reading the product from one and the performance
     // from the other manufactured a window that never existed.
+    // A UNIT carries its own frozen record on the line. It can never have an
+    // ai_proposal_line — that table requires an opening_instance and a unit has
+    // none — so reading only the proposal table reported a blank beside a unit
+    // whose chosen product is plainly on the row, and blanked its verdict with
+    // it. configuration_snapshot_json is written once by the estimator at split
+    // time and no human path updates it, so it is a frozen proposal in every
+    // sense this surface needs.
+    const snapshot = isSegment && r.configuration_snapshot_json
+      ? safeParse(r.configuration_snapshot_json) as Record<string, unknown>
+      : null;
     const perf = r.performance_json ? safeParse(r.performance_json) as Record<string, unknown> : null;
-    const aiProductSlug = s(r.ai_product_slug);
+    const aiProductSlug = s(r.ai_product_slug) ?? (snapshot ? s(snapshot.productSlug) : null);
     const proposed = aiProductSlug ? {
       productSlug: aiProductSlug,
-      variantId: s(r.ai_variant_id),
-      uw: perf ? n(perf.uw) : null,
-      shgc: perf ? n(perf.shgc) : null,
-      source: perf ? s(perf.source) : null,          // certified | estimated
+      variantId: s(r.ai_variant_id) ?? (snapshot ? s(snapshot.variantId) : null),
+      uw: (perf ? n(perf.uw) : null) ?? (snapshot ? n(snapshot.uw) : null),
+      shgc: (perf ? n(perf.shgc) : null) ?? (snapshot ? n(snapshot.shgc) : null),
+      source: (perf ? s(perf.source) : null) ?? (snapshot ? s(snapshot.source) : null),
     } : null;
 
     // ── verdict ───────────────────────────────────────────────────────────────
@@ -1643,7 +1663,7 @@ ops.get("/projects/:id/thermal", async (c) => {
 
     return {
       lineId: r.id,
-      ref: s(r.external_ref) ?? component?.ref ?? (parentRef ? `${parentRef}·${(r.segment_seq ?? 0) + 1}` : null),
+      ref: s(r.external_ref) ?? component?.ref ?? (parentRef ? `${parentRef}${unitLetter(r.segment_seq)}` : null),
       kind: isSegment ? "segment" : isHeader ? "composite" : "line",
       unitCount,
       operation: component?.operationType ?? s(r.operation_type),

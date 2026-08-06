@@ -54,6 +54,12 @@ export interface SegmentSpec {
   resolvedBand?: { maxUValue: number | null; minShgc: number | null; maxShgc: number | null; shgcTarget?: number | null } | null;
   requirementBasis?: string | null;
   thermalReview?: boolean;
+  /** The machine's frozen account of what it chose for THIS unit. A unit never
+   *  gets an ai_proposal_line — that table requires an opening_instance and a
+   *  unit has none — so this is the only per-unit record of the proposal that
+   *  exists. Written once, here; no human path updates it (updateSegment's SET
+   *  clause omits the column), so it stays the machine's answer. */
+  configurationSnapshot?: Record<string, unknown> | null;
 }
 
 export interface SplitValidation {
@@ -252,8 +258,9 @@ export async function splitLine(env: Env, args: {
          (id, project_id, parent_line_id, segment_seq, qty_per_parent, line_kind,
           external_ref, room_label, product_slug, options_json, dims_json,
           qty, line_total, status, position, origin, selected_variant_id,
-          segment_requirements_json, segment_requirement_basis, segment_thermal_review)
-       VALUES (?, ?, ?, ?, ?, 'segment', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          segment_requirements_json, segment_requirement_basis, segment_thermal_review,
+          configuration_snapshot_json)
+       VALUES (?, ?, ?, ?, ?, 'segment', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       uuid(), parent.project_id, parent.id, i, Math.max(1, s.qtyPerParent ?? 1),
       s.productSlug, JSON.stringify(s.options),
@@ -268,6 +275,7 @@ export async function splitLine(env: Env, args: {
       args.origin, s.selectedVariantId ?? null,
       s.resolvedBand ? JSON.stringify(s.resolvedBand) : null,
       s.requirementBasis ?? null, s.thermalReview ? 1 : 0,
+      s.configurationSnapshot ? JSON.stringify(s.configurationSnapshot) : null,
     )),
     env.DB.prepare(
       "UPDATE quote_line SET line_kind='composite_parent', composite_axis=?, coverage_delta_mm=?, composite_origin=?, updated_at=datetime('now') WHERE id=?",

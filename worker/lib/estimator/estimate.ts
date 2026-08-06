@@ -410,6 +410,21 @@ async function materialiseSplits(env: Env, ctx: {
         productSlug,
         options,
         selectedVariantId: variant?.variantId ?? null,
+        // THE MACHINE'S OWN RECORD OF THIS UNIT, frozen at the moment it chose.
+        // A unit never gets an ai_proposal_line — that table requires an
+        // opening_instance and a unit has none — so without this there is no
+        // frozen account of what was proposed for it, and the thermal audit
+        // could only report a blank beside a unit whose product it can plainly
+        // see on the line. configuration_snapshot_json is written once, here,
+        // and no human path updates it: updateSegment's SET clause omits it.
+        configurationSnapshot: chosen ? {
+          productSlug,
+          variantId: variant?.variantId ?? null,
+          uw: variant?.uValue ?? null,
+          shgc: variant?.shgc ?? null,
+          source: variant?.dataSource ?? null,
+          catalogueRevision: chosen.candidate.catalogueRevision ?? null,
+        } : null,
         resolvedBand: requirement ? {
           maxUValue: requirement.maxUValue ?? null,
           minShgc: requirement.minShgc ?? null,

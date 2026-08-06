@@ -836,15 +836,30 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.equal(byRef.W7B.target.maxUValue, 1.69, "which differs between the two halves");
       assert.equal(byRef.W7A.targetInherited, false, "a report-named unit did not inherit");
 
-      // A unit we invented gets a positional label — never an invented letter,
-      // which would look like it came from the report.
-      const ours = byRef["W9·1"];
-      assert.ok(ours, "a unit the report never named is labelled positionally");
+      // A unit we split ourselves is LETTERED, the way a schedule writes the
+      // units of one opening. The basis column already says whether a document
+      // named it, so the label does not also need to withhold a letter — and a
+      // dot-number is not a code anybody uses.
+      const ours = byRef["W9A"];
+      assert.ok(ours, "a unit the report never named is still lettered");
       assert.equal(ours.targetInherited, true, "and its target is marked as inherited from the opening");
       assert.equal(ours.target.maxUValue, 2.2, "inheriting means the opening's number, unchanged");
-      // A unit has no ai_proposal_line, so no frozen record of what was proposed.
-      // Saying so beats resolving it live from a catalogue that can change.
-      assert.equal(ours.verdict, "no_record", "a unit with no parse record claims nothing");
+      // This fixture writes no configuration snapshot either, so there genuinely
+      // is no recorded proposal for the unit and the row says exactly that.
+      assert.equal(ours.verdict, "no_record", "a unit with no recorded proposal claims nothing");
+
+      // A unit the estimator DID record is judged like any other line. Its
+      // proposal lives on the line's own configuration snapshot, because a unit
+      // can never have an ai_proposal_line — that table requires an
+      // opening_instance and a unit has none. Reading only the proposal table
+      // showed a blank beside a unit whose product was plainly on the row.
+      await sql(`UPDATE quote_line SET configuration_snapshot_json='{"productSlug":"amj80-series-awning-window","variantId":"glz-lowe-y","uw":2.9,"shgc":0.31,"source":"certified"}' WHERE id='ql_s9'`);
+      const judged = await requestJson(ops, `/api/ops/projects/${projectId}/thermal`);
+      const unit = judged.body.rows.find((r) => r.ref === "W9A");
+      assert.equal(unit.proposed.productSlug, "amj80-series-awning-window", "the unit reports what was chosen for it");
+      assert.equal(unit.proposed.uw, 2.9);
+      assert.equal(unit.verdict, "missed", "2.9 against the opening's 2.2 is a miss, and is now stated");
+      assert.equal(unit.miss.uw, 0.7);
     });
 
     await t.test("thermal audit: a human edit never becomes the machine's proposal", async () => {
