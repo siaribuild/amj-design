@@ -368,6 +368,47 @@ test("with no blockers the bar offers submission and never invents a stage", asy
   await expect(page.getByRole("heading", { name: "Review and submit" })).toBeVisible();
 });
 
+test("a submitted job leaves the builder — it does not linger until a refresh", async ({ page }) => {
+  // The draft stops being the customer's the moment it is submitted: the server
+  // moves it out of 'draft' and the dashboard already invites a new quote. The
+  // builder held its openings in memory regardless, so coming BACK to it showed
+  // a job that was under review as though it were still a working cart. Only a
+  // reload cleared it, because a fresh mount starts empty and hydrate then
+  // declines to populate it.
+  //
+  // Hydrate cannot fix this on its own: an absent draft clears the builder only
+  // when the IDENTITY changed, which protects unsaved work on a first visit and
+  // is right to keep. So the reset belongs at submission, and this test walks
+  // the round trip rather than asserting on the confirmation screen — which
+  // shows no openings either way and would pass with the bug present.
+  await mockProject(page, [compositeItem]);
+  await page.route("**/api/projects/*/submit", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "project-qp", status: "submitted" }) }));
+
+  await page.goto("/quote");
+  await page.getByRole("region", { name: "Project summary and actions" })
+    .getByRole("button", { name: /Submit for technical review/ }).click();
+  await expect(page.getByRole("heading", { name: "Review and submit" })).toBeVisible();
+  await page.getByPlaceholder("Your name").fill("Regression Tester");
+  await page.getByPlaceholder("your@email.com").fill("regression@example.com");
+
+  // From here the server has NO draft to hand back — same customer, so the
+  // identity has not changed either.
+  await page.route("**/api/projects/current", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ project: null, files: [], items: [] }) });
+  });
+  await page.getByRole("button", { name: /Submit for technical review/ }).click();
+  await expect(page.getByRole("heading", { name: "Quote submitted" })).toBeVisible();
+
+  // Back to the builder the way a customer would — in-app, never a reload.
+  await page.getByRole("button", { name: "Back to home" }).click();
+  await page.getByRole("button", { name: "Get a quote" }).first().click();
+  await expect(page.getByRole("region", { name: "Project summary and actions" })).toBeVisible();
+  await expect(page.getByText(compositeItem.code as string)).toHaveCount(0,
+    { timeout: 10_000 });
+});
+
 // ─── 8. Responsive ─────────────────────────────────────────────────────────────
 
 test("desktop gets a side drawer, mobile a full-screen editor, neither scrolls sideways", async ({ page }) => {

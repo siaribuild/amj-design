@@ -2075,6 +2075,23 @@ export default function App() {
     if (!id) return { ok: false, error: "no_project" };
     try {
       const r = await submitProject(id, contact);
+      // THE DRAFT IS NO LONGER OURS. Submission moves the project out of 'draft'
+      // server-side, so the builder is holding a job that is now under review —
+      // and the dashboard, reading the server, already invites a NEW quote. Going
+      // back to the builder showed the submitted items as though they were still
+      // a working cart, until a refresh made them vanish.
+      //
+      // Hydrate cannot recover from this on its own: an absent draft only clears
+      // the builder when the IDENTITY changed (see the guard above), which
+      // protects unsaved local work on a first visit and is right to keep. This
+      // is the one moment we know the draft became a quote, so it is where the
+      // builder is reset.
+      removedLineIdsRef.current.clear();
+      skipNextSaveRef.current = true;   // the empty cart must not save back over anything
+      setQuoteItems([]);
+      setQuoteFiles([]);
+      setProjectId(null);               // the next save starts a fresh draft
+      setProjectTitle(DEFAULT_PROJECT_TITLE);
       return { ok: true, status: r.status };
     } catch {
       return { ok: false, error: "rejected" };
