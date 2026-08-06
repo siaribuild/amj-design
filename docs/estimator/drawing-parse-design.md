@@ -31,6 +31,37 @@ It is worth recording, because the errors were confident and they were mine.
 
 ---
 
+## 0. What this pass is, and what it is not
+
+**The openings list already works and is authoritative.** Extraction returns every opening with
+its tag, dimensions, product type and comment, and the shipped parser does it at 19 rows and
+zero warnings on this document. None of that is in question and none of it is re-derived here.
+
+This pass takes that list and asks the drawings **one further question per opening**: the thing
+a human would look at an elevation to find.
+
+| Already known, authoritative | What this pass adds |
+|---|---|
+| tag, width, height | how the opening **divides** |
+| product type / family | which units make it up, and what each one **is** |
+| comments, glazing, head height | their **order**, left to right |
+| | the **ratio** each unit takes of the width |
+| | whether the division is side-by-side or stacked |
+
+So it is **not a discovery problem**. We are never asking "what windows exist" — we are looking
+up a window we already know the size of, and reading how it is made up. That changes three
+things materially:
+
+- **Frame matching is a lookup, not a search.** The schedule says 2050 × 2100; the decoder looks
+  for that rectangle. This is why the >2% rejection rule is sufficient rather than heroic, and
+  why the title-block logo that came back as a 2091 × 2091 "window" is easy to reject.
+- **Tag harvesting is almost unnecessary.** It is needed only to tell apart two rows with
+  identical dimensions — W14 and W16 here — not to find openings.
+- **Failure is per-opening and harmless.** An opening whose frame is not found keeps everything
+  the schedule gave it and reports composition as *not stated*. The list never degrades.
+
+---
+
 ## 1. The method being reproduced
 
 SKILL.md's six steps, unchanged: inventory cheaply → choose a strategy → text extraction for
@@ -149,19 +180,35 @@ per selected page; decode `constructPath`; compose the CTM through save/restore/
 bucket into vertical / horizontal / diagonal; `page.cleanup()` between pages. Scale from the
 title block's `1 : 100`.
 
-**Stage 5 — Frames** *(drawing Stage C)*. Find the rectangle matching each schedule row's
-dimensions, then read internal full-height verticals as mullions and count diagonals per leaf.
-**Rejection is the work, not extraction** — a strict matcher searching for W1's 2050×2100 also
-returned the title-block logo border as a 2091×2091 mm "window". Codified rules: a real frame
-contains at least one leaf whose head and sill rails span the same x-range; a candidate whose
-measured size differs from the schedule row by >2% is not that window.
+**Stage 5 — Frame lookup, per known opening** *(drawing Stage C)*. **Driven by the openings
+list, one row at a time.** For a row of 2050 × 2100, search the selected pages for a rectangle
+of that size; then read its internal full-height verticals as mullions and count diagonals per
+leaf, left to right.
 
-**Stage 6 — Tags and join** *(drawing Stages B and D)*. Tags come from `getTextContent` on the
-floor plans — no operator list needed. Two verified traps: every tag is an octagon carrying
-**two** lines (`W1` over `S08`), so a single-token reader mis-segments; and a legend decoy `W1`
-sits at (975, 486) on both plan pages, distinguishable because its second line reads `S7`.
-Association is the genuinely unsolved sub-problem — elevations carry no tags and W14/W16 are
-identical drawings, so the resolution is ordering along the wall from plan-view tag positions.
+**Rejection is the work, not extraction.** A strict matcher searching for W1's 2050 × 2100 also
+returned the title-block logo border as a 2091 × 2091 mm "window". Because the target size is
+known, rejection is cheap and rule-based:
+
+- a candidate whose measured size differs from the row by **>2%** is not that window;
+- a real frame contains at least one leaf whose head and sill rails span the same x-range —
+  two bare verticals with no internal rails is furniture;
+- **zero candidates or two-plus surviving candidates ⇒ composition is *not stated* for that
+  opening.** Never a guess, and the row keeps everything the schedule gave it.
+
+**Stage 6 — Disambiguation only** *(drawing Stages B and D)*. Needed **only** when two rows
+share dimensions, because then a matched frame could belong to either. W14 and W16 are the case
+here — both 2050 × 2000 OFFSET AWNING, drawn identically.
+
+Tags come from `getTextContent` on the floor plans; no operator list, ~30–50 ms. Two verified
+traps: each tag is an octagon carrying **two** lines (`W1` over `S08`), so a single-token reader
+mis-segments; and a legend decoy `W1` sits at (975, 486) on both plan pages, rejectable because
+its second line reads `S7`. Resolution is ordering along the wall from plan-view tag positions
+against order along the elevation.
+
+Worth stating plainly: **when two identical rows resolve to identical compositions, the
+ambiguity does not matter** — which is the case for W14/W16 on this document. Disambiguation
+only has to work the day two same-sized openings are drawn differently, and until then a
+mismatch between them is itself the signal that this stage is needed.
 
 **Stage 7 — Output.** Conforms to the spec. For W1:
 
@@ -268,8 +315,14 @@ architectural upload.
 
 ### Stages 4+ — Outline only; host decided by Stage 1.
 
-Geometry → frames → tags and join → `splitHints` with `source: "drawing"` → escalation →
-progress detail. Each independently shippable and inert until the next lands.
+Geometry → **frame lookup per known opening** → `splitHints` with `source: "drawing"` →
+escalation → disambiguation → progress detail. Each independently shippable and inert until the
+next lands.
+
+Note the ordering change that the §0 framing buys: **disambiguation moves late.** It was a
+prerequisite when this looked like a discovery problem; driven by a known list it is only needed
+for same-sized rows, so the pass delivers value for every uniquely-sized opening before any tag
+harvesting exists at all. On this document that is 17 of 19 openings.
 
 ---
 
