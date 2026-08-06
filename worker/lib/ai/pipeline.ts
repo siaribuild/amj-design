@@ -580,22 +580,40 @@ export async function runAiExtraction(
       if (components?.length) {
         o.thermalComponents = components;
         const authorityAxis = authority?.axis ?? "vertical";
-        splitHints.set(o.externalRef, {
-          source: "energy_report",
-          axis: authorityAxis,
-          raw: components.map((component) => component.ref).join(" + "),
-          units: components.map((component) => ({
-            operation: component.operationType ?? "fixed",
-            count: 1,
-            widthMm: component.widthMm,
-            heightMm: component.heightMm,
-            ref: component.ref,
-            requirement: component.requirement,
-            performanceTypeId: component.performanceTypeId,
-            performanceDescription: component.performanceDescription,
-            glazingNote: component.glazingNote,
-          })),
-        });
+        const componentUnits = components.map((component) => ({
+          operation: component.operationType ?? "fixed",
+          count: 1,
+          widthMm: component.widthMm,
+          heightMm: component.heightMm,
+          ref: component.ref,
+          requirement: component.requirement,
+          performanceTypeId: component.performanceTypeId,
+          performanceDescription: component.performanceDescription,
+          glazingNote: component.glazingNote,
+        }));
+        // OWNER RULE (2026-08-06): THE PLAN WINS THE GEOMETRY. It is the
+        // architectural contract; the energy report is produced later, can carry
+        // human error, and can be biased toward a particular product's size
+        // limits. The report is the FIRST FALLBACK when the plan says nothing
+        // about how an opening is divided.
+        //
+        // This used to be decided by nothing but write order — the loop below the
+        // plan's own loop set the SAME map key, so the report always landed last
+        // and silently replaced a split the drawings had specified. A hint that
+        // came from the plan now keeps its units; the report's components ride
+        // along in `components` so the thermal targets they carry can still be
+        // attached to whatever the plan produced (plans do not carry targets).
+        const planHint = splitHints.get(o.externalRef);
+        if (planHint && planHint.source === "schedule_comment") {
+          planHint.components = componentUnits;
+        } else {
+          splitHints.set(o.externalRef, {
+            source: "energy_report",
+            axis: authorityAxis,
+            raw: components.map((component) => component.ref).join(" + "),
+            units: componentUnits,
+          });
+        }
       }
       const req = mapped.requirements.get(o.externalRef);
       if (!req) continue;

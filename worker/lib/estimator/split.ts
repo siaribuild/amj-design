@@ -140,6 +140,14 @@ export interface SplitHint {
   units: SplitUnitHint[];
   raw: string;
   source?: "schedule_comment" | "energy_report";
+  /** The energy report's components, carried alongside a PLAN-derived hint that
+   *  won the geometry. Owner rule: the plan is the architectural contract and
+   *  decides how an opening is divided; the report is the only document that
+   *  carries a per-unit thermal target, and plans do not have them. So the two
+   *  documents each supply what they are authoritative about, rather than one
+   *  discarding the other. Never used to lay units out — only to attach targets
+   *  to the units the plan already produced. */
+  components?: SplitUnitHint[] | null;
   axis?: "vertical" | "horizontal";
 }
 

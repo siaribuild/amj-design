@@ -55,6 +55,30 @@ test("W4 example: width 3200, '2x 600mm WIDE AWNINGS' ⇒ awning 600 | fixed 200
   assert.equal(proposal.segments.reduce((s, seg) => s + seg.widthMm, 0), 3200);
 });
 
+// ── Precedence: the PLAN wins the geometry (owner rule, 2026-08-06) ──────────
+test("report components never move a plan-derived split's geometry", () => {
+  // The energy report is produced after the drawings, can carry human error, and
+  // can be biased toward one product's size limits. So when the plan says how an
+  // opening divides, the report's component schedule rides along ONLY to supply
+  // per-unit thermal targets (plans do not carry them) — it must never re-lay the
+  // units out. Previously the report won by writing second to the same map key.
+  const opening = { operationType: "awning", widthMm: 3200, heightMm: 2100 };
+  const planHint = parseSplitHint("2x 600mm WIDE AWNINGS");
+  const withReport = {
+    ...planHint,
+    components: [
+      { operation: "awning", count: 1, widthMm: 805, heightMm: 2100, ref: "W4A" },
+      { operation: "fixed", count: 1, widthMm: 1590, heightMm: 2100, ref: "W4B" },
+      { operation: "awning", count: 1, widthMm: 805, heightMm: 2100, ref: "W4C" },
+    ],
+  };
+  const bare = proposeSplit(opening, planHint);
+  const enriched = proposeSplit(opening, withReport);
+  assert.equal(enriched.basis, "schedule_comment", "the plan's basis survives");
+  assert.deepEqual(enriched.segments, bare.segments,
+    "600 | 2000 | 600 from the drawing, not 805 | 1590 | 805 from the report");
+});
+
 // ── Precedence: comment authoritative over the default ───────────────────────
 test("comment overrides the 50/50 default", () => {
   const p1 = proposeSplit({ operationType: "awning", widthMm: 2400, heightMm: 1200 }, parseSplitHint("2x 500mm awnings"));

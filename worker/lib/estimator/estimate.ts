@@ -277,6 +277,25 @@ async function materialiseSplits(env: Env, ctx: {
     const proposal = proposeSplit(pl.opening, hint, { maxWidthMm: parent?.candidate.dimensionRule?.maxWidthMm ?? null });
     if (proposal.segments.length < 2) continue;
 
+    // The plan decided the geometry; the report is the only document carrying a
+    // per-unit thermal target, so its components are matched onto the units the
+    // plan produced — by operation, in document order, each claimed once. A unit
+    // with no counterpart keeps the opening's band, which is the conservative
+    // reading and is what the thermal audit reports as inherited.
+    if (hint?.components?.length && proposal.basis !== "energy_report") {
+      const pool = [...hint.components];
+      for (const seg of proposal.segments) {
+        const i = pool.findIndex((cp) => (cp.operation || "fixed") === seg.operation);
+        if (i < 0) continue;
+        const cp = pool.splice(i, 1)[0];
+        seg.requirement = cp.requirement ?? seg.requirement;
+        seg.ref = seg.ref ?? cp.ref ?? null;
+        seg.performanceTypeId = seg.performanceTypeId ?? cp.performanceTypeId ?? null;
+        seg.performanceDescription = seg.performanceDescription ?? cp.performanceDescription ?? null;
+        seg.glazingNote = seg.glazingNote ?? cp.glazingNote ?? null;
+      }
+    }
+
     const parentRow = await env.DB.prepare("SELECT options_json FROM quote_line WHERE id=?")
       .bind(quoteLineId).first<{ options_json: string | null }>();
     let inheritedOptions: Record<string, string> = {};
