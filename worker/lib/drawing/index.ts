@@ -31,7 +31,9 @@ export type {
 export type { SymbolProfile, ApexMeaning, ViewBasis } from "./profile";
 export { DEFAULT_PROFILE, classify, refineOperable, MISMATCH_QUORUM } from "./profile";
 
-export { normalizeTag, normalizeSheetId, looksLikeSheetRef, azimuthToOrientation } from "./ref";
+// Opening tags are keyed with normalizeOpeningRef (../ai/energyMap) — see ref.ts
+// for why this module does not define a second one.
+export { normalizeSheetId, azimuthToOrientation } from "./ref";
 
 export {
   dist, segLength, segAngleDeg, isVertical, isHorizontal,

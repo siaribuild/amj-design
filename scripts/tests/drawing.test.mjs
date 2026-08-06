@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
@@ -28,26 +29,28 @@ const seg = (ax, ay, bx, by, extra = {}) =>
   ({ a: { x: ax, y: ay }, b: { x: bx, y: by }, dashed: false, width: 1, groupId: null, ...extra });
 
 // ─── The join key ─────────────────────────────────────────────────────────────
-// This is the existing live defect: applyPlanContext joins a plan's opening ref
-// to a schedule row by exact string equality, so "W-04" against "W04" silently
-// drops that opening's room and orientation and nothing reports it.
+// The live defect was that applyPlanContext joined a plan's opening ref to a
+// schedule row by exact string equality, so "W-04" against "W04" silently
+// dropped that opening's room and orientation. It is fixed at the call site,
+// with the normaliser the rest of the pipeline already uses.
 
-test("normalizeTag collapses every spelling a set uses for one window", () => {
-  for (const raw of ["W4", "W04", "W-04", "w 4", "W_4", "W.04"]) {
-    assert.equal(M.normalizeTag(raw), "W4", raw);
-  }
-  assert.equal(M.normalizeTag("W16"), "W16");
-  assert.equal(M.normalizeTag("D07"), "D7", "a door is a different opening, prefix kept");
-  assert.notEqual(M.normalizeTag("D4"), M.normalizeTag("W4"), "W4 and D4 must never collide");
-  assert.equal(M.normalizeTag("W4A"), "W4A", "a unit suffix survives");
+test("THE join primitive is normalizeOpeningRef, and this module defines no rival", () => {
+  // A second normaliser is not half a fix, it is a new bug: this module used to
+  // export normalizeTag, which mapped "W04" to "W4" while normalizeOpeningRef
+  // maps it to "W04". They agree on unpadded refs and diverge on exactly the
+  // padded sets that motivated the work. One key, or none.
+  assert.equal(M.normalizeTag, undefined, "normalizeTag must not come back");
+  assert.equal(M.looksLikeSheetRef, undefined, "nor the guard that only existed to serve it");
 });
 
-test("normalizeTag refuses anything that is not a tag", () => {
-  // A grid bubble carries a bare letter. Reading it as a window is how a tag
-  // harvest picks up four phantom openings per plan.
-  for (const notTag of ["A", "B", "C", "D", "", null, undefined, "BED 3", "3010", "1:100"]) {
-    assert.equal(M.normalizeTag(notTag), null, String(notTag));
-  }
+test("the call site actually normalises — the defect, pinned", async () => {
+  // Reads the source rather than the behaviour because applyPlanContext needs a
+  // whole extraction model to invoke. The assertion that matters is that the
+  // Map is not keyed on the raw string, which is what the bug WAS.
+  const src = await readFile(join(projectRoot, "worker/lib/ai/pipeline.ts"), "utf8");
+  const join_ = src.slice(src.indexOf("const byRef = new Map("), src.indexOf("const byRef = new Map(") + 400);
+  assert.match(join_, /normalizeOpeningRef\(opening\.ref\)/, "the context side is normalised");
+  assert.match(join_, /normalizeOpeningRef\(opening\.externalRef\)/, "and so is the model side");
 });
 
 test("normalizeSheetId collapses the tag's second line to the title block's", () => {
@@ -57,23 +60,13 @@ test("normalizeSheetId collapses the tag's second line to the title block's", ()
   assert.equal(M.normalizeSheetId("BED 3"), null);
 });
 
-test("looksLikeSheetRef accepts the form normalizeSheetId itself emits", () => {
-  // It required TWO digits, so it answered false for "S8" — the exact canonical
-  // output of normalizeSheetId("S08"). The one guard against reading a sheet
-  // reference as a window tag rejected its own output.
-  assert.equal(M.looksLikeSheetRef("S8"), true);
-  assert.equal(M.looksLikeSheetRef("S08"), true);
-  assert.equal(M.looksLikeSheetRef("A101"), true);
-  assert.equal(M.looksLikeSheetRef("BED 3"), false);
-});
-
-test("a sheet reference is ALSO a well-formed tag — position is the real test", () => {
-  // Pinning the ambiguity rather than pretending it away: both text runs inside
-  // a tag circle parse as tags, and the discriminator is that the sheet
-  // reference is the LOWER of the two. Any harvester that reaches for the
-  // strings alone will get this wrong.
-  assert.equal(M.normalizeTag("S08"), "S8");
-  assert.equal(M.normalizeSheetId("S08"), "S8");
+test("normalizeSheetId is shape-only, and a caller must already know it is a sheet", () => {
+  // Stated as a test because it is a REAL limitation and the next person to
+  // reach for this will otherwise assume it validates. A room label and an
+  // Australian Standard both normalise perfectly happily.
+  assert.equal(M.normalizeSheetId("WC 1"), "WC1");
+  assert.equal(M.normalizeSheetId("AS 2047"), "AS2047");
+  assert.equal(M.normalizeSheetId("W04"), "W4", "even a window tag — position is the discriminator");
 });
 
 test("azimuthToOrientation lands in the vocabulary the platform already uses", () => {

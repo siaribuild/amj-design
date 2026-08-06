@@ -171,9 +171,17 @@ export function applyPlanContext(
       roomIds.add(room.id);
       model.rooms.push({ roomId: room.id, name: room.name, level: room.level, areaM2: room.areaM2, zoneType: room.zoneType });
     }
-    const byRef = new Map(context.openings.map((opening) => [opening.ref, opening]));
+    // Joined on the NORMALISED ref, like every other ref join in this pipeline.
+    // It used to be raw string equality, so a plan printing "W-04" against a
+    // schedule printing "W04" dropped that opening's room and orientation and
+    // said nothing — and orientation hard-filters product candidates downstream,
+    // so a silent miss here does not degrade a recommendation, it removes the
+    // correct product from consideration. normalizeOpeningRef is the form the
+    // rest of the pipeline already keys on; a second spelling of the key would
+    // be the same bug wearing a different hat.
+    const byRef = new Map(context.openings.map((opening) => [normalizeOpeningRef(opening.ref) ?? opening.ref, opening]));
     for (const opening of model.openings) {
-      const mapped = byRef.get(opening.externalRef);
+      const mapped = byRef.get(normalizeOpeningRef(opening.externalRef) ?? opening.externalRef);
       if (!mapped) continue;
       opening.roomId ??= mapped.roomId;
       opening.wallOrientation ??= mapped.orientation as OpeningV1["wallOrientation"];

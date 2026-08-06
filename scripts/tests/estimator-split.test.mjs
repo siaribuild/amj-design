@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-import { makeRunDir, projectRoot } from "./helpers.mjs";
+import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
 const runDir = await makeRunDir("estimator-split");
@@ -19,6 +19,9 @@ await build({
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
 const { parseSplitHint, proposeSplit, shouldPropose, evenWidths, compositeAveragedUw } = await import(pathToFileURL(outfile).href);
+// This suite never cleaned up, and left 70 stale run directories behind — the
+// only one of the three that omitted it, invisible because .codex-tmp is ignored.
+test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
 
 // ── Comment parsing ──────────────────────────────────────────────────────────
 test("parse: '2x 600mm WIDE AWNINGS' → two 600mm awnings", () => {
@@ -205,4 +208,150 @@ test("a fixed-only comment still declines, leaving the caller's default", () => 
   const p = proposeSplit({ widthMm: 3200, heightMm: 1200, operationType: "awning" },
     parseSplitHint("FIXED"), { maxWidthMm: 1300 });
   assert.equal(p.basis, "default_even", "one unit is not a split");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// THE PARSER READS FRAGMENTS, NOT WHOLE TOKENS
+//
+// Every case below was a LIVE silent unit loss: the comment parsed, the opening
+// was split, and the customer got a make-up the architect never asked for. The
+// cause was one rule — the cleaned fragment had to BE the operation, exactly —
+// so a full stop, a label, a product code or a bare width erased the unit that
+// carried it.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const shapeOf = (comment, width = 3200, maxWidthMm = 1300, operationType = "awning") =>
+  proposeSplit({ operationType, widthMm: width, heightMm: 2100 }, parseSplitHint(comment), { maxWidthMm })
+    .segments.map((s) => `${s.operation}:${s.widthMm}`).join(" | ");
+
+const THREE_EVEN = "awning:1066 | fixed:1066 | awning:1068";
+
+test("punctuation around a stated make-up does not delete a unit", () => {
+  // "AWNING + FIXED + AWNING." parsed as TWO units — the full stop killed the
+  // last one — and the customer got fixed glass at a jamb the architect had put
+  // an awning on.
+  for (const comment of [
+    "AWNING + FIXED + AWNING.",
+    "AWNING + FIXED + AWNING;",
+    "AWNING + FIXED + AWNING - OBSCURE GLASS",
+    "(AWNING + FIXED + AWNING)",
+  ]) {
+    assert.equal(shapeOf(comment), THREE_EVEN, comment);
+  }
+});
+
+test("a leading tag or label does not delete the FIRST unit", () => {
+  // "W04: AWNING + FIXED + AWNING" came out as fixed:2000 | awning:1200 —
+  // wrong count AND inverted shape.
+  for (const comment of [
+    "W04: AWNING + FIXED + AWNING",
+    "TYPE A - AWNING + FIXED + AWNING",
+    "NOTE AWNING + FIXED + AWNING",
+  ]) {
+    assert.equal(shapeOf(comment), THREE_EVEN, comment);
+  }
+});
+
+test("a product code or a bare width beside the operation keeps the operation", () => {
+  // The docstring's own example, "2 x 600 AWNING + FIXED", produced `fixed`
+  // alone and fell through to three awnings — no lite at all.
+  assert.equal(shapeOf("2 x 600 AWNING + FIXED"), "awning:600 | awning:600 | fixed:2000");
+  assert.equal(shapeOf("AMJ100T AWNING + FIXED"), "awning:1600 | fixed:1600");
+  assert.equal(shapeOf("AMJ80 AWNING 900 + AMJ80 FIXED"), "awning:900 | fixed:2300");
+  // "sliding door" is not in the vocabulary; "sliding" is, and it is in there.
+  assert.equal(shapeOf("SLIDING DOOR + FIXED", 3200, 1300, "sliding"), "sliding:1600 | fixed:1600");
+  // The wording our OWN extraction prompt shows the model as an example.
+  assert.equal(shapeOf("600 awn / fix / 600 awn"), "awning:600 | fixed:2000 | awning:600");
+});
+
+test("a stated width is HONOURED, not merely survived", () => {
+  // The previous fix kept the units and threw the numbers away: every stated
+  // width produced the same 1066|1066|1068, because Pattern B hardcoded a null
+  // width. The architect's 900s are the whole point of writing them down.
+  assert.equal(shapeOf("AWNING 900 + FIXED + AWNING 900"), "awning:900 | fixed:1400 | awning:900");
+  assert.equal(shapeOf("AWNING 500 + FIXED + AWNING 500"), "awning:500 | fixed:2200 | awning:500");
+  assert.equal(shapeOf("AWNING 900mm + FIXED + AWNING 900mm"), "awning:900 | fixed:1400 | awning:900");
+});
+
+test("a stated MAKE-UP outlives the product maximum; a stated COUNT does not", () => {
+  // The distinction is the point. "AWNING + FIXED" names which units exist, so
+  // an unbuildable 1600mm awning is shown and flagged at review rather than
+  // silently replaced — declining here would have returned three awnings and no
+  // lite for a comment that parsed perfectly.
+  assert.equal(shapeOf("AMJ100T AWNING + FIXED"), "awning:1600 | fixed:1600");
+  // "2 x AWNING" names only a count, and nothing is lost by declining: the even
+  // split gives the SAME operation in units that can actually be made.
+  for (const comment of ["2 x AWNING", "AWNING x2", "2x AWNING", "2 No. AWNING"]) {
+    assert.equal(shapeOf(comment), "awning:1066 | awning:1066 | awning:1068", comment);
+  }
+});
+
+test("both spaced aliases parse — they were unreachable", () => {
+  // "tilt&turn" was the only authored spelling, and normOp collapses whitespace
+  // without removing it, so "TILT & TURN" matched nothing. "DOUBLE HUNG" had no
+  // spaced form at all. Both silently dropped the operable unit.
+  for (const [comment, ops] of [
+    ["DOUBLE HUNG + FIXED", ["double-hung", "fixed"]],
+    ["TILT & TURN + FIXED", ["tilt-turn", "fixed"]],
+    ["TILT AND TURN + FIXED", ["tilt-turn", "fixed"]],
+    ["BI-FOLD + FIXED", ["bifold", "fixed"]],
+  ]) {
+    assert.deepEqual(parseSplitHint(comment).units.map((u) => u.operation), ops, comment);
+  }
+});
+
+test("a glazing note is not a split, and one unit is not a split", () => {
+  // Reading the operation INSIDE a fragment is what makes the cases above work,
+  // and it is exactly what could start finding windows in prose. The generic
+  // noun is held back for that reason, and a single unit is refused outright —
+  // otherwise a line noted "FIXED" would force a proposal on an in-range opening
+  // and saw a perfectly normal 900mm window in half.
+  for (const comment of [
+    "clear glass, restrictor stays",
+    "obscure glass to windows",
+    "obscure glass to windows, restrictor to frame",
+    "FIXED",
+    "clear glass",
+  ]) {
+    assert.equal(parseSplitHint(comment), null, comment);
+  }
+  assert.equal(shouldPropose({ widthMm: 900 }, parseSplitHint("FIXED"), 1300), false,
+    "an in-range window with a one-word note stays whole");
+});
+
+test("a stacked comment yields no hint rather than a confident sideways one", () => {
+  // Everything here partitions the WIDTH. A highlight over a fixed pane
+  // partitions the HEIGHT, which this parser cannot express — so it declines
+  // instead of stating a wrong make-up with full confidence.
+  for (const comment of ["AWNING ABOVE FIXED", "FIXED + AWNING HIGHLIGHT ABOVE", "FIXED WITH HIGHLIGHT OVER"]) {
+    assert.equal(parseSplitHint(comment), null, comment);
+  }
+});
+
+// ── The count is untrusted document text ─────────────────────────────────────
+
+test("an absurd count is refused outright, not allocated", () => {
+  // parseSplitHint is fed raw `l.notes`. This measured 1.1 GB of heap and then
+  // an uncaught RangeError on a 128 MB Worker — and the case just below the
+  // throw was worse, because it SUCCEEDED: 20,000 segments in 4ms, each of which
+  // the estimator then ran a product selection for.
+  for (const comment of ["9999999 x 600mm AWNINGS", "20000 x 600mm AWNINGS", "99 x 400mm AWNINGS"]) {
+    assert.equal(parseSplitHint(comment), null, comment);
+  }
+  // A credible count still parses.
+  assert.equal(parseSplitHint("6 x 400mm AWNINGS").units[0].count, 6);
+});
+
+test("a misread opening width cannot ask for thousands of units either", () => {
+  // A metre value read as millimetres, or an OCR slip, reaches the even split as
+  // a real number. 1e9 / 1300 is 769,231 segments.
+  const p = proposeSplit({ operationType: "awning", widthMm: 1e9, heightMm: 2100 }, null, { maxWidthMm: 1300 });
+  assert.ok(p.segments.length <= 12, `${p.segments.length} segments`);
+  assert.equal(p.segments.reduce((n, s) => n + s.widthMm, 0), 1e9, "still partitions exactly");
+});
+
+test("evenWidths refuses a degenerate count instead of building a hole", () => {
+  assert.deepEqual(evenWidths(3200, 0), []);
+  assert.deepEqual(evenWidths(3200, -1), []);
+  assert.deepEqual(evenWidths(3200, Infinity), []);
 });

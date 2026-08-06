@@ -1,77 +1,64 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// THE JOIN PRIMITIVES — one normaliser each for a window tag and a sheet number
+// THE JOIN PRIMITIVES
 //
 // Everything in this feature is a join, and a join is only as good as its key.
-// There is an existing, live defect this file exists to end: applyPlanContext
-// matches a plan's opening reference to a schedule row with EXACT STRING
-// EQUALITY, so a plan printing "W-04" against a schedule printing "W04" silently
-// drops that opening's room and orientation. Nothing reports it.
 //
-// So: one normaliser, used by every producer and every consumer of a tag.
+// ─── The normaliser that is NOT here, and why ─────────────────────────────────
+//
+// This file used to define its own `normalizeTag`. That was a mistake, and it is
+// worth recording rather than quietly deleting.
+//
+// It was written to end a real, live defect: applyPlanContext joined a plan's
+// opening reference to a schedule row by EXACT STRING EQUALITY, so a plan
+// printing "W-04" against a schedule printing "W04" silently dropped that
+// opening's room and orientation. But a normaliser for exactly that already
+// existed — `normalizeOpeningRef` in ../ai/energyMap.ts — and was already used
+// at five ref joins in the same pipeline. applyPlanContext was the only join
+// that had been left raw. So the fix needed no new module at all.
+//
+// Worse, the two disagreed: normalizeTag("W04") gave "W4" while
+// normalizeOpeningRef("W04") gives "W04". They AGREE on unpadded refs and
+// diverge on exactly the zero-padded sets that motivated the work — so the
+// second normaliser turned one wrong key into two incompatible ones. A join
+// primitive is only worth anything if it is the ONLY one.
+//
+//   → Use `normalizeOpeningRef` for every window/door tag, here and everywhere.
+//
+// Known limitation, stated rather than fixed: it strips separators and case but
+// NOT leading zeros, so a set that writes "W4" on the plan and "W04" in the
+// schedule still misses. Changing that would move five existing joins, so it is
+// a deliberate follow-up, not a silent gap.
+//
+// `looksLikeSheetRef` went with it. It answered true for "WD12" — a documented
+// window-tag prefix — so its only plausible caller, a tag harvester, would have
+// used it to discard real doors; and it answered false for real sheet prefixes
+// it did not know ("E01", "SK1", "DWG 05"). Two failure directions, in a helper
+// whose own comment conceded that position is the real discriminator. A weak
+// boolean that can be wrong both ways is worse than the unrouted state the
+// design already defines as safe.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/** Canonical form of a window/door tag.
- *
- *    "W-04" "w 4" "W04" "W4"  →  "W4"
- *    "D07"  "D-7"             →  "D7"
- *    "WD12"                   →  "WD12"
- *
- *  Leading zeros go because a schedule and a plan disagree about them constantly
- *  and nobody means anything by it. The letter prefix is kept and upper-cased
- *  because W4 and D4 are different openings.
- *
- *  Returns null for anything that is not a tag — a grid bubble's "A", a room
- *  name, a dimension. Callers treat null as "not a tag", never as a wildcard. */
-export function normalizeTag(raw: string | null | undefined): string | null {
-  const s = String(raw ?? "").trim().toUpperCase();
-  if (!s) return null;
-  // TWO letters at most. Three would swallow a room label: "BED 3" matches
-  // letters-then-digits perfectly and would normalise to a window called BED3,
-  // which then joins against nothing and reports a phantom opening. Real tag
-  // prefixes are W, D, WD, SD — never three.
-  const m = /^([A-Z]{1,2})[\s._-]*0*(\d{1,4})([A-Z]?)$/.exec(s);
-  if (!m) return null;
-  const [, prefix, digits, suffix] = m;
-  // A bare letter is a grid bubble, not a tag. A tag always carries a number.
-  if (!digits) return null;
-  return `${prefix}${String(Number(digits))}${suffix}`;
-}
-
-/** Canonical form of a sheet number — the tag circle's second line.
+/** Canonical form of a sheet number — the tag circle's second line, joined to
+ *  the title block of the sheet it points at.
  *
  *    "S08" "S-08" "S 8" "s08"  →  "S8"
  *    "A-101"                   →  "A101"
  *
- *  Same leading-zero rule and for the same reason: a title block and a tag
- *  reference the same sheet with different padding all the time. */
+ *  Leading zeros go because a title block and a tag reference the same sheet
+ *  with different padding all the time.
+ *
+ *  This is a SHEET key, not an opening key — a different namespace with a
+ *  different consumer — which is why it survives where normalizeTag did not.
+ *  It is still shape-only: "WC 1" and "AS 2047" both normalise happily, so a
+ *  caller must know it is looking at a sheet reference before asking. */
 export function normalizeSheetId(raw: string | null | undefined): string | null {
   const s = String(raw ?? "").trim().toUpperCase();
   if (!s) return null;
-  // Same two-letter bound and the same reason — and a sheet id never carries a
-  // trailing letter, so there is no suffix group here.
+  // Two letters at most: three would swallow a room label ("BED 3"), and a sheet
+  // id never carries a trailing letter, so there is no suffix group.
   const m = /^([A-Z]{1,2})[\s._-]*0*(\d{1,4})$/.exec(s);
   if (!m) return null;
   return `${m[1]}${String(Number(m[2]))}`;
-}
-
-/** Does this text run look like a sheet reference rather than a window tag?
- *
- *  Both are letter+number, so the shapes overlap. The discriminator is position:
- *  inside a tag circle the sheet reference is the LOWER of two runs. This helper
- *  exists for the cases where position is unavailable and only the strings are —
- *  it is deliberately conservative and the caller should prefer geometry. */
-export function looksLikeSheetRef(raw: string): boolean {
-  const s = raw.trim().toUpperCase();
-  // ONE to three digits. It required two, which made it fail on the very form
-  // normalizeSheetId itself emits: normalizeSheetId("S08") is "S8", and
-  // looksLikeSheetRef("S8") answered false — so the one guard against reading a
-  // sheet reference as a window tag rejected its own canonical output.
-  //
-  // This is a WEAK hint and callers must prefer geometry. "S8" is a perfectly
-  // well-formed window tag under normalizeTag too; inside a tag circle the
-  // discriminator is POSITION — the sheet reference is the lower of the two
-  // runs — and this exists only for the cases where position is unavailable.
-  return /^(S|A|DA|WD)[\s._-]*\d{1,3}$/.test(s);
 }
 
 /** Compass azimuth (degrees clockwise from north) → the eight-point name the

@@ -360,7 +360,27 @@ async function materialiseSplits(env: Env, ctx: {
     if (specs.length !== proposal.segments.length) continue;
 
     const res = await splitLine(env, { parentId: quoteLineId, segments: specs, axis: proposal.axis, origin: "ai" });
-    if (!res.ok) continue;
+    if (!res.ok) {
+      // A refused split used to be dropped on the floor. The opening stays a
+      // single oversize line — which is a defensible outcome — but nobody was
+      // told that the make-up the documents stated had been rejected, so the one
+      // person who could correct it never learned there was anything to correct.
+      // The commonest cause is a comment naming more units than the composite
+      // policy allows.
+      // `in` rather than res.errors: this project is deliberately not strict, so
+      // a boolean discriminant does not narrow the union.
+      const why = ("errors" in res ? res.errors : []).join(" ");
+      const warning = `${pl.externalRef ?? "Opening"}: the ${proposal.segments.length}-unit make-up `
+        + `${proposal.basis === "schedule_comment" ? `from the schedule comment "${hint?.raw ?? ""}" ` : ""}`
+        + `could not be built as a composite — ${why} Left as a single unit for human review.`;
+      reviewWarnings.push(warning);
+      await env.DB.prepare(
+        `UPDATE quote_line SET status='technical_review',
+           review_json=json_patch(COALESCE(review_json,'{}'), ?), updated_at=datetime('now')
+         WHERE id=?`,
+      ).bind(JSON.stringify({ composite: warning }), quoteLineId).run();
+      continue;
+    }
 
     const maxWidth = parent?.candidate.dimensionRule?.maxWidthMm ?? null;
     const warning = proposal.basis === "energy_report"

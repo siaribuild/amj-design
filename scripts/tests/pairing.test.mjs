@@ -160,17 +160,20 @@ test("outer alternates cleanly at four sashes too", () => {
     maxSegments: 8,
     rule: { ...AWNING_RULE, maxOperable: 4, operableEveryMm: 1500 },
   });
-  assert.equal(out.units[0].role, "operable");
-  assert.equal(out.units[out.units.length - 1].role, "operable");
+  // The WHOLE shape, not the two ends. Asserting only the jambs and the sum is
+  // the projection under which the original defect was invisible: the buggy
+  // arrangement (all glass bunched, surplus sashes appended) satisfies both.
+  assert.equal(shape(out), "operable:1300 | infill:933 | operable:1300 | infill:933 | operable:1300 | infill:934 | operable:1300");
   assert.equal(sums(out), 8000);
 });
 
 test("outer with fewer panels than gaps still puts sashes at the jambs", () => {
   // Three sashes and one panel: two sashes MUST be adjacent somewhere. The
-  // promise "outer" makes is the jambs, and it is still kept.
+  // promise "outer" makes is the jambs, and it is still kept — but assert where
+  // the panel actually LANDS, since "sash at each end" alone cannot tell the
+  // correct answer from the defect it replaced.
   const out = call(6000, { ...AWNING_RULE, maxOperable: 3, operableEveryMm: 1500 });
-  assert.equal(out.units[0].role, "operable");
-  assert.equal(out.units[out.units.length - 1].role, "operable");
+  assert.equal(shape(out), "operable:1300 | infill:2100 | operable:1300 | operable:1300");
   assert.equal(sums(out), 6000);
 });
 
@@ -198,8 +201,9 @@ test("every placement is distinguishable from every other, at k=2 AND k=3", () =
       assert.ok(out.units.length <= 4, placement);
       const key = `k${rule.maxOperable}`;
       const bucket = seen.get(key) ?? new Set();
-      const last = out.units[out.units.length - 1];
-      bucket.add(`${out.units[0].role}/${last.role}`);
+      // The full role sequence, not the two jambs — four placements must differ
+      // in the INTERIOR too, and a first/last signature cannot see that.
+      bucket.add(out.units.map((u) => u.role[0]).join(""));
       seen.set(key, bucket);
     }
   }

@@ -20,7 +20,21 @@ import type { EnergyRequirementV1 } from "../ai/schema";
 // Operation vocabulary the comment parser recognises. Fixed is the passive lite
 // used to fill the remainder around operable units.
 const OPERATIONS = ["awning", "fixed", "sliding", "casement", "hinged", "louvre", "stacker", "bifold", "double-hung", "tilt-turn"];
-const OP_ALIASES: Record<string, string> = { "bi-fold": "bifold", "bi fold": "bifold", "tilt&turn": "tilt-turn", "tilt and turn": "tilt-turn", "awnings": "awning", "windows": "fixed" };
+const OP_ALIASES: Record<string, string> = {
+  "bi-fold": "bifold", "bi fold": "bifold",
+  // Every spelling a person actually types. "tilt&turn" alone was unreachable:
+  // normOp collapses whitespace but does not remove it, so "TILT & TURN" — the
+  // form with the spaces, which is how it is written — matched nothing and the
+  // unit was silently dropped. Same for "DOUBLE HUNG": the hyphenated form is in
+  // OPERATIONS and the spaced form matched nothing.
+  "tilt&turn": "tilt-turn", "tilt & turn": "tilt-turn", "tilt turn": "tilt-turn", "tilt and turn": "tilt-turn",
+  "double hung": "double-hung", "doublehung": "double-hung",
+  "awnings": "awning", "windows": "fixed",
+  // The trade's own shorthand, and the wording our OWN extraction prompt shows
+  // the model as an example ("600 awn / fix / 600 awn") — which the parser could
+  // not read back.
+  "awn": "awning", "fix": "fixed", "csmt": "casement",
+};
 
 const normOp = (raw: string): string | null => {
   const s = raw.trim().toLowerCase().replace(/\s+/g, " ");
@@ -30,6 +44,84 @@ const normOp = (raw: string): string | null => {
   if (OPERATIONS.includes(singular)) return singular;
   return null;
 };
+
+// A schedule comment is written by a person, and people write "AWNING + FIXED +
+// AWNING." with a full stop, "W04: AWNING + FIXED", and "AMJ100T AWNING". The
+// parser used to require the CLEANED FRAGMENT TO BE the operation, whole, so
+// every one of those dropped the unit silently and the opening fell through to
+// an even split of the wrong thing. So: find the operation INSIDE the fragment.
+//
+// The one word held back from that search is the generic noun. "2x 600mm WIDE
+// WINDOWS" means two fixed panes, but "obscure glass to windows" is a glazing
+// note about the whole line — so a generic term counts only when it is the
+// entire descriptor, never when found among other words.
+const GENERIC_TERMS = new Set(["window", "windows"]);
+
+function findOperation(fragment: string): string | null {
+  const cleaned = fragment.toLowerCase().normalize("NFKC")
+    .replace(/[^a-z&-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+  const whole = normOp(cleaned);
+  if (whole) return whole;
+  // Longest phrase first, so "double hung" is never read as the bare "hung",
+  // and "tilt & turn" is not three failed single words.
+  const words = cleaned.split(" ");
+  for (let size = 3; size >= 1; size--) {
+    for (let i = 0; i + size <= words.length; i++) {
+      const phrase = words.slice(i, i + size).join(" ");
+      if (size === 1 && GENERIC_TERMS.has(phrase)) continue;
+      const op = normOp(phrase);
+      if (op) return op;
+    }
+  }
+  return null;
+}
+
+/** Count and per-unit width stated inside one fragment, in the forms a schedule
+ *  uses: "2 x 600mm", "2x600", "2 No.", "AWNING x2", "AWNING 900". */
+function readCountAndWidth(fragment: string): { count: number; widthMm: number | null } {
+  const s = fragment.toLowerCase().normalize("NFKC").replace(/[×✕]/g, "x");
+  const countWidth = /(\d{1,4})\s*x\s*(\d{2,4})\s*(?:mm)?\b/.exec(s);
+  if (countWidth) return { count: clampCount(countWidth[1]), widthMm: parseInt(countWidth[2], 10) };
+  // "2 x", "x 2", and the estimator's-quantity form "2 No." / "2No".
+  const count = /(\d{1,4})\s*x\b/.exec(s) ?? /\bx\s*(\d{1,4})\b/.exec(s) ?? /(\d{1,4})\s*nos?\.?(?=\s|$)/.exec(s);
+  // A bare number is a width only at 3-4 digits: "AWNING 900" is a width,
+  // the "04" of "W04" is not, and "AMJ100T" has no word boundary around its
+  // digits so it never reads as one.
+  const width = /\b(\d{2,4})\s*mm\b/.exec(s) ?? /\b(\d{3,4})\b/.exec(s);
+  return { count: count ? clampCount(count[1]) : 1, widthMm: width ? parseInt(width[1], 10) : null };
+}
+
+const clampCount = (raw: string): number => {
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.min(Math.max(1, n), MAX_HINT_UNITS + 1) : 1;
+};
+
+/** The most units a COMMENT can credibly describe.
+ *
+ *  This is a safety bound, not a style rule. parseSplitHint is fed raw document
+ *  text (pipeline.ts passes `l.notes` straight in), so the count in "9999999 x
+ *  600mm AWNINGS" was an untrusted number that went unbounded into an array
+ *  allocation: measured at 1.1 GB of heap and then a RangeError, uncaught, on a
+ *  128 MB Worker. Below the throw was worse than the throw — "20000 x 600mm
+ *  AWNINGS" SUCCEEDED in 4ms and the estimator then ran twenty thousand product
+ *  selections before discarding every one. The LLM path is already clamped
+ *  (schedule.ts); this is the same clamp for the deterministic path.
+ *
+ *  A comment claiming more than this is not a split instruction we can act on,
+ *  so the hint is refused outright and the opening falls back to the even split,
+ *  which is bounded by the product's own maximum width. */
+const MAX_HINT_UNITS = 12;
+
+/** Words that put one unit ABOVE another rather than beside it.
+ *
+ *  Everything below partitions the WIDTH. A comment describing a highlight over
+ *  a fixed pane describes a partition of the HEIGHT, which this parser cannot
+ *  express — SplitHint carries an axis but layoutFromHint only ever divides the
+ *  width. Reading "FIXED + AWNING HIGHLIGHT ABOVE" as a side-by-side pair would
+ *  state a confident, wrong make-up, so a stacked comment yields no hint at all
+ *  and the opening keeps the caller's default. */
+const STACKED = /\b(above|below|over|under|beneath|highlight|high[- ]?light|toplight|sub[- ]?light)\b/;
 
 export interface SplitUnitHint {
   operation: string;
@@ -59,43 +151,49 @@ export interface SplitHint {
 export function parseSplitHint(comment: string | null | undefined): SplitHint | null {
   if (!comment) return null;
   const raw = comment.trim();
-  const hay = raw.toLowerCase();
-  const units: SplitUnitHint[] = [];
+  // Written before any splitting: "and" is a separator here, so the one alias
+  // that CONTAINS it ("TILT AND TURN") would otherwise be torn into two
+  // fragments and both halves discarded.
+  const hay = raw.toLowerCase().normalize("NFKC").replace(/\btilt\s*(?:and|&)\s*turn\b/g, "tilt-turn");
+  if (STACKED.test(hay)) return null;
 
-  // Pattern A: "<n> x <width>mm [wide] <operation>" (repeatable).
-  const countWidth = /(\d+)\s*[x×]\s*(\d{2,4})\s*mm?\s*(?:wide\s+)?([a-z][a-z &-]*?)(?=\b)/gi;
+  // Pattern A: "<n> x <width>mm [wide] <operation>", repeatable, over the WHOLE
+  // comment — this is the form that names several differently-sized groups in
+  // one breath ("2x 600mm awnings 1x 900mm fixed") with no separator to split
+  // on. It only wins when it finds more than one group; a single hit is left to
+  // the fragment pass below, which reads the same text with more context.
+  const units: SplitUnitHint[] = [];
+  // `mm` is OPTIONAL, not "m with an optional second m" — /\s*mm?\s*/ required
+  // at least one literal m, so "2 x 600 AWNING" (the form this function's own
+  // docstring promises to handle) never matched here.
+  const countWidth = /(\d{1,4})\s*[x×]\s*(\d{2,4})\s*(?:mm)?\s*(?:wide\s+)?([a-z][a-z &-]*?)(?=\b)/gi;
   let m: RegExpExecArray | null;
   while ((m = countWidth.exec(hay)) !== null) {
-    const op = normOp(m[3]);
-    if (op) units.push({ operation: op, count: Math.max(1, parseInt(m[1], 10)), widthMm: parseInt(m[2], 10) });
+    const op = findOperation(m[3]);
+    if (op) units.push({ operation: op, count: clampCount(m[1]), widthMm: parseInt(m[2], 10) });
   }
 
-  // Pattern B: an operation sequence joined by + / , (widths unknown), only when
-  // Pattern A found nothing — otherwise the explicit widths win.
-  if (!units.length && /[+/,]/.test(hay)) {
-    for (const part of hay.split(/[+/,]|\band\b/)) {
-      // `mm` is OPTIONAL, not "m with an optional second m". The old
-      // /\d+\s*mm?/ required at least one letter, so a bare width was never
-      // stripped: "AWNING 900 + FIXED + AWNING 900" left "awning 900", normOp
-      // matches on the whole cleaned token and failed, and both awnings were
-      // silently discarded — leaving a one-unit hint that fell through to an
-      // even split. Found while fixing the layout collapse below; the same
-      // class of fault, one layer earlier.
-      const op = normOp(part.replace(/\d+\s*(?:mm)?/g, "").replace(/wide/g, ""));
-      if (op) units.push({ operation: op, count: 1, widthMm: null });
+  // Pattern B: one unit per fragment. Splitting first and reading the operation
+  // WITHIN each fragment is what lets a label, a product code, a bare width or a
+  // trailing qualifier sit beside the operation without erasing it.
+  if (units.length < 2) {
+    units.length = 0;
+    for (const part of hay.split(/[+/,;]|\band\b/)) {
+      const op = findOperation(part);
+      if (!op) continue;
+      const { count, widthMm } = readCountAndWidth(part);
+      units.push({ operation: op, count, widthMm });
     }
   }
 
-  // Pattern C: a bare "<n> x <operation>" with no width.
-  if (!units.length) {
-    const countOnly = /(\d+)\s*[x×]\s*([a-z][a-z-]*)/i.exec(hay);
-    if (countOnly) {
-      const op = normOp(countOnly[2]);
-      if (op) units.push({ operation: op, count: Math.max(1, parseInt(countOnly[1], 10)), widthMm: null });
-    }
-  }
-
-  return units.length ? { units, raw } : null;
+  if (!units.length) return null;
+  // ONE unit is not a split. A line noted "FIXED" describes the whole window,
+  // and treating it as a hint would force a proposal on an in-range opening —
+  // shouldPropose returns true for any hint at all — and saw a perfectly normal
+  // 900mm window in half.
+  const total = units.reduce((n, u) => n + u.count, 0);
+  if (total < 2 || total > MAX_HINT_UNITS) return null;
+  return { units, raw };
 }
 
 export interface ProposedSegment {
@@ -129,7 +227,16 @@ export function shouldPropose(opening: { widthMm?: number | null }, hint: SplitH
 
 /** Place operable units symmetrically with a fixed lite filling the remainder:
  *  2 awnings → awning | fixed | awning. Odd counts keep the fixed central. */
-function layoutFromHint(hint: SplitHint, totalWidthMm: number, heightMm: number, fallbackOp: string): ProposedSegment[] | null {
+function layoutFromHint(hint: SplitHint, totalWidthMm: number, heightMm: number, fallbackOp: string, maxWidthMm: number | null): ProposedSegment[] | null {
+  // A width WE derive has to be buildable; a width the ARCHITECT stated is
+  // theirs, and a disagreement with the opening is the coverage delta the
+  // estimator already reports. So the product maximum bounds only the widths
+  // this function invents, and only for units carrying the parent's operation —
+  // a fixed lite is a different product with its own, wider maximum, which is
+  // why the 2000mm lite in the owner's W4 example is not bound by an awning's
+  // 1300mm limit.
+  const derivedFits = (op: string, widthMm: number): boolean =>
+    !(maxWidthMm && maxWidthMm > 0) || op === "fixed" || op !== fallbackOp || widthMm <= maxWidthMm;
   // An explicit report component schedule owns row order, operations and each
   // component's thermal facts. Architectural documents own the total opening
   // dimensions. Preserve primary-operation sizes where possible and absorb a
@@ -183,6 +290,12 @@ function layoutFromHint(hint: SplitHint, totalWidthMm: number, heightMm: number,
     if (remainder < unstated) return null;          // nothing left to share out
     const share = evenWidths(remainder, unstated);
     let n = 0;
+    // NOT bounded by the product maximum, deliberately. The comment named which
+    // units exist and in what order; if that make-up cannot be built at this
+    // width the answer is to show it and flag the oversize unit at review, not
+    // to quietly substitute a different make-up. Declining here would have taken
+    // "AMJ100T AWNING + FIXED" on a 3200mm opening — parsed perfectly — and
+    // returned three awnings and no lite.
     return stated.map((u) => ({
       operation: u.operation,
       widthMm: u.widthMm ?? share[n++],
@@ -213,7 +326,14 @@ function layoutFromHint(hint: SplitHint, totalWidthMm: number, heightMm: number,
   // Widths not given: distribute the total evenly across the operable units
   // (plus fallback op if only one type), no derived fixed.
   const even = evenWidths(totalWidthMm, operable.length);
-  return operable.map((u, i) => ({ operation: u.operation === fallbackOp || u.operation ? u.operation : fallbackOp, widthMm: even[i], heightMm }));
+  const segments = operable.map((u, i) => ({ operation: u.operation === fallbackOp || u.operation ? u.operation : fallbackOp, widthMm: even[i], heightMm }));
+  // "2 x AWNING" on a 3200mm opening asked for two 1600mm awnings against a
+  // 1300mm maximum — a stated COUNT the product cannot honour. A count is a
+  // weaker claim than a make-up: nothing is lost by declining, because the even
+  // split falls back to the SAME operation in units that can actually be made.
+  // (The stated-make-up branch above deliberately does not do this.)
+  if (segments.some((s) => !derivedFits(s.operation, s.widthMm))) return null;
+  return segments;
 }
 
 /** Allocate a positive integer total proportionally, preserving the exact sum. */
@@ -281,6 +401,7 @@ function fitReportComponentsToOpening(
 
 /** Even integer widths that sum EXACTLY to total (remainder to the last). */
 export function evenWidths(totalMm: number, count: number): number[] {
+  if (!Number.isFinite(count) || count < 1) return [];
   const base = Math.floor(totalMm / count);
   const out = Array.from({ length: count }, () => base);
   out[count - 1] = totalMm - base * (count - 1);
@@ -301,7 +422,7 @@ export function proposeSplit(
   const fallbackOp = opening.operationType ?? "awning";
 
   if (hint) {
-    const segments = layoutFromHint(hint, width, height, fallbackOp);
+    const segments = layoutFromHint(hint, width, height, fallbackOp, opts?.maxWidthMm ?? null);
     if (segments && segments.length >= 2) {
       return {
         segments,
@@ -316,8 +437,16 @@ export function proposeSplit(
   }
 
   // Even default: the minimum equal units that each fit the product's max width.
+  // Bounded for the same reason the hint is: `width` comes from a parsed
+  // document, and a misread dimension (a metre value read as millimetres, an OCR
+  // slip) would otherwise ask for thousands of segments. Past the cap the units
+  // no longer fit the product, which the reviewer sees — the composite validator
+  // refuses more than a handful of units anyway.
   const maxW = opts?.maxWidthMm ?? null;
-  const count = maxW && maxW > 0 ? Math.max(2, Math.ceil(width / maxW)) : 2;
+  const count = Math.min(
+    maxW && maxW > 0 ? Math.max(2, Math.ceil(width / maxW)) : 2,
+    MAX_HINT_UNITS,
+  );
   const widths = evenWidths(width, count);
   return {
     segments: widths.map((w) => ({ operation: fallbackOp, widthMm: w, heightMm: height })),
