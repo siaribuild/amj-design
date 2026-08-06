@@ -222,9 +222,37 @@ mismatch between them is itself the signal that this stage is needed.
 ```
 
 No `widthMm` on either unit — this sheet does not dimension them and the spec forbids
-back-calculating (§1.2). No orientation value: the north point is a symbol on the site plan,
-and there is no compass word anywhere near the elevations, so this is **not read**, never
-"not stated" (§4).
+back-calculating (§1.2). Orientation is left null **by this pass**, which reads elevations; it
+is obtainable by a separate route (below) and is not a reason to hold the composition back.
+
+#### Orientation is readable after all — from the survey, not from a compass rose
+
+An earlier draft of this document said orientation was unreadable, on the grounds that the north
+point is a symbol and no compass word appears near any elevation. Both facts are true and the
+conclusion was wrong. **The site plan states the lot's boundary bearings as text** *[verified]*:
+
+```
+p2:  178°22'10"   268°22'10"   358°22'10"   268°22'10"
+```
+
+A rectangular lot with its axes on 88°/268° and 178°/358°. **268°22'10" is west**, which agrees
+with the independently-reported "front (west-facing) wall" for W1. No symbol recognition is
+needed for the hard part — the bearings are text, and text is free.
+
+The remaining chain is coordinates, not pixels *[inferred, not yet built]*:
+
+1. bearings → the lot's compass axes *(verified: text)*
+2. the `FRONT` / `REAR` labels' positions on the site plan → which axis end is the street
+3. a window tag's position on the floor plan → which wall of the building it sits in
+4. wall → outward normal → one of the eight compass points
+
+Note step 3 makes the elevation letter unnecessary: the floor plan gives the wall directly, and
+`ELEVATION A`…`D` carry no face name in the text anyway *(verified — page 6 has "FRONT ELEVATION
+MATERIALS TABLE", which is a materials table, not an elevation title)*.
+
+**This is a separate workstream from composition and should not be bundled with it.** It shares
+the geometry machinery but nothing else, it serves a different consumer (the thermal band's
+SHGC cap), and it can ship later without holding up the split.
 
 **The ratio convention, decided by measurement.** Two candidates, tested against W4 where the
 drafter wrote the answer down:
@@ -363,10 +391,10 @@ harvesting exists at all. On this document that is 17 of 19 openings.
 
    This amends [plan-parse-output-spec.md](plan-parse-output-spec.md) §6, whose precedence row
    reads "composition, division axis, order — the drawings win" without the width caveat.
-2. **`wallOrientation` is unreadable on this set.** The north point is a symbol on the site
-   plan; no compass word appears near any elevation. Report *not read* and accept the
-   Uw-cap-only path, build a north-arrow reader (a separate project), or ask the builder once at
-   review? **Recommendation: report not-read now, ask at review soon.**
+2. ~~`wallOrientation` is unreadable on this set.~~ **WITHDRAWN — it was wrong.** The site plan
+   states the boundary bearings as text and 268°22'10" is west, matching the independently
+   reported west-facing front. No north-arrow reader is needed. It is a separate workstream
+   from composition (§5) and the only question left is scheduling, not feasibility.
 3. ~~`DEFAULT_PROFILE.confirmed`~~ **RESOLVED, owner 2026-08-07.** AMJ makes no hopper, so the
    awning/hopper distinction the convention exists to draw cannot be expressed by the catalogue.
    Geometry claims operable-or-not; the schedule names the family. `refineOperable` is unused in
