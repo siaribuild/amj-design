@@ -323,8 +323,8 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
       </div>
       {liveJustAdded ? (
         <div className="space-y-3">
-          {/* Matches the /quote-project edit panel (owner): no Quantity group,
-              note inside Dimensions. */}
+          {/* Matches the /quote edit panel (owner): no Quantity group, note
+              inside Dimensions. */}
           <ItemSummaryCard item={liveJustAdded} added quote={quote} panelParity />
           <div className="border border-black/10 bg-bone px-4 py-4">
             <p className="text-body mb-3 t-bd-sm">MyProject now has <span className="font-medium text-ink">{quote.items.length} item{quote.items.length !== 1 ? "s" : ""}</span> · estimated {fmt(gstAdjust(projectTotal, gstMode))} {gstSuffix(gstMode)}.</p>

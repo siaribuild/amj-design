@@ -1,11 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROJECT DOCUMENTS — the shared upload / parse / AI-refinement engine
 //
-// Extracted verbatim from QuotePage so BOTH customer quote presentations
-// (/quote and the /quote-project A/B arm) drive the same engine rather than
-// each owning a copy. Two copies of a polling state machine is how the two
-// arms would silently diverge on timing, retry and failure copy — and an A/B
-// that differs in its engine measures the engine, not the presentation.
+// Extracted verbatim from the card builder /quote used to be, so both arms of
+// the A/B drove the same engine rather than each owning a copy — two copies of a
+// polling state machine is how they would have diverged on timing, retry and
+// failure copy, and an A/B that differs in its engine measures the engine rather
+// than the presentation. The arm won and the card builder is gone; the engine
+// stays here because a page is not where a state machine belongs.
 //
 // Behaviour here is deliberately unchanged from the original. The epoch /
 // deadline / stall logic in particular is load-bearing and tuned:

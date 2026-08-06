@@ -5,9 +5,6 @@ export const PAGE_PATHS: Record<Page, string> = {
   products: "/products",
   "product-detail": "/products",
   quote: "/quote",
-  // Internal A/B alternative to /quote. Registered here so direct navigation and
-  // browser back/forward work; deliberately absent from every public nav link.
-  "quote-project": "/quote-project",
   "how-it-works": "/how-it-works",
   resources: "/resources",
   contact: "/contact",
@@ -29,6 +26,12 @@ export const PAGE_PATHS: Record<Page, string> = {
 // Legacy paths kept working after the account-area IA collapse (Dashboard+Projects
 // → one "My Projects" home; Profile+Settings → Account; Support → Help).
 const LEGACY_ROUTES = new Map<string, Page>([
+  // The retired A/B arm. /quote-project WAS the rework of the project builder,
+  // run beside the original while the comparison was open; it won, so it is now
+  // simply /quote. The old path resolves rather than 404s because it was linked
+  // internally for months and sits in bookmarks and briefs — and because a path
+  // that quietly stops working is how a shared link becomes a home page.
+  ["/quote-project", "quote"],
   ["/dashboard", "dashboard"],
   ["/orders", "dashboard"],
   ["/quotes", "dashboard"],

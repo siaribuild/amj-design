@@ -1,9 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// /quote-project — the internal A/B arm of the customer quote builder
+// /quote — the customer project builder
 //
-// Plan §12. These prove the things the presentation change could plausibly break:
-// route isolation, the read-only expansion boundary, UI identity surviving a
-// rehydrate, draft safety, and that the state mapping never moves a submit gate.
+// Written as the A/B arm at /quote-project; it won that comparison and is now
+// simply /quote, so every case here drives the standard route. Plan §12. These
+// prove the things the presentation could plausibly break: the read-only
+// expansion boundary, UI identity surviving a rehydrate, draft safety, and that
+// the state mapping never moves a submit gate.
 //
 // Seeding follows the established pattern in customer.spec.ts: route-mock the
 // current-project GET (letting writes through) for exact hydrated shapes, and
@@ -71,28 +73,30 @@ const blockedItem: MockItem = {
 
 // ─── 1. Route isolation ────────────────────────────────────────────────────────
 
-test("/quote-project loads the same current project, and /quote is unchanged", async ({ page }) => {
+test("/quote IS this builder, and the retired path still lands on it", async ({ page }) => {
   await mockProject(page, [plainItem]);
 
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   await expect(page.locator(".quote-page")).toHaveClass(/ground-bone/);
   await expect(page.getByRole("heading", { name: "Quote project regression" })).toBeVisible();
   await expect(page.getByText("AMJ80 Series Sliding Window").first()).toBeVisible();
+  // The card builder that used to answer here is gone, not hidden.
+  await expect(page.locator(".quote-item-card")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Build your quote" })).toHaveCount(0);
 
-  // The control arm still renders its own hero/composer surface from the SAME
-  // project — the A/B compares presentation, not data.
-  await page.goto("/quote");
-  await expect(page.getByRole("heading", { name: "Build your quote" })).toBeVisible();
-  // The A arm keeps its own card class — only /quote-project became a table.
-  await expect(page.locator(".quote-item-card")).toHaveCount(1);
-  await expect(page.locator(".quote-sticky")).toBeVisible();
+  // /quote-project was linked internally for months and sits in bookmarks and
+  // briefs. It resolves to the same page rather than falling through to the
+  // home page, which is what an unknown path does here.
+  await page.goto("/quote-project");
+  await expect(page.locator(".quote-page")).toHaveClass(/ground-bone/);
+  await expect(page.getByRole("heading", { name: "Quote project regression" })).toBeVisible();
 });
 
 // ─── 2. Compact row ────────────────────────────────────────────────────────────
 
 test("the compact row renders identity, size, price and its direct actions", async ({ page }) => {
   await mockProject(page, [plainItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
 
   await expect(page.getByText("W1", { exact: true })).toBeVisible();
   await expect(page.getByText("AMJ80 Series Sliding Window").first()).toBeVisible();
@@ -124,7 +128,7 @@ test("the compact row renders identity, size, price and its direct actions", asy
 
 test("expansion inspects only; rows open independently, composite children priced once", async ({ page }) => {
   await mockProject(page, [plainItem, compositeItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
 
   const w1 = page.getByRole("button", { name: /details for W1$/ });
   const w2 = page.getByRole("button", { name: /details for W2$/ });
@@ -190,7 +194,7 @@ test("saving from the drawer keeps the same opening expanded and restores focus"
   });
   expect(saved.ok()).toBeTruthy();
 
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   await page.getByRole("button", { name: /details for W01$/ }).click();
   await expect(page.getByRole("button", { name: /details for W01$/ })).toHaveAttribute("aria-expanded", "true");
 
@@ -223,7 +227,7 @@ test("saving from the drawer keeps the same opening expanded and restores focus"
 
 test("Add opening creates nothing until an explicit save", async ({ page }) => {
   await mockProject(page, [plainItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   await expect(page.locator(".quote-row")).toHaveCount(1);
 
   await page.getByRole("button", { name: "Add opening" }).first().click();
@@ -239,7 +243,7 @@ test("Add opening creates nothing until an explicit save", async ({ page }) => {
 
 test("the customer may change what a unit IS, but not how many there are", async ({ page }) => {
   await mockProject(page, [compositeItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
 
   await page.getByRole("button", { name: "Edit W2", exact: true }).click();
   const drawer = page.getByRole("dialog");
@@ -285,7 +289,7 @@ test("the customer may change what a unit IS, but not how many there are", async
 
 test("duplicate is an intentional copy and Undo restores the previous list", async ({ page }) => {
   await mockProject(page, [plainItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   await expect(page.locator(".quote-row")).toHaveCount(1);
 
   await page.getByRole("button", { name: "Actions for W1" }).click();
@@ -301,7 +305,7 @@ test("duplicate is an intentional copy and Undo restores the previous list", asy
 
 test("customer blockers are actionable; technical-only review stays neutral", async ({ page }) => {
   await mockProject(page, [compositeItem, blockedItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
 
   // Asserted through innerText rather than element matching: the status chip is
   // rendered twice — beside the reference below 1024px, as its own column above
@@ -349,7 +353,7 @@ test("customer blockers are actionable; technical-only review stays neutral", as
 
 test("with no blockers the bar offers submission and never invents a stage", async ({ page }) => {
   await mockProject(page, [compositeItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   const bar = page.getByRole("region", { name: "Project summary and actions" });
   // "ready", not "review". A technical caveat no longer tones the whole bar
   // down (owner): it is priced, submittable and ours to resolve, so nothing the
@@ -371,7 +375,7 @@ test("desktop gets a side drawer, mobile a full-screen editor, neither scrolls s
 
   for (const [w, h] of [[1440, 900], [1024, 800], [768, 1024], [375, 812]] as const) {
     await page.setViewportSize({ width: w, height: h });
-    await page.goto("/quote-project");
+    await page.goto("/quote");
     await expect(page.locator(".quote-row").first()).toBeVisible();
     const overflow = await page.evaluate(() =>
       document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -382,14 +386,14 @@ test("desktop gets a side drawer, mobile a full-screen editor, neither scrolls s
   // real quote form. From 768 up it is a slide-out panel like the main menu, so
   // the project context the drawer exists to preserve stays on screen.
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   await page.getByRole("button", { name: "Edit W1", exact: true }).click();
   const mobileBox = await page.getByRole("dialog").boundingBox();
   expect(mobileBox!.width).toBeGreaterThan(360);
 
   for (const [w, h] of [[768, 1024], [1440, 900]] as const) {
     await page.setViewportSize({ width: w, height: h });
-    await page.goto("/quote-project");
+    await page.goto("/quote");
     await page.getByRole("button", { name: "Edit W1", exact: true }).click();
     const box = await page.getByRole("dialog").boundingBox();
     // Narrower than the viewport, so the list it dims stays visible beside it.
@@ -402,7 +406,7 @@ test("desktop gets a side drawer, mobile a full-screen editor, neither scrolls s
 
 test("the drawer behaves as a dialog: Escape steps back, then closes, and focus returns", async ({ page }) => {
   await mockProject(page, [compositeItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
 
   await page.getByRole("button", { name: "Edit W2", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -426,7 +430,7 @@ test("the drawer behaves as a dialog: Escape steps back, then closes, and focus 
 
 test("row disclosure exposes accurate state and unique labels", async ({ page }) => {
   await mockProject(page, [plainItem, compositeItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
 
   // Unique per-row names, so a screen-reader list is navigable.
   await expect(page.getByRole("button", { name: "Edit W1", exact: true })).toHaveCount(1);
@@ -492,7 +496,7 @@ test("a hostile catalogue record cannot execute anything in the quote list", asy
     });
   });
   await mockProject(page, [plainItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   await expect(page.locator(".quote-row")).toHaveCount(1);
 
   // Give any deferred handler a chance to fire before asserting it did not.
@@ -537,7 +541,7 @@ test("clear all wipes lines and documents durably, and is never a single tap", a
   });
   expect(uploaded.ok()).toBeTruthy();
 
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   await expect(page.getByText("qp-clear-all.txt")).toBeVisible();
   await expect(page.locator(".quote-row")).toHaveCount(1);
 
@@ -566,7 +570,7 @@ test("clear all wipes lines and documents durably, and is never a single tap", a
 // it saved on Enter-or-blur when every other edit here needs a button.
 test("the project title is a heading at rest and saves only when told to", async ({ page }) => {
   await mockProject(page, [plainItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
 
   // At rest: text, not a field. Exactly one h1, and it holds the NAME — while
   // the editor is open the heading must not become "Save Cancel".
@@ -623,7 +627,7 @@ test("the project title is a heading at rest and saves only when told to", async
 // is wrong with the line, so the customer would have to find it twice.
 test("the expansion offers one launcher, always at the foot, labelled for the state", async ({ page }) => {
   await mockProject(page, [blockedItem, plainItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
 
   // Opened by hand: nothing opens itself any more (owner). The blocked row
   // states its reason — with no button of its own beside it.
@@ -651,7 +655,7 @@ test("the expansion offers one launcher, always at the foot, labelled for the st
 // ─── 13. A drawing may be indicative; a dimension may not ─────────────────────
 test("an opening with no size is drawn as a shape and carries no measurements", async ({ page }) => {
   await mockProject(page, [blockedItem, plainItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
 
   // blockedItem has width: "" and height: "" — the row says "— × —". The
   // generator falls back to 1200×1200 for the SHAPE, which is honest, but once
@@ -679,7 +683,7 @@ test("an opening with no size is drawn as a shape and carries no measurements", 
 // The row now sits at one size and WEIGHT alone carries the hierarchy (owner).
 test("the row's type hierarchy is carried by weight, not size", async ({ page }) => {
   await mockProject(page, [plainItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   const row = page.locator(".quote-row").first();
 
   const type = (l: ReturnType<typeof page.locator>) =>
@@ -703,7 +707,7 @@ test("size never wraps at any realistic opening, on any width", async ({ page })
   await mockProject(page, [plainItem, wide]);
   for (const w of [1280, 1024, 900, 768, 375]) {
     await page.setViewportSize({ width: w, height: 950 });
-    await page.goto("/quote-project");
+    await page.goto("/quote");
     await expect(page.locator(".quote-row").first()).toBeVisible();
     const worst = await page.evaluate(() => Math.max(...[...document.querySelectorAll<HTMLElement>(".quote-row")]
       .map((r) => [...r.querySelectorAll<HTMLElement>("span")]
@@ -729,7 +733,7 @@ test("a composite is named and drawn from its units, and carries no chip", async
     ],
   };
   await mockProject(page, [uneven, plainItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   const parent = page.locator(".quote-row").first();
 
   // Named from the CHILDREN, so a door line is never called a window.
@@ -788,7 +792,7 @@ test("a shortfall accuses the opening; a wrong-across unit accuses itself", asyn
     coverageDeltaMm: 0, coverageOutOfTolerance: false,
     segments: [unit("s1", "2600", "700", 600), unit("s2", "900", "900", 400)],
   }]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   await expect(page.locator(".quote-row").first()).toBeVisible();
 
   // The opening is flagged BEFORE it is opened — collapsed, it is all there is.
@@ -817,7 +821,7 @@ test("a shortfall accuses the opening; a wrong-across unit accuses itself", asyn
     coverageDeltaMm: -400, coverageOutOfTolerance: true,
     segments: [unit("s3", "1550", "700", 500), unit("s4", "1550", "700", 500)],
   }]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   await expect(page.locator(".quote-row").first()).toBeVisible();
 
   expect(await page.locator(".quote-row").first().innerText()).toContain("Check sizes");
@@ -840,7 +844,7 @@ test("a shortfall accuses the opening; a wrong-across unit accuses itself", asyn
 // order (category.order) that ops manages; the client sorts by it as well.
 test("the product-type picker lists Windows before Doors", async ({ page }) => {
   await mockProject(page, [plainItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   await page.getByRole("button", { name: "Edit W1", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
 
@@ -855,7 +859,7 @@ test("a unit's size stays lighter than its opening's", async ({ page }) => {
   // unit's size would carry the same weight as the opening it belongs to, and
   // the indent would be the only thing separating them down the column.
   await mockProject(page, [compositeItem]);
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   await page.getByRole("button", { name: "Show details for W2", exact: true }).click();
   const weight = (l: ReturnType<typeof page.locator>) =>
     l.evaluate((e) => getComputedStyle(e).fontWeight);

@@ -18,7 +18,6 @@ import { HelpPage } from "../pages/AccountSections";
 import { OrderDetail, ProjectDetail } from "../pages/RecordDetailPage";
 import { QuoteReviewPage } from "../pages/QuoteReviewPage";
 import { initialsOf } from "../pages/accountModel";
-import { QuotePage } from "../pages/QuotePage";
 import { QuoteProjectPage } from "../pages/QuoteProjectPage";
 import { HowItWorksPage } from "../pages/HowItWorksPage";
 import { type TrackFocus } from "../pages/OrderTrackingPage";
@@ -107,12 +106,9 @@ const ACCOUNT_PAGES: Page[] = ["dashboard", "account", "help", "order"];
 const isAccountPage = (p: Page) => ACCOUNT_PAGES.includes(p);
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
-function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
+function Nav({ page, setPage, user, setUser }: {
   page: Page; setPage: (p: Page) => void;
   user: AuthUser | null; setUser: (u: AuthUser | null) => void;
-  /** False when the current page is showing a sub-view with no hero behind the
-   *  header. Defaults true so every other page is unaffected. */
-  viewHasHero?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const go = (p: Page) => { setPage(p); setOpen(false); window.scrollTo(0, 0); };
@@ -141,13 +137,13 @@ function Nav({ page, setPage, user, setUser, viewHasHero = true }: {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-  const heroPage = page === "home" || page === "products" || page === "product-detail" || page === "quote" || page === "trade" || page === "how-it-works";
-  // A hero page can still have hero-LESS sub-views, and the quote page does: its
-  // build view has a dark hero for the header to overlay, but Review and
-  // Submitted have none. The header stayed transparent over those, which on a
-  // bone ground is an invisible menu. The page has to tell us — it cannot be
-  // inferred from the route, so App owns the flag and passes it down here.
-  const transparent = heroPage && viewHasHero && !scrolled;
+  // /quote is no longer here. The retired card builder opened on a dark hero for
+  // the header to overlay, and had to tell the shell when its Review and
+  // Submitted sub-views did not — without that the header stayed transparent
+  // over a bone ground, which is an invisible menu. The builder that replaced it
+  // has no hero at all, so the whole sub-view flag went with it.
+  const heroPage = page === "home" || page === "products" || page === "product-detail" || page === "trade" || page === "how-it-works";
+  const transparent = heroPage && !scrolled;
 
   return (
     <>
@@ -1781,12 +1777,6 @@ export default function App() {
   // Which order/project the tracking page should open (set from the dashboard).
   // Cleared on any ordinary navigation so unrelated entry points show the default.
   const [focusRecord, setFocusRecord] = useState<TrackFocus>(null);
-  // Whether the CURRENT view has a hero for the header to overlay. Only the
-  // quote page changes it — its Review and Submitted views have none, and the
-  // header was left transparent over them.
-  const [viewHasHero, setViewHasHero] = useState(true);
-  // Reset on navigation, so a heroless sub-view cannot leak into the next page.
-  useEffect(() => { setViewHasHero(true); }, [page]);
   const navigateTo = (p: Page, pathOverride?: string) => {
     const nextPath = pathOverride ?? pathForPage(p);
     if (window.location.pathname !== nextPath) window.history.pushState({ page: p }, "", nextPath);
@@ -2108,11 +2098,10 @@ export default function App() {
       case "home":             return <HomePage setPage={navigateTo} />;
       case "products":         return <ProductsPage setPage={navigateTo} category={catCategory} family={catFamily} onSelectCategory={selectCategory} onSelectFamily={setCatFamily} onOpenProduct={openProduct} />;
       case "product-detail":   return <ProductDetailPage slug={productSlug} setPage={navigateTo} onOpenProduct={openProduct} onBack={backToFamily} quote={quote} />;
-      case "quote":            return <QuotePage setPage={navigateTo} user={user} quote={quote} onSubmit={submitCurrentProject} onHeroChange={setViewHasHero} />;
-      // Same draft, same props, different presentation — the A/B arm. `quote` is
-      // App-level state, so this route shows the identical project with no extra
-      // wiring. It is NOT a hero page, so the header stays solid over its bone canvas.
-      case "quote-project":    return <QuoteProjectPage setPage={navigateTo} user={user} quote={quote} onSubmit={submitCurrentProject} />;
+      // THE project builder. It was the A/B arm at /quote-project until the
+      // comparison closed in its favour; the card builder it replaced is gone.
+      // Not a hero page, so the header stays solid over its bone canvas.
+      case "quote":            return <QuoteProjectPage setPage={navigateTo} user={user} quote={quote} onSubmit={submitCurrentProject} />;
       // Without setPage the page's own CTAs called setPage?.(…) on undefined and
       // did nothing but scroll to top — a dead end for traffic the home page sends.
       case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;
@@ -2284,14 +2273,13 @@ export default function App() {
         .hero-zoom { animation: heroZoom 2.5s ease-out both; }
         @media (prefers-reduced-motion: reduce) { .hero-zoom { animation: none; } }
       `}</style>
-      <Nav page={page} setPage={navigateTo} user={user} setUser={setUser} viewHasHero={viewHasHero} />
+      <Nav page={page} setPage={navigateTo} user={user} setUser={setUser} />
       <main>{renderPage()}</main>
       {page !== "admin" && <Footer setPage={navigateTo} />}
-      {/* "quote-project" belongs here for the same reason "quote" does: it IS the
-          quote builder, and a fixed "Get a quote" bar there covers the project's
-          own sticky summary with an invitation to the page you are already on.
-          It was missing only because the route was added after this list. */}
-      {!["home", "quote", "quote-project", "admin", "product-detail", "dashboard", "account", "help", "order"].includes(page) && (
+      {/* "quote" is excluded because it IS the quote builder: a fixed "Get a
+          quote" bar there covers the project's own sticky summary with an
+          invitation to the page you are already on. */}
+      {!["home", "quote", "admin", "product-detail", "dashboard", "account", "help", "order"].includes(page) && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-4 py-3 bg-white border-t border-black/8"
           style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
           <Btn variant="sage" size="md" onClick={() => navigateTo("quote")} className="w-full justify-center">Get a quote →</Btn>

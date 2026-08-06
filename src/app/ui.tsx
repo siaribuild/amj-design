@@ -11,12 +11,15 @@ import { SAGE, INK as DARK, LINE } from "../styles/tokens";
 export { SAGE, INK as DARK, PAPER, BONE, LINE } from "../styles/tokens";
 
 // Client-side route identifiers. Kept here so page files can type their props.
-// `quote-project` is an INTERNAL alternative presentation of the same draft
-// shown at `quote` (docs/estimator/quote-project-implementation-brief.md). It is
-// reachable by direct navigation only — never linked from public navigation —
-// until the A/B comparison picks a winner.
+//
+// `quote` is the project builder — ONE page, one presentation. It used to be two:
+// the original card builder here and a `quote-project` arm carrying the row/
+// drawer rework, run side by side while the comparison was open. The comparison
+// closed in favour of the rework, so the arm became the page and the id went
+// with it. /quote-project still RESOLVES (routes.ts keeps it as a legacy path)
+// because it was linked internally for months, but it is no longer a page.
 export type Page =
-  | "home" | "products" | "product-detail" | "quote" | "quote-project"
+  | "home" | "products" | "product-detail" | "quote"
   | "how-it-works" | "resources" | "contact" | "admin"
   | "approved-quote" | "trade" | "login" | "dashboard"
   | "account" | "help"

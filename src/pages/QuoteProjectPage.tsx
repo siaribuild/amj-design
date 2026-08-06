@@ -1,10 +1,14 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// /quote-project — internal A/B alternative to /quote
+// /quote — THE project builder
 //
-// An alternative PRESENTATION of the same draft project shown at /quote. Not a
-// second quoting workflow: same project, same quote state, same pricing API,
-// same draft persistence, same document engine, same submission lifecycle.
-// /quote is untouched.
+// This was the A/B arm at /quote-project, run beside the original card builder
+// while the comparison was open. The owner closed it in favour of this one, so
+// the arm became the page: /quote renders this, the card builder (QuotePage.tsx)
+// and its StickyQuotePanel are deleted, and /quote-project survives only as a
+// legacy path in routes.ts because it was linked internally for months.
+//
+// The file and its components/quote-project/ directory keep their names on
+// purpose — renaming ~15 modules would bury this one-line change in churn.
 //
 // Plan: docs/estimator/quote-project-implementation-plan.md
 // Brief: docs/estimator/quote-project-implementation-brief.md

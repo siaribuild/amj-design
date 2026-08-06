@@ -15,13 +15,6 @@ function seedEmail(userId: string): string {
 }
 const DEMO_EMAIL = seedEmail("u_demo");
 
-/** A unit IS an item — a real frame that is made and delivered, sharing an
- *  opening with its siblings instead of having one to itself (owner). So a mock
- *  unit with no options is a unit that would genuinely block on its missing
- *  colour, which is not what these fixtures are testing. Production agrees:
- *  splitLine inherits the opening's options, and all 23 live units carry them. */
-const SEGMENT_OPTIONS = { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" };
-
 
 // Read the dev-mode OTP the Worker surfaces in non-prod, and complete a two-step
 // email login form.
@@ -115,76 +108,15 @@ test("clear all removes uploaded documents durably across a browser refresh", as
   expect(body.files).toEqual([]);
 });
 
-test("a persisted composite survives current-project hydration and renders its units", async ({ page }) => {
-  await page.route("**/api/projects/current", async (route) => {
-    if (route.request().method() !== "GET") return route.continue();
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        project: { id: "project-composite", ref: "OF-Q-COMPOSITE", title: "Composite regression", status: "draft", createdAt: new Date().toISOString() },
-        files: [],
-        items: [{
-          id: "line-w2", code: "W2", productSlug: "amj80-series-sliding-window", location: "Kitchen / Meals / Family",
-          width: "3500", height: "700", options: {}, qty: 1, status: "Ready", lineTotal: 1000,
-          origin: "ai", aiPriced: true, review: { fit: "Composite layout requires technical confirmation." }, compositeAxis: "vertical",
-          segments: [
-            { id: "segment-w2-a", productSlug: "amj80-series-sliding-window", width: "1750", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 500, options: SEGMENT_OPTIONS, status: "Ready" },
-            { id: "segment-w2-b", productSlug: "amj80-series-sliding-window", width: "1750", height: "700", qtyPerParent: 1, qty: 1, lineTotal: 500, options: SEGMENT_OPTIONS, status: "Ready" },
-          ],
-        }],
-      }),
-    });
-  });
-
-  await page.goto("/quote");
-  await expect(page.locator(".quote-page")).toHaveClass(/ground-bone/);
-  await expect(page.locator(".quote-item-card")).toHaveAttribute("data-state", "review");
-  await expect(page.locator(".quote-sticky")).toHaveAttribute("data-state", "review");
-
-  const collapsedSurfaces = await page.evaluate(() => {
-    const background = (selector: string) => getComputedStyle(document.querySelector(selector)!).backgroundColor;
-    return {
-      page: background(".quote-page"),
-      card: background(".quote-item-card"),
-      header: background(".quote-item-head"),
-      body: background(".quote-item-body"),
-      sticky: background(".quote-sticky"),
-    };
-  });
-  expect(collapsedSurfaces.page).not.toBe(collapsedSurfaces.card);
-  expect(collapsedSurfaces.header).not.toBe(collapsedSurfaces.body);
-  expect(collapsedSurfaces.sticky).toBe(collapsedSurfaces.card);
-
-  await expect(page.getByText("W2", { exact: true })).toBeVisible();
-  await expect(page.getByText("Needs review", { exact: true })).toBeVisible();
-  await expect(page.getByText("Composite · 2 windows", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Expand item" }).click();
-  await expect(page.getByText("Built as 2 units", { exact: true })).toBeVisible();
-  await expect(page.getByText("Unit 1", { exact: true })).toBeVisible();
-  await expect(page.getByText("Unit 2", { exact: true })).toBeVisible();
-
-  // The unit COUNT is not the customer's to change (owner, 2026-08-04): they can
-  // neither create a composite nor merge one back, so adding and removing units
-  // was the same power by another route. Both controls are gone from BOTH arms,
-  // and the server routes behind them with them.
-  await expect(page.getByRole("button", { name: /Add window|Add door|Add unit/ })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Remove", exact: true })).toHaveCount(0);
-
-  await expect(page.getByRole("button", { name: "Edit", exact: true })).toHaveCount(2);
-  await page.getByRole("button", { name: "Edit", exact: true }).first().click();
-  await expect(page.getByRole("button", { name: "Save unit 1" })).toBeVisible();
-  await expect(page.locator(".quote-composite-panel")).toBeVisible();
-  await expect(page.locator(".quote-composite-editor .quote-panel")).toBeVisible();
-  // BOTH dimensions are editable (owner). The across-axis one used to be locked
-  // to the opening's, which reads as a safety rail and behaves as a trap: correct
-  // an opening's parsed height and every unit is left at the old figure with its
-  // only repair field greyed out. A mismatch is reported now — on the unit and on
-  // the opening — rather than prevented.
-  const unitEditor = page.getByText("Edit composite unit", { exact: true }).locator("..").locator("..");
-  await expect(unitEditor.locator('input[type="number"]').nth(0)).toBeEnabled();
-  await expect(unitEditor.locator('input[type="number"]').nth(1)).toBeEnabled();
-});
+// RETIRED WITH THE PAGE IT TESTED. "a persisted composite survives
+// current-project hydration and renders its units" drove /quote when /quote was
+// the card builder, and asserted that builder's internals: .quote-item-card,
+// .quote-sticky, "Expand item", the composite editor panel. None of those exist
+// now. What it actually PROVED — a composite arrives from the API with its
+// segments and is drawn from them, and a unit is editable on both axes — is
+// covered against the current UI by quote-project.spec.ts: "a composite is
+// named and drawn from its units" and "the customer may change what a unit IS,
+// but not how many there are".
 
 test("resolved document dimension conflicts do not create a quote-level warning", async ({ page }) => {
   await page.route("**/api/auth/me", async (route) => {
@@ -317,7 +249,7 @@ test("signing in re-resolves the current project without a reload", async ({ pag
     }
   });
 
-  await page.goto("/quote-project");
+  await page.goto("/quote");
   await expect(page.getByRole("region", { name: "Project summary and actions" })).toBeVisible();
   const beforeLogin = currentCalls.length;
   expect(beforeLogin, "the builder resolves a project on load").toBeGreaterThan(0);

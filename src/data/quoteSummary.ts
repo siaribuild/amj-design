@@ -1,11 +1,13 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// SHARED QUOTE SUMMARY — the counters both quote presentations must agree on
+// SHARED QUOTE SUMMARY — the counters the quote presentation runs on
 //
 // Plan §4. These figures (total, blockers, technical caveats, pending prices)
-// drive the sticky panel on /quote and the action bar on /quote-project. They
-// were computed inline in QuotePage; extracting them means the two arms of the
-// A/B can never disagree about whether a quote is submittable, which would
-// otherwise read as a UX difference when it is really an arithmetic one.
+// drive the action bar on /quote. They were computed inline in the card builder
+// that /quote used to be; extracting them meant the two arms of the A/B could
+// never disagree about whether a quote was submittable — a difference that would
+// have read as UX when it was really arithmetic. The A/B is over and the card
+// builder is gone, so there is one caller again; the extraction stays because
+// this is a pure derivation and the page is not the place for it.
 //
 // Pure derivation — no state, no effects, no business logic of its own. Every
 // rule it applies already lives in configurator.ts.
