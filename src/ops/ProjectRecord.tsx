@@ -752,26 +752,31 @@ function ThermalAudit({ rows, counts }: { rows: OpsThermalRow[]; counts: OpsTher
               {rows.map((r) => (
                 <tr key={r.lineId} className="border-t border-black/5 align-top">
                   <td className="px-4 py-2" style={{ color: INK }}>
-                    <span className="font-data">{r.ref ?? "—"}</span>
-                    {r.kind === "segment" && <span className="ml-1 t-cap" style={{ color: MUTED }}>lite</span>}
-                    {r.operation && <div className="t-cap" style={{ color: MUTED }}>{r.operation}</div>}
+                    {/* A unit is indented under the opening it belongs to, so a
+                        composite reads as one thing made of parts. */}
+                    <span className={r.kind === "segment" ? "pl-4 font-data" : "font-data"}>{r.ref ?? "—"}</span>
+                    {r.operation && <div className={`t-cap ${r.kind === "segment" ? "pl-4" : ""}`} style={{ color: MUTED }}>{r.operation}</div>}
                   </td>
                   <td className="px-3 py-2 text-right font-data" style={{ color: MUTED }}>
                     {r.widthMm && r.heightMm ? `${r.widthMm}×${r.heightMm}` : "—"}
                   </td>
                   <td className="px-3 py-2 font-data" style={{ color: INK }}>{bandText(r.target)}</td>
                   <td className="px-3 py-2 t-cap" style={{ color: MUTED }}>
-                    {r.target?.basis ? humanLabel(r.target.basis) : "—"}
+                    {r.targetInherited
+                      ? "Inherited from opening"
+                      : r.target?.basis ? humanLabel(r.target.basis) : "—"}
                   </td>
                   <td className="px-3 py-2" style={{ color: INK }}>
-                    {r.proposed?.productSlug ?? "—"}
-                    {r.proposed?.variantId && (
+                    {r.verdict === "header"
+                      ? <span className="t-cap" style={{ color: MUTED }}>Split into {r.unitCount} units</span>
+                      : r.proposed?.productSlug ?? "—"}
+                    {r.verdict !== "header" && r.proposed?.variantId && (
                       <div className="t-cap font-data" style={{ color: MUTED }}>{r.proposed.variantId}</div>
                     )}
                   </td>
                   <td className="px-3 py-2 font-data" style={{ color: INK }}>
-                    {perfText(r.proposed)}
-                    {r.proposed?.source === "estimated" && (
+                    {r.verdict === "header" ? "—" : perfText(r.proposed)}
+                    {r.verdict !== "header" && r.proposed?.source === "estimated" && (
                       <div className="t-cap" style={{ color: MUTED }}>estimated</div>
                     )}
                   </td>
@@ -808,6 +813,7 @@ function perfText(p: OpsThermalRow["proposed"]): string {
 /** The verdict carries the SIZE of the miss, not just the fact of it — "0.01 over"
  *  and "1.33 over" are the difference between a rounding argument and a redesign. */
 function ThermalVerdict({ row }: { row: OpsThermalRow }) {
+  if (row.verdict === "header") return <span className="t-cap" style={{ color: MUTED }}>—</span>;
   if (row.verdict === "no_target") {
     return <span className="t-cap" style={{ color: MUTED }}>No target derived</span>;
   }

@@ -779,6 +779,60 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.equal(audit.body.counts.missed, 1);
       assert.equal(audit.body.counts.noTarget, 1);
     });
+
+    await t.test("thermal audit: a composite groups its units, and each unit is judged", async () => {
+      const projectId = "p_thermal_composite";
+      await sql(`INSERT INTO project (id, title, status_customer) VALUES ('${projectId}','Composite audit fixture','draft')`);
+      await sql(`INSERT INTO ai_runs (id, project_id, pipeline_version) VALUES ('run_tc','${projectId}','test')`);
+      // W7 — the report NAMED its two components, so each unit has its own code and
+      // its own target. W9 — we split it ourselves, so it has neither.
+      const model = JSON.stringify({
+        openings: [{
+          externalRef: "W7",
+          thermalComponents: [
+            { ref: "W7A", operationType: "awning", widthMm: 905, heightMm: 854 },
+            { ref: "W7B", operationType: "sliding", widthMm: 905, heightMm: 854 },
+          ],
+        }],
+      }).replace(/'/g, "''");
+      await sql(`INSERT INTO building_models (id, project_id, ai_run_id, schema_version, model_json, confidence_json) VALUES ('bm_tc','${projectId}','run_tc','building-model/1.1','${model}','{}')`);
+
+      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind) VALUES ('ql_p7','${projectId}','W7','amj80-series-awning-window','{}','{"width":1810,"height":854}',1,900,'ready',0,'ai','composite_parent')`);
+      await sql(`INSERT INTO opening_instance (id, project_id, quote_line_id, external_ref, family, operation_type, width_mm, height_mm, requirements_json, requirement_basis, status) VALUES ('op_p7','${projectId}','ql_p7','W7','windows','awning',1810,854,'{"maxUValue":1.69,"minShgc":null,"maxShgc":null}','explicit_energy_report','ready')`);
+      await sql(`INSERT INTO quote_line (id, project_id, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind, parent_line_id, segment_seq, segment_requirements_json, segment_requirement_basis) VALUES ('ql_s7a','${projectId}','amj80-series-awning-window','{}','{"width":905,"height":854}',1,450,'ready',1,'ai','segment','ql_p7',0,'{"maxUValue":2.27,"minShgc":0.37,"maxShgc":0.41}','explicit_energy_report')`);
+      await sql(`INSERT INTO quote_line (id, project_id, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind, parent_line_id, segment_seq, segment_requirements_json, segment_requirement_basis) VALUES ('ql_s7b','${projectId}','amj80-series-sliding-window','{}','{"width":905,"height":854}',1,450,'ready',2,'ai','segment','ql_p7',1,'{"maxUValue":1.69,"minShgc":0.5,"maxShgc":0.56}','explicit_energy_report')`);
+
+      // W9 — a split WE made for dimensional reasons: the unit inherits the
+      // opening's band and has no code of its own in any document.
+      await sql(`INSERT INTO quote_line (id, project_id, external_ref, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind) VALUES ('ql_p9','${projectId}','W9','amj80-series-awning-window','{}','{"width":1600,"height":900}',1,800,'ready',3,'ai','composite_parent')`);
+      await sql(`INSERT INTO quote_line (id, project_id, product_slug, options_json, dims_json, qty, line_total, status, position, origin, line_kind, parent_line_id, segment_seq, segment_requirements_json, segment_requirement_basis) VALUES ('ql_s9','${projectId}','amj80-series-awning-window','{}','{"width":800,"height":900}',1,400,'ready',4,'ai','segment','ql_p9',0,'{"maxUValue":2.2,"minShgc":null,"maxShgc":null}','default_even')`);
+
+      const audit = await requestJson(ops, `/api/ops/projects/${projectId}/thermal`);
+      const byRef = Object.fromEntries(audit.body.rows.map((r) => [r.ref, r]));
+
+      // The parent groups; it never proposes. Its product is the pre-split unit
+      // that is not being built, so a verdict on it would judge the wrong window.
+      const parent = byRef.W7;
+      assert.equal(parent.verdict, "header", "a composite parent carries no pass/fail");
+      assert.equal(parent.proposed, null, "the superseded pre-split product is not shown as a proposal");
+      assert.equal(parent.unitCount, 2);
+      assert.equal(parent.target.maxUValue, 1.69, "the opening's own target still shows on the header");
+
+      // Units take the code the ENERGY REPORT gave them, matched on operation.
+      assert.ok(byRef.W7A, "a unit the report named keeps that name");
+      assert.ok(byRef.W7B, "and so does its sibling");
+      assert.equal(byRef.W7A.operation, "awning");
+      assert.equal(byRef.W7A.target.maxUValue, 2.27, "each unit is judged against ITS OWN target");
+      assert.equal(byRef.W7B.target.maxUValue, 1.69, "which differs between the two halves");
+      assert.equal(byRef.W7A.targetInherited, false, "a report-named unit did not inherit");
+
+      // A unit we invented gets a positional label — never an invented letter,
+      // which would look like it came from the report.
+      const ours = byRef["W9·1"];
+      assert.ok(ours, "a unit the report never named is labelled positionally");
+      assert.equal(ours.targetInherited, true, "and its target is marked as inherited from the opening");
+      assert.equal(ours.target.maxUValue, 2.2, "inheriting means the opening's number, unchanged");
+    });
   } finally {
     await stop(server);
     await removeRunDir(runDir);

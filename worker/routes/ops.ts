@@ -30,7 +30,7 @@ import { checkHardRules } from "../lib/estimator/rules";
 import { retryCurrentAiExtraction } from "../lib/ai/jobs";
 import { isOverrideReason, OVERRIDE_REASONS } from "../lib/ai/schema";
 import { refreshLearningExampleEligibility } from "../lib/ai/examples";
-import { getProductBySlug } from "../../src/data/catalogue";
+import { getProductBySlug, families } from "../../src/data/catalogue";
 import { priceItem } from "../lib/lines";
 import { MissingSurcharge, priceLine } from "../lib/estimator/pricing";
 import { opsPricing } from "./ops-pricing";
@@ -1496,7 +1496,60 @@ ops.get("/projects/:id/thermal", async (c) => {
   const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
   const s = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
   const refById = new Map<string, string | null>();
-  for (const r of results ?? []) refById.set(r.id, r.external_ref);
+  const unitsByParent = new Map<string, number>();
+  for (const r of results ?? []) {
+    refById.set(r.id, r.external_ref);
+    if (r.line_kind === "segment" && r.parent_line_id) {
+      unitsByParent.set(r.parent_line_id, (unitsByParent.get(r.parent_line_id) ?? 0) + 1);
+    }
+  }
+
+  // A unit's own code comes from the SOURCE where the source named it. The energy
+  // report's component schedule carries refs like W7A/W7B; nothing writes them
+  // onto the segment row, so they are read back off the building model and matched
+  // by operation + size. Only a split WE invented for manufacturing reasons falls
+  // back to a positional W7·1 label — because in that case no such code exists in
+  // any document, and inventing a letter would look like it came from the report.
+  const bm = await c.env.DB.prepare(
+    "SELECT model_json FROM building_models WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
+  ).bind(projectId).first<{ model_json: string }>();
+  type Component = { ref: string; operationType: string | null; widthMm: number | null; heightMm: number | null };
+  const componentsByOpening = new Map<string, Component[]>();
+  if (bm?.model_json) {
+    const model = safeParse(bm.model_json) as any;
+    for (const o of Array.isArray(model?.openings) ? model.openings : []) {
+      const comps = Array.isArray(o?.thermalComponents) ? o.thermalComponents : [];
+      if (o?.externalRef && comps.length) {
+        componentsByOpening.set(String(o.externalRef), comps.map((cp: any) => ({
+          ref: String(cp?.ref ?? ""),
+          operationType: s(cp?.operationType),
+          widthMm: n(cp?.widthMm),
+          heightMm: n(cp?.heightMm),
+        })).filter((cp: Component) => cp.ref));
+      }
+    }
+  }
+  const operationOfProduct = (slug: string | null): string | null => {
+    if (!slug) return null;
+    const product = getProductBySlug(slug);
+    if (!product) return null;
+    return families.find((f) => f.slug === product.familySlug)?.operation ?? null;
+  };
+  // Claim each component at most once: two lites of identical size differing only
+  // by operation (the common awning+fixed pair) must not both match the same row.
+  const claimed = new Set<string>();
+  const componentFor = (parentRef: string | null, productSlug: string | null, w: number | null, h: number | null): Component | null => {
+    const comps = parentRef ? componentsByOpening.get(parentRef) : null;
+    if (!comps?.length) return null;
+    const operation = operationOfProduct(productSlug);
+    const free = comps.filter((cp) => !claimed.has(`${parentRef}:${cp.ref}`));
+    const match =
+      free.find((cp) => cp.operationType === operation && cp.widthMm === w && cp.heightMm === h) ??
+      free.find((cp) => cp.operationType === operation) ??
+      (free.length === 1 ? free[0] : null);
+    if (match) claimed.add(`${parentRef}:${match.ref}`);
+    return match ?? null;
+  };
 
   const rows = (results ?? []).map((r) => {
     const dims = safeParse(r.dims_json ?? "{}") as Record<string, unknown>;
@@ -1520,14 +1573,28 @@ ops.get("/projects/:id/thermal", async (c) => {
     } : null;
     const hasTarget = !!target && (target.maxUValue != null || target.minShgc != null || target.maxShgc != null);
 
+    // A segment has no ai_proposal_line, so no stored performance snapshot — but it
+    // does store the GLASS it was given, and the catalogue knows what that glass
+    // does on that frame. Resolving it here is what lets a lite carry a verdict at
+    // all. The figure is the catalogue's CURRENT rating for the pair, not a
+    // snapshot taken at selection time; they agree unless the WERS data is
+    // re-imported between the estimate and the audit being read.
     const perf = r.performance_json ? safeParse(r.performance_json) as Record<string, unknown> : null;
+    let uw = perf ? n(perf.uw) : null;
+    let shgc = perf ? n(perf.shgc) : null;
+    let fromCatalogue = false;
+    if (uw == null && shgc == null && r.product_slug && r.selected_variant_id) {
+      const spec = getProductBySlug(r.product_slug)?.thermal?.find((t) => t.slug === r.selected_variant_id);
+      if (spec) { uw = n(spec.uValue); shgc = n(spec.shgc); fromCatalogue = true; }
+    }
     const proposed = r.product_slug ? {
       productSlug: s(r.product_slug),
       variantId: s(r.selected_variant_id),
-      uw: perf ? n(perf.uw) : null,
-      shgc: perf ? n(perf.shgc) : null,
+      uw,
+      shgc,
       certified: perf && typeof perf.certified === "boolean" ? perf.certified : null,
       source: perf ? s(perf.source) : null,          // certified | estimated
+      fromCatalogue,
       basis: s(r.recommendation_basis),
       confidence: s(r.confidence_band),
     } : null;
@@ -1555,21 +1622,40 @@ ops.get("/projects/:id/thermal", async (c) => {
       else verdict = uwUnknown || shgcUnknown ? "unknown" : "met";
     }
 
+    const widthMm = n(r.width_mm) ?? n(dims.width) ?? n(dims.widthMm);
+    const heightMm = n(r.height_mm) ?? n(dims.height) ?? n(dims.heightMm);
+    const component = isSegment ? componentFor(parentRef, r.product_slug, widthMm, heightMm) : null;
+
+    // A composite PARENT is a grouping header, not a proposal. Its product is the
+    // pre-split single unit the AI first chose, which is not what gets built — and
+    // its band is a lossy collapse of the components' (strictest Uw, and an SHGC
+    // pair silently dropped when the components' ranges do not overlap). Showing a
+    // verdict on it would be a pass/fail on a window that does not exist, sitting
+    // above the rows that describe what does.
+    const unitCount = unitsByParent.get(r.id) ?? 0;
+    const isHeader = r.line_kind === "composite_parent" && unitCount > 0;
+
     return {
       lineId: r.id,
-      ref: s(r.external_ref) ?? (parentRef ? `${parentRef}·${(r.segment_seq ?? 0) + 1}` : null),
-      kind: isSegment ? "segment" : r.line_kind === "composite_parent" ? "composite" : "line",
+      ref: s(r.external_ref) ?? component?.ref ?? (parentRef ? `${parentRef}·${(r.segment_seq ?? 0) + 1}` : null),
+      kind: isSegment ? "segment" : isHeader ? "composite" : "line",
       parentRef,
+      unitCount,
       origin: s(r.origin),
       family: s(r.family),
-      operation: s(r.operation_type),
-      widthMm: n(r.width_mm) ?? n(dims.width) ?? n(dims.widthMm),
-      heightMm: n(r.height_mm) ?? n(dims.height) ?? n(dims.heightMm),
+      operation: s(r.operation_type) ?? operationOfProduct(r.product_slug),
+      widthMm,
+      heightMm,
       generation: n(r.source_generation),
       target,
-      proposed,
-      verdict,
-      miss,
+      // A unit whose target came from the opening rather than from a component the
+      // report named. It is the CONSERVATIVE reading — every unit must meet what
+      // the whole opening was asked to meet — so a miss here is a flag to check,
+      // not proof of non-compliance: the assembly can still average out.
+      targetInherited: isSegment && !!target && !component,
+      proposed: isHeader ? null : proposed,
+      verdict: isHeader ? "header" : verdict,
+      miss: isHeader ? null : miss,
       thermalReview: r.segment_thermal_review === 1,
       status: s(r.status),
       openingStatus: s(r.opening_status),

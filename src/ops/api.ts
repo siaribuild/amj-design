@@ -212,6 +212,8 @@ export interface OpsThermalProposed {
   productSlug: string | null; variantId: string | null;
   uw: number | null; shgc: number | null;
   certified: boolean | null; source: string | null;
+  /** Performance resolved from the catalogue (a unit has no stored snapshot). */
+  fromCatalogue: boolean;
   basis: string | null; confidence: string | null;
 }
 export interface OpsThermalRow {
@@ -219,6 +221,8 @@ export interface OpsThermalRow {
   ref: string | null;
   kind: "line" | "composite" | "segment";
   parentRef: string | null;
+  /** Units inside a composite parent; 0 for anything that is not one. */
+  unitCount: number;
   origin: string | null;
   family: string | null;
   operation: string | null;
@@ -226,9 +230,11 @@ export interface OpsThermalRow {
   heightMm: number | null;
   generation: number | null;
   target: OpsThermalTarget | null;
+  /** The unit inherited the opening's target — the report did not name it. */
+  targetInherited: boolean;
   proposed: OpsThermalProposed | null;
-  /** missed = outside the band; no_target = none was derived; unknown = not comparable. */
-  verdict: "met" | "missed" | "no_target" | "unknown";
+  /** header = a composite parent, which groups units rather than proposing one. */
+  verdict: "met" | "missed" | "no_target" | "unknown" | "header";
   /** Signed distance outside the band per axis; null where that axis is fine or unconstrained. */
   miss: { uw: number | null; shgc: number | null } | null;
   thermalReview: boolean;
