@@ -5,6 +5,8 @@
 // while the selector helpers and React pages stay unchanged.
 // Regenerate: node scripts/generate-catalogue.cjs <unpacked-xlsx-dir> src/data/catalogue.ts
 
+import type { FrameSystem } from "./frameSystem";
+
 export type CategorySlug = "windows" | "doors";
 
 export interface Category {
@@ -156,12 +158,13 @@ export interface Product {
    *  profile, else the legacy variant). Priced per m² — null on the built-in
    *  fallback catalogue, which prices glass through the rate card's area rate. */
   defaultGlazingSlug?: string | null;
-  /** SCAFFOLD (product compatibility, C3): the extrusion platform this product is
-   *  built on (`sys-80`, `sys-100` …). Units of one composite opening come from a
-   *  single system, so a unit's product picker reads this to offer the frames that
-   *  couple with its siblings. Null on the built-in fallback catalogue and on any
-   *  product not yet tagged — which is UNKNOWN, and unknown never excludes. */
-  frameSystemSlug?: string | null;
+  /** The extrusion platform this product is built on, and the platforms its
+   *  editor has declared couplable with it. Units of one composite opening come
+   *  from a single system, so the product picker reads this to offer the frames
+   *  that couple with a unit's siblings — and the server reads the SAME field to
+   *  refuse the ones that do not. Null on the built-in fallback catalogue and on
+   *  any product not yet tagged, which is UNKNOWN and never excludes. */
+  frameSystem?: FrameSystem | null;
   /** Public WERS thermal ratings per glazing the frame offers (M3). Empty until the
    *  product has a thermal profile. Shown on the product page; never fabricated. */
   thermal?: ThermalSpec[];

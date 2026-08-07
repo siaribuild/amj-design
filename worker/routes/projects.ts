@@ -230,7 +230,12 @@ projects.patch("/current/segments/:id", async (c) => {
   // column as an opening's — the only thing a unit has that a childless opening
   // does not is a parent.
   if (body?.note !== undefined) patch.note = normNote(body.note);
-  const result = await updateSegment(c.env, { segmentId: segment.id, patch });
+  // The customer is BLOCKED from putting an incompatible frame beside its
+  // siblings; staff are warned and may proceed (owner, 2026-08-08). The rule
+  // itself lives in updateSegment so the two routes cannot drift; only the
+  // policy is stated here. The picker offers compatible products only, so
+  // reaching this refusal means the request did not come from the editor.
+  const result = await updateSegment(c.env, { segmentId: segment.id, patch, enforceCompatibility: true });
   if ("errors" in result) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
   await markCustomerCompositeEdit(c.env, segment.project_id, segment.parent_line_id, segment.id);
   await logEvent(c.env, {

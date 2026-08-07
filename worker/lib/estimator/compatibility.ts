@@ -36,10 +36,9 @@
 // Design: docs/product-compatibility-design.md.
 // ═══════════════════════════════════════════════════════════════════════════════
 import type { CatalogueCandidate, FrameSystem, FrameSystemAffinity } from "./types";
+import { areSystemsCompatible, systemsBuildableTogether, type CompatibilityVerdict } from "../../../src/data/frameSystem";
 
-/** `same` needs no authored edge; `preferred`/`allowed` come from one; `incompatible`
- *  is a tagged pair with no edge; `unknown` is at least one untagged product. */
-export type CompatibilityVerdict = "same" | FrameSystemAffinity | "incompatible" | "unknown";
+export type { CompatibilityVerdict };
 
 /** The platform a candidate is built on, or null when its editor has not tagged it. */
 export const systemOf = (candidate: CatalogueCandidate | null | undefined): string | null =>
@@ -51,34 +50,22 @@ const edgeTo = (from: FrameSystem | null | undefined, toSlug: string): FrameSyst
 /**
  * May these two frames sit in one opening?
  *
- * Symmetric deliberately: an edge is a statement that two platforms couple, and
- * coupling is a property of the joint rather than of one side of it. If a
- * directional case ever turns up it needs its own decision, not an asymmetry
- * that emerged from whichever document an editor happened to open first.
+ * The rule itself is in src/data/frameSystem.ts, shared with the segment routes
+ * and the customer's product picker: a picker that offers what the server then
+ * refuses is a dead end, and two copies of a rule are two rules. This is the
+ * candidate-shaped door onto it.
  */
-export function areCompatible(
+export const areCompatible = (
   a: CatalogueCandidate | null | undefined,
   b: CatalogueCandidate | null | undefined,
-): CompatibilityVerdict {
-  const [sa, sb] = [systemOf(a), systemOf(b)];
-  if (!sa || !sb) return "unknown";
-  if (sa === sb) return "same";
-  // Either side may carry the edge; `preferred` on one side outranks `allowed`
-  // on the other, so a partner an editor singled out is not demoted by the
-  // reciprocal row being left at its default.
-  const severities = [edgeTo(a?.frameSystem, sb), edgeTo(b?.frameSystem, sa)].filter(Boolean);
-  if (severities.includes("preferred")) return "preferred";
-  if (severities.includes("allowed")) return "allowed";
-  return "incompatible";
-}
+): CompatibilityVerdict => areSystemsCompatible(a?.frameSystem, b?.frameSystem);
 
 /** True when the pair may be built — including the untagged case, which is
- *  permissive by design (see the header). Use this at every enforcement point so
- *  "unknown never blocks" cannot be re-decided one caller at a time. */
+ *  permissive by design (see the header). */
 export const isBuildableTogether = (
   a: CatalogueCandidate | null | undefined,
   b: CatalogueCandidate | null | undefined,
-): boolean => areCompatible(a, b) !== "incompatible";
+): boolean => systemsBuildableTogether(a?.frameSystem, b?.frameSystem);
 
 /** Candidates a composite on `systemSlug` may draw a unit from: the system's own
  *  frames, plus any partner system's. Untagged candidates are EXCLUDED here —

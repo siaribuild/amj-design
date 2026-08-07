@@ -15,7 +15,7 @@ import { drainLearningOutbox, issueRevision } from "../lib/revisions";
 import { logEvent } from "../lib/activity";
 import {
   splitLine, mergeComposite, recomputeComposite,
-  updateSegment, addSegment, removeSegment, loadCompositePolicy,
+  updateSegment, addSegment, removeSegment, loadCompositePolicy, compatibilityConflict,
 } from "../lib/composite";
 import { orderDto, applyTransition, markPaid, availableActions, STAGE_LABEL, type Stage, type OrderRow } from "../lib/orders";
 import { lifecycleOf, daysSince } from "../lib/lifecycle";
@@ -901,7 +901,7 @@ ops.post("/lines/:id/price-preview", async (c) => {
 /** The opening a unit belongs to, if its project is still editable by staff. */
 async function editableSegmentParent(env: Env, req: Request, segmentId: string) {
   const row = await env.DB.prepare(
-    `SELECT q.id, q.parent_line_id, p.id AS project_id
+    `SELECT q.id, q.parent_line_id, q.product_slug, p.id AS project_id
        FROM quote_line q
        JOIN quote_line par ON par.id = q.parent_line_id
        JOIN project p ON p.id = q.project_id
@@ -910,7 +910,7 @@ async function editableSegmentParent(env: Env, req: Request, segmentId: string) 
           'submitted','triage_pending','estimator_assigned',
           'technical_review_required','customer_clarification_required'
         )`,
-  ).bind(segmentId).first<{ id: string; parent_line_id: string; project_id: string }>();
+  ).bind(segmentId).first<{ id: string; parent_line_id: string; product_slug: string; project_id: string }>();
   if (!row) return null;
   const staff = await resolveStaff(env, req);
   if (!staff || !hasAssignedRole(staff)) return null;
@@ -944,13 +944,30 @@ ops.patch("/segments/:id", async (c) => {
   if (body?.qtyPerParent !== undefined) patch.qtyPerParent = Number(body.qtyPerParent) || 1;
   if (body?.note !== undefined) patch.note = normNote(body.note);
 
+  // STAFF ARE WARNED, NOT BLOCKED (owner, 2026-08-08). A frame that cannot
+  // couple with its siblings is a real fault, and it is also occasionally the
+  // right answer — an engineer who has decided how to detail the joint should
+  // not be stopped by a default. So the same sentence the customer route refuses
+  // with is stamped on the opening for review, and the save proceeds. Read
+  // BEFORE the update, while the unit still holds its old product.
+  const conflict = patch.productSlug !== undefined && patch.productSlug !== seg.product_slug
+    ? await compatibilityConflict(c.env, { parentId: seg.parent_line_id, segmentId: seg.id, productSlug: patch.productSlug })
+    : null;
+
   const result = await updateSegment(c.env, { segmentId: seg.id, patch });
   if (!result.ok) return c.json({ error: "invalid_segment", errors: result.errors }, 400);
+  if (conflict) {
+    await c.env.DB.prepare(
+      `UPDATE quote_line SET status='technical_review',
+         review_json=json_patch(COALESCE(review_json,'{}'), ?), updated_at=datetime('now')
+       WHERE id=?`,
+    ).bind(JSON.stringify({ compatibility: conflict }), seg.parent_line_id).run();
+  }
   await logEvent(c.env, {
     entityType: "project", entityId: seg.project_id, action: "line.unit.edit",
-    after: { lineId: seg.parent_line_id, unitId: seg.id, fields: Object.keys(patch) },
+    after: { lineId: seg.parent_line_id, unitId: seg.id, fields: Object.keys(patch), compatibility: conflict ?? undefined },
   });
-  return c.json({ ok: true });
+  return c.json({ ok: true, compatibility: conflict });
 });
 
 ops.post("/lines/:id/segments", async (c) => {

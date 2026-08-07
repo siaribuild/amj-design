@@ -38,6 +38,7 @@ import {
 // here; reusing it is what stops the console growing a second, drifting
 // implementation of product picking, option defaults and range checks.
 import { ItemForm } from "../components/ItemComposer";
+import { getProductBySlug } from "../data/catalogue";
 
 const MONO = {  } as const;
 
@@ -1012,6 +1013,15 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
 
   // After per-unit products, "Sliding Window" alone misdescribes the opening.
   const unitNames = [...new Set(line.segments.map((s) => s.productName))];
+  // The platform(s) the units are built on. More than one is the fault worth
+  // seeing: coupled frames of different depth clash at the mullion. Untagged
+  // products contribute nothing rather than a blank entry — an unlabelled frame
+  // is not evidence of a second system.
+  const frameSystems = [...new Set(
+    line.segments
+      .map((s) => { const f = getProductBySlug(s.productSlug)?.frameSystem; return f?.name || f?.slug || null; })
+      .filter((s): s is string => !!s),
+  )];
 
   return (
     <>
@@ -1034,6 +1044,19 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
           <span className="block t-cap font-data" style={{ color: SAGE }}>
             composite · {line.segments.length} joined unit{line.segments.length === 1 ? "" : "s"}
             {unitNames.length > 1 && ` · ${unitNames.join(" + ")}`}
+          </span>
+        )}
+        {/* WHY THESE FRAMES. The units were not chosen on their own merits — they
+            came out of one extrusion platform picked for the whole opening — so
+            naming it is the difference between a reviewer reading a list of
+            products and reading a decision. Derived from the units rather than
+            stored: the products ARE the record, and a second copy could disagree
+            with them after a human edit. */}
+        {composite && frameSystems.length > 0 && (
+          <span className="block t-cap font-data" style={{ color: frameSystems.length > 1 ? "var(--warning-ink)" : MUTED }}>
+            {frameSystems.length === 1
+              ? `frame system · ${frameSystems[0]}`
+              : `mixed frame systems · ${frameSystems.join(" + ")} — confirm these couple`}
           </span>
         )}
       </td>
@@ -1234,6 +1257,15 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
                 seed={{ productSlug: sg.productSlug, width: sg.width, height: sg.height, options: sg.options, qty: sg.qty, location: sg.note }}
                 onCommit={(built) => saveUnit(sg.id, built as never)}
                 onCancel={() => setEditingUnit(null)}
+                // Staff see the whole family with the mismatches MARKED, not
+                // removed. A frame of another depth clashing at the mullion is a
+                // real fault and occasionally the right answer — an engineer who
+                // has decided how to detail the joint should not be stopped by a
+                // default. The save proceeds and stamps a review reason.
+                compatibility={{
+                  siblingSlugs: (line.segments ?? []).filter((s) => s.id !== sg.id).map((s) => s.productSlug),
+                  enforce: false,
+                }}
               />
             </td>
           </tr>

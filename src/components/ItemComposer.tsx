@@ -12,6 +12,7 @@ import { useState, useEffect, useRef } from "react";
 import { Check, AlertCircle, Info, ChevronDown, Plus, Minus, Pencil, Trash2, Copy, X, Sun, Snowflake } from "lucide-react";
 import { SAGE, WindowMark, Btn, FieldLabel, Input } from "../app/ui";
 import { type Product, getProductBySlug, getProductsByFamily } from "../data/catalogue";
+import { fitsAlongside } from "../data/frameSystem";
 import {
   type QItem, type QuoteState, type OptionChoice, type GlazingChoice,
   optionGroupsFor, defaultOptions, linePriceTotal, familyGroups, glazingChoicesFor,
@@ -522,7 +523,7 @@ export function ItemForm({
   lockedSlug, quote, seed, onCommit, onCancel, rail = false, submitLabel = "Save",
   priceFn = previewPrice, scope = "item", unitAxis = "vertical", unitMode = "edit",
   onDirtyChange, initialSection, excludeId, heading, busy = false, hideOptions = false,
-  hideProduct = false, stickyActions = false, hideHeader = false, quietUntilTouched = false, parts,
+  hideProduct = false, stickyActions = false, hideHeader = false, quietUntilTouched = false, parts, compatibility,
 }: {
   lockedSlug?: string;
   /** Only `items` is read — for the duplicate-code check and code suggestion. It
@@ -584,6 +585,15 @@ export function ItemForm({
   /** …and it is not a product either, so it gets no type/product selectors —
    *  just its ID and its size (owner). The drawing becomes a plain opening. */
   hideProduct?: boolean;
+  /** Editing a UNIT of a composite: the products of the frames beside it, and
+   *  whether a frame that cannot couple with them may still be chosen.
+   *
+   *  `enforce` mirrors the server exactly — the customer route refuses an
+   *  incompatible unit and the ops route saves it with a review reason — because
+   *  a picker that offers what the server rejects is a dead end, and one that
+   *  hides what the server would accept takes a decision away from the person
+   *  qualified to make it. Absent on a plain opening, which has no siblings. */
+  compatibility?: { siblingSlugs: string[]; enforce: boolean } | null;
   /** Say nothing until the customer has typed something.
    *
    *  A blank form is not a form with mistakes in it. On the product page the
@@ -722,7 +732,20 @@ export function ItemForm({
   const setOpt = (typeSlug: string, v: string) => { setTouched(true); setOptions(o => ({ ...o, [typeSlug]: v })); };
 
   const famGroups = familyGroups();
-  const familyProducts = familySlug ? getProductsByFamily(familySlug) : [];
+  // What this UNIT may be built from, given the frames beside it. A composite is
+  // coupled frames and they have to be the same extrusion platform, so a product
+  // of another depth is not an option here — it would clash at the mullion.
+  //
+  // The customer's list is FILTERED and staff's is MARKED (owner, 2026-08-08).
+  // Filtering for the customer is not decoration: the server refuses the save, so
+  // offering a product it will reject is a dead end with no explanation. Marking
+  // for staff is the same fact stated without taking the decision away.
+  const siblingSystems = (compatibility?.siblingSlugs ?? [])
+    .map((slug) => getProductBySlug(slug)?.frameSystem ?? null);
+  const incompatible = (pr: Product) => siblingSystems.length > 0 && !fitsAlongside(pr.frameSystem ?? null, siblingSystems);
+  const allProducts = familySlug ? getProductsByFamily(familySlug) : [];
+  const familyProducts = compatibility?.enforce ? allProducts.filter((pr) => !incompatible(pr)) : allProducts;
+  const excludedCount = allProducts.length - familyProducts.length;
   const dimsSummary = (dimsEntered ? `${mm(width)} × ${mm(height)}` : "Enter the opening size")
     + (location ? ` · ${location}` : "");
 
@@ -843,10 +866,22 @@ export function ItemForm({
                   <div className="relative">
                     <select value={productSlug} onChange={e => pickProduct(e.target.value)} disabled={!familySlug} className={`${selectClass} disabled:cursor-not-allowed`}>
                       <option value="">{familySlug ? "Choose a product…" : "Select a type first"}</option>
-                      {familyProducts.map(pr => <option key={pr.slug} value={pr.slug}>{pr.name}</option>)}
+                      {familyProducts.map(pr => (
+                        <option key={pr.slug} value={pr.slug}>
+                          {pr.name}{incompatible(pr) ? " — different frame system" : ""}
+                        </option>
+                      ))}
                     </select>
                     <ChevronDown className="w-4 h-4 text-body absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
+                  {/* Say WHY the list is short. A picker that silently drops half
+                      its options reads as a catalogue that has run out. */}
+                  {excludedCount > 0 && (
+                    <p className="text-quiet mt-1 t-cap">
+                      Showing the frames that join the other units of this opening
+                      {excludedCount === 1 ? "; one more is a different frame system" : `; ${excludedCount} more are a different frame system`}.
+                    </p>
+                  )}
                 </div>
               </>
             )}

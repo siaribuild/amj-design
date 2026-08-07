@@ -525,14 +525,31 @@ export function proposeSplit(
  *  the opening requirement — NOT a per-lite precision model. Returns null when no
  *  segment carries a Uw. */
 export function compositeAveragedUw(segments: { widthMm: number; heightMm: number; uValue: number | null }[]): number | null {
+  return areaWeighted(segments, (s) => s.uValue);
+}
+
+/** The SHGC counterpart, for the same reason and by the same weighting. Uw alone
+ *  cannot answer a band: SHGC is two-sided — a report may set a floor to admit
+ *  winter sun and a ceiling to keep summer heat out — so a composite scored on
+ *  its averaged Uw and its units' individual SHGCs would be judged against half
+ *  its own requirement. */
+export function compositeAveragedShgc(segments: { widthMm: number; heightMm: number; shgc: number | null }[]): number | null {
+  return areaWeighted(segments, (s) => s.shgc);
+}
+
+function areaWeighted<T extends { widthMm: number; heightMm: number }>(
+  segments: T[],
+  value: (s: T) => number | null,
+): number | null {
   let areaSum = 0;
   let weighted = 0;
   for (const s of segments) {
-    if (s.uValue == null) continue;
+    const v = value(s);
+    if (v == null) continue;
     const area = Math.max(0, s.widthMm) * Math.max(0, s.heightMm);
     if (area <= 0) continue;
     areaSum += area;
-    weighted += area * s.uValue;
+    weighted += area * v;
   }
   return areaSum > 0 ? weighted / areaSum : null;
 }

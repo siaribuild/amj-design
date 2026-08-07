@@ -6,6 +6,7 @@
 // definition of the same contract, free to drift from the projection that fills
 // it — the exact failure this whole feature is recovering from.
 import type { FamilyDefaultSplit } from "../../../src/data/catalogue";
+import type { FrameSystem } from "../../../src/data/frameSystem";
 
 export interface PerformanceVariant {
   variantId: string;
@@ -28,25 +29,11 @@ export interface PerformanceVariant {
   published: boolean;
 }
 
-/** How firmly one system's editor stands behind coupling with another. Absent
- *  from this list entirely ⇒ not compatible; SAME system needs no edge at all. */
-export type FrameSystemAffinity = "preferred" | "allowed";
-
-export interface FrameSystemEdge {
-  /** The partner system's slug (sys-80, sys-100 …). */
-  slug: string;
-  severity: FrameSystemAffinity;
-}
-
-export interface FrameSystem {
-  /** Depth-based and permanent — it is frozen into configuration snapshots. */
-  slug: string;
-  name: string | null;
-  /** Empty is the DEFAULT and means "same system only", which is the right answer
-   *  for every system that makes its own fixed lite. Never a gap to be filled in
-   *  by inference — an unauthored edge is a decision the manufacturer has not made. */
-  compatibleWith: FrameSystemEdge[];
-}
+// Re-exported, not re-declared, for the same reason FamilyDefaultSplit is
+// imported above: the estimator, the segment routes and the customer's product
+// picker all read this shape, and a second definition here would be free to
+// drift from the one they share.
+export type { FrameSystem, FrameSystemEdge, FrameSystemAffinity } from "../../../src/data/frameSystem";
 
 export interface CatalogueCandidate {
   sanityProductId: string;

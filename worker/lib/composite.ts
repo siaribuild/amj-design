@@ -22,6 +22,42 @@
 import type { Env } from "../types";
 import { priceItem } from "./lines";
 import { uuid } from "./util";
+import { ensureCatalogue } from "./catalogue";
+import { getProductBySlug } from "../../src/data/catalogue";
+import { fitsAlongside, systemsBuildableTogether } from "../../src/data/frameSystem";
+
+/**
+ * Why this product cannot join this opening, or null when it can.
+ *
+ * A composite is coupled frames, so they have to be the same extrusion platform:
+ * differing depths clash at the mullion and read as a mistake to anyone standing
+ * in front of the finished job. Nothing checked that, and a unit's product could
+ * be set to anything with a slug.
+ *
+ * Returns a MESSAGE rather than a boolean because both callers need the words:
+ * the customer route refuses with it, and ops saves anyway and stamps it as a
+ * review reason. Same rule, same sentence, one place to change it.
+ *
+ * Null for an untagged product — its own or a sibling's. Unknown never blocks;
+ * the catalogue is tagged by hand and an absent fact must not cost an edit.
+ */
+export async function compatibilityConflict(env: Env, args: {
+  parentId: string; segmentId: string; productSlug: string;
+}): Promise<string | null> {
+  await ensureCatalogue(env);
+  const product = getProductBySlug(args.productSlug);
+  const candidate = product?.frameSystem ?? null;
+  if (!candidate) return null;
+  const { results } = await env.DB.prepare(
+    "SELECT product_slug FROM quote_line WHERE parent_line_id=? AND id<>?",
+  ).bind(args.parentId, args.segmentId).all<{ product_slug: string }>();
+  const siblings = (results ?? []).map((r) => getProductBySlug(r.product_slug)?.frameSystem ?? null);
+  if (fitsAlongside(candidate, siblings)) return null;
+  const clash = siblings.find((s) => s && !systemsBuildableTogether(candidate, s));
+  const named = (s: { slug: string; name: string | null } | null | undefined) => s?.name || s?.slug || "another system";
+  return `${product?.name ?? args.productSlug} is a ${named(candidate)} frame and the other units of this opening `
+    + `are ${named(clash)}. Frames of different depth do not couple, so they cannot be joined in one opening.`;
+}
 
 export interface CompositePolicy {
   toleranceMm: number;
@@ -344,19 +380,17 @@ export async function loadSegment(env: Env, segmentId: string): Promise<
  *  mismatch is reported the same way coverage is: on the unit AND on the
  *  opening, never silently reconciled. Report, do not veto — the same rule the
  *  coverage delta has always followed. */
-// SCAFFOLD (product compatibility, C9): a unit's product is accepted here on
-// presence alone — any non-empty slug, from any system. Fill: an
-// `enforceCompatibility?: boolean` arg, checked against the SIBLING units'
-// systems via compatibility.isBuildableTogether.
-//
-// The flag is the ROUTE's to set, not this function's to decide: the owner ruled
-// that a customer is blocked and staff are warned, and the two segment routes
-// were deliberately merged onto this one function so pricing, coverage and
-// derived quantity could not drift apart. A second implementation of the rule on
-// the customer side would undo exactly that. Customer route ⇒ true, ops ⇒ false
-// (ops saves and stamps a review reason instead). Design §7.
 export async function updateSegment(env: Env, args: {
   segmentId: string;
+  /** Refuse a product that cannot couple with the unit's siblings.
+   *
+   *  The ROUTE decides this, not this function: the owner ruled that a customer
+   *  is blocked and staff are warned, and the two segment routes were
+   *  deliberately merged onto one domain function so pricing, coverage and
+   *  derived quantity could not drift apart. A second implementation of the rule
+   *  on the customer side would undo exactly that. Customer route ⇒ true; ops
+   *  leaves it off and stamps the same sentence as a review reason instead. */
+  enforceCompatibility?: boolean;
   patch: {
     productSlug?: string; options?: Record<string, string>;
     alongMm?: number; acrossMm?: number; qtyPerParent?: number;
@@ -395,6 +429,17 @@ export async function updateSegment(env: Env, args: {
   if (!productSlug) return { ok: false, errors: ["This unit has no product selected."] };
   if (!(widthMm > 0)) return { ok: false, errors: ["This unit needs a width."] };
   if (!(heightMm > 0)) return { ok: false, errors: ["This unit needs a height."] };
+
+  if (args.enforceCompatibility && productSlug !== segment.product_slug) {
+    // Only on a CHANGE of product. Re-validating an unchanged slug would make an
+    // opening that predates the frame systems unsavable for any other reason —
+    // a customer correcting a width would be told to fix a frame pairing they
+    // never chose and have no route to change.
+    const conflict = await compatibilityConflict(env, {
+      parentId: parent.id, segmentId: segment.id, productSlug,
+    });
+    if (conflict) return { ok: false, errors: [conflict] };
+  }
 
   // Only the fields named in the patch move, so an ABSENT note keeps whatever
   // the unit already carries. Blank is a legitimate value — clearing a note is

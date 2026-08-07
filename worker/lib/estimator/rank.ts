@@ -9,10 +9,16 @@ import type { GlassCell, ThermalBand } from "./thermal/types";
 // hard-0 veto, so a thermal miss depresses rank without eliminating the line.
 export const RANKER_VERSION = "v3-graded-thermal";
 
-const W = {
+// Exported so the COMPOSITE ranker weighs the same six things in the same
+// proportions. A composite is scored by aggregating these components across its
+// units, not by a second opinion about what matters — a separate weight set
+// would let one opening and the same opening split in two disagree about which
+// product is better, with nothing to say which of them was right.
+export const RANK_WEIGHTS = {
   compliance: 0.35, geometry: 0.20, configuration: 0.15,
   commercial: 0.15, historical: 0.10, dataCompleteness: 0.05,
 };
+const W = RANK_WEIGHTS;
 
 export interface ScoreComponents {
   compliance: number; geometry: number; configuration: number;
@@ -38,7 +44,7 @@ export interface RankInput {
 
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 
-function geometryScore(opening: OpeningInput, c: CatalogueCandidate): number {
+export function geometryScore(opening: OpeningInput, c: CatalogueCandidate): number {
   const r = c.dimensionRule;
   const w = opening.widthMm ?? 0, h = opening.heightMm ?? 0;
   if (!r || !w || !h) return 0.5;
@@ -60,7 +66,7 @@ function geometryScore(opening: OpeningInput, c: CatalogueCandidate): number {
   return clamp01((wf + hf) / 2);
 }
 
-function configurationScore(opening: OpeningInput, c: CatalogueCandidate, variant: PerformanceVariant | null): number {
+export function configurationScore(opening: OpeningInput, c: CatalogueCandidate, variant: PerformanceVariant | null): number {
   const ops = c.configuration?.operationTypes ?? [];
   if (!opening.operationType) return 0.5 * 0.6 + 0.5 * variantAffinityScore(opening, variant);
   if (!ops.includes(opening.operationType)) return 0;
@@ -69,7 +75,7 @@ function configurationScore(opening: OpeningInput, c: CatalogueCandidate, varian
 }
 
 /** A performance variant is the (frame×glass) cell the graded scorer consumes. */
-function variantCell(v: PerformanceVariant | null): GlassCell | null {
+export function variantCell(v: PerformanceVariant | null): GlassCell | null {
   if (!v) return null;
   // WS1: prefer the shared glazing option as the glass identity; fall back to the
   // variantId until the catalogue is migrated.
@@ -80,7 +86,7 @@ function variantCell(v: PerformanceVariant | null): GlassCell | null {
 // above 0 in gradedComplianceScore) but the line survives to be ranked + warned,
 // so among always-eligible glasses the one closest to the band ranks highest.
 // The band is coherence-guarded so an impossible requirement cannot mis-score.
-function complianceScore(opening: OpeningInput, variant: PerformanceVariant | null): number {
+export function complianceScore(opening: OpeningInput, variant: PerformanceVariant | null): number {
   // M4/D2: score against the SAME enforced band rules apply (explicit ∩ advisory,
   // coherence-guarded) — not a divergent explicit-else-advisory band — so rank
   // order reflects what was enforced. A compliant cell scores a flat 1.0; the
@@ -114,7 +120,7 @@ function commercialScores(inputs: RankInput[]): Map<string, number> {
 const configurationId = (input: RankInput) =>
   `${input.candidate.sanityProductId}::${input.selectedVariant?.variantId ?? "none"}`;
 
-function dataCompletenessScore(c: CatalogueCandidate, variant: PerformanceVariant | null): number {
+export function dataCompletenessScore(c: CatalogueCandidate, variant: PerformanceVariant | null): number {
   let score = 0;
   if (c.dimensionRule) score += 0.4;
   if (variant) score += 0.3;

@@ -361,6 +361,14 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                   // discard prompt now.
                   onCancel={requestBack}
                   onDirtyChange={setDirty}
+                  // The frames beside this one. A composite is coupled frames and
+                  // they must be the same extrusion platform, so the picker offers
+                  // only what joins them — the server refuses the rest, and an
+                  // option that cannot be saved is not an option.
+                  compatibility={{
+                    siblingSlugs: segments.filter((s) => s.id !== activeSegment.id).map((s) => s.productSlug),
+                    enforce: true,
+                  }}
                   rail
                   stickyActions
                   hideHeader

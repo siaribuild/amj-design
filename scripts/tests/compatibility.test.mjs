@@ -26,7 +26,10 @@ const runDir = await makeRunDir("compatibility");
 const outfile = join(runDir, "compatibility-bundle.mjs");
 await build({
   stdin: {
-    contents: `export { systemOf, areCompatible, isBuildableTogether, candidatesInSystem, partnersOf, coveringSystems } from ${p("worker/lib/estimator/compatibility.ts")};`,
+    contents: `
+      export { systemOf, areCompatible, isBuildableTogether, candidatesInSystem, partnersOf, coveringSystems } from ${p("worker/lib/estimator/compatibility.ts")};
+      export { fitsAlongside, areSystemsCompatible } from ${p("src/data/frameSystem.ts")};
+    `,
     resolveDir: projectRoot, sourcefile: "compatibility-entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
@@ -143,6 +146,36 @@ test("restricting to a system keeps its own frames and its partners', and drops 
 test("with no partners, restricting to a system is restricting to that system", () => {
   const kept = M.candidatesInSystem([AWNING_80, FIXED_80, FIXED_67, UNTAGGED], "sys-80");
   assert.deepEqual(kept.map((c) => c.slug), ["amj80-series-awning-window", "amj80st-fixed-window"]);
+});
+
+// ── The rule the picker and the server share ─────────────────────────────────
+// fitsAlongside is what the customer's product list is filtered by, what the ops
+// list is marked by, and what the server refuses on. They must be one function:
+// a picker offering what the server rejects is a dead end with no explanation.
+
+test("fitsAlongside: a unit joins siblings of its own system and refuses another's", () => {
+  const sys = (slug, compatibleWith = []) => ({ slug, name: slug, compatibleWith });
+  assert.equal(M.fitsAlongside(sys("sys-80"), [sys("sys-80"), sys("sys-80")]), true);
+  assert.equal(M.fitsAlongside(sys("sys-65"), [sys("sys-80"), sys("sys-80")]), false);
+  // ONE bad sibling is enough — a frame has to join everything it touches.
+  assert.equal(M.fitsAlongside(sys("sys-80"), [sys("sys-80"), sys("sys-65")]), false);
+});
+
+test("fitsAlongside: the first unit of an opening, and an untagged one, are never refused", () => {
+  const sys = (slug) => ({ slug, name: slug, compatibleWith: [] });
+  assert.equal(M.fitsAlongside(sys("sys-80"), []), true, "nothing to clash with");
+  assert.equal(M.fitsAlongside(null, [sys("sys-80")]), true, "an untagged product is unknown, not unpairable");
+  assert.equal(M.fitsAlongside(sys("sys-80"), [null, null]), true, "untagged siblings block nothing");
+  assert.equal(M.fitsAlongside(sys("sys-80"), [sys("sys-80"), null, sys("sys-65")]), false,
+    "an untagged sibling does not excuse a tagged clash");
+});
+
+test("fitsAlongside honours an authored edge, in either direction", () => {
+  const a = { slug: "sys-125", name: "AMJ125T", compatibleWith: [{ slug: "sys-150", severity: "allowed" }] };
+  const b = { slug: "sys-150", name: "AMJ150", compatibleWith: [] };
+  assert.equal(M.fitsAlongside(a, [b]), true);
+  assert.equal(M.fitsAlongside(b, [a]), true, "the edge is a fact about the joint, not about one side");
+  assert.equal(M.areSystemsCompatible(b, a), "allowed");
 });
 
 test("partnersOf reads an edge from either side, and never lists the system itself", () => {

@@ -13,6 +13,7 @@ import type { PerformanceVariant } from "./types";
 import { publishAiProposal, type ProposalSelection } from "../ai/proposal";
 import { splitLine, loadCompositePolicy, type SegmentSpec } from "../composite";
 import { proposeSplit, type SplitHint } from "./split";
+import { selectForComposite } from "./compositeSelect";
 import { resolveScheduleType } from "../../../src/data/scheduleMatch";
 import { defaultOptions } from "../../../src/data/configurator";
 import { getProductBySlug } from "../../../src/data/catalogue";
@@ -351,8 +352,16 @@ async function materialiseSplits(env: Env, ctx: {
     } catch { /* unreadable options are absent */ }
 
     const section = pl.opening.family === "doors" ? "door" : "window";
+    // The opening's own category, and the one a unit may cross into when the
+    // chosen frame system makes nothing for its operation here. In practice this
+    // is one case — a door composite taking a fixed WINDOW lite from its own
+    // system — and it repairs a real fault: queryCandidates("doors","fixed") is
+    // empty, so a door needing a lite used to fall through to the parent's slug
+    // and price a fixed panel as a whole sliding door.
+    const primaryCategory = pl.opening.family ?? null;
+    const alternateCategory = primaryCategory === "doors" ? "windows" : primaryCategory === "windows" ? "doors" : null;
     const specs: SegmentSpec[] = [];
-    for (const seg of proposal.segments) {
+    const prepared = proposal.segments.map((seg) => {
       // Resolve the tradie term (e.g. "fixed") to a manufacturer operation via the
       // Sanity Family → Schedule Aliases — "fixed" is an alias on Sliding Window,
       // so a fixed lite is a sliding-window frame, not an unknown operation.
@@ -384,19 +393,34 @@ async function materialiseSplits(env: Env, ctx: {
             : pl.opening.scheduleRequirements?.doubleGlazed ?? null,
         },
       };
-      // SCAFFOLD (product compatibility, C5/C6/C7/C8): THIS IS THE LINE THE
-      // FEATURE REPLACES. Each segment is selected independently here, so nothing
-      // ties this unit's frame to the one beside it and the cheapest lite in the
-      // catalogue wins regardless of what it is coupled to.
-      //
-      // Fill: hoist the loop into compositeSelect.ts — for each covering system
-      // (compatibility.coveringSystems), select every segment restricted to it,
-      // unify the glass (D4), score the composite as a whole (area-weighted
-      // compliance + Σ price) and take the best. No covering system ⇒ fall back
-      // to exactly this call and raise the reserved `composite` filter warning;
-      // it must never leave a unit unbuilt. Design §4–§6.
-      const sel = await selectForOpening(sub, ctx.repo, ctx.priceFn, ctx.historical);
-      const chosen = sel.selected;
+      return { seg, sub, requirement, glazingDescription };
+    });
+
+    // THE UNITS ARE CHOSEN TOGETHER, not one at a time. A composite is coupled
+    // frames, so the thing being selected is the SET: one frame system for the
+    // whole opening, the best frame and glass for each unit inside it, and the
+    // make-up scored as a whole on averaged thermal and summed price. When no
+    // single system can supply every unit this falls back to exactly the old
+    // per-unit selection and warns — it never refuses a line.
+    const composite = await selectForComposite(
+      pl.opening,
+      prepared.map(({ seg, sub, requirement }) => ({
+        opening: sub,
+        primaryCategory,
+        alternateCategory,
+        widthMm: seg.widthMm,
+        heightMm: seg.heightMm,
+        // A unit whose band an ENGINEER stated keeps its own glass; the one-glass
+        // preference must not overrule a report's per-component instruction.
+        ownBand: !!seg.requirement && !!requirement,
+      })),
+      ctx.repo, ctx.priceFn, ctx.historical,
+    );
+    if (composite.note) reviewWarnings.push(`${pl.externalRef ?? "Opening"}: ${composite.note}`);
+
+    for (let index = 0; index < prepared.length; index++) {
+      const { seg, requirement, glazingDescription } = prepared[index];
+      const chosen = composite.units[index]?.result.selected ?? null;
       if (!chosen && hint?.source === "energy_report") {
         specs.length = 0;
         break;
@@ -435,6 +459,13 @@ async function materialiseSplits(env: Env, ctx: {
           shgc: variant?.shgc ?? null,
           source: variant?.dataSource ?? null,
           catalogueRevision: chosen.candidate.catalogueRevision ?? null,
+          // WHY THIS FRAME AND NOT THE CHEAPER ONE. The unit was not chosen on
+          // its own merits — it came out of the system picked for the whole
+          // opening — so the frozen record has to name the system, or a reviewer
+          // reading it back has no account of the decision that produced it.
+          // Null when no system covered the opening and the units were chosen
+          // independently, which is itself the thing worth knowing.
+          frameSystem: composite.system,
         } : null,
         resolvedBand: requirement ? {
           maxUValue: requirement.maxUValue ?? null,

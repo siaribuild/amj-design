@@ -47,20 +47,34 @@ export interface SelectionResult {
 // Rank the failure states so an all-failed opening reports the most-actionable one.
 const FAILURE_ORDER: OutcomeStatus[] = ["needs_manual_review", "catalogue_data_incomplete", "unavailable"];
 
-// SCAFFOLD (product compatibility, C5): this function selects for ONE opening in
-// isolation, which is right for a plain opening and wrong for a unit of a
-// composite — the units have to come from a single frame system. Fill: add an
-// optional `restrictToSystems?: string[]` and filter `candidates` through
-// `candidatesInSystem` when it is given, leaving behaviour bit-identical when it
-// is absent. compositeSelect.ts then calls this once per (system × segment) and
-// scores the composite as a whole. Design §4.
+/** What a UNIT of a composite may be chosen from. Absent on a plain opening,
+ *  which is selected in isolation exactly as it always was. */
+export interface SelectionRestriction {
+  /** Frame systems this unit may come from — the composite has committed to one,
+   *  and its units have to couple. A HARD filter: compositeSelect only ever
+   *  passes a system it has already confirmed covers this segment, so an empty
+   *  result here is a caller fault rather than a catalogue one. */
+  systems?: readonly string[] | null;
+  /** The composite's glass. SOFT, deliberately: a frame that offers none of these
+   *  keeps its own eligible set rather than dropping out. Glass is mandatory, so
+   *  a hard filter would empty a frame and re-create the empty line that the
+   *  whole non-blocking contract exists to prevent — and the composite reports
+   *  the disagreement instead. */
+  glazingSlugs?: readonly string[] | null;
+}
+
 export async function selectForOpening(
   opening: OpeningInput & { externalRef?: string | null },
   repo: CatalogueRepository,
   priceFn: PriceFn,
   historical?: HistoricalModel,
+  restrict?: SelectionRestriction | null,
 ): Promise<SelectionResult> {
-  const candidates = await repo.queryCandidates(opening.family ?? null, opening.operationType ?? null);
+  const all = await repo.queryCandidates(opening.family ?? null, opening.operationType ?? null);
+  const systems = restrict?.systems;
+  const candidates = systems?.length
+    ? all.filter((c) => !!c.frameSystem && systems.includes(c.frameSystem.slug))
+    : all;
   const catalogueVersion = repo.catalogueVersion(candidates);
 
   // Hard rules on every product, then evaluate every eligible exact performance
@@ -80,7 +94,13 @@ export async function selectForOpening(
     // The frame stays even on a thermal miss; the ranker (below) picks the best
     // glass among eligible variants rather than a standalone band-matcher. Only a
     // frame with zero eligible variants falls through to an unselected row.
-    const variants = eligiblePerformanceVariants(candidate, outcome);
+    const eligible = eligiblePerformanceVariants(candidate, outcome);
+    // The composite's glass, applied per frame. Soft (see SelectionRestriction):
+    // a frame rated for none of them keeps its own set, and the composite says so.
+    const pinned = restrict?.glazingSlugs?.length
+      ? eligible.filter((v) => restrict.glazingSlugs!.includes(v.glazingOptionSlug ?? v.variantId))
+      : eligible;
+    const variants = pinned.length ? pinned : eligible;
     if (!variants.length) {
       evaluated.push({ candidate, outcome, selectedVariant: null, price: null, score: null, components: null, rank: null, selected: false });
       continue;

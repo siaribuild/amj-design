@@ -34,7 +34,7 @@
     "test:composite": "node --test scripts/tests/composite.test.mjs scripts/tests/estimator-split.test.mjs",
     "test:drawing": "node --test scripts/tests/drawing.test.mjs",
     "test:pairing": "node --test scripts/tests/pairing.test.mjs",
-    "test:compatibility": "node --test scripts/tests/compatibility.test.mjs"
+    "test:compatibility": "node --test scripts/tests/compatibility.test.mjs scripts/tests/composite-select.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
