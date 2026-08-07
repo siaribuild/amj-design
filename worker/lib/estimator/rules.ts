@@ -16,6 +16,12 @@ import { coerceCoherent } from "./thermal/precedence";
 // product). See docs/estimator/thermal-selection-rework-plan.md.
 export const RULE_VERSION = "v2-thermal-nonblocking";
 
+// SCAFFOLD (product compatibility, C8): `composite` has been declared and never
+// pushed since this engine was written. It is the name for "no single frame
+// system could supply every unit of this opening, so the units were chosen
+// independently and may not couple" — raised at severity `warning`, never
+// `reject`, because an eliminated candidate is an empty line and thermal,
+// dimensions and pricing all already refuse to produce one. Design §6.
 export type FilterName =
   | "publication" | "operation" | "dimensions" | "energy" | "schedule_configuration"
   | "composite" | "option_compatibility" | "data_completeness";

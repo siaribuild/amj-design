@@ -344,6 +344,17 @@ export async function loadSegment(env: Env, segmentId: string): Promise<
  *  mismatch is reported the same way coverage is: on the unit AND on the
  *  opening, never silently reconciled. Report, do not veto — the same rule the
  *  coverage delta has always followed. */
+// SCAFFOLD (product compatibility, C9): a unit's product is accepted here on
+// presence alone — any non-empty slug, from any system. Fill: an
+// `enforceCompatibility?: boolean` arg, checked against the SIBLING units'
+// systems via compatibility.isBuildableTogether.
+//
+// The flag is the ROUTE's to set, not this function's to decide: the owner ruled
+// that a customer is blocked and staff are warned, and the two segment routes
+// were deliberately merged onto this one function so pricing, coverage and
+// derived quantity could not drift apart. A second implementation of the rule on
+// the customer side would undo exactly that. Customer route ⇒ true, ops ⇒ false
+// (ops saves and stamps a review reason instead). Design §7.
 export async function updateSegment(env: Env, args: {
   segmentId: string;
   patch: {

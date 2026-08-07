@@ -384,6 +384,17 @@ async function materialiseSplits(env: Env, ctx: {
             : pl.opening.scheduleRequirements?.doubleGlazed ?? null,
         },
       };
+      // SCAFFOLD (product compatibility, C5/C6/C7/C8): THIS IS THE LINE THE
+      // FEATURE REPLACES. Each segment is selected independently here, so nothing
+      // ties this unit's frame to the one beside it and the cheapest lite in the
+      // catalogue wins regardless of what it is coupled to.
+      //
+      // Fill: hoist the loop into compositeSelect.ts — for each covering system
+      // (compatibility.coveringSystems), select every segment restricted to it,
+      // unify the glass (D4), score the composite as a whole (area-weighted
+      // compliance + Σ price) and take the best. No covering system ⇒ fall back
+      // to exactly this call and raise the reserved `composite` filter warning;
+      // it must never leave a unit unbuilt. Design §4–§6.
       const sel = await selectForOpening(sub, ctx.repo, ctx.priceFn, ctx.historical);
       const chosen = sel.selected;
       if (!chosen && hint?.source === "energy_report") {

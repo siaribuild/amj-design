@@ -645,6 +645,13 @@ export const product = defineType({
     defineField({ name: "thermalProfile", title: "Thermal profile (frame)", type: "reference", to: [{ type: "thermalProfile" }], group: "glazing",
       description: "The manufacturer frame this product is built on — supplies its glazing choices and WERS Uw/SHGC/stars." }),
     // ── Estimator technical contract (spec §4) ──
+    // SCAFFOLD (product compatibility, C1/C2): the extrusion platform this product
+    // is built on. Optional, and UNSET IS UNKNOWN — an untagged product never
+    // blocks anything, so the catalogue stays usable while it is being tagged. It
+    // is what lets the estimator couple only same-platform frames in one opening.
+    // Nothing reads it until C3 projects it; see docs/product-compatibility-design.md.
+    defineField({ name: "frameSystem", title: "Frame system", type: "reference", to: [{ type: "frameSystem" }], group: "technical",
+      description: "The extrusion platform (AMJ80, AMJ100…). Units of one composite opening are chosen from a single system." }),
     dimensionRule,
     defineField({ name: "performanceVariants", title: "Performance variants (legacy)", type: "array", of: [performanceVariant], group: "technical",
       validation: (r) => r.unique(),
@@ -1140,4 +1147,96 @@ export const thermalProfile = defineType({
   },
 });
 
-export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation, siteSettings, postCategory, postAttachment, post, emailTemplate, thermalProfile];
+// ── SCAFFOLD (product compatibility, C1) — the frame system ───────────────────
+// The extrusion PLATFORM a product is built on: AMJ80, AMJ100, AMJ150. It exists
+// nowhere else in this model — not as a field, not derivable. `frameTechnology`
+// is conventional-vs-thermally-broken, `frameType` is the metal, and the AMJ
+// designator survives only inside `product.name` and `product.slug`.
+//
+// It has to exist because a composite opening is coupled from two or more frames
+// and they must be the same platform: differing depths clash at the mullion and
+// read as a mistake. Without this field the estimator picks each unit on its own
+// merits, and since every fixed product shares one 400–3000 dimension rule, the
+// commercial term decides alone — an AMJ67T lite beside an AMJ80 awning is the
+// routine outcome, not the edge case.
+//
+// The owner's grouping rule, which applies to any product added later: THE NUMBER
+// IS THE SYSTEM, THE LETTERS ARE VARIANTS WITHIN IT. So 80 / 80ST / 80T are one
+// system, as are 65T / 67T / 68, 100 / 100L / 100T, and 150 / 150T.
+//
+// Deliberately NOT here: frameTechnology. A system spans conventional and
+// thermally-broken products by that same rule, so technology is a per-product
+// fact; a copy on the system would be a second source free to disagree with the
+// product's own — which is the failure this whole area is recovering from.
+//
+// Design: docs/product-compatibility-design.md.
+const frameSystemEdge = defineArrayMember({
+  type: "object",
+  name: "frameSystemEdge",
+  title: "Compatible system",
+  fields: [
+    defineField({
+      name: "system", title: "System", type: "reference", to: [{ type: "frameSystem" }],
+      description: "A system whose frames may be coupled with this one in a single opening.",
+      // Same trap as the infill family's: an editor pointing a system at itself
+      // states nothing (same-system is already compatible) while looking like an
+      // authored decision.
+      options: {
+        filter: ({ document }) => {
+          const self = String((document as { _id?: string })?._id ?? "").replace(/^drafts\./, "");
+          return { filter: "_id != $self && _id != $selfDraft", params: { self, selfDraft: `drafts.${self}` } };
+        },
+      },
+      validation: (r) => r.required().custom((value, context) => {
+        const ref = (value as { _ref?: string } | undefined)?._ref;
+        if (!ref) return true;
+        const self = String(context.document?._id ?? "").replace(/^drafts\./, "");
+        return ref === self || ref === `drafts.${self}`
+          ? "A system is always compatible with itself — this row states nothing."
+          : true;
+      }),
+    }),
+    defineField({
+      name: "severity", title: "Severity", type: "string", initialValue: "allowed",
+      options: { list: [{ title: "Preferred partner", value: "preferred" }, { title: "Allowed", value: "allowed" }] },
+      description: "Preferred wins over Allowed when both could supply a unit.",
+    }),
+    defineField({ name: "note", title: "Note", type: "string", description: "Why, for the reviewer who sees the pairing." }),
+  ],
+  preview: {
+    select: { title: "system.name", severity: "severity" },
+    prepare: ({ title, severity }: any) => ({ title: title || "system", subtitle: severity }),
+  },
+});
+
+export const frameSystem = defineType({
+  name: "frameSystem",
+  title: "Frame system",
+  type: "document",
+  fields: [
+    defineField({ name: "name", title: "Name", type: "string", validation: (r) => r.required(),
+      description: 'The platform as the trade names it, e.g. "AMJ80".' }),
+    // Slugged by DEPTH (sys-80, sys-100) rather than by the AMJ designator, so the
+    // identifier states the criterion — frame depth — and survives a product being
+    // renamed. It is frozen into configuration snapshots, so it never changes.
+    defineField({ name: "slug", type: "slug", options: { source: "name" }, validation: (r) => r.required(),
+      description: 'Depth-based and permanent: sys-65, sys-72, sys-80, sys-100, sys-125, sys-150.' }),
+    defineField({ name: "notes", title: "Notes", type: "text", rows: 3 }),
+    defineField({
+      name: "compatibleWith", title: "Also compatible with", type: "array", of: [frameSystemEdge],
+      validation: (r) => r.unique(),
+      description:
+        "Other systems whose frames may sit beside this one. EMPTY IS THE DEFAULT AND MEANS "
+        + "same system only — which is the right answer for every system that makes its own "
+        + "fixed lite. Add a row only where a system cannot supply a unit it needs.",
+    }),
+  ],
+  preview: {
+    select: { title: "name", slug: "slug.current", edges: "compatibleWith" },
+    prepare: ({ title, slug, edges }: any) => ({
+      title, subtitle: `${slug ?? "?"} · ${(edges || []).length ? `${edges.length} partner system(s)` : "same system only"}`,
+    }),
+  },
+});
+
+export const schemaTypes = [category, family, optionType, option, product, page, seoMeta, showroomLocation, siteSettings, postCategory, postAttachment, post, emailTemplate, thermalProfile, frameSystem];

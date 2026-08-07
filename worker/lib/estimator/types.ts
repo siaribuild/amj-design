@@ -28,6 +28,26 @@ export interface PerformanceVariant {
   published: boolean;
 }
 
+/** How firmly one system's editor stands behind coupling with another. Absent
+ *  from this list entirely ⇒ not compatible; SAME system needs no edge at all. */
+export type FrameSystemAffinity = "preferred" | "allowed";
+
+export interface FrameSystemEdge {
+  /** The partner system's slug (sys-80, sys-100 …). */
+  slug: string;
+  severity: FrameSystemAffinity;
+}
+
+export interface FrameSystem {
+  /** Depth-based and permanent — it is frozen into configuration snapshots. */
+  slug: string;
+  name: string | null;
+  /** Empty is the DEFAULT and means "same system only", which is the right answer
+   *  for every system that makes its own fixed lite. Never a gap to be filled in
+   *  by inference — an unauthored edge is a decision the manufacturer has not made. */
+  compatibleWith: FrameSystemEdge[];
+}
+
 export interface CatalogueCandidate {
   sanityProductId: string;
   /** Sanity document revision the candidate was read at (snapshot key). */
@@ -45,6 +65,15 @@ export interface CatalogueCandidate {
    *  the do-not-pair default and the reason this is nullable rather than filled
    *  in with assumptions here. */
   defaultSplit: FamilyDefaultSplit | null;
+  /** SCAFFOLD (product compatibility, C3): the extrusion PLATFORM this frame is
+   *  built on — AMJ80, AMJ100 — plus any other platform its editor has declared
+   *  couplable with it. The units of one composite opening are chosen from a
+   *  single system, because differing frame depths clash at the mullion.
+   *
+   *  Null on every product an editor has not tagged. That is UNKNOWN, never
+   *  "incompatible": an untagged product must not be eliminated, so the absence
+   *  of this data can only ever cost the constraint, not the line. */
+  frameSystem: FrameSystem | null;
   dimensionRule: {
     minWidthMm: number | null;
     maxWidthMm: number | null;

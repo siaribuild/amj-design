@@ -35,6 +35,18 @@ const CANDIDATE_QUERY = defineQuery(`*[_type == "product" && defined(name) && de
     "infillOperation": infillFamily->operation,
     minInfillMm
   },
+  // SCAFFOLD (product compatibility, C3): the extrusion PLATFORM this frame is
+  // built on, and the other platforms it may be coupled with. Absent on every
+  // product an editor has not tagged, which is UNKNOWN — never "incompatible" —
+  // so the catalogue keeps working untouched while it is being authored.
+  // The edges are dereferenced to SLUGS for the same reason defaultSplit is: the
+  // selector resolves systems by slug and a Sanity document id would be a
+  // reference nothing downstream can follow.
+  "frameSystem": frameSystem->{
+    "slug": slug.current,
+    name,
+    "compatibleWith": compatibleWith[]{ "slug": system->slug.current, severity }
+  },
   dimensionRule,
   // The product's glazing × thermal matrix comes from its shared frame profile
   // (M2/D5). Preferred over the legacy per-product performanceVariants below,
@@ -95,6 +107,31 @@ const canonicalGlazingClass = (cls: string) => cls.replace(/_low_e$/, "_lowe");
 
 const coerceFrameTech = (v: unknown): "conventional" | "thermally_broken" | "unknown" =>
   v === "conventional" || v === "thermally_broken" ? v : "unknown";
+
+// SCAFFOLD (product compatibility, C3). A system is only usable if it has a slug —
+// that is the identity every downstream comparison is made on, and a system
+// without one cannot be matched against anything, so an untagged-in-practice
+// product must read as untagged rather than as a system nothing else can equal.
+// Edges are held to the same rule: a row pointing at a deleted or draft-only
+// system dereferences to no slug and is dropped, never carried as a hole.
+function toFrameSystem(raw: any): CatalogueCandidate["frameSystem"] {
+  const slug = typeof raw?.slug === "string" && raw.slug ? raw.slug : null;
+  if (!slug) return null;
+  const edges = Array.isArray(raw?.compatibleWith) ? raw.compatibleWith : [];
+  const seen = new Set<string>();
+  return {
+    slug,
+    name: typeof raw?.name === "string" && raw.name ? raw.name : null,
+    compatibleWith: edges.flatMap((e: any) => {
+      const to = typeof e?.slug === "string" && e.slug ? e.slug : null;
+      // Self-edges say nothing (same system is already compatible) and a repeat
+      // would let one authoring slip weight a partner twice once severity ranks.
+      if (!to || to === slug || seen.has(to)) return [];
+      seen.add(to);
+      return [{ slug: to, severity: e?.severity === "preferred" ? "preferred" as const : "allowed" as const }];
+    }),
+  };
+}
 
 // M2/D5: map a shared frame thermal profile's rows to the variant shape the ranker
 // consumes. variantId is the glazing slug (stable per product × glazing). WERS rows
@@ -185,6 +222,7 @@ export function toCandidate(row: any): CatalogueCandidate | null {
     // "do not pair" default, and is why this is passed through as-is rather than
     // defaulted here. proposePairedLayout owns what a missing knob means.
     defaultSplit: row.defaultSplit?.infillFamilySlug ? row.defaultSplit : null,
+    frameSystem: toFrameSystem(row.frameSystem),
     dimensionRule: row.dimensionRule ?? null,
     performanceVariants: variants,
     optionGroups: Array.isArray(row.optionGroups) ? [...new Set(row.optionGroups.filter(Boolean))] as string[] : [],

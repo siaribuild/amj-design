@@ -48,6 +48,13 @@ export const CATALOGUE_QUERY = `{
     "familySlug":family->slug.current, "categorySlug":category->slug.current,
     shortDescription, descriptionParagraphs, standardGlass, notes,
     "dimensionRule": dimensionRule{ minWidthMm, maxWidthMm, minHeightMm, maxHeightMm },
+    // SCAFFOLD (product compatibility, C3): the extrusion platform, so a unit's
+    // product picker can offer the frames that actually couple with its siblings.
+    // The SLUG only — the compatibility EDGES stay server-side until an edge
+    // exists to carry (every system today makes its own fixed lite, so same-slug
+    // is the whole rule), and shipping the graph before then would be a public
+    // copy of a decision nothing yet reads.
+    "frameSystemSlug": frameSystem->slug.current,
     // The glass a manually-configured / schedule line carries by default. Prefer the
     // frame thermal profile's first glazing (M2/M6); fall back to the legacy variant.
     "defaultGlazingSlug": coalesce(thermalProfile->rows[0].glazing->slug.current, performanceVariants[0].glazingOption->slug.current),
@@ -163,6 +170,7 @@ function normalizeProduct(p: any): Product {
     minWidth: p.dimensionRule?.minWidthMm ?? null, minHeight: p.dimensionRule?.minHeightMm ?? null,
     maxWidth: p.dimensionRule?.maxWidthMm ?? null, maxHeight: p.dimensionRule?.maxHeightMm ?? null,
     defaultGlazingSlug: p.defaultGlazingSlug ?? null,
+    frameSystemSlug: p.frameSystemSlug ?? null,
     thermal: Array.isArray(p.thermal) ? p.thermal : [],
     notes: p.notes ?? "", heroImage: normalizeImage(p.heroImage) ?? "",
     gallery: (p.gallery ?? []).map(normalizeImage).filter(Boolean),

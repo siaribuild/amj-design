@@ -47,6 +47,13 @@ export interface SelectionResult {
 // Rank the failure states so an all-failed opening reports the most-actionable one.
 const FAILURE_ORDER: OutcomeStatus[] = ["needs_manual_review", "catalogue_data_incomplete", "unavailable"];
 
+// SCAFFOLD (product compatibility, C5): this function selects for ONE opening in
+// isolation, which is right for a plain opening and wrong for a unit of a
+// composite — the units have to come from a single frame system. Fill: add an
+// optional `restrictToSystems?: string[]` and filter `candidates` through
+// `candidatesInSystem` when it is given, leaving behaviour bit-identical when it
+// is absent. compositeSelect.ts then calls this once per (system × segment) and
+// scores the composite as a whole. Design §4.
 export async function selectForOpening(
   opening: OpeningInput & { externalRef?: string | null },
   repo: CatalogueRepository,
