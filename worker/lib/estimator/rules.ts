@@ -66,7 +66,7 @@ function checkDimensions(opening: OpeningInput, c: CatalogueCandidate): FilterOu
   // Same contract as the deterministic matcher, so both paths agree.
   const within = (v, min, max) => (min == null || v >= min) && (max == null || v <= max);
   if (!within(w, rule.minWidthMm, rule.maxWidthMm) || !within(h, rule.minHeightMm, rule.maxHeightMm)) {
-    return { filter: "dimensions", passed: false, severity: "warning", reason: `size ${w}×${h} outside ${rule.minWidthMm ?? "?"}–${rule.maxWidthMm ?? "?"} × ${rule.minHeightMm ?? "?"}–${rule.maxHeightMm ?? "?"} mm — composite/custom unit, indicative price` };
+    return { filter: "dimensions", passed: false, severity: "warning", reason: `size ${h}×${w} outside ${rule.minHeightMm ?? "?"}–${rule.maxHeightMm ?? "?"} × ${rule.minWidthMm ?? "?"}–${rule.maxWidthMm ?? "?"} mm — composite/custom unit, indicative price` };
   }
   if (rule.maxAreaM2 != null && (w * h) / 1_000_000 > rule.maxAreaM2 + 0.001) {
     return { filter: "dimensions", passed: false, severity: "warning", reason: `area ${((w * h) / 1e6).toFixed(2)} m² exceeds ${rule.maxAreaM2} m² — composite/custom unit, indicative price` };

@@ -749,7 +749,7 @@ function ThermalAudit({ rows }: { rows: OpsThermalRow[] }) {
                     {r.operation && <div className={`t-cap ${r.kind === "segment" ? "pl-4" : ""}`} style={{ color: MUTED }}>{r.operation}</div>}
                   </td>
                   <td className="px-3 py-2 text-right font-data" style={{ color: MUTED }}>
-                    {r.widthMm && r.heightMm ? `${r.widthMm}×${r.heightMm}` : "—"}
+                    {r.widthMm && r.heightMm ? `${r.heightMm}×${r.widthMm}` : "—"}
                   </td>
                   <td className="px-3 py-2 font-data" style={{ color: INK }}>{bandText(r.target)}</td>
                   {/* The recorded basis is always shown. An inherited target is
@@ -1061,7 +1061,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
         )}
       </td>
       <td className="px-3 py-2 text-right font-data" style={{ color: MUTED }}>
-        {line.width && line.height ? `${line.width} × ${line.height}` : "—"}
+        {line.width && line.height ? `${line.height} × ${line.width}` : "—"}
       </td>
       <td className="px-3 py-2 text-right font-data" style={{ color: MUTED }}>{line.qty}</td>
       <td className="px-3 py-2 text-right font-data" style={{ color: INK }}>{money(line.lineTotal)}</td>
@@ -1201,7 +1201,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
             <SpecSummary unit={sg.options} opening={line.options} />
           </td>
           <td className="px-3 py-1.5 text-right t-cap font-data" style={{ color: MUTED }}>
-            {sg.width} × {sg.height}
+            {sg.height} × {sg.width}
           </td>
           <td className="px-3 py-1.5 text-right t-cap font-data" style={{ color: MUTED }}>
             {sg.qtyPerParent}× per opening
@@ -1422,7 +1422,7 @@ function SplitPanel({ line, composite, busy, policy, onDone, onError }: {
   return (
     <div>
       <p className="mb-2.5 t-cap" style={{ color: INK }}>
-        Build this {openingW} × {openingH} mm opening as joined units.
+        Build this {openingH} × {openingW} mm opening as joined units.
         Each unit keeps the opening's spec — change any of them afterwards.
       </p>
       <div className="flex flex-wrap items-end gap-4 mb-2.5">

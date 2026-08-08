@@ -223,7 +223,7 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit }: {
   return (
     <>
       <div className="hidden md:grid grid-cols-[118px_1fr_110px_44px_104px_116px] gap-3.5 px-5 py-[11px] bg-sage/[0.07] border-b border-black/10 text-body font-data t-label" aria-hidden="true">
-        <span>Code / room</span><span>Product</span><span>Size (W×H)</span><span>Qty</span>
+        <span>Code / room</span><span>Product</span><span>Size (H×W)</span><span>Qty</span>
         <span className="text-right">{showUnit ? "Unit price" : "Line price"}</span>
         <span className="text-right">{showUnit ? "Line total" : "Status"}</span>
       </div>

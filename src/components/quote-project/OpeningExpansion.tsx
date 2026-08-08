@@ -161,7 +161,7 @@ export function CoverageNotice({ item, state }: { item: QItem; state: RowState }
             hunting; "160 mm short" tells them which unit to look at. */}
         The units add up to {Math.abs(state.deltaMm)} mm
         {state.deltaMm > 0 ? " more" : " less"} than this opening
-        {" "}({mm(item.width)} × {mm(item.height)}). Check each unit's size.
+        {" "}({mm(item.height)} × {mm(item.width)}). Check each unit's size.
       </p>
     </div>
   );

@@ -237,7 +237,7 @@ const contextConflict = (
 };
 
 const sizeLabel = (widthMm: number | null, heightMm: number | null) =>
-  widthMm != null && heightMm != null ? `${widthMm} × ${heightMm} mm` : "the stated size";
+  widthMm != null && heightMm != null ? `${heightMm} × ${widthMm} mm` : "the stated size";
 
 function inferCompositeAuthority(rows: EnergyConstraint[]): EnergyOpeningAuthority | null {
   if (rows.length < 2 || rows.some((row) => row.widthMm == null || row.heightMm == null)) return null;
@@ -421,7 +421,7 @@ export function mapEnergyToOpenings(extraction: EnergyExtraction, openings: Open
         }));
         components.set(o.externalRef, exactComponents);
         const componentLabel = exactComponents
-          .map((component) => `${component.ref} ${component.operationType ?? "unit"} ${component.widthMm} × ${component.heightMm} mm`)
+          .map((component) => `${component.ref} ${component.operationType ?? "unit"} ${component.heightMm} × ${component.widthMm} mm`)
           .join(" + ");
         reviewWarnings.push(`${o.externalRef}: the energy report defines ${exactComponents.length} components (${componentLabel}); human review is required.`);
         const discrepancy = dimensionsConflict(o, authority.widthMm, authority.heightMm);

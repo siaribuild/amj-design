@@ -104,8 +104,9 @@ test("the compact row renders identity, size, price and its direct actions", asy
   // the model is one opening per reference, so a "×1" on every line is a column
   // of noise. It had a column of its own from 1024 up and rode in the size cell
   // below that — two homes for a figure that now has none.
-  // One trailing unit: "1,200 × 900 mm", not "1,200 mm × 900 mm" (owner).
-  await expect(page.locator(".quote-row").getByText("1,200 × 900 mm", { exact: true })).toBeVisible();
+  // HEIGHT FIRST (trade convention), and one trailing unit: "900 × 1,200 mm",
+  // not "900 mm × 1,200 mm" (owner).
+  await expect(page.locator(".quote-row").getByText("900 × 1,200 mm", { exact: true })).toBeVisible();
   await expect(page.locator(".quote-row").getByText(/×\s*2/)).toHaveCount(0);
   // Scoped to the row: the line now shows the number ALONE, so an unscoped
   // "$800" also matches the summary bar's identical total.
@@ -739,7 +740,7 @@ test("the row's type hierarchy is carried by weight, not size", async ({ page })
 
   // ONE trailing unit, not two. Saying "mm" on both figures is what made the
   // column wrap at 12px, and it is what paid for the larger type.
-  await expect(row.getByText("1,200 × 900 mm", { exact: true })).toBeVisible();
+  await expect(row.getByText("900 × 1,200 mm", { exact: true })).toBeVisible();
   await expect(row.getByText(/mm ×/)).toHaveCount(0);
 });
 

@@ -352,7 +352,7 @@ function RateCardDetail({ id, onBack }: { id: string; onBack: () => void }) {
             {preview.map((p) => (
               <div key={p.sample.key} className="flex items-center justify-between px-3 py-1.5 border-b border-black/5 last:border-0 t-cap">
                 <span style={{ color: MUTED }}>{p.sample.key}</span>
-                <span style={{ ...MONO, color: MUTED }}>{p.sample.widthMm} × {p.sample.heightMm}</span>
+                <span style={{ ...MONO, color: MUTED }}>{p.sample.heightMm} × {p.sample.widthMm}</span>
                 <span style={{ ...MONO, color: INK }}>{money0(p.snapshot.total)}</span>
               </div>
             ))}
@@ -419,7 +419,7 @@ function WorkedExample({ priced }: { priced: OpsPricedSample | undefined }) {
   return (
     <div className="card p-3">
       <p className="mb-2 t-cap" style={{ color: MUTED }}>
-        {priced.sample.widthMm} × {priced.sample.heightMm} mm · qty {priced.sample.qty}
+        {priced.sample.heightMm} × {priced.sample.widthMm} mm · qty {priced.sample.qty}
       </p>
       {steps.map((s, i) => (
         <div key={`${s.key}-${i}`} className="flex items-baseline justify-between py-0.5 t-cap"
@@ -604,7 +604,7 @@ function ConfirmDialog({ family, before, after, baseline, preview, exposure, onC
             {rows.map((r) => (
               <tr key={r.key}>
                 <td className="py-0.5" style={{ color: MUTED }}>
-                  {r.key} <span className="font-data t-data-sm">{r.sample.widthMm}×{r.sample.heightMm}</span>
+                  {r.key} <span className="font-data t-data-sm">{r.sample.heightMm}×{r.sample.widthMm}</span>
                 </td>
                 <td className="text-right py-0.5" style={{ ...MONO, color: MUTED }}>{r.now == null ? "—" : money0(r.now)}</td>
                 <td className="text-right py-0.5" style={{ ...MONO, color: INK }}>{money0(r.next)}</td>

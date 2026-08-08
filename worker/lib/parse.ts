@@ -268,7 +268,7 @@ export async function runScheduleParse(
     try { oldDims = JSON.parse(old.dims_json || "{}"); } catch { /* unreadable ⇒ no dim diff */ }
     const dim = (v: unknown) => String(v ?? "").trim();
     if (!locked.includes("dims_json") && (dim(oldDims.width) !== dim(l.width) || dim(oldDims.height) !== dim(l.height))) {
-      changes.push({ tag, field: "size", from: `${dim(oldDims.width) || "?"}×${dim(oldDims.height) || "?"}mm`, to: `${dim(l.width) || "?"}×${dim(l.height) || "?"}mm` });
+      changes.push({ tag, field: "size", from: `${dim(oldDims.height) || "?"}×${dim(oldDims.width) || "?"}mm`, to: `${dim(l.height) || "?"}×${dim(l.width) || "?"}mm` });
     }
     if (!locked.includes("qty") && (old.qty ?? 1) !== l.qty) {
       changes.push({ tag, field: "qty", from: String(old.qty ?? 1), to: String(l.qty) });

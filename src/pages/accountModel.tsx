@@ -180,7 +180,9 @@ export function parseLine(l: ApiOrderLine): ParsedLine {
   };
 }
 
-export const dimsLabel = (l: ParsedLine) => (l.width && l.height ? `${Number(l.width).toLocaleString("en-AU")} × ${Number(l.height).toLocaleString("en-AU")}` : "—");
+/** HEIGHT FIRST, the joinery trade's order — see sizePhrase in configurator.ts.
+ *  The stored fields keep their own names; only the rendering is reversed. */
+export const dimsLabel = (l: ParsedLine) => (l.width && l.height ? `${Number(l.height).toLocaleString("en-AU")} × ${Number(l.width).toLocaleString("en-AU")}` : "—");
 
 // ── Account-wide data (one fetch per shell mount) ─────────────────────────────
 export interface AccountData {

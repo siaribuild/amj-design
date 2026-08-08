@@ -180,7 +180,7 @@ export function matchSchedule(rows: RawScheduleRow[]): ParsedLine[] {
         // and WARN that we will design the composite/custom unit and confirm the
         // final price. Not customer-fixable (they can't resize the building), so
         // it never blocks submission.
-        review.fit = `Indicative price only — no standard ${r.section} is manufactured at ${w}×${h} mm ` +
+        review.fit = `Indicative price only — no standard ${r.section} is manufactured at ${h}×${w} mm ` +
           `(${product.name} covers ${product.minWidth ?? "?"}–${product.maxWidth ?? "?"} W, ${product.minHeight ?? "?"}–${product.maxHeight ?? "?"} H mm). ` +
           `we will design a composite or custom unit and confirm the price at technical review.`;
       }

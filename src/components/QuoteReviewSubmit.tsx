@@ -102,7 +102,7 @@ export function QuoteReviewSubmit({
           <div className="space-y-2 mb-3">
             {quote.items.map((it, i) => (
               <div key={it.id} className="flex justify-between gap-3 border-b border-black/6 last:border-0 py-1.5 t-bd-sm">
-                <span className="text-ink min-w-0 truncate">{String(i + 1).padStart(2, "0")} · {productLabel(it.productSlug)} — {mm(it.width)} × {mm(it.height)} ×{it.qty}</span>
+                <span className="text-ink min-w-0 truncate">{String(i + 1).padStart(2, "0")} · {productLabel(it.productSlug)} — {mm(it.height)} × {mm(it.width)} ×{it.qty}</span>
                 <span className="text-body flex-shrink-0 font-data">
                   {it.review?.customerConfigurationChanged && (typeof it.lineTotal !== "number" || !Number.isFinite(it.lineTotal))
                     ? "Pending final price"

@@ -246,7 +246,7 @@ export function OpeningDrawer({ target, item, quote, initialSection, onClose, on
                       </span>
                       <span className="text-ink min-w-0 truncate">{productLabel(s.productSlug)}</span>
                       <span className="text-body tabular-nums font-data">
-                        {mm(s.width)} × {mm(s.height)}
+                        {mm(s.height)} × {mm(s.width)}
                       </span>
                       <span className="ml-auto flex items-center gap-2">
                         <button type="button" disabled={busy}

@@ -521,9 +521,15 @@ export const mm = (v: string | number) => {
   const n = typeof v === "string" ? parseInt(v) : v;
   return n ? `${n.toLocaleString("en-AU")} mm` : "—";
 };
-/** An opening's size as ONE phrase: "1,200 × 900 mm".
+/** An opening's size as ONE phrase, HEIGHT FIRST: "900 × 1,200 mm" for a 1200
+ *  wide by 900 high opening.
  *
- *  Not mm(w) + " × " + mm(h), which says the unit twice — 38 redundant glyphs in
+ *  Height × width is the joinery trade's universal order, and a schedule read
+ *  the wrong way round is a window built the wrong way round. The ARGUMENTS stay
+ *  (width, height) — that is the order every caller already holds and the order
+ *  the data is stored in; only the rendering is reversed, here and once.
+ *
+ *  Not mm(h) + " × " + mm(w), which says the unit twice — 38 redundant glyphs in
  *  a 19-row list, and the reason the size column was already wrapping at 12px on
  *  4-digit openings. One trailing unit costs about the same width at 14px as two
  *  did at 12px, which is what pays for the larger type.
@@ -534,7 +540,7 @@ export const sizePhrase = (w: string | number, h: string | number) => {
   const n = (v: string | number) => (typeof v === "string" ? parseInt(v) : v) || 0;
   const a = n(w), b = n(h);
   const fmtOne = (v: number) => (v ? v.toLocaleString("en-AU") : "—");
-  return a && b ? `${fmtOne(a)} × ${fmtOne(b)} mm` : `${fmtOne(a)} × ${fmtOne(b)}`;
+  return a && b ? `${fmtOne(b)} × ${fmtOne(a)} mm` : `${fmtOne(b)} × ${fmtOne(a)}`;
 };
 
 export const productLabel = (slug: string) => getProductBySlug(slug)?.name ?? "Product";

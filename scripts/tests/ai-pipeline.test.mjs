@@ -467,7 +467,7 @@ test("energy map: child components retain report types/performance but architect
   assert.deepEqual(r.conflicts[0].selectedValue, { widthMm: 2410, heightMm: 1800 }, "architectural dimensions win");
   assert.match(r.reviewWarnings.join(" "), /W04.*architectural dimensions retained/i);
   assert.deepEqual(r.conflictWarnings, [
-    "W04: energy report components total 3200 × 2100 mm, while the architectural plan/schedule says 2410 × 1800 mm. Architectural dimensions selected: 2410 × 1800 mm; energy-report component types and performance retained.",
+    "W04: energy report components total 2100 × 3200 mm, while the architectural plan/schedule says 1800 × 2410 mm. Architectural dimensions selected: 1800 × 2410 mm; energy-report component types and performance retained.",
   ], "only the genuine cross-document disagreement belongs in the top warning");
   assert.doesNotMatch(r.conflictWarnings.join(" "), /defines 3 components/i);
   assert.equal(r.unmatched.length, 0, "child refs that matched a parent are not 'unmatched'");
@@ -497,7 +497,7 @@ test("energy map: incomplete D1 component set retains schedule size and names th
   assert.equal(r.conflicts[0].resolution, "retain_parent_and_flag_incomplete_component");
   assert.deepEqual(r.conflicts[0].selectedValue, { widthMm: 1380, heightMm: 2405 });
   assert.deepEqual(r.conflictWarnings, [
-    "D1: energy report says D1A is 1200 × 2405 mm, while the architectural schedule says D1 is 1380 × 2405 mm. Architectural schedule selected: 1380 × 2405 mm because the report component set is incomplete.",
+    "D1: energy report says D1A is 2405 × 1200 mm, while the architectural schedule says D1 is 2405 × 1380 mm. Architectural schedule selected: 2405 × 1380 mm because the report component set is incomplete.",
   ]);
 });
 

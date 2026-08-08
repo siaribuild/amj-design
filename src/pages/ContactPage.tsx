@@ -295,7 +295,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
                 <aside className="border border-black/10 ground-bone p-[18px]">
                   <h4 className="text-sage mb-3 font-data t-label">Helps us answer fast</h4>
                   <ul className="space-y-2.5">
-                    {["Rough width × height for each opening", "Product type — sliding, awning, fixed, door", "Your quote reference, if you have one"].map(t => (
+                    {["Rough height × width for each opening", "Product type — sliding, awning, fixed, door", "Your quote reference, if you have one"].map(t => (
                       <li key={t} className="flex gap-2.5 text-body t-cap"><Check className="w-[15px] h-[15px] text-sage flex-shrink-0 mt-0.5" />{t}</li>
                     ))}
                   </ul>

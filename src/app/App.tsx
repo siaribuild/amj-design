@@ -863,7 +863,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
                           {product?.name ?? l.rawType ?? "Needs a product"}
                         </span>
                         <span className="block text-quiet font-data t-data-sm">
-                          {l.width} × {l.height}
+                          {l.height} × {l.width}
                         </span>
                       </span>
                       {/* Never colour alone: the word carries the state. amber-800
@@ -1596,7 +1596,7 @@ function ApprovedQuotePage() {
           <table className="w-full t-bd-sm"><thead><tr className="border-b border-black/8 text-body t-label">
             {["Description","Dims","Qty","Total"].map(h => <th key={h} className="text-left py-2 pr-4 font-semibold">{h}</th>)}
           </tr></thead><tbody>
-            {[["Alum. Sliding Door — Satin Black / DG LowE","3000×2100mm","2","[total]"],["Alum. Awning Window — Woodland Grey / DG","1200×900mm","4","[total]"],["Delivery — Preston VIC","—","1","[price]"]].map(r => (
+            {[["Alum. Sliding Door — Satin Black / DG LowE","2100×3000mm","2","[total]"],["Alum. Awning Window — Woodland Grey / DG","900×1200mm","4","[total]"],["Delivery — Preston VIC","—","1","[price]"]].map(r => (
               <tr key={r[0]} className="border-b border-black/6">{r.map((c,i) => <td key={i} className="py-3 pr-4">{c}</td>)}</tr>
             ))}
           </tbody></table>
@@ -1745,7 +1745,7 @@ function AdminPage() {
             </div>
             <div className="mb-4">
               <div className="flex items-center gap-1.5 mb-2"><Bot className="w-3.5 h-3.5 text-sage" /><span className="text-white/35 t-label">AI extracted · indicative only</span></div>
-              {[["Alum. Sliding Door","3000×2100mm",2,92],["Awning Window","1200×900mm",4,78],["Sliding Window","?×1050mm",3,38]].map(([t,d,qty,conf],i) => (
+              {[["Alum. Sliding Door","2100×3000mm",2,92],["Awning Window","900×1200mm",4,78],["Sliding Window","1050×?mm",3,38]].map(([t,d,qty,conf],i) => (
                 <div key={i} className="flex items-center justify-between py-1.5 border-b border-white/6 last:border-0 t-bd-sm">
                   <span className="text-white/75">{t as string} — {d as string} ×{qty as number}</span>
                   <div className="flex items-center gap-2">

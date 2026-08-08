@@ -138,13 +138,19 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
             size="sm" className="w-[180px] h-[180px] max-w-full text-body" />
         </div>
         <div className="flex-1 space-y-3">
-          <div>
-            <FieldLabel>Width — horizontal (mm)</FieldLabel>
-            <Input type="number" inputMode="numeric" value={width} onChange={e => setWidth(e.target.value)} placeholder="e.g. 1810" disabled={lockedDimension === "width"} />
-          </div>
+          {/* HEIGHT FIRST, matching every size this app now prints and the order
+              a schedule states one in. Reading H×W everywhere and typing W first
+              is how a 1210×1810 opening gets entered as 1810×1210 — the exact
+              transposition the trade convention exists to prevent. Each input
+              still holds its own state and posts its own field; only the visual
+              order moved. */}
           <div>
             <FieldLabel>Height — vertical (mm)</FieldLabel>
             <Input type="number" inputMode="numeric" value={height} onChange={e => setHeight(e.target.value)} placeholder="e.g. 1210" disabled={lockedDimension === "height"} />
+          </div>
+          <div>
+            <FieldLabel>Width — horizontal (mm)</FieldLabel>
+            <Input type="number" inputMode="numeric" value={width} onChange={e => setWidth(e.target.value)} placeholder="e.g. 1810" disabled={lockedDimension === "width"} />
           </div>
           {/* "You have entered: 1810 wide × 1210 high" is gone (owner). The
               drawing directly above now carries both figures as dimension
@@ -152,12 +158,12 @@ function DimensionsFields({ p, width, height, setWidth, setHeight, rail = false,
               line restated, in words, two numbers already shown twice: once in
               the fields being typed into and once on the elevation. */}
           {!dimsEntered && p && (
-            <p className="text-body t-cap">Fits {mm(p.minWidth ?? 0)}–{mm(p.maxWidth ?? 0)} wide, {mm(p.minHeight ?? 0)}–{mm(p.maxHeight ?? 0)} high.</p>
+            <p className="text-body t-cap">Fits {mm(p.minHeight ?? 0)}–{mm(p.maxHeight ?? 0)} high, {mm(p.minWidth ?? 0)}–{mm(p.maxWidth ?? 0)} wide.</p>
           )}
           {tooSmall && p && (
             <div className="quote-notice--danger flex items-start gap-2 border border-destructive/35 px-3 py-2 t-cap">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-destructive" />
-              <span>{p.name} starts at {mm(p.minWidth ?? 0)} wide and {mm(p.minHeight ?? 0)} high. Check the measurement.</span>
+              <span>{p.name} starts at {mm(p.minHeight ?? 0)} high and {mm(p.minWidth ?? 0)} wide. Check the measurement.</span>
             </div>
           )}
           {/* The oversize notice is GONE (owner). It explained our manufacturing
@@ -770,7 +776,7 @@ export function ItemForm({
       }))
       .filter((g) => g.families.length > 0)
     : famGroups;
-  const dimsSummary = (dimsEntered ? `${mm(width)} × ${mm(height)}` : "Enter the opening size")
+  const dimsSummary = (dimsEntered ? `${mm(height)} × ${mm(width)}` : "Enter the opening size")
     + (location ? ` · ${location}` : "");
 
   // Dismissing the draft: silent for an empty/product-only form, but a real
@@ -1125,7 +1131,7 @@ export function ItemSummaryCard({
   const toggle = (s: EditFocus) => setOpen(o => (o === s ? null : s));
   const update = (patch: Partial<QItem>) => quote.update(item.id, patch);
 
-  const dimsSummary = w && h ? `${mm(item.width)} × ${mm(item.height)}` : "Enter the opening size";
+  const dimsSummary = w && h ? `${mm(item.height)} × ${mm(item.width)}` : "Enter the opening size";
   const qtySummary = `Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
   const summaryLine = `${dimsSummary} · Qty ×${item.qty}${item.location ? ` · ${item.location}` : ""}`;
   const selectedOptionsSummary = optionSummaryOf(p, item.options);
@@ -1375,7 +1381,7 @@ export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState
         <div className="flex items-center justify-between px-3.5 py-2 border-b border-black/8">
           <span className="text-quiet font-data t-data-sm">Your opening</span>
           <span className="text-ink font-data t-data-sm">
-            {openingW && openingH ? `${openingW.toLocaleString("en-AU")} × ${openingH.toLocaleString("en-AU")} mm` : "—"}
+            {openingW && openingH ? `${openingH.toLocaleString("en-AU")} × ${openingW.toLocaleString("en-AU")} mm` : "—"}
           </span>
         </div>
         {segments.map((s, i) => (
@@ -1389,7 +1395,7 @@ export function CompositePanel({ item, quote }: { item: QItem; quote: QuoteState
               </span>
               <span className="flex items-center gap-3 flex-shrink-0">
                 <span className="text-body font-data t-data-sm">
-                  {(parseInt(s.width) || 0).toLocaleString("en-AU")} × {(parseInt(s.height) || 0).toLocaleString("en-AU")}
+                  {(parseInt(s.height) || 0).toLocaleString("en-AU")} × {(parseInt(s.width) || 0).toLocaleString("en-AU")}
                 </span>
                 <span className="text-quiet font-data t-data-sm">included</span>
                 <button type="button" disabled={busy} onClick={() => setEditingUnit(editingUnit === s.id ? null : s.id)}
