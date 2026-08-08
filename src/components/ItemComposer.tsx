@@ -744,8 +744,32 @@ export function ItemForm({
     .map((slug) => getProductBySlug(slug)?.frameSystem ?? null);
   const incompatible = (pr: Product) => siblingSystems.length > 0 && !fitsAlongside(pr.frameSystem ?? null, siblingSystems);
   const allProducts = familySlug ? getProductsByFamily(familySlug) : [];
-  const familyProducts = compatibility?.enforce ? allProducts.filter((pr) => !incompatible(pr)) : allProducts;
+  // The unit's OWN product survives the filter even when it is the incompatible
+  // one. A composite built before the frames were tagged — or by staff, who may
+  // couple deliberately — can hold a product this list would otherwise drop, and
+  // dropping it leaves the select with no matching option: it renders blank, and
+  // the customer is told to choose a product while looking at the one they have.
+  // It is kept and MARKED, which is the same sentence the server would use.
+  const familyProducts = compatibility?.enforce
+    ? allProducts.filter((pr) => !incompatible(pr) || pr.slug === productSlug)
+    : allProducts;
   const excludedCount = allProducts.length - familyProducts.length;
+  // …and the PRODUCT TYPE list is filtered to match, which is what stops the
+  // product list emptying at all. Choosing a type is what blanks the product
+  // (pickFamily), so the "keep the unit's own product" escape above cannot save
+  // a type whose every product is a different platform: the customer landed on
+  // an empty select under a caption promising the frames that fit. A type with
+  // nothing to offer is not offered. The CURRENT type always survives, for the
+  // same reason the current product does.
+  const typeGroups = compatibility?.enforce
+    ? famGroups
+      .map((g) => ({
+        ...g,
+        families: g.families.filter((f) =>
+          f.slug === familySlug || getProductsByFamily(f.slug).some((pr) => !incompatible(pr))),
+      }))
+      .filter((g) => g.families.length > 0)
+    : famGroups;
   const dimsSummary = (dimsEntered ? `${mm(width)} × ${mm(height)}` : "Enter the opening size")
     + (location ? ` · ${location}` : "");
 
@@ -856,7 +880,7 @@ export function ItemForm({
                   <div className="relative">
                     <select value={familySlug} onChange={e => pickFamily(e.target.value)} className={selectClass}>
                       <option value="">Choose a type…</option>
-                      {famGroups.map(g => <optgroup key={g.category} label={g.category}>{g.families.map(f => <option key={f.slug} value={f.slug}>{f.name}</option>)}</optgroup>)}
+                      {typeGroups.map(g => <optgroup key={g.category} label={g.category}>{g.families.map(f => <option key={f.slug} value={f.slug}>{f.name}</option>)}</optgroup>)}
                     </select>
                     <ChevronDown className="w-4 h-4 text-body absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
@@ -876,10 +900,18 @@ export function ItemForm({
                   </div>
                   {/* Say WHY the list is short. A picker that silently drops half
                       its options reads as a catalogue that has run out. */}
-                  {excludedCount > 0 && (
+                  {excludedCount > 0 && familyProducts.length > 0 && (
                     <p className="text-quiet mt-1 t-cap">
                       Showing the frames that join the other units of this opening
                       {excludedCount === 1 ? "; one more is a different frame system" : `; ${excludedCount} more are a different frame system`}.
+                    </p>
+                  )}
+                  {/* The type list is filtered too, so this should be
+                      unreachable — but an empty select under a caption about
+                      "the frames that fit" is the exact lie worth a floor. */}
+                  {familySlug && familyProducts.length === 0 && (
+                    <p className="text-attention-ink mt-1 t-cap">
+                      No frame of this type joins the other units of this opening — choose a different product type.
                     </p>
                   )}
                 </div>

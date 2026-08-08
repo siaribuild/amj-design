@@ -53,7 +53,7 @@ import type { CatalogueCandidate, OpeningInput } from "./types";
 import { selectForOpening, type PriceFn, type SelectionResult } from "./select";
 import type { HistoricalModel } from "./learning";
 import type { ScoreComponents } from "./rank";
-import { coveringSystems, partnersOf, systemOf } from "./compatibility";
+import { coveringSystems, isBuildableTogether, partnersOf, systemOf } from "./compatibility";
 import { area, commercialScores, glassOf, scoreComposite, type ScoredUnit } from "./compositeRank";
 import type { FilterOutcome } from "./rules";
 
@@ -96,11 +96,17 @@ export interface CompositeSelectionResult {
   note: string | null;
 }
 
-/** How many covering systems are actually tried. They arrive best-first (exact
- *  make-ups, then by how much of the opening the system covers itself), so this
- *  is a bound on work rather than a filter on quality — and four is already more
- *  platforms than any one opening has ever had available to it. */
-const MAX_SYSTEMS = 4;
+/** How many covering systems are actually tried.
+ *
+ *  Set ABOVE the number of systems the catalogue has (six), because the
+ *  best-first ordering it relies on does not survive a tie. On an all-fixed
+ *  composite every fixed-lite system covers the opening exactly and with the
+ *  same own-segment count, so the sort collapses to its last tiebreak — the
+ *  slug, which exists only to make runs reproducible — and a cap of four
+ *  silently and permanently excluded sys-80, the largest platform in the
+ *  catalogue, because "8" sorts after "1", "6" and "7". A bound has to be a
+ *  bound on runaway work, not a lexical filter on which frames get a hearing. */
+const MAX_SYSTEMS = 12;
 /** Distinct glasses trialled across the units. Pass one produces at most one per
  *  unit, and a composite is capped at a handful of units. */
 const MAX_GLASS_TRIALS = 3;
@@ -178,10 +184,19 @@ export async function selectForComposite(
     // nothing to unify.
     if (trials.length < 2) { makeUps.push(first); continue; }
 
+    let anyTrial = false;
     for (const glass of trials) {
       const trial = await selectAll(system, partners, glass, segments, primary, alternate, repo, priceFn, historical, first);
-      if (trial) makeUps.push(trial);
+      if (trial) { makeUps.push(trial); anyTrial = true; }
     }
+    // Every unification failed — no glass this system offers can be carried
+    // across all its units at a price. The unpinned make-up is then the best
+    // thing available and it is still SINGLE-SYSTEM, which is what this whole
+    // function is for. Discarding it dropped the opening to the mixed-systems
+    // fallback and told the reviewer the units may not couple, which was false:
+    // they came from one platform and only the glass disagreed. The glass
+    // disagreement is reported instead (glazingSlugs, below).
+    if (!anyTrial) makeUps.push(first);
   }
 
   if (!makeUps.length) {
@@ -201,8 +216,14 @@ export async function selectForComposite(
   });
   const chosen = best!;
 
+  // Only the units that were ASKED to share a glass. A unit whose band an
+  // engineer stated is deliberately left out of unification, so counting its
+  // glass here reported "no single glazing is offered by every frame" on every
+  // opening with a per-component energy report — the one case where differing
+  // glass is the correct, instructed answer.
+  const unified = chosen.makeUp.units.filter((u) => !segments[u.index]?.ownBand);
   const glazingSlugs = [...new Set(
-    chosen.makeUp.units.map((u) => glassOf(u.result.selected?.selectedVariant ?? null)).filter((g): g is string => !!g),
+    unified.map((u) => glassOf(u.result.selected?.selectedVariant ?? null)).filter((g): g is string => !!g),
   )];
   const crossed = chosen.makeUp.units.filter((u) => u.crossedToCategory);
   const notes: string[] = [];
@@ -298,6 +319,17 @@ async function selectAll(
 
     const selected = result.selected;
     if (!selected) return null;
+    // EVERY PAIR, not just each unit against the system it was drawn from.
+    //
+    // A system may reach a unit through a declared partner, and two DIFFERENT
+    // partners of the same hub need not be compatible with each other: sys-125
+    // naming both sys-100 and sys-150 says nothing about sys-100 beside sys-150.
+    // Checking only hub-to-supplier let exactly that make-up through, and it was
+    // reported as a clean single-system one. Compatibility is a property of the
+    // joints, so it is verified across the joints.
+    for (const built of units) {
+      if (!isBuildableTogether(built.result.selected?.candidate, selected.candidate)) return null;
+    }
     units.push({ index: i, result, crossedToCategory });
     scored.push({
       opening: seg.opening, candidate: selected.candidate, variant: selected.selectedVariant,

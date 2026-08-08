@@ -155,7 +155,11 @@ async function main() {
     for (const c of changes) {
       tx = tx.patch(c.id, (p) => p.set({ frameSystem: { _type: "reference", _ref: docId(c.system) } }));
     }
-    await tx.commit({ visibility: "async" });
+    // SYNC, because the audit below reads back the very field this writes. With
+    // async visibility the query can be served from an index that has not seen
+    // the patches yet, and the run reports every system as having no fixed lite
+    // — a false alarm on the one output an operator is meant to act on.
+    await tx.commit({ visibility: "sync" });
   }
 
   // 3. THE AUDIT — this script's second job, and the reason to keep running it.

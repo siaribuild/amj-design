@@ -27,12 +27,13 @@ await build({
       export { selectForComposite } from ${p("worker/lib/estimator/compositeSelect.ts")};
       export { selectForOpening } from ${p("worker/lib/estimator/select.ts")};
       export { technologyAgreement, compositeCompliance } from ${p("worker/lib/estimator/compositeRank.ts")};
+      export { alternateCategoryFor } from ${p("worker/lib/estimator/estimate.ts")};
     `,
     resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { selectForComposite, selectForOpening, technologyAgreement, compositeCompliance } =
+const { selectForComposite, selectForOpening, technologyAgreement, compositeCompliance, alternateCategoryFor } =
   await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 test.after(async () => { if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir); });
 
@@ -80,7 +81,10 @@ const unit = (operation, widthMm, over = {}) => {
   const { opening: openingOver, ...rest } = over;
   return {
     opening: { family: "windows", operationType: operation, widthMm, heightMm: 2100, qty: 1, ...(openingOver ?? {}) },
-    primaryCategory: "windows", alternateCategory: "doors",
+    // Exactly what materialiseSplits supplies for a window opening — null, not
+    // "doors". The fixture mirrors the production wiring rather than inventing a
+    // looser one, because that is what the regressions below turn on.
+    primaryCategory: "windows", alternateCategory: alternateCategoryFor("windows"),
     widthMm, heightMm: 2100, ownBand: false, ...rest,
   };
 };
@@ -261,7 +265,11 @@ test("a report's per-unit band outranks the one-glass preference", async () => {
   const glasses = r.units.map((u) => u.result.selected.selectedVariant.variantId);
   assert.equal(glasses[0], "lowe", "the awning meets the band an engineer set for it");
   assert.equal(glasses[2], "lowe");
-  assert.ok(r.glazingSlugs.length >= 1, "unification is not forced over a stated band");
+  // glazingSlugs reports only the units ASKED to share a glass. Every unit here
+  // carries a stated band, so none was, and there is nothing to report — the
+  // absence is the point, not an omission.
+  assert.deepEqual(r.glazingSlugs, [], "unification is not forced over a stated band");
+  assert.ok(!r.note?.includes("same glass"));
 });
 
 test("a make-up whose frames share no glass is built anyway, and reported", async () => {
@@ -288,7 +296,7 @@ test("a DOOR composite takes a fixed WINDOW lite from its own system — the bug
   ];
   const doorUnit = (operation, widthMm) => ({
     opening: { family: "doors", operationType: operation, widthMm, heightMm: 2400, qty: 1 },
-    primaryCategory: "doors", alternateCategory: "windows",
+    primaryCategory: "doors", alternateCategory: alternateCategoryFor("doors"),
     widthMm, heightMm: 2400, ownBand: false,
   });
   const r = await selectForComposite(
@@ -316,6 +324,155 @@ test("a WINDOW composite never pulls in a door", async () => {
   // The door is cheaper by 9×, and it is still not a window.
   assert.deepEqual(slugsOf(r), ["sys80-slide-window", "sys80-slide-window"]);
   assert.ok(r.units.every((u) => u.crossedToCategory === null));
+});
+
+// REGRESSION. The crossing shipped SYMMETRIC and this is what it did: exactly
+// one product in the live catalogue is a sliding WINDOW, so every door system
+// reported exact coverage of a sliding-window opening, out-scored it on thermal
+// (a thermally-broken door meets a band a conventional window misses), and the
+// line was built as two sliding DOORS on the door rate card. The test above did
+// not catch it because ITS sys-80 also makes a sliding window, so "own first"
+// kept the unit at home. Here no system makes one.
+test("REGRESSION: no window opening is ever built from doors, however much better they score", async () => {
+  // The rule lives in the derivation, because the selector honestly crosses in
+  // whichever direction it is handed. Guard the derivation first.
+  assert.equal(alternateCategoryFor("windows"), null, "a window opening may not reach into doors");
+  assert.equal(alternateCategoryFor("doors"), "windows", "a door opening may reach a window lite");
+  assert.equal(alternateCategoryFor(null), null);
+
+  const LOWE = glass("lowe", 1.4, 0.42);
+  const products = [
+    // The only sliding window: conventional, single-glazed, cheap.
+    product("sys80-slide-window", { system: "sys-80", operation: "sliding", category: "windows", glasses: [SG] }),
+    // Every sliding DOOR: thermally broken, meets the band, and dearer.
+    product("sys100-slide-door", { system: "sys-100", operation: "sliding", category: "doors", glasses: [LOWE] }),
+    product("sys150-slide-door", { system: "sys-150", operation: "sliding", category: "doors", glasses: [LOWE] }),
+  ];
+  const priceFn = makePrice({ "sys80-slide-window": 400, "sys100-slide-door": 2500, "sys150-slide-door": 2500 });
+  const band = { requirements: { maxUValue: 2.7 } };
+  const r = await selectForComposite(
+    { family: "windows", operationType: "sliding", widthMm: 3600, heightMm: 2100, ...band },
+    [unit("sliding", 1800, { opening: band }), unit("sliding", 1800, { opening: band })],
+    makeRepo(products), priceFn,
+  );
+  assert.deepEqual(slugsOf(r), ["sys80-slide-window", "sys80-slide-window"]);
+  assert.ok(r.units.every((u) => u.crossedToCategory === null), "no unit crossed into doors");
+});
+
+test("a door composite still crosses to a window lite — the one direction that is allowed", async () => {
+  const products = [
+    product("sys80-slider", { system: "sys-80", operation: "sliding", category: "doors" }),
+    product("sys80-fixed", { system: "sys-80", operation: "fixed", category: "windows" }),
+  ];
+  const doorUnit = (operation, widthMm) => ({
+    opening: { family: "doors", operationType: operation, widthMm, heightMm: 2400, qty: 1 },
+    // As estimate.ts supplies it: doors may cross, windows may not.
+    primaryCategory: "doors", alternateCategory: alternateCategoryFor("doors"),
+    widthMm, heightMm: 2400, ownBand: false,
+  });
+  const r = await selectForComposite(
+    { family: "doors", operationType: "sliding", widthMm: 4000, heightMm: 2400 },
+    [doorUnit("sliding", 2000), doorUnit("fixed", 2000)],
+    makeRepo(products), makePrice({}),
+  );
+  assert.deepEqual(slugsOf(r), ["sys80-slider", "sys80-fixed"]);
+  assert.equal(r.units[1].crossedToCategory, "windows");
+});
+
+// REGRESSION. sourceFor handed the WHOLE partner set to every unit, and
+// coveringSystems only ever tested hub-to-supplier. So a hub naming two
+// partners let those two partners — which say nothing about each other — land
+// in one opening, reported as a clean single-system make-up.
+test("REGRESSION: two partners of one hub cannot meet in an opening unless they name each other", async () => {
+  const withEdges = (slug, opts, edges) => {
+    const prod = product(slug, opts);
+    prod.frameSystem.compatibleWith = edges;
+    return prod;
+  };
+  const hubEdges = [{ slug: "sys-100", severity: "allowed" }, { slug: "sys-150", severity: "allowed" }];
+  const products = [
+    // The hub makes nothing this opening needs; both its partners do.
+    withEdges("sys125-slider", { system: "sys-125", operation: "sliding" }, hubEdges),
+    product("sys100-awning", { system: "sys-100", operation: "awning" }),
+    product("sys150-fixed", { system: "sys-150", operation: "fixed" }),
+  ];
+  const r = await selectForComposite(
+    { family: "windows", operationType: "awning", widthMm: 3200, heightMm: 2100 },
+    [unit("awning", 600), unit("fixed", 2000), unit("awning", 600)],
+    makeRepo(products), makePrice({}),
+  );
+  // sys-100 beside sys-150 is an unauthored pair; the make-up must not be built
+  // and must not be described as single-system.
+  assert.equal(r.system, null);
+  assert.equal(r.mixedSystems, true);
+  assert.ok(r.units.every((u) => u.result.selected), "still never an empty unit");
+});
+
+// REGRESSION. Five fixed-lite systems all cover an all-fixed opening exactly and
+// equally, so the sort fell through to its slug tiebreak — which exists only for
+// reproducibility — and a cap of four permanently excluded sys-80, the largest
+// platform in the catalogue, because "8" sorts after "1", "6" and "7".
+test("REGRESSION: a system is never dropped by the search bound for sorting late in the alphabet", async () => {
+  const lite = (slug, system) => product(slug, { system, operation: "fixed" });
+  const products = [
+    lite("sys65-fixed", "sys-65"), lite("sys72-fixed", "sys-72"), lite("sys80-fixed", "sys-80"),
+    lite("sys100-fixed", "sys-100"), lite("sys150-fixed", "sys-150"),
+  ];
+  // sys-80 is the cheapest, and it is the one the old cap discarded.
+  const priceFn = makePrice({
+    "sys80-fixed": 200, "sys65-fixed": 900, "sys72-fixed": 900, "sys100-fixed": 900, "sys150-fixed": 900,
+  });
+  const r = await selectForComposite(
+    { family: "windows", operationType: "fixed", widthMm: 4000, heightMm: 2100 },
+    [unit("fixed", 2000), unit("fixed", 2000)],
+    makeRepo(products), priceFn,
+  );
+  assert.equal(r.system, "sys-80");
+  assert.deepEqual(slugsOf(r), ["sys80-fixed", "sys80-fixed"]);
+});
+
+// REGRESSION. When no glass could be carried across every unit, the system's own
+// valid make-up was thrown away and the opening fell to the mixed-systems
+// fallback — telling the reviewer the units may not couple, which was false:
+// they came from one platform and only the glass disagreed.
+test("REGRESSION: a single-system make-up survives every glass trial failing", async () => {
+  const products = [
+    product("sys80-awning", { system: "sys-80", operation: "awning", glasses: [DG] }),
+    product("sys80-fixed", { system: "sys-80", operation: "fixed", glasses: [SG] }),
+  ];
+  // Each frame is rated for one glass and they are different, so no unification
+  // is possible — but the frames are still one system.
+  const r = await selectForComposite(
+    { family: "windows", operationType: "awning", widthMm: 3200, heightMm: 2100 },
+    [unit("awning", 600), unit("fixed", 2000)],
+    makeRepo(products), makePrice({}),
+  );
+  assert.equal(r.system, "sys-80", "one platform, reported as one platform");
+  assert.equal(r.mixedSystems, false);
+  assert.ok(!r.note?.includes("independently"), "the units DID couple; only the glass differs");
+  assert.ok(r.note?.includes("same glass"), "and the glass is what gets reported");
+});
+
+// REGRESSION. glazingSlugs counted units deliberately left out of unification,
+// so every opening carrying a per-component energy report was warned that no
+// single glazing fits — in the one case where differing glass is the instruction.
+test("REGRESSION: report-banded units do not trigger the one-glass warning", async () => {
+  const LOWE = glass("lowe", 1.2, 0.40);
+  const products = [
+    product("sys80-awning", { system: "sys-80", operation: "awning", glasses: [DG, SG, LOWE] }),
+    product("sys80-fixed", { system: "sys-80", operation: "fixed", glasses: [DG, SG, LOWE] }),
+  ];
+  const r = await selectForComposite(
+    { family: "windows", operationType: "awning", widthMm: 3200, heightMm: 2100 },
+    [
+      unit("awning", 600, { ownBand: true, opening: { requirements: { maxUValue: 1.3 } } }),
+      unit("fixed", 2000, { ownBand: true, opening: { requirements: { maxUValue: 5.5 } } }),
+    ],
+    makeRepo(products), makePrice({ "sys80-awning": 500, "sys80-fixed": 500 }),
+  );
+  const glasses = r.units.map((u) => u.result.selected.selectedVariant.variantId);
+  assert.notEqual(glasses[0], glasses[1], "the units genuinely carry different glass, as instructed");
+  assert.ok(!r.note?.includes("same glass"), `no false glazing warning, got: ${r.note}`);
 });
 
 // ── Frame technology: a preference, never a rule ─────────────────────────────

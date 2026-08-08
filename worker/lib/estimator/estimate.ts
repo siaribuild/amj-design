@@ -69,6 +69,27 @@ export async function bridgeParseLinesToOpenings(env: Env, projectId: string): P
   return stmts.length;
 }
 
+/** The other category a composite's unit may be sought in, or null for none.
+ *
+ *  ONE WAY ONLY: a door composite may take a fixed WINDOW lite, because
+ *  queryCandidates("doors","fixed") is empty and a door needing a lite otherwise
+ *  fell through to the parent's slug and priced a fixed panel as a whole sliding
+ *  door. A window composite may never take a door.
+ *
+ *  It shipped symmetric once and that was a hole rather than a generalisation.
+ *  `sliding` is claimed by sliding-window, sliding-door AND slim-frame-sliding-door
+ *  while exactly one product in the catalogue is a sliding window — so on a wide
+ *  sliding-window opening every door system reported EXACT coverage, out-scored
+ *  the window on thermal (a thermally-broken door meets a band a conventional
+ *  window misses), and the line was built as two sliding DOORS on the door rate
+ *  card. Nothing downstream would have caught it: splitLine checks that a product
+ *  slug exists, never that it belongs to the opening's category.
+ *
+ *  Exported for the test that guards it: the composite selector honestly crosses
+ *  in whichever direction it is handed, so THIS is where the rule lives. */
+export const alternateCategoryFor = (primaryCategory: string | null): string | null =>
+  (primaryCategory === "doors" ? "windows" : null);
+
 export interface OpeningRow {
   id: string; external_ref: string | null; family: string | null; operation_type: string | null;
   width_mm: number | null; height_mm: number | null; requirements_json: string | null;
@@ -358,8 +379,19 @@ async function materialiseSplits(env: Env, ctx: {
     // system — and it repairs a real fault: queryCandidates("doors","fixed") is
     // empty, so a door needing a lite used to fall through to the parent's slug
     // and price a fixed panel as a whole sliding door.
+    // ONE WAY ONLY. A door composite may take a fixed WINDOW lite; a window
+    // composite may never take a door.
+    //
+    // This was symmetric and that was a hole, not a generalisation. `sliding` is
+    // claimed by sliding-window, sliding-door AND slim-frame-sliding-door, and
+    // exactly one product in the whole catalogue is a sliding window — so on a
+    // wide sliding-window opening every door system reported EXACT coverage,
+    // scored higher (a thermally-broken door meets a band the conventional
+    // window misses), and the line was materialised as two sliding DOORS priced
+    // on the door rate card. Nothing downstream would have caught it: splitLine
+    // validates that a product slug exists, never that it is the right category.
     const primaryCategory = pl.opening.family ?? null;
-    const alternateCategory = primaryCategory === "doors" ? "windows" : primaryCategory === "windows" ? "doors" : null;
+    const alternateCategory = alternateCategoryFor(primaryCategory);
     const specs: SegmentSpec[] = [];
     const prepared = proposal.segments.map((seg) => {
       // Resolve the tradie term (e.g. "fixed") to a manufacturer operation via the
