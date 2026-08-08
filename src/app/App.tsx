@@ -106,12 +106,30 @@ const ACCOUNT_PAGES: Page[] = ["dashboard", "account", "help", "order"];
 const isAccountPage = (p: Page) => ACCOUNT_PAGES.includes(p);
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
-function Nav({ page, setPage, user, setUser }: {
+function Nav({ page, setPage, user, setUser, onSelectCategory }: {
   page: Page; setPage: (p: Page) => void;
   user: AuthUser | null; setUser: (u: AuthUser | null) => void;
+  /** Resets the catalogue so Products is a CLEAN entry — see `go` below. */
+  onSelectCategory: (c: CategorySlug) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const go = (p: Page) => { setPage(p); setOpen(false); window.scrollTo(0, 0); };
+  const go = (p: Page) => {
+    // PRODUCTS ALWAYS OPENS ON ITS DEFAULT TAB. The category and family are app
+    // state that outlives a visit to the page, so the main menu used to reopen
+    // the catalogue wherever it was last left — a visitor who once looked at
+    // Bi-Fold Doors met a doors-only, bi-fold-only catalogue every time
+    // afterwards, with no indication that anything had been narrowed for them.
+    // A top-level menu item is a way IN, not a way back; remembering what was
+    // filtered is work the reader should not have to do.
+    // The footer's Windows/Doors links reset in the same way, just to a stated
+    // tab, and the product-detail breadcrumb is deliberately NOT routed through
+    // here — going back to the family you came from is the one case where the
+    // filter should survive.
+    if (p === "products") onSelectCategory("windows");
+    setPage(p);
+    setOpen(false);
+    window.scrollTo(0, 0);
+  };
   const topOffset = 0; // the account top-bar was removed; header sits at the top
   const brand = getSiteBrand(); // Sanity logo/name; null ⇒ built-in wordmark
 
@@ -308,8 +326,20 @@ function Nav({ page, setPage, user, setUser }: {
 }
 
 // ─── Footer ───────────────────────────────────────────────────────────────────
-function Footer({ setPage }: { setPage: (p: Page) => void }) {
-  const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
+function Footer({ setPage, onSelectCategory }: {
+  setPage: (p: Page) => void;
+  /** Windows and Doors are the same PAGE with a different tab selected, and the
+   *  category is app state rather than a route — /products/:slug is already the
+   *  product-detail path, so there is no /products/windows to link to. The footer
+   *  therefore sets the tab and then navigates, which is exactly what the
+   *  category tiles on the page itself do. */
+  onSelectCategory: (c: CategorySlug) => void;
+}) {
+  const go = (p: Page, category?: CategorySlug) => {
+    if (category) onSelectCategory(category);
+    setPage(p);
+    window.scrollTo(0, 0);
+  };
   const brand = getSiteBrand(); // Sanity logo/tagline/copyright/ABN; null ⇒ fallbacks
   // flex-1 so a page SHORTER than the viewport gives its leftover height to the
   // footer rather than leaving a pale strip between the closing CTA and it. On a
@@ -341,16 +371,23 @@ function Footer({ setPage }: { setPage: (p: Page) => void }) {
             </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-8 t-bd-sm">
-            {[
-              { h: "Products", ls: [["Windows", "products"], ["Doors", "products"], ["Product detail", "product-detail"]] },
+            {([
+              // The third entry is the product category to preselect. Both links
+              // land on /products; without it they were the same destination
+              // twice, showing whichever tab the visitor happened to leave
+              // selected — so "Doors" could open on Windows.
+              // "Product detail" was removed (owner): it pointed at whatever
+              // product happened to be current, which is a developer's route into
+              // the page, not a destination a visitor can mean.
+              { h: "Products", ls: [["Windows", "products", "windows"], ["Doors", "products", "doors"]] },
               { h: "Service",  ls: [["Get a quote", "quote"], ["Trade account", "trade"], ["How it works", "how-it-works"], ["Privacy Policy", "privacy"]] },
               { h: "Account", ls: [["Sign in", "login"], ["Track order", "track-order"], ["Resources", "resources"], ["Contact", "contact"]] },
-            ].map(col => (
+            ] as { h: string; ls: [string, Page, CategorySlug?][] }[]).map(col => (
               <div key={col.h}>
                 <div className="text-white mb-3 t-label">{col.h}</div>
                 <ul className="space-y-2">
-                  {col.ls.map(([l, p]) => (
-                    <li key={l}><button onClick={() => go(p as Page)} className="hover:text-white transition-colors text-left">{l}</button></li>
+                  {col.ls.map(([l, p, category]) => (
+                    <li key={l}><button onClick={() => go(p, category)} className="hover:text-white transition-colors text-left">{l}</button></li>
                   ))}
                 </ul>
               </div>
@@ -2290,9 +2327,9 @@ export default function App() {
         .hero-zoom { animation: heroZoom 2.5s ease-out both; }
         @media (prefers-reduced-motion: reduce) { .hero-zoom { animation: none; } }
       `}</style>
-      <Nav page={page} setPage={navigateTo} user={user} setUser={setUser} />
+      <Nav page={page} setPage={navigateTo} user={user} setUser={setUser} onSelectCategory={selectCategory} />
       <main>{renderPage()}</main>
-      {page !== "admin" && <Footer setPage={navigateTo} />}
+      {page !== "admin" && <Footer setPage={navigateTo} onSelectCategory={selectCategory} />}
       {/* "quote" is excluded because it IS the quote builder: a fixed "Get a
           quote" bar there covers the project's own sticky summary with an
           invitation to the page you are already on. */}
