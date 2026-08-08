@@ -6,9 +6,15 @@
 // fetched here, once, on mount.
 //
 // The rail is where the files live, and it is first in DOM order on mobile —
-// someone who opened a page about a datasheet came for the datasheet. A long
-// When there is nothing to put there, there is NO rail, and the page narrows:
-// a 54ch measure pinned to the left of a 1152px container is a half-empty page.
+// someone who opened a page about a datasheet came for the datasheet. When there
+// is nothing to put there, there is no rail and the body takes the full column.
+//
+// The page used to NARROW instead, to max-w-3xl, because a 54ch measure pinned to
+// the left of a 1152px container is a half-empty page. That was true, and the
+// cure was worse: it made the hero band and the body visibly tighter than the
+// site header above them and the "More in…" section directly below, so the page
+// changed width twice as you scrolled it. The frame is now the site's at every
+// post, and the BODY fills its column rather than sitting in a strip inside it.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useEffect, useState } from "react";
 import { PortableText, type PortableTextComponents } from "@portabletext/react";
@@ -100,7 +106,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
   if (!post) {
     return (
       <div className="ground-paper min-h-screen pt-28 pb-20">
-        <div className="max-w-2xl mx-auto px-6">
+        <div className="max-w-6xl mx-auto px-6">
           <div className="card p-8">
             <h1 className="font-semibold text-ink mb-2 font-display t-hd2">That page isn't here.</h1>
             <p className="text-body mb-6">It may have been renamed or unpublished.</p>
@@ -115,7 +121,12 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
 
   const products = post.productSlugs.map(getProductBySlug).filter(Boolean);
   const hasRail = !!post.attachment || products.length > 0;
-  const shell = hasRail ? "max-w-6xl" : "max-w-3xl";
+  // THE SITE'S WIDTH, whether or not this post has a rail. It used to narrow to
+  // max-w-3xl without one, which put the hero band and the body in a column
+  // noticeably tighter than the header above them and the "More in…" section
+  // directly below — the same page changing width twice as you scroll it. The
+  // rail still decides the LAYOUT inside; it no longer decides the frame.
+  const shell = "max-w-6xl";
   const heroUrl = imageUrl(post.heroImage, { w: 1920, h: 1080 });
   const related = posts.filter((p) => p.categorySlug === post.categorySlug && p.slug !== post.slug).slice(0, 3);
   const date = postDate(post);
@@ -189,13 +200,13 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
             {loading ? (
               <Loader2 className="w-5 h-5 text-quieter animate-spin" aria-label="Loading" />
             ) : body && body.length > 0 ? (
-              <div className="split-prose">
+              <div>
                 <PortableText value={body} components={components} />
               </div>
             ) : (
               /* Every post HAS a body — the schema requires one — so an empty
                  result here means the fetch failed, not that the page is empty. */
-              <p className="text-body leading-relaxed split-prose">
+              <p className="text-body leading-relaxed">
                 This didn't load. Refreshing usually fixes it.
                 {post.attachment && " Its attachment is listed alongside and is unaffected."}
               </p>

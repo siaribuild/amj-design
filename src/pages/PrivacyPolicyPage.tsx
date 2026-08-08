@@ -36,7 +36,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
           <img src={imageUrl(getPage("privacy")?.heroImage, { w: 1920, h: 600 })} alt="" aria-hidden="true"
             className="absolute inset-0 w-full h-full object-cover opacity-40" />
         )}
-        <div className="relative max-w-5xl mx-auto px-6">
+        <div className="relative max-w-6xl mx-auto px-6">
           <div className="flex items-center gap-2 mb-3">
             <WindowMark size={11} color="rgba(255,255,255,0.55)" />
             <span className="text-white/60 font-data t-label">Legal</span>
@@ -53,7 +53,7 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
       </section>
 
       {/* ─── Content ─────────────────────────────────────────────────────────── */}
-      <section className="max-w-3xl mx-auto px-6 section-pad">
+      <section className="max-w-6xl mx-auto px-6 section-pad">
           {/* Policy body */}
           <div className="space-y-10">
             <Section id="who-we-are" title="1. Who we are">
