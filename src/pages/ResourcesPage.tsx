@@ -122,7 +122,7 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
 
   const railBlock = (
     <div className="border-t border-ink">
-      <div className="py-4 border-b border-line">
+      <div className="py-4">
         <div className="flex items-baseline justify-between gap-3 mb-3 font-data t-label">
           <span className="text-ink">Category</span>
           <span className="text-quieter">What it is</span>
@@ -148,13 +148,22 @@ export function ResourcesPage({ setPage }: { setPage: (p: Page, path?: string) =
           );
         })}
       </div>
-      {/* Always present, as in the wireframe. Disabled rather than absent when
-          there is nothing to clear: a control that appears only once you have
-          already acted is a control you cannot learn is there. */}
-      <button onClick={clear} disabled={!filtering}
-        className="w-full text-left py-3.5 text-sage hover:text-sage-deep cursor-pointer disabled:text-quieter disabled:cursor-default disabled:hover:text-quieter font-data t-label">
-        Clear search and filters
-      </button>
+      {/* Only when there is something to clear (owner). It used to render always
+          and sit disabled, on the reasoning that a control you meet only after
+          acting is one you cannot learn is there — but that argument buys
+          discoverability for an action nobody can want yet, and pays for it with
+          a permanently dead control at the foot of the panel. Nothing is lost:
+          the moment a filter or a search exists the button appears, right beside
+          the chips that appear with it.
+          The hairline travels WITH the button rather than closing the category
+          list, so the panel ends on the list instead of on a separator with
+          nothing after it. */}
+      {filtering && (
+        <button onClick={clear}
+          className="w-full text-left py-3.5 border-t border-line text-sage hover:text-sage-deep cursor-pointer font-data t-label">
+          Clear search and filters
+        </button>
+      )}
     </div>
   );
 
