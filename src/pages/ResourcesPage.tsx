@@ -39,14 +39,19 @@ function metaLines(post: Post): string[] {
     return [a.ext, fileSize(a.size), a.revision, a.standardRef].filter(Boolean) as string[];
   }
   const d = postDate(post);
-  return d ? [`${d.label} ${docDate(d.value)}`] : [];
+  // THE DATE, not "Published 29 July 2026". The word was the same on every
+  // dateless row in the list — a column of identical prefixes, each pushing the
+  // one varying part of the line to the right — and it is not the reader's
+  // question here: the list is scanned for WHICH resource, and the record page
+  // states the full "Published …" / "Updated …" for anyone who wants it.
+  return d ? [docDate(d.value)] : [];
 }
 
 function PostRow({ post, onOpen }: { post: Post; onOpen: (slug: string) => void }) {
   const meta = metaLines(post);
   return (
     <button onClick={() => onOpen(post.slug)}
-      className="group w-full text-left grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_280px_34px] gap-x-6 gap-y-3 items-center py-6 border-t border-line first:border-t-0 transition-colors hover:bg-sage-wash cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-inset">
+      className="group w-full text-left grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_150px_34px] gap-x-6 gap-y-3 items-center py-6 border-t border-line first:border-t-0 transition-colors hover:bg-sage-wash cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-inset">
       <span className="min-w-0">
         <span className="block text-sage mb-2 font-data t-label">
           {post.categoryTitle}
@@ -58,7 +63,11 @@ function PostRow({ post, onOpen }: { post: Post; onOpen: (slug: string) => void 
       </span>
 
       {/* The scan column. First line carries the weight — it is the file type, or
-          the date when there is no file. */}
+          the date when there is no file. 150px, down from 280: the widest thing
+          it ever holds is a standard reference ("AS 2047:2014") or a date, both
+          around twelve mono characters, so the old width was a third of the row
+          reserved for a column that never filled it — and the title and summary
+          beside it are what the reader is actually scanning. */}
       <span className="text-quiet md:justify-self-start font-data t-label">
         {meta.map((line, i) => (
           <span key={i} className={`block ${i === 0 ? "text-ink font-medium" : ""}`}>{line}</span>
