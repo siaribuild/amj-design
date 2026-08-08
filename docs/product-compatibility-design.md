@@ -1,8 +1,40 @@
 # Product compatibility — frame systems, and the composite as the unit of choice
 
-**Status: final design for approval. Nothing implemented.**
-Owner decisions recorded 2026-08-08. Supersedes the unimplemented `product.fixedCounterpart`
-proposal in `docs/default-split-pairing-design.md` §3b.
+**Status: BUILT AND DEPLOYED 2026-08-08.** Owner decisions recorded the same day.
+Supersedes the unimplemented `product.fixedCounterpart` proposal in
+`docs/default-split-pairing-design.md` §3b.
+
+Schema deployed to `xjtrm1ex/production`; six systems authored and all 34 products
+tagged (`sanity/scripts/tag-frame-systems.mjs`, idempotent — re-run it after adding
+a product and it reports the new one as untagged rather than guessing).
+
+### As built — where the code differs from what is written below
+
+- **§4, `MAX_SYSTEMS` is 12, not a tight bound.** The "covering systems arrive
+  best-first" argument only holds while the ordering carries information. On an
+  all-fixed composite every fixed-lite system covers the opening exactly and with
+  the same own-segment count, so the sort falls through to its slug tiebreak —
+  which exists purely to make runs reproducible — and a bound of four permanently
+  excluded `sys-80`, the largest platform in the catalogue, for sorting after
+  "1", "6" and "7". The bound is now above the catalogue's system count.
+- **§4, compatibility is verified across every PAIR of chosen units**, not just
+  each unit against the system it was drawn from. A system may reach a unit
+  through a declared partner, and two different partners of one hub need not be
+  compatible with each other — `sys-125` naming both `sys-100` and `sys-150` says
+  nothing about `sys-100` beside `sys-150`.
+- **§4.2, the one-way crossing lives in `alternateCategoryFor`** (exported from
+  `estimate.ts`), because the composite selector honestly crosses in whichever
+  direction it is handed. It shipped symmetric once: exactly one product in the
+  catalogue is a sliding window, so every door system reported exact coverage of
+  a sliding-window opening and the line was built as two sliding doors.
+- **§5.2, `glazingSlugs` counts only the units asked to share a glass.** A unit
+  whose band an energy report stated is deliberately excluded from unification,
+  so counting it warned "no single glazing" on the one case where differing glass
+  is the instruction.
+- **§7, the customer's PRODUCT TYPE list is filtered too.** Choosing a type
+  blanks the product, so the "keep the unit's own product" escape could not save
+  a type whose every product is another platform — the customer landed on an
+  empty select under a caption promising the frames that fit.
 
 ---
 
