@@ -204,26 +204,36 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
     : (activeFamily?.name ?? "");
   const description = familyDescription(category, family);
 
-  // THE PAGE IS BONE; THE CATALOGUE ESCAPES TO PAPER AS ITS OWN BAND.
+  // BONE IS THE PAGE, INCLUDING THE CATALOGUE. night → bone → paper → bone.
   //
-  // The page ground was paper, because full-page bone had been tried and
-  // reverted: it read as a wash of warm grey behind photography, and on a
-  // catalogue the images are the figure — a tinted field competes with them.
-  // That judgement still holds and is not being overturned. What changes is the
-  // level it applies at.
+  // This band was ground-paper, and the comment here defended it on the grounds
+  // that full-page bone had been tried and reverted for reading as "a wash of
+  // warm grey behind photography". That revert was real (b83c8a68) and it was
+  // right — against the bone of the day. Bone was #F0EDE8 then, ΔL* 6.15 from
+  // paper. It was lightened twice in the seven hours AFTER that revert (9cc68fa9,
+  // a9a08a87) and is now #FBFAF8, ΔL* 1.70 — the token's own comment calls it
+  // "deliberately barely there". The objection was aimed at a value 3.6× darker
+  // that no longer exists anywhere in the codebase.
   //
-  // Bone is the page (owner), and the alternation the rest of the site uses
-  // carries it: night → paper → bone → paper. The catalogue is a full-bleed
-  // ground-paper SECTION inside the bone page, so the grid keeps exactly the
-  // surface it has today and a product tile is still a bone body under a dark
-  // image on a white field — gutters read, and the caption under each
-  // photograph is bounded rather than floating.
+  // Two more of that comment's claims did not survive checking. It called the
+  // home page's Systems section "the site's only other photographic tile grid":
+  // Systems is bg-ink with no .card at all, so its ground never touched a fill,
+  // and ProductDetailPage — the page this grid links INTO — has been shipping
+  // paper-bodied photographic .card tiles on a bone ground the whole time
+  // (ProductDetailPage.tsx:477). The arrangement being avoided here was already
+  // live one click away, in the same funnel, on the same photography.
   //
-  // Do NOT flip that band to bone to make the page look more bone. It turns
-  // every tile paper and reproduces precisely the state that was reverted. The
-  // home page's Systems section — the site's only other photographic tile grid
-  // — is ground-paper for the same reason, and says outright not to darken bone
-  // to force the contrast.
+  // And paper was never the untinted field the argument assumed: section.ground-paper
+  // paints a 64px sage drafting grid behind its content (theme.css:935), ΔL* 2.17
+  // — MORE tint than bone — and because that pseudo-element is absolutely
+  // positioned with no z-index it painted over the product photographs unless the
+  // inner wrapper was made `relative` to stop it. Bone carries no decoration, so
+  // that hazard and its workaround both go away.
+  //
+  // What a tile loses: nothing. The photograph sits on its own bg-shade plate
+  // (#E8E5DF, 7.28 L* below bone) inside overflow-hidden, so it never touches the
+  // ground; the 1px --line border that bounds the caption is ground-independent;
+  // and the sage-wash hover doubles in legibility against a paper fill.
   return (
     <div className="ground-bone min-h-screen">
       {/* ─── HERO — contextual to selected category, header overlays it ─────── */}
@@ -260,14 +270,14 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
 
       {/* The catalogue band. No border-t: it meets the night hero, and a hairline
           on black is invisible — the phase sections on How it works do the same.
-          No section-pad either: 96px of white above the taxonomy rail is the
-          opposite of what this page is for, so it keeps its working rhythm.
-          `relative` on the inner wrapper is REQUIRED, not decoration: the
-          drafting-grid pseudo-element on section.ground-paper is absolutely
-          positioned with no z-index, so without a positioned wrapper it paints
-          OVER the product photographs. */}
-      <section className="ground-paper">
-      <div className="max-w-6xl mx-auto px-6 relative">
+          No section-pad either: 96px of empty ground above the taxonomy rail is
+          the opposite of what this page is for, so it keeps its working rhythm.
+          The inner wrapper no longer needs `relative`: that existed solely to
+          stop ground-paper's drafting grid painting over the photographs, and
+          bone carries no decoration. Nothing in here is absolutely positioned;
+          the rail is lg:sticky, which does not need a positioned ancestor. */}
+      <section className="ground-bone">
+      <div className="max-w-6xl mx-auto px-6">
         <div className="lg:grid lg:grid-cols-[272px_1fr] lg:gap-10 py-8 md:py-10">
 
           {/* ─── MOBILE — category cards + family scroll rail ───────────────── */}
@@ -377,17 +387,24 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
           Was four icons in a grid INSIDE the max-w-6xl content wrapper, held up
           by nothing but a border-t — so its ground did not span and it read as a
           footnote to the product grid rather than as a section. Now it is one,
-          full-bleed on bone with contained content, on the site's standard
-          section rhythm.
-          NOT cards: on bone, .card resolves to paper, and four paper boxes would
-          become four objects competing with the grid above. Hairlines only, the
-          device the home page uses for exactly this content.
+          full-bleed with contained content, on the site's standard section
+          rhythm.
+          PAPER, because the catalogue above it is bone now: two bone sections
+          meeting would put the whole lower page on one surface and the seam
+          would be a rule drawn on a single ground rather than a change of it.
+          This is the page's one paper interruption, which is the shape every
+          other page uses — bone is the page, paper is the interruption.
+          Still NOT cards. It was hairlines because on bone a .card resolves to
+          paper and four boxes would compete with the grid above; on paper they
+          would resolve to bone and do the same thing in the other direction.
+          Hairlines are right either way — the device the home page uses for
+          exactly this content — so nothing here moves.
           The copy is rewritten. "Manufacturer-backed / Quality you can trust"
           is a content-free imperative, and promoting weak copy to a bigger stage
           only makes it louder. Every line below is stated elsewhere on the site
           — the two-day review and the $0/50% terms on home, supply-only in the
           same section — so nothing here is a new claim. */}
-      <section className="ground-bone border-t border-black/8 section-pad">
+      <section className="ground-paper border-t border-black/8 section-pad">
         <div className="max-w-6xl mx-auto px-6">
           <SLabel>What you get</SLabel>
           <h2 className="text-ink mb-8 t-hd1">
@@ -421,12 +438,15 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
       </section>
 
       {/* The page's ONE ask, and the ending it never had — this was the only
-          marketing page on the site that simply stopped. Defaults to paper,
-          which follows the bone section above it exactly as on every other page. */}
+          marketing page on the site that simply stopped. Pinned to bone rather
+          than taking the paper default: it follows the What-you-get section,
+          which is paper now, and two paper sections in a row is the seam
+          disappearing — which is the reason CtaBanner takes a ground at all. */}
       <CtaBanner
         title="Skip the catalogue — send the schedule."
         sub="Upload your window and door schedule and every line comes back matched to a system and priced in about a minute."
         onQuote={() => go("quote")}
+        ground="bone"
       />
     </div>
   );
