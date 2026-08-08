@@ -44,6 +44,25 @@ import { fixTargetFor, rowStateFor, unitLabel } from "../components/quote-projec
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
 
+/** WHAT THE SYSTEM DETECTED EACH DOCUMENT AS.
+ *
+ *  A schedule, an energy report and a set of plans do different jobs in the same
+ *  project — the schedule becomes the lines, the report sets the thermal targets,
+ *  the plans decide how a wide opening is divided — so which is which is the one
+ *  fact a customer needs from the file rail. It was on the card builder that /quote
+ *  replaced and did not survive the move.
+ *
+ *  KNOWN TYPES ONLY, and the chip renders only once a real classification exists.
+ *  `docType` is null permanently for anonymous/deterministic uploads and
+ *  transiently for registered ones before the AI run lands, and an unresolvable
+ *  "SORTING…" promise is worse than saying nothing (UX review 2026-07-26). */
+const DOC_TYPE: Record<string, { label: string; tint: string }> = {
+  schedule: { label: "SCHEDULE", tint: "border-sage/30 bg-sage-wash text-sage-ink" },
+  energy_report: { label: "ENERGY REPORT", tint: "border-info/30 bg-info/10 text-info" },
+  plans: { label: "PLANS", tint: "border-black/15 bg-black/[0.03] text-body-soft" },
+  supporting: { label: "SUPPORTING", tint: "border-dashed border-black/15 bg-black/[0.03] text-body-soft" },
+};
+
 export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
   setPage: (p: Page) => void;
   user: QuoteUser;
@@ -260,6 +279,11 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
                 <div key={f.id} className="inline-flex items-center gap-2 card px-3 py-1.5 max-w-full t-cap">
                   <Paperclip className="w-3.5 h-3.5 text-sage flex-shrink-0" aria-hidden="true" />
                   <span className="text-ink font-medium truncate max-w-[14rem]">{f.name}</span>
+                  {f.docType && DOC_TYPE[f.docType] && (
+                    <span className={`px-1.5 py-0.5 border flex-shrink-0 ${DOC_TYPE[f.docType].tint} font-data t-label`}>
+                      {DOC_TYPE[f.docType].label}
+                    </span>
+                  )}
                   <button onClick={() => setRemovingFile(String(f.id))} aria-label={`Remove ${f.name}`}
                     className="flex-shrink-0 -mr-1 w-5 h-5 inline-flex items-center justify-center text-quiet hover:text-red-600 cursor-pointer">
                     <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />

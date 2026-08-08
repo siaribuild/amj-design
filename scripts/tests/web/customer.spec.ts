@@ -144,6 +144,43 @@ test("resolved document dimension conflicts do not create a quote-level warning"
   await expect(page.getByText(/energy report says 3200/i)).toHaveCount(0);
 });
 
+// A schedule, an energy report and a set of plans do different jobs in the same
+// project, so which is which is the one fact the file rail owes the customer.
+// The card builder showed it; /quote replaced that page and the chip did not
+// survive the move — silently, because nothing asserted it. This does.
+test("the file rail says what each document was detected as", async ({ page }) => {
+  await page.route("**/api/auth/me", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({
+      authenticated: true, anonymous: false,
+      user: { id: "doc-user", email: "doc@example.com", name: "Doc User", phone: null, company: null, abn: null, priceGstMode: "inc", type: "customer", createdAt: new Date().toISOString() },
+    }),
+  }));
+  await page.route("**/api/projects/current", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({
+      project: { id: "doc-project", ref: "OF-Q-DOC", title: "Doc project", status: "draft", createdAt: new Date().toISOString() },
+      items: [],
+      files: [
+        { id: "f-sched", filename: "schedule.pdf", kind: "upload", size: 100, doc_type: "schedule" },
+        { id: "f-energy", filename: "energy-report.pdf", kind: "upload", size: 100, doc_type: "energy_report" },
+        { id: "f-plans", filename: "plans.pdf", kind: "upload", size: 100, doc_type: "plans" },
+        // Null is the ANONYMOUS/pre-run state and is permanent for some uploads:
+        // it must render the file with no type, never an unresolvable "SORTING…".
+        { id: "f-unknown", filename: "mystery.pdf", kind: "upload", size: 100, doc_type: null },
+      ],
+    }),
+  }));
+
+  await page.goto("/quote");
+  await expect(page.getByText("schedule.pdf")).toBeVisible();
+  for (const label of ["SCHEDULE", "ENERGY REPORT", "PLANS"]) {
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
+  }
+  // The unclassified file is listed, and carries no type chip of any kind.
+  await expect(page.getByText("mystery.pdf")).toBeVisible();
+  await expect(page.getByText("SORTING", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("SUPPORTING", { exact: true })).toHaveCount(0);
+});
+
 test("queued AI work is labelled as document preparation, not file securing", async ({ page }) => {
   await page.route("**/api/auth/me", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 300));
