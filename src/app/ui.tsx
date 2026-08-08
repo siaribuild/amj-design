@@ -20,8 +20,8 @@ export { SAGE, INK as DARK, PAPER, BONE, LINE } from "../styles/tokens";
 // because it was linked internally for months, but it is no longer a page.
 export type Page =
   | "home" | "products" | "product-detail" | "quote"
-  | "how-it-works" | "resources" | "contact" | "admin"
-  | "approved-quote" | "trade" | "login" | "dashboard"
+  | "how-it-works" | "resources" | "contact"
+  | "trade" | "login" | "dashboard"
   | "account" | "help"
   | "track-order" | "order"
   | "privacy" | "post";

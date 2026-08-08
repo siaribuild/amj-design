@@ -8,8 +8,6 @@ export const PAGE_PATHS: Record<Page, string> = {
   "how-it-works": "/how-it-works",
   resources: "/resources",
   contact: "/contact",
-  admin: "/admin",
-  "approved-quote": "/quote/approved",
   trade: "/trade-account",
   login: "/login",
   dashboard: "/projects", // the merged account home ("My Projects")

@@ -1617,50 +1617,6 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// APPROVED QUOTE
-// ═══════════════════════════════════════════════════════════════════════════════
-function ApprovedQuotePage() {
-  const [t1, setT1] = useState(false); const [t2, setT2] = useState(false); const [t3, setT3] = useState(false);
-  return (
-    <div className="relative min-h-screen ground-bone pt-24 pb-24 overflow-hidden">
-      <div className="max-w-2xl mx-auto px-6 relative">
-        <div className="flex items-center gap-2 mb-2"><CheckCircle className="w-4 h-4 text-sage" /><span className="text-sage t-label">Human verified</span></div>
-        <h1 className="font-semibold text-ink mb-1 font-display t-hd1">Reviewed quote — OF-58712</h1>
-        <p className="text-body mb-8 t-bd-sm">Issued after manual technical review · 12 Jan 2025</p>
-        <div className="group relative card p-5 mb-4 overflow-hidden">
-          <FrameCorners size={10} color={SAGE} show="always" />
-          <h3 className="font-semibold text-ink mb-4 t-bd-sm">Approved line items</h3>
-          <table className="w-full t-bd-sm"><thead><tr className="border-b border-black/8 text-body t-label">
-            {["Description","Dims","Qty","Total"].map(h => <th key={h} className="text-left py-2 pr-4 font-semibold">{h}</th>)}
-          </tr></thead><tbody>
-            {[["Alum. Sliding Door — Satin Black / DG LowE","2100×3000mm","2","[total]"],["Alum. Awning Window — Woodland Grey / DG","900×1200mm","4","[total]"],["Delivery — Preston VIC","—","1","[price]"]].map(r => (
-              <tr key={r[0]} className="border-b border-black/6">{r.map((c,i) => <td key={i} className="py-3 pr-4">{c}</td>)}</tr>
-            ))}
-          </tbody></table>
-          <div className="mt-4 pt-4 border-t border-black/8 flex justify-between">
-            <span className="text-body t-bd-sm">Deposit (30%)</span>
-            <span className="font-semibold font-data">[deposit amount]</span>
-          </div>
-        </div>
-        <div className="group relative card p-5 mb-4 space-y-3 overflow-hidden">
-          <FrameCorners size={10} color={SAGE} show="always" />
-          <h3 className="font-semibold text-ink mb-1 t-bd-sm">Acknowledge before paying</h3>
-          {[[t1,setT1,"Dimensions verified by a qualified builder, installer or professional."],[t2,setT2,"Supply-only order. Installation not included."],[t3,setT3,"Payment confirms the reviewed quote only. Changes after deposit may incur costs."]].map(([v,s,l],i) => (
-            <label key={i} className="flex items-start gap-3 cursor-pointer text-body t-bd-sm">
-              <input type="checkbox" checked={v as boolean} onChange={e => (s as any)(e.target.checked)} className="mt-0.5 accent-sage w-4 h-4" />{l as string}
-            </label>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <Btn variant="sage" size="lg" disabled={!t1||!t2||!t3}>Pay deposit <ArrowRight className="w-4 h-4" /></Btn>
-          <Btn variant="ghost" size="lg">Request changes</Btn>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // TRADE ACCOUNT
 // ═══════════════════════════════════════════════════════════════════════════════
 function TradePage({ setPage }: { setPage: (p: Page) => void }) {
@@ -1719,87 +1675,6 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
         sub="Upload it and every line comes back priced in about a minute. No account needed to start."
         onQuote={() => go("quote")}
       />
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// ADMIN DASHBOARD
-// ═══════════════════════════════════════════════════════════════════════════════
-function AdminPage() {
-  const [sel, setSel] = useState(0);
-  const quotes = [
-    { ref: "OF-58901", name: "Premier Build Co.", type: "Builder", project: "New build — Coburg",      items: 3, status: "Review required", conf: 85, age: "2h" },
-    { ref: "OF-58698", name: "Sarah T.",           type: "Homeowner", project: "Renovation — Northcote",items: 1, status: "More info needed", conf: 52, age: "1d" },
-    { ref: "OF-58671", name: "Metro Reno Group",   type: "Trade",     project: "Extension — St Kilda",  items: 6, status: "Ready",           conf: 94, age: "2d" },
-  ];
-  const q = quotes[sel];
-  const sc: Record<string,string> = { "Review required":"text-amber-400 bg-amber-400/10","More info needed":"text-red-400 bg-red-400/10","Ready":"text-sage bg-sage-wash" };
-  return (
-    <div className="relative bg-night min-h-screen pt-16 text-white overflow-hidden">
-      <div className="border-b border-white/8 px-6 py-3">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <WindowMark size={16} color={SAGE} />
-            <span className="font-semibold t-bd-sm">Quote Review Dashboard</span>
-            <span className="bg-white/8 text-white/35 px-2 py-0.5 t-cap">Internal concept</span>
-          </div>
-          <div className="flex items-center gap-2 text-white/35 t-cap"><Bot className="w-3.5 h-3.5 text-sage" />AI-assisted</div>
-        </div>
-      </div>
-      <div className="max-w-6xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-3 gap-5 relative">
-        <div>
-          <p className="text-white/25 mb-3 t-label">Incoming ({quotes.length})</p>
-          {quotes.map((qt, i) => (
-            <button key={qt.ref} onClick={() => setSel(i)}
-              className={`group relative w-full text-left p-4 mb-2 border transition-all cursor-pointer overflow-hidden ${sel === i ? "border-sage/40 bg-sage/5" : "border-white/8 hover:border-white/20"}`}>
-              <FrameCorners size={8} color={SAGE} />
-              <div className="flex justify-between items-start mb-1">
-                <span className="text-sage font-medium font-data t-data-sm">{qt.ref}</span>
-                <span className={`px-1.5 py-0.5 font-medium ${sc[qt.status]} t-cap`}>{qt.status}</span>
-              </div>
-              <p className="font-medium text-white t-bd-sm">{qt.name}</p>
-              <p className="text-white/25 mb-2 t-cap">{qt.project} · {qt.age} ago</p>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-0.5 bg-white/10">
-                  <div className={`h-0.5 ${qt.conf > 80 ? "bg-sage" : qt.conf > 60 ? "bg-amber-400" : "bg-red-400"}`} style={{ width: `${qt.conf}%` }} />
-                </div>
-                <span className="text-white/25 t-cap">{qt.conf}%</span>
-              </div>
-            </button>
-          ))}
-        </div>
-        <div className="lg:col-span-2 space-y-4">
-          <div className="group relative bg-white/5 border border-white/10 p-5 overflow-hidden">
-            <FrameCorners size={8} color={SAGE} />
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <span className="text-sage block mb-1 font-data t-data-sm">{q.ref}</span>
-                <h3 className="font-semibold text-white t-bd-lg">{q.name}</h3>
-                <p className="text-white/35 t-bd-sm">{q.type} · {q.project}</p>
-              </div>
-              <span className={`px-2 py-1 font-medium ${sc[q.status]} t-cap`}>{q.status}</span>
-            </div>
-            <div className="mb-4">
-              <div className="flex items-center gap-1.5 mb-2"><Bot className="w-3.5 h-3.5 text-sage" /><span className="text-white/35 t-label">AI extracted · indicative only</span></div>
-              {[["Alum. Sliding Door","2100×3000mm",2,92],["Awning Window","900×1200mm",4,78],["Sliding Window","1050×?mm",3,38]].map(([t,d,qty,conf],i) => (
-                <div key={i} className="flex items-center justify-between py-1.5 border-b border-white/6 last:border-0 t-bd-sm">
-                  <span className="text-white/75">{t as string} — {d as string} ×{qty as number}</span>
-                  <div className="flex items-center gap-2">
-                    <div className="w-10 h-0.5 bg-white/10"><div className={`h-0.5 ${(conf as number) > 80 ? "bg-sage" : (conf as number) > 60 ? "bg-amber-400" : "bg-red-400"}`} style={{ width: `${conf}%` }} /></div>
-                    <span className="text-white/25 t-cap">{conf as number}%</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Btn variant="ghost" size="sm" className="text-white/55 border border-white/12 hover:text-white"><MessageSquare className="w-3 h-3" />Request info</Btn>
-              <Btn variant="ghost" size="sm" className="text-white/55 border border-white/12 hover:text-white"><Eye className="w-3 h-3" />Mark ready</Btn>
-              <Btn variant="sage" size="sm"><Send className="w-3 h-3" />Send reviewed quote</Btn>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -2163,9 +2038,7 @@ export default function App() {
       case "post":             return <PostPage slug={postSlug} setPage={navigateTo} onOpenProduct={openProduct} />;
       case "contact":          return <ContactPage setPage={navigateTo} user={user} />;
       case "privacy":          return <PrivacyPolicyPage setPage={navigateTo} />;
-      case "approved-quote":   return <ApprovedQuotePage />;
       case "trade":            return <TradePage setPage={navigateTo} />;
-      case "admin":            return <AdminPage />;
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
       case "dashboard":        return inShell("projects", <AccountDashboard user={user!} setPage={navigateTo} onOpenRecord={openRecord} />);
       case "account":          return inShell("account", <AccountPage user={user} setPage={navigateTo} setUser={setUser} authLoading={authLoading} />);
@@ -2329,11 +2202,11 @@ export default function App() {
       `}</style>
       <Nav page={page} setPage={navigateTo} user={user} setUser={setUser} onSelectCategory={selectCategory} />
       <main>{renderPage()}</main>
-      {page !== "admin" && <Footer setPage={navigateTo} onSelectCategory={selectCategory} />}
+      <Footer setPage={navigateTo} onSelectCategory={selectCategory} />
       {/* "quote" is excluded because it IS the quote builder: a fixed "Get a
           quote" bar there covers the project's own sticky summary with an
           invitation to the page you are already on. */}
-      {!["home", "quote", "admin", "product-detail", "dashboard", "account", "help", "order"].includes(page) && (
+      {!["home", "quote", "product-detail", "dashboard", "account", "help", "order"].includes(page) && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-4 py-3 bg-white border-t border-black/8"
           style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
           <Btn variant="sage" size="md" onClick={() => navigateTo("quote")} className="w-full justify-center">Get a quote →</Btn>
