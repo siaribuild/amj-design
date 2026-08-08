@@ -6,10 +6,8 @@
 // transactional email, Cloudflare Turnstile on the contact form, Cloudflare Access
 // for the staff console, and passwordless email-OTP sign-in (no stored passwords).
 // ═══════════════════════════════════════════════════════════════════════════════
-import { ObfuscatedEmail } from "../components/ObfuscatedEmail";
-import { getSiteBrand } from "../data/sanity";
-import { Mail, ArrowRight } from "lucide-react";
-import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
+import { ArrowRight } from "lucide-react";
+import { type Page, WindowMark } from "../app/ui";
 import { getPage, imageUrl } from "../data/catalogue";
 
 const UPDATED = "19 July 2026";
@@ -173,24 +171,24 @@ export function PrivacyPolicyPage({ setPage }: { setPage: (p: Page) => void }) {
               </p>
             </Section>
 
+            {/* A LINK, not a card of contact details (owner). The card restated
+                the address, business name and location that the contact page and
+                the footer already carry, so a change of email meant editing it in
+                three places and the policy was the one nobody would remember.
+                The inline sage link is the device the rest of the site uses to
+                send a reader somewhere else mid-section. */}
             <Section id="contact" title="12. Contact us">
-              <p>To exercise your rights or ask a question about this policy, get in touch:</p>
-              <div className="card p-5 mt-2">
-                <p className="flex items-center gap-2.5 text-ink t-bd-sm">
-                  <Mail className="w-4 h-4" style={{ color: SAGE }} />
-                  <ObfuscatedEmail address={getSiteBrand()?.email} className="hover:underline" />
-                </p>
-                <p className="text-body mt-1.5 t-bd-sm">{[getSiteBrand()?.businessName, "Melbourne, Victoria", "Supply only"].filter(Boolean).join(" · ")}</p>
-                <div className="mt-4">
-                  <Btn variant="outline" size="sm" onClick={() => go("contact")}>Go to contact page <ArrowRight className="w-4 h-4" /></Btn>
-                </div>
-              </div>
+              <p>
+                To exercise your rights or ask a question about this policy, get in touch through the
+                contact page.
+              </p>
+              <p>
+                <button onClick={() => go("contact")}
+                  className="text-sage hover:text-sage-deep inline-flex items-center gap-1.5 cursor-pointer">
+                  Go to contact page <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              </p>
             </Section>
-
-            <p className="text-quiet border-t border-black/8 pt-6 italic t-cap">
-              This policy is a draft prepared for the OpenFrame prototype and should be reviewed by a
-              qualified legal professional before the site goes live.
-            </p>
           </div>
       </section>
     </div>
