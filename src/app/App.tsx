@@ -1680,6 +1680,38 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// NOT FOUND
+//
+// Served with a 404 STATUS (worker/lib/shell.ts decides it from the same route
+// table this page is reached through). The two have to agree: a 404 page behind
+// a 200 is a soft 404 — the URL stays indexable, and every mistyped address
+// becomes a duplicate of whatever it landed on.
+//
+// It offers the two routes anyone arriving here actually wants, and nothing else:
+// no closing CTA banner, because a page that exists to say "this is not here" is
+// not the place to sell. Bone ground and the site's container, like every page.
+// ═══════════════════════════════════════════════════════════════════════════════
+function NotFoundPage({ setPage }: { setPage: (p: Page) => void }) {
+  const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
+  return (
+    <div className="ground-bone min-h-screen">
+      <section className="max-w-6xl mx-auto px-6 pt-32 pb-24">
+        <SLabel>404</SLabel>
+        <h1 className="text-ink mt-3 mb-3 t-hd1">That page isn't here.</h1>
+        <p className="text-body max-w-[52ch] mb-8 t-bd">
+          The link may be out of date, or the address mistyped. Nothing is wrong with your
+          quote — anything you had saved is still there.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <Btn variant="sage" size="md" onClick={() => go("home")}>Back to home <ArrowRight className="w-4 h-4" /></Btn>
+          <Btn variant="outline" size="md" onClick={() => go("products")}>Browse products</Btn>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ROOT
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function App() {
@@ -2026,7 +2058,17 @@ export default function App() {
     switch (page) {
       case "home":             return <HomePage setPage={navigateTo} />;
       case "products":         return <ProductsPage setPage={navigateTo} category={catCategory} family={catFamily} onSelectCategory={selectCategory} onSelectFamily={setCatFamily} onOpenProduct={openProduct} />;
-      case "product-detail":   return <ProductDetailPage slug={productSlug} setPage={navigateTo} onOpenProduct={openProduct} onBack={backToFamily} quote={quote} />;
+      // A slug that resolves to nothing, or to a product withdrawn from sale, is
+      // NOT a product page. It used to fall back to products[0] — a real product
+      // served under someone else's URL, which is worse than a blank: it is
+      // indexable, shareable and wrong. The gate is here rather than inside the
+      // page so the page keeps one job.
+      case "product-detail": {
+        const p = getProductBySlug(productSlug);
+        return p && p.disabled !== true
+          ? <ProductDetailPage slug={productSlug} setPage={navigateTo} onOpenProduct={openProduct} onBack={backToFamily} quote={quote} />
+          : <NotFoundPage setPage={navigateTo} />;
+      }
       // THE project builder. It was the A/B arm at /quote-project until the
       // comparison closed in its favour; the card builder it replaced is gone.
       // Not a hero page, so the header stays solid over its bone canvas.
@@ -2038,6 +2080,7 @@ export default function App() {
       case "post":             return <PostPage slug={postSlug} setPage={navigateTo} onOpenProduct={openProduct} />;
       case "contact":          return <ContactPage setPage={navigateTo} user={user} />;
       case "privacy":          return <PrivacyPolicyPage setPage={navigateTo} />;
+      case "not-found":        return <NotFoundPage setPage={navigateTo} />;
       case "trade":            return <TradePage setPage={navigateTo} />;
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
       case "dashboard":        return inShell("projects", <AccountDashboard user={user!} setPage={navigateTo} onOpenRecord={openRecord} />);

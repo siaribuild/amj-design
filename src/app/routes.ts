@@ -19,6 +19,9 @@ export const PAGE_PATHS: Record<Page, string> = {
   // A post under the resources index. Same relationship product-detail has to
   // /products: a slug route, so it is excluded from the static map below.
   post: "/resources",
+  // A canonical address for the 404 page. Reachable directly, and what the
+  // client navigates to when a slug does not resolve.
+  "not-found": "/404",
 };
 
 // Legacy paths kept working after the account-area IA collapse (Dashboard+Projects
@@ -64,7 +67,11 @@ export function routeFromPathname(pathname: string): { page: Page; productSlug?:
     return { page: "post", postSlug: decodeURIComponent(postMatch[1]) };
   }
 
-  return { page: "home" };
+  // NOT the home page. An unknown path used to render home with a 200, which is
+  // a soft 404: the URL stays indexable, every typo becomes a duplicate of the
+  // front page, and the visitor is never told the link was wrong. The Worker
+  // reads this same result to set the status (worker/lib/shell.ts).
+  return { page: "not-found" };
 }
 
 /** `slug` is the record slug for the two routes that have one — a product, or a

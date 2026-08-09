@@ -77,7 +77,13 @@ export function buildRobots(origin: string, indexable: boolean): Response {
 
 /** Rewrite the shell's <head> for THIS url, so a scraper's single fetch sees the
  *  real title, description and share image. */
-export async function renderShell(env: Env, shellHtml: string, url: URL): Promise<string> {
+/** The rewritten head AND the status it should be served with. They are decided
+ *  together, from one route resolution, because a 404 page behind a 200 is a soft
+ *  404 — the URL stays indexable and every mistyped address becomes a duplicate of
+ *  whatever it landed on. */
+export interface RenderedShell { html: string; status: 200 | 404 }
+
+export async function renderShell(env: Env, shellHtml: string, url: URL): Promise<RenderedShell> {
   const meta = await siteMeta(env);
   const brand = meta.businessName?.trim() || null;
   const suffix = brand ? ` — ${brand}` : "";
@@ -87,9 +93,15 @@ export async function renderShell(env: Env, shellHtml: string, url: URL): Promis
   let description = "";
   let image = "";
 
+  // A slug that resolves to nothing — or to a product withdrawn from sale — is
+  // not a page. The client renders the 404 for exactly these, so the status is
+  // decided from the same three facts rather than guessed at separately.
+  let missing = route.page === "not-found";
+
   if (route.page === "product-detail") {
     const p = getProductBySlug(route.productSlug ?? "");
-    if (p) {
+    if (!p || p.disabled === true) missing = true;
+    if (p && p.disabled !== true) {
       title = `${p.name}${suffix}`;
       description = p.shortDescription || "";
       image = imageUrl(p.heroImage, { w: 1200, h: 630 }) || "";
@@ -98,6 +110,7 @@ export async function renderShell(env: Env, shellHtml: string, url: URL): Promis
     // A shared post link previewed as the generic site card before this: the
     // branch below would have looked up a `post` page record that cannot exist.
     const p = getPostBySlug(route.postSlug ?? "");
+    if (!p) missing = true;
     if (p) {
       // A post titled "About OpenFrame" must not become "About OpenFrame — OpenFrame".
       title = p.seo?.metaTitle || (brand && p.title.includes(brand) ? p.title : `${p.title}${suffix}`);
@@ -116,6 +129,7 @@ export async function renderShell(env: Env, shellHtml: string, url: URL): Promis
       // Absent before, so /resources served a crawler the bare business name
       // while the client set "Resources — <brand>". Same page, two titles.
       resources: `Resources${suffix}`,
+      "not-found": `Page not found${suffix}`,
     };
     title = pg?.seo?.metaTitle || named[pageId] || title;
     description = pg?.seo?.metaDescription || "";
@@ -152,14 +166,19 @@ export async function renderShell(env: Env, shellHtml: string, url: URL): Promis
     siteName ? `<meta property="og:site_name" content="${esc(siteName)}" />` : "",
     image ? `<meta property="og:image" content="${esc(image)}" />` : "",
     `<meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}" />`,
+    // A 404 that invites indexing defeats the point of returning one. Only ever
+    // emitted for a missing page — the site-wide head must stay indexable, and a
+    // test asserts that.
+    missing ? `<meta name="robots" content="noindex" />` : "",
     meta.twitterSite ? `<meta name="twitter:site" content="${esc(meta.twitterSite)}" />` : "",
     image ? `<meta name="twitter:image" content="${esc(image)}" />` : "",
   ].filter(Boolean).join("\n      ");
 
   // Replace the shell's placeholder title + description outright, so the values a
   // scraper reads are never the build-time defaults.
-  return shellHtml
+  const html = shellHtml
     .replace(/<title>[\s\S]*?<\/title>/, "")
     .replace(/<meta\s+name="description"[^>]*>/, "")
     .replace("</head>", `  ${tags}\n    </head>`);
+  return { html, status: missing ? 404 : 200 };
 }

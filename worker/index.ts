@@ -174,8 +174,14 @@ export default {
     // placeholder. Failure here must never cost the page: fall back to the shell.
     if (isOps) return res;
     try {
-      const html = await renderShell(env, await res.text(), url);
-      return new Response(html, { headers: res.headers });
+      // The status comes back with the head because both are decided from one
+      // route resolution. An unknown path, an unknown product or post slug, and a
+      // product withdrawn from sale all serve the SPA shell — the client renders
+      // its 404 page — but with a 404 STATUS. Serving that page behind a 200 is a
+      // soft 404: the URL stays indexable and every mistyped address becomes a
+      // duplicate of whatever it landed on.
+      const { html, status } = await renderShell(env, await res.text(), url);
+      return new Response(html, { status, headers: res.headers });
     } catch (e) {
       console.log(`[shell] head render failed: ${String(e)}`);
       return env.ASSETS.fetch(new URL(shell, url.origin).toString());

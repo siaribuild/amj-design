@@ -24,7 +24,7 @@ export type Page =
   | "trade" | "login" | "dashboard"
   | "account" | "help"
   | "track-order" | "order"
-  | "privacy" | "post";
+  | "privacy" | "post" | "not-found";
 
 
 // 4-pane window mark — logo and repeated motif

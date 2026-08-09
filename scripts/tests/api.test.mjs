@@ -688,8 +688,29 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.ok(!html.includes("OpenFrame Website"), "the build-time placeholder title must be replaced");
 
       // A product URL gets that product own title, not the home page one.
-      const prodHtml = await (await customer.request("/products/amj80-series-sliding-window")).text();
+      const prod = await customer.request("/products/amj80-series-sliding-window");
+      assert.equal(prod.status, 200, "a real page is a 200");
+      const prodHtml = await prod.text();
       assert.ok(prodHtml.includes("AMJ80 Series Sliding Window"), "product head is rendered server-side");
+
+      // ── A page that does not exist says so, with the status to match ────────
+      // These used to answer 200 with the home page: a soft 404. Every mistyped
+      // or stale URL became a duplicate of the front page, indexable, and the
+      // visitor was never told the link was wrong. Unknown product slugs were
+      // worse — they served products[0], a real product under someone else's URL.
+      for (const [path, why] of [
+        ["/nonsense", "an unknown path"],
+        ["/products/does-not-exist", "an unknown product slug"],
+        ["/resources/does-not-exist", "an unknown post slug"],
+      ]) {
+        const res = await customer.request(path);
+        assert.equal(res.status, 404, `${why} answers 404`);
+        const body = await res.text();
+        // Still the SPA shell — the client renders a branded 404 page. Status and
+        // body are allowed to disagree in this direction, and must.
+        assert.ok(body.includes("og:title"), `${why} still serves the app shell`);
+        assert.ok(/content="noindex"/.test(body), `${why} is not offered for indexing`);
+      }
 
       const sitemap = await customer.request("/sitemap.xml");
       assert.equal(sitemap.status, 200);
@@ -708,8 +729,13 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
     });
 
     await t.test("customer and ops SPA fallback plus real static assets", async () => {
-      const customerShell = await customer.request("/catalogue/deep-link");
-      assert.equal(customerShell.status, 200);
+      // A REAL client route with no file behind it — that is what "SPA fallback"
+      // has to prove. It used to use /catalogue/deep-link, an address the router
+      // does not know; that passed only because every unknown path answered 200
+      // with the home page. Now an unknown path is a 404 (asserted in the crawler
+      // test above), so the fallback has to be shown on a route that exists.
+      const customerShell = await customer.request("/projects");
+      assert.equal(customerShell.status, 200, "a real client route is served the shell, not an asset 404");
       const customerHtml = await customerShell.text();
       assert.match(customerHtml, /<div id="root"><\/div>/);
       const assetPath = customerHtml.match(/(?:src|href)="(\/assets\/[^"]+)"/)?.[1];
