@@ -181,6 +181,37 @@ test("the file rail says what each document was detected as", async ({ page }) =
   await expect(page.getByText("SUPPORTING", { exact: true })).toHaveCount(0);
 });
 
+// The footer's "Sign in" was the only sign-in control on the site that survived
+// signing in: the header hides it and the drawer turns it into Sign out. It sent
+// a signed-in customer to an OTP form, which reads as an expired session rather
+// than as a link they did not need.
+test("the footer stops offering sign-in to someone already signed in", async ({ page }) => {
+  // Auto-waiting assertions, not allInnerTexts(): the footer is rendered by React
+  // after hydration, and a bare read returns an empty list before it exists.
+  const inFooter = (name: string) => page.locator("footer").getByRole("button", { name, exact: true });
+
+  await page.goto("/");
+  await expect(inFooter("Sign in")).toBeVisible();
+  await expect(inFooter("My Projects")).toHaveCount(0);
+
+  await page.route("**/api/auth/me", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({
+      authenticated: true, anonymous: false,
+      user: { id: "footer-user", email: "footer@example.com", name: "Footer User", phone: null, company: null, abn: null, priceGstMode: "inc", type: "customer", createdAt: new Date().toISOString() },
+    }),
+  }));
+  await page.reload();
+
+  await expect(inFooter("My Projects")).toBeVisible();
+  await expect(inFooter("Sign in")).toHaveCount(0);
+  // Everything else in the footer stays put — a utility list that rearranges
+  // itself is harder to learn than one that repeats itself. Track order in
+  // particular is redundant when signed in, not broken, so it stays.
+  for (const stays of ["Track order", "Resources", "Contact", "Trade account", "Get a quote", "Windows", "Doors"]) {
+    await expect(inFooter(stays)).toBeVisible();
+  }
+});
+
 test("queued AI work is labelled as document preparation, not file securing", async ({ page }) => {
   await page.route("**/api/auth/me", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 300));

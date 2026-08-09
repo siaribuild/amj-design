@@ -326,8 +326,13 @@ function Nav({ page, setPage, user, setUser, onSelectCategory }: {
 }
 
 // ─── Footer ───────────────────────────────────────────────────────────────────
-function Footer({ setPage, onSelectCategory }: {
+function Footer({ setPage, onSelectCategory, user }: {
   setPage: (p: Page) => void;
+  /** Only ONE link in this footer changes with it — see the Account column. The
+   *  rest stay put on purpose: Track order and Trade account still lead somewhere
+   *  coherent when you are signed in, and a utility list that rearranges itself is
+   *  harder to learn than one that repeats itself. */
+  user: AuthUser | null;
   /** Windows and Doors are the same PAGE with a different tab selected, and the
    *  category is app state rather than a route — /products/:slug is already the
    *  product-detail path, so there is no /products/windows to link to. The footer
@@ -381,7 +386,23 @@ function Footer({ setPage, onSelectCategory }: {
               // the page, not a destination a visitor can mean.
               { h: "Products", ls: [["Windows", "products", "windows"], ["Doors", "products", "doors"]] },
               { h: "Service",  ls: [["Get a quote", "quote"], ["Trade account", "trade"], ["How it works", "how-it-works"], ["Privacy Policy", "privacy"]] },
-              { h: "Account", ls: [["Sign in", "login"], ["Track order", "track-order"], ["Resources", "resources"], ["Contact", "contact"]] },
+              // "Sign in" was the ONLY sign-in control on the site that survived
+              // signing in — the header hides it and the mobile drawer turns it
+              // into Sign out, so the footer was the odd one out. It sent a
+              // signed-in customer to an OTP form, which reads as "your session
+              // has expired" rather than as a link they did not need.
+              //
+              // It becomes what the header already shows in that state: My
+              // Projects. Not Sign out — that lives in the drawer, a menu you
+              // opened on purpose; a sign-out sitting in the footer is something
+              // you hit on the way past.
+              {
+                h: "Account",
+                ls: [
+                  user ? ["My Projects", "dashboard"] : ["Sign in", "login"],
+                  ["Track order", "track-order"], ["Resources", "resources"], ["Contact", "contact"],
+                ],
+              },
             ] as { h: string; ls: [string, Page, CategorySlug?][] }[]).map(col => (
               <div key={col.h}>
                 <div className="text-white mb-3 t-label">{col.h}</div>
@@ -2275,7 +2296,7 @@ export default function App() {
       `}</style>
       <Nav page={page} setPage={navigateTo} user={user} setUser={setUser} onSelectCategory={selectCategory} />
       <main>{renderPage()}</main>
-      <Footer setPage={navigateTo} onSelectCategory={selectCategory} />
+      <Footer setPage={navigateTo} onSelectCategory={selectCategory} user={user} />
       {/* "quote" is excluded because it IS the quote builder: a fixed "Get a
           quote" bar there covers the project's own sticky summary with an
           invitation to the page you are already on. */}
