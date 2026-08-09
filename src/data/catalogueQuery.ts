@@ -79,6 +79,7 @@ export const CATALOGUE_QUERY = `{
       "hex": option->hex
     },
     featuredOrder,
+    disabled,
     "seo": ${SEO_PROJECTION}
   },
   "colours": *[_type=="option" && optionType->appliesToAll==true]|order(isDefault desc, name asc){
@@ -191,6 +192,8 @@ function normalizeProduct(p: any): Product {
     keySpecs: p.keySpecs ?? [], specs: p.specs ?? [],
     options: (p.options ?? []).filter((o: any) => o?.name && o?.typeSlug).map(normalizeOption),
     featuredOrder: p.featuredOrder ?? 0,
+    // Absent is AVAILABLE: every product predates the field.
+    disabled: p.disabled === true,
     seo: normalizeSeo(p.seo),
   };
 }

@@ -125,6 +125,38 @@ test("catalogue query normalization and runtime hydration", async () => {
     assert.equal(catalogue.getProductBySlug("regression-product")?.name, "Regression Product");
     assert.equal(catalogue.products.length, 1);
     assert.equal(catalogue.colorbondColourOptions[0].name, "Test");
+
+    // ── Withdrawn from sale ──────────────────────────────────────────────────
+    // The catalogue is hydrated ONCE and shared by the customer app and the ops
+    // console, so the customer/ops split lives in the SELECTORS. Both halves are
+    // asserted here because either one alone is the bug: filtering everywhere
+    // takes the product off ops, filtering nowhere sells it.
+    const withdrawn = { ...replacement, id: "gone", slug: "gone", name: "Withdrawn Product", disabled: true };
+    catalogue.hydrateCatalogue({ products: [replacement, withdrawn], colours: normalized.colours });
+
+    assert.deepEqual(
+      catalogue.getProductsByFamily("regression-family").map((p) => p.slug),
+      ["regression-product"], "customer-facing selectors exclude a withdrawn product");
+    assert.deepEqual(
+      catalogue.getProductsByFamily("regression-family", { includeDisabled: true }).map((p) => p.slug).sort(),
+      ["gone", "regression-product"], "ops opts in and gets it back");
+    assert.deepEqual(
+      catalogue.getProductsByCategory("regression-category").map((p) => p.slug),
+      ["regression-product"], "and the category grid excludes it too");
+    assert.equal(catalogue.familyProductCount("regression-family"), 1,
+      "the count matches the list — a family cannot advertise a product it will not show");
+    // NOT filtered, deliberately: a line that already names it must still resolve
+    // to a name, options and dimensions rather than blanking everywhere it appears.
+    assert.equal(catalogue.getProductBySlug("gone")?.name, "Withdrawn Product");
+    // ABSENT MEANS AVAILABLE. This fixture is hydrated directly, bypassing
+    // normalizeProduct, so the key is genuinely missing — which is exactly the
+    // shape a product authored before the field existed has. The contract is
+    // `disabled !== true`, not `disabled === false`, and the product's presence
+    // in the lists above is the proof.
+    assert.equal(catalogue.getProductBySlug("regression-product")?.disabled, undefined);
+    assert.notEqual(catalogue.getProductBySlug("regression-product")?.disabled, true);
+    // …and the normalizer fills it in for anything that comes through Sanity.
+    assert.equal(normalized.products[0].disabled, false);
   } finally {
     if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir);
   }

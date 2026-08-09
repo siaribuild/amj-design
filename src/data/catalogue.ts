@@ -165,6 +165,10 @@ export interface Product {
    *  refuse the ones that do not. Null on the built-in fallback catalogue and on
    *  any product not yet tagged, which is UNKNOWN and never excludes. */
   frameSystem?: FrameSystem | null;
+  /** Withdrawn from sale: hidden from the site and never chosen by the estimator,
+   *  while ops keeps full access. Absent or false ⇒ available, so every product
+   *  that predates the field keeps selling untouched. */
+  disabled?: boolean;
   /** Public WERS thermal ratings per glazing the frame offers (M3). Empty until the
    *  product has a thermal profile. Shown on the product page; never fabricated. */
   thermal?: ThermalSpec[];
@@ -647,18 +651,33 @@ export const getCategories = (): Category[] => categories;
 export const getCategory = (slug: string): Category | undefined => categories.find(c => c.slug === slug);
 export const getFamiliesByCategory = (categorySlug: string): Family[] => families.filter(f => f.categorySlug === categorySlug);
 export const getFamily = (slug: string): Family | undefined => families.find(f => f.slug === slug);
+/** DISABLED PRODUCTS ARE EXCLUDED BY DEFAULT, and every selector below opts in
+ *  rather than out. The catalogue is hydrated ONCE and shared by the customer app
+ *  and the ops console, so filtering at hydration would take a withdrawn product
+ *  away from ops too — and ops must keep it to read, reprice and rebuild orders
+ *  already placed against it. The split therefore lives here, in the selectors,
+ *  where a caller that genuinely needs everything can say so.
+ *
+ *  `getProductBySlug` is deliberately NOT filtered: a line that already names a
+ *  disabled product still has to resolve to a name, options and dimensions, and
+ *  returning undefined would blank it everywhere it appears. */
+const sellable = (p: Product) => p.disabled !== true;
+/** Ops passes `{ includeDisabled: true }`; nothing customer-facing does. */
+export interface ProductQuery { includeDisabled?: boolean }
+const visible = (list: Product[], q?: ProductQuery) => (q?.includeDisabled ? list : list.filter(sellable));
+
 export const getProductBySlug = (slug: string): Product | undefined => products.find(p => p.slug === slug);
-export const getProductsByCategory = (categorySlug: string): Product[] =>
-  products.filter(p => p.categorySlug === categorySlug).sort((a, b) => a.featuredOrder - b.featuredOrder);
-export const getProductsByFamily = (familySlug: string): Product[] =>
-  products.filter(p => p.familySlug === familySlug).sort((a, b) => a.featuredOrder - b.featuredOrder);
+export const getProductsByCategory = (categorySlug: string, q?: ProductQuery): Product[] =>
+  visible(products.filter(p => p.categorySlug === categorySlug), q).sort((a, b) => a.featuredOrder - b.featuredOrder);
+export const getProductsByFamily = (familySlug: string, q?: ProductQuery): Product[] =>
+  visible(products.filter(p => p.familySlug === familySlug), q).sort((a, b) => a.featuredOrder - b.featuredOrder);
 export const getRelatedProducts = (slug: string, limit = 3): Product[] => {
   const p = getProductBySlug(slug);
   if (!p) return [];
-  return products.filter(x => x.familySlug === p.familySlug && x.slug !== p.slug).slice(0, limit);
+  return products.filter(x => x.familySlug === p.familySlug && x.slug !== p.slug && sellable(x)).slice(0, limit);
 };
 export const familyProductCount = (familySlug: string): number =>
-  products.filter(p => p.familySlug === familySlug).length;
+  products.filter(p => p.familySlug === familySlug && sellable(p)).length;
 
 // ─── Runtime hydration (Sanity) ───────────────────────────────────────────────
 // The arrays above are the build-time default (from products.xlsx). When a CMS

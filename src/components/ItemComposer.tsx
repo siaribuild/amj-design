@@ -529,7 +529,7 @@ export function ItemForm({
   lockedSlug, quote, seed, onCommit, onCancel, rail = false, submitLabel = "Save",
   priceFn = previewPrice, scope = "item", unitAxis = "vertical", unitMode = "edit",
   onDirtyChange, initialSection, excludeId, heading, busy = false, hideOptions = false,
-  hideProduct = false, stickyActions = false, hideHeader = false, quietUntilTouched = false, parts, compatibility,
+  hideProduct = false, stickyActions = false, hideHeader = false, quietUntilTouched = false, parts, compatibility, includeDisabled = false,
 }: {
   lockedSlug?: string;
   /** Only `items` is read — for the duplicate-code check and code suggestion. It
@@ -600,6 +600,12 @@ export function ItemForm({
    *  hides what the server would accept takes a decision away from the person
    *  qualified to make it. Absent on a plain opening, which has no siblings. */
   compatibility?: { siblingSlugs: string[]; enforce: boolean } | null;
+  /** Show products withdrawn from sale. OPS ONLY, and it is why this defaults to
+   *  false: staff still quote a disabled product for a legacy job and still open
+   *  orders placed before it was withdrawn, so they need it in the list. A
+   *  customer must never be offered one. Disabled products are marked, not
+   *  silently mixed in — see the option label below. */
+  includeDisabled?: boolean;
   /** Say nothing until the customer has typed something.
    *
    *  A blank form is not a form with mistakes in it. On the product page the
@@ -749,7 +755,7 @@ export function ItemForm({
   const siblingSystems = (compatibility?.siblingSlugs ?? [])
     .map((slug) => getProductBySlug(slug)?.frameSystem ?? null);
   const incompatible = (pr: Product) => siblingSystems.length > 0 && !fitsAlongside(pr.frameSystem ?? null, siblingSystems);
-  const allProducts = familySlug ? getProductsByFamily(familySlug) : [];
+  const allProducts = familySlug ? getProductsByFamily(familySlug, { includeDisabled }) : [];
   // The unit's OWN product survives the filter even when it is the incompatible
   // one. A composite built before the frames were tagged — or by staff, who may
   // couple deliberately — can hold a product this list would otherwise drop, and
@@ -772,7 +778,7 @@ export function ItemForm({
       .map((g) => ({
         ...g,
         families: g.families.filter((f) =>
-          f.slug === familySlug || getProductsByFamily(f.slug).some((pr) => !incompatible(pr))),
+          f.slug === familySlug || getProductsByFamily(f.slug, { includeDisabled }).some((pr) => !incompatible(pr))),
       }))
       .filter((g) => g.families.length > 0)
     : famGroups;
@@ -898,7 +904,9 @@ export function ItemForm({
                       <option value="">{familySlug ? "Choose a product…" : "Select a type first"}</option>
                       {familyProducts.map(pr => (
                         <option key={pr.slug} value={pr.slug}>
-                          {pr.name}{incompatible(pr) ? " — different frame system" : ""}
+                          {pr.name}
+                          {pr.disabled ? " — withdrawn from sale" : ""}
+                          {incompatible(pr) ? " — different frame system" : ""}
                         </option>
                       ))}
                     </select>

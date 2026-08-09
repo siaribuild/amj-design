@@ -61,6 +61,10 @@ export interface CatalogueCandidate {
    *  "incompatible": an untagged product must not be eliminated, so the absence
    *  of this data can only ever cost the constraint, not the line. */
   frameSystem: FrameSystem | null;
+  /** Withdrawn from sale. The machine must never choose it — see selectForOpening —
+   *  but it stays in the repository so ops can still configure and revalidate a
+   *  line whose product was disabled after it was quoted. Absent ⇒ available. */
+  disabled: boolean;
   dimensionRule: {
     minWidthMm: number | null;
     maxWidthMm: number | null;

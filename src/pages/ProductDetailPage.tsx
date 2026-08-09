@@ -272,7 +272,14 @@ export function ProductDetailPage({ slug, setPage, onOpenProduct, onBack, quote 
   const [composerKey, setComposerKey] = useState(0);
   const [lightbox, setLightbox] = useState<number | null>(null);
 
-  const product = getProductBySlug(slug) ?? products[0];
+  // A withdrawn product is resolved by slug like any other — ops and existing
+  // lines still need its name and options — but it must not keep a page you can
+  // reach, link to and add to a quote from. `products[0]` is the pre-existing
+  // fallback for an unknown slug; a disabled one now takes the same route, so a
+  // stale link lands on a real product instead of a page selling something the
+  // catalogue has stopped offering.
+  const resolved = getProductBySlug(slug);
+  const product = resolved && resolved.disabled !== true ? resolved : products.find(p => p.disabled !== true) ?? products[0];
   // Must follow `product` — it reads it. It sat above the declaration and threw
   // "Cannot access 'product' before initialization" on every render, blanking
   // the page. `const` is not hoisted the way a function declaration is.

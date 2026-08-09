@@ -47,6 +47,11 @@ const CANDIDATE_QUERY = defineQuery(`*[_type == "product" && defined(name) && de
     name,
     "compatibleWith": compatibleWith[]{ "slug": system->slug.current, severity }
   },
+  // Withdrawn from sale. PROJECTED, NOT FILTERED IN THE QUERY: ops reads this same
+  // repository to list configurations and to revalidate a line whose product was
+  // disabled after it was quoted, so a product that vanished here would take ops's
+  // access with it. selectForOpening does the excluding, and only for the machine.
+  disabled,
   dimensionRule,
   // The product's glazing × thermal matrix comes from its shared frame profile
   // (M2/D5). Preferred over the legacy per-product performanceVariants below,
@@ -223,6 +228,7 @@ export function toCandidate(row: any): CatalogueCandidate | null {
     // defaulted here. proposePairedLayout owns what a missing knob means.
     defaultSplit: row.defaultSplit?.infillFamilySlug ? row.defaultSplit : null,
     frameSystem: toFrameSystem(row.frameSystem),
+    disabled: row.disabled === true,
     dimensionRule: row.dimensionRule ?? null,
     performanceVariants: variants,
     optionGroups: Array.isArray(row.optionGroups) ? [...new Set(row.optionGroups.filter(Boolean))] as string[] : [],

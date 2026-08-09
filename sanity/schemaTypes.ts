@@ -637,6 +637,24 @@ export const product = defineType({
       description: "Shared options offered on this product, each marked standard or optional.",
     }),
     defineField({ name: "featuredOrder", type: "number", group: "content" }),
+    // WITHDRAWN FROM SALE, NOT DELETED.
+    //
+    // Ticked, the product leaves the website and the estimator stops choosing it —
+    // automatically or by hand. It stays fully available to OPS, deliberately:
+    // orders already placed against it still have to be read, repriced and built,
+    // and staff may still quote it for a legacy job. Deleting the document would
+    // take the name and options off every line that ever used it.
+    //
+    // UNTICKED OR ABSENT MEANS AVAILABLE, which is why this asks the question in
+    // the negative: every product that exists today predates the field and must
+    // keep selling without anyone touching it.
+    defineField({
+      name: "disabled", title: "Disabled — hide from the site and the estimator", type: "boolean",
+      group: "content", initialValue: false,
+      description:
+        "Withdraws the product from the catalogue, the product pages and every estimator path. "
+        + "Ops keeps full access to it for existing orders and legacy builds. Leave unticked to sell it.",
+    }),
     // ── Glazing / thermal (SCAFFOLD M1/D5) ──
     // The glazings this product offers + their whole-window Uw/SHGC/stars come from
     // its FRAME's shared thermal profile. Hardware-twin products share one profile.

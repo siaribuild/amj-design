@@ -306,6 +306,52 @@ test("the catalogue query matches on the family operation only", async () => {
   assert.equal(miss.length, 0, "does not match an operation its family does not perform");
 });
 
+// A withdrawn product must be unreachable by the MACHINE and fully reachable by
+// OPS — the two halves of the same rule, so they are asserted together.
+test("a disabled product is never selected automatically, and still reaches ops", async () => {
+  const rows = [
+    { ...awning, category: { slug: { current: "windows" } }, disabled: true },
+    {
+      ...awning, category: { slug: { current: "windows" } },
+      sanityProductId: "product-live", slug: "amj100l-series-awning-window", name: "AMJ100L Series Awning Window",
+    },
+  ];
+  const repo = fixtureCatalogueRepository(rows);
+
+  // OPS: the repository still carries it. This is the path /lines/:id/configurations
+  // and the ops PATCH revalidation both use, so a line quoted before the product
+  // was withdrawn can still be opened, reconfigured and repriced.
+  const candidates = await repo.queryCandidates("windows", "awning");
+  assert.equal(candidates.length, 2, "the repository keeps withdrawn products for ops");
+  assert.equal(candidates.find((c) => c.slug === "amj80-series-awning-window").disabled, true);
+  assert.equal(candidates.find((c) => c.slug === "amj100l-series-awning-window").disabled, false,
+    "absent in the document means available, not disabled");
+
+  // THE MACHINE: it is not a candidate, even though it is otherwise a perfect fit.
+  const priceFn = async () => ({ ok: true, unit: 500, total: 500, depositAmount: 250, currency: "AUD", rateCardId: "r", rateCardVersion: "v1", pricingPolicyVersion: "v1", depositPercent: 50, discountPercent: 0 });
+  const result = await selectForOpening(
+    { family: "windows", operationType: "awning", widthMm: 800, heightMm: 1200, qty: 1 },
+    repo, priceFn,
+  );
+  assert.equal(result.selected.candidate.slug, "amj100l-series-awning-window");
+  assert.ok(!result.evaluated.some((e) => e.candidate.disabled),
+    "a withdrawn product is not even evaluated, so it cannot surface as an alternative");
+});
+
+test("disabling every product for an operation leaves the line unavailable, not wrong", async () => {
+  const repo = fixtureCatalogueRepository([
+    { ...awning, category: { slug: { current: "windows" } }, disabled: true },
+  ]);
+  const result = await selectForOpening(
+    { family: "windows", operationType: "awning", widthMm: 800, heightMm: 1200, qty: 1 },
+    repo, async () => null,
+  );
+  // There is genuinely nothing left to sell. Saying so is the honest answer, and
+  // is what the empty-catalogue case has always done.
+  assert.equal(result.selected, null);
+  assert.equal(result.status, "no_candidate");
+});
+
 test("selection prices the exact variant that met the report, with extracted quantity", async () => {
   const repo = fixtureCatalogueRepository([{
     ...awning,

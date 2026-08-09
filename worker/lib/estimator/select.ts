@@ -71,10 +71,22 @@ export async function selectForOpening(
   restrict?: SelectionRestriction | null,
 ): Promise<SelectionResult> {
   const all = await repo.queryCandidates(opening.family ?? null, opening.operationType ?? null);
+  // WITHDRAWN PRODUCTS ARE NEVER CHOSEN BY THE MACHINE.
+  //
+  // Here rather than in the GROQ, deliberately: every caller of this function is
+  // an automatic path (the estimate run and the composite selector), while ops
+  // reaches the same repository through queryCandidates + checkHardRules to list
+  // configurations and revalidate a line. Filtering in the query would have taken
+  // a disabled product away from ops too, and ops is exactly who still needs it —
+  // an order placed before the product was withdrawn still has to be repriced.
+  //
+  // If EVERY candidate for an operation is disabled the line comes back
+  // unavailable, which is the honest answer: there is nothing left to sell.
+  const sellable = all.filter((c) => !c.disabled);
   const systems = restrict?.systems;
   const candidates = systems?.length
-    ? all.filter((c) => !!c.frameSystem && systems.includes(c.frameSystem.slug))
-    : all;
+    ? sellable.filter((c) => !!c.frameSystem && systems.includes(c.frameSystem.slug))
+    : sellable;
   const catalogueVersion = repo.catalogueVersion(candidates);
 
   // Hard rules on every product, then evaluate every eligible exact performance

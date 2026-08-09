@@ -1186,6 +1186,10 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
               width: line.width, height: line.height, options: line.options, qty: line.qty }}
             onCommit={(built) => saveLine(built as never)}
             onCancel={() => setEditing(false)}
+            // Ops keeps withdrawn products: an order placed before a product was
+            // disabled still has to be read and repriced, and staff may quote one
+            // for a legacy job. They are marked in the list, never hidden.
+            includeDisabled
           />
         </td>
       </tr>
@@ -1257,6 +1261,9 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
                 seed={{ productSlug: sg.productSlug, width: sg.width, height: sg.height, options: sg.options, qty: sg.qty, location: sg.note }}
                 onCommit={(built) => saveUnit(sg.id, built as never)}
                 onCancel={() => setEditingUnit(null)}
+                // Ops keeps withdrawn products: an order placed before a product was
+                // disabled still has to be repriced, and a legacy job may still want it.
+                includeDisabled
                 // Staff see the whole family with the mismatches MARKED, not
                 // removed. A frame of another depth clashing at the mullion is a
                 // real fault and occasionally the right answer — an engineer who
