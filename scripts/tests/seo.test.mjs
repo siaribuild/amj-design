@@ -194,3 +194,46 @@ test("schema.org JSON-LD graph", async () => {
     if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir);
   }
 });
+
+// A product withdrawn from sale leaves the site — and must leave the sitemap with
+// it. Left in, the sitemap keeps inviting Google to crawl a URL the catalogue no
+// longer serves, which is the one place a "hidden" product stays advertised.
+test("the sitemap lists sellable products only, and keeps ones with no flag", async () => {
+  const runDir = await makeRunDir("sitemap-disabled");
+  try {
+    const outfile = join(runDir, "sitemap.mjs");
+    await build({
+      stdin: {
+        contents: `
+          export { buildSitemap } from ${JSON.stringify(join(projectRoot, "worker/lib/shell.ts"))};
+          export { hydrateCatalogue } from ${JSON.stringify(join(projectRoot, "src/data/catalogue.ts"))};
+        `,
+        resolveDir: projectRoot, sourcefile: "sitemap-entry.ts", loader: "ts",
+      },
+      bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+    });
+    const { buildSitemap, hydrateCatalogue } = await import(pathToFileURL(outfile).href);
+
+    const product = (slug, over = {}) => ({
+      id: slug, slug, name: slug, familySlug: "f", categorySlug: "windows",
+      shortDescription: "", descriptionParagraphs: [], standardGlass: "",
+      minWidth: null, minHeight: null, maxWidth: null, maxHeight: null,
+      notes: "", heroImage: "", gallery: [], keySpecs: [], specs: [], options: [], featuredOrder: 0,
+      ...over,
+    });
+    hydrateCatalogue({
+      products: [product("sellable"), product("withdrawn", { disabled: true }), product("untagged")],
+      colours: [],
+    });
+
+    // No SANITY_PROJECT_ID, so siteMeta short-circuits and nothing is fetched.
+    const xml = await (await buildSitemap({}, "https://example.test")).text();
+    assert.ok(xml.includes("https://example.test/products/sellable"), "a sellable product is listed");
+    assert.ok(xml.includes("https://example.test/products/untagged"),
+      "so is one with no flag at all — absent means available");
+    assert.ok(!xml.includes("https://example.test/products/withdrawn"),
+      "a withdrawn product is not advertised to crawlers");
+  } finally {
+    if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir);
+  }
+});

@@ -45,7 +45,12 @@ export async function buildSitemap(env: Env, origin: string): Promise<Response> 
   void meta;
   const urls = [
     ...PUBLIC_PAGES.map((p) => ({ loc: `${origin}/${p}`, priority: p === "" ? "1.0" : "0.7" })),
-    ...products.filter((p) => p.slug).map((p) => ({ loc: `${origin}/products/${p.slug}`, priority: "0.6" })),
+    // `disabled` is checked here, not just in the app: a product withdrawn from
+    // sale leaves the site but would otherwise stay in the sitemap, which is an
+    // invitation to crawl a URL the catalogue no longer serves. `!== true` so an
+    // absent flag means available, the same reading every other consumer applies.
+    ...products.filter((p) => p.slug && p.disabled !== true)
+      .map((p) => ({ loc: `${origin}/products/${p.slug}`, priority: "0.6" })),
     // Posts are indexable content in their own right — each is an article at a
     // stable URL, and several of them exist to be FOUND (a certifier searching a
     // standard reference lands on the article, not on the product).
