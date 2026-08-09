@@ -42,6 +42,25 @@ test("catalogue query normalization and runtime hydration", async () => {
       "the public catalogue query must never expose option pricing");
     // Colours come from the "applies to all" option type; images resolve to asset
     // url + focal point for on-demand sizing.
+    // "Published (eligible for selection)" was enforced in the estimator and
+    // nowhere else, so an unpublished glazing still reached the product page's
+    // thermal table and the customer's glazing picker — the machine would not
+    // choose it, and a person could pick it by hand.
+    //
+    // The predicate is asserted verbatim because WHICH one it is decides whether
+    // the picker works at all. `published != false` treats an absent flag as
+    // published, matching the estimator (`published !== false`); `published ==
+    // true` would drop every row an importer left the field off, which is the
+    // shape of the low-E bug that silently deleted exactly the glass a thermal
+    // band needs. Verified against a real GROQ engine: on rows [true, absent,
+    // false], `!= false` yields [true, absent] and `== true` yields [true].
+    assert.match(catalogue.CATALOGUE_QUERY, /"thermal": thermalProfile->rows\[published != false\]\{/,
+      "the public glazing list excludes unpublished rows, and keeps rows with no flag");
+    assert.match(catalogue.CATALOGUE_QUERY, /rows\[published != false\]\[0\]\.glazing->slug\.current/,
+      "the default glass is the first PUBLISHED row — rows[0] could preselect a glass nobody can choose");
+    assert.doesNotMatch(catalogue.CATALOGUE_QUERY, /rows\[published == true\]/,
+      "== true would drop rows whose flag was never set");
+
     assert.match(catalogue.CATALOGUE_QUERY, /optionType->appliesToAll==true/);
     assert.match(catalogue.CATALOGUE_QUERY, /"heroImage": heroImage\{/);
     assert.match(catalogue.CATALOGUE_QUERY, /"url": asset->url/);

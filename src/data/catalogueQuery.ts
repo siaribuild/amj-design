@@ -59,10 +59,22 @@ export const CATALOGUE_QUERY = `{
     },
     // The glass a manually-configured / schedule line carries by default. Prefer the
     // frame thermal profile's first glazing (M2/M6); fall back to the legacy variant.
-    "defaultGlazingSlug": coalesce(thermalProfile->rows[0].glazing->slug.current, performanceVariants[0].glazingOption->slug.current),
+    // The first PUBLISHED row: rows[0] unconditionally made an unpublished glass
+    // the default on every new line for that product — selectable by nobody, yet
+    // preselected for everybody.
+    "defaultGlazingSlug": coalesce(thermalProfile->rows[published != false][0].glazing->slug.current, performanceVariants[0].glazingOption->slug.current),
     // Public thermal ratings (M3): the WERS matrix shown on the product page — one
     // row per glazing the frame offers. Empty for products with no profile yet.
-    "thermal": thermalProfile->rows[]{
+    // PUBLISHED ROWS ONLY. "Published (eligible for selection)" was enforced in
+    // the estimator and nowhere else, so an unpublished glazing still appeared in
+    // the product page thermal table AND in the customer glazing picker: the
+    // machine would not choose it and a person could pick it by hand.
+    // The test is "not false", NOT "is true": an absent flag means published,
+    // which is the same reading the estimator applies (published !== false).
+    // Inverting it would empty the glazing picker for every row an importer
+    // left the field off — the shape of the low-E bug, which silently deleted
+    // exactly the glass a thermal band needs.
+    "thermal": thermalProfile->rows[published != false]{
       "slug": glazing->slug.current,
       "glazingName": coalesce(glazing->longDisplayName, glazing->name),
       "glassSpec": glazing->glassSpecification,
