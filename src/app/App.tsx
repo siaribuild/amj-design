@@ -1694,20 +1694,50 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
 function NotFoundPage({ setPage }: { setPage: (p: Page) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   return (
-    <div className="ground-bone min-h-screen">
-      <section className="max-w-6xl mx-auto px-6 pt-32 pb-24">
-        <SLabel>404</SLabel>
-        <h1 className="text-ink mt-3 mb-3 t-hd1">That page isn't here.</h1>
-        <p className="text-body max-w-[52ch] mb-8 t-bd">
-          The link may be out of date, or the address mistyped. Nothing is wrong with your
-          quote — anything you had saved is still there.
+    // FULL SCREEN, on the site's own dark ground. A 404 dropped into a short bone
+    // band reads as a page that failed to load rather than a page that answered;
+    // giving it the whole viewport is what makes it look deliberate.
+    //
+    // No photograph. Every other hero takes one from Sanity and there is no page
+    // record behind this route — and the resources band already settled what to do
+    // about that: "a hero whose default state is a missing photograph is the
+    // placeholder problem again". Night on its own carries it, and night carries
+    // no watermark either (deco, 2026-08-02).
+    <section className="relative bg-night overflow-hidden min-h-screen flex items-center">
+      <div className="relative w-full max-w-6xl mx-auto px-6 pt-24 pb-16">
+        <SLabel light>Error 404</SLabel>
+        {/* t-ds1 is the site's LARGEST display size and its sentence case with a
+            terminal full stop is the house form — the reference this was modelled
+            on sets 115px uppercase, which would make the 404 the only uppercase
+            display type on the site and roughly double its biggest type. Matching
+            the site's language means matching the site's scale. */}
+        <h1 className="text-white mb-4 t-ds1">This one wasn't made.</h1>
+        {/* Nothing gets made until you sign it off is the sentence this site
+            repeats more than any other; here it is, turned on a URL.
+            The saved-work reassurance is a SUBORDINATE clause, not its own
+            sentence: raising "nothing is wrong with your quote" is the first
+            moment a visitor considers that something might be, and most people
+            who land here arrived from a stale link with no quote in flight. */}
+        <p className="text-white/80 max-w-[54ch] leading-relaxed mb-8 t-bd">
+          The link is dead, or the address is wrong. Everything else on the site still
+          works — the catalogue's here, and so is anything you'd saved.
         </p>
-        <div className="flex flex-wrap gap-3">
-          <Btn variant="sage" size="md" onClick={() => go("home")}>Back to home <ArrowRight className="w-4 h-4" /></Btn>
-          <Btn variant="outline" size="md" onClick={() => go("products")}>Browse products</Btn>
+        {/* PRODUCTS LEADS, not home. Only two routes can reach this page with a
+            real intent behind them — /products/:slug and /resources/:slug — every
+            other path either resolves or is redirected (routes.ts LEGACY_ROUTES).
+            So the likeliest arrival wanted a specific product, and sending them to
+            the front page to start again is the worst answer available.
+            Two actions, unequal weight, and no quote CTA: a page that exists to
+            say "this is not here" is not the place to sell. */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <Btn variant="sage" size="md" onClick={() => go("products")}>Browse products <ArrowRight className="w-4 h-4" /></Btn>
+          <button onClick={() => go("home")}
+            className="text-white/70 hover:text-white transition-colors cursor-pointer t-bd-sm">
+            Back to home
+          </button>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
   );
 }
 
