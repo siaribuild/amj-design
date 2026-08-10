@@ -8,10 +8,10 @@ The automated suite uses Node's built-in test runner and isolated local Cloudfla
 - `npm run test:all` also runs the browser E2E suite (`test:web`).
 - `npm run test:unit` — pure-logic units: pricing, schedule codes, option groups,
   formatting, and the Worker's pure helpers (cookies, tokens, email/OTP utils,
-  order transitions, approval RBAC, staff allowlist, catalogue normalization).
+  order transitions, staff allowlist, catalogue normalization).
 - `npm run test:catalogue` validates catalogue hydration, the shared GROQ shape, and the generated Sanity NDJSON.
 - `npm run test:build` builds both Vite entry points and performs a Wrangler deployment dry run.
-- `npm run test:api` creates a fresh D1 database, applies every migration, seeds it, starts a local Worker, and exercises API, KV, R2, authentication, approval, quote, order, guest-tracking, and SPA-routing flows — happy paths (`api.test.mjs`) and edge/negative paths (`api-edge.test.mjs`: OTP caps, guest anti-enumeration + rate limit, file limits/ownership, clarification round-trip, approval reject/wrong-role/no-rule, admin RBAC, audit, customers 360, search, order stage-conflicts).
+- `npm run test:api` creates a fresh D1 database, applies every migration, seeds it, starts a local Worker, and exercises API, KV, R2, authentication, approval, quote, order, guest-tracking, and SPA-routing flows — happy paths (`api.test.mjs`, which also pins the security-header policy) and edge/negative paths (`api-edge.test.mjs`: OTP caps and per-source throttling, the Access-mode ops sign-in guard — which boots a second Worker with the Access variables actually set — last-admin protection, enquiry reference sequencing across a deleted row, guest anti-enumeration, file limits/ownership, upload-scanner refusals, the clarification round-trip, flat-access verification, audit, customers 360, search, order stage-conflicts).
 - `npm run test:web` — Playwright E2E against a real built Worker (customer site + `ops.*` console): OTP login, real dashboard data, products catalogue, guest tracking, and the ops queue/workspace/tabs.
 - `npm run test:coverage` — c8 line/branch/function coverage for the in-process logic layer (pure functions in `src/data/**` + `worker/lib/**`), via esbuild inline source maps. HTML report in `coverage/`. Integration/Worker-route and E2E code run in separate processes (wrangler/workerd, the browser) so they are covered behaviourally, not line-instrumented, by design.
 
@@ -39,15 +39,26 @@ CI image), `test:web` is skipped by not being part of `npm test`.
 
 Temporary build and database state is created beneath `.codex-tmp/` and removed after each run. The API suite uses development OTPs returned by the local Worker; it never sends email or talks to production services.
 
+## The type-check gate
+
+`npm test` begins with `typecheck:gate`, which fails on a named set of error codes
+— the ones that mean code cannot run at all — and prints the remaining backlog as
+a per-code table on every run. `npm run typecheck` reports everything and exits 0.
+
+The subset is a ratchet, not a standing compromise: fix a code's last occurrence,
+add it to `FATAL` in `scripts/typecheck.mjs`, and it can never return. Treat a
+growing count as a real signal rather than noise — two live defects were found
+sitting in the ungated backlog, an estimator flag that never reached the module
+that reads it, and three input fields that had silently lost Enter-to-submit and
+autofocus.
+
 ## Known-issue regressions
 
-Confirmed defects are retained as executable `TODO` tests. They run and report their current failure without making the otherwise passing suite exit unsuccessfully:
-
-- Sanity object-array members are missing `_key` values.
-- An estimator can delegate an approval to the estimator role and self-approve.
-- The legacy staff seam authorizes unauthenticated requests while `APP_ENV` is `development`.
-
-Remove each `todo` annotation when its underlying defect is fixed; the existing assertion then becomes a required regression gate.
+None. This section used to list three defects kept as executable `todo` tests, and
+all three are gone — there is no `todo` annotation left anywhere in
+`scripts/tests/`. The approval-delegation item went with the approvals engine
+itself (migration 0033), and the legacy staff seam is an ordinary passing
+assertion now.
 
 ## Still environment-dependent
 
