@@ -1148,6 +1148,15 @@ ops.get("/customers", async (c) => {
       FROM user u
      WHERE u.type = 'customer'
      ORDER BY u.created_at DESC`).all();
+  // Attribution is the compensating control for flat access — every staff action
+  // is meant to be answerable later. It was not applied to the READS, which is
+  // where the customer data actually leaves: this endpoint returns every
+  // customer's name, email, phone, company and ABN in one response and left no
+  // trace that anyone had asked for it.
+  await logEvent(c.env, {
+    actor: staff.id, entityType: "user", entityId: "*",
+    action: `viewed the customer list (${results.length} record(s))`,
+  });
   return c.json({ customers: results });
 });
 
@@ -1211,6 +1220,7 @@ ops.get("/customers/:id", async (c) => {
   if (!u) return c.json({ error: "not_found" }, 404);
   const { results: projects } = await c.env.DB.prepare("SELECT id, title, status_customer, status_internal, updated_at FROM project WHERE owner_user_id = ? ORDER BY updated_at DESC").bind(id).all();
   const { results: ordersRows } = await c.env.DB.prepare('SELECT o.id, o.order_no, o.stage, o.total FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.owner_user_id = ? ORDER BY o.created_at DESC').bind(id).all();
+  await logEvent(c.env, { actor: staff.id, entityType: "user", entityId: id, action: "viewed customer record" });
   return c.json({
     customer: {
       id: u.id, name: u.name, email: u.email, phone: u.phone,
@@ -1814,6 +1824,12 @@ ops.get("/files/:id/download", async (c) => {
   if (fa.virus_status !== "clean") return c.json({ error: "scan_pending" }, 409);
   const obj = await c.env.FILES.get(fa.r2_key);
   if (!obj) return c.json({ error: "gone" }, 404);
+  // A customer's uploaded documents leaving the building is the single most
+  // consequential read in this console, and it was the one with no audit row.
+  await logEvent(c.env, {
+    actor: staff.id, entityType: "file", entityId: c.req.param("id"),
+    action: `downloaded ${fa.filename}`,
+  });
   // Parity with the customer download (routes/files.ts). This one interpolated
   // fa.filename raw — a name that comes from the client's multipart upload and is
   // stored verbatim, so a quote or a newline in it lands in a response header —
