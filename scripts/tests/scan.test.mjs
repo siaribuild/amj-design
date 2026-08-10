@@ -80,6 +80,50 @@ test("a ZIP/Office container is rejected (macro carrier)", async () => {
   assert.equal((await scan(zip)).verdict, "infected");
 });
 
+// The tests above only ever fed the scanner an UNPREFIXED container, which is
+// what let the sniff window survive: it read the first 8 KB, so eight kilobytes
+// of ASCII in front of any of these sniffed as 'text' and was stored clean and
+// served to staff. A prefixed archive is not inconvenienced — ZIP and OOXML are
+// read from the End-of-Central-Directory record at the tail, so the file still
+// opens normally. Every case here passed as 'clean' before the window was removed.
+const PREFIX = "A".repeat(8192);
+for (const [what, tail] of [
+  ["a ZIP", "\x50\x4b\x03\x04\x14\x00\x00\x00"],
+  ["a Windows executable", "\x4d\x5a\x90\x00\x03\x00\x00\x00"],
+  ["an OOXML macro document", "\x50\x4b\x03\x04word/vbaProject.bin"],
+  ["a legacy OLE document", "\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"],
+  ["a RAR archive", "\x52\x61\x72\x21\x1a\x07\x00"],
+]) {
+  test(`${what} behind 8 KB of ASCII is still rejected`, async () => {
+    const r = await scan(`${PREFIX}${tail}`, { SCAN_ENGINE: "structural" }, "plans.pdf", "application/pdf");
+    assert.equal(r.verdict, "infected", `${what} sniffed as text and was stored`);
+  });
+}
+
+test("the sniffer reads past the old 8 KB window", () => {
+  // Genuine text stays text however long it is — the fix is scope, not paranoia.
+  assert.equal(sniffType(bytes("schedule line\n".repeat(2000))), "text");
+  // A single NUL anywhere is enough to disqualify it, at any offset.
+  assert.equal(sniffType(bytes(`${PREFIX}${"B".repeat(50000)}\x00`)), null);
+});
+
+test("SCAN_ENGINE is validated, and an unknown value fails closed", async () => {
+  // A typo used to degrade silently to structural-only, so a misconfigured
+  // deployment read as a working AV one.
+  const r = await scan(minimalPdf(), { SCAN_ENGINE: "clamav" });
+  assert.equal(r.verdict, "unknown");
+  assert.equal(r.reason, "scanner_misconfigured");
+});
+
+test("'remote' still enforces the structural type allowlist", async () => {
+  // 'remote' used to skip structural entirely, so acting on "deploy AV" with the
+  // obvious value newly permitted executables on an AV verdict alone.
+  const exe = new Uint8Array([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00]);
+  const r = await scan(exe, { SCAN_ENGINE: "remote", SCAN_ENDPOINT: "https://av.invalid/scan" });
+  assert.equal(r.verdict, "infected");
+  assert.equal(r.engine, "structural");
+});
+
 test("PDF with embedded JavaScript is rejected", async () => {
   const r = await scan(minimalPdf("/Names << /JavaScript 6 0 R >> "));
   assert.equal(r.verdict, "infected");

@@ -3,7 +3,7 @@ import { SAGE } from "../styles/tokens";
 import { useEffect, useState } from "react";
 import { Loader2, Download, Power, ShieldCheck } from "lucide-react";
 import {
-  opsFiles, opsRescanFile, opsAudit, opsStaff, opsSetRole,
+  opsFiles, opsRescanFile, opsAudit, opsStaff, opsSetRole, OpsApiError,
   type OpsFile, type OpsAudit, type OpsStaff,
 } from "./api";
 
@@ -119,11 +119,31 @@ export function Admin() {
 
   const change = async (id: string, role: string) => {
     setErr("");
-    try { await opsSetRole(id, role); await load(); } catch { setErr("Only admins can change roles."); }
+    // 409 means the last admin was about to be demoted, which would leave nobody
+    // able to grant the role again. Worth saying specifically — "only admins can
+    // change roles" is confusing advice to give an admin who just tried.
+    try { await opsSetRole(id, role); await load(); }
+    catch (e) {
+      setErr(e instanceof OpsApiError && e.code === "last_admin"
+        ? "That is the only admin. Promote someone else first."
+        : "Only admins can change roles.");
+    }
   };
   return (
     <div className="max-w-3xl">
-      <p className="text-quiet mb-3 flex items-center gap-1.5 t-cap"><ShieldCheck className="w-4 h-4" />Staff & roles. Only admins can change roles.</p>
+      {/* This screen used to say "Staff & roles. Only admins can change roles." and
+          leave it there, which read as a least-privilege control. It is not one:
+          access has been flat since 2026-07-28, so estimator, technical_reviewer
+          and manager are the same privilege as each other and as no role at all.
+          Only 'admin' gates anything — this screen, and changing a customer's
+          sign-in email. Someone withholding a role here to limit what a new
+          starter can reach was limiting nothing and had no way to find that out. */}
+      <p className="text-quiet mb-1 flex items-center gap-1.5 t-cap"><ShieldCheck className="w-4 h-4" />Staff &amp; roles. Only admins can change roles.</p>
+      <p className="text-quiet mb-3 t-cap">
+        Everyone who reaches this console has full access to customers, files, pricing and payments —
+        the boundary is the Cloudflare Access policy, not this dropdown. Only <strong>admin</strong> differs:
+        it grants role changes and customer sign-in email edits. The other values are labels.
+      </p>
       {err && <p className="text-red-600 mb-2 t-cap">{err}</p>}
       <div className="card divide-y divide-black/5">
         {staff.map(s => (

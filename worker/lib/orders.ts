@@ -143,13 +143,24 @@ export async function createOrderFromRevision(
   const balance = Math.round((total - deposit) * 100) / 100;
 
   const orderId = uuid();
-  // Derive the next number from the max existing suffix (gap-tolerant); a rare
-  // collision just fails this batch, and the caller's retry re-derives it.
-  // substr is 1-based: position 4 is the first digit after the "OF-" prefix.
-  const maxRow = await env.DB
-    .prepare(`SELECT MAX(58000, COALESCE(MAX(CAST(substr(order_no, 4) AS INTEGER)), 58000)) AS n FROM "order" WHERE order_no LIKE 'OF-%'`)
-    .first<{ n: number }>();
-  const orderNo = `OF-${(maxRow?.n ?? 58000) + 1}`;
+  // The number is assigned by the INSERT below, not derived above it.
+  //
+  // It used to be a SELECT before the batch. That failed SAFELY — the batch rolls
+  // back and the caller returns 409 — but it failed for the wrong reason and told
+  // the customer the wrong thing. Two different people accepting two different
+  // quotes at the same moment both derived the same OF- number, and the loser
+  // tripped the order_no UNIQUE index rather than the UNIQUE(accepted_revision_id)
+  // guard this path is actually built around. They were told their quote "may have
+  // just changed and to refresh" when nothing about their quote had changed, and
+  // refreshing showed them the same thing. The careful reasoning at the top of this
+  // function is all about the same-revision race; it never covered this one.
+  //
+  // substr is 1-based: position 4 is the first digit after the "OF-" prefix. The
+  // subquery reads the pre-insert state of the table it inserts into, which is
+  // exactly what is wanted, and it is evaluated inside the statement so no second
+  // request can occupy the gap. Still gap-tolerant, still the same format.
+  const NEXT_ORDER_NO =
+    `'OF-' || (SELECT MAX(58000, COALESCE(MAX(CAST(substr(o2.order_no, 4) AS INTEGER)), 58000)) + 1 FROM "order" o2 WHERE o2.order_no LIKE 'OF-%')`;
 
   const stmts = [
     // Claim the revision inside the transaction — gates the whole order creation.
@@ -166,7 +177,7 @@ export async function createOrderFromRevision(
     ).bind(revisionId, projectId, projectId, revisionId),
     env.DB.prepare(
       `INSERT INTO "order" (id, project_id, accepted_revision_id, order_no, total, stage)
-       SELECT ?, ?, ?, ?, ?, 'deposit_invoiced'
+       SELECT ?, ?, ?, ${NEXT_ORDER_NO}, ?, 'deposit_invoiced'
         WHERE EXISTS (
           SELECT 1 FROM quote_revision
            WHERE id=? AND project_id=? AND snapshot_status='accepted'
@@ -178,7 +189,7 @@ export async function createOrderFromRevision(
                AND current_revision_id=?
           )`,
     ).bind(
-      orderId, projectId, revisionId, orderNo, total,
+      orderId, projectId, revisionId, total,
       revisionId, projectId, projectId, revisionId,
     ),
     // deposit invoiced now; balance created but not yet invoiced (invoiced_at NULL)

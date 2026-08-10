@@ -25,6 +25,7 @@ import { ensureCatalogue } from "./lib/catalogue";
 import { getActiveLocations } from "../src/data/catalogue";
 import { drainLearningOutbox } from "./lib/revisions";
 import { reconcilePricing } from "./lib/pricing-admin";
+import { applySecurity, securityOptions } from "./lib/headers";
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -87,8 +88,12 @@ api.route("/api/debug", debug);
 // Any other /api/* path is a real 404 — never fall through to the SPA shell.
 api.all("/api/*", (c) => c.json({ error: "not_found" }, 404));
 
-export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+// Route a request to its response. Every `return` below is a page or a payload;
+// the security policy is attached once, by the fetch handler that wraps this.
+// There are eight exits here — two redirects, sitemap, robots, static assets, the
+// API, the ops shell, the customer shell and the shell-render fallback — and
+// before the wrapper existed, every one of them answered with no policy at all.
+async function route(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     // ── ONE HOST PER SITE ───────────────────────────────────────────────────
@@ -186,6 +191,13 @@ export default {
       console.log(`[shell] head render failed: ${String(e)}`);
       return env.ASSETS.fetch(new URL(shell, url.origin).toString());
     }
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+    const host = request.headers.get("host") ?? url.hostname;
+    return applySecurity(await route(request, env, ctx), securityOptions(env, url, host));
   },
   async queue(batch: MessageBatch<AiExtractionJob>, env: Env): Promise<void> {
     await consumeAiJobs(batch, env);

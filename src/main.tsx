@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import App from "./app/App.tsx";
+import App from "./app/App";
 import { hydrateFromSanity, hydrateSiteSettings } from "./data/sanity";
 import "./styles/index.css";
 

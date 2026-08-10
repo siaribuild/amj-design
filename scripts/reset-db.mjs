@@ -2,20 +2,51 @@
 // Reset the OpenFrame database to a known test state: ensure schema, clear all data,
 // load default fixtures. Local by default; pass --remote to target Cloudflare.
 //
-//   npm run db:reset              # local, lock-safe (DELETE rows + reseed)
-//   npm run db:reset -- --hard    # local, also nuke KV sessions/OTP + R2
-//   npm run db:reset -- --remote  # target the deployed Cloudflare DB
+//   npm run db:reset                    # local, lock-safe (DELETE rows + reseed)
+//   npm run db:reset -- --hard          # local, also nuke KV sessions/OTP + R2
+//   npm run db:reset -- --remote        # the DEPLOYED database — asks first
+//   npm run db:reset -- --remote --yes  # …without asking (scripts only)
 //
 // The default is safe to run while `npm run dev:api` is up. --hard deletes the
 // local Miniflare state and therefore needs the dev server stopped (it holds
 // file locks on Windows).
 import { execSync } from "node:child_process";
 import { rmSync } from "node:fs";
+import { createInterface } from "node:readline/promises";
+import { stdin, stdout } from "node:process";
 
 const remote = process.argv.includes("--remote");
 const hard = process.argv.includes("--hard") && !remote;
 const flag = remote ? "--remote" : "--local";
 const DB = "apertly-db";
+
+// --remote points at the DEPLOYED database. clear.sql is a straight DELETE
+// across every transactional table — customers, projects, quotes, orders,
+// payments, uploads — followed by a reseed with demo fixtures. There is no undo
+// here; recovery is a D1 Time Travel restore, which loses everything written
+// since. A single mistyped flag on a line that is otherwise routine locally is
+// all it takes, so this asks, out loud, naming the database.
+//
+// The prompt is skippable with --yes for a scripted restore, deliberately: a
+// guard nobody can automate around gets removed by the first person who needs to
+// automate around it. Without a TTY (CI, a pipe) and without --yes it refuses
+// rather than assuming consent.
+if (remote && !process.argv.includes("--yes")) {
+  const CONFIRM = "reset production";
+  if (!stdin.isTTY) {
+    console.error(`\n✗ Refusing to reset the REMOTE ${DB} without a terminal.\n  Pass --yes if you really mean it from a script.`);
+    process.exit(1);
+  }
+  const rl = createInterface({ input: stdin, output: stdout });
+  console.log(`\n⚠ This DELETES every row in the DEPLOYED ${DB} and reloads demo fixtures.`);
+  console.log("  Customers, projects, quotes, orders, payments and uploads all go.");
+  const answer = await rl.question(`  Type "${CONFIRM}" to continue: `);
+  rl.close();
+  if (answer.trim() !== CONFIRM) {
+    console.error("\n✗ Aborted — nothing was changed.");
+    process.exit(1);
+  }
+}
 
 const run = (cmd) => {
   console.log(`\n$ ${cmd}`);

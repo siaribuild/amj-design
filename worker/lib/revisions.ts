@@ -140,8 +140,13 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
   // by staff before the quote goes out. Readiness is enforced here, at the gate.
   if (lines.some((l) => l.status === "technical_review" || l.status === "incomplete")) return { ok: false, error: "not_ready" };
 
-  const maxRow = await env.DB.prepare("SELECT COALESCE(MAX(revision_no), 0) AS n FROM quote_revision WHERE project_id = ?").bind(projectId).first<{ n: number }>();
-  const revisionNo = (maxRow?.n ?? 0) + 1;
+  // revision_no is assigned by the INSERT, for the same reason as the project and
+  // order references: read-then-write across two statements leaves a window, and
+  // this one had no catch at all — a collision threw D1_ERROR straight out of
+  // batch(), past a function whose whole contract is to return { ok: false }, and
+  // the Worker registers no onError, so staff issuing a revision saw a bare 500.
+  const NEXT_REVISION_NO =
+    "(SELECT COALESCE(MAX(qr2.revision_no), 0) + 1 FROM quote_revision qr2 WHERE qr2.project_id = ?)";
   const revisionId = uuid();
   const outboxId = uuid();
   const total = lines.reduce((s, l) => s + (l.line_total || 0), 0);
@@ -154,12 +159,13 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
     env.DB.prepare(
       `INSERT INTO quote_revision
          (id, project_id, revision_no, snapshot_status, totals_json)
-       SELECT ?, ?, ?, 'issued', ?
+       SELECT ?, ?, ${NEXT_REVISION_NO}, 'issued', ?
         WHERE EXISTS (
           SELECT 1 FROM project
            WHERE id=? AND quote_edit_version=?
-        )`,
-    ).bind(revisionId, projectId, revisionNo, JSON.stringify({ total }), projectId, project.quote_edit_version),
+        )
+        RETURNING revision_no`,
+    ).bind(revisionId, projectId, projectId, JSON.stringify({ total }), projectId, project.quote_edit_version),
     ...lines.map((l) => {
       const p = getProductBySlug(l.product_slug);
       const snapshot = JSON.stringify({
@@ -205,11 +211,27 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
           AND EXISTS (SELECT 1 FROM quote_revision WHERE id=?)`,
     ).bind(revisionId, projectId, project.quote_edit_version, revisionId),
   ];
-  const committed = await env.DB.batch(stmts);
+  let committed: D1Result[];
+  try {
+    committed = await env.DB.batch(stmts);
+  } catch {
+    // Rolled back. Whatever the cause — a residual number conflict, a constraint
+    // this function does not model — the caller's contract is a 409, not a 500.
+    // orders.ts has always handled its batch this way; this one did not.
+    return { ok: false, error: "not_ready" };
+  }
   if (Number(committed[0]?.meta?.changes ?? 0) !== 1 ||
       Number(committed[committed.length - 1]?.meta?.changes ?? 0) !== 1) {
     return { ok: false, error: "not_ready" };
   }
+  // The number the database assigned. RETURNING inside a batch is not something
+  // this codebase relies on elsewhere, so fall back to reading the row rather than
+  // reporting a number nobody verified — the value reaches the customer's email.
+  const revisionNo = Number(
+    (committed[0]?.results?.[0] as { revision_no?: number } | undefined)?.revision_no ??
+    (await env.DB.prepare("SELECT revision_no FROM quote_revision WHERE id = ?").bind(revisionId).first<{ revision_no: number }>())?.revision_no ??
+    1,
+  );
   await processLearningOutbox(env, outboxId);
   // Finalization creates the learning example (LLM strategy §16.3/§17.2): the AI
   // proposal vs the human-approved outcome, retrieval-eligible immediately,

@@ -40,7 +40,10 @@ cd sanity
 npx sanity@latest init --project-plan free   # creates project + dataset; note the projectId
 # add studio deps if init didn't: npm i sanity @sanity/vision
 ```
-Set `projectId`/`dataset` in `sanity.config.ts` (or via SANITY_STUDIO_PROJECT_ID).
+Copy `.env.example` to `.env` and fill in `SANITY_STUDIO_PROJECT_ID`. Both it and
+`SANITY_STUDIO_DATASET` are required — the config and the CLI each throw without
+them, so no command can act on a project or dataset nobody named. Do not put the
+values back in `sanity.config.ts`; that is the pattern being removed.
 
 ## 2. Import the catalogue
 ```bash

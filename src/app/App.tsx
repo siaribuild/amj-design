@@ -8,6 +8,7 @@ import {
   Search, Lock, Key, Bell, Settings, ExternalLink
 } from "lucide-react";
 import { type Page, SAGE, DARK, WindowMark, SLabel, Btn, CtaBanner, FieldLabel, Input } from "./ui";
+import { TURNSTILE_SITE_KEY, useTurnstile } from "../lib/turnstile";
 import { getSiteBrand, brandName } from "../data/sanity";
 import { ObfuscatedEmail } from "../components/ObfuscatedEmail";
 import { ProductsPage } from "../pages/ProductsPage";
@@ -84,7 +85,11 @@ const IMG = {
 // Card framing is now expressed through the border-color transition on hover,
 // dark header strips on widget cards, and the GhostMark watermarks in section backgrounds.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function FrameCorners(_props: unknown) { return null; }
+// `unknown` is not a props type — JSX cannot assign attributes to it, so every
+// call site reported an error that the reduced gate swallowed. Naming the props
+// the four callers actually pass keeps the no-op deliberate and legible instead
+// of merely untyped.
+function FrameCorners(_props: { size?: number; color?: string; show?: string }) { return null; }
 
 function Select({ value, onChange, children }: {
   value: string; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
@@ -1239,14 +1244,21 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [devCode, setDevCode] = useState<string | undefined>();
+  // Turnstile, present only where a site key is configured. The Worker demands a
+  // token on /api/auth/challenge whenever TURNSTILE_SECRET is set: the endpoint
+  // is unauthenticated and emails whatever address it is given, so the caller has
+  // to be vouched for. Without a key this is inert and the flow is unchanged.
+  const [captchaToken, setCaptchaToken] = useState("");
+  const turnstileRef = useTurnstile(setCaptchaToken, step);
+  const captchaReady = !TURNSTILE_SITE_KEY || !!captchaToken;
 
   const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
 
   const sendCode = async () => {
-    if (!validEmail || busy) return;
+    if (!validEmail || busy || !captchaReady) return;
     setBusy(true); setError("");
     try {
-      const r = await requestCode(email.trim());
+      const r = await requestCode(email.trim(), captchaToken || undefined);
       setDevCode(r.devCode);       // shown only in dev (no email provider yet)
       setStep("code");
     } catch { setError("Couldn't send a code. Try again."); }
@@ -1288,8 +1300,9 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
                   onKeyDown={e => e.key === "Enter" && sendCode()}
                   placeholder="your@email.com" />
               </div>
+              {TURNSTILE_SITE_KEY && <div ref={turnstileRef} />}
               <Btn variant="sage" size="md" onClick={sendCode}
-                className={`w-full justify-center ${!validEmail || busy ? "opacity-50 pointer-events-none" : ""}`}>
+                className={`w-full justify-center ${!validEmail || busy || !captchaReady ? "opacity-50 pointer-events-none" : ""}`}>
                 {busy ? "Sending…" : "Send code"}
               </Btn>
             </>

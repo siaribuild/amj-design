@@ -31,6 +31,19 @@ const FATAL = new Set([
   // this code was not listed. A temporal-dead-zone read is never a preference.
   "TS2448", // Block-scoped variable used before its declaration
   "TS2454", // Variable is used before being assigned
+  // Promoted after its single occurrence was fixed. estimate.ts passed `offset`
+  // into proposeSplit, whose options type did not declare it, and the literal
+  // built downstream dropped it — so an OFFSET unit was proposed as a straight
+  // half and `offsetOperableRatio` was unreachable from Sanity all the way down.
+  // An unknown property on an object literal is never a strictness preference:
+  // it means the value the caller is sending is not the value being read.
+  "TS2353", // Object literal may only specify known properties
+  // Both cleared and promoted together: a missing module declaration and an
+  // import path the bundler accepts but tsc does not. Neither is a strictness
+  // preference — each is "this import does not resolve" — and four of them
+  // sitting in the backlog is four chances to scroll past a real one.
+  "TS2882", // Cannot find module/type declarations for a side-effect import
+  "TS5097", // An import path can only end with .tsx when allowImportingTsExtensions
 ]);
 
 const fatalOnly = process.argv.includes("--fatal-only");
@@ -58,4 +71,14 @@ if (fatal.length) {
   console.error(`\nGated codes: ${[...FATAL].join(", ")}`);
   process.exit(1);
 }
-console.log(`✓ no fatal type errors (${lines.length} non-fatal remain — see: npm run typecheck)`);
+// Print the backlog on every run, not just the informational one. A number that
+// is never shown is a number nobody works down: the gate used to say only that it
+// passed, so the remaining errors were invisible to anyone who did not go looking
+// — and two of them were live defects, not strictness preferences.
+console.log(`✓ no fatal type errors (${lines.length} non-fatal remain)`);
+const byCode = {};
+for (const l of lines) { const m = l.match(/error (TS\d+)/); if (m) byCode[m[1]] = (byCode[m[1]] ?? 0) + 1; }
+for (const [code, n] of Object.entries(byCode).sort((a, b) => b[1] - a[1])) {
+  console.log(`    ${code.padEnd(8)} ${String(n).padStart(3)}`);
+}
+if (lines.length) console.log("  Fix a code's last occurrence, add it to FATAL, and it can never come back.");

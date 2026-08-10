@@ -8,6 +8,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { normEmail, resolveUser } from "../lib/auth";
+import { sourceIp, verifyTurnstile } from "../lib/captcha";
 import { notify } from "../lib/email";
 import { logEvent } from "../lib/activity";
 import { uuid } from "../lib/util";
@@ -18,18 +19,6 @@ export const enquiries = new Hono<{ Bindings: Env }>();
 
 const clip = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
 const nowSql = () => new Date().toISOString().replace("T", " ").replace(/\..+/, "");
-
-async function verifyTurnstile(secret: string, token: string, ip?: string): Promise<boolean> {
-  try {
-    const form = new URLSearchParams({ secret, response: token });
-    if (ip) form.set("remoteip", ip);
-    const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST", body: form, signal: AbortSignal.timeout(3000),
-    });
-    const data = await res.json<{ success?: boolean }>().catch(() => ({}));
-    return data?.success === true;
-  } catch { return false; }
-}
 
 // Pull the whitelisted UTM/context fields the client may send (analytics only —
 // never trusted to set attribution ownership).
@@ -66,7 +55,7 @@ enquiries.post("/enquiries", async (c) => {
   if (errors.length) return c.json({ error: "invalid", fields: errors }, 400);
 
   // Throttle: one/min and five/hour per source IP.
-  const ip = c.req.header("CF-Connecting-IP") || c.req.header("X-Forwarded-For") || "unknown";
+  const ip = sourceIp(c.req.raw);
   if (await c.env.KV.get(`enq:min:${ip}`)) return c.json({ error: "rate_limited" }, 429);
   const hourKey = `enq:hr:${ip}`;
   const usedHour = parseInt((await c.env.KV.get(hourKey)) ?? "0", 10) || 0;
@@ -76,24 +65,35 @@ enquiries.post("/enquiries", async (c) => {
     const ok = await verifyTurnstile(c.env.TURNSTILE_SECRET, clip(body?.token, 4000), ip);
     if (!ok) return c.json({ error: "captcha" }, 400);
   }
-  await c.env.KV.put(`enq:min:${ip}`, "1", { expirationTtl: 60 });
-  await c.env.KV.put(hourKey, String(usedHour + 1), { expirationTtl: 3600 });
-
   // Signed-in context (attribution stays server-owned regardless).
   const user = await resolveUser(c.env, c.req.raw);
 
-  // Reference — generated BEFORE any notification. Simple per-year sequence.
   const year = new Date().getUTCFullYear();
-  const cnt = await c.env.DB.prepare(
-    "SELECT count(*) AS n FROM enquiry WHERE public_reference LIKE ?",
-  ).bind(`OF-ENQ-${year}-%`).first<{ n: number }>();
-  const reference = enquiryReference(year, (cnt?.n ?? 0) + 1);
-
   const isAppt = intent === "appointment_request";
   const ctx = clientContext(body?.client_context);
   const id = uuid();
 
-  await c.env.DB.prepare(`
+  // Reference — assigned by the INSERT itself, and still generated before any
+  // notification goes out.
+  //
+  // This was `SELECT count(*)`, then a separate insert, and it had two faults of
+  // which the race was the lesser. count(*)+1 assumes the year's references are a
+  // contiguous 1..N run: delete ONE enquiry row and every later submission
+  // computes a reference that already exists, the insert fails on the UNIQUE
+  // index, the count never advances — and the public contact form is wedged
+  // permanently, with no path back that does not involve a human editing the
+  // database. MAX() is gap-tolerant, which is what the other three generators in
+  // this Worker already use.
+  //
+  // Computing it inside the statement closes the race as well: there is no window
+  // between deriving and writing for a second submission to occupy. Both faults
+  // 500'd — nothing catches here and the Worker registers no onError — and the
+  // throttle below was charged before the insert, so the customer had already
+  // spent their one-per-minute allowance and an immediate retry got a 429.
+  //
+  // substr(...,13) skips the 12-character 'OF-ENQ-YYYY-' prefix; enquiryReference
+  // in lib/enquiry.ts still owns the format, and its test pins the two together.
+  const inserted = await c.env.DB.prepare(`
     INSERT INTO enquiry (
       id, public_reference, intent,
       name, email, email_display, phone, phone_display, customer_type, company,
@@ -103,9 +103,15 @@ enquiries.post("/enquiries", async (c) => {
       source_owner, source_entry_point, landing_path, referrer, utm_json, form_version,
       privacy_version, marketing_opt_in,
       appointment_status, handed_off_at
-    ) VALUES (?,?,?, ?,?,?,?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?, 'OPENFRAME','CONTACT_PAGE',?,?,?,?, ?,?, ?,?)
+    ) VALUES (
+      ?,
+      'OF-ENQ-' || ? || '-' || printf('%06d', (SELECT COALESCE(MAX(CAST(substr(public_reference, 13) AS INTEGER)), 0) + 1 FROM enquiry WHERE public_reference LIKE ?)),
+      ?, ?,?,?,?,?,?,?, ?,?, ?,?,?,?,?,?,?, ?,?, 'OPENFRAME','CONTACT_PAGE',?,?,?,?, ?,?, ?,?)
+    RETURNING public_reference
   `).bind(
-    id, reference, intent,
+    // String(year), not year: D1 binds a JS number as REAL, and SQLite renders a
+    // REAL in `||` concatenation as "2026.0".
+    id, String(year), `OF-ENQ-${year}-%`, intent,
     clip(body?.name, 200), normEmail(body?.email), clip(body?.email, 200),
     normalizePhone(body?.phone) || null, clip(body?.phone, 60) || null,
     clip(body?.customerType, 40) || null, clip(body?.company, 200) || null,
@@ -120,7 +126,17 @@ enquiries.post("/enquiries", async (c) => {
     ctx.landingPath, ctx.referrer, ctx.utmJson, FORM_VERSION,
     clip(body?.privacyVersion, 20) || "2026-07", body?.marketingOptIn ? 1 : 0,
     isAppt ? "requested" : "not_applicable", isAppt ? nowSql() : null,
-  ).run();
+  ).first<{ public_reference: string }>();
+  // The database assigned it, so read it back rather than trusting a local copy.
+  const reference = inserted?.public_reference ?? enquiryReference(year, 1);
+
+  // Charge the throttle only once the submission is durable. It used to be spent
+  // before the insert, so a server-side failure cost the customer their
+  // one-per-minute allowance and the obvious response — retry — got a 429. Still
+  // before the notifications, so a mail failure counts as a submission and cannot
+  // be used to send repeatedly.
+  await c.env.KV.put(`enq:min:${ip}`, "1", { expirationTtl: 60 });
+  await c.env.KV.put(hourKey, String(usedHour + 1), { expirationTtl: 3600 });
 
   await logEvent(c.env, { actor: user?.id ?? "public", entityType: "enquiry", entityId: id, action: `enquiry submitted (${intent})` });
 

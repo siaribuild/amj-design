@@ -6,9 +6,10 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import {
-  challengeAllowed, clearCookie, consumeChallenge, createSession, destroySession, isDevEnv,
-  isEmail, normEmail, sessionCookie, sixDigit, storeChallenge, userDto,
+  challengeAllowed, challengeSourceAllowed, clearCookie, consumeChallenge, createSession, destroySession,
+  isDevEnv, isEmail, normEmail, sessionCookie, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
+import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
 import { findOrCreateInternalUser, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
 import { drainLearningOutbox, issueRevision } from "../lib/revisions";
@@ -150,8 +151,44 @@ const opsLineDto = (r: LineRow) => {
   };
 };
 
+/** Whether Cloudflare Access is the configured identity for this deployment.
+ *
+ *  Read by the OTP routes below as well as by resolveInternalUser, because the
+ *  two must agree: the perimeter cannot be "Access" for reads and "an emailed
+ *  six-digit code" for the write that creates the staff row. */
+const accessIsConfigured = (env: Env) => !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD);
+
+/** The OTP sign-in seam is LOCAL/STAGING ONLY, and says so by not existing in
+ *  production.
+ *
+ *  These two routes are mounted on the shared /api app, which worker/index.ts
+ *  serves on every hostname — `isOps` there only picks which SPA shell to return.
+ *  Cloudflare Access is a hostname policy on ops.*, so until this guard existed
+ *  `POST https://<customer-host>/api/ops/auth/verify` reached findOrCreateInternalUser
+ *  without any assertion at all: an Access-free write into the identity table that
+ *  creates the internal user, flips an existing customer row to type='internal',
+ *  and fires the admin bootstrap. The comment above ("the perimeter is Cloudflare
+ *  Access on the ops.* host") was true for every read and false for that write.
+ *
+ *  404 rather than 403 because in Access mode the route genuinely is not part of
+ *  this deployment's surface. Nothing usable is lost: the session these routes
+ *  mint is already ignored for ops reads (resolveInternalUser reads the assertion
+ *  and never the cookie), so in production they could only ever write. If Access
+ *  is misconfigured the recovery path is `wrangler d1 execute --remote`, which is
+ *  the same break-glass the runbook already documents for every ops read. */
+const otpDisabledInAccessMode = (c: { env: Env }) => accessIsConfigured(c.env);
+
 // POST /api/ops/auth/challenge { email } — allowlisted staff only; neutral otherwise.
 ops.post("/auth/challenge", async (c) => {
+  if (otpDisabledInAccessMode(c)) return c.json({ error: "not_found" }, 404);
+  // Same per-source cap as the customer challenge, sharing the same counter so
+  // rotating between the two endpoints does not buy a second budget. No captcha
+  // here: recipients are already bounded to the configured domains, and in
+  // production this route does not exist at all (see the guard above), so a
+  // widget on the ops sign-in screen would guard a 404.
+  if (!(await challengeSourceAllowed(c.env, sourceIp(c.req.raw)))) {
+    return c.json({ error: "rate_limited" }, 429);
+  }
   const body = await c.req.json().catch(() => ({}));
   const email = normEmail(body?.email);
   if (isEmail(email) && isStaffEmail(c.env, email) && (await challengeAllowed(c.env, email))) {
@@ -171,6 +208,7 @@ ops.post("/auth/challenge", async (c) => {
 
 // POST /api/ops/auth/verify { email, code } — starts an internal-user session.
 ops.post("/auth/verify", async (c) => {
+  if (otpDisabledInAccessMode(c)) return c.json({ error: "not_found" }, 404);
   const body = await c.req.json().catch(() => ({}));
   const email = normEmail(body?.email);
   const code = String(body?.code ?? "").trim();
@@ -197,8 +235,7 @@ ops.post("/auth/logout", async (c) => {
   // endpoint to navigate to. Host-relative on purpose: /cdn-cgi/* is handled at
   // the Cloudflare edge before the Worker sees it, and scoping the logout to this
   // hostname signs the user out of ops rather than every Access app in the org.
-  const accessConfigured = !!(c.env.ACCESS_TEAM_DOMAIN && c.env.ACCESS_AUD);
-  return c.json({ ok: true, accessLogout: accessConfigured ? "/cdn-cgi/access/logout" : null });
+  return c.json({ ok: true, accessLogout: accessIsConfigured(c.env) ? "/cdn-cgi/access/logout" : null });
 });
 
 // GET /api/ops/brand — the logo and business name from Sanity Site Settings.
@@ -1111,6 +1148,15 @@ ops.get("/customers", async (c) => {
       FROM user u
      WHERE u.type = 'customer'
      ORDER BY u.created_at DESC`).all();
+  // Attribution is the compensating control for flat access — every staff action
+  // is meant to be answerable later. It was not applied to the READS, which is
+  // where the customer data actually leaves: this endpoint returns every
+  // customer's name, email, phone, company and ABN in one response and left no
+  // trace that anyone had asked for it.
+  await logEvent(c.env, {
+    actor: staff.id, entityType: "user", entityId: "*",
+    action: `viewed the customer list (${results.length} record(s))`,
+  });
   return c.json({ customers: results });
 });
 
@@ -1174,6 +1220,7 @@ ops.get("/customers/:id", async (c) => {
   if (!u) return c.json({ error: "not_found" }, 404);
   const { results: projects } = await c.env.DB.prepare("SELECT id, title, status_customer, status_internal, updated_at FROM project WHERE owner_user_id = ? ORDER BY updated_at DESC").bind(id).all();
   const { results: ordersRows } = await c.env.DB.prepare('SELECT o.id, o.order_no, o.stage, o.total FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.owner_user_id = ? ORDER BY o.created_at DESC').bind(id).all();
+  await logEvent(c.env, { actor: staff.id, entityType: "user", entityId: id, action: "viewed customer record" });
   return c.json({
     customer: {
       id: u.id, name: u.name, email: u.email, phone: u.phone,
@@ -1207,7 +1254,8 @@ ops.get("/files", async (c) => {
 // POST /api/ops/files/:id/rescan — run the scanner over a stored file and record
 // the verdict. This is how the pre-scanning backlog ('skipped') and any file whose
 // inline scan failed ('pending') get cleared for download; an infected verdict
-// purges the bytes from R2 rather than leaving them parked in the bucket.
+// moves the bytes off the serving key into quarantine/ rather than leaving them
+// parked where a route could reach them.
 ops.post("/files/:id/rescan", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
@@ -1220,19 +1268,41 @@ ops.post("/files/:id/rescan", async (c) => {
   const obj = await c.env.FILES.get(fa.r2_key);
   if (!obj) return c.json({ error: "gone" }, 404);
   const contentType = obj.httpMetadata?.contentType ?? "application/octet-stream";
-  const result = await scanFile(c.env, {
-    bytes: new Uint8Array(await obj.arrayBuffer()), filename: fa.filename, contentType,
-  });
+  const bytes = new Uint8Array(await obj.arrayBuffer());
+  const result = await scanFile(c.env, { bytes, filename: fa.filename, contentType });
 
   const status = result.verdict === "clean" ? "clean" : result.verdict === "infected" ? "infected" : "pending";
-  if (result.verdict === "infected") await c.env.FILES.delete(fa.r2_key).catch(() => {});
+  // QUARANTINE, never delete. On the upload path an infected verdict discards
+  // bytes that were never stored — nothing is lost, the customer still has their
+  // file. Here the stored copy is the ONLY copy: worker/routes/files.ts is the
+  // sole R2 write, there is no soft-delete and no second bucket. A rescan that
+  // deletes therefore destroys a customer's evidence the moment the scanner gets
+  // stricter or an AV service returns a false positive on a legitimate 6 MB plan
+  // set — and this endpoint exists precisely to be re-run after such a change.
+  // Moving the object off the serving key gets the bytes out of reach (both
+  // download routes already refuse a non-clean row) without making the tightening
+  // itself a data-loss event.
+  let quarantined = false;
+  if (result.verdict === "infected") {
+    try {
+      await c.env.FILES.put(`quarantine/${fa.r2_key}`, bytes, {
+        httpMetadata: { contentType },
+        customMetadata: { fileAssetId: id, reason: result.reason ?? "", quarantinedBy: staff.id },
+      });
+      await c.env.FILES.delete(fa.r2_key);
+      quarantined = true;
+    } catch {
+      // Could not park a copy — then do NOT delete. Leaving the object on a key
+      // no route will serve is strictly better than losing it.
+    }
+  }
   await c.env.DB.prepare("UPDATE file_asset SET virus_status = ?, scan_engine = ?, scanned_at = datetime('now') WHERE id = ?")
     .bind(status, result.engine, id).run();
   await logEvent(c.env, {
     actor: staff.id, entityType: "file", entityId: id,
-    action: `rescanned file → ${status}${result.reason ? ` (${result.reason})` : ""}`,
+    action: `rescanned file → ${status}${result.reason ? ` (${result.reason})` : ""}${result.verdict === "infected" ? (quarantined ? " — moved to quarantine/" : " — quarantine FAILED, bytes left in place") : ""}`,
   });
-  return c.json({ ok: true, status, engine: result.engine, reason: result.reason ?? null });
+  return c.json({ ok: true, status, engine: result.engine, reason: result.reason ?? null, quarantined });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1754,7 +1824,27 @@ ops.get("/files/:id/download", async (c) => {
   if (fa.virus_status !== "clean") return c.json({ error: "scan_pending" }, 409);
   const obj = await c.env.FILES.get(fa.r2_key);
   if (!obj) return c.json({ error: "gone" }, 404);
-  return new Response(obj.body, { headers: { "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream", "Content-Disposition": `attachment; filename="${fa.filename}"`, "X-Content-Type-Options": "nosniff" } });
+  // A customer's uploaded documents leaving the building is the single most
+  // consequential read in this console, and it was the one with no audit row.
+  await logEvent(c.env, {
+    actor: staff.id, entityType: "file", entityId: c.req.param("id"),
+    action: `downloaded ${fa.filename}`,
+  });
+  // Parity with the customer download (routes/files.ts). This one interpolated
+  // fa.filename raw — a name that comes from the client's multipart upload and is
+  // stored verbatim, so a quote or a newline in it lands in a response header —
+  // and it omitted Cache-Control, leaving staff-downloaded customer PII
+  // shared-cacheable.
+  const safe = fa.filename.replace(/[\r\n"\\]/g, "_").replace(/[\x00-\x1f]/g, "");
+  return new Response(obj.body, {
+    headers: {
+      "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream",
+      "Content-Disposition": `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(fa.filename)}`,
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, no-store",
+      "Referrer-Policy": "no-referrer",
+    },
+  });
 });
 
 // GET /api/ops/audit — recent audit events (optionally ?entity=project|order).
@@ -1784,8 +1874,26 @@ ops.patch("/staff/:id", async (c) => {
   const role = String(body?.role ?? "").trim();
   const valid = ["estimator", "technical_reviewer", "manager", "admin"];
   if (!valid.includes(role)) return c.json({ error: "invalid_role" }, 400);
-  const res = await c.env.DB.prepare("UPDATE user SET role = ? WHERE id = ? AND type = 'internal'").bind(role, c.req.param("id")).run();
-  if (!res.meta.changes) return c.json({ error: "not_found" }, 404);
+  // Never demote the last admin — including yourself.
+  //
+  // Access is flat, so 'estimator', 'technical_reviewer' and 'manager' are the
+  // same privilege; 'admin' is the only value that gates anything (this endpoint,
+  // and changing a customer's sign-in email). Demoting the only admin therefore
+  // does not reduce anyone's access — it removes the ability to ever grant it
+  // again, and re-arms the empty-database bootstrap on a live system, where the
+  // next authenticated request claims admin rather than the next sign-in.
+  // Single statement, so two admins demoting each other at once cannot both win.
+  const res = await c.env.DB.prepare(
+    `UPDATE user SET role = ? WHERE id = ? AND type = 'internal'
+      AND (? = 'admin' OR role IS NOT 'admin'
+           OR EXISTS (SELECT 1 FROM user WHERE type = 'internal' AND role = 'admin' AND id <> ?))`,
+  ).bind(role, c.req.param("id"), role, c.req.param("id")).run();
+  if (!res.meta.changes) {
+    const target = await c.env.DB.prepare("SELECT role FROM user WHERE id = ? AND type = 'internal'")
+      .bind(c.req.param("id")).first<{ role: string | null }>();
+    if (!target) return c.json({ error: "not_found" }, 404);
+    return c.json({ error: "last_admin" }, 409);
+  }
   await logEvent(c.env, { actor: staff.id, entityType: "user", entityId: c.req.param("id"), action: `set role ${role}` });
   return c.json({ ok: true, role });
 });

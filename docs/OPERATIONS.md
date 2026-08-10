@@ -29,22 +29,29 @@ Flags:
 |---|---|
 | `npm run db:reset` | Local, lock-safe — safe to run while `npm run dev:api` is up. |
 | `npm run db:reset -- --hard` | Local, also wipes KV sessions/OTP + R2 (needs the dev API stopped). |
-| `npm run db:reset -- --remote` | Runs the same reset against the **deployed** Cloudflare DB. |
+| `npm run db:reset -- --remote` | **Empties the DEPLOYED database** and reloads demo fixtures. Asks for a typed confirmation; refuses without a terminal. There is no undo short of a D1 Time Travel restore (DEPLOY.md §9). |
 
 ### Seeded accounts (passwordless email OTP)
 
 | Role | Email | Notes |
 |---|---|---|
-| Customer | `demo@openframe.com.au` | Has a draft project + order **OF-58001** mid-journey. |
-| Customer | `sarah@northsidebuild.com.au` | Second customer for multi-user views. |
-| Staff (admin) | `staff@openframe.com.au` | Internal user — signs into the ops console. |
+| Customer | `gediminas.bereznevicius@gmail.com` | Has a draft project + order **OF-58001** mid-journey. |
+| Customer | `doni@siaribuild.com.au` | Second customer. |
+| Customer | `sarah@northsidebuild.com.au` | Third customer, for multi-user views. |
+| Staff (admin) | `ged@openframe.com.au` | Internal user — signs into the ops console. |
+| Staff (admin) | `doni@openframe.com.au` | Second admin. |
+
+These come from `scripts/db/seed.sql` and a test asserts this table matches it —
+the guide previously named two accounts the seed had never created, so following
+it produced a rejected sign-in and no explanation.
 
 Staff sign-in is gated by `STAFF_EMAIL_DOMAINS` (default `openframe.com.au`); only
-`@openframe.com.au` addresses can reach the console via OTP.
+`@openframe.com.au` addresses can reach the console via OTP — and only where
+Cloudflare Access is not configured. In production the OTP routes return 404.
 
 ### Getting the OTP code in dev
 
-There are no real emails locally. When `APP_ENV` is **not** `production`, requesting a
+There are no real emails locally. When `APP_ENV` is exactly `development`, requesting a
 code returns it in the API response as `devCode` **and** logs it to the `dev:api`
 console. Use that value on the verify step. In production this is disabled and codes
 go out via Resend.
@@ -76,14 +83,16 @@ Worker routes by `Host`:
 
 - Against the Worker directly: **`http://ops.localhost:8787`**
   (`*.localhost` resolves to 127.0.0.1 in modern browsers).
-- Sign in with `staff@openframe.com.au` (OTP → `devCode`). Non-allowlisted emails
+- Sign in with `ged@openframe.com.au` (OTP → `devCode`). Non-allowlisted emails
   are rejected.
 
 Locally this works because `npm run dev:api` runs with Cloudflare Access **off**
 (and `APP_ENV=development`), so the staff email-OTP session fallback is active. In
 production the ops subdomain sits behind **Cloudflare Access** (staff IdP + MFA) and
 that fallback is disabled by design. The production `ACCESS_*` / `APP_ENV` values
-live in `wrangler.jsonc` and are used by `npm run cf:deploy`; see `DEPLOY.md` §5.
+live in `wrangler.jsonc` and are used by `npm run cf:deploy`; see `DEPLOY.md` §6.
+In production the OTP routes do not merely go unused — they return 404, so there is
+no emailed-code path into the staff table on any hostname.
 
 ---
 
@@ -100,7 +109,7 @@ page), it's because those commits haven't reached `apertly/main` yet.
 | `apertly` | `github.com/siaribuild/apertly.git` | **CF builds from here** (`main`). |
 | `origin` | `github.com/siaribuild/amj-design.git` | Legacy mirror. |
 
-The local working branch is **`apertly-main`**, which tracks `apertly/main`.
+The local working branch is **`main`**, which tracks `apertly/main`. (`apertly-main` is an older local branch, long behind.)
 
 ### Ship it
 
@@ -115,7 +124,7 @@ git add -A
 git commit -m "your message"
 
 # 3. Push the branch CF builds
-git push apertly apertly-main:main
+git push apertly main
 ```
 
 That push triggers Cloudflare's build. Watch it in the Cloudflare dashboard
@@ -125,7 +134,7 @@ the site.
 ### Verify the deploy is current
 
 ```bash
-curl https://www.openframe.com.au/api/health
+curl https://openframe.com.au/api/health
 ```
 
 If a change still isn't visible after a green build, it's a browser/edge cache —
@@ -135,6 +144,6 @@ hard-refresh, or confirm the commit is actually on `apertly/main`:
 git log --oneline -5 apertly/main
 ```
 
-> **Note:** this is the **git-push → auto-build** path. `DEPLOY.md` §6 documents the
+> **Note:** this is the **git-push → auto-build** path. `DEPLOY.md` §8 documents the
 > alternative manual `npm run cf:deploy` (local `wrangler deploy`) for when you need
 > to push a build without going through GitHub.

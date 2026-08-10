@@ -41,6 +41,30 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(s, "/api/auth/verify", { method: "POST", json: { email: "capped@example.com", code: good } }, 400);
     });
 
+    await t.test("OTP issuance is capped per SOURCE, not only per recipient", async () => {
+      // The per-address cap bounds what one mailbox receives and says nothing
+      // about total volume: /api/auth/challenge needs no session and will email
+      // any valid address, so rotating recipients used to emit unlimited mail.
+      const s = new Session(baseUrl);
+      const ip = "198.51.100.7";                       // TEST-NET-2, never a real client
+      const headers = { "X-Forwarded-For": ip };
+      let rateLimited = 0;
+      for (let i = 0; i < 65; i++) {
+        // Raw request: the point of the loop is that the status CHANGES partway.
+        const r = await s.request("/api/auth/challenge",
+          { method: "POST", json: { email: `rotate${i}@example.com` }, headers });
+        if (r.status === 429) rateLimited++;
+        await r.arrayBuffer();
+      }
+      assert.ok(rateLimited > 0, "rotating recipients from one source must eventually be refused");
+      // A different source is unaffected — the cap is on the caller, not the app.
+      // And it still answers 200 for an address with no account, so the neutral
+      // response that stops enumeration is untouched.
+      const other = await requestJson(s, "/api/auth/challenge",
+        { method: "POST", json: { email: "elsewhere@example.com" }, headers: { "X-Forwarded-For": "198.51.100.8" } });
+      assert.equal(other.body.ok, true);
+    });
+
     await t.test("logout clears the session", async () => {
       const s = new Session(baseUrl);
       await login(s, "/api/auth", "logout@example.com");
@@ -1060,6 +1084,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       // Same source immediately again → throttled.
       await requestJson(s, "/api/enquiries", { method: "POST", json: { intent: "question", name: "Again", email: "again@ex.com", message: "hi", privacyConsent: true }, ...ip("203.0.113.20") }, 429);
 
+
       // Honeypot → neutral success, no reference, nothing recorded.
       const trap = await requestJson(s, "/api/enquiries", { method: "POST", json: { intent: "question", name: "Bot", email: "b@spam.test", message: "x", privacyConsent: true, website: "http://x" }, ...ip("203.0.113.30") });
       assert.equal(trap.body.reference, null);
@@ -1132,6 +1157,99 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(rookie2, "/api/ops/enquiries");
       await requestJson(rookie2, `/api/ops/enquiries/${apptRow.id}`);
       await requestJson(anon, "/api/ops/enquiries", {}, 403);
+
+      // ── Reference sequencing (last: these add rows and delete one) ──────────
+      // A DELETED enquiry must not wedge the form. The reference used to be
+      // count(*)+1, which assumes the year's rows are a contiguous 1..N run:
+      // remove one and every later submission recomputes a reference that already
+      // exists, the insert fails on the UNIQUE index, the count never advances,
+      // and the public contact form is broken permanently — with no way back that
+      // does not involve someone editing the database by hand. MAX() steps over
+      // the hole instead of falling into it.
+      await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--command",
+        `DELETE FROM enquiry WHERE public_reference = '${q.body.reference}'`], { env: wranglerEnv });
+      const afterGap = await requestJson(s, "/api/enquiries", { method: "POST",
+        json: { intent: "question", name: "After Gap", email: "gap@example.com", topic: "pricing", message: "still works?", privacyConsent: true }, ...ip("203.0.113.40") });
+      assert.match(afterGap.body.reference, /^OF-ENQ-\d{4}-\d{6}$/);
+      assert.notEqual(afterGap.body.reference, appt.body.reference, "must not re-issue a live reference");
+      assert.notEqual(afterGap.body.reference, phoneOnly.body.reference);
+
+      // A failed submission must not cost the customer their throttle allowance:
+      // the counters are charged after the insert now, so an invalid payload from
+      // a fresh source leaves that source able to submit immediately.
+      await requestJson(s, "/api/enquiries", { method: "POST", json: { intent: "question", name: "Invalid", email: "bad@ex.com", message: "hi" }, ...ip("203.0.113.50") }, 400);
+      const retried = await requestJson(s, "/api/enquiries", { method: "POST",
+        json: { intent: "question", name: "Retry", email: "retry@example.com", topic: "pricing", message: "second go", privacyConsent: true }, ...ip("203.0.113.50") });
+      assert.match(retried.body.reference, /^OF-ENQ-\d{4}-\d{6}$/);
+      assert.notEqual(retried.body.reference, afterGap.body.reference);
+    });
+
+    // Last, because it moves the acting staffer's own role around and every other
+    // subtest here signs in as an admin.
+    await t.test("the last admin cannot be demoted", async () => {
+      // Roles are flat, so demoting an admin takes nothing away from them — it
+      // removes the ability to ever grant admin again, and re-arms the
+      // empty-database bootstrap on a LIVE system, where the next authenticated
+      // request claims it rather than the next sign-in.
+      const self = (await requestJson(staff, "/api/ops/me")).body.user;
+      assert.equal(self.role, "admin");
+      const others = (await requestJson(staff, "/api/ops/staff")).body.staff
+        .filter((s) => s.role === "admin" && s.id !== self.id);
+      assert.ok(others.length >= 1, "seed provides a second admin");
+      const other = others[0];
+
+      // Down to one admin is allowed…
+      await requestJson(staff, `/api/ops/staff/${other.id}`, { method: "PATCH", json: { role: "estimator" } });
+      // …and the last one is refused, including when it is yourself.
+      await requestJson(staff, `/api/ops/staff/${self.id}`, { method: "PATCH", json: { role: "manager" } }, 409);
+      assert.equal((await requestJson(staff, "/api/ops/me")).body.user.role, "admin", "the refusal did not write");
+      // An unknown id is still a 404, not a last-admin 409.
+      await requestJson(staff, "/api/ops/staff/u_nope", { method: "PATCH", json: { role: "manager" } }, 404);
+
+      // Promote someone else and the demotion becomes legal.
+      await requestJson(staff, `/api/ops/staff/${other.id}`, { method: "PATCH", json: { role: "admin" } });
+      await requestJson(staff, `/api/ops/staff/${self.id}`, { method: "PATCH", json: { role: "manager" } });
+      // Having given it up, this session can no longer assign roles — which is the
+      // whole point of the guard, seen from the other side.
+      await requestJson(staff, `/api/ops/staff/${self.id}`, { method: "PATCH", json: { role: "admin" } }, 403);
+      const otherSession = new Session(baseUrl);
+      await login(otherSession, "/api/ops/auth", other.email);
+      await requestJson(otherSession, `/api/ops/staff/${self.id}`, { method: "PATCH", json: { role: "admin" } });
+      assert.equal((await requestJson(staff, "/api/ops/me")).body.user.role, "admin", "restored");
+    });
+
+    // The whole suite above runs with Access DELIBERATELY off, which is why the
+    // OTP seam was never exercised in the configuration production actually uses.
+    // That gap is what let the ops OTP routes stay reachable on the customer host
+    // with no assertion — an Access-free write into the identity table that
+    // creates an internal user and fires the admin bootstrap. Booting a second
+    // Worker is the only honest way to assert it: the variables are read per
+    // request, so nothing short of a real Access-mode instance proves the guard.
+    await t.test("Access mode: the ops OTP seam does not exist", async () => {
+      const accessState = join(runDir, "access-state");
+      const accessPort = await freePort();
+      const accessUrl = `http://127.0.0.1:${accessPort}`;
+      const accessServer = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1",
+        "--port", String(accessPort), "--persist-to", accessState, "--assets", assets, "--log-level", "warn",
+        "--var", "APP_ENV:development", "--var", "SANITY_PROJECT_ID:", "--var", "AI_EXTRACTION_MODE:manual",
+        "--var", "ACCESS_TEAM_DOMAIN:test-team", "--var", "ACCESS_AUD:test-aud"], { env: wranglerEnv });
+      try {
+        await waitForUrl(`${accessUrl}/api/health`, accessServer);
+        const s = new Session(accessUrl);
+        // Both halves of the seam are gone, for a staff-domain address that would
+        // otherwise be accepted — so this is the guard, not the allowlist.
+        await requestJson(s, "/api/ops/auth/challenge", { method: "POST", json: { email: staffEmail } }, 404);
+        await requestJson(s, "/api/ops/auth/verify", { method: "POST", json: { email: staffEmail, code: "123456" } }, 404);
+        // And a manufacturer-domain address cannot use it either: isStaffEmail
+        // admits those too, so they shared the same un-gated write path.
+        await requestJson(s, "/api/ops/auth/challenge", { method: "POST", json: { email: "partner@amjtradedirect.test" } }, 404);
+        // Reads still fail closed without an assertion — the fallback is off, not
+        // merely unused, which is the property the OTP guard has to preserve.
+        await requestJson(s, "/api/ops/me", {}, 401);
+        await requestJson(s, "/api/ops/summary", {}, 403);
+      } finally {
+        await stop(accessServer);
+      }
     });
   } finally {
     await stop(server);

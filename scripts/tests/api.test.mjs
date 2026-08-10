@@ -759,6 +759,55 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       assert.match(opsShell.body, /<title>OpenFrame Ops Console<\/title>/);
     });
 
+    await t.test("security headers are on every exit path", async () => {
+      // The repository had three security headers, all on private file downloads.
+      // Shells, assets and API responses carried none. These assert the policy is
+      // attached where it was missing, not that a particular directive is correct.
+      const must = ["x-content-type-options", "referrer-policy", "x-frame-options", "permissions-policy"];
+      const check = (res, what) => {
+        for (const h of must) assert.ok(res.headers.get(h), `${what}: missing ${h}`);
+        assert.equal(res.headers.get("x-frame-options"), "DENY", `${what}: framable`);
+      };
+
+      const shell = await customer.request("/projects");
+      check(shell, "customer shell");
+      // HTML gets the full policy. It ships Report-Only first on purpose — a CSP
+      // that silently blanks the map is worse than none — so accept either name,
+      // and assert the directives that actually matter for this app.
+      const csp = shell.headers.get("content-security-policy")
+        ?? shell.headers.get("content-security-policy-report-only");
+      assert.ok(csp, "customer shell: no CSP at all");
+      assert.match(csp, /frame-ancestors 'none'/);
+      assert.match(csp, /object-src 'none'/);
+      // script-src is strict: no unsafe-inline, no unsafe-eval. style-src keeps
+      // unsafe-inline (MUI/emotion inject at runtime) and that is documented.
+      const scriptSrc = csp.split(";").map((s) => s.trim()).find((s) => s.startsWith("script-src"));
+      assert.ok(scriptSrc && !scriptSrc.includes("unsafe-inline") && !scriptSrc.includes("unsafe-eval"),
+        `script-src must stay strict, got: ${scriptSrc}`);
+      // The origins the app genuinely loads must be present, or the enforcing
+      // flip will break the contact map, the imagery and the captcha.
+      for (const origin of ["https://cdn.sanity.io", "https://images.unsplash.com",
+        "https://*.basemaps.cartocdn.com", "https://challenges.cloudflare.com", "https://fonts.gstatic.com"]) {
+        assert.ok(csp.includes(origin), `CSP is missing ${origin}`);
+      }
+
+      check(await customer.request("/api/health"), "API json");
+      const asset = (await customer.request("/projects").then((r) => r.text()))
+        .match(/(?:src|href)="(\/assets\/[^"]+)"/)?.[1];
+      assert.ok(asset, "no hashed asset in the shell to check");
+      check(await customer.request(asset), "static asset");
+
+      // No HSTS over plain http, whatever APP_ENV says — it would pin the browser
+      // to https://localhost and break the next dev run.
+      assert.equal(shell.headers.get("strict-transport-security"), null, "HSTS must not be set over http");
+
+      // A 301 carries no body; building the new Response wrong here throws rather
+      // than merely dropping a header, so this path needs its own assertion.
+      const redirect = await customer.request("/products/", { redirect: "manual" });
+      assert.equal(redirect.status, 301);
+      assert.ok(redirect.headers.get("x-content-type-options"), "redirect lost the policy");
+    });
+
     // "estimator cannot delegate an approval to self" lived here. Delegation, the
     // approval step and the estimator role are all gone (0033), so the behaviour it
     // guarded no longer exists to be guarded.

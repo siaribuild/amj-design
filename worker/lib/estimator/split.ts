@@ -435,6 +435,16 @@ export function proposeSplit(
       rule: FamilyDefaultSplit | null;
       infillMaxWidthMm: number | null;
       maxSegments?: number | null;
+      /** The schedule said OFFSET — the opening pane is the smaller share.
+       *
+       *  This was passed by estimate.ts and declared nowhere, so tsc reported it
+       *  and the reduced gate let it through; the fresh literal built below then
+       *  dropped it, and the word `offset` did not appear anywhere in this file.
+       *  The effect was silent: an OFFSET unit took the plain 0.5 default instead
+       *  of the 0.3 offset one, and `offsetOperableRatio` — authored in Sanity,
+       *  carried by the GROQ projection, typed on the client and read by
+       *  pairing.ts — could not affect a proposal no matter what an editor typed. */
+      offset?: boolean;
     } | null;
   },
 ): SplitProposal {
@@ -478,6 +488,7 @@ export function proposeSplit(
       // pairing from being silently dropped for a reason nobody sees.
       maxSegments: opts.pairing?.maxSegments ?? MAX_HINT_UNITS,
       rule: pairingRule,
+      offset: opts.pairing?.offset ?? false,
     });
     if (paired) {
       return {

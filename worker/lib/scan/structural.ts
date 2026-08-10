@@ -5,7 +5,9 @@
 // block the realistic attack paths for a document-upload endpoint:
 //
 //   1. Type allowlist by SNIFFED bytes (never the client's declared type) —
-//      executables, archives and macro containers never get stored.
+//      executables, archives and macro containers never get stored. The sniff
+//      reads the WHOLE file, not a leading window: the window version of this
+//      promise was false, and prefixing 8 KB of ASCII was enough to break it.
 //   2. Active content in PDFs — embedded JavaScript, launch actions, embedded
 //      files, XFA and RichMedia are the vectors weaponised PDFs actually use.
 //      Detected both from the raw bytes and via the pdf.js parser, so content
@@ -15,8 +17,6 @@
 // SCAN_ENDPOINT at a real AV service — see ./remote.ts.
 import { getDocumentProxy } from "unpdf";
 import type { FileScanner, ScanInput, ScanResult } from "./types";
-
-const MAX_SNIFF = 8192;
 
 // Byte signatures we accept. Anything not matched here (and not plain text) is
 // refused rather than guessed at.
@@ -35,21 +35,76 @@ const isWebp = (b: Uint8Array) =>
   b.length > 12 && startsWith(b, [0x52, 0x49, 0x46, 0x46]) &&
   b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50;
 
-// Plain text: no NULs and no stray control bytes in the sniff window.
+/** Plain text: no NULs and no stray control bytes ANYWHERE in the file.
+ *
+ *  THE WHOLE BUFFER, not a leading window. This used to read only the first
+ *  8 KB, which made the allowlist above decorative: eight kilobytes of printable
+ *  ASCII in front of a ZIP, a Windows PE or a macro-bearing .docm sniffed as
+ *  'text' and was stored clean, then served to staff. A prefixed archive is not
+ *  even inconvenienced — ZIP and every OOXML container are read from the
+ *  End-of-Central-Directory record at the TAIL, which is exactly why
+ *  self-extracting archives work, so the file still opens normally in Explorer,
+ *  7-Zip and Office. Reproduced against this module before the window was
+ *  removed; the suite asserted the guarantee the code did not have, because it
+ *  only ever tested an UNPREFIXED executable.
+ *
+ *  A container cannot survive this pass: its own headers carry NULs (a ZIP local
+ *  header is `PK\x03\x04` then a version word containing 0x00). The cost is one
+ *  O(n) walk over at most the upload cap, on a path that already SHA-256s the
+ *  entire file and hands PDFs to pdf.js — and only files matching NO signature
+ *  above ever reach it. */
 const looksTextual = (b: Uint8Array) => {
-  const window = b.subarray(0, MAX_SNIFF);
-  if (window.length === 0) return false;
-  for (const byte of window) {
+  if (b.length === 0) return false;
+  for (let i = 0; i < b.length; i++) {
+    const byte = b[i];
     if (byte === 0x00) return false;
     if (byte < 0x09 || (byte > 0x0d && byte < 0x20)) return false;
   }
   return true;
 };
 
+/** Container/executable magics, searched at EVERY offset rather than only at 0.
+ *
+ *  Belt to looksTextual's braces. The control-byte walk already refuses any real
+ *  archive, but it accepts high-bit bytes (legitimately — UTF-8 and latin-1 text
+ *  need them), so this states the guarantee the header makes rather than leaving
+ *  it as a consequence. Single pass, first-byte gated, so the common case is one
+ *  comparison per byte. */
+const EMBEDDED_MAGIC: { magic: number[]; what: string }[] = [
+  { magic: [0x50, 0x4b, 0x03, 0x04], what: "zip" },                    // ZIP / OOXML local header
+  { magic: [0x50, 0x4b, 0x05, 0x06], what: "zip" },                    // ZIP end-of-central-directory
+  { magic: [0x52, 0x61, 0x72, 0x21], what: "rar" },                    // Rar!
+  { magic: [0x37, 0x7a, 0xbc, 0xaf], what: "7z" },                     // 7z
+  { magic: [0xd0, 0xcf, 0x11, 0xe0], what: "ole" },                    // legacy Office / OLE compound
+  { magic: [0x4d, 0x5a, 0x90, 0x00], what: "pe" },                     // Windows executable
+  { magic: [0x7f, 0x45, 0x4c, 0x46], what: "elf" },                    // ELF executable
+];
+
+// First-byte gate as a 256-entry table: one array index per input byte, so the
+// overwhelmingly common "not a magic" case costs a single lookup.
+const MAGIC_HEADS = (() => {
+  const t = new Uint8Array(256);
+  for (const sig of EMBEDDED_MAGIC) t[sig.magic[0]] = 1;
+  return t;
+})();
+
+function embeddedContainer(b: Uint8Array): { what: string; at: number } | null {
+  for (let i = 0; i < b.length; i++) {
+    if (!MAGIC_HEADS[b[i]]) continue;
+    for (const sig of EMBEDDED_MAGIC) {
+      if (sig.magic.every((byte, k) => b[i + k] === byte)) return { what: sig.what, at: i };
+    }
+  }
+  return null;
+}
+
 export function sniffType(bytes: Uint8Array): string | null {
   for (const sig of SIGNATURES) if (startsWith(bytes, sig.magic)) return sig.type;
   if (isWebp(bytes)) return "webp";
-  if (looksTextual(bytes)) return "text";
+  // The container sweep only ever runs on a buffer that already looks textual —
+  // a real archive carries NULs in its own headers and is refused above — so this
+  // is a belt to looksTextual's braces, not the primary control.
+  if (looksTextual(bytes) && !embeddedContainer(bytes)) return "text";
   return null;
 }
 
@@ -163,6 +218,16 @@ export const structuralScanner: FileScanner = {
     }
     const type = sniffType(input.bytes);
     if (!type) {
+      // A container at offset 0 is simply a type we do not accept. One buried
+      // further in is concealment — a deliberate act — and the audit trail should
+      // distinguish the two rather than reporting a generic wrong-type for both.
+      const hidden = embeddedContainer(input.bytes);
+      if (hidden && hidden.at > 0) {
+        return {
+          verdict: "infected", engine: this.id, reason: "embedded_container",
+          detail: `File hides a ${hidden.what} container at byte ${hidden.at}`,
+        };
+      }
       return {
         verdict: "infected", engine: this.id, reason: "type_not_allowed",
         detail: "File is not a PDF, image, or text document",
