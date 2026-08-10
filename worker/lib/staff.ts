@@ -8,7 +8,7 @@
 // RBAC is a single "staff" role for now (type='internal' IS the gate). Persona
 // roles arrive with the approvals engine (O4).
 import type { Env } from "../types";
-import { resolveUser, type UserRow } from "./auth";
+import { normEmail, resolveUser, type UserRow } from "./auth";
 import { uuid } from "./util";
 
 export const DEFAULT_STAFF_DOMAINS = ["openframe.com.au"];
@@ -123,7 +123,16 @@ async function resolveInternalUser(env: Env, req: Request): Promise<UserRow | nu
   if (accessConfigured) {
     const jwt = req.headers.get("Cf-Access-Jwt-Assertion");
     if (!jwt) return null;
-    const email = await verifyAccessEmail(env, jwt);
+    // NORMALISE. The OTP path lowercases via normEmail before it ever touches the
+    // table; this one used to hand the assertion's `email` claim through raw. The
+    // user table's UNIQUE index has no COLLATE NOCASE (migrations/0001), and
+    // isStaffEmail only lowercases the DOMAIN half — so an IdP that emits
+    // `Ged@openframe.com.au` passed the allowlist, missed the existing row, and
+    // minted a SECOND internal user for the same person. On a fresh database that
+    // duplicate is what the admin bootstrap below promotes, and the runbook's own
+    // recovery procedure matches on lower(email), so it would fix a row that the
+    // next assertion does not resolve to.
+    const email = normEmail(await verifyAccessEmail(env, jwt));
     if (email && isStaffEmail(env, email)) return findOrCreateInternalUser(env, email);
     return null;
   }

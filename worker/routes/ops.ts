@@ -150,8 +150,36 @@ const opsLineDto = (r: LineRow) => {
   };
 };
 
+/** Whether Cloudflare Access is the configured identity for this deployment.
+ *
+ *  Read by the OTP routes below as well as by resolveInternalUser, because the
+ *  two must agree: the perimeter cannot be "Access" for reads and "an emailed
+ *  six-digit code" for the write that creates the staff row. */
+const accessIsConfigured = (env: Env) => !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD);
+
+/** The OTP sign-in seam is LOCAL/STAGING ONLY, and says so by not existing in
+ *  production.
+ *
+ *  These two routes are mounted on the shared /api app, which worker/index.ts
+ *  serves on every hostname — `isOps` there only picks which SPA shell to return.
+ *  Cloudflare Access is a hostname policy on ops.*, so until this guard existed
+ *  `POST https://<customer-host>/api/ops/auth/verify` reached findOrCreateInternalUser
+ *  without any assertion at all: an Access-free write into the identity table that
+ *  creates the internal user, flips an existing customer row to type='internal',
+ *  and fires the admin bootstrap. The comment above ("the perimeter is Cloudflare
+ *  Access on the ops.* host") was true for every read and false for that write.
+ *
+ *  404 rather than 403 because in Access mode the route genuinely is not part of
+ *  this deployment's surface. Nothing usable is lost: the session these routes
+ *  mint is already ignored for ops reads (resolveInternalUser reads the assertion
+ *  and never the cookie), so in production they could only ever write. If Access
+ *  is misconfigured the recovery path is `wrangler d1 execute --remote`, which is
+ *  the same break-glass the runbook already documents for every ops read. */
+const otpDisabledInAccessMode = (c: { env: Env }) => accessIsConfigured(c.env);
+
 // POST /api/ops/auth/challenge { email } — allowlisted staff only; neutral otherwise.
 ops.post("/auth/challenge", async (c) => {
+  if (otpDisabledInAccessMode(c)) return c.json({ error: "not_found" }, 404);
   const body = await c.req.json().catch(() => ({}));
   const email = normEmail(body?.email);
   if (isEmail(email) && isStaffEmail(c.env, email) && (await challengeAllowed(c.env, email))) {
@@ -171,6 +199,7 @@ ops.post("/auth/challenge", async (c) => {
 
 // POST /api/ops/auth/verify { email, code } — starts an internal-user session.
 ops.post("/auth/verify", async (c) => {
+  if (otpDisabledInAccessMode(c)) return c.json({ error: "not_found" }, 404);
   const body = await c.req.json().catch(() => ({}));
   const email = normEmail(body?.email);
   const code = String(body?.code ?? "").trim();
@@ -197,8 +226,7 @@ ops.post("/auth/logout", async (c) => {
   // endpoint to navigate to. Host-relative on purpose: /cdn-cgi/* is handled at
   // the Cloudflare edge before the Worker sees it, and scoping the logout to this
   // hostname signs the user out of ops rather than every Access app in the org.
-  const accessConfigured = !!(c.env.ACCESS_TEAM_DOMAIN && c.env.ACCESS_AUD);
-  return c.json({ ok: true, accessLogout: accessConfigured ? "/cdn-cgi/access/logout" : null });
+  return c.json({ ok: true, accessLogout: accessIsConfigured(c.env) ? "/cdn-cgi/access/logout" : null });
 });
 
 // GET /api/ops/brand — the logo and business name from Sanity Site Settings.

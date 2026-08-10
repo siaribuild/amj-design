@@ -1133,6 +1133,40 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(rookie2, `/api/ops/enquiries/${apptRow.id}`);
       await requestJson(anon, "/api/ops/enquiries", {}, 403);
     });
+
+    // The whole suite above runs with Access DELIBERATELY off, which is why the
+    // OTP seam was never exercised in the configuration production actually uses.
+    // That gap is what let the ops OTP routes stay reachable on the customer host
+    // with no assertion — an Access-free write into the identity table that
+    // creates an internal user and fires the admin bootstrap. Booting a second
+    // Worker is the only honest way to assert it: the variables are read per
+    // request, so nothing short of a real Access-mode instance proves the guard.
+    await t.test("Access mode: the ops OTP seam does not exist", async () => {
+      const accessState = join(runDir, "access-state");
+      const accessPort = await freePort();
+      const accessUrl = `http://127.0.0.1:${accessPort}`;
+      const accessServer = start(process.execPath, [wranglerCli, "dev", "--local", "--ip", "127.0.0.1",
+        "--port", String(accessPort), "--persist-to", accessState, "--assets", assets, "--log-level", "warn",
+        "--var", "APP_ENV:development", "--var", "SANITY_PROJECT_ID:", "--var", "AI_EXTRACTION_MODE:manual",
+        "--var", "ACCESS_TEAM_DOMAIN:test-team", "--var", "ACCESS_AUD:test-aud"], { env: wranglerEnv });
+      try {
+        await waitForUrl(`${accessUrl}/api/health`, accessServer);
+        const s = new Session(accessUrl);
+        // Both halves of the seam are gone, for a staff-domain address that would
+        // otherwise be accepted — so this is the guard, not the allowlist.
+        await requestJson(s, "/api/ops/auth/challenge", { method: "POST", json: { email: staffEmail } }, 404);
+        await requestJson(s, "/api/ops/auth/verify", { method: "POST", json: { email: staffEmail, code: "123456" } }, 404);
+        // And a manufacturer-domain address cannot use it either: isStaffEmail
+        // admits those too, so they shared the same un-gated write path.
+        await requestJson(s, "/api/ops/auth/challenge", { method: "POST", json: { email: "partner@amjtradedirect.test" } }, 404);
+        // Reads still fail closed without an assertion — the fallback is off, not
+        // merely unused, which is the property the OTP guard has to preserve.
+        await requestJson(s, "/api/ops/me", {}, 401);
+        await requestJson(s, "/api/ops/summary", {}, 403);
+      } finally {
+        await stop(accessServer);
+      }
+    });
   } finally {
     await stop(server);
     await removeRunDir(runDir);
