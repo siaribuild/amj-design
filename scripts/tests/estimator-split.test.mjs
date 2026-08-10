@@ -411,6 +411,33 @@ test("W1: 2050 becomes an awning and a lite, not two awnings", () => {
   assert.equal(p.reviewRequired, true, "a proposal is always a starting point");
 });
 
+test("OFFSET reaches the pairing module — the fourth missing link", () => {
+  // The same failure as the three above, one layer further in. estimate.ts read
+  // "OFFSET AWNING" off the schedule and passed `offset` into proposeSplit; the
+  // options type did not declare it and the literal handed to the pairing module
+  // did not carry it, so the word `offset` appeared nowhere in split.ts. tsc said
+  // so (TS2353) and the reduced gate let it through.
+  //
+  // Nothing looked broken: an offset unit simply came out as a straight half.
+  // The whole authored chain below it was dead — offsetOperableRatio is defined
+  // in the Sanity schema, projected by the GROQ query, typed on the client and
+  // read by pairing.ts, and no value an editor typed could reach a proposal.
+  const plain = paired(2000).segments.map((s) => s.widthMm);
+  assert.deepEqual(plain, [1000, 1000], "no offset: the range's typical straight half");
+
+  const offset = paired(2000, { offset: true }).segments.map((s) => s.widthMm);
+  assert.notDeepEqual(offset, plain, "OFFSET must not resolve to the same geometry as plain");
+  assert.ok(offset[0] < offset[1], "the opening pane is the SMALLER share on an offset unit");
+  assert.equal(offset[0] + offset[1], 2000, "still partitions the opening exactly");
+
+  // And the authored ratio wins over the default when a family states one.
+  const authored = proposeSplit(
+    { operationType: "awning", widthMm: 2000, heightMm: 2100 }, null,
+    { maxWidthMm: 1300, pairing: { rule: { ...AUTHORED, offsetOperableRatio: 0.4 }, ...LIVE, offset: true } },
+  ).segments.map((s) => s.widthMm);
+  assert.deepEqual(authored, [800, 1200], "offsetOperableRatio is honoured, not merely declared");
+});
+
 test("the role becomes the INFILL family's operation, never the opening's", () => {
   // The pairing module names roles and knows nothing about the catalogue; this
   // is the one place a role becomes an operation. Getting it wrong would price a

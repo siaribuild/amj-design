@@ -28,9 +28,9 @@ export type Page =
 
 
 // 4-pane window mark — logo and repeated motif
-export function WindowMark({ size = 20, color = SAGE }: { size?: number; color?: string }) {
+export function WindowMark({ size = 20, color = SAGE, className }: { size?: number; color?: string; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
       <rect x="1" y="1" width="18" height="18" stroke={color} strokeWidth="1.5" />
       <line x1="10" y1="1" x2="10" y2="19" stroke={color} strokeWidth="1.5" />
       <line x1="1" y1="10" x2="19" y2="10" stroke={color} strokeWidth="1.5" />
@@ -109,7 +109,7 @@ export function FieldLabel({ children }: { children: ReactNode }) {
   );
 }
 
-export function Input({ value, onChange, placeholder, type = "text", className = "", defaultValue, inputMode, disabled, maxLength }: {
+export function Input({ value, onChange, placeholder, type = "text", className = "", defaultValue, inputMode, disabled, maxLength, onKeyDown, autoFocus }: {
   value?: string; onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string; type?: string; className?: string; defaultValue?: string;
   inputMode?: "numeric" | "text" | "decimal"; disabled?: boolean;
@@ -118,10 +118,19 @@ export function Input({ value, onChange, placeholder, type = "text", className =
    *  uses a raw input) and not on the composer, which is where codes are
    *  actually created. */
   maxLength?: number;
+  /** Same failure again, and this component has no rest-spread to catch it: ten
+   *  call sites passed one or both of these and got neither. Enter-to-submit was
+   *  dead on the sign-in email field, the six-digit code field and the guest
+   *  tracking form, and the code field never took focus. The ops console
+   *  implements the identical behaviour on a raw <input> and works — which is how
+   *  we know this was an accident rather than a removal. */
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  autoFocus?: boolean;
 }) {
   return (
     <input type={type} value={value} defaultValue={defaultValue} onChange={onChange} disabled={disabled}
       placeholder={placeholder} inputMode={inputMode} maxLength={maxLength}
+      onKeyDown={onKeyDown} autoFocus={autoFocus}
       className={`field-control w-full border px-3 py-2.5 text-ink placeholder-quieter focus:outline-none transition-colors disabled:cursor-not-allowed ${className} t-bd-sm`} />
   );
 }

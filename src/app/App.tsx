@@ -85,7 +85,11 @@ const IMG = {
 // Card framing is now expressed through the border-color transition on hover,
 // dark header strips on widget cards, and the GhostMark watermarks in section backgrounds.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function FrameCorners(_props: unknown) { return null; }
+// `unknown` is not a props type — JSX cannot assign attributes to it, so every
+// call site reported an error that the reduced gate swallowed. Naming the props
+// the four callers actually pass keeps the no-op deliberate and legible instead
+// of merely untyped.
+function FrameCorners(_props: { size?: number; color?: string; show?: string }) { return null; }
 
 function Select({ value, onChange, children }: {
   value: string; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
