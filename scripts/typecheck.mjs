@@ -38,6 +38,12 @@ const FATAL = new Set([
   // An unknown property on an object literal is never a strictness preference:
   // it means the value the caller is sending is not the value being read.
   "TS2353", // Object literal may only specify known properties
+  // Both cleared and promoted together: a missing module declaration and an
+  // import path the bundler accepts but tsc does not. Neither is a strictness
+  // preference — each is "this import does not resolve" — and four of them
+  // sitting in the backlog is four chances to scroll past a real one.
+  "TS2882", // Cannot find module/type declarations for a side-effect import
+  "TS5097", // An import path can only end with .tsx when allowImportingTsExtensions
 ]);
 
 const fatalOnly = process.argv.includes("--fatal-only");

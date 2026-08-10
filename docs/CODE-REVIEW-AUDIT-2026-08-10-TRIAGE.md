@@ -631,9 +631,63 @@ production dataset export — is tracked in git.
 8. **Finding 1 steps 3–5, finding 3 slices A/B, finding 2's JWKS fix.**
 9. **Findings 9, 10, finding 3 slice C, finding 8 commits 2–3.**
 
+## What was actually done
+
+Branch `fix/audit-2026-08-10`. Every step below was verified by running it, not
+by reading it; `npm test` is green throughout.
+
+| Commit | Covers |
+| --- | --- |
+| `3adbfedf` | N1 scanner sniff scope, N7 rescan quarantine, engine-selection footgun, 5 prefixed-container tests |
+| `9181b7a9` | N2 ops OTP seam 404s under Access, N6 Access email normalised, Access-mode regression test |
+| `72f97ca5` | N4 `db:reset --remote` confirmation gate |
+| `41cfb816` | Finding 5 per-source OTP cap + Turnstile, shared captcha/widget helpers, N12 documented |
+| `64c2ad82` | Finding 8 live defects: N10 offset chain, `Input` props, TS2353 promoted |
+| `8c440e4d` | Finding 7 all four generators, enquiry `count(*)` bug, throttle ordering |
+| `72fd5430` | Finding 6 header policy, CSP Report-Only, N8 folded in |
+| `19fd00c0` | N3 JWKS rotation, atomic bootstrap, last-admin guard, ops download parity |
+| `a68ae5ab` | N12 audit rows on PII reads and file downloads |
+| `0be079cb` | Finding 10 both Sanity fallbacks, N11 dataset default |
+| `cd76e0e4` | Finding 9 one runbook, docs corrected, two narrow doc tests |
+| this | TS2882/TS5097 cleared and promoted; 47 → 32 |
+
+### Deliberately not done
+
+- **Finding 1's `BOOTSTRAP_ADMIN_EMAIL`.** The owner's call: nobody ships without
+  creating and activating an admin first, so the exposure is not real in
+  practice. The code-level parts that stand on their own — atomicity, the
+  last-admin guard, and closing the Access-free write path — shipped anyway.
+- **Finding 3 slice C's contract changes.** A mandatory payment reference needs
+  the owner's decision (a field people type "n/a" into is a worse control than an
+  optional one), and moving the ±20% pricing tripwire server-side changes an API
+  contract with live callers. The audit-trail half of slice C shipped.
+- **Mandatory `expectedVersion`** in `pricing-admin.ts` — correctly identified in
+  the challenge pass as breaking two deliberate call sites: the revert endpoint
+  and the first-ever option-surcharge insert.
+- **Renaming the 38 role-alias call sites.** Zero behaviour change, guaranteed
+  conflicts, and the aliases are already explained by the comment above them.
+- **The remaining 32 type errors.** 25 are TS2339, mostly `await res.json()`
+  returning `unknown` and discriminated-union narrowing that `strictNullChecks`
+  would resolve. That flag is its own commit with a wide blast radius.
+
 ## Release position
 
-The audit's own recommendation stands, with one substitution: the blocking item is not
+The audit's own recommendation stood, with one substitution: the blocking item was not
 the flat-RBAC decision (which is deliberate and documented) but **N1** — the upload
-scanner does not enforce the type allowlist it claims, and files that defeat it are
+scanner did not enforce the type allowlist it claimed, and files that defeated it were
 stored `clean` and served to staff.
+
+That is fixed, along with every other P1 and P2 above. What remains before a release
+is configuration and one owner decision, not code:
+
+1. **Scope the Cloudflare Access policy to named identities**, not an email-domain
+   suffix. It is the entire privilege boundary; the application applies no further
+   restriction, and `DEPLOY.md` §6 now says so.
+2. **Set `MANUFACTURER_EMAIL_DOMAINS`** if any partner is to be admitted. Unset, the
+   one boundary the code does enforce classifies nobody.
+3. **Decide on external AV** (`SCAN_ENGINE=both`). The structural scanner now enforces
+   what it claims, but it is still not anti-virus.
+4. **Flip the CSP to enforcing** in `worker/lib/headers.ts` after reading a few days of
+   Report-Only violations.
+5. **Confirm the production admin rows** are the intended people —
+   `SELECT email, role FROM user WHERE type='internal' AND role='admin'`.
