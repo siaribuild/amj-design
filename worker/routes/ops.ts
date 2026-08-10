@@ -1814,7 +1814,21 @@ ops.get("/files/:id/download", async (c) => {
   if (fa.virus_status !== "clean") return c.json({ error: "scan_pending" }, 409);
   const obj = await c.env.FILES.get(fa.r2_key);
   if (!obj) return c.json({ error: "gone" }, 404);
-  return new Response(obj.body, { headers: { "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream", "Content-Disposition": `attachment; filename="${fa.filename}"`, "X-Content-Type-Options": "nosniff" } });
+  // Parity with the customer download (routes/files.ts). This one interpolated
+  // fa.filename raw — a name that comes from the client's multipart upload and is
+  // stored verbatim, so a quote or a newline in it lands in a response header —
+  // and it omitted Cache-Control, leaving staff-downloaded customer PII
+  // shared-cacheable.
+  const safe = fa.filename.replace(/[\r\n"\\]/g, "_").replace(/[\x00-\x1f]/g, "");
+  return new Response(obj.body, {
+    headers: {
+      "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream",
+      "Content-Disposition": `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(fa.filename)}`,
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, no-store",
+      "Referrer-Policy": "no-referrer",
+    },
+  });
 });
 
 // GET /api/ops/audit — recent audit events (optionally ?entity=project|order).
@@ -1844,8 +1858,26 @@ ops.patch("/staff/:id", async (c) => {
   const role = String(body?.role ?? "").trim();
   const valid = ["estimator", "technical_reviewer", "manager", "admin"];
   if (!valid.includes(role)) return c.json({ error: "invalid_role" }, 400);
-  const res = await c.env.DB.prepare("UPDATE user SET role = ? WHERE id = ? AND type = 'internal'").bind(role, c.req.param("id")).run();
-  if (!res.meta.changes) return c.json({ error: "not_found" }, 404);
+  // Never demote the last admin — including yourself.
+  //
+  // Access is flat, so 'estimator', 'technical_reviewer' and 'manager' are the
+  // same privilege; 'admin' is the only value that gates anything (this endpoint,
+  // and changing a customer's sign-in email). Demoting the only admin therefore
+  // does not reduce anyone's access — it removes the ability to ever grant it
+  // again, and re-arms the empty-database bootstrap on a live system, where the
+  // next authenticated request claims admin rather than the next sign-in.
+  // Single statement, so two admins demoting each other at once cannot both win.
+  const res = await c.env.DB.prepare(
+    `UPDATE user SET role = ? WHERE id = ? AND type = 'internal'
+      AND (? = 'admin' OR role IS NOT 'admin'
+           OR EXISTS (SELECT 1 FROM user WHERE type = 'internal' AND role = 'admin' AND id <> ?))`,
+  ).bind(role, c.req.param("id"), role, c.req.param("id")).run();
+  if (!res.meta.changes) {
+    const target = await c.env.DB.prepare("SELECT role FROM user WHERE id = ? AND type = 'internal'")
+      .bind(c.req.param("id")).first<{ role: string | null }>();
+    if (!target) return c.json({ error: "not_found" }, 404);
+    return c.json({ error: "last_admin" }, 409);
+  }
   await logEvent(c.env, { actor: staff.id, entityType: "user", entityId: c.req.param("id"), action: `set role ${role}` });
   return c.json({ ok: true, role });
 });

@@ -41,22 +41,37 @@ export function isManufacturerEmail(env: Env, email: string): boolean {
   return !!domain && manufacturerDomains(env).includes(domain);
 }
 
-// Whether any admin exists. Used to bootstrap the first staffer (see below).
+// Whether any admin exists. Used on the create path (see below).
 const anyAdminExists = (env: Env) =>
   env.DB.prepare("SELECT 1 FROM user WHERE type = 'internal' AND role = 'admin' LIMIT 1").first();
 
 // Bootstrap: while NO admin exists, the acting staff member is promoted to admin.
-// Without this a fresh deployment is locked out of every role-gated surface
-// (customer PII, files, payments, role assignment) — role-less staff can't act and
-// there's no admin to promote them. Applies to a freshly created staffer AND to an
-// existing role-less one (e.g. someone who signed in before this shipped), so the
-// lockout self-heals on the next sign-in. Once any admin exists it is a no-op, and
+// Without this a fresh deployment cannot assign a role to anybody — there is no
+// admin to do it and no in-app path to make one. Applies to a freshly created
+// staffer AND to an existing role-less one (e.g. someone who signed in before this
+// shipped), so the lockout self-heals. Once any admin exists it is a no-op, and
 // later staff start role-less until an admin assigns them a role.
+//
+// ONE STATEMENT. It was a SELECT then an UPDATE, which is a race — and a wider
+// one than it looks, because this runs on EVERY authenticated ops request, not
+// on sign-in: resolveInternalUser calls findOrCreateInternalUser per request, so
+// a single console page load evaluates it many times over. Two staff opening the
+// console for the first time on a clean database could both be promoted. SQLite
+// evaluates the NOT EXISTS and the write as one atomic statement, so the interval
+// is gone rather than narrowed.
+//
+// Note what is deliberately NOT in the WHERE clause: `role IS NULL`. The self-heal
+// above depends on promoting a staffer who already has some other role when no
+// admin exists, and adding that condition would silently delete the only in-app
+// recovery from an admin-less database.
 async function bootstrapAdmin(env: Env, user: UserRow): Promise<UserRow> {
   if (user.role === "admin") return user;
-  if (await anyAdminExists(env)) return user;
-  await env.DB.prepare("UPDATE user SET role = 'admin' WHERE id = ?").bind(user.id).run();
-  return { ...user, role: "admin" };
+  const res = await env.DB.prepare(
+    `UPDATE user SET role = 'admin'
+      WHERE id = ? AND type = 'internal'
+        AND NOT EXISTS (SELECT 1 FROM user WHERE type = 'internal' AND role = 'admin')`,
+  ).bind(user.id).run();
+  return Number(res.meta?.changes ?? 0) === 1 ? { ...user, role: "admin" } : user;
 }
 
 // Find or create an internal user for an allowlisted email. Promotes an existing
@@ -86,10 +101,17 @@ export async function findOrCreateInternalUser(env: Env, email: string): Promise
   }
   const role = manufacturer ? "manufacturer" : (await anyAdminExists(env)) ? null : "admin";
   const id = uuid();
+  // INSERT ... SELECT ... WHERE NOT EXISTS, then re-select BY EMAIL rather than by
+  // id. Two concurrent first-requests for the same address used to race the email
+  // UNIQUE index; the loser's insert threw, nothing catches it, and the caller got
+  // a bare 500 on sign-in. Now the loser inserts nothing and reads back the row
+  // the winner created, which is the same identity either way.
   await env.DB.prepare(
-    "INSERT INTO user (id, email, name, type, role, last_verified_at) VALUES (?, ?, ?, 'internal', ?, datetime('now'))",
-  ).bind(id, email, email.split("@")[0], role).run();
-  return (await env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(id).first<UserRow>())!;
+    `INSERT INTO user (id, email, name, type, role, last_verified_at)
+     SELECT ?, ?, ?, 'internal', ?, datetime('now')
+      WHERE NOT EXISTS (SELECT 1 FROM user WHERE email = ?)`,
+  ).bind(id, email, email.split("@")[0], role, email).run();
+  return (await env.DB.prepare("SELECT * FROM user WHERE email = ?").bind(email).first<UserRow>())!;
 }
 
 // Resolve the acting staff member, or null.
@@ -169,8 +191,16 @@ async function verifyAccessEmail(env: Env, token: string): Promise<string | null
     const expectedIss = `https://${env.ACCESS_TEAM_DOMAIN}.cloudflareaccess.com`;
     if (payload.iss !== expectedIss) return null;
 
-    const jwks = await getJwks(env);
-    const jwk = jwks.find((k: any) => k.kid === header.kid);
+    // A kid MISS used to be a flat rejection. Cloudflare rotates the Access
+    // signing keys, and the key set is cached in KV under one fixed key for an
+    // hour — so the moment a new kid started signing assertions, every ops request
+    // 401'd until that cache expired. Up to sixty minutes of total console outage,
+    // from this code, on the deployed configuration, with nobody having touched
+    // anything. Re-fetch once past the cache before giving up; bounded to a single
+    // refresh per request so a genuinely unknown kid cannot become a fetch
+    // amplifier against the certs endpoint.
+    let jwk = (await getJwks(env)).find((k: any) => k.kid === header.kid);
+    if (!jwk) jwk = (await getJwks(env, { refresh: true })).find((k: any) => k.kid === header.kid);
     if (!jwk) return null;
     const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
     const data = new TextEncoder().encode(`${h}.${p}`);
@@ -182,12 +212,20 @@ async function verifyAccessEmail(env: Env, token: string): Promise<string | null
   }
 }
 
-async function getJwks(env: Env): Promise<any[]> {
+async function getJwks(env: Env, opts?: { refresh?: boolean }): Promise<any[]> {
   const cacheKey = "access:jwks";
-  const cached = await env.KV.get(cacheKey);
-  if (cached) return JSON.parse(cached);
+  if (!opts?.refresh) {
+    const cached = await env.KV.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  }
   const res = await fetch(`https://${env.ACCESS_TEAM_DOMAIN}.cloudflareaccess.com/cdn-cgi/access/certs`);
-  const body = await res.json<{ keys: any[] }>();
+  // Without this an HTML error page from the certs endpoint threw inside
+  // res.json(), the throw was swallowed by verifyAccessEmail's catch, and every
+  // request 401'd — the same total outage as the rotation case, from a blip.
+  // Returning empty means this request fails; it does not poison the cache.
+  if (!res.ok) return [];
+  const body = await res.json<{ keys: any[] }>().catch(() => ({ keys: [] as any[] }));
+  if (!body.keys?.length) return [];
   await env.KV.put(cacheKey, JSON.stringify(body.keys), { expirationTtl: 3600 });
   return body.keys;
 }

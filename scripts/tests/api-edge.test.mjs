@@ -1184,6 +1184,40 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.notEqual(retried.body.reference, afterGap.body.reference);
     });
 
+    // Last, because it moves the acting staffer's own role around and every other
+    // subtest here signs in as an admin.
+    await t.test("the last admin cannot be demoted", async () => {
+      // Roles are flat, so demoting an admin takes nothing away from them — it
+      // removes the ability to ever grant admin again, and re-arms the
+      // empty-database bootstrap on a LIVE system, where the next authenticated
+      // request claims it rather than the next sign-in.
+      const self = (await requestJson(staff, "/api/ops/me")).body.user;
+      assert.equal(self.role, "admin");
+      const others = (await requestJson(staff, "/api/ops/staff")).body.staff
+        .filter((s) => s.role === "admin" && s.id !== self.id);
+      assert.ok(others.length >= 1, "seed provides a second admin");
+      const other = others[0];
+
+      // Down to one admin is allowed…
+      await requestJson(staff, `/api/ops/staff/${other.id}`, { method: "PATCH", json: { role: "estimator" } });
+      // …and the last one is refused, including when it is yourself.
+      await requestJson(staff, `/api/ops/staff/${self.id}`, { method: "PATCH", json: { role: "manager" } }, 409);
+      assert.equal((await requestJson(staff, "/api/ops/me")).body.user.role, "admin", "the refusal did not write");
+      // An unknown id is still a 404, not a last-admin 409.
+      await requestJson(staff, "/api/ops/staff/u_nope", { method: "PATCH", json: { role: "manager" } }, 404);
+
+      // Promote someone else and the demotion becomes legal.
+      await requestJson(staff, `/api/ops/staff/${other.id}`, { method: "PATCH", json: { role: "admin" } });
+      await requestJson(staff, `/api/ops/staff/${self.id}`, { method: "PATCH", json: { role: "manager" } });
+      // Having given it up, this session can no longer assign roles — which is the
+      // whole point of the guard, seen from the other side.
+      await requestJson(staff, `/api/ops/staff/${self.id}`, { method: "PATCH", json: { role: "admin" } }, 403);
+      const otherSession = new Session(baseUrl);
+      await login(otherSession, "/api/ops/auth", other.email);
+      await requestJson(otherSession, `/api/ops/staff/${self.id}`, { method: "PATCH", json: { role: "admin" } });
+      assert.equal((await requestJson(staff, "/api/ops/me")).body.user.role, "admin", "restored");
+    });
+
     // The whole suite above runs with Access DELIBERATELY off, which is why the
     // OTP seam was never exercised in the configuration production actually uses.
     // That gap is what let the ops OTP routes stay reachable on the customer host

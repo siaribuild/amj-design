@@ -293,9 +293,10 @@ export interface OpsSearchResult { type: string; id: string; label: string; hint
 
 export const opsFiles = () => req<{ files: OpsFile[] }>("/api/ops/files");
 /** Re-run the scanner over a stored file (clears 'skipped'/'pending' so it can be
- *  downloaded again; an infected verdict purges the bytes). */
+ *  downloaded again; an infected verdict moves the bytes to quarantine/ rather
+ *  than deleting them — the stored copy is the only copy). */
 export const opsRescanFile = (id: string) =>
-  req<{ ok: boolean; status: string; engine: string; reason: string | null }>(`/api/ops/files/${id}/rescan`, { method: "POST" });
+  req<{ ok: boolean; status: string; engine: string; reason: string | null; quarantined: boolean }>(`/api/ops/files/${id}/rescan`, { method: "POST" });
 export const opsAudit = (entity?: string) => req<{ events: OpsAudit[] }>(`/api/ops/audit${entity ? `?entity=${entity}` : ""}`);
 export const opsStaff = () => req<{ staff: OpsStaff[]; roles: string[] }>("/api/ops/staff");
 export const opsSetRole = (id: string, role: string) =>
