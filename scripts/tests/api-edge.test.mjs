@@ -41,6 +41,30 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(s, "/api/auth/verify", { method: "POST", json: { email: "capped@example.com", code: good } }, 400);
     });
 
+    await t.test("OTP issuance is capped per SOURCE, not only per recipient", async () => {
+      // The per-address cap bounds what one mailbox receives and says nothing
+      // about total volume: /api/auth/challenge needs no session and will email
+      // any valid address, so rotating recipients used to emit unlimited mail.
+      const s = new Session(baseUrl);
+      const ip = "198.51.100.7";                       // TEST-NET-2, never a real client
+      const headers = { "X-Forwarded-For": ip };
+      let rateLimited = 0;
+      for (let i = 0; i < 65; i++) {
+        // Raw request: the point of the loop is that the status CHANGES partway.
+        const r = await s.request("/api/auth/challenge",
+          { method: "POST", json: { email: `rotate${i}@example.com` }, headers });
+        if (r.status === 429) rateLimited++;
+        await r.arrayBuffer();
+      }
+      assert.ok(rateLimited > 0, "rotating recipients from one source must eventually be refused");
+      // A different source is unaffected — the cap is on the caller, not the app.
+      // And it still answers 200 for an address with no account, so the neutral
+      // response that stops enumeration is untouched.
+      const other = await requestJson(s, "/api/auth/challenge",
+        { method: "POST", json: { email: "elsewhere@example.com" }, headers: { "X-Forwarded-For": "198.51.100.8" } });
+      assert.equal(other.body.ok, true);
+    });
+
     await t.test("logout clears the session", async () => {
       const s = new Session(baseUrl);
       await login(s, "/api/auth", "logout@example.com");

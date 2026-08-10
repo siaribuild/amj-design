@@ -14,6 +14,14 @@ const MAX_OTP_ATTEMPTS = 5;
 const RESEND_COOLDOWN_MS = 60 * 1000;   // don't re-issue while a fresh code is outstanding
 const CHALLENGE_WINDOW = 60 * 15;       // rolling window for the per-address hard cap (seconds)
 const MAX_CHALLENGES_PER_WINDOW = 5;    // max codes emailed to one address per window
+// Per-SOURCE cap. The per-address controls above are the wrong axis on their own:
+// they bound what one victim receives and say nothing about total volume, so a
+// bot rotating recipient addresses could emit unlimited mail from an endpoint
+// that needs no session. Generous on purpose — corporate and carrier-grade NAT
+// put many real people behind one address, and a legitimate user who cannot get
+// a code is a worse outcome than a bot that gets sixty.
+const CHALLENGE_IP_WINDOW = 60 * 60;    // seconds
+const MAX_CHALLENGES_PER_IP = 60;       // codes issued per source address per window
 
 export interface UserRow {
   id: string;
@@ -43,7 +51,11 @@ export const userDto = (u: UserRow) => ({
   createdAt: u.created_at ?? null,
 });
 
-export const normEmail = (e: unknown) => String(e ?? "").trim().toLowerCase();
+// Clipped at 254 (the RFC 5321 maximum) because these addresses become KV keys:
+// `otp:{email}` and `otpc:{email}`. Workers KV rejects a key over 512 bytes, so
+// an over-long address used to throw inside KV.get and turn the challenge route's
+// deliberately neutral 200 into a 500 — which is itself an enumeration signal.
+export const normEmail = (e: unknown) => String(e ?? "").trim().toLowerCase().slice(0, 254);
 export const isEmail = (e: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
 
 // Dev-only affordances (surfacing OTP `devCode`, verbose email logging) are gated
@@ -82,6 +94,27 @@ export async function challengeAllowed(env: Env, email: string): Promise<boolean
   const count = parseInt((await env.KV.get(countKey)) ?? "0", 10) || 0;
   if (count >= MAX_CHALLENGES_PER_WINDOW) return false;
   await env.KV.put(countKey, String(count + 1), { expirationTtl: CHALLENGE_WINDOW });
+  return true;
+}
+
+/** Per-source cap on code issuance, checked BEFORE challengeAllowed.
+ *
+ *  Deliberately a separate function rather than another argument to
+ *  challengeAllowed: that one's per-address semantics are load-bearing and
+ *  covered by tests, and the two limits answer different questions ("is this
+ *  mailbox being flooded" vs "is this client a bot").
+ *
+ *  Both counters are read-modify-write over KV, which offers no atomic increment
+ *  and is eventually consistent, so a burst of simultaneous requests can all read
+ *  the same value and slip past. That is a real hole and it is accepted: closing
+ *  it means moving the counter into D1, which puts a write on the unauthenticated
+ *  path — a cheaper denial-of-service than the one being prevented. The cap is a
+ *  ceiling on sustained abuse, not a mutex. */
+export async function challengeSourceAllowed(env: Env, ip: string): Promise<boolean> {
+  const key = `otpip:${ip}`;
+  const count = parseInt((await env.KV.get(key)) ?? "0", 10) || 0;
+  if (count >= MAX_CHALLENGES_PER_IP) return false;
+  await env.KV.put(key, String(count + 1), { expirationTtl: CHALLENGE_IP_WINDOW });
   return true;
 }
 

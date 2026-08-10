@@ -169,11 +169,25 @@ export async function requestJson(session, path, options = {}, expectedStatus = 
   return { response, body };
 }
 
+// Every login gets its own source address. Code issuance is now capped per source
+// as well as per recipient, and without this the whole suite would share the
+// single "unknown" bucket and start tripping the throttle partway through a run —
+// a failure that would look like a broken auth flow rather than a working control.
+// The documentation range 198.18.0.0/15 is used so these can never collide with a
+// real client address.
+let loginSource = 0;
+const testSourceIp = () => {
+  const n = loginSource++;
+  return `198.18.${(n >> 8) & 255}.${n & 255}`;
+};
+
 export async function login(session, prefix, email) {
-  const challenge = await requestJson(session, `${prefix}/challenge`, { method: "POST", json: { email } });
+  const headers = { "X-Forwarded-For": testSourceIp() };
+  const challenge = await requestJson(session, `${prefix}/challenge`, { method: "POST", json: { email }, headers });
   if (!/^\d{6}$/.test(challenge.body.devCode ?? "")) throw new Error(`No development OTP returned for ${email}`);
   return requestJson(session, `${prefix}/verify`, {
     method: "POST",
     json: { email, code: challenge.body.devCode },
+    headers,
   });
 }

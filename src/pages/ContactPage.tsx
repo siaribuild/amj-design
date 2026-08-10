@@ -20,8 +20,8 @@ import { type Page, SAGE, WindowMark, SLabel, Btn, CtaBanner } from "../app/ui";
 import { getPage, imageUrl } from "../data/catalogue";
 import { submitEnquiry, getLocations, type ApiLocation, type EnquiryPayload } from "../data/api";
 import { LocationMap } from "../components/LocationMap";
+import { TURNSTILE_SITE_KEY, useTurnstile } from "../lib/turnstile";
 
-const TURNSTILE_SITE_KEY = (import.meta as any).env?.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
 type Intent = "question" | "appointment_request";
 type Tab = "ask" | "visit";
@@ -29,41 +29,6 @@ type ContactUser = { name: string; email: string; phone: string; company: string
 
 const BEST_TIMES = [["anytime", "Anytime, business hours"], ["morning", "Morning (8am–12pm)"], ["afternoon", "Afternoon (12–5pm)"]];
 
-// Render a Cloudflare Turnstile widget into the active tab's container. Re-runs on
-// `dep` (the current tab) so switching panels re-mounts the widget in the newly
-// shown container instead of leaving it stranded in the unmounted one. No-op when
-// no site key is configured (dev/preview/tests run without a captcha provider).
-function useTurnstile(onToken: (t: string) => void, dep: unknown) {
-  const ref = useRef<HTMLDivElement>(null);
-  const widgetId = useRef<string | null>(null);
-  useEffect(() => {
-    if (!TURNSTILE_SITE_KEY || !ref.current) return;
-    let cancelled = false;
-    const render = () => {
-      const ts = (window as any).turnstile;
-      if (cancelled || !ts || !ref.current) return;
-      if (widgetId.current != null) { try { ts.remove(widgetId.current); } catch { /* already gone */ } widgetId.current = null; }
-      widgetId.current = ts.render(ref.current, { sitekey: TURNSTILE_SITE_KEY, callback: (t: string) => onToken(t), "expired-callback": () => onToken(""), "error-callback": () => onToken("") });
-    };
-    if ((window as any).turnstile) render();
-    else {
-      let script = document.querySelector<HTMLScriptElement>("script[data-turnstile]");
-      if (!script) {
-        script = document.createElement("script");
-        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
-        script.async = true; script.defer = true; script.setAttribute("data-turnstile", "");
-        document.head.appendChild(script);
-      }
-      script.addEventListener("load", render);
-    }
-    return () => {
-      cancelled = true;
-      const ts = (window as any).turnstile;
-      if (ts && widgetId.current != null) { try { ts.remove(widgetId.current); } catch { /* noop */ } widgetId.current = null; }
-    };
-  }, [onToken, dep]);
-  return ref;
-}
 
 const initialTab = (): Tab => (new URLSearchParams(window.location.search).get("intent") === "appointment" ? "visit" : "ask");
 

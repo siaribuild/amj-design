@@ -8,6 +8,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { normEmail, resolveUser } from "../lib/auth";
+import { sourceIp, verifyTurnstile } from "../lib/captcha";
 import { notify } from "../lib/email";
 import { logEvent } from "../lib/activity";
 import { uuid } from "../lib/util";
@@ -18,18 +19,6 @@ export const enquiries = new Hono<{ Bindings: Env }>();
 
 const clip = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
 const nowSql = () => new Date().toISOString().replace("T", " ").replace(/\..+/, "");
-
-async function verifyTurnstile(secret: string, token: string, ip?: string): Promise<boolean> {
-  try {
-    const form = new URLSearchParams({ secret, response: token });
-    if (ip) form.set("remoteip", ip);
-    const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST", body: form, signal: AbortSignal.timeout(3000),
-    });
-    const data = await res.json<{ success?: boolean }>().catch(() => ({}));
-    return data?.success === true;
-  } catch { return false; }
-}
 
 // Pull the whitelisted UTM/context fields the client may send (analytics only —
 // never trusted to set attribution ownership).
@@ -66,7 +55,7 @@ enquiries.post("/enquiries", async (c) => {
   if (errors.length) return c.json({ error: "invalid", fields: errors }, 400);
 
   // Throttle: one/min and five/hour per source IP.
-  const ip = c.req.header("CF-Connecting-IP") || c.req.header("X-Forwarded-For") || "unknown";
+  const ip = sourceIp(c.req.raw);
   if (await c.env.KV.get(`enq:min:${ip}`)) return c.json({ error: "rate_limited" }, 429);
   const hourKey = `enq:hr:${ip}`;
   const usedHour = parseInt((await c.env.KV.get(hourKey)) ?? "0", 10) || 0;

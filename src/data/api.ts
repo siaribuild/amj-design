@@ -108,11 +108,15 @@ export interface MeResponse {
 /** Current session -> user, or anonymous. */
 export const me = () => req<MeResponse>("/api/auth/me");
 
-/** Request a one-time email code. `devCode` is returned only in non-prod. */
-export const requestCode = (email: string) =>
+/** Request a one-time email code. `devCode` is returned only in non-prod.
+ *
+ *  `token` is a Turnstile response, required by the Worker only when
+ *  TURNSTILE_SECRET is configured — the endpoint is unauthenticated and will
+ *  email any address on request, so the caller has to be vouched for. */
+export const requestCode = (email: string, token?: string) =>
   req<{ ok: boolean; devCode?: string }>("/api/auth/challenge", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, token }),
   });
 
 /** Verify a code: starts a session and merges the anon project. Throws on 400. */

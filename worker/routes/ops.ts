@@ -6,9 +6,10 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import {
-  challengeAllowed, clearCookie, consumeChallenge, createSession, destroySession, isDevEnv,
-  isEmail, normEmail, sessionCookie, sixDigit, storeChallenge, userDto,
+  challengeAllowed, challengeSourceAllowed, clearCookie, consumeChallenge, createSession, destroySession,
+  isDevEnv, isEmail, normEmail, sessionCookie, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
+import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
 import { findOrCreateInternalUser, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
 import { drainLearningOutbox, issueRevision } from "../lib/revisions";
@@ -180,6 +181,14 @@ const otpDisabledInAccessMode = (c: { env: Env }) => accessIsConfigured(c.env);
 // POST /api/ops/auth/challenge { email } — allowlisted staff only; neutral otherwise.
 ops.post("/auth/challenge", async (c) => {
   if (otpDisabledInAccessMode(c)) return c.json({ error: "not_found" }, 404);
+  // Same per-source cap as the customer challenge, sharing the same counter so
+  // rotating between the two endpoints does not buy a second budget. No captcha
+  // here: recipients are already bounded to the configured domains, and in
+  // production this route does not exist at all (see the guard above), so a
+  // widget on the ops sign-in screen would guard a 404.
+  if (!(await challengeSourceAllowed(c.env, sourceIp(c.req.raw)))) {
+    return c.json({ error: "rate_limited" }, 429);
+  }
   const body = await c.req.json().catch(() => ({}));
   const email = normEmail(body?.email);
   if (isEmail(email) && isStaffEmail(c.env, email) && (await challengeAllowed(c.env, email))) {

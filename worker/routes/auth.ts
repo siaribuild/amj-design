@@ -9,9 +9,10 @@ import type { Env } from "../types";
 import { CLAIM_COOKIE, parseCookies } from "../lib/util";
 import { claimAnonProjectForUser } from "../lib/access";
 import {
-  challengeAllowed, clearCookie, consumeChallenge, createSession, destroySession, findOrCreateUser,
-  isDevEnv, isEmail, normEmail, resolveUser, sessionCookie, sixDigit, storeChallenge, userDto,
+  challengeAllowed, challengeSourceAllowed, clearCookie, consumeChallenge, createSession, destroySession,
+  findOrCreateUser, isDevEnv, isEmail, normEmail, resolveUser, sessionCookie, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
+import { sourceIp, verifyTurnstile } from "../lib/captcha";
 import { notify } from "../lib/email";
 
 export const auth = new Hono<{ Bindings: Env }>();
@@ -23,10 +24,29 @@ auth.get("/me", async (c) => {
   return c.json({ authenticated: true, anonymous: false, user: userDto(user) });
 });
 
-// POST /api/auth/challenge { email } — always neutral (no account enumeration).
+// POST /api/auth/challenge { email, token? } — always neutral (no account enumeration).
+//
+// Deliberately sends to ANY valid address, whether or not an account exists —
+// that is what keeps it from being an account-enumeration oracle. The cost of
+// that choice is that the endpoint will email a stranger on request, so the
+// controls here have to be about the CALLER, not the recipient: without them a
+// bot rotating addresses turns an anti-enumeration measure into an open relay
+// for fixed-content mail, at your sending domain's reputation.
 auth.post("/challenge", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const email = normEmail(body?.email);
+
+  // 429 rather than the neutral 200: this says something about the SOURCE, never
+  // about whether the address exists, so it leaks nothing the neutral response
+  // was protecting. Checked before the captcha so a flood costs no siteverify calls.
+  const ip = sourceIp(c.req.raw);
+  if (!(await challengeSourceAllowed(c.env, ip))) return c.json({ error: "rate_limited" }, 429);
+
+  if (c.env.TURNSTILE_SECRET) {
+    const ok = await verifyTurnstile(c.env.TURNSTILE_SECRET, String(body?.token ?? "").slice(0, 4000), ip);
+    if (!ok) return c.json({ error: "captcha" }, 400);
+  }
+
   if (isEmail(email) && (await challengeAllowed(c.env, email))) {
     const code = sixDigit();
     await storeChallenge(c.env, email, code);
