@@ -1207,7 +1207,8 @@ ops.get("/files", async (c) => {
 // POST /api/ops/files/:id/rescan — run the scanner over a stored file and record
 // the verdict. This is how the pre-scanning backlog ('skipped') and any file whose
 // inline scan failed ('pending') get cleared for download; an infected verdict
-// purges the bytes from R2 rather than leaving them parked in the bucket.
+// moves the bytes off the serving key into quarantine/ rather than leaving them
+// parked where a route could reach them.
 ops.post("/files/:id/rescan", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
@@ -1220,19 +1221,41 @@ ops.post("/files/:id/rescan", async (c) => {
   const obj = await c.env.FILES.get(fa.r2_key);
   if (!obj) return c.json({ error: "gone" }, 404);
   const contentType = obj.httpMetadata?.contentType ?? "application/octet-stream";
-  const result = await scanFile(c.env, {
-    bytes: new Uint8Array(await obj.arrayBuffer()), filename: fa.filename, contentType,
-  });
+  const bytes = new Uint8Array(await obj.arrayBuffer());
+  const result = await scanFile(c.env, { bytes, filename: fa.filename, contentType });
 
   const status = result.verdict === "clean" ? "clean" : result.verdict === "infected" ? "infected" : "pending";
-  if (result.verdict === "infected") await c.env.FILES.delete(fa.r2_key).catch(() => {});
+  // QUARANTINE, never delete. On the upload path an infected verdict discards
+  // bytes that were never stored — nothing is lost, the customer still has their
+  // file. Here the stored copy is the ONLY copy: worker/routes/files.ts is the
+  // sole R2 write, there is no soft-delete and no second bucket. A rescan that
+  // deletes therefore destroys a customer's evidence the moment the scanner gets
+  // stricter or an AV service returns a false positive on a legitimate 6 MB plan
+  // set — and this endpoint exists precisely to be re-run after such a change.
+  // Moving the object off the serving key gets the bytes out of reach (both
+  // download routes already refuse a non-clean row) without making the tightening
+  // itself a data-loss event.
+  let quarantined = false;
+  if (result.verdict === "infected") {
+    try {
+      await c.env.FILES.put(`quarantine/${fa.r2_key}`, bytes, {
+        httpMetadata: { contentType },
+        customMetadata: { fileAssetId: id, reason: result.reason ?? "", quarantinedBy: staff.id },
+      });
+      await c.env.FILES.delete(fa.r2_key);
+      quarantined = true;
+    } catch {
+      // Could not park a copy — then do NOT delete. Leaving the object on a key
+      // no route will serve is strictly better than losing it.
+    }
+  }
   await c.env.DB.prepare("UPDATE file_asset SET virus_status = ?, scan_engine = ?, scanned_at = datetime('now') WHERE id = ?")
     .bind(status, result.engine, id).run();
   await logEvent(c.env, {
     actor: staff.id, entityType: "file", entityId: id,
-    action: `rescanned file → ${status}${result.reason ? ` (${result.reason})` : ""}`,
+    action: `rescanned file → ${status}${result.reason ? ` (${result.reason})` : ""}${result.verdict === "infected" ? (quarantined ? " — moved to quarantine/" : " — quarantine FAILED, bytes left in place") : ""}`,
   });
-  return c.json({ ok: true, status, engine: result.engine, reason: result.reason ?? null });
+  return c.json({ ok: true, status, engine: result.engine, reason: result.reason ?? null, quarantined });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
