@@ -1084,6 +1084,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       // Same source immediately again → throttled.
       await requestJson(s, "/api/enquiries", { method: "POST", json: { intent: "question", name: "Again", email: "again@ex.com", message: "hi", privacyConsent: true }, ...ip("203.0.113.20") }, 429);
 
+
       // Honeypot → neutral success, no reference, nothing recorded.
       const trap = await requestJson(s, "/api/enquiries", { method: "POST", json: { intent: "question", name: "Bot", email: "b@spam.test", message: "x", privacyConsent: true, website: "http://x" }, ...ip("203.0.113.30") });
       assert.equal(trap.body.reference, null);
@@ -1156,6 +1157,31 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       await requestJson(rookie2, "/api/ops/enquiries");
       await requestJson(rookie2, `/api/ops/enquiries/${apptRow.id}`);
       await requestJson(anon, "/api/ops/enquiries", {}, 403);
+
+      // ── Reference sequencing (last: these add rows and delete one) ──────────
+      // A DELETED enquiry must not wedge the form. The reference used to be
+      // count(*)+1, which assumes the year's rows are a contiguous 1..N run:
+      // remove one and every later submission recomputes a reference that already
+      // exists, the insert fails on the UNIQUE index, the count never advances,
+      // and the public contact form is broken permanently — with no way back that
+      // does not involve someone editing the database by hand. MAX() steps over
+      // the hole instead of falling into it.
+      await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--command",
+        `DELETE FROM enquiry WHERE public_reference = '${q.body.reference}'`], { env: wranglerEnv });
+      const afterGap = await requestJson(s, "/api/enquiries", { method: "POST",
+        json: { intent: "question", name: "After Gap", email: "gap@example.com", topic: "pricing", message: "still works?", privacyConsent: true }, ...ip("203.0.113.40") });
+      assert.match(afterGap.body.reference, /^OF-ENQ-\d{4}-\d{6}$/);
+      assert.notEqual(afterGap.body.reference, appt.body.reference, "must not re-issue a live reference");
+      assert.notEqual(afterGap.body.reference, phoneOnly.body.reference);
+
+      // A failed submission must not cost the customer their throttle allowance:
+      // the counters are charged after the insert now, so an invalid payload from
+      // a fresh source leaves that source able to submit immediately.
+      await requestJson(s, "/api/enquiries", { method: "POST", json: { intent: "question", name: "Invalid", email: "bad@ex.com", message: "hi" }, ...ip("203.0.113.50") }, 400);
+      const retried = await requestJson(s, "/api/enquiries", { method: "POST",
+        json: { intent: "question", name: "Retry", email: "retry@example.com", topic: "pricing", message: "second go", privacyConsent: true }, ...ip("203.0.113.50") });
+      assert.match(retried.body.reference, /^OF-ENQ-\d{4}-\d{6}$/);
+      assert.notEqual(retried.body.reference, afterGap.body.reference);
     });
 
     // The whole suite above runs with Access DELIBERATELY off, which is why the

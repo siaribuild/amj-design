@@ -14,15 +14,26 @@ export interface ProjectRow {
 }
 
 // Customer-facing project reference (OF-Q-NNNNN) — the durable, phone-quotable
-// anchor for a quote before an order number exists. Derived from the max existing
-// suffix (gap-tolerant); the UNIQUE index makes a rare race fail the insert, and
-// the caller's retry re-derives it.
-async function nextProjectRef(env: Env): Promise<string> {
-  const r = await env.DB
-    .prepare("SELECT COALESCE(MAX(CAST(substr(public_ref, 6) AS INTEGER)), 10000) AS n FROM project WHERE public_ref LIKE 'OF-Q-%'")
-    .first<{ n: number }>();
-  return `OF-Q-${(r?.n ?? 10000) + 1}`;
-}
+// anchor for a quote before an order number exists. Still derived from the max
+// existing suffix, so it stays gap-tolerant; the difference is WHERE.
+//
+// It used to be a SELECT, then a separate INSERT. Two simultaneous first-saves
+// read the same maximum, both built the same reference, and the loser hit the
+// UNIQUE index — and the comment here promised "the caller's retry re-derives
+// it", which was not true of any of the three callers. None of them catch:
+// projects.ts, files.ts and parse.ts all go through resolveOrCreateCurrentProject
+// with no try/catch, there is no api.onError anywhere in the Worker, and the
+// visitor got a bare 500 on their first save or upload.
+//
+// Computing it INSIDE the insert closes the window rather than reacting to it.
+// SQLite executes one statement atomically and D1 serialises writes on a single
+// primary, so there is no interval for a second request to occupy. No migration,
+// no counter table, and the human-readable sequence the business reads down the
+// phone is unchanged. The aggregate has no GROUP BY, so it yields exactly one row
+// even when the table is empty, and RETURNING hands back the value the database
+// actually assigned — the DB is the authority now, not a number computed here.
+const PROJECT_REF_SQL =
+  "'OF-Q-' || (SELECT COALESCE(MAX(CAST(substr(public_ref, 6) AS INTEGER)), 10000) + 1 FROM project WHERE public_ref LIKE 'OF-Q-%')";
 
 // The "current" project: a signed-in user's latest project wins; otherwise the
 // anonymous claim-cookie project. `token`/`userId` inform the create path.
@@ -73,14 +84,17 @@ export async function resolveOrCreateCurrentProject(env: Env, req: Request, titl
   }
 
   const id = uuid();
-  const ref = await nextProjectRef(env);
   if (userId) {
-    await env.DB.prepare("INSERT INTO project (id, owner_user_id, title, public_ref) VALUES (?, ?, ?, ?)").bind(id, userId, title, ref).run();
-    return { project: { id, owner_user_id: userId, claim_token: null, title, status_customer: "draft", created_at: "", public_ref: ref } };
+    const row = await env.DB.prepare(
+      `INSERT INTO project (id, owner_user_id, title, public_ref) VALUES (?, ?, ?, ${PROJECT_REF_SQL}) RETURNING public_ref`,
+    ).bind(id, userId, title).first<{ public_ref: string }>();
+    return { project: { id, owner_user_id: userId, claim_token: null, title, status_customer: "draft", created_at: "", public_ref: row?.public_ref ?? null } };
   }
   const token = newToken();
-  await env.DB.prepare("INSERT INTO project (id, claim_token, title, public_ref) VALUES (?, ?, ?, ?)").bind(id, token, title, ref).run();
-  return { project: { id, owner_user_id: null, claim_token: token, title, status_customer: "draft", created_at: "", public_ref: ref }, cookie: claimCookie(token, env) };
+  const row = await env.DB.prepare(
+    `INSERT INTO project (id, claim_token, title, public_ref) VALUES (?, ?, ?, ${PROJECT_REF_SQL}) RETURNING public_ref`,
+  ).bind(id, token, title).first<{ public_ref: string }>();
+  return { project: { id, owner_user_id: null, claim_token: token, title, status_customer: "draft", created_at: "", public_ref: row?.public_ref ?? null }, cookie: claimCookie(token, env) };
 }
 
 // Claim an anonymous project into a user's account on sign-in ("save & continue").
