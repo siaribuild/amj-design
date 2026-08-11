@@ -15,7 +15,7 @@
 //    replies, burying our oldest obligation under the newest event.
 import { SAGE, INK, QUIET as MUTED } from "../styles/tokens";
 import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { opsProjects, type OpsProjectRow } from "./api";
 import { ProjectRecord } from "./ProjectRecord";
 
@@ -30,42 +30,113 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "production", label: "In production" },
   { id: "all", label: "All" },
 ];
+// The two people actually live in day to day ("whose move is it", then the
+// general fallback). The rest sit behind "More filters" instead of a scrolling
+// chip row — a phone should never need a sideways swipe to see what it can
+// filter by, and five permanently-open chips is the schema talking, not a
+// disclosure decision.
+const PRIMARY = FILTERS.slice(0, 2);
+const SECONDARY = FILTERS.slice(2);
+
+function matchesFilter(r: OpsProjectRow, id: Filter) {
+  if (id === "all") return true;
+  if (id === "needs-us") return r.waitingOn === "Us";
+  if (id === "customer") return r.waitingOn === "Customer";
+  if (id === "production") return r.phase === "Production" || r.phase === "Accepted";
+  return r.phase !== "Delivered";                       // "All open"
+}
 
 export function Projects() {
   const [rows, setRows] = useState<OpsProjectRow[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("needs-us");
+  const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => { opsProjects().then((r) => setRows(r.projects)).catch(() => setRows([])); }, []);
 
-  const shown = useMemo(() => (rows ?? []).filter((r) => {
-    if (filter === "all") return true;
-    if (filter === "needs-us") return r.waitingOn === "Us";
-    if (filter === "customer") return r.waitingOn === "Customer";
-    if (filter === "production") return r.phase === "Production" || r.phase === "Accepted";
-    return r.phase !== "Delivered";                       // "All open"
-  }), [rows, filter]);
+  const shown = useMemo(() => (rows ?? []).filter((r) => matchesFilter(r, filter)), [rows, filter]);
+  // Every filter's count, not just the active one — the same reasoning as the
+  // Dashboard's "Needs us" rows: a number beside a name is what lets someone
+  // decide whether to open "More filters" at all.
+  const counts = useMemo(() => {
+    const c = {} as Record<Filter, number>;
+    FILTERS.forEach((f) => { c[f.id] = (rows ?? []).filter((r) => matchesFilter(r, f.id)).length; });
+    return c;
+  }, [rows]);
+
+  // Same technique as MobileNav in OpsApp.tsx, mirrored to the right: escape
+  // closes, and the page behind does not scroll while it is open.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMoreOpen(false); };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [moreOpen]);
 
   if (openId) return <ProjectRecord id={openId} onBack={() => setOpenId(null)} />;
   if (!rows) return <Loader2 className="w-5 h-5 text-black/30 animate-spin" />;
 
   const withCustomer = rows.filter((r) => r.waitingOn === "Customer").length;
+  const activeIsSecondary = SECONDARY.some((f) => f.id === filter);
 
   return (
     <div className="max-w-[1180px]">
-      <div className="flex gap-2 mb-4 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap">
-        {FILTERS.map((f) => (
+      <div className="flex items-center gap-2 mb-4">
+        {PRIMARY.map((f) => (
           <button key={f.id} onClick={() => setFilter(f.id)}
-            className="px-3 py-2 border whitespace-nowrap flex-shrink-0 t-cap"
+            className="px-3 py-2 border t-cap"
             style={{
               background: filter === f.id ? SAGE : "#fff",
               borderColor: filter === f.id ? SAGE : "rgba(0,0,0,0.12)",
               color: filter === f.id ? "#fff" : MUTED,
             }}>
-            {f.label}
+            {f.label} <span className="font-data" style={{ opacity: 0.7 }}>{counts[f.id]}</span>
           </button>
         ))}
+        <button onClick={() => setMoreOpen(true)}
+          className="px-3 py-2 border t-cap flex items-center gap-1.5"
+          style={{
+            background: "#fff",
+            borderColor: activeIsSecondary ? SAGE : "rgba(0,0,0,0.12)",
+            color: activeIsSecondary ? SAGE : MUTED,
+          }}>
+          {activeIsSecondary ? FILTERS.find((f) => f.id === filter)!.label : "More filters"}
+          {activeIsSecondary && <span className="font-data">{counts[filter]}</span>}
+        </button>
       </div>
+
+      {/* Same technique as MobileNav (OpsApp.tsx), mirrored to the right, and
+          full-width below md rather than a fixed phone width — a filter list on
+          a 375px screen has nowhere else to go. */}
+      {moreOpen && (
+        <div className="fixed inset-0 z-40 bg-black/45" onClick={() => setMoreOpen(false)} aria-hidden="true" />
+      )}
+      <aside
+        className={`fixed inset-y-0 right-0 z-50 w-full md:w-[360px] md:max-w-[92vw] bg-white flex flex-col border-l border-black/10
+                    transition-transform duration-200 ease-out
+                    ${moreOpen ? "translate-x-0" : "translate-x-full invisible"}`}
+        aria-hidden={!moreOpen}>
+        <div className="px-5 h-12 flex items-center justify-between border-b border-black/8 flex-shrink-0">
+          <span className="t-bd font-semibold" style={{ color: INK }}>Filter</span>
+          <button onClick={() => setMoreOpen(false)} className="w-10 h-10 -mr-2 flex items-center justify-center text-body" aria-label="Close">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <nav className="flex-1 overflow-y-auto py-2">
+          {SECONDARY.map((f) => (
+            <button key={f.id} onClick={() => { setFilter(f.id); setMoreOpen(false); }}
+              className="w-full flex items-center justify-between gap-3 px-5 h-11 border-l-2 t-bd-sm"
+              style={filter === f.id
+                ? { color: INK, borderColor: SAGE, background: "rgba(0,0,0,0.02)" }
+                : { color: MUTED, borderColor: "transparent" }}>
+              <span>{f.label}</span>
+              <span className="font-data" style={{ color: MUTED }}>{counts[f.id]}</span>
+            </button>
+          ))}
+        </nav>
+      </aside>
 
       {shown.length === 0 ? (
         <div className="bg-white border border-dashed border-black/15 p-12 text-center">
