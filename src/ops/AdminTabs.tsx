@@ -88,7 +88,11 @@ export function Audit() {
   useEffect(() => { opsAudit(filter || undefined).then(r => setEvents(r.events)).catch(() => setEvents([])); }, [filter]);
   return (
     <div className="max-w-3xl">
-      <div className="flex gap-1.5 mb-3">
+      {/* flex-wrap, not overflow-x-auto: five short chips is a case for wrapping
+          to a second row on narrow widths, not a "More filters" panel — that
+          machinery earns its keep on Projects/Enquiries (5-9 options, high
+          traffic) but would be ceremony here for a five-item admin filter. */}
+      <div className="flex flex-wrap gap-1.5 mb-3">
         {["", "project", "order", "user", "rule"].map(e => (
           <button key={e || "all"} onClick={() => setFilter(e)} className={`px-2.5 py-1 border ${filter === e ? "border-sage bg-sage-wash text-sage-ink" : "border-black/12 text-body"} t-cap`}>{e || "All"}</button>
         ))}
@@ -139,10 +143,13 @@ export function Admin() {
           sign-in email. Someone withholding a role here to limit what a new
           starter can reach was limiting nothing and had no way to find that out. */}
       <p className="text-quiet mb-1 flex items-center gap-1.5 t-cap"><ShieldCheck className="w-4 h-4" />Staff &amp; roles. Only admins can change roles.</p>
+      {/* Was the architecture rationale from the comment above, pasted in as the
+          user-facing paragraph (down to "the Cloudflare Access policy" and "the
+          other values are labels"). An ops reader needs what a role does here,
+          not why the system is built that way. */}
       <p className="text-quiet mb-3 t-cap">
-        Everyone who reaches this console has full access to customers, files, pricing and payments —
-        the boundary is the Cloudflare Access policy, not this dropdown. Only <strong>admin</strong> differs:
-        it grants role changes and customer sign-in email edits. The other values are labels.
+        Only <strong>Admin</strong> changes what someone can do on this screen — role changes and
+        editing a customer's sign-in email. Other roles are labels and don't restrict access.
       </p>
       {err && <p className="text-red-600 mb-2 t-cap">{err}</p>}
       <div className="card divide-y divide-black/5">
