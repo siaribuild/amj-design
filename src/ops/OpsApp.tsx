@@ -282,9 +282,10 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
  *  1. It was FIXED TO THE VIEWPORT, so on any tab whose content overflowed
  *     horizontally the page slid sideways underneath a bar that did not move —
  *     the labels ended up over the wrong columns and the active marker pointed
- *     at nothing. Customers, a six-column table with no phone treatment, did
- *     this on every phone. A drawer cannot desynchronise from content because
- *     it is not on screen while content is being read.
+ *     at nothing. Customers, then a six-column table with no phone treatment,
+ *     did this on every phone (it has since been given the same card treatment
+ *     as Projects). A drawer cannot desynchronise from content because it is
+ *     not on screen while content is being read.
  *  2. Eight tabs into five slots meant three of them lived behind a generic
  *     "More" cog. The drawer shows all eight at once, in the same order and
  *     with the same icons as the desktop rail, so the two surfaces teach the
