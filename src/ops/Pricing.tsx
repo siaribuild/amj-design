@@ -362,8 +362,12 @@ function RateCardDetail({ id, onBack }: { id: string; onBack: () => void }) {
 
       <Rules rules={rules} setRules={setRules} preview={preview} canEdit={d.canEdit} />
 
+      {/* Sticky, same `quote-panel-footer` treatment as the estimator's own
+          action bar — this page has no bounded scroll container of its own, so
+          without it Save/Discard scrolled away with the rest of the page below
+          the rule editor. mt-6 keeps normal spacing when it's not stuck. */}
       {d.canEdit && edited && (
-        <div className="flex items-center justify-end gap-4 mt-6 pt-4 border-t border-black/8">
+        <div className="quote-panel-footer sticky bottom-0 z-30 flex items-center justify-end gap-4 mt-6 px-4 py-3 -mx-4">
           <button onClick={() => {
             setPerim(String(d.card.perimRate)); setArea(String(d.card.areaRate));
             setMin(String(d.card.minCharge)); setRules(d.modifiers);
@@ -576,14 +580,30 @@ function ConfirmDialog({ family, before, after, baseline, preview, exposure, onC
     next: p.snapshot.total,
   }));
 
+  // Same escape/scroll-lock technique as MobileNav (OpsApp.tsx) and the
+  // Projects/Enquiries filter panels — a centered modal was too small a frame
+  // for this much content (deltas, a before/after table, exposure text, the
+  // tripwire); a right slide-in that goes full-screen below md matches how
+  // this app already presents secondary surfaces with real content.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [onCancel]);
+
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={onCancel}>
-      <div className="card max-w-xl w-full p-6" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between mb-4">
+    <>
+    <div className="fixed inset-0 bg-black/45 z-40" onClick={onCancel} aria-hidden="true" />
+    <aside className="fixed inset-y-0 right-0 z-50 w-full md:w-[480px] md:max-w-[92vw] bg-white flex flex-col border-l border-black/10"
+      role="dialog" aria-modal="true" aria-label={`Review pricing change — ${family}`}>
+        <div className="flex items-center justify-between px-5 h-14 border-b border-black/8 flex-shrink-0">
           <h3 className="t-bd font-display" style={{ color: INK }}>Review pricing change — {family}</h3>
-          <button onClick={onCancel}><X className="w-4 h-4" style={{ color: MUTED }} /></button>
+          <button onClick={onCancel} aria-label="Close"><X className="w-4 h-4" style={{ color: MUTED }} /></button>
         </div>
 
+        <div className="flex-1 overflow-y-auto px-5 py-4">
         <div className="mb-5 t-bd-sm">
           <Delta label="Perimeter rate" before={before.perim} after={after.perim} />
           <Delta label="Area rate" before={before.area} after={after.area} />
@@ -638,17 +658,18 @@ function ConfirmDialog({ family, before, after, baseline, preview, exposure, onC
 
         <input value={note} onChange={(e) => setNote(e.target.value)}
           placeholder={tripwire ? "Why (required)" : "Note (optional — shows in history)"}
-          className="w-full border border-black/12 px-2 py-1.5 mb-4 t-bd-sm" style={{ color: INK }} />
+          className="w-full border border-black/12 px-2 py-1.5 t-bd-sm" style={{ color: INK }} />
+        </div>
 
-        <div className="flex justify-end gap-3">
+        <div className="quote-panel-footer flex justify-end gap-3 px-5 py-3 flex-shrink-0">
           <button onClick={onCancel} className="px-3 py-2 t-cap" style={{ color: MUTED }}>Cancel</button>
           <button onClick={() => onSave(note)} disabled={blocked}
             className="text-white px-4 py-2 disabled:opacity-40 t-cap" style={{ background: SAGE }}>
             Save new rates
           </button>
         </div>
-      </div>
-    </div>
+    </aside>
+    </>
   );
 }
 
@@ -908,9 +929,12 @@ function Policy() {
           appear to work and do nothing, which is worse than not having one. */}
       <div className="mb-6">
         <span className="t-bd-sm" style={{ color: INK }}>GST</span>
+        {/* Was "the rate itself is a code constant. — not editable —", which
+            reads like a note to the next developer rather than an answer to the
+            ops reader's actual question: can I change this here? */}
         <p className="mt-1 t-cap" style={{ color: MUTED }}>
-          Prices are stored GST-inclusive. Whether a customer sees “inc GST” or “ex GST” is their own account
-          preference, not a setting here, and the rate itself is a code constant. — not editable —
+          Prices are stored GST-inclusive. Whether a customer sees "inc GST" or "ex GST" is their own
+          account preference — the GST rate itself can't be changed from this screen.
         </p>
       </div>
 
