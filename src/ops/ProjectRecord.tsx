@@ -1190,6 +1190,10 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
             // disabled still has to be read and repriced, and staff may quote one
             // for a legacy job. They are marked in the list, never hidden.
             includeDisabled
+            // This mount sits in ordinary page flow, not a bounded drawer — the
+            // default (sticky only below md) left Save/Cancel scrolling away with
+            // the rest of the page on desktop once Dimensions/Options expanded.
+            stickyActions
           />
         </td>
       </tr>
@@ -1273,6 +1277,9 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
                   siblingSlugs: (line.segments ?? []).filter((s) => s.id !== sg.id).map((s) => s.productSlug),
                   enforce: false,
                 }}
+                // Same reasoning as the line editor above: page flow, not a
+                // bounded drawer, so Save/Cancel need to stay pinned on desktop too.
+                stickyActions
               />
             </td>
           </tr>
