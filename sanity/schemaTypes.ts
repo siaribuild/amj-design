@@ -10,6 +10,7 @@
 // Images are real Sanity image assets (hotspot/crop enabled) so the frontend can
 // request on-demand sizes and honour focal points.
 import { defineType, defineField, defineArrayMember } from "sanity";
+import { orderRankField, orderRankOrdering } from "@sanity/orderable-document-list";
 
 const specRow = defineArrayMember({
   type: "object",
@@ -32,19 +33,27 @@ export const category = defineType({
     // to scroll past the doors first. Alphabetical was doing that, because
     // "Doors" precedes "Windows".
     //
-    // Low numbers first; leave it empty and the category sorts after every
-    // ordered one, then alphabetically among its peers. Ops manages the order
-    // here rather than it being a constant in the app.
+    // Drag-and-drop in Studio (the "Categories" list item in the desk structure,
+    // see sanity.config.ts) — orderRankField is the plugin's own rank string, and
+    // it is what CATALOGUE_QUERY orders by now. Ops manages the order by dragging
+    // rather than by typing a number.
+    orderRankField({ type: "category" }),
+    // DEPRECATED — replaced by orderRank above. Left in place (read-only, hidden
+    // once empty) rather than deleted: never drop a field with production data in
+    // the same change that replaces it. Remove once nothing reads it.
     defineField({
       name: "order",
-      title: "Display order",
+      title: "Display order (deprecated)",
       type: "number",
-      description: "Lowest first. Leave empty to sort last, alphabetically.",
-      validation: (r) => r.integer().positive(),
+      description: "Superseded by drag-and-drop ordering. Safe to remove once nothing reads it.",
+      deprecated: { reason: "Replaced by drag-and-drop ordering (orderRank)." },
+      readOnly: true,
+      hidden: ({ value }) => value === undefined,
     }),
     defineField({ name: "shortDescription", type: "text", rows: 2 }),
     defineField({ name: "description", type: "text", rows: 4 }),
   ],
+  orderings: [orderRankOrdering],
 });
 
 export const family = defineType({
@@ -226,7 +235,12 @@ export const family = defineType({
     }),
     defineField({ name: "shortDescription", type: "text", rows: 2 }),
     defineField({ name: "description", type: "text", rows: 4 }),
+    // Drag-and-drop in Studio (the "Families" list item, see sanity.config.ts) —
+    // this is what CATALOGUE_QUERY orders families by now (the product picker's
+    // family grouping, the family selector on /products).
+    orderRankField({ type: "family" }),
   ],
+  orderings: [orderRankOrdering],
 });
 
 // ── Options as first-class, shared, reusable documents ───────────────────────
@@ -238,7 +252,24 @@ export const optionType = defineType({
   fields: [
     defineField({ name: "name", type: "string", validation: (r) => r.required() }),
     defineField({ name: "slug", type: "slug", options: { source: "name" }, validation: (r) => r.required() }),
-    defineField({ name: "sortOrder", title: "Sort order", type: "number", description: "Display order of this type in the configurator." }),
+    // Drag-and-drop in Studio (the "Option Types" list item, see
+    // sanity.config.ts) — this now drives which option group (Colour, Hardware,
+    // Flyscreen…) shows first in the item builder customers use
+    // (src/data/configurator.ts), replacing the hardcoded TYPE_ORDER constant
+    // that lived there before.
+    orderRankField({ type: "optionType" }),
+    // DEPRECATED — never wired up. The field existed since early on ("Display
+    // order of this type in the configurator") but nothing ever read it; the
+    // configurator used a hardcoded TYPE_ORDER array instead, until orderRank
+    // above replaced it. Left in place (read-only, hidden once empty) rather
+    // than deleted.
+    defineField({
+      name: "sortOrder", title: "Sort order (deprecated)", type: "number",
+      description: "Never wired up. Superseded by drag-and-drop ordering (orderRank).",
+      deprecated: { reason: "Replaced by drag-and-drop ordering (orderRank)." },
+      readOnly: true,
+      hidden: ({ value }) => value === undefined,
+    }),
     defineField({
       name: "appliesToAll",
       title: "Applies to all products",
@@ -259,6 +290,7 @@ export const optionType = defineType({
       initialValue: false,
     }),
   ],
+  orderings: [orderRankOrdering],
   preview: { select: { title: "name" } },
 });
 
@@ -271,6 +303,12 @@ export const option = defineType({
     defineField({ name: "name", type: "string", validation: (r) => r.required() }),
     defineField({ name: "slug", type: "slug", options: { source: "name" }, validation: (r) => r.required() }),
     defineField({ name: "optionType", type: "reference", to: [{ type: "optionType" }], validation: (r) => r.required() }),
+    // Drag-and-drop in Studio, grouped per Option Type (see sanity.config.ts —
+    // Options drills into an Option Type, then shows a drag-orderable list scoped
+    // to just that type). Studio browsing only: the field is NOT read by any
+    // customer-facing query — the colour swatch order, for instance, stays
+    // isDefault-first-then-alphabetical, unaffected by this.
+    orderRankField({ type: "option" }),
     defineField({
       name: "pricingComponent",
       title: "Price",
@@ -636,7 +674,22 @@ export const product = defineType({
       name: "options", title: "Options", type: "array", of: [productOption], group: "content",
       description: "Shared options offered on this product, each marked standard or optional.",
     }),
-    defineField({ name: "featuredOrder", type: "number", group: "content" }),
+    // Drag-and-drop in Studio (the "Products" list item in the desk structure,
+    // see sanity.config.ts) — takes over featuredOrder's job. This is what
+    // CATALOGUE_QUERY orders products by now.
+    orderRankField({ type: "product" }),
+    // DEPRECATED — replaced by orderRank above, which now drives product order
+    // everywhere (category view, family view, the product picker) despite this
+    // field's name never having been scoped to "featured" items specifically.
+    // Left in place (read-only, hidden once empty) rather than deleted.
+    defineField({
+      name: "featuredOrder", type: "number", group: "content",
+      title: "Display order (deprecated)",
+      description: "Superseded by drag-and-drop ordering. Safe to remove once nothing reads it.",
+      deprecated: { reason: "Replaced by drag-and-drop ordering (orderRank)." },
+      readOnly: true,
+      hidden: ({ value }) => value === undefined,
+    }),
     // WITHDRAWN FROM SALE, NOT DELETED.
     //
     // Ticked, the product leaves the website and the estimator stops choosing it —
@@ -681,6 +734,7 @@ export const product = defineType({
       description: "System field — the estimator's technical-contract version. Managed in code (bumped by a migration when the contract shape changes); not editable here." }),
     defineField({ name: "seo", title: "SEO", type: "seoMeta", group: "seo" }),
   ],
+  orderings: [orderRankOrdering],
   preview: { select: { title: "name", subtitle: "family.name", media: "heroImage" } },
 });
 
@@ -726,7 +780,12 @@ export const page = defineType({
       description: "Served by Sanity; drag the hotspot to set the focal point.",
     }),
     defineField({ name: "seo", title: "SEO", type: "seoMeta", group: "seo" }),
+    // Drag-and-drop in Studio only — pages are looked up by pageId, never
+    // listed to a customer in any order, so this is purely a tidier Pages
+    // list for editors.
+    { ...orderRankField({ type: "page" }), group: "content" },
   ],
+  orderings: [orderRankOrdering],
   preview: { select: { title: "title", subtitle: "pageId", media: "heroImage" } },
 });
 
@@ -883,9 +942,18 @@ export const postCategory = defineType({
       name: "slug", title: "Slug", type: "slug", options: { source: "title", maxLength: 40 },
       validation: (r) => r.required(),
     }),
+    // Drag-and-drop in Studio (the "Resources Categories" list item in the desk
+    // structure, see sanity.config.ts) — this is what the postCategories query
+    // orders by now.
+    orderRankField({ type: "postCategory" }),
+    // DEPRECATED — replaced by orderRank above. Left in place (read-only, hidden
+    // once empty) rather than deleted.
     defineField({
-      name: "order", title: "Order", type: "number",
-      description: "Lower numbers appear first in the filter. Ties fall back to title.",
+      name: "order", title: "Order (deprecated)", type: "number",
+      description: "Superseded by drag-and-drop ordering. Safe to remove once nothing reads it.",
+      deprecated: { reason: "Replaced by drag-and-drop ordering (orderRank)." },
+      readOnly: true,
+      hidden: ({ value }) => value === undefined,
     }),
     defineField({
       name: "description", title: "Description", type: "text", rows: 2,
@@ -915,7 +983,7 @@ export const postCategory = defineType({
       initialValue: true,
     }),
   ],
-  orderings: [{ title: "Order", name: "order", by: [{ field: "order", direction: "asc" }, { field: "title", direction: "asc" }] }],
+  orderings: [orderRankOrdering],
   preview: { select: { title: "title", subtitle: "slug.current" } },
 });
 
@@ -1057,6 +1125,10 @@ export const post = defineType({
       description: "The date you last checked this is still true — not the date you fixed a typo. Shown as \"Updated\" on categories set to show it.",
     }),
     defineField({ name: "seo", title: "SEO", type: "seoMeta", group: "seo" }),
+    // Drag-and-drop in Studio only — the Resources index still sorts by
+    // publishedAt (unchanged, see CATALOGUE_QUERY's "posts" block). This is
+    // purely a tidier editorial list, the same treatment as Options.
+    { ...orderRankField({ type: "post" }), group: "content" },
   ],
   // Body is required by its own field rule. This enforces the rest of the model.
   validation: (r) =>
@@ -1077,6 +1149,7 @@ export const post = defineType({
   orderings: [
     { title: "Newest", name: "newest", by: [{ field: "publishedAt", direction: "desc" }] },
     { title: "Title", name: "title", by: [{ field: "title", direction: "asc" }] },
+    orderRankOrdering,
   ],
   preview: {
     select: { title: "title", category: "category.title", media: "heroImage" },
@@ -1108,7 +1181,11 @@ export const emailTemplate = defineType({
       description: "The email body. Use [placeholders] like [name] or [ref] where live values should appear. A blank line starts a new paragraph.",
       validation: (r) => r.required(),
     }),
+    // Drag-and-drop in Studio only — templates are looked up by key, never
+    // listed to a customer, so this is purely a tidier list for editors.
+    orderRankField({ type: "emailTemplate" }),
   ],
+  orderings: [orderRankOrdering],
   preview: {
     select: { title: "title", subtitle: "subject" },
   },
@@ -1158,7 +1235,11 @@ export const thermalProfile = defineType({
       options: { list: [{ title: "Conventional", value: "conventional" }, { title: "Thermally broken", value: "thermally_broken" }, { title: "Unknown", value: "unknown" }] } }),
     defineField({ name: "rows", title: "Glazing rows", type: "array", of: [thermalProfileRow], validation: (r) => r.unique(),
       description: "One row per glazing this frame is rated for — the WERS matrix for this frame." }),
+    // Drag-and-drop in Studio only — technical reference data looked up per
+    // product, never listed to a customer in any order.
+    orderRankField({ type: "thermalProfile" }),
   ],
+  orderings: [orderRankOrdering],
   preview: {
     select: { title: "name", rows: "rows" },
     prepare: ({ title, rows }: any) => ({ title, subtitle: `${(rows || []).length} glazings` }),
@@ -1248,7 +1329,11 @@ export const frameSystem = defineType({
         + "same system only — which is the right answer for every system that makes its own "
         + "fixed lite. Add a row only where a system cannot supply a unit it needs.",
     }),
+    // Drag-and-drop in Studio only — technical reference data looked up per
+    // product, never listed to a customer in any order.
+    orderRankField({ type: "frameSystem" }),
   ],
+  orderings: [orderRankOrdering],
   preview: {
     select: { title: "name", slug: "slug.current", edges: "compatibleWith" },
     prepare: ({ title, slug, edges }: any) => ({

@@ -11,7 +11,7 @@
 // NOTE: there is no "configuration/panel" concept — that is not in the product
 // data yet. When it exists it will live with the dimensions, not as an invented field.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { type Product, type ProductOption, getProductBySlug, getCategories, getFamiliesByCategory, colorbondColourOptions } from "./catalogue";
+import { type Product, type ProductOption, getProductBySlug, getCategories, getFamiliesByCategory, colorbondColourOptions, optionTypeOrder } from "./catalogue";
 
 // ─── Quote (MyProject) state ──────────────────────────────────────────────────
 export interface QItem {
@@ -387,7 +387,6 @@ export interface OptionChoice { name: string; add: number; standard: boolean; he
 export const POPULAR_COLOURS = ["Dover White", "Shale Grey", "Monument", "Night Sky"];
 export interface OptionGroup { typeSlug: string; label: string; required: boolean; choices: OptionChoice[]; defaultName: string }
 
-const TYPE_ORDER = ["colour", "hardware", "flyscreen", "installation"];
 // Every option a product offers must be chosen before the item can be saved or
 // submitted — each group is required and starts with a default (see defaultOptions).
 
@@ -455,9 +454,17 @@ export function optionGroupsFor(p: Product): OptionGroup[] {
     //                       product, Installation: four options, none standard.
     groups.push({ typeSlug, label, required: choices.length > 0 && !std, choices, defaultName: def });
   }
+  // Ops-managed in Studio's "Option Types" list (see sanity.config.ts) —
+  // replaced the hardcoded TYPE_ORDER this used to be. An unranked type (one
+  // that predates the migration, or a stale cached payload) falls back to
+  // alphabetical among its own kind, same convention as everywhere else this
+  // session touched ordering — never silently jumping to the front.
   groups.sort((a, b) => {
-    const ia = TYPE_ORDER.indexOf(a.typeSlug), ib = TYPE_ORDER.indexOf(b.typeSlug);
-    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    const ra = optionTypeOrder[a.typeSlug], rb = optionTypeOrder[b.typeSlug];
+    if (ra != null && rb != null) return ra.localeCompare(rb);
+    if (ra != null) return -1;
+    if (rb != null) return 1;
+    return a.typeSlug.localeCompare(b.typeSlug);
   });
   return groups;
 }

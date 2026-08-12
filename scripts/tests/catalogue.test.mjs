@@ -65,10 +65,32 @@ test("catalogue query normalization and runtime hydration", async () => {
     assert.match(catalogue.CATALOGUE_QUERY, /"heroImage": heroImage\{/);
     assert.match(catalogue.CATALOGUE_QUERY, /"url": asset->url/);
 
+    // Products, Families and Resources categories sort by the drag-and-drop
+    // rank Studio writes (see sanity.config.ts), not the retired
+    // featuredOrder/order/name fields — mirrors the categories check in
+    // unit.test.mjs.
+    assert.match(catalogue.CATALOGUE_QUERY, /"products":\s*\*\[_type=="product"\]\|order\(orderRank asc\)/);
+    assert.match(catalogue.CATALOGUE_QUERY, /"postCategories":\s*\*\[_type=="postCategory"\]\|order\(orderRank asc\)/);
+    assert.match(catalogue.CATALOGUE_QUERY, /"families":\s*\*\[_type=="family"\]\|order\(orderRank asc\)/);
+    // Option type order (which group — Colour, Hardware, Flyscreen… — shows
+    // first in the item builder) is fetched too, replacing the hardcoded
+    // TYPE_ORDER that used to live in src/data/configurator.ts.
+    assert.match(catalogue.CATALOGUE_QUERY, /"optionTypes":\s*\*\[_type=="optionType"\]\{/);
+
     const normalized = catalogue.toCatalogueData({
       categories: [], families: [], colours: [{ name: "Test", hex: null, availability: "standard" }],
       products: [{ id: "p", slug: "p", name: null, options: null, gallery: null }],
     });
+    assert.deepEqual(normalized.optionTypeOrder, {}, "no optionTypes in the payload -> empty map, not a crash");
+
+    // optionTypes -> a slug:orderRank map; an unranked type (no orderRank yet)
+    // is dropped rather than carried through as an empty-string rank that
+    // would sort it to the front ahead of every ranked one.
+    const withOptionTypes = catalogue.toCatalogueData({
+      categories: [], families: [], colours: [], products: [],
+      optionTypes: [{ slug: "hardware", orderRank: "a001" }, { slug: "colour", orderRank: "a000" }, { slug: "unranked", orderRank: null }],
+    });
+    assert.deepEqual(withOptionTypes.optionTypeOrder, { hardware: "a001", colour: "a000" });
     assert.equal(normalized.products[0].name, "");
     assert.deepEqual(normalized.products[0].options, []);
     assert.deepEqual(normalized.products[0].gallery, []);
@@ -176,6 +198,25 @@ test("catalogue query normalization and runtime hydration", async () => {
     assert.notEqual(catalogue.getProductBySlug("regression-product")?.disabled, true);
     // …and the normalizer fills it in for anything that comes through Sanity.
     assert.equal(normalized.products[0].disabled, false);
+
+    // ── Product order is the drag-and-drop rank, not featuredOrder ─────────
+    // orderRank "wins" even when it disagrees with the legacy featuredOrder —
+    // proves the selectors read the new field, not the one it replaced.
+    const rankedFirst = { ...replacement, id: "b", slug: "b", featuredOrder: 2, orderRank: "a0" };
+    const rankedSecond = { ...replacement, id: "a", slug: "a", featuredOrder: 1, orderRank: "a1" };
+    catalogue.hydrateCatalogue({ products: [rankedSecond, rankedFirst], colours: normalized.colours });
+    assert.deepEqual(
+      catalogue.getProductsByCategory("regression-category").map((p) => p.slug),
+      ["b", "a"], "orderRank beats the legacy featuredOrder");
+
+    // A product that predates the migration (no orderRank yet) falls back to
+    // featuredOrder — and sorts AFTER every ranked product, never in front of
+    // one just because its old number happens to be low.
+    const unranked = { ...replacement, id: "c", slug: "c", featuredOrder: 0, orderRank: undefined };
+    catalogue.hydrateCatalogue({ products: [rankedFirst, rankedSecond, unranked], colours: normalized.colours });
+    assert.deepEqual(
+      catalogue.getProductsByCategory("regression-category").map((p) => p.slug),
+      ["b", "a", "c"], "an unranked product falls back to featuredOrder, after every ranked one");
   } finally {
     if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir);
   }

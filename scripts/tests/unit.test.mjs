@@ -17,7 +17,7 @@ await build({
     contents: `
       export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions, unitMissingRequiredOptions, productColours } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
-      export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories, colorbondColourOptions } from ${p("src/data/catalogue.ts")};
+      export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories, colorbondColourOptions, hydrateCatalogue, optionTypeOrder } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
       export { normEmail, isEmail, sixDigit, sha256hex, userDto } from ${p("worker/lib/auth.ts")};
@@ -150,6 +150,30 @@ test("a group answers itself when the catalogue names a standard", () => {
   assert.equal(g("installation").required, true, "no standard IS a real decision");
   // Colour is injected from the shared palette, which carries its own default.
   assert.equal(g("colour").required, false);
+});
+
+test("option groups sort by optionTypeOrder, replacing the old hardcoded TYPE_ORDER", () => {
+  const product = productWith([
+    { typeSlug: "hardware", typeName: "Hardware", name: "H", availability: "standard" },
+    { typeSlug: "flyscreen", typeName: "Flyscreen", name: "F", availability: "standard" },
+    { typeSlug: "installation", typeName: "Installation", name: "I", availability: "standard" },
+  ]);
+  // Default (built-in fallback) order — colour, hardware, flyscreen,
+  // installation, same sequence the retired TYPE_ORDER constant held.
+  assert.deepEqual(M.optionGroupsFor(product).map((g) => g.typeSlug),
+    ["colour", "hardware", "flyscreen", "installation"]);
+
+  try {
+    // Ops reorders in Studio: Installation now leads, Colour falls to last —
+    // and an unranked type (flyscreen, left out here) sorts after every
+    // ranked one, then alphabetically among its own kind.
+    M.hydrateCatalogue({ optionTypeOrder: { installation: "a000", hardware: "a001", colour: "a002" } });
+    assert.deepEqual(M.optionGroupsFor(product).map((g) => g.typeSlug),
+      ["installation", "hardware", "colour", "flyscreen"]);
+  } finally {
+    // Restore — this module-level state leaks across tests otherwise.
+    M.hydrateCatalogue({ optionTypeOrder: { colour: "a000", hardware: "a001", flyscreen: "a002", installation: "a003" } });
+  }
 });
 
 test("a group with no choices is not an option in the first place", () => {
@@ -553,45 +577,53 @@ test("unitLabel: children are W1A, W1B … and spreadsheet-style past Z", () => 
   assert.equal(M.unitLabel("", 0), "Unit 1", "an untagged opening still labels its units");
 });
 
-// ── Category order is ops-managed, and Windows comes first ───────────────────
+// ── Category order is a drag-and-drop rank, and Windows comes first ──────────
 // Alphabetical put Doors ahead of Windows everywhere the catalogue is grouped —
 // the two-field product picker most visibly, where a builder adding a window
-// scrolled past every door first (owner). Sanity now carries a display order.
-test("toCatalogueData orders categories by the ops-set order, then by name", () => {
+// scrolled past every door first (owner). Sanity now carries orderRank, the
+// @sanity/orderable-document-list rank Studio's "Categories" list writes (see
+// sanity.config.ts) — it replaced the hand-typed `order` field, which is kept
+// only as a fallback for a category that predates the migration.
+test("toCatalogueData orders categories by orderRank, then legacy order, then name", () => {
   const raw = {
     categories: [
-      { id: "d", slug: "doors", name: "Doors", order: 2, shortDescription: "", description: "" },
-      { id: "w", slug: "windows", name: "Windows", order: 1, shortDescription: "", description: "" },
+      { id: "d", slug: "doors", name: "Doors", orderRank: "a1", shortDescription: "", description: "" },
+      { id: "w", slug: "windows", name: "Windows", orderRank: "a0", shortDescription: "", description: "" },
     ],
     families: [], products: [], colours: [], pages: [],
   };
   assert.deepEqual(M.toCatalogueData(raw).categories.map((c) => c.name), ["Windows", "Doors"]);
 
-  // An unordered category sorts AFTER every ordered one — never to the front —
-  // and alphabetically among its own kind. A new category someone forgets to
-  // order must not silently displace Windows.
-  const withNew = {
+  // A category with only the legacy `order` (never dragged since the
+  // migration) sorts by it, but AFTER every ranked category — never in front
+  // of Windows/Doors just because its old number happens to be low. A
+  // category with neither falls back to alphabetical among its own kind. A
+  // new category someone forgets to order must not silently displace Windows.
+  const withLegacyAndNew = {
     ...raw,
     categories: [
       { id: "z", slug: "louvres", name: "Louvres", shortDescription: "", description: "" },
       ...raw.categories,
+      { id: "l", slug: "legacy", name: "Legacy", order: 1, shortDescription: "", description: "" },
       { id: "a", slug: "awnings", name: "Awnings", shortDescription: "", description: "" },
     ],
   };
-  assert.deepEqual(M.toCatalogueData(withNew).categories.map((c) => c.name),
-    ["Windows", "Doors", "Awnings", "Louvres"]);
+  assert.deepEqual(M.toCatalogueData(withLegacyAndNew).categories.map((c) => c.name),
+    ["Windows", "Doors", "Legacy", "Awnings", "Louvres"]);
 });
 
 test("the catalogue query asks Sanity for that same order", () => {
-  // Belt and braces: the client sorts too, but a query that stops projecting
-  // `order` would make every category tie at 999 and quietly revert to
-  // alphabetical on the server side.
-  assert.match(M.CATALOGUE_QUERY, /order\(coalesce\(order, 999\) asc, name asc\)/);
+  // Belt and braces: the client sorts too, but a query that stops ordering by
+  // orderRank would make every category tie and quietly revert to whatever
+  // order the server happens to return.
+  assert.match(M.CATALOGUE_QUERY, /"categories":\s*\*\[_type=="category"\]\|order\(orderRank asc\)/);
+  // `order` (the deprecated field) is still projected — toCatalogueData's
+  // fallback needs it for a category that predates the migration.
   assert.match(M.CATALOGUE_QUERY, /"categories"[\s\S]{0,400}?\border\b/);
 });
 
 test("the built-in fallback catalogue is already Windows-first", () => {
   // A browser that never reaches Sanity still gets the intended order.
   assert.deepEqual(M.categories.map((c) => c.name), ["Windows", "Doors"]);
-  assert.equal(M.categories[0].order, 1);
+  assert.equal(M.categories[0].orderRank, "a0");
 });

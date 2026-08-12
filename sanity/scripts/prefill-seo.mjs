@@ -32,7 +32,9 @@ function productTitle(name, glazing) {
 function productDescription(p) {
   const glazing = spec(p.specs, "Glazing");
   const wind = spec(p.specs, "Wind rating");
-  const size = p.maxWidth && p.maxHeight ? `${p.maxWidth} × ${p.maxHeight} mm` : null;
+  const maxWidth = p.dimensionRule?.maxWidthMm;
+  const maxHeight = p.dimensionRule?.maxHeightMm;
+  const size = maxWidth && maxHeight ? `${maxWidth} × ${maxHeight} mm` : null;
 
   let out = clean(p.shortDescription) + ".";
 
@@ -122,7 +124,7 @@ const PAGES = {
 async function main() {
   const products = await client.fetch(`*[_type=="product" && defined(name)]|order(name asc){
     _id, name, "family": family->name, "category": category->name, shortDescription,
-    maxWidth, maxHeight, "specs": keySpecs[]{label,value}
+    "dimensionRule": dimensionRule{maxWidthMm, maxHeightMm}, "specs": keySpecs[]{label,value}
   }`);
   const pageIds = await client.fetch(`*[_type=="page"]._id`);
 

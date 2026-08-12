@@ -53,12 +53,21 @@ function paragraphs(desc){if(!desc)return[];return String(desc).split(/\n\s*\n/)
 function num(v){return v===""||v==null?null:Number(v);}
 const ref=(id)=>({_type:"reference",_ref:id});
 const imageAsset=(url)=>({_type:"image",_sanityAsset:`image@${url}`});
+// Deterministic rank-string generator for orderRank (the @sanity/orderable-
+// document-list field — see sanity.config.ts). Same algorithm as
+// sanity/scripts/lib/rank.mjs, duplicated here because that one is ESM and
+// this file is CommonJS; keep the two in step. A newly-imported category,
+// option or product needs a STARTING rank too, not just the ones the
+// one-time backfill script (sanity/scripts/backfill-order-rank.mjs) seeds on
+// existing live documents.
+function ranksFor(count){const width=Math.max(3,String(Math.max(count-1,0)).length);return Array.from({length:count},(_,i)=>`a${String(i).padStart(width,"0")}`);}
 const docs=[];
 
 // ── categories ───────────────────────────────────────────────────────────────
 const categories=S["Categories"].slice(1).filter(r=>r&&r[0]).map(r=>({id:r[0],slug:slugify(r[1]),name:r[1],shortDescription:r[2]||"",description:r[3]||""}));
 const catById={};categories.forEach(c=>catById[c.id]=c);
-for(const c of categories) docs.push({_id:`category-${c.slug}`,_type:"category",name:c.name,slug:{_type:"slug",current:c.slug},shortDescription:c.shortDescription,description:c.description});
+const categoryRanks=ranksFor(categories.length);
+categories.forEach((c,i)=>docs.push({_id:`category-${c.slug}`,_type:"category",name:c.name,slug:{_type:"slug",current:c.slug},orderRank:categoryRanks[i],shortDescription:c.shortDescription,description:c.description}));
 
 // ── families ─────────────────────────────────────────────────────────────────
 const NAME_FIX={"Casament Door":"Casement Door","Bi-Fold Dooor":"Bi-Fold Door","Lif-Sliding Door":"Lift-Slide Door","Slim Frame Sliding Door":"Slim-Frame Sliding Door","Glass Louver":"Glass Louvre","Tilt&Turn Window":"Tilt & Turn Window"};
@@ -92,8 +101,12 @@ S["Options"].slice(1).filter(r=>r&&r[0]).forEach(r=>{
   const _id=`option-${type.slug}-${slug}`;optionIdBySheet[r[0]]=_id;
   options.push({_id,name,typeSlug:type.slug,price:num(r[3])??0});
 });
+// Ranked PER TYPE — Colours and Hardware never contend for the same ranks,
+// matching how Studio's "Options" list is grouped (see sanity.config.ts).
+const optionsByType={};options.forEach(o=>{(optionsByType[o.typeSlug]=optionsByType[o.typeSlug]||[]).push(o);});
+Object.values(optionsByType).forEach(group=>{const ranks=ranksFor(group.length);group.forEach((o,i)=>{o.orderRank=ranks[i];});});
 for(const o of options){
-  docs.push({_id:o._id,_type:"option",name:o.name,slug:{_type:"slug",current:o._id.replace(/^option-/,"")},optionType:ref(`optiontype-${o.typeSlug}`),pricingComponent:o.price});
+  docs.push({_id:o._id,_type:"option",name:o.name,slug:{_type:"slug",current:o._id.replace(/^option-/,"")},optionType:ref(`optiontype-${o.typeSlug}`),pricingComponent:o.price,orderRank:o.orderRank});
 }
 // Colorbond colours (shared palette): swatches, included in base price, Dover White default.
 const COLORBOND=[
@@ -104,9 +117,14 @@ const COLORBOND=[
   ["Basalt","#5C5E5E"],["Woodland Grey","#53514D"],["Cottage Green","#3B5045"],["Ironstone","#474B50"],
   ["Deep Ocean","#3C4B54"],["Manor Red","#673833"],["Monument","#404141"],["Night Sky","#2B2C2C"],
 ];
-for(const [name,hex,isDefault] of COLORBOND){
-  docs.push({_id:`option-colour-${slugify(name)}`,_type:"option",name,slug:{_type:"slug",current:`colour-${slugify(name)}`},optionType:ref("optiontype-colour"),pricingComponent:0,hex,isDefault:!!isDefault});
-}
+// Ranked in the order listed above — Dover White (isDefault) already leads,
+// which is also where the live colour-swatch sort (isDefault desc, name asc)
+// would put it, so this is a reasonable starting arrangement even though the
+// swatch order itself does not read orderRank.
+const colourRanks=ranksFor(COLORBOND.length);
+COLORBOND.forEach(([name,hex,isDefault],i)=>{
+  docs.push({_id:`option-colour-${slugify(name)}`,_type:"option",name,slug:{_type:"slug",current:`colour-${slugify(name)}`},optionType:ref("optiontype-colour"),pricingComponent:0,hex,isDefault:!!isDefault,orderRank:colourRanks[i]});
+});
 
 // ── mapping matrix: rows = sheet option id, cols = product id -> availability ──
 const mapRows=S["Mapping"];const header=mapRows[0];
@@ -131,7 +149,8 @@ function shortGlass(g){if(!g)return"";const l=g.toLowerCase();const lowE=/low-?e
 
 // ── products ─────────────────────────────────────────────────────────────────
 const prodRows=S["Products"].slice(1).filter(r=>r&&r[0]);
-for(const r of prodRows){
+const productRanks=ranksFor(prodRows.length);
+prodRows.forEach((r,rowIndex)=>{
   const id=String(r[0]).trim();const fam=famById[r[1]];const cat=fam?catById[fam.categoryId]:null;
   const name=r[2];const glass=r[5]||"";const minW=num(r[7]),minH=num(r[8]),maxW=num(r[9]),maxH=num(r[10]);
   const profile=r[11]||"",air=r[12]||"",water=r[13]||"",wind=r[14]||"",notes=r[15]||"";
@@ -149,10 +168,10 @@ for(const r of prodRows){
     heroImage:imageAsset(hero),gallery:gallery.map((u,i)=>({_key:`g${i}`,...imageAsset(u)})),
     keySpecs:keySpecs.map((s,i)=>({_key:`ks${i}`,_type:"specRow",...s})),
     specs:specs.map((s,i)=>({_key:`sp${i}`,_type:"specRow",...s})),
-    options:prodOptions,featuredOrder:Number(id)||0,
+    options:prodOptions,featuredOrder:Number(id)||0,orderRank:productRanks[rowIndex],
     seo:{_type:"seoMeta",metaTitle:`${name} | OpenFrame`,metaDescription:(r[3]||"").replace(/\s+/g," ").trim().slice(0,160)},
   });
-}
+});
 
 fs.writeFileSync(outPath,docs.map(d=>JSON.stringify(d)).join("\n")+"\n","utf8");
 const by=(t)=>docs.filter(d=>d._type===t).length;

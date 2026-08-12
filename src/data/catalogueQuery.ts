@@ -24,16 +24,20 @@ export const SEO_PROJECTION = `seo{
 // non-standard option costs (pricing_option_surcharge). The catalogue is served
 // publicly to every browser, so a price here is a published price list.
 export const CATALOGUE_QUERY = `{
-  // ORDER, then name. Alphabetical alone put Doors ahead of Windows everywhere
+  // orderRank — the drag-and-drop rank Studio's "Categories" list writes (see
+  // sanity.config.ts). Alphabetical alone put Doors ahead of Windows everywhere
   // the catalogue is grouped — the product picker most visibly, where a builder
-  // adding a window had to scroll past the doors first. The field is optional,
-  // so a category nobody has ordered yet sorts after the ones that are, and
-  // then alphabetically among its peers rather than jumping to the front.
-  "categories": *[_type=="category"]|order(coalesce(order, 999) asc, name asc){
-    "id":_id, "slug":slug.current, name, order, shortDescription, description
+  // adding a window had to scroll past the doors first. "order" is the retired
+  // hand-typed field, kept projected only so toCatalogueData can still fall
+  // back to it for a document that predates the drag-and-drop migration.
+  "categories": *[_type=="category"]|order(orderRank asc){
+    "id":_id, "slug":slug.current, name, order, orderRank, shortDescription, description
   },
-  "families": *[_type=="family"]|order(name asc){
-    "id":_id, "slug":slug.current, "categorySlug":category->slug.current, name, operation, aliases, icon, shortDescription, description,
+  // orderRank — the drag-and-drop rank Studio's "Families" list writes (see
+  // sanity.config.ts). Drives the product picker's family grouping and the
+  // family selector on /products.
+  "families": *[_type=="family"]|order(orderRank asc){
+    "id":_id, "slug":slug.current, "categorySlug":category->slug.current, name, operation, aliases, icon, shortDescription, description, orderRank,
     // What goes NEXT to this window when an opening is too wide for one frame.
     // The infill is dereferenced to its SLUG: the estimator resolves candidates
     // by family slug, and shipping a Sanity document id would make the browser
@@ -43,7 +47,7 @@ export const CATALOGUE_QUERY = `{
       minInfillMm, operableRatio, offsetOperableRatio
     }
   },
-  "products": *[_type=="product"]|order(featuredOrder asc){
+  "products": *[_type=="product"]|order(orderRank asc){
     "id":_id, "slug":slug.current, name,
     "familySlug":family->slug.current, "categorySlug":category->slug.current,
     shortDescription, descriptionParagraphs, standardGlass, notes,
@@ -90,7 +94,7 @@ export const CATALOGUE_QUERY = `{
       "name": option->name,
       "hex": option->hex
     },
-    featuredOrder,
+    featuredOrder, orderRank,
     disabled,
     "seo": ${SEO_PROJECTION}
   },
@@ -98,6 +102,13 @@ export const CATALOGUE_QUERY = `{
     "name": name,
     "availability": select(isDefault == true => "standard", "optional"),
     "hex": hex
+  },
+  // Which option group (Colour, Hardware, Flyscreen…) shows first in the item
+  // builder — see optionGroupsFor in src/data/configurator.ts. Ops-managed in
+  // Studio's "Option Types" list (see sanity.config.ts), replacing the
+  // hardcoded TYPE_ORDER constant that used to live in configurator.ts.
+  "optionTypes": *[_type=="optionType"]{
+    "slug": slug.current, orderRank
   },
   "pages": *[_type=="page"]|order(_updatedAt desc){
     pageId,
@@ -107,8 +118,8 @@ export const CATALOGUE_QUERY = `{
   "locations": *[_type=="showroomLocation"]|order(stateCode asc, suburb asc){
     "id":_id, stateCode, suburb, displayName, lat, lng, appointmentAvailable, status, historicalAliases
   },
-  "postCategories": *[_type=="postCategory"]|order(order asc, title asc){
-    "id":_id, "slug":slug.current, title, order, description, dateDisplay, allowsProducts
+  "postCategories": *[_type=="postCategory"]|order(orderRank asc){
+    "id":_id, "slug":slug.current, title, order, orderRank, description, dateDisplay, allowsProducts
   },
   "posts": *[_type=="post" && defined(slug.current)]|order(publishedAt desc, title asc){
     "id":_id, "slug":slug.current, title, summary,
@@ -149,6 +160,7 @@ export interface RawCataloguePayload {
   colours: { name: string; hex?: string | null; availability: string; price?: number | null }[];
   pages: any[];
   locations?: any[];
+  optionTypes?: { slug: string; orderRank?: string | null }[];
 }
 
 function normalizeOption(o: any): ProductOption {
@@ -204,6 +216,7 @@ function normalizeProduct(p: any): Product {
     keySpecs: p.keySpecs ?? [], specs: p.specs ?? [],
     options: (p.options ?? []).filter((o: any) => o?.name && o?.typeSlug).map(normalizeOption),
     featuredOrder: p.featuredOrder ?? 0,
+    orderRank: p.orderRank ?? undefined,
     // Absent is AVAILABLE: every product predates the field.
     disabled: p.disabled === true,
     seo: normalizeSeo(p.seo),
@@ -296,8 +309,16 @@ export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
     // a property of one transport — the built-in fallback, a cached payload and
     // any future caller all have to honour it, and a category picker that lists
     // Doors first is the kind of regression nobody notices for a month.
-    categories: [...(raw.categories ?? [])].sort((a, b) =>
-      (a.order ?? 999) - (b.order ?? 999) || a.name.localeCompare(b.name)),
+    //
+    // orderRank is the drag-and-drop rank (see sanity.config.ts); a category
+    // still carrying only the old hand-typed "order" (never dragged since the
+    // migration, or a stale cached payload) falls back to that, then name.
+    categories: [...(raw.categories ?? [])].sort((a, b) => {
+      if (a.orderRank != null && b.orderRank != null) return a.orderRank.localeCompare(b.orderRank);
+      if (a.orderRank != null) return -1;
+      if (b.orderRank != null) return 1;
+      return (a.order ?? 999) - (b.order ?? 999) || a.name.localeCompare(b.name);
+    }),
     families: raw.families ?? [],
     products: (raw.products ?? []).map(normalizeProduct),
     colours: (raw.colours ?? []).map((c) => ({
@@ -322,5 +343,13 @@ export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
         attachment: p.attachment?.url && p.attachment?.label ? p.attachment : undefined,
         seo: normalizeSeo(p.seo),
       })),
+    // slug -> orderRank, dropping any type not yet ranked so it falls through
+    // to the built-in defaults in src/data/catalogue.ts rather than sorting
+    // that group to the front with an empty-string rank.
+    optionTypeOrder: Object.fromEntries(
+      (raw.optionTypes ?? [])
+        .filter((t): t is { slug: string; orderRank: string } => !!t?.slug && !!t?.orderRank)
+        .map((t) => [t.slug, t.orderRank]),
+    ),
   };
 }

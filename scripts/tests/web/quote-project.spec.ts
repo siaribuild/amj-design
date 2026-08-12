@@ -882,8 +882,9 @@ test("a shortfall accuses the opening; a wrong-across unit accuses itself", asyn
 // ─── 17. The product picker leads with Windows ────────────────────────────────
 // Category order was alphabetical, so "Doors" preceded "Windows" everywhere the
 // catalogue is grouped — and the picker is where it cost the most: a builder
-// adding a window scrolled past every door first. Sanity now carries a display
-// order (category.order) that ops manages; the client sorts by it as well.
+// adding a window scrolled past every door first. Sanity now carries a
+// drag-and-drop rank (category.orderRank, set in Studio — see
+// sanity.config.ts) that ops manages; the client sorts by it as well.
 test("the product-type picker lists Windows before Doors", async ({ page }) => {
   await mockProject(page, [plainItem]);
   await page.goto("/quote");
