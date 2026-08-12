@@ -204,8 +204,13 @@ function openingSymbol(kind: string, p: Box, hand: Hand, o: { inset: number; sw:
   let n: number, d: string, step: number, gap: number, a: number, b: number, rr: number, dir: number, x1: number, x2: number;
 
   switch (kind) {
-    case "awning":                       // top-hung, outward. Apex on the TOP rail.
-      return sym(`M${q(L)} ${q(B)} L${q(cx)} ${q(T)} L${q(R)} ${q(B)}`, false, sw);
+    // Top-hung, outward: the base spans the top (hinge) rail and the apex sits
+    // on the bottom rail, pointing at the free edge the sash swings out from.
+    // Was drawn upside down (apex on the TOP rail, reading as a bottom-hung
+    // hopper) from when this case was first written — confirmed and reversed
+    // per the owner, 2026-08-13.
+    case "awning":
+      return sym(`M${q(L)} ${q(T)} L${q(cx)} ${q(B)} L${q(R)} ${q(T)}`, false, sw);
 
     case "casement":                     // side-hung, outward. Apex on the hinge stile.
     case "hinged":
