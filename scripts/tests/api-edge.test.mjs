@@ -977,6 +977,20 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(asEstimator.body.canEdit, true, "every staff user can edit pricing");
       assert.ok(asEstimator.body.cards.length > 0);
 
+      // BY PRODUCT NAME, not the SQL fetch's `ORDER BY id` — id is the product
+      // slug, which a staffer scanning the table does not read by. A card with
+      // no matching product (the "default" fallback, or one for a deleted
+      // product) sorts after every named one, never mixed in ahead of a real
+      // product's row.
+      const named = asEstimator.body.cards.filter((c) => c.productName);
+      const sortedNames = [...named].sort((a, b) => a.productName.localeCompare(b.productName));
+      assert.deepEqual(named.map((c) => c.productName), sortedNames.map((c) => c.productName),
+        "rate cards list by product name");
+      const lastNamedIndex = asEstimator.body.cards.map((c) => !!c.productName).lastIndexOf(true);
+      const firstUnnamedIndex = asEstimator.body.cards.findIndex((c) => !c.productName);
+      assert.ok(firstUnnamedIndex === -1 || firstUnnamedIndex > lastNamedIndex,
+        "an unmatched card (e.g. the 'default' fallback) sorts after every named one");
+
       const card = asEstimator.body.cards.find((c) => c.id === "amj80-series-awning-window");
       assert.ok(card, "rate cards are per PRODUCT (0031) — the AMJ80 awning has its own");
       assert.equal(card.familySlug, "awning-window", "and still reports the family it belongs to");

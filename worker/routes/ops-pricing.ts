@@ -89,6 +89,19 @@ opsPricing.get("/rate-cards", async (c) => {
     };
   }));
 
+  // BY PRODUCT NAME — the SQL fetch above is `ORDER BY id`, but id is the
+  // product slug (0031), which a staffer scanning the table does not read by.
+  // productName only exists after the join above, so the sort has to happen
+  // here rather than in SQL. A card with no matching product (deleted/renamed
+  // since) sorts after every named one, then by id among its own kind — the
+  // "default" fallback card included, never mixed in ahead of a real product.
+  cards.sort((a, b) => {
+    if (a.productName && b.productName) return a.productName.localeCompare(b.productName);
+    if (a.productName) return -1;
+    if (b.productName) return 1;
+    return a.id.localeCompare(b.id);
+  });
+
   return c.json({ canEdit: canEdit(staff), sample: INDEX_SAMPLE, cards });
 });
 
