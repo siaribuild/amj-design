@@ -16,7 +16,7 @@ import type { Env } from "../types";
 import { resolveStaff } from "../lib/staff";
 import { catalogueStatus, ensureCatalogue } from "../lib/catalogue";
 import {
-  applyPricingChange, draftExposure, lastReconcileRun, loadHistory, previewSample,
+  applyPricingChange, draftExposure, lastReconcileRun, previewSample,
   offeredOptionSlugs, reconcilePricing, sampleSizes, VersionConflict, type SampleSize,
 } from "../lib/pricing-admin";
 import { loadModifiers, type PricingModifier, type RateCard } from "../lib/estimator/pricing";
@@ -105,6 +105,42 @@ opsPricing.get("/rate-cards", async (c) => {
   return c.json({ canEdit: canEdit(staff), sample: INDEX_SAMPLE, cards });
 });
 
+/** No special screen — just a new row, seeded from the 'default' card's
+ *  current rates (so nothing prices at $0 the moment it exists — it prices
+ *  exactly like an unmapped product would, until someone edits it) and
+ *  'default's active modifiers, matching how every product card in this
+ *  system has been seeded since 0031/0040. */
+opsPricing.post("/rate-cards", async (c) => {
+  const { staff, deny } = await gate(c, "edit");
+  if (!staff) return deny;
+
+  const body = await c.req.json().catch(() => ({}));
+  const id = String(body?.id ?? "").trim();
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+
+  const existing = await c.env.DB.prepare("SELECT id FROM pricing_rate_card WHERE id = ?").bind(id).first<any>();
+  if (existing) return c.json({ error: "id_taken" }, 409);
+
+  const base = await c.env.DB.prepare(
+    "SELECT perim_rate, area_rate, min_charge FROM pricing_rate_card WHERE id = 'default'",
+  ).first<any>();
+  const perimRate = base?.perim_rate ?? 0, areaRate = base?.area_rate ?? 0, minCharge = base?.min_charge ?? 0;
+
+  await c.env.DB.prepare(
+    "INSERT INTO pricing_rate_card (id, perim_rate, area_rate, min_charge, version, active) VALUES (?, ?, ?, ?, 'v1', 1)",
+  ).bind(id, perimRate, areaRate, minCharge).run();
+
+  const baseModifiers = await loadModifiers(c.env, "default");
+  for (const m of baseModifiers) {
+    await c.env.DB.prepare(
+      `INSERT INTO pricing_modifier (id, rate_card_id, seq, label, when_field, when_op, when_value, then_type, then_value, version, active, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'v1', 1, datetime('now'))`,
+    ).bind(uuid(), id, m.seq, m.label, m.whenField, m.whenOp, m.whenValue, m.thenType, m.thenValue).run();
+  }
+
+  return c.json({ ok: true, id });
+});
+
 opsPricing.get("/rate-cards/:id", async (c) => {
   const { staff, deny } = await gate(c, "view");
   if (!staff) return deny;
@@ -115,23 +151,17 @@ opsPricing.get("/rate-cards/:id", async (c) => {
   ).bind(id).first<any>();
   if (!row) return c.json({ error: "not_found" }, 404);
 
-  const [modifiers, sizes, history, exposure] = await Promise.all([
+  const [modifiers, sizes, exposure] = await Promise.all([
     loadModifiers(c.env, id),
     sampleSizes(c.env, id),
-    loadHistory(c.env, "pricing_rate_card", id),
     draftExposure(c.env, id),
   ]);
 
   return c.json({
-    canEdit: canEdit(staff), canRevert: canAdmin(staff),
+    canEdit: canEdit(staff),
     card: rowToCard(row), updatedAt: row.updated_at,
     modifiers, samples: sizes.samples, samplesFromHistory: sizes.fromHistory, sampleLineCount: sizes.lineCount,
     draftExposure: exposure,
-    history: history.map((h) => ({
-      id: h.id, fromVersion: h.from_version, toVersion: h.to_version,
-      before: h.before_json, after: h.after_json, note: h.note,
-      actor: h.actor_name || h.actor, createdAt: h.created_at,
-    })),
   });
 });
 
@@ -212,7 +242,7 @@ opsPricing.put("/rate-cards/:id", async (c) => {
 
   try {
     const version = await applyPricingChange(c.env, {
-      table: "pricing_rate_card", rowId: id, actor: staff.id, note: body?.note,
+      table: "pricing_rate_card", rowId: id, actor: staff.id,
       expectedVersion: body?.expectedVersion ?? null,
       before: { perimRate: before.perim_rate, areaRate: before.area_rate, minCharge: before.min_charge ?? 0, version: before.version },
       after: { perimRate, areaRate, minCharge },
@@ -247,7 +277,7 @@ opsPricing.put("/rate-cards/:id/modifiers", async (c) => {
   const before = await loadModifiers(c.env, id);
   try {
     const version = await applyPricingChange(c.env, {
-      table: "pricing_modifier", rowId: id, actor: staff.id, note: body?.note,
+      table: "pricing_modifier", rowId: id, actor: staff.id,
       expectedVersion: body?.expectedVersion ?? null,
       before: { modifiers: before, version: card.version },
       after: { modifiers },
@@ -276,43 +306,62 @@ opsPricing.put("/rate-cards/:id/modifiers", async (c) => {
   }
 });
 
-/** Revert to an earlier version — as a NEW forward change, never a rewind.
- *
- *  Cheap undo is what makes it defensible not to gate rate edits behind a second
- *  person's approval: in a four-person shop an approval queue resolves to either
- *  self-approval or a verbal yes clicked on someone else's behalf, which is worse
- *  than no gate because it looks like a control. */
-opsPricing.post("/rate-cards/:id/revert", async (c) => {
-  const { staff, deny } = await gate(c, "admin");
+/** No downstream-dependency checks — a confirm dialog is the only gate, by
+ *  design (owner). 'default' is the one exception: every unmapped product
+ *  prices through it, so losing it breaks pricing for all of them at once
+ *  rather than just the one product a normal delete affects. */
+opsPricing.delete("/rate-cards/:id", async (c) => {
+  const { staff, deny } = await gate(c, "edit");
   if (!staff) return deny;
   const id = c.req.param("id");
+  if (id === "default") return c.json({ error: "cannot_delete_default" }, 400);
+
+  const row = await c.env.DB.prepare("SELECT id FROM pricing_rate_card WHERE id = ?").bind(id).first<any>();
+  if (!row) return c.json({ error: "not_found" }, 404);
+
+  // Modifiers cascade — pricing_modifier.rate_card_id is ON DELETE CASCADE.
+  await c.env.DB.prepare("DELETE FROM pricing_rate_card WHERE id = ?").bind(id).run();
+  return c.json({ ok: true });
+});
+
+/** Renames the card's id — its primary key, and the product slug it prices.
+ *  'default' cannot be renamed away (nor anything renamed TO 'default') for
+ *  the same reason it cannot be deleted: code elsewhere looks it up by that
+ *  literal string.
+ *
+ *  COPY, REPOINT, DELETE — not a plain UPDATE of the primary key.
+ *  pricing_modifier.rate_card_id is a foreign key with ON DELETE CASCADE but
+ *  no ON UPDATE, and foreign_keys is ON: renaming the parent first orphans
+ *  every child mid-statement and the write fails. Inserting the new parent
+ *  before the children move means no row is ever without one, and dropping
+ *  the old parent last cascades to nothing because nothing points at it. */
+opsPricing.put("/rate-cards/:id/rename", async (c) => {
+  const { staff, deny } = await gate(c, "edit");
+  if (!staff) return deny;
+  const id = c.req.param("id");
+  if (id === "default") return c.json({ error: "cannot_rename_default" }, 400);
+
   const body = await c.req.json().catch(() => ({}));
+  const newId = String(body?.newId ?? "").trim();
+  if (!newId) return c.json({ error: "invalid_id" }, 400);
+  if (newId === "default") return c.json({ error: "cannot_rename_to_default" }, 400);
+  if (newId === id) return c.json({ ok: true, id });
 
-  const change = await c.env.DB.prepare(
-    "SELECT before_json, from_version FROM pricing_change WHERE table_name='pricing_rate_card' AND row_id=? AND to_version=?",
-  ).bind(id, String(body?.toVersion ?? "")).first<any>();
-  if (!change) return c.json({ error: "not_found" }, 404);
-
-  let target: any;
-  try { target = JSON.parse(change.before_json || "{}"); } catch { return c.json({ error: "unreadable_history" }, 422); }
-  const perimRate = num(target?.perimRate), areaRate = num(target?.areaRate), minCharge = num(target?.minCharge) ?? 0;
-  if (perimRate == null || areaRate == null) return c.json({ error: "unreadable_history" }, 422);
-
-  const before = await c.env.DB.prepare(
-    "SELECT perim_rate, area_rate, min_charge, version FROM pricing_rate_card WHERE id = ?",
+  const row = await c.env.DB.prepare(
+    "SELECT perim_rate, area_rate, min_charge, version, active FROM pricing_rate_card WHERE id = ?",
   ).bind(id).first<any>();
-  if (!before) return c.json({ error: "not_found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
+  const collision = await c.env.DB.prepare("SELECT id FROM pricing_rate_card WHERE id = ?").bind(newId).first<any>();
+  if (collision) return c.json({ error: "id_taken" }, 409);
 
-  const version = await applyPricingChange(c.env, {
-    table: "pricing_rate_card", rowId: id, actor: staff.id,
-    note: `Reverted to ${change.from_version ?? "an earlier version"}`,
-    before: { perimRate: before.perim_rate, areaRate: before.area_rate, minCharge: before.min_charge ?? 0, version: before.version },
-    after: { perimRate, areaRate, minCharge },
-    write: (v) => c.env.DB.prepare(
-      "UPDATE pricing_rate_card SET perim_rate=?, area_rate=?, min_charge=?, version=?, updated_at=datetime('now') WHERE id=?",
-    ).bind(perimRate, areaRate, minCharge, v, id).run().then(() => undefined),
-  });
-  return c.json({ ok: true, version });
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "INSERT INTO pricing_rate_card (id, perim_rate, area_rate, min_charge, version, active, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
+    ).bind(newId, row.perim_rate, row.area_rate, row.min_charge, row.version, row.active),
+    c.env.DB.prepare("UPDATE pricing_modifier SET rate_card_id = ? WHERE rate_card_id = ?").bind(newId, id),
+    c.env.DB.prepare("DELETE FROM pricing_rate_card WHERE id = ?").bind(id),
+  ]);
+  return c.json({ ok: true, id: newId });
 });
 
 // ── Option surcharges ────────────────────────────────────────────────────────
@@ -387,7 +436,7 @@ opsPricing.put("/options/:slug", async (c) => {
   // error, not a free one.
   try {
     const version = await applyPricingChange(c.env, {
-      table: "pricing_option_surcharge", rowId: slug, actor: staff.id, note: body?.note,
+      table: "pricing_option_surcharge", rowId: slug, actor: staff.id,
       expectedVersion: before ? (body?.expectedVersion ?? null) : null,
       before: before ? { surcharge: before.surcharge, basis: before.basis ?? "per_unit", version: before.version } : { surcharge: null, basis: null, version: "v0" },
       after: { surcharge, basis },
@@ -425,11 +474,9 @@ opsPricing.get("/policy", async (c) => {
   const { staff, deny } = await gate(c, "view");
   if (!staff) return deny;
   const row = await c.env.DB.prepare("SELECT deposit_percent, gst_mode, version FROM pricing_policy WHERE id='default'").first<any>();
-  const history = await loadHistory(c.env, "pricing_policy", "default");
   return c.json({
     canEdit: canAdmin(staff),
     policy: { depositPercent: row?.deposit_percent ?? 40, version: row?.version ?? "v1" },
-    history: history.map((h) => ({ id: h.id, toVersion: h.to_version, before: h.before_json, after: h.after_json, note: h.note, actor: h.actor_name || h.actor, createdAt: h.created_at })),
   });
 });
 
@@ -449,7 +496,7 @@ opsPricing.put("/policy", async (c) => {
 
   try {
     const version = await applyPricingChange(c.env, {
-      table: "pricing_policy", rowId: "default", actor: staff.id, note: body?.note,
+      table: "pricing_policy", rowId: "default", actor: staff.id,
       expectedVersion: body?.expectedVersion ?? null,
       before: { depositPercent: before.deposit_percent, version: before.version },
       after: { depositPercent },

@@ -1011,7 +1011,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
 
       const saved = await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window", {
         method: "PUT",
-        json: { perimRate: card.perimRate + 10, areaRate: card.areaRate, minCharge: card.minCharge, note: "supplier increase", expectedVersion: card.version },
+        json: { perimRate: card.perimRate + 10, areaRate: card.areaRate, minCharge: card.minCharge, expectedVersion: card.version },
       });
       assert.notEqual(saved.body.version, card.version, "a write bumps the version");
 
@@ -1023,19 +1023,45 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
         json: { perimRate: 999, areaRate: 999, minCharge: 0, expectedVersion: card.version },
       }, 409);
 
-      // The change is readable as before/after, which is what a revert needs.
+      // No change history and no revert — owner: never asked for either, and
+      // didn't want a bespoke history/revert mechanism sitting beside
+      // Cloudflare's own observability tooling. The write sticks; that's all.
       const detail = await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window");
       assert.equal(detail.body.card.perimRate, card.perimRate + 10);
-      assert.equal(JSON.parse(detail.body.history[0].before).perimRate, card.perimRate);
-      assert.equal(detail.body.history[0].note, "supplier increase");
+      assert.equal(detail.body.history, undefined, "history is gone, not just hidden");
+      assert.equal(detail.body.canRevert, undefined);
       assert.ok(detail.body.samples.length === 3, "small / typical / large, because a rate change is not uniform");
+      await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window/revert",
+        { method: "POST", json: { toVersion: saved.body.version } }, 404);
 
-      // Revert lands as a NEW forward change, never a rewind.
-      await requestJson(staff, `/api/ops/pricing/rate-cards/amj80-series-awning-window/revert`,
-        { method: "POST", json: { toVersion: saved.body.version } });
-      const reverted = await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window");
-      assert.equal(reverted.body.card.perimRate, card.perimRate, "revert restores the earlier rate");
-      assert.ok(reverted.body.history.length >= 2, "and does so as a new entry, never a rewind");
+      // Restore the real card's rate — this test mutates live seed data and
+      // other assertions (and other test files) read it afterward.
+      await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window", {
+        method: "PUT",
+        json: { perimRate: card.perimRate, areaRate: card.areaRate, minCharge: card.minCharge, expectedVersion: saved.body.version },
+      });
+
+      // ── Create / rename / delete — no special screen, no downstream checks,
+      // just a confirm for delete. 'default' is the one protected id: it is
+      // the fallback every unmapped product prices through.
+      const created = await requestJson(reader, "/api/ops/pricing/rate-cards", { method: "POST", json: { id: "test-rate-card-crud" } });
+      assert.equal(created.body.id, "test-rate-card-crud");
+      const seeded = await requestJson(reader, "/api/ops/pricing/rate-cards/test-rate-card-crud");
+      const defaultCard = asEstimator.body.cards.find((c) => c.id === "default");
+      assert.equal(seeded.body.card.perimRate, defaultCard.perimRate, "seeded from 'default', not zero");
+      assert.equal(seeded.body.card.areaRate, defaultCard.areaRate);
+      await requestJson(reader, "/api/ops/pricing/rate-cards", { method: "POST", json: { id: "test-rate-card-crud" } }, 409);
+
+      const renamed = await requestJson(reader, "/api/ops/pricing/rate-cards/test-rate-card-crud/rename",
+        { method: "PUT", json: { newId: "test-rate-card-crud-renamed" } });
+      assert.equal(renamed.body.id, "test-rate-card-crud-renamed");
+      await requestJson(reader, "/api/ops/pricing/rate-cards/test-rate-card-crud", {}, 404);
+      await requestJson(reader, "/api/ops/pricing/rate-cards/default/rename", { method: "PUT", json: { newId: "whatever" } }, 400);
+      await requestJson(reader, "/api/ops/pricing/rate-cards/test-rate-card-crud-renamed/rename", { method: "PUT", json: { newId: "default" } }, 400);
+
+      await requestJson(reader, "/api/ops/pricing/rate-cards/default", { method: "DELETE" }, 400);
+      await requestJson(reader, "/api/ops/pricing/rate-cards/test-rate-card-crud-renamed", { method: "DELETE" });
+      await requestJson(reader, "/api/ops/pricing/rate-cards/test-rate-card-crud-renamed", { method: "DELETE" }, 404);
 
       // Reconciliation names what has no price, and $0 is stored as a ROW —
       // a missing row means "unknown option", which is an error, not a free one.

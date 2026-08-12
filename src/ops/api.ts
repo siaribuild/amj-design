@@ -358,11 +358,6 @@ export interface OpsPricedSample {
   sample: OpsSample;
   snapshot: { ok: boolean; unit: number; total: number; depositAmount: number; steps?: OpsPriceStep[]; appliedModifiers: string[] };
 }
-export interface OpsPricingHistory {
-  id: string; fromVersion?: string | null; toVersion: string;
-  before: string | null; after: string | null; note: string | null;
-  actor: string; createdAt: string;
-}
 export interface OpsReconcileRun {
   ok: boolean; checkedAt: string;
   missing: { slug: string; productSlugs: string[] }[];
@@ -384,12 +379,11 @@ export const opsRateCards = () =>
 
 export const opsRateCard = (id: string) =>
   req<{
-    canEdit: boolean; canRevert: boolean;
+    canEdit: boolean;
     card: { id: string; perimRate: number; areaRate: number; minCharge: number; version: string };
     updatedAt: string | null; modifiers: OpsModifier[];
     samples: OpsSample[]; samplesFromHistory: boolean; sampleLineCount: number;
     draftExposure: { lines: number; projects: number };
-    history: OpsPricingHistory[];
   }>(`/api/ops/pricing/rate-cards/${id}`);
 
 export const opsPricePreview = (body: {
@@ -404,8 +398,14 @@ export const opsSaveRateCard = (id: string, body: {
 export const opsSaveModifiers = (id: string, body: { modifiers: OpsModifier[]; note?: string; expectedVersion: string }) =>
   write<{ ok: boolean; version: string }>(`/api/ops/pricing/rate-cards/${id}/modifiers`, "PUT", body);
 
-export const opsRevertRateCard = (id: string, toVersion: string) =>
-  write<{ ok: boolean; version: string }>(`/api/ops/pricing/rate-cards/${id}/revert`, "POST", { toVersion });
+export const opsCreateRateCard = (id: string) =>
+  write<{ ok: boolean; id: string }>("/api/ops/pricing/rate-cards", "POST", { id });
+
+export const opsDeleteRateCard = (id: string) =>
+  write<{ ok: boolean }>(`/api/ops/pricing/rate-cards/${encodeURIComponent(id)}`, "DELETE", {});
+
+export const opsRenameRateCard = (id: string, newId: string) =>
+  write<{ ok: boolean; id: string }>(`/api/ops/pricing/rate-cards/${encodeURIComponent(id)}/rename`, "PUT", { newId });
 
 export type OpsSurchargeBasis = "per_unit" | "per_sqm";
 export const opsPricingOptions = () =>
@@ -418,7 +418,7 @@ export const opsReconcile = () => write<{ run: OpsReconcileRun }>("/api/ops/pric
 export const opsReconcileLast = () => req<{ run: OpsReconcileRun | null }>("/api/ops/pricing/reconcile");
 
 export const opsPricingPolicy = () =>
-  req<{ canEdit: boolean; policy: { depositPercent: number; version: string }; history: OpsPricingHistory[] }>("/api/ops/pricing/policy");
+  req<{ canEdit: boolean; policy: { depositPercent: number; version: string } }>("/api/ops/pricing/policy");
 export const opsSavePolicy = (depositPercent: number, expectedVersion: string, note?: string) =>
   write<{ ok: boolean; version: string }>("/api/ops/pricing/policy", "PUT", { depositPercent, expectedVersion, note });
 

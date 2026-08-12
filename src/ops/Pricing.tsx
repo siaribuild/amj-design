@@ -15,15 +15,18 @@
 //  • There is no approval queue and no "publish pricing" mode. In a four-person
 //    shop an approval gate resolves to self-approval or a verbal yes clicked on
 //    someone else's behalf, which is worse than no gate because it looks like a
-//    control. Safety comes from preview, audit, and one-click revert instead.
+//    control. Safety comes from preview and the ±20% confirmation instead — no
+//    bespoke change-history or revert; the owner never wanted either sitting
+//    beside Cloudflare's own observability tooling. A bad edit is corrected by
+//    typing the right numbers back in.
 import { SAGE, QUIET as MUTED } from "../styles/tokens";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, Check, ExternalLink, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
-  OpsApiError, opsCatalogueMirror, opsPricePreview, opsPricingOptions, opsPricingPolicy,
-  opsRateCard, opsRateCards, opsReconcile, opsReconcileLast, opsRevertRateCard,
-  opsSaveModifiers, opsSaveOption, opsSavePolicy, opsSaveRateCard,
-  type OpsCatalogueMirror, type OpsModifier, type OpsPricedSample, type OpsPricingHistory,
+  OpsApiError, opsCatalogueMirror, opsCreateRateCard, opsDeleteRateCard, opsPricePreview,
+  opsPricingOptions, opsPricingPolicy, opsRateCard, opsRateCards, opsReconcile, opsReconcileLast,
+  opsRenameRateCard, opsSaveModifiers, opsSaveOption, opsSavePolicy, opsSaveRateCard,
+  type OpsCatalogueMirror, type OpsModifier, type OpsPricedSample,
   type OpsRateCardRow, type OpsReconcileRun,
 } from "./api";
 
@@ -162,20 +165,61 @@ function Banner({ tone, children }: { tone: "ok" | "warn"; children: React.React
 function RateCards() {
   const [data, setData] = useState<{ canEdit: boolean; cards: OpsRateCardRow[] } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newId, setNewId] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => { opsRateCards().then(setData).catch(() => setData(null)); }, []);
   useEffect(load, [load]);
 
-  if (open) return <RateCardDetail id={open} onBack={() => { setOpen(null); load(); }} />;
+  if (open) return <RateCardDetail id={open} onBack={() => { setOpen(null); load(); }} onRenamed={setOpen} />;
   if (!data) return <p className="t-bd-sm" style={{ color: MUTED }}>Loading rate cards…</p>;
+
+  // No special screen — a product slug and Create, seeded from 'default'.
+  // Everything else (rates, modifiers) is edited afterward in the detail view.
+  const createCard = async () => {
+    const id = newId.trim();
+    if (!id) { setCreateError("Enter a product slug."); return; }
+    setBusy(true); setCreateError(null);
+    try {
+      const res = await opsCreateRateCard(id);
+      setCreating(false); setNewId("");
+      setOpen(res.id);
+    } catch (e) {
+      setCreateError(e instanceof OpsApiError && e.code === "id_taken"
+        ? "A rate card with that id already exists." : "Could not create that rate card.");
+    } finally { setBusy(false); }
+  };
 
   return (
     <>
-      <p className="mb-3 t-cap" style={{ color: MUTED }}>
-        A unit is <span className="font-data">perimeter(m) × perim + area(m²) × area + options</span>, then the minimum
-        charge, then the rules, then rounded to $10. The example column prices a 1200 × 1200 mm opening with no
-        options on each card — a mistyped rate shows up there before it reaches a customer.
-      </p>
+      <div className="flex items-baseline justify-between mb-3">
+        <p className="t-cap" style={{ color: MUTED }}>
+          A unit is <span className="font-data">perimeter(m) × perim + area(m²) × area + options</span>, then the minimum
+          charge, then the rules, then rounded to $10. The example column prices a 1200 × 1200 mm opening with no
+          options on each card — a mistyped rate shows up there before it reaches a customer.
+        </p>
+        {data.canEdit && !creating && (
+          <button onClick={() => setCreating(true)}
+            className="flex items-center gap-1 shrink-0 ml-4 t-cap" style={{ color: SAGE }}>
+            <Plus className="w-3.5 h-3.5" /> New rate card
+          </button>
+        )}
+      </div>
+
+      {creating && (
+        <div className="card px-4 py-3 mb-3 flex items-center gap-3">
+          <input value={newId} onChange={(e) => setNewId(e.target.value)}
+            placeholder="product-slug" autoFocus
+            onKeyDown={(e) => { if (e.key === "Enter") createCard(); if (e.key === "Escape") setCreating(false); }}
+            className="flex-1 border border-black/12 px-2 py-1.5 font-data t-bd-sm" style={{ color: INK }} />
+          <button onClick={createCard} disabled={busy}
+            className="text-white px-3 py-1.5 disabled:opacity-40 t-cap" style={{ background: SAGE }}>Create</button>
+          <button onClick={() => { setCreating(false); setCreateError(null); }} className="px-2 py-1.5 t-cap" style={{ color: MUTED }}>Cancel</button>
+        </div>
+      )}
+      {createError && <p className="mb-3 t-cap" style={{ color: "var(--warning-ink)" }}>{createError}</p>}
       {/* Contained so it scrolls inside its own box rather than widening the
           document. Pricing is a desktop surface and is still slated for an
           explicit desktop-only notice on phones. */}
@@ -234,7 +278,7 @@ function RateCards() {
 
 type Detail = Awaited<ReturnType<typeof opsRateCard>>;
 
-function RateCardDetail({ id, onBack }: { id: string; onBack: () => void }) {
+function RateCardDetail({ id, onBack, onRenamed }: { id: string; onBack: () => void; onRenamed: (newId: string) => void }) {
   const [d, setD] = useState<Detail | null>(null);
   const [perim, setPerim] = useState("");
   const [area, setArea] = useState("");
@@ -244,6 +288,10 @@ function RateCardDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const [baseline, setBaseline] = useState<OpsPricedSample[]>([]);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameInput, setRenameInput] = useState(id);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     opsRateCard(id).then((data) => {
@@ -308,18 +356,69 @@ function RateCardDetail({ id, onBack }: { id: string; onBack: () => void }) {
     }
   };
 
+  // No downstream-dependency checks — a confirm is the only gate (owner). The
+  // backend refuses 'default' outright; the button is hidden for it too, so
+  // that refusal is never the first thing someone hears about it.
+  const deleteCard = async () => {
+    if (!window.confirm(`Delete the rate card for "${id}"? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await opsDeleteRateCard(id);
+      onBack();
+    } catch {
+      setDeleting(false);
+      setError("That rate card could not be deleted.");
+    }
+  };
+
+  const renameCard = async () => {
+    const newId = renameInput.trim();
+    if (!newId || newId === id) { setRenaming(false); setRenameInput(id); return; }
+    setRenameError(null);
+    try {
+      const res = await opsRenameRateCard(id, newId);
+      setRenaming(false);
+      onRenamed(res.id);
+    } catch (e) {
+      setRenameError(e instanceof OpsApiError && e.code === "id_taken"
+        ? "A rate card with that id already exists." : "Could not rename that rate card.");
+    }
+  };
+
   return (
     <>
       <button onClick={onBack} className="flex items-center gap-1 mb-3 t-cap" style={{ color: MUTED }}>
         <ArrowLeft className="w-3.5 h-3.5" /> Rate cards
       </button>
 
-      <div className="flex items-baseline justify-between mb-4">
-        <h2 className="t-bd-lg font-display" style={{ color: INK }}>{id}</h2>
-        <span className="t-cap font-data" style={{ color: MUTED }}>
-          {d.card.version} · {d.updatedAt ? ago(d.updatedAt) : "unchanged since seed"}
+      <div className="flex items-baseline justify-between mb-1">
+        {renaming
+          ? <div className="flex items-center gap-2">
+              <input value={renameInput} onChange={(e) => setRenameInput(e.target.value)}
+                autoFocus onKeyDown={(e) => { if (e.key === "Enter") renameCard(); if (e.key === "Escape") { setRenaming(false); setRenameInput(id); } }}
+                className="border border-black/12 px-2 py-1 font-data t-bd-lg" style={{ color: INK }} />
+              <button onClick={renameCard} className="t-cap" style={{ color: SAGE }}><Check className="w-4 h-4" /></button>
+              <button onClick={() => { setRenaming(false); setRenameInput(id); }} className="t-cap" style={{ color: MUTED }}><X className="w-4 h-4" /></button>
+            </div>
+          : <h2 className="t-bd-lg font-display flex items-center gap-2" style={{ color: INK }}>
+              {id}
+              {id !== "default" && (
+                <button onClick={() => setRenaming(true)} className="t-cap underline underline-offset-2" style={{ color: MUTED }}>rename</button>
+              )}
+            </h2>}
+        <span className="flex items-center gap-3">
+          {id !== "default" && (
+            <button onClick={deleteCard} disabled={deleting}
+              className="flex items-center gap-1 t-cap disabled:opacity-40" style={{ color: "var(--warning-ink)" }}>
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          )}
+          <span className="t-cap font-data" style={{ color: MUTED }}>
+            {d.card.version} · {d.updatedAt ? ago(d.updatedAt) : "unchanged since seed"}
+          </span>
         </span>
       </div>
+      {renameError && <p className="mb-4 t-cap" style={{ color: "var(--warning-ink)" }}>{renameError}</p>}
 
       {error && <Banner tone="warn"><span>{error}</span><span /></Banner>}
 
@@ -383,9 +482,6 @@ function RateCardDetail({ id, onBack }: { id: string; onBack: () => void }) {
           onCancel={() => setConfirming(false)} onSave={save}
         />
       )}
-
-      <History rows={d.history} canRevert={d.canRevert}
-        onRevert={async (v) => { await opsRevertRateCard(id, v); onBack(); }} />
     </>
   );
 }
@@ -637,7 +733,7 @@ function ConfirmDialog({ family, before, after, baseline, preview, exposure, onC
         )}
 
         <input value={note} onChange={(e) => setNote(e.target.value)}
-          placeholder={tripwire ? "Why (required)" : "Note (optional — shows in history)"}
+          placeholder={tripwire ? "Why (required)" : "Note (optional)"}
           className="w-full border border-black/12 px-2 py-1.5 mb-4 t-bd-sm" style={{ color: INK }} />
 
         <div className="flex justify-end gap-3">
@@ -664,49 +760,6 @@ function Delta({ label, before, after }: { label: string; before: number; after:
         <span style={{ color: INK }}>{money(after)}</span>
         <span className="ml-3" style={{ color: INK }}>{diff >= 0 ? "+" : ""}{money(diff)}</span>
       </span>
-    </div>
-  );
-}
-
-// ── History ──────────────────────────────────────────────────────────────────
-// One-click revert is what makes it safe NOT to gate: cheap undo instead of
-// expensive pre-approval. A revert is itself a new versioned change, never a
-// rewind — the log only ever grows forward.
-function History({ rows, canRevert, onRevert }: {
-  rows: OpsPricingHistory[]; canRevert: boolean; onRevert: (toVersion: string) => void;
-}) {
-  if (!rows.length) return null;
-  const summarise = (before: string | null, after: string | null) => {
-    try {
-      const b = JSON.parse(before || "{}"), a = JSON.parse(after || "{}");
-      return (["perimRate", "areaRate", "minCharge"] as const)
-        .filter((k) => b[k] !== a[k])
-        .map((k) => `${k} ${money(b[k])} → ${money(a[k])}`).join(" · ") || "rules changed";
-    } catch { return "changed"; }
-  };
-  return (
-    <div className="mt-8">
-      <h3 className="mb-2 t-label" style={{ color: MUTED }}>Change history</h3>
-      <div className="card">
-        {rows.map((h) => (
-          <div key={h.id} className="px-4 py-2.5 border-b border-black/5 last:border-0">
-            <div className="flex items-baseline justify-between">
-              <span className="t-bd-sm" style={{ color: INK }}>
-                <span className="font-data">{h.toVersion}</span> · {h.actor}
-              </span>
-              <span className="flex items-center gap-3">
-                <span className="t-cap" style={{ color: MUTED }}>{ago(h.createdAt)}</span>
-                {canRevert && h.fromVersion && (
-                  <button className="underline underline-offset-2 t-cap" style={{ color: SAGE }}
-                    onClick={() => onRevert(h.toVersion)}>Revert to {h.fromVersion}</button>
-                )}
-              </span>
-            </div>
-            <p className="mt-0.5 t-cap" style={{ ...MONO, color: MUTED }}>{summarise(h.before, h.after)}</p>
-            {h.note && <p className="mt-0.5 italic t-cap" style={{ color: MUTED }}>“{h.note}”</p>}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

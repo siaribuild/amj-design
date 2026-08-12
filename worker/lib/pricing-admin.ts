@@ -15,7 +15,6 @@
 import type { Env } from "../types";
 import { colorbondColourOptions, products } from "../../src/data/catalogue";
 import { ensureCatalogue } from "./catalogue";
-import { logEvent } from "./activity";
 import { uuid } from "./util";
 import {
   computePrice, loadOptionSurcharges, loadPolicy,
@@ -38,16 +37,18 @@ export class VersionConflict extends Error {
 
 /** The single writer for every pricing table.
  *
- *  Bumps the version, records the before/after in `pricing_change` (which is what
- *  a revert reads), and writes an `audit_event` carrying BOTH sides. Optimistic
- *  concurrency is on `expectedVersion`: two managers on one supplier increase is
- *  an ordinary afternoon, and a silent last-write-wins is how one of them loses
- *  their change without ever knowing. */
+ *  Bumps the version and enforces optimistic concurrency on `expectedVersion`:
+ *  two managers on one supplier increase is an ordinary afternoon, and a silent
+ *  last-write-wins is how one of them loses their change without ever knowing.
+ *
+ *  DELIBERATELY does not keep a change history — no audit trail, no revert.
+ *  Owner: never asked for it, and didn't want a bespoke history/revert
+ *  mechanism sitting beside Cloudflare's own observability tooling. A bad
+ *  edit is corrected by typing the right numbers back in. */
 export async function applyPricingChange(env: Env, args: {
   table: "pricing_rate_card" | "pricing_option_surcharge" | "pricing_modifier" | "pricing_policy";
   rowId: string;
   actor: string;
-  note?: string | null;
   before: Record<string, unknown> & { version?: string };
   after: Record<string, unknown>;
   expectedVersion?: string | null;
@@ -59,36 +60,7 @@ export async function applyPricingChange(env: Env, args: {
 
   const version = nextVersion(currentVersion);
   await args.write(version);
-  await env.DB.prepare(
-    `INSERT INTO pricing_change (id, table_name, row_id, from_version, to_version, before_json, after_json, note, actor)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).bind(
-    uuid(), args.table, args.rowId, currentVersion, version,
-    JSON.stringify(args.before), JSON.stringify({ ...args.after, version }),
-    args.note?.trim() || null, args.actor,
-  ).run();
-  await logEvent(env, {
-    actor: args.actor, entityType: args.table, entityId: args.rowId,
-    action: "pricing.updated", before: args.before, after: { ...args.after, version },
-  });
   return version;
-}
-
-export interface PricingChangeRow {
-  id: string; from_version: string | null; to_version: string;
-  before_json: string | null; after_json: string | null;
-  note: string | null; actor: string; actor_name: string | null; created_at: string;
-}
-
-export async function loadHistory(env: Env, table: string, rowId: string, limit = 20): Promise<PricingChangeRow[]> {
-  const { results } = await env.DB.prepare(
-    `SELECT c.id, c.from_version, c.to_version, c.before_json, c.after_json, c.note, c.actor,
-            u.name AS actor_name, c.created_at
-       FROM pricing_change c LEFT JOIN user u ON u.id = c.actor
-      WHERE c.table_name = ? AND c.row_id = ?
-      ORDER BY c.created_at DESC LIMIT ?`,
-  ).bind(table, rowId, limit).all<PricingChangeRow>();
-  return results ?? [];
 }
 
 // ── Reconciliation ───────────────────────────────────────────────────────────
