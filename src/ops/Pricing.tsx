@@ -20,14 +20,15 @@
 //    beside Cloudflare's own observability tooling. A bad edit is corrected by
 //    typing the right numbers back in.
 import { SAGE, QUIET as MUTED } from "../styles/tokens";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, Check, ExternalLink, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
-  OpsApiError, opsCatalogueMirror, opsCreateRateCard, opsDeleteRateCard, opsPricePreview,
+  OpsApiError, opsCatalogueMirror, opsCreateDeliveryRange, opsCreateDeliveryZone, opsCreateRateCard,
+  opsDeleteDeliveryRange, opsDeleteDeliveryZone, opsDeleteRateCard, opsDeliveryZones, opsPricePreview,
   opsPricingOptions, opsPricingPolicy, opsRateCard, opsRateCards, opsReconcile, opsReconcileLast,
-  opsRenameRateCard, opsSaveModifiers, opsSaveOption, opsSaveRateCard,
-  type OpsCatalogueMirror, type OpsModifier, type OpsPricedSample,
-  type OpsRateCardRow, type OpsReconcileRun,
+  opsRenameRateCard, opsSaveDeliveryZone, opsSaveModifiers, opsSaveOption, opsSaveRateCard,
+  type OpsCatalogueMirror, type OpsDeliveryZone, type OpsDeliveryZonesResponse, type OpsModifier,
+  type OpsPricedSample, type OpsRateCardRow, type OpsReconcileRun,
 } from "./api";
 
 const MONO = {  } as const;
@@ -50,10 +51,11 @@ const ago = (iso: string | null) => {
   return `${Math.round(mins / 1440)}d ago`;
 };
 
-type Sub = "rate-cards" | "options" | "policy" | "catalogue";
+type Sub = "rate-cards" | "options" | "delivery-zones" | "policy" | "catalogue";
 const SUBS: { id: Sub; label: string }[] = [
   { id: "rate-cards", label: "Rate cards" },
   { id: "options", label: "Options" },
+  { id: "delivery-zones", label: "Delivery zones" },
   { id: "policy", label: "Policy" },
   { id: "catalogue", label: "Catalogue" },
 ];
@@ -93,8 +95,9 @@ export function Pricing() {
 
       {sub === "rate-cards" ? <RateCards />
         : sub === "options" ? <Options onChanged={load} />
-          : sub === "policy" ? <Policy />
-            : <CatalogueMirror />}
+          : sub === "delivery-zones" ? <DeliveryZones />
+            : sub === "policy" ? <Policy />
+              : <CatalogueMirror />}
     </div>
   );
 }
@@ -948,6 +951,286 @@ function Policy() {
         <span className="t-cap" style={{ ...MONO, color: MUTED }}>{data.policy.version}</span>
       </div>
     </div>
+  );
+}
+
+// ── Delivery zones (0044) ─────────────────────────────────────────────────────
+// The Australian domestic delivery leg. worker/lib/delivery.ts doesn't exist
+// yet (that's C4) — nothing here computes a price for a customer. The worked-
+// example column is a three-line formula (round to $10, clamped between min
+// and max) duplicated locally on purpose: it is trivial, it is staff-only, and
+// showing it live while typing beats a round trip for feedback this cheap.
+//
+// Inline, not a detail view — updating the header comment's own two-case rule:
+// a zone has ONE dimension and one rate ($/m²); min/max are prices, not a
+// second rate, so there is nothing here as opaque as perimRate × areaRate. And
+// zones are edited AS A SET, against each other — WA metro above SA metro,
+// regional above metro — which a detail view would hide by showing one row and
+// fourteen neighbours nobody can see.
+const EXAMPLE_AREA_M2 = 12;
+const workedExample = (min: number | null, rate: number | null, max: number | null): number | null => {
+  if (min == null || rate == null || max == null) return null;
+  const raw = EXAMPLE_AREA_M2 * rate;
+  const clamped = Math.min(Math.max(raw, min), max);
+  return Math.round(clamped / 10) * 10;
+};
+const exGst = (n: number): string => (n / 1.1).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+interface ZoneDraft { label: string; minCharge: string; ratePerSqm: string; maxCharge: string }
+const draftShape = (z: OpsDeliveryZone): ZoneDraft => ({
+  label: z.label,
+  minCharge: z.minCharge == null ? "" : String(z.minCharge),
+  ratePerSqm: z.ratePerSqm == null ? "" : String(z.ratePerSqm),
+  maxCharge: z.maxCharge == null ? "" : String(z.maxCharge),
+});
+
+function DeliveryZones() {
+  const [data, setData] = useState<OpsDeliveryZonesResponse | null>(null);
+  const [draft, setDraft] = useState<Record<string, ZoneDraft>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newId, setNewId] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [rangeOpen, setRangeOpen] = useState<string | null>(null);
+  const [rangeFrom, setRangeFrom] = useState("");
+  const [rangeTo, setRangeTo] = useState("");
+  const [rangeNote, setRangeNote] = useState("");
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
+  const load = useCallback(() => { opsDeliveryZones().then(setData).catch(() => setData(null)); }, []);
+  useEffect(load, [load]);
+
+  if (!data) return <p className="t-bd-sm" style={{ color: MUTED }}>Loading delivery zones…</p>;
+
+  const draftFor = (z: OpsDeliveryZone): ZoneDraft => ({ ...draftShape(z), ...draft[z.id] });
+  const setField = (z: OpsDeliveryZone, field: keyof ZoneDraft, value: string) =>
+    setDraft((d) => ({ ...d, [z.id]: { ...draftFor(z), [field]: value } }));
+  const isChanged = (z: OpsDeliveryZone) => {
+    const d = draft[z.id];
+    if (!d) return false;
+    const stored = draftShape(z);
+    return d.label !== stored.label || d.minCharge !== stored.minCharge
+      || d.ratePerSqm !== stored.ratePerSqm || d.maxCharge !== stored.maxCharge;
+  };
+
+  const save = async (z: OpsDeliveryZone) => {
+    const d = draftFor(z);
+    setSaving(z.id); setError(null);
+    try {
+      await opsSaveDeliveryZone(z.id, {
+        label: d.label,
+        minCharge: d.minCharge === "" ? undefined : Number(d.minCharge),
+        ratePerSqm: d.ratePerSqm === "" ? undefined : Number(d.ratePerSqm),
+        maxCharge: d.maxCharge === "" ? undefined : Number(d.maxCharge),
+        expectedVersion: z.version,
+      });
+      setDraft((dd) => { const { [z.id]: _drop, ...rest } = dd; return rest; });
+      load();
+    } catch (e) {
+      setError(e instanceof OpsApiError && e.code === "version_conflict"
+        ? "Someone else changed this zone — reload and try again."
+        : e instanceof OpsApiError && e.code === "max_below_min"
+          ? "The maximum cannot be below the minimum."
+          : "That change could not be saved.");
+    } finally { setSaving(null); }
+  };
+
+  const createZone = async () => {
+    const id = newId.trim(), label = newLabel.trim();
+    if (!id || !label) { setError("Enter an id and a label."); return; }
+    setSaving("__new__"); setError(null);
+    try {
+      await opsCreateDeliveryZone(id, label);
+      setCreating(false); setNewId(""); setNewLabel("");
+      load();
+    } catch (e) {
+      setError(e instanceof OpsApiError && e.code === "id_taken" ? "A zone with that id already exists." : "Could not create that zone.");
+    } finally { setSaving(null); }
+  };
+
+  const remove = async (z: OpsDeliveryZone) => {
+    if (z.isFallback) return;
+    const fallback = data.zones.find((x) => x.isFallback)?.label ?? "the fallback zone";
+    if (!window.confirm(`Delete "${z.label}"? Its postcodes fall back to ${fallback}. This cannot be undone.`)) return;
+    setSaving(z.id);
+    try { await opsDeleteDeliveryZone(z.id); load(); } finally { setSaving(null); }
+  };
+
+  const addRange = async (zoneId: string) => {
+    const pcFrom = Number(rangeFrom), pcTo = Number(rangeTo);
+    setRangeError(null);
+    try {
+      await opsCreateDeliveryRange(zoneId, { pcFrom, pcTo, note: rangeNote.trim() || undefined });
+      setRangeFrom(""); setRangeTo(""); setRangeNote("");
+      load();
+    } catch (e) {
+      setRangeError(e instanceof OpsApiError && e.code === "range_overlap"
+        ? "That range partially overlaps another zone's — full containment is fine, a partial overlap is not."
+        : "That range is not valid — check it runs forwards, inside 0200–9999.");
+    }
+  };
+
+  const removeRange = async (zoneId: string, rangeId: number) => { await opsDeleteDeliveryRange(zoneId, rangeId); load(); };
+
+  return (
+    <>
+      <div className="flex items-baseline justify-between mb-3">
+        <p className="t-cap" style={{ color: MUTED }}>
+          {data.summary.zoneCount} zones · {data.summary.unpricedCount} unpriced · {data.summary.postcodeCount.toLocaleString("en-AU")} postcodes mapped
+        </p>
+        {data.canEdit && !creating && (
+          <button onClick={() => setCreating(true)} className="flex items-center gap-1 shrink-0 ml-4 t-cap" style={{ color: SAGE }}>
+            <Plus className="w-3.5 h-3.5" /> New zone
+          </button>
+        )}
+      </div>
+
+      {data.overlaps.length > 0 && (
+        <Banner tone="warn">
+          <span className="flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            {data.overlaps.length} postcode range{data.overlaps.length === 1 ? "" : "s"} partially overlap another
+            zone's. Full containment is fine; a partial overlap means the first match wins, which is not a decision
+            anyone made.
+          </span>
+          <span />
+        </Banner>
+      )}
+
+      {creating && (
+        <div className="card px-4 py-3 mb-3 flex items-center gap-3">
+          <input value={newId} onChange={(e) => setNewId(e.target.value)} placeholder="zone-id" autoFocus
+            className="w-40 border border-black/12 px-2 py-1.5 font-data t-bd-sm" style={{ color: INK }} />
+          <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Label shown to staff and customers"
+            onKeyDown={(e) => { if (e.key === "Enter") createZone(); if (e.key === "Escape") setCreating(false); }}
+            className="flex-1 border border-black/12 px-2 py-1.5 t-bd-sm" style={{ color: INK }} />
+          <button onClick={createZone} disabled={saving === "__new__"} className="text-white px-3 py-1.5 disabled:opacity-40 t-cap" style={{ background: SAGE }}>Create</button>
+          <button onClick={() => { setCreating(false); setError(null); }} className="px-2 py-1.5 t-cap" style={{ color: MUTED }}>Cancel</button>
+        </div>
+      )}
+      {error && <p className="mb-3 t-cap" style={{ color: "var(--warning-ink)" }}>{error}</p>}
+
+      <div className="card overflow-x-auto">
+        <table className="w-full t-bd-sm">
+          <thead>
+            <tr className="t-label" style={{ color: MUTED }}>
+              <th className="text-left font-medium px-4 py-2">Zone</th>
+              <th className="text-right font-medium px-3 py-2">$/m²</th>
+              <th className="text-right font-medium px-3 py-2">Min</th>
+              <th className="text-right font-medium px-3 py-2">Max</th>
+              <th className="text-right font-medium px-3 py-2">{EXAMPLE_AREA_M2} m²</th>
+              <th className="text-right font-medium px-4 py-2">Ver</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.zones.map((z) => {
+              const d = draftFor(z);
+              const rowChanged = isChanged(z);
+              const example = workedExample(
+                d.minCharge === "" ? null : Number(d.minCharge),
+                d.ratePerSqm === "" ? null : Number(d.ratePerSqm),
+                d.maxCharge === "" ? null : Number(d.maxCharge),
+              );
+              const hasAny = d.ratePerSqm !== "" || d.minCharge !== "" || d.maxCharge !== "";
+              return (
+                <Fragment key={z.id}>
+                  <tr className="border-t border-black/5 align-top">
+                    <td className="px-4 py-2" style={{ color: INK }}>
+                      <input value={d.label} disabled={!data.canEdit}
+                        onChange={(e) => setField(z, "label", e.target.value)}
+                        className="w-full border-0 bg-transparent px-0 py-0 t-bd-sm disabled:opacity-100" style={{ color: INK }} />
+                      <span className="block t-cap font-data" style={{ color: MUTED }}>
+                        {z.id}{z.isFallback ? " ◦ fallback" : ""}
+                      </span>
+                      <span className="block t-cap" style={{ color: MUTED }}>
+                        {z.ranges.length ? z.ranges.map((r) => `${r.pcFrom}–${r.pcTo}`).join(", ") : z.isFallback ? "everything else" : "no postcodes yet"}
+                        {data.canEdit && (
+                          <button onClick={() => setRangeOpen(rangeOpen === z.id ? null : z.id)} className="ml-2 underline underline-offset-2" style={{ color: SAGE }}>
+                            {rangeOpen === z.id ? "close" : "manage"}
+                          </button>
+                        )}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input value={d.ratePerSqm} inputMode="decimal" disabled={!data.canEdit} placeholder="—"
+                        onChange={(e) => setField(z, "ratePerSqm", e.target.value)}
+                        className="w-20 text-right border px-2 py-0.5 disabled:bg-transparent disabled:border-transparent t-bd-sm"
+                        style={{ ...MONO, color: INK, borderColor: rowChanged ? SAGE : "rgba(0,0,0,0.12)" }} />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input value={d.minCharge} inputMode="decimal" disabled={!data.canEdit} placeholder="—"
+                        onChange={(e) => setField(z, "minCharge", e.target.value)}
+                        className="w-20 text-right border px-2 py-0.5 disabled:bg-transparent disabled:border-transparent t-bd-sm"
+                        style={{ ...MONO, color: INK, borderColor: rowChanged ? SAGE : "rgba(0,0,0,0.12)" }} />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input value={d.maxCharge} inputMode="decimal" disabled={!data.canEdit} placeholder="—"
+                        onChange={(e) => setField(z, "maxCharge", e.target.value)}
+                        className="w-20 text-right border px-2 py-0.5 disabled:bg-transparent disabled:border-transparent t-bd-sm"
+                        style={{ ...MONO, color: INK, borderColor: rowChanged ? SAGE : "rgba(0,0,0,0.12)" }} />
+                    </td>
+                    <td className="px-3 py-2 text-right" style={{ ...MONO, color: example == null ? MUTED : INK }}>
+                      {example == null ? "not priced" : money0(example)}
+                    </td>
+                    <td className="px-4 py-2 text-right" style={{ ...MONO, color: MUTED }}>
+                      {z.version}
+                      {data.canEdit && (rowChanged
+                        ? <button onClick={() => save(z)} disabled={saving === z.id} title="Save"><Check className="w-3.5 h-3.5 ml-2 inline" style={{ color: SAGE }} /></button>
+                        : !z.isFallback && <button onClick={() => remove(z)} disabled={saving === z.id} title="Delete"><Trash2 className="w-3.5 h-3.5 ml-2 inline" style={{ color: MUTED }} /></button>)}
+                    </td>
+                  </tr>
+                  {/* ex-GST equivalents — the mistake risk 9 exists for (a
+                      carrier's ex-GST invoice typed into a GST-inclusive field)
+                      is made at data entry, and this is what makes it visible
+                      right there. */}
+                  {hasAny && (
+                    <tr className="t-cap" style={{ color: MUTED }}>
+                      <td />
+                      <td className="px-3 text-right">{d.ratePerSqm !== "" ? exGst(Number(d.ratePerSqm)) : ""}</td>
+                      <td className="px-3 text-right">{d.minCharge !== "" ? exGst(Number(d.minCharge)) : ""}</td>
+                      <td className="px-3 text-right">{d.maxCharge !== "" ? exGst(Number(d.maxCharge)) : ""}</td>
+                      <td colSpan={2} className="px-3 text-left">← ex GST</td>
+                    </tr>
+                  )}
+                  {rangeOpen === z.id && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-3 bg-black/[0.015]">
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {z.ranges.map((r) => (
+                            <span key={r.id} className="inline-flex items-center gap-1 border border-black/10 px-2 py-1 t-cap font-data">
+                              {r.pcFrom}–{r.pcTo}{r.note ? ` · ${r.note}` : ""}
+                              {data.canEdit && <button onClick={() => removeRange(z.id, r.id)} title="Remove range"><X className="w-3 h-3" style={{ color: MUTED }} /></button>}
+                            </span>
+                          ))}
+                        </div>
+                        {data.canEdit && (
+                          <div className="flex items-center gap-2">
+                            <input value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} placeholder="from" inputMode="numeric"
+                              className="w-20 border border-black/12 px-2 py-1 font-data t-cap" />
+                            <input value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} placeholder="to" inputMode="numeric"
+                              className="w-20 border border-black/12 px-2 py-1 font-data t-cap" />
+                            <input value={rangeNote} onChange={(e) => setRangeNote(e.target.value)} placeholder="note (optional)"
+                              className="flex-1 border border-black/12 px-2 py-1 t-cap" />
+                            <button onClick={() => addRange(z.id)} className="text-white px-3 py-1 t-cap" style={{ background: SAGE }}>Add range</button>
+                          </div>
+                        )}
+                        {rangeError && <p className="mt-1.5 t-cap" style={{ color: "var(--warning-ink)" }}>{rangeError}</p>}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 t-cap" style={{ color: MUTED }}>
+        {data.canEdit
+          ? `A field with the sage border has an unsaved change — click the check to save it. The ${EXAMPLE_AREA_M2} m² column is a worked PRICE, not a rate: floored below the minimum, capped above the maximum. Rates are entered inc GST; the grey line under a row is the ex-GST value.`
+          : "Read-only — a manager or admin can change these."}
+      </p>
+    </>
   );
 }
 

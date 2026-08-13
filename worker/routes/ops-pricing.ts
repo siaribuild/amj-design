@@ -487,6 +487,214 @@ opsPricing.get("/policy", async (c) => {
   });
 });
 
+// ── Delivery zones (0044) ────────────────────────────────────────────────────
+// The Australian domestic delivery leg (design doc §4.4/§6.2) — port cartage,
+// warehouse handling, last mile, tailgate. Same conventions as PUT
+// /rate-cards/:id exactly: gate() in two lines, read `before` -> 404,
+// num() coercion with fall-back-to-stored, negative -> 400 invalid_amount,
+// applyPricingChange with expectedVersion, VersionConflict -> 409
+// version_conflict, canEdit on every GET.
+//
+// Zones are edited inline as a SET, against each other (§7.3) rather than
+// behind a detail view like a rate card — a zone has one dimension and one
+// rate, and the comparisons across zones (WA metro above SA metro, regional
+// above metro) are what make a guessed number look right or wrong.
+
+const rowToZone = (r: any) => ({
+  id: r.id, label: r.label,
+  minCharge: r.min_charge, ratePerSqm: r.rate_per_sqm, maxCharge: r.max_charge,
+  isFallback: !!r.is_fallback, sortOrder: r.sort_order, version: r.version,
+  active: !!r.active, updatedAt: r.updated_at,
+});
+
+/** PARTIAL overlap only — two ranges that intersect without one fully
+ *  containing the other. Full containment is the layering mechanism the
+ *  seed relies on (§4.4) and must never be reported as a conflict. */
+const rangesPartiallyOverlap = (a: { from: number; to: number }, b: { from: number; to: number }): boolean => {
+  if (a.from > b.to || b.from > a.to) return false; // no intersection at all
+  const aContainsB = a.from <= b.from && b.to <= a.to;
+  const bContainsA = b.from <= a.from && a.to <= b.to;
+  return !aContainsB && !bContainsA;
+};
+
+/** E1. Every zone with its postcode ranges, plus a summary and any partial
+ *  overlaps in the table — pairwise over a few dozen rows, not a scale where
+ *  O(n²) matters. */
+opsPricing.get("/delivery-zones", async (c) => {
+  const { staff, deny } = await gate(c, "view");
+  if (!staff) return deny;
+
+  const [{ results: zoneRows }, { results: rangeRows }] = await Promise.all([
+    c.env.DB.prepare(
+      "SELECT id, label, min_charge, rate_per_sqm, max_charge, is_fallback, sort_order, version, active, updated_at FROM delivery_zone ORDER BY sort_order",
+    ).all<any>(),
+    c.env.DB.prepare("SELECT id, zone_id, pc_from, pc_to, note FROM delivery_postcode_range ORDER BY pc_from").all<any>(),
+  ]);
+
+  const rangesByZone = new Map<string, { id: number; pcFrom: number; pcTo: number; note: string | null }[]>();
+  for (const r of rangeRows ?? []) {
+    const list = rangesByZone.get(r.zone_id) ?? [];
+    list.push({ id: r.id, pcFrom: r.pc_from, pcTo: r.pc_to, note: r.note });
+    rangesByZone.set(r.zone_id, list);
+  }
+  const zones = (zoneRows ?? []).map((r) => ({ ...rowToZone(r), ranges: rangesByZone.get(r.id) ?? [] }));
+
+  const all = (rangeRows ?? []).map((r) => ({ id: r.id, zoneId: r.zone_id, from: r.pc_from, to: r.pc_to }));
+  const overlaps: { a: typeof all[number]; b: typeof all[number] }[] = [];
+  for (let i = 0; i < all.length; i++) {
+    for (let j = i + 1; j < all.length; j++) {
+      if (rangesPartiallyOverlap(all[i], all[j])) overlaps.push({ a: all[i], b: all[j] });
+    }
+  }
+
+  const postcodeCount = (rangeRows ?? []).reduce((s, r) => s + (r.pc_to - r.pc_from + 1), 0);
+  const unpricedCount = zones.filter((z) => z.minCharge == null || z.ratePerSqm == null || z.maxCharge == null).length;
+
+  return c.json({
+    canEdit: canEdit(staff),
+    zones,
+    summary: { zoneCount: zones.length, unpricedCount, postcodeCount },
+    overlaps,
+  });
+});
+
+/** E2. Seeds NULL rates, never the fallback's numbers — copying `unmapped`'s
+ *  deliberately-high figures into a new zone would produce a plausible-
+ *  looking wrong price, and a NULL zone is visibly unfinished. */
+opsPricing.post("/delivery-zones", async (c) => {
+  const { staff, deny } = await gate(c, "edit");
+  if (!staff) return deny;
+  const body = await c.req.json().catch(() => ({}));
+  const id = String(body?.id ?? "").trim();
+  const label = String(body?.label ?? "").trim();
+  if (!id || !label) return c.json({ error: "invalid_id" }, 400);
+
+  const existing = await c.env.DB.prepare("SELECT id FROM delivery_zone WHERE id = ?").bind(id).first<any>();
+  if (existing) return c.json({ error: "id_taken" }, 409);
+
+  const sortRow = await c.env.DB.prepare("SELECT COALESCE(MAX(sort_order),0) AS m FROM delivery_zone").first<{ m: number }>();
+  await c.env.DB.prepare(
+    "INSERT INTO delivery_zone (id, label, sort_order, version, active) VALUES (?, ?, ?, 'v1', 1)",
+  ).bind(id, label, (sortRow?.m ?? 0) + 10).run();
+
+  return c.json({ ok: true, id });
+});
+
+/** E3. */
+opsPricing.put("/delivery-zones/:id", async (c) => {
+  const { staff, deny } = await gate(c, "edit");
+  if (!staff) return deny;
+  const id = c.req.param("id");
+
+  const before = await c.env.DB.prepare(
+    "SELECT id, label, min_charge, rate_per_sqm, max_charge, active, version FROM delivery_zone WHERE id = ?",
+  ).bind(id).first<any>();
+  if (!before) return c.json({ error: "not_found" }, 404);
+
+  const body = await c.req.json().catch(() => ({}));
+  const label = typeof body?.label === "string" && body.label.trim() ? body.label.trim() : before.label;
+  const minCharge = "minCharge" in (body ?? {}) ? num(body.minCharge) : before.min_charge;
+  const ratePerSqm = "ratePerSqm" in (body ?? {}) ? num(body.ratePerSqm) : before.rate_per_sqm;
+  const maxCharge = "maxCharge" in (body ?? {}) ? num(body.maxCharge) : before.max_charge;
+  const active = typeof body?.active === "boolean" ? (body.active ? 1 : 0) : before.active;
+
+  // A negative delivery charge is not a discount, it is a typo that pays the
+  // customer to receive their windows (schema CHECK, restated so the console
+  // gets a clean 400 rather than a raw SQLite constraint error).
+  if ((minCharge != null && minCharge < 0) || (ratePerSqm != null && ratePerSqm < 0) || (maxCharge != null && maxCharge < 0)) {
+    return c.json({ error: "invalid_amount" }, 400);
+  }
+  // A cap under a floor is a formula that always returns the floor.
+  if (minCharge != null && maxCharge != null && maxCharge < minCharge) {
+    return c.json({ error: "max_below_min" }, 400);
+  }
+
+  try {
+    const version = await applyPricingChange(c.env, {
+      table: "delivery_zone", rowId: id, actor: staff.id,
+      expectedVersion: body?.expectedVersion ?? null,
+      before: {
+        label: before.label, minCharge: before.min_charge, ratePerSqm: before.rate_per_sqm,
+        maxCharge: before.max_charge, active: !!before.active, version: before.version,
+      },
+      after: { label, minCharge, ratePerSqm, maxCharge, active: !!active },
+      write: (v) => c.env.DB.prepare(
+        "UPDATE delivery_zone SET label=?, min_charge=?, rate_per_sqm=?, max_charge=?, active=?, version=?, updated_at=datetime('now') WHERE id=?",
+      ).bind(label, minCharge, ratePerSqm, maxCharge, active, v, id).run().then(() => undefined),
+    });
+    return c.json({ ok: true, version });
+  } catch (e) {
+    if (e instanceof VersionConflict) return c.json({ error: "version_conflict" }, 409);
+    throw e;
+  }
+});
+
+/** E4. No downstream-dependency check, by design (§6.2): the estimate is
+ *  computed live from the postcode, so a deleted zone's postcodes simply
+ *  fall to the fallback — the dearest row — on the next read. Ranges cascade
+ *  (delivery_postcode_range.zone_id is ON DELETE CASCADE). */
+opsPricing.delete("/delivery-zones/:id", async (c) => {
+  const { staff, deny } = await gate(c, "edit");
+  if (!staff) return deny;
+  const id = c.req.param("id");
+  if (id === "unmapped") return c.json({ error: "cannot_delete_fallback" }, 400);
+
+  const row = await c.env.DB.prepare("SELECT id FROM delivery_zone WHERE id = ?").bind(id).first<any>();
+  if (!row) return c.json({ error: "not_found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM delivery_zone WHERE id = ?").bind(id).run();
+  return c.json({ ok: true });
+});
+
+/** Postcode ranges. Not one of E1-E5 by name, but under the same prefix and
+ *  needing no route registration either. Row-by-row (the id is a bare rowid,
+ *  "a postcode band has no natural key") rather than the whole-list-replace
+ *  pattern the modifier editor uses — ranges are independently addressable
+ *  and there is no ordering within a zone for an interrupted write to lose. */
+opsPricing.post("/delivery-zones/:zoneId/ranges", async (c) => {
+  const { staff, deny } = await gate(c, "edit");
+  if (!staff) return deny;
+  const zoneId = c.req.param("zoneId");
+
+  const zone = await c.env.DB.prepare("SELECT id FROM delivery_zone WHERE id = ?").bind(zoneId).first<any>();
+  if (!zone) return c.json({ error: "not_found" }, 404);
+
+  const body = await c.req.json().catch(() => ({}));
+  const pcFrom = num(body?.pcFrom), pcTo = num(body?.pcTo);
+  const note = typeof body?.note === "string" && body.note.trim() ? body.note.trim().slice(0, 500) : null;
+  if (pcFrom == null || pcTo == null || pcFrom < 200 || pcFrom > 9999 || pcTo < 200 || pcTo > 9999 || pcTo < pcFrom) {
+    return c.json({ error: "invalid_range" }, 400);
+  }
+
+  const { results: existing } = await c.env.DB.prepare("SELECT id, zone_id, pc_from, pc_to FROM delivery_postcode_range").all<any>();
+  const candidate = { from: pcFrom, to: pcTo };
+  const conflict = (existing ?? []).find((r) => rangesPartiallyOverlap(candidate, { from: r.pc_from, to: r.pc_to }));
+  if (conflict) {
+    return c.json({
+      error: "range_overlap",
+      conflict: { id: conflict.id, zoneId: conflict.zone_id, pcFrom: conflict.pc_from, pcTo: conflict.pc_to },
+    }, 409);
+  }
+
+  const result = await c.env.DB.prepare(
+    "INSERT INTO delivery_postcode_range (zone_id, pc_from, pc_to, note) VALUES (?, ?, ?, ?)",
+  ).bind(zoneId, pcFrom, pcTo, note).run();
+  return c.json({ ok: true, id: Number(result.meta?.last_row_id) });
+});
+
+opsPricing.delete("/delivery-zones/:zoneId/ranges/:rangeId", async (c) => {
+  const { staff, deny } = await gate(c, "edit");
+  if (!staff) return deny;
+  const zoneId = c.req.param("zoneId");
+  const rangeId = Number(c.req.param("rangeId"));
+
+  const row = await c.env.DB.prepare("SELECT id FROM delivery_postcode_range WHERE id = ? AND zone_id = ?").bind(rangeId, zoneId).first<any>();
+  if (!row) return c.json({ error: "not_found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM delivery_postcode_range WHERE id = ?").bind(rangeId).run();
+  return c.json({ ok: true });
+});
+
 // ── Catalogue mirror (read-only, but honest) ─────────────────────────────────
 
 /** What the ENGINE loaded, not what the browser bundle happens to contain.

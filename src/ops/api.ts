@@ -407,6 +407,38 @@ export const opsDeleteRateCard = (id: string) =>
 export const opsRenameRateCard = (id: string, newId: string) =>
   write<{ ok: boolean; id: string }>(`/api/ops/pricing/rate-cards/${encodeURIComponent(id)}/rename`, "PUT", { newId });
 
+// ── Delivery zones (0044) — the Australian domestic delivery leg ────────────
+export interface OpsDeliveryRange { id: number; pcFrom: number; pcTo: number; note: string | null }
+export interface OpsDeliveryZone {
+  id: string; label: string;
+  minCharge: number | null; ratePerSqm: number | null; maxCharge: number | null;
+  isFallback: boolean; sortOrder: number; version: string; active: boolean; updatedAt: string;
+  ranges: OpsDeliveryRange[];
+}
+export interface OpsDeliveryZonesResponse {
+  canEdit: boolean;
+  zones: OpsDeliveryZone[];
+  summary: { zoneCount: number; unpricedCount: number; postcodeCount: number };
+  overlaps: { a: { id: number; zoneId: string; from: number; to: number }; b: { id: number; zoneId: string; from: number; to: number } }[];
+}
+export const opsDeliveryZones = () => req<OpsDeliveryZonesResponse>("/api/ops/pricing/delivery-zones");
+
+export const opsCreateDeliveryZone = (id: string, label: string) =>
+  write<{ ok: boolean; id: string }>("/api/ops/pricing/delivery-zones", "POST", { id, label });
+
+export const opsSaveDeliveryZone = (id: string, body: {
+  label?: string; minCharge?: number; ratePerSqm?: number; maxCharge?: number; active?: boolean; expectedVersion?: string;
+}) => write<{ ok: boolean; version: string }>(`/api/ops/pricing/delivery-zones/${encodeURIComponent(id)}`, "PUT", body);
+
+export const opsDeleteDeliveryZone = (id: string) =>
+  write<{ ok: boolean }>(`/api/ops/pricing/delivery-zones/${encodeURIComponent(id)}`, "DELETE", {});
+
+export const opsCreateDeliveryRange = (zoneId: string, body: { pcFrom: number; pcTo: number; note?: string }) =>
+  write<{ ok: boolean; id: number }>(`/api/ops/pricing/delivery-zones/${encodeURIComponent(zoneId)}/ranges`, "POST", body);
+
+export const opsDeleteDeliveryRange = (zoneId: string, rangeId: number) =>
+  write<{ ok: boolean }>(`/api/ops/pricing/delivery-zones/${encodeURIComponent(zoneId)}/ranges/${rangeId}`, "DELETE", {});
+
 export type OpsSurchargeBasis = "per_unit" | "per_sqm";
 export const opsPricingOptions = () =>
   req<{ canEdit: boolean; reconcile: OpsReconcileRun | null; options: { slug: string; surcharge: number; version: string; basis: OpsSurchargeBasis; offeredBy: number }[] }>("/api/ops/pricing/options");
