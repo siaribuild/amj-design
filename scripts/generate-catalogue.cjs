@@ -194,7 +194,6 @@ const products=prodRows.map((r)=>{
     maxWidth:maxW?Number(maxW):null, maxHeight:maxH?Number(maxH):null,
     profileThickness:profile, airTightness:air, waterTightness:water, windPressure:wind,
     notes, heroImage:hero, gallery, keySpecs, specs, options:opts,
-    featuredOrder:Number(id)||0,
   };
 });
 
@@ -262,7 +261,6 @@ L.push(`  gallery: string[];`);
 L.push(`  keySpecs: SpecRow[];`);
 L.push(`  specs: SpecRow[];`);
 L.push(`  options: ProductOption[];`);
-L.push(`  featuredOrder: number;`);
 L.push(`}`);
 L.push(``);
 // categories
@@ -297,7 +295,6 @@ for(const p of products){
   L.push(`    keySpecs: [${p.keySpecs.map(k=>`{ label: ${j(k.label)}, value: ${j(k.value)} }`).join(', ')}],`);
   L.push(`    specs: [${p.specs.map(k=>`{ label: ${j(k.label)}, value: ${j(k.value)} }`).join(', ')}],`);
   L.push(`    options: [${p.options.map(o=>`{ typeSlug: ${j(o.typeSlug)}, typeName: ${j(o.typeName)}, name: ${j(o.name)}, availability: ${j(o.availability)} }`).join(', ')}],`);
-  L.push(`    featuredOrder: ${p.featuredOrder},`);
   L.push(`  },`);
 }
 L.push(`];`);
@@ -309,10 +306,15 @@ L.push(`export const getCategory = (slug: string): Category | undefined => categ
 L.push(`export const getFamiliesByCategory = (categorySlug: string): Family[] => families.filter(f => f.categorySlug === categorySlug);`);
 L.push(`export const getFamily = (slug: string): Family | undefined => families.find(f => f.slug === slug);`);
 L.push(`export const getProductBySlug = (slug: string): Product | undefined => products.find(p => p.slug === slug);`);
+// No orderRank here (this generator predates the drag-and-drop migration and
+// emits neither it nor several other fields the real src/data/catalogue.ts
+// now carries — frameSystem, thermal, disabled, seo — so it is already a
+// partial/stale regeneration path; name is the only ordering field this
+// script's own output actually has).
 L.push(`export const getProductsByCategory = (categorySlug: string): Product[] =>`);
-L.push(`  products.filter(p => p.categorySlug === categorySlug).sort((a, b) => a.featuredOrder - b.featuredOrder);`);
+L.push(`  products.filter(p => p.categorySlug === categorySlug).sort((a, b) => a.name.localeCompare(b.name));`);
 L.push(`export const getProductsByFamily = (familySlug: string): Product[] =>`);
-L.push(`  products.filter(p => p.familySlug === familySlug).sort((a, b) => a.featuredOrder - b.featuredOrder);`);
+L.push(`  products.filter(p => p.familySlug === familySlug).sort((a, b) => a.name.localeCompare(b.name));`);
 L.push(`export const getRelatedProducts = (slug: string, limit = 3): Product[] => {`);
 L.push(`  const p = getProductBySlug(slug);`);
 L.push(`  if (!p) return [];`);

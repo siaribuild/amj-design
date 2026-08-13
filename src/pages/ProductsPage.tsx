@@ -195,7 +195,7 @@ export function ProductsPage({ setPage, category, family, onSelectCategory, onSe
   const windowCount = getFamiliesByCategory("windows").length;
   const doorCount = getFamiliesByCategory("doors").length;
 
-  // Products come pre-ordered by featuredOrder from the selectors.
+  // Products come pre-ordered by orderRank from the selectors.
   const list = family === "all" ? getProductsByCategory(category) : getProductsByFamily(family);
 
   const activeFamily = families.find(f => f.slug === family);

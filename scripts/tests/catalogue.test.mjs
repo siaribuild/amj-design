@@ -160,7 +160,7 @@ test("catalogue query normalization and runtime hydration", async () => {
       familySlug: "regression-family", categorySlug: "regression-category",
       shortDescription: "", descriptionParagraphs: [], standardGlass: "",
       minWidth: null, minHeight: null, maxWidth: null, maxHeight: null,
-      notes: "", heroImage: "", gallery: [], keySpecs: [], specs: [], options: [], featuredOrder: 0,
+      notes: "", heroImage: "", gallery: [], keySpecs: [], specs: [], options: [],
     };
     catalogue.hydrateCatalogue({ products: [replacement], colours: normalized.colours });
     assert.equal(catalogue.getProductBySlug("regression-product")?.name, "Regression Product");
@@ -199,24 +199,28 @@ test("catalogue query normalization and runtime hydration", async () => {
     // …and the normalizer fills it in for anything that comes through Sanity.
     assert.equal(normalized.products[0].disabled, false);
 
-    // ── Product order is the drag-and-drop rank, not featuredOrder ─────────
-    // orderRank "wins" even when it disagrees with the legacy featuredOrder —
-    // proves the selectors read the new field, not the one it replaced.
-    const rankedFirst = { ...replacement, id: "b", slug: "b", featuredOrder: 2, orderRank: "a0" };
-    const rankedSecond = { ...replacement, id: "a", slug: "a", featuredOrder: 1, orderRank: "a1" };
+    // ── Product order is the drag-and-drop rank, then name ──────────────────
+    // orderRank wins over whatever order the raw list happened to arrive in —
+    // proves the selectors sort by the ranked field rather than trusting the
+    // caller's array order.
+    const rankedFirst = { ...replacement, id: "b", slug: "b", orderRank: "a0" };
+    const rankedSecond = { ...replacement, id: "a", slug: "a", orderRank: "a1" };
     catalogue.hydrateCatalogue({ products: [rankedSecond, rankedFirst], colours: normalized.colours });
     assert.deepEqual(
       catalogue.getProductsByCategory("regression-category").map((p) => p.slug),
-      ["b", "a"], "orderRank beats the legacy featuredOrder");
+      ["b", "a"], "orderRank wins over raw list order");
 
-    // A product that predates the migration (no orderRank yet) falls back to
-    // featuredOrder — and sorts AFTER every ranked product, never in front of
-    // one just because its old number happens to be low.
-    const unranked = { ...replacement, id: "c", slug: "c", featuredOrder: 0, orderRank: undefined };
-    catalogue.hydrateCatalogue({ products: [rankedFirst, rankedSecond, unranked], colours: normalized.colours });
+    // A product with no orderRank yet (never dragged, or a stale cached
+    // payload) sorts AFTER every ranked product — never in front of one just
+    // because of where it landed in the raw list — and falls back to
+    // alphabetical among its own unranked kind. The legacy hand-typed
+    // featuredOrder field this used to also fall back to is gone.
+    const unrankedZ = { ...replacement, id: "z", slug: "z", name: "Zeta Product", orderRank: undefined };
+    const unrankedC = { ...replacement, id: "c", slug: "c", name: "Charlie Product", orderRank: undefined };
+    catalogue.hydrateCatalogue({ products: [rankedFirst, rankedSecond, unrankedZ, unrankedC], colours: normalized.colours });
     assert.deepEqual(
       catalogue.getProductsByCategory("regression-category").map((p) => p.slug),
-      ["b", "a", "c"], "an unranked product falls back to featuredOrder, after every ranked one");
+      ["b", "a", "c", "z"], "unranked products sort after every ranked one, then alphabetically by name");
   } finally {
     if (!process.env.NODE_V8_COVERAGE) await removeRunDir(runDir);
   }

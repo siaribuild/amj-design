@@ -333,7 +333,7 @@ test("catalogueQuery.toCatalogueData: full null coercion + colour mapping", () =
   assert.equal(prod.name, "");
   assert.deepEqual(prod.gallery, []);
   assert.deepEqual(prod.keySpecs, []);
-  assert.equal(prod.featuredOrder, 0);
+  assert.equal(prod.orderRank, undefined);
   assert.equal(prod.minWidth, null);
   assert.deepEqual(out.categories, []);
   assert.equal(out.colours[0].typeSlug, "colour");
@@ -616,7 +616,7 @@ test("unitLabel: children are W1A, W1B … and spreadsheet-style past Z", () => 
 // @sanity/orderable-document-list rank Studio's "Categories" list writes (see
 // sanity.config.ts) — it replaced the hand-typed `order` field, which is kept
 // only as a fallback for a category that predates the migration.
-test("toCatalogueData orders categories by orderRank, then legacy order, then name", () => {
+test("toCatalogueData orders categories by orderRank, then name", () => {
   const raw = {
     categories: [
       { id: "d", slug: "doors", name: "Doors", orderRank: "a1", shortDescription: "", description: "" },
@@ -626,22 +626,22 @@ test("toCatalogueData orders categories by orderRank, then legacy order, then na
   };
   assert.deepEqual(M.toCatalogueData(raw).categories.map((c) => c.name), ["Windows", "Doors"]);
 
-  // A category with only the legacy `order` (never dragged since the
-  // migration) sorts by it, but AFTER every ranked category — never in front
-  // of Windows/Doors just because its old number happens to be low. A
-  // category with neither falls back to alphabetical among its own kind. A
-  // new category someone forgets to order must not silently displace Windows.
-  const withLegacyAndNew = {
+  // A category with no orderRank yet (never dragged, or a stale cached
+  // payload) sorts AFTER every ranked category — never in front of
+  // Windows/Doors — and falls back to alphabetical among its own kind. A new
+  // category someone forgets to rank must not silently displace Windows. The
+  // legacy hand-typed `order` field this used to also fall back to is gone —
+  // every category and the built-in fallback catalogue already carry a rank.
+  const withUnranked = {
     ...raw,
     categories: [
       { id: "z", slug: "louvres", name: "Louvres", shortDescription: "", description: "" },
       ...raw.categories,
-      { id: "l", slug: "legacy", name: "Legacy", order: 1, shortDescription: "", description: "" },
       { id: "a", slug: "awnings", name: "Awnings", shortDescription: "", description: "" },
     ],
   };
-  assert.deepEqual(M.toCatalogueData(withLegacyAndNew).categories.map((c) => c.name),
-    ["Windows", "Doors", "Legacy", "Awnings", "Louvres"]);
+  assert.deepEqual(M.toCatalogueData(withUnranked).categories.map((c) => c.name),
+    ["Windows", "Doors", "Awnings", "Louvres"]);
 });
 
 test("the catalogue query asks Sanity for that same order", () => {
@@ -649,9 +649,6 @@ test("the catalogue query asks Sanity for that same order", () => {
   // orderRank would make every category tie and quietly revert to whatever
   // order the server happens to return.
   assert.match(M.CATALOGUE_QUERY, /"categories":\s*\*\[_type=="category"\]\|order\(orderRank asc\)/);
-  // `order` (the deprecated field) is still projected — toCatalogueData's
-  // fallback needs it for a category that predates the migration.
-  assert.match(M.CATALOGUE_QUERY, /"categories"[\s\S]{0,400}?\border\b/);
 });
 
 test("the built-in fallback catalogue is already Windows-first", () => {

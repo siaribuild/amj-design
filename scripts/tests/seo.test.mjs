@@ -218,7 +218,7 @@ test("the sitemap lists sellable products only, and keeps ones with no flag", as
       id: slug, slug, name: slug, familySlug: "f", categorySlug: "windows",
       shortDescription: "", descriptionParagraphs: [], standardGlass: "",
       minWidth: null, minHeight: null, maxWidth: null, maxHeight: null,
-      notes: "", heroImage: "", gallery: [], keySpecs: [], specs: [], options: [], featuredOrder: 0,
+      notes: "", heroImage: "", gallery: [], keySpecs: [], specs: [], options: [],
       ...over,
     });
     hydrateCatalogue({

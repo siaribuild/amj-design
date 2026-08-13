@@ -38,18 +38,10 @@ export const category = defineType({
     // it is what CATALOGUE_QUERY orders by now. Ops manages the order by dragging
     // rather than by typing a number.
     orderRankField({ type: "category" }),
-    // DEPRECATED — replaced by orderRank above. Left in place (read-only, hidden
-    // once empty) rather than deleted: never drop a field with production data in
-    // the same change that replaces it. Remove once nothing reads it.
-    defineField({
-      name: "order",
-      title: "Display order (deprecated)",
-      type: "number",
-      description: "Superseded by drag-and-drop ordering. Safe to remove once nothing reads it.",
-      deprecated: { reason: "Replaced by drag-and-drop ordering (orderRank)." },
-      readOnly: true,
-      hidden: ({ value }) => value === undefined,
-    }),
+    // The deprecated hand-typed "order" field (superseded by orderRank above)
+    // is gone: every category and the built-in fallback catalogue already
+    // carry a rank (confirmed against production before removing), and
+    // nothing in src/data/catalogue{,Query}.ts reads it any more.
     defineField({ name: "shortDescription", type: "text", rows: 2 }),
     defineField({ name: "description", type: "text", rows: 4 }),
   ],
@@ -678,18 +670,11 @@ export const product = defineType({
     // see sanity.config.ts) — takes over featuredOrder's job. This is what
     // CATALOGUE_QUERY orders products by now.
     orderRankField({ type: "product" }),
-    // DEPRECATED — replaced by orderRank above, which now drives product order
-    // everywhere (category view, family view, the product picker) despite this
-    // field's name never having been scoped to "featured" items specifically.
-    // Left in place (read-only, hidden once empty) rather than deleted.
-    defineField({
-      name: "featuredOrder", type: "number", group: "content",
-      title: "Display order (deprecated)",
-      description: "Superseded by drag-and-drop ordering. Safe to remove once nothing reads it.",
-      deprecated: { reason: "Replaced by drag-and-drop ordering (orderRank)." },
-      readOnly: true,
-      hidden: ({ value }) => value === undefined,
-    }),
+    // The deprecated hand-typed "featuredOrder" field (superseded by orderRank
+    // above, which now drives product order everywhere — category view,
+    // family view, the product picker) is gone: every product and the
+    // built-in fallback catalogue already carry a rank (confirmed against
+    // production before removing), and nothing downstream reads it any more.
     // WITHDRAWN FROM SALE, NOT DELETED.
     //
     // Ticked, the product leaves the website and the estimator stops choosing it —

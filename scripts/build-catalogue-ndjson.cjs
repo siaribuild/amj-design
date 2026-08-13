@@ -168,7 +168,7 @@ prodRows.forEach((r,rowIndex)=>{
     heroImage:imageAsset(hero),gallery:gallery.map((u,i)=>({_key:`g${i}`,...imageAsset(u)})),
     keySpecs:keySpecs.map((s,i)=>({_key:`ks${i}`,_type:"specRow",...s})),
     specs:specs.map((s,i)=>({_key:`sp${i}`,_type:"specRow",...s})),
-    options:prodOptions,featuredOrder:Number(id)||0,orderRank:productRanks[rowIndex],
+    options:prodOptions,orderRank:productRanks[rowIndex],
     seo:{_type:"seoMeta",metaTitle:`${name} | OpenFrame`,metaDescription:(r[3]||"").replace(/\s+/g," ").trim().slice(0,160)},
   });
 });

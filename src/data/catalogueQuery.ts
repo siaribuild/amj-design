@@ -27,11 +27,9 @@ export const CATALOGUE_QUERY = `{
   // orderRank — the drag-and-drop rank Studio's "Categories" list writes (see
   // sanity.config.ts). Alphabetical alone put Doors ahead of Windows everywhere
   // the catalogue is grouped — the product picker most visibly, where a builder
-  // adding a window had to scroll past the doors first. "order" is the retired
-  // hand-typed field, kept projected only so toCatalogueData can still fall
-  // back to it for a document that predates the drag-and-drop migration.
+  // adding a window had to scroll past the doors first.
   "categories": *[_type=="category"]|order(orderRank asc){
-    "id":_id, "slug":slug.current, name, order, orderRank, shortDescription, description
+    "id":_id, "slug":slug.current, name, orderRank, shortDescription, description
   },
   // orderRank — the drag-and-drop rank Studio's "Families" list writes (see
   // sanity.config.ts). Drives the product picker's family grouping and the
@@ -94,7 +92,7 @@ export const CATALOGUE_QUERY = `{
       "name": option->name,
       "hex": option->hex
     },
-    featuredOrder, orderRank,
+    orderRank,
     disabled,
     "seo": ${SEO_PROJECTION}
   },
@@ -119,7 +117,7 @@ export const CATALOGUE_QUERY = `{
     "id":_id, stateCode, suburb, displayName, lat, lng, appointmentAvailable, status, historicalAliases
   },
   "postCategories": *[_type=="postCategory"]|order(orderRank asc){
-    "id":_id, "slug":slug.current, title, order, orderRank, description, dateDisplay, allowsProducts
+    "id":_id, "slug":slug.current, title, orderRank, description, dateDisplay, allowsProducts
   },
   "posts": *[_type=="post" && defined(slug.current)]|order(publishedAt desc, title asc){
     "id":_id, "slug":slug.current, title, summary,
@@ -215,7 +213,6 @@ function normalizeProduct(p: any): Product {
     gallery: (p.gallery ?? []).map(normalizeImage).filter(Boolean),
     keySpecs: p.keySpecs ?? [], specs: p.specs ?? [],
     options: (p.options ?? []).filter((o: any) => o?.name && o?.typeSlug).map(normalizeOption),
-    featuredOrder: p.featuredOrder ?? 0,
     orderRank: p.orderRank ?? undefined,
     // Absent is AVAILABLE: every product predates the field.
     disabled: p.disabled === true,
@@ -311,13 +308,12 @@ export function toCatalogueData(raw: RawCataloguePayload): CatalogueData {
     // Doors first is the kind of regression nobody notices for a month.
     //
     // orderRank is the drag-and-drop rank (see sanity.config.ts); a category
-    // still carrying only the old hand-typed "order" (never dragged since the
-    // migration, or a stale cached payload) falls back to that, then name.
+    // with no rank yet (a stale cached payload) falls back to name.
     categories: [...(raw.categories ?? [])].sort((a, b) => {
       if (a.orderRank != null && b.orderRank != null) return a.orderRank.localeCompare(b.orderRank);
       if (a.orderRank != null) return -1;
       if (b.orderRank != null) return 1;
-      return (a.order ?? 999) - (b.order ?? 999) || a.name.localeCompare(b.name);
+      return a.name.localeCompare(b.name);
     }),
     families: raw.families ?? [],
     products: (raw.products ?? []).map(normalizeProduct),
