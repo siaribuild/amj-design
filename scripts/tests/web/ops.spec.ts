@@ -159,3 +159,80 @@ test("a rate card can be created, edited, saved and deleted from the console", a
   await expect(page.getByRole("button", { name: /New rate card/i })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: slug })).toHaveCount(0);
 });
+
+// T-C6 — the delivery panel on the project record (design doc §7.1, C6).
+// ops.spec.ts runs before quote-project.spec.ts alphabetically (playwright.
+// config.ts: fullyParallel:false, workers:1, one shared D1 for the whole
+// run), so vic-metro is not yet priced when this runs — prices it itself,
+// same Host-header trick api-edge-style tests use for the ops.* host (the
+// `request` fixture is a plain Node client and does not resolve *.localhost
+// the way Chromium does).
+test("T-C6: the record shows the machine estimate beside the number staff confirmed", async ({ page, request }) => {
+  const OPS_HOST = "ops.localhost:8788";
+  const title = `T-C6 delivery check ${Date.now().toString().slice(-6)}`;
+  // A UNIQUE staffer, not STAFF_EMAIL — the OTP issuance cap is per source AND
+  // per recipient (see the "OTP issuance is capped per SOURCE" test in
+  // api-edge.test.mjs), and by the time this test runs the other five in this
+  // file have already logged STAFF_EMAIL in via the UI several times.
+  // isStaffEmail (worker/lib/staff.ts) allowlists by DOMAIN, and pricing
+  // access is flat (worker/routes/ops-pricing.ts: `const isStaffUser = (s) =>
+  // !!s`), so any @openframe.com.au address can price a zone even though only
+  // the seeded admin can sign in through the ops UI's own role gates.
+  const rawEmail = `tc6-ops-${Date.now().toString().slice(-8)}@openframe.com.au`;
+
+  const staffChallenge = await request.post("http://127.0.0.1:8788/api/ops/auth/challenge", {
+    headers: { Host: OPS_HOST }, data: { email: rawEmail },
+  });
+  const { devCode: staffCode } = await staffChallenge.json();
+  const verifyRes = await request.post("http://127.0.0.1:8788/api/ops/auth/verify", {
+    headers: { Host: OPS_HOST }, data: { email: rawEmail, code: staffCode },
+  });
+  // Carries the session into the BROWSER context by hand, from the raw
+  // response's own Set-Cookie — not a second, UI-driven staffLogin(page) call.
+  // A second login for the shared STAFF_EMAIL is exactly what tripped the
+  // per-recipient OTP cap in an earlier version of this test (five other
+  // tests in this file already log that address in via the UI); this test's
+  // one rawEmail login is reused for both the API calls above and the UI
+  // below.
+  const setCookie = (await verifyRes.headersArray()).find((h) => h.name.toLowerCase() === "set-cookie")?.value ?? "";
+  const sessionToken = setCookie.match(/apertly_session=([^;]+)/)?.[1];
+  if (!sessionToken) throw new Error("ops dev-mode login did not set a session cookie");
+  await page.context().addCookies([{ name: "apertly_session", value: sessionToken, domain: "ops.localhost", path: "/" }]);
+
+  const zones = await (await request.get("http://127.0.0.1:8788/api/ops/pricing/delivery-zones", { headers: { Host: OPS_HOST } })).json();
+  const vicMetro = zones.zones.find((z: { id: string; version: string }) => z.id === "vic-metro");
+  if (vicMetro.minCharge == null) {
+    await request.put("http://127.0.0.1:8788/api/ops/pricing/delivery-zones/vic-metro", {
+      headers: { Host: OPS_HOST }, data: { ratePerSqm: 45, minCharge: 180, maxCharge: 900, expectedVersion: vicMetro.version },
+    });
+  }
+
+  const saved = await page.request.put("/api/projects/current/lines", {
+    data: {
+      items: [{
+        code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+        width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      }],
+      title,
+    },
+  });
+  expect(saved.ok()).toBeTruthy();
+  const submitted = await page.request.post(`/api/projects/${(await saved.json()).project.id}/submit`, {
+    data: { contact: { name: "T-C6 Customer", email: "tc6-delivery-check@example.com", postcode: "3072" } },
+  });
+  expect(submitted.ok()).toBeTruthy();
+
+  await page.goto(OPS);
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await page.getByRole("button", { name: "Projects", exact: true }).click();
+  const row = page.getByText(title).locator("visible=true");
+  await expect(row.first()).toBeVisible();
+  await row.first().click();
+
+  await expect(page.getByText("Delivery", { exact: true })).toBeVisible();
+  await expect(page.getByText("3072")).toBeVisible();
+  await expect(page.getByText("Melbourne metro")).toBeVisible();
+  await expect(page.getByText("Machine estimate")).toBeVisible();
+  await expect(page.getByText("Not set", { exact: true })).toBeVisible();
+});

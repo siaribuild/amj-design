@@ -89,7 +89,10 @@ export async function drainLearningOutbox(env: Env, limit = 25): Promise<{ attem
 // and issuing became impossible; the tests caught it as a blanket 409. The real
 // protection was never the approval anyway — it is the two line checks below,
 // which refuse to issue a quote that is unpriced or still carries a review flag.
-const ISSUABLE_FROM = new Set([
+// Exported: the delivery panel's editable set (E7, design doc §6.3) is this
+// set PLUS 'draft' — a project that has not even reached the queue yet can
+// still have its postcode corrected.
+export const ISSUABLE_FROM = new Set([
   "estimator_assigned", "technical_review_required", "customer_clarification_required",
   "submitted", "triage_pending",
 ]);

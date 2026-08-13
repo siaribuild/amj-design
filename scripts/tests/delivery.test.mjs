@@ -243,6 +243,150 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const stranger = new Session(baseUrl);
       await requestJson(stranger, `/api/projects/${id}/delivery-estimate`, { method: "POST", json: { postcode: "3072" } }, 404);
     });
+
+    await t.test("T-B6: submitting records the postcode; the ops record prices it live", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Live estimate", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Live Estimate", email: "live-estimate@example.com", postcode: "3072" } },
+      });
+      const record = await requestJson(staff, `/api/ops/projects/${id}`);
+      assert.ok(record.body.delivery.estimate > 0, "a real figure");
+      assert.equal(record.body.delivery.zoneId, "vic-metro");
+      assert.equal(record.body.delivery.amount, null, "unsettled");
+      assert.equal(record.body.delivery.settled, false);
+    });
+
+    await t.test("T-B7: a postcode we do not price still gets a number, and admits it is a fallback", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Fallback estimate", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Fallback Estimate", email: "fallback-estimate@example.com", postcode: "9999" } },
+      });
+      const record = await requestJson(staff, `/api/ops/projects/${id}`);
+      assert.ok(record.body.delivery.estimate > 0);
+      assert.equal(record.body.delivery.basis, "fallback_zone");
+      assert.equal(record.body.delivery.zoneId, "unmapped");
+    });
+
+    await t.test("T-B8: the account discount moves goods and never delivery", async () => {
+      const guest = new Session(baseUrl);
+      const guestSaved = await requestJson(guest, "/api/projects/current/lines", { method: "PUT", json: { title: "Discount vs delivery (guest)", items: [aLine()] } });
+      const guestId = guestSaved.body.project.id;
+      const guestGoods = guestSaved.body.items[0].lineTotal;
+      await requestJson(guest, `/api/projects/${guestId}/submit`, {
+        method: "POST", json: { contact: { name: "Guest", email: "discount-vs-delivery-guest@example.com", postcode: "3072" } },
+      });
+      const guestRecord = await requestJson(staff, `/api/ops/projects/${guestId}`);
+
+      const member = new Session(baseUrl);
+      await login(member, "/api/auth", "discount-vs-delivery-member@example.com");
+      const memberSaved = await requestJson(member, "/api/projects/current/lines", { method: "PUT", json: { title: "Discount vs delivery (member)", items: [aLine()] } });
+      const memberId = memberSaved.body.project.id;
+      const memberGoods = memberSaved.body.items[0].lineTotal;
+      await requestJson(member, `/api/projects/${memberId}/submit`, {
+        method: "POST", json: { contact: { name: "Member", email: "discount-vs-delivery-member@example.com", postcode: "3072" } },
+      });
+      const memberRecord = await requestJson(staff, `/api/ops/projects/${memberId}`);
+
+      assert.notEqual(memberGoods, guestGoods, "the account discount moves goods");
+      assert.equal(memberRecord.body.delivery.estimate, guestRecord.body.delivery.estimate, "delivery is byte-identical either way");
+    });
+
+    // T-B9's design-doc phrasing drives it "through split", reasoning that
+    // split is the one mutation of several that does NOT bump
+    // quote_edit_version. Verified against this codebase's own composite
+    // invariant (worker/lib/composite.ts: a parent's dims_json is the
+    // opening's own size and never changes when it becomes a composite) that
+    // a split cannot actually move the area basis — loadProjectAreaM2 reads
+    // parents only, so the number split is meant to move never would. A rate
+    // edit is the mutation that genuinely demonstrates "computed live on every
+    // read" (§5.5) without touching quote_edit_version at all, so this test
+    // is driven through that instead.
+    await t.test("T-B9: a rate edit moves the live estimate and never the settled figure", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Staleness check", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Staleness Check", email: "staleness-check@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
+
+      const before = await requestJson(staff, "/api/ops/pricing/delivery-zones");
+      const vicMetro = before.body.zones.find((z) => z.id === "vic-metro");
+      await requestJson(staff, "/api/ops/pricing/delivery-zones/vic-metro", {
+        method: "PUT", json: { ratePerSqm: vicMetro.ratePerSqm * 4, expectedVersion: vicMetro.version },
+      });
+
+      const record = await requestJson(staff, `/api/ops/projects/${id}`);
+      assert.notEqual(record.body.delivery.estimate, record.body.delivery.settledEstimate, "the live table moved");
+      assert.equal(record.body.delivery.amount, 640, "the settled figure did not");
+
+      // Restore, so later tests in this file see vic-metro's original rate.
+      const after = await requestJson(staff, "/api/ops/pricing/delivery-zones");
+      const now = after.body.zones.find((z) => z.id === "vic-metro");
+      await requestJson(staff, "/api/ops/pricing/delivery-zones/vic-metro", {
+        method: "PUT", json: { ratePerSqm: 45, expectedVersion: now.version },
+      });
+    });
+
+    // ── The staff figure (C6) ────────────────────────────────────────────────
+
+    await t.test("T-B10: staff replace the machine estimate with the real number, and both survive", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Override check", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Override Check", email: "override-check@example.com", postcode: "3072" } },
+      });
+      const before = await requestJson(staff, `/api/ops/projects/${id}`);
+      const preEstimate = before.body.delivery.estimate;
+
+      const settled = await requestJson(staff, `/api/ops/projects/${id}/delivery`, {
+        method: "PUT", json: { amount: 640, note: "Two 2.4 m stackers" },
+      });
+      assert.equal(settled.body.delivery.amount, 640);
+      assert.equal(settled.body.delivery.settled, true);
+      assert.equal(settled.body.delivery.settledEstimate, preEstimate);
+    });
+
+    await t.test("T-B11: the override is logged with both numbers", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Audit check", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Audit Check", email: "audit-check@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 340 } });
+      const rows = await sql(`SELECT action FROM audit_event WHERE entity_id='${id}' AND action LIKE '%delivery%'`);
+      assert.equal(rows.length, 1, "exactly one delivery audit row");
+      assert.match(rows[0].action, /340/);
+      assert.match(rows[0].action, /\$\d/, "the machine estimate is quoted too");
+    });
+
+    await t.test("T-B12: a negative delivery charge is a typo that pays the customer", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Negative check", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: -50 } }, 400);
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: "lots" } }, 400);
+      await requestJson(anon, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 100 } }, 403);
+    });
+
+    await t.test("T-B13: delivery cannot be edited once the quote is issued", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Locked check", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Locked Check", email: "locked-check@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 250 } });
+      const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+      assert.ok(issued.body.revisionNo >= 1, "the revision issued");
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 300 } }, 409);
+    });
   } finally {
     if (server) await stop(server);
     await removeRunDir(runDir);

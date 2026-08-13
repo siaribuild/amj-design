@@ -28,10 +28,10 @@ import {
   opsSplitLine, opsMergeComposite,
   opsPatchSegment, opsAddSegment, opsRemoveSegment, opsLinePricePreview,
   opsLineConfigurations, opsRecommendationOutcomes, opsAdjudicateRecommendationOutcome,
-  opsThermal,
+  opsThermal, opsSetDelivery,
   OPS_PHASES, type OpsWorkspace, type OpsPhase, type OpsRecordAction, type OpsSegment,
   type OpsCompositePolicy, type OpsExactConfiguration, type OpsRecommendationOutcome,
-  type OpsRecommendationReason, type OpsThermalRow,
+  type OpsRecommendationReason, type OpsThermalRow, type OpsDelivery,
 } from "./api";
 // The SAME editor the customer configures an opening with. Ops hydrates the same
 // Sanity catalogue (src/ops/main.tsx), so product and option metadata are already
@@ -166,7 +166,15 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
   const rows = showingContract
     ? contractLines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: "ready", lineKind: "simple", segments: [] as OpsSegment[], productSlug: "", options: {} as Record<string, string>, compositeAxis: null as string | null, origin: "revision", selectedVariantId: null as string | null, review: null as Record<string, string> | null }))
     : ws.lines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: l.status, lineKind: l.lineKind ?? "simple", segments: l.segments ?? [], productSlug: l.productSlug, options: l.options ?? {}, compositeAxis: l.compositeAxis ?? null, origin: l.origin, selectedVariantId: l.selectedVariantId, review: l.review }));
-  const total = rows.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
+  const goods = rows.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
+  // Which figure is authoritative follows the tab (design doc §7.2). Summing
+  // lineTotal on the issued and contract tabs would reproduce orders.ts's own
+  // pre-C8 defect on screen — freight present in the document and absent from
+  // the number beside it.
+  const del = ws.delivery?.amount ?? null;
+  const total = showingContract ? (order?.total ?? goods)
+    : revisionId ? (ws.revisions.find((r) => r.id === revisionId)?.total ?? goods)
+      : goods + (del ?? 0);
 
   // Three modes, and the difference must be visible. The server only accepts line
   // edits in the pricing states, so rendering inputs anywhere else produces a
@@ -203,6 +211,14 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
             <div className="t-cap" style={{ color: MUTED }}>
               {order ? "contract" : ws.revisions.length ? "issued" : "estimate"}
             </div>
+            {/* Only on the live-draft total, where `del` is actually inside
+                `total` above (goods + del) — an issued/contract total already
+                carries or excludes delivery on its own terms. */}
+            {!showingContract && !revisionId && (
+              del == null
+                ? <div className="t-cap" style={{ color: "var(--warning-ink)" }}>delivery not set</div>
+                : <div className="t-cap" style={{ color: MUTED }}>incl. {money(del)} delivery</div>
+            )}
           </div>
         </div>
 
@@ -418,6 +434,11 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
               </div>
             </Block>
           )}
+
+          {/* Unconditional, unlike Payments — a project with no postcode must
+              show THAT, not nothing. An absent panel is indistinguishable
+              from an empty one, and the point is that the reviewer notices. */}
+          <DeliveryBlock delivery={ws.delivery} projectId={id} onSaved={load} />
 
           <Block title="Files" icon={<Paperclip className="w-3.5 h-3.5" />} meta={String(ws.files.length)}>
             {ws.files.map((f) => (
@@ -827,6 +848,151 @@ function ThermalVerdict({ row }: { row: OpsThermalRow }) {
     <span className="t-cap" style={{ color: "var(--warning-ink)" }}>
       Misses target{over && <span className="font-data"> ({over})</span>}
     </span>
+  );
+}
+
+// ── Delivery (0044, design doc §7.1) ────────────────────────────────────────
+// The estimate never disappears when the confirmed number arrives — that is
+// D19 as a layout rule. Two rows, always both present once settled, estimate
+// above and confirmed below and heavier. Replacing one with the other is the
+// obvious space saving and it destroys the only signal the owner has that his
+// guessed rates are wrong.
+//
+// Same editing grammar as the Options tab: local draft state, Enter commits,
+// Escape reverts, Save appears only when something changed. On success,
+// onSaved() re-fetches the workspace, which also refreshes actions — so the
+// Issue button un-blocks in the same paint (C7 wires the block itself).
+function DeliveryBlock({ delivery, projectId, onSaved }: { delivery: OpsDelivery; projectId: string; onSaved: () => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [note, setNote] = useState(delivery.note ?? "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  // Reset local drafts when the server record moves under us — a save just
+  // landed, or a different project was opened.
+  useEffect(() => { setDraft(null); setNote(delivery.note ?? ""); }, [delivery.amount, delivery.settledAt, projectId]);
+
+  const storedAmount = delivery.amount != null ? String(delivery.amount) : "";
+  const prefill = delivery.amount != null ? storedAmount : delivery.estimate != null ? String(delivery.estimate) : "";
+  const amountValue = draft ?? prefill;
+  const amountChanged = draft != null && draft.trim() !== storedAmount;
+  const noteChanged = note !== (delivery.note ?? "");
+
+  const save = async () => {
+    const trimmed = amountValue.trim();
+    const n = Number(trimmed);
+    if (trimmed !== "" && (!Number.isFinite(n) || n < 0)) { setErr("Enter a number, 0 or more."); return; }
+    setSaving(true); setErr("");
+    try {
+      await opsSetDelivery(projectId, { amount: trimmed === "" ? null : n, note: note.trim() || undefined });
+      setDraft(null);
+      onSaved();
+    } catch {
+      setErr("That change could not be saved.");
+    } finally { setSaving(false); }
+  };
+
+  const delta = delivery.settled && delivery.settledEstimate != null && delivery.amount != null
+    ? delivery.amount - delivery.settledEstimate : null;
+
+  return (
+    <Block title="Delivery" meta={delivery.postcode ?? undefined}>
+      <div className="px-4 py-3">
+        {delivery.postcode ? (
+          <>
+            {/* deliverySuburb has been in the DTO since ops.ts's project GET and
+                rendered nowhere — this is the first screen that reads it, so a
+                staffer can spot "3730 · Victoria regional" beside "Preston". */}
+            <p className="t-bd-sm" style={{ color: INK }}>{delivery.suburb ?? "—"}</p>
+            <p className="mt-0.5 t-cap" style={{ color: MUTED }}>
+              {delivery.zoneLabel ?? "No zone matched"}{delivery.areaM2 ? ` · ${delivery.areaM2} m²` : ""}
+            </p>
+          </>
+        ) : (
+          <p className="t-bd-sm" style={{ color: "var(--warning-ink)" }}>No postcode on file</p>
+        )}
+
+        {delivery.basis === "fallback_zone" && delivery.postcode && (
+          <p className="mt-1 t-cap" style={{ color: "var(--warning-ink)" }}>
+            {delivery.postcode} · no zone matched — priced as {delivery.zoneLabel ?? "the fallback"}
+          </p>
+        )}
+        {delivery.basis === "unpriced_table" && (
+          <p className="mt-1 t-cap" style={{ color: "var(--warning-ink)" }}>No zone in this deployment carries a rate.</p>
+        )}
+        {delivery.caveats.map((cav, i) => (
+          <p key={i} className="mt-1 t-cap" style={{ color: "var(--warning-ink)" }}>{cav}</p>
+        ))}
+
+        <div className="mt-2.5 pt-2.5 border-t border-black/5 flex items-baseline justify-between">
+          <span className="t-cap" style={{ color: MUTED }}>Machine estimate</span>
+          <span className="t-bd-sm font-data" style={{ color: INK }}>{money(delivery.estimate)}</span>
+        </div>
+        {delivery.estimate != null && delivery.ratePerSqm != null && (
+          <p className="t-cap" style={{ color: MUTED }}>
+            {delivery.areaM2} m² × {money(delivery.ratePerSqm)}/m²
+            {delivery.bound === "min" ? " → floored" : delivery.bound === "max" ? " → capped" : ""} to {money(delivery.estimate)}
+          </p>
+        )}
+
+        <div className="mt-2.5 pt-2.5 border-t border-black/5 flex items-baseline justify-between">
+          <span className="t-cap" style={{ color: MUTED }}>{delivery.settled ? "Confirmed" : "Not set"}</span>
+          {delivery.settled ? (
+            <span className="text-right">
+              <span className="block t-bd-sm font-data" style={{ color: INK }}>{money(delivery.amount)}</span>
+              {delta != null && delta !== 0 && delivery.settledEstimate ? (
+                <span className="block t-cap font-data" style={{ color: MUTED }}>
+                  {delta > 0 ? "+" : ""}{money(delta)} · {delta > 0 ? "+" : ""}{Math.round((delta / delivery.settledEstimate) * 100)}%
+                </span>
+              ) : null}
+            </span>
+          ) : (
+            <span className="t-cap" style={{ color: "var(--warning-ink)" }}>the quote cannot be issued until it is</span>
+          )}
+        </div>
+
+        {delivery.settled && (delivery.note || delivery.settledBy) && (
+          <p className="mt-1 t-cap" style={{ color: MUTED }}>
+            {delivery.note}{delivery.note && <br />}
+            {delivery.settledBy ?? "—"} · {when(delivery.settledAt)}
+          </p>
+        )}
+        {/* Drift footnote — only when the live estimate differs from the one
+            stamped at settle time. How a reviewer opening an old job learns
+            the rates moved under it. */}
+        {delivery.settled && delivery.estimate != null && delivery.settledEstimate != null && delivery.estimate !== delivery.settledEstimate && (
+          <p className="mt-1 t-cap" style={{ color: MUTED }}>the table now says {money(delivery.estimate)}</p>
+        )}
+
+        {delivery.editable ? (
+          <div className="mt-3 pt-3 border-t border-black/5">
+            <div className="flex items-center gap-2">
+              <span className="t-cap" style={{ color: MUTED }}>$</span>
+              <input value={amountValue} inputMode="decimal"
+                onChange={(e) => { setDraft(e.target.value); setErr(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { setDraft(null); setErr(""); } }}
+                className="w-24 border border-black/12 px-2 py-1 font-data t-data" />
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note…"
+                className="flex-1 border border-black/12 px-2 py-1 t-cap" />
+              {(amountChanged || noteChanged) && (
+                <button onClick={save} disabled={saving}
+                  className="text-white px-3 py-1.5 disabled:opacity-40 t-cap" style={{ background: SAGE }}>
+                  {saving ? "Saving…" : "Save"}
+                </button>
+              )}
+            </div>
+            <p className="mt-1 t-cap" style={{ color: MUTED }}>
+              Enter saves, Esc reverts. 0 is a valid answer — use it when the customer arranges freight.
+            </p>
+            {err && <p role="alert" className="mt-1 t-cap" style={{ color: "var(--warning-ink)" }}>{err}</p>}
+          </div>
+        ) : delivery.settled ? (
+          <p className="mt-3 pt-3 border-t border-black/5 t-cap" style={{ color: MUTED }}>
+            Issued at {money(delivery.amount)} — fixed for this revision.
+          </p>
+        ) : null}
+      </div>
+    </Block>
   );
 }
 

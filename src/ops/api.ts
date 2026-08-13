@@ -127,6 +127,11 @@ export interface OpsWorkspace {
   order?: {
     id: string; orderNo: string; stage: string; stageLabel: string;
     paymentStatus: string; acceptedRevisionId: string | null; createdAt: string;
+    /** The contract total (goods + delivery) and the delivery component of it —
+     *  worker/lib/orders.ts:141 re-derives from revision_line and used to lose
+     *  the freight; these are what the header reads instead of re-summing
+     *  order_line client-side. */
+    total: number; deliveryTotal: number;
   } | null;
   payments?: OpsPayment[];
   /** Contract lines — what is actually being built, once a revision is accepted.
@@ -135,7 +140,39 @@ export interface OpsWorkspace {
   orderLines?: { id: string; code: string; room: string; qty: number; lineTotal: number; productName: string; width: string; height: string }[];
   /** What can be done to this job right now, derived server-side. */
   actions?: OpsRecordAction[];
+  /** The Australian domestic delivery leg (0044) — computed live on every read.
+   *  `amount` is null until a human settles it; never test it for truthiness,
+   *  0 is a settled trade waiver. */
+  delivery: OpsDelivery;
 }
+
+export interface OpsDelivery {
+  postcode: string | null;
+  suburb: string | null;
+  zoneId: string | null;
+  zoneLabel: string | null;
+  basis: "postcode_zone" | "fallback_zone" | "unpriced_table";
+  caveats: string[];
+  areaM2: number;
+  ratePerSqm: number | null;
+  minCharge: number | null;
+  maxCharge: number | null;
+  /** LIVE, from the current zone table — moves when the owner edits a rate. */
+  estimate: number | null;
+  bound: "min" | "max" | "rate" | null;
+  /** null => NOT SETTLED. 0 is a settled trade waiver (D14) — never `!amount`. */
+  amount: number | null;
+  settled: boolean;
+  settledEstimate: number | null;
+  settledAreaM2: number | null;
+  settledZoneVersion: string | null;
+  note: string | null;
+  settledAt: string | null;
+  settledBy: string | null;
+  editable: boolean;
+}
+export const opsSetDelivery = (projectId: string, body: { amount: number | null; postcode?: string; note?: string }) =>
+  write<{ ok: boolean; delivery: OpsDelivery }>(`/api/ops/projects/${projectId}/delivery`, "PUT", body);
 
 export const opsSubmissions = () => req<{ submissions: OpsSubmission[] }>("/api/ops/queues/submissions");
 export const opsProject = (id: string) => req<OpsWorkspace>(`/api/ops/projects/${id}`);

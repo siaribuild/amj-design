@@ -12,7 +12,11 @@ import {
 import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
 import { findOrCreateInternalUser, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
-import { drainLearningOutbox, issueRevision } from "../lib/revisions";
+import { drainLearningOutbox, issueRevision, ISSUABLE_FROM } from "../lib/revisions";
+import {
+  deliveryCost, loadProjectAreaM2, loadZonesAndRanges, normalisePostcode, resolveZone, zoneIsPriced,
+  type DeliveryZone,
+} from "../lib/delivery";
 import { logEvent } from "../lib/activity";
 import {
   splitLine, mergeComposite, recomputeComposite,
@@ -387,6 +391,56 @@ ops.get("/projects", async (c) => {
   return c.json({ projects });
 });
 
+// ── Delivery (0044, design doc §6.7/§7.1) ───────────────────────────────────
+// The machine estimate is computed LIVE on every read (§5.5) — never stored,
+// never staled by a rate edit. `delivery_amount` is the staff-confirmed
+// figure, and its NULLABILITY is the gate: NULL means unsettled, 0 means
+// settled at zero (the trade-waiver case, D14). Every test on this object
+// tests `== null`, never truthiness — see migrations/0044's own warning.
+async function buildDeliveryDto(env: Env, p: Record<string, any>) {
+  const [{ zones, ranges }, area] = await Promise.all([
+    loadZonesAndRanges(env),
+    loadProjectAreaM2(env, p.id),
+  ]);
+  const resolution = resolveZone(p.delivery_postcode ?? null, zones, ranges);
+  const zone = resolution.zone;
+  const priced = !!zone && zoneIsPriced(zone);
+  const pricedZone = priced ? (zone as DeliveryZone & { minCharge: number; ratePerSqm: number; maxCharge: number }) : null;
+  const estimate = pricedZone ? deliveryCost(area.areaM2, pricedZone) : null;
+  // Which side of the clamp produced the live estimate — the ops panel's own
+  // worked-example line ("12.4 m² × $18/m² = $223 -> floored to $250").
+  const bound = pricedZone
+    ? (area.areaM2 * pricedZone.ratePerSqm <= pricedZone.minCharge ? "min"
+      : area.areaM2 * pricedZone.ratePerSqm >= pricedZone.maxCharge ? "max" : "rate")
+    : null;
+  const settleJson = safeParse(p.delivery_settle_json ?? "{}");
+  return {
+    postcode: p.delivery_postcode ?? null,
+    suburb: p.delivery_suburb ?? null,
+    zoneId: zone?.id ?? null,
+    zoneLabel: zone?.label ?? null,
+    basis: resolution.basis,
+    caveats: resolution.caveats,
+    areaM2: Math.round(area.areaM2 * 100) / 100,
+    ratePerSqm: pricedZone?.ratePerSqm ?? null,
+    minCharge: pricedZone?.minCharge ?? null,
+    maxCharge: pricedZone?.maxCharge ?? null,
+    estimate, bound,               // LIVE, from the current table
+    amount: p.delivery_amount ?? null,   // null => NOT SETTLED. 0 is settled.
+    settled: p.delivery_amount != null,
+    settledEstimate: typeof settleJson.estimate === "number" ? settleJson.estimate : null,
+    settledAreaM2: typeof settleJson.areaM2 === "number" ? settleJson.areaM2 : null,
+    settledZoneVersion: typeof settleJson.zoneVersion === "string" ? settleJson.zoneVersion : null,
+    note: p.delivery_note ?? null,
+    settledAt: p.delivery_settled_at ?? null,
+    settledBy: p.delivery_settled_by ?? null,
+    // Editable set = ISSUABLE_FROM plus draft (§6.3) — once 'issued' the figure
+    // is frozen into the revision and a project-level edit would desync the
+    // record from the document the customer is reading.
+    editable: p.status_internal === "draft" || ISSUABLE_FROM.has(p.status_internal),
+  };
+}
+
 ops.get("/projects/:id", async (c) => {
   if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
   const id = c.req.param("id");
@@ -424,7 +478,8 @@ ops.get("/projects/:id", async (c) => {
     // `stage` (0002) is the 12-step journey every other surface reads. `status`
     // is the vestigial 8-value enum from 0001 — reading it here put an order that
     // had reached balance_paid into the "Intake" phase.
-    `SELECT id, order_no, stage, payment_status, accepted_revision_id, created_at, updated_at
+    `SELECT id, order_no, stage, payment_status, accepted_revision_id, created_at, updated_at,
+            total, delivery_total
        FROM "order" WHERE project_id = ? ORDER BY created_at DESC LIMIT 1`,
   ).bind(id).first<any>();
   const { results: payments } = order
@@ -536,9 +591,112 @@ ops.get("/projects/:id", async (c) => {
       paymentStatus: order.payment_status,
       acceptedRevisionId: order.accepted_revision_id,
       createdAt: order.created_at,
+      // Verified gap (design doc §6.7): this query never selected `total`, and
+      // without it the ops record header (ProjectRecord.tsx) keeps summing
+      // order_line and understates every contract by the freight, on the same
+      // screen as the Payments block showing the correct invoice.
+      total: order.total, deliveryTotal: order.delivery_total,
     } : null,
+    // The Australian domestic delivery leg (0044) — computed live on every
+    // read; see buildDeliveryDto above.
+    delivery: await buildDeliveryDto(c.env, p),
     payments,
   });
+});
+
+// PUT /api/ops/projects/:id/delivery { amount, postcode?, note? } — E7. Settles,
+// un-settles or corrects the delivery figure. `amount: null` un-settles and
+// re-arms the issue gate (C7) — the honest way to say "I typed a number and I
+// now think it is wrong". Does NOT bump quote_edit_version (§6.3): a bump
+// would collide with issueRevision's own concurrency guard and a staffer
+// setting delivery while a colleague clicks Issue would be told "delivery is
+// not set" immediately after setting it. The issue path guards on the
+// delivery figure directly instead (C7), which cannot be misattributed.
+ops.put("/projects/:id/delivery", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const id = c.req.param("id");
+
+  const project = await c.env.DB.prepare(
+    "SELECT id, status_internal, delivery_postcode FROM project WHERE id = ?",
+  ).bind(id).first<{ id: string; status_internal: string; delivery_postcode: string | null }>();
+  if (!project) return c.json({ error: "not_found" }, 404);
+  // Editable set = ISSUABLE_FROM plus draft (§6.3). Once 'issued' the figure is
+  // frozen into the revision and honoured (D12); a project-level edit then
+  // would desync the record from the document the customer is reading.
+  if (!(project.status_internal === "draft" || ISSUABLE_FROM.has(project.status_internal))) {
+    return c.json({ error: "locked" }, 409);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  // A number >= 0, or an explicit null to un-settle. `0` is a decision
+  // (D11/D14 — a trade customer arranging their own freight); NULL is the
+  // absence of one. Never `?? 0`, never a truthiness check, here or anywhere
+  // this column is read.
+  let amount: number | null;
+  if (body?.amount === null) {
+    amount = null;
+  } else {
+    const n = Number(body?.amount);
+    if (!Number.isFinite(n) || n < 0) return c.json({ error: "invalid_amount" }, 400);
+    amount = n;
+  }
+
+  let postcode = project.delivery_postcode;
+  if (typeof body?.postcode === "string" && body.postcode.trim()) {
+    const normalised = normalisePostcode(body.postcode);
+    if (!normalised) return c.json({ error: "invalid_postcode" }, 400);
+    postcode = normalised;
+  }
+  const note = typeof body?.note === "string" ? body.note.trim().slice(0, 500) || null : null;
+
+  // The machine's answer AT THE INSTANT of settling — delivery_settle_json,
+  // stamped once and never touched again until the next settle. Without the
+  // area and the zone version, a year of overrides is a scatter of numbers
+  // with no independent variable (§4.4a). Cleared (NULL) on un-settle.
+  let settleJson: string | null = null;
+  let liveEstimate: number | null = null;
+  let liveZoneId: string | null = null;
+  if (amount != null) {
+    const [{ zones, ranges }, area] = await Promise.all([
+      loadZonesAndRanges(c.env),
+      loadProjectAreaM2(c.env, id),
+    ]);
+    const resolution = resolveZone(postcode, zones, ranges);
+    if (resolution.zone && zoneIsPriced(resolution.zone)) {
+      const zone = resolution.zone as DeliveryZone & { minCharge: number; ratePerSqm: number; maxCharge: number; version?: string };
+      liveEstimate = deliveryCost(area.areaM2, zone);
+      liveZoneId = zone.id;
+      settleJson = JSON.stringify({
+        estimate: liveEstimate, areaM2: area.areaM2, zoneId: zone.id, zoneVersion: zone.version ?? null,
+      });
+    }
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE project SET delivery_amount = ?, delivery_postcode = ?, delivery_note = ?,
+        delivery_settled_at = ?, delivery_settled_by = ?, delivery_settle_json = ?
+      WHERE id = ?`,
+  ).bind(
+    amount, postcode, note,
+    amount != null ? new Date().toISOString() : null,
+    amount != null ? staff.id : null,
+    settleJson, id,
+  ).run();
+
+  const after = await c.env.DB.prepare("SELECT * FROM project WHERE id = ?").bind(id).first<any>();
+  const delivery = await buildDeliveryDto(c.env, after);
+
+  // Lands in the History block for free, with both numbers in it — what makes
+  // a staff override a data point rather than an anecdote (D19).
+  await logEvent(c.env, {
+    actor: staff.id, entityType: "project", entityId: id,
+    action: amount == null
+      ? "un-set delivery — the quote cannot be issued until it is set again"
+      : `set delivery to $${amount.toFixed(2)} (machine estimate ${liveEstimate == null ? "n/a" : `$${liveEstimate.toFixed(2)}`}, zone ${liveZoneId ?? "none"})`,
+  });
+
+  return c.json({ ok: true, delivery });
 });
 
 // POST /api/ops/projects/:id/assign { userId? } — claim/assign the quote.
