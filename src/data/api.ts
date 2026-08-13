@@ -42,10 +42,24 @@ export interface ApiScheduleFile {
   doc_type_source?: string | null;
 }
 
+/** E13 (design doc §8.4) — the stored-or-live-estimated delivery figure for
+ *  the account area's "pending" quote-stage view. `indicative` selects the
+ *  pending vs. issued copy; `conservative` selects the mapped vs. fallback-
+ *  zone copy within the pending state. `amount` is null only when the
+ *  resolved zone (including the fallback) has no rates yet — a data gap,
+ *  not a code path the UI should treat as an error. */
+export interface ApiProjectDelivery {
+  postcode: string | null;
+  amount: number | null;
+  indicative: boolean;
+  conservative: boolean;
+}
+
 export interface CurrentProject {
   project: ApiProject | null;
   items: ApiItem[];
   files?: ApiScheduleFile[];
+  delivery?: ApiProjectDelivery;
 }
 
 /** Translate durable API lines into the editable client model in one place.

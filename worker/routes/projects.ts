@@ -284,6 +284,10 @@ projects.get("/:id", async (c) => {
   // declare them.
   const raw = project as unknown as { delivery_postcode: string | null; delivery_amount: number | null };
   let deliveryAmount = raw.delivery_amount ?? null;
+  // A settled figure is a human's number, never "conservative" — that word
+  // names an auto-estimate that fell through to the fallback zone, which is
+  // exactly the case a settled amount skips by returning early here.
+  let conservative = false;
   if (deliveryAmount == null) {
     const [{ zones, ranges }, area] = await Promise.all([
       loadZonesAndRanges(c.env),
@@ -292,6 +296,10 @@ projects.get("/:id", async (c) => {
     const resolution = resolveZone(raw.delivery_postcode ?? null, zones, ranges);
     if (resolution.zone && zoneIsPriced(resolution.zone)) {
       deliveryAmount = deliveryCost(area.areaM2, resolution.zone as DeliveryZone & { minCharge: number; ratePerSqm: number; maxCharge: number });
+      // Same test the E9 preview route uses (worker/routes/quote.ts) — the
+      // "we've allowed generously" copy (§8.4) is for a postcode that missed
+      // its own zone and landed on the fallback, not every unsettled estimate.
+      conservative = resolution.basis !== "postcode_zone";
     }
   }
   return c.json({
@@ -304,6 +312,7 @@ projects.get("/:id", async (c) => {
       postcode: raw.delivery_postcode ?? null,
       amount: deliveryAmount,
       indicative: !["quote_issued", "accepted"].includes(project.status_customer),
+      conservative,
     },
   });
 });

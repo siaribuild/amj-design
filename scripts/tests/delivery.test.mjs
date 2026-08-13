@@ -271,6 +271,49 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       assert.equal(record.body.delivery.zoneId, "unmapped");
     });
 
+    // Not a doc-numbered T-B case — E13's own shape (design doc line 871) was
+    // never actually asserted from the customer's side of the fence, only the
+    // staff one above. Added alongside the account-area "Estimated shipping"
+    // card, which is the first thing that reads `conservative` at all.
+    await t.test("the customer's own GET carries postcode/amount/indicative/conservative for the estimate card (§8.4)", async () => {
+      // Registered, not anonymous — ownedProject's claim-cookie path only
+      // works while isCart(p) (status_customer === 'draft'), same reason
+      // T-B18/T-B19 log in before submit rather than after.
+      const mapped = new Session(baseUrl);
+      await login(mapped, "/api/auth", "mapped-estimate-card@example.com");
+      const mappedSaved = await requestJson(mapped, "/api/projects/current/lines", { method: "PUT", json: { title: "Mapped estimate card", items: [aLine()] } });
+      const mappedId = mappedSaved.body.project.id;
+      await requestJson(mapped, `/api/projects/${mappedId}/submit`, {
+        method: "POST", json: { contact: { name: "Mapped Estimate Card", email: "mapped-estimate-card@example.com", postcode: "3072" } },
+      });
+      const mappedRecord = await requestJson(mapped, `/api/projects/${mappedId}`);
+      assert.equal(mappedRecord.body.delivery.postcode, "3072");
+      assert.ok(mappedRecord.body.delivery.amount > 0, "a real figure");
+      assert.equal(mappedRecord.body.delivery.indicative, true, "not yet issued");
+      assert.equal(mappedRecord.body.delivery.conservative, false, "a real postcode match, not the fallback");
+
+      // Unmapped: falls to the fallback zone — "conservative", never null (D9).
+      const unmapped = new Session(baseUrl);
+      await login(unmapped, "/api/auth", "unmapped-estimate-card@example.com");
+      const unmappedSaved = await requestJson(unmapped, "/api/projects/current/lines", { method: "PUT", json: { title: "Unmapped estimate card", items: [aLine()] } });
+      const unmappedId = unmappedSaved.body.project.id;
+      await requestJson(unmapped, `/api/projects/${unmappedId}/submit`, {
+        method: "POST", json: { contact: { name: "Unmapped Estimate Card", email: "unmapped-estimate-card@example.com", postcode: "9999" } },
+      });
+      const unmappedRecord = await requestJson(unmapped, `/api/projects/${unmappedId}`);
+      assert.ok(unmappedRecord.body.delivery.amount > 0, "never null once the fallback is priced (D9)");
+      assert.equal(unmappedRecord.body.delivery.conservative, true, "fell through to the fallback zone");
+
+      // Staff-settled: a human figure is never "conservative" — that word
+      // names an auto-estimate that fell through to the fallback zone, not a
+      // number someone typed in, and settling skips the live resolution
+      // entirely (worker/routes/projects.ts).
+      await requestJson(staff, `/api/ops/projects/${mappedId}/delivery`, { method: "PUT", json: { amount: 777 } });
+      const settledRecord = await requestJson(mapped, `/api/projects/${mappedId}`);
+      assert.equal(settledRecord.body.delivery.amount, 777, "the settled figure, not the live table");
+      assert.equal(settledRecord.body.delivery.conservative, false);
+    });
+
     await t.test("T-B8: the account discount moves goods and never delivery", async () => {
       const guest = new Session(baseUrl);
       const guestSaved = await requestJson(guest, "/api/projects/current/lines", { method: "PUT", json: { title: "Discount vs delivery (guest)", items: [aLine()] } });

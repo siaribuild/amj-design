@@ -18,7 +18,7 @@ import { type Page, Btn } from "../app/ui";
 import {
   getOrder, getProject, getRevisions, getProjectFiles, getClarifications, replyClarification,
   confirmDrawings, confirmQa,
-  type ApiOrder, type ApiFile, type ApiScheduleFile, type ApiClarification, type ApiItem, type CurrentProject,
+  type ApiOrder, type ApiFile, type ApiScheduleFile, type ApiClarification, type ApiItem, type ApiProjectDelivery, type CurrentProject,
 } from "../data/api";
 import { productLabel } from "../data/configurator";
 import {
@@ -551,6 +551,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
   const needsInfo = st === "needs_information";
   const lines: ParsedLine[] = data.items.map(itemToParsed);
   const total = data.items.reduce((s, it) => s + (it.lineTotal ?? 0), 0);
+  const delivery = data.delivery;
 
   const sendReply = async () => {
     if (!reply.trim() || busy) return;
@@ -627,10 +628,48 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
           <OpeningList items={hydrateQuoteItems(data.items)} />
         </Blk>
 
+        <DeliveryEstimateBlock delivery={delivery} />
+
         <FilesBlock files={files} />
         <SummaryBand><ContactCard setPage={setPage} /></SummaryBand>
       </div>
     </>
+  );
+}
+
+// Design doc §8.4 — the "pending" half of the delivery microcopy split. The
+// word that changes meaning between pending and issued is "estimate": this
+// card only ever renders while pending (ProjectDetail is not shown once a
+// revision issues — QuoteReviewPage takes over, with its own, non-estimate
+// "This is the price" copy), so `delivery.indicative` is not re-checked here.
+function DeliveryEstimateBlock({ delivery }: { delivery: ApiProjectDelivery | undefined }) {
+  return (
+    <Blk eyebrow="Delivery" title="Estimated shipping" id="rec-delivery">
+      <div className="px-5 py-4">
+        {delivery?.amount != null ? (
+          <>
+            <p className="text-ink t-bd-sm">
+              <b>Delivery to {delivery.postcode ?? "your site"} — around {money(delivery.amount)}.</b>
+            </p>
+            <p className="text-body mt-1 t-cap">
+              {delivery.conservative
+                ? "That postcode is outside our usual runs, so we've allowed generously. A person checks it before your quote is issued, and it may come down."
+                : "An estimate. A person checks it against real freight before your quote is issued."}
+            </p>
+          </>
+        ) : (
+          // Never invents a figure (D9 is about never showing nothing when a
+          // number exists — it is not licence to guess one when it doesn't).
+          // Reached only while a zone genuinely has no rates yet; the release
+          // checklist keeps that off the customer-facing production deploy.
+          <p className="text-body t-cap">
+            {delivery?.postcode
+              ? `We'll confirm delivery to ${delivery.postcode} when your reviewed quote is issued.`
+              : "We'll confirm your delivery cost when your reviewed quote is issued."}
+          </p>
+        )}
+      </div>
+    </Blk>
   );
 }
 
