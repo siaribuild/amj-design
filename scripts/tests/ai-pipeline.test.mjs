@@ -600,11 +600,36 @@ test("applying energy authority retains architectural dimensions and applies rep
 });
 
 // ── Phase 4: default envelopes (§10.3, Path 3) + learning examples (§17.2) ───
-test("archetype registry: VIC resolves; an uncovered region gets NO archetype (never a guess)", () => {
+// An uncovered region used to resolve to NO archetype, on the reasoning that a
+// band from an unrelated region would be a guess. In practice the delivery
+// location is unknown when an estimate is produced (a manual quote has no
+// address until the customer enters a delivery postcode at submit), so that
+// branch fired for nearly every job and left tier-3 with no band at all —
+// a bigger fabrication than applying a stated, conservative assumption.
+// Owner decision 2026-08-14: one interim national default until the postcode
+// is known early enough to key climate zone on.
+test("archetype registry: every jurisdiction resolves — an uncovered one gets the interim national default", () => {
   const vic = resolveDefaultEnvelope({ jurisdiction: { state: "VIC" } });
   assert.equal(vic.id, ARCHETYPES[0].id);
-  assert.equal(resolveDefaultEnvelope({ jurisdiction: { state: "NT" } }), null);
-  assert.equal(resolveDefaultEnvelope({ jurisdiction: { state: null } }), null);
+  // NT is genuinely uncovered, and an unknown state is the common case.
+  assert.equal(resolveDefaultEnvelope({ jurisdiction: { state: "NT" } })?.id, ARCHETYPES[0].id);
+  assert.equal(resolveDefaultEnvelope({ jurisdiction: { state: null } })?.id, ARCHETYPES[0].id);
+  // The band it carries must say it is an interim assumption, not a VIC fact —
+  // this note reaches a Queensland job's requirement_json verbatim.
+  assert.match(ARCHETYPES[0].defaultOpeningBand.note, /interim|pending the delivery postcode/i);
+  assert.doesNotMatch(ARCHETYPES[0].defaultOpeningBand.note, /VIC CZ6 new build/);
+});
+
+test("a non-VIC job gets a tier-3 band rather than none at all", () => {
+  const merged = mergeScheduleLines([{ fileId: "f1", lines: [line("W01", 1200, 900)] }]);
+  const model = linesToBuildingModel("prj_nonvic", merged, []);
+  model.jurisdiction.state = "QLD"; // uncovered by the registry
+  const archetype = applyDefaultEnvelope(model);
+  assert.ok(archetype, "an uncovered state still resolves the interim default");
+  const req = model.openings[0].thermalRequirement;
+  assert.ok(req, "the opening carries a band — the whole point of the change");
+  assert.equal(req.basis, "default_envelope", "and it is labelled an assumption, never an explicit requirement");
+  assert.ok(req.maxUValue > 0);
 });
 
 test("default band: default_envelope basis, Uw cap only — SHGC stays null in Mode A (§11.3)", () => {

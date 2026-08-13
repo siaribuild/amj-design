@@ -1,9 +1,13 @@
 // Default-envelope archetypes (LLM strategy §10.3, Phase 4). A default envelope
-// is not a universal house: it is a VERSIONED, jurisdiction-scoped set of
-// conservative assumptions applied ONLY when the evidence mode requires it
-// (Path 3 — schedule-only, no report). Every application is recorded as an
-// envelope_default assumption and drives the §10.5 default-basis language
-// ("indicative estimate using documented default building assumptions").
+// is a VERSIONED set of conservative assumptions applied ONLY when the evidence
+// mode requires it (Path 3 — schedule-only, no report). Every application is
+// recorded as an envelope_default assumption and drives the §10.5 default-basis
+// language ("indicative estimate using documented default building assumptions").
+//
+// The registry is still keyed by jurisdiction, but resolution no longer FAILS on
+// a jurisdiction it does not list — the delivery location is unknown at estimate
+// time, so one interim national default is applied instead of no band at all.
+// See resolveDefaultEnvelope for the full reasoning.
 //
 // Registry home: §10.3 wants technical admins to publish archetypes in Sanity.
 // Until that studio type is provisioned, this code-resident registry IS the
@@ -48,21 +52,40 @@ export const ARCHETYPES: EnvelopeArchetype[] = [
     uncertaintyPenalty: 0.25,
     defaultOpeningBand: {
       maxUValue: 4.0, shgcMin: null, shgcMax: null,
-      note: "assumption-based band for VIC CZ6 new build; confirm with plans or an energy report",
+      note: "interim assumption-based band applied nationally pending the delivery postcode; confirm with plans or an energy report",
     },
   },
 ];
 
-/** Resolve the archetype for a building model's jurisdiction, or null when no
- *  published archetype covers it (⇒ no default band is applied — never a guess
- *  from an unrelated region). */
-// SCAFFOLD WS6 (thermal rework): broaden beyond the single VIC archetype (climate
-// -zone keyed) so tier-3 covers a project's jurisdiction. Feeds thermal/computedBand.
-// Plan §5/WS6.
+/** The archetype used when no published one covers the model's jurisdiction —
+ *  see resolveDefaultEnvelope for why that is every job today. */
+const INTERIM_DEFAULT_ARCHETYPE = ARCHETYPES[0];
+
+/** Resolve the archetype for a building model's jurisdiction, falling back to the
+ *  interim national default rather than null.
+ *
+ *  WHY A FALLBACK AND NOT null (owner, 2026-08-14). The delivery location is not
+ *  known when an estimate is produced — a manual quote has no address until the
+ *  customer enters a delivery postcode at submit (0044), and a parsed file only
+ *  sometimes carries one. Returning null for "no archetype covers this state"
+ *  therefore did not mean "an unrelated region's band would be a guess"; it meant
+ *  that in practice EVERY job outside Victoria — and every job whose state had
+ *  not been determined, which is most of them — got no tier-3 band at all, so
+ *  `thermalRequirement` stayed absent and nothing downstream could reason about
+ *  thermal. That is a bigger fabrication than applying a stated assumption.
+ *
+ *  The band is deliberately conservative rather than climate-correct: VIC CZ6
+ *  caps Uw at 4.0 where CZ1/CZ2 (Darwin, Brisbane) would allow 5.8, so a hot-
+ *  climate job is held to a TIGHTER bar than its climate requires. That errs
+ *  toward review and never toward under-speccing, and every application is
+ *  recorded as an `envelope_default` assumption carrying the note above.
+ *
+ *  Replace this with climate-zone resolution once the delivery postcode is known
+ *  early enough to key on (docs/estimator/thermal-selection-rework-plan.md, WS6). */
 export function resolveDefaultEnvelope(model: Pick<BuildingModelV1, "jurisdiction">): EnvelopeArchetype | null {
   const state = model.jurisdiction.state;
-  if (!state) return null;
-  return ARCHETYPES.find((a) => a.jurisdiction === state) ?? null;
+  if (!state) return INTERIM_DEFAULT_ARCHETYPE;
+  return ARCHETYPES.find((a) => a.jurisdiction === state) ?? INTERIM_DEFAULT_ARCHETYPE;
 }
 
 /** The Path 3 requirement an archetype implies for one opening. */
