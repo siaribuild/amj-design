@@ -101,16 +101,20 @@ export function Btn({
 }
 
 // ─── Form primitives ──────────────────────────────────────────────────────────
-export function FieldLabel({ children }: { children: ReactNode }) {
+export function FieldLabel({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
   return (
-    <label className="text-ink-soft block mb-1.5 t-label">
+    <label htmlFor={htmlFor} className="text-ink-soft block mb-1.5 t-label">
       {children}
     </label>
   );
 }
 
-export function Input({ value, onChange, placeholder, type = "text", className = "", defaultValue, inputMode, disabled, maxLength, onKeyDown, autoFocus }: {
+export function Input({
+  value, onChange, onBlur, placeholder, type = "text", className = "", defaultValue, inputMode, disabled,
+  maxLength, onKeyDown, autoFocus, id, autoComplete, "aria-invalid": ariaInvalid, "aria-describedby": ariaDescribedby,
+}: {
   value?: string; onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
   placeholder?: string; type?: string; className?: string; defaultValue?: string;
   inputMode?: "numeric" | "text" | "decimal"; disabled?: boolean;
   /** Two callers passed this and it was silently dropped — the prop did not
@@ -126,10 +130,19 @@ export function Input({ value, onChange, placeholder, type = "text", className =
    *  we know this was an accident rather than a removal. */
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   autoFocus?: boolean;
+  /** Added for the delivery postcode field (design doc §8.2): FieldLabel is a
+   *  SIBLING of the input, not a wrapper, so `htmlFor`/`id` is the only thing
+   *  that associates them — without it `page.getByLabel(...)` cannot resolve
+   *  and a screen reader announces the field with no name at all. */
+  id?: string;
+  autoComplete?: string;
+  "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
 }) {
   return (
-    <input type={type} value={value} defaultValue={defaultValue} onChange={onChange} disabled={disabled}
-      placeholder={placeholder} inputMode={inputMode} maxLength={maxLength}
+    <input id={id} type={type} value={value} defaultValue={defaultValue} onChange={onChange} onBlur={onBlur} disabled={disabled}
+      placeholder={placeholder} inputMode={inputMode} maxLength={maxLength} autoComplete={autoComplete}
+      aria-invalid={ariaInvalid} aria-describedby={ariaDescribedby}
       onKeyDown={onKeyDown} autoFocus={autoFocus}
       className={`field-control w-full border px-3 py-2.5 text-ink placeholder-quieter focus:outline-none transition-colors disabled:cursor-not-allowed ${className} t-bd-sm`} />
   );

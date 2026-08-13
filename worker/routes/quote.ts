@@ -10,6 +10,7 @@ import { issueRevision } from "../lib/revisions";
 import { logEvent } from "../lib/activity";
 import { notify } from "../lib/email";
 import { uuid } from "../lib/util";
+import { deliveryCost, loadProjectAreaM2, loadZonesAndRanges, normalisePostcode, resolveZone, zoneIsPriced } from "../lib/delivery";
 
 export const quote = new Hono<{ Bindings: Env }>();
 
@@ -156,6 +157,14 @@ quote.post("/projects/:id/submit", async (c) => {
   if (!contactName || !isEmail(contactEmail)) {
     return c.json({ error: "missing_contact" }, 400);
   }
+  // The postcode is required at submit, inside this same form — no new step,
+  // no new screen (D7/D8). Distinct codes for missing vs malformed so the
+  // customer-facing message can say which: a customer who typed "300" and one
+  // who typed nothing get different sentences on the review screen.
+  const rawPostcode = typeof contact.postcode === "string" ? contact.postcode.trim() : "";
+  if (!rawPostcode) return c.json({ error: "missing_postcode" }, 400);
+  const postcode = normalisePostcode(rawPostcode);
+  if (!postcode) return c.json({ error: "invalid_postcode" }, 400);
 
   const { results: lines } = await c.env.DB
     .prepare(`SELECT external_ref, status, line_total, origin, ai_proposal_line_id, review_json
@@ -197,6 +206,7 @@ quote.post("/projects/:id/submit", async (c) => {
     c.env.DB.prepare(
       `UPDATE project SET status_customer = 'submitted', status_internal = 'submitted',
          contact_name = ?, contact_email = ?, contact_phone = ?, delivery_suburb = ?,
+         delivery_postcode = ?,
          updated_at = datetime('now')
         WHERE id = ? AND status_customer='draft'
            AND ai_generation=?
@@ -232,7 +242,7 @@ quote.post("/projects/:id/submit", async (c) => {
                AND j.status IN ('scheduled','processing')
           )`,
     ).bind(
-      contactName, contactEmail, contactPhone || null, suburb || null, p.id,
+      contactName, contactEmail, contactPhone || null, suburb || null, postcode, p.id,
       submitState.ai_generation, submitState.quote_edit_version,
     ),
     // Backfill the signed-in user's profile from the contact when it's still blank.
@@ -292,6 +302,51 @@ quote.post("/projects/:id/submit", async (c) => {
   }
 
   return c.json({ id: p.id, status: "submitted" });
+});
+
+// POST /api/projects/:id/delivery-estimate { postcode } — E9. A PREVIEW for the
+// submit screen; writes nothing. Owner-scoped, the same guard as everything
+// else on this project.
+//
+// Body carries the postcode, not a query string — an address is not a URL
+// parameter (and never belongs in one, per this codebase's own privacy rule).
+//
+// THIS ENDPOINT MUST NEVER BE CALLED FROM THE BUILDER. Delivery must not enter
+// the running estimate (D8) — the guard is T-A30 on quoteSummary, a test, not
+// a comment, but the comment is here too because a route this easy to wire
+// into the wrong screen deserves saying twice.
+//
+// Always 200 with `ok`, never a hard error for "the table isn't priced yet" —
+// D9 says never show nothing, and a customer mid-submission should not see a
+// broken form because a zone the owner hasn't priced happened to match. The
+// one real error is a malformed postcode, which is a bad request, not an
+// unpriced destination.
+quote.post("/projects/:id/delivery-estimate", async (c) => {
+  const p = await ownedProject(c.env, c.req.raw, c.req.param("id"));
+  if (!p) return c.json({ error: "not_found" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  const postcode = normalisePostcode(body?.postcode);
+  if (!postcode) return c.json({ error: "invalid_postcode" }, 400);
+
+  const [{ zones, ranges }, area] = await Promise.all([
+    loadZonesAndRanges(c.env),
+    loadProjectAreaM2(c.env, p.id),
+  ]);
+  const resolution = resolveZone(postcode, zones, ranges);
+  if (!resolution.zone || !zoneIsPriced(resolution.zone)) {
+    // Branch 4 — a deployment fault (the fallback itself has no rates), not a
+    // business state. The release checklist keeps this off the customer-facing
+    // release; if it is somehow reached anyway, the form degrades to no number
+    // rather than an error the customer cannot act on.
+    return c.json({ ok: false });
+  }
+  const zone = resolution.zone as { minCharge: number; ratePerSqm: number; maxCharge: number };
+  return c.json({
+    ok: true,
+    amount: deliveryCost(area.areaM2, zone),
+    zoneLabel: resolution.zone.label,
+    conservative: resolution.basis !== "postcode_zone",
+  });
 });
 
 // POST /api/projects/:id/issue-revision — STAFF seam (shared with the ops console).

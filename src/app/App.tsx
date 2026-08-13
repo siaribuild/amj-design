@@ -33,7 +33,7 @@ import { matchSchedule } from "../data/scheduleMatch";
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
-import { getCurrentProject, hydrateQuoteItems, saveLines, submitProject, updateProfile, clearDraft, updateCurrentSegment, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
+import { getCurrentProject, hydrateQuoteItems, saveLines, submitProject, updateProfile, clearDraft, updateCurrentSegment, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, ApiError, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
 import { GstContext, type GstMode } from "../data/gst";
 import { SAGE_LIGHT as SAGE_LT } from "../styles/tokens";
 
@@ -2101,8 +2101,11 @@ export default function App() {
       setProjectId(null);               // the next save starts a fresh draft
       setProjectTitle(DEFAULT_PROJECT_TITLE);
       return { ok: true, status: r.status };
-    } catch {
-      return { ok: false, error: "rejected" };
+    } catch (e) {
+      // The server's reason, not a collapsed "rejected" — a customer who typed
+      // three digits into the postcode field used to be told to fix their item
+      // codes, because this catch discarded the response body entirely.
+      return { ok: false, error: e instanceof ApiError ? e.code : "rejected" };
     }
   };
 
@@ -2136,7 +2139,7 @@ export default function App() {
       // THE project builder. It was the A/B arm at /quote-project until the
       // comparison closed in its favour; the card builder it replaced is gone.
       // Not a hero page, so the header stays solid over its bone canvas.
-      case "quote":            return <QuoteProjectPage setPage={navigateTo} user={user} quote={quote} onSubmit={submitCurrentProject} />;
+      case "quote":            return <QuoteProjectPage setPage={navigateTo} user={user} quote={quote} projectId={projectId} onSubmit={submitCurrentProject} />;
       // Without setPage the page's own CTAs called setPage?.(…) on undefined and
       // did nothing but scroll to top — a dead end for traffic the home page sends.
       case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;

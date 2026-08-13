@@ -10,7 +10,7 @@
 // optimistically — so a failed or lost request surfaces an error instead of a
 // false confirmation.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronLeft, AlertCircle, CheckCircle, Send } from "lucide-react";
 import { SAGE, WindowMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import {
@@ -18,7 +18,7 @@ import {
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 import { quoteSummary } from "../data/quoteSummary";
-import type { SubmitContact, SubmitResult } from "../data/api";
+import { getDeliveryEstimate, type SubmitContact, type SubmitResult } from "../data/api";
 
 type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
 
@@ -43,10 +43,14 @@ export function QuoteSubmitted({ email, user, onGo }: {
 }
 
 export function QuoteReviewSubmit({
-  quote, user, backLabel = "Back to MyProject", aiReading, onBack, onSubmit, onSubmitted, onFixBlocked,
+  quote, user, projectId, backLabel = "Back to MyProject", aiReading, onBack, onSubmit, onSubmitted, onFixBlocked,
 }: {
   quote: QuoteState;
   user: QuoteUser;
+  /** Null until the draft's first autosave. The delivery estimate preview
+   *  (E9) needs it; without one yet, the preview simply does not show —
+   *  submission itself is gated on the postcode field, not on this. */
+  projectId: string | null;
   backLabel?: string;
   /** Documents are still being read — submitting now would race the estimate. */
   aiReading: boolean;
@@ -63,8 +67,25 @@ export function QuoteReviewSubmit({
   const [contactEmail, setContactEmail] = useState(user?.email || "");
   const [contactPhone, setContactPhone] = useState(user?.phone || "");
   const [suburb, setSuburb] = useState("");
+  const [postcode, setPostcode] = useState("");
+  const [postcodeError, setPostcodeError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+
+  // The delivery figure at submit (design doc §8.3, Q1 recommendation (a)) —
+  // shown once four digits are entered, labelled as an estimate a person will
+  // check. Never called while the customer is building (D8); this effect only
+  // runs on THIS screen, and only once a project id and a complete postcode
+  // both exist.
+  const [delivery, setDelivery] = useState<{ amount: number; conservative: boolean } | null>(null);
+  useEffect(() => {
+    if (!projectId || postcode.length !== 4) { setDelivery(null); return; }
+    let cancelled = false;
+    getDeliveryEstimate(projectId, postcode)
+      .then((r) => { if (!cancelled) setDelivery(r.ok && typeof r.amount === "number" ? { amount: r.amount, conservative: !!r.conservative } : null); })
+      .catch(() => { if (!cancelled) setDelivery(null); });
+    return () => { cancelled = true; };
+  }, [projectId, postcode]);
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -74,10 +95,18 @@ export function QuoteReviewSubmit({
     }
     if (attentionCount > 0) { onFixBlocked(); return; }
     if (!contactName.trim() || !contactEmail.trim()) { setSubmitError("Add your name and email to submit."); return; }
-    setSubmitting(true); setSubmitError("");
+    if (!/^\d{4}$/.test(postcode)) { setPostcodeError("Enter your 4-digit delivery postcode."); return; }
+    setSubmitting(true); setSubmitError(""); setPostcodeError("");
     try {
-      const result = await onSubmit?.({ name: contactName.trim(), email: contactEmail.trim(), phone: contactPhone.trim(), suburb: suburb.trim() });
+      const result = await onSubmit?.({
+        name: contactName.trim(), email: contactEmail.trim(), phone: contactPhone.trim(),
+        suburb: suburb.trim(), postcode,
+      });
       if (!result || result.ok) { onSubmitted(contactEmail); return; } // no handler = design preview
+      if (result.error === "missing_postcode" || result.error === "invalid_postcode") {
+        setPostcodeError("Enter your 4-digit delivery postcode.");
+        return;
+      }
       setSubmitError(
         result.error === "rejected"
           ? "We couldn't submit this quote — check that every line is priced and your item codes are unique."
@@ -112,21 +141,49 @@ export function QuoteReviewSubmit({
             ))}
             {quote.files.length > 0 && <p className="text-body pt-1 t-cap">+ {quote.files.length} uploaded file{quote.files.length !== 1 ? "s" : ""} for review</p>}
           </div>
-          <div className="flex justify-between border-t border-black/8 pt-3 t-bd-sm"><span className="text-body">{pendingPriceCount ? "Priced-items subtotal" : "Estimated total"}</span><span className="font-semibold text-ink font-data">{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
+          {delivery ? (
+            <>
+              <div className="flex justify-between border-t border-black/8 pt-3 t-bd-sm"><span className="text-body">{pendingPriceCount ? "Priced-items subtotal" : "Windows and doors"}</span><span className="text-ink font-data">{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
+              <div className="flex justify-between t-bd-sm"><span className="text-body">Delivery to {postcode}</span><span className="text-ink font-data">{fmt(gstAdjust(delivery.amount, gstMode))} {gstSuffix(gstMode)}</span></div>
+              <div className="flex justify-between border-t border-black/8 pt-2 t-bd-sm"><span className="font-semibold text-ink">Project total</span><span className="font-semibold text-ink font-data">{fmt(gstAdjust(total + delivery.amount, gstMode))} {gstSuffix(gstMode)}</span></div>
+              <p className="text-body t-cap">
+                {delivery.conservative
+                  ? "That postcode is outside our usual runs, so we've allowed generously. "
+                  : "An estimate. "}A person checks the delivery against real freight before your quote is issued.
+              </p>
+            </>
+          ) : (
+            <div className="flex justify-between border-t border-black/8 pt-3 t-bd-sm"><span className="text-body">{pendingPriceCount ? "Priced-items subtotal" : "Estimated total"}</span><span className="font-semibold text-ink font-data">{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
+          )}
           {pendingPriceCount > 0 && <p className="mt-2 text-amber-800 t-cap">{pendingPriceCount} customer-changed configuration{pendingPriceCount === 1 ? "" : "s"} will be added after we confirm the exact product and price.</p>}
         </div>
         <div className="quote-panel p-5 space-y-4 mb-4">
           {user && <p className="text-sage flex items-center gap-1.5 t-bd-sm"><CheckCircle className="w-4 h-4" />Pre-filled from your account — edit if needed.</p>}
-          <div><FieldLabel>Full name</FieldLabel><Input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Your name" /></div>
+          <div><FieldLabel htmlFor="contact-name">Full name</FieldLabel><Input id="contact-name" value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Your name" /></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><FieldLabel>Email</FieldLabel><Input value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="your@email.com" /></div>
-            <div><FieldLabel>Phone</FieldLabel><Input value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="(03) 9000 0000" /></div>
+            <div><FieldLabel htmlFor="contact-email">Email</FieldLabel><Input id="contact-email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="your@email.com" /></div>
+            <div><FieldLabel htmlFor="contact-phone">Phone</FieldLabel><Input id="contact-phone" value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="(03) 9000 0000" /></div>
           </div>
-          <div><FieldLabel>Delivery suburb / postcode</FieldLabel><Input value={suburb} onChange={e => setSuburb(e.target.value)} placeholder="e.g. Preston VIC 3072" /></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div><FieldLabel htmlFor="delivery-suburb">Delivery suburb</FieldLabel><Input id="delivery-suburb" value={suburb} onChange={e => setSuburb(e.target.value)} placeholder="e.g. Preston VIC" /></div>
+            <div>
+              <FieldLabel htmlFor="delivery-postcode">Delivery postcode</FieldLabel>
+              <Input id="delivery-postcode" value={postcode} inputMode="numeric" maxLength={4}
+                autoComplete="postal-code"
+                aria-invalid={!!postcodeError || undefined}
+                aria-describedby={postcodeError ? "postcode-err" : "postcode-help"}
+                onChange={e => { setPostcode(e.target.value.replace(/\D/g, "").slice(0, 4)); setPostcodeError(""); }}
+                onBlur={() => { if (postcode && postcode.length !== 4) setPostcodeError("Enter your 4-digit delivery postcode."); }}
+                placeholder="3072" />
+              {postcodeError
+                ? <p id="postcode-err" role="alert" className="text-red-700 mt-1 t-cap">{postcodeError}</p>
+                : <p id="postcode-help" className="text-body mt-1 t-cap">We price delivery from this.</p>}
+            </div>
+          </div>
         </div>
-        <div className="quote-notice--info border border-line p-4 mb-6 text-body t-cap"><AlertCircle className="w-3 h-3 inline mr-1" />Estimated totals are confirmed on technical review. No deposit until you approve the reviewed quote. Supply only — installation not included.</div>
+        <div className="quote-notice--info border border-line p-4 mb-6 text-body t-cap"><AlertCircle className="w-3 h-3 inline mr-1" />Delivery is priced from your postcode and confirmed on technical review. Estimated totals are confirmed on that same review. No deposit until you approve the reviewed quote. Supply only — tailgate to the kerb, and installation is not included.</div>
         {submitError && <p role="alert" className="text-red-700 flex items-center gap-1.5 mb-3 justify-end t-bd-sm"><AlertCircle className="w-4 h-4" />{submitError}</p>}
-        <div className="flex justify-end"><Btn variant="sage" size="lg" disabled={!contactName || !contactEmail || submitting || aiReading} onClick={handleSubmit}>{submitting ? "Submitting…" : aiReading ? "Refining estimate…" : <>Submit for technical review <Send className="w-4 h-4" /></>}</Btn></div>
+        <div className="flex justify-end"><Btn variant="sage" size="lg" disabled={!contactName || !contactEmail || postcode.length !== 4 || submitting || aiReading} onClick={handleSubmit}>{submitting ? "Submitting…" : aiReading ? "Refining estimate…" : <>Submit for technical review <Send className="w-4 h-4" /></>}</Btn></div>
       </div>
     </div>
   );

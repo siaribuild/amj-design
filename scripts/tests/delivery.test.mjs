@@ -18,6 +18,17 @@ import {
   requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
+// A real, fully-specified window line (parity with api.test.mjs's fixture) —
+// used to give a project SOME area, since a submission needs at least one
+// line or a clean uploaded file (worker/routes/quote.ts's empty_quote gate).
+const aLine = (overrides = {}) => ({
+  code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+  width: "1200", height: "900", qty: 1,
+  options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+  lineTotal: 1,
+  ...overrides,
+});
+
 // PARTIAL overlap only — mirrors worker/routes/ops-pricing.ts's own check, so
 // this test's idea of "overlap" cannot silently diverge from the server's.
 function rangesPartiallyOverlap(a, b) {
@@ -156,6 +167,81 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
         assert.ok(match, `${pc} resolves to a zone`);
         assert.notEqual(match.zone_id, "unmapped", `${pc} is a capital-city postcode, not the fallback`);
       }
+    });
+
+    // ── The postcode reaches the server (C5) ────────────────────────────────
+
+    await t.test("T-B1: a submission with no delivery postcode is refused, and the project stays a draft", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "No postcode", items: [aLine()] } });
+      const id = saved.body.project.id;
+      const refused = await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "No Postcode", email: "no-postcode@example.com" } },
+      }, 400);
+      assert.equal(refused.body.error, "missing_postcode");
+      const current = await requestJson(s, "/api/projects/current");
+      assert.equal(current.body.project.status, "draft");
+    });
+
+    await t.test("T-B2: a postcode that is not four digits is refused, distinctly from a missing one", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Bad postcode", items: [aLine()] } });
+      const id = saved.body.project.id;
+      for (const bad of ["300", "30000", "3o00", "VIC 3000"]) {
+        const r = await requestJson(s, `/api/projects/${id}/submit`, {
+          method: "POST", json: { contact: { name: "Bad Postcode", email: "bad-postcode@example.com", postcode: bad } },
+        }, 400);
+        assert.equal(r.body.error, "invalid_postcode", `"${bad}" -> invalid_postcode`);
+      }
+    });
+
+    await t.test("T-B3: a valid postcode is stored digits-intact, and the free-text suburb is left alone", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Good postcode", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST",
+        json: { contact: { name: "Good Postcode", email: "good-postcode@example.com", postcode: "0800", suburb: "Darwin NT" } },
+      });
+      const rows = await sql(`SELECT delivery_postcode, delivery_suburb FROM project WHERE id='${id}'`);
+      assert.equal(rows[0].delivery_postcode, "0800");
+      assert.equal(rows[0].delivery_suburb, "Darwin NT");
+    });
+
+    // ── The estimate (C5) ────────────────────────────────────────────────────
+    // Setup: the seeded zones have NULL rates, so pricing two of them (vic-metro,
+    // unmapped) is the first act — also the first proof E3 works end to end.
+
+    await t.test("setup: price vic-metro and unmapped for the estimate tests below", async () => {
+      const zones = await requestJson(staff, "/api/ops/pricing/delivery-zones");
+      const vicMetro = zones.body.zones.find((z) => z.id === "vic-metro");
+      const unmapped = zones.body.zones.find((z) => z.id === "unmapped");
+      await requestJson(staff, "/api/ops/pricing/delivery-zones/vic-metro", {
+        method: "PUT", json: { ratePerSqm: 45, minCharge: 180, maxCharge: 900, expectedVersion: vicMetro.version },
+      });
+      await requestJson(staff, "/api/ops/pricing/delivery-zones/unmapped", {
+        method: "PUT", json: { ratePerSqm: 220, minCharge: 980, maxCharge: 4200, expectedVersion: unmapped.version },
+      });
+    });
+
+    await t.test("T-B4: the submit-screen preview prices a postcode without committing anything", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Preview check", items: [aLine()] } });
+      const id = saved.body.project.id;
+      const preview = await requestJson(s, `/api/projects/${id}/delivery-estimate`, { method: "POST", json: { postcode: "3072" } });
+      assert.equal(preview.body.ok, true);
+      assert.ok(preview.body.amount > 0, "a real figure, not zero");
+      const rows = await sql(`SELECT delivery_postcode FROM project WHERE id='${id}'`);
+      assert.equal(rows[0].delivery_postcode, null, "the preview commits nothing");
+      await requestJson(s, `/api/projects/${id}/delivery-estimate`, { method: "POST", json: { postcode: "30" } }, 400);
+    });
+
+    await t.test("T-B5: the preview endpoint refuses a project the caller does not own", async () => {
+      const owner = new Session(baseUrl);
+      const saved = await requestJson(owner, "/api/projects/current/lines", { method: "PUT", json: { title: "Owned", items: [aLine()] } });
+      const id = saved.body.project.id;
+      const stranger = new Session(baseUrl);
+      await requestJson(stranger, `/api/projects/${id}/delivery-estimate`, { method: "POST", json: { postcode: "3072" } }, 404);
     });
   } finally {
     if (server) await stop(server);

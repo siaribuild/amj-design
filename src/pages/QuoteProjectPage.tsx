@@ -63,10 +63,14 @@ const DOC_TYPE: Record<string, { label: string; tint: string }> = {
   supporting: { label: "SUPPORTING", tint: "border-dashed border-black/15 bg-black/[0.03] text-body-soft" },
 };
 
-export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
+export function QuoteProjectPage({ setPage, user, quote, projectId, onSubmit }: {
   setPage: (p: Page) => void;
   user: QuoteUser;
   quote: QuoteState;
+  /** Null until the draft's first autosave — the review screen's delivery
+   *  estimate preview (E9) needs a saved project id to price against, and
+   *  degrades to no preview rather than erroring when there isn't one yet. */
+  projectId: string | null;
   onSubmit?: (contact: SubmitContact) => Promise<SubmitResult>;
 }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
@@ -198,7 +202,7 @@ export function QuoteProjectPage({ setPage, user, quote, onSubmit }: {
   if (view === "review") {
     return (
       <QuoteReviewSubmit
-        quote={quote} user={user}
+        quote={quote} user={user} projectId={projectId}
         backLabel="Back to your project"
         aiReading={aiPhase?.kind === "reading"}
         onBack={() => setView("build")}

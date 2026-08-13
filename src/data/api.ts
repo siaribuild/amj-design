@@ -77,13 +77,27 @@ export function hydrateQuoteItems(items: ApiItem[], localIdSeed = Date.now(), pr
   }));
 }
 
+// Failures carry the server's reason, not just a status. Before this, every
+// rejection collapsed to a generic Error the callers could not distinguish —
+// submitProject's catch (src/app/App.tsx) turned missing_postcode, ai_failed
+// and a genuine server error into the same "rejected", which the submit form
+// rendered as "check that every line is priced and your item codes are
+// unique" for a customer who had typed three digits into a postcode field.
+// Same shape as src/ops/api.ts's OpsApiError, ported here rather than shared —
+// the ops client only ever talks to /api/ops/*.
+export class ApiError extends Error {
+  constructor(public status: number, public code: string) { super(code); }
+}
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     credentials: "same-origin",
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
-  if (!res.ok) throw new Error(`${path} → ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, (body as any)?.error ?? `http_${res.status}`);
+  }
   return res.json() as Promise<T>;
 }
 
@@ -276,7 +290,9 @@ export interface ApiRevision {
   lines: ApiOrderLine[];
 }
 
-export interface SubmitContact { name: string; email: string; phone?: string; suburb?: string }
+// postcode is REQUIRED, not optional — a caller that forgets it fails to
+// compile, rather than 400ing at submit time with no indication why (D7/D8).
+export interface SubmitContact { name: string; email: string; phone?: string; suburb?: string; postcode: string }
 /** Outcome of a submission — callers gate their success UI on `ok`. */
 export type SubmitResult = { ok: true; status: string } | { ok: false; error: string };
 
@@ -286,6 +302,23 @@ export const submitProject = (projectId: string, contact: SubmitContact) =>
   req<{ id: string; status: string }>(`/api/projects/${projectId}/submit`, {
     method: "POST",
     body: JSON.stringify({ contact }),
+  });
+
+/** E9 — a delivery PREVIEW for the submit screen. Never called from the
+ *  builder (D8); writes nothing. `ok: false` means the table isn't priced
+ *  yet (a deployment fault, not something to show the customer as an error). */
+export interface DeliveryEstimatePreview {
+  ok: boolean;
+  amount?: number;
+  zoneLabel?: string;
+  /** True when the postcode fell to the fallback zone rather than matching
+   *  its own priced zone — the caller shows "around" / "we'll confirm" copy. */
+  conservative?: boolean;
+}
+export const getDeliveryEstimate = (projectId: string, postcode: string) =>
+  req<DeliveryEstimatePreview>(`/api/projects/${projectId}/delivery-estimate`, {
+    method: "POST",
+    body: JSON.stringify({ postcode }),
   });
 
 /** Update the signed-in customer's profile / business details / price preference. */

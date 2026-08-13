@@ -11,7 +11,9 @@
 // current-project GET (letting writes through) for exact hydrated shapes, and
 // use the real API for anything that must actually persist.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const SLIDING = "amj80-series-sliding-window";
 
@@ -392,6 +394,7 @@ test("a submitted job leaves the builder — it does not linger until a refresh"
   await expect(page.getByRole("heading", { name: "Review and submit" })).toBeVisible();
   await page.getByPlaceholder("Your name").fill("Regression Tester");
   await page.getByPlaceholder("your@email.com").fill("regression@example.com");
+  await page.getByLabel("Delivery postcode").fill("3072"); // required at submit (D7)
 
   // From here the server has NO draft to hand back — same customer, so the
   // identity has not changed either.
@@ -910,4 +913,129 @@ test("a unit's size stays lighter than its opening's", async ({ page }) => {
   const unitSize = page.locator("[data-unit]").first().getByText(/×.*mm/);
   expect(await weight(parentSize)).toBe("600");
   expect(await weight(unitSize)).toBe("500");
+});
+
+// ─── 18. Delivery at submit (design doc docs/shipping-costs-design.md §8, C5) ──
+// The postcode is required inside the existing submit form (D7/D8) — no new
+// step, no new screen — and the builder itself must show no delivery figure
+// (D8: the running estimate is deliberately delivery-free).
+
+// Chromium resolves *.localhost (ops.spec.ts's own comment); the `request`
+// fixture is a plain Node HTTP client and does not, so it 404s on the
+// hostname with getaddrinfo ENOTFOUND. The Worker routes ops.* purely off the
+// Host HEADER (same mechanism production Cloudflare routing uses), so hitting
+// the plain loopback address with that header set achieves the same routing
+// without needing DNS to resolve the subdomain.
+const OPS_API = "http://127.0.0.1:8788";
+const OPS_HOST = "ops.localhost:8788";
+
+// Same read as ops.spec.ts's staffLogin: dev-mode OTP, code returned in the
+// challenge response body — no UI needed for an API-only login.
+function seedStaffEmail(): string {
+  const seedSql = readFileSync(join(process.cwd(), "scripts", "db", "seed.sql"), "utf8");
+  const row = seedSql.split("\n").find((l) => l.includes("'u_staff1'") && l.includes("@"));
+  const email = row?.match(/'([^']+@[^']+)'/)?.[1];
+  if (!email) throw new Error("seed.sql: no email for u_staff1");
+  return email;
+}
+
+async function opsLogin(request: APIRequestContext): Promise<void> {
+  const email = seedStaffEmail();
+  const challenge = await request.post(`${OPS_API}/api/ops/auth/challenge`, { headers: { Host: OPS_HOST }, data: { email } });
+  const { devCode } = await challenge.json();
+  const verify = await request.post(`${OPS_API}/api/ops/auth/verify`, { headers: { Host: OPS_HOST }, data: { email, code: devCode } });
+  expect(verify.ok(), "ops dev-mode OTP login").toBeTruthy();
+}
+
+// Idempotent: reads the zone's current version and re-prices it. Safe to call
+// from more than one spec — workers: 1 / fullyParallel: false (playwright.
+// config.ts) means every spec in the run is sequential, never racing this.
+async function ensureZonePriced(request: APIRequestContext, id: string, rates: { ratePerSqm: number; minCharge: number; maxCharge: number }): Promise<void> {
+  const list = await (await request.get(`${OPS_API}/api/ops/pricing/delivery-zones`, { headers: { Host: OPS_HOST } })).json();
+  const zone = list.zones.find((z: { id: string; version: string }) => z.id === id);
+  await request.put(`${OPS_API}/api/ops/pricing/delivery-zones/${id}`, { headers: { Host: OPS_HOST }, data: { ...rates, expectedVersion: zone.version } });
+}
+
+test("T-C1: the builder shows no delivery — the figure belongs to submission, not to browsing", async ({ page }) => {
+  await mockProject(page, [plainItem]);
+  await page.goto("/quote");
+  const bar = page.getByRole("region", { name: "Project summary and actions" });
+  // A generous first-paint allowance: this is occasionally the first request
+  // Wrangler serves after a cold `webServer` start, and that first compile can
+  // outrun the default 10s assertion timeout on its own.
+  await expect(bar).toBeVisible({ timeout: 30_000 });
+  await expect(bar.getByText(/deliver/i)).toHaveCount(0);
+  await expect(bar.getByText(/freight/i)).toHaveCount(0);
+});
+
+test("T-C2: the submit screen asks for a postcode and will not submit without four digits", async ({ page }) => {
+  await mockProject(page, [plainItem]);
+  await page.goto("/quote");
+  await page.getByRole("region", { name: "Project summary and actions" })
+    .getByRole("button", { name: /Submit for technical review/ }).click();
+
+  const submit = page.getByRole("button", { name: /Submit for technical review/ });
+  await page.getByLabel("Full name").fill("Postcode Tester");
+  await page.getByLabel("Email").fill("postcode-tester@example.com");
+  await expect(submit).toBeDisabled();
+
+  const postcode = page.getByLabel("Delivery postcode");
+  await postcode.fill("30");
+  await postcode.blur();
+  await expect(page.getByText(/enter your 4-digit delivery postcode/i)).toBeVisible();
+  await expect(submit).toBeDisabled();
+
+  await postcode.fill("3072");
+  await expect(submit).toBeEnabled();
+});
+
+test("T-C3: entering a postcode prices the delivery and moves the project total", async ({ page, request }) => {
+  await opsLogin(request);
+  await ensureZonePriced(request, "vic-metro", { ratePerSqm: 45, minCharge: 180, maxCharge: 900 });
+
+  const saved = await page.request.put("/api/projects/current/lines", {
+    data: {
+      items: [{
+        code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+        width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      }],
+    },
+  });
+  expect(saved.ok()).toBeTruthy();
+
+  await page.goto("/quote");
+  await page.getByRole("region", { name: "Project summary and actions" })
+    .getByRole("button", { name: /Submit for technical review/ }).click();
+  await page.getByLabel("Delivery postcode").fill("3072");
+
+  const deliveryRow = page.getByText(/^Delivery to 3072/);
+  await expect(deliveryRow).toBeVisible();
+  await expect(page.getByText("Project total")).toBeVisible();
+});
+
+test("T-C4: a postcode we do not price still shows a number, and says a person will check it", async ({ page, request }) => {
+  await opsLogin(request);
+  await ensureZonePriced(request, "unmapped", { ratePerSqm: 220, minCharge: 980, maxCharge: 4200 });
+
+  const saved = await page.request.put("/api/projects/current/lines", {
+    data: {
+      items: [{
+        code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+        width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      }],
+    },
+  });
+  expect(saved.ok()).toBeTruthy();
+
+  await page.goto("/quote");
+  await page.getByRole("region", { name: "Project summary and actions" })
+    .getByRole("button", { name: /Submit for technical review/ }).click();
+  // 9999 matches no seeded range -> falls to the fallback (unmapped).
+  await page.getByLabel("Delivery postcode").fill("9999");
+
+  await expect(page.getByText(/^Delivery to 9999/)).toBeVisible();
+  await expect(page.getByText(/outside our usual runs/i)).toBeVisible();
+  await expect(page.getByText(/quoted separately|contact us for delivery/i)).toHaveCount(0);
 });
