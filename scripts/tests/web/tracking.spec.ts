@@ -157,7 +157,7 @@ test("a submitted quote is trackable by its OF-Q reference, anonymously", async 
   expect(project.ref, "a submitted quote gets an OF-Q reference").toMatch(/^OF-Q-\d+$/);
 
   await page.request.post(`/api/projects/${project.id}/submit`, {
-    data: { contact: { name: "E2E Tester", email, phone: "0400 000 000", suburb: "Rowville" } },
+    data: { contact: { name: "E2E Tester", email, phone: "0400 000 000", suburb: "Rowville", postcode: "3178" } },
   });
 
   // Now track it the way the confirmation email tells them to.

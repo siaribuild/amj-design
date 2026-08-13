@@ -365,7 +365,7 @@ quote.post("/projects/:id/issue-revision", async (c) => {
   }
   const rev = await issueRevision(c.env, c.req.param("id"));
   if (!rev.ok) return c.json({ error: rev.error }, rev.error === "not_found" ? 404 : 409);
-  return c.json({ id: rev.id, revisionNo: rev.revisionNo, total: rev.total });
+  return c.json({ id: rev.id, revisionNo: rev.revisionNo, total: rev.total, goods: rev.goods, delivery: rev.delivery });
 });
 
 // GET /api/projects/:id/revisions — customer view of issued revisions.
@@ -379,14 +379,22 @@ quote.get("/projects/:id/revisions", async (c) => {
     const { results: rl } = await c.env.DB
       .prepare("SELECT external_ref, room_label, product_snapshot_json, dims_json, qty, line_total FROM revision_line WHERE revision_id = ?")
       .bind(r.id).all();
-    const total = safeParse(r.totals_json).total ?? 0;
+    // Every reader treats the delivery keys as optional, in one place, once —
+    // revisions issued before C8 have only `total` in totals_json (design doc
+    // §6.7). `goods` falls back to `total` (delivery-free by construction on
+    // those rows); `delivery` falls back to 0.
+    const t = safeParse(r.totals_json);
+    const total = t.total ?? 0;
+    const delivery = t.delivery ?? 0;
+    const goods = t.goods ?? t.total ?? 0;
     // One deposit percentage (0043), computed here rather than in the browser —
     // the same reason orders.ts computes it rather than the review screen.
-    const deposit = depositOf(total);
-    const balance = balanceOf(total);
+    const deposit = depositOf(goods, delivery);
+    const balance = balanceOf(goods, delivery);
     return {
       id: r.id, revisionNo: r.revision_no, status: r.snapshot_status,
-      total, deposit, balance, issuedAt: r.issued_at, acceptedAt: r.accepted_at,
+      total, goods, delivery, deliveryPostcode: t.deliveryPostcode ?? null,
+      deposit, balance, issuedAt: r.issued_at, acceptedAt: r.accepted_at,
       lines: rl,
     };
   }));

@@ -262,6 +262,11 @@ export interface ApiOrder {
   stageLabel: string;
   stageIndex: number;
   total: number | null;
+  /** E14 — the delivery component of `total`, and goods (total minus it).
+   *  worker/lib/orders.ts:141 used to re-derive the order total from lines
+   *  alone and lose the freight; these are what confirm it survived. */
+  delivery: number;
+  goods: number;
   drawingsSignedOffAt: string | null;
   qaConfirmedAt: string | null;
   createdAt: string;
@@ -280,7 +285,11 @@ export interface ApiRevision {
   id: string;
   revisionNo: number;
   status: string;
+  /** goods + delivery (C8) — the customer-facing contract figure. */
   total: number;
+  goods: number;
+  delivery: number;
+  deliveryPostcode: string | null;
   /** Server-computed (0043) — one deposit percentage, never Math.round(total/2)
    *  in the browser. */
   deposit: number;

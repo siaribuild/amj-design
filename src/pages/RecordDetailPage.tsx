@@ -214,9 +214,13 @@ function orderTimeline(o: ApiOrder): TlNode[] {
 }
 
 // ── Line list ─────────────────────────────────────────────────────────────────
-export function LineList({ lines, footerLabel, total, statusPill, showUnit }: {
+export function LineList({ lines, footerLabel, total, statusPill, showUnit, deliveryNote }: {
   lines: ParsedLine[]; footerLabel: string; total: number | null;
   statusPill?: (l: ParsedLine) => ReactNode; showUnit?: boolean;
+  /** design doc §6.7 — delivery is a project-level charge, never a line, so
+   *  `total` here can be (and after C8, usually is) larger than the visible
+   *  lines sum to. Shown only when the caller has a real figure to name. */
+  deliveryNote?: string;
 }) {
   const hasPendingPrice = lines.some((line) => line.lineTotal == null);
   const price = (value: number | null) => value == null ? "Pending final price" : money(value);
@@ -258,7 +262,10 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit }: {
       {total != null && (
         <div className="flex justify-between items-center px-5 py-[15px] bg-sage/[0.07] border-t border-black/10 t-cap">
           <small className="text-body">{footerLabel}</small>
-          <div><small className="text-body">{hasPendingPrice ? "Priced-lines subtotal " : "Order total "}</small><span className="font-medium t-bd-lg font-data">{money(total)}</span></div>
+          <div className="text-right">
+            <div><small className="text-body">{hasPendingPrice ? "Priced-lines subtotal " : "Order total "}</small><span className="font-medium t-bd-lg font-data">{money(total)}</span></div>
+            {deliveryNote && <small className="block text-body mt-0.5">{deliveryNote}</small>}
+          </div>
         </div>
       )}
     </>
@@ -486,6 +493,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
         {/* Lines */}
         <Blk eyebrow="Schedule" title="Order lines" right="Anchored by your schedule code" id="rec-lines">
           <LineList lines={lines} total={order.total} footerLabel={`${lines.length} line${lines.length === 1 ? "" : "s"} · from accepted revision ${order.revisionNo ? `R${order.revisionNo}` : ""}`}
+            deliveryNote={order.delivery > 0 ? `incl. ${money(order.delivery)} delivery` : undefined}
             />
         </Blk>
 

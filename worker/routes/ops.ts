@@ -1215,7 +1215,7 @@ ops.post("/projects/:id/issue-revision", async (c) => {
       email: { to: cust.email, subject: "Your OpenFrame quote is ready", text: `Your reviewed quote (revision ${rev.revisionNo}) is ready to review and accept.` },
     });
   }
-  return c.json({ id: rev.id, revisionNo: rev.revisionNo, total: rev.total });
+  return c.json({ id: rev.id, revisionNo: rev.revisionNo, total: rev.total, goods: rev.goods, delivery: rev.delivery });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

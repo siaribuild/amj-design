@@ -12,7 +12,7 @@ function safeParse(s: string): Record<string, unknown> {
 }
 
 export type IssueResult =
-  | { ok: true; id: string; revisionNo: number; total: number }
+  | { ok: true; id: string; revisionNo: number; total: number; goods: number; delivery: number }
   // delivery_unset is a DISTINCT code, not a fourth "not_ready" — ProjectRecord.
   // tsx's ACTION_ERRORS map has no "not_ready" key at all, so folding this into
   // it would render the generic "That action could not be completed.", exactly
@@ -103,8 +103,11 @@ export const ISSUABLE_FROM = new Set([
 
 export async function issueRevision(env: Env, projectId: string): Promise<IssueResult> {
   const project = await env.DB.prepare(
-    "SELECT id, status_internal, quote_edit_version, delivery_amount FROM project WHERE id = ?",
-  ).bind(projectId).first<{ id: string; status_internal: string; quote_edit_version: number; delivery_amount: number | null }>();
+    "SELECT id, status_internal, quote_edit_version, delivery_amount, delivery_postcode, delivery_settle_json FROM project WHERE id = ?",
+  ).bind(projectId).first<{
+    id: string; status_internal: string; quote_edit_version: number; delivery_amount: number | null;
+    delivery_postcode: string | null; delivery_settle_json: string | null;
+  }>();
   if (!project) return { ok: false, error: "not_found" };
   if (!ISSUABLE_FROM.has(project.status_internal)) return { ok: false, error: "not_ready" };
 
@@ -166,7 +169,31 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
     "(SELECT COALESCE(MAX(qr2.revision_no), 0) + 1 FROM quote_revision qr2 WHERE qr2.project_id = ?)";
   const revisionId = uuid();
   const outboxId = uuid();
-  const total = lines.reduce((s, l) => s + (l.line_total || 0), 0);
+  // THE FLIP (C8): total is now goods + delivery, not goods alone — D10 sets
+  // the deposit at 50% of goods + delivery, and both customer deposit
+  // surfaces read totals_json.total. The last three keys freeze the BASIS
+  // (design doc §4.4b): without them, an issued job's delivery_total can
+  // never be checked against the area it was priced on — draft lines keep
+  // moving after issue, and delivery_settle_json is cleared on the next
+  // revision (the re-arm in worker/routes/quote.ts). Sourced from
+  // delivery_settle_json (stamped by E7 at the instant of settling), not a
+  // live re-resolution — this freezes what was true when the figure was set,
+  // matching what that column exists to answer.
+  const goods = lines.reduce((s, l) => s + (l.line_total || 0), 0);
+  const delivery = project.delivery_amount ?? 0; // GUARD 8 above already refused NULL
+  const total = goods + delivery;
+  let deliveryZoneId: string | null = null;
+  let deliveryAreaM2: number | null = null;
+  try {
+    const settle = JSON.parse(project.delivery_settle_json || "{}");
+    deliveryZoneId = typeof settle?.zoneId === "string" ? settle.zoneId : null;
+    deliveryAreaM2 = typeof settle?.areaM2 === "number" ? settle.areaM2 : null;
+  } catch { /* delivery_settle_json unreadable or absent — basis stays null */ }
+  const totalsJson = JSON.stringify({
+    total, goods, delivery,
+    deliveryPostcode: project.delivery_postcode ?? null,
+    deliveryZoneId, deliveryAreaM2,
+  });
   const issuedLines = lines.map((line) => ({
     ...line,
     line_total: line.line_total ?? 0,
@@ -175,8 +202,8 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
   const stmts = [
     env.DB.prepare(
       `INSERT INTO quote_revision
-         (id, project_id, revision_no, snapshot_status, totals_json)
-       SELECT ?, ?, ${NEXT_REVISION_NO}, 'issued', ?
+         (id, project_id, revision_no, snapshot_status, totals_json, delivery_total)
+       SELECT ?, ?, ${NEXT_REVISION_NO}, 'issued', ?, ?
         WHERE EXISTS (
           -- IS, not =: NULL-safe by construction even though GUARD 8 above has
           -- already excluded NULL. The issue freezes exactly the delivery
@@ -185,7 +212,7 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
            WHERE id=? AND quote_edit_version=? AND delivery_amount IS ?
         )
         RETURNING revision_no`,
-    ).bind(revisionId, projectId, projectId, JSON.stringify({ total }), projectId, project.quote_edit_version, project.delivery_amount),
+    ).bind(revisionId, projectId, projectId, totalsJson, delivery, projectId, project.quote_edit_version, project.delivery_amount),
     ...lines.map((l) => {
       const p = getProductBySlug(l.product_slug);
       const snapshot = JSON.stringify({
@@ -256,5 +283,5 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
   // Finalization creates the learning example (LLM strategy §16.3/§17.2): the AI
   // proposal vs the human-approved outcome, retrieval-eligible immediately,
   // training-gated. Best-effort — issuing must never fail because capture did.
-  return { ok: true, id: revisionId, revisionNo, total };
+  return { ok: true, id: revisionId, revisionNo, total, goods, delivery };
 }

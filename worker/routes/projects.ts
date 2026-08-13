@@ -12,6 +12,7 @@ import { uuid, normNote } from "../lib/util";
 import { loadCompositePolicy, recomputeComposite, updateSegment } from "../lib/composite";
 import { logEvent } from "../lib/activity";
 import { depositOf } from "../lib/orders";
+import { deliveryCost, loadProjectAreaM2, loadZonesAndRanges, resolveZone, zoneIsPriced, type DeliveryZone } from "../lib/delivery";
 
 export const projects = new Hono<{ Bindings: Env }>();
 
@@ -32,6 +33,7 @@ projects.get("/", async (c) => {
   if (!user) return c.json({ projects: [] });
   const { results } = await c.env.DB.prepare(`
     SELECT p.id, p.public_ref, p.title, p.status_customer, p.updated_at, p.created_at,
+           p.delivery_postcode, p.delivery_amount,
            -- PARENTS ONLY. A composite's segments belong to their parent line,
            -- which already aggregates them; counting or summing them alongside
            -- it would double the customer's item count and total.
@@ -43,15 +45,30 @@ projects.get("/", async (c) => {
       FROM project p
      WHERE p.owner_user_id = ?
      ORDER BY p.updated_at DESC`).bind(user.id).all<Record<string, unknown>>();
-  const rows = results.map((r) => {
+  // Loaded once for the whole list, not once per row — the zone table rarely
+  // changes and this is a dashboard read, not a pricing decision.
+  const { zones, ranges } = await loadZonesAndRanges(c.env);
+  const rows = await Promise.all(results.map(async (r) => {
     let issuedTotal: number | null = null;
     try { const t = JSON.parse(String(r.issued_totals_json ?? "")); if (typeof t?.total === "number") issuedTotal = t.total; } catch { /* unpriced */ }
-    const { issued_totals_json: _drop, ...rest } = r;
+    const { issued_totals_json: _drop, delivery_postcode, delivery_amount, ...rest } = r;
     // One deposit percentage (0043) — computed here, not by accountModel.tsx's
     // dashboard rows, which used to do their own Math.round(total / 2).
     const issuedDeposit = issuedTotal == null ? null : depositOf(issuedTotal);
-    return { ...rest, issued_total: issuedTotal, issued_deposit: issuedDeposit };
-  });
+    // E13 — confirmed figure if settled, else the LIVE estimate (never a
+    // stored, staling number — design doc §5.5), so a dashboard row shows a
+    // real figure even before a staffer has looked at it.
+    let deliveryAmount = (delivery_amount as number | null) ?? null;
+    if (deliveryAmount == null) {
+      const resolution = resolveZone((delivery_postcode as string | null) ?? null, zones, ranges);
+      if (resolution.zone && zoneIsPriced(resolution.zone)) {
+        const zone = resolution.zone as DeliveryZone & { minCharge: number; ratePerSqm: number; maxCharge: number };
+        const area = await loadProjectAreaM2(c.env, String(r.id));
+        deliveryAmount = deliveryCost(area.areaM2, zone);
+      }
+    }
+    return { ...rest, issued_total: issuedTotal, issued_deposit: issuedDeposit, delivery_amount: deliveryAmount };
+  }));
   return c.json({ projects: rows });
 });
 
@@ -262,7 +279,33 @@ projects.get("/:id", async (c) => {
   // encodes the draft-vs-committed rule, so this needs no separate policy.
   const project = await ownedProject(c.env, c.req.raw, c.req.param("id"));
   if (!project) return c.json({ error: "not_found" }, 404);
-  return c.json({ project: projectDto(project), items: await loadLines(c.env, project.id), files: await loadProjectFiles(c.env, project.id) });
+  // ownedProject reads SELECT * — these two columns are present on the row at
+  // runtime even though ProjectRow's own type (worker/lib/access.ts) does not
+  // declare them.
+  const raw = project as unknown as { delivery_postcode: string | null; delivery_amount: number | null };
+  let deliveryAmount = raw.delivery_amount ?? null;
+  if (deliveryAmount == null) {
+    const [{ zones, ranges }, area] = await Promise.all([
+      loadZonesAndRanges(c.env),
+      loadProjectAreaM2(c.env, project.id),
+    ]);
+    const resolution = resolveZone(raw.delivery_postcode ?? null, zones, ranges);
+    if (resolution.zone && zoneIsPriced(resolution.zone)) {
+      deliveryAmount = deliveryCost(area.areaM2, resolution.zone as DeliveryZone & { minCharge: number; ratePerSqm: number; maxCharge: number });
+    }
+  }
+  return c.json({
+    project: projectDto(project),
+    items: await loadLines(c.env, project.id),
+    files: await loadProjectFiles(c.env, project.id),
+    // E13 — the pending/issued copy split (design doc §8.4) reads `indicative`
+    // rather than inferring it from status strings in three places.
+    delivery: {
+      postcode: raw.delivery_postcode ?? null,
+      amount: deliveryAmount,
+      indicative: !["quote_issued", "accepted"].includes(project.status_customer),
+    },
+  });
 });
 
 // PUT /api/projects/current/lines — replace the draft line set (snapshot save).

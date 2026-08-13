@@ -288,3 +288,82 @@ test("T-C7: Issue reviewed quote is blocked, and says delivery is why", async ({
   await expect(issueButton).toBeDisabled();
   await expect(page.getByText(/delivery/i)).toBeVisible();
 });
+
+// T-C8 — a staff override settles delivery, unblocks issuing, and the issued
+// total carries it (design doc §7.1/§7.2, C8). Same single-login pattern as
+// T-C6/T-C7.
+test("T-C8: a staff override settles delivery, unblocks issuing, and the issued total carries it", async ({ page, request }) => {
+  const OPS_HOST = "ops.localhost:8788";
+  const title = `T-C8 flip check ${Date.now().toString().slice(-6)}`;
+  const rawEmail = `tc8-ops-${Date.now().toString().slice(-8)}@openframe.com.au`;
+
+  const staffChallenge = await request.post("http://127.0.0.1:8788/api/ops/auth/challenge", {
+    headers: { Host: OPS_HOST }, data: { email: rawEmail },
+  });
+  const { devCode: staffCode } = await staffChallenge.json();
+  const verifyRes = await request.post("http://127.0.0.1:8788/api/ops/auth/verify", {
+    headers: { Host: OPS_HOST }, data: { email: rawEmail, code: staffCode },
+  });
+  const setCookie = (await verifyRes.headersArray()).find((h) => h.name.toLowerCase() === "set-cookie")?.value ?? "";
+  const sessionToken = setCookie.match(/apertly_session=([^;]+)/)?.[1];
+  if (!sessionToken) throw new Error("ops dev-mode login did not set a session cookie");
+  await page.context().addCookies([{ name: "apertly_session", value: sessionToken, domain: "ops.localhost", path: "/" }]);
+
+  // Price vic-metro if this is the first spec in the run to need it.
+  const zones = await (await request.get("http://127.0.0.1:8788/api/ops/pricing/delivery-zones", { headers: { Host: OPS_HOST } })).json();
+  const vicMetro = zones.zones.find((z: { id: string; version: string; minCharge: number | null }) => z.id === "vic-metro");
+  if (vicMetro.minCharge == null) {
+    await request.put("http://127.0.0.1:8788/api/ops/pricing/delivery-zones/vic-metro", {
+      headers: { Host: OPS_HOST }, data: { ratePerSqm: 45, minCharge: 180, maxCharge: 900, expectedVersion: vicMetro.version },
+    });
+  }
+
+  const saved = await page.request.put("/api/projects/current/lines", {
+    data: {
+      items: [{
+        code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+        width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      }],
+      title,
+    },
+  });
+  expect(saved.ok()).toBeTruthy();
+  const savedBody = await saved.json();
+  const projectId = savedBody.project.id;
+  const goods = savedBody.items[0].lineTotal;
+  const submitted = await page.request.post(`/api/projects/${projectId}/submit`, {
+    data: { contact: { name: "T-C8 Customer", email: "tc8-flip-check@example.com", postcode: "3072" } },
+  });
+  expect(submitted.ok()).toBeTruthy();
+
+  await page.goto(OPS);
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await page.getByRole("button", { name: "Projects", exact: true }).click();
+  const row = page.getByText(title).locator("visible=true");
+  await expect(row.first()).toBeVisible();
+  await row.first().click();
+  await page.getByRole("button", { name: "Start pricing" }).click();
+
+  // The panel's own save is the control — no separate action button.
+  const deliveryBlock = page.locator(".card").filter({ hasText: "Machine estimate" });
+  await expect(deliveryBlock).toBeVisible();
+  const amountInput = deliveryBlock.locator('input[inputmode="decimal"]');
+  await amountInput.fill("640");
+  await deliveryBlock.getByRole("button", { name: "Save" }).click();
+
+  // D19 as a layout rule: the estimate never disappears when the confirmed
+  // number arrives.
+  await expect(deliveryBlock.getByText("Machine estimate")).toBeVisible();
+  await expect(deliveryBlock.getByText("Confirmed")).toBeVisible();
+
+  const issueButton = page.getByRole("button", { name: "Issue reviewed quote" });
+  await expect(issueButton).toBeEnabled();
+  await issueButton.click();
+  // Confirms in place (ProjectRecord.tsx) — a second, explicit click, since
+  // issuing moves money and emails the customer.
+  await page.getByRole("button", { name: "Confirm", exact: true }).click();
+
+  const total = goods + 640;
+  await expect(page.getByText(new RegExp(`\\$${total.toLocaleString("en-AU")}`)).first()).toBeVisible();
+});

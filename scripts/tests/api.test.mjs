@@ -169,6 +169,9 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       const queue = await requestJson(ops, "/api/ops/queues/submissions");
       assert.ok(queue.body.submissions.some((project) => project.id === "p_submitted"));
       await requestJson(ops, "/api/ops/projects/p_submitted/start-pricing", { method: "POST", json: {} });
+      // Seeded fixture project — delivery_amount is NULL (seed.sql predates
+      // 0044) and the issue gate (C7) refuses to issue on that.
+      await requestJson(ops, "/api/ops/projects/p_submitted/delivery", { method: "PUT", json: { amount: 0 } });
       // No approval step: a priced quote issues directly (0033). The guard that
       // remains is the one that always mattered — every line priced and resolved.
       const issued = await requestJson(ops, "/api/ops/projects/p_submitted/issue-revision", { method: "POST", json: {} });
@@ -324,7 +327,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
 
       await requestJson(guest, `/api/projects/${projectId}/submit`, {
         method: "POST",
-        json: { contact: { name: "Anon Tester", email, phone: "0400 000 000", suburb: "Rowville" } },
+        json: { contact: { name: "Anon Tester", email, phone: "0400 000 000", suburb: "Rowville", postcode: "3178" } },
       });
 
       // A code must actually be issued — the reported symptom was silence here.
@@ -398,7 +401,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       const openingTotal = made.body.items[0].lineTotal;
       await requestJson(cust, `/api/projects/${projectId}/submit`, {
         method: "POST",
-        json: { contact: { name: "Composite Tester", email: "composite@example.com", phone: "0400 000 000", suburb: "Rowville" } },
+        json: { contact: { name: "Composite Tester", email: "composite@example.com", phone: "0400 000 000", suburb: "Rowville", postcode: "3178" } },
       });
 
       const split = await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
@@ -623,8 +626,15 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       const opsView = await requestJson(ops, `/api/ops/projects/${projectId}`);
       assert.equal(opsView.body.lines[0].segments.length, 2, "the composite is back for the issue check");
       const opsTotal = opsView.body.lines.reduce((n, l) => n + (l.lineTotal ?? 0), 0);
+      // The issue gate (C7) requires delivery to be settled before a quote can
+      // be issued at all.
+      await requestJson(ops, `/api/ops/projects/${projectId}/delivery`, { method: "PUT", json: { amount: 0 } });
       const issued = await requestJson(ops, `/api/ops/projects/${projectId}/issue-revision`, { method: "POST" });
-      assert.equal(issued.body.total, opsTotal, "the issued total is the total the reviewer approved");
+      // issued.body.total is now goods + delivery (C8) — this test targets
+      // GOODS, not the header total, so it does not assert that delivery
+      // does not exist. See T-B23 (scripts/tests/delivery.test.mjs) for the
+      // goods+delivery correctness this test does not need to re-cover.
+      assert.equal(issued.body.goods, opsTotal, "the issued goods total is the total the reviewer approved");
       const issuedLines = await sql(
         `SELECT external_ref, line_total FROM revision_line WHERE revision_id='${issued.body.id}'`,
       );

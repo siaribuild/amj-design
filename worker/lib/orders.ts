@@ -84,6 +84,10 @@ export interface OrderRow {
   order_no: string;
   stage: Stage;
   total: number | null;
+  /** The delivery component of `total` — "order".delivery_total (0044). NOT
+   *  NULL DEFAULT 0, same reasoning as quote_revision.delivery_total: by the
+   *  time an order exists the figure was frozen at issue. */
+  delivery_total: number | null;
   drawings_signed_off_at: string | null;
   qa_confirmed_at: string | null;
   created_at: string;
@@ -110,6 +114,12 @@ export async function orderDto(env: Env, o: OrderRow) {
     stageLabel: STAGE_LABEL[o.stage],
     stageIndex: STAGES.indexOf(o.stage),
     total: o.total,
+    // E14 — RecordDetailPage.tsx's contract total previously read order.total
+    // with no breakdown; with delivery inside it and no order.delivery, the
+    // customer's post-acceptance screen showed a number simply larger than
+    // the lines summed to.
+    delivery: o.delivery_total ?? 0,
+    goods: (o.total ?? 0) - (o.delivery_total ?? 0),
     drawingsSignedOffAt: o.drawings_signed_off_at,
     qaConfirmedAt: o.qa_confirmed_at,
     createdAt: o.created_at,
@@ -150,9 +160,23 @@ export async function createOrderFromRevision(
     .prepare("SELECT external_ref, product_snapshot_json, qty, line_total FROM revision_line WHERE revision_id = ?")
     .bind(revisionId).all<{ external_ref: string | null; product_snapshot_json: string; qty: number; line_total: number }>();
 
-  const total = revLines.reduce((s, l) => s + (l.line_total || 0), 0);
-  const deposit = depositOf(total);
-  const balance = balanceOf(total);
+  // THE FLIP (C8) — this line is the reason the whole feature exists.
+  // Before it, this function re-derived the order total by summing
+  // revision_line and never read totals_json: delivery is a project-level
+  // charge with no line (D17), so it was present on the quote the customer
+  // accepted and absent from "order".total, payment.deposit.amount and
+  // payment.balance.amount. Every screen stayed internally consistent — the
+  // contract total, the payment rows, all agreeing with each other and
+  // disagreeing with the document the customer accepted — and nothing threw.
+  // See T-B23 (scripts/tests/delivery.test.mjs), five assertions in one
+  // subtest so a regression here names which half broke.
+  const revision = await env.DB.prepare("SELECT delivery_total FROM quote_revision WHERE id = ?")
+    .bind(revisionId).first<{ delivery_total: number | null }>();
+  const goods = revLines.reduce((s, l) => s + (l.line_total || 0), 0);
+  const delivery = revision?.delivery_total ?? 0;
+  const total = goods + delivery;
+  const deposit = depositOf(goods, delivery);
+  const balance = balanceOf(goods, delivery);
 
   const orderId = uuid();
   // The number is assigned by the INSERT below, not derived above it.
@@ -188,8 +212,11 @@ export async function createOrderFromRevision(
           )`,
     ).bind(revisionId, projectId, projectId, revisionId),
     env.DB.prepare(
-      `INSERT INTO "order" (id, project_id, accepted_revision_id, order_no, total, stage)
-       SELECT ?, ?, ?, ${NEXT_ORDER_NO}, ?, 'deposit_invoiced'
+      // "order".delivery_total is what E14/E6 read back (worker/lib/orders.ts's
+      // own orderDto, and the ops project DTO) — order_line itself carries no
+      // delivery row, ever (D17).
+      `INSERT INTO "order" (id, project_id, accepted_revision_id, order_no, total, delivery_total, stage)
+       SELECT ?, ?, ?, ${NEXT_ORDER_NO}, ?, ?, 'deposit_invoiced'
         WHERE EXISTS (
           SELECT 1 FROM quote_revision
            WHERE id=? AND project_id=? AND snapshot_status='accepted'
@@ -201,7 +228,7 @@ export async function createOrderFromRevision(
                AND current_revision_id=?
           )`,
     ).bind(
-      orderId, projectId, revisionId, total,
+      orderId, projectId, revisionId, total, delivery,
       revisionId, projectId, projectId, revisionId,
     ),
     // deposit invoiced now; balance created but not yet invoiced (invoiced_at NULL)

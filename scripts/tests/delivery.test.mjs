@@ -505,6 +505,218 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const rows = await sql(`SELECT delivery_amount FROM project WHERE id='${id}'`);
       assert.equal(rows[0].delivery_amount, null);
     });
+
+    // ── The freeze (C8) ──────────────────────────────────────────────────────
+
+    await t.test("T-B20: issuing freezes the figure and the basis it was priced from", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Freeze check", items: [aLine()] } });
+      const id = saved.body.project.id;
+      const goodsAmount = saved.body.items[0].lineTotal;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Freeze Check", email: "freeze-check@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
+      const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+      assert.equal(issued.body.total, goodsAmount + 640);
+      assert.equal(issued.body.goods, goodsAmount);
+      assert.equal(issued.body.delivery, 640);
+
+      const rows = await sql(`SELECT delivery_total, totals_json FROM quote_revision WHERE id='${issued.body.id}'`);
+      assert.equal(rows[0].delivery_total, 640);
+      const totals = JSON.parse(rows[0].totals_json);
+      assert.deepEqual(totals, {
+        total: goodsAmount + 640, goods: goodsAmount, delivery: 640,
+        deliveryPostcode: "3072", deliveryZoneId: "vic-metro", deliveryAreaM2: 1.08,
+      });
+    });
+
+    await t.test("T-B21: re-issuing freezes the current figure; the superseded revision keeps its own", async () => {
+      const s = new Session(baseUrl);
+      await login(s, "/api/auth", "reissue-freeze@example.com");
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Reissue freeze", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Reissue Freeze", email: "reissue-freeze@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
+      const r1 = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+
+      await requestJson(s, `/api/revisions/${r1.body.id}/request-changes`, { method: "POST", json: { message: "Please add a note." } });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 700 } });
+      const r2 = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+
+      const rows = await sql(`SELECT id, snapshot_status, delivery_total FROM quote_revision WHERE project_id='${id}' ORDER BY revision_no`);
+      const rev1 = rows.find((r) => r.id === r1.body.id);
+      const rev2 = rows.find((r) => r.id === r2.body.id);
+      assert.equal(rev1.snapshot_status, "superseded");
+      assert.equal(rev1.delivery_total, 640);
+      assert.equal(rev2.snapshot_status, "issued");
+      assert.equal(rev2.delivery_total, 700);
+    });
+
+    await t.test("T-B22: editing the rate table does not move a quote that is already issued", async () => {
+      const s = new Session(baseUrl);
+      await login(s, "/api/auth", "issued-frozen-rate@example.com");
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Issued frozen rate", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Issued Frozen Rate", email: "issued-frozen-rate@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
+      const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+
+      const before = await requestJson(staff, "/api/ops/pricing/delivery-zones");
+      const vicMetro = before.body.zones.find((z) => z.id === "vic-metro");
+      await requestJson(staff, "/api/ops/pricing/delivery-zones/vic-metro", {
+        method: "PUT", json: { ratePerSqm: vicMetro.ratePerSqm * 4, expectedVersion: vicMetro.version },
+      });
+
+      // The CUSTOMER read path — where a lazy implementation would recompute.
+      const revisions = await requestJson(s, `/api/projects/${id}/revisions`);
+      const current = revisions.body.revisions.find((r) => r.id === issued.body.id);
+      assert.equal(current.delivery, 640, "frozen despite the rate move");
+
+      const after = await requestJson(staff, "/api/ops/pricing/delivery-zones");
+      const now = after.body.zones.find((z) => z.id === "vic-metro");
+      await requestJson(staff, "/api/ops/pricing/delivery-zones/vic-metro", { method: "PUT", json: { ratePerSqm: 45, expectedVersion: now.version } });
+    });
+
+    // ── The order — the seam this feature dies at (C8) ──────────────────────
+
+    await t.test("T-B23: THE CRITICAL ONE -- the order total includes delivery", async () => {
+      const s = new Session(baseUrl);
+      await login(s, "/api/auth", "order-critical@example.com");
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Order critical", items: [aLine()] } });
+      const id = saved.body.project.id;
+      const goodsAmount = saved.body.items[0].lineTotal;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Order Critical", email: "order-critical@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
+      const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+      const accepted = await requestJson(s, `/api/revisions/${issued.body.id}/accept`, { method: "POST" });
+      const orderId = accepted.body.order.id;
+
+      const lineSum = await sql(`SELECT COALESCE(SUM(line_total),0) AS s FROM order_line WHERE order_id='${orderId}'`);
+      assert.equal(Number(lineSum[0].s), goodsAmount, "SUM(order_line) === goods");
+      const orderRow = await sql(`SELECT total, delivery_total FROM "order" WHERE id='${orderId}'`);
+      assert.equal(orderRow[0].delivery_total, 640, "\"order\".delivery_total === 640");
+      assert.equal(orderRow[0].total, goodsAmount + 640, "\"order\".total === goods + 640");
+      const revRow = await sql(`SELECT totals_json FROM quote_revision WHERE id='${issued.body.id}'`);
+      assert.equal(orderRow[0].total, JSON.parse(revRow[0].totals_json).total, "\"order\".total === totals_json.total");
+      assert.equal(accepted.body.order.total, orderRow[0].total, "the DTO's order.total agrees with the row");
+    });
+
+    await t.test("T-B24: the deposit is half of goods plus delivery", async () => {
+      const s = new Session(baseUrl);
+      await login(s, "/api/auth", "deposit-half@example.com");
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Deposit half", items: [aLine()] } });
+      const id = saved.body.project.id;
+      const goodsAmount = saved.body.items[0].lineTotal;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Deposit Half", email: "deposit-half@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
+      const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+      const accepted = await requestJson(s, `/api/revisions/${issued.body.id}/accept`, { method: "POST" });
+      const deposit = accepted.body.order.payments.find((p) => p.kind === "deposit");
+
+      assert.equal(deposit.percent, 50);
+      assert.equal(deposit.amount, Math.round((goodsAmount + 640) * 0.5));
+      assert.notEqual(deposit.amount, Math.round(goodsAmount * 0.5), "not half of goods alone");
+      assert.notEqual(deposit.amount, Math.round((goodsAmount + 640) * 0.4), "not 40% of the right total");
+    });
+
+    await t.test("T-B25: deposit and balance add up to the order total, to the cent", async () => {
+      const s = new Session(baseUrl);
+      await login(s, "/api/auth", "deposit-balance-cent@example.com");
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Deposit balance cent", items: [aLine({ width: "600", height: "600" })] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Deposit Balance Cent", email: "deposit-balance-cent@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 180 } }); // a real minimum-charge figure
+      const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+      const accepted = await requestJson(s, `/api/revisions/${issued.body.id}/accept`, { method: "POST" });
+      const deposit = accepted.body.order.payments.find((p) => p.kind === "deposit");
+      const balance = accepted.body.order.payments.find((p) => p.kind === "balance");
+
+      assert.equal(deposit.amount + balance.amount, accepted.body.order.total);
+      assert.equal(deposit.percent, 50);
+      assert.equal(balance.percent, 50);
+    });
+
+    await t.test("T-B26: delivery is never a line -- not a quote_line, not a revision_line, not an order_line", async () => {
+      const s = new Session(baseUrl);
+      await login(s, "/api/auth", "never-a-line@example.com");
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Never a line", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Never A Line", email: "never-a-line@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
+      const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+      const accepted = await requestJson(s, `/api/revisions/${issued.body.id}/accept`, { method: "POST" });
+      const orderId = accepted.body.order.id;
+
+      const quoteLineCount = await sql(`SELECT count(*) AS n FROM quote_line WHERE project_id='${id}' AND revision_id IS NULL AND parent_line_id IS NULL`);
+      const revLineCount = await sql(`SELECT count(*) AS n FROM revision_line WHERE revision_id='${issued.body.id}'`);
+      const orderLineCount = await sql(`SELECT count(*) AS n FROM order_line WHERE order_id='${orderId}'`);
+      assert.equal(Number(quoteLineCount[0].n), 1);
+      assert.equal(Number(revLineCount[0].n), 1);
+      assert.equal(Number(orderLineCount[0].n), 1);
+
+      const deliveryLikeSlugs = await sql(
+        `SELECT count(*) AS n FROM quote_line WHERE project_id='${id}' AND (product_slug LIKE '%deliver%' OR product_slug LIKE '%freight%')`,
+      );
+      assert.equal(Number(deliveryLikeSlugs[0].n), 0);
+      const kinds = await sql(`SELECT DISTINCT line_kind FROM quote_line WHERE project_id='${id}'`);
+      assert.deepEqual(kinds.map((k) => k.line_kind), ["simple"]);
+    });
+
+    await t.test("T-B27: a project quoted before this feature still works", async () => {
+      const s = new Session(baseUrl);
+      await login(s, "/api/auth", "pre-feature-quote@example.com");
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Pre-feature quote", items: [aLine()] } });
+      const id = saved.body.project.id;
+      const revisionId = "rev-pre-feature-test";
+      // Simulates a revision issued before C8: one-key totals_json, delivery_total
+      // defaulted to 0 by the migration.
+      await sql(`INSERT INTO quote_revision (id, project_id, revision_no, snapshot_status, totals_json, issued_at)
+                 VALUES ('${revisionId}', '${id}', 1, 'issued', '{"total":10000}', datetime('now'))`);
+      await sql(`INSERT INTO revision_line (id, revision_id, external_ref, product_snapshot_json, dims_json, qty, line_total)
+                 VALUES ('revline-pre-feature', '${revisionId}', 'W01', '{}', '{}', 1, 10000)`);
+      await sql(`UPDATE project SET status_customer='quote_issued', status_internal='issued', current_revision_id='${revisionId}' WHERE id='${id}'`);
+
+      const accepted = await requestJson(s, `/api/revisions/${revisionId}/accept`, { method: "POST" });
+      assert.equal(accepted.body.order.total, 10000);
+      const deposit = accepted.body.order.payments.find((p) => p.kind === "deposit");
+      assert.equal(deposit.amount, 5000);
+
+      const revisions = await requestJson(s, `/api/projects/${id}/revisions`);
+      const rev = revisions.body.revisions.find((r) => r.id === revisionId);
+      assert.equal(rev.goods, 10000);
+      assert.equal(rev.delivery, 0);
+    });
+
+    await t.test("T-B28: delivery is GST-inclusive everywhere and is never grossed up on the way to a screen", async () => {
+      const s = new Session(baseUrl);
+      await login(s, "/api/auth", "gst-everywhere@example.com");
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "GST everywhere", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "GST Everywhere", email: "gst-everywhere@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
+      const opsBefore = await requestJson(staff, `/api/ops/projects/${id}`);
+      assert.equal(opsBefore.body.delivery.amount, 640);
+      const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+      const revisions = await requestJson(s, `/api/projects/${id}/revisions`);
+      assert.equal(revisions.body.revisions.find((r) => r.id === issued.body.id).delivery, 640);
+      const accepted = await requestJson(s, `/api/revisions/${issued.body.id}/accept`, { method: "POST" });
+      assert.equal(accepted.body.order.delivery, 640);
+    });
   } finally {
     if (server) await stop(server);
     await removeRunDir(runDir);

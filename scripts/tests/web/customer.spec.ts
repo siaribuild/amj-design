@@ -409,3 +409,62 @@ test("signing in re-resolves the current project without a reload", async ({ pag
   await page.getByRole("button", { name: "Resume building your quote" }).click();
   await expect(page.locator(".quote-row, .quote-item-card").first()).toBeVisible();
 });
+
+// T-C5 — the issued quote asks for half of goods plus delivery (design doc
+// §8.4, C8). Fixtures built through page.request against the real API, ops
+// side priced/settled/issued through the Host-header trick T-C6/T-C7 (ops.
+// spec.ts) already use for the same OTP-cap reason.
+test("T-C5: the issued quote asks for half of goods plus delivery", async ({ page, request }) => {
+  const stamp = Date.now().toString().slice(-8);
+  const email = `tc5-issued-${stamp}@example.com`;
+  const title = `T-C5 issued check ${stamp}`;
+
+  const saved = await page.request.put("/api/projects/current/lines", {
+    data: {
+      items: [{
+        code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+        width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      }],
+      title,
+    },
+  });
+  expect(saved.ok()).toBeTruthy();
+  const savedBody = await saved.json();
+  const projectId = savedBody.project.id;
+  const goods = savedBody.items[0].lineTotal;
+
+  const submitted = await page.request.post(`/api/projects/${projectId}/submit`, {
+    data: { contact: { name: "TC5 Customer", email, postcode: "3072" } },
+  });
+  expect(submitted.ok()).toBeTruthy();
+
+  const OPS_HOST = "ops.localhost:8788";
+  const rawEmail = `tc5-ops-${stamp}@openframe.com.au`;
+  const staffChallenge = await request.post("http://127.0.0.1:8788/api/ops/auth/challenge", { headers: { Host: OPS_HOST }, data: { email: rawEmail } });
+  const { devCode } = await staffChallenge.json();
+  await request.post("http://127.0.0.1:8788/api/ops/auth/verify", { headers: { Host: OPS_HOST }, data: { email: rawEmail, code: devCode } });
+
+  const zones = await (await request.get("http://127.0.0.1:8788/api/ops/pricing/delivery-zones", { headers: { Host: OPS_HOST } })).json();
+  const vicMetro = zones.zones.find((z: { id: string; version: string; minCharge: number | null }) => z.id === "vic-metro");
+  if (vicMetro.minCharge == null) {
+    await request.put("http://127.0.0.1:8788/api/ops/pricing/delivery-zones/vic-metro", {
+      headers: { Host: OPS_HOST }, data: { ratePerSqm: 45, minCharge: 180, maxCharge: 900, expectedVersion: vicMetro.version },
+    });
+  }
+  await request.put(`http://127.0.0.1:8788/api/ops/projects/${projectId}/delivery`, { headers: { Host: OPS_HOST }, data: { amount: 640 } });
+  await request.post(`http://127.0.0.1:8788/api/ops/projects/${projectId}/issue-revision`, { headers: { Host: OPS_HOST }, data: {} });
+
+  await page.goto("/login");
+  await otpLogin(page, /your@email\.com/, email, /verify & continue/i);
+  await page.getByText(title).locator("visible=true").first().click();
+
+  await expect(page.getByRole("heading", { name: "Review and submit" })).toHaveCount(0);
+  const total = goods + 640;
+  await expect(page.getByText(/Delivery to 3072/).first()).toBeVisible();
+  await expect(page.getByText(/40%/)).toHaveCount(0);
+  await expect(page.getByText(`Total (inc GST)`)).toBeVisible();
+  await expect(page.getByText(new RegExp(`\\$${total.toLocaleString("en-AU")}`))).toBeVisible();
+  const halfTotal = Math.round(total / 2);
+  await expect(page.getByText(new RegExp(`\\$${halfTotal.toLocaleString("en-AU")}`)).first()).toBeVisible();
+});

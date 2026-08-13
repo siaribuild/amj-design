@@ -578,7 +578,8 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       // Empty draft cannot be submitted, even with a contact.
       const empty = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [] } });
       const pid = empty.body.project.id;
-      await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "Sam", email: "sam@example.com" } } }, 400);
+      const emptyDraft = await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "Sam", email: "sam@example.com", postcode: "3072" } } }, 400);
+      assert.equal(emptyDraft.body.error, "empty_quote");
 
       // A fully-priced line makes the quote submittable.
       const line = { code: "W01", location: "Living", productSlug: "amj80-series-sliding-window", width: "1200", height: "900", qty: 1,
@@ -630,7 +631,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       // Contact is required by the server, not just the SPA.
       await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "", email: "" } } }, 400);
       const ok = await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST",
-        json: { contact: { name: "Sam Builder", email: "sam@example.com", phone: "0400 000 000", suburb: "Preston VIC 3072" } } });
+        json: { contact: { name: "Sam Builder", email: "sam@example.com", phone: "0400 000 000", suburb: "Preston VIC 3072", postcode: "3072" } } });
       assert.equal(ok.body.status, "submitted");
       // A submitted project is no longer a draft — resubmission is rejected.
       await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "Sam", email: "sam@example.com" } } }, 409);
@@ -671,6 +672,8 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       ], { env: wranglerEnv });
       // Staff take it through approval → issue; then the customer requests changes.
       await requestJson(staff, `/api/ops/projects/${pid}/start-pricing`, { method: "POST", json: {} });
+      // The issue gate (C7) requires delivery to be settled first.
+      await requestJson(staff, `/api/ops/projects/${pid}/delivery`, { method: "PUT", json: { amount: 0 } });
       const issuedRev = await requestJson(staff, `/api/ops/projects/${pid}/issue-revision`, { method: "POST", json: {} });
       const revId = issuedRev.body.id;
       const issuedList = await requestJson(buyer, "/api/projects");
@@ -689,6 +692,9 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       // A second change request on the same (now stale) revision is rejected too.
       await requestJson(buyer, `/api/revisions/${revId}/request-changes`, { method: "POST", json: { message: "again" } }, 409);
 
+      // request-changes re-arms the gate (C7) — delivery must be settled again
+      // for this second revision, exactly as a real re-issue would need.
+      await requestJson(staff, `/api/ops/projects/${pid}/delivery`, { method: "PUT", json: { amount: 0 } });
       // A replacement issue must not make revision 1 live again.
       const replacement = await requestJson(
         staff, `/api/ops/projects/${pid}/issue-revision`,
@@ -728,7 +734,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(status.body.run.diagnostic.code, "RATE_LIMITED");
       const submitted = await requestJson(buyer, `/api/projects/${pid}/submit`, {
         method: "POST",
-        json: { contact: { name: "Casey Builder", email: "casey@example.com" } },
+        json: { contact: { name: "Casey Builder", email: "casey@example.com", postcode: "3072" } },
       });
       assert.equal(submitted.body.status, "submitted");
     });
@@ -755,7 +761,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       ], { env: wranglerEnv });
       const rejected = await requestJson(buyer, `/api/projects/${pid}/submit`, {
         method: "POST",
-        json: { contact: { name: "Casey Builder", email: "casey@example.com" } },
+        json: { contact: { name: "Casey Builder", email: "casey@example.com", postcode: "3072" } },
       }, 400);
       assert.equal(rejected.body.error, "empty_quote");
     });
@@ -790,7 +796,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(status.body.run.diagnostic.code, "TEMPORARY_FAILURE");
       const submitted = await requestJson(buyer, `/api/projects/${pid}/submit`, {
         method: "POST",
-        json: { contact: { name: "Stalled AI", email: "stalled-ai@example.com" } },
+        json: { contact: { name: "Stalled AI", email: "stalled-ai@example.com", postcode: "3072" } },
       });
       assert.equal(submitted.body.status, "submitted");
     });
@@ -810,7 +816,7 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
          WHERE project_id='${pid}' AND revision_id IS NULL;`,
       ], { env: wranglerEnv });
       const submitted = await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST",
-        json: { contact: { name: "AI Edit", email: "ai-edit@example.com" } } });
+        json: { contact: { name: "AI Edit", email: "ai-edit@example.com", postcode: "3072" } } });
       assert.equal(submitted.body.status, "submitted");
 
       await requestJson(staff, `/api/ops/projects/${pid}/start-pricing`, { method: "POST", json: {} });

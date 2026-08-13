@@ -61,7 +61,12 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
   }
 
   const lines = current.lines.map(parseLine);
-  const total = current.total;
+  const total = current.total; // goods + delivery (C8)
+  const goods = current.goods;
+  const delivery = current.delivery;
+  // gstAdjust is linear, so the split adjusts the SUM once — splitting goods
+  // and delivery independently would give a customer viewing ex-GST two
+  // roundings that do not add up on screen.
   const ex = Math.round((total / 1.1) * 100) / 100;
   const gst = Math.round((total - ex) * 100) / 100;
   // Server-computed (0043) — one deposit percentage, not this screen's own
@@ -145,6 +150,8 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
           <ConfirmDetails
             summary={`Preview what happens when you accept ${R}`}
             receipt={[
+              { label: "Windows and doors (inc GST)", value: money(goods) },
+              { label: `Delivery to ${current.deliveryPostcode ?? "your site"} (inc GST)`, value: delivery === 0 ? "$0" : money(delivery) },
               { label: "Quote total (inc GST)", value: money(total) },
               { label: "Deposit invoiced now — 50%", value: money(deposit), big: true },
               { label: "Balance due before despatch — 50%", value: money(balance) },
@@ -180,11 +187,23 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
         <Blk eyebrow="Schedule" title="Quoted lines" right={`Revision ${R} · anchored by schedule code`} id="rec-lines">
           <LineList lines={lines} total={null} showUnit footerLabel={`${lines.length} line${lines.length === 1 ? "" : "s"} · prices inc GST`} />
           <div className="bg-sage/[0.07] border-t border-black/10 px-5 py-[15px] flex flex-col gap-[9px]">
+            <TotalRow label="Windows and doors (inc GST)" value={money(goods)} />
+            <TotalRow label={`Delivery to ${current.deliveryPostcode ?? "your site"} (inc GST)`} value={delivery === 0 ? "$0" : money(delivery)} />
             <TotalRow label="Subtotal (ex GST)" value={money(ex)} />
             <TotalRow label="GST 10%" value={money(gst)} />
             <TotalRow label="Total (inc GST)" value={money(total)} big />
             <TotalRow label="50% deposit to begin" value={money(deposit)} attn />
           </div>
+          {/* Delivery — $340 to 3072. This is the price. D14/D12: the reason
+              for a $0 is never stated to the customer — staff zero the field
+              for other reasons besides a trade waiver (a goodwill absorb, a
+              bundled job), and only the trade case would make that sentence
+              true. */}
+          <p className="px-5 pb-4 -mt-2 text-body t-cap">
+            {delivery === 0
+              ? "Delivery — $0. Delivery is not charged on this quote."
+              : `Delivery — ${money(delivery)} to ${current.deliveryPostcode ?? "your site"}. This is the price. Tailgate to the kerb at your address; you unload.`}
+          </p>
         </Blk>
 
         {/* Revision history */}
