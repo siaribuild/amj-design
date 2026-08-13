@@ -9,7 +9,7 @@
 //
 // Sanity writes go through the mutate API (createOrReplace, idempotent, dot-free
 // ids) using the local Sanity CLI token. It also emits a D1 seed for the default
-// glass $/m² per build-up (pricing-defaults tiers).
+// glass $/m² per build-up (the D6 default tiers below).
 //
 //   node scripts/catalogue/import-wers.mjs <unzipped-wers-dir> [--write]
 //
@@ -62,7 +62,10 @@ const glassTypeKey = (t) => ({ clear: "clear", toned: "toned", "low-e": "low_e" 
 const specWord = (spec) => ({ SG: "single", DG: "double", TG: "triple" }[spec] ?? "double");
 const glazingClass = (spec, type) => `${specWord(spec)}_${glassTypeKey(type)}`;
 const frameTech = (frame) => (/\d+T\b|TB|thermal/i.test(frame) ? "thermally_broken" : "conventional");
-// Default $/m² by tier (pricing-defaults), keyed spec:type. Kept in sync by hand.
+// Default $/m² by tier (D6), keyed spec:type. THIS MAP IS THE ONLY COPY — the
+// worker-side pricing-defaults.ts module it once mirrored was never imported by
+// anything and has been deleted; these are seed DEFAULTS overridden per glazing
+// slug in D1 once real prices land (M7), never a runtime source of truth.
 const DEFAULT_GLASS_SQM = { "SG:clear": 60, "SG:low_e": 90, "SG:toned": 80, "DG:clear": 100, "DG:toned": 120, "DG:low_e": 140, "TG:clear": 160, "TG:low_e": 180 };
 // typeKey is ALREADY a key (clear/toned/low_e) — do NOT re-run glassTypeKey.
 const defaultGlassSqm = (spec, typeKey) => DEFAULT_GLASS_SQM[`${spec}:${typeKey}`] ?? DEFAULT_GLASS_SQM[`${spec}:clear`] ?? 100;
