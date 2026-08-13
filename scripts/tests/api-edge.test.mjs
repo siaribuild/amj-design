@@ -1082,12 +1082,16 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
         { method: "PUT", json: { perimRate: -5, areaRate: 300, minCharge: 0 } }, 400);
       await requestJson(reader, `/api/ops/pricing/options/colour%3Amonument`, { method: "PUT", json: { surcharge: -1 } }, 400);
 
+      // 0043: deposit_percent is gone. GET /policy survives (version, for the
+      // optimistic-concurrency shape other pricing screens share) but no longer
+      // carries a deposit figure, and PUT /policy — the editor for a knob that
+      // is now a code constant (DEPOSIT_PERCENT, worker/lib/orders.ts) — is gone
+      // outright rather than left inert.
       const policy = await requestJson(staff, "/api/ops/pricing/policy");
+      assert.ok(policy.body.policy.version);
+      assert.equal("depositPercent" in policy.body.policy, false);
       await requestJson(staff, "/api/ops/pricing/policy",
-        { method: "PUT", json: { depositPercent: 50, expectedVersion: policy.body.policy.version } });
-      assert.equal((await requestJson(staff, "/api/ops/pricing/policy")).body.policy.depositPercent, 50);
-      await requestJson(staff, "/api/ops/pricing/policy",
-        { method: "PUT", json: { depositPercent: 140, expectedVersion: "v2" } }, 400);
+        { method: "PUT", json: { depositPercent: 50, expectedVersion: policy.body.policy.version } }, 404);
 
       // The catalogue mirror reports what the ENGINE loaded, not what the browser
       // bundle happens to contain — the divergence the old screen could not show.

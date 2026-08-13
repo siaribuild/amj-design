@@ -126,7 +126,6 @@ export function orderMeta(o: ApiOrder): RecordMeta {
 // a project, "Ordered" is the phase a project earns at acceptance. State copy
 // follows that model — never "order" before acceptance.
 export function projectMeta(p: ApiProjectSummary): RecordMeta {
-  const depositOf = (t: number | null) => (t == null ? null : Math.round(t / 2));
   switch (p.status_customer) {
     case "draft":
       return { pill: "Draft — not submitted", tone: "draft", needsYou: true, next: <>finish {b(`${p.item_count} line${p.item_count === 1 ? "" : "s"}`)} and {b("submit for pricing")}</> };
@@ -137,7 +136,7 @@ export function projectMeta(p: ApiProjectSummary): RecordMeta {
     case "needs_information":
       return { pill: "Needs your answer", tone: "attn", needsYou: true, next: <>answer our question so pricing can continue</>, action: { cta: "Reply now", when: "Pauses pricing", rank: 4 } };
     case "quote_issued":
-      return { pill: `Quote ready${p.issued_revision_no ? ` · R${p.issued_revision_no}` : ""}`, tone: "attn", needsYou: true, next: <>review &amp; accept, then a {b("50% deposit")} of {b(money(depositOf(p.issued_total)))} starts your order</>, action: { cta: "Review & accept", when: "Your decision", rank: 5 } };
+      return { pill: `Quote ready${p.issued_revision_no ? ` · R${p.issued_revision_no}` : ""}`, tone: "attn", needsYou: true, next: <>review &amp; accept, then a {b("50% deposit")} of {b(money(p.issued_deposit))} starts your order</>, action: { cta: "Review & accept", when: "Your decision", rank: 5 } };
     case "expired":
       return { pill: "Expired", tone: "mute", needsYou: false, next: <>This quote expired — start a new one or contact us</> };
     default: // accepted / closed — the project is Ordered; the order row carries it

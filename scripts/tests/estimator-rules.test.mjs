@@ -31,7 +31,10 @@ await build({
 const { toCandidate, fixtureCatalogueRepository, catalogueCandidateReadiness, checkHardRules, computePrice, loadOptionSurcharges, createCachedPriceResolver, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION, effectiveThermalRequirements, gradedComplianceScore } = await import(pathToFileURL(outfile).href);
 
 const RATE = { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" };
-const POLICY = { depositPercent: 40, gstMode: "inc", version: "v1" };
+// depositPercent is gone from PricingPolicy (0043) — deposit is always
+// DEPOSIT_PERCENT (50), a constant computePrice imports itself, not a field
+// on this fixture.
+const POLICY = { gstMode: "inc", version: "v1" };
 
 // A realistic candidate mirroring the enriched Sanity shape (estimated perf).
 const awning = {
@@ -412,14 +415,14 @@ test("fixture CatalogueRepository filters by family + operation and stamps a ver
   assert.match(repo.catalogueVersion(windows), /^cat:1:/);
 });
 
-test("pricing: perimeter+area model, ×qty, 40% deposit, snapshot versions", () => {
+test("pricing: perimeter+area model, ×qty, 50% deposit, snapshot versions", () => {
   const s = computePrice(RATE, POLICY, { family: "awning-window", widthMm: 1000, heightMm: 1200, qty: 2 });
   // perimeter = 2*(1+1.2)=4.4m ×55 = 242; area = 1.2m² ×340 = 408; unit ≈ 650 (round10)
   assert.equal(s.ok, true);
   assert.equal(s.unit, 650);
   assert.equal(s.total, 1300);
-  assert.equal(s.depositAmount, 520);        // 40% of 1300
-  assert.equal(s.depositPercent, 40);        // spec: real deposit is 40%, not 50%
+  assert.equal(s.depositAmount, 650);        // 50% of 1300 — 0043: one deposit percentage
+  assert.equal(s.depositPercent, 50);
   assert.equal(s.rateCardVersion, "v1");
   assert.equal(s.pricingPolicyVersion, "v1");
 });
@@ -444,7 +447,7 @@ test("AI batch pricing loads private tables once, not once per candidate variant
           async first() {
             reads++;
             if (sql.includes("pricing_policy")) {
-              return { deposit_percent: 40, gst_mode: "inc", version: "v1" };
+              return { gst_mode: "inc", version: "v1" };
             }
             if (sql.includes("discount_percent")) return { discount_percent: 5 };
             throw new Error(`unexpected first: ${sql}`);
@@ -582,7 +585,7 @@ const bigAwning = {
 };
 const priceFn = async (c) => computePrice(
   { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" },
-  { depositPercent: 40, gstMode: "inc", version: "v1" },
+  { gstMode: "inc", version: "v1" },
   { family: "awning-window", widthMm: 800, heightMm: 1200, qty: 1 },
 );
 

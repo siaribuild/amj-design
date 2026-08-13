@@ -11,6 +11,7 @@ import { resolveUser } from "../lib/auth";
 import { uuid, normNote } from "../lib/util";
 import { loadCompositePolicy, recomputeComposite, updateSegment } from "../lib/composite";
 import { logEvent } from "../lib/activity";
+import { depositOf } from "../lib/orders";
 
 export const projects = new Hono<{ Bindings: Env }>();
 
@@ -46,7 +47,10 @@ projects.get("/", async (c) => {
     let issuedTotal: number | null = null;
     try { const t = JSON.parse(String(r.issued_totals_json ?? "")); if (typeof t?.total === "number") issuedTotal = t.total; } catch { /* unpriced */ }
     const { issued_totals_json: _drop, ...rest } = r;
-    return { ...rest, issued_total: issuedTotal };
+    // One deposit percentage (0043) — computed here, not by accountModel.tsx's
+    // dashboard rows, which used to do their own Math.round(total / 2).
+    const issuedDeposit = issuedTotal == null ? null : depositOf(issuedTotal);
+    return { ...rest, issued_total: issuedTotal, issued_deposit: issuedDeposit };
   });
   return c.json({ projects: rows });
 });

@@ -470,44 +470,21 @@ opsPricing.post("/reconcile", async (c) => {
 
 // ── Policy ───────────────────────────────────────────────────────────────────
 
+// Deposit % is no longer read here — there is one deposit percentage in this
+// codebase (0043), DEPOSIT_PERCENT in worker/lib/orders.ts, and it is not a
+// policy row nobody could edit correctly without also fixing the three other
+// places that used to disagree with it. This endpoint survives as the read of
+// `version` (optimistic-concurrency plumbing other pricing screens expect to
+// exist) and `gst_mode`, which nothing has ever read either — see the PUT this
+// used to sit above, deleted with the deposit control it edited.
 opsPricing.get("/policy", async (c) => {
   const { staff, deny } = await gate(c, "view");
   if (!staff) return deny;
-  const row = await c.env.DB.prepare("SELECT deposit_percent, gst_mode, version FROM pricing_policy WHERE id='default'").first<any>();
+  const row = await c.env.DB.prepare("SELECT gst_mode, version FROM pricing_policy WHERE id='default'").first<any>();
   return c.json({
     canEdit: canAdmin(staff),
-    policy: { depositPercent: row?.deposit_percent ?? 40, version: row?.version ?? "v1" },
+    policy: { version: row?.version ?? "v1" },
   });
-});
-
-// Deposit % only. `pricing_policy.gst_mode` is deliberately NOT editable: nothing
-// reads it — customer-facing GST comes from user.price_gst_mode via gstAdjust —
-// so a control bound to it would be a knob that appears to work and does nothing,
-// which is strictly worse than its absence.
-opsPricing.put("/policy", async (c) => {
-  const { staff, deny } = await gate(c, "admin");
-  if (!staff) return deny;
-  const body = await c.req.json().catch(() => ({}));
-  const depositPercent = num(body?.depositPercent);
-  if (depositPercent == null || depositPercent < 0 || depositPercent > 100) return c.json({ error: "invalid_amount" }, 400);
-
-  const before = await c.env.DB.prepare("SELECT deposit_percent, version FROM pricing_policy WHERE id='default'").first<any>();
-  if (!before) return c.json({ error: "not_found" }, 404);
-
-  try {
-    const version = await applyPricingChange(c.env, {
-      table: "pricing_policy", rowId: "default", actor: staff.id,
-      expectedVersion: body?.expectedVersion ?? null,
-      before: { depositPercent: before.deposit_percent, version: before.version },
-      after: { depositPercent },
-      write: (v) => c.env.DB.prepare("UPDATE pricing_policy SET deposit_percent=?, version=? WHERE id='default'")
-        .bind(depositPercent, v).run().then(() => undefined),
-    });
-    return c.json({ ok: true, version });
-  } catch (e) {
-    if (e instanceof VersionConflict) return c.json({ error: "version_conflict" }, 409);
-    throw e;
-  }
 });
 
 // ── Catalogue mirror (read-only, but honest) ─────────────────────────────────

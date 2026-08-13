@@ -25,7 +25,7 @@ import { AlertTriangle, ArrowLeft, Check, ExternalLink, Plus, RefreshCw, Trash2,
 import {
   OpsApiError, opsCatalogueMirror, opsCreateRateCard, opsDeleteRateCard, opsPricePreview,
   opsPricingOptions, opsPricingPolicy, opsRateCard, opsRateCards, opsReconcile, opsReconcileLast,
-  opsRenameRateCard, opsSaveModifiers, opsSaveOption, opsSavePolicy, opsSaveRateCard,
+  opsRenameRateCard, opsSaveModifiers, opsSaveOption, opsSaveRateCard,
   type OpsCatalogueMirror, type OpsModifier, type OpsPricedSample,
   type OpsRateCardRow, type OpsReconcileRun,
 } from "./api";
@@ -908,42 +908,29 @@ function Options({ onChanged }: { onChanged: () => void }) {
 }
 
 // ── Policy ───────────────────────────────────────────────────────────────────
+// Deposit used to be edited here. It no longer is: 0043 deleted
+// pricing_policy.deposit_percent, and with it the four-implementations problem
+// that column's own editor was quietly part of. There is one deposit
+// percentage in this codebase now — DEPOSIT_PERCENT in worker/lib/orders.ts —
+// and it is a code constant, not a control, on exactly the same footing as the
+// GST rate below it. This screen is read-only.
 function Policy() {
   const [data, setData] = useState<Awaited<ReturnType<typeof opsPricingPolicy>> | null>(null);
-  const [deposit, setDeposit] = useState("");
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    opsPricingPolicy().then((d) => { setData(d); setDeposit(String(d.policy.depositPercent)); }).catch(() => setData(null));
-  }, []);
+  useEffect(() => { opsPricingPolicy().then(setData).catch(() => setData(null)); }, []);
   if (!data) return <p className="t-bd-sm" style={{ color: MUTED }}>Loading policy…</p>;
-
-  const save = async () => {
-    setError(null);
-    try {
-      await opsSavePolicy(Number(deposit), data.policy.version);
-      const next = await opsPricingPolicy();
-      setData(next); setDeposit(String(next.policy.depositPercent));
-    } catch { setError("That change could not be saved."); }
-  };
 
   return (
     <div className="max-w-lg">
-      <p className="mb-4 t-cap" style={{ color: MUTED }}>Admin only. Applies to every quote and order, in every family.</p>
-      {error && <Banner tone="warn"><span>{error}</span><span /></Banner>}
+      <p className="mb-6 t-cap" style={{ color: MUTED }}>Applies to every quote and order, in every family.</p>
 
-      <div className="flex items-center justify-between mb-1">
+      <div className="mb-6">
         <span className="t-bd-sm" style={{ color: INK }}>Deposit</span>
-        <span className="flex items-center gap-1">
-          <input value={deposit} onChange={(e) => setDeposit(e.target.value)} disabled={!data.canEdit} inputMode="decimal"
-            className="w-20 text-right border border-black/12 px-2 py-1 disabled:bg-black/[0.03] font-data t-data" />
-          <span className="t-cap" style={{ color: MUTED }}>%</span>
-        </span>
+        <p className="mt-1 t-cap" style={{ color: MUTED }}>
+          Fixed at 50% of goods plus delivery, everywhere this system computes a deposit. Not a setting — there is
+          one deposit percentage in this codebase, and this is it. — not editable —
+        </p>
       </div>
-      <p className="mb-6 t-cap" style={{ color: MUTED }}>
-        A {money0(10000)} order asks for {money0(10000 * (Number(deposit) || 0) / 100)} up front. Changing this does
-        not alter deposits already requested on existing orders.
-      </p>
 
       {/* Stated on the screen so the next person does not "fix" its absence:
           pricing_policy.gst_mode is loaded and never read — customer-facing GST
@@ -957,11 +944,8 @@ function Policy() {
         </p>
       </div>
 
-      <div className="flex items-center justify-between pt-4 border-t border-black/8">
+      <div className="pt-4 border-t border-black/8">
         <span className="t-cap" style={{ ...MONO, color: MUTED }}>{data.policy.version}</span>
-        {data.canEdit && Number(deposit) !== data.policy.depositPercent && (
-          <button onClick={save} className="text-white px-4 py-2 t-cap" style={{ background: SAGE }}>Save deposit %</button>
-        )}
       </div>
     </div>
   );

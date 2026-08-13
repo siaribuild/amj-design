@@ -267,6 +267,10 @@ export interface ApiRevision {
   revisionNo: number;
   status: string;
   total: number;
+  /** Server-computed (0043) — one deposit percentage, never Math.round(total/2)
+   *  in the browser. */
+  deposit: number;
+  balance: number;
   issuedAt: string;
   acceptedAt: string | null;
   lines: ApiOrderLine[];
@@ -317,6 +321,8 @@ export interface ApiProjectSummary {
   issued_revision_id: string | null;
   issued_revision_no: number | null;
   issued_total: number | null;
+  /** Server-computed (0043) — accountModel.tsx no longer derives this itself. */
+  issued_deposit: number | null;
 }
 export const getProjects = () => req<{ projects: ApiProjectSummary[] }>("/api/projects");
 

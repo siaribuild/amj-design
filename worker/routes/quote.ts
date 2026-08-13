@@ -5,7 +5,7 @@ import type { Env } from "../types";
 import { ownedProject } from "../lib/access";
 import { resolveStaff } from "../lib/staff";
 import { isEmail, normEmail, resolveUser } from "../lib/auth";
-import { createOrderFromRevision, orderDto, type OrderRow } from "../lib/orders";
+import { createOrderFromRevision, orderDto, depositOf, balanceOf, type OrderRow } from "../lib/orders";
 import { issueRevision } from "../lib/revisions";
 import { logEvent } from "../lib/activity";
 import { notify } from "../lib/email";
@@ -317,9 +317,14 @@ quote.get("/projects/:id/revisions", async (c) => {
     const { results: rl } = await c.env.DB
       .prepare("SELECT external_ref, room_label, product_snapshot_json, dims_json, qty, line_total FROM revision_line WHERE revision_id = ?")
       .bind(r.id).all();
+    const total = safeParse(r.totals_json).total ?? 0;
+    // One deposit percentage (0043), computed here rather than in the browser —
+    // the same reason orders.ts computes it rather than the review screen.
+    const deposit = depositOf(total);
+    const balance = balanceOf(total);
     return {
       id: r.id, revisionNo: r.revision_no, status: r.snapshot_status,
-      total: safeParse(r.totals_json).total ?? 0, issuedAt: r.issued_at, acceptedAt: r.accepted_at,
+      total, deposit, balance, issuedAt: r.issued_at, acceptedAt: r.accepted_at,
       lines: rl,
     };
   }));

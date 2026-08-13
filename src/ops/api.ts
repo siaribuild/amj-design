@@ -417,10 +417,11 @@ export const opsSaveOption = (slug: string, surcharge: number, expectedVersion?:
 export const opsReconcile = () => write<{ run: OpsReconcileRun }>("/api/ops/pricing/reconcile", "POST", {});
 export const opsReconcileLast = () => req<{ run: OpsReconcileRun | null }>("/api/ops/pricing/reconcile");
 
+// depositPercent left the payload in 0043 — there is one deposit percentage in
+// this codebase now (DEPOSIT_PERCENT, worker/lib/orders.ts) and it is not an
+// editable policy row. opsSavePolicy is gone with the control it saved.
 export const opsPricingPolicy = () =>
-  req<{ canEdit: boolean; policy: { depositPercent: number; version: string } }>("/api/ops/pricing/policy");
-export const opsSavePolicy = (depositPercent: number, expectedVersion: string) =>
-  write<{ ok: boolean; version: string }>("/api/ops/pricing/policy", "PUT", { depositPercent, expectedVersion });
+  req<{ canEdit: boolean; policy: { version: string } }>("/api/ops/pricing/policy");
 
 export interface OpsCatalogueMirror {
   source: "sanity" | "builtin"; loadedAt: string | null; productCount: number;

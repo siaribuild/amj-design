@@ -22,7 +22,7 @@ await build({
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
       export { normEmail, isEmail, sixDigit, sha256hex, userDto } from ${p("worker/lib/auth.ts")};
       export { normalizePhone, enquiryReference, validateEnquiry } from ${p("worker/lib/enquiry.ts")};
-      export { availableActions, ACTION_LABEL, TRANSITIONS, STAGES, STAGE_LABEL, DEPOSIT_PERCENT } from ${p("worker/lib/orders.ts")};
+      export { availableActions, ACTION_LABEL, TRANSITIONS, STAGES, STAGE_LABEL, DEPOSIT_PERCENT, depositOf, balanceOf } from ${p("worker/lib/orders.ts")};
       export { editedFieldsAfterSave } from ${p("worker/lib/lines.ts")};
       export { pricingOptionSlugsFromOptions } from ${p("worker/lib/estimator/estimate.ts")};
       export { staffDomains, isStaffEmail } from ${p("worker/lib/staff.ts")};
@@ -263,6 +263,36 @@ test("orders.availableActions: correct staff options per stage", () => {
   assert.deepEqual(M.availableActions({ stage: "manufacturing" }).map((a) => a.action), ["share-qa"]);
   assert.deepEqual(M.availableActions({ stage: "delivered" }).map((a) => a.action), ["close"]);
   assert.deepEqual(M.availableActions({ stage: "after_sales" }).map((a) => a.action), []);
+});
+
+// T-A27 — there is one deposit percentage in this codebase and it is 50 (0043
+// deleted pricing_policy.deposit_percent; this is what every reader now uses).
+test("T-A27: there is one deposit percentage in this codebase and it is 50", () => {
+  assert.equal(M.DEPOSIT_PERCENT, 50);
+});
+
+// T-A28 — deposit and balance are computed once, over goods plus delivery.
+// `delivery` is 0 in every call site until C8 wires a real figure through, but
+// the function already takes it as its own argument rather than a pre-summed
+// total, which is the shape D10 actually describes.
+test("T-A28: deposit and balance are computed once, over goods plus delivery", () => {
+  assert.equal(M.depositOf(10000, 640), 5320);
+  assert.equal(M.balanceOf(10000, 640), 5320);
+  assert.equal(M.depositOf(10000, 0), 5000);
+  assert.equal(M.depositOf(10000), 5000); // delivery defaults to 0
+});
+
+// T-A29 — deposit and balance add up to the total, to the cent, for every
+// (goods, delivery) pair on the $10 grid (the grid every line total and every
+// delivery charge — T-A7 — is already on).
+test("T-A29: deposit and balance add up to the total, to the cent", () => {
+  for (let goods = 0; goods <= 20000; goods += 730) {
+    for (let delivery = 0; delivery <= 900; delivery += 170) {
+      const total = Math.round(goods / 10) * 10 + Math.round(delivery / 10) * 10;
+      const g = Math.round(goods / 10) * 10, d = Math.round(delivery / 10) * 10;
+      assert.equal(M.depositOf(g, d) + M.balanceOf(g, d), total);
+    }
+  }
 });
 
 test("orders: TRANSITIONS graph + STAGES/labels integrity", () => {

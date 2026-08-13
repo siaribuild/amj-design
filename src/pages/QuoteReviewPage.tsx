@@ -64,8 +64,10 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
   const total = current.total;
   const ex = Math.round((total / 1.1) * 100) / 100;
   const gst = Math.round((total - ex) * 100) / 100;
-  const deposit = Math.round(total / 2);
-  const balance = total - deposit;
+  // Server-computed (0043) — one deposit percentage, not this screen's own
+  // Math.round(total / 2).
+  const deposit = current.deposit;
+  const balance = current.balance;
   const issued = new Date(current.issuedAt.includes("T") ? current.issuedAt : current.issuedAt.replace(" ", "T") + "Z");
   const validUntil = new Date(+issued + VALIDITY_DAYS * 86400_000);
   const daysLeft = Math.max(0, Math.ceil((+validUntil - Date.now()) / 86400_000));

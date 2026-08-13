@@ -30,6 +30,18 @@ export const STAGE_LABEL: Record<Stage, string> = {
 
 export const DEPOSIT_PERCENT = 50;
 
+// One place that computes a deposit (0043) — every reader (this module, the
+// revision DTO in quote.ts, the dashboard summary row in projects.ts) calls
+// these rather than repeating the arithmetic. Two arguments, not one
+// pre-summed total, because that is what "50% of goods PLUS delivery" (D10)
+// actually says: goods and delivery are named separately at every call site
+// that has a delivery figure, and `delivery` defaults to 0 for the call sites
+// that (for now) do not.
+export const depositOf = (goods: number, delivery: number = 0): number =>
+  Math.round(((goods + delivery) * DEPOSIT_PERCENT) / 100);
+export const balanceOf = (goods: number, delivery: number = 0): number =>
+  Math.round((goods + delivery) * 100) / 100 - depositOf(goods, delivery);
+
 // Human labels for the transition actions (shown as ops buttons).
 export const ACTION_LABEL: Record<string, string> = {
   "issue-drawings": "Issue shop drawings",
@@ -139,8 +151,8 @@ export async function createOrderFromRevision(
     .bind(revisionId).all<{ external_ref: string | null; product_snapshot_json: string; qty: number; line_total: number }>();
 
   const total = revLines.reduce((s, l) => s + (l.line_total || 0), 0);
-  const deposit = Math.round(total * DEPOSIT_PERCENT / 100);
-  const balance = Math.round((total - deposit) * 100) / 100;
+  const deposit = depositOf(total);
+  const balance = balanceOf(total);
 
   const orderId = uuid();
   // The number is assigned by the INSERT below, not derived above it.

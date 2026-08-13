@@ -1,0 +1,32 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 0043_one_deposit_percent — one deposit percentage, and one place that says it.
+--
+-- The deposit was computed in FOUR places over TWO different percentages:
+--   worker/lib/orders.ts:31          DEPOSIT_PERCENT = 50   (the real payment rows)
+--   worker/lib/estimator/pricing.ts:250  row?.deposit_percent ?? 40  (advisory only)
+--   src/pages/QuoteReviewPage.tsx:67     Math.round(total / 2)  (browser arithmetic)
+--   src/pages/accountModel.tsx:129       Math.round(t / 2)      (browser arithmetic)
+--
+-- The two 50s always agreed with each other and the 40 was seen by nobody
+-- outside the ops pricing preview — so the disagreement was invisible. The
+-- moment `total` means goods PLUS delivery (this feature, C8) it stops being
+-- invisible and becomes a number on a document the customer keeps: the review
+-- screen would quote one deposit, the invoice would ask for another, and the
+-- difference would be exactly the freight. There is no explanation for that
+-- which does not begin with "our software".
+--
+-- Owner: the deposit is 50% of goods + delivery, and the 40% knob is DELETED —
+-- not defaulted, not left inert, deleted.
+--
+-- DROP COLUMN IS LEGAL HERE and this migration is not the first to use it:
+-- migrations/0037_drop_measured_by.sql:12 drops a column that even carried a
+-- CHECK constraint. deposit_percent is not a primary key, not UNIQUE, not
+-- indexed, and not named in a table-level CHECK or partial index, so the drop
+-- is a metadata change.
+--
+-- DEPLOY ORDER — 0037 states the rule and this migration obeys it: ship the
+-- code that no longer reads deposit_percent FIRST (same commit as this file;
+-- applied to the REMOTE database only after that code is confirmed live),
+-- THEN apply this migration. Append-only: never edit an applied migration.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE pricing_policy DROP COLUMN deposit_percent;

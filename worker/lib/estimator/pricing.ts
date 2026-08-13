@@ -7,6 +7,9 @@
 // reads the private D1 rate card; priceLine ties them together and returns an
 // immutable snapshot suitable for a quote/order line.
 import type { Env } from "../../types";
+// There is one deposit percentage in this codebase (0043) and it lives on the
+// order domain, not on a policy row — pricing_policy.deposit_percent is gone.
+import { DEPOSIT_PERCENT } from "../orders";
 
 export interface RateCard {
   id: string;            // family slug or 'default'
@@ -17,7 +20,6 @@ export interface RateCard {
 }
 
 export interface PricingPolicy {
-  depositPercent: number;
   gstMode: string;
   version: string;
 }
@@ -201,7 +203,7 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
   step({ key: "round", label: "rounded to nearest $10", detail: money(beforeRound), amount: unit - beforeRound, runningTotal: unit, applied: unit !== beforeRound });
   const total = ok ? unit * qty : 0;
   step({ key: "qty", label: `× qty ${qty}`, amount: total - unit, runningTotal: total, applied: qty > 1 });
-  const depositAmount = round10((total * policy.depositPercent) / 100);
+  const depositAmount = round10((total * DEPOSIT_PERCENT) / 100);
   return {
     ok,
     unit: ok ? unit : 0,
@@ -211,7 +213,7 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
     rateCardId: rate.id,
     rateCardVersion: rate.version,
     pricingPolicyVersion: policy.version,
-    depositPercent: policy.depositPercent,
+    depositPercent: DEPOSIT_PERCENT,
     discountPercent,
     appliedModifiers,
     computedAt: new Date().toISOString(),
@@ -245,9 +247,8 @@ export async function loadModifiers(env: Env, rateCardId: string): Promise<Prici
 }
 
 export async function loadPolicy(env: Env): Promise<PricingPolicy> {
-  const row = await env.DB.prepare("SELECT deposit_percent, gst_mode, version FROM pricing_policy WHERE id = 'default'").first<any>();
+  const row = await env.DB.prepare("SELECT gst_mode, version FROM pricing_policy WHERE id = 'default'").first<any>();
   return {
-    depositPercent: row?.deposit_percent ?? 40,
     gstMode: row?.gst_mode ?? "inc",
     version: row?.version ?? "v1",
   };
