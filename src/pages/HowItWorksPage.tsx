@@ -105,15 +105,15 @@ const PHASES: Phase[] = [
         body: "The final 50%, invoiced only after you have seen the photos." },
       { side: "you", n: "06", title: "Confirm you're ready",
         body: "Delivery is booked on your go-ahead, not before." },
-      { side: "us", title: "Delivered to your door", meta: "about 2 weeks after the balance",
-        body: "Australia-wide, with after-sales support from there." },
+      { side: "us", title: "Delivered to your kerb", meta: "about 2 weeks after the balance",
+        body: "Australia-wide, tailgate to the kerb. After-sales support runs from there." },
     ],
   },
 ];
 
 // The supply-only fact closes the sequence rather than sitting inside phase 03,
 // because it is true of the whole page and not of that phase.
-const FOOTNOTE = "Supply only — your builder or installer fits the frames. We hand over at your address.";
+const FOOTNOTE = "Supply only — your builder or installer fits the frames. We deliver by tailgate to the kerb at your address; unloading is yours to arrange.";
 
 /** Two filled/hollow cells — the same 50/50 glyph the account area uses.
  *  aria-hidden: the percentage is always written out beside it. */

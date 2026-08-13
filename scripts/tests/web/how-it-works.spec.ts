@@ -114,6 +114,21 @@ test("the removed homeowner panel stays removed", async ({ page }) => {
   await expect(page.locator("#homeowner")).toHaveCount(0);
 });
 
+// T-C10 — the delivery service promise is tailgate to kerbside, not the
+// door-to-door / hand-over claim neither showroom nor factory ever delivered.
+// A release that ships the delivery fee (C8) without this copy charges money
+// against a service description that was never true (design doc §12, risk 5).
+test("the promise is tailgate to kerbside, and the old door-to-door claim is gone", async ({ page }) => {
+  await page.goto("/how-it-works");
+  await expect(page.getByText("Door-to-door, from our factory to your site")).toHaveCount(0);
+  await expect(page.getByText("We hand over at your address")).toHaveCount(0);
+  await expect(page.getByText(/kerb/i).first()).toBeVisible();
+
+  await page.goto("/products");
+  await expect(page.getByText("Door-to-door, from our factory to your site")).toHaveCount(0);
+  await expect(page.getByText(/kerb/i).first()).toBeVisible();
+});
+
 test("neither a phone nor a desktop scrolls sideways", async ({ page }) => {
   for (const width of [375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });

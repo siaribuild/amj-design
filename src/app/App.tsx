@@ -678,7 +678,7 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
     {
       q: "Where do you deliver?",
       a: suburbs.length
-        ? `We manufacture and deliver from our showrooms in ${suburbs.join(", ")}. Tell us the site address and delivery is quoted with the frames.`
+        ? `Anywhere in Australia. Our showrooms in ${suburbs.join(", ")} are for seeing the frames and talking them through — every unit is built to order and delivered to your site. Give us the delivery postcode and the delivery is quoted with the frames.`
         : "Tell us the site address and delivery is quoted with the frames.",
       link: { label: "Find a showroom", page: "contact" },
     },
