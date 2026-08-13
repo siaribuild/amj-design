@@ -101,3 +101,61 @@ test("ops enquiries tab shows a lead with its immutable attribution", async ({ p
   await expect(page.getByText(/Source: OpenFrame Website/i)).toBeVisible();
   await expect(page.getByText("OPENFRAME").first()).toBeVisible();
 });
+
+// ── Rate card create → edit → save → delete ──────────────────────────────────
+// The save button did not work, and the cause was not the save at all: the
+// confirm dialog armed a typed-slug tripwire on "> 20% change", and its pct()
+// returns 100 whenever the previous value was 0. min_charge seeds at 0 on every
+// card (migration 0015), so setting a minimum charge for the FIRST time — the
+// most ordinary edit there is — always demanded the operator type the exact
+// rate-card slug plus a reason before Save would enable.
+//
+// This drives the real button rather than the endpoint underneath it, because
+// the endpoint was never broken. It works on a card it creates and then deletes,
+// so it cannot move a price another spec prices against: this file shares a
+// Worker and a database with the rest of the run.
+test("a rate card can be created, edited, saved and deleted from the console", async ({ page }) => {
+  const slug = `e2e-save-check-${Date.now().toString().slice(-6)}`;
+  page.on("dialog", (d) => d.accept()); // the delete confirm
+
+  await staffLogin(page);
+  await page.getByRole("button", { name: "Pricing", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Rate cards" })).toBeVisible();
+
+  await page.getByRole("button", { name: /New rate card/i }).click();
+  await page.getByPlaceholder("product-slug").fill(slug);
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+
+  // Create drops straight into the detail view — no intermediate screen.
+  await expect(page.getByRole("heading", { name: slug })).toBeVisible();
+
+  // 0 -> 250 is exactly the change that used to arm the tripwire.
+  const minField = page.locator("label").filter({ hasText: "Minimum charge" }).locator("input");
+  await expect(minField).toHaveValue("0");
+  await minField.fill("250");
+
+  await page.getByRole("button", { name: /Review change/i }).click();
+
+  // Neither gate exists any more; a reason field that nothing records is worse
+  // than no field, and the tripwire fired on an ordinary edit.
+  await expect(page.getByText(/Type the family slug/i)).toHaveCount(0);
+  await expect(page.getByPlaceholder(/Why \(required\)/i)).toHaveCount(0);
+
+  // THE ASSERTION THIS TEST EXISTS FOR: the button is enabled and it saves.
+  const saveButton = page.getByRole("button", { name: /Save new rates/i });
+  await expect(saveButton).toBeEnabled();
+  await saveButton.click();
+
+  // Saving returns to the list; the new minimum is on the row.
+  await expect(page.getByRole("button", { name: /New rate card/i })).toBeVisible();
+  const row = page.getByRole("row").filter({ hasText: slug });
+  await expect(row).toContainText("250.00");
+
+  // And it persists a round trip through the API, not just in local state.
+  await row.click();
+  await expect(page.locator("label").filter({ hasText: "Minimum charge" }).locator("input")).toHaveValue("250");
+
+  await page.getByRole("button", { name: /Delete/i }).click();
+  await expect(page.getByRole("button", { name: /New rate card/i })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: slug })).toHaveCount(0);
+});

@@ -392,10 +392,10 @@ export const opsPricePreview = (body: {
 }) => write<{ samples: OpsPricedSample[] }>("/api/ops/pricing/preview", "POST", body);
 
 export const opsSaveRateCard = (id: string, body: {
-  perimRate: number; areaRate: number; minCharge: number; note?: string; expectedVersion: string;
+  perimRate: number; areaRate: number; minCharge: number; expectedVersion: string;
 }) => write<{ ok: boolean; version: string }>(`/api/ops/pricing/rate-cards/${id}`, "PUT", body);
 
-export const opsSaveModifiers = (id: string, body: { modifiers: OpsModifier[]; note?: string; expectedVersion: string }) =>
+export const opsSaveModifiers = (id: string, body: { modifiers: OpsModifier[]; expectedVersion: string }) =>
   write<{ ok: boolean; version: string }>(`/api/ops/pricing/rate-cards/${id}/modifiers`, "PUT", body);
 
 export const opsCreateRateCard = (id: string) =>
@@ -419,8 +419,8 @@ export const opsReconcileLast = () => req<{ run: OpsReconcileRun | null }>("/api
 
 export const opsPricingPolicy = () =>
   req<{ canEdit: boolean; policy: { depositPercent: number; version: string } }>("/api/ops/pricing/policy");
-export const opsSavePolicy = (depositPercent: number, expectedVersion: string, note?: string) =>
-  write<{ ok: boolean; version: string }>("/api/ops/pricing/policy", "PUT", { depositPercent, expectedVersion, note });
+export const opsSavePolicy = (depositPercent: number, expectedVersion: string) =>
+  write<{ ok: boolean; version: string }>("/api/ops/pricing/policy", "PUT", { depositPercent, expectedVersion });
 
 export interface OpsCatalogueMirror {
   source: "sanity" | "builtin"; loadedAt: string | null; productCount: number;

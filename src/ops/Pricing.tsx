@@ -332,7 +332,7 @@ function RateCardDetail({ id, onBack, onRenamed }: { id: string; onBack: () => v
   const perimM = typical ? (2 * (typical.sample.widthMm + typical.sample.heightMm)) / 1000 : 0;
   const areaM2 = typical ? (typical.sample.widthMm * typical.sample.heightMm) / 1_000_000 : 0;
 
-  const save = async (note: string) => {
+  const save = async () => {
     setError(null);
     try {
       const cardChanged = Number(perim) !== d.card.perimRate || Number(area) !== d.card.areaRate || Number(min) !== d.card.minCharge;
@@ -340,11 +340,11 @@ function RateCardDetail({ id, onBack, onRenamed }: { id: string; onBack: () => v
       if (cardChanged) {
         version = (await opsSaveRateCard(id, {
           perimRate: Number(perim), areaRate: Number(area), minCharge: Number(min),
-          note, expectedVersion: version,
+          expectedVersion: version,
         })).version;
       }
       if (JSON.stringify(rules) !== JSON.stringify(d.modifiers)) {
-        await opsSaveModifiers(id, { modifiers: rules, note, expectedVersion: version });
+        await opsSaveModifiers(id, { modifiers: rules, expectedVersion: version });
       }
       setConfirming(false);
       onBack();
@@ -644,28 +644,30 @@ function Select({ value, onChange, options, labels, disabled }: {
 // "Are you sure?" teaches nothing. A before/after on a real window teaches
 // everything: if the operator sees $1,060 and thinks "that's about right", the
 // guardrail worked. If they see $10,600, it worked harder.
+// NO TYPED TRIPWIRE, and no reason field. Both are gone deliberately (owner,
+// 2026-08-13).
+//
+// The tripwire fired on "> 20% change", and pct() returns 100 whenever the
+// previous value was 0 — so because min_charge seeds at 0 on every card
+// (migration 0015), setting a minimum charge for the FIRST time was always a
+// "100% change". It then demanded the operator type the exact rate-card slug
+// plus a reason before Save would enable, which read as a broken button on the
+// most ordinary edit there is.
+//
+// The reason field went with it: the audit trail it was written to no longer
+// exists, so it was collecting text nobody could ever read — the "knob that
+// appears to work and does nothing" this file argues against elsewhere.
+//
+// What still guards a fat finger is the thing that always did the real work:
+// the before/after on three real windows, directly above the button.
 function ConfirmDialog({ family, before, after, baseline, preview, exposure, onCancel, onSave }: {
   family: string;
   before: { perim: number; area: number; min: number };
   after: { perim: number; area: number; min: number };
   baseline: OpsPricedSample[]; preview: OpsPricedSample[];
   exposure: { lines: number; projects: number };
-  onCancel: () => void; onSave: (note: string) => void;
+  onCancel: () => void; onSave: () => void;
 }) {
-  const [note, setNote] = useState("");
-  const [typed, setTyped] = useState("");
-
-  const pct = (a: number, b: number) => (a === 0 ? (b === 0 ? 0 : 100) : ((b - a) / a) * 100);
-  const biggest = Math.max(
-    Math.abs(pct(before.perim, after.perim)),
-    Math.abs(pct(before.area, after.area)),
-    before.min || after.min ? Math.abs(pct(before.min, after.min)) : 0,
-  );
-  // One escalation only, and narrow: typed confirmation is expensive attention,
-  // spent where a fat finger is plausible and the blast radius is a whole family.
-  const tripwire = biggest > 20;
-  const blocked = tripwire && (typed.trim() !== family || !note.trim());
-
   const rows = preview.map((p) => ({
     key: p.sample.key, sample: p.sample,
     now: baseline.find((b) => b.sample.key === p.sample.key)?.snapshot.total ?? null,
@@ -724,22 +726,10 @@ function ConfirmDialog({ family, before, after, baseline, preview, exposure, onC
           )}
         </p>
 
-        {tripwire && (
-          <div className="px-3 py-2 mb-3 border t-cap" style={{ background: "rgba(180,120,40,0.09)", borderColor: "rgba(180,120,40,0.3)", color: "var(--warning-ink)" }}>
-            <p className="mb-2">This is a {Math.round(biggest)}% change. Type the family slug to confirm.</p>
-            <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={family}
-              className="w-full border border-black/12 px-2 py-1 bg-white" style={{ ...MONO, color: INK }} />
-          </div>
-        )}
-
-        <input value={note} onChange={(e) => setNote(e.target.value)}
-          placeholder={tripwire ? "Why (required)" : "Note (optional)"}
-          className="w-full border border-black/12 px-2 py-1.5 mb-4 t-bd-sm" style={{ color: INK }} />
-
         <div className="flex justify-end gap-3">
           <button onClick={onCancel} className="px-3 py-2 t-cap" style={{ color: MUTED }}>Cancel</button>
-          <button onClick={() => onSave(note)} disabled={blocked}
-            className="text-white px-4 py-2 disabled:opacity-40 t-cap" style={{ background: SAGE }}>
+          <button onClick={onSave}
+            className="text-white px-4 py-2 t-cap" style={{ background: SAGE }}>
             Save new rates
           </button>
         </div>
