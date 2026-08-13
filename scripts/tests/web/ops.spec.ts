@@ -236,3 +236,55 @@ test("T-C6: the record shows the machine estimate beside the number staff confir
   await expect(page.getByText("Machine estimate")).toBeVisible();
   await expect(page.getByText("Not set", { exact: true })).toBeVisible();
 });
+
+// T-C7 — the issue gate on the record (design doc §6.4/§7.2, C7). Same
+// single-login pattern as T-C6, for the same OTP-cap reason.
+test("T-C7: Issue reviewed quote is blocked, and says delivery is why", async ({ page, request }) => {
+  const OPS_HOST = "ops.localhost:8788";
+  const title = `T-C7 gate check ${Date.now().toString().slice(-6)}`;
+  const rawEmail = `tc7-ops-${Date.now().toString().slice(-8)}@openframe.com.au`;
+
+  const staffChallenge = await request.post("http://127.0.0.1:8788/api/ops/auth/challenge", {
+    headers: { Host: OPS_HOST }, data: { email: rawEmail },
+  });
+  const { devCode: staffCode } = await staffChallenge.json();
+  const verifyRes = await request.post("http://127.0.0.1:8788/api/ops/auth/verify", {
+    headers: { Host: OPS_HOST }, data: { email: rawEmail, code: staffCode },
+  });
+  const setCookie = (await verifyRes.headersArray()).find((h) => h.name.toLowerCase() === "set-cookie")?.value ?? "";
+  const sessionToken = setCookie.match(/apertly_session=([^;]+)/)?.[1];
+  if (!sessionToken) throw new Error("ops dev-mode login did not set a session cookie");
+  await page.context().addCookies([{ name: "apertly_session", value: sessionToken, domain: "ops.localhost", path: "/" }]);
+
+  const saved = await page.request.put("/api/projects/current/lines", {
+    data: {
+      items: [{
+        code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+        width: "1200", height: "900", qty: 1,
+        options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+      }],
+      title,
+    },
+  });
+  expect(saved.ok()).toBeTruthy();
+  const projectId = (await saved.json()).project.id;
+  const submitted = await page.request.post(`/api/projects/${projectId}/submit`, {
+    data: { contact: { name: "T-C7 Customer", email: "tc7-gate-check@example.com", postcode: "3072" } },
+  });
+  expect(submitted.ok()).toBeTruthy();
+
+  await page.goto(OPS);
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await page.getByRole("button", { name: "Projects", exact: true }).click();
+  const row = page.getByText(title).locator("visible=true");
+  await expect(row.first()).toBeVisible();
+  await row.first().click();
+
+  // 'submitted' offers only "Start pricing" — moves to estimator_assigned,
+  // where "Issue reviewed quote" becomes the primary action.
+  await page.getByRole("button", { name: "Start pricing" }).click();
+  const issueButton = page.getByRole("button", { name: "Issue reviewed quote" });
+  await expect(issueButton).toBeVisible();
+  await expect(issueButton).toBeDisabled();
+  await expect(page.getByText(/delivery/i)).toBeVisible();
+});

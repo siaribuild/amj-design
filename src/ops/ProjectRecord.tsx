@@ -55,6 +55,7 @@ const when = (ts: string | null | undefined) => {
 // pricing problem that did not exist.
 const ACTION_ERRORS: Record<string, string> = {
   unresolved_lines: "Resolve and exactly price every line, then try again.",
+  delivery_unset: "Delivery has not been set on this project — enter a figure, or 0, in the Delivery panel.",
   line_changed_reload_required: "Someone else changed this record while you had it open — your edit wasn't saved. Reload and try again.",
   quote_changed_retry: "Someone else changed this record while you had it open — your edit wasn't saved. Reload and try again.",
   workflow_changed_retry: "This job moved to another state while you had it open. Reload to see where it is now.",

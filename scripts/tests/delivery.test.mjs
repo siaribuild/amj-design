@@ -387,6 +387,124 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       assert.ok(issued.body.revisionNo >= 1, "the revision issued");
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 300 } }, 409);
     });
+
+    // ── The gate (C7) ─────────────────────────────────────────────────────────
+
+    await t.test("T-B14: a quote cannot be issued until delivery is settled", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Gate check", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Gate Check", email: "gate-check@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/start-pricing`, { method: "POST" });
+
+      const record = await requestJson(staff, `/api/ops/projects/${id}`);
+      const issueAction = record.body.actions.find((a) => a.id === "issue-revision");
+      assert.ok(issueAction, "the action is present, not hidden");
+      assert.match(issueAction.blockedReason ?? "", /delivery/i);
+
+      const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" }, 409);
+      assert.equal(issued.body.error, "delivery_unset");
+      const rows = await sql(`SELECT count(*) AS n FROM quote_revision WHERE project_id='${id}'`);
+      assert.equal(Number(rows[0].n), 0, "zero revisions exist");
+    });
+
+    await t.test("T-B15: the second issue endpoint is gated too", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Second gate check", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Second Gate", email: "second-gate@example.com", postcode: "3072" } },
+      });
+      // On 'submitted' -- in ISSUABLE_FROM -- actionsFor renders no issue
+      // button at all (only estimator_assigned/technical_review_required
+      // do): the server guard is the whole mechanism on this status.
+      const record = await requestJson(staff, `/api/ops/projects/${id}`);
+      assert.equal(record.body.actions.find((a) => a.id === "issue-revision"), undefined);
+
+      const issued = await requestJson(staff, `/api/projects/${id}/issue-revision`, { method: "POST" }, 409);
+      assert.equal(issued.body.error, "delivery_unset");
+    });
+
+    await t.test("T-B16: an explicit zero is settled -- a trade customer is not an unfinished quote", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Zero settle check", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Zero Settle", email: "zero-settle@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/start-pricing`, { method: "POST" });
+      const settled = await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 0 } });
+      assert.equal(settled.body.delivery.settled, true);
+
+      const record = await requestJson(staff, `/api/ops/projects/${id}`);
+      const issueAction = record.body.actions.find((a) => a.id === "issue-revision");
+      assert.equal(issueAction.blockedReason, undefined);
+
+      const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+      assert.ok(issued.body.revisionNo >= 1);
+    });
+
+    await t.test("T-B17: un-setting re-arms the gate", async () => {
+      const s = new Session(baseUrl);
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Re-arm check", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Re-arm Check", email: "re-arm-check@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/start-pricing`, { method: "POST" });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 300 } });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: null } });
+      const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" }, 409);
+      assert.equal(issued.body.error, "delivery_unset");
+    });
+
+    await t.test("T-B18: requesting changes re-arms the gate for the next revision", async () => {
+      const s = new Session(baseUrl);
+      // Registered, not anonymous: worker/lib/access.ts's ownedProject accepts
+      // the claim cookie only while isCart(p) (status_customer === 'draft'),
+      // so an anonymous session cannot request-changes on its OWN quote once
+      // it has been submitted and issued — it would 404 regardless of this
+      // feature. request-changes needs the customer to act on an issued
+      // revision, so this test needs an owner login, same as T-B19.
+      await login(s, "/api/auth", "request-changes-rearm@example.com");
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Request changes re-arm", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Request Changes", email: "request-changes-rearm@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/start-pricing`, { method: "POST" });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
+      const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+      const revisionId = issued.body.id;
+
+      const changes = await requestJson(s, `/api/revisions/${revisionId}/request-changes`, { method: "POST", json: { message: "Please swap the colour." } });
+      assert.equal(changes.body.ok, true);
+
+      const rows = await sql(`SELECT delivery_amount FROM project WHERE id='${id}'`);
+      assert.equal(rows[0].delivery_amount, null, "without a change, the gate would arm only once per project ever");
+      const record = await requestJson(staff, `/api/ops/projects/${id}`);
+      assert.match(record.body.actions.find((a) => a.id === "issue-revision")?.blockedReason ?? "", /delivery/i);
+    });
+
+    await t.test("T-B19: replying to a clarification re-arms the gate", async () => {
+      const s = new Session(baseUrl);
+      await login(s, "/api/auth", "clarification-rearm@example.com");
+      const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Clarification re-arm", items: [aLine()] } });
+      const id = saved.body.project.id;
+      await requestJson(s, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Clarification Rearm", email: "clarification-rearm@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 250 } });
+      await requestJson(staff, `/api/ops/projects/${id}/request-clarification`, { method: "POST", json: { message: "What colour frame?" } });
+
+      const reply = await requestJson(s, `/api/projects/${id}/clarification-reply`, { method: "POST", json: { message: "Dover White." } });
+      assert.equal(reply.body.ok, true);
+
+      const rows = await sql(`SELECT delivery_amount FROM project WHERE id='${id}'`);
+      assert.equal(rows[0].delivery_amount, null);
+    });
   } finally {
     if (server) await stop(server);
     await removeRunDir(runDir);

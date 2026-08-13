@@ -34,6 +34,10 @@ export function actionsFor(args: {
   order: OrderRow | null;
   unresolvedLines: number;
   customerEmail: string | null;
+  /** project.delivery_amount == null — the issue gate's other half (C7,
+   *  design doc §6.4/§7.2). Never a truthiness check upstream of this: 0 is
+   *  settled (a trade waiver), only NULL is unset. */
+  deliveryUnset: boolean;
 }): OpsAction[] {
   const out: OpsAction[] = [];
 
@@ -64,9 +68,15 @@ export function actionsFor(args: {
   } else if (args.statusInternal === "estimator_assigned" || args.statusInternal === "technical_review_required") {
     out.push({
       id: "issue-revision", label: "Issue reviewed quote", tier: "primary",
+      // Lines report first when both are wrong — lines are the reviewer's
+      // actual work, delivery is one field, and surfacing the trivial
+      // blocker while hiding the substantial one trains people to distrust
+      // the gate.
       blockedReason: args.unresolvedLines > 0
         ? `${args.unresolvedLines} line${args.unresolvedLines === 1 ? " is" : "s are"} unpriced or unresolved`
-        : undefined,
+        : args.deliveryUnset
+          ? "Delivery has not been set on this project — enter a figure, or 0, in the Delivery panel."
+          : undefined,
       confirm: `Freezes this quote as a new revision and emails it to ${args.customerEmail ?? "the customer"}.`,
     });
     if (args.statusInternal === "estimator_assigned") {

@@ -570,6 +570,7 @@ ops.get("/projects/:id", async (c) => {
       order: (order as any) ?? null,
       unresolvedLines: lines.filter((line) => line.status !== "ready" || line.line_total == null).length,
       customerEmail: p.customer_email ?? p.contact_email ?? null,
+      deliveryUnset: p.delivery_amount == null,
     }),
     // The CONTRACT lines. Once a revision is accepted the draft lines are no
     // longer what anyone is building — order_line is. Without these an accepted

@@ -13,7 +13,11 @@ function safeParse(s: string): Record<string, unknown> {
 
 export type IssueResult =
   | { ok: true; id: string; revisionNo: number; total: number }
-  | { ok: false; error: "not_found" | "not_ready" };
+  // delivery_unset is a DISTINCT code, not a fourth "not_ready" — ProjectRecord.
+  // tsx's ACTION_ERRORS map has no "not_ready" key at all, so folding this into
+  // it would render the generic "That action could not be completed.", exactly
+  // the useless message that map exists to avoid.
+  | { ok: false; error: "not_found" | "not_ready" | "delivery_unset" };
 
 interface LearningOutboxPayload {
   lines: IssuedCartLine[];
@@ -99,8 +103,8 @@ export const ISSUABLE_FROM = new Set([
 
 export async function issueRevision(env: Env, projectId: string): Promise<IssueResult> {
   const project = await env.DB.prepare(
-    "SELECT id, status_internal, quote_edit_version FROM project WHERE id = ?",
-  ).bind(projectId).first<{ id: string; status_internal: string; quote_edit_version: number }>();
+    "SELECT id, status_internal, quote_edit_version, delivery_amount FROM project WHERE id = ?",
+  ).bind(projectId).first<{ id: string; status_internal: string; quote_edit_version: number; delivery_amount: number | null }>();
   if (!project) return { ok: false, error: "not_found" };
   if (!ISSUABLE_FROM.has(project.status_internal)) return { ok: false, error: "not_ready" };
 
@@ -143,6 +147,16 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
   // by staff before the quote goes out. Readiness is enforced here, at the gate.
   if (lines.some((l) => l.status === "technical_review" || l.status === "incomplete")) return { ok: false, error: "not_ready" };
 
+  // GUARD 8 — delivery must be SETTLED, not non-zero. A trade customer
+  // arranging their own freight is priced at 0 and that is an answer; NULL is
+  // the absence of one, and issuing on it freezes a figure nobody has looked
+  // at into a document the business then has to honour (design doc D12).
+  // Placed AFTER the line guards so a job with both problems reports the line
+  // problem first — lines are the reviewer's actual work, delivery is one
+  // field, and surfacing the trivial blocker while hiding the substantial one
+  // trains people to distrust the gate.
+  if (project.delivery_amount == null) return { ok: false, error: "delivery_unset" };
+
   // revision_no is assigned by the INSERT, for the same reason as the project and
   // order references: read-then-write across two statements leaves a window, and
   // this one had no catch at all — a collision threw D1_ERROR straight out of
@@ -164,11 +178,14 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
          (id, project_id, revision_no, snapshot_status, totals_json)
        SELECT ?, ?, ${NEXT_REVISION_NO}, 'issued', ?
         WHERE EXISTS (
+          -- IS, not =: NULL-safe by construction even though GUARD 8 above has
+          -- already excluded NULL. The issue freezes exactly the delivery
+          -- figure it read at the top of this call, or it fails.
           SELECT 1 FROM project
-           WHERE id=? AND quote_edit_version=?
+           WHERE id=? AND quote_edit_version=? AND delivery_amount IS ?
         )
         RETURNING revision_no`,
-    ).bind(revisionId, projectId, projectId, JSON.stringify({ total }), projectId, project.quote_edit_version),
+    ).bind(revisionId, projectId, projectId, JSON.stringify({ total }), projectId, project.quote_edit_version, project.delivery_amount),
     ...lines.map((l) => {
       const p = getProductBySlug(l.product_slug);
       const snapshot = JSON.stringify({

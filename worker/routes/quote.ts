@@ -69,7 +69,14 @@ quote.post("/projects/:id/clarification-reply", async (c) => {
         )`,
     ).bind(uuid(), p.id, user?.id ?? p.owner_user_id, message, p.id),
     c.env.DB.prepare(
+      // Re-arms the issue gate (C7) for the revision this reply leads to.
+      // delivery_postcode is NOT cleared — the destination has not changed,
+      // only the price of getting there. Without this the gate is armed once
+      // per project, ever: R1's freight figure would issue on R2/R3/R4 no
+      // matter how much the line set changed in between.
       `UPDATE project SET status_customer='under_review', status_internal='estimator_assigned',
+          delivery_amount = NULL, delivery_note = NULL,
+          delivery_settled_at = NULL, delivery_settle_json = NULL,
           updated_at=datetime('now')
         WHERE id=? AND status_customer='needs_information'
           AND status_internal='customer_clarification_required'`,
@@ -422,8 +429,16 @@ quote.post("/revisions/:id/request-changes", async (c) => {
       p.id, revisionId, revisionId, p.id,
     ),
     c.env.DB.prepare(
+      // Re-arms the issue gate (C7). delivery_postcode survives — a customer
+      // who writes "actually, deliver to Cairns" in the change request lands
+      // here with the gate re-armed, staff correct the postcode via E7, and
+      // the new figure freezes on R2. A destination change is a new
+      // revision, never an edit to an issued one.
       `UPDATE project SET status_customer='under_review',
-          status_internal='estimator_assigned', updated_at=datetime('now')
+          status_internal='estimator_assigned',
+          delivery_amount = NULL, delivery_note = NULL,
+          delivery_settled_at = NULL, delivery_settle_json = NULL,
+          updated_at=datetime('now')
         WHERE id=? AND status_customer='quote_issued' AND status_internal='issued'
           AND current_revision_id=?
           AND EXISTS (
