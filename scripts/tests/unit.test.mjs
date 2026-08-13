@@ -17,6 +17,7 @@ await build({
     contents: `
       export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions, unitMissingRequiredOptions, productColours } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
+      export { quoteSummary } from ${p("src/data/quoteSummary.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories, colorbondColourOptions, hydrateCatalogue, optionTypeOrder } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
@@ -27,6 +28,7 @@ await build({
       export { pricingOptionSlugsFromOptions } from ${p("worker/lib/estimator/estimate.ts")};
       export { staffDomains, isStaffEmail } from ${p("worker/lib/staff.ts")};
       export { rowStateFor, unitLabel } from ${p("src/components/quote-project/rowState.ts")};
+      export { normalisePostcode, sumOpeningAreaM2, zoneIsPriced, resolveZone, deliveryCost } from ${p("worker/lib/delivery.ts")};
     `,
     resolveDir: projectRoot,
     sourcefile: "unit-entry.ts",
@@ -656,4 +658,227 @@ test("the built-in fallback catalogue is already Windows-first", () => {
   // A browser that never reaches Sanity still gets the intended order.
   assert.deepEqual(M.categories.map((c) => c.name), ["Windows", "Doors"]);
   assert.equal(M.categories[0].orderRank, "a0");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Delivery pricing — the pure rate engine (design doc docs/shipping-costs-
+// design.md §5/§10.1, commit C4). worker/lib/delivery.ts has zero callers
+// elsewhere in the app as of this commit; these are the tests that make the
+// arithmetic and the postcode resolution trustworthy before anything depends
+// on them for money.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// 45 / 180 / 900 is a SHAPE, not the owner's rates — it puts the break-even at
+// exactly 4 m² and the cap at exactly 20 m², so a failure names the band it broke.
+const VIC_METRO = { id: "vic-metro", ratePerSqm: 45, minCharge: 180, maxCharge: 900, isFallback: 0 };
+const VIC_REGIONAL = { id: "vic-regional", ratePerSqm: 70, minCharge: 260, maxCharge: 1400, isFallback: 0 };
+const TAS = { id: "tas", ratePerSqm: 100, minCharge: 560, maxCharge: 2100, isFallback: 0 };
+const TAS_REMOTE = { id: "tas-remote", ratePerSqm: 180, minCharge: 900, maxCharge: 4000, isFallback: 0 };
+const UNMAPPED = { id: "unmapped", ratePerSqm: 220, minCharge: 980, maxCharge: 4200, isFallback: 1 };
+const ZONES = [VIC_METRO, VIC_REGIONAL, TAS, TAS_REMOTE, UNMAPPED];
+const RANGES = [
+  { zoneId: "vic-metro", from: 3000, to: 3207 }, { zoneId: "vic-regional", from: 3211, to: 3996 },
+  { zoneId: "tas", from: 7000, to: 7999 }, { zoneId: "tas-remote", from: 7255, to: 7256 },
+];
+
+// ── The rate curve ────────────────────────────────────────────────────────────
+
+test("T-A1: zero area is charged the zone minimum, because a minimum charge is a floor", () => {
+  assert.equal(M.deliveryCost(0, VIC_METRO), 180);
+});
+
+test("T-A2: one 600 x 600 window still costs the zone minimum", () => {
+  // area 0.36; cost 180 (16.20 raw, floored). This is the test that proves the
+  // floor is a floor -- with a base it would cost 180 + 16.20.
+  assert.equal(M.deliveryCost(0.36, VIC_METRO), 180);
+});
+
+test("T-A3: an area under the break-even is charged the minimum, not the arithmetic", () => {
+  assert.equal(M.deliveryCost(3, VIC_METRO), 180); // 135 raw
+});
+
+test("T-A4: the minimum and the linear band meet without a step at the break-even", () => {
+  assert.equal(M.deliveryCost(4, VIC_METRO), 180);
+  assert.equal(M.deliveryCost(4.5, VIC_METRO), 200); // 202.50 -> 200
+});
+
+test("T-A5: between the floor and the cap the charge is area x rate, rounded to the $10 grid", () => {
+  assert.equal(M.deliveryCost(10, VIC_METRO), 450);
+  assert.equal(M.deliveryCost(19, VIC_METRO), 860); // 855 -> 860
+  assert.equal(M.deliveryCost(4.32, VIC_METRO), 190); // 194.40 -> 190
+});
+
+test("T-A6: the area landing exactly on the cap is charged the cap", () => {
+  assert.equal(M.deliveryCost(20, VIC_METRO), 900);
+});
+
+test("T-A7: clamping happens before rounding, so the answer is always on the $10 grid", () => {
+  assert.equal(M.deliveryCost(19.999, VIC_METRO), 900);
+  for (let x = 0; x <= 40; x += 0.37) {
+    assert.equal(M.deliveryCost(x, VIC_METRO) % 10, 0, `deliveryCost(${x}) on the $10 grid`);
+  }
+});
+
+test("T-A8: ten times the glass does not cost ten times the delivery -- the cap holds", () => {
+  assert.equal(M.deliveryCost(60, VIC_METRO), 900);
+  assert.equal(M.deliveryCost(200, VIC_METRO), 900);
+});
+
+test("T-A9: a zone whose rate is zero still charges its minimum", () => {
+  assert.equal(M.deliveryCost(10, { ...VIC_METRO, ratePerSqm: 0 }), 180);
+});
+
+test("T-A10: a maximum below the minimum is a typo, and the LOWER number wins", () => {
+  // Unreachable in D1 (schema CHECK); defined here so a hand-built zone can
+  // never produce an unbounded charge.
+  assert.equal(M.deliveryCost(1, { ...VIC_METRO, minCharge: 900, maxCharge: 400 }), 400);
+});
+
+test("T-A11: more glass never costs less to deliver", () => {
+  let prev = -Infinity;
+  for (let x = 0; x <= 80; x += 0.17) {
+    const cost = M.deliveryCost(x, VIC_METRO);
+    assert.ok(Number.isFinite(cost), `finite at ${x}`);
+    assert.ok(cost >= prev, `monotonic at ${x} (${cost} >= ${prev})`);
+    assert.ok(cost <= VIC_METRO.maxCharge, `never above the cap at ${x}`);
+    prev = cost;
+  }
+});
+
+test("T-A12: a negative or non-finite area is refused rather than credited", () => {
+  assert.equal(M.deliveryCost(-5, VIC_METRO), 0);
+  assert.equal(M.deliveryCost(NaN, VIC_METRO), 0);
+  assert.equal(M.deliveryCost(Infinity, VIC_METRO), 0);
+  assert.equal(M.deliveryCost(-Infinity, VIC_METRO), 0);
+});
+
+// ── The postcode ──────────────────────────────────────────────────────────────
+
+test("T-A13: a four-digit postcode maps to its zone", () => {
+  assert.equal(M.normalisePostcode("3000"), "3000");
+  const r = M.resolveZone("3000", ZONES, RANGES);
+  assert.equal(r.zone.id, "vic-metro");
+  assert.equal(r.basis, "postcode_zone");
+});
+
+test("T-A14: 0800 is a postcode, not the number 800 -- the leading zero survives, and a number is not a postcode", () => {
+  assert.equal(M.normalisePostcode("0800"), "0800");
+  assert.equal(M.normalisePostcode(800), null);
+  assert.equal(M.normalisePostcode(3000), null);
+});
+
+test("T-A15: range bounds are inclusive at both ends", () => {
+  assert.equal(M.resolveZone("3207", ZONES, RANGES).zone.id, "vic-metro");
+  assert.equal(M.resolveZone("3211", ZONES, RANGES).zone.id, "vic-regional");
+  // 3208 is the gap -- falls to the fallback, not the nearer neighbour.
+  assert.equal(M.resolveZone("3208", ZONES, RANGES).zone.id, "unmapped");
+});
+
+test("T-A16: surrounding whitespace is not a malformed postcode", () => {
+  assert.equal(M.normalisePostcode(" 3000 "), "3000");
+  assert.equal(M.normalisePostcode("\t3000\n"), "3000");
+});
+
+test("T-A17: anything that is not exactly four ASCII digits is refused", () => {
+  const arabicIndicFour = String.fromCharCode(0x0663, 0x0660, 0x0660, 0x0660); // deliberate: \p{Nd} but not \d
+  for (const bad of ["300", "30000", "3o00", "3 00", "VIC 3000", "", "3000.0", "+3000", arabicIndicFour, null, undefined, {}, [], true, 3000]) {
+    assert.equal(M.normalisePostcode(bad), null, `rejects ${JSON.stringify(bad)}`);
+  }
+});
+
+test("T-A18: a postcode inside no configured range still gets a zone -- never nothing", () => {
+  for (const pc of ["9999", "0000", "3208"]) {
+    const r = M.resolveZone(pc, ZONES, RANGES);
+    assert.ok(r.zone, `${pc} resolves to a zone`);
+    assert.ok(r.zone.isFallback, `${pc} resolves to the fallback`);
+    assert.equal(r.basis, "fallback_zone");
+  }
+});
+
+test("T-A19: overlapping ranges resolve to the narrower one, not to whichever was written first", () => {
+  assert.equal(M.resolveZone("7256", ZONES, RANGES).zone.id, "tas-remote");
+  assert.equal(M.resolveZone("7100", ZONES, RANGES).zone.id, "tas");
+  const reversed = [...RANGES].reverse();
+  assert.equal(M.resolveZone("7256", ZONES, reversed).zone.id, "tas-remote");
+  assert.equal(M.resolveZone("7100", ZONES, reversed).zone.id, "tas");
+});
+
+test("T-A20: an unpriced zone is not free delivery -- it falls to the fallback", () => {
+  const unpriced = ZONES.map((z) => (z.id === "tas" ? { ...z, minCharge: null, ratePerSqm: null, maxCharge: null } : z));
+  assert.equal(M.resolveZone("7100", unpriced, RANGES).zone.id, "unmapped");
+});
+
+test("T-A21: an inactive zone falls back rather than continuing to price", () => {
+  const inactive = ZONES.map((z) => (z.id === "tas" ? { ...z, active: 0 } : z));
+  assert.equal(M.resolveZone("7100", inactive, RANGES).zone.id, "unmapped");
+});
+
+// ── The area basis ────────────────────────────────────────────────────────────
+
+test("T-A22: millimetres in, square metres out, from string dims and numeric dims alike", () => {
+  const fromStrings = M.sumOpeningAreaM2([{ dims_json: JSON.stringify({ width: "1200", height: "900" }), qty: 1 }]);
+  const fromNumbers = M.sumOpeningAreaM2([{ dims_json: JSON.stringify({ width: 1200, height: 900 }), qty: 1 }]);
+  assert.equal(fromStrings.areaM2, 1.08);
+  assert.equal(fromNumbers.areaM2, 1.08);
+});
+
+test("T-A23: a composite opening is measured once -- its units are frames of one hole, not extra deliveries", () => {
+  // Parent 3600x2400; two 1800x2400 segments. Only the PARENT is summed.
+  const parentOnly = M.sumOpeningAreaM2([{ dims_json: JSON.stringify({ width: 3600, height: 2400 }), qty: 1 }]);
+  assert.equal(parentOnly.areaM2, 8.64);
+  assert.notEqual(parentOnly.areaM2, 17.28); // the exact number the double-count bug produces
+});
+
+test("T-A24: the area basis is parents-only, exactly as every money total in this system is", () => {
+  // sumOpeningAreaM2 itself has no notion of "parent" -- callers (loadProjectAreaM2)
+  // filter to parent_line_id IS NULL in SQL. This asserts the arithmetic is a
+  // plain sum with no special-casing that would need reconciling with that rule.
+  const rows = [
+    { dims_json: JSON.stringify({ width: 1000, height: 1000 }), qty: 1 },
+    { dims_json: JSON.stringify({ width: 2000, height: 1000 }), qty: 1 },
+  ];
+  assert.equal(M.sumOpeningAreaM2(rows).areaM2, 1 + 2);
+});
+
+test("T-A25: an opening ordered three times ships three frames, and qty 0 is clamped to 1", () => {
+  assert.equal(M.sumOpeningAreaM2([{ dims_json: JSON.stringify({ width: 2400, height: 1800 }), qty: 3 }]).areaM2, 12.96);
+  assert.equal(M.sumOpeningAreaM2([{ dims_json: JSON.stringify({ width: 2400, height: 1800 }), qty: 0 }]).areaM2, 4.32);
+});
+
+test("T-A26: a line with no readable dimensions contributes nothing and does not poison the total with NaN", () => {
+  const rows = [
+    { dims_json: "not json", qty: 1 },
+    { dims_json: JSON.stringify({ width: "", height: "" }), qty: 1 },
+    { dims_json: JSON.stringify({ width: "abc", height: "def" }), qty: 1 },
+    { dims_json: JSON.stringify({ width: 1200, height: 900 }), qty: 1 },
+  ];
+  const r = M.sumOpeningAreaM2(rows);
+  assert.ok(Number.isFinite(r.areaM2));
+  assert.equal(r.areaM2, 1.08);
+  assert.equal(r.unmeasuredLines, 3);
+});
+
+// ── The deposit ───────────────────────────────────────────────────────────────
+// T-A27/T-A28/T-A29 already live above, alongside DEPOSIT_PERCENT (C1) -- the
+// deposit exists before delivery does, and stays where it was added rather
+// than being duplicated here for section-numbering's sake.
+
+// ── The builder guard ─────────────────────────────────────────────────────────
+
+test("T-A30: the customer's running estimate has no delivery term, and cannot grow one", () => {
+  // quoteSummary's total is Sigma linePriceTotal(it) over quote.items. A
+  // delivery-shaped extra key on an item, or on the state passed alongside
+  // items/files, must not be picked up by anything that totals it -- D8 is a
+  // promise about THIS function, since it is what the sticky builder bar and
+  // the submit gate both read.
+  const items = [
+    { id: 1, code: "W1", lineTotal: 500, status: "Ready", options: {} },
+    { id: 2, code: "W2", lineTotal: 640, status: "Ready", options: {} },
+  ];
+  const summary = M.quoteSummary({
+    items, files: [],
+    // A delivery-shaped extra key on the state itself -- must be ignored too.
+    deliveryTotal: 999999, delivery: { amount: 999999 },
+  });
+  assert.equal(summary.total, 500 + 640);
 });

@@ -109,7 +109,11 @@ export interface PriceSnapshot {
 }
 
 // Round to the nearest $10 (matches the existing configurator convention).
-const round10 = (n: number) => Math.round(n / 10) * 10;
+// Exported so worker/lib/delivery.ts imports this rather than writing a second
+// rounding helper — the class of duplication this codebase has already paid
+// for twice (the browser pricing engine that used to shadow the server's, and
+// the Math.round(total / 2) deposit that disagreed with orders.ts).
+export const round10 = (n: number) => Math.round(n / 10) * 10;
 
 // Does a rule's condition hold for this line? Dimensions are millimetres, area is
 // m² (the unit the rules are authored in).
