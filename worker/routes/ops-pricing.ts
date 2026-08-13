@@ -30,10 +30,16 @@ export const opsPricing = new Hono<{ Bindings: Env }>();
 // view / edit / policy — distinguished nobody once both staff were admins, and
 // the perimeter that actually protects pricing is Cloudflare Access on ops.*.
 //
-// What survives as a guard is CONFIRMATION rather than role: the rate-card editor
-// still refuses a save whose expectedVersion is stale, still records before/after
-// on every write, and the console still makes a change past ±20% type the family
-// slug. Those catch the mistake a role never would.
+// What survives as a guard is CONCURRENCY rather than role: every write here
+// still refuses a save whose expectedVersion is stale (applyPricingChange,
+// worker/lib/pricing-admin.ts). Two things this comment used to also claim
+// are gone, not merely unenforced: applyPricingChange stopped recording a
+// before/after history when 0042 dropped pricing_change (the bespoke audit
+// trail nobody asked for), and the console's own ±20% typed-family-slug
+// tripwire is gone too — it armed on the ordinary case (a value moving off
+// its seeded 0, e.g. a rate card's min_charge) at least as often as a real
+// mistake, and the delivery-zone editor (0044) was built without it from the
+// start rather than inheriting a gate that was already on its way out.
 const isStaffUser = (s: { role: string | null }) => !!s;
 const canView = isStaffUser;
 const canEdit = isStaffUser;

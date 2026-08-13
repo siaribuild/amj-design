@@ -286,7 +286,12 @@ test("T-C7: Issue reviewed quote is blocked, and says delivery is why", async ({
   const issueButton = page.getByRole("button", { name: "Issue reviewed quote" });
   await expect(issueButton).toBeVisible();
   await expect(issueButton).toBeDisabled();
-  await expect(page.getByText(/delivery/i)).toBeVisible();
+  // Not a bare /delivery/i — that also matches the header's "delivery not
+  // set" caption and the DeliveryBlock panel's own "Delivery" title, both
+  // legitimately on the page at the same time. This is the blockedReason
+  // beside the disabled button specifically (worker/lib/ops-actions.ts),
+  // which is the thing the test's name is actually asserting.
+  await expect(page.getByText(/delivery has not been set on this project/i)).toBeVisible();
 });
 
 // T-C8 — a staff override settles delivery, unblocks issuing, and the issued
@@ -366,4 +371,68 @@ test("T-C8: a staff override settles delivery, unblocks issuing, and the issued 
 
   const total = goods + 640;
   await expect(page.getByText(new RegExp(`\\$${total.toLocaleString("en-AU")}`)).first()).toBeVisible();
+});
+
+// T-C9 — a delivery zone can be created, priced, saved and deleted from the
+// console (design doc §10.3, C9). NULL -> 1200 on a zone's own first edit is
+// the same SHAPE as the 0 -> 1200 edit that armed the now-removed rate-card
+// tripwire (ops-pricing.ts's header comment, corrected this same commit) —
+// E2 seeds every new zone's rates at NULL rather than 0 (§6.2), so the
+// relative jump here is if anything more extreme, and the zones screen was
+// built without that gate from the start rather than inheriting it.
+// Creates its own zone and destroys it, so it cannot move a price another
+// spec prices against — this file shares a Worker and a database with the
+// rest of the run.
+test("T-C9: a delivery zone can be created, priced, saved and deleted from the console", async ({ page, request }) => {
+  const OPS_HOST = "ops.localhost:8788";
+  const rawEmail = `tc9-ops-${Date.now().toString().slice(-8)}@openframe.com.au`;
+  const staffChallenge = await request.post("http://127.0.0.1:8788/api/ops/auth/challenge", {
+    headers: { Host: OPS_HOST }, data: { email: rawEmail },
+  });
+  const { devCode: staffCode } = await staffChallenge.json();
+  const verifyRes = await request.post("http://127.0.0.1:8788/api/ops/auth/verify", {
+    headers: { Host: OPS_HOST }, data: { email: rawEmail, code: staffCode },
+  });
+  const setCookie = (await verifyRes.headersArray()).find((h) => h.name.toLowerCase() === "set-cookie")?.value ?? "";
+  const sessionToken = setCookie.match(/apertly_session=([^;]+)/)?.[1];
+  if (!sessionToken) throw new Error("ops dev-mode login did not set a session cookie");
+  await page.context().addCookies([{ name: "apertly_session", value: sessionToken, domain: "ops.localhost", path: "/" }]);
+
+  const slug = `e2e-zone-${Date.now()}`;
+
+  await page.goto(OPS);
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await page.getByRole("button", { name: "Pricing", exact: true }).click();
+  await page.getByRole("button", { name: "Delivery zones", exact: true }).click();
+
+  await page.getByRole("button", { name: /New zone/i }).click();
+  await page.getByPlaceholder("zone-id").fill(slug);
+  await page.getByPlaceholder("Label shown to staff and customers").fill("E2E Test Zone");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+
+  const row = page.getByRole("row").filter({ hasText: slug });
+  await expect(row).toBeVisible();
+
+  // $/m², Min, Max — Min is the one the removed rate-card tripwire fired on.
+  const inputs = row.locator('input[inputmode="decimal"]');
+  await inputs.nth(1).fill("1200");
+
+  // THE ASSERTION THIS TEST EXISTS FOR: the save button is not blocked.
+  const saveButton = row.locator('button[title="Save"]');
+  await expect(saveButton).toBeVisible();
+  await saveButton.click();
+  // Rate and max are still unset, so the worked-example column stays "not
+  // priced" — the input's own value is what proves the save landed.
+  await expect(inputs.nth(1)).toHaveValue("1200");
+
+  // And it persists a round trip through the API, not just local state.
+  await page.reload();
+  await page.getByRole("button", { name: "Pricing", exact: true }).click();
+  await page.getByRole("button", { name: "Delivery zones", exact: true }).click();
+  const reloadedRow = page.getByRole("row").filter({ hasText: slug });
+  await expect(reloadedRow.locator('input[inputmode="decimal"]').nth(1)).toHaveValue("1200");
+
+  page.on("dialog", (d) => d.accept()); // the delete confirm
+  await reloadedRow.locator('button[title="Delete"]').click();
+  await expect(page.getByRole("row").filter({ hasText: slug })).toHaveCount(0);
 });

@@ -7,18 +7,29 @@
 //
 // Two decisions worth knowing before reading:
 //
-//  • Rate cards are NOT inline-editable; options ARE. An option surcharge is a
-//    flat amount whose effect is linear and bounded, so density wins. A rate
-//    card's effect is dimensional and non-obvious — two numbers with only a
-//    total for feedback is exactly the mistyped-rate scenario — so it opens a
-//    detail view with a worked example, and comprehension wins.
+//  • Rate cards are NOT inline-editable; options and delivery zones ARE — and
+//    the rule sorting the three is not "how many numbers", it's whether a
+//    single number is opaque on its own. An option surcharge is one flat
+//    amount whose effect is linear and bounded, so density wins. A delivery
+//    zone has three numbers, but they are min/rate/max in the SAME unit as
+//    the answer ($) — the one opaque figure is $/m², and a worked-example
+//    column makes it legible for the cost of one column, not a screen. Zones
+//    are also edited AS A SET, against each other (WA metro above SA metro,
+//    regional above metro), which a detail view would hide by showing one
+//    zone and fourteen invisible neighbours. A rate card's perimRate × areaRate
+//    genuinely IS opaque — two numbers over two different dimensions,
+//    combining into a unit price where neither input's contribution is
+//    legible — so it alone opens a detail view with a worked example, and
+//    comprehension wins there instead.
 //  • There is no approval queue and no "publish pricing" mode. In a four-person
 //    shop an approval gate resolves to self-approval or a verbal yes clicked on
 //    someone else's behalf, which is worse than no gate because it looks like a
-//    control. Safety comes from preview and the ±20% confirmation instead — no
-//    bespoke change-history or revert; the owner never wanted either sitting
-//    beside Cloudflare's own observability tooling. A bad edit is corrected by
-//    typing the right numbers back in.
+//    control. Safety comes from the preview instead — no ±20% typed-slug
+//    tripwire either: it armed on the ordinary case (a value moving off its
+//    seeded 0) at least as often as a real mistake, and no bespoke change-
+//    history or revert; the owner never wanted either sitting beside
+//    Cloudflare's own observability tooling. A bad edit is corrected by typing
+//    the right numbers back in.
 import { SAGE, QUIET as MUTED } from "../styles/tokens";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, Check, ExternalLink, Plus, RefreshCw, Trash2, X } from "lucide-react";
