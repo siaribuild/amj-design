@@ -1002,13 +1002,21 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       assert.equal(card.familySlug, "awning-window", "and still reports the family it belongs to");
 
       // The preview prices UNSAVED values through the real engine, and shows the
-      // steps that did nothing as well as the ones that did.
+      // steps that did nothing as well as the ones that did. Compared against a
+      // baseline preview of the STORED rate, not the rate-cards list's own
+      // total — the list carries no worked example any more (that lives only
+      // in the detail view now), so the preview endpoint is the one source of
+      // truth for both sides of this comparison.
+      const baseline = await requestJson(reader, "/api/ops/pricing/preview", {
+        method: "POST",
+        json: { rateCardId: "amj80-series-awning-window", perimRate: card.perimRate, samples: [{ key: "typical", widthMm: 1200, heightMm: 1200, qty: 1 }] },
+      });
       const preview = await requestJson(reader, "/api/ops/pricing/preview", {
         method: "POST",
         json: { rateCardId: "amj80-series-awning-window", perimRate: card.perimRate + 10, samples: [{ key: "typical", widthMm: 1200, heightMm: 1200, qty: 1 }] },
       });
       const [sample] = preview.body.samples;
-      assert.ok(sample.snapshot.total > card.exampleTotal, "a higher perimeter rate prices higher");
+      assert.ok(sample.snapshot.total > baseline.body.samples[0].snapshot.total, "a higher perimeter rate prices higher");
       assert.ok(sample.snapshot.steps.some((s) => s.key === "min-charge" && !s.applied),
         "a step that did nothing is still reported — that is what teaches the formula");
       // A preview must not write.

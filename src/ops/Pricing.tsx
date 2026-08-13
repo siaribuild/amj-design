@@ -211,8 +211,7 @@ function RateCards() {
       <div className="flex items-baseline justify-between mb-3">
         <p className="t-cap" style={{ color: MUTED }}>
           A unit is <span className="font-data">perimeter(m) × perim + area(m²) × area + options</span>, then the minimum
-          charge, then the rules, then rounded to $10. The example column prices a 1200 × 1200 mm opening with no
-          options on each card — a mistyped rate shows up there before it reaches a customer.
+          charge, then the rules, then rounded to $10.
         </p>
         {data.canEdit && !creating && (
           <button onClick={() => setCreating(true)}
@@ -246,7 +245,6 @@ function RateCards() {
               <th className="text-right font-medium px-3 py-2">Area $/m²</th>
               <th className="text-right font-medium px-3 py-2">Min $</th>
               <th className="text-right font-medium px-3 py-2">Rules</th>
-              <th className="text-right font-medium px-3 py-2">Example</th>
               <th className="text-right font-medium px-4 py-2">Ver</th>
             </tr>
           </thead>
@@ -276,7 +274,6 @@ function RateCards() {
                 <td className="px-3 py-2 text-right font-data" style={{ color: INK }}>{c.areaRate.toFixed(2)}</td>
                 <td className="px-3 py-2 text-right font-data" style={{ color: c.minCharge ? INK : MUTED }}>{c.minCharge ? c.minCharge.toFixed(2) : "0.—"}</td>
                 <td className="px-3 py-2 text-right font-data" style={{ color: MUTED }}>{c.modifierCount}</td>
-                <td className="px-3 py-2 text-right font-data" style={{ color: INK }}>{money0(c.exampleTotal)}</td>
                 <td className="px-4 py-2 text-right font-data" style={{ color: MUTED }}>{c.version}</td>
               </tr>
             ))}

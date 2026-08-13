@@ -377,7 +377,7 @@ export const opsLogContact = (id: string, outcome: string, note?: string) =>
 export interface OpsRateCardRow {
   id: string; perimRate: number; areaRate: number; minCharge: number;
   version: string; updatedAt: string | null;
-  modifierCount: number; exampleTotal: number;
+  modifierCount: number;
   productName: string | null; familySlug: string | null;
 }
 export interface OpsModifier {

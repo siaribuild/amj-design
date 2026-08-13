@@ -63,16 +63,13 @@ const rowToCard = (r: any): RateCard => ({
   id: r.id, perimRate: r.perim_rate, areaRate: r.area_rate, minCharge: r.min_charge ?? 0, version: r.version,
 });
 
-// A rate card's own typical example, so the index column is comparable row to row.
-const INDEX_SAMPLE: SampleSize = { key: "typical", widthMm: 1200, heightMm: 1200, qty: 1 };
-
 // ── Rate cards ───────────────────────────────────────────────────────────────
 
-/** The index. Read-only by design: two numbers with only a total for feedback is
- *  exactly the mistyped-rate scenario, so editing opens the detail view where the
- *  worked example lives. The `example` column earns its place by making a wrong
- *  row visible AT REST — $237 in a column of four-figure numbers jumps out in a
- *  way that "13.00" in a rate cell never does. */
+/** The index. Read-only by design: no worked-example total here any more (it
+ *  used to price a shared 1200×1200 sample per row for at-rest scanning) —
+ *  editing opens the detail view, where the live worked example lives beside
+ *  the fields that produce it, which is where a wrong figure is legible
+ *  against a real before/after rather than a lone number in a dense table. */
 opsPricing.get("/rate-cards", async (c) => {
   const { staff, deny } = await gate(c, "view");
   if (!staff) return deny;
@@ -83,11 +80,9 @@ opsPricing.get("/rate-cards", async (c) => {
 
   const cards = await Promise.all((results ?? []).map(async (r) => {
     const modifiers = await loadModifiers(c.env, r.id);
-    const snap = await previewSample(c.env, { rate: rowToCard(r), modifiers, sample: INDEX_SAMPLE });
     return {
       id: r.id, perimRate: r.perim_rate, areaRate: r.area_rate, minCharge: r.min_charge ?? 0,
       version: r.version, updatedAt: r.updated_at, modifierCount: modifiers.length,
-      exampleTotal: snap.total,
       // Cards are keyed on the product slug (0031), so the row can name the
       // product and the family it belongs to.
       productName: products.find((p) => p.slug === r.id)?.name ?? null,
@@ -108,7 +103,7 @@ opsPricing.get("/rate-cards", async (c) => {
     return a.id.localeCompare(b.id);
   });
 
-  return c.json({ canEdit: canEdit(staff), sample: INDEX_SAMPLE, cards });
+  return c.json({ canEdit: canEdit(staff), cards });
 });
 
 /** No special screen — just a new row, seeded from the 'default' card's
