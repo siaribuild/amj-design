@@ -1,8 +1,9 @@
 # Referral program — specification
 
 Branch: `feat/referral-program`
-Status: **revision 6 — FINAL. Every owner decision is answered; §12 is empty. Architect has started;
-revision 6 changes are surgical additions from the legal research, not a rework.**
+Status: **revision 7 — FINAL. Every owner decision is answered; §12 is empty. Architect's design
+(`docs/design/referral-program.md`) is complete and this revision reconciles the spec to it per that
+document's §17.**
 Author: product-manager
 Date: 2026-08-15
 
@@ -23,23 +24,26 @@ proof method** · legal research cross-reference and contradiction protocol.
 the **referral increment only and never a combined total** (§4.6.3, AC-75). Tone corrected to *one-off
 offer with a clock*: explicit, honestly-displayed **expiry** (§4.6.4) and a reminder before it lapses.
 
-**Revision 6 — from `docs/specs/referral-program-legal-research.md`, which landed after revision 5.
-Four surgical changes, nothing else reworked:**
+**Revision 6 — from the legal research:** bank-detail access log reinstated as a **minimal invisible
+log with no viewer** (§7.1) · **a referrer may never submit a mate's contact details** (§7.0) · A18
+promoted to **compliance-load-bearing** under ACL s 49 and a stated **payment timeframe** added under
+ACL s 32(2) (§4.8) · A13's claim softened.
 
-1. **§7.1 reversed on audit** — the owner changed their mind on new evidence (OAIC lists audit logs of
-   access to financial information among APP 11 security expectations; research §5.1 finds the business
-   may be a full APP entity, not an exempt small business). A **minimal invisible access log** is now
-   in. **No UI, no screen, no workflow — and a viewer for it is explicitly out of scope** (AC-82).
-2. **New architectural rule (§7, AC-78):** a referrer may **never** submit a mate's contact details.
-   Attribution is always the referred tradie self-identifying. This is what keeps the business outside
-   Privacy Act s 6D(4)(d), and the stakes are the whole business's privacy status.
-3. **A18 promoted to compliance-load-bearing** (ACL s 49, referral selling) with a copy constraint on
-   the §8.2 placements (AC-79); **an explicit payment timeframe added** (ACL s 32(2)) with the payout
-   threshold disclosed up front (AC-80, AC-81).
-4. **A13's claim softened** — one person may legitimately hold several ABNs, so the same-ABN gate is
-   kept but no longer described as *preventing* self-referral.
+**Revision 7 — D18 plus one owner confirmation. Surgical; nothing else reworked:**
 
-> **Five things that must survive to implementation.** These are the ones most likely to be lost, or
+1. **D18 — payout details are a precondition of becoming a referrer** (new §4.9). A user cannot hold a
+   referral code until ABN, BSB, account number and account name are stored. Commission can therefore
+   never be earned by someone unpayable, and Victoria's twelve-month unclaimed-money clock never
+   starts. **M11/M12 are reconciled into this one rule, not stacked beside it.**
+2. **The "details missing" state is the PRIMARY entry state, not an error state** — for every new
+   referrer, it is the first thing they meet. Specified and tested as a first-class surface (§8.3,
+   AC-83).
+3. **`payout_timeframe_days` = 14 confirmed by the owner** — M14 moves from my default to settled, and
+   the promise must be **met**, not merely stated (AC-80).
+4. **A18 and D18 must stay un-conflatable** — payability is not purchase. Copy rule and criterion added
+   (§4.9.4, AC-87).
+
+> **Six things that must survive to implementation.** These are the ones most likely to be lost, or
 > "helpfully improved", between this document and working code:
 >
 > 1. **AC-49 — non-referred pricing is unchanged, byte for byte.** Every existing account and every
@@ -52,11 +56,15 @@ Four surgical changes, nothing else reworked:**
 > 3. **AC-78 — no referrer-submitted contact details, ever.** A referrer shares a code; they never type
 >    a mate's name, phone or email into this system. "Invite your mates by email" is the well-intentioned
 >    addition that would break it, and it must hit this rule when someone proposes it.
-> 4. **§4.6.6 — the same-ABN gate cannot fire at the moment the discount is granted** (no ABN is
->    collected at signup) **and does not prove common identity even when it does fire** (one person may
->    hold several ABNs legitimately). The containment argument, not the gate, is what makes the discount
->    safe. **No later revision may upgrade this to "blocked automatically".**
-> 5. **§8.6 — the panel is an offer with a deadline, not a receipt.** Accurate about mechanics (the
+> 4. **AC-87 — D18 gates on being PAYABLE, never on having PURCHASED.** No API, query, table or line of
+>    copy may condition any referrer capability on the referrer's own order history. "You must be a
+>    customer to refer" is the ACL s 49 fact pattern — strict liability, penalties to $100m. The two
+>    conditions are stated as separate facts on every surface that states either.
+> 5. **§4.6.6 — the same-ABN gate cannot fire at the moment the discount is granted** for the referred
+>    side, **and does not prove common identity even when it does fire** (one person may hold several
+>    ABNs legitimately). The containment argument, not the gate, is what makes the discount safe. **No
+>    later revision may upgrade this to "blocked automatically".**
+> 6. **§8.6 — the panel is an offer with a deadline, not a receipt.** Accurate about mechanics (the
 >    price already includes it; there is no redemption step) but urgent in tone, because the owner's
 >    rationale is that this is *"an incentive to place an order"*.
 
@@ -80,11 +88,13 @@ repeats out loud.
 
 ### What success looks like
 
-- A registered user can find their code, share it in under 10 seconds, and explain the deal from
-  memory.
+- A registered user can get set up as a referrer in one short step, find their code, share it in
+  under 10 seconds, and explain the deal from memory.
 - A tradie who arrives with a code sees the discount **while they are quoting**, knows it is one-off,
   and knows when it runs out.
 - A referred tradie's first order automatically produces a payable amount with no staff data entry.
+- **Every referrer who earns money can be paid** — the business never holds money for someone it
+  cannot pay.
 - One staff member can pay every confirmed referral in a weekly session of a few minutes, and the
   accountant can reconcile those payments from a record that survives independently of the app.
 - The business never pays commission on an order that was cancelled, refunded, or never paid for.
@@ -99,8 +109,9 @@ repeats out loud.
 
 | Actor | Who they are | What they do here |
 |---|---|---|
-| **Referrer (B)** | An existing registered user (`user` row, `type='customer'`) | Shares a code/link, watches referrals and earnings, supplies payout details, gets paid. **Never enters anything about the mate they referred.** |
-| **Referred tradie (A)** | A person with no OpenFrame account yet | Arrives via link or types a code, registers, **quotes at a discount**, orders. **Always self-identifies** (§7, AC-78). |
+| **Referrer (B)** | An existing registered user (`user` row, `type='customer'`) **who has stored complete payout details** (§4.9) | Shares a code/link, watches referrals and earnings, gets paid. **Never enters anything about the mate they referred.** |
+| **Prospective referrer** | A registered user without complete payout details | Meets the entry step: what they get, then one short form. **This is the primary state for every new referrer** (§8.3). |
+| **Referred tradie (A)** | A person with no OpenFrame account yet | Arrives via link or types a code, registers, **quotes at a discount**, orders. **Always self-identifies** (§7.0, AC-78), and is **never gated by D18**. |
 | **Visitor** | Logged-out, no account | Reads the landing page, sees the pitch on marketing pages |
 | **Ops staff** | `user.type='internal'`, ops console behind Cloudflare Access | Configures every number, reviews/voids referrals, runs the weekly payout, records payment references |
 | **Accountant** | External, not a system user | Reconciles referral payments from an exported record |
@@ -121,20 +132,25 @@ Notes grounded in the code:
   `migrations/0032_account_discount.sql` already applied to the account discount.
 - Staff and customers share the `user` table; `type='internal'` is the staff gate.
 - **An ABN is not collected at signup.** It is a profile field added later
-  (`POST /api/auth/profile`). This is load-bearing for the abuse analysis in §4.6.6.
+  (`POST /api/auth/profile`). This is load-bearing for both §4.9 (the referrer supplies one to enter
+  the program) and §4.6.6 (the referred side usually has none at capture time).
 
 ---
 
 ## 3. The program, as a tradie reads it
 
 > **Refer a mate. You both win.**
-> Share your code. Your mate gets **2.5% off their first order**. When they place it and pay in full,
-> we pay you **1% of that order** — cash, into your bank account, within **14 days**.
-> Their first order needs to be at least **$2,000** (ex GST, before delivery). You'll need an ABN on
-> your account to be paid.
+> Add your payment details to get your code — you don't need to have ordered anything yourself.
+> Your mate gets **2.5% off their first order**. When they place it and pay in full, we pay you
+> **1% of that order** — cash, into your bank account, within **14 days**.
+> Their first order needs to be at least **$2,000** (ex GST, before delivery).
 
-Five sentences, two numbers. Both sides get something, which is what makes the introduction easy to
+Six sentences, two numbers. Both sides get something, which is what makes the introduction easy to
 make — B is not asking a mate for a favour, B is giving them a discount.
+
+Note the deliberate ordering and separation in line 2: **no purchase needed** and **payment details
+needed** are two different facts, always stated as two facts (§4.9.4). Merging them into anything
+resembling "you have to be a customer to refer" is the ACL s 49 fact pattern.
 
 Every figure above is the **launch default held in the ops config**, not a constant in the code. The
 copy renders from config (§4.5); this section shows the defaults so the document reads concretely.
@@ -153,11 +169,11 @@ Every row is **DECIDED** (mine — derivable from the code, the house rules, or 
 
 | # | Decision | |
 |---|---|---|
-| A1 | **Two capture paths, one relationship — both self-identifying.** (a) **Link**: `https://<site>/r/<CODE>` sets an httpOnly cookie and 302-redirects to `/refer`. (b) **Manual code**: the referred user types the code into a field in their own account area after signing in. **There is no third path in which the referrer supplies anything about their mate** (§7, AC-78). | DECIDED |
+| A1 | **Two capture paths, one relationship — both self-identifying.** (a) **Link**: `https://<site>/r/<CODE>` sets an httpOnly cookie and 302-redirects to `/refer`. (b) **Manual code**: the referred user types the code into a field in their own account area after signing in. **There is no third path in which the referrer supplies anything about their mate** (§7.0, AC-78). | DECIDED |
 | A2 | Why both: a link only works when the introduction happens over a phone. Half of these introductions happen at a job site — B reads the code out, A types it in later. A link-only program silently loses those. Both paths write the same `referral` row. | DECIDED |
 | A3 | **The code is never asked for on the sign-in screen.** `POST /api/auth/challenge` is deliberately non-enumerating (`worker/routes/auth.ts:35`), so the server cannot reveal whether an email is new and cannot conditionally show a "new user" field. A field shown to everyone would be typed by returning customers claiming a referral on themselves. | DECIDED |
 | A4 | **A referral is only recorded when the `user` row is CREATED.** An existing customer clicking a referral link is not a referral, ever. | DECIDED |
-| A5 | Manual code entry is allowed **until the account's first order exists**, once only. After that the field disappears. | OWNER |
+| A5 | Manual code entry is allowed **until the account's first order exists**, once only. After that the field disappears. **Never gated by D18** — this is the referred side. | OWNER |
 | A6 | **Click cookie lifetime: 90 days.** A click older than that has no causal claim on a sale. | DECIDED |
 | A7 | **Attribution window: the referred tradie's first order must be placed within `window_months` of the referral being recorded — default 12, configurable in ops.** After that the referral lapses (`expired`) and pays nothing — **and the discount lapses with it (§4.6.4).** | OWNER |
 | A8 | **Scope: FIRST ORDER ONLY**, for both the commission and the discount. | OWNER |
@@ -170,12 +186,12 @@ Every row is **DECIDED** (mine — derivable from the code, the house rules, or 
 |---|---|---|
 | A11 | A user can never refer themselves | `referrer_user_id != referred_user_id`; automatic |
 | A12 | Same email = same account | Structural — email is UNIQUE on `user` |
-| A13 | **Same ABN as the referrer → refused.** Kept as a cheap signal, **but it must not be described as preventing self-referral** (research §7.2): the ABR confirms one person may legitimately hold several ABNs across different structures — a sole trader and their own Pty Ltd are two ABNs, one human. Two further limits: no ABN exists at signup, so it cannot fire at capture time for most accounts; and it runs again at earn time, voiding the earning. It does **not** protect the discount — see §4.6.6, where the containment argument does the real work. | Automatic, late, partial |
+| A13 | **Same ABN as the referrer → refused.** Kept as a cheap signal, **but it must not be described as preventing self-referral** (research §7.2): the ABR confirms one person may legitimately hold several ABNs across different structures — a sole trader and their own Pty Ltd are two ABNs, one human. **Under D18 the *referrer* always has an ABN**, so the gate can now fire at capture time whenever the *referred* user has set one — but the referred side still usually has none at signup, so it remains late and partial. It runs again at earn time, voiding the earning. It does **not** protect the discount — see §4.6.6, where the containment argument does the real work. | Automatic, partial |
 | A14 | **Staff accounts cannot refer or be referred** (`user.type='internal'`) | Automatic |
 | A15 | **Same delivery postcode is NOT a block** — a suburb full of tradies is the target market, not fraud. Ops sees it as a review flag, nothing more. | Manual review |
 | A16 | Referrer's account must be `active` at payout time | Automatic gate, ops-overridable |
 | A17 | **Ops can void any referral or earning, with a mandatory reason, at any point before it is paid.** The reason is an operational record, not audit apparatus — it is what a staff member reads later to understand why money did not go out. | Manual |
-| A18 | **Anyone with a registered account may refer, including someone who has never ordered.** Money only moves when a genuine qualifying order is paid in full. **⚠️ COMPLIANCE-LOAD-BEARING — see §4.8.** This was a scope decision in revision 1; the legal research finds it is most likely what keeps the business outside ACL s 49 (referral selling), a strict-liability offence. It is no longer a preference and must not be "tightened" into a requirement that the referrer has ordered. | DECIDED (compliance) |
+| A18 | **Anyone with a registered account may refer, including someone who has never ordered.** Money only moves when a genuine qualifying order is paid in full. **⚠️ COMPLIANCE-LOAD-BEARING — see §4.8a.** The legal research finds this is most likely what keeps the business outside ACL s 49 (referral selling), a strict-liability offence. It is not a preference and must not be "tightened" into a requirement that the referrer has ordered. **D18 (§4.9) does not qualify this rule:** D18 gates on being *payable*, A18 is about *purchase*, and the two must never be conflated (§4.9.4, AC-87). | DECIDED (compliance) |
 
 ### 4.3 Money — the referrer's commission
 
@@ -187,14 +203,14 @@ Every row is **DECIDED** (mine — derivable from the code, the house rules, or 
 | M4 | **Rate: 1% of ex-GST goods, configurable in ops** (`rate_percent`). Flat, not tiered. | OWNER |
 | M5 | **No cap.** `cap_amount` exists in the schema, is **nullable**, and ships **NULL = no cap** — present so a future cap needs no migration. Everything that renders the rules must omit the cap clause entirely when it is NULL, never print an empty slot or "up to $". | OWNER |
 | M6 | **Qualifying minimum: the referred first order must be ≥ `min_order_amount` ex-GST goods — default $2,000, configurable in ops.** | OWNER |
-| M7 | **Minimum payout balance** (`min_payout_balance`), **default $0 = off.** At 1%, a $2,000 order earns $20, so a tiny transfer is possible — hence this field. When set, a referrer's confirmed balance below it is held (visible, accruing, never lost) until it crosses the threshold. **Ships off**, so the default behaviour is "we pay you what you earned". **If it is ever switched on, it must be disclosed at the point the offer is made** — §4.8, AC-81. | OWNER |
-| M8 | **Earned vs payable.** `pending` the moment the referred order is created — the customer accepted the quote. `confirmed` (payable) when that order reaches stage **`balance_paid`**, i.e. paid 100% (`worker/lib/orders.ts:80`). No separate hold period: full payment IS the maturation, and it is an existing state, so no new lifecycle is invented. | OWNER |
+| M7 | **Minimum payout balance** (`min_payout_balance`), **default $0 = off.** At 1%, a $2,000 order earns $20, so a tiny transfer is possible — hence this field. When set, a referrer's confirmed balance below it is held (visible, accruing, never lost) until it crosses the threshold. **Ships off**, so the default behaviour is "we pay you what you earned". Switching it on carries two structural guards (§4.9.5) and must be disclosed at the point the offer is made (§4.8b, AC-81). | OWNER |
+| M8 | **Earned vs payable.** `pending` the moment the referred order is created — the customer accepted the quote. `confirmed` (payable) when that order reaches stage **`balance_paid`**, i.e. paid 100% (`worker/lib/orders.ts:80`) **and the referrer is payable** (§4.9.2). No separate hold period: full payment IS the maturation, and it is an existing state, so no new lifecycle is invented. | OWNER |
 | M9 | If the order is cancelled or `payment_status='refunded'` before payout, the earning is voided automatically. After payout there is **no clawback in v1** — exposure is negligible because money only becomes payable after the customer has paid in full. | DECIDED |
-| M10 | **Rate is snapshotted onto the referral when the referral is RECORDED**, not read live at earn time. Changing the rate in ops must never retroactively change what someone was already promised. The config is the source of truth for *new* referrals; the referral row is the source of truth for money already promised. | DECIDED |
+| M10 | **Rate is snapshotted onto the referral when the referral is RECORDED**, not read live at earn time. Changing the rate in ops must never retroactively change what someone was already promised. The config is the source of truth for *new* referrals; the referral row is the source of truth for money already promised. **Compliance-load-bearing** (design ADR-6). | DECIDED (compliance) |
 | M11 | **Payout mechanism: manual bank transfer by staff, recorded in ops.** No payment rail, no API, no automated disbursement. The system tells staff who to pay and how much, captures the reference of the transfer they made, and keeps a record the accountant can reconcile. This is *tracking*, not a payments integration. | DECIDED |
-| M12 | **Payout requires a valid ABN on the referrer's account**, plus BSB, account number and account name. No ABN → the earning stays `confirmed` and the account area says exactly what is missing. | OWNER |
+| M12 | **Payability is an ENTRY condition, not a payment-time condition — see §4.9.** *(Reconciled in revision 7.)* Revisions 1–6 said an earning without an ABN stays `confirmed` while the account area explains what is missing. **That state is unreachable by construction under D18 and this document no longer describes it.** A referrer is payable before they can hold a code; the only reachable residue — details cleared after a referral was recorded — holds future earnings at `pending` (§4.9.2), never at `confirmed`. One rule, one place. | OWNER (D18) |
 | M13 | **The advertised commission is inclusive of any GST payable.** "We pay you $200" means $200 lands in the account, whether or not the referrer is GST-registered. See §11. | OWNER |
-| M14 | **A stated payment timeframe: `payout_within_days`, default 14 days** from the referred order being paid in full, configurable in ops. **⚠️ COMPLIANCE-LOAD-BEARING — see §4.8** (ACL s 32(2)). Comfortably achievable with a weekly payout run; the timeframe is a promise, so it is stated wherever the offer is made rather than left open-ended. | DECIDED (compliance) |
+| M14 | **Payment timeframe: `payout_timeframe_days` = 14**, configurable in ops. **⚠️ COMPLIANCE-LOAD-BEARING** (ACL s 32(2)) — and it is a **public promise that must be met, not merely stated** (AC-80). Comfortably achievable with a weekly payout run; the ops queue surfaces anything approaching the deadline (§8.4c). | OWNER (confirmed) |
 
 ### 4.4 GST display — one exemption, one non-exemption
 
@@ -226,7 +242,7 @@ honours the preference like every other price (AC-74).
 |---|---|---|
 | Structural marketing copy (headline, steps, FAQ) | **Hard-coded in the page component** | Every other marketing page works that way (`HomePage`, `HowItWorksPage`, `TradePage`). It must interleave with an auth-aware CTA and live figures, which portable text cannot do. |
 | Hero image + per-page SEO | **Sanity `page` document, `pageId: "refer"`** | The existing mechanism (`src/data/catalogueQuery.ts:111`, via `getPage()`); lets the owner swap image and meta without a deploy. |
-| **Every number** (commission rate, **discount**, minimum, window, cap, payout threshold, **payment timeframe**) | **The program config in D1, rendered into the copy at runtime** | See below — now load-bearing. |
+| **Every number** (commission rate, **discount**, minimum, window, cap, payout threshold, **payment timeframe**) | **The program config in D1, rendered into the copy at runtime** | See below — load-bearing. |
 | Plain-English rules and full T&Cs | **Sanity `post`**, linked from the landing page | Supplied by the coordinator (§11); revised by a human who is not deploying code. |
 
 **The no-typed-figures rule is load-bearing, not hygiene.** The owner kept the discount at 2.5%
@@ -344,9 +360,7 @@ placement, and every email. Ops screens are unaffected — staff see the full co
 1. **Used** — the discount applies while the referred account has **no order**. The moment their first
    order is created, eligibility ends. That is the intended, happy ending: it did its job.
 2. **Expired** — if no first order is placed within the attribution window (A7, default 12 months),
-   **the referral lapses and the discount lapses with it.** This follows from A7 and is already
-   enforced by AC-13; revision 5 makes it explicit because it is now *advertised* and therefore a
-   promise being withdrawn on a timer.
+   **the referral lapses and the discount lapses with it.**
 
 **The expiry is a feature, not fine print.** The owner's rationale for the discount is that it is *"an
 incentive to place an order… a one-off"*, and an incentive with no deadline is not an incentive. So the
@@ -358,19 +372,16 @@ account panel (§8.6). It must never simply vanish.
 - **An issued quote is a price offer and is never re-priced under the customer.** If eligibility ends —
   by use or by expiry — between issue and acceptance, the issued price stands.
 - **A reminder before it lapses.** One email, 30 days before expiry, to a referred account that still
-  has the discount available and has not ordered. This is my decision, not the owner's, and the
-  reasoning is the owner's own: a deadline nobody is reminded of generates neither urgency nor
-  goodwill, only complaints when the price moves. The notification machinery already exists
-  (`worker/lib/email.ts`), so the cost is one template. Vetoable.
+  has the discount available and has not ordered. My decision, on the owner's own logic: a deadline
+  nobody is reminded of generates neither urgency nor goodwill, only complaints when the price moves.
 - **The stale-draft contradiction, and its resolution.** Line totals are stored, not recomputed on
   read, so a referred user with two open drafts who orders one would otherwise keep seeing
   referral-discounted figures on the other — while the account panel says the discount is used. Same
   problem on expiry. **Required outcome (AC-72): once the discount has been used or has expired, no
   customer-facing surface may present it as still available, and no unissued draft may present
   referral-discounted figures as current** — the draft is either re-priced without the referral
-  discount or visibly marked as needing re-pricing before its figures are relied on. The architect
-  chooses the mechanism; re-pricing the user's other unissued drafts at first-order creation (and on
-  expiry) is the obvious candidate and is bounded work. Issued quotes remain exempt (AC-54).
+  discount or visibly marked as needing re-pricing before its figures are relied on. Issued quotes
+  remain exempt (AC-54).
 - **Line price overrides** (`migrations/0046_line_price_override.sql`, `ops.put("/lines/:id/price")`)
   bypass the engine entirely. An overridden line does not receive the referral discount, and that is
   correct: a human set that number deliberately. An edge case, not a bug (AC-59).
@@ -389,25 +400,28 @@ qualifies before the discount and not after) is accepted and is what the ops voi
 gap, the change gets described; the gap does not get re-labelled. The legal research (§7.2) strengthens
 this reasoning rather than weakening it.
 
-- The discount is **immediate**, needs **no ABN and no bank details**, and is claimable by anyone who
-  can create an email address. The §4.2 gates were designed around the payout and only partly cover
-  it: A11/A12/A14 hold, but **A13 (same ABN) cannot fire at signup, because no ABN is collected
-  then — and even when it does fire it does not prove common identity**, because one person may
-  legitimately hold several ABNs across different structures (a sole trader and their own Pty Ltd).
-  Self-referral via a second email address is therefore **not** automatically blocked, and the ABN gate
-  should be understood as a cheap signal, not a control.
+- The discount is **immediate**, needs **no ABN and no bank details on the referred side**, and is
+  claimable by anyone who can create an email address. **D18 does not change this** — it gates the
+  referrER, not the referred tradie. The §4.2 gates were designed around the payout and only partly
+  cover it: A11/A12/A14 hold, but **A13 (same ABN) usually cannot fire at signup, because the referred
+  side has no ABN then — and even when it does fire it does not prove common identity**, because one
+  person may legitimately hold several ABNs across different structures (a sole trader and their own
+  Pty Ltd). Self-referral via a second email address is therefore **not** automatically blocked, and
+  the ABN gate should be understood as a cheap signal, not a control.
 - **What actually contains it:** this business issues no price without a human. Every quote is priced
   and reviewed in ops before issue, and the perpetrator must place and pay for a real order to a real
   address. The maximum gain is the discount percentage of one order they actually buy; the maximum
   loss to the business is that same percentage — **bounded, and self-funding, because the "attacker"
   has bought windows.** There is no cash-out path: the commission side requires an ABN, bank details
-  and a fully paid order.
+  and a fully paid order — and under D18 those details must exist **before** a code is issued at all,
+  which raises the effort of the cash-out path further without being a control on the discount.
 - **What we add:** the ops referrals list flags a referral where the two accounts share an ABN, phone
   number, business name or delivery postcode. A reviewer sees the flag on the project record before
   issuing the quote (AC-58). Ops can void the referral and re-price the project, which removes the
   discount from any not-yet-issued quote.
-- **What we do not add:** identity verification, ABN-at-signup, or blocking on postcode. Each costs
-  real conversion on the majority of honest users to prevent a bounded, self-funding loss.
+- **What we do not add:** identity verification, ABN-at-signup for the referred side, or blocking on
+  postcode. Each costs real conversion on the majority of honest users to prevent a bounded,
+  self-funding loss.
 
 #### 4.6.7 Independently switchable
 
@@ -449,7 +463,7 @@ with a mandatory reason and its own confirmation — never a side effect of flip
 `terminated` is reversible by an admin, with a confirmation stating that restarting attributes nothing
 retroactively (AC-68).
 
-### 4.8 Australian Consumer Law constraints on the offer *(new in revision 6)*
+### 4.8 Australian Consumer Law constraints on the offer
 
 Two findings from the legal research bind the design, not just the terms. Both are recorded here
 because they constrain what the **surfaces are allowed to say**, which is a spec concern rather than a
@@ -461,71 +475,171 @@ corporate. It is engaged where a supplier induces a consumer to buy by promising
 supplier to make a sale to someone else, where the benefit is contingent on an event occurring after
 the contract is made.**
 
-**A18 is what most likely keeps the business outside it**, and it is therefore promoted from a scope
-decision to a compliance constraint. Two consequences:
+**A18 is what most likely keeps the business outside it**, and it is therefore a compliance constraint,
+not a scope decision. Three consequences:
 
 - **A18 must not be tightened.** Requiring the referrer to have ordered before they can earn would
-  couple the reward to their own purchase, which is the shape s 49 is about. Anyone proposing that
-  change must be sent back to this section.
+  couple the reward to their own purchase, which is the shape s 49 is about.
 - **The §8.2 placements must never couple the referrer's reward to the referrer's own purchase.**
   *"Place your first order and earn 1% on every mate you refer"* is inside the shape of s 49.
-  *"Any account can refer — you don't need to have ordered"* is not. This binds the logged-out
-  placements in particular, where the temptation to write a purchase-conditional pitch is highest
-  (AC-79).
+  *"Any account can refer — you don't need to have ordered"* is not (AC-79).
+- **D18 must never be described in purchase terms** (§4.9.4). "Add your payment details to get your
+  code" is an eligibility condition about payability. "You have to be a customer to refer" is the
+  s 49 fact pattern. They are one careless sentence apart, which is why AC-87 exists.
 
 **(b) ACL s 32(2) — offering rebates, gifts and prizes.** A rebate must be provided **within the time
 stated in the offer**, or within a reasonable time if none is stated. Two consequences:
 
-- **A stated payment timeframe is mandatory, not optional** — hence M14 (`payout_within_days`, default
-  14). It appears wherever the offer is made, from config like every other figure (AC-80).
+- **A stated payment timeframe is mandatory, not optional** — M14, `payout_timeframe_days` = 14. It
+  appears wherever the offer is made, from config like every other figure, **and it has to actually be
+  met** (AC-80).
 - **`min_payout_balance` must be disclosed at the point the offer is made**, not discovered afterwards
-  by a referrer whose money is being held. A held payment that was never mentioned in the offer is
-  arguably not provided in accordance with it. The field ships **off** (M7), so this bites only if it
-  is ever switched on — which is exactly when it would be forgotten, hence the criterion (AC-81).
+  by a referrer whose money is being held (AC-81). The field ships **off** (M7), so this bites only if
+  it is ever switched on — which is exactly when it would be forgotten, hence §4.9.5's structural
+  guards.
+
+### 4.9 D18 — payout details are a precondition of becoming a referrer *(new in revision 7)*
+
+**Owner's decision, verbatim:** *"Only allow users to become referrers if they have required details
+stored."*
+
+#### 4.9.1 The rule
+
+> **A user cannot hold a referral code until ABN, BSB, account number and account name are stored.**
+> Completing those details is how you enter the program — not how you unblock a payment later.
+
+**Why the gate is at the front.** The legal research (§10) found Victoria's *Unclaimed Money Act 2008*
+s 3(1) catches sums legally payable that have remained unpaid for twelve months, above a $20 floor,
+with duties to register and remit to the Registrar. The scenario that engages it is a referrer who
+earns commission, never supplies bank details, and twelve months later has turned a dormant balance
+into a statutory obligation. Moving the gate to the front means **commission can never be earned by
+someone unpayable, so the clock never starts.**
+
+It is also the stronger legal position on a second front: a term saying *"we hold your earned money
+until you give us details"* is a limitation on an obligation already incurred and carries
+unfair-contract-terms risk. A rule saying *"you aren't in the program until you're payable"* is an
+eligibility condition disclosed up front. And it removes an entire failure state from the account area
+rather than building screens for it.
+
+#### 4.9.2 What the architect settled (engineering, now spec)
+
+The three questions D18 left open are decided; the spec records outcomes, not questions:
+
+- **The code is WITHHELD until details are complete** — not issued-inactive. Withholding makes the
+  invariant structural: there is no window in which a referral could be recorded against a referrer
+  who cannot be paid.
+- **Payability is re-checked at recording time**, not just at code issue. Details are editable, so
+  code-in-hand does not prove payable-now. A link for a currently-unpayable referrer sets no cookie,
+  and manual entry of a dormant code returns the **generic invalid-code error** — the message must
+  never disclose the referrer's account state (their missing bank details) to a third party.
+- **Details may be cleared, except while a `confirmed` unpaid earning exists.** That money is already
+  payable and the details are actively needed for the imminent payment; the refusal states the amount
+  and the reason. Otherwise clearing is allowed, with three consequences: the code goes **dormant**;
+  the referrer's *existing* referrals keep their referred-side promises untouched (limb-2 principle —
+  the mate's discount is not collateral damage); and any future earning **holds at `pending`** rather
+  than confirming, until details are re-completed. **`pending` money is not yet payable**, so the
+  eligibility rule still holds and the twelve-month clock still does not start. This is the only
+  reachable residue of the unpayable-referrer problem, it introduces no new state, and it is visible
+  in the account area — never silent.
+
+#### 4.9.3 The cost, stated plainly
+
+**This is real friction, deliberately accepted.** A tradie willing to pass a code to a mate must first
+enter an ABN, BSB, account number and account name — before they have earned anything, and possibly
+before they believe they ever will. **Some will not push through it, and the program's reach is
+smaller for it.** That is the trade the owner accepted knowingly, in exchange for never holding money
+it cannot pay out.
+
+The design response is to make the ask feel proportionate rather than to hide it: **state what they get
+before asking for banking details, and keep the form to one short step.** This is why the
+"details missing" state is specified as the **primary entry state** rather than an error state
+(§8.3, AC-83) — for every new referrer it is the first thing they meet, and it is the screen the whole
+program's reach depends on.
+
+#### 4.9.4 D18 is a payability gate, never a purchase gate
+
+**⚠️ COMPLIANCE-LOAD-BEARING (ACL s 49) — this is the sentence most at risk of a careless edit.**
+
+- The predicate reads four detail fields and **nothing else**. No API, query, table or line of copy may
+  condition any referrer capability on the referrer's **order history**. There is no such predicate
+  anywhere in the design, and none may be added (AC-87).
+- **The two facts are always stated separately**, on every surface that states either:
+  - *no purchase needed* — you don't have to have ordered anything to refer (A18);
+  - *payment details needed* — that's how you get your code and where the money goes (D18).
+- They must never be merged into anything resembling **"you have to be a customer to refer"**, which is
+  the s 49 fact pattern. The payment-details requirement is presented as *how you get your code / where
+  the money goes* — never as customer status.
+- A standing regression test holds the line: a brand-new account with **zero orders** and complete
+  payout details gets a code and records a referral.
+
+#### 4.9.5 `min_payout_balance` re-engages what D18 closed — two structural guards
+
+If the threshold is ever switched on, confirmed money can sit unpaid by the business's own rule rather
+than for want of a bank account — which re-opens the Victorian regime the front gate closed. Two
+guards, both structural rather than procedural:
+
+1. **The ops write refuses a non-zero threshold without an explicit acknowledgement**, and the Program
+   screen states plainly that money held under a threshold is still legally payable and must not sit
+   unpaid for twelve months.
+2. **The payout queue force-promotes an accruing group into `ready` when its oldest confirmed earning
+   reaches 11 months** — one month of margin before the statutory twelve — regardless of the threshold.
+
+Plus the disclosure obligation from §4.8b: whenever a threshold is set, it is stated at the point the
+offer is made (AC-81).
 
 ---
 
 ## 5. In scope
 
-1. Referral code per registered user; `/r/<CODE>` link; cookie capture; manual code entry.
-2. Automatic referral recording at account creation, with the automatic gates (§4.2).
-3. **The referred tradie's 2.5% first-order discount, delivered by extending `loadAccountDiscount` in
+1. Referral code per **payable** registered user (§4.9); `/r/<CODE>` link; cookie capture; manual code
+   entry.
+2. **The referrer entry gate**: payout-details capture as the program's entry step, the withheld-code
+   invariant, dormancy on clearing, and the `pending`-hold residue (§4.9).
+3. Automatic referral recording at account creation, with the automatic gates (§4.2) and the
+   payability re-check at recording time.
+4. **The referred tradie's 2.5% first-order discount, delivered by extending `loadAccountDiscount` in
    the existing pricing engine** (§4.6) — including its visibility on the quote surface, **its offer
    panel in the account area (§8.6)**, its expiry handling, and its breakdown in the price snapshot.
-4. Automatic earning creation at order creation, confirmation at `balance_paid`, voiding on
-   cancel/refund/expiry; optional minimum payout balance; **a stated payment timeframe** (M14).
-5. Public landing page at `/refer` (indexable, in the sitemap, SEO record in Sanity), with active /
-   paused / terminated states.
-6. Marketing placements: home page section, trade-account page section, footer link, post-delivery
-   prompt on a completed order — **within the s 49 copy constraint** (§4.8).
-7. Account area: a new **Referrals** section for the referrer, **and a pricing-side offer panel for the
+5. Automatic earning creation at order creation, confirmation at `balance_paid` **for a payable
+   referrer**, voiding on cancel/refund/expiry; optional minimum payout balance with its two guards;
+   the stated payment timeframe (M14).
+6. Public landing page at `/refer` (indexable, in the sitemap, SEO record in Sanity), with active /
+   paused / terminated states **and the two signed-in states (with and without details)**.
+7. Marketing placements: home page section, trade-account page section, footer link, post-delivery
+   prompt on a completed order — **within the s 49 copy constraint** (§4.8a, §4.9.4).
+8. Account area: a new **Referrals** section for the referrer, **and a pricing-side offer panel for the
    referred tradie**.
-8. Ops console: a new **Referrals** tab — Program (every number + status + the two side switches),
-   Referrals (list, review flags, void, bulk void), Payouts (weekly run, CSV export, record of
-   payment).
-9. Transactional emails: referral recorded, earning confirmed, payout sent, **and the 30-day
-   discount-expiry reminder** (§4.6.4). Through the existing Sanity `emailTemplate` mechanism with
-   inline fallbacks (`worker/lib/emailTemplates.ts`).
-10. Migration `0051_referral_program.sql` (next after `0050_order_line_position.sql`).
-11. **A minimal, invisible access log for payout bank details** (§7.1) — a write path only.
-12. Privacy policy update covering bank details and referral data; rules + T&Cs published as Sanity
+9. Ops console: a new **Referrals** tab — Program (every number + status + the two side switches +
+   the threshold acknowledgement), Referrals (list, review flags, void, bulk void), Payouts (weekly
+   run, ready + accruing groups, long-stop promotion, CSV export, record of payment).
+10. Transactional emails: referral recorded, earning confirmed, payout sent, and the 30-day
+    discount-expiry reminder. Through the existing Sanity `emailTemplate` mechanism with inline
+    fallbacks (`worker/lib/emailTemplates.ts`).
+11. Migration `0051_referral_program.sql` (next after `0050_order_line_position.sql`).
+12. **A minimal, invisible access log for payout bank details** (§7.1) — a write path only.
+13. Privacy policy update covering bank details and referral data; rules + T&Cs published as Sanity
     posts from the text the coordinator supplies.
 
 ## 6. Out of scope
 
+- **A "blocked on missing details" group in the payouts queue** — unreachable by construction under
+  D18 and not built. The queue has **ready** and **accruing** only (§8.4c).
+- **Unclaimed-money machinery** — no ops flag, no chasing workflow, no aged-earnings report, no
+  evidence-of-reasonable-efforts record. D18 removes the state that would need them.
 - **Any UI for the payout-details access log** — no screen, no report, no filter, no export, now or
-  later (§7.1, AC-82). The owner accepted the log on the explicit basis that it is invisible.
+  later (§7.1, AC-82).
 - **Any path by which a referrer supplies a mate's name, phone, email or other contact detail** —
   including "invite by email", "send an SMS invite", contact-list import, or a referrals form with a
-  recipient field (§7, AC-78). This is a compliance boundary, not a backlog item.
+  recipient field (§7.0, AC-78). This is a compliance boundary, not a backlog item.
+- **Any predicate anywhere that conditions a referrer capability on the referrer's own orders**
+  (§4.9.4, AC-87).
 - Any automated payment rail (Zepto/Monoova/Stripe Connect/ABA file generation). Staff pay from their
   own banking.
 - **Surfacing the standing account discount, anywhere, in any form — including as part of a total**
-  (§4.6.3). Owner's explicit decision.
+  (§4.6.3).
 - **Fixed-dollar and free-delivery forms of the discount** — rejected in §4.6.2 and not being built.
 - **A total-discount ceiling** — rejected in §4.6.3, with an explicit revisit trigger.
-- **A worked dollar "you saved $X" figure** on any surface — §8.5 and §8.6 show percentages only in
-  v1; the reasoning and the condition for adding one later are recorded there.
+- **A worked dollar "you saved $X" figure** on any surface — §8.5 and §8.6 show percentages only in v1.
 - Multi-level / chain commissions; tiered or promotional rates; time-limited bonus periods.
 - Referral of ops users, manufacturers or suppliers.
 - Automated tax-invoice or RCTI generation (§11) — the accountant works from the export in v1.
@@ -533,6 +647,7 @@ stated in the offer**, or within a reasonable time if none is stated. Two conseq
 - Editing the maturation trigger from the console. It is one code path, deliberately.
 - Per-customer editing of the base account discount (`user.discount_percent`) — no ops UI today and
   this feature does not add one.
+- ABN-Lookup verification in v1 — an 11-digit ATO checksum is the validity test.
 - Any change to rate cards, surcharges, modifiers, delivery zones or GST arithmetic. **The referral
   discount is a percentage handed to the existing discount step; it changes no other pricing rule.**
 
@@ -544,30 +659,34 @@ Migration **`0051_referral_program.sql`** (append-only; next after `0050`). Shap
 architect owns the final schema — but these invariants are not negotiable:
 
 - `user.referral_code TEXT` + a `CREATE UNIQUE INDEX` on it. The code belongs to the account; there is
-  no separate code table and no second place a code can live.
+  no separate code table and no second place a code can live. **It is only ever populated for a user
+  whose payout details are complete** (§4.9).
 - `referral` — the **relationship**: referrer, referred (UNIQUE), code used, source (`link`|`manual`),
   the snapshotted program values in force when it was recorded (commission rate, cap, minimum order,
   window, **discount percent**, **payment timeframe**), status, `expires_at`, void reason, review
   flags, timestamps. **It holds no contact details for anyone — both parties are `user` foreign keys**
-  (see the rule below).
+  (§7.0).
 - `referral_earning` — the **money**: referral, order, base amount (post-discount ex-GST goods),
   computed amount, status (`pending`|`confirmed`|`void`|`paid`), payout id, timestamps.
   *Two tables, not one*: voiding a relationship and voiding a payment are different acts with
-  different reasons, the payout batch links to money rather than relationships, and it keeps the door
-  open without a schema rewrite.
+  different reasons, and the payout batch links to money rather than relationships.
 - `referral_payout` — one row per referrer per payment run: amount, status, reference, `paid_at`,
   `paid_by`, note, **and a frozen copy of the ABN, BSB, account number and account name used**.
 - `referral_program` — singleton config (`id='default'`), versioned exactly like `pricing_policy`
   (`migrations/0015_estimator_pricing.sql:35`) for optimistic concurrency:
   `status` (`active`|`paused`|`terminated`), `referrer_reward_active`, `referred_discount_active`,
   `rate_percent` (default 1), `cap_amount` (**NULL**), `min_order_amount` (default 2000),
-  `min_payout_balance` (default 0), `window_months` (default 12), `discount_percent` (**default 2.5**),
-  **`payout_within_days` (default 14)**, `updated_at`, `updated_by`, `version`.
-- Payout method on `user`: `payout_bsb`, `payout_account_number`, `payout_account_name`.
+  `min_payout_balance` (default 0), `window_months` (default 12), `discount_percent` (default 2.5),
+  **`payout_timeframe_days` (default 14)**, `updated_at`, `updated_by`, `version`.
+- Payout method on `user`: `payout_bsb`, `payout_account_number`, `payout_account_name` (ABN stays the
+  existing profile field).
 - **The discount's lifecycle state is derived, not stored.** *Available* / *used* / *expired* (§8.6.2)
   is computed from the `referral` row, its `expires_at` and the existence of the account's first
   order. A stored status column would be a second source of truth for a fact three existing records
   already answer.
+- **Referrer payability is likewise derived, not stored** — one predicate over four detail fields,
+  evaluated wherever it matters (code issue, link resolution, recording, confirmation). A cached
+  "is_referrer" flag would be a second source of truth that goes stale the moment details are edited.
 
 **The migration is additive only.** It creates tables and adds columns. It must not rewrite, recompute
 or touch a single existing `quote_line.line_total`, `order_line.line_total`, `"order".total` or
@@ -577,7 +696,8 @@ or touch a single existing `quote_line.line_total`, `order_line.line_total`, `"o
 
 | Fact | The one place it lives |
 |---|---|
-| **Who a referred person is** | **The `user` row they created themselves.** See the boundary rule below — this one is a legal constraint, not an engineering preference. |
+| **Who a referred person is** | **The `user` row they created themselves.** See §7.0 — a legal constraint, not an engineering preference. |
+| **Whether someone may be a referrer** | **One payability predicate over the four detail fields** (§4.9). It reads nothing else — and specifically never order history (§4.9.4). |
 | What percentage off a user gets | `loadAccountDiscount()` in `worker/lib/estimator/pricing.ts` — extended to compose account + referral. No caller re-derives it, no React component knows about it. **The composition is server-side only and is never serialised to a customer response.** |
 | How a discount is applied to a price | The existing discount step, `pricing.ts:195-203`. The referral discount adds no second application point. |
 | GST arithmetic / ex-GST goods figure | `src/data/gst.ts` (`taxBreakdown`) — called, never re-derived |
@@ -587,7 +707,7 @@ or touch a single existing `quote_line.line_total`, `order_line.line_total`, `"o
 | Money and discount already promised | The `referral` row's snapshot, never the live config |
 | Referral business logic | `worker/lib/referrals.ts` — routes thin, no rules in components |
 
-### 7.0 THE ATTRIBUTION BOUNDARY — a referrer never supplies a mate's details *(new in revision 6)*
+### 7.0 THE ATTRIBUTION BOUNDARY — a referrer never supplies a mate's details
 
 > **A referrer shares a code. They never tell us anything about the person they are referring.**
 > Every referral is created by the **referred tradie identifying themselves** — by arriving on a link
@@ -615,13 +735,12 @@ in their own words, on whatever channel they like. That is how the two capture p
 work, so nothing is lost — the boundary costs this design nothing today, and only ever costs a feature
 that must not be built.
 
-### 7.1 Handling of payout bank details *(reversed in revision 6)*
+### 7.1 Handling of payout bank details
 
-Revision 2 removed audit logging at the owner's request ("sounds overcomplicated"). **Revision 6
-reinstates a minimal form of it, because the owner changed their mind on new evidence:** the OAIC
-lists audit logs of access to financial information among its APP 11 security expectations, and the
-research's §5.1 finding on s 6D(4)(d) means the business may be a full APP entity rather than an
-exempt small business.
+Revision 2 removed audit logging at the owner's request. **Revision 6 reinstated a minimal form of it**,
+because the owner changed their mind on new evidence: the OAIC lists audit logs of access to financial
+information among its APP 11 security expectations, and the research's §5.1 finding on s 6D(4)(d)
+means the business may be a full APP entity rather than an exempt small business.
 
 **What is in:**
 
@@ -638,10 +757,9 @@ exempt small business.
 
 - **No UI. No screen. No tab. No report. No export. No filter. No workflow.** The owner accepted this
   on the basis that it is a table nobody looks at until something goes wrong; a viewer would reinstate
-  exactly the complexity they rejected. **Building one is out of scope now and later** (§6, AC-82). If
-  something goes wrong, the table is queried directly.
+  exactly the complexity they rejected. **Building one is out of scope now and later** (§6, AC-82).
 
-**Unaffected — the three keeps from revision 2 stand:**
+**Unaffected — the three keeps:**
 
 - **Masked read-back.** Once stored, the customer API never returns the full account number
   (`BSB 063-••• · account ••••1234`).
@@ -665,16 +783,20 @@ and required content** only.
 
 - New `Page` id in `src/app/ui.tsx`, path in `src/app/routes.ts`, added to `PUBLIC_PAGES` in
   `worker/lib/shell.ts:41` so it is in the sitemap and indexable.
-- **Purpose:** explain the deal well enough that a visitor can repeat it, and convert two audiences
+- **Purpose:** explain the deal well enough that a visitor can repeat it, and convert three audiences
   differently.
-- **Content:** the two-sided promise with live figures; three steps; what qualifies; **that the
-  discount is one-off and time-limited**; **when the referrer gets paid** (M14); how you get paid; link
-  to the rules/T&Cs post; FAQ. The cap clause appears only when a cap is set; the payout threshold is
-  stated whenever one is set (§4.8b).
-- **States:** *logged out* (pitch + "Sign in to get your code", secondary "Get a quote" → `/quote`);
-  *logged in* (pitch **plus the user's own code and share link**, copy button, prefilled share
-  message); *paused* ("on hold", no rate, no code); *terminated* ("this program has ended", no rate,
-  no code).
+- **Content:** the two-sided promise with live figures; three steps; what qualifies; **that referring
+  needs no purchase but does need payment details** (§4.9.4, stated as two separate facts); that the
+  discount is one-off and time-limited; **when the referrer gets paid** (M14); link to the rules/T&Cs
+  post; FAQ. The cap clause appears only when a cap is set; the payout threshold is stated whenever one
+  is set (§4.8b).
+- **States:**
+  - *Logged out* — pitch + "Sign in to get your code", secondary "Get a quote" → `/quote`.
+  - *Logged in, details complete* — pitch **plus the user's own code and share link**, copy button,
+    prefilled share message.
+  - *Logged in, details missing* — pitch **plus a complete-your-details CTA**, not a code. The value is
+    stated before the ask (§4.9.3).
+  - *Paused* — "on hold", no rate, no code. *Terminated* — "this program has ended", no rate, no code.
 - **Sharing is by code and link only** — the page offers no way to enter someone else's contact
   details (§7.0).
 
@@ -682,19 +804,19 @@ and required content** only.
 
 | Placement | Logged-out says | Logged-in says |
 |---|---|---|
-| **Home page**, one section low on the page (after "Good to know") | "Know another tradie? They get 2.5% off their first order and you get paid." → `/refer` | "Your code: **ABC-123** — Copy link" + earnings to date if any |
-| **`/trade-account`**, one section | Same pitch, trade-framed | Code + copy link |
+| **Home page**, one section low on the page (after "Good to know") | "Know another tradie? They get 2.5% off their first order and you get paid." → `/refer` | Code + copy link when details are complete; otherwise a one-line prompt to finish setting up → `/refer` |
+| **`/trade-account`**, one section | Same pitch, trade-framed | Same split |
 | **Footer**, site-wide | "Refer a mate" link | Same |
-| **Completed order** (`delivered`/`after_sales`) + delivery email | n/a | "Happy with these? Refer a mate." + code |
+| **Completed order** (`delivered`/`after_sales`) + delivery email | n/a | "Happy with these? Refer a mate." + code or setup prompt |
 
 All placements disappear when the program is `paused` or `terminated`. All carry the one-off, expiring
 framing of the discount rather than presenting it as a standing entitlement.
 
-**⚠️ s 49 copy constraint (§4.8a), binding on every placement and on the landing page.** No placement
-may couple the referrer's reward to the referrer's own purchase. *"Place your first order and earn 1%
-on every mate you refer"* is inside the shape of s 49; *"any account can refer — you don't need to have
-ordered"* is not. The logged-out placements are where this temptation is highest, and where the
-criterion (AC-79) bites hardest.
+**⚠️ s 49 copy constraint (§4.8a, §4.9.4), binding on every placement and on the landing page.** No
+placement may couple the referrer's reward to the referrer's own purchase, and no placement may
+express the payment-details requirement as customer status. *"Place your first order and earn 1% on
+every mate you refer"* is inside the shape of s 49; *"any account can refer — you don't need to have
+ordered"* is not (AC-79, AC-87).
 
 **Not placed:** product pages, the quote builder, review-and-accept, any payment screen. Never
 interrupt a priced flow with a marketing offer. (The referred tradie's *discount badge* and the §8.6
@@ -706,29 +828,46 @@ A rail item in `src/pages/AccountShell.tsx` (`AccountSection`), route `/referral
 about money owed to the account holder for introductions they made.** A discount they received as
 someone else's referral is a different subject and lives in §8.6.
 
+**The section has two shapes, and the first one is the primary state**, because under D18 it is what
+every new referrer meets:
+
+**(i) Details missing — THE ENTRY STATE, not an error state.** No code is shown, because none exists.
+The screen's job is to convert:
+
+1. **What you get, first** — the one-sentence rule with live figures, and the two facts stated
+   separately: **you don't need to have ordered anything**; **you do need payment details, because
+   that's where the money goes** (§4.9.4).
+2. **One short step** — ABN, BSB, account number, account name. Not a wizard, not a multi-page flow.
+   Exactly what is missing is named; nothing else is demanded.
+3. **What happens next** — completing it produces the code immediately.
+
+Nothing about this state may be styled or worded as a failure, a warning or a blocked action. It is
+step one of joining, and the program's reach depends on it (§4.9.3).
+
+**(ii) Details complete — the working screen:**
+
 1. **Your code** — code, full share link, copy button, prefilled SMS/WhatsApp message, and the
    one-sentence rule with live figures. **No recipient field, ever** (§7.0): the share message is
    handed to the referrer's own phone to send, and this system never learns who received it.
 2. **Were you referred?** — the manual code field, shown only while eligible (A5), with clear feedback
    ("that code isn't valid", "you can't use your own code", "your account already has a referral").
-   **On success it confirms the discount and points at §8.6** — the code is entered here, but the offer
-   is explained where pricing lives, and the two must not tell the story twice.
+   **Never gated by D18** — this is the referred side. **On success it confirms the discount and points
+   at §8.6.**
 3. **Your referrals** — one row per referred account: **business name if set, otherwise a masked
    email** (`j••••@gmail.com`), join date, status (*Signed up · Quoting · Ordered · Paid in full · Not
    eligible*). **Never** their phone, address, project details or order contents.
 4. **Your earnings** — **Pending**, **Confirmed**, **Paid** (lifetime), each traceable to its referral,
    **and when a confirmed amount will be paid** (M14).
-5. **How you get paid** — BSB, account number, account name, ABN status, as a checklist so a referrer
-   with money waiting sees exactly what is blocking it. Saved values masked on read-back. **When
-   `min_payout_balance` is set and the balance is under it**, say so plainly: *"You've earned $20. We
-   pay out once your balance reaches $50."* — never a silent hold, and the threshold must also have
-   been stated in the offer itself (§4.8b, AC-81).
+5. **Your payment details** — masked read-back, editable. Two holds are stated plainly whenever they
+   apply, and neither is ever silent:
+   - **held pending details** — money waiting to be confirmed because details were removed
+     (§4.9.2): *"re-add your payment details — $X is waiting to be confirmed."*
+   - **held under threshold** — confirmed money under a non-zero `min_payout_balance` (AC-61).
+   Clearing details is **refused while a confirmed unpaid earning exists**, with the amount and the
+   reason stated.
 6. **Payout history** — date, amount, reference, referrals covered.
 7. **Terminated state** — read-only history with a "this program has ended" notice; absent entirely for
    an account with no referral history.
-
-**Empty state:** a user with zero referrals sees the code, the rule, the share button and nothing else
-— not an empty table with five headers.
 
 ### 8.4 Ops console — new "Referrals" tab
 
@@ -738,10 +877,13 @@ following the `Pricing.tsx` sub-tab pattern. **There is no fourth sub-screen for
 
 **(a) Program** — every number: status (active/paused/**terminated**), the two side switches, commission
 rate, cap (blank = no cap), qualifying minimum, minimum payout balance, attribution window, discount
-percent, **payment timeframe**. Restates the settings in one sentence so a typo is visible. Warns that
-changes apply only to referrals recorded from now on. Refuses a stale save (version check). Terminating
-requires a typed confirmation and states plainly that promises already made are honoured. **Raising the
-discount here must change every customer-facing figure with no code change** (AC-76).
+percent, payment timeframe. Restates the settings in one sentence so a typo is visible. Warns that
+changes apply only to referrals recorded from now on. Refuses a stale save (version check).
+**Setting a non-zero payout threshold requires an explicit acknowledgement** and displays the standing
+warning that money held under it is still legally payable and must not sit unpaid for twelve months
+(§4.9.5). Terminating requires a typed confirmation and states plainly that promises already made are
+honoured. **Raising the discount here must change every customer-facing figure with no code change**
+(AC-76).
 
 **(b) Referrals** — list: referrer, referred, date, status, amount, **review flags** (shared ABN /
 phone / business name / postcode — a signal for a human, not a control; A13). Filter by status; search
@@ -756,11 +898,14 @@ supplied (§7.0).
 > CSV** (name, ABN, BSB, account number, account name, amount, referral references). Pay those six from
 > the business banking. Paste the bank's reference against the batch, click **Mark paid**. Done.
 
+- **Two groups only: ready and accruing.** A "blocked on missing details" group is unreachable under
+  D18 and is not built (§6) — every confirmed group is payable by construction.
 - Confirmed earnings group **per referrer**, so one person with three earnings gets one transfer.
 - **Anything approaching its stated payment deadline (M14) sorts to the top and is flagged** — the
   timeframe is a promise under ACL s 32(2), and a weekly run must not quietly let one slip.
-- Referrers **below the minimum payout balance** (when set) appear in a separate "accruing" group —
-  visible, excluded from the run, payable anyway by explicit override.
+- **Accruing** (under a non-zero threshold) is visible, excluded from the run, payable by explicit
+  override — **and force-promoted to ready at 11 months** by the long-stop (§4.9.5), which is shown as
+  the reason on the row.
 - Marking paid flips the included earnings to `paid`, stamps `paid_at`/`paid_by`, freezes the banking
   details onto the payout row, and emails each referrer.
 - **Failed** returns earnings to the ready queue without losing history.
@@ -781,8 +926,7 @@ For the discount to convert it has to be visible **while quoting**, not discover
   against an undiscounted baseline, doubling pricing work on every preview. A percentage has no GST
   dimension and needs no baseline. If a dollar figure is ever added it **must** respect the ex/inc
   preference (§4.4).
-- The indicator disappears at the first pricing event after the discount is used or expires (§4.6.4,
-  AC-57).
+- The indicator disappears at the first pricing event after the discount is used or expires (AC-57).
 - Ops sees the composition on the project record and in the existing price-explain trace.
 
 ### 8.6 The account area's offer panel (the REFERRED TRADIE's screen)
@@ -793,6 +937,9 @@ discount is not surfaced here or anywhere (§4.6.3) — verified as the current 
 "discount" anywhere in `src/` is a code comment, and both price-preview endpoints return a bare total
 and nothing about how it was reached. That silence is deliberate and is preserved.
 
+**Never gated by D18.** This panel, the manual code entry and the discount itself consult the referred
+user's payout details not at all. D18 gates becoming a referrer, nothing else.
+
 #### 8.6.1 Where it lives, and why not in Referrals
 
 **Home: the Account page, beside the existing "Price display" (ex/inc GST) preference** in
@@ -802,14 +949,14 @@ and nothing about how it was reached. That silence is deliberate and is preserve
    view they are not participating in a program — they were given a one-off offer on their price. The
    account area already has exactly one place where "how my prices work" lives: the Price display card.
 2. **The two audiences are different people** (§2). Putting a *received* offer inside the screen about
-   *money you are owed for introductions you made* conflates them, and would leave a referred tradie
-   who has never referred anyone hunting through a marketing screen for their price.
+   *money you are owed for introductions you made* conflates them — and under D18 that screen now opens
+   with a request for banking details, which would be an absurd thing to show a tradie looking up why
+   their price is what it is.
 3. **It survives the program.** If the program is terminated, the Referrals section disappears for
-   anyone without referral history (§4.7) — but a live discount must still be explicable, and per Limb
-   2 it is still live.
+   anyone without referral history (§4.7) — but a live discount must still be explicable.
 
 **The Referrals section carries a pointer only**, from the "Were you referred?" confirmation (§8.3
-item 2). One authoritative panel, one link to it — not the same story told twice.
+item ii.2). One authoritative panel, one link to it — not the same story told twice.
 
 #### 8.6.2 Required content — an offer with a clock
 
@@ -819,19 +966,15 @@ item 2). One authoritative panel, one link to it — not the same story told twi
   with what they get and by when.
 - **Three states, derived (§7), never a stored status:**
   - **Available** — "2.5% off your first order", the expiry date, and a sense of the time remaining.
-    This is the state that should read as an offer worth acting on.
   - **Used** — past tense, naming the order it applied to and the date. It did its job.
   - **Expired** — past tense, with the date it lapsed and what it would have applied to. Honest, not
     apologetic, and never a silent disappearance.
 - **Accurate about mechanics, urgent in tone.** The panel states that displayed prices **already
   include** the discount and that there is nothing to apply. **No redemption language anywhere** — no
-  "apply", "redeem", "claim", "use at checkout", "voucher", and no code-entry step at order time. There
-  is no redemption moment in this system: the discount is applied when the price is computed. Copy
+  "apply", "redeem", "claim", "use at checkout", "voucher", and no code-entry step at order time. Copy
   implying otherwise generates support calls and an expectation of a further reduction on top of the
-  price already shown (AC-70). Urgency comes from the deadline and the one-off nature, never from
-  inventing a redemption step.
-- **No worked dollar figure in v1** (§6); if one is ever added it is a price and honours ex/inc
-  (AC-74).
+  price already shown (AC-70).
+- **No worked dollar figure in v1** (§6); if one is ever added it is a price and honours ex/inc (AC-74).
 - **A non-referred account never sees this panel at all.**
 
 #### 8.6.3 Interaction with the GST preference
@@ -849,8 +992,9 @@ payout figures are. The prices that percentage acted on continue to honour the p
 Marketing prose for the ux-designer to refine — **not the rules or the T&Cs**, which the coordinator
 supplies (§11). `[rate]`, `[discount]`, `[minOrder]`, `[window]`, `[cap]`, `[payoutDays]` are slots
 filled from config, **never typed as literals** (§4.5), and `[cap]` renders nothing at all when no cap
-is set. All of it is subject to the s 49 constraint (§4.8a): nothing here may make the referrer's
-reward conditional on the referrer's own purchase.
+is set. All of it is subject to the s 49 constraints (§4.8a, §4.9.4): nothing may make the referrer's
+reward conditional on the referrer's own purchase, and the payment-details requirement is never
+expressed as customer status.
 
 **Landing hero**
 > **Refer a mate. You both win.**
@@ -862,30 +1006,50 @@ reward conditional on the referrer's own purchase.
 > full we pay you **[rate]% of it**, into your bank account within **[payoutDays] days**.
 
 **Three steps**
-1. **Share your code.** Text it, say it, send the link. Every account has one — **you don't need to
-   have ordered yourself.**
+1. **Get your code.** Add your ABN and bank details — that's where we send the money. **You don't need
+   to have ordered anything yourself.**
 2. **They save.** Your mate signs up with your code and gets **[discount]% off their first order** —
    it's on their quote from the start, and it's theirs for **[window] months**.
 3. **You get paid.** Once they've paid that order in full, we transfer your **[rate]%**[ifCap: , up to
    [cap]] within **[payoutDays] days**.
 
 **The fine print, in plain words**
+- Any account can refer — **you don't need to have bought anything from us.** You do need your ABN and
+  bank details on file, because that's the account we pay.
 - It's their **first order** that counts, and it has to be placed within **[window] months** of them
   signing up with your code.
 - The order needs to be at least **[minOrder]** ex GST, before delivery.
 - **[rate]%** is worked out on the **goods, excluding GST and delivery** — not the total on the invoice.
 - We pay by **bank transfer**, within **[payoutDays] days** of your mate paying their order in full.
   [ifThreshold: We pay out once your balance reaches **[threshold]**.]
-- You'll need an **ABN** and your bank details on your account.
 - One code per new customer. You can't refer yourself, or another login for your own business.
 - You get paid for the mates you refer — not for anyone they go on to refer.
+
+**Referrals section — entry state (details missing). THE PRIMARY STATE.**
+> **Get your referral code**
+> Refer another tradie and earn **[rate]%** of their first order — they get **[discount]% off** theirs.
+> You don't need to have ordered anything yourself. We just need to know where to send the money.
+> *[form: ABN · BSB · Account number · Account name]*
+> Add these and your code appears straight away.
+
+**Referrals section — clearing refused**
+> You've got **`[$]`** confirmed and waiting to be paid into this account. You can change these details
+> once that payment has gone out.
+
+**Referrals section — held pending details**
+> **Re-add your payment details** — **`[$]`** is waiting to be confirmed. Your mates' discounts aren't
+> affected.
 
 **Home/trade placement, logged out**
 > **Know another tradie?** They get **[discount]% off** their first order, you get **[rate]%** of it.
 > Any account can refer. →
 
-**Home/trade placement, logged in**
+**Home/trade placement, logged in with code**
 > **Your referral code: `ABC-123`** · Copy link · `[n]` mates referred · `[$]` earned
+
+**Home/trade placement, logged in without details**
+> **Finish setting up your referral code** — add your ABN and bank details and start earning
+> **[rate]%**. →
 
 **Quote surface, referred tradie**
 > **[discount]% referral discount applied — thanks to [referrer].** It's already in these prices, and
@@ -908,13 +1072,6 @@ reward conditional on the referrer's own purchase.
 > **Your [discount]% discount runs out on [date].** It's on your first order and it's already built
 > into the prices in your quote — start or finish a quote before then and it's yours.
 
-**Account, no referrals yet** *(Referrals section)*
-> Nobody's used your code yet. Share it with one tradie this week — they save [discount]%, you earn
-> [rate]%.
-
-**Account, blocked on ABN**
-> `[$]` is ready to pay you. Add your **ABN** and bank details and it goes out in the next payment run.
-
 **Account, under the payout threshold** (only when one is set)
 > You've earned **`[$]`**. We pay out once your balance reaches **`[threshold]`** — keep sharing.
 
@@ -928,7 +1085,7 @@ reward conditional on the referrer's own purchase.
 
 **Email — earning confirmed**
 > `[name]`'s order is paid in full, so you've earned **`[$]`**. It'll be in your account within
-> **[payoutDays] days**. `[bankDetailsPrompt]`
+> **[payoutDays] days**.
 
 **Email — paid**
 > **`[$]` is on its way to your account.** Sent `[date]`, reference `[ref]`. Thanks for the
@@ -941,15 +1098,41 @@ reward conditional on the referrer's own purchase.
 Each is independently verifiable. Figures are whatever the ops config holds; no criterion hard-codes a
 rate.
 
+### The referrer entry gate (D18)
+- **AC-1** *(amended)* Every registered customer account **with complete payout details (ABN, BSB,
+  account number, account name)** has exactly one referral code, generated on first demand once those
+  details are stored, and stable thereafter. An account without complete details **has no code**.
+- **AC-83** **The "details missing" state is a first-class entry surface, not an error.** For a
+  signed-in user without complete details, the Referrals section and the `/refer` logged-in state both
+  lead with what the program pays, state the two facts separately (no purchase needed / payment details
+  needed), and present one short form naming exactly which fields are missing. No part of it renders as
+  a warning, failure or blocked action. Completing the form yields the code without a further step.
+- **AC-84** **A dormant code is inert end to end.** For a referrer whose details are incomplete or
+  cleared: the link route sets no cookie and redirects normally, and manual entry of that code returns
+  the **same generic invalid-code error** as an unknown code — never a message disclosing that the
+  referrer's bank details are missing.
+- **AC-85** **Clearing details behaves as specified.** (a) Refused while any earning is `confirmed` and
+  unpaid, with the amount and reason stated; (b) otherwise allowed, after which the code is dormant,
+  existing referrals' referred-side promises are untouched (the mate's discount still applies), and any
+  future earning **holds at `pending`** rather than confirming; (c) re-completing the details allows
+  those held earnings to confirm.
+- **AC-86** **The referred side is never gated by D18.** Manual code entry, the discount, and the §8.6
+  offer panel work identically for a referred tradie with no ABN and no bank details.
+- **AC-87** **D18 gates payability, never purchase.** (Regression-critical, compliance.) (a) A
+  brand-new account with **zero orders** and complete payout details receives a code and can record a
+  referral; (b) no API, query or table conditions any referrer capability on the referrer's order
+  history — verified by inspection as well as test; (c) every customer-facing surface that states
+  either condition states them as **two separate facts**, and no copy anywhere implies that being a
+  customer is required to refer.
+
 ### Codes and sharing
-- **AC-1** Every registered customer account has exactly one referral code, generated on first demand
-  and stable thereafter. Requesting it twice returns the same code.
 - **AC-2** Codes use an unambiguous uppercase alphabet with no `O`, `0`, `I` or `1`, so a code can be
   read out over a job-site phone call and typed back correctly.
 - **AC-3** Codes are unique across all accounts; a generation collision retries rather than failing or
   reusing.
-- **AC-4** `GET /r/<CODE>` for a valid code sets an httpOnly cookie and redirects (302) to `/refer`. An
-  unknown code redirects to `/refer` **without** setting a cookie and without erroring.
+- **AC-4** `GET /r/<CODE>` for a valid code **belonging to a currently-payable referrer** sets an
+  httpOnly cookie and redirects (302) to `/refer`. An unknown, staff-owned or dormant code redirects to
+  `/refer` **without** setting a cookie and without erroring.
 - **AC-5** An internal (staff) account has no referral code and no referral surfaces.
 
 ### Attribution
@@ -979,8 +1162,8 @@ rate.
 
 ### AC-49 — Non-referred pricing is unchanged, byte for byte *(the criterion this feature lives or dies on)*
 
-Stated first among the pricing criteria because it outranks them. It is **not** satisfied by "we
-didn't mean to change anything"; the tester must be able to *prove* it. Four parts, all required:
+It is **not** satisfied by "we didn't mean to change anything"; the tester must be able to *prove* it.
+Four parts, all required:
 
 - **AC-49a — Golden fixtures, captured before and compared after.** A characterisation corpus is
   captured from the pricing engine **on `main`, before any referral code exists**, committed as
@@ -1051,9 +1234,7 @@ didn't mean to change anything"; the tester must be able to *prove* it. Four par
 - **AC-72** **Once the discount has been used or has expired, no customer-facing surface presents it as
   still available, and no unissued draft presents referral-discounted figures as current** — the draft
   is either re-priced without the referral discount or visibly marked as needing re-pricing before its
-  figures are relied on. Specifically: a referred user with two open drafts who orders one must not be
-  able to see a "Used" panel and a still-referral-discounted second draft at the same time. (Issued
-  quotes are exempt — AC-54 governs them.)
+  figures are relied on. (Issued quotes are exempt — AC-54 governs them.)
 - **AC-73** The percentage in the panel comes from the server; the browser never computes it or any
   composition of it.
 - **AC-74** Toggling the GST display preference changes no percentage in the panel (a percentage is
@@ -1080,7 +1261,8 @@ didn't mean to change anything"; the tester must be able to *prove* it. Four par
 - **AC-19** With `cap_amount` NULL, an arbitrarily large order produces an uncapped commission; with a
   cap set, the commission is exactly the cap.
 - **AC-20** The earning flips `pending` → `confirmed` when and only when the referred order reaches
-  `balance_paid`. Earlier stages (including `deposit_paid`) leave it `pending`.
+  `balance_paid` **and the referrer is payable**. Earlier stages (including `deposit_paid`) leave it
+  `pending`, and so does an unpayable referrer (AC-85).
 - **AC-21** Cancelling or refunding the referred order before payout voids the earning automatically,
   with a reason.
 - **AC-22** A referred user's **second** order produces no further earning and no discount.
@@ -1089,23 +1271,32 @@ didn't mean to change anything"; the tester must be able to *prove* it. Four par
   values.
 - **AC-24** Amounts are stored and displayed to the cent, and the sum of a payout's earnings equals the
   payout amount exactly.
-- **AC-80** **The payment timeframe is stated wherever the offer is made** — landing page, placements,
-  Referrals section and the earning-confirmed email — rendered from `payout_within_days`, never typed.
-  A confirmed earning displays when it will be paid, and the ops payouts queue surfaces anything
-  approaching that deadline. (Compliance — ACL s 32(2).)
+- **AC-80** **The payment timeframe is stated wherever the offer is made AND met.** (Compliance —
+  ACL s 32(2).) (a) It appears on the landing page, the placements' linked detail, the Referrals
+  section and the earning-confirmed email, rendered from `payout_timeframe_days`, never typed; (b) a
+  confirmed earning displays when it will be paid; (c) the ops payouts queue flags and sorts to the top
+  any group whose wait has reached the stated timeframe, so a missed promise is visible rather than
+  silent.
 - **AC-81** **When `min_payout_balance` is non-zero, the threshold appears in the offer itself** — on
   the landing page and in the placements' linked detail — and not only in the account area after a
   referrer's money is already being held. With it at 0 (default) no threshold language appears
   anywhere. (Compliance — ACL s 32(2).)
+- **AC-88** **The threshold's two guards work.** (a) The ops write refuses a non-zero
+  `min_payout_balance` without the explicit acknowledgement, and the screen carries the standing
+  warning; (b) an accruing group whose oldest confirmed earning reaches 11 months is force-promoted
+  into the ready queue regardless of the threshold, with the reason shown on the row.
 
 ### Account area (Referrals section)
-- **AC-25** The Referrals section shows the code, a working share link, and a copy control that puts the
-  full URL on the clipboard — **and offers no field for a recipient's details** (AC-78).
+- **AC-25** With details complete, the Referrals section shows the code, a working share link, and a
+  copy control that puts the full URL on the clipboard — **and offers no field for a recipient's
+  details** (AC-78).
 - **AC-26** The referral list shows the referred party's business name, or a masked email when none is
   set, and never their phone, address, project or order contents.
 - **AC-27** Pending, Confirmed and Paid totals each equal the sum of the underlying earning rows.
-- **AC-28** With money confirmed but no ABN or no bank details, the section states specifically what is
-  missing and that the money is held, not lost.
+- **AC-28** *(amended — the old "confirmed but unpayable" state is unreachable under D18)* **Both
+  reachable holds are stated plainly and neither is ever silent:** money **pending because payment
+  details were removed** (§4.9.2), and money **confirmed but under a non-zero payout threshold**
+  (AC-61). Each names the amount and what will release it.
 - **AC-29** Saved bank details are masked on read-back; the full account number is never returned by the
   customer API after storage.
 - **AC-30** Payout history shows date, amount, reference and referrals covered, and remains correct
@@ -1125,21 +1316,22 @@ didn't mean to change anything"; the tester must be able to *prove* it. Four par
 ### Landing page, placements and configurability
 - **AC-33** `/refer` is reachable, server-renders its `<head>` from the Sanity `page` record with site
   defaults filled in, and appears in `/sitemap.xml`.
-- **AC-34** Logged out, `/refer` shows the pitch and a sign-in CTA and no code. Logged in, it shows the
-  user's own code and share link.
+- **AC-34** *(amended)* Logged out, `/refer` shows the pitch and a sign-in CTA and no code. Logged in
+  **with complete details**, it shows the user's own code and share link. Logged in **without**, it
+  shows the complete-your-details CTA and no code (AC-83).
 - **AC-35** With no cap configured, no page renders a cap clause, an empty slot, or "up to $".
 - **AC-36** The home page and `/trade-account` each carry exactly one referral placement, matching
-  session state.
+  session and gate state.
 - **AC-37** A completed order shows the refer-a-mate prompt; an in-progress order does not.
 - **AC-76** **Raising the discount is a config change and nothing else.** Changing `discount_percent`
-  (and likewise `rate_percent`, `min_order_amount`, `window_months`, `payout_within_days`) in the ops
-  console updates every customer-facing figure — landing page, home and trade placements, offer panel,
-  quote badge, emails — with **no code change and no deploy**. Verified by grep as well as by test: no
-  customer-facing string contains a hard-coded program figure.
+  (and likewise `rate_percent`, `min_order_amount`, `window_months`, `payout_timeframe_days`) in the
+  ops console updates every customer-facing figure — landing page, home and trade placements, offer
+  panel, quote badge, emails — with **no code change and no deploy**. Verified by grep as well as by
+  test: no customer-facing string contains a hard-coded program figure.
 - **AC-79** **No customer-facing copy makes the referrer's reward conditional on the referrer's own
-  purchase.** Every placement, the landing page and every email are checked against this; the
-  logged-out placements state or imply that any account can refer without having ordered. (Compliance —
-  ACL s 49, strict liability.)
+  purchase**, and none expresses the payment-details requirement as customer status. Every placement,
+  the landing page and every email are checked against this; the logged-out placements state or imply
+  that any account can refer without having ordered. (Compliance — ACL s 49, strict liability.)
 
 ### Program status and the kill switch
 - **AC-62** In `paused`, no new referral is recorded by link or manual entry, all placements are hidden,
@@ -1172,7 +1364,8 @@ didn't mean to change anything"; the tester must be able to *prove* it. Four par
   details** (AC-78).
 - **AC-40** Voiding requires a reason and removes the earning from the ready-to-pay queue.
 - **AC-41** The payouts screen groups confirmed earnings **per referrer**, so a referrer with three
-  earnings appears once with a single total.
+  earnings appears once with a single total, **and has exactly two groups — ready and accruing**. No
+  "blocked on details" group exists.
 - **AC-42** CSV export contains name, ABN, BSB, account number, account name, amount and referral
   references, and opens cleanly in a spreadsheet.
 - **AC-43** Marking a payout paid records reference, date and staff member, flips its earnings to
@@ -1192,7 +1385,7 @@ didn't mean to change anything"; the tester must be able to *prove* it. Four par
 The coordinator supplies all the text — the plain-English rules and the T&Cs — researched against
 Australian primary sources (ACCC / ATO / OAIC). **That research lives at
 `docs/specs/referral-program-legal-research.md`** and feeds the copy; this spec does not duplicate it,
-but revision 6 folds in the four findings that bind the design (§4.8, §7.0, §7.1, A13).
+but folds in the findings that bind the design (§4.8, §4.9, §7.0, §7.1, A13).
 
 - **Everything drafted must be flagged in-repo and to the owner as requiring professional review before
   it is relied on.** Drafted terms are not vetted terms and must not be presented as such.
@@ -1201,39 +1394,49 @@ but revision 6 folds in the four findings that bind the design (§4.8, §7.0, §
   payment timeframe, they reference the published program page, so a config change in ops cannot leave
   the terms advertising a stale figure (§4.5).
 
+**New copy obligations carried by this revision**, for the coordinator's terms pass: the
+payment-timeframe sentence conditioned on the entry rule (*"you'll have added your ABN and bank details
+to get your code — that's the account we pay"*), the threshold-hold disclosure whenever a threshold is
+set, the ops-screen warning text for enabling `min_payout_balance`, and the A18/D18 two-facts rule
+(§4.9.4) applied to every sentence that mentions either.
+
 **Contradiction protocol.** If further legal findings contradict a decision recorded here — the most
 likely candidates being the GST-on-payout wording (M13), the right-to-terminate position (§4.7) and the
 expiry of an advertised discount (§4.6.4) — the finding comes **back to this spec for a decision**, and
-is not patched around in the copy. A rules page that says something different from what the system does
-is worse than either one alone.
+is not patched around in the copy.
 
 Items still requiring the owner's accountant or a lawyer:
 
 1. **GST on the payout.** Position taken: the advertised amount is **inclusive of any GST payable**
    (M13). *Accountant to confirm.*
 2. **Tax invoicing / RCTI.** If input credits are to be claimed, the business needs a tax invoice from
-   the referrer or a written Recipient Created Tax Invoice agreement. v1 generates no such document;
-   the accountant works from the CSV. *Accountant to confirm this is acceptable, or RCTI generation
-   becomes a scope addition.*
-3. **No-ABN withholding.** Requiring an ABN for payout (M12) is the recommended way to sidestep the 47%
-   no-ABN withholding question. *Accountant to confirm.*
+   the referrer or a written Recipient Created Tax Invoice agreement. v1 generates no such document.
+   *Accountant to confirm, or RCTI generation becomes a scope addition.*
+3. **No-ABN withholding.** Requiring an ABN before a code is issued (§4.9) sidesteps the 47% no-ABN
+   withholding question entirely. *Accountant to confirm.*
 4. **Privacy Act status.** Research §5.1 finds s 6D(4)(d) may end the small business exemption for the
-   **entire business**, not just this feature. §7.0's attribution boundary is what keeps this design
-   outside that trigger, and §7.1's access log is the APP 11 response if the business is (or becomes) a
-   full APP entity. *Legal to confirm the s 6D(4)(d) analysis.*
-5. **ACL s 49 (referral selling)** — strict liability, penalties to $100m for a body corporate. A18 and
-   the §8.2 copy constraint are the design's answer (§4.8a). *Legal to confirm.*
-6. **ACL s 32(2) (rebates, gifts and prizes)** — the stated payment timeframe (M14) and up-front
-   disclosure of any payout threshold are the design's answer (§4.8b). *Legal to confirm 14 days is
-   consistent with what the terms will say.*
-7. **Disclosure inherent in a percentage.** A percentage commission tells the referrer roughly what the
+   **entire business**. §7.0's attribution boundary is what keeps this design outside that trigger, and
+   §7.1's access log is the APP 11 response. *Legal to confirm the s 6D(4)(d) analysis.*
+5. **ACL s 49 (referral selling)** — strict liability, penalties to $100m. A18, the §8.2 copy
+   constraint and the §4.9.4 two-facts rule are the design's answer. *Legal to confirm — and to check
+   the drafted copy specifically, since this is a wording risk as much as a design one.*
+6. **ACL s 32(2) (rebates, gifts and prizes)** — the stated 14-day timeframe (M14) and up-front
+   disclosure of any payout threshold are the design's answer. *Legal to confirm 14 days is consistent
+   with what the terms will say.*
+7. **Victorian unclaimed money.** §4.9 closes the primary route by construction; §4.9.5's two guards
+   cover the residual route that `min_payout_balance` would open. *Legal to confirm the front-gate
+   analysis holds.*
+8. **Unfair contract terms.** The entry-condition framing (§4.9.1) was chosen partly to avoid this. The
+   terms must present payout details as an **eligibility condition**, never as a withholding of money
+   already owed. *Legal to confirm the drafted wording keeps that framing.*
+9. **Disclosure inherent in a percentage.** A percentage commission tells the referrer roughly what the
    referred tradie spent, and the referred tradie learns their mate is paid a percentage of their
    order. The terms must say what each party will see.
-8. **Advertising a time-limited discount.** Conditions — first order only, minimum order value, the
-   expiry — must be clear **at the point the claim is made**, not only in the terms.
-9. **Right to terminate.** §4.7 commits to honouring promises already made, including not bringing a
-   discount deadline forward. The terms must say the same thing, in the same direction.
-10. **Privacy policy page.** `src/pages/PrivacyPolicyPage.tsx` must be updated for referral data,
+10. **Advertising a time-limited discount.** Conditions — first order only, minimum order value, the
+    expiry — must be clear **at the point the claim is made**, not only in the terms.
+11. **Right to terminate.** §4.7 commits to honouring promises already made, including not bringing a
+    discount deadline forward. The terms must say the same thing.
+12. **Privacy policy page.** `src/pages/PrivacyPolicyPage.tsx` must be updated for referral data,
     payout details and the access log before launch.
 
 ---
@@ -1242,69 +1445,67 @@ Items still requiring the owner's accountant or a lawyer:
 
 **None. This list is empty.**
 
-All seventeen decisions raised across revisions 1–5 (D1–D17) are answered, and revision 6's changes
-came from the owner's own reversal plus legal findings. Nothing in this document rests on an unapproved
-assumption, and there are no `ASSUMED:` tags left to veto.
+All eighteen decisions raised across revisions 1–7 (D1–D18) are answered. Nothing in this document
+rests on an unapproved assumption, and there are no `ASSUMED:` tags left to veto.
 
-Three things I decided myself that the owner may still want to veto, flagged here rather than buried:
+Two things I decided myself that the owner may still want to veto, flagged here rather than buried:
 
 - **The 30-day expiry-reminder email** (§4.6.4, AC-77). On the owner's own logic that the discount is
   an incentive to order: a deadline nobody is reminded of produces no urgency, only a complaint when
   the price moves. One template on existing machinery.
 - **The discount lapses with the referral at 12 months** (§4.6.4). Follows from A7 and was already
-  enforced by AC-13, so not re-raised as a question — but it is now *advertised*, so it is stated
-  explicitly and shown honestly rather than being allowed to vanish.
-- **`payout_within_days` defaults to 14** (M14). ACL s 32(2) requires *a* stated timeframe; the number
-  is mine. 14 days is comfortably achievable with a weekly payout run and leaves slack for bank
-  processing. Configurable, so it is a console edit if the owner prefers 7 or 21 — but it should not be
-  set to something the weekly run cannot meet.
+  enforced by AC-13 — but it is now *advertised*, so it is stated explicitly and shown honestly rather
+  than being allowed to vanish.
 
-The only outstanding external inputs are **not decisions and do not block the architect**: the
-rules/T&Cs copy in progress, and the professional confirmations at §11 items 1–6 and 8–9, required
-before **launch**, not before **build**.
+*(`payout_timeframe_days` = 14 is no longer in this list — the owner confirmed it in revision 7.)*
+
+The only outstanding external inputs are **not decisions and do not block implementation**: the
+rules/T&Cs copy in progress, and the professional confirmations at §11 items 1–11, required before
+**launch**, not before **build**.
 
 ---
 
 ## 13. Suggested ticket breakdown (tracer-bullet order)
 
-For the architect to confirm or restructure. Each ticket ends with something demonstrable.
+The architect's design owns the final sequencing; this is the product view of what each ticket has to
+end with.
 
 1. **T1 — Schema + program config.** Migration `0051`, `worker/lib/referrals.ts` skeleton, ops Program
-   screen (all numbers incl. `payout_within_days`, three statuses, two side switches),
-   `GET /api/referral/program` returning the live figures. *Demo: change the rate in ops, see it come
-   back from the public endpoint.*
-2. **T2 — Codes and capture.** Code generation, `/r/<CODE>`, cookie, referral recorded at account
-   creation, all §4.2 gates, **and the §7.0 boundary enforced at the endpoint layer** (AC-78).
-   *Demo: click a link, sign up as a new email, see the referral in D1; a request carrying a referred
-   person's contact details is refused.*
+   screen (all numbers incl. `payout_timeframe_days`, three statuses, two side switches, threshold
+   acknowledgement), `GET /api/referral/program`. *Demo: change the rate in ops, see it come back from
+   the public endpoint; try to set a threshold without acknowledging and be refused.*
+2. **T2 — The entry gate and capture.** Payability predicate, payout-details capture, code withheld
+   until complete, dormancy and the `pending`-hold, `/r/<CODE>`, cookie, referral recorded at account
+   creation, all §4.2 gates, **the §7.0 boundary enforced at the endpoint layer** (AC-78), **and the
+   A18/D18 separation regression test** (AC-87). *Demo: a zero-order account adds details, gets a code,
+   and records a referral; clearing details makes the code inert.*
 3. **T3 — The discount in the pricing engine.** Extend `loadAccountDiscount` to compose account +
    referral (additive, server-side only); snapshot breakdown; eligibility ends on first order or
    expiry; the AC-72 resolution for other unissued drafts. **Highest-risk ticket in the set — it
-   touches the pricing path, so it lands before anything cosmetic and it carries AC-49 in full,
-   including capturing the golden fixtures from `main` *before* the first line of referral code is
-   written.** *Demo: two identical quotes, one referred, priced side by side, plus the unchanged
-   fixture run.*
-4. **T4 — Earning lifecycle.** Earning on order creation, confirm at `balance_paid`, void on
-   cancel/refund, expiry sweep, post-discount ex-GST base through `src/data/gst.ts`, payment-timeframe
-   stamping. *Demo: walk an order to balance paid, watch the earning confirm with the right cents and
-   a due-by date.*
-5. **T5 — Account area (both screens).** The referrer's Referrals section (code, share, list, earnings,
-   manual entry, payout details, threshold copy, timeframe, history, terminated state) **and the
-   referred tradie's §8.6 offer panel** (three states, deadline, past-tense mechanics, referral
-   percentage only). **Includes the §7.1 access-log write path — and no viewer.**
-   *Demo: a referrer sees a real pending earning; a referred tradie's panel moves Available → Used.*
+   carries AC-49 in full, including capturing the golden fixtures from `main` *before* the first line
+   of referral code is written.** *Demo: two identical quotes, one referred, side by side, plus the
+   unchanged fixture run.*
+4. **T4 — Earning lifecycle.** Earning on order creation, confirm at `balance_paid` for a payable
+   referrer, hold at `pending` otherwise, void on cancel/refund, expiry sweep, post-discount ex-GST
+   base through `src/data/gst.ts`, payment-timeframe stamping. *Demo: walk an order to balance paid,
+   watch the earning confirm with the right cents and a due-by date.*
+5. **T5 — Account area (both screens).** The referrer's Referrals section — **entry state first**
+   (AC-83), then code, share, list, earnings, the two holds, history, terminated state — **and the
+   referred tradie's §8.6 offer panel**. Includes the §7.1 access-log write path, and no viewer.
+   *Demo: a new account moves from entry state to code in one step; a referred tradie's panel moves
+   Available → Used.*
 6. **T6 — Quote surface.** The referral discount indicator on the money panel and issued quote; ops
    project-record visibility and review flags. *Demo: the referred tradie sees the discount while
    quoting, in both GST display modes, with no total anywhere.*
 7. **T7 — Landing page and placements.** `/refer`, Sanity `page` record, sitemap, home/trade/footer/
-   completed-order placements, all four states, every figure from config, **and the s 49 copy
-   constraint applied** (AC-79).
-8. **T8 — Ops payouts.** Referrals list + void + bulk void, payouts queue with threshold grouping and
-   deadline flagging, CSV export, mark paid/failed, frozen banking snapshot, dashboard row. *Demo: the
-   full weekly routine.*
-9. **T9 — Emails, rules pages, privacy policy.** Four transactional templates (referral recorded,
-   earning confirmed, payout sent, expiry reminder) with inline fallbacks; rules and T&Cs published as
-   posts; privacy policy update covering referral data, payout details and the access log.
+   completed-order placements, all states including the two signed-in ones, every figure from config,
+   **and the s 49 / two-facts copy constraints applied** (AC-79, AC-87c).
+8. **T8 — Ops payouts.** Referrals list + void + bulk void, payouts queue with ready/accruing groups,
+   deadline flagging, long-stop promotion, CSV export, mark paid/failed, frozen banking snapshot,
+   dashboard row. *Demo: the full weekly routine.*
+9. **T9 — Emails, rules pages, privacy policy.** Four transactional templates with inline fallbacks;
+   rules and T&Cs published as posts; privacy policy update covering referral data, payout details and
+   the access log.
 
 UI-bearing tickets (T5, T6, T7, T8) require the ux-designer's mock and the **UX mock gate** before any
 implementation.

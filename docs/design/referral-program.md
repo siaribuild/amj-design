@@ -1,7 +1,7 @@
 # Referral program — architecture & implementation design
 
 Branch: `feat/referral-program`
-Status: revision 2 (D18 folded in) — ready for UX design (customer/ops surfaces) and development
+Status: revision 2 (D18 folded in; all decisions settled) — accepted; UX design in progress
 Author: architect
 Date: 2026-08-15
 
@@ -273,7 +273,7 @@ CREATE TABLE referral_program (
   min_payout_balance        REAL NOT NULL DEFAULT 0,       -- 0 = off (M7); ADR-8e when on
   window_months             INTEGER NOT NULL DEFAULT 12,   -- one clock (ADR-3)
   discount_percent          REAL NOT NULL DEFAULT 2.5,
-  payout_timeframe_days     INTEGER NOT NULL DEFAULT 14,   -- ACL s 32(2), amendment D
+  payout_timeframe_days     INTEGER NOT NULL DEFAULT 14,   -- ACL s 32(2); owner-confirmed default
   version                   TEXT NOT NULL DEFAULT 'v1',
   updated_at                TEXT NOT NULL DEFAULT (datetime('now')),
   updated_by                TEXT
@@ -985,18 +985,16 @@ exist, then generating them).
 
 ## 16. Decisions needed
 
-Seventeen owner decisions plus D18 stand; nothing above reopens them. One item remains open, already
-in flight:
+**None.** Seventeen owner decisions plus D18 stand; nothing above reopens them, and the one item this
+design raised is now settled:
 
-1. **The advertised payment window (`payout_timeframe_days`, shipped default 14).** ACL s 32(2) makes
-   this a stated promise that must be met, and it will be printed on the landing page and in the
-   terms. With a weekly manual run, 14 days after the referred order is paid in full is comfortably
-   met and honest. **Recommendation: 14 days.** The coordinator is putting the number to the owner;
-   the design treats it as config either way — only the shipped default is in question.
+- **`payout_timeframe_days` ships at 14** — owner confirmed (2026-08-15) per this design's
+  recommendation. It remains ops-editable config; the shipped default and the advertised promise are
+  now the same settled number (§12's s 32(2) placement rule and the `overPromise` monitoring in §9
+  are what keep it "stated **and met**").
 
-Nothing else. All other choices in this document — including the three D18 open questions (withhold
-vs inactive; cleared details; the threshold condition) — are engineering decisions, made and reasoned
-in ADR-8.
+All other choices in this document — including the three D18 open questions (withhold vs inactive;
+cleared details; the threshold condition) — are engineering decisions, made and reasoned in ADR-8.
 
 ---
 
