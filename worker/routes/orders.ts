@@ -32,16 +32,15 @@ async function ownedOrder(env: Env, req: Request, orderId: string): Promise<Orde
     .first<OrderRow>();
 }
 
-// Project context the account area shows alongside every order: title, quote ref,
-// line count and the accepted revision number ("accepted from quote R2").
+// Project context the account area shows alongside every order: title, quote
+// ref and line count.
 type OrderCtxRow = OrderRow & {
   project_title: string | null; project_ref: string | null;
-  line_count: number; revision_no: number | null;
+  line_count: number;
 };
 const ORDER_CTX_SELECT = `
   SELECT o.*, p.title AS project_title, p.public_ref AS project_ref,
-         (SELECT count(*) FROM order_line ol WHERE ol.order_id = o.id) AS line_count,
-         (SELECT revision_no FROM quote_revision qr WHERE qr.id = o.accepted_revision_id) AS revision_no
+         (SELECT count(*) FROM order_line ol WHERE ol.order_id = o.id AND ol.parent_line_id IS NULL) AS line_count
     FROM "order" o JOIN project p ON p.id = o.project_id`;
 
 async function orderCtxDto(c: { env: Env }, o: OrderCtxRow) {
@@ -51,7 +50,6 @@ async function orderCtxDto(c: { env: Env }, o: OrderCtxRow) {
     projectTitle: o.project_title,
     projectRef: o.project_ref,
     lineCount: o.line_count,
-    revisionNo: o.revision_no,
   };
 }
 
@@ -78,8 +76,14 @@ orders.get("/:id", async (c) => {
     : await c.env.DB.prepare(`${ORDER_CTX_SELECT} WHERE o.id = ? AND o.project_id = ?`)
         .bind(c.req.param("id"), grantProjectId).first<OrderCtxRow>();
   if (!order) return c.json({ error: "not_found" }, 404);
+  // PARENTS ONLY — a split opening's units nest inside their opening on every
+  // other surface (loadLines, ops's orderLines); the account order view keeps
+  // that convention rather than listing units as loose extra rows.
   const { results: lines } = await c.env.DB
-    .prepare("SELECT external_ref, product_snapshot_json, qty, line_total FROM order_line WHERE order_id = ?")
+    .prepare(
+      `SELECT external_ref, room_label, product_snapshot_json, dims_json, qty, line_total
+         FROM order_line WHERE order_id = ? AND parent_line_id IS NULL`,
+    )
     .bind(order.id).all();
   return c.json({ order: { ...(await orderCtxDto(c, order)), lines } });
 });

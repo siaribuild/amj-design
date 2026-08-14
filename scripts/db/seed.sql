@@ -41,19 +41,14 @@ INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, 
 INSERT INTO project (id, organisation_id, owner_user_id, title, status_customer, status_internal, public_ref, created_at, updated_at) VALUES
   ('p_order', 'org_demo', 'u_demo', 'Northcote extension', 'closed', 'converted_to_order', 'OF-Q-10002', datetime('now','-10 days'), datetime('now','-3 days'));
 
-INSERT INTO quote_revision (id, project_id, revision_no, snapshot_status, totals_json, issued_at, accepted_at) VALUES
-  ('rev_1', 'p_order', 1, 'accepted', '{"total":5400}', datetime('now','-8 days'), datetime('now','-7 days'));
+-- One quote per project (docs/quote-revisions-removal-plan.md) — the order
+-- IS the freeze, so there is no separate issued-revision row to seed any more.
+INSERT INTO "order" (id, project_id, order_no, total, stage, drawings_signed_off_at, created_at) VALUES
+  ('o_1', 'p_order', 'OF-58001', 5400, 'manufacturing', datetime('now','-5 days'), datetime('now','-7 days'));
 
-INSERT INTO revision_line (id, revision_id, external_ref, room_label, product_snapshot_json, dims_json, options_json, qty, line_total) VALUES
-  ('rl_1', 'rev_1', 'D01', 'Living', '{"productSlug":"amj80-series-sliding-door","productName":"AMJ80 Series Sliding Door","options":{},"dims":{"width":"2400","height":"2100"}}', '{"width":"2400","height":"2100"}', '{}', 1, 3400),
-  ('rl_2', 'rev_1', 'W01', 'Study',  '{"productSlug":"amj80-series-awning-window","productName":"AMJ80 Series Awning Window","options":{},"dims":{"width":"1200","height":"900"}}', '{"width":"1200","height":"900"}', '{}', 2, 2000);
-
-INSERT INTO "order" (id, project_id, accepted_revision_id, order_no, total, stage, drawings_signed_off_at, created_at) VALUES
-  ('o_1', 'p_order', 'rev_1', 'OF-58001', 5400, 'manufacturing', datetime('now','-5 days'), datetime('now','-7 days'));
-
-INSERT INTO order_line (id, order_id, external_ref, product_snapshot_json, qty, line_total) VALUES
-  ('ol_1', 'o_1', 'D01', '{"productSlug":"amj80-series-sliding-door","productName":"AMJ80 Series Sliding Door"}', 1, 3400),
-  ('ol_2', 'o_1', 'W01', '{"productSlug":"amj80-series-awning-window","productName":"AMJ80 Series Awning Window"}', 2, 2000);
+INSERT INTO order_line (id, order_id, external_ref, room_label, product_snapshot_json, dims_json, qty, line_total) VALUES
+  ('ol_1', 'o_1', 'D01', 'Living', '{"productSlug":"amj80-series-sliding-door","productName":"AMJ80 Series Sliding Door"}', '{"width":"2400","height":"2100"}', 1, 3400),
+  ('ol_2', 'o_1', 'W01', 'Study',  '{"productSlug":"amj80-series-awning-window","productName":"AMJ80 Series Awning Window"}', '{"width":"1200","height":"900"}', 2, 2000);
 
 INSERT INTO payment (id, order_id, kind, amount, percent, status, reference, invoiced_at, paid_at) VALUES
   ('pay_dep', 'o_1', 'deposit', 2700, 50, 'paid', 'EFT-7001', datetime('now','-7 days'), datetime('now','-6 days')),

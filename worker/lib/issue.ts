@@ -1,18 +1,15 @@
-// Issue an immutable quote revision: snapshot the current draft lines into
-// revision_line and move the project to "quote issued". Shared by the customer
-// staff-seam and the ops console.
+// Issue the quote: a STATE CHANGE, not a copy (docs/quote-revisions-removal-
+// plan.md, owner decision 2026-08-14 — "a quote is a quote"). There is one
+// quote per project, updated in place; "issued" locks editing (EDITABLE in
+// src/ops/ProjectRecord.tsx already excludes it) and that lock is what makes
+// the quote stable — not a snapshot copy. Replaces worker/lib/revisions.ts.
 import type { Env } from "../types";
 import { uuid } from "./util";
-import { getProductBySlug } from "../../src/data/catalogue";
 import { captureRecommendationOutcomes, type IssuedCartLine } from "./ai/outcomes";
 import { createLearningExample, refreshLearningExampleEligibility } from "./ai/examples";
 
-function safeParse(s: string): Record<string, unknown> {
-  try { const v = JSON.parse(s || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; }
-}
-
 export type IssueResult =
-  | { ok: true; id: string; revisionNo: number; total: number; goods: number; delivery: number }
+  | { ok: true; total: number; goods: number; delivery: number }
   // delivery_unset is a DISTINCT code, not a fourth "not_ready" — ProjectRecord.
   // tsx's ACTION_ERRORS map has no "not_ready" key at all, so folding this into
   // it would render the generic "That action could not be completed.", exactly
@@ -34,10 +31,8 @@ export async function processLearningOutbox(env: Env, outboxId: string): Promise
         status IN ('pending','failed')
         OR (status='processing' AND updated_at < datetime('now','-10 minutes'))
       )
-      RETURNING project_id, quote_revision_id, payload_json`,
-  ).bind(outboxId).first<{
-    project_id: string; quote_revision_id: string; payload_json: string;
-  }>();
+      RETURNING project_id, payload_json`,
+  ).bind(outboxId).first<{ project_id: string; payload_json: string }>();
   if (!row) {
     const current = await env.DB.prepare("SELECT status FROM learning_outbox WHERE id=?")
       .bind(outboxId).first<{ status: string }>();
@@ -47,12 +42,12 @@ export async function processLearningOutbox(env: Env, outboxId: string): Promise
   try {
     const payload = JSON.parse(row.payload_json) as LearningOutboxPayload;
     if (!Array.isArray(payload.lines)) throw new Error("invalid_learning_payload");
-    await captureRecommendationOutcomes(env, row.project_id, row.quote_revision_id, payload.lines);
+    await captureRecommendationOutcomes(env, row.project_id, payload.lines);
     // The immutable AI-vs-human record is best-effort and never blocks quote
     // issuance. Eligibility is governed separately: exact human acceptance is
     // approved immediately; adjusted lines remain pending until adjudicated.
-    const exampleId = await createLearningExample(env, row.project_id, row.quote_revision_id);
-    if (exampleId) await refreshLearningExampleEligibility(env, row.quote_revision_id);
+    const exampleId = await createLearningExample(env, row.project_id);
+    if (exampleId) await refreshLearningExampleEligibility(env, row.project_id);
     await env.DB.prepare(
       `UPDATE learning_outbox
           SET status='completed', completed_at=datetime('now'),
@@ -101,7 +96,7 @@ export const ISSUABLE_FROM = new Set([
   "submitted", "triage_pending",
 ]);
 
-export async function issueRevision(env: Env, projectId: string): Promise<IssueResult> {
+export async function issueQuote(env: Env, projectId: string): Promise<IssueResult> {
   const project = await env.DB.prepare(
     "SELECT id, status_internal, quote_edit_version, delivery_amount, delivery_postcode, delivery_settle_json FROM project WHERE id = ?",
   ).bind(projectId).first<{
@@ -123,13 +118,16 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
   // The readiness gates below stay correct on parents alone: recomputeComposite
   // rolls an unpriced or flagged unit up into its parent's line_total and
   // status, so a bad unit still blocks the issue through its opening.
+  //
+  // There is no more `revision_id IS NULL` clause — that column is gone
+  // (0049); every quote_line row for a project is the one live quote.
   const { results: lines } = await env.DB
     .prepare(`SELECT id, external_ref, room_label, product_slug, options_json, dims_json,
                     qty, line_total, status, ai_proposal_line_id, selected_variant_id,
                     configuration_snapshot_json, pricing_snapshot_json,
                     recommendation_basis, recommendation_confidence, line_kind
                FROM quote_line
-              WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL
+              WHERE project_id = ? AND parent_line_id IS NULL
               ORDER BY position`)
     .bind(projectId)
     .all<{
@@ -160,128 +158,64 @@ export async function issueRevision(env: Env, projectId: string): Promise<IssueR
   // trains people to distrust the gate.
   if (project.delivery_amount == null) return { ok: false, error: "delivery_unset" };
 
-  // revision_no is assigned by the INSERT, for the same reason as the project and
-  // order references: read-then-write across two statements leaves a window, and
-  // this one had no catch at all — a collision threw D1_ERROR straight out of
-  // batch(), past a function whose whole contract is to return { ok: false }, and
-  // the Worker registers no onError, so staff issuing a revision saw a bare 500.
-  const NEXT_REVISION_NO =
-    "(SELECT COALESCE(MAX(qr2.revision_no), 0) + 1 FROM quote_revision qr2 WHERE qr2.project_id = ?)";
-  const revisionId = uuid();
-  const outboxId = uuid();
-  // THE FLIP (C8): total is now goods + delivery, not goods alone — D10 sets
-  // the deposit at 50% of goods + delivery, and both customer deposit
-  // surfaces read totals_json.total. The last three keys freeze the BASIS
-  // (design doc §4.4b): without them, an issued job's delivery_total can
-  // never be checked against the area it was priced on — draft lines keep
-  // moving after issue, and delivery_settle_json is cleared on the next
-  // revision (the re-arm in worker/routes/quote.ts). Sourced from
-  // delivery_settle_json (stamped by E7 at the instant of settling), not a
-  // live re-resolution — this freezes what was true when the figure was set,
-  // matching what that column exists to answer.
+  // THE FLIP (C8): total is goods + delivery, not goods alone — D10 sets the
+  // deposit at 50% of goods + delivery. Nothing is frozen into a totals blob
+  // any more: lines cannot change while status_internal='issued' (the EDITABLE
+  // gate), so goods/delivery are computed live, here and at every later read,
+  // off the same quote_line + project.delivery_amount rows.
   const goods = lines.reduce((s, l) => s + (l.line_total || 0), 0);
   const delivery = project.delivery_amount ?? 0; // GUARD 8 above already refused NULL
   const total = goods + delivery;
-  let deliveryZoneId: string | null = null;
-  let deliveryAreaM2: number | null = null;
-  try {
-    const settle = JSON.parse(project.delivery_settle_json || "{}");
-    deliveryZoneId = typeof settle?.zoneId === "string" ? settle.zoneId : null;
-    deliveryAreaM2 = typeof settle?.areaM2 === "number" ? settle.areaM2 : null;
-  } catch { /* delivery_settle_json unreadable or absent — basis stays null */ }
-  const totalsJson = JSON.stringify({
-    total, goods, delivery,
-    deliveryPostcode: project.delivery_postcode ?? null,
-    deliveryZoneId, deliveryAreaM2,
-  });
+  const outboxId = uuid();
   const issuedLines = lines.map((line) => ({
     ...line,
     line_total: line.line_total ?? 0,
   })) as IssuedCartLine[];
 
   const stmts = [
+    // The optimistic guard is quote_edit_version: if the quote changed while we
+    // were reading it above, this update matches nothing and the whole batch is
+    // reported as a conflict.
     env.DB.prepare(
-      `INSERT INTO quote_revision
-         (id, project_id, revision_no, snapshot_status, totals_json, delivery_total)
-       SELECT ?, ?, ${NEXT_REVISION_NO}, 'issued', ?, ?
-        WHERE EXISTS (
+      `UPDATE project SET status_customer='quote_issued', status_internal='issued',
+          issued_at=datetime('now'), updated_at=datetime('now')
+        WHERE id=? AND quote_edit_version=?
           -- IS, not =: NULL-safe by construction even though GUARD 8 above has
           -- already excluded NULL. The issue freezes exactly the delivery
           -- figure it read at the top of this call, or it fails.
-          SELECT 1 FROM project
-           WHERE id=? AND quote_edit_version=? AND delivery_amount IS ?
-        )
-        RETURNING revision_no`,
-    ).bind(revisionId, projectId, projectId, totalsJson, delivery, projectId, project.quote_edit_version, project.delivery_amount),
-    ...lines.map((l) => {
-      const p = getProductBySlug(l.product_slug);
-      const snapshot = JSON.stringify({
-        productSlug: l.product_slug,
-        productName: p?.name ?? l.product_slug,
-        options: safeParse(l.options_json),
-        dims: safeParse(l.dims_json),
-        performanceVariantId: l.selected_variant_id,
-        configuration: safeParse(l.configuration_snapshot_json || "{}"),
-        pricing: safeParse(l.pricing_snapshot_json || "{}"),
-        recommendationBasis: l.recommendation_basis,
-        recommendationConfidence: l.recommendation_confidence,
-      });
-      return env.DB.prepare(
-        `INSERT INTO revision_line
-           (id, revision_id, external_ref, room_label, product_snapshot_json, dims_json, options_json, qty, line_total)
-         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
-          WHERE EXISTS (SELECT 1 FROM quote_revision WHERE id=?)`,
-      ).bind(uuid(), revisionId, l.external_ref, l.room_label, snapshot, l.dims_json, l.options_json, l.qty, l.line_total ?? 0, revisionId);
-    }),
+          AND delivery_amount IS ?`,
+    ).bind(projectId, project.quote_edit_version, project.delivery_amount),
+    // One outbox row per finalized quote (UNIQUE(project_id)) — a re-issue after
+    // a request-changes round trip (an accepted edge case, not actively designed
+    // for) replaces the pending payload rather than colliding.
     env.DB.prepare(
-      `INSERT INTO learning_outbox
-         (id, project_id, quote_revision_id, payload_json)
-       SELECT ?, ?, ?, ?
-        WHERE EXISTS (SELECT 1 FROM quote_revision WHERE id=?)`,
-    ).bind(outboxId, projectId, revisionId, JSON.stringify({ lines: issuedLines }), revisionId),
-    env.DB.prepare(
-      `UPDATE quote_revision SET snapshot_status='superseded'
-        WHERE project_id=? AND id<>? AND snapshot_status='issued'
-          AND EXISTS (
-            SELECT 1 FROM quote_revision
-             WHERE id=? AND project_id=? AND snapshot_status='issued'
-          )`,
-    ).bind(projectId, revisionId, revisionId, projectId),
-    env.DB.prepare(
-      // The optimistic guard is quote_edit_version: if the quote changed while we
-      // were snapshotting it, this update matches nothing and the whole batch is
-      // reported as a conflict. The old status_internal='approved_for_issue' term
-      // was the approval gate, not the concurrency guard.
-      `UPDATE project SET status_customer='quote_issued', status_internal='issued',
-          current_revision_id=?, updated_at=datetime('now')
-        WHERE id=? AND quote_edit_version=?
-          AND EXISTS (SELECT 1 FROM quote_revision WHERE id=?)`,
-    ).bind(revisionId, projectId, project.quote_edit_version, revisionId),
+      `INSERT INTO learning_outbox (id, project_id, payload_json)
+       SELECT ?, ?, ?
+        WHERE EXISTS (SELECT 1 FROM project WHERE id=? AND status_internal='issued')
+       ON CONFLICT(project_id) DO UPDATE SET
+         payload_json=excluded.payload_json, status='pending', attempts=0,
+         last_error=NULL, updated_at=datetime('now'), completed_at=NULL`,
+    ).bind(outboxId, projectId, JSON.stringify({ lines: issuedLines }), projectId),
   ];
   let committed: D1Result[];
   try {
     committed = await env.DB.batch(stmts);
   } catch {
-    // Rolled back. Whatever the cause — a residual number conflict, a constraint
-    // this function does not model — the caller's contract is a 409, not a 500.
+    // Rolled back. Whatever the cause — a residual conflict, a constraint this
+    // function does not model — the caller's contract is a 409, not a 500.
     // orders.ts has always handled its batch this way; this one did not.
     return { ok: false, error: "not_ready" };
   }
-  if (Number(committed[0]?.meta?.changes ?? 0) !== 1 ||
-      Number(committed[committed.length - 1]?.meta?.changes ?? 0) !== 1) {
+  if (Number(committed[0]?.meta?.changes ?? 0) !== 1) {
     return { ok: false, error: "not_ready" };
   }
-  // The number the database assigned. RETURNING inside a batch is not something
-  // this codebase relies on elsewhere, so fall back to reading the row rather than
-  // reporting a number nobody verified — the value reaches the customer's email.
-  const revisionNo = Number(
-    (committed[0]?.results?.[0] as { revision_no?: number } | undefined)?.revision_no ??
-    (await env.DB.prepare("SELECT revision_no FROM quote_revision WHERE id = ?").bind(revisionId).first<{ revision_no: number }>())?.revision_no ??
-    1,
-  );
-  await processLearningOutbox(env, outboxId);
+  // The upsert means outboxId above may not be the row's id when this is a
+  // re-issue (ON CONFLICT keeps the original id) — read back the live one.
+  const outbox = await env.DB.prepare("SELECT id FROM learning_outbox WHERE project_id = ?")
+    .bind(projectId).first<{ id: string }>();
+  if (outbox) await processLearningOutbox(env, outbox.id);
   // Finalization creates the learning example (LLM strategy §16.3/§17.2): the AI
   // proposal vs the human-approved outcome, retrieval-eligible immediately,
   // training-gated. Best-effort — issuing must never fail because capture did.
-  return { ok: true, id: revisionId, revisionNo, total, goods, delivery };
+  return { ok: true, total, goods, delivery };
 }

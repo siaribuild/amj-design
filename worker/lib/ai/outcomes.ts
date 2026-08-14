@@ -44,7 +44,6 @@ export function outcomeQualityState(
 export async function captureRecommendationOutcomes(
   env: Env,
   projectId: string,
-  revisionId: string,
   lines: IssuedCartLine[],
 ): Promise<void> {
   const stmts: D1PreparedStatement[] = [];
@@ -138,15 +137,15 @@ export async function captureRecommendationOutcomes(
     };
     stmts.push(env.DB.prepare(
       `INSERT OR IGNORE INTO recommendation_outcome
-         (id, project_id, quote_revision_id, quote_line_id, ai_proposal_line_id,
+         (id, project_id, quote_line_id, ai_proposal_line_id,
           external_ref, context_key, context_json, proposed_product_slug,
           proposed_variant_id, proposed_config_json, proposed_line_total,
           final_product_slug, final_variant_id, final_config_json, final_line_total,
           price_delta, decision, reason_code, recommendation_eligible,
           thermal_eligible, quality_state)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)`,
     ).bind(
-      uuid(), projectId, revisionId, line.id, line.ai_proposal_line_id, line.external_ref,
+      uuid(), projectId, line.id, line.ai_proposal_line_id, line.external_ref,
       contextKey(opening), JSON.stringify({ ...context, family: opening.family, operationType: opening.operationType }),
       proposal?.product_slug ?? null, proposal?.performance_variant_id ?? null,
       proposal?.configuration_json ?? null, proposedTotal, line.product_slug,

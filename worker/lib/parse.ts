@@ -115,7 +115,7 @@ export async function deriveSubject(env: Env, id: { userId: string | null; claim
 // ── Existing draft state (for replace/append + 1-file enforcement) ───────────
 export async function draftScheduleState(env: Env, projectId: string): Promise<{ lineCount: number; scheduleFiles: ParseFile[] }> {
   const lc = await env.DB
-    .prepare("SELECT count(*) AS n FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL")
+    .prepare("SELECT count(*) AS n FROM quote_line WHERE project_id = ? AND parent_line_id IS NULL")
     .bind(projectId).first<{ n: number }>();
   const { results } = await env.DB
     .prepare("SELECT id, r2_key, filename, size FROM file_asset WHERE project_id = ? AND kind = 'schedule' ORDER BY created_at DESC")
@@ -229,7 +229,7 @@ export async function runScheduleParse(
   if (mode === "replace") {
     stmts.push(env.DB.prepare(
       `DELETE FROM quote_line
-        WHERE project_id=? AND revision_id IS NULL AND ${mutationGuard}`,
+        WHERE project_id=? AND ${mutationGuard}`,
     ).bind(project.id, project.id, nextQuoteVersion, mutationToken));
   }
 
@@ -240,7 +240,7 @@ export async function runScheduleParse(
   // card arrives with the digest UI).
   interface DraftRow { id: string; external_ref: string | null; origin: string | null; edited_fields: string | null; position: number; collision_choice: string | null; product_slug: string | null; dims_json: string | null; qty: number | null }
   const draftRows = mode === "upsert"
-    ? ((await env.DB.prepare("SELECT id, external_ref, origin, edited_fields, position, collision_choice, product_slug, dims_json, qty FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL").bind(project.id).all<DraftRow>()).results ?? [])
+    ? ((await env.DB.prepare("SELECT id, external_ref, origin, edited_fields, position, collision_choice, product_slug, dims_json, qty FROM quote_line WHERE project_id = ? AND parent_line_id IS NULL").bind(project.id).all<DraftRow>()).results ?? [])
     : [];
   const byTag = new Map<string, DraftRow>();
   const manualTags = new Map<string, DraftRow>();
@@ -252,7 +252,7 @@ export async function runScheduleParse(
 
   const posRow = mode === "replace"
     ? { n: 0 }
-    : await env.DB.prepare("SELECT COALESCE(MAX(position),-1)+1 AS n FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL").bind(project.id).first<{ n: number }>();
+    : await env.DB.prepare("SELECT COALESCE(MAX(position),-1)+1 AS n FROM quote_line WHERE project_id = ? AND parent_line_id IS NULL").bind(project.id).first<{ n: number }>();
   let position = posRow?.n ?? 0;
 
   let needsReview = 0;
@@ -344,8 +344,8 @@ export async function runScheduleParse(
       added++;
       qlId = uuid();
       stmts.push(env.DB.prepare(
-        `INSERT INTO quote_line (id, project_id, revision_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, origin, review_json)
-         SELECT ?,?,NULL,?,?,?,?,?,?,?,?,?, 'schedule', ?
+        `INSERT INTO quote_line (id, project_id, external_ref, room_label, product_slug, options_json, dims_json, qty, line_total, status, position, origin, review_json)
+         SELECT ?,?,?,?,?,?,?,?,?,?,?, 'schedule', ?
           WHERE ${mutationGuard}`,
       ).bind(
         qlId, project.id, l.code || null, l.location || null, l.productSlug,

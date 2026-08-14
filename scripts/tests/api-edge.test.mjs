@@ -301,8 +301,8 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       await login(demo, "/api/auth", demoEmail);
       const projects = await requestJson(demo, "/api/projects");
       assert.ok(projects.body.projects.some((p) => p.id === "p_draft"));
-      // An already-accepted revision cannot be accepted again (seed rev_1 is accepted).
-      await requestJson(demo, "/api/revisions/rev_1/accept", { method: "POST" }, 409);
+      // An already-accepted quote cannot be accepted again (seed p_order is closed).
+      await requestJson(demo, "/api/projects/p_order/accept", { method: "POST" }, 409);
     });
 
     await t.test("autosave upserts by stable id, preserving parse-line provenance (P1-03)", async () => {
@@ -558,7 +558,7 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       assert.equal(ws.body.project.internalOwnerId, undefined, "no owner is carried any more");
 
       // And the record offers issuing directly, with no sign-off in between.
-      const issue = ws.body.actions.find((a) => a.id === "issue-revision");
+      const issue = ws.body.actions.find((a) => a.id === "issue-quote");
       assert.ok(issue, "a quote in pricing offers 'issue' as an action");
       assert.equal(issue.tier, "primary");
     });
@@ -717,48 +717,44 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       assert.equal(typeof row.draft_total, "number");
 
       // The reconciliation note persists after a technician resolves the flagged
-      // line; only then may the reviewed revision be issued.
+      // line; only then may the reviewed quote be issued.
       await run(process.execPath, [
         wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
         "--command", `UPDATE quote_line SET status='ready', review_json=NULL WHERE project_id='${pid}';`,
       ], { env: wranglerEnv });
-      // Staff take it through approval → issue; then the customer requests changes.
+      // Staff take it through pricing → issue; then the customer requests changes.
       await requestJson(staff, `/api/ops/projects/${pid}/start-pricing`, { method: "POST", json: {} });
       // The issue gate (C7) requires delivery to be settled first.
       await requestJson(staff, `/api/ops/projects/${pid}/delivery`, { method: "PUT", json: { amount: 0 } });
-      const issuedRev = await requestJson(staff, `/api/ops/projects/${pid}/issue-revision`, { method: "POST", json: {} });
-      const revId = issuedRev.body.id;
+      await requestJson(staff, `/api/ops/projects/${pid}/issue-quote`, { method: "POST", json: {} });
       const issuedList = await requestJson(buyer, "/api/projects");
       const issuedRow = issuedList.body.projects.find((x) => x.id === pid);
       assert.equal(issuedRow.status_customer, "quote_issued");
-      assert.equal(issuedRow.issued_revision_no, 1);
+      assert.ok(issuedRow.issued_at);
       assert.equal(typeof issuedRow.issued_total, "number");
 
       // Request-changes guards: anonymous 404, empty message 400.
-      await requestJson(new Session(baseUrl), `/api/revisions/${revId}/request-changes`, { method: "POST", json: { message: "x" } }, 404);
-      await requestJson(buyer, `/api/revisions/${revId}/request-changes`, { method: "POST", json: { message: "" } }, 400);
-      // The honest state move: back to Under review; the old revision stops being acceptable.
-      const rc = await requestJson(buyer, `/api/revisions/${revId}/request-changes`, { method: "POST", json: { message: "Swap the door to a 3-panel stacker" } });
+      await requestJson(new Session(baseUrl), `/api/projects/${pid}/request-changes`, { method: "POST", json: { message: "x" } }, 404);
+      await requestJson(buyer, `/api/projects/${pid}/request-changes`, { method: "POST", json: { message: "" } }, 400);
+      // The honest state move: back to Under review — there is no separate
+      // revision to keep around; the SAME quote gets revised in place.
+      const rc = await requestJson(buyer, `/api/projects/${pid}/request-changes`, { method: "POST", json: { message: "Swap the door to a 3-panel stacker" } });
       assert.equal(rc.body.status, "under_review");
-      await requestJson(buyer, `/api/revisions/${revId}/accept`, { method: "POST" }, 409);
-      // A second change request on the same (now stale) revision is rejected too.
-      await requestJson(buyer, `/api/revisions/${revId}/request-changes`, { method: "POST", json: { message: "again" } }, 409);
+      // No longer issued, so it is no longer acceptable.
+      await requestJson(buyer, `/api/projects/${pid}/accept`, { method: "POST" }, 409);
+      // A second change request against a quote that isn't currently issued is rejected too.
+      await requestJson(buyer, `/api/projects/${pid}/request-changes`, { method: "POST", json: { message: "again" } }, 409);
 
       // request-changes re-arms the gate (C7) — delivery must be settled again
-      // for this second revision, exactly as a real re-issue would need.
+      // before the revised quote can be issued.
       await requestJson(staff, `/api/ops/projects/${pid}/delivery`, { method: "PUT", json: { amount: 0 } });
-      // A replacement issue must not make revision 1 live again.
-      const replacement = await requestJson(
-        staff, `/api/ops/projects/${pid}/issue-revision`,
-        { method: "POST", json: {} },
-      );
-      assert.equal(replacement.body.revisionNo, 2);
-      await requestJson(buyer, `/api/revisions/${revId}/accept`, { method: "POST" }, 409);
-      const afterReplacement = await requestJson(buyer, `/api/projects/${pid}/revisions`);
-      const original = afterReplacement.body.revisions.find((r) => r.id === revId);
-      const current = afterReplacement.body.revisions.find((r) => r.id === replacement.body.id);
-      assert.equal(original.status, "superseded");
-      assert.equal(current.status, "issued");
+      await requestJson(staff, `/api/ops/projects/${pid}/issue-quote`, { method: "POST", json: {} });
+      // The re-issued quote (same project, same lines — nothing to distinguish
+      // by revision any more) is now the one the customer can accept.
+      const reIssued = await requestJson(buyer, `/api/projects/${pid}/quote`);
+      assert.equal(reIssued.body.live, true);
+      const accepted = await requestJson(buyer, `/api/projects/${pid}/accept`, { method: "POST" });
+      assert.ok(accepted.body.order.id, "re-issuing after a change request still ends in an acceptable order");
     });
 
     await t.test("registered customer can submit source documents for human review after an AI capacity limit", async () => {
@@ -865,7 +861,7 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
         "--command",
         `UPDATE quote_line SET origin='ai', line_total=NULL, status='technical_review',
            review_json='{"customerConfigurationChanged":"AMJ will confirm and price this selection."}'
-         WHERE project_id='${pid}' AND revision_id IS NULL;`,
+         WHERE project_id='${pid}';`,
       ], { env: wranglerEnv });
       const submitted = await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST",
         json: { contact: { name: "AI Edit", email: "ai-edit@example.com", postcode: "3072" } } });
@@ -875,9 +871,9 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       const workspace = await requestJson(staff, `/api/ops/projects/${pid}`);
       assert.equal(workspace.body.project.unresolvedLineCount, 1);
       // Unpriced lines block issuing — the action is offered but carries a reason.
-      const issue = workspace.body.actions.find((a) => a.id === "issue-revision");
+      const issue = workspace.body.actions.find((a) => a.id === "issue-quote");
       assert.ok(issue.blockedReason, "the blocked action says WHY, rather than vanishing");
-      await requestJson(staff, `/api/ops/projects/${pid}/issue-revision`, { method: "POST", json: {} }, 409);
+      await requestJson(staff, `/api/ops/projects/${pid}/issue-quote`, { method: "POST", json: {} }, 409);
     });
 
     await t.test("editing an AI-priced line reprices it — it does not lose its price", async () => {

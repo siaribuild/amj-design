@@ -290,28 +290,30 @@ export interface ApiOrder {
   projectTitle?: string | null;
   projectRef?: string | null;
   lineCount?: number;
-  revisionNo?: number | null;
   lines?: ApiOrderLine[];
   // Source files carried onto the order (the uploaded schedule).
   files?: ApiScheduleFile[];
 }
-export interface ApiRevision {
-  id: string;
-  revisionNo: number;
-  status: string;
-  /** goods + delivery (C8) — the customer-facing contract figure. */
-  total: number;
-  goods: number;
-  delivery: number;
-  deliveryPostcode: string | null;
-  /** Server-computed (0043) — one deposit percentage, never Math.round(total/2)
-   *  in the browser. */
-  deposit: number;
-  balance: number;
-  issuedAt: string;
-  acceptedAt: string | null;
-  lines: ApiOrderLine[];
-}
+// The one quote a project has — read live off quote_line, not a frozen copy
+// (docs/quote-revisions-removal-plan.md). `live: false` means it has moved
+// past 'quote_issued' (accepted, or the customer asked for changes).
+export type ApiQuote =
+  | {
+    live: true;
+    status: string;
+    /** goods + delivery (C8) — the customer-facing contract figure. */
+    total: number;
+    goods: number;
+    delivery: number;
+    deliveryPostcode: string | null;
+    /** Server-computed (0043) — one deposit percentage, never Math.round(total/2)
+     *  in the browser. */
+    deposit: number;
+    balance: number;
+    issuedAt: string | null;
+    lines: ApiItem[];
+  }
+  | { live: false; status: string };
 
 // postcode is REQUIRED, not optional — a caller that forgets it fails to
 // compile, rather than 400ing at submit time with no indication why (D7/D8).
@@ -348,16 +350,16 @@ export const getDeliveryEstimate = (projectId: string, postcode: string) =>
 export const updateProfile = (patch: { name?: string; phone?: string; company?: string; abn?: string; priceGstMode?: "inc" | "ex" }) =>
   req<{ user: AuthUserDto }>("/api/auth/profile", { method: "POST", body: JSON.stringify(patch) });
 
-export const getRevisions = (projectId: string) =>
-  req<{ revisions: ApiRevision[] }>(`/api/projects/${projectId}/revisions`);
+export const getQuote = (projectId: string) =>
+  req<ApiQuote>(`/api/projects/${projectId}/quote`);
 
-/** Accept an issued revision -> creates the order + deposit invoice. */
-export const acceptRevision = (revisionId: string) =>
-  req<{ order: ApiOrder }>(`/api/revisions/${revisionId}/accept`, { method: "POST" });
+/** Accept the issued quote -> creates the order + deposit invoice. */
+export const acceptQuote = (projectId: string) =>
+  req<{ order: ApiOrder }>(`/api/projects/${projectId}/accept`, { method: "POST" });
 
-/** Decline an issued revision and ask for changes — project returns to Under review. */
-export const requestChanges = (revisionId: string, message: string) =>
-  req<{ ok: boolean; status: string }>(`/api/revisions/${revisionId}/request-changes`, {
+/** Decline the issued quote and ask for changes — project returns to Under review. */
+export const requestChanges = (projectId: string, message: string) =>
+  req<{ ok: boolean; status: string }>(`/api/projects/${projectId}/request-changes`, {
     method: "POST", body: JSON.stringify({ message }),
   });
 
@@ -374,8 +376,7 @@ export interface ApiProjectSummary {
   created_at: string;
   item_count: number;
   draft_total: number;
-  issued_revision_id: string | null;
-  issued_revision_no: number | null;
+  issued_at: string | null;
   issued_total: number | null;
   /** Server-computed (0043) — accountModel.tsx no longer derives this itself. */
   issued_deposit: number | null;

@@ -746,7 +746,7 @@ export async function runAiExtraction(
   const { results: quoteRows } = await env.DB.prepare(
     `SELECT id, external_ref, qty, options_json
        FROM quote_line
-      WHERE project_id = ? AND revision_id IS NULL AND external_ref IS NOT NULL`,
+      WHERE project_id = ? AND external_ref IS NOT NULL`,
   ).bind(projectId).all<{ id: string; external_ref: string; qty: number; options_json: string | null }>();
   const quoteByRef = new Map((quoteRows ?? []).map((row) => [row.external_ref, row]));
   const upserts: D1PreparedStatement[] = [];

@@ -61,7 +61,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
   for (const id of quoteIds) {
     const row = await env.DB.prepare(
       `SELECT id, origin, edited_fields, line_total, review_json, edit_version
-         FROM quote_line WHERE id = ? AND revision_id IS NULL`,
+         FROM quote_line WHERE id = ?`,
     ).bind(id).first<{
       id: string; origin: string | null; edited_fields: string | null; line_total: number | null;
       review_json: string | null; edit_version: number;
@@ -98,7 +98,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
     ),
   ];
   const positionRow = await env.DB.prepare(
-    "SELECT COALESCE(MAX(position), -1) + 1 AS n FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL",
+    "SELECT COALESCE(MAX(position), -1) + 1 AS n FROM quote_line WHERE project_id = ? AND parent_line_id IS NULL",
   ).bind(input.projectId).first<{ n: number }>();
   let nextPosition = positionRow?.n ?? 0;
   for (const line of input.lines) {
@@ -116,9 +116,9 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       if (!quote) {
         stmts.push(env.DB.prepare(
           `INSERT INTO quote_line
-             (id, project_id, revision_id, external_ref, product_slug, options_json,
+             (id, project_id, external_ref, product_slug, options_json,
               dims_json, qty, line_total, status, position, origin, review_json)
-           SELECT ?,?,NULL,?,'','{}',?,?,NULL,'incomplete',?,'ai',?
+           SELECT ?,?,?,'','{}',?,?,NULL,'incomplete',?,'ai',?
              WHERE EXISTS (SELECT 1 FROM ai_proposal WHERE id=? AND status='building')`,
         ).bind(
           effectiveQuoteLineId, input.projectId, line.externalRef,
@@ -179,7 +179,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
              configuration_snapshot_json=?, pricing_snapshot_json=NULL,
              recommendation_basis=?, recommendation_confidence='low',
              edit_version=edit_version+1
-           WHERE id=? AND revision_id IS NULL AND origin IN ('ai','schedule')
+           WHERE id=? AND origin IN ('ai','schedule')
              AND edit_version=?
              AND EXISTS (
                SELECT 1 FROM project p JOIN ai_proposal ap ON ap.project_id=p.id
@@ -215,9 +215,9 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
       };
       stmts.push(env.DB.prepare(
         `INSERT INTO quote_line
-           (id, project_id, revision_id, external_ref, product_slug, options_json,
+           (id, project_id, external_ref, product_slug, options_json,
             dims_json, qty, line_total, status, position, origin)
-         SELECT ?,?,NULL,?,?,?,?,?,?, 'technical_review',?, 'ai'
+         SELECT ?,?,?,?,?,?,?,?, 'technical_review',?, 'ai'
            WHERE EXISTS (SELECT 1 FROM ai_proposal WHERE id=? AND status='building')`,
       ).bind(
         effectiveQuoteLineId, input.projectId, line.externalRef, chosen.candidate.slug,
@@ -361,7 +361,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
            configuration_snapshot_json = ?, pricing_snapshot_json = ?,
            recommendation_basis = ?, recommendation_confidence = ?,
            edit_version=edit_version+1
-         WHERE id = ? AND revision_id IS NULL
+         WHERE id = ?
            AND origin IN ('ai','schedule')
            AND edit_version=?
            AND EXISTS (
@@ -396,7 +396,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
         SET status='technical_review',
             review_json=json_patch(COALESCE(review_json,'{}'), ?),
             updated_at=datetime('now')
-      WHERE project_id=? AND revision_id IS NULL
+      WHERE project_id=?
         AND (origin='ai' OR ai_proposal_line_id IS NOT NULL)
         AND edited_fields IS NOT NULL AND json_array_length(edited_fields) > 0
         AND NOT EXISTS (
@@ -411,7 +411,7 @@ export async function publishAiProposal(env: Env, input: PublishProposalInput): 
   ));
   stmts.push(env.DB.prepare(
     `DELETE FROM quote_line
-      WHERE project_id=? AND revision_id IS NULL
+      WHERE project_id=?
         AND (origin='ai' OR ai_proposal_line_id IS NOT NULL)
         AND (edited_fields IS NULL OR json_array_length(edited_fields)=0)
         AND NOT EXISTS (

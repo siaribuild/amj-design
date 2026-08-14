@@ -416,7 +416,7 @@ files.delete("/files/:id", async (c) => {
     `SELECT DISTINCT q.id, q.edited_fields FROM quote_line q
        JOIN parse_line pl ON pl.quote_line_id = q.id
        JOIN schedule_parse_job j ON j.id = pl.job_id
-      WHERE j.file_asset_id = ? AND q.project_id = ? AND q.revision_id IS NULL AND q.origin = 'schedule'`,
+      WHERE j.file_asset_id = ? AND q.project_id = ? AND q.origin = 'schedule'`,
   ).bind(fa.id, fa.project_id).all<{ id: string; edited_fields: string | null }>();
   const affected = new Map<string, { id: string; edited_fields: string | null }>();
   for (const row of sourced ?? []) affected.set(row.id, row);

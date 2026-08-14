@@ -185,7 +185,7 @@ parse.post("/projects/current/clear", async (c) => {
       mutationState.quote_edit_version, mutationState.ai_generation),
     c.env.DB.prepare(
       `DELETE FROM quote_line
-        WHERE project_id=? AND revision_id IS NULL AND EXISTS (
+        WHERE project_id=? AND EXISTS (
           SELECT 1 FROM project WHERE id=? AND status_customer='draft'
             AND quote_edit_version=? AND quote_mutation_token=?
         )`,
@@ -272,7 +272,7 @@ parse.post("/projects/current/lines/:id/collision", async (c) => {
   const choice = body?.choice === "linked" || body?.choice === "separate" ? body.choice : null;
   if (!choice) return c.json({ error: "bad_choice" }, 400);
   const line = await c.env.DB.prepare(
-    "SELECT id, origin, external_ref FROM quote_line WHERE id = ? AND project_id = ? AND revision_id IS NULL",
+    "SELECT id, origin, external_ref FROM quote_line WHERE id = ? AND project_id = ?",
   ).bind(c.req.param("id"), project.id).first<{ id: string; origin: string | null; external_ref: string | null }>();
   if (!line || (line.origin ?? "manual") !== "manual" || !line.external_ref) return c.json({ error: "not_found" }, 404);
   const mutationState = await c.env.DB.prepare(
@@ -286,7 +286,7 @@ parse.post("/projects/current/lines/:id/collision", async (c) => {
     ? c.env.DB.prepare(
       `UPDATE quote_line SET origin='schedule', collision_choice='linked',
           edited_fields='["product_slug","options_json","dims_json","qty"]'
-        WHERE id=? AND project_id=? AND revision_id IS NULL
+        WHERE id=? AND project_id=?
           AND COALESCE(origin,'manual')='manual' AND external_ref IS NOT NULL
           AND EXISTS (
             SELECT 1 FROM project WHERE id=? AND status_customer='draft'
@@ -295,7 +295,7 @@ parse.post("/projects/current/lines/:id/collision", async (c) => {
     ).bind(line.id, project.id, project.id, nextQuoteVersion, mutationToken)
     : c.env.DB.prepare(
       `UPDATE quote_line SET collision_choice='separate'
-        WHERE id=? AND project_id=? AND revision_id IS NULL
+        WHERE id=? AND project_id=?
           AND COALESCE(origin,'manual')='manual' AND external_ref IS NOT NULL
           AND EXISTS (
             SELECT 1 FROM project WHERE id=? AND status_customer='draft'
@@ -414,7 +414,7 @@ parse.get("/projects/current/extraction-status", async (c) => {
   const { results: reqs } = await c.env.DB.prepare(
     `SELECT q.id, q.recommendation_basis
        FROM quote_line q
-      WHERE q.project_id=? AND q.revision_id IS NULL
+      WHERE q.project_id=?
         AND q.ai_proposal_line_id IS NOT NULL AND q.recommendation_basis IS NOT NULL`,
   ).bind(project.id).all<{ id: string; recommendation_basis: string }>()
     .catch(() => ({ results: [] as { id: string; recommendation_basis: string }[] }));

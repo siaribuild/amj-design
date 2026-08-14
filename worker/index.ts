@@ -23,7 +23,7 @@ import { debug } from "./routes/debug";
 import { buildSitemap, buildRobots, renderShell } from "./lib/shell";
 import { ensureCatalogue } from "./lib/catalogue";
 import { getActiveLocations } from "../src/data/catalogue";
-import { drainLearningOutbox } from "./lib/revisions";
+import { drainLearningOutbox } from "./lib/issue";
 import { reconcilePricing } from "./lib/pricing-admin";
 import { applySecurity, securityOptions } from "./lib/headers";
 
@@ -58,7 +58,7 @@ api.route("/api/auth", auth);
 // Customer project workspace (session- or claim-cookie scoped).
 api.route("/api/projects", projects);
 
-// Quote lifecycle: submit / issue-revision / revisions / accept.
+// Quote lifecycle: submit / issue-quote / quote / accept.
 api.route("/api", quote);
 
 // Order tracking, customer sign-off gates, and staff fulfilment seams.

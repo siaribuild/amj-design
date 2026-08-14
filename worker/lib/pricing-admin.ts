@@ -331,7 +331,7 @@ export async function draftExposure(env: Env, productSlug: string): Promise<{ li
   const row = await env.DB.prepare(
     `SELECT count(*) AS lines, count(DISTINCT l.project_id) AS projects
        FROM quote_line l JOIN project p ON p.id = l.project_id
-      WHERE l.product_slug IN (${placeholders}) AND l.revision_id IS NULL
+      WHERE l.product_slug IN (${placeholders})
         AND p.status_customer = 'draft' AND l.line_total IS NOT NULL`,
   ).bind(...slugs).first<{ lines: number; projects: number }>();
   return { lines: Number(row?.lines ?? 0), projects: Number(row?.projects ?? 0) };

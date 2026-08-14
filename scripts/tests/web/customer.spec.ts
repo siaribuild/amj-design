@@ -279,7 +279,7 @@ test("the record draws a composite as the builder does, with nothing to press", 
         id: "p_composite", public_ref: "OF-Q-19900", title: "Composite record",
         status_customer: "submitted", updated_at: new Date().toISOString(),
         created_at: new Date().toISOString(), item_count: 1, draft_total: 900,
-        issued_revision_id: null, issued_revision_no: null,
+        issued_at: null, issued_total: null, issued_deposit: null,
       }] }),
     }));
   await page.route("**/api/projects/p_composite*", (route) =>
@@ -453,7 +453,7 @@ test("T-C5: the issued quote asks for half of goods plus delivery", async ({ pag
     });
   }
   await request.put(`http://127.0.0.1:8788/api/ops/projects/${projectId}/delivery`, { headers: { Host: OPS_HOST }, data: { amount: 640 } });
-  await request.post(`http://127.0.0.1:8788/api/ops/projects/${projectId}/issue-revision`, { headers: { Host: OPS_HOST }, data: {} });
+  await request.post(`http://127.0.0.1:8788/api/ops/projects/${projectId}/issue-quote`, { headers: { Host: OPS_HOST }, data: {} });
 
   await page.goto("/login");
   await otpLogin(page, /your@email\.com/, email, /verify & continue/i);

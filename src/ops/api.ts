@@ -111,7 +111,6 @@ export const opsSetLinePrice = (lineId: string, total: number | null) =>
     method: "PUT", body: JSON.stringify({ total }),
   });
 export interface OpsComment { id: string; line_id: string | null; kind: string; body: string; author: string | null; created_at: string }
-export interface OpsRevision { id: string; revisionNo: number; status: string; total: number; issuedAt: string; acceptedAt: string | null }
 export interface OpsActivity { actor: string | null; action: string; occurred_at: string }
 export interface OpsWorkspace {
   project: {
@@ -128,7 +127,6 @@ export interface OpsWorkspace {
   lines: OpsLine[];
   files: { id: string; kind: string; filename: string; size: number; virus_status: string }[];
   compositePolicy: OpsCompositePolicy;
-  revisions: OpsRevision[];
   comments: OpsComment[];
   activity: OpsActivity[];
   // Slice 1 additions — the merged record. Optional so the existing Quotes
@@ -138,18 +136,23 @@ export interface OpsWorkspace {
   daysInStage?: number | null;
   order?: {
     id: string; orderNo: string; stage: string; stageLabel: string;
-    paymentStatus: string; acceptedRevisionId: string | null; createdAt: string;
+    paymentStatus: string; createdAt: string;
     /** The contract total (goods + delivery) and the delivery component of it —
-     *  worker/lib/orders.ts:141 re-derives from revision_line and used to lose
-     *  the freight; these are what the header reads instead of re-summing
+     *  worker/lib/orders.ts used to re-derive from lines alone and lose the
+     *  freight; these are what the header reads instead of re-summing
      *  order_line client-side. */
     total: number; deliveryTotal: number;
   } | null;
   payments?: OpsPayment[];
-  /** Contract lines — what is actually being built, once a revision is accepted.
+  /** Contract lines — what is actually being built, once the quote is accepted.
    *  The draft lines are no longer the truth at that point, and on an accepted
-   *  project there are usually none left at all. */
-  orderLines?: { id: string; code: string; room: string; qty: number; lineTotal: number; productName: string; width: string; height: string }[];
+   *  project there are usually none left at all. Segments (a split opening's
+   *  units) nest inside their parent, same convention as `lines` above. */
+  orderLines?: {
+    id: string; code: string; room: string; qty: number; lineTotal: number;
+    productName: string; width: string; height: string;
+    segments?: { id: string; productName: string; width: string; height: string; qtyPerParent: number; qty: number; lineTotal: number | null }[];
+  }[];
   /** What can be done to this job right now, derived server-side. */
   actions?: OpsRecordAction[];
   /** The Australian domestic delivery leg (0044) — computed live on every read.
@@ -290,8 +293,8 @@ export const opsBuildingModel = (projectId: string) =>
     `/api/ops/projects/${projectId}/building-model`);
 export const opsAddNote = (id: string, body: string, lineId?: string) =>
   req<{ comment: OpsComment }>(`/api/ops/projects/${id}/note`, { method: "POST", body: JSON.stringify({ body, lineId }) });
-export const opsIssueRevision = (id: string) =>
-  req<{ id: string; revisionNo: number; total: number }>(`/api/ops/projects/${id}/issue-revision`, { method: "POST" });
+export const opsIssueQuote = (id: string) =>
+  req<{ total: number; goods: number; delivery: number }>(`/api/ops/projects/${id}/issue-quote`, { method: "POST" });
 export const opsSetStatus = (id: string, statusInternal: string) =>
   req<{ statusInternal: string; statusInternalLabel: string; nextStates: string[] }>(`/api/ops/projects/${id}/status`, { method: "POST", body: JSON.stringify({ statusInternal }) });
 export const opsRequestClarification = (id: string, message: string) =>

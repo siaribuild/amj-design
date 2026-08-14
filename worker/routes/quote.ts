@@ -1,12 +1,13 @@
-// /api — quote lifecycle: submit (customer), issue revision (staff seam),
-// list revisions (customer), accept (customer -> creates order + deposit invoice).
+// /api — quote lifecycle: submit (customer), issue the quote (staff seam), read
+// the issued quote (customer), accept (customer -> creates order + deposit invoice).
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { ownedProject } from "../lib/access";
 import { resolveStaff } from "../lib/staff";
 import { isEmail, normEmail, resolveUser } from "../lib/auth";
-import { createOrderFromRevision, orderDto, depositOf, balanceOf, type OrderRow } from "../lib/orders";
-import { issueRevision } from "../lib/revisions";
+import { createOrderFromProject, orderDto, depositOf, balanceOf, type OrderRow } from "../lib/orders";
+import { issueQuote } from "../lib/issue";
+import { loadLines } from "./projects";
 import { logEvent } from "../lib/activity";
 import { notify } from "../lib/email";
 import { uuid } from "../lib/util";
@@ -204,7 +205,7 @@ quote.post("/projects/:id/submit", async (c) => {
 
   const { results: lines } = await c.env.DB
     .prepare(`SELECT external_ref, status, line_total, origin, ai_proposal_line_id, review_json
-                FROM quote_line WHERE project_id = ? AND revision_id IS NULL`)
+                FROM quote_line WHERE project_id = ?`)
     .bind(p.id).all<{
       external_ref: string | null; status: string; line_total: number | null;
       origin: string | null; ai_proposal_line_id: string | null; review_json: string | null;
@@ -255,7 +256,7 @@ quote.post("/projects/:id/submit", async (c) => {
           AND (
             EXISTS (
               SELECT 1 FROM quote_line
-               WHERE project_id=project.id AND revision_id IS NULL
+               WHERE project_id=project.id
             ) OR EXISTS (
               SELECT 1 FROM file_asset
                WHERE project_id=project.id AND virus_status='clean'
@@ -290,7 +291,7 @@ quote.post("/projects/:id/submit", async (c) => {
     const payload = await c.env.DB.prepare(
       `SELECT 1 AS present
          WHERE EXISTS (
-           SELECT 1 FROM quote_line WHERE project_id=? AND revision_id IS NULL
+           SELECT 1 FROM quote_line WHERE project_id=?
          ) OR EXISTS (
            SELECT 1 FROM file_asset WHERE project_id=? AND virus_status='clean'
          )`,
@@ -385,63 +386,63 @@ quote.post("/projects/:id/delivery-estimate", async (c) => {
   });
 });
 
-// POST /api/projects/:id/issue-revision — STAFF seam (shared with the ops console).
-quote.post("/projects/:id/issue-revision", async (c) => {
+// POST /api/projects/:id/issue-quote — STAFF seam (shared with the ops console).
+quote.post("/projects/:id/issue-quote", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
   if (!["estimator", "manager", "admin"].includes(staff.role ?? "")) {
     return c.json({ error: "forbidden_role" }, 403);
   }
-  const rev = await issueRevision(c.env, c.req.param("id"));
-  if (!rev.ok) return c.json({ error: rev.error }, rev.error === "not_found" ? 404 : 409);
-  return c.json({ id: rev.id, revisionNo: rev.revisionNo, total: rev.total, goods: rev.goods, delivery: rev.delivery });
+  const result = await issueQuote(c.env, c.req.param("id"));
+  if (!result.ok) return c.json({ error: result.error }, result.error === "not_found" ? 404 : 409);
+  return c.json({ total: result.total, goods: result.goods, delivery: result.delivery });
 });
 
-// GET /api/projects/:id/revisions — customer view of issued revisions.
-quote.get("/projects/:id/revisions", async (c) => {
+// GET /api/projects/:id/quote — customer view of the issued quote. There is one
+// quote per project (docs/quote-revisions-removal-plan.md); `live: false` means
+// the project has moved past 'quote_issued' (accepted elsewhere, or the customer
+// asked for changes and it re-armed) — the caller shows "no longer live" rather
+// than treating the response as an error.
+quote.get("/projects/:id/quote", async (c) => {
   const p = await ownedProject(c.env, c.req.raw, c.req.param("id"));
   if (!p) return c.json({ error: "not_found" }, 404);
-  const { results } = await c.env.DB
-    .prepare("SELECT id, revision_no, snapshot_status, totals_json, issued_at, accepted_at FROM quote_revision WHERE project_id = ? ORDER BY revision_no DESC")
-    .bind(p.id).all<{ id: string; revision_no: number; snapshot_status: string; totals_json: string; issued_at: string; accepted_at: string | null }>();
-  const revisions = await Promise.all(results.map(async (r) => {
-    const { results: rl } = await c.env.DB
-      .prepare("SELECT external_ref, room_label, product_snapshot_json, dims_json, qty, line_total FROM revision_line WHERE revision_id = ?")
-      .bind(r.id).all();
-    // Every reader treats the delivery keys as optional, in one place, once —
-    // revisions issued before C8 have only `total` in totals_json (design doc
-    // §6.7). `goods` falls back to `total` (delivery-free by construction on
-    // those rows); `delivery` falls back to 0.
-    const t = safeParse(r.totals_json);
-    const total = t.total ?? 0;
-    const delivery = t.delivery ?? 0;
-    const goods = t.goods ?? t.total ?? 0;
-    // One deposit percentage (0043), computed here rather than in the browser —
-    // the same reason orders.ts computes it rather than the review screen.
-    const deposit = depositOf(goods, delivery);
-    const balance = balanceOf(goods, delivery);
-    return {
-      id: r.id, revisionNo: r.revision_no, status: r.snapshot_status,
-      total, goods, delivery, deliveryPostcode: t.deliveryPostcode ?? null,
-      deposit, balance, issuedAt: r.issued_at, acceptedAt: r.accepted_at,
-      lines: rl,
-    };
-  }));
-  return c.json({ revisions });
+  const proj = await c.env.DB.prepare(
+    "SELECT status_customer, delivery_amount, delivery_postcode, issued_at FROM project WHERE id = ?",
+  ).bind(p.id).first<{
+    status_customer: string; delivery_amount: number | null;
+    delivery_postcode: string | null; issued_at: string | null;
+  }>();
+  if (!proj || proj.status_customer !== "quote_issued") {
+    return c.json({ live: false, status: proj?.status_customer ?? p.status_customer });
+  }
+  // Same read as the live draft (loadLines) — an issued quote IS the project's
+  // lines, just locked. One list shape at every stage; the customer's issued
+  // view renders through the same component as the draft and the order.
+  const lines = await loadLines(c.env, p.id);
+  const goods = lines.reduce((s, l) => s + (l.lineTotal || 0), 0);
+  const delivery = proj.delivery_amount ?? 0;
+  const total = goods + delivery;
+  // One deposit percentage (0043), computed here rather than in the browser —
+  // the same reason orders.ts computes it rather than the review screen.
+  return c.json({
+    live: true, status: proj.status_customer,
+    total, goods, delivery, deliveryPostcode: proj.delivery_postcode ?? null,
+    deposit: depositOf(goods, delivery), balance: balanceOf(goods, delivery),
+    issuedAt: proj.issued_at, lines,
+  });
 });
 
-// POST /api/revisions/:id/request-changes { message } — the customer declines the
-// issued revision and asks for changes. Honest state move: the project returns to
-// "Under review" (the revision itself stays on file, immutable) and we issue a
-// fresh revision. The accept guard below stops a stale client accepting afterwards.
-quote.post("/revisions/:id/request-changes", async (c) => {
-  const revisionId = c.req.param("id");
-  const rev = await c.env.DB.prepare("SELECT id, project_id, snapshot_status FROM quote_revision WHERE id = ?").bind(revisionId).first<{ id: string; project_id: string; snapshot_status: string }>();
-  if (!rev) return c.json({ error: "not_found" }, 404);
-  const p = await ownedProject(c.env, c.req.raw, rev.project_id);
+// POST /api/projects/:id/request-changes { message } — the customer declines the
+// issued quote and asks for changes. Honest state move: the project returns to
+// "Under review" and staff revise + re-issue the SAME quote in place — there is
+// no separate copy to keep or supersede any more.
+quote.post("/projects/:id/request-changes", async (c) => {
+  const p = await ownedProject(c.env, c.req.raw, c.req.param("id"));
   if (!p) return c.json({ error: "not_found" }, 404);
-  if (rev.snapshot_status !== "issued" || p.status_customer !== "quote_issued") {
-    return c.json({ error: "invalid_state", status: p.status_customer }, 409);
+  const proj = await c.env.DB.prepare("SELECT status_customer, status_internal FROM project WHERE id=?")
+    .bind(p.id).first<{ status_customer: string; status_internal: string }>();
+  if (!proj || proj.status_customer !== "quote_issued" || proj.status_internal !== "issued") {
+    return c.json({ error: "invalid_state", status: proj?.status_customer }, 409);
   }
   const body = await c.req.json().catch(() => ({}));
   const message = String(body?.message ?? "").trim().slice(0, 2000);
@@ -451,62 +452,23 @@ quote.post("/revisions/:id/request-changes", async (c) => {
     c.env.DB.prepare(
       `INSERT INTO comment (id, project_id, author_id, kind, body)
        SELECT ?, ?, ?, 'clarification', ?
-        WHERE EXISTS (
-          SELECT 1 FROM project
-           WHERE id=? AND status_customer='quote_issued' AND status_internal='issued'
-             AND current_revision_id=?
-        )
-          AND EXISTS (
-            SELECT 1 FROM quote_revision
-             WHERE id=? AND project_id=? AND snapshot_status='issued'
-          )`,
-    ).bind(
-      uuid(), p.id, user?.id ?? p.owner_user_id,
-      `Change request on issued quote: ${message}`,
-      p.id, revisionId, revisionId, p.id,
-    ),
+        WHERE EXISTS (SELECT 1 FROM project WHERE id=? AND status_customer='quote_issued' AND status_internal='issued')`,
+    ).bind(uuid(), p.id, user?.id ?? p.owner_user_id, `Change request on issued quote: ${message}`, p.id),
     c.env.DB.prepare(
       // Re-arms the issue gate (C7). delivery_postcode survives — a customer
       // who writes "actually, deliver to Cairns" in the change request lands
       // here with the gate re-armed, staff correct the postcode via E7, and
-      // the new figure freezes on R2. A destination change is a new
-      // revision, never an edit to an issued one.
+      // the new figure freezes on the next issue. A destination change is a
+      // new pricing pass, never an edit to the issued quote.
       `UPDATE project SET status_customer='under_review',
           status_internal='estimator_assigned',
           delivery_amount = NULL, delivery_note = NULL,
           delivery_settled_at = NULL, delivery_settle_json = NULL,
           updated_at=datetime('now')
-        WHERE id=? AND status_customer='quote_issued' AND status_internal='issued'
-          AND current_revision_id=?
-          AND EXISTS (
-            SELECT 1 FROM quote_revision
-             WHERE id=? AND project_id=? AND snapshot_status='issued'
-          )`,
-    ).bind(p.id, revisionId, revisionId, p.id),
-    c.env.DB.prepare(
-      `UPDATE quote_revision SET snapshot_status='superseded'
-        WHERE id=? AND project_id=? AND snapshot_status='issued'
-          AND EXISTS (
-            SELECT 1 FROM project
-             WHERE id=? AND status_customer='under_review'
-               AND status_internal='estimator_assigned'
-               AND current_revision_id=?
-          )`,
-    ).bind(revisionId, p.id, p.id, revisionId),
-    c.env.DB.prepare(
-      `UPDATE project SET current_revision_id=NULL
-        WHERE id=? AND status_customer='under_review'
-          AND status_internal='estimator_assigned'
-          AND current_revision_id=?
-          AND EXISTS (
-            SELECT 1 FROM quote_revision
-             WHERE id=? AND project_id=? AND snapshot_status='superseded'
-          )`,
-    ).bind(p.id, revisionId, revisionId, p.id),
+        WHERE id=? AND status_customer='quote_issued' AND status_internal='issued'`,
+    ).bind(p.id),
   ]);
-  if (Number(committed[1]?.meta?.changes ?? 0) !== 1 ||
-      Number(committed[2]?.meta?.changes ?? 0) !== 1 ||
-      Number(committed[3]?.meta?.changes ?? 0) !== 1) {
+  if (Number(committed[1]?.meta?.changes ?? 0) !== 1) {
     return c.json({ error: "invalid_state" }, 409);
   }
   await logEvent(c.env, { actor: user?.id ?? "customer", entityType: "project", entityId: p.id, action: "customer requested changes on issued quote" });
@@ -525,27 +487,24 @@ quote.post("/revisions/:id/request-changes", async (c) => {
   return c.json({ ok: true, status: "under_review" });
 });
 
-// POST /api/revisions/:id/accept — customer accepts an issued revision.
-quote.post("/revisions/:id/accept", async (c) => {
-  const revisionId = c.req.param("id");
-  const rev = await c.env.DB.prepare("SELECT id, project_id, snapshot_status FROM quote_revision WHERE id = ?").bind(revisionId).first<{ id: string; project_id: string; snapshot_status: string }>();
-  if (!rev) return c.json({ error: "not_found" }, 404);
-  const proj = await ownedProject(c.env, c.req.raw, rev.project_id);
-  if (!proj) return c.json({ error: "not_found" }, 404);
-  // The revision must be live AND the project still awaiting acceptance — after a
-  // change request (project back to under_review) the old revision is not acceptable.
-  if (rev.snapshot_status !== "issued" || proj.status_customer !== "quote_issued") return c.json({ error: "not_acceptable" }, 409);
+// POST /api/projects/:id/accept — customer accepts the issued quote.
+quote.post("/projects/:id/accept", async (c) => {
+  const p = await ownedProject(c.env, c.req.raw, c.req.param("id"));
+  if (!p) return c.json({ error: "not_found" }, 404);
+  const proj = await c.env.DB.prepare("SELECT status_customer, status_internal FROM project WHERE id=?")
+    .bind(p.id).first<{ status_customer: string; status_internal: string }>();
+  // The quote must still be issued AND the project still awaiting acceptance —
+  // after a change request (project back to under_review) it is not acceptable.
+  if (!proj || proj.status_customer !== "quote_issued" || proj.status_internal !== "issued") {
+    return c.json({ error: "not_acceptable" }, 409);
+  }
 
-  // The claim (issued -> accepted) and the order creation happen in ONE atomic
-  // batch (see createOrderFromRevision). Only the winning caller gets an order;
-  // concurrent duplicates and any mid-flight failure roll back to a re-acceptable
-  // revision, so an accepted revision can never be left without an order.
-  const orderId = await createOrderFromRevision(c.env, revisionId, rev.project_id);
+  // The claim and the order creation happen in ONE atomic batch (see
+  // createOrderFromProject). Only the winning caller gets an order; concurrent
+  // duplicates and any mid-flight failure roll back to a re-acceptable quote,
+  // so an accepted quote can never be left without an order.
+  const orderId = await createOrderFromProject(c.env, p.id);
   if (!orderId) return c.json({ error: "not_acceptable" }, 409);
   const order = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(orderId).first<OrderRow>();
   return c.json({ order: await orderDto(c.env, order!) });
 });
-
-function safeParse(s: string): Record<string, any> {
-  try { const v = JSON.parse(s || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; }
-}

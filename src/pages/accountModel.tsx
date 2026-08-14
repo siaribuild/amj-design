@@ -131,7 +131,7 @@ export function projectMeta(p: ApiProjectSummary): RecordMeta {
     case "needs_information":
       return { pill: "Needs your answer", tone: "attn", needsYou: true, next: <>answer our question so pricing can continue</>, action: { cta: "Reply now", when: "Pauses pricing", rank: 4 } };
     case "quote_issued":
-      return { pill: `Quote ready${p.issued_revision_no ? ` · R${p.issued_revision_no}` : ""}`, tone: "attn", needsYou: true, next: <>review &amp; accept, then a {b("50% deposit")} of {b(money(p.issued_deposit))} starts your order</>, action: { cta: "Review & accept", when: "Your decision", rank: 5 } };
+      return { pill: "Quote ready", tone: "attn", needsYou: true, next: <>review &amp; accept, then a {b("50% deposit")} of {b(money(p.issued_deposit))} starts your order</>, action: { cta: "Review & accept", when: "Your decision", rank: 5 } };
     case "expired":
       return { pill: "Expired", tone: "mute", needsYou: false, next: <>This quote expired — start a new one or contact us</> };
     default: // accepted / closed — the project is Ordered; the order row carries it

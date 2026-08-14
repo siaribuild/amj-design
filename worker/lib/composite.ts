@@ -12,7 +12,7 @@
 //   2. Segments are quote_line rows with parent_line_id set. They carry no
 //      external_ref — one opening, one architect tag.
 //   3. `qty` on a segment is DERIVED: parent.qty × qty_per_parent, materialised
-//      because computePrice, revision_line, order_line and every customer view
+//      because computePrice, order_line and every customer view
 //      read `qty` directly. The safety condition is a single writer — this
 //      module — so it can never desync. Covered by a test.
 //   4. The parent is never priced directly. Its line_total is Σ(segments), or

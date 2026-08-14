@@ -12,7 +12,7 @@ import {
 import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
 import { findOrCreateInternalUser, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
-import { drainLearningOutbox, issueRevision, ISSUABLE_FROM } from "../lib/revisions";
+import { drainLearningOutbox, issueQuote, ISSUABLE_FROM } from "../lib/issue";
 import {
   deliveryCost, loadProjectAreaM2, loadZonesAndRanges, normalisePostcode, resolveZone, zoneIsPriced,
   type DeliveryZone,
@@ -48,7 +48,7 @@ export const ops = new Hono<{ Bindings: Env }>();
 ops.route("/pricing", opsPricing);
 
 // Internal workflow state machine (status_internal). 'issued' is reached via
-// issue-revision; 'customer_clarification_required' via request-clarification.
+// issue-quote; 'customer_clarification_required' via request-clarification.
 //
 // There is no approval step. The rules that decided WHICH quotes needed sign-off
 // are gone, and with anyone able to approve — including the person who submitted
@@ -104,7 +104,7 @@ const canAdjudicateThermal = isStaffUser;
 async function unresolvedLineCount(env: Env, projectId: string): Promise<number> {
   const row = await env.DB.prepare(
     `SELECT count(*) AS count FROM quote_line
-      WHERE project_id=? AND revision_id IS NULL
+      WHERE project_id=?
         AND (status <> 'ready' OR line_total IS NULL)`,
   ).bind(projectId).first<{ count: number }>();
   return Number(row?.count ?? 0);
@@ -301,7 +301,7 @@ ops.get("/summary", async (c) => {
         (SELECT count(*) FROM "order" WHERE stage IN ('deposit_invoiced','balance_invoiced'))    AS awaiting_payment,
         (SELECT count(*) FROM user WHERE type = 'customer')                                       AS customers,
         (SELECT count(*) FROM project p2 WHERE p2.status_internal IN ('estimator_assigned','technical_review_required')
-           AND NOT EXISTS (SELECT 1 FROM quote_line l2 WHERE l2.project_id = p2.id AND l2.revision_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM quote_line l2 WHERE l2.project_id = p2.id
                             AND (l2.status <> 'ready' OR l2.line_total IS NULL)))                        AS ready_to_issue,
         (SELECT count(*) FROM enquiry WHERE workflow_status = 'new')                              AS new_enquiries
     `).first<Record<string, number>>();
@@ -328,8 +328,8 @@ ops.get("/queues/submissions", async (c) => {
            o.name AS org_name, u.name AS customer_name, u.email AS customer_email,
            -- PARENTS ONLY — same rule as loadLines(). A segment must never be
            -- summed beside the parent that already aggregates it.
-           (SELECT count(*) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL AND parent_line_id IS NULL) AS item_count,
-           (SELECT COALESCE(SUM(line_total), 0) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL AND parent_line_id IS NULL) AS total
+           (SELECT count(*) FROM quote_line WHERE project_id = p.id AND parent_line_id IS NULL) AS item_count,
+           (SELECT COALESCE(SUM(line_total), 0) FROM quote_line WHERE project_id = p.id AND parent_line_id IS NULL) AS total
       FROM project p
       LEFT JOIN organisation o ON o.id = p.organisation_id
       LEFT JOIN user u  ON u.id  = p.owner_user_id
@@ -350,13 +350,12 @@ ops.get("/projects", async (c) => {
   if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
   const { results } = await c.env.DB.prepare(`
     SELECT p.id, p.title, p.public_ref, p.status_customer, p.status_internal, p.updated_at,
-           p.contact_name, p.contact_email,
+           p.contact_name, p.contact_email, p.delivery_amount,
            o.name AS org_name, u.name AS customer_name, u.email AS customer_email,
-           ord.id AS order_id, ord.order_no, ord.stage AS order_stage,
-           (SELECT count(*) FROM quote_line l WHERE l.project_id = p.id AND l.revision_id IS NULL AND l.parent_line_id IS NULL) AS line_count,
-           (SELECT COALESCE(sum(l.line_total), 0) FROM quote_line l WHERE l.project_id = p.id AND l.revision_id IS NULL AND l.parent_line_id IS NULL) AS draft_total,
-           (SELECT count(*) FROM quote_line l WHERE l.project_id = p.id AND l.revision_id IS NULL AND l.parent_line_id IS NULL AND (l.status <> 'ready' OR l.line_total IS NULL)) AS unresolved,
-           (SELECT r.totals_json FROM quote_revision r WHERE r.project_id = p.id ORDER BY r.revision_no DESC LIMIT 1) AS latest_totals
+           ord.id AS order_id, ord.order_no, ord.stage AS order_stage, ord.total AS order_total,
+           (SELECT count(*) FROM quote_line l WHERE l.project_id = p.id AND l.parent_line_id IS NULL) AS line_count,
+           (SELECT COALESCE(sum(l.line_total), 0) FROM quote_line l WHERE l.project_id = p.id AND l.parent_line_id IS NULL) AS draft_total,
+           (SELECT count(*) FROM quote_line l WHERE l.project_id = p.id AND l.parent_line_id IS NULL AND (l.status <> 'ready' OR l.line_total IS NULL)) AS unresolved
       FROM project p
       LEFT JOIN organisation o ON o.id = p.organisation_id
       LEFT JOIN user u   ON u.id   = p.owner_user_id
@@ -368,18 +367,23 @@ ops.get("/projects", async (c) => {
     const lifecycle = lifecycleOf({
       statusInternal: r.status_internal, statusCustomer: r.status_customer, orderStage: r.order_stage,
     });
-    const issued = safeParse(r.latest_totals ?? "{}").total;
     // Three different meanings can occupy the value column. Say which one this is
     // — a number read down a phone with the wrong basis is worse than no number.
-    const valueBasis = r.order_id ? "contract" : issued != null ? "issued" : "est.";
+    // "issued": lines can't change while status_internal='issued' (the edit
+    // lock), so goods (draft_total) + the frozen delivery_amount IS the issued
+    // figure — no separate snapshot to read it from any more.
+    const issuedNow = r.status_internal === "issued";
+    const value = r.order_id ? Number(r.order_total ?? 0)
+      : issuedNow ? Number(r.draft_total ?? 0) + Number(r.delivery_amount ?? 0)
+      : Number(r.draft_total ?? 0);
+    const valueBasis = r.order_id ? "contract" : issuedNow ? "issued" : "est.";
     return {
       id: r.id, ref: r.public_ref ?? r.id, title: r.title ?? "Untitled project",
       customerName: r.customer_name ?? r.contact_name ?? null,
       customerEmail: r.customer_email ?? r.contact_email ?? null,
       org: r.org_name ?? null,
       lineCount: Number(r.line_count ?? 0),
-      value: typeof issued === "number" && (r.order_id || issued > 0) ? issued : Number(r.draft_total ?? 0),
-      valueBasis,
+      value, valueBasis,
       unresolved: Number(r.unresolved ?? 0),
       orderNo: r.order_no ?? null,
       ...lifecycle,
@@ -459,7 +463,7 @@ ops.get("/projects/:id", async (c) => {
 
   // PARENTS ONLY — the reviewer sees the same line list the customer does, with
   // segments nested inside their parent rather than loose beside it.
-  const { results: lines } = await c.env.DB.prepare("SELECT * FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL ORDER BY position").bind(id).all<LineRow>();
+  const { results: lines } = await c.env.DB.prepare("SELECT * FROM quote_line WHERE project_id = ? AND parent_line_id IS NULL ORDER BY position").bind(id).all<LineRow>();
   // The SEGMENTS of any composite parent. The parents-only query above is right
   // for the item list, but it meant the console could never see, or offer, a
   // split — the split/merge endpoints have existed since the composite work and
@@ -471,11 +475,10 @@ ops.get("/projects/:id", async (c) => {
     `SELECT id, parent_line_id, product_slug, options_json, dims_json,
             qty_per_parent, qty, line_total, status, segment_seq, room_label
        FROM quote_line
-      WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NOT NULL
+      WHERE project_id = ? AND parent_line_id IS NOT NULL
       ORDER BY parent_line_id, segment_seq`,
   ).bind(id).all<any>();
   const { results: files } = await c.env.DB.prepare("SELECT id, kind, filename, size, virus_status, created_at FROM file_asset WHERE project_id = ? ORDER BY created_at DESC").bind(id).all();
-  const { results: revisions } = await c.env.DB.prepare("SELECT id, revision_no, snapshot_status, totals_json, issued_at, accepted_at FROM quote_revision WHERE project_id = ? ORDER BY revision_no DESC").bind(id).all<any>();
   const { results: comments } = await c.env.DB.prepare("SELECT cm.id, cm.line_id, cm.kind, cm.body, cm.created_at, u.name AS author FROM comment cm LEFT JOIN user u ON u.id = cm.author_id WHERE cm.project_id = ? ORDER BY cm.created_at DESC").bind(id).all();
   // The order for this project, if it has reached one. A project and its order
   // are one job (order is 1:1 with project); the split is storage, not domain.
@@ -483,24 +486,26 @@ ops.get("/projects/:id", async (c) => {
     // `stage` (0002) is the 12-step journey every other surface reads. `status`
     // is the vestigial 8-value enum from 0001 — reading it here put an order that
     // had reached balance_paid into the "Intake" phase.
-    `SELECT id, order_no, stage, payment_status, accepted_revision_id, created_at, updated_at,
+    `SELECT id, order_no, stage, payment_status, created_at, updated_at,
             total, delivery_total
        FROM "order" WHERE project_id = ? ORDER BY created_at DESC LIMIT 1`,
   ).bind(id).first<any>();
   const { results: payments } = order
     ? await c.env.DB.prepare("SELECT kind, amount, percent, status, reference, invoiced_at, paid_at FROM payment WHERE order_id = ? ORDER BY kind DESC").bind(order.id).all()
     : { results: [] as any[] };
-  // The CONTRACT lines, read from the revision that was accepted rather than from
-  // order_line. Both exist and agree — orders.ts copies one into the other at
-  // acceptance — but order_line is a thin copy carrying only ref/qty/total, while
-  // revision_line keeps dims_json, options and the room. Reading the accepted
-  // revision gives the same contract with the detail a staffer actually needs.
-  const { results: orderLines } = order?.accepted_revision_id
+  // The CONTRACT lines, read from order_line — which now carries the whole
+  // opening (0047: room, dims, options and a unit's segments), not just
+  // ref/qty/total. Once an order exists the draft lines are no longer what
+  // anyone is building; order_line is.
+  const { results: orderLineRows } = order
     ? await c.env.DB.prepare(
-      `SELECT id, external_ref, room_label, product_snapshot_json, dims_json, qty, line_total
-         FROM revision_line WHERE revision_id = ? ORDER BY external_ref`,
-    ).bind(order.accepted_revision_id).all()
+      `SELECT id, external_ref, room_label, product_snapshot_json, dims_json,
+              qty, line_total, parent_line_id, segment_seq, qty_per_parent
+         FROM order_line WHERE order_id = ? ORDER BY COALESCE(parent_line_id, id), segment_seq`,
+    ).bind(order.id).all<any>()
     : { results: [] as any[] };
+  const orderParentLines = orderLineRows.filter((l) => l.parent_line_id == null);
+  const orderSegmentLines = orderLineRows.filter((l) => l.parent_line_id != null);
 
   // History spans BOTH entities. It used to filter on entity_type='project' only,
   // while every fulfilment action logs against 'order' — so on a merged plane the
@@ -557,7 +562,6 @@ ops.get("/projects/:id", async (c) => {
     // proposeEvenSplit() by joinerMm × (units − 1) before the reviewer typed
     // anything. maxSegments and toleranceMm were unreachable entirely.
     compositePolicy,
-    revisions: revisions.map((r: any) => ({ id: r.id, revisionNo: r.revision_no, status: r.snapshot_status, total: safeParse(r.totals_json).total ?? 0, issuedAt: r.issued_at, acceptedAt: r.accepted_at })),
     comments,
     activity,
     // ── The merged view's additions (Slice 1) ───────────────────────────────
@@ -577,11 +581,12 @@ ops.get("/projects/:id", async (c) => {
       customerEmail: p.customer_email ?? p.contact_email ?? null,
       deliveryUnset: p.delivery_amount == null,
     }),
-    // The CONTRACT lines. Once a revision is accepted the draft lines are no
+    // The CONTRACT lines. Once the quote is accepted the draft lines are no
     // longer what anyone is building — order_line is. Without these an accepted
     // project renders an empty table, which is how a staffer concludes the record
-    // is broken.
-    orderLines: orderLines.map((l: any) => {
+    // is broken. Segments nest inside their parent, same convention as the draft
+    // `lines` above — a split opening is one row on screen either way.
+    orderLines: orderParentLines.map((l) => {
       const snap = safeParse(l.product_snapshot_json);
       const dims = safeParse(l.dims_json ?? "{}");
       return {
@@ -589,13 +594,21 @@ ops.get("/projects/:id", async (c) => {
         room: (l.room_label as string) ?? "",
         productName: (snap.productName as string) ?? (snap.productSlug as string) ?? "—",
         width: String(dims.width ?? ""), height: String(dims.height ?? ""),
+        segments: orderSegmentLines.filter((s) => s.parent_line_id === l.id).map((s) => {
+          const sSnap = safeParse(s.product_snapshot_json);
+          const sDims = safeParse(s.dims_json ?? "{}");
+          return {
+            id: s.id, productName: (sSnap.productName as string) ?? (sSnap.productSlug as string) ?? "—",
+            width: String(sDims.width ?? ""), height: String(sDims.height ?? ""),
+            qtyPerParent: s.qty_per_parent ?? 1, qty: s.qty, lineTotal: s.line_total,
+          };
+        }),
       };
     }),
     order: order ? {
       id: order.id, orderNo: order.order_no, stage: order.stage,
       stageLabel: STAGE_LABEL[order.stage as Stage] ?? order.stage,
       paymentStatus: order.payment_status,
-      acceptedRevisionId: order.accepted_revision_id,
       createdAt: order.created_at,
       // Verified gap (design doc §6.7): this query never selected `total`, and
       // without it the ops record header (ProjectRecord.tsx) keeps summing
@@ -614,7 +627,7 @@ ops.get("/projects/:id", async (c) => {
 // un-settles or corrects the delivery figure. `amount: null` un-settles and
 // re-arms the issue gate (C7) — the honest way to say "I typed a number and I
 // now think it is wrong". Does NOT bump quote_edit_version (§6.3): a bump
-// would collide with issueRevision's own concurrency guard and a staffer
+// would collide with issueQuote's own concurrency guard and a staffer
 // setting delivery while a colleague clicks Issue would be told "delivery is
 // not set" immediately after setting it. The issue path guards on the
 // delivery figure directly instead (C7), which cannot be misattributed.
@@ -809,7 +822,7 @@ async function editableParent(env: Env, req: Request, lineId: string) {
   if (!staff || !hasAssignedRole(staff)) return null;
   return env.DB.prepare(
     `SELECT q.* FROM quote_line q JOIN project p ON p.id=q.project_id
-      WHERE q.id=? AND q.revision_id IS NULL AND q.parent_line_id IS NULL
+      WHERE q.id=? AND q.parent_line_id IS NULL
         AND p.status_internal IN (${EDITABLE_STATES})`,
   ).bind(lineId).first<LineRow & { project_id: string }>();
 }
@@ -891,7 +904,7 @@ ops.patch("/lines/:id", async (c) => {
   // endpoint below, which cannot express either mistake.
   const line = await c.env.DB.prepare(
     `SELECT q.*, p.quote_edit_version, p.owner_user_id FROM quote_line q JOIN project p ON p.id=q.project_id
-      WHERE q.id=? AND q.revision_id IS NULL AND q.parent_line_id IS NULL
+      WHERE q.id=? AND q.parent_line_id IS NULL
         AND p.status_internal IN (
           'submitted','triage_pending','estimator_assigned',
           'technical_review_required','customer_clarification_required'
@@ -1129,7 +1142,7 @@ ops.put("/lines/:id/price", async (c) => {
   const line = await c.env.DB.prepare(
     `SELECT q.id, q.line_kind, q.line_total, q.price_calculated, q.parent_line_id
        FROM quote_line q JOIN project p ON p.id=q.project_id
-      WHERE q.id=? AND q.revision_id IS NULL
+      WHERE q.id=?
         AND p.status_internal IN (
           'submitted','triage_pending','estimator_assigned',
           'technical_review_required','customer_clarification_required'
@@ -1188,7 +1201,7 @@ async function editableSegmentParent(env: Env, req: Request, segmentId: string) 
        FROM quote_line q
        JOIN quote_line par ON par.id = q.parent_line_id
        JOIN project p ON p.id = q.project_id
-      WHERE q.id=? AND q.parent_line_id IS NOT NULL AND q.revision_id IS NULL
+      WHERE q.id=? AND q.parent_line_id IS NOT NULL
         AND p.status_internal IN (
           'submitted','triage_pending','estimator_assigned',
           'technical_review_required','customer_clarification_required'
@@ -1285,24 +1298,24 @@ ops.post("/projects/:id/note", async (c) => {
   return c.json({ comment: { id, body: text, author: staff.name, kind: "note", created_at: new Date().toISOString() } });
 });
 
-// POST /api/ops/projects/:id/issue-revision — issue the reviewed quote + notify customer.
-ops.post("/projects/:id/issue-revision", async (c) => {
+// POST /api/ops/projects/:id/issue-quote — issue the reviewed quote + notify customer.
+ops.post("/projects/:id/issue-quote", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
   if (!canIssueQuote(staff)) return c.json({ error: "forbidden_role" }, 403);
   const id = c.req.param("id");
-  const rev = await issueRevision(c.env, id);
-  if (!rev.ok) return c.json({ error: rev.error }, rev.error === "not_found" ? 404 : 409);
-  await logEvent(c.env, { actor: staff?.id, entityType: "project", entityId: id, action: `issued revision ${rev.revisionNo}` });
+  const result = await issueQuote(c.env, id);
+  if (!result.ok) return c.json({ error: result.error }, result.error === "not_found" ? 404 : 409);
+  await logEvent(c.env, { actor: staff?.id, entityType: "project", entityId: id, action: "issued quote" });
   const cust = await c.env.DB.prepare("SELECT u.email, COALESCE(u.name, p.contact_name) AS name FROM project p JOIN user u ON u.id = p.owner_user_id WHERE p.id = ?").bind(id).first<{ email: string; name: string | null }>();
   if (cust?.email) {
     await notify(c.env, {
-      recipient: cust.email, eventType: "revision.issued", templateKey: "quote_issued",
-      vars: { name: cust.name || "there", revision: rev.revisionNo },
-      email: { to: cust.email, subject: "Your OpenFrame quote is ready", text: `Your reviewed quote (revision ${rev.revisionNo}) is ready to review and accept.` },
+      recipient: cust.email, eventType: "quote.issued", templateKey: "quote_issued",
+      vars: { name: cust.name || "there" },
+      email: { to: cust.email, subject: "Your OpenFrame quote is ready", text: "Your reviewed quote is ready to review and accept." },
     });
   }
-  return c.json({ id: rev.id, revisionNo: rev.revisionNo, total: rev.total, goods: rev.goods, delivery: rev.delivery });
+  return c.json({ total: result.total, goods: result.goods, delivery: result.delivery });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1581,7 +1594,7 @@ ops.get("/lines/:id/configurations", async (c) => {
   if (!staff) return c.json({ error: "forbidden" }, 403);
   if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const line = await c.env.DB.prepare(
-    "SELECT * FROM quote_line WHERE id=? AND revision_id IS NULL",
+    "SELECT * FROM quote_line WHERE id=?",
   ).bind(c.req.param("id")).first<LineRow>();
   if (!line) return c.json({ error: "not_found" }, 404);
   const opening = await c.env.DB.prepare(
@@ -1635,10 +1648,10 @@ ops.patch("/recommendation-outcomes/:id", async (c) => {
       `UPDATE recommendation_outcome
           SET quality_state='rejected', recommendation_eligible=0, thermal_eligible=0,
               reviewed_by=?, reviewed_at=datetime('now')
-        WHERE id=? AND quality_state='pending' RETURNING id, quote_revision_id`,
-    ).bind(staff.id, c.req.param("id")).first<{ id: string; quote_revision_id: string }>();
+        WHERE id=? AND quality_state='pending' RETURNING id, project_id`,
+    ).bind(staff.id, c.req.param("id")).first<{ id: string; project_id: string }>();
     if (!changed) return c.json({ error: "not_found_or_final" }, 409);
-    await refreshLearningExampleEligibility(c.env, changed.quote_revision_id).catch(() => false);
+    await refreshLearningExampleEligibility(c.env, changed.project_id).catch(() => false);
     return c.json({ ok: true, qualityState: "rejected" });
   }
   const reasonCode = String(body?.reasonCode ?? "").trim();
@@ -1669,13 +1682,13 @@ ops.patch("/recommendation-outcomes/:id", async (c) => {
             recommendation_eligible=?, thermal_eligible=?,
             reviewed_thermal_json=?, reviewed_by=?, reviewed_at=datetime('now')
       WHERE id=? AND decision='adjusted' AND quality_state='pending'
-      RETURNING id, quote_revision_id`,
+      RETURNING id, project_id`,
   ).bind(
     reasonCode, policy.ranker ? 1 : 0, policy.thermal ? 1 : 0,
     reviewedThermal, staff.id, c.req.param("id"),
-  ).first<{ id: string; quote_revision_id: string }>();
+  ).first<{ id: string; project_id: string }>();
   if (!changed) return c.json({ error: "not_found_or_final" }, 409);
-  await refreshLearningExampleEligibility(c.env, changed.quote_revision_id).catch(() => false);
+  await refreshLearningExampleEligibility(c.env, changed.project_id).catch(() => false);
   await logEvent(c.env, {
     actor: staff.id, entityType: "recommendation_outcome", entityId: changed.id,
     action: `adjudicated recommendation outcome: ${reasonCode}`,
@@ -1691,7 +1704,7 @@ ops.get("/projects/:id/recommendation-outcomes", async (c) => {
   if (!staff) return c.json({ error: "forbidden" }, 403);
   if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const { results } = await c.env.DB.prepare(
-    `SELECT id, quote_revision_id, quote_line_id, ai_proposal_line_id, external_ref,
+    `SELECT id, quote_line_id, ai_proposal_line_id, external_ref,
             context_key, context_json, proposed_config_json, final_config_json,
             proposed_product_slug, proposed_variant_id, proposed_line_total,
             final_product_slug, final_variant_id, final_line_total, price_delta,
@@ -1818,8 +1831,6 @@ ops.get("/projects/:id/thermal", async (c) => {
     .bind(projectId).first<{ id: string }>();
   if (!project) return c.json({ error: "not_found" }, 404);
 
-  // The live draft only (revision_id IS NULL) — an issued revision snapshots the
-  // chosen configuration, not the target it was chosen against.
   const { results } = await c.env.DB.prepare(
     `SELECT ql.id, ql.external_ref, ql.line_kind, ql.parent_line_id, ql.segment_seq, ql.dims_json,
             ql.configuration_snapshot_json,
@@ -1832,7 +1843,7 @@ ops.get("/projects/:id/thermal", async (c) => {
        FROM quote_line ql
        LEFT JOIN opening_instance o ON o.quote_line_id = ql.id
        LEFT JOIN ai_proposal_line apl ON apl.id = ql.ai_proposal_line_id
-      WHERE ql.project_id = ? AND ql.revision_id IS NULL`,
+      WHERE ql.project_id = ?`,
   ).bind(projectId).all<any>();
 
   const s = (v: unknown): string | null => (typeof v === "string" && v ? v : null);

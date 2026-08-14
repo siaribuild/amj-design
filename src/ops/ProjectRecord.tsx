@@ -1,13 +1,15 @@
 // className="font-data" Ops → Projects: ONE record, whole lifecycle, on one plane.
 //
-// A project, the quote revisions issued from it and the order it becomes are the
-// same job at different moments — `order` is 1:1 with `project`, and every order
-// query already joins the project back in. Splitting them across a Quotes tab and
-// an Orders tab made a staffer cross a boundary that exists only in storage.
+// A project, the quote issued from it and the order it becomes are the same job
+// at different moments — `order` is 1:1 with `project`, and every order query
+// already joins the project back in. Splitting them across a Quotes tab and an
+// Orders tab made a staffer cross a boundary that exists only in storage.
 //
 // This IS where work happens. It absorbed the Quotes workspace (line editing,
 // notes, clarifications, issuing) and the Orders detail (stage advances,
-// payments), and both of those tabs are gone.
+// payments), and both of those tabs are gone. There is also no version tab
+// strip any more (owner, 2026-08-14, "a quote is a quote") — one quote per
+// project, updated in place, so there is nothing to switch between.
 //
 // Two deliberate refusals, both worth stating because the obvious design does the
 // opposite:
@@ -23,7 +25,7 @@ import { SAGE, INK, QUIET as MUTED } from "../styles/tokens";
 import { Fragment, useEffect, useState } from "react";
 import { Check, ChevronLeft, Loader2, FileText, Paperclip, History as HistoryIcon } from "lucide-react";
 import {
-  OpsApiError, opsProject, opsStartPricing, opsSetStatus, opsIssueRevision,
+  OpsApiError, opsProject, opsStartPricing, opsSetStatus, opsIssueQuote,
   opsRequestClarification, opsAddNote, opsPatchLine, opsAdvanceOrder, opsPayOrder,
   opsSplitLine, opsMergeComposite,
   opsPatchSegment, opsAddSegment, opsRemoveSegment, opsLinePricePreview,
@@ -90,8 +92,6 @@ const reviewReasons = (review: Record<string, unknown> | null): string[] =>
 export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }) {
   const [ws, setWs] = useState<OpsWorkspace | null>(null);
   const [showAllHistory, setShowAllHistory] = useState(false);
-  // Which version is being viewed: null = the live draft.
-  const [revisionId, setRevisionId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   // The action awaiting confirmation, and the free text it needs (a bank
@@ -145,7 +145,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
 
   const perform = (a: OpsRecordAction) => {
     if (a.id === "start-pricing") return run(() => opsStartPricing(id));
-    if (a.id === "issue-revision") return run(() => opsIssueRevision(id));
+    if (a.id === "issue-quote") return run(() => opsIssueQuote(id));
     if (a.id.startsWith("status:")) return run(() => opsSetStatus(id, a.id.slice(7)));
     if (a.id.startsWith("advance:")) return run(() => opsAdvanceOrder(ws!.order!.id, a.id.slice(8)));
     if (a.id.startsWith("pay:")) return run(() => opsPayOrder(ws!.order!.id, a.id.slice(4), confirmText.trim()));
@@ -159,30 +159,27 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
   const life = ws.lifecycle;
   const order = ws.order ?? null;
 
-  // Once a revision is accepted, the CONTRACT is what is being built — and the
+  // Once the quote is accepted, the CONTRACT is what is being built — and the
   // draft lines are usually gone by then, so showing them renders an empty table
   // on a live order. Fall back to the draft only when there is no contract.
   const contractLines = ws.orderLines ?? [];
   const showingContract = !!order && contractLines.length > 0;
   const rows = showingContract
-    ? contractLines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: "ready", lineKind: "simple", segments: [] as OpsSegment[], productSlug: "", options: {} as Record<string, string>, compositeAxis: null as string | null, origin: "revision", selectedVariantId: null as string | null, review: null as Record<string, string> | null, priceCalculated: null as number | null }))
+    ? contractLines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: "ready", lineKind: "simple", segments: [] as OpsSegment[], productSlug: "", options: {} as Record<string, string>, compositeAxis: null as string | null, origin: "order", selectedVariantId: null as string | null, review: null as Record<string, string> | null, priceCalculated: null as number | null }))
     : ws.lines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: l.status, lineKind: l.lineKind ?? "simple", segments: l.segments ?? [], productSlug: l.productSlug, options: l.options ?? {}, compositeAxis: l.compositeAxis ?? null, origin: l.origin, selectedVariantId: l.selectedVariantId, review: l.review, priceCalculated: l.priceCalculated ?? null }));
   const goods = rows.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
-  // Which figure is authoritative follows the tab (design doc §7.2). Summing
-  // lineTotal on the issued and contract tabs would reproduce orders.ts's own
-  // pre-C8 defect on screen — freight present in the document and absent from
-  // the number beside it.
+  // Which figure is authoritative follows the mode. Summing lineTotal on the
+  // contract view would reproduce orders.ts's own pre-C8 defect on screen —
+  // freight present in the document and absent from the number beside it.
   const del = ws.delivery?.amount ?? null;
-  const total = showingContract ? (order?.total ?? goods)
-    : revisionId ? (ws.revisions.find((r) => r.id === revisionId)?.total ?? goods)
-      : goods + (del ?? 0);
+  const total = showingContract ? (order?.total ?? goods) : goods + (del ?? 0);
 
-  // Three modes, and the difference must be visible. The server only accepts line
+  // Two modes, and the difference must be visible. The server only accepts line
   // edits in the pricing states, so rendering inputs anywhere else produces a
   // Save that silently 404s — which is exactly what the old workspace did once a
   // quote was issued.
   const EDITABLE = new Set(["submitted", "triage_pending", "estimator_assigned", "technical_review_required", "customer_clarification_required"]);
-  const editable = !revisionId && !showingContract && EDITABLE.has(p.statusInternal);
+  const editable = !showingContract && EDITABLE.has(p.statusInternal);
 
   return (
     <div className="max-w-[1180px]">
@@ -210,12 +207,12 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
           <div className="text-right">
             <div className="t-bd-lg font-data" style={{ color: INK }}>{money(total)}</div>
             <div className="t-cap" style={{ color: MUTED }}>
-              {order ? "contract" : ws.revisions.length ? "issued" : "estimate"}
+              {order ? "contract" : p.statusInternal === "issued" ? "issued" : "estimate"}
             </div>
             {/* Only on the live-draft total, where `del` is actually inside
                 `total` above (goods + del) — an issued/contract total already
                 carries or excludes delivery on its own terms. */}
-            {!showingContract && !revisionId && (
+            {!showingContract && (
               del == null
                 ? <div className="t-cap" style={{ color: "var(--warning-ink)" }}>delivery not set</div>
                 : <div className="t-cap" style={{ color: MUTED }}>incl. {money(del)} delivery</div>
@@ -229,7 +226,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
             Exactly one primary, filled — the single move that advances this job.
             Colour weight tracks consequence weight. Inapplicable actions are not
             here at all; BLOCKED ones are, disabled, with the reason beside them. */}
-        {(ws.actions ?? []).length > 0 && !revisionId && (
+        {(ws.actions ?? []).length > 0 && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {(ws.actions ?? []).map((a) => {
               const blocked = !!a.blockedReason;
@@ -292,32 +289,10 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
       <div className="flex flex-col lg:flex-row gap-4">
         {/* ── Main column ──────────────────────────────────────────────────── */}
         <div className="flex-1 min-w-0">
-          {/* Versions. Above the table, because it is the thing you compare
-              against — not a footnote at the bottom of the page. */}
-          {ws.revisions.length > 0 && (
-            <div className="flex flex-wrap gap-0 mb-0">
-              <VersionTab label="Live draft" meta="editing elsewhere" active={revisionId === null} onClick={() => setRevisionId(null)} />
-              {ws.revisions.map((r) => (
-                <VersionTab key={r.id}
-                  label={`R${r.revisionNo}`}
-                  meta={`${r.status} · ${money(r.total)}`}
-                  active={revisionId === r.id}
-                  onClick={() => setRevisionId(r.id)} />
-              ))}
-            </div>
-          )}
-
-          {revisionId && (
-            <div className="border border-black/10 border-b-0 px-4 py-2 t-cap" style={{ background: "rgba(90,122,106,0.07)", color: "var(--sage-ink)" }}>
-              Viewing an issued revision — read-only.{" "}
-              <button onClick={() => setRevisionId(null)} className="underline underline-offset-2">Back to the live draft</button>
-            </div>
-          )}
-
           <div className="card">
             <div className="px-4 py-2.5 border-b border-black/8 flex items-center justify-between">
               <span className="t-label" style={{ color: MUTED }}>
-                {revisionId ? "Issued lines" : showingContract ? "Contract lines" : "Draft lines"}
+                {showingContract ? "Contract lines" : p.statusInternal === "issued" ? "Issued lines" : "Draft lines"}
               </span>
               <span className="t-cap" style={{ color: MUTED }}>{rows.length} lines</span>
             </div>
@@ -372,14 +347,14 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
           )}
           {thermal.status === "ready" && <ThermalAudit rows={thermal.rows} />}
 
-          {ws.revisions.length > 0 && learning.status === "loading" && (
+          {learning.status === "loading" && (
             <Block title="Teach future estimates">
               <p role="status" className="px-4 py-3 t-cap" style={{ color: MUTED }}>
                 Loading learning decisions...
               </p>
             </Block>
           )}
-          {ws.revisions.length > 0 && learning.status === "error" && (
+          {learning.status === "error" && (
             <Block title="Teach future estimates">
               <div role="alert" className="px-4 py-3 t-cap" style={{ color: "var(--warning-ink)" }}>
                 Learning decisions could not be loaded.{" "}
@@ -716,20 +691,6 @@ function PhaseRibbon({ phase, stateLabel, waitingOn, days }: {
   );
 }
 
-function VersionTab({ label, meta, active, onClick }: { label: string; meta: string; active: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick}
-      className="px-3.5 py-2 text-left border border-b-0 -mr-px"
-      style={{
-        background: active ? "#fff" : "transparent",
-        borderColor: "rgba(0,0,0,0.1)",
-        color: active ? INK : MUTED }}>
-      <span className={`block t-cap ${active ? "font-semibold" : "font-normal"}`}>{label}</span>
-      <span className="block t-cap font-data" style={{ color: MUTED }}>{meta}</span>
-    </button>
-  );
-}
-
 /** THERMAL AUDIT — what was asked of each line, and what we proposed for it.
  *
  *  Validation surface, not a control: nothing here edits. It answers one
@@ -989,7 +950,7 @@ function DeliveryBlock({ delivery, projectId, onSaved }: { delivery: OpsDelivery
           </div>
         ) : delivery.settled ? (
           <p className="mt-3 pt-3 border-t border-black/5 t-cap" style={{ color: MUTED }}>
-            Issued at {money(delivery.amount)} — fixed for this revision.
+            Issued at {money(delivery.amount)} — fixed while the quote is issued.
           </p>
         ) : null}
       </div>

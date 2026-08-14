@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { type Page, Btn } from "../app/ui";
 import {
-  getOrder, getProject, getRevisions, getProjectFiles, getClarifications, replyClarification,
+  getOrder, getProject, getProjectFiles, getClarifications, replyClarification,
   confirmDrawings, confirmQa,
   type ApiOrder, type ApiFile, type ApiScheduleFile, type ApiClarification, type ApiItem, type ApiProjectDelivery, type CurrentProject,
 } from "../data/api";
@@ -174,11 +174,10 @@ function orderTimeline(o: ApiOrder): TlNode[] {
   const at = (stage: string) => i >= ["deposit_invoiced", "deposit_paid", "drawings_shared", "drawings_signed_off", "manufacturing", "qa_photos_shared", "balance_invoiced", "balance_paid", "customer_confirmed", "dispatched", "delivered", "after_sales"].indexOf(stage);
   const dep = o.payments.find((p) => p.kind === "deposit");
   const bal = o.payments.find((p) => p.kind === "balance");
-  const R = o.revisionNo ? `R${o.revisionNo}` : "the reviewed quote";
   return [
     { key: "req", title: "Quote requested", state: "done", pill: { tone: "pos", label: "Done" }, status: <>Submitted from your schedule · {num(`${o.lineCount ?? "—"} lines`)}</> },
-    { key: "issued", title: "Reviewed quote issued", state: "done", pill: { tone: "pos", label: "Done" }, status: <>Issued {num(R)} · {num(money(o.total))} · immutable</> },
-    { key: "accepted", title: "Quote accepted", state: "done", pill: { tone: "pos", label: "Done" }, status: <>You accepted {num(R)} on {num(fmtDate(o.createdAt))} · deposit invoice issued</> },
+    { key: "issued", title: "Reviewed quote issued", state: "done", pill: { tone: "pos", label: "Done" }, status: <>Issued · {num(money(o.total))} · locked</> },
+    { key: "accepted", title: "Quote accepted", state: "done", pill: { tone: "pos", label: "Done" }, status: <>You accepted on {num(fmtDate(o.createdAt))} · deposit invoice issued</> },
     {
       key: "deposit", title: "Deposit — 50%",
       state: dep?.status === "paid" ? "done" : "cur",
@@ -377,7 +376,6 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
   const { refresh } = useAccount();
   const [order, setOrder] = useState<ApiOrder | null>(null);
   const [files, setFiles] = useState<ApiFile[]>([]);
-  const [rooms, setRooms] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [missing, setMissing] = useState(false);
 
@@ -388,14 +386,6 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
       setOrder(o);
       if (o.projectId) {
         getProjectFiles(o.projectId).then((r) => { if (!off) setFiles(r.files); }).catch(() => {});
-        // Room labels live on the revision snapshot (order lines don't carry them).
-        getRevisions(o.projectId).then((r) => {
-          if (off) return;
-          const accepted = r.revisions.find((x) => x.status === "accepted") ?? r.revisions[0];
-          const map: Record<string, string> = {};
-          for (const l of accepted?.lines ?? []) if (l.external_ref && l.room_label) map[l.external_ref] = l.room_label;
-          setRooms(map);
-        }).catch(() => {});
       }
     }).catch(() => { if (!off) setMissing(true); });
     return () => { off = true; };
@@ -423,7 +413,8 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
   if (!order) return <div className="card p-8 text-body t-bd-sm">Loading your order…</div>;
 
   const m = orderMeta(order);
-  const lines = (order.lines ?? []).map((l) => ({ ...parseLine(l), room: rooms[l.external_ref ?? ""] ?? null }));
+  // Room labels come straight off order_line now (0047) — no separate lookup.
+  const lines = (order.lines ?? []).map(parseLine);
   const dep = order.payments.find((p) => p.kind === "deposit");
   const bal = order.payments.find((p) => p.kind === "balance");
 
@@ -440,7 +431,6 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
           </div>
           <h1 className="text-ink t-hd1">{order.projectTitle ?? "Your order"}</h1>
           <div className="flex gap-x-4 gap-y-2 flex-wrap text-body mt-2 t-cap">
-            <span>Ordered · accepted from quote <span className="text-ink font-data">{order.revisionNo ? `R${order.revisionNo}` : "—"}</span></span>
             <span>Order no. <span className="text-ink font-data">{order.orderNo}</span></span>
             <span>Ordered <span className="text-ink font-data">{fmtDate(order.createdAt)}</span></span>
             <span><span className="text-ink font-data">{order.lineCount ?? lines.length}</span> lines</span>
@@ -515,7 +505,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
 
         {/* Lines */}
         <Blk eyebrow="Schedule" title="Order lines" right="Anchored by your schedule code" id="rec-lines">
-          <LineList lines={lines} total={order.total} footerLabel={`${lines.length} line${lines.length === 1 ? "" : "s"} · from accepted revision ${order.revisionNo ? `R${order.revisionNo}` : ""}`}
+          <LineList lines={lines} total={order.total} footerLabel={`${lines.length} line${lines.length === 1 ? "" : "s"} · from the accepted quote`}
             deliveryNote={order.delivery > 0 ? `incl. ${money(order.delivery)} delivery` : undefined}
             />
         </Blk>
@@ -669,7 +659,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
  *
  *  Design doc §8.4 — the word that changes meaning between pending and issued
  *  is "estimate". This only ever renders while pending (ProjectDetail is not
- *  shown once a revision issues; QuoteReviewPage takes over with its own
+ *  shown once the quote issues; QuoteReviewPage takes over with its own
  *  "This is the price" copy), so `delivery.indicative` is not re-checked. */
 function PendingTotals({ lineTotals, total, delivery }: {
   lineTotals: number[]; total: number; delivery: ApiProjectDelivery | undefined;

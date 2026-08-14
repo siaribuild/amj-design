@@ -141,7 +141,7 @@ export async function loadProjectAreaM2(env: Env, projectId: string): Promise<Op
   const { results } = await env.DB.prepare(
     // PARENTS ONLY. No ORDER BY — a sum has no order.
     `SELECT dims_json, qty FROM quote_line
-      WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL`,
+      WHERE project_id = ? AND parent_line_id IS NULL`,
   ).bind(projectId).all<{ dims_json: string; qty: number }>();
   return sumOpeningAreaM2(results ?? []);
 }

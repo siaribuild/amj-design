@@ -32,16 +32,13 @@ projects.get("/", async (c) => {
   const user = await resolveUser(c.env, c.req.raw);
   if (!user) return c.json({ projects: [] });
   const { results } = await c.env.DB.prepare(`
-    SELECT p.id, p.public_ref, p.title, p.status_customer, p.updated_at, p.created_at,
-           p.delivery_postcode, p.delivery_amount,
+    SELECT p.id, p.public_ref, p.title, p.status_customer, p.status_internal, p.updated_at, p.created_at,
+           p.delivery_postcode, p.delivery_amount, p.issued_at,
            -- PARENTS ONLY. A composite's segments belong to their parent line,
            -- which already aggregates them; counting or summing them alongside
            -- it would double the customer's item count and total.
-           (SELECT count(*) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL AND parent_line_id IS NULL) AS item_count,
-           (SELECT COALESCE(SUM(line_total), 0) FROM quote_line WHERE project_id = p.id AND revision_id IS NULL AND parent_line_id IS NULL) AS draft_total,
-           (SELECT id FROM quote_revision WHERE project_id = p.id AND snapshot_status = 'issued' ORDER BY revision_no DESC LIMIT 1) AS issued_revision_id,
-           (SELECT revision_no FROM quote_revision WHERE project_id = p.id AND snapshot_status = 'issued' ORDER BY revision_no DESC LIMIT 1) AS issued_revision_no,
-           (SELECT totals_json FROM quote_revision WHERE project_id = p.id AND snapshot_status = 'issued' ORDER BY revision_no DESC LIMIT 1) AS issued_totals_json
+           (SELECT count(*) FROM quote_line WHERE project_id = p.id AND parent_line_id IS NULL) AS item_count,
+           (SELECT COALESCE(SUM(line_total), 0) FROM quote_line WHERE project_id = p.id AND parent_line_id IS NULL) AS draft_total
       FROM project p
      WHERE p.owner_user_id = ?
      ORDER BY p.updated_at DESC`).bind(user.id).all<Record<string, unknown>>();
@@ -49,9 +46,13 @@ projects.get("/", async (c) => {
   // changes and this is a dashboard read, not a pricing decision.
   const { zones, ranges } = await loadZonesAndRanges(c.env);
   const rows = await Promise.all(results.map(async (r) => {
-    let issuedTotal: number | null = null;
-    try { const t = JSON.parse(String(r.issued_totals_json ?? "")); if (typeof t?.total === "number") issuedTotal = t.total; } catch { /* unpriced */ }
-    const { issued_totals_json: _drop, delivery_postcode, delivery_amount, ...rest } = r;
+    // Lines cannot change while status_internal='issued' (the edit lock), so
+    // draft_total (goods, parents-only) plus the frozen delivery_amount IS the
+    // issued figure — no separate snapshot to read it from any more.
+    const issuedTotal: number | null = r.status_internal === "issued"
+      ? Number(r.draft_total ?? 0) + Number(r.delivery_amount ?? 0)
+      : null;
+    const { status_internal: _drop, delivery_postcode, delivery_amount, ...rest } = r;
     // One deposit percentage (0043) — computed here, not by accountModel.tsx's
     // dashboard rows, which used to do their own Math.round(total / 2).
     const issuedDeposit = issuedTotal == null ? null : depositOf(issuedTotal);
@@ -84,7 +85,7 @@ export async function loadLines(env: Env, projectId: string) {
   const { results } = await env.DB.prepare(
     // PARENTS ONLY: segments render INSIDE their parent card, never as separate
     // items in the customer's list. The count they see is the count they authored.
-    "SELECT * FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL ORDER BY position",
+    "SELECT * FROM quote_line WHERE project_id = ? AND parent_line_id IS NULL ORDER BY position",
   ).bind(projectId).all<LineRow>();
   const items = results.map(rowToApiLine);
 
@@ -182,7 +183,7 @@ async function currentDraftSegment(env: Env, req: Request, segmentId: string): P
     `SELECT segment.id, segment.parent_line_id, segment.project_id
        FROM quote_line segment
        JOIN quote_line parent ON parent.id=segment.parent_line_id
-      WHERE segment.id=? AND segment.project_id=? AND segment.revision_id IS NULL
+      WHERE segment.id=? AND segment.project_id=?
         AND parent.line_kind='composite_parent' AND parent.parent_line_id IS NULL`,
   ).bind(segmentId, project.id).first<{ id: string; parent_line_id: string; project_id: string }>();
 }
@@ -371,7 +372,7 @@ projects.put("/current/lines", async (c) => {
     `SELECT id, origin, edited_fields, product_slug, options_json, dims_json, qty,
             ai_proposal_line_id, pricing_snapshot_json, configuration_snapshot_json,
             selected_variant_id, line_total, line_kind
-       FROM quote_line WHERE project_id = ? AND revision_id IS NULL AND parent_line_id IS NULL`,
+       FROM quote_line WHERE project_id = ? AND parent_line_id IS NULL`,
   ).bind(project.id).all<StoredRow>()).results ?? []);
   const existing = new Map(storedRows.map((r) => [r.id, r]));
   const resolved = items.map((raw, i) => {
@@ -437,7 +438,7 @@ projects.put("/current/lines", async (c) => {
           `UPDATE quote_line SET external_ref=?, room_label=?, dims_json=?, position=?,
              review_json=?, edited_fields=?, edit_version=edit_version+1,
              updated_at=datetime('now')
-           WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
+           WHERE id=? AND project_id=? AND parent_line_id IS NULL
              AND EXISTS (
                SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                  AND quote_edit_version=? AND quote_mutation_token=?
@@ -469,7 +470,7 @@ projects.put("/current/lines", async (c) => {
              status=CASE WHEN line_total IS NULL AND ? IS NOT NULL
                          THEN 'technical_review' ELSE status END,
              position=?, edit_version=edit_version+1, updated_at=datetime('now')
-           WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
+           WHERE id=? AND project_id=? AND parent_line_id IS NULL
              AND EXISTS (
                SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                  AND quote_edit_version=? AND quote_mutation_token=?
@@ -512,7 +513,7 @@ projects.put("/current/lines", async (c) => {
              pricing_snapshot_json=NULL, configuration_snapshot_json=NULL,
              selected_variant_id=?,
              edit_version=edit_version+1, updated_at=datetime('now')
-           WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
+           WHERE id=? AND project_id=? AND parent_line_id IS NULL
              AND EXISTS (
                SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                  AND quote_edit_version=? AND quote_mutation_token=?
@@ -537,7 +538,7 @@ projects.put("/current/lines", async (c) => {
       }
       stmts.push(c.env.DB.prepare(
         `UPDATE quote_line SET external_ref=?, room_label=?, product_slug=?, options_json=?, dims_json=?, qty=?, line_total=?, status=?, position=?, review_json=?, edited_fields=?, edit_version=edit_version+1, updated_at=datetime('now')
-         WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
+         WHERE id=? AND project_id=? AND parent_line_id IS NULL
            AND EXISTS (
              SELECT 1 FROM project WHERE id=? AND status_customer='draft'
                AND quote_edit_version=? AND quote_mutation_token=?
@@ -602,7 +603,7 @@ projects.post("/current/lines/:id/restore-ai", async (c) => {
        JOIN ai_proposal_line pl ON pl.quote_line_id=q.id
        JOIN ai_proposal p ON p.id=pl.proposal_id
        JOIN project project_state ON project_state.id=q.project_id
-      WHERE q.id=? AND q.project_id=? AND q.revision_id IS NULL
+      WHERE q.id=? AND q.project_id=?
         AND p.status='published'
         AND p.source_generation=project_state.ai_generation
         AND EXISTS (
@@ -640,7 +641,7 @@ projects.post("/current/lines/:id/restore-ai", async (c) => {
        pricing_snapshot_json=?, recommendation_basis=?,
        recommendation_confidence=?, edit_version=edit_version+1,
        updated_at=datetime('now')
-     WHERE id=? AND project_id=? AND revision_id IS NULL AND parent_line_id IS NULL
+     WHERE id=? AND project_id=? AND parent_line_id IS NULL
        AND edit_version=?
        AND EXISTS (
          SELECT 1 FROM project restore_project

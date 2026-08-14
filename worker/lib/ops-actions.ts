@@ -17,7 +17,7 @@ import { availableActions, type OrderRow } from "./orders";
 export type ActionTier = "primary" | "secondary" | "overflow";
 
 export interface OpsAction {
-  /** `status:<state>` | `start-pricing` | `issue-revision` | `request-clarification`
+  /** `status:<state>` | `start-pricing` | `issue-quote` | `request-clarification`
    *  | `note` | `advance:<transition>` | `pay:<kind>` */
   id: string;
   label: string;
@@ -67,7 +67,7 @@ export function actionsFor(args: {
     out.push({ id: "start-pricing", label: "Start pricing", tier: "primary" });
   } else if (args.statusInternal === "estimator_assigned" || args.statusInternal === "technical_review_required") {
     out.push({
-      id: "issue-revision", label: "Issue reviewed quote", tier: "primary",
+      id: "issue-quote", label: "Issue reviewed quote", tier: "primary",
       // Lines report first when both are wrong — lines are the reviewer's
       // actual work, delivery is one field, and surfacing the trivial
       // blocker while hiding the substantial one trains people to distrust

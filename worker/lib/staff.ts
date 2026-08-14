@@ -162,7 +162,7 @@ async function resolveInternalUser(env: Env, req: Request): Promise<UserRow | nu
   return user && user.type === "internal" ? user : null;
 }
 
-// Staff gate for the legacy seams (issue-revision / order advance / pay). A real
+// Staff gate for the legacy seams (issue-quote / order advance / pay). A real
 // staff identity is always required — never open, in any environment.
 export async function isStaff(env: Env, req: Request): Promise<boolean> {
   return (await resolveStaff(env, req)) !== null;

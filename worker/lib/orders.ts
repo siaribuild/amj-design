@@ -1,9 +1,14 @@
 // Order fulfilment domain: the 12-stage journey, its transitions, the two-fold
-// payment model, and order creation from an accepted revision. Shared by the
+// payment model, and order creation from the accepted quote. Shared by the
 // customer routes (accept + sign-off gates) and the internal "staff" seams that
 // the ops console will later drive.
 import type { Env } from "../types";
 import { uuid } from "./util";
+import { getProductBySlug } from "../../src/data/catalogue";
+
+function safeParse(s: string | null | undefined): Record<string, unknown> {
+  try { const v = JSON.parse(s || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; }
+}
 
 export const STAGES = [
   "deposit_invoiced", "deposit_paid", "drawings_shared", "drawings_signed_off",
@@ -85,8 +90,8 @@ export interface OrderRow {
   stage: Stage;
   total: number | null;
   /** The delivery component of `total` — "order".delivery_total (0044). NOT
-   *  NULL DEFAULT 0, same reasoning as quote_revision.delivery_total: by the
-   *  time an order exists the figure was frozen at issue. */
+   *  NULL DEFAULT 0: by the time an order exists, delivery was frozen at issue
+   *  (it cannot move while a quote is issued — the edit lock covers it too). */
   delivery_total: number | null;
   drawings_signed_off_at: string | null;
   qa_confirmed_at: string | null;
@@ -143,53 +148,97 @@ export async function orderFiles(env: Env, orderId: string, projectId: string) {
   return (results ?? []).filter((f) => (seen.has(f.id) ? false : (seen.add(f.id), true)));
 }
 
-// Accept an issued revision AND create its order as one atomic unit. The revision
-// claim (issued -> accepted) is the FIRST statement in the same D1 batch that
-// creates the order, so the two can never diverge:
+// Accept the issued quote AND create its order as one atomic unit. There is no
+// revision to claim any more — the claim is the order INSERT itself, gated on
+// the project's state and guarded against a duplicate by the UNIQUE index on
+// "order".project_id (one order per project, replacing what UNIQUE(accepted_
+// revision_id) used to guard):
 //   * D1 runs a batch as a single transaction — either all writes land or none do.
-//   * The claim's `WHERE snapshot_status = 'issued'` means only the first caller
-//     flips it; a concurrent duplicate matches 0 rows, its order INSERT collides
-//     on the UNIQUE(accepted_revision_id) index, and the WHOLE batch rolls back
-//     (including any no-op) → the loser gets a clean conflict, the winner's order
-//     stands, and a genuine failure leaves the revision re-acceptable (no strand).
-// Returns the new order id, or null when the revision could not be claimed.
-export async function createOrderFromRevision(
-  env: Env, revisionId: string, projectId: string,
+//   * The INSERT's `WHERE EXISTS (project still quote_issued/issued)` means only
+//     a project that is actually acceptable produces a row; a concurrent duplicate
+//     either finds the project already flipped to 'closed' below (0 rows) or
+//     collides on idx_order_project, and the WHOLE batch rolls back → the loser
+//     gets a clean conflict, the winner's order stands.
+// Returns the new order id, or null when the project could not be claimed.
+export async function createOrderFromProject(
+  env: Env, projectId: string,
 ): Promise<string | null> {
-  const { results: revLines } = await env.DB
-    .prepare("SELECT external_ref, product_snapshot_json, qty, line_total FROM revision_line WHERE revision_id = ?")
-    .bind(revisionId).all<{ external_ref: string | null; product_snapshot_json: string; qty: number; line_total: number }>();
+  // PARENTS ONLY, same rule as every other read of the live quote (a
+  // composite's segments belong to their parent) — but this time the segments
+  // ARE carried across too, just as their own order_line rows, because this is
+  // the one freeze that legally matters (docs/quote-revisions-removal-plan.md).
+  // revision_line had no columns for a unit; order_line now does (0047).
+  const { results: parents } = await env.DB
+    .prepare(
+      `SELECT id, external_ref, room_label, product_slug, options_json, dims_json,
+              qty, line_total, selected_variant_id, line_kind, composite_axis
+         FROM quote_line WHERE project_id = ? AND parent_line_id IS NULL ORDER BY position`,
+    )
+    .bind(projectId)
+    .all<{
+      id: string; external_ref: string | null; room_label: string | null; product_slug: string;
+      options_json: string; dims_json: string; qty: number; line_total: number | null;
+      selected_variant_id: string | null; line_kind: string | null; composite_axis: string | null;
+    }>();
+
+  const compositeParentIds = parents.filter((p) => p.line_kind === "composite_parent").map((p) => p.id);
+  let segments: {
+    id: string; parent_line_id: string; segment_seq: number; qty_per_parent: number;
+    product_slug: string; options_json: string; dims_json: string; qty: number;
+    line_total: number | null; selected_variant_id: string | null;
+  }[] = [];
+  if (compositeParentIds.length) {
+    const placeholders = compositeParentIds.map(() => "?").join(",");
+    ({ results: segments } = await env.DB.prepare(
+      `SELECT id, parent_line_id, segment_seq, qty_per_parent, product_slug,
+              options_json, dims_json, qty, line_total, selected_variant_id
+         FROM quote_line WHERE parent_line_id IN (${placeholders}) ORDER BY segment_seq`,
+    ).bind(...compositeParentIds).all());
+  }
 
   // THE FLIP (C8) — this line is the reason the whole feature exists.
-  // Before it, this function re-derived the order total by summing
-  // revision_line and never read totals_json: delivery is a project-level
-  // charge with no line (D17), so it was present on the quote the customer
-  // accepted and absent from "order".total, payment.deposit.amount and
-  // payment.balance.amount. Every screen stayed internally consistent — the
-  // contract total, the payment rows, all agreeing with each other and
-  // disagreeing with the document the customer accepted — and nothing threw.
-  // See T-B23 (scripts/tests/delivery.test.mjs), five assertions in one
-  // subtest so a regression here names which half broke.
-  const revision = await env.DB.prepare("SELECT delivery_total FROM quote_revision WHERE id = ?")
-    .bind(revisionId).first<{ delivery_total: number | null }>();
-  const goods = revLines.reduce((s, l) => s + (l.line_total || 0), 0);
-  const delivery = revision?.delivery_total ?? 0;
+  // Before it, this function re-derived the order total by summing lines and
+  // never read a frozen delivery figure: delivery is a project-level charge
+  // with no line (D17), so it was present on the quote the customer accepted
+  // and absent from "order".total, payment.deposit.amount and payment.balance.
+  // amount. Every screen stayed internally consistent — the contract total,
+  // the payment rows, all agreeing with each other and disagreeing with the
+  // document the customer accepted — and nothing threw. See T-B23 (scripts/
+  // tests/delivery.test.mjs), five assertions in one subtest so a regression
+  // here names which half broke.
+  //
+  // project.delivery_amount, not a snapshot: it cannot move while the quote is
+  // issued (issue-lock + the delivery panel's own editable gate both exclude
+  // 'issued'), so it is already the figure the customer accepted.
+  const project = await env.DB.prepare(
+    "SELECT status_customer, status_internal, delivery_amount FROM project WHERE id = ?",
+  ).bind(projectId).first<{ status_customer: string; status_internal: string; delivery_amount: number | null }>();
+  const goods = parents.reduce((s, l) => s + (l.line_total || 0), 0);
+  const delivery = project?.delivery_amount ?? 0;
   const total = goods + delivery;
   const deposit = depositOf(goods, delivery);
   const balance = balanceOf(goods, delivery);
 
   const orderId = uuid();
+  // Each parent's fresh order_line id, decided here so a segment's order_line
+  // row can point at its NEW parent id in the same batch (quote_line ids are
+  // not carried over — order_line has its own id space).
+  const parentOrderLineId = new Map(parents.map((p) => [p.id, uuid()]));
+  const snapshot = (productSlug: string) => {
+    const p = getProductBySlug(productSlug);
+    return JSON.stringify({ productSlug, productName: p?.name ?? productSlug });
+  };
   // The number is assigned by the INSERT below, not derived above it.
   //
   // It used to be a SELECT before the batch. That failed SAFELY — the batch rolls
   // back and the caller returns 409 — but it failed for the wrong reason and told
   // the customer the wrong thing. Two different people accepting two different
   // quotes at the same moment both derived the same OF- number, and the loser
-  // tripped the order_no UNIQUE index rather than the UNIQUE(accepted_revision_id)
-  // guard this path is actually built around. They were told their quote "may have
+  // tripped the order_no UNIQUE index rather than the UNIQUE(project_id) guard
+  // this path is actually built around. They were told their quote "may have
   // just changed and to refresh" when nothing about their quote had changed, and
   // refreshing showed them the same thing. The careful reasoning at the top of this
-  // function is all about the same-revision race; it never covered this one.
+  // function is all about the same-project race; it never covered this one.
   //
   // substr is 1-based: position 4 is the first digit after the "OF-" prefix. The
   // subquery reads the pre-insert state of the table it inserts into, which is
@@ -199,38 +248,20 @@ export async function createOrderFromRevision(
     `'OF-' || (SELECT MAX(58000, COALESCE(MAX(CAST(substr(o2.order_no, 4) AS INTEGER)), 58000)) + 1 FROM "order" o2 WHERE o2.order_no LIKE 'OF-%')`;
 
   const stmts = [
-    // Claim the revision inside the transaction — gates the whole order creation.
-    env.DB.prepare(
-      `UPDATE quote_revision SET snapshot_status='accepted',
-          accepted_at=datetime('now')
-        WHERE id=? AND project_id=? AND snapshot_status='issued'
-          AND EXISTS (
-            SELECT 1 FROM project
-             WHERE id=? AND status_customer='quote_issued'
-               AND status_internal='issued'
-               AND current_revision_id=?
-          )`,
-    ).bind(revisionId, projectId, projectId, revisionId),
     env.DB.prepare(
       // "order".delivery_total is what E14/E6 read back (worker/lib/orders.ts's
       // own orderDto, and the ops project DTO) — order_line itself carries no
-      // delivery row, ever (D17).
-      `INSERT INTO "order" (id, project_id, accepted_revision_id, order_no, total, delivery_total, stage)
-       SELECT ?, ?, ?, ${NEXT_ORDER_NO}, ?, ?, 'deposit_invoiced'
+      // delivery row, ever (D17). idx_order_project (UNIQUE) is what makes this
+      // the claim: a concurrent duplicate either finds the project already
+      // flipped to 'closed' (0 rows here) or collides on that index, and the
+      // whole batch rolls back either way.
+      `INSERT INTO "order" (id, project_id, order_no, total, delivery_total, stage)
+       SELECT ?, ?, ${NEXT_ORDER_NO}, ?, ?, 'deposit_invoiced'
         WHERE EXISTS (
-          SELECT 1 FROM quote_revision
-           WHERE id=? AND project_id=? AND snapshot_status='accepted'
-        )
-          AND EXISTS (
-            SELECT 1 FROM project
-             WHERE id=? AND status_customer='quote_issued'
-               AND status_internal='issued'
-               AND current_revision_id=?
-          )`,
-    ).bind(
-      orderId, projectId, revisionId, total, delivery,
-      revisionId, projectId, projectId, revisionId,
-    ),
+          SELECT 1 FROM project
+           WHERE id=? AND status_customer='quote_issued' AND status_internal='issued'
+        )`,
+    ).bind(orderId, projectId, total, delivery, projectId),
     // deposit invoiced now; balance created but not yet invoiced (invoiced_at NULL)
     env.DB.prepare(
       `INSERT INTO payment (id, order_id, kind, amount, percent, status, invoiced_at)
@@ -242,15 +273,34 @@ export async function createOrderFromRevision(
        SELECT ?, ?, 'balance', ?, ?, 'due'
         WHERE EXISTS (SELECT 1 FROM "order" WHERE id=?)`,
     ).bind(uuid(), orderId, balance, 100 - DEPOSIT_PERCENT, orderId),
-    ...revLines.map((l) =>
+    ...parents.map((p) =>
       env.DB.prepare(
         `INSERT INTO order_line
-           (id, order_id, external_ref, product_snapshot_json, qty, line_total)
-         SELECT ?, ?, ?, ?, ?, ?
+           (id, order_id, external_ref, room_label, product_snapshot_json, dims_json,
+            options_json, qty, line_total, line_kind, composite_axis, selected_variant_id)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE EXISTS (SELECT 1 FROM "order" WHERE id=?)`,
       ).bind(
-        uuid(), orderId, l.external_ref, l.product_snapshot_json, l.qty,
-        l.line_total, orderId,
+        parentOrderLineId.get(p.id), orderId, p.external_ref, p.room_label,
+        snapshot(p.product_slug), p.dims_json, p.options_json, p.qty, p.line_total ?? 0,
+        p.line_kind ?? "simple", p.composite_axis, p.selected_variant_id, orderId,
+      ),
+    ),
+    // Segments carry no external_ref/room_label of their own (same rule as
+    // quote_line — one opening, one architect tag) and their price is
+    // DISPLAY-ONLY: the parent's line_total already IS Σ(segments), which is
+    // what was charged and what payments/totals above are computed from.
+    ...segments.map((s) =>
+      env.DB.prepare(
+        `INSERT INTO order_line
+           (id, order_id, external_ref, product_snapshot_json, dims_json, options_json,
+            qty, line_total, parent_line_id, segment_seq, qty_per_parent, line_kind, selected_variant_id)
+         SELECT ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'segment', ?
+          WHERE EXISTS (SELECT 1 FROM "order" WHERE id=?)`,
+      ).bind(
+        uuid(), orderId, snapshot(s.product_slug), s.dims_json, s.options_json,
+        s.qty, s.line_total ?? 0, parentOrderLineId.get(s.parent_line_id), s.segment_seq,
+        s.qty_per_parent, s.selected_variant_id, orderId,
       ),
     ),
     // Carry the uploaded schedule onto the order so it stays with the record for
@@ -263,27 +313,20 @@ export async function createOrderFromRevision(
     env.DB.prepare(
       `UPDATE project SET status_customer='closed', updated_at=datetime('now')
         WHERE id=? AND status_customer='quote_issued' AND status_internal='issued'
-          AND current_revision_id=?
           AND EXISTS (SELECT 1 FROM "order" WHERE id=?)`,
-    ).bind(projectId, revisionId, orderId),
+    ).bind(projectId, orderId),
   ];
   try {
-    // A committed batch means the order rows landed. Either the claim flipped the
-    // revision (normal path) or it was already 'accepted' but orderless and we've
-    // now healed it — both leave exactly one order for this revision.
     const committed = await env.DB.batch(stmts);
-    // The order insert + final project transition are the commit proof. The
-    // revision claim may legitimately be a no-op only for the documented
-    // accepted-but-orderless recovery case; request-changes still blocks the
-    // insert because it atomically moves the project out of quote_issued.
-    if (Number(committed[1]?.meta?.changes ?? 0) !== 1 ||
+    // The order insert + final project transition are the commit proof.
+    if (Number(committed[0]?.meta?.changes ?? 0) !== 1 ||
         Number(committed[committed.length - 1]?.meta?.changes ?? 0) !== 1) {
       return null;
     }
     return orderId;
   } catch {
     // Rolled back — lost the race (duplicate order / number collision). The
-    // revision is untouched and stays re-acceptable, so the caller returns 409.
+    // project is untouched and stays re-acceptable, so the caller returns 409.
     return null;
   }
 }

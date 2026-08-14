@@ -28,10 +28,10 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
     const migrationRerun = await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env: wranglerEnv });
     assert.match(migrationRerun.stdout + migrationRerun.stderr, /No migrations to apply/i);
     await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env: wranglerEnv });
-    const dbCheck = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", "SELECT (SELECT count(*) FROM user) AS users, (SELECT count(*) FROM project) AS projects, (SELECT count(*) FROM quote_line) AS quote_lines, (SELECT count(*) FROM quote_revision) AS revisions, (SELECT count(*) FROM [order]) AS orders, (SELECT count(*) FROM payment) AS payments; PRAGMA foreign_key_check;"], { env: wranglerEnv });
+    const dbCheck = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", "SELECT (SELECT count(*) FROM user) AS users, (SELECT count(*) FROM project) AS projects, (SELECT count(*) FROM quote_line) AS quote_lines, (SELECT count(*) FROM [order]) AS orders, (SELECT count(*) FROM payment) AS payments; PRAGMA foreign_key_check;"], { env: wranglerEnv });
     const statements = JSON.parse(dbCheck.stdout);
     assert.deepEqual(statements[0].results[0], {
-      users: seedUserCount, projects: 3, quote_lines: 4, revisions: 1,
+      users: seedUserCount, projects: 3, quote_lines: 4,
       orders: 1, payments: 2,
     });
     assert.deepEqual(statements[1].results, []);
@@ -169,7 +169,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
     });
 
     const ops = new Session(baseUrl);
-    await t.test("staff OTP, dashboard, queue, start pricing, and revision issue", async () => {
+    await t.test("staff OTP, dashboard, queue, start pricing, and quote issue", async () => {
       await login(ops, "/api/ops/auth", staffEmail);
       const summary = await requestJson(ops, "/api/ops/summary");
       assert.ok(summary.body.submissions >= 1);
@@ -181,17 +181,17 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       await requestJson(ops, "/api/ops/projects/p_submitted/delivery", { method: "PUT", json: { amount: 0 } });
       // No approval step: a priced quote issues directly (0033). The guard that
       // remains is the one that always mattered — every line priced and resolved.
-      const issued = await requestJson(ops, "/api/ops/projects/p_submitted/issue-revision", { method: "POST", json: {} });
-      assert.equal(issued.body.revisionNo, 1);
+      const issued = await requestJson(ops, "/api/ops/projects/p_submitted/issue-quote", { method: "POST", json: {} });
+      assert.equal(issued.body.goods, 4550);
     });
 
     const sarah = new Session(baseUrl);
     let newOrder;
-    await t.test("customer revision retrieval and concurrent acceptance", async () => {
+    await t.test("customer quote retrieval and concurrent acceptance", async () => {
       await login(sarah, "/api/auth", "sarah@northsidebuild.com.au");
-      const revisions = await requestJson(sarah, "/api/projects/p_submitted/revisions");
-      const revisionId = revisions.body.revisions[0].id;
-      const attempts = await Promise.all(Array.from({ length: 10 }, () => sarah.request(`/api/revisions/${revisionId}/accept`, { method: "POST" })));
+      const quote = await requestJson(sarah, "/api/projects/p_submitted/quote");
+      assert.equal(quote.body.live, true);
+      const attempts = await Promise.all(Array.from({ length: 10 }, () => sarah.request("/api/projects/p_submitted/accept", { method: "POST" })));
       const statuses = attempts.map((response) => response.status);
       assert.equal(statuses.filter((status) => status === 200).length, 1);
       assert.equal(statuses.filter((status) => status === 409).length, 9);
@@ -206,11 +206,9 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       // Account-area context rides on the customer order DTO.
       assert.equal(mine.projectTitle, "Fitzroy townhouses");
       assert.match(mine.projectRef ?? "", /^OF-Q-\d+$/);
-      assert.equal(mine.revisionNo, 1);
       assert.equal(mine.lineCount, 2);
-      // A stale client cannot request changes on an already-accepted revision.
-      const revsAfter = await requestJson(sarah, "/api/projects/p_submitted/revisions");
-      await requestJson(sarah, `/api/revisions/${revsAfter.body.revisions[0].id}/request-changes`, { method: "POST", json: { message: "too late" } }, 409);
+      // A stale client cannot request changes on an already-accepted quote.
+      await requestJson(sarah, "/api/projects/p_submitted/request-changes", { method: "POST", json: { message: "too late" } }, 409);
     });
 
     await t.test("accept and request-changes race has exactly one workflow winner", async () => {
@@ -218,27 +216,20 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
         "--command",
         `INSERT INTO project
-           (id, owner_user_id, title, public_ref, status_customer, status_internal)
+           (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
          VALUES
-           ('p_accept_change_race','u_sarah','Race quote','OF-Q-19991','quote_issued','issued');
-         INSERT INTO quote_revision
-           (id, project_id, revision_no, snapshot_status, totals_json)
+           ('p_accept_change_race','u_sarah','Race quote','OF-Q-19991','quote_issued','issued',0);
+         INSERT INTO quote_line
+           (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
          VALUES
-           ('rev_accept_change_race','p_accept_change_race',1,'issued','{"total":1250}');
-         INSERT INTO revision_line
-           (id, revision_id, external_ref, product_snapshot_json, dims_json,
-            options_json, qty, line_total)
-         VALUES
-           ('rl_accept_change_race','rev_accept_change_race','W01',
-            '{"slug":"amj80-series-awning-window"}','{"width":"900","height":"1200"}',
-            '{}',1,1250);
-         UPDATE project SET current_revision_id='rev_accept_change_race'
-          WHERE id='p_accept_change_race';`,
+           ('ql_accept_change_race','p_accept_change_race','W01',
+            'amj80-series-awning-window','{"width":"900","height":"1200"}',
+            '{}',1,1250,'ready',0);`,
       ], { env: wranglerEnv });
 
       const [accept, changes] = await Promise.all([
-        sarah.request("/api/revisions/rev_accept_change_race/accept", { method: "POST" }),
-        sarah.request("/api/revisions/rev_accept_change_race/request-changes", {
+        sarah.request("/api/projects/p_accept_change_race/accept", { method: "POST" }),
+        sarah.request("/api/projects/p_accept_change_race/request-changes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: "Please reconsider the glass specification" }),
@@ -249,23 +240,19 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       const check = await run(process.execPath, [
         wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
         "--json", "--command",
-        `SELECT p.status_customer, p.status_internal, r.snapshot_status,
-                (SELECT count(*) FROM "order"
-                  WHERE accepted_revision_id=r.id) AS orders
+        `SELECT p.status_customer, p.status_internal,
+                (SELECT count(*) FROM "order" WHERE project_id=p.id) AS orders
            FROM project p
-           JOIN quote_revision r ON r.project_id=p.id
           WHERE p.id='p_accept_change_race';`,
       ], { env: wranglerEnv });
       const row = JSON.parse(check.stdout)[0].results[0];
       if (accept.status === 200) {
         assert.deepEqual(row, {
-          status_customer: "closed", status_internal: "issued",
-          snapshot_status: "accepted", orders: 1,
+          status_customer: "closed", status_internal: "issued", orders: 1,
         });
       } else {
         assert.deepEqual(row, {
-          status_customer: "under_review", status_internal: "estimator_assigned",
-          snapshot_status: "issued", orders: 0,
+          status_customer: "under_review", status_internal: "estimator_assigned", orders: 0,
         });
       }
     });
@@ -369,9 +356,12 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       const cookieOnly = new Session(baseUrl);
       cookieOnly.cookies = new Map(guest.cookies);
       cookieOnly.cookies.delete("apertly_guest");
-      await requestJson(cookieOnly, `/api/projects/${projectId}/revisions`, {}, 404);
-      // …and with the verified guest session, the same request resolves.
-      await requestJson(guest, `/api/projects/${projectId}/revisions`);
+      await requestJson(cookieOnly, `/api/projects/${projectId}/quote`, {}, 404);
+      // …and with the verified guest session, the same request resolves. (This
+      // project is submitted, not issued, so the body says live:false — the
+      // point here is the 200 vs the 404, which is the authorisation boundary.)
+      const guestQuote = await requestJson(guest, `/api/projects/${projectId}/quote`);
+      assert.equal(guestQuote.body.live, false);
 
       // Signing out drops the session, so a shared machine keeps nothing.
       // Navigating away and back must NOT demand the code again: the credential
@@ -653,14 +643,16 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       // The issue gate (C7) requires delivery to be settled before a quote can
       // be issued at all.
       await requestJson(ops, `/api/ops/projects/${projectId}/delivery`, { method: "PUT", json: { amount: 0 } });
-      const issued = await requestJson(ops, `/api/ops/projects/${projectId}/issue-revision`, { method: "POST" });
+      const issued = await requestJson(ops, `/api/ops/projects/${projectId}/issue-quote`, { method: "POST" });
       // issued.body.total is now goods + delivery (C8) — this test targets
       // GOODS, not the header total, so it does not assert that delivery
       // does not exist. See T-B23 (scripts/tests/delivery.test.mjs) for the
       // goods+delivery correctness this test does not need to re-cover.
       assert.equal(issued.body.goods, opsTotal, "the issued goods total is the total the reviewer approved");
+      // There is no separate issued snapshot any more (docs/quote-revisions-
+      // removal-plan.md) — the issued lines ARE the parent quote_line rows.
       const issuedLines = await sql(
-        `SELECT external_ref, line_total FROM revision_line WHERE revision_id='${issued.body.id}'`,
+        `SELECT external_ref, line_total FROM quote_line WHERE project_id='${projectId}' AND parent_line_id IS NULL`,
       );
       assert.equal(issuedLines.length, opsView.body.lines.length, "one issued line per opening, never per unit");
       assert.ok(issuedLines.every((l) => l.external_ref), "no issued line is missing its item code");
@@ -685,9 +677,9 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         assert.equal(o.reason_code, "HUMAN_BUILT_AS_COMPOSITE", "the cause is named, not bucketed as unspecified");
       }
       const examples = await sql(
-        `SELECT quote_revision_id, eligible_for_retrieval, eligible_for_training, quality_state
+        `SELECT project_id, eligible_for_retrieval, eligible_for_training, quality_state
            FROM learning_examples
-          WHERE quote_revision_id='${issued.body.id}'`,
+          WHERE project_id='${projectId}'`,
       );
       assert.equal(examples.length, 1, "issuance creates one immutable AI-vs-human learning example");
       assert.equal(examples[0].eligible_for_retrieval, 0, "an unadjudicated adjustment cannot enter retrieval");
@@ -703,7 +695,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       });
       const governed = await sql(
         `SELECT eligible_for_retrieval, quality_state FROM learning_examples
-          WHERE quote_revision_id='${issued.body.id}'`,
+          WHERE project_id='${projectId}'`,
       );
       assert.equal(governed[0].eligible_for_retrieval, 0,
         "a manufacturing-only correction remains outside product/thermal retrieval");
@@ -847,7 +839,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
     // guarded no longer exists to be guarded.
 
     await t.test("unauthenticated legacy staff seam is forbidden", async () => {
-      const response = await fetch(`${baseUrl}/api/projects/p_draft/issue-revision`, { method: "POST" });
+      const response = await fetch(`${baseUrl}/api/projects/p_draft/issue-quote`, { method: "POST" });
       assert.equal(response.status, 403);
     });
 
