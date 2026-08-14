@@ -216,6 +216,16 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         quote.body.lines.map((l) => l.code),
         "the contract keeps the quote's line order",
       );
+      // …and the STAFF read of the same contract agrees. It is a second query
+      // over the same rows, so it can drift from the customer's on its own —
+      // a staffer reading line 2 down the phone must be reading the line the
+      // customer is looking at.
+      const opsContract = await requestJson(ops, "/api/ops/projects/p_submitted");
+      assert.deepEqual(
+        (opsContract.body.orderLines ?? []).map((l) => l.code),
+        quote.body.lines.map((l) => l.code),
+        "the ops contract view keeps the quote's line order too",
+      );
       // A stale client cannot request changes on an already-accepted quote.
       await requestJson(sarah, "/api/projects/p_submitted/request-changes", { method: "POST", json: { message: "too late" } }, 409);
     });

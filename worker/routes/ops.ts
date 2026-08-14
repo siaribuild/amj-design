@@ -22,7 +22,7 @@ import {
   splitLine, mergeComposite, recomputeComposite,
   updateSegment, addSegment, removeSegment, loadCompositePolicy, compatibilityConflict,
 } from "../lib/composite";
-import { orderDto, applyTransition, markPaid, availableActions, STAGE_LABEL, type Stage, type OrderRow } from "../lib/orders";
+import { orderDto, orderLines, applyTransition, markPaid, availableActions, STAGE_LABEL, type Stage, type OrderRow } from "../lib/orders";
 import { lifecycleOf, daysSince } from "../lib/lifecycle";
 import { actionsFor } from "../lib/ops-actions";
 import { uuid, normNote } from "../lib/util";
@@ -493,19 +493,14 @@ ops.get("/projects/:id", async (c) => {
   const { results: payments } = order
     ? await c.env.DB.prepare("SELECT kind, amount, percent, status, reference, invoiced_at, paid_at FROM payment WHERE order_id = ? ORDER BY kind DESC").bind(order.id).all()
     : { results: [] as any[] };
-  // The CONTRACT lines, read from order_line — which now carries the whole
-  // opening (0047: room, dims, options and a unit's segments), not just
-  // ref/qty/total. Once an order exists the draft lines are no longer what
-  // anyone is building; order_line is.
-  const { results: orderLineRows } = order
-    ? await c.env.DB.prepare(
-      `SELECT id, external_ref, room_label, product_snapshot_json, dims_json,
-              qty, line_total, parent_line_id, segment_seq, qty_per_parent
-         FROM order_line WHERE order_id = ? ORDER BY COALESCE(parent_line_id, id), segment_seq`,
-    ).bind(order.id).all<any>()
-    : { results: [] as any[] };
-  const orderParentLines = orderLineRows.filter((l) => l.parent_line_id == null);
-  const orderSegmentLines = orderLineRows.filter((l) => l.parent_line_id != null);
+  // The CONTRACT lines, through the SAME reader the customer's order view uses
+  // (worker/lib/orders.ts's orderLines). This was a second query over the same
+  // rows and it drifted exactly as a second copy does: it ordered parents by
+  // their UUID, so the staff-facing contract could list the openings in a
+  // different order from the quote the customer accepted — and, being a UUID
+  // sort, differently on different records. A staffer reading line 2 down the
+  // phone has to be reading the line the customer is looking at.
+  const orderParentLines = order ? await orderLines(c.env, order.id) : [];
 
   // History spans BOTH entities. It used to filter on entity_type='project' only,
   // while every fulfilment action logs against 'order' — so on a merged plane the
@@ -586,25 +581,18 @@ ops.get("/projects/:id", async (c) => {
     // project renders an empty table, which is how a staffer concludes the record
     // is broken. Segments nest inside their parent, same convention as the draft
     // `lines` above — a split opening is one row on screen either way.
-    orderLines: orderParentLines.map((l) => {
-      const snap = safeParse(l.product_snapshot_json);
-      const dims = safeParse(l.dims_json ?? "{}");
-      return {
-        id: l.id, code: l.external_ref ?? "", qty: l.qty, lineTotal: l.line_total,
-        room: (l.room_label as string) ?? "",
-        productName: (snap.productName as string) ?? (snap.productSlug as string) ?? "—",
-        width: String(dims.width ?? ""), height: String(dims.height ?? ""),
-        segments: orderSegmentLines.filter((s) => s.parent_line_id === l.id).map((s) => {
-          const sSnap = safeParse(s.product_snapshot_json);
-          const sDims = safeParse(s.dims_json ?? "{}");
-          return {
-            id: s.id, productName: (sSnap.productName as string) ?? (sSnap.productSlug as string) ?? "—",
-            width: String(sDims.width ?? ""), height: String(sDims.height ?? ""),
-            qtyPerParent: s.qty_per_parent ?? 1, qty: s.qty, lineTotal: s.line_total,
-          };
-        }),
-      };
-    }),
+    orderLines: orderParentLines.map((l) => ({
+      id: l.id, code: l.code, qty: l.qty, lineTotal: l.lineTotal,
+      room: l.location,
+      productName: getProductBySlug(l.productSlug)?.name ?? l.productSlug ?? "—",
+      width: l.width, height: l.height,
+      segments: l.segments.map((s) => ({
+        id: s.id,
+        productName: getProductBySlug(s.productSlug)?.name ?? s.productSlug ?? "—",
+        width: s.width, height: s.height,
+        qtyPerParent: s.qtyPerParent, qty: s.qty, lineTotal: s.lineTotal,
+      })),
+    })),
     order: order ? {
       id: order.id, orderNo: order.order_no, stage: order.stage,
       stageLabel: STAGE_LABEL[order.stage as Stage] ?? order.stage,
