@@ -113,6 +113,22 @@ export function Pricing() {
   );
 }
 
+// Gap code -> the words an operator can act on. Mirrors PRODUCT_GAP_LABELS in
+// worker/lib/pricing-admin.ts; the unpriced_option code carries its slugs after
+// a colon, so the prefix is what maps and the slugs are appended.
+const GAP_LABELS: Record<string, string> = {
+  operation_types: "no operation type",
+  dimension_rule: "no dimension rule",
+  thermally_described_variant: "no glazing/thermal data",
+  rate_card: "rate card missing",
+  unpriced_option: "unpriced option",
+};
+const gapLabel = (code: string): string => {
+  const [prefix, detail] = code.split(/:(.+)/);
+  const label = GAP_LABELS[prefix] ?? prefix;
+  return detail ? `${label} ${detail}` : label;
+};
+
 // ── Health banner ────────────────────────────────────────────────────────────
 // On EVERY pricing screen, so a known failure cannot live on a screen nobody
 // visits. "Nothing has checked yet" is said out loud rather than shown as green:
@@ -121,7 +137,13 @@ function HealthBanner({ run, checked, busy, onRecheck, onFix }: {
   run: OpsReconcileRun | null; checked: boolean; busy: boolean; onRecheck: () => void; onFix: () => void;
 }) {
   if (!checked) return null;
-  const gaps = (run?.missing.length ?? 0) + (run?.productsWithoutRateCard.length ?? 0);
+  // Withheld products count toward the banner's alarm even though they are NOT
+  // folded into the run's own `ok` flag (pricing-admin.ts): `ok` has meant "the
+  // two pricing tables agree with the catalogue" since 0029, and an unmigrated
+  // product is not a pricing fault. It is still something a customer cannot buy,
+  // which is exactly what this banner exists to refuse to leave unsaid.
+  const withheld = run?.notOfferable?.length ?? 0;
+  const gaps = (run?.missing.length ?? 0) + (run?.productsWithoutRateCard.length ?? 0) + withheld;
 
   if (!run) {
     return (
@@ -136,7 +158,17 @@ function HealthBanner({ run, checked, busy, onRecheck, onFix }: {
   if (gaps === 0) {
     return (
       <Banner tone="ok">
-        <span>✓ Every option a product offers has a price. Checked {ago(run.checkedAt)}.</span>
+        <span>
+          ✓ Every option a product offers has a price
+          {/* Said out loud rather than implied: a run from before offerability
+              existed, or one where the catalogue could not be read, checked
+              NOTHING about products. Reporting that as part of a green banner
+              is the same unearned green this component already refuses to show
+              for "never checked". */}
+          {run.notOfferable === null
+            ? <>, and every product can be quoted — <b>not verified on this check</b></>
+            : <>, and every product can be quoted</>}. Checked {ago(run.checkedAt)}.
+        </span>
         <button onClick={onRecheck} disabled={busy} className="underline underline-offset-2">
           {busy ? "Checking…" : "Re-check"}
         </button>
@@ -152,6 +184,22 @@ function HealthBanner({ run, checked, busy, onRecheck, onFix }: {
         )}
         {run.productsWithoutRateCard.length > 0 && (
           <span>{run.productsWithoutRateCard.length} product{run.productsWithoutRateCard.length === 1 ? " has" : "s have"} no rate card — {run.productsWithoutRateCard.length === 1 ? "it prices" : "they price"} at ‘default’.</span>
+        )}
+        {withheld > 0 && (
+          // Named, with the reason, right here — not a count linking to a screen
+          // that does not exist yet. The whole failure this replaces was a
+          // product that quietly stopped being sellable and told nobody which
+          // of its three records was the one to go and fix.
+          <span>
+            {withheld} product{withheld === 1 ? " is" : "s are"} <b>not offered to customers</b> — incomplete data:{" "}
+            {run.notOfferable!.slice(0, 4).map((p, i) => (
+              <span key={p.slug}>
+                {i > 0 && "; "}
+                <span className="font-data">{p.slug}</span> ({p.gaps.map(gapLabel).join(", ")})
+              </span>
+            ))}
+            {run.notOfferable!.length > 4 && `; +${run.notOfferable!.length - 4} more`}
+          </span>
         )}
       </span>
       <span className="flex items-center gap-3 shrink-0">

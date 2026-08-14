@@ -400,6 +400,11 @@ export interface OpsReconcileRun {
   missing: { slug: string; productSlugs: string[] }[];
   orphaned: string[];
   productsWithoutRateCard: string[];
+  /** Products too incomplete to offer a customer, each with its gap codes.
+   *  NULL means offerability was NOT CHECKED on that run (the catalogue could
+   *  not be read) — distinct from [] meaning checked and all fine, and the
+   *  banner must not render the two the same way. */
+  notOfferable: { slug: string; name: string | null; gaps: string[] }[] | null;
 }
 
 // Pricing writes need the RESPONSE BODY on failure, not just a status: a 409 is

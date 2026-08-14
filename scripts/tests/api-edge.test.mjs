@@ -1091,6 +1091,35 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
           "an 'included' option is a row worth $0, not an absent row");
       }
 
+      // ── The write ITSELF re-checks; nobody has to remember to press anything.
+      // Before this, only a Sanity publish and the ten-minute cron re-ran the
+      // reconcile, so a D1 edit left the console — and, since 0045, the
+      // customer-facing picker — describing a catalogue that had already
+      // changed. Asserted through GET (the LAST RECORDED run), never POST,
+      // because POST would recompute and pass whether or not the write fired
+      // anything.
+      const beforeWrite = await requestJson(reader, "/api/ops/pricing/reconcile");
+      const createdForFreshness = await requestJson(reader, "/api/ops/pricing/rate-cards",
+        { method: "POST", json: { id: "reconcile-freshness-probe" } });
+      assert.equal(createdForFreshness.body.ok, true);
+      const afterCreate = await requestJson(reader, "/api/ops/pricing/reconcile");
+      assert.notEqual(afterCreate.body.run.checkedAt, beforeWrite.body.run?.checkedAt ?? null,
+        "creating a rate card recorded a fresh run without anyone pressing Re-check");
+
+      const afterDelete = await requestJson(reader, "/api/ops/pricing/rate-cards/reconcile-freshness-probe",
+        { method: "DELETE" });
+      assert.equal(afterDelete.body.ok, true);
+      const afterDeleteRun = await requestJson(reader, "/api/ops/pricing/reconcile");
+      assert.notEqual(afterDeleteRun.body.run.checkedAt, afterCreate.body.run.checkedAt,
+        "and so did deleting it — the write that OPENS a gap is the one that most needs this");
+
+      // Offerability rides on the same run. SANITY_PROJECT_ID is empty in this
+      // harness, so the catalogue cannot be read and the honest answer is
+      // "not checked" — null, never [] (which would claim every product was
+      // verified offerable). The banner renders the two differently.
+      assert.equal(afterDeleteRun.body.run.notOfferable, null,
+        "no catalogue to check ⇒ not checked, never an unearned all-clear");
+
       // A negative rate is not a low price, it is a typo that pays the customer.
       await requestJson(reader, "/api/ops/pricing/rate-cards/amj80-series-awning-window",
         { method: "PUT", json: { perimRate: -5, areaRate: 300, minCharge: 0 } }, 400);

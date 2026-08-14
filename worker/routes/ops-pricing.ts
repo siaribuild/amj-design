@@ -63,6 +63,38 @@ const rowToCard = (r: any): RateCard => ({
   id: r.id, perimRate: r.perim_rate, areaRate: r.area_rate, minCharge: r.min_charge ?? 0, version: r.version,
 });
 
+/**
+ * Re-check pricing gaps immediately after a write that can OPEN or CLOSE one.
+ *
+ * The publish webhook already does this on the Sanity side — "the check runs on
+ * the event that causes it" (routes/integrations.ts) — but nothing did it on the
+ * D1 side, so deleting a rate card left the catalogue advertising a product that
+ * could no longer be quoted until the ten-minute cron caught up. The gap was
+ * never a PRICING risk (loadRateCard still fails closed), but it is exactly the
+ * "seemingly not working, no idea why" surprise the offerability work exists to
+ * remove — and since 0045 the same run decides what the customer-facing picker
+ * is allowed to offer, so its freshness is now load-bearing.
+ *
+ * Awaited, not waitUntil'd: the ops console re-reads the LAST run the moment a
+ * save returns, so a backgrounded re-check would repaint the banner from the
+ * state before the write. An admin action can afford one Sanity read.
+ *
+ * Only called where EXISTENCE changes (create / delete / rename a card, price an
+ * option). Editing a rate on a card that already exists cannot open or close a
+ * gap, and paying for a Sanity query on every keystroke-driven save would be a
+ * cost with no answer attached.
+ *
+ * Never fails the write it follows. The write already succeeded and is durable;
+ * a reconcile that throws must not turn that into an error the operator reads as
+ * "my change did not save". The cron is still the backstop for exactly this.
+ */
+async function reconcileAfterWrite(env: Env): Promise<void> {
+  await reconcilePricing(env).catch((e) => {
+    console.log(`[reconcile] post-write check failed: ${String(e)}`);
+    return null;
+  });
+}
+
 // ── Rate cards ───────────────────────────────────────────────────────────────
 
 /** The index. Read-only by design: no worked-example total here any more (it
@@ -139,6 +171,7 @@ opsPricing.post("/rate-cards", async (c) => {
     ).bind(uuid(), id, m.seq, m.label, m.whenField, m.whenOp, m.whenValue, m.thenType, m.thenValue).run();
   }
 
+  await reconcileAfterWrite(c.env); // a new card can CLOSE a gap
   return c.json({ ok: true, id });
 });
 
@@ -322,6 +355,7 @@ opsPricing.delete("/rate-cards/:id", async (c) => {
 
   // Modifiers cascade — pricing_modifier.rate_card_id is ON DELETE CASCADE.
   await c.env.DB.prepare("DELETE FROM pricing_rate_card WHERE id = ?").bind(id).run();
+  await reconcileAfterWrite(c.env); // deleting a card OPENS a gap
   return c.json({ ok: true });
 });
 
@@ -362,6 +396,10 @@ opsPricing.put("/rate-cards/:id/rename", async (c) => {
     c.env.DB.prepare("UPDATE pricing_modifier SET rate_card_id = ? WHERE rate_card_id = ?").bind(newId, id),
     c.env.DB.prepare("DELETE FROM pricing_rate_card WHERE id = ?").bind(id),
   ]);
+  // A rename is a delete and a create at once: it opens a gap on the old slug
+  // and closes one on the new, so it is the write most able to leave the
+  // console describing a catalogue that no longer exists.
+  await reconcileAfterWrite(c.env);
   return c.json({ ok: true, id: newId });
 });
 
@@ -446,6 +484,10 @@ opsPricing.put("/options/:slug", async (c) => {
          ON CONFLICT(id) DO UPDATE SET surcharge=excluded.surcharge, basis=excluded.basis, version=excluded.version, active=1`,
       ).bind(slug, surcharge, basis, v).run().then(() => undefined),
     });
+    // Pricing an option is the single most common way a gap is CLOSED — it is
+    // what the banner's own "Fix" link sends an operator here to do, so the
+    // banner has to stop saying it the moment they have.
+    await reconcileAfterWrite(c.env);
     return c.json({ ok: true, version });
   } catch (e) {
     if (e instanceof VersionConflict) return c.json({ error: "version_conflict" }, 409);
