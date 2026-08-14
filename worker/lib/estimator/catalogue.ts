@@ -249,25 +249,38 @@ export interface CatalogueCandidateReadiness {
   usableVariantIds: string[];
 }
 
-/** Enough to QUOTE this glass honestly: it is published, it has an identity to
- *  price against, and it carries the two numbers thermal reasoning needs. */
+/** Enough to QUOTE this row honestly: it is published and carries the two
+ *  numbers thermal reasoning needs.
+ *
+ *  GLAZING IS NOT REQUIRED HERE, deliberately (owner, 2026-08-14): "glazing
+ *  should technically be optional — use it when it exists, do not when it does
+ *  not". A row without a glazing option still prices, at frame + area, because
+ *  the glass surcharge is only ever added when a slug resolves (lib/lines.ts
+ *  pushes it `if (glazingSlug)`), and it still reasons thermally, because Uw
+ *  and SHGC are what a band is checked against. Withholding a product over a
+ *  missing glass CHOICE would refuse to sell a window we can both price and
+ *  rate. What cannot be done without Uw/SHGC is claim the thing meets an energy
+ *  requirement — and since a band now always exists (ai/archetypes.ts), that is
+ *  the gap that genuinely disqualifies. */
 const variantIsQuotable = (variant: PerformanceVariant): boolean =>
   variant.published &&
   variant.uValue != null &&
-  variant.shgc != null &&
-  !!variant.glazingOptionSlug;
+  variant.shgc != null;
 
-/** Enough to be FULLY DESCRIBED: quotable, plus a known frame technology.
+/** Enough to be FULLY DESCRIBED: quotable, plus the glass identity and a known
+ *  frame technology.
  *
- *  The extra clause is why this is a separate bar rather than one. Frame
- *  technology (conventional vs thermally broken) refines ranking; it does not
- *  change whether a product can be sold. Requiring it for readiness is right —
- *  readiness decides whether the published catalogue is authored well enough to
- *  spend model budget against. Requiring it to OFFER a product would withhold
- *  frames whose Uw, SHGC and glazing are all present and correct because one
- *  descriptive field was never filled in, which costs a sale to fix a typo. */
+ *  The extra clauses are why this is a separate bar. Both refine what the
+ *  machine can say about a product; neither changes whether it can be sold.
+ *  Requiring them for readiness is right — readiness decides whether the
+ *  published catalogue is authored well enough to spend model budget against.
+ *  Requiring them to OFFER would withhold frames whose Uw and SHGC are present
+ *  and correct because a descriptive field was never filled in, which costs a
+ *  sale to fix a typo. */
 const variantIsFullyDescribed = (variant: PerformanceVariant): boolean =>
-  variantIsQuotable(variant) && variant.frameTechnology !== "unknown";
+  variantIsQuotable(variant) &&
+  !!variant.glazingOptionSlug &&
+  variant.frameTechnology !== "unknown";
 
 /**
  * Minimum contract required for a thermally meaningful, priceable selection.
@@ -306,7 +319,9 @@ export function catalogueCandidateReadiness(candidate: CatalogueCandidate): Cata
  *     the ops list as "← fallback for unmapped products"), so it prices
  *     correctly and is perfectly sellable. Readiness counts it because a
  *     product being AI-priced should name its own card.
- *   - the glazing bar is `variantIsQuotable`, not `variantIsFullyDescribed`.
+ *   - the glazing bar is `variantIsQuotable`, not `variantIsFullyDescribed`:
+ *     a missing glass CHOICE prices at frame + area, a missing Uw/SHGC cannot
+ *     be claimed to meet a band.
  */
 export function catalogueCandidateOfferability(candidate: CatalogueCandidate): { offerable: boolean; gaps: string[] } {
   const gaps: string[] = [];

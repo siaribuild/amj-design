@@ -251,6 +251,23 @@ test("offerability withholds a product with NO usable glazing/thermal row, and n
   assert.equal(catalogueCandidateOfferability(noNumbers).offerable, false);
 });
 
+test("glazing is OPTIONAL: no glass choice still sells, at frame + area", () => {
+  // Owner rule: "use it when it exists, do not when it does not". A row with
+  // Uw and SHGC but no glazing option can be priced (lib/lines.ts only adds the
+  // glass surcharge `if (glazingSlug)`) and can be checked against a band, so
+  // withholding it would refuse to sell a window we can both price and rate.
+  // Contrast with the case above: no Uw/SHGC is what genuinely disqualifies,
+  // because a band always exists now and nothing could be claimed against it.
+  const noGlassChoice = toCandidate({
+    ...awning,
+    performanceVariants: [{ ...awning.performanceVariants[0], glazingOptionSlug: null, glazingClass: null }],
+  });
+  assert.equal(catalogueCandidateOfferability(noGlassChoice).offerable, true);
+  assert.deepEqual(catalogueCandidateOfferability(noGlassChoice).gaps, []);
+  // Readiness still wants it — the two bars differ here on purpose.
+  assert.equal(catalogueCandidateReadiness(noGlassChoice).ready, false);
+});
+
 test("offerability reports EVERY gap at once, not the first", () => {
   const broken = toCandidate({ ...awning, seriesOperation: null, dimensionRule: null, performanceVariants: [] });
   const gaps = catalogueCandidateOfferability(broken).gaps.sort();
