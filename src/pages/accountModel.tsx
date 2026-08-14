@@ -10,7 +10,7 @@
 // This module owns the account-wide data context.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { AlertCircle, Check, Loader2, Lock, Pencil, X } from "lucide-react";
+import { AlertCircle, Check, Loader2, Lock, Pencil } from "lucide-react";
 import {
   getProjects, getOrders,
   type ApiProjectSummary, type ApiOrder, type ApiOrderLine,
@@ -48,11 +48,6 @@ export function StatusPill({ tone, children, icon }: { tone: Tone; children: Rea
     </span>
   );
 }
-
-// Superseded pill (revision history).
-export const SupersededPill = () => (
-  <StatusPill tone="mute" icon={<X className="w-3 h-3" aria-hidden="true" />}>Superseded</StatusPill>
-);
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const aud = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" });

@@ -3,9 +3,13 @@
 //
 // Acts on an IMMUTABLE issued revision: what-happens-when-you-accept panel with a
 // confirm preview (deposit invoice + order creation spelled out), an honest
-// request-changes path (returns the quote to Under review → a new revision), the
-// priced schedule-code line list with ex-GST/GST/inc-GST/deposit totals, and the
-// revision history with superseded revisions struck through and non-actionable.
+// request-changes path (returns the quote to Under review → a new revision), and
+// the priced schedule-code line list with its GST/deposit totals.
+//
+// NO REVISION HISTORY. A list of superseded revisions was here and is gone
+// (owner, 2026-08-14): the customer is deciding on the revision in front of
+// them, and ops reads history in the record, so it was a block neither side
+// used. `revisions` is still fetched — that is how the live one is found.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useEffect, useState } from "react";
 import { ChevronDown, Check, Clock, Loader2, Lock, PenLine } from "lucide-react";
@@ -15,10 +19,10 @@ import {
   type ApiRevision, type ApiFile, type CurrentProject,
 } from "../data/api";
 import {
-  StatusPill, SupersededPill, TONE, money, fmtDate, parseLine, useAccount,
+  StatusPill, TONE, money, fmtDate, parseLine, useAccount,
 } from "./accountModel";
 import {
-  BackLink, Blk, ConfirmDetails, ContactCard, FilesBlock, LineList, SummaryBand,
+  BackLink, Blk, ConfirmDetails, ContactCard, FilesBlock, LineList, SummaryBand, TotalRow,
 } from "./RecordDetailPage";
 import type { TrackFocus } from "./OrderTrackingPage";
 
@@ -194,32 +198,6 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
             <TotalRow label="Total (inc GST)" value={money(total)} big />
             <TotalRow label="50% deposit to begin" value={money(deposit)} attn />
           </div>
-          {/* Delivery — $340 to 3072. This is the price. D14/D12: the reason
-              for a $0 is never stated to the customer — staff zero the field
-              for other reasons besides a trade waiver (a goodwill absorb, a
-              bundled job), and only the trade case would make that sentence
-              true. */}
-          <p className="px-5 pb-4 -mt-2 text-body t-cap">
-            {delivery === 0
-              ? "Delivery — $0. Delivery is not charged on this quote."
-              : `Delivery — ${money(delivery)} to ${current.deliveryPostcode ?? "your site"}. This is the price. Tailgate to the kerb at your address; you unload.`}
-          </p>
-        </Blk>
-
-        {/* Revision history */}
-        <Blk eyebrow="History" title="Revision history" right="Issued revisions are immutable">
-          {revisions.map((r) => {
-            const isCurrent = r.id === current.id;
-            return (
-              <div key={r.id} className="flex items-center gap-[13px] px-5 py-[13px] border-b border-black/[0.07] last:border-b-0">
-                <span className={`w-[30px] font-medium ${isCurrent ? "text-ink" : "line-through"} t-cap font-data`} style={{ color: isCurrent ? undefined : TONE.mute.text, textDecorationColor: TONE.mute.bd }}>R{r.revisionNo}</span>
-                <span className={`flex-1 ${isCurrent ? "text-body" : "line-through"} t-cap`} style={{ color: isCurrent ? undefined : TONE.mute.text, textDecorationColor: TONE.mute.bd }}>
-                  {isCurrent ? `Current · issued ${fmtDate(r.issuedAt)} · ${money(r.total)}` : `Superseded · issued ${fmtDate(r.issuedAt)} — kept on file, view only`}
-                </span>
-                {isCurrent ? <StatusPill tone="attn">Awaiting you</StatusPill> : <SupersededPill />}
-              </div>
-            );
-          })}
         </Blk>
 
         <FilesBlock files={files} />
@@ -242,12 +220,3 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
   );
 }
 
-function TotalRow({ label, value, big, attn }: { label: string; value: string; big?: boolean; attn?: boolean }) {
-  return (
-    <div className={`flex justify-between ${big ? "border-t border-black/10 pt-[11px] mt-0.5 font-semibold text-ink" : "text-body t-cap"} t-bd`}
-      style={attn ? { color: TONE.attn.text } : undefined}>
-      <span>{label}</span>
-      <span className={`font-data ${big ? "t-bd-lg" : "font-medium"}`} style={{ color: attn ? TONE.attn.text : big ? undefined : "var(--ink)" }}>{value}</span>
-    </div>
-  );
-}

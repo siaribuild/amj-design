@@ -273,7 +273,7 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
 
     // Not a doc-numbered T-B case — E13's own shape (design doc line 871) was
     // never actually asserted from the customer's side of the fence, only the
-    // staff one above. Added alongside the account-area "Estimated shipping"
+    // staff one above. Added alongside the account-area estimated-shipping
     // card, which is the first thing that reads `conservative` at all.
     await t.test("the customer's own GET carries postcode/amount/indicative/conservative for the estimate card (§8.4)", async () => {
       // Registered, not anonymous — ownedProject's claim-cookie path only

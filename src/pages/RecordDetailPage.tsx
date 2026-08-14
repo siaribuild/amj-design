@@ -82,6 +82,19 @@ export function ConfirmDetails({ summary, lines, action, busy, onConfirm, receip
   );
 }
 
+/** One line of a money panel. Shared by the issued quote's totals block and the
+ *  pending estimate's, because those two panels have to keep reading the same —
+ *  two copies drifted the moment one of them gained a row. */
+export function TotalRow({ label, value, big, attn }: { label: string; value: string; big?: boolean; attn?: boolean }) {
+  return (
+    <div className={`flex justify-between ${big ? "border-t border-black/10 pt-[11px] mt-0.5 font-semibold text-ink" : "text-body t-cap"} t-bd`}
+      style={attn ? { color: TONE.attn.text } : undefined}>
+      <span>{label}</span>
+      <span className={`font-data ${big ? "t-bd-lg" : "font-medium"}`} style={{ color: attn ? TONE.attn.text : big ? undefined : "var(--ink)" }}>{value}</span>
+    </div>
+  );
+}
+
 // Pinned amber action gate.
 function ActionGate({ pill, step, title, children }: { pill: string; step?: string; title: string; children: ReactNode }) {
   return (
@@ -616,19 +629,22 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
         <Blk eyebrow="Lifecycle" title="Quote → order journey" id="rec-timeline"><Timeline nodes={timeline} /></Blk>
 
         <Blk eyebrow="Schedule" title="Submitted lines"
-          right={`${money(total)} · estimates, and your reviewed quote may differ`} id="rec-lines">
+          right="Estimates — your reviewed quote may differ" id="rec-lines">
           {/* THE SAME LIST the builder draws, with nothing to press — not a
               second one that resembles it. The flat table here could not express
               a composite at all: an opening built as two units showed as one
               product and one size, and the product it named was the parent's
-              pre-split frame, which is not what gets made. The total moves to the
-              block header because the list itself has no footer — in the builder
-              the action bar carries it, and adding one here would be a difference
-              nobody asked for. */}
+              pre-split frame, which is not what gets made. */}
           <OpeningList items={hydrateQuoteItems(data.items)} />
+          {/* Money hangs off the BOTTOM of the list it describes, the same shape
+              the issued quote uses (QuoteReviewPage). It began as a sibling card
+              and was moved here (owner, 2026-08-14) so the pending and issued
+              views read the same way round. The total came down out of the block
+              header at the same time — leaving it there would have stated the
+              same figure twice, which is the duplication removed from the issued
+              view in this same change. */}
+          <PendingTotals total={total} delivery={delivery} />
         </Blk>
-
-        <DeliveryEstimateBlock delivery={delivery} />
 
         <FilesBlock files={files} />
         <SummaryBand><ContactCard setPage={setPage} /></SummaryBand>
@@ -637,39 +653,40 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
   );
 }
 
-// Design doc §8.4 — the "pending" half of the delivery microcopy split. The
-// word that changes meaning between pending and issued is "estimate": this
-// card only ever renders while pending (ProjectDetail is not shown once a
-// revision issues — QuoteReviewPage takes over, with its own, non-estimate
-// "This is the price" copy), so `delivery.indicative` is not re-checked here.
-function DeliveryEstimateBlock({ delivery }: { delivery: ApiProjectDelivery | undefined }) {
+/** The money panel attached under the submitted-lines list — the pending
+ *  counterpart of the issued quote's totals block, and deliberately the same
+ *  shape so the two states read the same way round.
+ *
+ *  Design doc §8.4 — the word that changes meaning between pending and issued
+ *  is "estimate". This only ever renders while pending (ProjectDetail is not
+ *  shown once a revision issues; QuoteReviewPage takes over with its own
+ *  "This is the price" copy), so `delivery.indicative` is not re-checked. */
+function PendingTotals({ total, delivery }: { total: number; delivery: ApiProjectDelivery | undefined }) {
+  const shipping = delivery?.amount ?? null;
   return (
-    <Blk eyebrow="Delivery" title="Estimated shipping" id="rec-delivery">
-      <div className="px-5 py-4">
-        {delivery?.amount != null ? (
-          <>
-            <p className="text-ink t-bd-sm">
-              <b>Delivery to {delivery.postcode ?? "your site"} — around {money(delivery.amount)}.</b>
-            </p>
-            <p className="text-body mt-1 t-cap">
-              {delivery.conservative
-                ? "That postcode is outside our usual runs, so we've allowed generously. A person checks it before your quote is issued, and it may come down."
-                : "An estimate. A person checks it against real freight before your quote is issued."}
-            </p>
-          </>
-        ) : (
-          // Never invents a figure (D9 is about never showing nothing when a
-          // number exists — it is not licence to guess one when it doesn't).
-          // Reached only while a zone genuinely has no rates yet; the release
-          // checklist keeps that off the customer-facing production deploy.
-          <p className="text-body t-cap">
-            {delivery?.postcode
-              ? `We'll confirm delivery to ${delivery.postcode} when your reviewed quote is issued.`
-              : "We'll confirm your delivery cost when your reviewed quote is issued."}
-          </p>
-        )}
+    <>
+      <div className="bg-sage/[0.07] border-t border-black/10 px-5 py-[15px] flex flex-col gap-[9px]">
+        <TotalRow label="Windows and doors" value={money(total)} />
+        <TotalRow
+          label={`Delivery to ${delivery?.postcode ?? "your site"}`}
+          value={shipping == null ? "To be confirmed" : `around ${money(shipping)}`} />
+        {/* Only a total once BOTH halves are real. Adding an unpriced delivery
+            to goods would print a confident number that is quietly missing its
+            freight — the one figure a customer would carry away. */}
+        {shipping != null && <TotalRow label="Estimated total" value={money(total + shipping)} big />}
       </div>
-    </Blk>
+      <p className="px-5 pb-4 pt-3 text-body t-cap">
+        {shipping == null
+          // Never invents a figure. D9 is about never showing nothing when a
+          // number exists — it is not licence to guess one when it does not.
+          ? (delivery?.postcode
+            ? `We'll confirm delivery to ${delivery.postcode} when your reviewed quote is issued.`
+            : "We'll confirm your delivery cost when your reviewed quote is issued.")
+          : delivery?.conservative
+            ? "That postcode is outside our usual runs, so we've allowed generously. A person checks it before your quote is issued, and it may come down."
+            : "An estimate. A person checks it against real freight before your quote is issued."}
+      </p>
+    </>
   );
 }
 
