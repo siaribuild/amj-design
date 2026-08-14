@@ -230,6 +230,33 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       await requestJson(sarah, "/api/projects/p_submitted/request-changes", { method: "POST", json: { message: "too late" } }, 409);
     });
 
+    await t.test("an order placed before the snapshot columns existed still shows its sizes", async () => {
+      // Every order_line written before 0047 has NULL dims_json/options_json:
+      // those columns did not exist, and the geometry lived inside
+      // product_snapshot_json instead (issueRevision wrote `dims` and `options`
+      // into the snapshot, and acceptance copied that blob onto the order).
+      // The reader this replaced merged the snapshot UNDER the columns for
+      // exactly that reason. Reading the columns alone renders every existing
+      // order with blank sizes and no specification — the customer's own record
+      // of what they bought, silently emptied by a migration.
+      const line = (await sql(`SELECT id FROM order_line WHERE order_id='${newOrder.id}' AND parent_line_id IS NULL LIMIT 1`))[0];
+      const legacySnapshot = JSON.stringify({
+        productSlug: "amj80-series-sliding-window",
+        productName: "AMJ80 Series Sliding Window",
+        dims: { width: "1500", height: "1200" },
+        options: { colour: "Monument" },
+      }).replace(/'/g, "''");
+      await sql(
+        `UPDATE order_line SET dims_json=NULL, options_json=NULL, product_snapshot_json='${legacySnapshot}' WHERE id='${line.id}'`,
+      );
+      const view = await requestJson(sarah, `/api/orders/${newOrder.id}`);
+      const legacy = (view.body.order.lines ?? []).find((l) => l.id === line.id);
+      assert.ok(legacy, "the legacy line is still returned");
+      assert.equal(legacy.width, "1500", "width falls back to the frozen snapshot");
+      assert.equal(legacy.height, "1200", "height falls back to the frozen snapshot");
+      assert.equal(legacy.options.colour, "Monument", "so does the specification");
+    });
+
     await t.test("accept and request-changes race has exactly one workflow winner", async () => {
       await run(process.execPath, [
         wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,

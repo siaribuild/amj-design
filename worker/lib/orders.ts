@@ -175,9 +175,23 @@ export async function orderLines(env: Env, orderId: string) {
   }>();
   const rows = results ?? [];
   const slugOf = (snapshot: string) => String(safeParse(snapshot).productSlug ?? "");
-  const dimsOf = (json: string | null) => safeParse(json);
+  // The columns FIRST, the frozen snapshot underneath. Every order_line written
+  // before 0047 has NULL dims_json/options_json — those columns did not exist,
+  // and the geometry and specification lived inside product_snapshot_json
+  // instead. Reading the columns alone empties the sizes and options on every
+  // order placed before that migration: the customer's own record of what they
+  // bought, blanked by a schema change. The reader this replaced merged the two
+  // for exactly this reason, so the merge comes with it.
+  const nested = (snapshot: string, key: "dims" | "options") => {
+    const value = safeParse(snapshot)[key];
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  };
+  const dimsOf = (row: { dims_json: string | null; product_snapshot_json: string }) =>
+    ({ ...nested(row.product_snapshot_json, "dims"), ...safeParse(row.dims_json) });
+  const optionsOf = (row: { options_json: string | null; product_snapshot_json: string }) =>
+    ({ ...nested(row.product_snapshot_json, "options"), ...safeParse(row.options_json) }) as Record<string, string>;
   return rows.filter((r) => r.parent_line_id == null).map((parent) => {
-    const dims = dimsOf(parent.dims_json);
+    const dims = dimsOf(parent);
     const units = rows.filter((r) => r.parent_line_id === parent.id);
     return {
       id: parent.id,
@@ -186,7 +200,7 @@ export async function orderLines(env: Env, orderId: string) {
       location: parent.room_label ?? "",
       width: String(dims.width ?? ""),
       height: String(dims.height ?? ""),
-      options: safeParse(parent.options_json) as Record<string, string>,
+      options: optionsOf(parent),
       qty: parent.qty,
       // A contracted line is settled by definition — there is no unpriced or
       // review state left to express once an order exists.
@@ -195,7 +209,7 @@ export async function orderLines(env: Env, orderId: string) {
       compositeAxis: parent.composite_axis === "horizontal" ? "horizontal" as const
         : parent.composite_axis === "vertical" ? "vertical" as const : null,
       segments: units.map((unit) => {
-        const unitDims = dimsOf(unit.dims_json);
+        const unitDims = dimsOf(unit);
         return {
           id: unit.id,
           productSlug: slugOf(unit.product_snapshot_json),
@@ -206,7 +220,7 @@ export async function orderLines(env: Env, orderId: string) {
           // Display-only, same rule as the quote: the parent's lineTotal is
           // authoritative and a client must never sum these.
           lineTotal: unit.line_total,
-          options: safeParse(unit.options_json) as Record<string, string>,
+          options: optionsOf(unit),
           status: "Ready" as const,
           note: unit.room_label ?? "",
         };
