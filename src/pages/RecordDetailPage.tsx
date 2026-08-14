@@ -21,6 +21,7 @@ import {
   type ApiOrder, type ApiFile, type ApiScheduleFile, type ApiClarification, type ApiItem, type ApiProjectDelivery, type CurrentProject,
 } from "../data/api";
 import { productLabel } from "../data/configurator";
+import { gstAdjust, taxBreakdown, useGstMode } from "../data/gst";
 import {
   StatusPill, TONE, money, fmtDate, parseLine, dimsLabel, orderMeta, useAccount,
   type ParsedLine, type Tone,
@@ -236,7 +237,16 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit, deli
   deliveryNote?: string;
 }) {
   const hasPendingPrice = lines.some((line) => line.lineTotal == null);
-  const price = (value: number | null) => value == null ? "Pending final price" : money(value);
+  // Line prices follow the account's ex/inc preference; stored figures are
+  // GST-inclusive. Applied HERE, in the one component that renders a priced
+  // line, so the quote and the order cannot show the same line two ways.
+  //
+  // `total` is NOT adjusted: it is the contract figure and stays inclusive in
+  // both modes, for the same reason the deposit does — it is what is owed, not
+  // a way of looking at what is owed.
+  const gstMode = useGstMode();
+  const price = (value: number | null) =>
+    value == null ? "Pending final price" : money(gstAdjust(value, gstMode));
   return (
     <>
       <div className="hidden md:grid grid-cols-[118px_1fr_110px_44px_104px_116px] gap-3.5 px-5 py-[11px] bg-sage/[0.07] border-b border-black/10 text-body font-data t-label" aria-hidden="true">
@@ -276,7 +286,7 @@ export function LineList({ lines, footerLabel, total, statusPill, showUnit, deli
         <div className="flex justify-between items-center px-5 py-[15px] bg-sage/[0.07] border-t border-black/10 t-cap">
           <small className="text-body">{footerLabel}</small>
           <div className="text-right">
-            <div><small className="text-body">{hasPendingPrice ? "Priced-lines subtotal " : "Order total "}</small><span className="font-medium t-bd-lg font-data">{money(total)}</span></div>
+            <div><small className="text-body">{hasPendingPrice ? "Priced-lines subtotal " : "Order total (inc GST) "}</small><span className="font-medium t-bd-lg font-data">{money(total)}</span></div>
             {deliveryNote && <small className="block text-body mt-0.5">{deliveryNote}</small>}
           </div>
         </div>
@@ -663,17 +673,22 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
  *  "This is the price" copy), so `delivery.indicative` is not re-checked. */
 function PendingTotals({ total, delivery }: { total: number; delivery: ApiProjectDelivery | undefined }) {
   const shipping = delivery?.amount ?? null;
+  const gstMode = useGstMode();
+  // Same preference as the issued quote — an estimate a customer reads ex-GST
+  // must not become an inc-GST number the moment it is confirmed. The
+  // estimated total stays inclusive, matching the issued grand total.
+  const tax = taxBreakdown(gstMode, total, shipping ?? 0, total + (shipping ?? 0));
   return (
     <>
       <div className="bg-sage/[0.07] border-t border-black/10 px-5 py-[15px] flex flex-col gap-[9px]">
-        <TotalRow label="Windows and doors" value={money(total)} />
+        <TotalRow label={`Windows and doors (${tax.suffix})`} value={money(tax.goods)} />
         <TotalRow
-          label={`Delivery to ${delivery?.postcode ?? "your site"}`}
-          value={shipping == null ? "To be confirmed" : `around ${money(shipping)}`} />
+          label={`Delivery to ${delivery?.postcode ?? "your site"}${shipping == null ? "" : ` (${tax.suffix})`}`}
+          value={shipping == null ? "To be confirmed" : `around ${money(tax.delivery)}`} />
         {/* Only a total once BOTH halves are real. Adding an unpriced delivery
             to goods would print a confident number that is quietly missing its
             freight — the one figure a customer would carry away. */}
-        {shipping != null && <TotalRow label="Estimated total" value={money(total + shipping)} big />}
+        {shipping != null && <TotalRow label="Estimated total (inc GST)" value={money(total + shipping)} big />}
       </div>
       <p className="px-5 pb-4 pt-3 text-body t-cap">
         {shipping == null

@@ -18,6 +18,7 @@ await build({
       export { lineBlocksSubmission, reviewSeverity, severityOf, REVIEW_SEVERITY, suggestCode, hasDuplicateCode, normCode, optionGroupsFor, defaultOptions, fmt, mm, productLabel, acrossMismatch, compositeAcrossFault, missingRequiredOptions, unitMissingRequiredOptions, productColours } from ${p("src/data/configurator.ts")};
       export { hydrateQuoteItems } from ${p("src/data/api.ts")};
       export { quoteSummary } from ${p("src/data/quoteSummary.ts")};
+      export { taxBreakdown, gstAdjust } from ${p("src/data/gst.ts")};
       export { getProductBySlug, products, getCategories, getFamiliesByCategory, categories, colorbondColourOptions, hydrateCatalogue, optionTypeOrder } from ${p("src/data/catalogue.ts")};
       export { toCatalogueData, CATALOGUE_QUERY } from ${p("src/data/catalogueQuery.ts")};
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
@@ -649,6 +650,48 @@ test("the catalogue query asks Sanity for that same order", () => {
   // orderRank would make every category tie and quietly revert to whatever
   // order the server happens to return.
   assert.match(M.CATALOGUE_QUERY, /"categories":\s*\*\[_type=="category"\]\|order\(orderRank asc\)/);
+});
+
+// ── GST display preference (owner spec, 2026-08-14) ─────────────────────────
+// Stored money is GST-INCLUSIVE. An account may read it ex-GST, but two things
+// never move: the grand total and anything the customer pays.
+test("taxBreakdown: ex-GST splits the rows and lets GST absorb the rounding", () => {
+  // The owner's own figures from OF-Q-10020.
+  const t = M.taxBreakdown("ex", 14370, 8000, 22370);
+  assert.equal(t.goods, 13063.64);
+  assert.equal(t.delivery, 7272.73);
+  assert.equal(t.gstLabel, "GST 10%");
+  assert.equal(t.suffix, "ex GST");
+  // THE POINT: dividing each row by 1.1 gives 20,336.37 where the true ex-GST
+  // subtotal is 20,336.36. The GST line carries that cent so the column a
+  // customer can add up reconciles to the total they are agreeing to.
+  assert.equal(t.gst, 2033.63);
+  assert.equal(Math.round((t.goods + t.delivery + t.gst) * 100) / 100, 22370,
+    "the visible column must sum to the contractual total, exactly");
+});
+
+test("taxBreakdown: inc-GST leaves the rows alone and states the GST contained", () => {
+  const t = M.taxBreakdown("inc", 14370, 8000, 22370);
+  assert.equal(t.goods, 14370);
+  assert.equal(t.delivery, 8000);
+  assert.equal(t.gst, 2033.64, "one eleventh of the inclusive total");
+  assert.equal(t.gstLabel, "Includes GST of", "ATO wording — it is not added, it is already there");
+  assert.equal(t.suffix, "inc GST");
+});
+
+test("taxBreakdown: the grand total is the same figure in both modes", () => {
+  // A quote is agreed at one number. The display preference changes how the
+  // rows are read, never what is owed — which is why deposit and balance are
+  // computed server-side from this figure and never from the ex-GST reading.
+  assert.equal(M.taxBreakdown("ex", 14370, 8000, 22370).totalInc,
+    M.taxBreakdown("inc", 14370, 8000, 22370).totalInc);
+});
+
+test("taxBreakdown: a zero delivery stays zero in both modes, and never negative", () => {
+  const ex = M.taxBreakdown("ex", 1000, 0, 1000);
+  assert.equal(ex.delivery, 0, "$0 delivery is a settled figure, not a missing one");
+  assert.ok(ex.gst > 0);
+  assert.equal(M.taxBreakdown("inc", 1000, 0, 1000).delivery, 0);
 });
 
 test("the built-in fallback catalogue is already Windows-first", () => {

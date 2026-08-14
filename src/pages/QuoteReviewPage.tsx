@@ -21,6 +21,7 @@ import {
 import {
   StatusPill, TONE, money, fmtDate, parseLine, useAccount,
 } from "./accountModel";
+import { taxBreakdown, useGstMode } from "../data/gst";
 import {
   BackLink, Blk, ConfirmDetails, ContactCard, FilesBlock, LineList, SummaryBand, TotalRow,
 } from "./RecordDetailPage";
@@ -33,6 +34,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
   onOpenRecord: (rec: TrackFocus) => void;
 }) {
   const { refresh } = useAccount();
+  const gstMode = useGstMode();
   const [data, setData] = useState<CurrentProject | null>(null);
   const [revisions, setRevisions] = useState<ApiRevision[] | null>(null);
   const [files, setFiles] = useState<ApiFile[]>([]);
@@ -65,16 +67,15 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
   }
 
   const lines = current.lines.map(parseLine);
-  const total = current.total; // goods + delivery (C8)
-  const goods = current.goods;
-  const delivery = current.delivery;
-  // gstAdjust is linear, so the split adjusts the SUM once — splitting goods
-  // and delivery independently would give a customer viewing ex-GST two
-  // roundings that do not add up on screen.
-  const ex = Math.round((total / 1.1) * 100) / 100;
-  const gst = Math.round((total - ex) * 100) / 100;
+  const total = current.total; // goods + delivery (C8), always GST-inclusive
+  // The account's own preference (App provides it from user.priceGstMode).
+  // Everything on this screen used to be hardcoded inc-GST, so an ex-GST
+  // account was shown inc-GST prices under inc-GST labels — correct numbers
+  // answering a question the customer had not asked.
+  const tax = taxBreakdown(gstMode, current.goods, current.delivery, total);
   // Server-computed (0043) — one deposit percentage, not this screen's own
-  // Math.round(total / 2).
+  // Math.round(total / 2) — and computed on the INCLUSIVE total, which is what
+  // the customer actually transfers, in either display mode.
   const deposit = current.deposit;
   const balance = current.balance;
   const issued = new Date(current.issuedAt.includes("T") ? current.issuedAt : current.issuedAt.replace(" ", "T") + "Z");
@@ -154,8 +155,12 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
           <ConfirmDetails
             summary={`Preview what happens when you accept ${R}`}
             receipt={[
-              { label: "Windows and doors (inc GST)", value: money(goods) },
-              { label: `Delivery to ${current.deliveryPostcode ?? "your site"} (inc GST)`, value: delivery === 0 ? "$0" : money(delivery) },
+              { label: `Windows and doors (${tax.suffix})`, value: money(tax.goods) },
+              { label: `Delivery to ${current.deliveryPostcode ?? "your site"} (${tax.suffix})`, value: tax.delivery === 0 ? "$0" : money(tax.delivery) },
+              { label: tax.gstLabel, value: money(tax.gst) },
+              // The last thing read before an irreversible click, so the two
+              // figures that are about to become money owed are stated on the
+              // inclusive total in either mode — never the ex-GST reading.
               { label: "Quote total (inc GST)", value: money(total) },
               { label: "Deposit invoiced now — 50%", value: money(deposit), big: true },
               { label: "Balance due before despatch — 50%", value: money(balance) },
@@ -189,12 +194,11 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
 
         {/* Priced lines */}
         <Blk eyebrow="Schedule" title="Quoted lines" right={`Revision ${R} · anchored by schedule code`} id="rec-lines">
-          <LineList lines={lines} total={null} showUnit footerLabel={`${lines.length} line${lines.length === 1 ? "" : "s"} · prices inc GST`} />
+          <LineList lines={lines} total={null} showUnit footerLabel={`${lines.length} line${lines.length === 1 ? "" : "s"} · prices ${tax.suffix}`} />
           <div className="bg-sage/[0.07] border-t border-black/10 px-5 py-[15px] flex flex-col gap-[9px]">
-            <TotalRow label="Windows and doors (inc GST)" value={money(goods)} />
-            <TotalRow label={`Delivery to ${current.deliveryPostcode ?? "your site"} (inc GST)`} value={delivery === 0 ? "$0" : money(delivery)} />
-            <TotalRow label="Subtotal (ex GST)" value={money(ex)} />
-            <TotalRow label="GST 10%" value={money(gst)} />
+            <TotalRow label={`Windows and doors (${tax.suffix})`} value={money(tax.goods)} />
+            <TotalRow label={`Delivery to ${current.deliveryPostcode ?? "your site"} (${tax.suffix})`} value={tax.delivery === 0 ? "$0" : money(tax.delivery)} />
+            <TotalRow label={tax.gstLabel} value={money(tax.gst)} />
             <TotalRow label="Total (inc GST)" value={money(total)} big />
             <TotalRow label="50% deposit to begin" value={money(deposit)} attn />
           </div>
