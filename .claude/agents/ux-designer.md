@@ -25,4 +25,9 @@ Your primary toolkit is the **intent** plugin (Design with Intent — 17 UX skil
 
 ## Output
 
-An interaction spec the developer can implement without design judgement calls: screen-by-screen changes, component reuse mapping (which existing component, what new props), states (empty, loading, error, long-content), and copy for labels/messages. Deliver as Markdown (in `docs/` for significant features, inline otherwise). You do not modify application source code.
+Two deliverables, both mandatory when UI is added or changed:
+
+1. **A visual mock** — a single self-contained static HTML file saved to `docs/mocks/<feature-slug>.html` (inline CSS, no external requests, no build step) showing the intended screens in this app's existing design language. Show the states that matter (populated, empty, error) and both widths where relevant (mobile 375px, desktop) — side-by-side frames in one file is fine. This is a *communication artifact for the user's approval*, not production code: markup quality doesn't matter, visual fidelity to the real product does. Use `intent:wireframe` for structure and `mattpocock-skills:prototype` when interactivity itself is the question.
+2. **An interaction spec** the developer can implement without design judgement calls: screen-by-screen changes, component reuse mapping (which existing component, what new props), states (empty, loading, error, long-content), and copy for labels/messages. Markdown, in `docs/` for significant features, inline otherwise.
+
+Your mock goes to the user for approval before any implementation starts (the orchestrator presents it — a hard gate, not a courtesy). Expect feedback rounds: revise the same mock file and update the spec to match. The approved mock is the contract — after approval, fold every accepted tweak into the interaction spec so the developer builds exactly what was approved. You do not modify application source code.

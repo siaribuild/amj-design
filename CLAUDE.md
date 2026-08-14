@@ -8,7 +8,7 @@ For substantive work — a new capability, schema change, or anything spanning m
 
 1. **product-manager** → spec with acceptance criteria
 2. **architect** → design (files, interfaces, migrations, test plan)
-3. **ux-designer** → interaction spec, using the intent UX skills (only if the feature adds/changes UI)
+3. **ux-designer** → interaction spec **+ visual mock**, using the intent UX skills (only if the feature adds/changes UI) — then the **UX mock gate** (below) before any implementation
 4. **developer** → test-first implementation
 5. **ui-designer** → visual polish/audit of implemented UI, using impeccable (only if UI changed)
 6. **tester** → independent verification against the acceptance criteria
@@ -38,6 +38,8 @@ Subagents cannot talk to the user mid-run, so decisions are batched at stage bou
 2. The answers go back **to the same agent via SendMessage** (so it keeps its context — never a fresh spawn), which revises the spec/design accordingly.
 3. If the answers changed decisions or raised new questions, the agent returns a new "Decisions needed" section → repeat from 1.
 4. The next pipeline stage starts only when the agent returns with an empty "Decisions needed" list.
+
+**UX mock gate (hard rule — no assumption fallback):** when a feature adds or changes UI, implementation must not start until the user has seen a visual representation of the intended solution and explicitly approved it. The ux-designer delivers a self-contained static HTML mock (saved under `docs/mocks/`); the orchestrator renders it to the user (SendUserFile with display render, or an Artifact) and asks for approval. Feedback goes back to the same ux-designer via SendMessage; revised mock → re-present; loop until the user says it's acceptable. If the user is unavailable, the pipeline **pauses at this gate** — unlike question gates, there is no `ASSUMED:` fallback here. "Approved with tweaks" must be re-stated in the interaction spec so the developer builds the approved version, not the first draft.
 
 The list should shrink every round; if a gate is still churning after ~3 rounds, that usually means the underlying goal is unsettled — say so to the user plainly instead of another round of questions. Ask only user-owned decisions — business rules, scope, trade-offs with cost or customer-facing consequences; never things derivable from the code or spec. If the user is unavailable or a point is minor, proceed on an assumption explicitly tagged `ASSUMED:` in the spec/design so it can be vetoed at review. Developer/tester never open new question channels — a gap they hit is a spec/design defect and goes back up the pipeline as a finding.
 
