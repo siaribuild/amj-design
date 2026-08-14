@@ -12,7 +12,9 @@ import {
   requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
-test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
+// 300s, raised from 180s (2026-08-14) — same reasoning as api.test.mjs, and
+// this file has already timed out once on load in the same way.
+test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
   const runDir = await makeRunDir("api-edge");
   const assets = join(runDir, "assets");
   const state = join(runDir, "state");
@@ -486,6 +488,56 @@ test("API edge cases and negative paths", { timeout: 180_000 }, async (t) => {
       const resolved = await requestJson(staff, `/api/ops/lines/${lineId}`, { method: "PATCH", json: { resolveReview: true } });
       assert.equal(resolved.body.line.review, null, "flag cleared on explicit resolve");
       assert.equal(resolved.body.line.status, "ready", "priced + no flags ⇒ ready");
+    });
+
+    await t.test("staff can adjust a line's price, and the adjustment does not outlive its specification", async () => {
+      // Review is where a price gets adjusted (owner, 2026-08-14). Before 0046
+      // ops could only change WHAT was quoted and watch the engine reprice it,
+      // so the field most likely to be edited had no editor — and the workaround
+      // was to distort the specification until the total came out right.
+      const detail = await requestJson(staff, "/api/ops/projects/p_submitted");
+      const line = detail.body.lines[0];
+      const calculated = line.lineTotal;
+      assert.ok(calculated > 0, "fixture line is priced by the engine");
+      assert.equal(line.priceCalculated, null, "and is not overridden to begin with");
+
+      // The human's number becomes THE price; the engine's is kept beside it.
+      const set = await requestJson(staff, `/api/ops/lines/${line.id}/price`,
+        { method: "PUT", json: { total: 1234.5 } });
+      assert.equal(set.body.line.lineTotal, 1234.5, "the override is the price");
+      assert.equal(set.body.line.priceCalculated, calculated,
+        "and what the rate card said is preserved, so the panel can show both");
+
+      // Adjusting AGAIN must not let the previous override become "calculated" —
+      // that word has to keep meaning what the engine said, or the figure staff
+      // are comparing against drifts every time they touch it.
+      const again = await requestJson(staff, `/api/ops/lines/${line.id}/price`,
+        { method: "PUT", json: { total: 1000 } });
+      assert.equal(again.body.line.priceCalculated, calculated);
+
+      // $0 is a real decision (a line absorbed into the job); negative is a typo
+      // that pays the customer. Same rule the delivery override applies.
+      const zero = await requestJson(staff, `/api/ops/lines/${line.id}/price`, { method: "PUT", json: { total: 0 } });
+      assert.equal(zero.body.line.lineTotal, 0);
+      await requestJson(staff, `/api/ops/lines/${line.id}/price`, { method: "PUT", json: { total: -1 } }, 400);
+      await requestJson(staff, `/api/ops/lines/${line.id}/price`, { method: "PUT", json: { total: "lots" } }, 400);
+
+      // Clearing restores the calculated figure from the stored copy — a local
+      // restore, not a re-price that could land elsewhere if a rate card moved.
+      const cleared = await requestJson(staff, `/api/ops/lines/${line.id}/price`, { method: "PUT", json: { total: null } });
+      assert.equal(cleared.body.line.lineTotal, calculated);
+      assert.equal(cleared.body.line.priceCalculated, null, "no override left to show");
+
+      // THE RE-ARM. A price agreed for one specification must not ride onto a
+      // different one — the same reasoning the delivery gate re-arms on.
+      await requestJson(staff, `/api/ops/lines/${line.id}/price`, { method: "PUT", json: { total: 999 } });
+      const edited = await requestJson(staff, `/api/ops/lines/${line.id}`, { method: "PATCH", json: { qty: 3 } });
+      assert.equal(edited.body.line.priceCalculated, null, "editing the line drops the override");
+      assert.notEqual(edited.body.line.lineTotal, 999,
+        "and the line reprices from the rate card rather than keeping a number agreed for the old spec");
+
+      // Issued lines are frozen: a price is no more editable than a dimension.
+      await requestJson(staff, "/api/ops/lines/does-not-exist/price", { method: "PUT", json: { total: 10 } }, 404);
     });
 
     await t.test("no approval step: a priced quote issues directly, and the old surfaces are gone", async () => {

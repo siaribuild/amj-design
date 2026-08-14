@@ -8,7 +8,14 @@ import {
   run, seedUserCount, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
-test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180_000 }, async (t) => {
+// 300s, raised from 180s (2026-08-14). This file boots a Worker and a local D1
+// and then runs twenty end-to-end journeys through them; the composite test
+// alone takes 50-65s and that variance is wider than the headroom 180s left.
+// Measured runs were landing at 169s, 177s and 180s+ — i.e. passing or failing
+// on machine load rather than on anything the code did. Raised rather than
+// trimmed: every assertion in here is earning its place, and a suite that fails
+// half the time teaches people to re-run it instead of read it.
+test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300_000 }, async (t) => {
   const runDir = await makeRunDir("api");
   const assets = join(runDir, "assets");
   const state = join(runDir, "state");
@@ -437,6 +444,23 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 180
       for (const s of specs) {
         assert.equal(s.options_json, openingSpec, "a unit is built to the opening's spec, not to a blank one");
       }
+
+      // PRICE THE UNITS, NOT THE OPENING (0046). A parent's total is Σ(segments)
+      // — composite.ts's single-writer invariant — so an override written to the
+      // parent would be erased by the next recomputeComposite. Refused loudly
+      // rather than accepted and quietly undone later.
+      await requestJson(ops, `/api/ops/lines/${parentId}/price`, { method: "PUT", json: { total: 999 } }, 409);
+      const priceUnits = await sql(`SELECT id FROM quote_line WHERE parent_line_id='${parentId}' ORDER BY segment_seq`);
+      const pricedUnit = await requestJson(ops, `/api/ops/lines/${priceUnits[0].id}/price`,
+        { method: "PUT", json: { total: 500 } });
+      assert.equal(pricedUnit.body.ok, true, "a UNIT takes an override");
+      // …and the opening follows its units, still exactly their sum.
+      const afterUnitPrice = await requestJson(ops, `/api/ops/projects/${projectId}`);
+      const segsAfter = await sql(`SELECT line_total FROM quote_line WHERE parent_line_id='${parentId}'`);
+      assert.equal(afterUnitPrice.body.lines[0].lineTotal, segsAfter.reduce((n, x) => n + x.line_total, 0),
+        "the opening total is STILL the sum of its units after one was adjusted");
+      // Restore, so the assertions below still read the engine's own figures.
+      await requestJson(ops, `/api/ops/lines/${priceUnits[0].id}/price`, { method: "PUT", json: { total: null } });
 
       // Splitting again is REFUSED. splitLine deletes every unit and recreates
       // it, which destroys per-unit products and specs that a reviewer set by

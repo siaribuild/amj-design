@@ -97,7 +97,19 @@ export interface OpsLine {
   compositeAxis?: string | null;
   /** The joined frames this opening is built from, when it is a composite. */
   segments?: OpsSegment[];
+  /** What the rate card said, when a human has overridden it (0046). NULL means
+   *  no override — `lineTotal` is the price either way. */
+  priceCalculated?: number | null;
+  priceOverrideAt?: string | null;
 }
+
+/** Set an explicit price on a line, or pass null to restore the calculated one.
+ *  Refused on a composite parent (409 composite_parent) — a parent's total is
+ *  the sum of its units, so the units are what you price. */
+export const opsSetLinePrice = (lineId: string, total: number | null) =>
+  req<{ ok: boolean; line?: OpsLine }>(`/api/ops/lines/${lineId}/price`, {
+    method: "PUT", body: JSON.stringify({ total }),
+  });
 export interface OpsComment { id: string; line_id: string | null; kind: string; body: string; author: string | null; created_at: string }
 export interface OpsRevision { id: string; revisionNo: number; status: string; total: number; issuedAt: string; acceptedAt: string | null }
 export interface OpsActivity { actor: string | null; action: string; occurred_at: string }

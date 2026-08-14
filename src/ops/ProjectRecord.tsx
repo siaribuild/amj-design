@@ -21,14 +21,14 @@
 //  • NO progress ring, badge or colour-only state. Every state carries its word.
 import { SAGE, INK, QUIET as MUTED } from "../styles/tokens";
 import { Fragment, useEffect, useState } from "react";
-import { ChevronLeft, Loader2, FileText, Paperclip, History as HistoryIcon } from "lucide-react";
+import { Check, ChevronLeft, Loader2, FileText, Paperclip, History as HistoryIcon } from "lucide-react";
 import {
   OpsApiError, opsProject, opsStartPricing, opsSetStatus, opsIssueRevision,
   opsRequestClarification, opsAddNote, opsPatchLine, opsAdvanceOrder, opsPayOrder,
   opsSplitLine, opsMergeComposite,
   opsPatchSegment, opsAddSegment, opsRemoveSegment, opsLinePricePreview,
   opsLineConfigurations, opsRecommendationOutcomes, opsAdjudicateRecommendationOutcome,
-  opsThermal, opsSetDelivery,
+  opsThermal, opsSetDelivery, opsSetLinePrice,
   OPS_PHASES, type OpsWorkspace, type OpsPhase, type OpsRecordAction, type OpsSegment,
   type OpsCompositePolicy, type OpsExactConfiguration, type OpsRecommendationOutcome,
   type OpsRecommendationReason, type OpsThermalRow, type OpsDelivery,
@@ -165,8 +165,8 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
   const contractLines = ws.orderLines ?? [];
   const showingContract = !!order && contractLines.length > 0;
   const rows = showingContract
-    ? contractLines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: "ready", lineKind: "simple", segments: [] as OpsSegment[], productSlug: "", options: {} as Record<string, string>, compositeAxis: null as string | null, origin: "revision", selectedVariantId: null as string | null, review: null as Record<string, string> | null }))
-    : ws.lines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: l.status, lineKind: l.lineKind ?? "simple", segments: l.segments ?? [], productSlug: l.productSlug, options: l.options ?? {}, compositeAxis: l.compositeAxis ?? null, origin: l.origin, selectedVariantId: l.selectedVariantId, review: l.review }));
+    ? contractLines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: "ready", lineKind: "simple", segments: [] as OpsSegment[], productSlug: "", options: {} as Record<string, string>, compositeAxis: null as string | null, origin: "revision", selectedVariantId: null as string | null, review: null as Record<string, string> | null, priceCalculated: null as number | null }))
+    : ws.lines.map((l) => ({ id: l.id, code: l.code, productName: l.productName, room: l.room, width: l.width, height: l.height, qty: l.qty, lineTotal: l.lineTotal, status: l.status, lineKind: l.lineKind ?? "simple", segments: l.segments ?? [], productSlug: l.productSlug, options: l.options ?? {}, compositeAxis: l.compositeAxis ?? null, origin: l.origin, selectedVariantId: l.selectedVariantId, review: l.review, priceCalculated: l.priceCalculated ?? null }));
   const goods = rows.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
   // Which figure is authoritative follows the tab (design doc §7.2). Summing
   // lineTotal on the issued and contract tabs would reproduce orders.ts's own
@@ -1031,6 +1031,90 @@ const Empty = ({ children }: { children: React.ReactNode }) =>
  *  A unit renders it with scope="unit": no item code and no room (one opening,
  *  one architect tag) and no quantity box, because a unit's quantity is derived
  *  from the opening's and composite.ts is its only writer. */
+/** The line price, and the one place staff can change it (0046).
+ *
+ *  INLINE, not a panel. This codebase's own rule for the choice (src/ops/
+ *  Pricing.tsx's header) is whether a single number is opaque on its own: a
+ *  line total is one figure in dollars whose effect is itself, so density
+ *  wins — the same call already made for option surcharges and delivery zones.
+ *
+ *  NOT IN ItemForm, which is the shared line editor the CUSTOMER also uses in
+ *  the builder. A price field there would appear on their screen too. The
+ *  separation is why this sits in the row rather than inside "edit".
+ *
+ *  A composite parent shows its sum and cannot be edited — the units carry the
+ *  price, and recomputeComposite would overwrite anything written here. */
+function PriceCell({ line, editable, busy, onSaved, onError }: {
+  line: { id: string; lineTotal: number | null; priceCalculated?: number | null; lineKind: string };
+  editable: boolean; busy: boolean; onSaved: () => void; onError: (m: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const overridden = line.priceCalculated != null;
+  const composite = line.lineKind === "composite_parent";
+
+  const commit = async (next: number | null) => {
+    setSaving(true);
+    try {
+      await opsSetLinePrice(line.id, next);
+      setDraft(null);
+      onSaved();
+    } catch (e) {
+      onError(e instanceof OpsApiError && e.code === "invalid_amount"
+        ? "A price cannot be negative."
+        : e instanceof OpsApiError && e.code === "composite_parent"
+          ? "Price the units, not the opening — a composite's total is the sum of its units."
+          : "That price could not be saved.");
+    } finally { setSaving(false); }
+  };
+
+  if (!editable || composite) {
+    return (
+      <>
+        <span>{money(line.lineTotal)}</span>
+        {overridden && (
+          <span className="block t-cap" style={{ color: MUTED }}>calculated {money(line.priceCalculated)}</span>
+        )}
+      </>
+    );
+  }
+
+  const stored = line.lineTotal == null ? "" : String(line.lineTotal);
+  const value = draft ?? stored;
+  const changed = draft != null && draft !== stored;
+
+  return (
+    <span className="inline-flex flex-col items-end gap-0.5">
+      <span className="inline-flex items-center gap-1">
+        <span style={{ color: MUTED }}>$</span>
+        <input value={value} inputMode="decimal" disabled={busy || saving}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && changed) commit(Number(draft));
+            if (e.key === "Escape") setDraft(null);
+          }}
+          className="w-24 text-right border px-2 py-0.5 t-bd-sm font-data"
+          style={{ color: INK, borderColor: changed ? SAGE : overridden ? "rgba(180,120,40,0.45)" : "rgba(0,0,0,0.12)" }} />
+        {changed && (
+          <button onClick={() => commit(Number(draft))} disabled={saving} title="Save price" className="p-1">
+            <Check className="w-3.5 h-3.5" style={{ color: SAGE }} />
+          </button>
+        )}
+      </span>
+      {/* What the rate card said, so an adjusted line still shows the number it
+          was adjusted FROM — the same estimate-beside-confirmed reading the
+          delivery panel uses. */}
+      {overridden && !changed && (
+        <span className="t-cap" style={{ color: MUTED }}>
+          calculated {money(line.priceCalculated)}
+          <button onClick={() => commit(null)} disabled={saving}
+            className="ml-1.5 underline underline-offset-2" style={{ color: SAGE }}>revert</button>
+        </span>
+      )}
+    </span>
+  );
+}
+
 function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
   line: {
     id: string; code: string; productName: string; room: string; width: string; height: string;
@@ -1039,6 +1123,7 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
     options: Record<string, string>; compositeAxis: string | null;
     origin: string; selectedVariantId: string | null;
     review: Record<string, string> | null;
+    priceCalculated?: number | null;
   };
   editable: boolean; busy: boolean;
   policy?: OpsCompositePolicy;
@@ -1231,7 +1316,9 @@ function LineRow({ line, editable, busy, policy, siblings, onSaved, onError }: {
         {line.width && line.height ? `${line.height} × ${line.width}` : "—"}
       </td>
       <td className="px-3 py-2 text-right font-data" style={{ color: MUTED }}>{line.qty}</td>
-      <td className="px-3 py-2 text-right font-data" style={{ color: INK }}>{money(line.lineTotal)}</td>
+      <td className="px-3 py-2 text-right font-data" style={{ color: INK }}>
+        <PriceCell line={line} editable={editable} busy={busy} onSaved={onSaved} onError={onError} />
+      </td>
       <td className="px-4 py-2 t-cap">
         <span className="flex items-center gap-2">
           {/* Never colour alone — the word carries the state. */}

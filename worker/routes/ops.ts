@@ -152,6 +152,11 @@ const opsLineDto = (r: LineRow) => {
     // joined frames; its segments are never loose items beside it.
     lineKind: (r as { line_kind?: string }).line_kind ?? "simple",
     compositeAxis: (r as { composite_axis?: string | null }).composite_axis ?? null,
+    // 0046 — what the rate card said, when a human has overridden it. NULL is
+    // the whole test for "not overridden"; lineTotal is the price either way,
+    // so nothing downstream has to know this exists.
+    priceCalculated: (r as { price_calculated?: number | null }).price_calculated ?? null,
+    priceOverrideAt: (r as { price_override_at?: string | null }).price_override_at ?? null,
   };
 };
 
@@ -1019,9 +1024,17 @@ ops.patch("/lines/:id", async (c) => {
   ];
   const updated = await c.env.DB.batch([
     c.env.DB.prepare(
+    // A price override is CLEARED here (0046), not carried. This statement runs
+    // when the specification changed — product, size, options, qty — so the
+    // engine has just produced a different figure and the human number attached
+    // to the OLD specification is no longer an answer to anything. Same re-arm
+    // the delivery gate performs when the quote it was settled against moves.
+    // Silently keeping it would let a price agreed for a 1200mm window ride
+    // onto a 2400mm one.
     `UPDATE quote_line SET product_slug=?, dims_json=?, options_json=?, qty=?, external_ref=?, room_label=?,
        line_total=?, status=?, review_json=?, pricing_snapshot_json=?,
        configuration_snapshot_json=?, selected_variant_id=?, edited_fields=?,
+       price_calculated=NULL, price_override_by=NULL, price_override_at=NULL,
        edit_version=edit_version+1, updated_at=datetime('now')
        WHERE id=? AND edit_version=?
          AND EXISTS (
@@ -1086,6 +1099,80 @@ ops.post("/lines/:id/price-preview", async (c) => {
     ownerUserId: line.owner_user_id ?? null,
   });
   return c.json({ ok: total != null, total });
+});
+
+// PUT /api/ops/lines/:id/price { total } — the price a human decided (0046).
+//
+// Review is where a price gets adjusted: a relationship, a job won on margin, a
+// number the rate card cannot know about. Before this, ops could only change
+// WHAT was quoted and watch the engine reprice it — so the field most likely to
+// be edited was the one field with no editor, and the workaround was to distort
+// the specification until the total came out right, corrupting the record of
+// what is actually being built.
+//
+// `total: null` clears the override and restores the calculated figure. That is
+// why price_calculated is kept: reverting is a local restore, not a re-price
+// round trip that could land on a different number if a rate card moved since.
+//
+// SEGMENTS, NOT PARENTS, for a composite. A parent's total is Σ(segments)
+// (composite.ts's single-writer invariant, and recomputeComposite would
+// overwrite anything written here on the next edit anyway). Refused explicitly
+// rather than silently ignored — a save that appears to work and is erased
+// later is worse than one that says no.
+ops.put("/lines/:id/price", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
+
+  // Same mutable-state window as PATCH /lines/:id: once a revision is issued the
+  // figures are frozen, and a price is no more editable than a dimension.
+  const line = await c.env.DB.prepare(
+    `SELECT q.id, q.line_kind, q.line_total, q.price_calculated, q.parent_line_id
+       FROM quote_line q JOIN project p ON p.id=q.project_id
+      WHERE q.id=? AND q.revision_id IS NULL
+        AND p.status_internal IN (
+          'submitted','triage_pending','estimator_assigned',
+          'technical_review_required','customer_clarification_required'
+        )`,
+  ).bind(c.req.param("id")).first<any>();
+  if (!line) return c.json({ error: "not_found" }, 404);
+  if (line.line_kind === "composite_parent") return c.json({ error: "composite_parent" }, 409);
+
+  const body = await c.req.json().catch(() => ({}));
+  const clearing = body?.total === null;
+  const total = clearing ? null : Number(body?.total);
+  // 0 is a legitimate price (a line absorbed into the job), a negative one is a
+  // typo that pays the customer — the same rule the delivery override applies.
+  if (!clearing && (!Number.isFinite(total as number) || (total as number) < 0)) {
+    return c.json({ error: "invalid_amount" }, 400);
+  }
+
+  // The engine's figure, captured the first time it is overridden and preserved
+  // through later adjustments — so "calculated" keeps meaning what the rate card
+  // said, not what the previous override said.
+  const calculated = line.price_calculated ?? line.line_total;
+  if (clearing && line.price_calculated == null) return c.json({ ok: true, unchanged: true });
+
+  await c.env.DB.prepare(
+    clearing
+      ? `UPDATE quote_line SET line_total=?, price_calculated=NULL, price_override_by=NULL,
+           price_override_at=NULL, edit_version=edit_version+1, updated_at=datetime('now') WHERE id=?`
+      : `UPDATE quote_line SET line_total=?, price_calculated=?, price_override_by=?,
+           price_override_at=datetime('now'), edit_version=edit_version+1, updated_at=datetime('now') WHERE id=?`,
+  ).bind(...(clearing ? [calculated, line.id] : [total, calculated, staff.id, line.id])).run();
+
+  // A segment's price change moves its parent's total, which is Σ(segments).
+  if (line.parent_line_id) await recomputeComposite(c.env, line.parent_line_id);
+
+  await logEvent(c.env, {
+    actor: staff.id, entityType: "quote_line", entityId: line.id,
+    action: clearing ? "line.price.override.cleared" : "line.price.override",
+    before: { lineTotal: line.line_total },
+    after: { lineTotal: clearing ? calculated : total, calculated },
+  });
+
+  const fresh = await c.env.DB.prepare("SELECT * FROM quote_line WHERE id = ?").bind(line.id).first<LineRow>();
+  return c.json({ ok: true, line: opsLineDto(fresh!) });
 });
 
 // ── Per-unit management of a composite ───────────────────────────────────────

@@ -1,0 +1,37 @@
+-- 0046_line_price_override — the price a human decided, beside the one the
+-- engine calculated.
+--
+-- Ops could change WHAT was quoted (product, size, options, qty) and watch the
+-- engine reprice it, but could not change the PRICE. Review is exactly where a
+-- price gets adjusted — a relationship, a job won on margin, a number the rate
+-- card cannot know about — so the one field most likely to be edited was the
+-- one field with no editor. Staff worked around it by distorting the
+-- specification until the total came out right, which corrupts the record of
+-- what is actually being built.
+--
+-- SHAPE COPIED FROM DELIVERY (0044), deliberately: keep the human's number and
+-- the machine's answer side by side, so neither erases the other and the ops
+-- screen can show the difference. Same reasoning, same columns, same reading.
+--
+--   line_total            stays THE price — every downstream sum already reads
+--                         it (revisions, orders, exports), and re-pointing all
+--                         of them at a COALESCE would be a wide change with a
+--                         new way to disagree. The override WRITES here.
+--   price_calculated      what the engine said at the moment of the override.
+--                         Not a duplicate of line_total: it is what line_total
+--                         WOULD be, kept so the panel can show "calculated
+--                         $1,350 → charged $1,200" and so clearing the override
+--                         has something to restore without a re-price round
+--                         trip.
+--   price_override_by/at  who and when. No reason field: the owner declined one
+--                         (2026-08-14) and this codebase has twice deleted
+--                         capture nobody read.
+--
+-- NULL price_calculated means NO OVERRIDE. That is the whole test — a single
+-- nullable column carrying the state, never a boolean that can disagree with
+-- the figures beside it.
+--
+-- Nothing is backfilled: every existing line is un-overridden, which is true.
+ALTER TABLE quote_line ADD COLUMN price_calculated  REAL;
+ALTER TABLE quote_line ADD COLUMN price_override_by TEXT REFERENCES user(id);
+ALTER TABLE quote_line ADD COLUMN price_override_at TEXT;
