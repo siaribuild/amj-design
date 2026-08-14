@@ -138,6 +138,83 @@ export async function orderDto(env: Env, o: OrderRow) {
   };
 }
 
+// The order's lines in the SAME shape the quote's are (loadLines in
+// worker/routes/projects.ts), so ONE list component renders every stage —
+// builder, pending project, issued quote and order. PARENTS ONLY at the top
+// level, with a composite's units nested inside their opening, exactly as the
+// customer authored it.
+//
+// Before 0047 this could not be done: order_line carried only ref/qty/total, so
+// a split opening arrived at the contract as its pre-split parent frame — not
+// what gets made. The units are real order_line rows now, and this is where
+// they become visible to the customer and to production.
+//
+// `productSlug` is the frozen snapshot's slug and the renderer resolves the
+// display NAME from the live catalogue, same as every other stage. That means a
+// product renamed in Sanity after an order was placed shows its new name on the
+// order — accepted deliberately: the alternative is a name-override prop that
+// would fork the list component's behaviour, and product_snapshot_json still
+// holds what was actually sold, which is what a dispute is settled from.
+export async function orderLines(env: Env, orderId: string) {
+  const { results } = await env.DB.prepare(
+    // The AUTHORED order (0050), never the id: sorting a signed contract by a
+    // UUID reorders it against the quote the customer accepted. Segments sort
+    // within their parent by segment_seq; the JOIN gives a segment its parent's
+    // position so the two levels cannot interleave.
+    `SELECT l.id, l.external_ref, l.room_label, l.product_snapshot_json, l.dims_json, l.options_json,
+            l.qty, l.line_total, l.parent_line_id, l.segment_seq, l.qty_per_parent, l.composite_axis
+       FROM order_line l
+       LEFT JOIN order_line parent ON parent.id = l.parent_line_id
+      WHERE l.order_id = ?
+      ORDER BY COALESCE(parent.position, l.position), l.segment_seq`,
+  ).bind(orderId).all<{
+    id: string; external_ref: string | null; room_label: string | null;
+    product_snapshot_json: string; dims_json: string | null; options_json: string | null;
+    qty: number; line_total: number; parent_line_id: string | null;
+    segment_seq: number; qty_per_parent: number; composite_axis: string | null;
+  }>();
+  const rows = results ?? [];
+  const slugOf = (snapshot: string) => String(safeParse(snapshot).productSlug ?? "");
+  const dimsOf = (json: string | null) => safeParse(json);
+  return rows.filter((r) => r.parent_line_id == null).map((parent) => {
+    const dims = dimsOf(parent.dims_json);
+    const units = rows.filter((r) => r.parent_line_id === parent.id);
+    return {
+      id: parent.id,
+      code: parent.external_ref ?? "",
+      productSlug: slugOf(parent.product_snapshot_json),
+      location: parent.room_label ?? "",
+      width: String(dims.width ?? ""),
+      height: String(dims.height ?? ""),
+      options: safeParse(parent.options_json) as Record<string, string>,
+      qty: parent.qty,
+      // A contracted line is settled by definition — there is no unpriced or
+      // review state left to express once an order exists.
+      status: "Ready" as const,
+      lineTotal: parent.line_total,
+      compositeAxis: parent.composite_axis === "horizontal" ? "horizontal" as const
+        : parent.composite_axis === "vertical" ? "vertical" as const : null,
+      segments: units.map((unit) => {
+        const unitDims = dimsOf(unit.dims_json);
+        return {
+          id: unit.id,
+          productSlug: slugOf(unit.product_snapshot_json),
+          width: String(unitDims.width ?? ""),
+          height: String(unitDims.height ?? ""),
+          qtyPerParent: unit.qty_per_parent,
+          qty: unit.qty,
+          // Display-only, same rule as the quote: the parent's lineTotal is
+          // authoritative and a client must never sum these.
+          lineTotal: unit.line_total,
+          options: safeParse(unit.options_json) as Record<string, string>,
+          status: "Ready" as const,
+          note: unit.room_label ?? "",
+        };
+      }),
+    };
+  });
+}
+
 // Files attached to an order: those linked to the order plus the project's
 // schedule (deduped) — so the source travels with the order for technical review.
 export async function orderFiles(env: Env, orderId: string, projectId: string) {
@@ -171,7 +248,7 @@ export async function createOrderFromProject(
   const { results: parents } = await env.DB
     .prepare(
       `SELECT id, external_ref, room_label, product_slug, options_json, dims_json,
-              qty, line_total, selected_variant_id, line_kind, composite_axis
+              qty, line_total, selected_variant_id, line_kind, composite_axis, position
          FROM quote_line WHERE project_id = ? AND parent_line_id IS NULL ORDER BY position`,
     )
     .bind(projectId)
@@ -179,6 +256,7 @@ export async function createOrderFromProject(
       id: string; external_ref: string | null; room_label: string | null; product_slug: string;
       options_json: string; dims_json: string; qty: number; line_total: number | null;
       selected_variant_id: string | null; line_kind: string | null; composite_axis: string | null;
+      position: number;
     }>();
 
   const compositeParentIds = parents.filter((p) => p.line_kind === "composite_parent").map((p) => p.id);
@@ -277,13 +355,13 @@ export async function createOrderFromProject(
       env.DB.prepare(
         `INSERT INTO order_line
            (id, order_id, external_ref, room_label, product_snapshot_json, dims_json,
-            options_json, qty, line_total, line_kind, composite_axis, selected_variant_id)
-         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            options_json, qty, line_total, line_kind, composite_axis, selected_variant_id, position)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE EXISTS (SELECT 1 FROM "order" WHERE id=?)`,
       ).bind(
         parentOrderLineId.get(p.id), orderId, p.external_ref, p.room_label,
         snapshot(p.product_slug), p.dims_json, p.options_json, p.qty, p.line_total ?? 0,
-        p.line_kind ?? "simple", p.composite_axis, p.selected_variant_id, orderId,
+        p.line_kind ?? "simple", p.composite_axis, p.selected_variant_id, p.position, orderId,
       ),
     ),
     // Segments carry no external_ref/room_label of their own (same rule as

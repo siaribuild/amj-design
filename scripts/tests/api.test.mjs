@@ -207,6 +207,15 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       assert.equal(mine.projectTitle, "Fitzroy townhouses");
       assert.match(mine.projectRef ?? "", /^OF-Q-\d+$/);
       assert.equal(mine.lineCount, 2);
+      // The contract lists the openings in the order the customer authored them
+      // — the same order as the quote they accepted. Sorting by anything else
+      // (a UUID, a code) silently reorders a document someone has already signed.
+      const orderView = await requestJson(sarah, `/api/orders/${newOrder.id}`);
+      assert.deepEqual(
+        (orderView.body.order.lines ?? []).map((l) => l.code),
+        quote.body.lines.map((l) => l.code),
+        "the contract keeps the quote's line order",
+      );
       // A stale client cannot request changes on an already-accepted quote.
       await requestJson(sarah, "/api/projects/p_submitted/request-changes", { method: "POST", json: { message: "too late" } }, 409);
     });
@@ -379,8 +388,12 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
     // one price. Getting this wrong reads to them as double-charging.
     await t.test("composite: one opening, segments nested, nothing double-counted", async () => {
       // Self-contained: a fresh project, submitted, so it is in a state a
-      // reviewer may act on regardless of what earlier tests did.
+      // reviewer may act on regardless of what earlier tests did. Registered,
+      // not anonymous: the claim cookie stops granting access once the project
+      // leaves 'draft' (worker/lib/access.ts), and this test follows the
+      // opening all the way through acceptance.
       const cust = new Session(baseUrl);
+      await login(cust, "/api/auth", "composite-journey@example.com");
       const made = await requestJson(cust, "/api/projects/current/lines", {
         method: "PUT",
         json: {
@@ -701,6 +714,47 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
         "a manufacturing-only correction remains outside product/thermal retrieval");
       assert.equal(governed[0].quality_state, "rejected",
         "a fully classified but non-learnable project example is closed, not left pending");
+
+      // …AND THE UNITS SURVIVE ACCEPTANCE. The order is the one freeze that
+      // legally matters, and production has to see what it makes: an opening
+      // built as two joined units, not the pre-split parent frame. order_line
+      // carries the units since 0047, so the customer's order view serves the
+      // SAME nested shape the quote does — one wire shape, one list component
+      // at every stage (docs/quote-revisions-removal-plan.md step 6).
+      // Read the quote BEFORE accepting — afterwards it is no longer live.
+      const quoteSeen = (await requestJson(cust, `/api/projects/${projectId}/quote`)).body;
+      const accepted = await requestJson(cust, `/api/projects/${projectId}/accept`, { method: "POST" });
+      // The order VIEW is the read path that has to carry them — the accept
+      // response stays lean, and the list DTO never pays for a per-order line
+      // query it does not render.
+      const orderView = await requestJson(cust, `/api/orders/${accepted.body.order.id}`);
+      const orderLines = orderView.body.order.lines ?? [];
+      // The contract lists the openings in the order the customer authored them
+      // — the same order as the quote they accepted. Sorting by anything else
+      // (a UUID, a code) reorders a document someone has already signed.
+      assert.deepEqual(
+        orderLines.map((l) => l.code),
+        (quoteSeen.lines ?? []).map((l) => l.code),
+        "the contract keeps the quote's line order",
+      );
+      // …and names the same destination. "Delivery to your site" beside a quote
+      // that said "Delivery to 3070" is the shared panel drifting apart again.
+      assert.equal(orderView.body.order.deliveryPostcode, quoteSeen.deliveryPostcode,
+        "the order names the destination the quote named");
+      assert.equal(orderLines.length, 1, "one order line per opening, never one per unit");
+      const opening = orderLines[0];
+      assert.equal(opening.code, "W12", "the opening keeps the architect's tag");
+      assert.equal(opening.location, "Living", "and its room");
+      // Against the reviewer's own last view, not a literal — this opening's
+      // quantity was edited during the test, and the contract must carry what
+      // was approved rather than what was first authored.
+      assert.equal(opening.qty, opsView.body.lines[0].qty, "the contracted quantity is the approved one");
+      assert.equal(opening.segments?.length, 2, "the units survive into the contract");
+      // Display-only, exactly as on the quote: the parent's lineTotal is the
+      // authoritative figure and a client must never sum the units.
+      assert.equal(opening.lineTotal, opsTotal, "the opening carries the contracted price");
+      assert.ok(opening.segments.every((u) => u.productSlug), "each unit names the product it is built from");
+      assert.ok(opening.segments.every((u) => u.width && u.height), "each unit carries its own size");
     });
 
     // Social scrapers fetch the raw HTML once and never run JS, so the shell's

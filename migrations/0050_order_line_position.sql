@@ -1,0 +1,13 @@
+-- 0050_order_line_position
+--
+-- The contract must list the openings in the order the customer authored them —
+-- the same order as the quote they accepted. order_line had no position, so the
+-- order view sorted by whatever the read query named (a UUID), which reordered
+-- a document someone had already signed: a quote reading W01 then D01 became an
+-- order reading D01 then W01.
+--
+-- quote_line.position is the authored order and createOrderFromProject already
+-- reads its parents by it; this carries it across rather than inferring it from
+-- an id, a code (alphabetical is not authored order either) or an implicit
+-- rowid. Segments keep using segment_seq within their parent.
+ALTER TABLE order_line ADD COLUMN position INTEGER NOT NULL DEFAULT 0;

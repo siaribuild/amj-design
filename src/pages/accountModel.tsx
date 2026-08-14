@@ -13,7 +13,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { AlertCircle, Check, Loader2, Lock, Pencil } from "lucide-react";
 import {
   getProjects, getOrders,
-  type ApiProjectSummary, type ApiOrder, type ApiOrderLine,
+  type ApiProjectSummary, type ApiOrder,
 } from "../data/api";
 
 // ── Semantic tones ───────────────────────────────────────────────────────────
@@ -143,40 +143,12 @@ export function projectMeta(p: ApiProjectSummary): RecordMeta {
 // the whole life; the order number is acceptance-time meta for financial documents.
 export const projectAnchor = (o: ApiOrder) => o.projectRef ?? o.orderNo;
 
-// ── Line parsing (schedule-code anchored) ─────────────────────────────────────
-export interface ParsedLine {
-  code: string;
-  room: string | null;
-  productName: string;
-  optionsSummary: string;
-  width: string; height: string;
-  qty: number;
-  lineTotal: number | null;
-}
-
-const safe = (s: string | undefined): Record<string, any> => {
-  try { const v = JSON.parse(s || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; }
-};
-
-export function parseLine(l: ApiOrderLine): ParsedLine {
-  const snap = safe(l.product_snapshot_json);
-  const dims = { ...(typeof snap.dims === "object" && snap.dims ? snap.dims : {}), ...safe(l.dims_json) };
-  const opts = typeof snap.options === "object" && snap.options ? snap.options as Record<string, string> : {};
-  const optionsSummary = ["colour", "finish", "glass", "hardware"]
-    .map((k) => opts[k]).filter(Boolean).slice(0, 2).join(" · ") || Object.values(opts).filter(Boolean).slice(0, 2).join(" · ");
-  return {
-    code: l.external_ref ?? "—",
-    room: l.room_label ?? null,
-    productName: String(snap.productName ?? snap.productSlug ?? "Product"),
-    optionsSummary,
-    width: String(dims.width ?? ""), height: String(dims.height ?? ""),
-    qty: l.qty, lineTotal: l.line_total,
-  };
-}
-
-/** HEIGHT FIRST, the joinery trade's order — see sizePhrase in configurator.ts.
- *  The stored fields keep their own names; only the rendering is reversed. */
-export const dimsLabel = (l: ParsedLine) => (l.width && l.height ? `${Number(l.height).toLocaleString("en-AU")} × ${Number(l.width).toLocaleString("en-AU")}` : "—");
+// `ParsedLine`, `parseLine` and `dimsLabel` lived here and are gone. They existed
+// to flatten an order's raw order_line rows into a shape the account's own table
+// could render — a second line model, beside the QItem one the builder uses. The
+// order now serves the SAME shape the quote does (worker/lib/orders.ts's
+// orderLines) and OpeningList renders every stage, so there is one line model
+// again and nothing to translate between.
 
 // ── Account-wide data (one fetch per shell mount) ─────────────────────────────
 export interface AccountData {

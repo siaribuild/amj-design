@@ -17,17 +17,18 @@ import { useEffect, useState } from "react";
 import { ChevronDown, Check, Clock, Loader2, Lock, PenLine } from "lucide-react";
 import { type Page, Btn } from "../app/ui";
 import {
-  getProject, getQuote, getProjectFiles, acceptQuote, requestChanges,
+  getProject, getQuote, getProjectFiles, acceptQuote, requestChanges, hydrateQuoteItems,
   type ApiQuote, type ApiFile, type CurrentProject,
 } from "../data/api";
 import {
-  StatusPill, TONE, money, fmtDate, type ParsedLine, useAccount,
+  StatusPill, TONE, money, fmtDate, useAccount,
 } from "./accountModel";
 import { taxBreakdown, useGstMode } from "../data/gst";
 import {
-  BackLink, Blk, ConfirmDetails, ContactCard, FilesBlock, LineList, SummaryBand, TotalRow,
+  BackLink, Blk, ConfirmDetails, ContactCard, FilesBlock, SummaryBand,
 } from "./RecordDetailPage";
-import { getProductBySlug } from "../data/catalogue";
+import { OpeningList } from "../components/quote-project/OpeningList";
+import { QuoteTotals } from "../components/quote-project/QuoteTotals";
 import type { TrackFocus } from "./OrderTrackingPage";
 
 const VALIDITY_DAYS = 14; // display policy: issued quotes are honoured for 14 days
@@ -69,19 +70,9 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
   }
   const current = quote;
 
-  // Same read as the live draft (loadLines server-side) — productName isn't on
-  // the wire shape, only productSlug, so it is resolved here the same way the
-  // draft builder does.
-  const lines: ParsedLine[] = current.lines.map((l) => ({
-    code: l.code || "—",
-    room: l.location || null,
-    productName: getProductBySlug(l.productSlug)?.name ?? l.productSlug,
-    optionsSummary: ["colour", "finish", "glass", "hardware"]
-      .map((k) => l.options[k]).filter(Boolean).slice(0, 2).join(" · ")
-      || Object.values(l.options).filter(Boolean).slice(0, 2).join(" · "),
-    width: l.width, height: l.height,
-    qty: l.qty, lineTotal: l.lineTotal,
-  }));
+  // Same read, same shape and same component as the draft, the pending view and
+  // the order — the issued quote is the project's own lines, just locked.
+  const lines = hydrateQuoteItems(current.lines);
   const total = current.total; // goods + delivery (C8), always GST-inclusive
   // The account's own preference (App provides it from user.priceGstMode).
   // Everything on this screen used to be hardcoded inc-GST, so an ex-GST
@@ -215,14 +206,12 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
 
         {/* Priced lines */}
         <Blk eyebrow="Schedule" title="Quoted lines" right="Anchored by schedule code" id="rec-lines">
-          <LineList lines={lines} total={null} showUnit footerLabel={`${lines.length} line${lines.length === 1 ? "" : "s"} · prices ${tax.suffix}`} />
-          <div className="bg-sage/[0.07] border-t border-black/10 px-5 py-[15px] flex flex-col gap-[9px]">
-            <TotalRow label={`Windows and doors (${tax.suffix})`} value={money(tax.goods)} />
-            <TotalRow label={`Delivery to ${current.deliveryPostcode ?? "your site"} (${tax.suffix})`} value={tax.delivery === 0 ? "$0" : money(tax.delivery)} />
-            <TotalRow label={tax.gstLabel} value={money(tax.gst)} />
-            <TotalRow label="Total (inc GST)" value={money(total)} big />
-            <TotalRow label="50% deposit to begin" value={money(deposit)} attn />
-          </div>
+          <OpeningList items={lines} />
+          <QuoteTotals
+            lineTotals={current.lines.map((l) => l.lineTotal ?? 0)}
+            deliveryInc={current.delivery}
+            postcode={current.deliveryPostcode}
+            deposit={deposit} />
         </Blk>
 
         <FilesBlock files={files} />

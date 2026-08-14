@@ -9,6 +9,7 @@
 import { brandSubject } from "../data/sanity";
 import { useEffect, useState, type ReactNode } from "react";
 import { OpeningList } from "../components/quote-project/OpeningList";
+import { QuoteTotals } from "../components/quote-project/QuoteTotals";
 import { hydrateQuoteItems } from "../data/api";
 import {
   ChevronLeft, ChevronDown, Check, PenLine, FileText,
@@ -20,11 +21,8 @@ import {
   confirmDrawings, confirmQa,
   type ApiOrder, type ApiFile, type ApiScheduleFile, type ApiClarification, type ApiItem, type ApiProjectDelivery, type CurrentProject,
 } from "../data/api";
-import { productLabel } from "../data/configurator";
-import { gstAdjust, taxBreakdown, useGstMode } from "../data/gst";
 import {
-  StatusPill, TONE, money, fmtDate, parseLine, dimsLabel, orderMeta, useAccount,
-  type ParsedLine, type Tone,
+  StatusPill, TONE, money, fmtDate, orderMeta, useAccount, type Tone,
 } from "./accountModel";
 import type { TrackFocus } from "./OrderTrackingPage";
 
@@ -83,18 +81,6 @@ export function ConfirmDetails({ summary, lines, action, busy, onConfirm, receip
   );
 }
 
-/** One line of a money panel. Shared by the issued quote's totals block and the
- *  pending estimate's, because those two panels have to keep reading the same —
- *  two copies drifted the moment one of them gained a row. */
-export function TotalRow({ label, value, big, attn }: { label: string; value: string; big?: boolean; attn?: boolean }) {
-  return (
-    <div className={`flex justify-between ${big ? "border-t border-black/10 pt-[11px] mt-0.5 font-semibold text-ink" : "text-body t-cap"} t-bd`}
-      style={attn ? { color: TONE.attn.text } : undefined}>
-      <span>{label}</span>
-      <span className={`font-data ${big ? "t-bd-lg" : "font-medium"}`} style={{ color: attn ? TONE.attn.text : big ? undefined : "var(--ink)" }}>{value}</span>
-    </div>
-  );
-}
 
 // Pinned amber action gate.
 function ActionGate({ pill, step, title, children }: { pill: string; step?: string; title: string; children: ReactNode }) {
@@ -226,73 +212,6 @@ function orderTimeline(o: ApiOrder): TlNode[] {
   ];
 }
 
-// ── Line list ─────────────────────────────────────────────────────────────────
-export function LineList({ lines, footerLabel, total, statusPill, showUnit, deliveryNote }: {
-  lines: ParsedLine[]; footerLabel: string; total: number | null;
-  statusPill?: (l: ParsedLine) => ReactNode; showUnit?: boolean;
-  /** design doc §6.7 — delivery is a project-level charge, never a line, so
-   *  `total` here can be (and after C8, usually is) larger than the visible
-   *  lines sum to. Shown only when the caller has a real figure to name. */
-  deliveryNote?: string;
-}) {
-  const hasPendingPrice = lines.some((line) => line.lineTotal == null);
-  // Line prices follow the account's ex/inc preference; stored figures are
-  // GST-inclusive. Applied HERE, in the one component that renders a priced
-  // line, so the quote and the order cannot show the same line two ways.
-  //
-  // `total` is NOT adjusted: it is the contract figure and stays inclusive in
-  // both modes, for the same reason the deposit does — it is what is owed, not
-  // a way of looking at what is owed.
-  const gstMode = useGstMode();
-  const price = (value: number | null) =>
-    value == null ? "Pending final price" : money(gstAdjust(value, gstMode));
-  return (
-    <>
-      <div className="hidden md:grid grid-cols-[118px_1fr_110px_44px_104px_116px] gap-3.5 px-5 py-[11px] bg-sage/[0.07] border-b border-black/10 text-body font-data t-label" aria-hidden="true">
-        <span>Code / room</span><span>Product</span><span>Size (H×W)</span><span>Qty</span>
-        <span className="text-right">{showUnit ? "Unit price" : "Line price"}</span>
-        <span className="text-right">{showUnit ? "Line total" : "Status"}</span>
-      </div>
-      <div className="md:hidden px-[18px] py-[11px] bg-sage/[0.07] border-b border-black/10 text-body font-data t-label">
-        {lines.length} line{lines.length === 1 ? "" : "s"} · anchored by schedule code
-      </div>
-      {lines.map((l, idx) => (
-        <div key={`${l.code}-${idx}`} className="grid grid-cols-[1fr_auto] md:grid-cols-[118px_1fr_110px_44px_104px_116px] gap-x-3.5 gap-y-2 px-5 py-3.5 border-b border-black/[0.07] last:border-b-0 hover:bg-sage/[0.05] items-center">
-          <div className="flex flex-col gap-1">
-            <span className="font-medium text-ink tracking-[0.02em] font-data t-data">{l.code}</span>
-            {l.room && <span className="text-body bg-black/[0.045] px-1.5 py-px w-fit t-cap">{l.room}</span>}
-          </div>
-          <div className="md:order-none order-3 col-span-2 md:col-span-1">
-            <span className="text-ink t-cap">{l.productName}</span>
-            {l.optionsSummary && <span className="block text-body mt-0.5 font-data t-data-sm">{l.optionsSummary}</span>}
-          </div>
-          <span className="hidden md:block text-body font-data t-data-sm">{dimsLabel(l)}</span>
-          <span className="hidden md:block t-cap">{l.qty}</span>
-          <span className="hidden md:block text-right font-medium t-cap font-data font-data">
-            {showUnit ? price(l.lineTotal == null ? null : (l.qty ? l.lineTotal / l.qty : l.lineTotal)) : price(l.lineTotal)}
-          </span>
-          <span className="justify-self-end md:text-right">
-            {showUnit
-              ? <span className="font-medium t-cap font-data">{price(l.lineTotal)}</span>
-              : statusPill?.(l)}
-          </span>
-          <span className="md:hidden col-span-2 order-4 flex items-center gap-4 text-body pt-0.5 font-data t-data-sm">
-            {dimsLabel(l)} <span>×{l.qty}</span> <span className="font-medium text-ink">{price(l.lineTotal)}</span>
-          </span>
-        </div>
-      ))}
-      {total != null && (
-        <div className="flex justify-between items-center px-5 py-[15px] bg-sage/[0.07] border-t border-black/10 t-cap">
-          <small className="text-body">{footerLabel}</small>
-          <div className="text-right">
-            <div><small className="text-body">{hasPendingPrice ? "Priced-lines subtotal " : "Order total (inc GST) "}</small><span className="font-medium t-bd-lg font-data">{money(total)}</span></div>
-            {deliveryNote && <small className="block text-body mt-0.5">{deliveryNote}</small>}
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
 
 // ── Files ─────────────────────────────────────────────────────────────────────
 export function FilesBlock({ files, note }: { files: ApiFile[]; note?: string }) {
@@ -315,42 +234,14 @@ export function FilesBlock({ files, note }: { files: ApiFile[]; note?: string })
   );
 }
 
-// ── Source schedule (the file the quote/order was built from) ─────────────────
-export function SummaryBand({ order, children }: { order?: ApiOrder; children?: ReactNode }) {
-  const dep = order?.payments.find((p) => p.kind === "deposit");
-  const bal = order?.payments.find((p) => p.kind === "balance");
+// The 50/50 payment panel lived here and is gone (owner, 2026-08-14): the order
+// journey above already states both instalments, their status and their dates,
+// so the panel restated them a screen apart — and restated the contract total a
+// third time, beside the list's own total. SummaryBand is now the band itself.
+export function SummaryBand({ children }: { children?: ReactNode }) {
   return (
     <div className="flex flex-wrap gap-4 mt-0.5" aria-label="Summary">
-      {order && (
-        <div className="flex-1 basis-[250px] card p-[18px]">
-          <h3 className="text-body mb-3.5 font-data t-label">Payment · 50 / 50</h3>
-          <div className="flex h-2.5 border border-black/10 mb-3.5" role="img" aria-label={dep?.status === "paid" ? (bal?.status === "paid" ? "Fully paid" : "Half paid") : "Unpaid"}>
-            <span className="block" style={{ width: "50%", background: dep?.status === "paid" ? TONE.pos.text : TONE.attn.bg }} />
-            <span className="block border-l border-black/10" style={{ width: "50%", background: bal?.status === "paid" ? TONE.pos.text : `repeating-linear-gradient(-45deg, ${TONE.attn.bg}, ${TONE.attn.bg} 4px, transparent 4px, transparent 8px)` }} />
-          </div>
-          <PayRow label="Deposit 50%" amount={dep?.amount}
-            state={dep?.status === "paid" ? { tone: "pos", label: `Paid ${fmtDate(dep?.paidAt)}` } : { tone: "attn", label: "Due now" }} />
-          <PayRow label="Balance 50%" amount={bal?.amount}
-            state={bal?.status === "paid" ? { tone: "pos", label: `Paid ${fmtDate(bal?.paidAt)}` }
-              : { tone: order.stage === "balance_invoiced" ? "attn" : "mute", label: order.stage === "balance_invoiced" ? "Due now" : "Due before despatch" }} />
-          <div className="flex justify-between pt-3 mt-1 border-t border-black/10 t-bd-sm">
-            <span>Contract total</span>
-            <span className="font-semibold t-bd font-data">{money(order.total)}</span>
-          </div>
-        </div>
-      )}
       {children}
-    </div>
-  );
-}
-
-function PayRow({ label, amount, state }: {
-  label: string; amount: number | undefined; state: { tone: Tone; label: string };
-}) {
-  return (
-    <div className="flex justify-between items-center py-[9px] border-b border-black/[0.07] gap-2 flex-wrap t-cap">
-      <span className="flex items-center gap-2 text-body">{label}<StatusPill tone={state.tone}>{state.label}</StatusPill></span>
-      <span className="font-medium text-ink font-data">{money(amount)}</span>
     </div>
   );
 }
@@ -413,8 +304,9 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
   if (!order) return <div className="card p-8 text-body t-bd-sm">Loading your order…</div>;
 
   const m = orderMeta(order);
-  // Room labels come straight off order_line now (0047) — no separate lookup.
-  const lines = (order.lines ?? []).map(parseLine);
+  // The order serves the same nested shape the quote does (worker/lib/orders.ts's
+  // orderLines), so this hydrates exactly as the draft and the issued quote do.
+  const lines = hydrateQuoteItems(order.lines ?? []);
   const dep = order.payments.find((p) => p.kind === "deposit");
   const bal = order.payments.find((p) => p.kind === "balance");
 
@@ -503,11 +395,20 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
           <Timeline nodes={orderTimeline(order)} />
         </Blk>
 
-        {/* Lines */}
+        {/* Lines — THE SAME LIST as the builder, the pending view and the issued
+            quote. The flat table that used to be here could not express a
+            composite at all: an opening built as two joined units showed as one
+            product and one size, naming the pre-split frame rather than what
+            gets made. order_line carries the units since 0047 and the API
+            serves them nested, so the contract shows what production builds. */}
         <Blk eyebrow="Schedule" title="Order lines" right="Anchored by your schedule code" id="rec-lines">
-          <LineList lines={lines} total={order.total} footerLabel={`${lines.length} line${lines.length === 1 ? "" : "s"} · from the accepted quote`}
-            deliveryNote={order.delivery > 0 ? `incl. ${money(order.delivery)} delivery` : undefined}
-            />
+          <OpeningList items={lines} />
+          <QuoteTotals
+            lineTotals={lines.map((l) => l.lineTotal ?? 0)}
+            deliveryInc={order.delivery}
+            postcode={order.deliveryPostcode ?? null}
+            /* No deposit row: it is invoiced by now, and the journey above says so. */
+          />
         </Blk>
 
         {/* Source schedule (the uploaded file this order was built from) */}
@@ -516,7 +417,7 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
         <FilesBlock files={files} note={order.stageIndex >= 5 ? undefined : "Quality & pre-despatch photos appear here after manufacturing."} />
 
         {/* Summary band */}
-        <SummaryBand order={order}><ContactCard setPage={setPage} /></SummaryBand>
+        <SummaryBand><ContactCard setPage={setPage} /></SummaryBand>
       </div>
     </>
   );
@@ -562,8 +463,6 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
   const p = data.project;
   const st = p.status;
   const needsInfo = st === "needs_information";
-  const lines: ParsedLine[] = data.items.map(itemToParsed);
-  const total = data.items.reduce((s, it) => s + (it.lineTotal ?? 0), 0);
   const delivery = data.delivery;
 
   const sendReply = async () => {
@@ -574,7 +473,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
   };
 
   const timeline: TlNode[] = [
-    { key: "req", title: "Quote requested", state: "done", pill: { tone: "pos", label: "Done" }, status: <>Submitted {num(fmtDate(p.createdAt))} · {num(`${lines.length} lines`)} from your schedule</> },
+    { key: "req", title: "Quote requested", state: "done", pill: { tone: "pos", label: "Done" }, status: <>Submitted {num(fmtDate(p.createdAt))} · {num(`${data.items.length} lines`)} from your schedule</> },
     needsInfo
       ? { key: "review", title: "Review — needs your answer", state: "cur", pill: { tone: "attn", label: "You're here", pulse: true }, status: <>Pricing is paused until you reply above</> }
       : { key: "review", title: "Reviewed quote", state: "work", pill: { tone: "work", label: "Being priced" }, status: <>We are checking specifications and pricing — usually within 2 business days</> },
@@ -593,7 +492,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
           <h1 className="text-ink t-hd1">{p.title}</h1>
           <div className="flex gap-x-4 gap-y-2 flex-wrap text-body mt-2 t-cap">
             <span>Project · submitted for pricing <span className="text-ink font-data">{fmtDate(p.createdAt)}</span></span>
-            <span><span className="text-ink font-data">{lines.length}</span> lines</span>
+            <span><span className="text-ink font-data">{data.items.length}</span> lines</span>
           </div>
         </div>
         <Btn variant="ghost" size="sm" onClick={() => { setPage("contact"); window.scrollTo(0, 0); }}>Message us</Btn>
@@ -637,13 +536,16 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
               pre-split frame, which is not what gets made. */}
           <OpeningList items={hydrateQuoteItems(data.items)} />
           {/* Money hangs off the BOTTOM of the list it describes, the same shape
-              the issued quote uses (QuoteReviewPage). It began as a sibling card
-              and was moved here (owner, 2026-08-14) so the pending and issued
-              views read the same way round. The total came down out of the block
-              header at the same time — leaving it there would have stated the
-              same figure twice, which is the duplication removed from the issued
-              view in this same change. */}
-          <PendingTotals lineTotals={data.items.map((it) => it.lineTotal ?? 0)} total={total} delivery={delivery} />
+              and the same component the issued quote and the order use. It began
+              as a sibling card and was moved here (owner, 2026-08-14) so the
+              stages read the same way round; it became the SHARED panel when the
+              three copies of it had already drifted apart. */}
+          <QuoteTotals
+            lineTotals={data.items.map((it) => it.lineTotal ?? 0)}
+            deliveryInc={delivery?.amount ?? null}
+            postcode={delivery?.postcode ?? null}
+            conservative={delivery?.conservative}
+            pending />
         </Blk>
 
         <FilesBlock files={files} />
@@ -653,61 +555,4 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
   );
 }
 
-/** The money panel attached under the submitted-lines list — the pending
- *  counterpart of the issued quote's totals block, and deliberately the same
- *  shape so the two states read the same way round.
- *
- *  Design doc §8.4 — the word that changes meaning between pending and issued
- *  is "estimate". This only ever renders while pending (ProjectDetail is not
- *  shown once the quote issues; QuoteReviewPage takes over with its own
- *  "This is the price" copy), so `delivery.indicative` is not re-checked. */
-function PendingTotals({ lineTotals, total, delivery }: {
-  lineTotals: number[]; total: number; delivery: ApiProjectDelivery | undefined;
-}) {
-  const shipping = delivery?.amount ?? null;
-  const gstMode = useGstMode();
-  // Same preference AND the same rounding rule as the issued quote — an
-  // estimate a customer reads ex-GST must not change figure the moment it is
-  // confirmed. The estimated total stays inclusive, matching the issued
-  // grand total.
-  const tax = taxBreakdown(gstMode, {
-    lineTotalsInc: lineTotals, deliveryInc: shipping ?? 0, totalInc: total + (shipping ?? 0),
-  });
-  return (
-    <>
-      <div className="bg-sage/[0.07] border-t border-black/10 px-5 py-[15px] flex flex-col gap-[9px]">
-        <TotalRow label={`Windows and doors (${tax.suffix})`} value={money(tax.goods)} />
-        <TotalRow
-          label={`Delivery to ${delivery?.postcode ?? "your site"}${shipping == null ? "" : ` (${tax.suffix})`}`}
-          value={shipping == null ? "To be confirmed" : `around ${money(tax.delivery)}`} />
-        {/* Only a total once BOTH halves are real. Adding an unpriced delivery
-            to goods would print a confident number that is quietly missing its
-            freight — the one figure a customer would carry away. */}
-        {shipping != null && <TotalRow label="Estimated total (inc GST)" value={money(total + shipping)} big />}
-      </div>
-      <p className="px-5 pb-4 pt-3 text-body t-cap">
-        {shipping == null
-          // Never invents a figure. D9 is about never showing nothing when a
-          // number exists — it is not licence to guess one when it does not.
-          ? (delivery?.postcode
-            ? `We'll confirm delivery to ${delivery.postcode} when your reviewed quote is issued.`
-            : "We'll confirm your delivery cost when your reviewed quote is issued.")
-          : delivery?.conservative
-            ? "That postcode is outside our usual runs, so we've allowed generously. A person checks it before your quote is issued, and it may come down."
-            : "An estimate. A person checks it against real freight before your quote is issued."}
-      </p>
-    </>
-  );
-}
 
-function itemToParsed(it: ApiItem): ParsedLine {
-  const opts = it.options ?? {};
-  return {
-    code: it.code || "—",
-    room: it.location || null,
-    productName: productLabel(it.productSlug),
-    optionsSummary: Object.values(opts).filter(Boolean).slice(0, 2).join(" · "),
-    width: it.width, height: it.height,
-    qty: it.qty, lineTotal: it.lineTotal,
-  };
-}

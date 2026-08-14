@@ -261,14 +261,6 @@ export interface ApiPayment {
   invoicedAt: string | null;
   paidAt: string | null;
 }
-export interface ApiOrderLine {
-  external_ref: string | null;
-  room_label?: string | null;
-  product_snapshot_json: string;
-  dims_json?: string;
-  qty: number;
-  line_total: number;
-}
 export interface ApiOrder {
   id: string;
   orderNo: string;
@@ -289,8 +281,14 @@ export interface ApiOrder {
   projectId?: string;
   projectTitle?: string | null;
   projectRef?: string | null;
+  /** The destination, so the shared totals panel names it on the order exactly
+   *  as the quote named it. */
+  deliveryPostcode?: string | null;
   lineCount?: number;
-  lines?: ApiOrderLine[];
+  /** The SAME shape the quote's lines have, so one component renders both —
+   *  openings at the top level, a composite's units nested inside their
+   *  opening. Served by worker/lib/orders.ts's orderLines. */
+  lines?: ApiItem[];
   // Source files carried onto the order (the uploaded schedule).
   files?: ApiScheduleFile[];
 }

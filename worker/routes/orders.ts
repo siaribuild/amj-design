@@ -5,7 +5,7 @@ import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
 import { isStaff } from "../lib/staff";
 import { guestGrantProjectId } from "../lib/access";
-import { orderDto, applyTransition, markPaid, TRANSITIONS, type OrderRow } from "../lib/orders";
+import { orderDto, orderLines, applyTransition, markPaid, TRANSITIONS, type OrderRow } from "../lib/orders";
 
 export const orders = new Hono<{ Bindings: Env }>();
 
@@ -33,13 +33,18 @@ async function ownedOrder(env: Env, req: Request, orderId: string): Promise<Orde
 }
 
 // Project context the account area shows alongside every order: title, quote
-// ref and line count.
+// ref, line count and the destination. The postcode rides along because the
+// shared totals panel names it at every stage — an order reading "Delivery to
+// your site" beside the quote that said "Delivery to 3070" is that one panel
+// drifting apart again.
 type OrderCtxRow = OrderRow & {
   project_title: string | null; project_ref: string | null;
+  delivery_postcode: string | null;
   line_count: number;
 };
 const ORDER_CTX_SELECT = `
   SELECT o.*, p.title AS project_title, p.public_ref AS project_ref,
+         p.delivery_postcode,
          (SELECT count(*) FROM order_line ol WHERE ol.order_id = o.id AND ol.parent_line_id IS NULL) AS line_count
     FROM "order" o JOIN project p ON p.id = o.project_id`;
 
@@ -49,6 +54,7 @@ async function orderCtxDto(c: { env: Env }, o: OrderCtxRow) {
     projectId: o.project_id,
     projectTitle: o.project_title,
     projectRef: o.project_ref,
+    deliveryPostcode: o.delivery_postcode,
     lineCount: o.line_count,
   };
 }
@@ -76,16 +82,9 @@ orders.get("/:id", async (c) => {
     : await c.env.DB.prepare(`${ORDER_CTX_SELECT} WHERE o.id = ? AND o.project_id = ?`)
         .bind(c.req.param("id"), grantProjectId).first<OrderCtxRow>();
   if (!order) return c.json({ error: "not_found" }, 404);
-  // PARENTS ONLY — a split opening's units nest inside their opening on every
-  // other surface (loadLines, ops's orderLines); the account order view keeps
-  // that convention rather than listing units as loose extra rows.
-  const { results: lines } = await c.env.DB
-    .prepare(
-      `SELECT external_ref, room_label, product_snapshot_json, dims_json, qty, line_total
-         FROM order_line WHERE order_id = ? AND parent_line_id IS NULL`,
-    )
-    .bind(order.id).all();
-  return c.json({ order: { ...(await orderCtxDto(c, order)), lines } });
+  // The same nested shape the quote serves, so the account renders both through
+  // one list component (worker/lib/orders.ts's orderLines).
+  return c.json({ order: { ...(await orderCtxDto(c, order)), lines: await orderLines(c.env, order.id) } });
 });
 
 // POST /api/orders/:id/confirm-drawings — CUSTOMER gate (step 7).
