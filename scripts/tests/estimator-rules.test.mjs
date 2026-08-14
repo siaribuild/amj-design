@@ -14,7 +14,7 @@ const outfile = join(runDir, "bundle.mjs");
 await build({
   stdin: {
     contents: `
-      export { toCandidate, fixtureCatalogueRepository, createCatalogueRepository, catalogueCandidateReadiness } from ${p("worker/lib/estimator/catalogue.ts")};
+      export { toCandidate, fixtureCatalogueRepository, createCatalogueRepository, catalogueCandidateReadiness, catalogueCandidateOfferability } from ${p("worker/lib/estimator/catalogue.ts")};
       export { checkHardRules, RULE_VERSION, effectiveThermalRequirements } from ${p("worker/lib/estimator/rules.ts")};
       export { gradedComplianceScore } from ${p("worker/lib/estimator/thermal/compliance.ts")};
       export { computePrice, loadOptionSurcharges, createCachedPriceResolver } from ${p("worker/lib/estimator/pricing.ts")};
@@ -28,7 +28,7 @@ await build({
   },
   bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
 });
-const { toCandidate, fixtureCatalogueRepository, catalogueCandidateReadiness, checkHardRules, computePrice, loadOptionSurcharges, createCachedPriceResolver, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION, effectiveThermalRequirements, gradedComplianceScore } = await import(pathToFileURL(outfile).href);
+const { toCandidate, fixtureCatalogueRepository, catalogueCandidateReadiness, catalogueCandidateOfferability, checkHardRules, computePrice, loadOptionSurcharges, createCachedPriceResolver, rankCandidates, selectForOpening, r2Keys, energyReportExtractor, SUPPORTED_SCHEMA_VERSION, effectiveThermalRequirements, gradedComplianceScore } = await import(pathToFileURL(outfile).href);
 
 const RATE = { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" };
 // depositPercent is gone from PricingPolicy (0043) — deposit is always
@@ -210,6 +210,101 @@ test("catalogue readiness rejects placeholder thermal rows", () => {
     })),
   };
   assert.equal(catalogueCandidateReadiness(ready).ready, true);
+});
+
+// ── Offerability: the customer-facing completeness gate ─────────────────────
+// A DIFFERENT bar from readiness, and the difference is the point. Readiness
+// decides whether the published catalogue is authored well enough to spend
+// model budget against; offerability decides whether one product can be quoted
+// to a customer at all. Conflating them would withhold sellable products.
+test("offerability is a LOWER bar than readiness — frame technology never blocks a sale", () => {
+  // The realistic fixture: Uw, SHGC and a glazing slug all present, frame
+  // technology never filled in (toCandidate maps absent -> "unknown").
+  const c = cand();
+  assert.equal(catalogueCandidateReadiness(c).ready, false, "readiness wants frame technology");
+  assert.ok(catalogueCandidateReadiness(c).gaps.includes("thermally_described_variant"));
+  assert.equal(catalogueCandidateOfferability(c).offerable, true,
+    "but the product is perfectly quotable — one unfilled descriptive field must not cost a sale");
+  assert.deepEqual(catalogueCandidateOfferability(c).gaps, []);
+});
+
+test("offerability withholds a product with NO usable glazing/thermal row, and names the gap", () => {
+  // This is the state the 15 unmigrated products land in the moment the legacy
+  // performanceVariants array is removed from them.
+  const stripped = toCandidate({ ...awning, performanceVariants: [] });
+  const verdict = catalogueCandidateOfferability(stripped);
+  assert.equal(verdict.offerable, false);
+  assert.deepEqual(verdict.gaps, ["thermally_described_variant"]);
+
+  // An unpublished row is not a usable one either.
+  const unpublished = toCandidate({
+    ...awning,
+    performanceVariants: [{ ...awning.performanceVariants[0], published: false }],
+  });
+  assert.equal(catalogueCandidateOfferability(unpublished).offerable, false);
+
+  // Nor is one missing the numbers thermal reasoning needs.
+  const noNumbers = toCandidate({
+    ...awning,
+    performanceVariants: [{ ...awning.performanceVariants[0], uValue: null, shgc: null }],
+  });
+  assert.equal(catalogueCandidateOfferability(noNumbers).offerable, false);
+});
+
+test("offerability reports EVERY gap at once, not the first", () => {
+  const broken = toCandidate({ ...awning, seriesOperation: null, dimensionRule: null, performanceVariants: [] });
+  const gaps = catalogueCandidateOfferability(broken).gaps.sort();
+  assert.deepEqual(gaps, ["dimension_rule", "operation_types", "thermally_described_variant"],
+    "fixing one record only to discover the next is missing is two trips through a screen someone has to go find");
+});
+
+test("a glazing priced at $0 is a PRICED option — the product stays offerable", () => {
+  // $0 and no-price are different states by design: $0 is an explicit ops
+  // decision ("Included"), a missing row is an unknown option that fails
+  // closed. A product whose every glazing is $0 must therefore price at
+  // frame + area and be offered normally — it is not a broken product.
+  const c = cand();
+  assert.equal(catalogueCandidateOfferability(c).offerable, true);
+  const priced = computePrice(
+    { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" },
+    POLICY,
+    { family: "awning-window", widthMm: 1200, heightMm: 1200, qty: 1, options: [{ value: 0, basis: "per_sqm" }] },
+  );
+  assert.ok(priced.total > 0, "a $0 glazing does not zero the line — the frame and area still cost money");
+  const withoutGlass = computePrice(
+    { id: "awning-window", perimRate: 55, areaRate: 340, minCharge: 0, version: "v1" },
+    POLICY,
+    { family: "awning-window", widthMm: 1200, heightMm: 1200, qty: 1, options: [] },
+  );
+  assert.equal(priced.total, withoutGlass.total, "and it adds exactly nothing, which is what $0 means");
+});
+
+test("selection withholds an incomplete product and says WHY, instead of reporting no candidate", () => {
+  const complete = { ...awning, category: { slug: { current: "windows" } } };
+  const incomplete = {
+    ...awning, sanityProductId: "product-halfauthored", slug: "halfauthored",
+    category: { slug: { current: "windows" } }, performanceVariants: [],
+  };
+  return (async () => {
+    // Both products exist for this operation; only one is authored.
+    const mixed = fixtureCatalogueRepository([complete, incomplete]);
+    const res = await selectForOpening(
+      { family: "windows", operationType: "awning", widthMm: 800, heightMm: 1200, externalRef: "W01" }, mixed, priceFn);
+    assert.equal(res.selected.candidate.slug, "amj80-series-awning-window", "the authored one is still quoted");
+    assert.deepEqual(res.withheldIncomplete, [{ slug: "halfauthored", gaps: ["thermally_described_variant"] }]);
+    assert.ok(res.evaluated.every((e) => e.candidate.slug !== "halfauthored"),
+      "the incomplete product is never evaluated, so it can never be recommended");
+
+    // And when the ONLY product of that shape is incomplete, the line must not
+    // claim the catalogue sells nothing of this shape — it does, it is broken.
+    const onlyBroken = fixtureCatalogueRepository([incomplete]);
+    const empty = await selectForOpening(
+      { family: "windows", operationType: "awning", widthMm: 800, heightMm: 1200, externalRef: "W02" }, onlyBroken, priceFn);
+    assert.equal(empty.selected, null);
+    assert.equal(empty.status, "catalogue_data_incomplete",
+      "not 'no_candidate' — that would send someone to re-measure an opening that was never the problem");
+    assert.deepEqual(empty.withheldIncomplete.map((w) => w.slug), ["halfauthored"]);
+  })();
 });
 
 test("M2: toCandidate reads the shared thermal profile, preferring it over legacy variants", () => {

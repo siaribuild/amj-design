@@ -2,7 +2,7 @@
 //   VITE_SANITY_PROJECT_ID=<id>   VITE_SANITY_DATASET=production (default)
 // When unset, the app keeps using the hardcoded catalogue.ts (hydrate is a no-op).
 import { createClient } from "@sanity/client";
-import { hydrateCatalogue } from "./catalogue";
+import { hydrateCatalogue, hydrateOfferability } from "./catalogue";
 import { CATALOGUE_QUERY, POST_BODY_QUERY, SEO_PROJECTION, normalizeSeo, toCatalogueData, type RawCataloguePayload } from "./catalogueQuery";
 import type { SeoMeta } from "./catalogue";
 
@@ -39,6 +39,25 @@ export async function hydrateFromSanity(): Promise<void> {
     if (data) hydrateCatalogue(data);
   } catch (e) {
     console.warn("[sanity] catalogue load failed; using built-in catalogue", e);
+  }
+}
+
+// Which products the quote builder must not offer. From our OWN Worker, not
+// Sanity: two of the gaps it reports live in D1 (a named rate card that does
+// not exist, an option with no price row), which the browser cannot see.
+//
+// Its own function and its own failure: a catalogue that loaded is still worth
+// rendering when this does not, so it never rides the Promise.race above. Left
+// unarmed on any failure — hydrateOfferability treats that as "not checked",
+// which leaves the picker unfiltered rather than emptying it.
+export async function hydrateOfferabilityFromApi(): Promise<void> {
+  try {
+    const res = await fetch("/api/catalogue/offerability", { credentials: "same-origin" });
+    if (!res.ok) throw new Error(`http_${res.status}`);
+    hydrateOfferability(await res.json());
+  } catch (e) {
+    console.warn("[catalogue] offerability check unavailable; the picker stays unfiltered", e);
+    hydrateOfferability(null);
   }
 }
 

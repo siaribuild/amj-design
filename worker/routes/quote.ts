@@ -11,8 +11,37 @@ import { logEvent } from "../lib/activity";
 import { notify } from "../lib/email";
 import { uuid } from "../lib/util";
 import { deliveryCost, loadProjectAreaM2, loadZonesAndRanges, normalisePostcode, resolveZone, zoneIsPriced } from "../lib/delivery";
+import { lastReconcileRun } from "../lib/pricing-admin";
 
 export const quote = new Hono<{ Bindings: Env }>();
+
+// GET /api/catalogue/offerability — which products the quote builder must not
+// offer, and why. PUBLIC and unauthenticated, like the catalogue it qualifies:
+// the browser already fetches the whole published catalogue straight from
+// Sanity's CDN, so a list of slugs that cannot be quoted reveals nothing the
+// caller could not already see. No prices and no private data cross this line.
+//
+// It exists because the browser CANNOT compute this. Two of the five gaps live
+// in D1 (a named rate card that does not exist, an option with no price row),
+// which the client has no access to and must never be given. The estimator does
+// not use this endpoint — it holds the real candidates and computes the same
+// verdict live (estimator/select.ts), so only the browser pays for the snapshot.
+//
+// `checked: false` is NOT an empty list. It means the last reconcile could not
+// read the catalogue at all, so nothing was verified; the client leaves the
+// picker unfiltered rather than hiding every product on an infrastructure
+// fault. Failing open is right here — the fail-CLOSED guards downstream
+// (loadRateCard, loadOptionSurcharges) still refuse to invent a price, so the
+// worst case is a product offered that then declines to quote, not a wrong one.
+quote.get("/catalogue/offerability", async (c) => {
+  const run = await lastReconcileRun(c.env).catch(() => null);
+  if (!run || run.notOfferable === null) return c.json({ checked: false, checkedAt: run?.checkedAt ?? null, products: [] });
+  return c.json({
+    checked: true,
+    checkedAt: run.checkedAt,
+    products: run.notOfferable.map((p) => ({ slug: p.slug, gaps: p.gaps })),
+  });
+});
 
 function reconciliationReviewNote(lines: {
   external_ref: string | null;

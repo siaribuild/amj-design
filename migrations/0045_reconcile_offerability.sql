@@ -1,0 +1,24 @@
+-- 0045_reconcile_offerability — record WHICH products cannot be offered, and why.
+--
+-- pricing_reconcile_run already answers "is anything missing" across the two
+-- pricing tables (0029). It could not answer the question the customer-facing
+-- estimator actually needs to ask: is THIS product complete enough to offer?
+--
+-- That question spans three records maintained by three different acts —
+-- the product in Sanity, its thermal profile in Sanity, its rate card and
+-- option prices in D1 — so a typo'd slug or a forgotten step in any one of
+-- them leaves a product that looks fine in Studio and cannot be quoted. The
+-- reconcile is already the system of record for that cross-check; this column
+-- carries the per-product verdict alongside the aggregate one.
+--
+-- JSON rather than a table: it is a snapshot of a computed view (the same
+-- shape as missing_json/orphaned_json beside it), read whole and never
+-- queried by field. A row per product per run would be a history nobody
+-- reads, growing every ten minutes forever.
+--
+-- Nullable with no default: a run recorded before this column existed did not
+-- compute offerability, and NULL says exactly that. Defaulting to '[]' would
+-- claim every product was checked and found offerable, which is the same
+-- "unlabelled green banner" failure the reconcile UI already warns about.
+ALTER TABLE pricing_reconcile_run
+  ADD COLUMN not_offerable_json TEXT;

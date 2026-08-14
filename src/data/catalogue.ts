@@ -679,9 +679,47 @@ export const getFamily = (slug: string): Family | undefined => families.find(f =
  *  disabled product still has to resolve to a name, options and dimensions, and
  *  returning undefined would blank it everywhere it appears. */
 const sellable = (p: Product) => p.disabled !== true;
-/** Ops passes `{ includeDisabled: true }`; nothing customer-facing does. */
-export interface ProductQuery { includeDisabled?: boolean }
-const visible = (list: Product[], q?: ProductQuery) => (q?.includeDisabled ? list : list.filter(sellable));
+
+// ─── Offerability (the quote builder only) ────────────────────────────────────
+// A product stands on three records maintained by three separate acts: the
+// product in Sanity, its thermal profile in Sanity, its rate card and option
+// prices in D1. A typo'd slug or a forgotten step in any one of them leaves a
+// product that looks complete in Studio and cannot honestly be quoted.
+//
+// Two of those gaps live in D1, which the browser cannot see and must not be
+// given, so the verdict is computed server-side and fetched as a list of slugs
+// (GET /api/catalogue/offerability, hydrated in src/data/sanity.ts).
+//
+// DELIBERATELY NOT part of `sellable`. A withheld product stays on the website
+// and its product page — it is a real product with real specifications, and the
+// gap is ours, not a reason to pretend it does not exist (owner, 2026-08-14).
+// It is withheld only where the platform would otherwise promise a price it
+// cannot stand behind: the quote builder's picker.
+let notOfferableSlugs = new Set<string>();
+let offerabilityChecked = false;
+
+/** Replace the withheld set. `checked: false` means the server could not verify
+ *  anything, which must NOT be read as "everything is fine" — the set is left
+ *  unarmed so the picker stays unfiltered rather than hiding the catalogue on an
+ *  infrastructure fault. The fail-closed price guards in the Worker are what
+ *  actually protect the customer from a bad quote. */
+export function hydrateOfferability(payload: { checked?: boolean; products?: { slug: string }[] } | null): void {
+  if (!payload?.checked) { notOfferableSlugs = new Set(); offerabilityChecked = false; return; }
+  notOfferableSlugs = new Set((payload.products ?? []).map((p) => p.slug).filter(Boolean));
+  offerabilityChecked = true;
+}
+
+/** True unless the server positively said this product cannot be quoted. */
+export const isOfferable = (slug: string): boolean =>
+  !offerabilityChecked || !notOfferableSlugs.has(slug);
+
+/** Ops passes `{ includeDisabled: true }`; nothing customer-facing does.
+ *  `offerableOnly` is the quote builder's own filter — see above. */
+export interface ProductQuery { includeDisabled?: boolean; offerableOnly?: boolean }
+const visible = (list: Product[], q?: ProductQuery) => {
+  const shown = q?.includeDisabled ? list : list.filter(sellable);
+  return q?.offerableOnly ? shown.filter((p) => isOfferable(p.slug)) : shown;
+};
 
 // orderRank is the drag-and-drop rank (see sanity.config.ts). The old hand-
 // typed featuredOrder that used to sit here as a fallback is gone — every

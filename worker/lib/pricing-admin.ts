@@ -15,6 +15,10 @@
 import type { Env } from "../types";
 import { colorbondColourOptions, products } from "../../src/data/catalogue";
 import { ensureCatalogue } from "./catalogue";
+import {
+  catalogueCandidateOfferability, createCatalogueRepository, sanityExecutor,
+} from "./estimator/catalogue";
+import type { CatalogueCandidate } from "./estimator/types";
 import { uuid } from "./util";
 import {
   computePrice, loadOptionSurcharges, loadPolicy,
@@ -78,7 +82,34 @@ export interface ReconcileResult {
   /** Products with no rate card of their own — they price at 'default' silently.
    *  Cards are per PRODUCT since 0031; a family-level gap no longer exists. */
   productsWithoutRateCard: string[];
+  /** Per-product verdict: which products are too incomplete to offer a customer,
+   *  and which record is missing. NULL (not []) when offerability could not be
+   *  checked at all — see computeOfferability. */
+  notOfferable: ProductGap[] | null;
 }
+
+/** One product that cannot be offered, and every reason why — all of them, not
+ *  the first: fixing a rate card only to discover the thermal profile is also
+ *  missing is two round trips through a screen someone has to go find. */
+export interface ProductGap {
+  slug: string;
+  name: string | null;
+  gaps: string[];
+}
+
+/** Gap vocabulary. The first three are `catalogueCandidateOfferability`'s own
+ *  codes, reused verbatim rather than restated so the estimator and this report
+ *  cannot drift into disagreeing about what "offerable" means — the estimator
+ *  computes them live per run, this recomputes them for the browser and for
+ *  ops. The last two are the D1 half, which the estimator-side check cannot
+ *  see because it has no database. */
+export const PRODUCT_GAP_LABELS: Record<string, string> = {
+  operation_types: "no operation type",
+  dimension_rule: "no dimension rule",
+  thermally_described_variant: "no usable glazing/thermal data",
+  rate_card: "names a rate card that does not exist",
+  unpriced_option: "offers an option with no price",
+};
 
 /** Every chargeable option slug the catalogue offers, mapped to the products
  *  offering it. Mirrors chargeableOptionSlugs() in lib/lines.ts exactly: a
@@ -108,6 +139,66 @@ export function offeredOptionSlugs(): Map<string, string[]> {
   return out;
 }
 
+/**
+ * Which products cannot be offered to a customer, and why.
+ *
+ * NOT "can this product meet the thermal band" — COMPLETENESS. A band is
+ * resolved per opening and (since 2026-08-14) always exists, but it is resolved
+ * at estimate time from context this check does not have. Gating on data the
+ * product either carries or does not is deterministic, cacheable, and gives the
+ * person who has to fix it a specific missing record rather than a verdict that
+ * varies by opening.
+ *
+ * Returns NULL — not [] — when the estimator catalogue could not be read at all
+ * (no SANITY_PROJECT_ID, an empty published set, a fetch that threw). Every
+ * product would otherwise look thermally undescribed and the whole catalogue
+ * would blink out on an infrastructure fault. An empty ARRAY means "checked,
+ * nothing wrong"; NULL means "not checked", and callers must treat the two
+ * differently — the same distinction lastReconcileRun already draws between a
+ * green banner and a broken checker.
+ */
+export async function computeOfferability(
+  env: Env,
+  offered: Map<string, string[]>,
+  havePrice: Set<string>,
+  haveCard: Set<string>,
+): Promise<ProductGap[] | null> {
+  const candidates = await createCatalogueRepository(sanityExecutor(env))
+    .queryCandidates(null, null)
+    .catch(() => [] as CatalogueCandidate[]);
+  if (!candidates.length) return null;
+
+  // Invert offered (option slug -> products) into product -> its unpriced options.
+  const unpricedByProduct = new Map<string, string[]>();
+  for (const [optionSlug, productSlugs] of offered) {
+    if (havePrice.has(optionSlug)) continue;
+    for (const productSlug of productSlugs) {
+      unpricedByProduct.set(productSlug, [...(unpricedByProduct.get(productSlug) ?? []), optionSlug]);
+    }
+  }
+
+  const out: ProductGap[] = [];
+  for (const candidate of candidates) {
+    // A withdrawn product is not "broken" — it is deliberately not for sale, and
+    // listing it here would bury the real faults under intentional ones.
+    if (candidate.disabled) continue;
+    const gaps = [...catalogueCandidateOfferability(candidate).gaps];
+    // Only a NAMED card that is missing breaks a product. pricingRef is what
+    // turns on requireExactRate (estimator/estimate.ts), so a product naming a
+    // card that does not exist fails closed at price time — that is the fault
+    // worth withholding for. A product naming none resolves 'default' by
+    // design and prices correctly, so it is not withheld; it is still listed
+    // in productsWithoutRateCard for ops, which is a different question.
+    if (candidate.pricingRef && !haveCard.has(candidate.pricingRef)) gaps.push("rate_card");
+    const unpriced = unpricedByProduct.get(candidate.slug) ?? [];
+    // One gap code, however many options — the slugs ride along in the label so
+    // the report stays scannable when a whole option type is unpriced.
+    if (unpriced.length) gaps.push(`unpriced_option:${unpriced.sort().join(",")}`);
+    if (gaps.length) out.push({ slug: candidate.slug, name: candidate.name || null, gaps });
+  }
+  return out.sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
 export async function reconcilePricing(env: Env): Promise<ReconcileResult> {
   await ensureCatalogue(env);
   const offered = offeredOptionSlugs();
@@ -125,22 +216,32 @@ export async function reconcilePricing(env: Env): Promise<ReconcileResult> {
   const orphaned = [...havePrice].filter((slug) => !offered.has(slug)).sort();
   const productsWithoutRateCard = products.map((p) => p.slug)
     .filter((slug) => slug && !haveCard.has(slug)).sort();
+  const notOfferable = await computeOfferability(env, offered, havePrice, haveCard);
 
+  // `ok` deliberately does NOT fold in notOfferable. It has meant "the two
+  // pricing tables agree with the catalogue" since 0029 and the banner's green
+  // state is bound to it; an unmigrated product would otherwise turn the
+  // pricing banner permanently amber for a reason that is not a pricing fault.
+  // Offerability gets its own line in the banner (ops-pricing.ts).
   const ok = missing.length === 0 && productsWithoutRateCard.length === 0;
   const checkedAt = new Date().toISOString();
   await env.DB.prepare(
-    `INSERT INTO pricing_reconcile_run (id, checked_at, ok, missing_json, orphaned_json, no_rate_card_json)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).bind(uuid(), checkedAt, ok ? 1 : 0, JSON.stringify(missing), JSON.stringify(orphaned), JSON.stringify(productsWithoutRateCard)).run();
+    `INSERT INTO pricing_reconcile_run (id, checked_at, ok, missing_json, orphaned_json, no_rate_card_json, not_offerable_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    uuid(), checkedAt, ok ? 1 : 0, JSON.stringify(missing), JSON.stringify(orphaned),
+    JSON.stringify(productsWithoutRateCard),
+    notOfferable === null ? null : JSON.stringify(notOfferable),
+  ).run();
 
-  return { ok, checkedAt, missing, orphaned, productsWithoutRateCard };
+  return { ok, checkedAt, missing, orphaned, productsWithoutRateCard, notOfferable };
 }
 
 /** The last recorded run, or null when nothing has ever checked. The distinction
  *  matters: an unlabelled green banner and a broken checker look identical. */
 export async function lastReconcileRun(env: Env): Promise<ReconcileResult | null> {
   const row = await env.DB.prepare(
-    "SELECT checked_at, ok, missing_json, orphaned_json, no_rate_card_json FROM pricing_reconcile_run ORDER BY checked_at DESC LIMIT 1",
+    "SELECT checked_at, ok, missing_json, orphaned_json, no_rate_card_json, not_offerable_json FROM pricing_reconcile_run ORDER BY checked_at DESC LIMIT 1",
   ).first<any>();
   if (!row) return null;
   const parse = <T>(s: string | null, fallback: T): T => {
@@ -150,6 +251,9 @@ export async function lastReconcileRun(env: Env): Promise<ReconcileResult | null
     ok: !!row.ok, checkedAt: row.checked_at,
     missing: parse(row.missing_json, []), orphaned: parse(row.orphaned_json, []),
     productsWithoutRateCard: parse(row.no_rate_card_json, []),
+    // NULL column (a run from before 0045, or one where the catalogue could not
+    // be read) stays null: "not checked", never "checked and all fine".
+    notOfferable: row.not_offerable_json == null ? null : parse(row.not_offerable_json, []),
   };
 }
 

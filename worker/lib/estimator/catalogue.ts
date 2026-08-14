@@ -8,7 +8,7 @@
 // The query executor is injectable so the rules/selection engine can be tested
 // against a fixture with no live CMS (spec §16.1 "catalogue test fixture export").
 import type { Env } from "../../types";
-import { SUPPORTED_SCHEMA_VERSION, type CatalogueCandidate } from "./types";
+import { SUPPORTED_SCHEMA_VERSION, type CatalogueCandidate, type PerformanceVariant } from "./types";
 import { defineQuery } from "groq";
 
 // GROQ: published products for a family (category slug) that support an operation.
@@ -249,10 +249,32 @@ export interface CatalogueCandidateReadiness {
   usableVariantIds: string[];
 }
 
+/** Enough to QUOTE this glass honestly: it is published, it has an identity to
+ *  price against, and it carries the two numbers thermal reasoning needs. */
+const variantIsQuotable = (variant: PerformanceVariant): boolean =>
+  variant.published &&
+  variant.uValue != null &&
+  variant.shgc != null &&
+  !!variant.glazingOptionSlug;
+
+/** Enough to be FULLY DESCRIBED: quotable, plus a known frame technology.
+ *
+ *  The extra clause is why this is a separate bar rather than one. Frame
+ *  technology (conventional vs thermally broken) refines ranking; it does not
+ *  change whether a product can be sold. Requiring it for readiness is right —
+ *  readiness decides whether the published catalogue is authored well enough to
+ *  spend model budget against. Requiring it to OFFER a product would withhold
+ *  frames whose Uw, SHGC and glazing are all present and correct because one
+ *  descriptive field was never filled in, which costs a sale to fix a typo. */
+const variantIsFullyDescribed = (variant: PerformanceVariant): boolean =>
+  variantIsQuotable(variant) && variant.frameTechnology !== "unknown";
+
 /**
  * Minimum contract required for a thermally meaningful, priceable selection.
  * A placeholder performance row is not readiness: the estimator must be able to
  * distinguish the glass/frame configuration whose cost it is recommending.
+ *
+ * STRICTER THAN OFFERABILITY ON PURPOSE — see catalogueCandidateOfferability.
  */
 export function catalogueCandidateReadiness(candidate: CatalogueCandidate): CatalogueCandidateReadiness {
   const gaps: string[] = [];
@@ -260,15 +282,38 @@ export function catalogueCandidateReadiness(candidate: CatalogueCandidate): Cata
   if (!candidate.configuration?.operationTypes?.length) gaps.push("operation_types");
   if (!candidate.dimensionRule) gaps.push("dimension_rule");
   const usableVariantIds = candidate.performanceVariants
-    .filter((variant) =>
-      variant.published &&
-      variant.uValue != null &&
-      variant.shgc != null &&
-      !!variant.glazingOptionSlug &&
-      variant.frameTechnology !== "unknown")
+    .filter(variantIsFullyDescribed)
     .map((variant) => variant.variantId);
   if (!usableVariantIds.length) gaps.push("thermally_described_variant");
   return { ready: gaps.length === 0, gaps, usableVariantIds };
+}
+
+/**
+ * Can this product be offered to a CUSTOMER at all? The Sanity half of the
+ * question; the D1 half (rate card, option prices) is added by
+ * pricing-admin.computeOfferability, which is the only place both are known.
+ *
+ * Three records maintained by three separate acts stand behind one product —
+ * the product in Sanity, its thermal profile in Sanity, its rate card and
+ * option prices in D1 — so a typo'd slug or a forgotten step leaves a product
+ * that looks complete in Studio and cannot be quoted. This is the check that
+ * turns that into a withheld product and a named gap instead of an opening
+ * that mysteriously has no products.
+ *
+ * NOT the same bar as readiness, deliberately:
+ *   - `pricing_ref` is absent here. A product without one resolves the
+ *     'default' rate card by design (loadRateCard's allowFallback, surfaced in
+ *     the ops list as "← fallback for unmapped products"), so it prices
+ *     correctly and is perfectly sellable. Readiness counts it because a
+ *     product being AI-priced should name its own card.
+ *   - the glazing bar is `variantIsQuotable`, not `variantIsFullyDescribed`.
+ */
+export function catalogueCandidateOfferability(candidate: CatalogueCandidate): { offerable: boolean; gaps: string[] } {
+  const gaps: string[] = [];
+  if (!candidate.configuration?.operationTypes?.length) gaps.push("operation_types");
+  if (!candidate.dimensionRule) gaps.push("dimension_rule");
+  if (!candidate.performanceVariants.some(variantIsQuotable)) gaps.push("thermally_described_variant");
+  return { offerable: gaps.length === 0, gaps };
 }
 
 /** Cheap production preflight used before model spend. It does not promise that

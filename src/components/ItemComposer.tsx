@@ -11,7 +11,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Check, AlertCircle, Info, ChevronDown, Plus, Minus, Pencil, Trash2, Copy, X, Sun, Snowflake } from "lucide-react";
 import { SAGE, WindowMark, Btn, FieldLabel, Input } from "../app/ui";
-import { type Product, getProductBySlug, getProductsByFamily } from "../data/catalogue";
+import { type Product, getProductBySlug, getProductsByFamily, isOfferable } from "../data/catalogue";
 import { fitsAlongside } from "../data/frameSystem";
 import {
   type QItem, type QuoteState, type OptionChoice, type GlazingChoice,
@@ -369,7 +369,15 @@ function ProductPicker({ productSlug, onPick }: { productSlug: string; onPick: (
   const current = getProductBySlug(productSlug);
   const [familySlug, setFamilySlug] = useState(current?.familySlug || "");
   const famGroups = familyGroups();
-  const familyProducts = familySlug ? getProductsByFamily(familySlug) : [];
+  // Withheld products are not offered here either. The line's OWN product
+  // survives regardless — same escape the compatibility filter below uses, and
+  // for the same reason: dropping it leaves the select with no matching option,
+  // so it renders blank and asks the customer to choose a product while they
+  // are looking at the one they already have.
+  const familyProducts = familySlug
+    ? getProductsByFamily(familySlug, { offerableOnly: true })
+      .concat(current && current.familySlug === familySlug && !isOfferable(productSlug) ? [current] : [])
+    : [];
   // Only show the saved product in the Product select if it belongs to the type
   // currently chosen — otherwise the select reads "Choose a product…".
   const selValue = current && current.familySlug === familySlug ? productSlug : "";
@@ -755,7 +763,12 @@ export function ItemForm({
   const siblingSystems = (compatibility?.siblingSlugs ?? [])
     .map((slug) => getProductBySlug(slug)?.frameSystem ?? null);
   const incompatible = (pr: Product) => siblingSystems.length > 0 && !fitsAlongside(pr.frameSystem ?? null, siblingSystems);
-  const allProducts = familySlug ? getProductsByFamily(familySlug, { includeDisabled }) : [];
+  // offerableOnly tracks the customer/ops split exactly as includeDisabled does:
+  // ops sees a product whose data is incomplete (they are who repairs it), the
+  // customer is never offered one the platform cannot honestly price.
+  const allProducts = familySlug
+    ? getProductsByFamily(familySlug, { includeDisabled, offerableOnly: !includeDisabled })
+    : [];
   // The unit's OWN product survives the filter even when it is the incompatible
   // one. A composite built before the frames were tagged — or by staff, who may
   // couple deliberately — can hold a product this list would otherwise drop, and
@@ -778,7 +791,7 @@ export function ItemForm({
       .map((g) => ({
         ...g,
         families: g.families.filter((f) =>
-          f.slug === familySlug || getProductsByFamily(f.slug, { includeDisabled }).some((pr) => !incompatible(pr))),
+          f.slug === familySlug || getProductsByFamily(f.slug, { includeDisabled, offerableOnly: !includeDisabled }).some((pr) => !incompatible(pr))),
       }))
       .filter((g) => g.families.length > 0)
     : famGroups;

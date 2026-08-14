@@ -4,7 +4,7 @@
 // ones, ranks them and picks with a confidence gate — producing the full
 // candidate set (persisted for reviewers) plus the draft line. D1 persistence is
 // a separate concern (persistSelection) so this is testable with a fixture.
-import type { CatalogueRepository } from "./catalogue";
+import { catalogueCandidateOfferability, type CatalogueRepository } from "./catalogue";
 import type { CatalogueCandidate, OpeningInput, PerformanceVariant } from "./types";
 import { checkHardRules, RULE_VERSION, type RuleOutcome, type OutcomeStatus } from "./rules";
 import { rankCandidates, selectWithConfidence, RANKER_VERSION, type RankedCandidate, type ScoreComponents } from "./rank";
@@ -42,6 +42,11 @@ export interface SelectionResult {
   status: OutcomeStatus | "no_candidate";
   dominant: boolean;
   alternatives: RankedCandidate[];
+  /** Products that WOULD have been candidates but were withheld as incomplete,
+   *  with the gap codes that withheld them. Carried so a reviewer is told which
+   *  record to fix instead of reading "no product fits" and re-measuring an
+   *  opening that was never the problem. Empty on a healthy catalogue. */
+  withheldIncomplete: { slug: string; gaps: string[] }[];
 }
 
 // Rank the failure states so an all-failed opening reports the most-actionable one.
@@ -83,10 +88,36 @@ export async function selectForOpening(
   // If EVERY candidate for an operation is disabled the line comes back
   // unavailable, which is the honest answer: there is nothing left to sell.
   const sellable = all.filter((c) => !c.disabled);
+  // INCOMPLETE PRODUCTS ARE NEVER CHOSEN BY THE MACHINE EITHER.
+  //
+  // A product whose catalogue record is missing a piece the estimator needs —
+  // no usable glazing/thermal row, no dimension rule, no operation type, no
+  // pricing ref — cannot be recommended to a customer on any honest basis. It
+  // used to reach the loop below and drop out silently at `!variants.length`,
+  // which read as "no product fits this opening" rather than "this product is
+  // half-authored", and told nobody which of the three records (product,
+  // thermal profile, rate card) was the one to go and fix.
+  //
+  // Computed live from the candidates already in hand, NOT from the cached
+  // reconcile verdict: this path has the real data, so it does not need — and
+  // must not inherit — the staleness of a snapshot taken up to ten minutes ago.
+  // The cached verdict exists only for the browser, which has no other way to
+  // know (worker/lib/pricing-admin.ts computeOfferability).
+  //
+  // Same seam as `disabled` above and for the same reason: ops reaches the
+  // repository through queryCandidates + checkHardRules directly and still sees
+  // everything, because ops is who repairs these.
+  const complete: CatalogueCandidate[] = [];
+  const withheldIncomplete: { slug: string; gaps: string[] }[] = [];
+  for (const c of sellable) {
+    const offerability = catalogueCandidateOfferability(c);
+    if (offerability.offerable) complete.push(c);
+    else withheldIncomplete.push({ slug: c.slug, gaps: offerability.gaps });
+  }
   const systems = restrict?.systems;
   const candidates = systems?.length
-    ? sellable.filter((c) => !!c.frameSystem && systems.includes(c.frameSystem.slug))
-    : sellable;
+    ? complete.filter((c) => !!c.frameSystem && systems.includes(c.frameSystem.slug))
+    : complete;
   const catalogueVersion = repo.catalogueVersion(candidates);
 
   // Hard rules on every product, then evaluate every eligible exact performance
@@ -157,7 +188,12 @@ export async function selectForOpening(
 
   let status: SelectionResult["status"];
   if (selected) status = selected.outcome.status;
-  else if (!candidates.length) status = "no_candidate";
+  // "no_candidate" means the catalogue sells nothing of this shape — a real,
+  // final answer. If products of this shape DO exist and were withheld as
+  // incomplete, that is a data fault wearing the same clothes, and saying
+  // "no_candidate" would send someone to check the opening instead of the
+  // catalogue. catalogue_data_incomplete already carries exactly that meaning.
+  else if (!candidates.length) status = withheldIncomplete.length ? "catalogue_data_incomplete" : "no_candidate";
   else if (passing.length && !priceable.length) status = "catalogue_data_incomplete";
   else {
     const statuses = evaluated.map((e) => e.outcome.status);
@@ -174,5 +210,6 @@ export async function selectForOpening(
     status,
     dominant,
     alternatives,
+    withheldIncomplete,
   };
 }
