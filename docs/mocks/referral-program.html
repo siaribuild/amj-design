@@ -1,0 +1,2037 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Referral program — UX mock</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='1' y='1' width='18' height='18' fill='none' stroke='%235A7A6A' stroke-width='2'/%3E%3Cline x1='10' y1='1' x2='10' y2='19' stroke='%235A7A6A' stroke-width='2'/%3E%3Cline x1='1' y1='10' x2='19' y2='10' stroke='%235A7A6A' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   PRODUCT TOKENS — copied from src/styles/theme.css. Do not invent values.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --paper:#FFFFFF; --bone:#FBFAF8; --recessive:#F5F3F0; --shade:#E8E5DF;
+  --line:rgba(19,19,17,.18); --line-strong:rgba(19,19,17,.28);
+  --sage:#5A7A6A; --sage-light:#8CA99B; --sage-deep:#3f5a4c; --sage-ink:#355344;
+  --sage-hover:#4a6858; --sage-wash:#F3F6F5; --sage-veil:#F7FAF8;
+  --ink:#131311; --ink-soft:#3a3835; --ink-hover:#2a2a27;
+  --body:#5c5a56; --body-soft:#6f6c67;
+  --quiet:#8b8880; --quieter:#9a9894; --quietest:#b5b2ac;
+  --night:#0c0c0a; --ops:#14150f; --ops-panel:#1d1e17;
+  --positive:#2c7a54; --warning:#8a6a2a; --warning-ink:#7a5410;
+  --attention:#C0392B; --attention-ink:#96271B;
+  --info:#4C6A88; --info-ink:#31485f; --destructive:#C0392B;
+  --tone-attn:#A2610A; --tone-attn-bg:rgba(178,110,15,.10); --tone-attn-bd:rgba(178,110,15,.34);
+  --tone-pos:#2C7A54;  --tone-pos-bg:rgba(44,122,84,.10);   --tone-pos-bd:rgba(44,122,84,.30);
+  --tone-work:#4C6A88; --tone-work-bg:rgba(76,106,136,.10); --tone-work-bd:rgba(76,106,136,.30);
+  --tone-mute:#8b897f; --tone-mute-bg:rgba(0,0,0,.045);     --tone-mute-bd:rgba(0,0,0,.12);
+  /* Space Grotesk / Inter are loaded from Google Fonts in the real app. A mock
+     may make no external request, so the stack falls through to the system UI
+     face. Type SIZE, WEIGHT, TRACKING and RHYTHM are the real values; only the
+     letterforms differ from production. */
+  --font-display:"Space Grotesk",ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+  --font-body:"Inter",ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+  --font-data:var(--font-display);
+  --t-ds1:56px; --t-ds1-lh:58px; --t-ds2:40px; --t-ds2-lh:44px;
+  --t-hd1:30px; --t-hd1-lh:36px; --t-hd2:22px; --t-hd2-lh:28px; --t-hd3:17px; --t-hd3-lh:24px;
+  --t-bdlg:18px; --t-bdlg-lh:29px; --t-bd:16px; --t-bd-lh:26px; --t-bdsm:14px; --t-bdsm-lh:21px;
+  --t-cap:13px; --t-cap-lh:18px; --t-lbl:11px; --t-lbl-lh:14px;
+  --t-dat:14px; --t-dat-lh:20px; --t-datsm:12px; --t-datsm-lh:16px;
+  --radius:2px;
+}
+*{box-sizing:border-box;margin:0;padding:0;border:0 solid var(--line)}
+/* Type roles */
+.t-ds1{font:600 var(--t-ds1)/var(--t-ds1-lh) var(--font-display);letter-spacing:-1.4px}
+.t-ds2{font:600 var(--t-ds2)/var(--t-ds2-lh) var(--font-display);letter-spacing:-.9px}
+.t-hd1{font:600 var(--t-hd1)/var(--t-hd1-lh) var(--font-display);letter-spacing:-.6px}
+.t-hd2{font:600 var(--t-hd2)/var(--t-hd2-lh) var(--font-display);letter-spacing:-.3px}
+.t-hd3{font:600 var(--t-hd3)/var(--t-hd3-lh) var(--font-display);letter-spacing:-.1px}
+.t-bd-lg{font:400 var(--t-bdlg)/var(--t-bdlg-lh) var(--font-body)}
+.t-bd{font:400 var(--t-bd)/var(--t-bd-lh) var(--font-body)}
+.t-bd-sm{font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.t-cap{font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)}
+.t-label{font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase}
+.t-data{font:500 var(--t-dat)/var(--t-dat-lh) var(--font-data);font-variant-numeric:tabular-nums}
+.t-data-sm{font:500 var(--t-datsm)/var(--t-datsm-lh) var(--font-data);font-variant-numeric:tabular-nums}
+.fd{font-family:var(--font-display)}
+.fdata{font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.sb{font-weight:600}.md{font-weight:500}
+/* Colour roles */
+.c-ink{color:var(--ink)}.c-inks{color:var(--ink-soft)}.c-body{color:var(--body)}
+.c-quiet{color:var(--quiet)}.c-quieter{color:var(--quieter)}.c-quietest{color:var(--quietest)}
+.c-sage{color:var(--sage)}.c-saged{color:var(--sage-deep)}.c-sagei{color:var(--sage-ink)}
+.c-white{color:#fff}.c-w70{color:rgba(255,255,255,.7)}.c-w55{color:rgba(255,255,255,.55)}
+.c-w40{color:rgba(255,255,255,.4)}.c-sagel{color:var(--sage-light)}
+.c-attn{color:var(--tone-attn)}.c-pos{color:var(--tone-pos)}.c-work{color:var(--tone-work)}
+.c-warn{color:var(--warning-ink)}.c-info{color:var(--info-ink)}.c-dest{color:var(--destructive)}
+/* Grounds + card, exactly as theme.css derives them */
+.ground-paper{background:var(--paper);--card-fill:var(--bone)}
+.ground-bone{background:var(--bone);--card-fill:var(--paper)}
+.ground-night{background:var(--night)}
+.card{border:1px solid var(--line);background:var(--card-fill,var(--bone))}
+.panel-head{background:var(--recessive);border-bottom:1px solid var(--line)}
+.panel-result{background:var(--sage-wash);border-top:1px solid var(--line)}
+.figure{font-family:var(--font-data);font-variant-numeric:tabular-nums;font-weight:600;line-height:1;color:var(--sage-deep);font-size:2.2rem}
+/* Buttons — src/app/ui.tsx Btn */
+.btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-body);font-weight:500;letter-spacing:.02em;cursor:default;border:1px solid transparent;white-space:nowrap}
+.btn-sm{padding:8px 16px;font-size:var(--t-cap);line-height:var(--t-cap-lh)}
+.btn-md{padding:12px 24px;font-size:var(--t-bdsm);line-height:var(--t-bdsm-lh)}
+.btn-lg{padding:16px 32px;font-size:var(--t-bdsm);line-height:var(--t-bdsm-lh)}
+.b-primary{background:var(--ink);color:#fff}
+.b-sage{background:var(--sage);color:#fff}
+.b-outline{border-color:var(--ink);color:var(--ink);background:transparent}
+.b-ghost{color:var(--body);background:transparent}
+.b-danger{background:var(--destructive);color:#fff}
+.b-disabled{background:var(--ink);color:#fff;opacity:.4}
+/* Inputs — .field-control */
+.field{width:100%;border:1px solid var(--line-strong);background:var(--paper);padding:10px 12px;color:var(--ink);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.field.mono{font-family:var(--font-data);font-variant-numeric:tabular-nums;letter-spacing:.06em}
+.field.err{border-color:var(--attention);background:color-mix(in oklab,var(--attention) 7%,var(--paper));color:var(--attention-ink)}
+.field.focus{border-color:var(--sage)}
+.field-label{display:block;color:var(--ink-soft);margin-bottom:6px;font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase}
+/* Status pill — pages/accountModel StatusPill (icon + word, never colour alone) */
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid;white-space:nowrap;font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-display);letter-spacing:1px;text-transform:uppercase}
+.p-attn{color:var(--tone-attn);background:var(--tone-attn-bg);border-color:var(--tone-attn-bd)}
+.p-pos{color:var(--tone-pos);background:var(--tone-pos-bg);border-color:var(--tone-pos-bd)}
+.p-work{color:var(--tone-work);background:var(--tone-work-bg);border-color:var(--tone-work-bd)}
+.p-mute{color:var(--tone-mute);background:var(--tone-mute-bg);border-color:var(--tone-mute-bd)}
+.p-draft{color:var(--body);background:transparent;border:1px dashed rgba(0,0,0,.1)}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--line);white-space:nowrap;font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)}
+.ch-sage{border-color:rgba(90,122,106,.3);background:var(--sage-wash);color:var(--sage-ink)}
+.ch-warn{border-color:rgba(180,120,40,.4);color:var(--warning-ink);background:rgba(180,120,40,.07)}
+.ch-mute{background:var(--bone);color:var(--body)}
+.ch-info{border-color:rgba(76,106,136,.38);background:rgba(76,106,136,.08);color:var(--info-ink)}
+/* Notices */
+.notice{padding:14px 16px;border:1px solid}
+.n-info{border-color:rgba(76,106,136,.32);background:color-mix(in oklab,var(--info) 6%,var(--paper));color:var(--info-ink)}
+.n-warn{border-color:rgba(180,120,40,.35);background:color-mix(in oklab,var(--warning) 9%,var(--paper));color:var(--warning-ink)}
+.n-sage{border-color:rgba(90,122,106,.35);background:rgba(90,122,106,.06);color:var(--sage-ink)}
+.n-dest{border-color:rgba(192,57,43,.35);background:color-mix(in oklab,var(--destructive) 7%,var(--paper));color:var(--attention-ink)}
+/* Layout helpers */
+.wrap{max-width:1152px;margin:0 auto;padding:0 24px}
+.sect{padding-block:96px;position:relative}
+.sect-sm{padding-block:64px;position:relative}
+.gridpaper::before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,rgba(90,122,106,.045) 1px,transparent 1px),linear-gradient(to bottom,rgba(90,122,106,.045) 1px,transparent 1px);background-size:64px 64px}
+.row{display:flex;align-items:center}.col{display:flex;flex-direction:column}
+.g4{gap:4px}.g6{gap:6px}.g8{gap:8px}.g10{gap:10px}.g12{gap:12px}.g16{gap:16px}.g20{gap:20px}.g24{gap:24px}.g32{gap:32px}
+.wr{flex-wrap:wrap}.ac{align-items:center}.ab{align-items:baseline}.as{align-items:flex-start}
+.jb{justify-content:space-between}.je{justify-content:flex-end}.jc{justify-content:center}
+.grow{flex:1;min-width:0}.mt-auto{margin-top:auto}
+.bt{border-top:1px solid var(--line)}.bb{border-bottom:1px solid var(--line)}
+.bt8{border-top:1px solid rgba(0,0,0,.08)}.bb8{border-bottom:1px solid rgba(0,0,0,.08)}
+.bb5{border-bottom:1px solid rgba(0,0,0,.05)}
+.p12{padding:12px}.p16{padding:16px}.p20{padding:20px}.p24{padding:24px}.p32{padding:32px}
+.px16{padding-inline:16px}.px20{padding-inline:20px}.py10{padding-block:10px}.py12{padding-block:12px}.py14{padding-block:14px}
+.mb4{margin-bottom:4px}.mb6{margin-bottom:6px}.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}
+.mb16{margin-bottom:16px}.mb20{margin-bottom:20px}.mb24{margin-bottom:24px}.mb32{margin-bottom:32px}
+.mt4{margin-top:4px}.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}.mt24{margin-top:24px}
+.tr{text-align:right}.tc{text-align:center}
+.mark{width:20px;height:20px;flex:none}
+.sagebar{border-left:3px solid var(--sage)}
+.attnbar{border-left:3px solid var(--tone-attn)}
+.mutebar{border-left:3px solid var(--tone-mute-bd)}
+.infobar{border-left:3px solid var(--info)}
+.measure{max-width:68ch}.prose{max-width:54ch}
+/* Site header / footer chrome, for context in the marketing frames */
+.sitehdr{height:64px;background:var(--night);color:#fff;display:flex;align-items:center}
+.sitehdr a{color:rgba(255,255,255,.72);text-decoration:none}
+/* Account rail (AccountShell) */
+.rail-item{display:flex;align-items:center;gap:11px;padding:10px 12px;border-left:2px solid transparent;color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.rail-item.on{color:var(--ink);font-weight:600;background:rgba(90,122,106,.07);border-left-color:var(--sage)}
+/* Ops chrome */
+.ops-shell{background:var(--bone);display:flex;min-height:100%}
+.ops-rail{width:224px;flex:none;background:var(--ops);color:#fff;display:flex;flex-direction:column}
+.ops-nav{display:flex;align-items:center;gap:10px;padding:8px 20px;color:rgba(255,255,255,.5);border-left:2px solid transparent;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.ops-nav.on{color:#fff;background:rgba(255,255,255,.08);border-left-color:var(--sage)}
+.ops-hdr{height:56px;background:#fff;border-bottom:1px solid rgba(0,0,0,.08);display:flex;align-items:center;padding:0 32px;gap:8px}
+table.ops{width:100%;border-collapse:collapse;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+table.ops thead tr{text-align:left;color:var(--quiet);border-bottom:1px solid rgba(0,0,0,.08)}
+table.ops th{padding:10px 12px;font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase;font-weight:500;text-align:left}
+table.ops th:first-child,table.ops td:first-child{padding-left:16px}
+table.ops th:last-child,table.ops td:last-child{padding-right:16px}
+table.ops td{padding:10px 12px;color:var(--ops);border-bottom:1px solid rgba(0,0,0,.05);vertical-align:top}
+table.ops tbody tr:last-child td{border-bottom:0}
+table.ops .num{text-align:right;font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.ops-empty{background:#fff;border:1px dashed rgba(0,0,0,.15);padding:48px;text-align:center;color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.ops-tab{padding:8px 0;border-bottom:2px solid transparent;color:var(--quiet);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);margin-bottom:-1px}
+.ops-tab.on{border-bottom-color:var(--sage);color:var(--ops);font-weight:500}
+.ops-in{border:1px solid rgba(0,0,0,.12);padding:2px 8px;text-align:right;font:500 var(--t-dat)/var(--t-dat-lh) var(--font-data);font-variant-numeric:tabular-nums;width:96px}
+.ops-btn{padding:8px 14px;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);white-space:nowrap}
+.ops-btn.pri{background:var(--sage);color:#fff}
+.ops-btn.sec{border:1px solid rgba(0,0,0,.15);color:var(--ink);background:#fff}
+.ops-btn.gho{color:var(--quiet);background:transparent}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOCK CHROME — deliberately unlike the product so nothing here can be
+   mistaken for UI. Slate ground, mono labels, orange accent.
+   ══════════════════════════════════════════════════════════════════════════ */
+body{background:#181A1B;color:#C9CBCC;font:400 15px/1.6 ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#top{position:sticky;top:0;z-index:60;background:#101112;border-bottom:1px solid #2E3133}
+#top .in{max-width:1400px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+#top b{color:#fff;font-size:15px;letter-spacing:-.2px}
+#top nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+#top nav a{color:#9BA0A3;text-decoration:none;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:5px 9px;border:1px solid #2E3133;font-family:ui-monospace,monospace}
+#top nav a:hover{color:#fff;border-color:#E8863A}
+.page{max-width:1400px;margin:0 auto;padding:0 24px 120px}
+.intro{padding:44px 0 32px;border-bottom:1px solid #2E3133;margin-bottom:8px}
+.intro h1{color:#fff;font-size:34px;line-height:1.15;letter-spacing:-.8px;font-weight:650;margin-bottom:10px}
+.intro p{max-width:78ch;color:#A8ACAE;margin-bottom:10px}
+.kicker{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#E8863A;margin-bottom:12px}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1px;background:#2E3133;border:1px solid #2E3133;margin-top:24px}
+.rules div{background:#1D1F21;padding:14px 16px}
+.rules h4{color:#E8863A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;font-weight:600}
+.rules p{font-size:13px;line-height:1.55;color:#A8ACAE;margin:0}
+section.surface{padding-top:56px}
+.shead{border-top:1px solid #2E3133;padding-top:20px;margin-bottom:8px}
+.shead .n{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.14em;color:#E8863A;text-transform:uppercase}
+.shead h2{color:#fff;font-size:25px;letter-spacing:-.4px;font-weight:650;margin:6px 0 8px}
+.shead p{max-width:80ch;color:#A8ACAE;font-size:14px;margin-bottom:4px}
+.shead .path{font-family:ui-monospace,monospace;font-size:12px;color:#6E7376}
+.state{margin-top:36px}
+.state h3{color:#fff;font-size:16px;font-weight:620;margin-bottom:4px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.state h3 .tag{font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#101112;background:#E8863A;padding:2px 7px}
+.state h3 .tag.g{background:#5A9A72}.state h3 .tag.b{background:#5F8AB0}.state h3 .tag.r{background:#C0392B;color:#fff}
+.state > p{color:#9BA0A3;font-size:13.5px;max-width:82ch;margin-bottom:14px}
+.frames{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
+.dev{background:#0E0F10;border:1px solid #2E3133;padding:9px;flex:none}
+.dev > .cap{font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#7E8386;padding:0 2px 8px;display:flex;justify-content:space-between;gap:12px}
+.dev .screen{overflow:hidden;background:#fff}
+.dev.desk{width:1198px}.dev.desk .screen{width:1180px}
+.dev.wide{width:1338px}.dev.wide .screen{width:1320px}
+.dev.mob{width:393px}.dev.mob .screen{width:375px}
+.note{margin-top:14px;border-left:2px solid #E8863A;padding:2px 0 2px 14px;max-width:88ch}
+.note b{color:#E8863A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:3px}
+.note p{color:#A8ACAE;font-size:13px;line-height:1.6;margin-bottom:6px}
+.note p:last-child{margin-bottom:0}
+.note code,.intro code,.rules code{font-family:ui-monospace,monospace;font-size:12px;background:#2A2D2F;color:#D9C08F;padding:1px 4px}
+.flag{border:1px solid #C0392B;background:rgba(192,57,43,.12);padding:12px 14px;margin-top:14px;max-width:88ch}
+.flag b{color:#E9776A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:4px}
+.flag p{color:#D8B7B2;font-size:13px;line-height:1.6;margin:0}
+</style>
+</head>
+<body>
+
+<div id="top"><div class="in">
+  <b>Referral program — UX mock</b>
+  <span class="mono" style="font-size:11px;color:#6E7376">AMJ Trade Direct / OpenFrame · for approval</span>
+  <nav>
+    <a href="#s1">1 · /refer</a>
+    <a href="#s2">2 · Placements</a>
+    <a href="#s3">3 · Referrals</a>
+    <a href="#s4">4 · Discount panel</a>
+    <a href="#s5">5 · Quote</a>
+    <a href="#s6">6 · Ops</a>
+  </nav>
+</div></div>
+
+<div class="page">
+
+<div class="intro">
+  <div class="kicker">Read this first</div>
+  <h1>Every screen the referral program adds, in the site's own design language.</h1>
+  <p>This is what the program will look like. The colours, type sizes, spacing, buttons, cards and status
+  chips are the real ones taken from the live site — the only visual difference from production is the
+  typeface, because a mock is not allowed to fetch anything from the internet and the site's two fonts
+  live on Google Fonts.</p>
+  <p><b style="color:#fff">Every word here is real copy.</b> If you approve this, this is what a tradie
+  reads. Numbers shown are the launch defaults — <code>2.5%</code>, <code>1%</code>,
+  <code>$2,000</code>, <code>12 months</code>, <code>14 days</code> — and every one of them is a slot
+  filled from the ops console, so changing any of them later needs no code and no new words.</p>
+  <p>Screens are shown at real widths: desktop 1180px and phone 375px. Scroll a frame to see the whole
+  screen where it is taller than the box.</p>
+  <div class="rules">
+    <div><h4>Never a total discount</h4><p>The referred tradie sees <b style="color:#fff">2.5%</b>, never
+      7.5%. Every registered account already gets a standing 5% that is deliberately invisible, and a
+      total gives it away by subtraction. No screen here prints a combined figure.</p></div>
+    <div><h4>Referring is never tied to buying</h4><p>Nothing says "order first, then you can earn".
+      That coupling is a strict-liability offence (ACL s 49). "Any account can refer" and "we need your
+      bank details" are stated as two separate facts, everywhere, on purpose.</p></div>
+    <div><h4>No invite form, anywhere</h4><p>There is no screen on which you type a mate's name, phone or
+      email. You share your own code, your own way. That boundary is what keeps the whole business
+      outside a Privacy Act trigger.</p></div>
+    <div><h4>The conditions sit next to the offer</h4><p>Minimum order, what the 1% is on, paid-on-payment,
+      the 12-month lapse, the ABN and the 14 days appear beside the headline — not in a footer. Fine
+      print cannot rescue a headline claim.</p></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     1 · PUBLIC LANDING PAGE /refer
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section class="surface" id="s1">
+  <div class="shead">
+    <div class="n">Surface 1</div>
+    <h2>The landing page</h2>
+    <p>The page a code links to, the page the footer link goes to, and the page a tradie lands on after
+    scanning a code off the back of a business card. It has one job: explain the deal well enough that
+    someone can repeat it from memory to the next bloke on site.</p>
+    <p class="path">openframe.com.au/refer · new route, indexable, in the sitemap</p>
+  </div>
+
+  <!-- 1A LOGGED OUT -->
+  <div class="state">
+    <h3><span class="tag">State A</span> Logged out — a visitor who has never seen us</h3>
+    <p>The full page. Everything a tradie needs to decide, above the fold or one scroll below it.</p>
+    <div class="frames">
+      <div class="dev desk">
+        <div class="cap"><span>Desktop · 1180 × full page</span><span>/refer · signed out</span></div>
+        <div class="screen">
+          <!-- site header -->
+          <div class="sitehdr"><div class="wrap row jb" style="width:100%">
+            <div class="row g10"><svg class="mark" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span class="c-white sb fd" style="font-size:15px;letter-spacing:.02em">OPENFRAME</span></div>
+            <div class="row g24 t-bd-sm"><a>Products</a><a>Get a quote</a><a>How it works</a><a>Trade account</a><a class="c-white">Sign in</a></div>
+          </div></div>
+
+          <!-- HERO -->
+          <div class="ground-night" style="position:relative;padding-block:76px">
+            <div class="wrap" style="position:relative">
+              <div class="row g8 mb12"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="rgba(255,255,255,.5)" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="rgba(255,255,255,.5)" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="rgba(255,255,255,.5)" stroke-width="2"/></svg><span class="t-label c-w55">Refer a mate</span></div>
+              <h1 class="t-ds1 c-white" style="max-width:16ch;margin-bottom:14px">Refer a mate. You both win.</h1>
+              <p class="t-bd-lg c-w70 prose mb24">You already tell other tradies where you get your windows.
+                Now there's something in it for both of you.</p>
+
+              <!-- THE RULE — one sentence, the thing they repeat -->
+              <div style="border:1px solid rgba(255,255,255,.22);padding:20px 22px;max-width:60ch;background:rgba(255,255,255,.04)" class="mb20">
+                <p class="t-bd c-white">Share your code — your mate gets <b class="c-sagel">2.5% off their first
+                  order</b>, and when they pay for it in full we pay you <b class="c-sagel">1% of it</b>, into your
+                  bank account within <b class="c-sagel">14 days</b>.</p>
+              </div>
+
+              <!-- TWO FACTS, SEPARATE. Never merged. -->
+              <div class="col" style="max-width:60ch;border-top:1px solid rgba(255,255,255,.14)">
+                <div class="row g10 as" style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.14)">
+                  <span class="c-sagel t-data" style="flex:none">01</span>
+                  <p class="t-bd-sm c-w70"><b class="c-white">Any account can refer.</b> You don't need to have
+                    ordered anything yourself.</p>
+                </div>
+                <div class="row g10 as" style="padding:12px 0">
+                  <span class="c-sagel t-data" style="flex:none">02</span>
+                  <p class="t-bd-sm c-w70"><b class="c-white">To get your code, we need your ABN and bank
+                    details.</b> That's the account we pay into.</p>
+                </div>
+              </div>
+
+              <div class="row g12 mt24 wr">
+                <span class="btn btn-lg b-sage">Sign in to get your code →</span>
+                <span class="btn btn-lg b-outline" style="border-color:rgba(255,255,255,.5);color:#fff">Get a quote</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CONDITIONS — adjacent to the claim, not in a footer -->
+          <div class="ground-bone bb8" style="padding-block:40px">
+            <div class="wrap">
+              <div class="row g8 mb16"><span class="t-label c-sage">What qualifies</span><span class="grow" style="height:1px;background:var(--line)"></span></div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line)">
+                <div class="p16" style="background:var(--paper)"><p class="t-cap c-quiet mb4 fdata">FIRST ORDER ONLY</p><p class="t-bd-sm c-ink">Theirs, not yours — and it has to be a tradie who's new to us.</p></div>
+                <div class="p16" style="background:var(--paper)"><p class="t-cap c-quiet mb4 fdata">MINIMUM ORDER</p><p class="t-bd-sm c-ink">At least <b>$2,000</b> ex GST, before delivery.</p></div>
+                <div class="p16" style="background:var(--paper)"><p class="t-cap c-quiet mb4 fdata">WHAT THE 1% IS ON</p><p class="t-bd-sm c-ink">The goods — excluding GST and delivery. Not the invoice total.</p></div>
+                <div class="p16" style="background:var(--paper)"><p class="t-cap c-quiet mb4 fdata">WHEN IT'S EARNED</p><p class="t-bd-sm c-ink">When they've <b>paid in full</b>. Not when they order.</p></div>
+                <div class="p16" style="background:var(--paper)"><p class="t-cap c-quiet mb4 fdata">HOW LONG IT LASTS</p><p class="t-bd-sm c-ink">Their first order has to be placed within <b>12 months</b> of them signing up with your code.</p></div>
+                <div class="p16" style="background:var(--paper)"><p class="t-cap c-quiet mb4 fdata">HOW YOU'RE PAID</p><p class="t-bd-sm c-ink">Bank transfer within <b>14 days</b>. You'll need an ABN and bank details on your account.</p></div>
+              </div>
+              <p class="t-cap c-body mt12 measure">Amounts include any GST payable. What you do with it at tax
+                time is between you and your accountant — we don't give tax advice.
+                <a class="c-sage" style="text-decoration:underline;text-underline-offset:2px">Read the full rules and terms →</a></p>
+            </div>
+          </div>
+
+          <!-- THREE STEPS -->
+          <div class="ground-paper gridpaper sect-sm">
+            <div class="wrap" style="position:relative">
+              <div class="row g8 mb12"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="2"/></svg><span class="t-label c-sage">How it works</span></div>
+              <h2 class="t-ds2 c-ink mb24" style="max-width:22ch">Three steps, and only one of them is yours.</h2>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0">
+                <div class="card p24" style="margin-right:-1px"><p class="figure mb12">1</p>
+                  <h3 class="t-bd-lg c-ink sb fd mb6">Share your code.</h3>
+                  <p class="t-bd c-body">Text it, say it, send the link. Every account has one — you don't need to have ordered yourself.</p></div>
+                <div class="card p24" style="margin-right:-1px"><p class="figure mb12">2</p>
+                  <h3 class="t-bd-lg c-ink sb fd mb6">They save.</h3>
+                  <p class="t-bd c-body">Your mate signs up with your code and gets <b class="c-ink">2.5% off their first order</b> — it's on their quote from the start, and it's theirs for 12 months.</p></div>
+                <div class="card p24"><p class="figure mb12">3</p>
+                  <h3 class="t-bd-lg c-ink sb fd mb6">You get paid.</h3>
+                  <p class="t-bd c-body">Once they've paid that order in full, we transfer your <b class="c-ink">1%</b> within 14 days.</p></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SIGNED-OUT CTA BAND -->
+          <div class="ground-bone bt8 sect-sm">
+            <div class="wrap">
+              <div class="card p32 row jb ac g32 wr" style="background:var(--paper)">
+                <div class="prose">
+                  <h3 class="t-hd1 c-ink mb8">Get your code</h3>
+                  <p class="t-bd c-body">Sign in and add your ABN and bank details — that's the whole setup, and
+                    your code appears straight after. Ordering isn't part of it.</p>
+                </div>
+                <span class="btn btn-lg b-sage" style="flex:none">Sign in →</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- FAQ -->
+          <div class="ground-paper gridpaper sect-sm">
+            <div class="wrap" style="position:relative">
+              <div class="row g8 mb12"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="2"/></svg><span class="t-label c-sage">Good to know</span></div>
+              <h2 class="t-ds2 c-ink mb24" style="max-width:24ch">The questions tradies actually ask.</h2>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+                <div class="card p24" style="margin:0 -1px -1px 0"><h3 class="t-bd-lg c-ink sb fd mb6">Can I refer someone if I've never ordered?</h3><p class="t-bd c-body">Yes. Any registered account can refer. Your own order history has nothing to do with it.</p></div>
+                <div class="card p24" style="margin:0 0 -1px 0"><h3 class="t-bd-lg c-ink sb fd mb6">What does my mate actually see?</h3><p class="t-bd c-body">Their quote is 2.5% lower from the first price they're shown. There's no code to enter at checkout and nothing for them to apply.</p></div>
+                <div class="card p24" style="margin:0 -1px 0 0"><h3 class="t-bd-lg c-ink sb fd mb6">What do I get to see about them?</h3><p class="t-bd c-body">Their business name and how far along they are — signed up, quoting, ordered, paid. Never their prices, their address or what's on their job.</p></div>
+                <div class="card p24"><h3 class="t-bd-lg c-ink sb fd mb6">Do I earn on the mates they go on to refer?</h3><p class="t-bd c-body">No. You get paid for the mates you refer, and that's it. No chains, no levels, no tiers.</p></div>
+              </div>
+              <p class="t-cap c-body mt16 measure">Your mate is told, when they use your code, that you'll be
+                notified once their first order is paid and that you're paid a percentage of it. Nobody is
+                surprised by this later.</p>
+            </div>
+          </div>
+
+          <!-- CLOSING BANNER (shared CtaBanner) -->
+          <div class="ground-bone bt8 sect-sm"><div class="wrap">
+            <div style="background:var(--sage);padding:40px" class="row jb ac g32 wr">
+              <div class="prose"><h2 class="t-hd1 c-white mb6">Your windows and doors, priced before you commit.</h2>
+                <p class="t-bd" style="color:rgba(255,255,255,.85)">Free, no account, and a person checks every quote before you pay a cent.</p></div>
+              <span class="btn btn-lg b-primary" style="flex:none">Get a quote →</span>
+            </div>
+          </div></div>
+
+          <!-- FOOTER -->
+          <div style="background:var(--ink);padding:56px 0 32px"><div class="wrap">
+            <div class="row jb g32 wr mb32" style="align-items:flex-start">
+              <div style="max-width:280px"><svg class="mark mb16" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg>
+                <p class="t-bd-sm c-w55">Trade aluminium windows and doors, priced online.</p></div>
+              <div class="row g32" style="align-items:flex-start">
+                <div><div class="t-label c-white mb12">Products</div><div class="col g8 t-bd-sm c-w55"><span>Windows</span><span>Doors</span></div></div>
+                <div><div class="t-label c-white mb12">Service</div><div class="col g8 t-bd-sm c-w55"><span>Get a quote</span><span>Trade account</span><span style="color:#fff;text-decoration:underline;text-underline-offset:3px">Refer a mate</span><span>How it works</span><span>Privacy Policy</span></div></div>
+                <div><div class="t-label c-white mb12">Account</div><div class="col g8 t-bd-sm c-w55"><span>Sign in</span><span>Track order</span><span>Resources</span><span>Contact</span></div></div>
+              </div>
+            </div>
+            <div class="bt" style="border-color:rgba(255,255,255,.12);padding-top:20px"><p class="t-cap c-w40">© 2026 AMJ Trade Direct · ABN 00 000 000 000</p></div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="dev mob">
+        <div class="cap"><span>Phone · 375</span><span>signed out</span></div>
+        <div class="screen" style="height:1180px;overflow-y:auto">
+          <div class="sitehdr" style="height:56px"><div class="row jb ac" style="width:100%;padding:0 20px">
+            <div class="row g8"><svg class="mark" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span class="c-white sb fd" style="font-size:13px">OPENFRAME</span></div>
+            <div class="col g4" style="width:20px"><span style="height:1.5px;background:#fff;display:block"></span><span style="height:1.5px;background:#fff;display:block"></span><span style="height:1.5px;background:#fff;display:block"></span></div>
+          </div></div>
+          <div class="ground-night" style="padding:40px 20px">
+            <div class="row g8 mb10"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="rgba(255,255,255,.5)" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="rgba(255,255,255,.5)" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="rgba(255,255,255,.5)" stroke-width="2"/></svg><span class="t-label c-w55">Refer a mate</span></div>
+            <h1 class="c-white mb10" style="font:600 32px/37px var(--font-display);letter-spacing:-.8px">Refer a mate. You both win.</h1>
+            <p class="t-bd c-w70 mb20">You already tell other tradies where you get your windows. Now there's something in it for both of you.</p>
+            <div style="border:1px solid rgba(255,255,255,.22);padding:16px;background:rgba(255,255,255,.04)" class="mb16">
+              <p class="t-bd-sm c-white">Share your code — your mate gets <b class="c-sagel">2.5% off their first order</b>, and when they pay for it in full we pay you <b class="c-sagel">1% of it</b>, into your bank account within <b class="c-sagel">14 days</b>.</p>
+            </div>
+            <div class="col" style="border-top:1px solid rgba(255,255,255,.14)">
+              <div class="row g8 as" style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.14)"><span class="c-sagel t-data-sm" style="flex:none">01</span><p class="t-cap c-w70"><b class="c-white">Any account can refer.</b> You don't need to have ordered anything yourself.</p></div>
+              <div class="row g8 as" style="padding:10px 0"><span class="c-sagel t-data-sm" style="flex:none">02</span><p class="t-cap c-w70"><b class="c-white">To get your code, we need your ABN and bank details.</b> That's the account we pay into.</p></div>
+            </div>
+            <div class="col g10 mt20"><span class="btn btn-md b-sage jc">Sign in to get your code →</span><span class="btn btn-md b-outline jc" style="border-color:rgba(255,255,255,.5);color:#fff">Get a quote</span></div>
+          </div>
+          <div class="ground-bone bb8" style="padding:28px 20px">
+            <div class="t-label c-sage mb12">What qualifies</div>
+            <div class="col" style="border:1px solid var(--line);background:var(--paper)">
+              <div class="p12 bb5"><p class="t-cap c-quiet mb4 fdata">FIRST ORDER ONLY</p><p class="t-bd-sm c-ink">Theirs, not yours — and a tradie who's new to us.</p></div>
+              <div class="p12 bb5"><p class="t-cap c-quiet mb4 fdata">MINIMUM ORDER</p><p class="t-bd-sm c-ink">At least <b>$2,000</b> ex GST, before delivery.</p></div>
+              <div class="p12 bb5"><p class="t-cap c-quiet mb4 fdata">WHAT THE 1% IS ON</p><p class="t-bd-sm c-ink">The goods — excluding GST and delivery.</p></div>
+              <div class="p12 bb5"><p class="t-cap c-quiet mb4 fdata">WHEN IT'S EARNED</p><p class="t-bd-sm c-ink">When they've <b>paid in full</b>. Not when they order.</p></div>
+              <div class="p12 bb5"><p class="t-cap c-quiet mb4 fdata">HOW LONG IT LASTS</p><p class="t-bd-sm c-ink">Their first order within <b>12 months</b> of signing up with your code.</p></div>
+              <div class="p12"><p class="t-cap c-quiet mb4 fdata">HOW YOU'RE PAID</p><p class="t-bd-sm c-ink">Bank transfer within <b>14 days</b>. You'll need an ABN and bank details on your account.</p></div>
+            </div>
+            <p class="t-cap c-body mt12">Amounts include any GST payable. Your own tax is between you and your accountant — we don't give tax advice. <a class="c-sage" style="text-decoration:underline">Full rules →</a></p>
+          </div>
+          <div class="ground-paper" style="padding:28px 20px">
+            <div class="t-label c-sage mb10">How it works</div>
+            <h2 class="c-ink mb16" style="font:600 26px/32px var(--font-display);letter-spacing:-.5px">Three steps, and only one of them is yours.</h2>
+            <div class="col"><div class="card p16" style="margin-bottom:-1px"><p class="figure mb8" style="font-size:1.7rem">1</p><h3 class="t-bd c-ink sb fd mb4">Share your code.</h3><p class="t-bd-sm c-body">Text it, say it, send the link. Every account has one — you don't need to have ordered yourself.</p></div>
+              <div class="card p16" style="margin-bottom:-1px"><p class="figure mb8" style="font-size:1.7rem">2</p><h3 class="t-bd c-ink sb fd mb4">They save.</h3><p class="t-bd-sm c-body">Your mate signs up with your code and gets <b class="c-ink">2.5% off their first order</b> — on their quote from the start, and theirs for 12 months.</p></div>
+              <div class="card p16"><p class="figure mb8" style="font-size:1.7rem">3</p><h3 class="t-bd c-ink sb fd mb4">You get paid.</h3><p class="t-bd-sm c-body">Once they've paid that order in full, we transfer your <b class="c-ink">1%</b> within 14 days.</p></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note"><b>Why it's built this way</b>
+      <p><b>The rule box is the thing they repeat.</b> One sentence, two numbers, on a job site, from
+      memory. Everything else on the page supports it.</p>
+      <p><b>The two facts are numbered and separated by a rule.</b> "Any account can refer" and "we need
+      your bank details" must never merge into anything that reads like "you have to be a customer to
+      refer" — that shape is what the law is about. Numbering them makes them two facts typographically,
+      not one sentence with a "but" in it.</p>
+      <p><b>The conditions grid sits directly under the hero</b>, before the sales pitch continues. It is
+      denser than any other section on the site, and that is deliberate: the conditions have to be next
+      to the claim, and a tradie who reads only this grid still has the whole deal.</p>
+      <p><b>Every bold number is a slot.</b> Raising the discount to 5% changes six figures on this page
+      and not one word.</p>
+    </div>
+  </div>
+
+  <!-- 1B LOGGED IN, NO PAYOUT DETAILS -->
+  <div class="state">
+    <h3><span class="tag r">State B</span> Signed in, no payment details yet <span class="tag">the front door</span></h3>
+    <p>This is the state most people will be in the first time they land here, and it is the screen the
+    whole program's reach depends on. The hero is unchanged; the band beneath it becomes the one step.
+    The form is the same component as the one in the account area — one form, one endpoint, two homes,
+    so the words can never drift apart.</p>
+    <div class="frames">
+      <div class="dev desk">
+        <div class="cap"><span>Desktop · 1180</span><span>/refer · signed in, gate not passed</span></div>
+        <div class="screen">
+          <div class="ground-night" style="padding:56px 0 48px"><div class="wrap">
+            <div class="row g8 mb12"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="rgba(255,255,255,.5)" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="rgba(255,255,255,.5)" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="rgba(255,255,255,.5)" stroke-width="2"/></svg><span class="t-label c-w55">Refer a mate</span></div>
+            <h1 class="t-ds1 c-white mb12" style="max-width:16ch">Refer a mate. You both win.</h1>
+            <div style="border:1px solid rgba(255,255,255,.22);padding:18px 20px;max-width:60ch;background:rgba(255,255,255,.04)">
+              <p class="t-bd c-white">Share your code — your mate gets <b class="c-sagel">2.5% off their first order</b>, and when they pay for it in full we pay you <b class="c-sagel">1% of it</b>, into your bank account within <b class="c-sagel">14 days</b>.</p>
+            </div>
+          </div></div>
+
+          <div class="ground-bone" style="padding:40px 0 48px"><div class="wrap">
+            <div class="card sagebar" style="background:var(--paper)">
+              <div class="p32" style="display:grid;grid-template-columns:1.15fr .85fr;gap:40px">
+                <div>
+                  <div class="t-label c-sage mb8">One step, then it's yours</div>
+                  <h2 class="t-hd1 c-ink mb8">Where do we send the money?</h2>
+                  <p class="t-bd c-body mb24" style="max-width:46ch">Add your ABN and bank details and your
+                    referral code appears right here. It's the account we pay your 1% into — nothing else uses
+                    it, and the tradies you refer never see it.</p>
+
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" class="mb16">
+                    <div style="grid-column:1/-1"><label class="field-label">ABN</label><div class="field mono">51 824 753 556</div></div>
+                    <div><label class="field-label">BSB</label><div class="field mono">063-000</div></div>
+                    <div><label class="field-label">Account number</label><div class="field mono">1234 4417</div></div>
+                    <div style="grid-column:1/-1"><label class="field-label">Account name</label><div class="field">Chen Bros Glazing Pty Ltd</div></div>
+                  </div>
+
+                  <span class="btn btn-md b-sage">Save and get my code</span>
+
+                  <div class="col g6 mt16 bt" style="padding-top:14px">
+                    <p class="t-cap c-body">· You don't need to have ordered anything to refer. Any account can.</p>
+                    <p class="t-cap c-body">· We only ever use these to pay you. Nobody else sees them.</p>
+                    <p class="t-cap c-body">· You can change or remove them any time.</p>
+                  </div>
+                </div>
+
+                <div class="p24" style="background:var(--recessive)">
+                  <div class="t-label c-quiet mb12">What this unlocks</div>
+                  <div class="row g10 ac mb16" style="border:1px dashed rgba(0,0,0,.2);padding:14px;background:var(--paper)">
+                    <span class="t-hd2 fdata c-quietest" style="letter-spacing:.14em">ABC-123</span>
+                    <span class="t-cap c-quieter">your code, once this is done</span>
+                  </div>
+                  <p class="t-bd-sm c-body mb12">Your mate gets <b class="c-ink">2.5% off their first order</b>.
+                    When they've paid it in full, your <b class="c-ink">1%</b> goes out by bank transfer within
+                    <b class="c-ink">14 days</b>.</p>
+                  <div class="col g6 bt" style="padding-top:12px">
+                    <p class="t-cap c-body">Their order needs to be at least <b class="c-ink">$2,000</b> ex GST, before delivery.</p>
+                    <p class="t-cap c-body">The 1% is worked out on the goods, excluding GST and delivery.</p>
+                    <p class="t-cap c-body">Placed within <b class="c-ink">12 months</b> of them signing up with your code.</p>
+                  </div>
+                  <p class="t-cap c-sage mt12" style="text-decoration:underline;text-underline-offset:2px">Read the full rules and terms →</p>
+                </div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="dev mob">
+        <div class="cap"><span>Phone · 375</span><span>the one step</span></div>
+        <div class="screen" style="height:940px;overflow-y:auto">
+          <div class="ground-night" style="padding:32px 20px">
+            <div class="t-label c-w55 mb8">Refer a mate</div>
+            <h1 class="c-white mb12" style="font:600 32px/37px var(--font-display);letter-spacing:-.8px">Refer a mate. You both win.</h1>
+            <div style="border:1px solid rgba(255,255,255,.22);padding:14px;background:rgba(255,255,255,.04)"><p class="t-bd-sm c-white">Share your code — your mate gets <b class="c-sagel">2.5% off their first order</b>, and when they pay for it in full we pay you <b class="c-sagel">1% of it</b>, into your bank account within <b class="c-sagel">14 days</b>.</p></div>
+          </div>
+          <div class="ground-bone" style="padding:20px">
+            <div class="card sagebar p20" style="background:var(--paper)">
+              <div class="t-label c-sage mb6">One step, then it's yours</div>
+              <h2 class="t-hd2 c-ink mb8">Where do we send the money?</h2>
+              <p class="t-bd-sm c-body mb16">Add your ABN and bank details and your referral code appears right
+                here. It's the account we pay your 1% into — nothing else uses it, and the tradies you refer
+                never see it.</p>
+              <div class="col g12 mb16">
+                <div><label class="field-label">ABN</label><div class="field mono">51 824 753 556</div></div>
+                <div><label class="field-label">BSB</label><div class="field mono">063-000</div></div>
+                <div><label class="field-label">Account number</label><div class="field mono">1234 4417</div></div>
+                <div><label class="field-label">Account name</label><div class="field">Chen Bros Glazing Pty Ltd</div></div>
+              </div>
+              <span class="btn btn-md b-sage jc" style="width:100%">Save and get my code</span>
+              <div class="col g6 mt16 bt" style="padding-top:12px">
+                <p class="t-cap c-body">· You don't need to have ordered anything to refer. Any account can.</p>
+                <p class="t-cap c-body">· We only ever use these to pay you. Nobody else sees them.</p>
+                <p class="t-cap c-body">· You can change or remove them any time.</p>
+              </div>
+            </div>
+            <div class="card p16 mt12" style="background:var(--recessive)">
+              <div class="t-label c-quiet mb8">What this unlocks</div>
+              <p class="t-bd-sm c-body mb10">Your mate gets <b class="c-ink">2.5% off their first order</b>. When they've paid it in full, your <b class="c-ink">1%</b> goes out by bank transfer within <b class="c-ink">14 days</b>. Minimum order <b class="c-ink">$2,000</b> ex GST, before delivery.</p>
+              <p class="t-cap c-sage" style="text-decoration:underline">Read the full rules and terms →</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dev mob">
+        <div class="cap"><span>Phone · 375</span><span>validation errors</span></div>
+        <div class="screen" style="height:560px">
+          <div class="ground-bone p20" style="height:100%">
+            <div class="card sagebar p20" style="background:var(--paper)">
+              <h2 class="t-hd2 c-ink mb16">Where do we send the money?</h2>
+              <div class="col g12">
+                <div><label class="field-label">ABN</label><div class="field mono err">51 824 753</div><p class="t-cap c-dest mt4">That's not a valid ABN. It's 11 digits — check the number on your invoices.</p></div>
+                <div><label class="field-label">BSB</label><div class="field mono err">63000</div><p class="t-cap c-dest mt4">A BSB is 6 digits, like 063-000.</p></div>
+                <div><label class="field-label">Account number</label><div class="field mono err">417</div><p class="t-cap c-dest mt4">Account numbers are between 5 and 9 digits.</p></div>
+                <div><label class="field-label">Account name</label><div class="field err" style="color:var(--quieter)">The name on the account</div><p class="t-cap c-dest mt4">We need the name on the account, exactly as your bank has it.</p></div>
+              </div>
+              <span class="btn btn-md b-disabled jc mt16" style="width:100%">Save and get my code</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note"><b>The delicate screen — how the ask is made proportionate</b>
+      <p><b>The headline is about money, not paperwork.</b> "Where do we send the money?" presumes the
+      money is coming. "Complete your profile" or "Verify your details" would read as onboarding
+      admin, and this is the screen we can least afford to have read that way.</p>
+      <p><b>What they get is stated before what we want.</b> The right-hand panel shows the deal and a
+      greyed-out example code — a preview of the thing on the other side of the form, not a teaser.</p>
+      <p><b>Four fields, one screen, one button.</b> No steps, no progress bar, no second page. On a phone
+      it is a single scroll.</p>
+      <p><b>The three quiet lines under the button are load-bearing.</b> The first is the legal
+      separation — it says the ask has nothing to do with buying. The second and third answer the two
+      questions a tradie actually has about handing over bank details: who sees this, and can I undo it.</p>
+    </div>
+    <div class="flag"><b>Worth saying out loud</b>
+      <p>This screen is real friction placed in front of the share action, and some tradies will not
+      bother. That is the trade you took to make sure the business never holds money it cannot pay out.
+      The design does everything it can to make the ask feel proportionate, but no amount of copy makes
+      "give us your bank details before you've earned a cent" free. If reach turns out to matter more
+      than the unclaimed-money exposure, the decision to revisit is D18, not this screen.</p>
+    </div>
+  </div>
+
+  <!-- 1C LOGGED IN WITH CODE -->
+  <div class="state">
+    <h3><span class="tag g">State C</span> Signed in, code in hand</h3>
+    <p>The hero and the conditions grid are unchanged; the band beneath the hero becomes the code and the
+    ways to send it. There is no field on this page — or anywhere in the product — into which you type a
+    mate's name, number or email.</p>
+    <div class="frames">
+      <div class="dev desk">
+        <div class="cap"><span>Desktop · 1180</span><span>/refer · signed in, payable</span></div>
+        <div class="screen">
+          <div class="ground-night" style="padding:56px 0 48px"><div class="wrap">
+            <div class="t-label c-w55 mb12">Refer a mate</div>
+            <h1 class="t-ds1 c-white mb12" style="max-width:16ch">Refer a mate. You both win.</h1>
+            <div style="border:1px solid rgba(255,255,255,.22);padding:18px 20px;max-width:60ch;background:rgba(255,255,255,.04)"><p class="t-bd c-white">Share your code — your mate gets <b class="c-sagel">2.5% off their first order</b>, and when they pay for it in full we pay you <b class="c-sagel">1% of it</b>, into your bank account within <b class="c-sagel">14 days</b>.</p></div>
+          </div></div>
+          <div class="ground-bone" style="padding:40px 0 48px"><div class="wrap">
+            <div class="card sagebar p32" style="background:var(--paper);display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center">
+              <div>
+                <div class="t-label c-sage mb10">Your code</div>
+                <div class="row g16 ac mb16 wr">
+                  <span class="fdata sb c-ink" style="font-size:44px;line-height:1;letter-spacing:.1em">KRA-7F2</span>
+                  <span class="btn btn-sm b-outline">Copy code</span>
+                </div>
+                <div class="row g8 ac mb16 wr">
+                  <span class="field mono" style="width:auto;flex:1;min-width:260px;color:var(--body)">openframe.com.au/r/KRA-7F2</span>
+                  <span class="btn btn-md b-sage">Copy link</span>
+                  <span class="btn btn-md b-outline">Share</span>
+                </div>
+                <p class="t-bd-sm c-body">Text it, say it over the phone, or send the link. Your mate gets
+                  <b class="c-ink">2.5% off their first order</b>; when they've paid it in full, you get
+                  <b class="c-ink">1%</b> of it.</p>
+              </div>
+              <div class="p24" style="background:var(--recessive)">
+                <div class="t-label c-quiet mb10">Ready to send</div>
+                <div class="p16 mb12" style="background:var(--paper);border:1px solid var(--line)">
+                  <p class="t-bd-sm c-ink">"Get your windows through OpenFrame — use my code <b>KRA-7F2</b> and
+                    you'll get 2.5% off your first order. openframe.com.au/r/KRA-7F2"</p>
+                </div>
+                <p class="t-cap c-body mb12">We hand this to your phone to send. We never see who you send it
+                  to, and there's nowhere here to give us their details.</p>
+                <a class="t-cap c-sage" style="text-decoration:underline;text-underline-offset:2px">See your referrals and earnings →</a>
+              </div>
+            </div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="dev mob">
+        <div class="cap"><span>Phone · 375</span><span>code + share sheet</span></div>
+        <div class="screen" style="height:640px">
+          <div class="ground-bone p20" style="height:100%">
+            <div class="card sagebar p20" style="background:var(--paper)">
+              <div class="t-label c-sage mb8">Your code</div>
+              <div class="row g12 ac jb mb14"><span class="fdata sb c-ink" style="font-size:34px;line-height:1;letter-spacing:.1em">KRA-7F2</span><span class="btn btn-sm b-outline">Copy</span></div>
+              <div class="field mono mb10" style="color:var(--body);font-size:13px">openframe.com.au/r/KRA-7F2</div>
+              <div class="col g8"><span class="btn btn-md b-sage jc">Share my link</span><span class="btn btn-md b-outline jc">Copy link</span></div>
+              <p class="t-bd-sm c-body mt14">Text it, say it over the phone, or send the link. Your mate gets
+                <b class="c-ink">2.5% off their first order</b>; when they've paid it in full, you get
+                <b class="c-ink">1%</b> of it.</p>
+            </div>
+            <div class="card p16 mt12" style="background:var(--recessive)">
+              <div class="t-label c-quiet mb8">Ready to send</div>
+              <div class="p12" style="background:var(--paper);border:1px solid var(--line)"><p class="t-bd-sm c-ink">"Get your windows through OpenFrame — use my code <b>KRA-7F2</b> and you'll get 2.5% off your first order. openframe.com.au/r/KRA-7F2"</p></div>
+              <p class="t-cap c-body mt10">We hand this to your phone to send. We never see who you send it to.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b>Sharing, without an invite flow</b>
+      <p>Three affordances and no fourth: <b>copy the code</b> (for reading out), <b>copy the link</b> (for
+      pasting), and <b>Share</b>, which opens the phone's own share sheet with the message pre-written.
+      The message is handed to their phone; we never learn who received it.</p>
+      <p>On desktop, where the share sheet often does not exist, "Share" falls back to copying the message.
+      Never an email field.</p>
+    </div>
+  </div>
+
+  <!-- 1D/E PAUSED + TERMINATED -->
+  <div class="state">
+    <h3><span class="tag b">States D + E</span> Paused, and ended</h3>
+    <p>The URL is on business cards and in text messages by then, so it never 404s. Neither state shows a
+    rate, a discount or a code.</p>
+    <div class="frames">
+      <div class="dev desk" style="width:600px"><div class="cap"><span>Desktop · paused</span><span>/refer</span></div>
+        <div class="screen" style="width:582px">
+          <div class="ground-night" style="padding:48px 32px">
+            <div class="t-label c-w55 mb10">Refer a mate</div>
+            <h1 class="t-hd1 c-white mb10">Refer a mate — on hold</h1>
+            <p class="t-bd c-w70" style="max-width:46ch">We've paused new referrals for the moment. Anything
+              you'd already earned is unaffected and still sitting in your account. When it's back on, it'll be
+              on this page.</p>
+            <div class="row g12 mt24"><span class="btn btn-md b-sage">Get a quote</span></div>
+          </div>
+        </div></div>
+      <div class="dev desk" style="width:600px"><div class="cap"><span>Desktop · ended</span><span>/refer</span></div>
+        <div class="screen" style="width:582px">
+          <div class="ground-night" style="padding:48px 32px">
+            <div class="t-label c-w55 mb10">Refer a mate</div>
+            <h1 class="t-hd1 c-white mb10">This program has ended.</h1>
+            <p class="t-bd c-w70" style="max-width:46ch">We're no longer taking new referrals. Anything you'd
+              already earned is in your account and will still be paid, and any discount already given still
+              runs to the date it was given.</p>
+            <div class="row g12 mt24"><span class="btn btn-md b-sage">Get a quote</span></div>
+          </div>
+        </div></div>
+    </div>
+    <div class="note"><b>Ending it never takes anything back</b>
+      <p>Both states say so in the same breath as the ending. Terminating stops <i>new</i> referrals; it
+      does not withdraw a discount someone was already promised or money someone already earned, and the
+      copy commits to that rather than reserving a right to change its mind.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     2 · MARKETING PLACEMENTS
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section class="surface" id="s2">
+  <div class="shead">
+    <div class="n">Surface 2</div>
+    <h2>Where the program shows up on the rest of the site</h2>
+    <p>Four placements, each shown in the context it lives in rather than floating. All four disappear
+    entirely when the program is paused or ended. None of them appears inside a priced flow — never on a
+    product page, the quote builder, review-and-accept or a payment screen.</p>
+    <p class="path">Home page · /trade-account · site footer · a delivered order</p>
+  </div>
+
+  <!-- 2A HOME -->
+  <div class="state">
+    <h3><span class="tag">Placement 1</span> Home page — one section, low on the page</h3>
+    <p>It sits after "Good to know" and before the closing banner: past the point where someone is still
+    deciding whether we're worth a quote. The section changes with who's looking.</p>
+    <div class="frames">
+      <div class="dev desk">
+        <div class="cap"><span>Desktop · 1180 · in context</span><span>Home · signed out</span></div>
+        <div class="screen">
+          <div class="ground-bone" style="padding:36px 0 28px"><div class="wrap">
+            <div class="t-label c-quietest mb8">…end of “Good to know”</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;opacity:.35">
+              <div class="card p20" style="margin-right:-1px"><h3 class="t-bd-lg c-ink sb fd mb4">Do I need an account?</h3><p class="t-bd-sm c-body">No. Price a job and get a reviewed quote without one.</p></div>
+              <div class="card p20"><h3 class="t-bd-lg c-ink sb fd mb4">How fast is a quote?</h3><p class="t-bd-sm c-body">Usually within two business days of you submitting.</p></div>
+            </div>
+          </div></div>
+
+          <div class="ground-paper gridpaper" style="padding:56px 0;border-top:1px solid rgba(0,0,0,.08)"><div class="wrap" style="position:relative">
+            <div class="row g8 mb12"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="2"/></svg><span class="t-label c-sage">Refer a mate</span></div>
+            <div class="row jb ac g32 wr">
+              <div class="prose">
+                <h2 class="t-ds2 c-ink mb10">Know another tradie?</h2>
+                <p class="t-bd-lg c-body mb10">They get <b class="c-ink">2.5% off their first order</b>. You get
+                  <b class="c-ink">1% of it</b>, into your bank account within 14 days of them paying.</p>
+                <p class="t-bd-sm c-body">Any account can refer — you don't need to have ordered.</p>
+              </div>
+              <span class="btn btn-lg b-sage" style="flex:none">How it works →</span>
+            </div>
+          </div></div>
+
+          <div class="ground-bone" style="padding:28px 0;border-top:1px solid rgba(0,0,0,.08)"><div class="wrap" style="opacity:.35">
+            <div style="background:var(--sage);padding:28px" class="row jb ac"><div><h2 class="t-hd1 c-white">Your windows and doors, priced before you commit.</h2></div><span class="btn btn-md b-primary">Get a quote →</span></div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="dev mob"><div class="cap"><span>Phone · 375</span><span>signed out</span></div>
+        <div class="screen">
+          <div class="ground-paper" style="padding:32px 20px;border-top:1px solid rgba(0,0,0,.08)">
+            <div class="t-label c-sage mb10">Refer a mate</div>
+            <h2 class="c-ink mb10" style="font:600 26px/32px var(--font-display);letter-spacing:-.5px">Know another tradie?</h2>
+            <p class="t-bd c-body mb8">They get <b class="c-ink">2.5% off their first order</b>. You get <b class="c-ink">1% of it</b>, into your bank account within 14 days of them paying.</p>
+            <p class="t-bd-sm c-body mb16">Any account can refer — you don't need to have ordered.</p>
+            <span class="btn btn-md b-sage jc" style="width:100%">How it works →</span>
+          </div>
+        </div></div>
+    </div>
+
+    <div class="frames" style="margin-top:20px">
+      <div class="dev desk" style="width:700px"><div class="cap"><span>Home · signed in, no details</span><span>desktop, section only</span></div>
+        <div class="screen" style="width:682px">
+          <div class="ground-paper gridpaper" style="padding:40px 32px"><div style="position:relative">
+            <div class="t-label c-sage mb10">Refer a mate</div>
+            <h2 class="t-hd1 c-ink mb8">Know another tradie?</h2>
+            <p class="t-bd c-body mb6" style="max-width:48ch">They get <b class="c-ink">2.5% off their first order</b> and you get <b class="c-ink">1% of it</b>, paid within 14 days of them paying in full.</p>
+            <p class="t-bd-sm c-body mb16">Add your ABN and bank details and your code is ready. You don't need to have ordered.</p>
+            <span class="btn btn-md b-sage">Get my code →</span>
+          </div></div>
+        </div></div>
+
+      <div class="dev desk" style="width:700px"><div class="cap"><span>Home · signed in, code in hand</span><span>desktop, section only</span></div>
+        <div class="screen" style="width:682px">
+          <div class="ground-paper gridpaper" style="padding:40px 32px"><div style="position:relative">
+            <div class="t-label c-sage mb10">Your referral code</div>
+            <div class="card sagebar p20" style="background:var(--paper)">
+              <div class="row jb ac g16 wr">
+                <div class="row g16 ac wr">
+                  <span class="fdata sb c-ink" style="font-size:30px;line-height:1;letter-spacing:.1em">KRA-7F2</span>
+                  <span class="btn btn-sm b-outline">Copy link</span>
+                </div>
+                <div class="row g16 ac">
+                  <span class="col"><span class="t-label c-quiet">Referred</span><span class="t-data c-ink">3 mates</span></span>
+                  <span class="col"><span class="t-label c-quiet">Earned</span><span class="t-data c-ink">$186.00</span></span>
+                  <a class="t-cap c-sage" style="text-decoration:underline;text-underline-offset:2px">Referrals →</a>
+                </div>
+              </div>
+            </div>
+            <p class="t-cap c-body mt10">Your mate gets 2.5% off their first order.</p>
+          </div></div>
+        </div></div>
+    </div>
+
+    <div class="note"><b>Three variants, and the reason the third one is missing a number</b>
+      <p><b>Signed out</b> leads with what both sides get and states the no-purchase fact as its own
+      sentence. It never sequences buying before earning.</p>
+      <p><b>Signed in without details</b> makes the ask the CTA, not the code — and states the two facts
+      separately again, in the same order, so the pairing is learnable.</p>
+      <p><b>Signed in with a code</b> shows the code, the count and the lifetime earned — and deliberately
+      does <i>not</i> repeat the 1% rate. See the flag under Surface 3: a rate printed beside an earned
+      dollar figure tells the referrer, by division, exactly what their mate spent.</p>
+    </div>
+  </div>
+
+  <!-- 2B TRADE -->
+  <div class="state">
+    <h3><span class="tag">Placement 2</span> /trade-account — same offer, trade framing</h3>
+    <div class="frames">
+      <div class="dev desk"><div class="cap"><span>Desktop · 1180 · in context</span><span>/trade-account · signed out</span></div>
+        <div class="screen">
+          <div class="ground-bone" style="padding:32px 0 24px"><div class="wrap" style="opacity:.35">
+            <div class="t-label c-quietest mb8">…end of “What a trade account gets you”</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0">
+              <div class="card p16" style="margin-right:-1px"><p class="t-bd-sm c-ink sb">Priced online, in minutes</p></div>
+              <div class="card p16" style="margin-right:-1px"><p class="t-bd-sm c-ink sb">Upload a schedule</p></div>
+              <div class="card p16"><p class="t-bd-sm c-ink sb">50/50 terms</p></div>
+            </div>
+          </div></div>
+          <div class="ground-paper gridpaper" style="padding:56px 0;border-top:1px solid rgba(0,0,0,.08)"><div class="wrap" style="position:relative">
+            <div class="t-label c-sage mb12">Refer a mate</div>
+            <div class="row jb ac g32 wr">
+              <div class="prose">
+                <h2 class="t-ds2 c-ink mb10">Bring another trade account with you.</h2>
+                <p class="t-bd-lg c-body mb10">Your mate gets <b class="c-ink">2.5% off their first order</b>.
+                  You get <b class="c-ink">1% of it</b> by bank transfer, within 14 days of them paying in full.</p>
+                <p class="t-bd-sm c-body">Any registered account can refer — ordering isn't part of it. Their
+                  first order needs to be at least $2,000 ex GST, before delivery.</p>
+              </div>
+              <span class="btn btn-lg b-sage" style="flex:none">See how it works →</span>
+            </div>
+          </div></div>
+        </div></div>
+    </div>
+  </div>
+
+  <!-- 2C FOOTER + 2D ORDER -->
+  <div class="state">
+    <h3><span class="tag">Placements 3 + 4</span> The footer link, and the prompt on a delivered order</h3>
+    <div class="frames">
+      <div class="dev desk" style="width:560px"><div class="cap"><span>Site footer</span><span>every page</span></div>
+        <div class="screen" style="width:542px">
+          <div style="background:var(--ink);padding:32px"><div class="row g32" style="align-items:flex-start">
+            <div><div class="t-label c-white mb12">Products</div><div class="col g8 t-bd-sm c-w55"><span>Windows</span><span>Doors</span></div></div>
+            <div><div class="t-label c-white mb12">Service</div><div class="col g8 t-bd-sm c-w55"><span>Get a quote</span><span>Trade account</span><span class="c-white" style="text-decoration:underline;text-underline-offset:3px">Refer a mate</span><span>How it works</span><span>Privacy Policy</span></div></div>
+            <div><div class="t-label c-white mb12">Account</div><div class="col g8 t-bd-sm c-w55"><span>My Projects</span><span>Track order</span><span>Resources</span><span>Contact</span></div></div>
+          </div></div>
+        </div></div>
+
+      <div class="dev desk" style="width:760px"><div class="cap"><span>A delivered order · foot of the record</span><span>desktop</span></div>
+        <div class="screen" style="width:742px">
+          <div class="ground-bone p24">
+            <div class="card mb16" style="background:var(--paper);opacity:.4">
+              <div class="panel-head px16 py10 row jb"><span class="t-label c-quiet">Delivery</span><span class="t-data-sm c-body">14 JUL 2026</span></div>
+              <div class="p16"><p class="t-bd-sm c-body">Delivered to 3149 · signed for by M. Chen · paid in full.</p></div>
+            </div>
+            <div class="card sagebar p20" style="background:var(--paper)">
+              <div class="row jb ac g20 wr">
+                <div style="max-width:44ch">
+                  <h3 class="t-hd3 c-ink sb fd mb4">Happy with these? Refer a mate.</h3>
+                  <p class="t-bd-sm c-body">They get <b class="c-ink">2.5% off their first order</b>. You get
+                    <b class="c-ink">1% of it</b>, within 14 days of them paying in full.</p>
+                </div>
+                <div class="row g10 ac wr" style="flex:none">
+                  <span class="fdata sb c-ink" style="font-size:22px;letter-spacing:.1em">KRA-7F2</span>
+                  <span class="btn btn-sm b-sage">Copy link</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+
+      <div class="dev mob"><div class="cap"><span>Phone · delivered order</span><span>375</span></div>
+        <div class="screen">
+          <div class="ground-bone p16">
+            <div class="card p12 mb12" style="background:var(--paper);opacity:.4"><p class="t-label c-quiet mb4">Delivery</p><p class="t-bd-sm c-body">Delivered 14 JUL · paid in full.</p></div>
+            <div class="card sagebar p16" style="background:var(--paper)">
+              <h3 class="t-hd3 c-ink sb fd mb4">Happy with these? Refer a mate.</h3>
+              <p class="t-bd-sm c-body mb12">They get <b class="c-ink">2.5% off their first order</b>. You get <b class="c-ink">1% of it</b>, within 14 days of them paying in full.</p>
+              <div class="row g10 ac jb"><span class="fdata sb c-ink" style="font-size:22px;letter-spacing:.1em">KRA-7F2</span><span class="btn btn-sm b-sage">Copy link</span></div>
+            </div>
+          </div>
+        </div></div>
+    </div>
+    <div class="note"><b>The order prompt only exists on a finished job</b>
+      <p>It appears once the order is <code>delivered</code> or in after-sales — never on an in-progress
+      one, and never on a payment screen. It shows the code but no earnings figure, so it carries no rate
+      either.</p>
+      <p>A referrer who hasn't added payment details sees the same card with "Add your details to get your
+      code →" in place of the code.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     3 · ACCOUNT AREA — REFERRALS (the referrer's screen)
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section class="surface" id="s3">
+  <div class="shead">
+    <div class="n">Surface 3</div>
+    <h2>The Referrals section — money owed to you for introductions you made</h2>
+    <p>A new item in the account rail, sitting with Account and Help rather than with My Projects: it is
+    about your money, not about your jobs. A discount you were <i>given</i> by someone else is a different
+    subject and lives on the Account page (Surface 4) — this screen never explains it twice.</p>
+    <p class="path">Account rail → Referrals · same shell as My Projects / Account / Help</p>
+  </div>
+
+  <!-- 3A DETAILS MISSING -->
+  <div class="state">
+    <h3><span class="tag r">State A</span> No payment details <span class="tag">primary entry state</span></h3>
+    <p>Under the payability rule this is where <i>every</i> new referrer starts. It is not an error and it
+    is not styled as one — no amber, no warning icon, no "action required". It is the front door.</p>
+    <div class="frames">
+      <div class="dev desk">
+        <div class="cap"><span>Desktop · 1180 · account shell</span><span>Referrals · gate not passed</span></div>
+        <div class="screen">
+          <div class="ground-bone" style="padding:26px 0 60px"><div class="wrap" style="display:grid;grid-template-columns:1fr 236px;gap:34px;align-items:start">
+            <div>
+              <header class="mb20"><h1 class="t-hd1 c-ink">Referrals</h1><p class="t-bd-sm c-body mt4">Get paid for the tradies you send our way.</p></header>
+
+              <div class="card sagebar" style="background:var(--paper)">
+                <div class="p24" style="display:grid;grid-template-columns:1.1fr .9fr;gap:32px">
+                  <div>
+                    <div class="t-label c-sage mb8">One step, then it's yours</div>
+                    <h2 class="t-hd2 c-ink mb8">Where do we send the money?</h2>
+                    <p class="t-bd-sm c-body mb20" style="max-width:44ch">Add your ABN and bank details and your
+                      referral code appears right here. It's the account we pay your 1% into — nothing else uses
+                      it, and the tradies you refer never see it.</p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" class="mb16">
+                      <div style="grid-column:1/-1"><label class="field-label">ABN</label><div class="field mono">51 824 753 556</div></div>
+                      <div><label class="field-label">BSB</label><div class="field mono">063-000</div></div>
+                      <div><label class="field-label">Account number</label><div class="field mono">1234 4417</div></div>
+                      <div style="grid-column:1/-1"><label class="field-label">Account name</label><div class="field">Chen Bros Glazing Pty Ltd</div></div>
+                    </div>
+                    <span class="btn btn-md b-sage">Save and get my code</span>
+                    <div class="col g6 mt16 bt" style="padding-top:14px">
+                      <p class="t-cap c-body">· You don't need to have ordered anything to refer. Any account can.</p>
+                      <p class="t-cap c-body">· We only ever use these to pay you. Nobody else sees them.</p>
+                      <p class="t-cap c-body">· You can change or remove them any time.</p>
+                    </div>
+                  </div>
+                  <div class="p20" style="background:var(--recessive)">
+                    <div class="t-label c-quiet mb10">What this unlocks</div>
+                    <div class="row g10 ac mb14" style="border:1px dashed rgba(0,0,0,.2);padding:12px;background:var(--paper)">
+                      <span class="t-hd2 fdata c-quietest" style="letter-spacing:.14em">ABC-123</span>
+                      <span class="t-cap c-quieter">your code</span>
+                    </div>
+                    <p class="t-bd-sm c-body mb12">Your mate gets <b class="c-ink">2.5% off their first order</b>.
+                      When they've paid it in full, your <b class="c-ink">1%</b> goes out by bank transfer within
+                      <b class="c-ink">14 days</b>.</p>
+                    <div class="col g6 bt" style="padding-top:12px">
+                      <p class="t-cap c-body">Their order needs to be at least <b class="c-ink">$2,000</b> ex GST, before delivery.</p>
+                      <p class="t-cap c-body">The 1% is on the goods, excluding GST and delivery.</p>
+                      <p class="t-cap c-body">Within <b class="c-ink">12 months</b> of them signing up with your code.</p>
+                    </div>
+                    <p class="t-cap c-sage mt12" style="text-decoration:underline;text-underline-offset:2px">Full rules and terms →</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- WERE YOU REFERRED — the other side, always available while eligible -->
+              <div class="card p20 mt16" style="background:var(--paper)">
+                <h3 class="t-hd3 c-ink sb fd mb4">Were you referred?</h3>
+                <p class="t-bd-sm c-body mb12" style="max-width:52ch">If a tradie gave you a code, put it in
+                  before your first order and <b class="c-ink">2.5%</b> comes off it.</p>
+                <div class="row g10 ac wr"><span class="field mono" style="width:200px;letter-spacing:.14em;color:var(--quieter)">ABC-123</span><span class="btn btn-md b-outline">Apply code</span></div>
+              </div>
+            </div>
+
+            <!-- RAIL -->
+            <aside class="col">
+              <div class="row g10 ac bb8" style="padding:0 10px 15px;margin-bottom:8px">
+                <span style="width:38px;height:38px;background:var(--sage);color:#fff;display:grid;place-items:center;flex:none" class="t-data">CB</span>
+                <div style="min-width:0"><div class="t-bd-sm sb c-ink">Chen Bros Glazing</div><div class="t-data-sm c-body" style="letter-spacing:.05em">CUSTOMER · TRADE</div></div>
+              </div>
+              <div class="rail-item"><svg width="17" height="17" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="currentColor" stroke-width="1.5"/></svg>My Projects<span style="margin-left:auto;background:rgba(0,0,0,.045);padding:1px 7px" class="t-data-sm c-body">4</span></div>
+              <div class="bt8 mt12" style="padding-top:12px;display:flex;flex-direction:column;gap:1px">
+                <div class="rail-item on"><span class="c-sage">◈</span>Referrals</div>
+                <div class="rail-item"><span>◯</span>Account</div>
+                <div class="rail-item"><span>?</span>Help &amp; contact</div>
+                <div class="rail-item"><span>⇥</span>Sign out</div>
+              </div>
+            </aside>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="dev mob"><div class="cap"><span>Phone · 375</span><span>Referrals · gate not passed</span></div>
+        <div class="screen" style="height:1000px;overflow-y:auto">
+          <div class="ground-bone" style="padding:16px">
+            <div class="row g8 ac mb14 t-label c-body"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="2"/></svg>My Projects <span style="opacity:.45">/</span> <b class="c-ink">Referrals</b></div>
+            <h1 class="t-hd1 c-ink">Referrals</h1><p class="t-bd-sm c-body mt4 mb16">Get paid for the tradies you send our way.</p>
+            <div class="card sagebar p16" style="background:var(--paper)">
+              <div class="t-label c-sage mb6">One step, then it's yours</div>
+              <h2 class="t-hd2 c-ink mb8">Where do we send the money?</h2>
+              <p class="t-bd-sm c-body mb16">Add your ABN and bank details and your referral code appears right here. It's the account we pay your 1% into — nothing else uses it, and the tradies you refer never see it.</p>
+              <div class="col g12 mb16">
+                <div><label class="field-label">ABN</label><div class="field mono">51 824 753 556</div></div>
+                <div><label class="field-label">BSB</label><div class="field mono">063-000</div></div>
+                <div><label class="field-label">Account number</label><div class="field mono">1234 4417</div></div>
+                <div><label class="field-label">Account name</label><div class="field">Chen Bros Glazing Pty Ltd</div></div>
+              </div>
+              <span class="btn btn-md b-sage jc" style="width:100%">Save and get my code</span>
+              <div class="col g6 mt14 bt" style="padding-top:12px">
+                <p class="t-cap c-body">· You don't need to have ordered anything to refer. Any account can.</p>
+                <p class="t-cap c-body">· We only ever use these to pay you. Nobody else sees them.</p>
+                <p class="t-cap c-body">· You can change or remove them any time.</p>
+              </div>
+            </div>
+            <div class="card p16 mt12" style="background:var(--recessive)">
+              <div class="t-label c-quiet mb8">What this unlocks</div>
+              <p class="t-bd-sm c-body mb10">Your mate gets <b class="c-ink">2.5% off their first order</b>. When they've paid it in full, your <b class="c-ink">1%</b> goes out by bank transfer within <b class="c-ink">14 days</b>. Minimum order <b class="c-ink">$2,000</b> ex GST, before delivery; within <b class="c-ink">12 months</b> of them signing up.</p>
+              <p class="t-cap c-sage" style="text-decoration:underline">Full rules and terms →</p>
+            </div>
+            <div class="card p16 mt12" style="background:var(--paper)">
+              <h3 class="t-hd3 c-ink sb fd mb4">Were you referred?</h3>
+              <p class="t-bd-sm c-body mb12">If a tradie gave you a code, put it in before your first order and <b class="c-ink">2.5%</b> comes off it.</p>
+              <div class="col g8"><span class="field mono" style="letter-spacing:.14em;color:var(--quieter)">ABC-123</span><span class="btn btn-md b-outline jc">Apply code</span></div>
+            </div>
+          </div>
+        </div></div>
+    </div>
+    <div class="note"><b>What is deliberately not here</b>
+      <p>No empty table with five headers. No "0 referrals · $0.00 earned" strip. No greyed-out share
+      buttons. Until there's a code there is nothing to report, and showing empty machinery makes the ask
+      look like the price of admission to a chore.</p>
+      <p><b>"Were you referred?" is on this screen and is never gated by payment details.</b> It is the
+      other half of the program and a brand-new account may well be here for that reason alone. Applying a
+      code confirms the discount and links to the Account page — it does not restate the offer here.</p>
+    </div>
+  </div>
+
+  <!-- 3B ACTIVE, EMPTY -->
+  <div class="state">
+    <h3><span class="tag g">State B</span> Code in hand, nobody's used it yet</h3>
+    <div class="frames">
+      <div class="dev desk"><div class="cap"><span>Desktop · 1180</span><span>Referrals · empty</span></div>
+        <div class="screen">
+          <div class="ground-bone" style="padding:26px 0 60px"><div class="wrap" style="display:grid;grid-template-columns:1fr 236px;gap:34px;align-items:start">
+            <div>
+              <header class="mb20"><h1 class="t-hd1 c-ink">Referrals</h1><p class="t-bd-sm c-body mt4">Get paid for the tradies you send our way.</p></header>
+
+              <div class="card sagebar p24 mb16" style="background:var(--paper)">
+                <div class="t-label c-sage mb10">Your code</div>
+                <div class="row g20 ac wr">
+                  <span class="fdata sb c-ink" style="font-size:40px;line-height:1;letter-spacing:.1em">KRA-7F2</span>
+                  <div class="row g8 ac wr grow">
+                    <span class="field mono" style="flex:1;min-width:220px;color:var(--body)">openframe.com.au/r/KRA-7F2</span>
+                    <span class="btn btn-md b-sage">Copy link</span><span class="btn btn-md b-outline">Share</span>
+                  </div>
+                </div>
+                <p class="t-bd-sm c-body mt14 bt" style="padding-top:14px">Your mate gets <b class="c-ink">2.5%
+                  off their first order</b>. When they've paid it in full, you get <b class="c-ink">1%</b> of it —
+                  bank transfer, within <b class="c-ink">14 days</b>. Their order needs to be at least
+                  <b class="c-ink">$2,000</b> ex GST before delivery, and placed within <b class="c-ink">12
+                  months</b>. <a class="c-sage" style="text-decoration:underline;text-underline-offset:2px">Full rules →</a></p>
+              </div>
+
+              <div class="card p24 mb16" style="background:var(--paper);border-left:3px solid var(--tone-mute-bd)">
+                <h3 class="t-bd-lg c-ink sb fd mb4">Nobody's used your code yet.</h3>
+                <p class="t-bd-sm c-body">Share it with one tradie this week. They save on their first order, and
+                  you get paid when they've paid us.</p>
+              </div>
+
+              <div class="card" style="background:var(--paper)">
+                <div class="panel-head px20 py12"><span class="t-label c-quiet">How you get paid</span></div>
+                <div class="p20">
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" class="mb14">
+                    <div><p class="t-label c-quiet mb4">Bank account</p><p class="t-data c-ink">BSB 063-••• · ••••4417</p><p class="t-bd-sm c-body">Chen Bros Glazing Pty Ltd</p></div>
+                    <div><p class="t-label c-quiet mb4">ABN</p><p class="t-data c-ink">51 824 753 556</p><p class="t-cap c-pos">Checks out</p></div>
+                  </div>
+                  <p class="t-bd-sm c-body bt" style="padding-top:14px">We pay by bank transfer within
+                    <b class="c-ink">14 days</b> of your mate's order being paid in full. Amounts include any GST
+                    payable; your own tax is between you and your accountant — we don't give tax advice.</p>
+                  <div class="row g10 mt14"><span class="btn btn-sm b-outline">Edit details</span><span class="btn btn-sm b-ghost">Remove details</span></div>
+                </div>
+              </div>
+            </div>
+            <aside class="col">
+              <div class="row g10 ac bb8" style="padding:0 10px 15px;margin-bottom:8px">
+                <span style="width:38px;height:38px;background:var(--sage);color:#fff;display:grid;place-items:center;flex:none" class="t-data">CB</span>
+                <div><div class="t-bd-sm sb c-ink">Chen Bros Glazing</div><div class="t-data-sm c-body" style="letter-spacing:.05em">CUSTOMER · TRADE</div></div>
+              </div>
+              <div class="rail-item">◫ My Projects<span style="margin-left:auto;background:rgba(0,0,0,.045);padding:1px 7px" class="t-data-sm c-body">4</span></div>
+              <div class="bt8 mt12" style="padding-top:12px;display:flex;flex-direction:column;gap:1px">
+                <div class="rail-item on"><span class="c-sage">◈</span>Referrals</div>
+                <div class="rail-item"><span>◯</span>Account</div>
+                <div class="rail-item"><span>?</span>Help &amp; contact</div>
+                <div class="rail-item"><span>⇥</span>Sign out</div>
+              </div>
+            </aside>
+          </div></div>
+        </div></div>
+    </div>
+  </div>
+
+  <!-- 3C ACTIVE, POPULATED -->
+  <div class="state">
+    <h3><span class="tag g">State C</span> Three mates referred, money in three places</h3>
+    <p>The working state. Earnings first because that's what the screen is for, then who they came from,
+    then what has actually been paid.</p>
+    <div class="frames">
+      <div class="dev desk"><div class="cap"><span>Desktop · 1180</span><span>Referrals · active</span></div>
+        <div class="screen">
+          <div class="ground-bone" style="padding:26px 0 60px"><div class="wrap" style="display:grid;grid-template-columns:1fr 236px;gap:34px;align-items:start">
+            <div>
+              <header class="mb20 row jb ab wr g16"><div><h1 class="t-hd1 c-ink">Referrals</h1><p class="t-bd-sm c-body mt4">5 mates referred · next payment due <b class="c-ink">29 AUG 2026</b></p></div><span class="t-data-sm c-body">MON 17 AUG 2026</span></header>
+
+              <!-- earnings strip -->
+              <div class="card row wr mb20" style="background:var(--paper)">
+                <div class="grow p20" style="min-width:170px;border-right:1px solid rgba(0,0,0,.07)"><span class="t-label c-body">Pending</span><div class="t-hd2 sb fd c-ink mt4">$62.40</div><span class="t-cap c-body">waiting on their payment</span></div>
+                <div class="grow p20" style="min-width:170px;border-right:1px solid rgba(0,0,0,.07);background:var(--tone-pos-bg)"><span class="t-label c-body">Confirmed</span><div class="t-hd2 sb fd mt4" style="color:var(--tone-pos)">$124.00</div><span class="t-cap c-body">due by 29 AUG 2026</span></div>
+                <div class="grow p20" style="min-width:170px"><span class="t-label c-body">Paid</span><div class="t-hd2 sb fd c-ink mt4">$186.00</div><span class="t-cap c-body">lifetime</span></div>
+              </div>
+              <p class="t-cap c-body mb20" style="margin-top:-12px">These are cash amounts. Your ex/inc GST
+                setting doesn't change them — a payout isn't a price.</p>
+
+              <!-- referrals list -->
+              <div class="card mb16" style="background:var(--paper)">
+                <div class="panel-head px20 py12 row jb ac"><span class="t-label c-quiet">Your referrals</span><span class="t-data-sm c-body">5</span></div>
+                <div class="row px20 py10 bb5 t-label c-quiet"><span class="grow">Who</span><span style="width:130px">Signed up</span><span style="width:230px">Status</span></div>
+                <div class="row px20 py14 bb5 ac"><span class="grow t-bd-sm c-ink sb">Kirra Glazing</span><span style="width:130px" class="t-data-sm c-body">04 MAR 2026</span><span style="width:230px"><span class="pill p-pos">✓ Paid in full</span></span></div>
+                <div class="row px20 py14 bb5 ac"><span class="grow t-bd-sm c-ink sb">Bayside Windows &amp; Doors</span><span style="width:130px" class="t-data-sm c-body">22 APR 2026</span><span style="width:230px"><span class="pill p-work">◷ Ordered</span></span></div>
+                <div class="row px20 py14 bb5 ac"><span class="grow t-bd-sm c-ink sb">j••••@outlook.com</span><span style="width:130px" class="t-data-sm c-body">11 MAY 2026</span><span style="width:230px"><span class="pill p-work">◷ Quoting</span></span></div>
+                <div class="row px20 py14 bb5 ac"><span class="grow t-bd-sm c-ink sb">Nolan Carpentry</span><span style="width:130px" class="t-data-sm c-body">02 JUN 2026</span><span style="width:230px"><span class="pill p-draft">✎ Signed up</span></span></div>
+                <div class="row px20 py14 ac as"><span class="grow t-bd-sm c-ink sb">Trent Sole Trading</span><span style="width:130px" class="t-data-sm c-body">14 JUN 2026</span><span style="width:230px"><span class="pill p-mute">✕ Not eligible</span><p class="t-cap c-body mt4">First order was under $2,000 ex GST</p></span></div>
+                <div class="px20 py12 bt"><p class="t-cap c-body">You see the business name and how far along they
+                  are, and nothing else — never their prices, their address or what's on their job.</p></div>
+              </div>
+
+              <!-- payout history -->
+              <div class="card mb16" style="background:var(--paper)">
+                <div class="panel-head px20 py12"><span class="t-label c-quiet">Payments to you</span></div>
+                <div class="row px20 py10 bb5 t-label c-quiet"><span style="width:130px">Date</span><span style="width:110px" class="tr">Amount</span><span style="width:170px;padding-left:24px">Reference</span><span class="grow">Covers</span></div>
+                <div class="row px20 py14 bb5 ac"><span style="width:130px" class="t-data-sm c-body">14 JUL 2026</span><span style="width:110px" class="tr t-data c-ink">$186.00</span><span style="width:170px;padding-left:24px" class="t-data-sm c-body">AMJ-REF-0091</span><span class="grow t-bd-sm c-body">Kirra Glazing</span></div>
+                <div class="row px20 py14 ac"><span style="width:130px" class="t-data-sm c-body">12 MAY 2026</span><span style="width:110px" class="tr t-data c-ink">$0.00</span><span style="width:170px;padding-left:24px" class="t-data-sm c-body">—</span><span class="grow t-bd-sm c-body">Nothing due this run</span></div>
+              </div>
+
+              <!-- how you get paid -->
+              <div class="card mb16" style="background:var(--paper)">
+                <div class="panel-head px20 py12"><span class="t-label c-quiet">How you get paid</span></div>
+                <div class="p20">
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" class="mb14">
+                    <div><p class="t-label c-quiet mb4">Bank account</p><p class="t-data c-ink">BSB 063-••• · ••••4417</p><p class="t-bd-sm c-body">Chen Bros Glazing Pty Ltd</p></div>
+                    <div><p class="t-label c-quiet mb4">ABN</p><p class="t-data c-ink">51 824 753 556</p><p class="t-cap c-pos">Checks out</p></div>
+                  </div>
+                  <p class="t-bd-sm c-body bt" style="padding-top:14px">We pay by bank transfer within
+                    <b class="c-ink">14 days</b> of your mate's order being paid in full. Amounts include any GST
+                    payable; your own tax is between you and your accountant — we don't give tax advice.</p>
+                  <div class="row g10 mt14"><span class="btn btn-sm b-outline">Edit details</span><span class="btn btn-sm b-ghost">Remove details</span></div>
+                </div>
+              </div>
+
+              <!-- your code, demoted once it's in use -->
+              <div class="card sagebar p20" style="background:var(--paper)">
+                <div class="row jb ac g16 wr">
+                  <div class="row g16 ac wr"><div class="t-label c-sage" style="width:100%">Your code</div>
+                    <span class="fdata sb c-ink" style="font-size:28px;line-height:1;letter-spacing:.1em">KRA-7F2</span>
+                    <span class="t-data-sm c-body">openframe.com.au/r/KRA-7F2</span></div>
+                  <div class="row g8"><span class="btn btn-sm b-sage">Copy link</span><span class="btn btn-sm b-outline">Share</span></div>
+                </div>
+              </div>
+            </div>
+            <aside class="col">
+              <div class="row g10 ac bb8" style="padding:0 10px 15px;margin-bottom:8px">
+                <span style="width:38px;height:38px;background:var(--sage);color:#fff;display:grid;place-items:center;flex:none" class="t-data">CB</span>
+                <div><div class="t-bd-sm sb c-ink">Chen Bros Glazing</div><div class="t-data-sm c-body" style="letter-spacing:.05em">CUSTOMER · TRADE</div></div>
+              </div>
+              <div class="rail-item">◫ My Projects<span style="margin-left:auto;background:rgba(0,0,0,.045);padding:1px 7px" class="t-data-sm c-body">4</span></div>
+              <div class="bt8 mt12" style="padding-top:12px;display:flex;flex-direction:column;gap:1px">
+                <div class="rail-item on"><span class="c-sage">◈</span>Referrals<span style="margin-left:auto;background:var(--tone-pos-bg);color:var(--tone-pos);padding:1px 7px" class="t-data-sm">$124</span></div>
+                <div class="rail-item"><span>◯</span>Account</div>
+                <div class="rail-item"><span>?</span>Help &amp; contact</div>
+                <div class="rail-item"><span>⇥</span>Sign out</div>
+              </div>
+            </aside>
+          </div></div>
+        </div></div>
+
+      <div class="dev mob"><div class="cap"><span>Phone · 375</span><span>Referrals · active</span></div>
+        <div class="screen" style="height:1080px;overflow-y:auto">
+          <div class="ground-bone p16">
+            <div class="row g8 ac mb14 t-label c-body">◫ My Projects <span style="opacity:.45">/</span> <b class="c-ink">Referrals</b></div>
+            <h1 class="t-hd1 c-ink">Referrals</h1><p class="t-bd-sm c-body mt4 mb16">5 mates referred · next payment due <b class="c-ink">29 AUG 2026</b></p>
+            <div class="card col mb8" style="background:var(--paper)">
+              <div class="p16 bb5"><span class="t-label c-body">Pending</span><div class="t-hd2 sb fd c-ink mt4">$62.40</div><span class="t-cap c-body">waiting on their payment</span></div>
+              <div class="p16 bb5" style="background:var(--tone-pos-bg)"><span class="t-label c-body">Confirmed</span><div class="t-hd2 sb fd mt4" style="color:var(--tone-pos)">$124.00</div><span class="t-cap c-body">due by 29 AUG 2026</span></div>
+              <div class="p16"><span class="t-label c-body">Paid</span><div class="t-hd2 sb fd c-ink mt4">$186.00</div><span class="t-cap c-body">lifetime</span></div>
+            </div>
+            <p class="t-cap c-body mb16">These are cash amounts. Your ex/inc GST setting doesn't change them.</p>
+            <div class="card mb12" style="background:var(--paper)">
+              <div class="panel-head px16 py10 row jb"><span class="t-label c-quiet">Your referrals</span><span class="t-data-sm c-body">5</span></div>
+              <div class="p16 bb5"><div class="row jb ac g8"><span class="t-bd-sm c-ink sb">Kirra Glazing</span><span class="pill p-pos">✓ Paid</span></div><p class="t-data-sm c-body mt4">Signed up 04 MAR 2026</p></div>
+              <div class="p16 bb5"><div class="row jb ac g8"><span class="t-bd-sm c-ink sb">Bayside Windows &amp; Doors</span><span class="pill p-work">◷ Ordered</span></div><p class="t-data-sm c-body mt4">Signed up 22 APR 2026</p></div>
+              <div class="p16 bb5"><div class="row jb ac g8"><span class="t-bd-sm c-ink sb">j••••@outlook.com</span><span class="pill p-work">◷ Quoting</span></div><p class="t-data-sm c-body mt4">Signed up 11 MAY 2026</p></div>
+              <div class="p16 bb5"><div class="row jb ac g8"><span class="t-bd-sm c-ink sb">Nolan Carpentry</span><span class="pill p-draft">✎ Signed up</span></div><p class="t-data-sm c-body mt4">Signed up 02 JUN 2026</p></div>
+              <div class="p16"><div class="row jb ac g8"><span class="t-bd-sm c-ink sb">Trent Sole Trading</span><span class="pill p-mute">✕ Not eligible</span></div><p class="t-cap c-body mt4">First order was under $2,000 ex GST</p></div>
+            </div>
+            <div class="card sagebar p16" style="background:var(--paper)">
+              <div class="t-label c-sage mb8">Your code</div>
+              <div class="row jb ac g12 mb10"><span class="fdata sb c-ink" style="font-size:28px;letter-spacing:.1em">KRA-7F2</span></div>
+              <div class="col g8"><span class="btn btn-md b-sage jc">Share my link</span><span class="btn btn-md b-outline jc">Copy link</span></div>
+            </div>
+          </div>
+        </div></div>
+    </div>
+    <div class="note"><b>Reading order, and what the list refuses to say</b>
+      <p><b>Money first.</b> Three cells in the dashboard's own summary-strip component: Pending,
+      Confirmed, Paid. Confirmed is the only one that carries a tone, because it is the only one with a
+      date attached to it.</p>
+      <p><b>The confirmed cell always names the date the payment is due</b> — the promise we made in the
+      offer, restated where it can be checked.</p>
+      <p><b>Never a dollar figure against a person.</b> The list carries a business name (or a masked email
+      when they haven't set one) and a status word, and stops. What their order was worth is theirs.</p>
+      <p><b>The code drops to the bottom once it's working.</b> On an empty account it's the point of the
+      screen; on a working one, the earnings are.</p>
+    </div>
+    <div class="flag"><b>A constraint that fights the screen — please read</b>
+      <p>The legal research points out that a commission percentage is invertible: if a referrer can see
+      "$45.00 earned" and "1%" on the same screen, they can work out that their mate spent $4,500. Its
+      cheapest suggested fix is <b>not to print the rate beside the earned figure</b>; but the spec
+      requires the rate to be stated wherever the offer is made, including here.</p>
+      <p>The design takes the research's stronger option instead: <b>tell the referred tradie up front.</b>
+      A line on their discount panel and on the code-applied confirmation says their mate is notified when
+      their first order is paid and is paid a percentage of it. Nobody is surprised, so nothing needs
+      hiding. As cheap insurance the rate and the earned figures are also kept in different blocks and
+      never in the same sentence — but the disclosure is the real answer, and it needs your sign-off,
+      because it means every referred tradie is told the referrer earns a percentage of what they spend.</p>
+    </div>
+  </div>
+
+  <!-- 3D DORMANT / REFUSAL / THRESHOLD / TERMINATED -->
+  <div class="state">
+    <h3><span class="tag b">States D–G</span> The four things that go sideways</h3>
+    <div class="frames">
+      <div class="dev desk" style="width:760px"><div class="cap"><span>D · details removed — code dormant</span><span>desktop, content column</span></div>
+        <div class="screen" style="width:742px">
+          <div class="ground-bone p24">
+            <h1 class="t-hd1 c-ink mb16">Referrals</h1>
+            <div class="notice n-info infobar mb16">
+              <p class="t-bd-sm sb mb4">Your code is switched off.</p>
+              <p class="t-bd-sm">You removed your payment details, so <b>KRA-7F2</b> won't record new referrals.
+                <b>$40.00</b> is waiting to be confirmed and can't go out until we have somewhere to send it.
+                Nothing you've already been paid is affected, and the mates you've already referred keep their
+                discount.</p>
+              <span class="btn btn-sm b-sage mt12">Add my details back</span>
+            </div>
+            <div class="card sagebar p20 mb16" style="background:var(--paper);opacity:.55">
+              <div class="t-label c-quiet mb8">Your code</div>
+              <div class="row g16 ac"><span class="fdata sb c-quietest" style="font-size:28px;letter-spacing:.1em;text-decoration:line-through">KRA-7F2</span><span class="chip ch-mute">Not recording new referrals</span></div>
+            </div>
+            <div class="card" style="background:var(--paper)">
+              <div class="panel-head px20 py12"><span class="t-label c-quiet">Your referrals</span></div>
+              <div class="row px20 py14 bb5 ac"><span class="grow t-bd-sm c-ink sb">Kirra Glazing</span><span class="pill p-pos">✓ Paid in full</span></div>
+              <div class="row px20 py14 ac"><span class="grow t-bd-sm c-ink sb">Bayside Windows &amp; Doors</span><span class="pill p-work">◷ Ordered</span></div>
+            </div>
+          </div>
+        </div></div>
+
+      <div class="dev desk" style="width:560px"><div class="cap"><span>E · can't remove — confirmed money waiting</span><span>in place, under the button</span></div>
+        <div class="screen" style="width:542px">
+          <div class="ground-bone p24">
+            <div class="card" style="background:var(--paper)">
+              <div class="panel-head px20 py12"><span class="t-label c-quiet">How you get paid</span></div>
+              <div class="p20">
+                <p class="t-data c-ink mb4">BSB 063-••• · ••••4417</p><p class="t-bd-sm c-body mb14">Chen Bros Glazing Pty Ltd · ABN 51 824 753 556</p>
+                <div class="row g10 mb16"><span class="btn btn-sm b-outline">Edit details</span><span class="btn btn-sm b-ghost">Remove details</span></div>
+                <div class="notice n-warn">
+                  <p class="t-bd-sm sb mb4">We can't remove these yet.</p>
+                  <p class="t-bd-sm"><b>$124.00</b> is confirmed and hasn't gone out. We need this account to
+                    send it — usually in the next payment run, due <b>29 AUG 2026</b>. You can remove them once
+                    it's paid.</p>
+                  <span class="btn btn-sm b-outline mt12" style="border-color:var(--warning-ink);color:var(--warning-ink)">OK</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+
+      <div class="dev desk" style="width:560px"><div class="cap"><span>F · under a payout threshold</span><span>only when one is configured</span></div>
+        <div class="screen" style="width:542px">
+          <div class="ground-bone p24">
+            <div class="card row wr mb12" style="background:var(--paper)">
+              <div class="grow p16" style="min-width:150px;border-right:1px solid rgba(0,0,0,.07)"><span class="t-label c-body">Pending</span><div class="t-hd2 sb fd c-ink mt4">$0.00</div></div>
+              <div class="grow p16" style="min-width:150px;border-right:1px solid rgba(0,0,0,.07);background:var(--tone-attn-bg)"><span class="t-label c-body">Confirmed</span><div class="t-hd2 sb fd mt4" style="color:var(--tone-attn)">$20.00</div><span class="t-cap c-body">accruing</span></div>
+              <div class="grow p16" style="min-width:150px"><span class="t-label c-body">Paid</span><div class="t-hd2 sb fd c-ink mt4">$0.00</div></div>
+            </div>
+            <div class="notice n-warn"><p class="t-bd-sm">You've earned <b>$20.00</b>. We pay out once your balance
+              reaches <b>$50.00</b> — it keeps accruing until then and it isn't going anywhere.</p></div>
+            <p class="t-cap c-body mt12">The threshold ships switched off, so none of this language appears
+              anywhere unless you turn it on in the console — and when it is on it also appears on the landing
+              page, in the offer itself.</p>
+          </div>
+        </div></div>
+
+      <div class="dev desk" style="width:560px"><div class="cap"><span>G · program ended, with history</span><span>read-only</span></div>
+        <div class="screen" style="width:542px">
+          <div class="ground-bone p24">
+            <h1 class="t-hd1 c-ink mb16">Referrals</h1>
+            <div class="notice n-info mutebar mb16">
+              <p class="t-bd-sm sb mb4">This program has ended.</p>
+              <p class="t-bd-sm">We're no longer taking new referrals. Anything you'd already earned is below and
+                will still be paid, on the timetable you were given.</p>
+            </div>
+            <div class="card row wr mb12" style="background:var(--paper)">
+              <div class="grow p16" style="border-right:1px solid rgba(0,0,0,.07)"><span class="t-label c-body">Confirmed</span><div class="t-hd2 sb fd mt4" style="color:var(--tone-pos)">$124.00</div><span class="t-cap c-body">due by 29 AUG 2026</span></div>
+              <div class="grow p16"><span class="t-label c-body">Paid</span><div class="t-hd2 sb fd c-ink mt4">$186.00</div></div>
+            </div>
+            <p class="t-cap c-body">An account with no referral history doesn't see this section at all.</p>
+          </div>
+        </div></div>
+    </div>
+    <div class="note"><b>None of these is a dead end</b>
+      <p>Every one of the four says what happened, what it means for money, and what to do next. The
+      dormant state in particular is careful to say that the mates already referred keep their discount —
+      removing your bank details is not allowed to take something back from a third party.</p>
+    </div>
+  </div>
+
+  <!-- 3H MANUAL CODE ENTRY -->
+  <div class="state">
+    <h3><span class="tag">State H</span> "Were you referred?" — entering a code, and the four ways it fails</h3>
+    <div class="frames">
+      <div class="dev desk" style="width:560px"><div class="cap"><span>Success</span><span>desktop</span></div>
+        <div class="screen" style="width:542px"><div class="ground-bone p24">
+          <div class="card p20" style="background:var(--paper);border-left:3px solid var(--sage)">
+            <h3 class="t-hd3 c-ink sb fd mb8">Were you referred?</h3>
+            <div class="notice n-sage mb12">
+              <p class="t-bd-sm sb mb4">Done — 2.5% is off your first order.</p>
+              <p class="t-bd-sm">It's already in every price you see, and it's yours until <b>17 AUG 2027</b>.
+                <a class="c-sage" style="text-decoration:underline;text-underline-offset:2px">See the details on your Account page →</a></p>
+            </div>
+            <p class="t-cap c-body">Kirra Glazing will be told when your first order is paid, and is paid a
+              percentage of it.</p>
+          </div>
+        </div></div></div>
+      <div class="dev desk" style="width:560px"><div class="cap"><span>Four failures</span><span>desktop</span></div>
+        <div class="screen" style="width:542px"><div class="ground-bone p24 col g12">
+          <div class="card p16" style="background:var(--paper)"><div class="row g10 ac mb8"><span class="field mono err" style="width:180px;letter-spacing:.14em">XYZ-999</span><span class="btn btn-sm b-outline">Apply code</span></div><p class="t-cap c-dest">That code isn't valid. Check it with the tradie who gave it to you.</p></div>
+          <div class="card p16" style="background:var(--paper)"><div class="row g10 ac mb8"><span class="field mono err" style="width:180px;letter-spacing:.14em">KRA-7F2</span><span class="btn btn-sm b-outline">Apply code</span></div><p class="t-cap c-dest">That's your own code.</p></div>
+          <div class="card p16" style="background:var(--paper)"><div class="row g10 ac mb8"><span class="field mono err" style="width:180px;letter-spacing:.14em">BAY-3K8</span><span class="btn btn-sm b-outline">Apply code</span></div><p class="t-cap c-dest">Your account already has a referral — it's one per account.</p></div>
+          <div class="card p16" style="background:var(--paper)"><div class="row g10 ac mb8"><span class="field mono err" style="width:180px;letter-spacing:.14em">BAY-3K8</span><span class="btn btn-sm b-outline">Apply code</span></div><p class="t-cap c-dest">A code can only be added before your first order.</p></div>
+        </div></div></div>
+    </div>
+    <div class="note"><b>One error message covers two different situations, on purpose</b>
+      <p>A code that doesn't exist and a code whose owner has removed their bank details both return
+      "that code isn't valid". Telling a stranger "that tradie hasn't given us their bank details" would
+      disclose someone else's account state to a third party.</p>
+      <p>The success message is where the referred tradie is told what the referrer will see. It is one
+      sentence, at the moment they benefit, and it is repeated on the discount panel.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     4 · THE REFERRED TRADIE'S DISCOUNT PANEL
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section class="surface" id="s4">
+  <div class="shead">
+    <div class="n">Surface 4</div>
+    <h2>The discount panel — the other person, the other voice</h2>
+    <p>The referred tradie isn't in a program. They were handed a one-off offer on their price, so it
+    lives with the other thing on the site that governs their price: the Price display preference on the
+    Account page. It is not on the Referrals screen, because a tradie who has never referred anyone should
+    not have to go looking through a marketing screen to find out about their own price.</p>
+    <p class="path">Account page → Settings, above the Price display card</p>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag g">State A</span> Available — an offer with a clock</h3>
+    <div class="frames">
+      <div class="dev desk"><div class="cap"><span>Desktop · 1180 · Account page in context</span><span>referred account</span></div>
+        <div class="screen">
+          <div class="ground-bone" style="padding:26px 0 48px"><div class="wrap" style="display:grid;grid-template-columns:1fr 236px;gap:34px;align-items:start">
+            <div>
+              <header class="mb24"><h1 class="t-hd1 c-ink">Account</h1><p class="t-bd-sm c-body mt4">Your details and preferences.</p></header>
+              <div class="mb32" style="opacity:.4">
+                <h2 class="t-bd-lg sb fd c-ink mb12">Profile</h2>
+                <div class="card p20" style="background:var(--paper)"><p class="t-bd-sm c-body">Michael Chen · Chen Bros Glazing Pty Ltd · ABN 51 824 753 556</p></div>
+              </div>
+              <div class="bt8" style="padding-top:28px">
+                <h2 class="t-bd-lg sb fd c-ink mb16">Settings</h2>
+
+                <!-- THE PANEL -->
+                <div class="card sagebar p24 mb16" style="background:var(--paper)">
+                  <div class="row jb as g24 wr">
+                    <div style="max-width:52ch">
+                      <div class="t-label c-sage mb8">Your referral discount</div>
+                      <h3 class="t-hd1 c-ink mb8">2.5% off your first order</h3>
+                      <p class="t-bd c-body mb12">It's already in every price you see — there's nothing to
+                        apply. This is a one-off from <b class="c-ink">Kirra Glazing</b>, and it's yours until
+                        <b class="c-ink">14 MAR 2027</b>.</p>
+                      <div class="row g8 wr mb12">
+                        <span class="chip ch-sage">7 months left</span>
+                        <span class="chip ch-mute">First order only</span>
+                        <span class="chip ch-mute">One per account</span>
+                      </div>
+                      <p class="t-cap c-body">Kirra Glazing is told when your first order is paid, and is paid a
+                        percentage of it.</p>
+                    </div>
+                    <span class="btn btn-md b-sage" style="flex:none">Finish your quote →</span>
+                  </div>
+                </div>
+
+                <!-- existing cards, unchanged -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                  <div class="card p20" style="background:var(--paper)">
+                    <div class="row g8 ac mb8"><span class="c-sage">⚙</span><h3 class="t-bd-sm sb c-ink">Price display</h3></div>
+                    <p class="t-bd-sm c-body mb16">Choose how estimates show pricing across the site. This changes the display only — quoted and invoiced totals are always GST-inclusive.</p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                      <div style="border:1px solid var(--sage);background:var(--sage-wash);padding:12px"><span class="t-bd-sm sb c-ink">✓ Including GST</span><span class="t-cap c-body" style="display:block;margin-top:2px">Prices shown with 10% GST added</span></div>
+                      <div style="border:1px solid rgba(0,0,0,.12);background:#fff;padding:12px"><span class="t-bd-sm sb c-ink">Excluding GST</span><span class="t-cap c-body" style="display:block;margin-top:2px">Prices shown before GST</span></div>
+                    </div>
+                  </div>
+                  <div class="card p20" style="background:var(--paper)">
+                    <div class="row g8 ac mb8"><span class="c-sage">⚿</span><h3 class="t-bd-sm sb c-ink">Sign-in &amp; security</h3></div>
+                    <p class="t-bd-sm c-body">Your account is passwordless — you sign in with a one-time code emailed to m.chen@chenbros.com.au. There's no password to set or change.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <aside class="col">
+              <div class="row g10 ac bb8" style="padding:0 10px 15px;margin-bottom:8px">
+                <span style="width:38px;height:38px;background:var(--sage);color:#fff;display:grid;place-items:center;flex:none" class="t-data">CB</span>
+                <div><div class="t-bd-sm sb c-ink">Chen Bros Glazing</div><div class="t-data-sm c-body" style="letter-spacing:.05em">CUSTOMER · TRADE</div></div>
+              </div>
+              <div class="rail-item">◫ My Projects<span style="margin-left:auto;background:rgba(0,0,0,.045);padding:1px 7px" class="t-data-sm c-body">2</span></div>
+              <div class="bt8 mt12" style="padding-top:12px;display:flex;flex-direction:column;gap:1px">
+                <div class="rail-item"><span>◈</span>Referrals</div>
+                <div class="rail-item on"><span class="c-sage">◯</span>Account</div>
+                <div class="rail-item"><span>?</span>Help &amp; contact</div>
+                <div class="rail-item"><span>⇥</span>Sign out</div>
+              </div>
+            </aside>
+          </div></div>
+        </div></div>
+
+      <div class="dev mob"><div class="cap"><span>Phone · 375</span><span>available</span></div>
+        <div class="screen" style="height:520px">
+          <div class="ground-bone p16" style="height:100%">
+            <h2 class="t-bd-lg sb fd c-ink mb12">Settings</h2>
+            <div class="card sagebar p16" style="background:var(--paper)">
+              <div class="t-label c-sage mb6">Your referral discount</div>
+              <h3 class="t-hd2 c-ink mb8">2.5% off your first order</h3>
+              <p class="t-bd-sm c-body mb12">It's already in every price you see — there's nothing to apply.
+                This is a one-off from <b class="c-ink">Kirra Glazing</b>, and it's yours until
+                <b class="c-ink">14 MAR 2027</b>.</p>
+              <div class="row g6 wr mb12"><span class="chip ch-sage">7 months left</span><span class="chip ch-mute">First order only</span></div>
+              <span class="btn btn-md b-sage jc" style="width:100%">Finish your quote →</span>
+              <p class="t-cap c-body mt12">Kirra Glazing is told when your first order is paid, and is paid a percentage of it.</p>
+            </div>
+          </div>
+        </div></div>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">States B–D</span> Expiring · used · expired — and the account that sees nothing</h3>
+    <div class="frames">
+      <div class="dev desk" style="width:600px"><div class="cap"><span>B · under 30 days</span><span>the reminder window</span></div>
+        <div class="screen" style="width:582px"><div class="ground-bone p24">
+          <div class="card attnbar p20" style="background:var(--paper)">
+            <div class="t-label c-attn mb8">Your referral discount</div>
+            <h3 class="t-hd1 c-ink mb8">2.5% off your first order — 18 days left</h3>
+            <p class="t-bd c-body mb12">It runs out on <b class="c-ink">14 MAR 2027</b>, and it's a one-off. It's
+              already in every price you see; place your first order before then and it's yours.</p>
+            <div class="row g8 wr mb14"><span class="chip ch-warn">Expires 14 MAR 2027</span><span class="chip ch-mute">First order only</span></div>
+            <span class="btn btn-md b-sage">Finish your quote →</span>
+          </div>
+        </div></div></div>
+
+      <div class="dev desk" style="width:600px"><div class="cap"><span>C · used</span><span>past tense, no fuss</span></div>
+        <div class="screen" style="width:582px"><div class="ground-bone p24">
+          <div class="card mutebar p20" style="background:var(--paper)">
+            <div class="t-label c-quiet mb8">Your referral discount</div>
+            <h3 class="t-hd2 c-ink mb8">Your 2.5% referral discount was applied to order OF-1042</h3>
+            <p class="t-bd c-body">On <b class="c-ink">12 MAY 2026</b>. That was the one-off — nice work.</p>
+            <a class="t-cap c-sage mt12" style="display:inline-block;text-decoration:underline;text-underline-offset:2px">See that order →</a>
+          </div>
+        </div></div></div>
+
+      <div class="dev desk" style="width:600px"><div class="cap"><span>D · expired</span><span>honest, not apologetic</span></div>
+        <div class="screen" style="width:582px"><div class="ground-bone p24">
+          <div class="card mutebar p20" style="background:var(--paper)">
+            <div class="t-label c-quiet mb8">Your referral discount</div>
+            <h3 class="t-hd2 c-ink mb8">Your 2.5% referral discount expired on 14 MAR 2027</h3>
+            <p class="t-bd c-body">It applied to a first order placed within <b class="c-ink">12 months</b> of
+              signing up with Kirra Glazing's code. Your prices are unchanged from here.</p>
+          </div>
+        </div></div></div>
+
+      <div class="dev desk" style="width:600px"><div class="cap"><span>An account that was never referred</span><span>no panel at all</span></div>
+        <div class="screen" style="width:582px"><div class="ground-bone p24">
+          <h2 class="t-bd-lg sb fd c-ink mb16">Settings</h2>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="card p20" style="background:var(--paper)"><div class="row g8 ac mb8"><span class="c-sage">⚙</span><h3 class="t-bd-sm sb c-ink">Price display</h3></div><p class="t-cap c-body">Choose how estimates show pricing across the site.</p></div>
+            <div class="card p20" style="background:var(--paper)"><div class="row g8 ac mb8"><span class="c-sage">⚿</span><h3 class="t-bd-sm sb c-ink">Sign-in &amp; security</h3></div><p class="t-cap c-body">Passwordless — a one-time code by email.</p></div>
+          </div>
+          <p class="t-cap c-quietest mt16">Exactly as it is today. Nothing is added, nothing greyed out, no
+            "you don't have a referral discount" placeholder.</p>
+        </div></div></div>
+    </div>
+    <div class="note"><b>The rules this panel is built on</b>
+      <p><b>One percentage, and no other.</b> 2.5%, never a combined figure, never a reference to any other
+      discount. This is the single thing most likely to get "improved" into a total later — a total gives
+      away the standing discount by subtraction just as effectively as printing it.</p>
+      <p><b>No redemption language anywhere.</b> Not apply, redeem, claim, use at checkout, voucher, credit
+      or balance. There is no redemption moment in this system — the discount is applied when the price is
+      computed — and copy that implies otherwise creates support calls and an expectation of a further
+      reduction on top of the price already shown.</p>
+      <p><b>The expiry is in the headline, not the footnote.</b> Under 30 days it becomes the headline
+      itself, the spine turns amber, and the CTA changes to finishing the quote. That is also when the
+      reminder email goes out.</p>
+      <p><b>Nothing on this panel moves with the ex/inc GST toggle</b>, because a percentage has no GST
+      dimension. That is arithmetic, not an exemption — the prices it acted on keep honouring the
+      preference everywhere else, and if a worked dollar figure is ever added here it moves with the
+      preference like any other price.</p>
+    </div>
+    <div class="flag"><b>One thing this panel can't fix</b>
+      <p>A referred tradie has nothing to check "2.5% off" against. This site publishes no list price, so
+      the figure is unverifiable by design — which is exactly what makes it safe to show the increment
+      alone, and also what means its credibility rests entirely on tone. It is worth knowing that a tradie
+      who priced a job anonymously, then signed up with a code, will watch the price drop by more than
+      2.5% (the standing account discount arrives at the same moment). That gap exists today for every
+      registering customer; the referral is what gives them a number to compare it against.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     5 · THE QUOTE SURFACE
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section class="surface" id="s5">
+  <div class="shead">
+    <div class="n">Surface 5</div>
+    <h2>While they're quoting</h2>
+    <p>For a discount to do its job it has to be visible where the price is, not discovered on the
+    invoice. One line on the existing money panel — the referral percentage and who it came from, never a
+    total, never a dollar saving.</p>
+    <p class="path">QuoteTotals · the draft, the issued quote and the order</p>
+  </div>
+  <div class="state">
+    <h3><span class="tag">Both GST modes</span> The money panel, with and without a referral</h3>
+    <div class="frames">
+      <div class="dev desk" style="width:420px"><div class="cap"><span>Referred · inc GST</span><span>the only change</span></div>
+        <div class="screen" style="width:402px"><div class="ground-bone p20">
+          <div class="card" style="background:var(--paper)">
+            <div class="px20 py12 bb5"><p class="t-bd-sm c-ink sb">5 openings</p></div>
+            <div style="background:rgba(90,122,106,.07);border-top:1px solid rgba(0,0,0,.1)" class="px20 py14">
+              <div class="row jb ab mb8" style="padding-bottom:9px;border-bottom:1px solid rgba(0,0,0,.08)">
+                <span class="t-cap c-sagei">Referral discount — 2.5% off, thanks to Kirra Glazing</span>
+                <span class="t-cap c-sagei md">Already in the prices above</span>
+              </div>
+              <div class="row jb ac t-bd" style="margin-bottom:9px"><span class="c-body t-cap">Windows and doors (inc GST)</span><span class="fdata md c-ink">$18,420.00</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Delivery to 3149 (inc GST)</span><span class="fdata md c-ink">$540.00</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Includes GST</span><span class="fdata md c-ink">$1,723.64</span></div>
+              <div class="row jb ac sb c-ink" style="border-top:1px solid rgba(0,0,0,.1);padding-top:11px"><span class="t-bd">Total (inc GST)</span><span class="fdata t-bd-lg">$18,960.00</span></div>
+              <div class="row jb ac mt8" style="color:var(--tone-attn)"><span class="t-cap">50% deposit to begin</span><span class="fdata md t-bd">$9,480.00</span></div>
+            </div>
+          </div>
+        </div></div></div>
+
+      <div class="dev desk" style="width:420px"><div class="cap"><span>Referred · ex GST</span><span>same line, prices move</span></div>
+        <div class="screen" style="width:402px"><div class="ground-bone p20">
+          <div class="card" style="background:var(--paper)">
+            <div class="px20 py12 bb5"><p class="t-bd-sm c-ink sb">5 openings</p></div>
+            <div style="background:rgba(90,122,106,.07);border-top:1px solid rgba(0,0,0,.1)" class="px20 py14">
+              <div class="row jb ab mb8" style="padding-bottom:9px;border-bottom:1px solid rgba(0,0,0,.08)">
+                <span class="t-cap c-sagei">Referral discount — 2.5% off, thanks to Kirra Glazing</span>
+                <span class="t-cap c-sagei md">Already in the prices above</span>
+              </div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Windows and doors (ex GST)</span><span class="fdata md c-ink">$16,745.45</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Delivery to 3149 (ex GST)</span><span class="fdata md c-ink">$490.91</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">GST</span><span class="fdata md c-ink">$1,723.64</span></div>
+              <div class="row jb ac sb c-ink" style="border-top:1px solid rgba(0,0,0,.1);padding-top:11px"><span class="t-bd">Total (inc GST)</span><span class="fdata t-bd-lg">$18,960.00</span></div>
+              <div class="row jb ac mt8" style="color:var(--tone-attn)"><span class="t-cap">50% deposit to begin</span><span class="fdata md t-bd">$9,480.00</span></div>
+            </div>
+          </div>
+        </div></div></div>
+
+      <div class="dev desk" style="width:420px"><div class="cap"><span>Not referred</span><span>byte for byte as today</span></div>
+        <div class="screen" style="width:402px"><div class="ground-bone p20">
+          <div class="card" style="background:var(--paper)">
+            <div class="px20 py12 bb5"><p class="t-bd-sm c-ink sb">5 openings</p></div>
+            <div style="background:rgba(90,122,106,.07);border-top:1px solid rgba(0,0,0,.1)" class="px20 py14">
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Windows and doors (inc GST)</span><span class="fdata md c-ink">$18,890.00</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Delivery to 3149 (inc GST)</span><span class="fdata md c-ink">$540.00</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Includes GST</span><span class="fdata md c-ink">$1,766.36</span></div>
+              <div class="row jb ac sb c-ink" style="border-top:1px solid rgba(0,0,0,.1);padding-top:11px"><span class="t-bd">Total (inc GST)</span><span class="fdata t-bd-lg">$19,430.00</span></div>
+              <div class="row jb ac mt8" style="color:var(--tone-attn)"><span class="t-cap">50% deposit to begin</span><span class="fdata md t-bd">$9,715.00</span></div>
+            </div>
+          </div>
+        </div></div></div>
+    </div>
+    <div class="note"><b>One extra row and nothing else</b>
+      <p>The line names the referral percentage and the referrer, and states that it's already in the
+      prices — so there is no "where do I enter my code" question at the moment of accepting. It sits
+      <i>above</i> the figures rather than among them, because it is a statement about the prices, not one
+      of them.</p>
+      <p>It disappears at the first re-price after the discount is used or expires. An already-issued quote
+      keeps the price it offered, always.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     6 · OPS CONSOLE
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section class="surface" id="s6">
+  <div class="shead">
+    <div class="n">Surface 6</div>
+    <h2>The console — one new tab, three sub-screens</h2>
+    <p>Built exactly like Pricing: dark rail, white sticky header, sub-tab underline, dense bordered
+    tables, sage primary, confirmation in place rather than in a modal. Density and speed over polish.
+    Staff see the full picture, including the composed discount — the "never a total" rule is a
+    customer-facing rule only.</p>
+    <p class="path">src/ops · Referrals → Program · Referrals · Payouts</p>
+  </div>
+
+  <!-- 6A PROGRAM -->
+  <div class="state">
+    <h3><span class="tag">Sub-screen A</span> Program — every number, and a sentence that makes a typo visible</h3>
+    <div class="frames">
+      <div class="dev wide"><div class="cap"><span>Desktop · 1320 · ops console</span><span>Referrals → Program</span></div>
+        <div class="screen">
+          <div class="ops-shell">
+            <aside class="ops-rail">
+              <div style="padding:0 20px;height:56px;display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,.1)"><span class="c-white sb fd" style="font-size:14px;letter-spacing:.02em">OPENFRAME OPS</span></div>
+              <nav style="padding:12px 0;flex:1">
+                <div class="ops-nav">▤ Dashboard</div>
+                <div class="ops-nav">▦ Projects</div>
+                <div class="ops-nav">✉ Enquiries</div>
+                <div class="ops-nav">◍ Customers</div>
+                <div class="ops-nav">$ Pricing</div>
+                <div class="ops-nav on">◈ Referrals</div>
+                <div class="ops-nav">▤ Files</div>
+                <div class="ops-nav">⌸ Admin</div>
+              </nav>
+              <div style="border-top:1px solid rgba(255,255,255,.1);padding:12px"><p class="t-bd-sm c-white">Jo Marsden</p><p class="t-cap c-w40">jo@amjtradedirect.com.au</p></div>
+            </aside>
+            <div style="flex:1;min-width:0">
+              <div class="ops-hdr"><h1 class="sb fd t-bd" style="color:var(--ops)">Referrals</h1></div>
+              <div style="padding:32px;max-width:1040px">
+                <!-- health banner -->
+                <div class="row jb ac g16 mb20" style="padding:10px 16px;border:1px solid rgba(90,122,106,.25);background:rgba(90,122,106,.08);color:var(--sage-ink)">
+                  <span class="t-cap"><b>Program active</b> · referrer reward on · referred discount on · version 7, saved 12 AUG 2026 by Jo Marsden</span>
+                  <span class="t-cap sb">6 payouts ready — $1,240.00 →</span>
+                </div>
+                <!-- sub tabs -->
+                <div class="row g24 bb8 mb20" style="align-items:flex-end"><span class="ops-tab on">Program</span><span class="ops-tab">Referrals</span><span class="ops-tab">Payouts</span></div>
+
+                <!-- the restatement -->
+                <div class="card p20 mb20" style="background:#fff">
+                  <p class="t-label c-quiet mb8">What this configuration means</p>
+                  <p class="t-bd-sm" style="color:var(--ops);max-width:76ch">A referred tradie gets
+                    <b>2.5%</b> off their first order. When that order is at least <b>$2,000</b> ex GST
+                    (goods, after discount, excluding delivery) and paid in full, the referrer earns
+                    <b>1%</b> of it, paid within <b>14 days</b>. A referral lapses if there's no first
+                    order within <b>12 months</b>. No cap. No payout threshold.</p>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px" class="mb20">
+                  <div class="card" style="background:#fff">
+                    <div class="panel-head" style="padding:10px 16px"><span class="t-label c-quiet">Status</span></div>
+                    <div class="p16">
+                      <div class="row g8 mb12"><span class="ops-btn pri">Active</span><span class="ops-btn sec">Paused</span><span class="ops-btn sec" style="color:var(--destructive);border-color:rgba(192,57,43,.4)">Terminated</span></div>
+                      <div class="col g8">
+                        <label class="row g8 ac t-bd-sm" style="color:var(--ops)"><input type="checkbox" checked> Referrer reward active</label>
+                        <label class="row g8 ac t-bd-sm" style="color:var(--ops)"><input type="checkbox" checked> Referred discount active</label>
+                      </div>
+                      <p class="t-cap c-quiet mt12">Paused hides every placement and records nothing new; the
+                        landing page stays up and says the program is on hold.</p>
+                    </div>
+                  </div>
+                  <div class="card" style="background:#fff">
+                    <div class="panel-head" style="padding:10px 16px"><span class="t-label c-quiet">Numbers</span></div>
+                    <table class="ops">
+                      <tbody>
+                        <tr><td>Commission rate</td><td class="num" style="width:150px"><span class="ops-in">1.00</span> <span class="c-quiet t-cap">%</span></td></tr>
+                        <tr><td>Cap per referral <span class="c-quiet t-cap">— blank = no cap</span></td><td class="num"><span class="ops-in" style="color:var(--quieter)">—</span> <span class="c-quiet t-cap">$</span></td></tr>
+                        <tr><td>Qualifying minimum order</td><td class="num"><span class="ops-in">2000.00</span> <span class="c-quiet t-cap">$</span></td></tr>
+                        <tr><td>Referred discount</td><td class="num"><span class="ops-in">2.50</span> <span class="c-quiet t-cap">%</span></td></tr>
+                        <tr><td>Attribution window</td><td class="num"><span class="ops-in">12</span> <span class="c-quiet t-cap">mo</span></td></tr>
+                        <tr><td>Payment timeframe</td><td class="num"><span class="ops-in">14</span> <span class="c-quiet t-cap">days</span></td></tr>
+                        <tr><td>Minimum payout balance <span class="c-quiet t-cap">— 0 = off</span></td><td class="num"><span class="ops-in">0.00</span> <span class="c-quiet t-cap">$</span></td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="notice n-warn mb20">
+                  <p class="t-bd-sm sb mb4">Setting a minimum payout balance above $0</p>
+                  <p class="t-cap">Money held under a threshold is still legally payable and must not sit unpaid
+                    for twelve months. The payout queue force-promotes any accruing group whose oldest confirmed
+                    earning passes eleven months, threshold or not. Turning this on also puts the threshold into
+                    the offer on the landing page — it can't be a surprise found later.</p>
+                  <label class="row g8 ac t-cap mt8"><input type="checkbox"> I understand</label>
+                </div>
+
+                <p class="t-cap c-quiet mb16">Changes apply to referrals recorded from now on. Referrals already
+                  recorded keep the rate, discount, minimum, window and timeframe they were given.</p>
+                <div class="row je g16 bt8" style="padding-top:16px"><span class="ops-btn gho">Discard changes</span><span class="ops-btn pri">Review change →</span></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+    </div>
+    <div class="frames" style="margin-top:20px">
+      <div class="dev desk" style="width:620px"><div class="cap"><span>Terminating</span><span>typed confirmation, in place</span></div>
+        <div class="screen" style="width:602px"><div class="ground-bone p24">
+          <div style="border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.05);padding:16px">
+            <p class="t-bd-sm sb mb4" style="color:var(--attention-ink)">End the referral program?</p>
+            <p class="t-cap c-body mb12" style="max-width:60ch">New referrals stop being recorded and every
+              placement disappears. <b>Nothing already promised is withdrawn:</b> pending earnings still confirm
+              when their order is paid, confirmed earnings are still paid within their stated timeframe, and
+              every discount already given runs to the date it was given. To stop those, use a bulk void — it
+              is a separate, deliberate act.</p>
+            <p class="t-cap c-quiet mb6">Type TERMINATE to confirm</p>
+            <div class="field mono mb12" style="width:200px;color:var(--quieter)">TERMINATE</div>
+            <div class="row g8"><span class="ops-btn pri" style="background:var(--destructive)">End the program</span><span class="ops-btn gho">Cancel</span></div>
+          </div>
+        </div></div></div>
+      <div class="dev desk" style="width:620px"><div class="cap"><span>Stale save</span><span>version conflict</span></div>
+        <div class="screen" style="width:602px"><div class="ground-bone p24">
+          <div class="notice n-warn">
+            <p class="t-bd-sm sb mb4">Someone else saved first.</p>
+            <p class="t-cap">These settings were changed by Rob Nguyen at 10:42 today, so your version (7) is no
+              longer current. Reload to see theirs, then make your change again — nothing of yours was saved.</p>
+            <span class="ops-btn sec mt12">Reload settings</span>
+          </div>
+        </div></div></div>
+    </div>
+  </div>
+
+  <!-- 6B REFERRALS LIST -->
+  <div class="state">
+    <h3><span class="tag">Sub-screen B</span> Referrals — the list, the flags, and the two ways to stop one</h3>
+    <div class="frames">
+      <div class="dev wide"><div class="cap"><span>Desktop · 1320</span><span>Referrals → Referrals</span></div>
+        <div class="screen">
+          <div class="ops-shell">
+            <aside class="ops-rail">
+              <div style="padding:0 20px;height:56px;display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,.1)"><span class="c-white sb fd" style="font-size:14px">OPENFRAME OPS</span></div>
+              <nav style="padding:12px 0;flex:1">
+                <div class="ops-nav">▤ Dashboard</div><div class="ops-nav">▦ Projects</div><div class="ops-nav">✉ Enquiries</div>
+                <div class="ops-nav">◍ Customers</div><div class="ops-nav">$ Pricing</div><div class="ops-nav on">◈ Referrals</div>
+                <div class="ops-nav">▤ Files</div><div class="ops-nav">⌸ Admin</div>
+              </nav>
+            </aside>
+            <div style="flex:1;min-width:0">
+              <div class="ops-hdr"><h1 class="sb fd t-bd" style="color:var(--ops)">Referrals</h1></div>
+              <div style="padding:32px">
+                <div class="row g24 bb8 mb16" style="align-items:flex-end"><span class="ops-tab">Program</span><span class="ops-tab on">Referrals</span><span class="ops-tab">Payouts</span></div>
+                <div class="row jb ac g16 mb16 wr">
+                  <div class="row g8 wr">
+                    <span class="ops-btn pri" style="padding:8px 12px;font-size:13px">All <b>38</b></span>
+                    <span class="ops-btn sec" style="padding:8px 12px;font-size:13px">Recorded 12</span>
+                    <span class="ops-btn sec" style="padding:8px 12px;font-size:13px">Ordered 4</span>
+                    <span class="ops-btn sec" style="padding:8px 12px;font-size:13px">Earned 9</span>
+                    <span class="ops-btn sec" style="padding:8px 12px;font-size:13px">Paid 11</span>
+                    <span class="ops-btn sec" style="padding:8px 12px;font-size:13px">Expired 1</span>
+                    <span class="ops-btn sec" style="padding:8px 12px;font-size:13px">Void 1</span>
+                  </div>
+                  <div class="row g8 ac">
+                    <span class="field mono" style="width:260px;padding:6px 10px;color:var(--quieter);font-size:13px">code, referrer or referred email…</span>
+                    <span class="ops-btn sec">Bulk void…</span>
+                  </div>
+                </div>
+                <div class="card" style="background:#fff;overflow-x:auto">
+                  <table class="ops" style="min-width:1000px">
+                    <thead><tr><th>Referrer</th><th>Referred</th><th>Code</th><th>Recorded</th><th>Status</th><th class="num">Earning</th><th>Flags</th></tr></thead>
+                    <tbody>
+                      <tr><td>Chen Bros Glazing<span style="display:block" class="c-quiet t-cap">m.chen@chenbros.com.au</span></td>
+                        <td>Bayside Windows &amp; Doors<span style="display:block" class="c-quiet t-cap">ops@baysidewd.com.au</span></td>
+                        <td class="fdata">KRA-7F2</td><td class="fdata">22 APR 2026</td>
+                        <td><span class="chip ch-info">Ordered</span></td><td class="num">$62.40</td>
+                        <td><span class="chip ch-warn">Postcode 3149</span></td></tr>
+                      <tr><td>Chen Bros Glazing</td><td>Kirra Glazing</td><td class="fdata">KRA-7F2</td><td class="fdata">04 MAR 2026</td>
+                        <td><span class="chip ch-sage">Paid</span></td><td class="num">$186.00</td><td class="c-quietest">—</td></tr>
+                      <tr style="background:rgba(180,120,40,.05)"><td>Trent Sole Trading<span style="display:block" class="c-quiet t-cap">trent@tsole.com.au</span></td>
+                        <td>T Sole Pty Ltd<span style="display:block" class="c-quiet t-cap">accounts@tsolepl.com.au</span></td>
+                        <td class="fdata">TSL-9M4</td><td class="fdata">14 JUN 2026</td>
+                        <td><span class="chip ch-info">Ordered</span></td><td class="num">$41.00</td>
+                        <td><span class="chip ch-warn">ABN</span> <span class="chip ch-warn">Phone</span> <span class="chip ch-warn">Name</span></td></tr>
+                      <tr><td>Nolan Carpentry</td><td>h••••@gmail.com</td><td class="fdata">NOL-2QP</td><td class="fdata">02 JUN 2026</td>
+                        <td><span class="chip ch-mute">Recorded</span></td><td class="num c-quietest">—</td><td class="c-quietest">—</td></tr>
+                      <tr><td>Bayside Windows &amp; Doors</td><td>Hume Shopfitting</td><td class="fdata">BAY-3K8</td><td class="fdata">08 JUL 2025</td>
+                        <td><span class="chip ch-mute">Expired</span><span style="display:block" class="c-quiet t-cap">no first order in 12 months</span></td><td class="num c-quietest">—</td><td class="c-quietest">—</td></tr>
+                      <tr style="opacity:.6"><td>Faraday Alu</td><td>d••••@proton.me</td><td class="fdata">FAR-6XT</td><td class="fdata">19 MAY 2026</td>
+                        <td><span class="chip" style="border-color:rgba(192,57,43,.35);color:var(--attention-ink);background:rgba(192,57,43,.07)">Void</span><span style="display:block" class="c-quiet t-cap">Same person — confirmed by phone</span></td><td class="num c-quietest">—</td><td class="c-quietest">—</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p class="t-cap c-quiet mt8">Flags are a signal for a reviewer, not a control — one person can
+                  legitimately hold several ABNs, and a suburb full of tradies is the market, not fraud. Click a
+                  row to see both accounts and void it. There is no action here that creates a referral.</p>
+              </div>
+            </div>
+          </div>
+        </div></div>
+    </div>
+    <div class="frames" style="margin-top:20px">
+      <div class="dev desk" style="width:620px"><div class="cap"><span>Void — reason required</span><span>in place</span></div>
+        <div class="screen" style="width:602px"><div class="ground-bone p24">
+          <div style="border:1px solid rgba(90,122,106,.35);background:rgba(90,122,106,.06);padding:16px">
+            <p class="t-bd-sm mb4" style="color:var(--ops)">Void this referral?</p>
+            <p class="t-cap c-quiet mb10">Trent Sole Trading → T Sole Pty Ltd. The earning of $41.00 leaves the
+              ready-to-pay queue. Any not-yet-issued quote can then be re-priced without the discount. An issued
+              quote keeps its price.</p>
+            <p class="t-cap c-quiet mb4">Reason — staff read this later to understand why money didn't go out</p>
+            <div class="field mb12" style="color:var(--quieter)">Same ABN and phone; confirmed by phone it's one business.</div>
+            <div class="row g8"><span class="ops-btn pri">Void referral</span><span class="ops-btn gho">Cancel</span></div>
+          </div>
+        </div></div></div>
+      <div class="dev desk" style="width:620px"><div class="cap"><span>Bulk void</span><span>the only way to stop in-flight promises</span></div>
+        <div class="screen" style="width:602px"><div class="ground-bone p24">
+          <div style="border:1px solid rgba(192,57,43,.35);background:rgba(192,57,43,.05);padding:16px">
+            <p class="t-bd-sm sb mb4" style="color:var(--attention-ink)">Void 12 recorded referrals</p>
+            <p class="t-cap c-body mb10" style="max-width:60ch">This withdraws promises already made to real
+              people: 12 referrers lose an expected payment and 12 referred tradies lose a discount they were
+              told about. It is not what ending the program does, and it cannot be undone in bulk.</p>
+            <p class="t-cap c-quiet mb4">Reason</p><div class="field mb10" style="color:var(--quieter)">Why these are being stopped</div>
+            <p class="t-cap c-quiet mb4">Type VOID to confirm</p><div class="field mono mb12" style="width:160px;color:var(--quieter)">VOID</div>
+            <div class="row g8"><span class="ops-btn pri" style="background:var(--destructive)">Void 12 referrals</span><span class="ops-btn gho">Cancel</span></div>
+          </div>
+        </div></div></div>
+    </div>
+  </div>
+
+  <!-- 6C PAYOUTS -->
+  <div class="state">
+    <h3><span class="tag g">Sub-screen C</span> Payouts — the weekly job, start to finish</h3>
+    <p>Open it, read the number at the top, export the CSV, pay six people from the business banking,
+    paste the bank's reference, mark it paid. A few minutes, once a week.</p>
+    <div class="frames">
+      <div class="dev wide"><div class="cap"><span>Desktop · 1320</span><span>Referrals → Payouts</span></div>
+        <div class="screen">
+          <div class="ops-shell">
+            <aside class="ops-rail">
+              <div style="padding:0 20px;height:56px;display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,.1)"><span class="c-white sb fd" style="font-size:14px">OPENFRAME OPS</span></div>
+              <nav style="padding:12px 0;flex:1">
+                <div class="ops-nav">▤ Dashboard</div><div class="ops-nav">▦ Projects</div><div class="ops-nav">✉ Enquiries</div>
+                <div class="ops-nav">◍ Customers</div><div class="ops-nav">$ Pricing</div><div class="ops-nav on">◈ Referrals</div>
+                <div class="ops-nav">▤ Files</div><div class="ops-nav">⌸ Admin</div>
+              </nav>
+            </aside>
+            <div style="flex:1;min-width:0">
+              <div class="ops-hdr"><h1 class="sb fd t-bd" style="color:var(--ops)">Referrals</h1></div>
+              <div style="padding:32px">
+                <div class="row g24 bb8 mb16" style="align-items:flex-end"><span class="ops-tab">Program</span><span class="ops-tab">Referrals</span><span class="ops-tab on">Payouts</span></div>
+
+                <div class="card mb16" style="background:#fff;border-left:2px solid var(--sage)">
+                  <div class="row jb ac g16 wr" style="padding:16px 20px">
+                    <div class="row g12 ab"><span class="t-hd2 sb fd" style="color:var(--ops)">6 referrers</span><span class="t-hd2 sb fd fdata" style="color:var(--ops)">$1,240.00</span><span class="t-cap c-quiet">ready to pay · 1 past its promised date</span></div>
+                    <div class="row g8"><span class="ops-btn sec">Export CSV</span><span class="ops-btn pri">Mark paid…</span></div>
+                  </div>
+                </div>
+
+                <div class="card mb16" style="background:#fff;overflow-x:auto">
+                  <div class="panel-head row jb ac" style="padding:10px 16px"><span class="t-label c-quiet">Ready to pay</span><span class="t-cap c-quiet">grouped per referrer — one transfer each</span></div>
+                  <table class="ops" style="min-width:1080px">
+                    <thead><tr><th>Referrer</th><th>ABN</th><th>BSB</th><th>Account</th><th>Account name</th><th class="num">Amount</th><th>Oldest confirmed</th><th></th></tr></thead>
+                    <tbody>
+                      <tr style="background:rgba(180,120,40,.06)">
+                        <td>Faraday Alu<span style="display:block" class="c-quiet t-cap">2 earnings</span></td>
+                        <td class="fdata">42 118 903 664</td><td class="fdata">083-004</td><td class="fdata">55219087</td><td>Faraday Alu Pty Ltd</td>
+                        <td class="num">$410.00</td>
+                        <td class="fdata">01 AUG 2026<span style="display:block"><span class="chip ch-warn">Over promise — 16 days</span></span></td>
+                        <td><span class="ops-btn gho" style="padding:2px 6px">Mark failed</span></td></tr>
+                      <tr><td>Chen Bros Glazing<span style="display:block" class="c-quiet t-cap">1 earning</span></td>
+                        <td class="fdata">51 824 753 556</td><td class="fdata">063-000</td><td class="fdata">12344417</td><td>Chen Bros Glazing Pty Ltd</td>
+                        <td class="num">$124.00</td><td class="fdata">11 AUG 2026 · 6 days</td><td></td></tr>
+                      <tr><td>Nolan Carpentry<span style="display:block" class="c-quiet t-cap">3 earnings</span></td>
+                        <td class="fdata">77 610 442 019</td><td class="fdata">013-256</td><td class="fdata">409881</td><td>K &amp; L Nolan</td>
+                        <td class="num">$318.00</td><td class="fdata">12 AUG 2026 · 5 days</td><td></td></tr>
+                      <tr><td>Bayside Windows &amp; Doors</td><td class="fdata">29 004 811 320</td><td class="fdata">063-118</td><td class="fdata">88104229</td><td>Bayside WD Pty Ltd</td>
+                        <td class="num">$205.00</td><td class="fdata">14 AUG 2026 · 3 days</td><td></td></tr>
+                      <tr><td>Hume Shopfitting</td><td class="fdata">61 337 905 118</td><td class="fdata">193-879</td><td class="fdata">21104774</td><td>Hume Shopfitting</td>
+                        <td class="num">$118.00</td><td class="fdata">15 AUG 2026 · 2 days</td><td></td></tr>
+                      <tr><td>Kirra Glazing</td><td class="fdata">18 552 003 771</td><td class="fdata">063-889</td><td class="fdata">70023118</td><td>Kirra Glazing</td>
+                        <td class="num">$65.00</td><td class="fdata">16 AUG 2026 · 1 day</td><td></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="card mb16" style="background:#fff;opacity:.75">
+                  <div class="panel-head row jb ac" style="padding:10px 16px"><span class="t-label c-quiet">Accruing — under the $50.00 threshold</span><span class="t-cap c-quiet">3 referrers · $84.00 · excluded from this run</span></div>
+                  <table class="ops">
+                    <tbody>
+                      <tr><td>Sandhu Building</td><td class="num" style="width:120px">$34.00</td><td class="fdata" style="width:200px">oldest 04 SEP 2025 <span class="chip ch-warn">Forced — 11 months</span></td><td style="width:130px"><span class="ops-btn sec" style="padding:2px 8px">Pay anyway</span></td></tr>
+                      <tr><td>Ellis &amp; Sons</td><td class="num">$28.00</td><td class="fdata">oldest 02 JUL 2026</td><td><span class="ops-btn sec" style="padding:2px 8px">Pay anyway</span></td></tr>
+                      <tr><td>t••••@bigpond.com</td><td class="num">$22.00</td><td class="fdata">oldest 28 JUL 2026</td><td><span class="ops-btn sec" style="padding:2px 8px">Pay anyway</span></td></tr>
+                    </tbody>
+                  </table>
+                  <p class="t-cap c-quiet" style="padding:10px 16px">This whole group only exists when a minimum
+                    payout balance is set. Anything past eleven months is promoted into the run automatically.</p>
+                </div>
+
+                <div class="card" style="background:#fff">
+                  <div class="panel-head row jb ac" style="padding:10px 16px"><span class="t-label c-quiet">Payments made</span><span class="row g8 ac"><span class="t-cap c-quiet">01 JUL 2026 → 17 AUG 2026</span><span class="ops-btn sec" style="padding:2px 8px">Export CSV</span></span></div>
+                  <table class="ops">
+                    <thead><tr><th>Paid</th><th>Referrer</th><th>Reference</th><th>Account paid</th><th class="num">Amount</th><th>By</th><th>Status</th></tr></thead>
+                    <tbody>
+                      <tr><td class="fdata">14 JUL 2026</td><td>Chen Bros Glazing</td><td class="fdata">AMJ-REF-0091</td><td class="fdata">063-000 · 12344417</td><td class="num">$186.00</td><td>Jo Marsden</td><td><span class="chip ch-sage">Paid</span></td></tr>
+                      <tr><td class="fdata">14 JUL 2026</td><td>Faraday Alu</td><td class="fdata">AMJ-REF-0092</td><td class="fdata">083-004 · 55219087</td><td class="num">$95.00</td><td>Jo Marsden</td><td><span class="chip" style="border-color:rgba(192,57,43,.35);color:var(--attention-ink);background:rgba(192,57,43,.07)">Failed — account closed</span></td></tr>
+                    </tbody>
+                  </table>
+                  <p class="t-cap c-quiet" style="padding:10px 16px">Bank details are frozen onto each payment as
+                    it goes out, so this stays correct after a referrer changes or removes theirs. This is the
+                    accountant's record.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+    </div>
+    <div class="frames" style="margin-top:20px">
+      <div class="dev desk" style="width:660px"><div class="cap"><span>Mark paid</span><span>confirm in place, after the transfer</span></div>
+        <div class="screen" style="width:642px"><div class="ground-bone p24">
+          <div style="border:1px solid rgba(90,122,106,.35);background:rgba(90,122,106,.06);padding:16px">
+            <p class="t-bd-sm mb4" style="color:var(--ops)">Mark 6 payouts paid — $1,240.00</p>
+            <p class="t-cap c-quiet mb10" style="max-width:62ch">Do this <b>after</b> you've made the transfers.
+              It flips 9 earnings to paid, freezes each referrer's bank details onto their payment record, and
+              emails all six.</p>
+            <p class="t-cap c-quiet mb4">Bank reference from the transfer you made</p>
+            <div class="field mono mb12" style="width:240px;color:var(--quieter)">AMJ-REF-0093</div>
+            <label class="row g8 ac t-cap c-quiet mb12"><input type="checkbox"> Include the 3 accruing referrers ($84.00)</label>
+            <div class="row g8"><span class="ops-btn pri">Mark 6 paid</span><span class="ops-btn gho">Cancel</span></div>
+          </div>
+        </div></div></div>
+      <div class="dev desk" style="width:660px"><div class="cap"><span>Dashboard row</span><span>renders nothing at zero</span></div>
+        <div class="screen" style="width:642px"><div class="ground-bone p24">
+          <div class="card" style="background:#fff;border-left:2px solid var(--sage)">
+            <div class="panel-head" style="padding:10px 20px"><span class="t-label c-quiet">Needs us</span></div>
+            <div class="row ab g12" style="padding:14px 20px;border-bottom:1px solid rgba(0,0,0,.05)"><span class="t-hd2 sb fd" style="color:var(--ops)">3</span><span class="t-bd-sm grow" style="color:var(--ops)">projects waiting on a price</span><span class="t-cap c-sage">Open →</span></div>
+            <div class="row ab g12" style="padding:14px 20px;border-bottom:1px solid rgba(0,0,0,.05)"><span class="t-hd2 sb fd" style="color:var(--ops)">6</span><span class="t-bd-sm grow" style="color:var(--ops)">referral payouts ready — $1,240.00, one 16 days old</span><span class="t-cap c-sage">Open →</span></div>
+            <div class="row ab g12" style="padding:14px 20px"><span class="t-hd2 sb fd" style="color:var(--ops)">1</span><span class="t-bd-sm grow" style="color:var(--ops)">enquiry unanswered</span><span class="t-cap c-sage">Open →</span></div>
+          </div>
+        </div></div></div>
+      <div class="dev desk" style="width:660px"><div class="cap"><span>Nothing to do</span><span>empty state</span></div>
+        <div class="screen" style="width:642px"><div class="ground-bone p24">
+          <div class="card mb16" style="background:#fff;border-left:2px solid var(--sage)"><div class="row jb ac" style="padding:16px 20px"><div class="row g12 ab"><span class="t-hd2 sb fd" style="color:var(--ops)">Nothing ready</span></div><span class="ops-btn sec">Export CSV</span></div></div>
+          <div class="ops-empty">No referral payouts are ready. Earnings appear here once the referred order is paid in full.</div>
+        </div></div></div>
+    </div>
+    <div class="note"><b>Two things the queue does that a staff member shouldn't have to remember</b>
+      <p><b>Anything past its promised date sorts to the top and is flagged.</b> The 14 days is a promise
+      made in the offer; a weekly run must not quietly let one slip past it.</p>
+      <p><b>Accruing money can't age out of sight.</b> If a payout threshold is ever switched on, any group
+      whose oldest confirmed earning passes eleven months is promoted into the run regardless — a month of
+      margin before it would become a statutory problem.</p>
+      <p>Full bank details are visible here and in the CSV, and every unmasked read is logged. There is no
+      screen for that log, by design.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     CLOSING
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section class="surface" id="end">
+  <div class="shead">
+    <div class="n">Before you approve</div>
+    <h2>Four things worth a decision, and one you can't have</h2>
+  </div>
+  <div class="state">
+    <div class="flag"><b>1 · The payment-details gate is the program's biggest cost</b>
+      <p>Asking for an ABN and bank details before a tradie has earned anything will lose some of them.
+      Surface 1 State B and Surface 3 State A are designed to make the ask feel proportionate — money-first
+      headline, what-you-get before what-we-want, four fields, one button, and three lines that answer
+      "who sees this, and can I undo it". That is everything design can do. If reach turns out to matter
+      more than never holding unpayable money, the thing to revisit is the rule, not the screen.</p></div>
+    <div class="flag"><b>2 · Telling the referred tradie that their mate earns a percentage</b>
+      <p>A commission percentage is invertible: rate plus earned amount equals their mate's order value.
+      The design's answer is to say so up front — on the code-applied confirmation and on the discount
+      panel: "Kirra Glazing is told when your first order is paid, and is paid a percentage of it." That
+      sentence needs your approval, because it means every referred tradie knows the referrer profits from
+      their spend. The alternative — hiding the rate from the earnings screen, or showing banded amounts —
+      costs the referrer clarity about their own money, which is the whole point of that screen.</p></div>
+    <div class="flag"><b>3 · The GST sentence on the payout is a placeholder position, not a settled one</b>
+      <p>Everywhere the payout is described, the copy says "Amounts include any GST payable." That follows
+      the decision already taken, but a bare stated figure defaults to GST-inclusive in law and the exact
+      wording is an accountant question. The words are in a slot that can be swapped without touching
+      layout — but they must not ship unreviewed, because "we pay you 1%" with nothing said about GST is
+      the one formulation that is definitely wrong.</p></div>
+    <div class="flag"><b>4 · Two things that could not be satisfied and were not worked around</b>
+      <p><b>A referred tradie cannot verify their discount.</b> The site publishes no list price, so
+      "2.5% off" has nothing visible to be off. That is precisely what makes showing the increment alone
+      safe — but it also means the claim rests on trust rather than on arithmetic, and a tradie who priced
+      a job anonymously before signing up will see the price move by more than 2.5%.</p>
+      <p><b>"Any account can refer" and "we need your bank details" is a confusing pair on a phone.</b>
+      The law requires them to be separate facts, and this design separates them typographically
+      everywhere. It cannot make them feel like one simple rule, because they aren't one.</p></div>
+    <div class="note"><b>What changes if you change a number</b>
+      <p>Nothing in this mock is written around 2.5% or 1%. Raise the discount to 5%, drop the minimum to
+      $1,000, shorten the window to six months — every figure on every screen re-renders and not one
+      sentence needs rewriting. That is why the numbers are always followed by a noun ("2.5% off their
+      first order", "$2,000 ex GST", "12 months") rather than fused into the grammar.</p>
+    </div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>
