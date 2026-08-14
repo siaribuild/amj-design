@@ -18,13 +18,21 @@
 -- the safer order to reason about, even though a plain column carrying only a
 -- FOREIGN KEY reference turns out not to need this — see 0049).
 --
--- `project.current_revision_id` and `quote_line.revision_id` were left in
--- place here on the theory that a column forever NULL never trips a foreign
--- key check. That held for INSERT/UPDATE, but not for D1's schema-wide
--- validation on things as ordinary as `DELETE FROM quote_line` — with the
--- referenced table gone, every statement against the OWNING table failed
--- outright. Corrected in 0049, which drops both directly (SQLite's ALTER
--- TABLE DROP COLUMN does not, in fact, refuse a plain FK-reference column).
+-- `project.current_revision_id` and `quote_line.revision_id` are dropped HERE,
+-- before the tables they point at, and that ordering is the whole lesson of
+-- this file. They were originally left in place on the theory that a column
+-- forever NULL never trips a foreign key check. That theory failed twice:
+--
+--   1. locally, D1 validates a table's own FK definitions on statements as
+--      ordinary as `DELETE FROM quote_line` — with the referenced table gone,
+--      every statement against the OWNING table failed outright; and
+--   2. against PRODUCTION, where one project still had current_revision_id
+--      set, `DROP TABLE quote_revision` itself failed with FOREIGN KEY
+--      constraint failed. The column was only ever NULL in a freshly-seeded
+--      local database, which is exactly why local runs looked clean.
+--
+-- SQLite's ALTER TABLE DROP COLUMN does not refuse a plain FK-reference
+-- column, so dropping them first is both legal and sufficient.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ── 1. order_line carries the whole opening ─────────────────────────────────
@@ -185,5 +193,10 @@ CREATE INDEX idx_learning_ex_project ON learning_examples(project_id);
 CREATE INDEX idx_learning_ex_retrieval ON learning_examples(eligible_for_retrieval);
 
 -- ── 4. Drop the snapshot tables themselves ──────────────────────────────────
+-- The pointers go first (see the header): a single project still carrying a
+-- current_revision_id is enough to make the DROP below fail outright.
+ALTER TABLE project DROP COLUMN current_revision_id;
+ALTER TABLE quote_line DROP COLUMN revision_id;
+
 DROP TABLE revision_line;
 DROP TABLE quote_revision;
