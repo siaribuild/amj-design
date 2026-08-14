@@ -652,46 +652,61 @@ test("the catalogue query asks Sanity for that same order", () => {
   assert.match(M.CATALOGUE_QUERY, /"categories":\s*\*\[_type=="category"\]\|order\(orderRank asc\)/);
 });
 
-// ── GST display preference (owner spec, 2026-08-14) ─────────────────────────
-// Stored money is GST-INCLUSIVE. An account may read it ex-GST, but two things
-// never move: the grand total and anything the customer pays.
-test("taxBreakdown: ex-GST splits the rows and lets GST absorb the rounding", () => {
-  // The owner's own figures from OF-Q-10020.
-  const t = M.taxBreakdown("ex", 14370, 8000, 22370);
+// ── GST display preference + rounding rule (owner spec, 2026-08-14) ─────────
+// Stored money is GST-INCLUSIVE. An account may read it ex-GST, but the GST
+// figure, the grand total and anything the customer pays never move.
+//
+// The rule is the ATO TAXABLE SUPPLY rule at LINE granularity: GST on each
+// supply, rounded, then summed. The alternative (1/11 of the invoice total) is
+// equally legal and gives 2033.64 on these numbers — the requirement is to pick
+// one and never mix them, which is what these tests hold.
+const OFQ = { lineTotalsInc: [14370], deliveryInc: 8000, totalInc: 22370 };
+
+test("taxBreakdown: GST is the SAME figure in ex and inc mode — one sale, one GST", () => {
+  // The regression this exists for: the first version used the taxable-supply
+  // rule for ex and the total-invoice rule for inc, so the same quote reported
+  // 2033.63 or 2033.64 depending on a DISPLAY PREFERENCE.
+  const ex = M.taxBreakdown("ex", OFQ);
+  const inc = M.taxBreakdown("inc", OFQ);
+  assert.equal(ex.gst, inc.gst, "a display preference cannot change the tax on a sale");
+  assert.equal(ex.gst, 2033.63, "taxable supply rule: 1306.36 on goods + 727.27 on freight");
+  assert.equal(ex.totalInc, inc.totalInc);
+});
+
+test("taxBreakdown: ex-GST shows every row net, and the column sums to the total", () => {
+  const t = M.taxBreakdown("ex", OFQ);
   assert.equal(t.goods, 13063.64);
   assert.equal(t.delivery, 7272.73);
   assert.equal(t.gstLabel, "GST 10%");
   assert.equal(t.suffix, "ex GST");
-  // THE POINT: dividing each row by 1.1 gives 20,336.37 where the true ex-GST
-  // subtotal is 20,336.36. The GST line carries that cent so the column a
-  // customer can add up reconciles to the total they are agreeing to.
-  assert.equal(t.gst, 2033.63);
   assert.equal(Math.round((t.goods + t.delivery + t.gst) * 100) / 100, 22370,
-    "the visible column must sum to the contractual total, exactly");
+    "a customer adding the visible column must land on the contractual total");
 });
 
-test("taxBreakdown: inc-GST leaves the rows alone and states the GST contained", () => {
-  const t = M.taxBreakdown("inc", 14370, 8000, 22370);
+test("taxBreakdown: inc-GST shows every row gross and states the GST contained", () => {
+  const t = M.taxBreakdown("inc", OFQ);
   assert.equal(t.goods, 14370);
   assert.equal(t.delivery, 8000);
-  assert.equal(t.gst, 2033.64, "one eleventh of the inclusive total");
-  assert.equal(t.gstLabel, "Includes GST of", "ATO wording — it is not added, it is already there");
+  assert.equal(t.gstLabel, "Includes GST of", "ATO wording — not added, already there");
   assert.equal(t.suffix, "inc GST");
 });
 
-test("taxBreakdown: the grand total is the same figure in both modes", () => {
-  // A quote is agreed at one number. The display preference changes how the
-  // rows are read, never what is owed — which is why deposit and balance are
-  // computed server-side from this figure and never from the ex-GST reading.
-  assert.equal(M.taxBreakdown("ex", 14370, 8000, 22370).totalInc,
-    M.taxBreakdown("inc", 14370, 8000, 22370).totalInc);
+test("taxBreakdown: GST is worked out PER LINE, not on the pre-summed goods", () => {
+  // Two 5c lines: per line each nets to 0.05 (0.0454 rounds up), so goods ex is
+  // 0.10 and the GST on them is 0. Rounding the 0.10 aggregate instead gives
+  // 0.09 and a cent of GST — a different, also-legal answer. This asserts WHICH
+  // one we do, because the line prices on screen have to sum to the subtotal
+  // printed under them.
+  const t = M.taxBreakdown("ex", { lineTotalsInc: [0.05, 0.05], deliveryInc: 0, totalInc: 0.1 });
+  assert.equal(t.goods, 0.1, "sum of per-line net amounts");
+  assert.notEqual(t.goods, 0.09, "not the net of the summed amount");
 });
 
-test("taxBreakdown: a zero delivery stays zero in both modes, and never negative", () => {
-  const ex = M.taxBreakdown("ex", 1000, 0, 1000);
+test("taxBreakdown: a zero delivery contributes no GST and stays zero in both modes", () => {
+  const ex = M.taxBreakdown("ex", { lineTotalsInc: [1000], deliveryInc: 0, totalInc: 1000 });
   assert.equal(ex.delivery, 0, "$0 delivery is a settled figure, not a missing one");
-  assert.ok(ex.gst > 0);
-  assert.equal(M.taxBreakdown("inc", 1000, 0, 1000).delivery, 0);
+  assert.equal(ex.gst, 90.91, "GST on the goods alone");
+  assert.equal(M.taxBreakdown("inc", { lineTotalsInc: [1000], deliveryInc: 0, totalInc: 1000 }).delivery, 0);
 });
 
 test("the built-in fallback catalogue is already Windows-first", () => {

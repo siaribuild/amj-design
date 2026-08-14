@@ -72,7 +72,14 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
   // Everything on this screen used to be hardcoded inc-GST, so an ex-GST
   // account was shown inc-GST prices under inc-GST labels — correct numbers
   // answering a question the customer had not asked.
-  const tax = taxBreakdown(gstMode, current.goods, current.delivery, total);
+  // Per LINE, not off current.goods: GST is worked out on each taxable supply
+  // and summed (see taxBreakdown), which is also what makes the line prices
+  // above add up to the subtotal below them.
+  const tax = taxBreakdown(gstMode, {
+    lineTotalsInc: current.lines.map((l) => l.line_total ?? 0),
+    deliveryInc: current.delivery,
+    totalInc: total,
+  });
   // Server-computed (0043) — one deposit percentage, not this screen's own
   // Math.round(total / 2) — and computed on the INCLUSIVE total, which is what
   // the customer actually transfers, in either display mode.

@@ -653,7 +653,7 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
               header at the same time — leaving it there would have stated the
               same figure twice, which is the duplication removed from the issued
               view in this same change. */}
-          <PendingTotals total={total} delivery={delivery} />
+          <PendingTotals lineTotals={data.items.map((it) => it.lineTotal ?? 0)} total={total} delivery={delivery} />
         </Blk>
 
         <FilesBlock files={files} />
@@ -671,13 +671,18 @@ export function ProjectDetail({ projectId, status, setPage, backToList, onOpenRe
  *  is "estimate". This only ever renders while pending (ProjectDetail is not
  *  shown once a revision issues; QuoteReviewPage takes over with its own
  *  "This is the price" copy), so `delivery.indicative` is not re-checked. */
-function PendingTotals({ total, delivery }: { total: number; delivery: ApiProjectDelivery | undefined }) {
+function PendingTotals({ lineTotals, total, delivery }: {
+  lineTotals: number[]; total: number; delivery: ApiProjectDelivery | undefined;
+}) {
   const shipping = delivery?.amount ?? null;
   const gstMode = useGstMode();
-  // Same preference as the issued quote — an estimate a customer reads ex-GST
-  // must not become an inc-GST number the moment it is confirmed. The
-  // estimated total stays inclusive, matching the issued grand total.
-  const tax = taxBreakdown(gstMode, total, shipping ?? 0, total + (shipping ?? 0));
+  // Same preference AND the same rounding rule as the issued quote — an
+  // estimate a customer reads ex-GST must not change figure the moment it is
+  // confirmed. The estimated total stays inclusive, matching the issued
+  // grand total.
+  const tax = taxBreakdown(gstMode, {
+    lineTotalsInc: lineTotals, deliveryInc: shipping ?? 0, totalInc: total + (shipping ?? 0),
+  });
   return (
     <>
       <div className="bg-sage/[0.07] border-t border-black/10 px-5 py-[15px] flex flex-col gap-[9px]">
