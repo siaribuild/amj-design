@@ -1,8 +1,7 @@
 # Referral program — specification
 
 Branch: `feat/referral-program`
-Status: **revision 8 — FINAL. Every owner decision is answered; §12 is empty. Reconciled to the
-architect's design (`docs/design/referral-program.md`) per that document's §17.**
+Status: **revision 8 — FINAL. Every owner decision is answered; §12 is empty.**
 Author: product-manager
 Date: 2026-08-15
 
@@ -32,22 +31,20 @@ ACL s 32(2) (§4.8) · A13's claim softened.
 "details missing" state is the **primary entry surface**, not an error; M11/M12 reconciled into one
 rule; `payout_timeframe_days` = 14 confirmed; **A18 and D18 kept un-conflatable** (§4.9.4, AC-87).
 
-**Revision 8 — owner reversal on termination, plus the SEO gap. Surgical; nothing else reworked:**
+**Revision 8 — search-engine behaviour, and termination kept deliberately simple:**
 
-1. **There is no public `/refer` once the program is killed** (owner, 2026-08-15). This replaces
-   revisions 1–7's "`/refer` never 404s" and the old AC-63. **The reasoning is written into §4.7**, not
-   just the rule, because the previous text argued the opposite and someone would otherwise reinstate a
-   public page from it.
-2. **Termination's search behaviour is specified**: anonymous → **410**; signed-in → **302 to the
-   account Referrals section**, authenticated-only *by construction*; sitemap drops the page.
-3. **`paused` is untouched** — 200, honest "on hold" content, still indexed, ranking preserved for the
-   resume. The terminated rules must not bleed into it.
-4. **`/r/<CODE>` indexing directives** specified as one bundle (AC-89), including why the path is
-   deliberately **not** disallowed in `robots.txt`.
-5. **FAQ duplication governance** made a criterion (AC-90) rather than a checklist item — reasoning in
-   §12A.
-6. **Numbering:** the design's §17 suggests "AC-78" for the `/r/<CODE>` bundle. **AC-78 is already
-   taken** (no referrer-submitted contact details, referenced from §7.0). The new criteria are
+1. **Termination's behaviour is unchanged from revisions 1–7: `/refer` still returns a public 200 with
+   the "program has ended" notice, for everyone** (AC-63). An elaboration was drafted and **rejected by
+   the owner on complexity grounds** — see the note in §4.7, kept so nobody re-elaborates it.
+2. **Three small additions to the terminated page**: it carries `noindex`, it leaves the sitemap, and
+   **the server-rendered head's title and description swap to the ended notice** (§12A.2, AC-63). That
+   last one closes a hole neither the design nor this spec had accounted for.
+3. **New AC-89** — the `/r/<CODE>` indexing bundle, including why the path is deliberately **not**
+   disallowed in `robots.txt`.
+4. **AC-33 amended** — indexability and sitemap presence become conditional on program status.
+5. **New AC-90** — FAQ duplication governance, made a criterion rather than a checklist item (§12A.3).
+6. **Numbering note:** the design's §17 suggests "AC-78" for the `/r/<CODE>` bundle. **AC-78 is already
+   taken** (no referrer-submitted contact details, referenced from §7.0 and §6). The new criteria are
    **AC-89** and **AC-90**. No other number the design proposes collides.
 
 > **Six things that must survive to implementation.** These are the ones most likely to be lost, or
@@ -66,11 +63,13 @@ rule; `payout_timeframe_days` = 14 confirmed; **A18 and D18 kept un-conflatable*
 > 4. **AC-87 — D18 gates on being PAYABLE, never on having PURCHASED.** No API, query, table or line of
 >    copy may condition any referrer capability on the referrer's own order history. "You must be a
 >    customer to refer" is the ACL s 49 fact pattern — strict liability, penalties to $100m.
-> 5. **AC-63 — a terminated program has no public page.** The obligation to code-holders is discharged
->    **behind login** (AC-64), not on a public URL. Anyone reading §4.7's honour-what-was-promised rule
->    and concluding the public page must survive has misread it; §4.7 says so explicitly.
+> 5. **§4.6.6 — the same-ABN gate cannot fire at the moment the discount is granted** for the referred
+>    side, **and does not prove common identity even when it does fire**. The containment argument, not
+>    the gate, is what makes the discount safe. **No later revision may upgrade this to "blocked
+>    automatically".**
 > 6. **§8.6 — the panel is an offer with a deadline, not a receipt.** Accurate about mechanics (the
->    price already includes it; there is no redemption step) but urgent in tone.
+>    price already includes it; there is no redemption step) but urgent in tone, because the owner's
+>    rationale is that this is *"an incentive to place an order"*.
 
 ---
 
@@ -173,7 +172,7 @@ Every row is **DECIDED** (mine — derivable from the code, the house rules, or 
 
 | # | Decision | |
 |---|---|---|
-| A1 | **Two capture paths, one relationship — both self-identifying.** (a) **Link**: `https://<site>/r/<CODE>` sets an httpOnly cookie and 302-redirects. (b) **Manual code**: the referred user types the code into a field in their own account area after signing in. **There is no third path in which the referrer supplies anything about their mate** (§7.0, AC-78). | DECIDED |
+| A1 | **Two capture paths, one relationship — both self-identifying.** (a) **Link**: `https://<site>/r/<CODE>` sets an httpOnly cookie and 302-redirects to `/refer`. (b) **Manual code**: the referred user types the code into a field in their own account area after signing in. **There is no third path in which the referrer supplies anything about their mate** (§7.0, AC-78). | DECIDED |
 | A2 | Why both: a link only works when the introduction happens over a phone. Half of these introductions happen at a job site — B reads the code out, A types it in later. A link-only program silently loses those. Both paths write the same `referral` row. | DECIDED |
 | A3 | **The code is never asked for on the sign-in screen.** `POST /api/auth/challenge` is deliberately non-enumerating (`worker/routes/auth.ts:35`), so the server cannot reveal whether an email is new and cannot conditionally show a "new user" field. A field shown to everyone would be typed by returning customers claiming a referral on themselves. | DECIDED |
 | A4 | **A referral is only recorded when the `user` row is CREATED.** An existing customer clicking a referral link is not a referral, ever. | DECIDED |
@@ -247,7 +246,7 @@ honours the preference like every other price (AC-74).
 | Structural marketing copy (headline, steps, FAQ) | **Hard-coded in the page component** | Every other marketing page works that way (`HomePage`, `HowItWorksPage`, `TradePage`). It must interleave with an auth-aware CTA and live figures, which portable text cannot do. |
 | Hero image + per-page SEO | **Sanity `page` document, `pageId: "refer"`** | The existing mechanism (`src/data/catalogueQuery.ts:111`, via `getPage()`); lets the owner swap image and meta without a deploy. |
 | **Every number** (commission rate, **discount**, minimum, window, cap, payout threshold, **payment timeframe**) | **The program config in D1, rendered into the copy at runtime** | See below — load-bearing. |
-| Plain-English rules and full T&Cs | **Sanity `post`**, linked from the landing page | Supplied by the coordinator (§11); revised by a human who is not deploying code. See §12A for how it must relate to the landing page's own FAQ. |
+| Plain-English rules and full T&Cs | **Sanity `post`**, linked from the landing page | Supplied by the coordinator (§11); revised by a human who is not deploying code. See §12A.3 for how it must relate to the landing page's own FAQ. |
 
 **The no-typed-figures rule is load-bearing, not hygiene.** The owner kept the discount at 2.5%
 explicitly on the basis that *it can be raised later without a deploy*. That promise is only true if
@@ -417,16 +416,16 @@ gap, the change gets described; the gap does not get re-labelled.
 The two sides are separately switchable in ops (`referrer_reward_active`, `referred_discount_active`)
 inside one program. Both default ON at launch (AC-60).
 
-### 4.7 Program status, the kill switch, and what happens to the public page
+### 4.7 Program status and the kill switch
 
 `referral_program.status` has **three** values, because the owner explicitly distinguished a
 termination from an on/off toggle:
 
-| Status | New referrals | Public `/refer` (anonymous) | Signed-in `/refer` | Sitemap | Account Referrals section | Promises already made |
-|---|---|---|---|---|---|---|
-| `active` | Recorded | 200, full pitch | 200, pitch + own code (or the entry step) | listed | Full | Run normally |
-| `paused` | Not recorded | **200, honest "on hold"** | 200, same | **listed** | Full, unchanged | Run normally |
-| `terminated` | Not recorded | **410 — the page is gone** | **302 → account Referrals section** | **dropped** | Read-only history + ended notice for anyone with history; absent entirely for anyone without | **Honoured — see below** |
+| Status | New referrals | Public `/refer` | Indexed / in sitemap | Account Referrals section | Promises already made |
+|---|---|---|---|---|---|
+| `active` | Recorded | 200, full pitch | yes | Full | Run normally |
+| `paused` | Not recorded | **200, honest "on hold"** | **yes** — a pause is temporary and the ranking is worth keeping for the resume | Full, unchanged | Run normally |
+| `terminated` | Not recorded | **200, "this program has ended"** — for everyone, never a 404 | **no** — `noindex` and dropped from the sitemap | Read-only history + ended notice for anyone with history; absent entirely for anyone without | **Honoured — see below** |
 
 #### THE RULE: termination honours what was already promised
 
@@ -446,42 +445,33 @@ what they get.
 If ops ever needs to stop in-flight promises, that is a **separate, deliberate act** — a bulk void
 with a mandatory reason and its own confirmation — never a side effect of flipping a switch (AC-67).
 
-#### There is no public `/refer` once the program is killed *(owner reversal, revision 8)*
+#### The terminated page: one branch, three effects
 
-**Owner, 2026-08-15: "there should not be public /refer if the program is killed."** This replaces the
-"`/refer` never 404s" rule that revisions 1–7 carried.
+`/refer` **never 404s and never 410s.** In any status it answers 200; when terminated the body is the
+"program has ended" notice, with no rate and no code. That page also:
 
-**Why the honour-what-was-promised principle above does NOT keep the public page alive — written here
-because the earlier text argued the opposite, and someone reading that rule will otherwise reinstate
-it:** the obligation to people holding codes and unpaid money is discharged **in the account area,
-behind login** — the read-only legacy view with the ended-program notice (AC-64, §8.3(7)), which is
-untouched and still carries the whole promise. **It was never the public page's job.** The public page
-is marketing. Marketing for a terminated program should not exist.
+1. carries **`noindex`**, and
+2. **leaves the sitemap**, and
+3. **swaps the server-rendered `<head>` title and description to the ended notice.**
 
-The mechanics, each chosen for a reason worth keeping:
+The third is not decoration. A 200 keeps serving Open Graph tags, so without it an old `/refer` link
+shared months ago in WhatsApp or Facebook would keep unfurling the **live pitch** indefinitely, long
+after the program stopped existing. It is one field set in the same branch that sets the `noindex`.
 
-- **Anonymous → 410, not 404 and not a redirect.** 410 states the resource is intentionally gone and
-  de-indexes fastest, which matters for a page that will have accumulated ranking while the program
-  ran. A 404 reads as possibly-temporary and lingers in the index. A redirect to home would transplant
-  "referral program" query relevance onto the storefront and keep the URL alive. The gone signal is
-  also simply true.
-- **Signed-in → 302 to the account Referrals section**, resolved server-side from the session cookie.
-  **This is authenticated-only by construction, and that property is the entire reason it is safe:**
-  crawlers are always anonymous, so they can never reach the redirect. It must never be "simplified"
-  into a general redirect, which would reintroduce a crawlable path and undo the 410.
-- **`/r/<CODE>` → 302 to home, byte-identical** for valid, invalid, dormant and staff-owned codes, so
-  nothing leaks about whether a code was ever real. Home rather than 410 because `/r/` links are held
-  by people mid-conversation; it is the search-held `/refer` that gets the gone signal (AC-89).
-- **The sitemap drops the page** when terminated, and restores it on reversal.
+The page **may link a signed-in user through to their account Referrals section** — a link on the
+page, not a server-side branch. **There is no auth-dependent server behaviour on this route.**
 
-**`paused` is untouched by all of this.** It stays a public 200 with honest "on hold" content and
-stays in the sitemap, because a pause is temporary, no dead offer is being advertised, and the
-accumulated ranking is worth keeping for the resume. **The terminated rules must not bleed into the
-paused ones.**
+> **Kept deliberately simple, and here is why, so nobody re-elaborates it.** A more thorough
+> termination design was drafted — a 410 for anonymous visitors, a cookie-resolved redirect for
+> signed-in ones, caching rules for the varying response, a status-code change in the shell, and a
+> separate destination for `/r/`. The owner rejected it: *"It feels we're trying to handle special
+> cases here with little business value."* That is right. **The kill switch is insurance that may
+> never fire**, and it had accumulated more machinery than the feature it protects. One status flag,
+> one page branch, three effects.
 
-`terminated` is reversible by an admin. The confirmation states three things: that restarting
-attributes nothing retroactively, that the public page is withdrawn from the site **and from search**,
-and that re-indexing after a 410 round-trip is slow (AC-68).
+`terminated` is reversible by an admin, with a confirmation stating that restarting attributes nothing
+retroactively (AC-68). **`paused` is untouched by any of this** — it stays a public 200 with honest
+"on hold" content and stays indexed and in the sitemap. The terminated rules must not bleed into it.
 
 ### 4.8 Australian Consumer Law constraints on the offer
 
@@ -605,9 +595,9 @@ Plus the disclosure obligation from §4.8b (AC-81).
 5. Automatic earning creation at order creation, confirmation at `balance_paid` **for a payable
    referrer**, voiding on cancel/refund/expiry; optional minimum payout balance with its two guards;
    the stated payment timeframe (M14).
-6. Public landing page at `/refer` (indexable and sitemapped **while `active` or `paused`**), with the
-   logged-out, logged-in-with-code and logged-in-without-details states — **and its withdrawal on
-   termination** (§4.7, §12A).
+6. Public landing page at `/refer` — always a 200 — with the logged-out, logged-in-with-code and
+   logged-in-without-details states, plus the paused and ended notices and their SEO treatment
+   (§4.7, §12A).
 7. Marketing placements: home page section, trade-account page section, footer link, post-delivery
    prompt on a completed order — **within the s 49 copy constraint** (§4.8a, §4.9.4).
 8. Account area: a new **Referrals** section for the referrer, **and a pricing-side offer panel for the
@@ -619,15 +609,16 @@ Plus the disclosure obligation from §4.8b (AC-81).
     discount-expiry reminder.
 11. Migration `0051_referral_program.sql` (next after `0050_order_line_position.sql`).
 12. **A minimal, invisible access log for payout bank details** (§7.1) — a write path only.
-13. **The search-engine behaviour in §12A** — `/r/<CODE>` directives, status-conditional sitemap and
-    indexability, and the FAQ governance rule.
+13. **The search-engine behaviour in §12A** — `/r/<CODE>` directives, status-conditional indexability
+    and sitemap presence, the terminated page's head correction, and the FAQ governance rule.
 14. Privacy policy update covering bank details and referral data; rules + T&Cs published as Sanity
     posts from the text the coordinator supplies.
 
 ## 6. Out of scope
 
-- **A public "program has ended" page.** Terminated means gone (§4.7). The obligation lives behind
-  login.
+- **Auth-dependent server-side behaviour on `/refer`.** The route answers 200 for everyone in every
+  status; the signed-in path to the account section is a **link on the page**, never a server branch
+  (§4.7).
 - **A `robots.txt` disallow for `/r/`** — actively wrong, see §12A.1.
 - **A canonical link between the landing page and the FAQ article** — actively wrong, see §12A.3.
 - **A "blocked on missing details" group in the payouts queue** — unreachable by construction under
@@ -696,7 +687,7 @@ architect owns the final schema — but these invariants are not negotiable:
 |---|---|
 | **Who a referred person is** | **The `user` row they created themselves** (§7.0) — a legal constraint, not an engineering preference. |
 | **Whether someone may be a referrer** | **One payability predicate over the four detail fields** (§4.9). It reads nothing else — and specifically never order history (§4.9.4). |
-| **Whether the program's public surfaces exist** | `referral_program.status`, read server-side (§4.7). The page, the sitemap entry and the API's figures all follow from it; none of them decides independently. |
+| **Whether the program's public surfaces advertise** | `referral_program.status`, read server-side. The page's content, its `noindex`, its head tags and its sitemap entry all follow from that one flag; none of them decides independently (§4.7, §12A.2). |
 | What percentage off a user gets | `loadAccountDiscount()` in `worker/lib/estimator/pricing.ts` — extended to compose account + referral. **Server-side only; never serialised to a customer response.** |
 | How a discount is applied to a price | The existing discount step, `pricing.ts:195-203`. No second application point. |
 | GST arithmetic / ex-GST goods figure | `src/data/gst.ts` (`taxBreakdown`) — called, never re-derived |
@@ -781,9 +772,10 @@ and required content** only.
     prefilled share message.
   - *Logged in, details missing* — pitch **plus a complete-your-details CTA**, not a code. The value is
     stated before the ask (§4.9.3).
-- **`paused`** — public 200, honest "on hold", no rate, no code, still indexed.
-- **`terminated`** — **no public page.** Anonymous requests get 410; signed-in requests are redirected
-  to their account Referrals section (§4.7, §12A.2, AC-63).
+- **`paused`** — 200, honest "on hold", no rate, no code, still indexed and in the sitemap.
+- **`terminated`** — 200, "this program has ended", no rate, no code; `noindex`; out of the sitemap;
+  head tags corrected (§4.7). It may carry a link inviting a signed-in reader to their account
+  Referrals section — a link, not a server branch.
 - **Sharing is by code and link only** — no way to enter someone else's contact details (§7.0).
 
 ### 8.2 Marketing placements
@@ -795,8 +787,9 @@ and required content** only.
 | **Footer**, site-wide | "Refer a mate" link | Same |
 | **Completed order** (`delivered`/`after_sales`) + delivery email | n/a | "Happy with these? Refer a mate." + code or setup prompt |
 
-All placements disappear when the program is `paused` or `terminated` — **including the footer link**,
-which must not point at a 410.
+All placements — **including the footer link** — disappear when the program is `paused` or
+`terminated`. The page still answers, so nothing breaks if someone follows an old link; but the site
+must not keep advertising a program that is not running.
 
 **⚠️ s 49 copy constraint (§4.8a, §4.9.4), binding on every placement and on the landing page.** No
 placement may couple the referrer's reward to the referrer's own purchase, and none may express the
@@ -809,8 +802,7 @@ disclosure, and they stay.)
 ### 8.3 Account area — the "Referrals" section (the REFERRER's screen)
 
 A rail item in `src/pages/AccountShell.tsx` (`AccountSection`), route `/referrals`. **This screen is
-about money owed to the account holder for introductions they made**, and — when the program is
-terminated — **it is the only surface that carries the promise** (§4.7).
+about money owed to the account holder for introductions they made.**
 
 **Two shapes, and the first one is the primary state**, because under D18 it is what every new referrer
 meets:
@@ -841,9 +833,8 @@ Nothing about this state may be styled or worded as a failure, a warning or a bl
    apply, neither ever silent: **held pending details** (§4.9.2) and **held under threshold** (AC-61).
    Clearing is **refused while a confirmed unpaid earning exists**, with the amount and reason stated.
 6. **Payout history** — date, amount, reference, referrals covered.
-7. **Terminated state** — read-only history with a "this program has ended" notice, **which is where
-   the whole obligation to code-holders is discharged** (§4.7); absent entirely for an account with no
-   referral history.
+7. **Terminated state** — read-only history with a "this program has ended" notice, carrying anything
+   still owed; absent entirely for an account with no referral history.
 
 ### 8.4 Ops console — new "Referrals" tab
 
@@ -856,8 +847,8 @@ rate, cap (blank = no cap), qualifying minimum, minimum payout balance, attribut
 percent, payment timeframe. Restates the settings in one sentence so a typo is visible. Warns that
 changes apply only to referrals recorded from now on. Refuses a stale save (version check).
 **Setting a non-zero payout threshold requires an explicit acknowledgement** (§4.9.5). **Terminating
-requires a typed confirmation** stating that promises already made are honoured, that the public page
-is withdrawn from the site **and from search**, and that re-indexing on any reversal is slow (§4.7).
+requires a typed confirmation** stating that promises already made are honoured and that the public
+page becomes an ended notice and leaves search (AC-68).
 
 **(b) Referrals** — list: referrer, referred, date, status, amount, **review flags** (shared ABN /
 phone / business name / postcode — a signal for a human, not a control; A13). Filter by status; search
@@ -1022,11 +1013,15 @@ All of it is subject to the s 49 constraints (§4.8a, §4.9.4).
 **Account, under the payout threshold** (only when one is set)
 > You've earned **`[$]`**. We pay out once your balance reaches **`[threshold]`** — keep sharing.
 
-**Landing page, paused (public)**
+**Landing page, paused**
 > **Our referral program is on hold.** We're not taking new referrals right now. If you've already
 > referred someone, everything you've earned is safe — sign in to see it.
 
-**Account Referrals section, terminated** *(the only surface that says this — there is no public page)*
+**Landing page, terminated** *(also the page's `<title>` and meta description in this state — §4.7)*
+> **Our referral program has ended.** We're no longer taking new referrals. If you referred someone
+> while it was running, anything you earned will still be paid — sign in to see it.
+
+**Account Referrals section, terminated**
 > **This program has ended.** We're no longer taking new referrals. Anything you'd already earned is
 > shown below and will still be paid, and any discount already given to a mate still stands.
 
@@ -1081,18 +1076,18 @@ rate.
   read out over a job-site phone call and typed back correctly.
 - **AC-3** Codes are unique across all accounts; a generation collision retries rather than failing or
   reusing.
-- **AC-4** *(amended r8)* `GET /r/<CODE>` always answers with a 302 and never an error. For a valid
-  code belonging to a currently-payable referrer while the program is `active`, it sets the httpOnly
-  cookie and redirects to `/refer`. For an unknown, staff-owned or dormant code — or while `paused` —
-  it redirects with **no cookie**. When `terminated` it redirects to `/` (AC-89).
+- **AC-4** `GET /r/<CODE>` always answers with a 302 to `/refer` and never an error. For a valid code
+  belonging to a currently-payable referrer while the program is `active`, it sets the httpOnly cookie.
+  For an unknown, staff-owned or dormant code — or in any status other than `active` — it redirects
+  with **no cookie**.
 - **AC-5** An internal (staff) account has no referral code and no referral surfaces.
 - **AC-89** **`/r/<CODE>` indexing directives, as one bundle.** (a) The 302 carries
   `X-Robots-Tag: noindex` in **every** program status; (b) no `/r/` URL ever appears in the sitemap;
   (c) **`robots.txt` does not disallow `/r/`** — and this is deliberate, not an oversight: a disallow
   prevents crawling, so the noindex would never be fetched, and a widely-shared but uncrawlable URL can
-  still reach the index with no content at all. The directive has to be *seen* to be obeyed; (d) when
-  `terminated` the response is **byte-identical for a valid code and an invented one**, so nothing
-  leaks about whether a code was ever real.
+  still reach the index with no content at all. **A directive has to be seen to be obeyed**; (d) in any
+  status other than `active`, no code sets a cookie, so a valid code and an invented one are
+  indistinguishable from the response.
 
 ### Attribution
 - **AC-6** A brand-new email signing in while the referral cookie is present produces exactly one
@@ -1261,9 +1256,9 @@ Four parts, all required:
 
 ### Landing page, placements, search and configurability
 - **AC-33** *(amended r8)* `/refer`'s indexability and sitemap presence are **conditional on program
-  status**: while `active` or `paused` it returns 200, server-renders its `<head>` from the Sanity
-  `page` record with site defaults filled in, and appears in `/sitemap.xml`; when `terminated` it is
-  **absent from the sitemap** and answers per AC-63.
+  status**: while `active` or `paused` it is indexable and appears in `/sitemap.xml`; when
+  `terminated` it carries `noindex` and is **absent from the sitemap**. **It returns 200 in all three
+  states** — the status changes the content and the directives, never the status code.
 - **AC-34** *(amended r7)* Logged out and `active`, `/refer` shows the pitch and a sign-in CTA and no
   code. Logged in **with complete details**, it shows the user's own code and share link. Logged in
   **without**, it shows the complete-your-details CTA and no code (AC-83).
@@ -1284,25 +1279,25 @@ Four parts, all required:
   two pages interlink ("the short version" ↔ "full details, rules and terms"); (c) **there is no
   canonical link between them** in either direction, because they are deliberately different documents
   and cross-canonicalising asks a search engine to discard one; (d) if FAQ structured data is ever
-  added, it appears on exactly one of the two pages — the one carrying that specific Q&A. Verified at
-  copy review (T7/T9) against the rendered pages, not the source.
+  added, it appears on exactly one of the two pages. Verified at copy review (T7/T9) against the
+  rendered pages, not the source.
 
 ### Program status and the kill switch
-- **AC-62** In `paused`: no new referral is recorded by link or manual entry; all placements are hidden;
-  `/refer` returns a public **200** with honest "on hold" content, **no rate and no code**, and
-  **remains in the sitemap and indexable** (a pause is temporary and the ranking is kept for the
-  resume); and `GET /api/referral/program` returns the status alone, with no figures.
-- **AC-63** *(replaced r8 — owner reversal)* In `terminated` **there is no public `/refer`**:
-  (a) an **anonymous** request returns **410** with no program content and no figures, and with
-  `Cache-Control: no-store` — not a 404, and not a redirect to home; (b) a **signed-in** request is
-  **302-redirected to the account Referrals section**, resolved server-side from the session cookie —
-  and this branch is **authenticated-only by construction**, so a crawler, which is always anonymous,
-  can never reach it; (c) `GET /api/referral/program` returns the status alone, with no figures;
-  (d) reversing termination restores the 200 and the sitemap entry.
+- **AC-62** In `paused`: no new referral is recorded by link or manual entry; all placements and the
+  footer link are hidden; `/refer` returns **200** with honest "on hold" content, **no rate and no
+  code**, and **remains indexable and in the sitemap** (a pause is temporary and the ranking is kept
+  for the resume); and `GET /api/referral/program` returns the status alone, with no figures.
+- **AC-63** In `terminated`, `/refer` returns **200** with the "program has ended" notice for
+  **everyone** — never a 404 and never a 410, with no rate and no code, and no auth-dependent server
+  behaviour on the route. In that state it additionally: (a) carries **`noindex`**; (b) is **absent
+  from the sitemap**; (c) **serves a `<head>` whose title and description are the ended notice** — so
+  an old `/refer` link shared months ago no longer unfurls the live pitch on social or messaging
+  platforms; and (d) `GET /api/referral/program` returns the status alone, with no figures. The page
+  may carry a **link** inviting a signed-in reader to their account Referrals section. Reversing
+  termination restores the pitch, indexability and the sitemap entry.
 - **AC-64** In `terminated`, an account **with** referral history still sees the Referrals section,
-  read-only, with the ended notice — **this is where the obligation to code-holders is discharged**
-  (§4.7) — and an account **without** history does not see the section at all. The §8.6 offer panel is
-  unaffected for anyone whose discount is still live.
+  read-only, with the ended notice and anything still owed; an account **without** history does not see
+  the section at all. The §8.6 offer panel is unaffected for anyone whose discount is still live.
 - **AC-65** **Termination honours what was already promised — limb 1, money.** A `pending` earning
   still confirms when its order reaches `balance_paid`, and a `confirmed` earning still appears in the
   payouts queue and is still paid within its stated timeframe. (Regression-critical.)
@@ -1314,8 +1309,7 @@ Four parts, all required:
 - **AC-67** Stopping in-flight promises is possible only through an explicitly confirmed bulk void with
   a reason — never as a side effect of a status change.
 - **AC-68** Terminating requires a typed confirmation, which states that nothing is attributed
-  retroactively, **that the public page is withdrawn from the site and from search**, and that
-  re-indexing on any reversal is slow.
+  retroactively and that the public page becomes an ended notice and leaves search.
 
 ### Ops
 - **AC-38** An admin can change every program number and status, and a concurrent stale save is refused
@@ -1356,8 +1350,8 @@ Australian primary sources (ACCC / ATO / OAIC), at
 **Copy obligations carried by this revision**, for the coordinator's terms pass: the payment-timeframe
 sentence conditioned on the entry rule; the threshold-hold disclosure whenever a threshold is set; the
 ops-screen warning text for enabling `min_payout_balance`; the A18/D18 two-facts rule (§4.9.4) applied
-to every sentence that mentions either; and **the terminate confirmation stating that the public page
-is withdrawn from the site and from search, with slow re-indexing on any reversal** (AC-68).
+to every sentence that mentions either; **the terminated landing-page notice, which doubles as that
+page's title and meta description** (AC-63c); and the terminate confirmation copy (AC-68).
 
 **Contradiction protocol.** If further legal findings contradict a decision recorded here — most likely
 the GST-on-payout wording (M13), the right-to-terminate position (§4.7) or the expiry of an advertised
@@ -1381,9 +1375,9 @@ Items still requiring the owner's accountant or a lawyer:
 7. **Victorian unclaimed money.** §4.9 closes the primary route; §4.9.5's guards cover the residual one.
 8. **Unfair contract terms.** The terms must present payout details as an **eligibility condition**,
    never as a withholding of money already owed (§4.9.1).
-9. **Withdrawing a public offer page on termination.** The terms should be consistent with §4.7: the
-   program can end, the public page goes, and everything already promised is still honoured through the
-   account area. *Legal to confirm the drafted right-to-terminate wording matches this behaviour.*
+9. **Right to terminate.** §4.7 commits to honouring promises already made, including not bringing a
+   discount deadline forward. The terms must say the same thing, and be consistent with the program
+   ending while everything already promised is still paid.
 10. **Disclosure inherent in a percentage.** The terms must say what each party will see.
 11. **Advertising a time-limited discount.** Conditions must be clear at the point the claim is made.
 12. **Privacy policy page.** `src/pages/PrivacyPolicyPage.tsx` must be updated for referral data,
@@ -1395,9 +1389,8 @@ Items still requiring the owner's accountant or a lawyer:
 
 **None. This list is empty.**
 
-All eighteen decisions raised across revisions 1–8 (D1–D18) are answered, and revision 8's changes came
-from an owner ruling plus the architect's SEO analysis. Nothing rests on an unapproved assumption, and
-there are no `ASSUMED:` tags left to veto.
+All eighteen decisions raised across revisions 1–8 (D1–D18) are answered. Nothing rests on an
+unapproved assumption, and there are no `ASSUMED:` tags left to veto.
 
 Two things I decided myself that the owner may still want to veto, flagged rather than buried:
 
@@ -1413,13 +1406,11 @@ rules/T&Cs copy in progress, and the professional confirmations at §11 items 1�
 
 ## 12A. Search-engine behaviour
 
-Consolidated because these rules are easy to "tidy" into their own opposites. The design's §12A carries
-the mechanism; this section carries the product intent and the reasons.
+Consolidated because these rules are easy to "tidy" into their own opposites.
 
 ### 12A.1 `/r/<CODE>` — noindex, but deliberately crawlable
 
-Share links are functional redirects, not content. They must never appear in search results, and they
-must never leak whether a code is real (AC-89).
+Share links are functional redirects, not content. They must never appear in search results (AC-89).
 
 **The rule that looks like a mistake and is not:** the path is marked `noindex` **and is deliberately
 left crawlable — there is no `robots.txt` disallow.** A disallow prevents a crawler fetching the URL at
@@ -1428,18 +1419,32 @@ uncrawlable can still be indexed on the strength of inbound links alone, with no
 both outcomes. **A directive has to be seen to be obeyed.** Anyone "hardening" this by adding a
 disallow would be removing the only thing making it work.
 
-### 12A.2 Termination removes the public page
+The destination is `/refer` in every program status. There is no special terminated destination — see
+§4.7 on keeping the kill switch small.
 
-The status table and the reasoning are in §4.7; criteria in AC-63, AC-33, AC-62.
+### 12A.2 Status changes what the page says and how it is indexed — never its status code
 
-Two points restated because they are the ones that erode:
+`/refer` returns **200 in all three statuses**. What changes is the content, the robots directive, the
+head tags and the sitemap entry:
 
-- **`paused` is not `terminated`.** A pause keeps a public 200, honest "on hold" content and its place
-  in the sitemap, because the ranking is worth keeping for the resume and no dead offer is being
-  advertised. Terminated is gone. Do not unify the two branches.
-- **The signed-in redirect is safe only because it is authenticated-only.** Crawlers are anonymous, so
-  they meet the 410 and nothing else. Generalising the redirect would reintroduce a crawlable path and
-  undo the de-index.
+| Status | Content | Robots | Sitemap |
+|---|---|---|---|
+| `active` | Full pitch | indexable | listed |
+| `paused` | Honest "on hold" | **indexable** | **listed** |
+| `terminated` | "Program has ended" | **`noindex`** | **dropped** |
+
+Three points worth keeping:
+
+- **`paused` is not `terminated`.** A pause keeps its content honest, its indexability and its place in
+  the sitemap, because the ranking is worth keeping for the resume and no dead offer is being
+  advertised. Do not unify the two branches.
+- **The terminated head must be corrected, not just the body.** A 200 keeps serving Open Graph tags, so
+  without an explicit swap of the title and description an old `/refer` link shared months ago in
+  WhatsApp or Facebook would keep unfurling the **live pitch** indefinitely. This is the one thing a
+  gone-status would have handled for free, and it is the price of keeping the route simple — one field
+  set in the same branch that sets the `noindex` (AC-63c).
+- **No auth-dependent server behaviour on this route.** A signed-in reader is offered a **link** to
+  their account section; the server does not branch on a session cookie (§6).
 
 ### 12A.3 The FAQ exists twice only as two different documents
 
@@ -1463,8 +1468,8 @@ document. A criterion has a name and a reviewer.
 
 ## 13. Ticket breakdown
 
-The architect's design owns the final sequencing (its §14); this is the product view of what each
-ticket has to end with.
+The architect's design owns the final sequencing; this is the product view of what each ticket has to
+end with.
 
 1. **T0/T1 — Golden capture, schema + config API.** Pricing fixtures captured from `main` first
    (AC-49a), then migration `0051`, `worker/lib/referrals.ts` skeleton, `GET /api/referral/program`
@@ -1474,9 +1479,9 @@ ticket has to end with.
    it carries AC-49 in full.** *Demo: two identical quotes, one referred, side by side, plus the
    unchanged fixture run.*
 3. **T3 — Codes and attribution.** Payability predicate, payout-details endpoint, code withheld until
-   complete, dormancy, `/r/<CODE>` with its **noindex directive and status-dependent destination**
-   (AC-89), cookie, `findOrCreateUser` hook, manual claim, all §4.2 gates, **the §7.0 boundary
-   enforced at the endpoint layer** (AC-78), **and the A18/D18 separation regression test** (AC-87).
+   complete, dormancy, `/r/<CODE>` with its **noindex directive** (AC-89), cookie, `findOrCreateUser`
+   hook, manual claim, all §4.2 gates, **the §7.0 boundary enforced at the endpoint layer** (AC-78),
+   **and the A18/D18 separation regression test** (AC-87).
 4. **T4 — Earning lifecycle.** Earning on order creation, confirm at `balance_paid` for a payable
    referrer, hold at `pending` otherwise, void on cancel/refund, expiry sweep, post-discount ex-GST
    base, payment-timeframe stamping.
@@ -1485,10 +1490,10 @@ ticket has to end with.
    no viewer.
 6. **T6 — Quote surface.** The discount indicator on the money panel and issued quote; ops
    project-record visibility and review flags.
-7. **T7 — Landing page, placements and search behaviour.** `/refer` in all its states, the Sanity
-   `page` record, **status-conditional sitemap and the 410 / signed-in-302 termination behaviour**
-   (AC-33, AC-62, AC-63), placements and footer link hidden when not `active`, every figure from
-   config, and the s 49 / two-facts copy constraints applied.
+7. **T7 — Landing page, placements and search behaviour.** `/refer` in all its states — always 200 —
+   the Sanity `page` record, **status-conditional indexability, sitemap entry and the terminated head
+   correction** (AC-33, AC-62, AC-63), placements and footer link hidden when not `active`, every
+   figure from config, and the s 49 / two-facts copy constraints applied.
 8. **T8 — Ops tab.** Program screen, referrals list + void + bulk void, payouts queue with
    ready/accruing groups, deadline flagging, long-stop promotion, CSV export, mark paid/failed, frozen
    banking snapshot, dashboard row, **and the terminate confirmation copy** (AC-68).

@@ -1,7 +1,7 @@
 # Referral program — architecture & implementation design
 
 Branch: `feat/referral-program`
-Status: revision 2 (D18 folded in; all decisions settled) — accepted; UX design in progress
+Status: revision 3 (D18 folded in; program status collapsed to On/Off — no terminated state; all decisions settled) — accepted; UX design in progress
 Author: architect
 Date: 2026-08-15
 
@@ -150,8 +150,8 @@ numbers from the **referral row's snapshot columns** (`rate_percent`, `cap_amoun
 config is not a parameter of `createEarningForOrder`, `confirmEarning`, or the eligibility SQL's
 numeric outputs. Live config is consulted in exactly four places: recording a new referral (to
 snapshot), the two side switches (`referred_discount_active` gates the discount per pricing call,
-`referrer_reward_active` gates earning *creation* — AC-60, owner-decided live gates), and program
-`status` gating **new attribution only**. UCT research §10.6: an expiry paired with a unilateral
+`referrer_reward_active` gates earning *creation* — AC-60, owner-decided live gates), and the master On/Off
+switch gating **new attribution and programme entry only** (§7.5). UCT research §10.6: an expiry paired with a unilateral
 variation right is the real exposure; making variation structurally unable to reach promises already
 made is the mitigation.
 
@@ -263,8 +263,8 @@ ALTER TABLE project ADD COLUMN referral_percent_at_issue REAL;
 -- Singleton config, versioned like pricing_policy for optimistic concurrency.
 CREATE TABLE referral_program (
   id                        TEXT PRIMARY KEY,              -- 'default'
-  status                    TEXT NOT NULL DEFAULT 'active'
-                              CHECK (status IN ('active','paused','terminated')),
+  active                    INTEGER NOT NULL DEFAULT 1,   -- master On/Off. Off = "come back
+                                                            -- later" (§7.5); no terminated state
   referrer_reward_active    INTEGER NOT NULL DEFAULT 1,
   referred_discount_active  INTEGER NOT NULL DEFAULT 1,
   rate_percent              REAL NOT NULL DEFAULT 1,
@@ -392,7 +392,7 @@ trigger touches existing tables. `scripts/db/clear.sql` gains the five new table
 | `worker/lib/issue.ts` | Stamps `project.referral_percent_at_issue` from `referralDiscountState` at issue (§5.4). |
 | `worker/routes/orders.ts`, `worker/routes/ops.ts` | The two `markPaid` sites call `onOrderBalancePaid` on success (balance kind only). `ops.ts` additionally: project record gains referral flag block (AC-58); `/summary` gains `referralPayoutsReady` (AC-46). |
 | `worker/lib/pricing-admin.ts` | `applyPricingChange.table` union gains `'referral_program'` — the program save reuses the one versioned-write helper (AC-38). |
-| `worker/lib/shell.ts` | `PUBLIC_PAGES` gains `"refer"`; the sitemap's `refer` entry, and the rendered head's robots + title for `/refer`, become program-status-conditional (§12A.2; AC-33 as amended §17). |
+| `worker/lib/shell.ts` | `PUBLIC_PAGES` gains `"refer"` (sitemap + indexability, AC-33 — unconditional; identical in both program states). |
 | `src/app/ui.tsx`, `src/app/routes.ts` | `Page` union + `PAGE_PATHS`: `refer: "/refer"`, `referrals: "/referrals"`. |
 | `src/pages/AccountShell.tsx` | `AccountSection` gains `"referrals"`; rail item gated per §7.5. |
 | `src/app/App.tsx` | Route wiring; the §8.6 offer panel renders beside the Price-display card in `AccountSettingsPage` (`App.tsx:1453`). |
@@ -503,20 +503,19 @@ In `worker/index.ts route()`, immediately after the trailing-slash redirect (GET
 host): `^/r/([A-Z2-9]{3}-[A-Z2-9]{3})$` (case-insensitively matched, uppercased) →
 `handleReferralLink(env, code)` in `referrals.ts`:
 
-- Code resolves to a non-internal user who is **currently payable** (ADR-8b) **and** program status is
-  `active` → 302 `/refer` with `Set-Cookie: of_ref=<CODE>; Path=/; HttpOnly; SameSite=Lax;
+- Code resolves to a non-internal user who is **currently payable** (ADR-8b) **and** the program is
+  On → 302 `/refer` with `Set-Cookie: of_ref=<CODE>; Path=/; HttpOnly; SameSite=Lax;
   Max-Age=7776000` (+`Secure` in prod, same pattern as `sessionCookie`).
-- Unknown code, staff-owned code, dormant code (referrer cleared details), or program
-  `paused`/`terminated` → 302 `/refer`, **no cookie**, no error (AC-4, AC-62). `/refer` itself never
-  404s in any status (spec §4.7).
+- Unknown code, staff-owned code, dormant code (referrer cleared details), or the program Off →
+  302 `/refer`, **no cookie**, no error (AC-4). `/refer` itself never 404s.
 
-Status and payability are checked **again** at recording time (a click during `active` followed by a
-signup during `paused`, or after the referrer cleared details, records nothing).
+The switch and payability are checked **again** at recording time (a click while On followed by a
+signup while Off, or after the referrer cleared details, records nothing).
 
-**Search directives and the terminated destination** (an unbounded per-member family of URLs that
+**Search directives** (an unbounded per-member family of URLs that
 will be pasted into WhatsApp, SMS and forums — exactly where crawlers harvest links):
 
-- The 302 response carries **`X-Robots-Tag: noindex`**, in every status. A temporary redirect's
+- The 302 response carries **`X-Robots-Tag: noindex`**, On or Off. A temporary redirect's
   source URL is *usually* not indexed, but "usually" is not a control; the header makes it one and
   prevents a proliferation of near-duplicate entry points.
 - **`robots.txt` deliberately does NOT disallow `/r/`.** A disallow prevents *crawling*, so the
@@ -527,13 +526,13 @@ will be pasted into WhatsApp, SMS and forums — exactly where crawlers harvest 
   `PUBLIC_PAGES` + products + posts), asserted by test rather than trusted (§13.8).
 - **302, not 301, is load-bearing.** Browsers cache a 301 aggressively: a mate who clicked the link
   last month and clicks it again would be redirected client-side without reaching the Worker — and
-  no cookie would be set. The redirect's destination and cookie behaviour also vary with program
-  status and referrer payability, which is the definition of a temporary redirect.
-- **Destination: `/refer`, in every status** — after termination the page answers the
-  code-holder's question directly (§12A.2), which is better than any other landing. Cookie only when
-  `active` and the referrer payable; unknown, staff-owned and dormant codes take the same redirect
-  with no cookie, so the response never leaks whether a code was real (the same no-disclosure rule
-  as the dormant-code `invalid_code`, ADR-8b). `/r/` never 404s or 410s in any status.
+  no cookie would be set. The cookie behaviour also varies with the program switch and referrer
+  payability, which is the definition of a temporary redirect.
+- **Destination: `/refer`, always** — while Off the page carries the come-back-later banner
+  (§7.5) and still answers the code-holder's question. Cookie only when On and the referrer payable;
+  unknown, staff-owned and dormant codes take the same redirect with no cookie, so the response
+  never leaks whether a code was real (the same no-disclosure rule as the dormant-code
+  `invalid_code`, ADR-8b). `/r/` never 404s or 410s.
 
 ### 6.2 The signup hook — AC-7 by construction
 
@@ -550,7 +549,7 @@ cookie's own Max-Age).
 
 `recordReferral(env, { referredUser, code, source })`, shared by the signup hook and manual claim:
 
-1. program `status === 'active'` (AC-62); 2. code resolves to referrer; referrer not internal
+1. the program is On (`referral_program.active = 1`); 2. code resolves to referrer; referrer not internal
 (A14/AC-5), not the referred user (A11 — plus the table CHECK), and **currently payable**
 (`payoutComplete`, ADR-8b); 3. referred user not internal (A14); 4. no existing referral for referred
 user (A9 — the UNIQUE index is the last word under concurrency; the INSERT failure maps to
@@ -564,15 +563,16 @@ send the `referral_recorded` email (referred party identified per the AC-26 mask
 
 Manual claim route errors are enumerated for the UI: `invalid_code` (unknown, staff-owned **or
 dormant** — deliberately indistinguishable, ADR-8b), `own_code`, `already_referred`, `has_order`,
-`program_paused`, `program_ended`, `not_eligible` (ABN match — deliberately unspecific).
+`program_off`, `not_eligible` (ABN match — deliberately unspecific).
 
 **The referred side is never gated by D18.** Manual entry, the discount, the offer panel — none of
 them consult the *referred* user's payout details. D18 gates becoming a referrER only.
 
 ### 6.4 Codes
 
-`ensureReferralCode(env, userId)` — refused for `type='internal'` (AC-5) **and while
-`!payoutComplete(user)`** (D18, ADR-8a); generated on first demand once payable, stable and permanent
+`ensureReferralCode(env, userId)` — refused for `type='internal'` (AC-5), **while
+`!payoutComplete(user)`** (D18, ADR-8a), **and while the program is Off** (§7.5 — joining is
+paused); generated on first demand once payable and On, stable and permanent
 thereafter (AC-1 as amended, §17): alphabet `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no O/0/I/1, AC-2),
 format `XXX-XXX` (~8.9 × 10⁸ codes), retry on UNIQUE collision (AC-3).
 
@@ -628,24 +628,35 @@ confirmed vs pending from the order's current stage and current payability).
 `payment_status='refunded'`. No live path sets these today; the guard makes the M9 promise hold the
 day one does, and the test sets the columns directly (AC-21).
 
-### 7.5 Program status — one table, implemented as written
+### 7.5 Program On/Off — two states, one table
 
-| Concern | Reads | `active` | `paused` | `terminated` |
-|---|---|---|---|---|
-| New attribution (link + manual) | live `status` + referrer payability | yes | no | no |
-| Cookie set by `/r/` | live `status` + referrer payability | yes | no | no |
-| Code issuance | payability only (ADR-8a) | on demand | on demand | no (no code without a program) |
-| Discount on a pricing call | **snapshot** percent/expiry; live `referred_discount_active` only | yes | yes | **yes** (AC-66) |
-| Earning create / confirm / payout | **snapshot** values; live `referrer_reward_active` at create; payability at confirm (§7.2) | yes | yes | **yes** (AC-65) |
-| `/refer`, placements | live `status` | full | placements hidden; page "on hold" | placements removed; page 200 "this program has ended" for everyone, `noindex` + out of sitemap (§12A.2) |
-| Account Referrals section | live `status` + own history | full | full | read-only w/ history; absent without (AC-64) |
-| §8.6 offer panel | derived state only | shown per state | shown per state | shown per state (AC-64/66) |
+**The owner collapsed the three-state status to On/Off and cut `paused`.** Off means *"come back
+later — the program is being reimagined"*, not termination. There is no terminated state and no
+termination surface anywhere in this design — no ended notice, no `noindex` branch, no conditional
+sitemap, no head rewrite, no read-only account variant, no typed confirmation. One switch
+(`referral_program.active`), one behavioural difference set:
 
-`status` is deliberately **absent** from `referralDiscountState`'s predicate and from every earning
-function — the two limbs of AC-65/66 cannot regress via a status check because no such check exists
-to get wrong. Stopping in-flight promises is only the bulk void (AC-67), a separate confirmed act.
-Terminate/reverse require a typed confirmation string in the request body (AC-68).
+| Concern | Reads | On | Off |
+|---|---|---|---|
+| New attribution (link cookie + manual claim) | the switch + referrer payability | yes | no — claim returns `program_off` |
+| Programme entry (join flow + code issuance) | the switch + payability (ADR-8a) | yes | no — a signed-in non-member sees the forward-looking message ("the program is being reimagined — check back soon") instead of the join flow. This is the entire behavioural difference for a non-member |
+| Discount on a pricing call | **snapshot** percent/expiry; live `referred_discount_active` only | yes | **yes** — promises run to their dates (AC-66's substance, regression-critical) |
+| Earning create / confirm / payout | **snapshot** values; live `referrer_reward_active` at create; payability at confirm (§7.2) | yes | **yes** (AC-65's substance, regression-critical) |
+| `/refer` | nothing server-side changes: 200, indexed, sitemapped, same head | full pitch | **the same page plus one conditional banner** — *"Joining is paused while we rework the program — check back soon."* The banner is the **only** change to the page. It exists because the page pitches a rate in the present tense, and an offer nobody can take up is ACL s 18 / s 32(1) exposure; the banner makes the pitch honest |
+| Placements (home, trade, footer, completed-order) | unchanged by the switch | shown | shown — the landing page they lead to explains the pause |
+| Account Referrals section (member with a code) | promises + history live as normal | full | full, with the same one-line banner on the share card — a member whose shared code silently recorded nothing would be a support call |
+| §8.6 offer panel | derived state only | shown per state | shown per state |
 
+The switch is deliberately **absent** from `referralDiscountState`'s predicate and from every
+earning function — the honour-what-was-promised limbs (AC-65/66's substance) cannot regress via a
+switch check because no such check exists to get wrong. Stopping in-flight promises is only the bulk
+void (AC-67), a separate confirmed act. Turning the program Off or On is a plain field on the
+versioned config save — the typed-confirmation ceremony existed for termination, and there is no
+termination.
+
+---
+
+## 8.
 ---
 
 ## 8. Scheduled work and emails
@@ -726,7 +737,7 @@ the shapes themselves and re-checked by test (§13.5):
 ```
 GET /api/referral/program            → { program: ReferralProgramPublic }   // NO auth
   ReferralProgramPublic = {
-    status: 'active'|'paused'|'terminated',
+    active: boolean,   // Off = joining paused; the page stays up, figures included (§7.5)
     discountPercent, ratePercent, minOrderAmount, windowMonths,
     capAmount: number|null,               // null ⇒ render no cap clause (AC-35)
     minPayoutBalance: number,             // 0 ⇒ render no threshold language (AC-61)
@@ -748,9 +759,8 @@ GET  /api/account/referrals          → the referrer screen (auth; 403 internal
               heldPendingDetails: null | { amount },   // ADR-8c residue: re-add details to confirm
               heldUnderThreshold: null | { balance, threshold } },          // AC-61
     payoutHistory: [{ paidAt, amount, reference, referralIds }],            // AC-30
-    program }        // full ReferralProgramPublic (authed): live figures for §8.3's copy in every
-                     // status + drives §8.3(7) terminated rendering (§12A.2 hardening: the PUBLIC
-                     // endpoint carries figures only while active)
+    program }        // full ReferralProgramPublic (authed) — figures + the switch, for the
+                     // section's live-figure copy and the Off banner (§7.5)
 
 POST /api/account/referrals/claim { code }             // manual entry (referred side); errors §6.3
 PUT  /api/account/payout-details { bsb, accountNumber, accountName }        // §9; returns referrerGate
@@ -777,8 +787,8 @@ continue to return a bare total** — no discount field is added to them.
 GET /api/ops/referrals/program                → full config + version
 PUT /api/ops/referrals/program                → via applyPricingChange('referral_program')
                                                 (stale version ⇒ 409 version_conflict, AC-38);
-                                                status→'terminated' or leaving it requires
-                                                body.confirm === 'TERMINATE' / 'REACTIVATE' (AC-68);
+                                                On/Off is a plain field on the same versioned save
+                                                (no typed confirmation — §7.5);
                                                 setting min_payout_balance > 0 requires
                                                 body.acknowledgeHold === true — the screen shows the
                                                 stated Vic unclaimed-money warning (ADR-8e);
@@ -882,51 +892,10 @@ stable indexable version; personalising for authenticated users at the same URL 
 
 Summarised: `X-Robots-Tag: noindex` on the 302 in every status; crawlable (no robots.txt disallow,
 or the noindex is never seen); never in the sitemap; 302 not 301 (browser redirect-caching would
-skip the cookie set); destination `/refer` in every status, uniform across valid and invalid
-codes so nothing leaks code validity.
+skip the cookie set); destination `/refer` whether the program is On or Off, uniform across
+valid and invalid codes so nothing leaks code validity.
 
-### 12A.2 Termination: one page for everyone, withdrawn from search
-
-**Owner (2026-08-15, second ruling — supersedes the first):** keep the landing page up when the
-program is killed, serving a short "this program has ended" notice, and stop handling special cases
-with little business value. Confirmed clarification: the ended notice shows to **everyone**,
-anonymous included — the thing actually worth avoiding was an anonymous visitor seeing the live
-pitch for a program that no longer exists.
-
-This replaces revision 3's terminated surface (a 410 branch, an authenticated-only redirect resolved
-from the session cookie, a redirect-to-home special case for `/r/`, and a `RenderedShell` status
-change) with:
-
-| `status` | `GET /refer` (everyone) | In `/sitemap.xml` | Robots |
-|---|---|---|---|
-| `active` | 200, full pitch (signed-in: + own code) | yes | indexable |
-| `paused` | 200, "on hold" (AC-62 — unchanged throughout; pause is temporary, the page is honest, ranking is kept for the resume) | yes | indexable |
-| `terminated` | 200, short "this program has ended" notice — same page for anonymous and signed-in; the only signed-in difference is a **link on the page** to the account Referrals section for their own history (AC-64's read-only view carries the honour-obligation). No figures, no pitch. | **no** | **`noindex`** |
-
-- **The whole SEO control is `noindex` + sitemap removal.** `renderShell`'s `refer` branch
-  reads program status (one D1 read) and, when `terminated`, emits `noindex` through the
-  route-level `noIndex` flag — which participates in `resolveSeo`'s monotonic OR
-  (`src/data/seo.ts:58-63`), so it can only ever add the restriction. `buildSitemap` (which
-  already receives `env`) drops the `refer` entry. `/refer` stays crawlable (nothing disallows
-  it), which is what lets the noindex be seen.
-- **The accepted cost, stated so it is a decision:** `noindex` de-indexes over weeks where a 410
-  does it in days. During that window some searchers land on an honest ended-notice. That is the
-  entire cost, and it is not worth three response paths and a status-code change.
-- **One residual the simplification touches — social previews.** Old shared `/refer` links keep
-  unfurling in WhatsApp/Facebook from the page's OG tags (a 410 would have killed the preview). So
-  the terminated branch of `renderShell` also swaps the head's title/description to the ended
-  notice — one more field in the same branch that already sets `noindex` — so a stale share
-  preview does not keep advertising the dead offer.
-- **No auth-dependent server behaviour** on this route: one page, one response shape, no
-  cookie-varying redirect, no caching subtleties.
-- Reversal (AC-68) restores the sitemap entry and lifts the route-level `noindex` automatically;
-  re-ranking after a noindex round-trip is slow, which the terminate confirmation copy states.
-- **API hardening (kept):** `GET /api/referral/program` returns the full figure set only while
-  `status='active'`; in `paused`/`terminated` it returns `{ status }` alone — the ended page
-  needs no figures, and the account area renders promises from referral-row snapshots (ADR-6) and
-  the authed `program` object in `GET /api/account/referrals`.
-
-### 12A.3 The FAQ exists twice only as two different documents
+### 12A.2 The FAQ exists twice only as two different documents
 
 The landing page carries three or four conversion questions; the Sanity `post` at
 `/resources/<slug>` carries the long tail. Governance rule, enforced at copy review (T7/T9), not in
@@ -976,7 +945,7 @@ one guard:
   the two new snapshot keys are **absent**.
 - **49b.** Integration: seeded non-referred account, price the same line via customer preview and ops
   preview before/after a referral exists for a *different* user; assert equality with
-  `user.discount_percent` pricing in every program status including `terminated` and with
+  `user.discount_percent` pricing with the program both On and Off and with
   `referred_discount_active=0`.
 - **49c.** `scripts/db/price-checksums.sql`: per-table `COUNT(*)`,
   `TOTAL(ROUND(line_total*100))`-style aggregates and min/max ids over `quote_line`, `order_line`,
@@ -992,16 +961,17 @@ one guard:
 `referral-lifecycle.test.mjs`: (1) login existing seeded user; visit `/r/<CODE>` through the same
 `Session` cookie jar; re-login; assert **zero** `referral` rows via the ops list API and that the
 account has no offer. (2) fresh email + cookie → exactly one row, cookie cleared (AC-6). (3) cookie
-present but program paused at verify time → zero rows (AC-62).
+present but program Off at verify time → zero rows.
 
-### 13.4 AC-65/66 — one describe block, two limbs
+### 13.4 AC-65/66 substance — switching Off honours what was promised (one describe block)
 
-Same subtest group ("termination honours what was promised") so they cannot drift: seed referral +
-pending earning + an issued quote and an open draft for the referred user → terminate via the ops API
-(typed confirmation) → assert (limb 1) balance-paid still confirms the earning and it appears in the
+Same subtest group ("Off honours what was promised") so the two limbs cannot drift: seed referral +
+pending earning + an issued quote and an open draft for the referred user → switch the program Off
+via the ops API → assert (limb 1) balance-paid still confirms the earning and it appears in the
 payouts queue and can be marked paid; (limb 2) a fresh price-preview for the referred user still
 carries the referral percent, the offer panel still says available with the **original** expiry, the
-issued quote's figures are byte-unchanged; and a new signup with the same code records nothing.
+issued quote's figures are byte-unchanged; and a new signup with the same code records nothing while
+`/refer` still returns 200 carrying the banner.
 
 ### 13.5 AC-75 — structural + behavioural
 
@@ -1044,20 +1014,17 @@ exist, then generating them).
    11 months → appears in `ready` with `forcedByLongStop`; and the program PUT refuses a non-zero
    threshold without `acknowledgeHold`.
 
-### 13.8 SEO and termination surface (§12A — lifecycle suite, plain fetches through the harness)
+### 13.8 SEO and the Off state (§12A, §7.5 — lifecycle suite, plain fetches through the harness)
 
-1. `GET /r/<CODE>` → 302 to `/refer` with `X-Robots-Tag: noindex`, in every program status;
-   cookie only when `active` + payable; a valid and an invented code get the same response shape in
-   `terminated` (no validity leak — trivially held, one destination for all).
+1. `GET /r/<CODE>` → 302 to `/refer` with `X-Robots-Tag: noindex`, On or Off; cookie only when
+   On and the referrer payable; a valid and an invented code get the same response shape (no
+   validity leak).
 2. `/robots.txt` contains **no** `/r/` disallow (the noindex must remain crawlable — §6.1).
-3. `/sitemap.xml` lists `/refer` while `active`/`paused`, drops it when `terminated`, and
-   never contains a `/r/` URL.
-4. `GET /refer` returns 200 in **every** status. When `terminated`, the served HTML head (what a
-   crawler's single fetch sees) carries `noindex` and the ended-notice title, and the body carries
-   no program figures; when `active`, no `noindex`. Reversal restores the sitemap entry and
-   drops the `noindex`.
-5. `GET /api/referral/program` carries figures only while `active`; `{ status }` alone in
-   `paused`/`terminated` (§12A.2 hardening).
+3. `/sitemap.xml` lists `/refer` in both states and never contains a `/r/` URL.
+4. `GET /refer` returns 200 with an unchanged head in both states; the public program payload
+   carries full figures plus `active`; the Off banner data is present exactly when Off. Manual
+   claim while Off returns `program_off`; a signed-in non-member's `GET /api/account/referrals`
+   while Off carries `program.active=false` and no code is issued.
 
 ---
 
@@ -1072,7 +1039,7 @@ exist, then generating them).
 | **T4** | Earning lifecycle | §7; hooks at the three route sites; §7.2 payability predicate + pending-hold; derived cancel guard; expiry + late-confirmation sweep (sans email); §13.7 scenarios 4–5 | |
 | **T5** | Account area (both screens) | Referrer section (gate-first empty state, code, share, list, earnings, held copy) + §8.6 offer panel | UX-mock-gated. |
 | **T6** | Quote surface | Badge on `QuoteTotals`/issued quote/order; ops project-record flags | UX-mock-gated. |
-| **T7** | Landing + placements | `/refer` all states incl. signed-in-without-details CTA (D18) and the terminated ended-notice with its `noindex`/head swap (§12A.2); Sanity `page` record, conditional sitemap, home/trade/footer/completed-order, s 32(2)/A18-vs-D18 copy placement (§12) | UX-mock-gated. |
+| **T7** | Landing + placements | `/refer` On/Off incl. signed-in-without-details CTA (D18) and the Off banner + non-member come-back-later message (§7.5); Sanity `page` record, sitemap entry, home/trade/footer/completed-order, s 32(2)/A18-vs-D18 copy placement (§12) | UX-mock-gated. |
 | **T8** | Ops Referrals tab | Program + Referrals + Payouts screens (ready/accruing only — no blocked group), CSV, mark paid/failed, access-log wiring, dashboard row, aging display + long-stop (§9, ADR-8e); §13.7 scenario 6 | UX-mock-gated; one mock covers the tab. |
 | **T9** | Emails + content + privacy | Four templates + reminder send in sweep; rules/T&Cs posts (coordinator copy); `PrivacyPolicyPage` update | Last: pure content + one cron branch. |
 
@@ -1128,11 +1095,12 @@ so two documents do not describe the same situation differently:
 | **A13 note** | "No ABN exists at signup, so this cannot fire at capture time for most accounts." | Still true for the referred side; note that under D18 the **referrer** always has an ABN, so manual-entry capture can now fire the gate whenever the referred user has set one. §4.6.6's containment argument is unchanged. |
 | **A18** | Unchanged — and must visibly survive the D18 write-up: the gate is payability, never purchase (ADR-8d; ACL s 49). | Add one sentence distinguishing the two conditions so no later edit collapses them. |
 | **§8.4(c) payouts** | Implies a blocked-on-details group could exist in the run. | Ready + accruing only; blocked is unreachable (§9, §11). |
-| **§4.7 + AC-63** | `/refer` never 404s; `terminated` serves a public 200 "program has ended" notice. | **Stands as written** (the intermediate 410 design was reverted by the owner, 2026-08-15). Two additions only: the ended page carries `noindex` and leaves the sitemap (§12A.2), and it may carry a link to the account Referrals section for signed-in users — a link on the page, never a server-side branch. AC-62 (paused, public 200 "on hold") is unchanged. |
-| **AC-33** | `/refer` indexable and in the sitemap, unconditionally. | Conditional on program status: indexable + sitemapped while `active`/`paused`; `noindex` + out of the sitemap when `terminated`, still 200 (§12A.2). |
-| **New AC (suggested AC-78)** | — | `GET /r/<CODE>` responds 302 to `/refer` with `X-Robots-Tag: noindex` in every program status; `/r/` URLs never appear in the sitemap; `robots.txt` does not disallow `/r/` (§6.1, §12A.1, tested §13.8). |
-| **New copy-review criterion (PM to decide: AC or copy checklist)** | — | The referral FAQ article extends the landing page's questions rather than restating them; the two pages interlink; no canonical between them (§12A.3). |
+| **The status model — §4.7, AC-62, AC-63, AC-64, AC-68** | Three states (`active`/`paused`/`terminated`), each with its own surface: on-hold page, ended page, read-only account variant, typed termination confirmation. | **Owner: status is On/Off; `paused` is cut; there is no terminated state and no termination surface.** Off = "come back later": `/refer` unchanged (200, indexed, sitemapped) plus **one conditional banner**; the join journey stops after login with a forward-looking message; placements and the footer link stay; a member's section stays live with the same banner; no attribution while Off (`program_off`); promises run to their dates (AC-65/66's substance — regression-critical, unchanged). AC-62/63/64 as written are withdrawn; AC-68's typed confirmation is withdrawn (plain toggle on the versioned save). Suggested replacement ACs: (a) while Off, the banner is the **only** change to `/refer` — s 18/s 32(1) honesty; (b) a signed-in non-member sees the come-back-later message in place of the join flow; (c) link + manual attribution both refuse while Off, and re-enable on On. |
+| **AC-33** | `/refer` indexable and in the sitemap, unconditionally. | **Stands as originally written** — both program states. The conditional-indexability amendments from the two previous correction notes are withdrawn. |
+| **New AC (suggested AC-78)** | — | `GET /r/<CODE>` responds 302 to `/refer` with `X-Robots-Tag: noindex` in both program states; `/r/` URLs never appear in the sitemap; `robots.txt` does not disallow `/r/` (§6.1, §12A.1, tested §13.8). |
+| **§8.2 / AC-36 placement withdrawal** | All placements disappear when `paused` or `terminated`. | Withdrawn — placements and the footer link stay while Off; the landing page they lead to explains the pause (§7.5). |
+| **New copy-review criterion (PM to decide: AC or copy checklist)** | — | The referral FAQ article extends the landing page's questions rather than restating them; the two pages interlink; no canonical between them (§12A.2). |
 
 New copy obligations from this design for the coordinator's terms/copy pass: the payment-timeframe
 sentence conditioned on the entry rule (§12), the threshold-hold disclosure whenever set (§12), and
-the ops-screen warning text for enabling `min_payout_balance` (ADR-8e), and the terminate confirmation stating that the page stays up with an ended notice but is withdrawn from search, with slow re-ranking on any reversal (§12A.2).
+the ops-screen warning text for enabling `min_payout_balance` (ADR-8e), and the two Off strings — the landing banner ("Joining is paused while we rework the program — check back soon.") and the signed-in non-member's come-back-later message — which exist for ACL s 18 / s 32(1) honesty (§7.5).
