@@ -5,6 +5,7 @@
 // the quote stable — not a snapshot copy. Replaces worker/lib/revisions.ts.
 import type { Env } from "../types";
 import { uuid } from "./util";
+import { referralDiscountState } from "./referral-discount";
 import { captureRecommendationOutcomes, type IssuedCartLine } from "./ai/outcomes";
 import { createLearningExample, refreshLearningExampleEligibility } from "./ai/examples";
 
@@ -98,9 +99,10 @@ export const ISSUABLE_FROM = new Set([
 
 export async function issueQuote(env: Env, projectId: string): Promise<IssueResult> {
   const project = await env.DB.prepare(
-    "SELECT id, status_internal, quote_edit_version, delivery_amount, delivery_postcode, delivery_settle_json FROM project WHERE id = ?",
+    "SELECT id, owner_user_id, status_internal, quote_edit_version, delivery_amount, delivery_postcode, delivery_settle_json FROM project WHERE id = ?",
   ).bind(projectId).first<{
-    id: string; status_internal: string; quote_edit_version: number; delivery_amount: number | null;
+    id: string; owner_user_id: string | null; status_internal: string; quote_edit_version: number;
+    delivery_amount: number | null;
     delivery_postcode: string | null; delivery_settle_json: string | null;
   }>();
   if (!project) return { ok: false, error: "not_found" };
@@ -172,19 +174,31 @@ export async function issueQuote(env: Env, projectId: string): Promise<IssueResu
     line_total: line.line_total ?? 0,
   })) as IssuedCartLine[];
 
+  // The issued-quote badge needs a FROZEN fact, and the per-line pricing snapshot
+  // is not one: a customer edit nulls pricing_snapshot_json, so a badge derived
+  // from it would vanish the moment the customer touched a line. Stamped here, at
+  // the same instant delivery freezes — the precedent 0044 already set.
+  //
+  // It is a LABEL, never a price. Nothing recomputes a total from it, so an
+  // issued quote is still never re-priced by a later change in eligibility: the
+  // percentage that was true when the offer went out stays on the document.
+  const referral = await referralDiscountState(env, project.owner_user_id);
+  const referralPercentAtIssue = referral.state === "available" ? referral.percent : null;
+
   const stmts = [
     // The optimistic guard is quote_edit_version: if the quote changed while we
     // were reading it above, this update matches nothing and the whole batch is
     // reported as a conflict.
     env.DB.prepare(
       `UPDATE project SET status_customer='quote_issued', status_internal='issued',
-          issued_at=datetime('now'), updated_at=datetime('now')
+          issued_at=datetime('now'), updated_at=datetime('now'),
+          referral_percent_at_issue=?
         WHERE id=? AND quote_edit_version=?
           -- IS, not =: NULL-safe by construction even though GUARD 8 above has
           -- already excluded NULL. The issue freezes exactly the delivery
           -- figure it read at the top of this call, or it fails.
           AND delivery_amount IS ?`,
-    ).bind(projectId, project.quote_edit_version, project.delivery_amount),
+    ).bind(referralPercentAtIssue, projectId, project.quote_edit_version, project.delivery_amount),
     // One outbox row per finalized quote (UNIQUE(project_id)) — a re-issue after
     // a request-changes round trip (an accepted edge case, not actively designed
     // for) replaces the pending payload rather than colliding.

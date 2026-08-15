@@ -26,7 +26,7 @@ import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import {
   Session, freePort, login, makeRunDir, projectRoot, removeRunDir,
-  requestJson, run, start, stop, viteCli, waitForUrl, wranglerCli,
+  requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
@@ -206,6 +206,36 @@ test("T2 — the referral discount reaches the price through loadAccountDiscount
       await login(expired, "/api/auth", "elig.expired@example.com");
       await seedReferral(await userIdFor("elig.expired@example.com"), { expiresAt: "datetime('now','-1 day')" });
       assert.equal(await saveLine(expired), nonReferred, "a referral past its expires_at must price like no referral at all");
+    });
+
+    await t.test("issuing a quote freezes the referral percentage onto the project", async () => {
+      // The issued-quote badge cannot be derived from the per-line pricing
+      // snapshot: a customer edit nulls pricing_snapshot_json, so a badge read
+      // from it would vanish the moment the customer touched the line. So the
+      // percentage is stamped at the existing freeze moment — the same instant
+      // delivery freezes — and it is a LABEL, never a price: nothing recomputes
+      // a total from it, which is why AC-54 is untouched.
+      const staff = new Session(baseUrl);
+      await login(staff, "/api/ops/auth", staffEmail);
+
+      const referred = new Session(baseUrl);
+      await login(referred, "/api/auth", "issue.referred@example.com");
+      await seedReferral(await userIdFor("issue.referred@example.com"));
+      const saved = await requestJson(referred, "/api/projects/current/lines", {
+        method: "PUT", json: { title: "Issue stamp", items: [aLine()] },
+      });
+      const id = saved.body.project.id;
+      await requestJson(referred, `/api/projects/${id}/submit`, {
+        method: "POST", json: { contact: { name: "Issue Stamp", email: "issue.referred@example.com", postcode: "3072" } },
+      });
+      await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 250 } });
+      await requestJson(staff, `/api/ops/projects/${id}/issue-quote`, { method: "POST" });
+
+      const rows = await sql(`SELECT referral_percent_at_issue FROM project WHERE id='${id}'`);
+      assert.equal(
+        rows[0].referral_percent_at_issue, 2.5,
+        "issueQuote must stamp project.referral_percent_at_issue with the live referral percentage",
+      );
     });
   } finally {
     await stop(server);
