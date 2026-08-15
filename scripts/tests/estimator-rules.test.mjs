@@ -561,6 +561,11 @@ test("AI batch pricing loads private tables once, not once per candidate variant
             if (sql.includes("pricing_policy")) {
               return { gst_mode: "inc", version: "v1" };
             }
+            // Ordered before the discount_percent branch: the referral lookup
+            // selects r.discount_percent, so a substring match on that alone
+            // would swallow it and quietly answer the wrong question. null =
+            // this user was never referred, which is every existing account.
+            if (sql.includes("FROM referral")) return null;
             if (sql.includes("discount_percent")) return { discount_percent: 5 };
             throw new Error(`unexpected first: ${sql}`);
           },
@@ -570,7 +575,11 @@ test("AI batch pricing loads private tables once, not once per candidate variant
     },
   };
   const price = await createCachedPriceResolver(env, "user-1");
-  assert.equal(reads, 5, "one bounded pricing snapshot");
+  // Six, not five, since 0051: loadAccountDiscount also asks whether this user
+  // has a live referral discount. The number is incidental — what this test
+  // actually protects is that the count is a CONSTANT of setup and does not grow
+  // with the candidate set, which is asserted again after the 100 calls below.
+  assert.equal(reads, 6, "one bounded pricing snapshot");
   for (let i = 0; i < 100; i++) {
     const result = price({
       family: "amj80", widthMm: 1200, heightMm: 900, qty: 1,
@@ -578,7 +587,7 @@ test("AI batch pricing loads private tables once, not once per candidate variant
     });
     assert.equal(result.ok, true);
   }
-  assert.equal(reads, 5, "candidate pricing is pure after the initial snapshot");
+  assert.equal(reads, 6, "candidate pricing is pure after the initial snapshot");
 });
 
 test("pricing: option surcharges add to the unit; missing dims ⇒ not ok", () => {
