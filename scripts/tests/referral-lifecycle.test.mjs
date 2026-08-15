@@ -370,6 +370,26 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(second.body.code, first.body.code, "a code, once issued, never changes");
     });
 
+    await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
+      // Staff and customers share the user table. Exclusion here is a different
+      // axis from payability: a staff member may well have a valid ABN and bank
+      // account and is still not a referrer, which is why this is NOT expressed
+      // through payoutComplete — that predicate reads four detail fields and
+      // nothing else, and widening it would blur a rule ACL s 49 depends on.
+      const session = new Session(baseUrl);
+      await login(session, "/api/auth", "gate.staff@example.com");
+      await sql(
+        `UPDATE user SET type='internal', abn='51824753556', payout_bsb='063000',
+           payout_account_number='12345678', payout_account_name='A Tradie'
+         WHERE email='gate.staff@example.com'`,
+      );
+
+      const response = await session.request("/api/account/referrals");
+      assert.equal(response.status, 403, "an internal account must be refused the referrer screen outright");
+      const rows = await sql("SELECT referral_code FROM user WHERE email='gate.staff@example.com'");
+      assert.equal(rows[0].referral_code, null, "and no code may be issued into a staff user row");
+    });
+
 
   } finally {
     await stop(server);
