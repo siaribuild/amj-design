@@ -13,6 +13,8 @@
 // is exactly the verification the criterion refuses to accept.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { build } from "esbuild";
+import { pathToFileURL } from "node:url";
 import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { makeRunDir, projectRoot, removeRunDir, run, wranglerCli } from "./helpers.mjs";
@@ -211,4 +213,37 @@ test("referral program — migration 0051", { timeout: 600_000 }, async (t) => {
   } finally {
     await removeRunDir(runDir);
   }
+});
+
+// ── T3: the payability predicate, and nothing else ───────────────────────────
+// D18: a user cannot hold a referral code until ABN, BSB, account number and
+// account name are stored. The predicate below is the whole of that rule, and
+// what it does NOT read is as load-bearing as what it does — see the ACL s 49
+// subtest.
+test("T3 — the payability predicate", { timeout: 120_000 }, async (t) => {
+  const runDir = await makeRunDir("referral-predicate");
+  t.after(async () => { await removeRunDir(runDir); });
+  const outfile = join(runDir, "referrals-bundle.mjs");
+  await build({
+    stdin: {
+      contents: `export { abnValid } from ${JSON.stringify(join(projectRoot, "worker/lib/referrals.ts"))};`,
+      resolveDir: projectRoot,
+      sourcefile: "referrals-entry.ts",
+      loader: "ts",
+    },
+    bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+  });
+  const M = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
+
+  await t.test("an ABN is valid only when it passes the ATO checksum", () => {
+    // 51 824 753 556 is the ABR's own worked example. v1 does no ABN Lookup
+    // call: an 11-digit checksum is the validity test, which catches a typo
+    // without putting a network round trip in front of a tradie.
+    assert.equal(M.abnValid("51824753556"), true, "abnValid must accept a checksum-valid ABN");
+    assert.equal(M.abnValid("51 824 753 556"), true, "spacing is how humans write an ABN");
+    assert.equal(M.abnValid("51824753557"), false, "a single transposed digit must fail the checksum");
+    assert.equal(M.abnValid("5182475355"), false, "ten digits is not an ABN");
+    assert.equal(M.abnValid(""), false);
+    assert.equal(M.abnValid(null), false);
+  });
 });
