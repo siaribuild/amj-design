@@ -370,6 +370,36 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(second.body.code, first.body.code, "a code, once issued, never changes");
     });
 
+    await t.test("payout details are stored, and the log records the fact without the numbers", async () => {
+      // The entry step, end to end. Every code test until now seeded the user row
+      // directly; this is the path a real referrer takes, and it is the only one
+      // that exercises the access log at all.
+      const session = new Session(baseUrl);
+      await login(session, "/api/auth", "payout.save@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='payout.save@example.com'");
+
+      const saved = await requestJson(session, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      assert.equal(saved.body.referrerGate.complete, true, "PUT /api/account/payout-details must complete the D18 gate");
+
+      const stored = await sql("SELECT payout_bsb, payout_account_number, payout_account_name FROM user WHERE email='payout.save@example.com'");
+      assert.equal(stored[0].payout_bsb, "063000", "a BSB is stored as digits — humans type the hyphen");
+      assert.equal(stored[0].payout_account_number, "12345678");
+      assert.equal(stored[0].payout_account_name, "A Tradie");
+
+      const log = await sql(
+        `SELECT action, context FROM payout_details_access
+          WHERE subject_user_id = (SELECT id FROM user WHERE email='payout.save@example.com')`,
+      );
+      assert.equal(log.length, 1, "changing payout details must write exactly one access row");
+      assert.equal(log[0].action, "change");
+      // Copying the details into a log in order to protect the details is
+      // self-defeating. The row records WHO, WHICH RECORD and WHEN — never the value.
+      assert.equal(/12345678/.test(JSON.stringify(log[0])), false, "the access log must never contain the account number");
+      assert.equal(/063000/.test(JSON.stringify(log[0])), false, "nor the BSB");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank
