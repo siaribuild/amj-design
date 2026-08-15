@@ -21,19 +21,40 @@ export interface ReferrerRow extends PayoutDetails {
  *  Only the ISSUE moment sits behind the gate. Once issued the code is permanent:
  *  a tradie who has already read it out to a mate on a job site must never find
  *  it changed underneath them. */
-export async function ensureReferralCode(env: Env, user: ReferrerRow): Promise<string | null> {
+export async function ensureReferralCode(
+  env: Env,
+  user: ReferrerRow,
+  generate: () => string = generateReferralCode,
+): Promise<string | null> {
   if (!payoutComplete(user)) return null;
   if (user.referral_code) return user.referral_code;
-  await env.DB
-    .prepare("UPDATE user SET referral_code = ? WHERE id = ? AND referral_code IS NULL")
-    .bind(generateReferralCode(), user.id)
-    .run();
-  // Read back rather than return what was just generated. If a concurrent
-  // request issued a code first, the WHERE clause matched nothing and THAT code
-  // is the permanent one — and it may already have been read out over the phone.
-  const row = await env.DB.prepare("SELECT referral_code FROM user WHERE id = ?")
-    .bind(user.id).first<{ referral_code: string | null }>();
-  return row?.referral_code ?? null;
+  for (let attempt = 0; attempt < CODE_ISSUE_ATTEMPTS; attempt += 1) {
+    const drawn = generate();
+    // NOT EXISTS rather than letting the UNIQUE index throw. Matching on D1's
+    // error text would couple this to a message we do not own, and a reworded
+    // message would turn a handled collision back into a 500 without a test
+    // noticing. Declining to take is the same outcome with none of that.
+    await env.DB
+      .prepare(
+        `UPDATE user SET referral_code = ? WHERE id = ? AND referral_code IS NULL
+           AND NOT EXISTS (SELECT 1 FROM user WHERE referral_code = ?)`,
+      )
+      .bind(drawn, user.id, drawn)
+      .run();
+    // Read back rather than return what was just drawn. If a concurrent request
+    // issued a code first, the WHERE clause matched nothing and THAT code is the
+    // permanent one — and it may already have been read out over the phone. A
+    // null read-back means the row did not take: the draw collided, so redraw.
+    const row = await env.DB.prepare("SELECT referral_code FROM user WHERE id = ?")
+      .bind(user.id).first<{ referral_code: string | null }>();
+    if (row?.referral_code) return row.referral_code;
+  }
+  // NOT null. null already means "this user may not hold a code" — the D18 gate's
+  // answer — and reusing it here would tell a tradie who HAS completed their bank
+  // details that they are not in the program, with nothing on the account screen
+  // able to tell the two apart. Five collisions is a broken generator, not bad
+  // luck, so it fails where someone will see it.
+  throw new Error(`could not issue a referral code after ${CODE_ISSUE_ATTEMPTS} attempts`);
 }
 
 /** The ATO's published ABN checksum: weighted digits, one subtracted from the
@@ -62,6 +83,11 @@ export function abnValid(abn: string | null | undefined): boolean {
  *  transcribed wrongly. Dropping them costs a little of a space that is already
  *  vastly larger than the number of tradies in Australia. */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+/** Redraws before giving up. Five collisions in a ~8.9 × 10⁸ space is not bad
+ *  luck — it is the generator or the alphabet being broken — so the loop is a
+ *  bound on a real fault, not a retry budget for an expected one. */
+const CODE_ISSUE_ATTEMPTS = 5;
 
 /** A fresh XXX-XXX code, drawn at random rather than issued from a counter: a
  *  sequential code would let anyone holding one guess the next. ~8.9 × 10⁸
