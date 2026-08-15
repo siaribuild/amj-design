@@ -38,11 +38,12 @@ On/Off, and Off means *come back later*, not *gone*:** *"leaving landing page as
 journey after login only: future looking statement 'program being reimagined, come back later.'
 type… it feels least involving and hardly any damage is done as well."*
 
-**There is no terminated state, so there is no termination surface to specify.** Deleted outright:
-the ended-notice page variant, the `noindex` branch, the conditional sitemap entry, the head/OG
-rewrite, the status-dependent `/r/` destination, the disappearing footer link, the terminate
-confirmation copy, and the paused-vs-terminated fencing that existed only to keep two states apart.
-**AC-63 and AC-62 collapse into one criterion for the Off state; §12A.2 is gone.**
+**There is no terminated state, so there is no termination surface to specify** — and the reason is
+structural rather than a matter of convenience (§4.7). Deleted outright: the ended-notice page variant,
+the `noindex` branch, the conditional sitemap entry, the head/OG rewrite, the status-dependent `/r/`
+destination, the disappearing footer link, the terminate confirmation copy, and the paused-vs-terminated
+fencing that existed only to keep two states apart. **AC-63 and AC-62 collapse into one criterion for
+the Off state; §12A.2 is gone.**
 
 **What Off changes, in full:** new referrals are not recorded, the join journey stops after login with
 a forward-looking message, and **one banner** appears on an otherwise unchanged landing page. That is
@@ -425,9 +426,29 @@ inside one program. Both default ON at launch (AC-60).
 ### 4.7 The program is On or Off — and Off means "come back later"
 
 **Two states, not three.** `referral_program.status` is `active` or `off`. There is no *paused* and no
-*terminated*: earlier revisions of this spec carried a three-state model, and it is gone (see the
-revision-9 note at the top). Anything in the design, tests or code that still names a third status is
-a leftover.
+*terminated*. Anything in the design, tests or code that still names a third status is a leftover from
+a superseded revision.
+
+#### Why there is no terminated state — the structural answer, not the convenient one
+
+Owner, verbatim: *"terminated is/can effectively [be] paused forever. If that helps to simplify code —
+let's go with it. Hard termination is not possible without leaving different tails to serve existing
+commitments anyway."*
+
+That is the reason, and it is worth stating properly, because "we simplified it" is exactly the kind of
+justification the next thorough person overturns — as happened twice while this spec was being written.
+
+**A hard termination cannot be clean.** Whatever the switch says, the commitments outlive it: a
+`pending` earning still has to confirm when its order is paid, a `confirmed` earning still has to be
+paid within its stated timeframe (M14), and a discount already given still has to run to its own date
+(§4.6.4). The tail exists either way. A second status was therefore only ever going to describe the
+**public page's content** — and once the owner decided the public page barely changes, there was
+nothing left for it to describe.
+
+> **Terminated is paused forever, and the commitments outlive either label.**
+
+That is the answer to give anyone who reads the kill-switch requirement in six months, finds a boolean,
+and wonders whether something was lost.
 
 #### What Off changes, in full
 
@@ -472,7 +493,8 @@ real person, and the two limbs must be implemented and tested together so they c
   that deadline forward. An already-issued quote is never re-priced. (AC-66)
 
 Both limbs are the same principle as M10's rate snapshot: what a person was told when they acted is
-what they get. The account-area legacy view (AC-64) stays: a referrer with history keeps seeing it,
+what they get. They are also the reason a second status was never going to be clean, per the structural
+answer above. The account-area legacy view (AC-64) stays: a referrer with history keeps seeing it,
 along with anything still owed.
 
 If ops ever needs to stop in-flight promises, that is a **separate, deliberate act** — a bulk void with
@@ -630,7 +652,8 @@ Plus the disclosure obligation from §4.8b (AC-81).
   `noindex` branch, no conditional sitemap entry, no head or Open Graph rewrite, no auth-dependent
   server branching (§4.7).
 - **A third program status.** There is `active` and `off`. Anything naming *paused* or *terminated* is
-  a leftover from a superseded revision.
+  a leftover from a superseded revision — and §4.7 records why a third state was never going to be
+  clean.
 - **A `robots.txt` disallow for `/r/`** — actively wrong, see §12A.1.
 - **A canonical link between the landing page and the FAQ article** — actively wrong, see §12A.2.
 - **A "blocked on missing details" group in the payouts queue** — unreachable by construction under
@@ -1377,7 +1400,9 @@ Items still requiring the owner's accountant or a lawyer:
 9. **Unfair contract terms.** The terms must present payout details as an **eligibility condition**,
    never as a withholding of money already owed (§4.9.1).
 10. **Right to end or change the program.** §4.7 commits to honouring promises already made, including
-    not bringing a discount deadline forward. The terms must say the same thing, in the same direction.
+    not bringing a discount deadline forward. The terms must say the same thing, in the same direction —
+    and note that the system has no "hard stop": a program that ends is a program switched off, with its
+    commitments still running (§4.7).
 11. **Disclosure inherent in a percentage.** The terms must say what each party will see.
 12. **Advertising a time-limited discount.** Conditions must be clear at the point the claim is made.
 13. **Privacy policy page.** `src/pages/PrivacyPolicyPage.tsx` must be updated for referral data,
