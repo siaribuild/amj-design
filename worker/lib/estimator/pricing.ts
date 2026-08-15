@@ -10,6 +10,9 @@ import type { Env } from "../../types";
 // There is one deposit percentage in this codebase (0043) and it lives on the
 // order domain, not on a policy row — pricing_policy.deposit_percent is gone.
 import { DEPOSIT_PERCENT } from "../orders";
+// A LEAF module (imports nothing from lib/) precisely so this import cannot
+// close a cycle: referrals.ts needs the re-price path, which runs through here.
+import { referralDiscountState } from "../referral-discount";
 
 export interface RateCard {
   id: string;            // family slug or 'default'
@@ -322,17 +325,47 @@ export class MissingSurcharge extends Error {
   }
 }
 
-/** The account's discount, resolved SERVER-SIDE from the owning user.
+/** What percentage off does this user get, and where did it come from?
+ *
+ *  The COMPONENTS, not a total. A total cannot be taken apart again, and the
+ *  snapshot has to record both halves so a stored line can be reproduced later
+ *  when the account's own rate may have moved. computePrice does the composing —
+ *  this only answers what the inputs are. */
+export interface DiscountResolution {
+  /** user.discount_percent (0032), clamped; 0 for an anonymous project. */
+  accountPercent: number;
+  /** The referred tradie's first-order discount (0051), taken from the referral
+   *  row's SNAPSHOT rather than the live config, so changing a number in ops can
+   *  never reach backwards into a promise already made. 0 for everyone who was
+   *  not referred. */
+  referralPercent: number;
+  /** Which referral granted it — set iff referralPercent > 0. */
+  referralId: string | null;
+}
+
+/** The discount for a user, resolved SERVER-SIDE from the owning user.
  *
  *  Never taken from the request: a percentage off the price is exactly the field
  *  a browser would love to supply. An anonymous project has no owner_user_id and
- *  prices at 0 — the discount is a reason to register, not a default for everyone. */
-export async function loadAccountDiscount(env: Env, userId: string | null | undefined): Promise<number> {
-  if (!userId) return 0;
-  const row = await env.DB.prepare("SELECT discount_percent FROM user WHERE id = ?")
-    .bind(userId).first<{ discount_percent: number }>();
+ *  prices at 0 — the discount is a reason to register, not a default for everyone.
+ *
+ *  This is THE place that answers the question, and both pricing entry points
+ *  come through it, so adding the referral component here is the whole of the
+ *  wiring: the customer preview, every save path, and the ops preview and
+ *  re-price all inherit it without a line of duplication. */
+export async function loadAccountDiscount(env: Env, userId: string | null | undefined): Promise<DiscountResolution> {
+  if (!userId) return { accountPercent: 0, referralPercent: 0, referralId: null };
+  const [row, referral] = await Promise.all([
+    env.DB.prepare("SELECT discount_percent FROM user WHERE id = ?")
+      .bind(userId).first<{ discount_percent: number }>(),
+    referralDiscountState(env, userId),
+  ]);
   const v = Number(row?.discount_percent);
-  return Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0;
+  return {
+    accountPercent: Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0,
+    referralPercent: referral.percent,
+    referralId: referral.percent > 0 ? referral.referralId : null,
+  };
 }
 
 export interface CachedPriceArgs {
@@ -357,7 +390,7 @@ export async function createCachedPriceResolver(
   env: Env,
   ownerUserId: string | null | undefined,
 ): Promise<(args: CachedPriceArgs) => PriceSnapshot> {
-  const [rateResult, policy, surchargeResult, modifierResult, discountPercent] = await Promise.all([
+  const [rateResult, policy, surchargeResult, modifierResult, discount] = await Promise.all([
     env.DB.prepare(
       "SELECT id, perim_rate, area_rate, min_charge, version FROM pricing_rate_card WHERE active=1",
     ).all<any>(),
@@ -424,7 +457,8 @@ export async function createCachedPriceResolver(
         return value == null ? [] : [value];
       }),
       modifiers: modifiers.get(rate.id) ?? [],
-      discountPercent,
+      discountPercent: discount.accountPercent,
+      referralDiscountPercent: discount.referralPercent,
     });
   };
 }
@@ -436,7 +470,7 @@ export async function priceLine(env: Env, args: {
   /** Owner of the project being priced, or null for an anonymous one. */
   ownerUserId?: string | null;
 }): Promise<PriceSnapshot> {
-  const [rate, policy, surcharges, discountPercent] = await Promise.all([
+  const [rate, policy, surcharges, discount] = await Promise.all([
     loadRateCard(env, args.family, !args.requireExactRate),
     loadPolicy(env),
     loadOptionSurcharges(env, args.optionSlugs ?? [], args.requireAllOptions),
@@ -446,6 +480,8 @@ export async function priceLine(env: Env, args: {
   const modifiers = await loadModifiers(env, rate.id);
   return computePrice(rate, policy, {
     family: args.family, widthMm: args.widthMm, heightMm: args.heightMm,
-    qty: args.qty, optionSurcharges: surcharges, modifiers, discountPercent,
+    qty: args.qty, optionSurcharges: surcharges, modifiers,
+    discountPercent: discount.accountPercent,
+    referralDiscountPercent: discount.referralPercent,
   });
 }

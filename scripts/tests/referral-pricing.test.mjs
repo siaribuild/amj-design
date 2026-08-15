@@ -24,7 +24,10 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
+import {
+  Session, freePort, login, makeRunDir, projectRoot, removeRunDir,
+  requestJson, run, start, stop, viteCli, waitForUrl, wranglerCli,
+} from "./helpers.mjs";
 
 const p = (rel) => JSON.stringify(join(projectRoot, rel));
 
@@ -70,4 +73,142 @@ test("AC-48 — the referral discount composes additively at the one discount st
     const snapshot = price({ discountPercent: 5, referralDiscountPercent: 2.5 });
     assert.equal(snapshot.accountDiscountPercent, 5, "snapshot.accountDiscountPercent must record the account half");
   });
+});
+
+// ── The resolver, through the real stack ─────────────────────────────────────
+// computePrice composing two numbers proves the arithmetic. It does not prove
+// that the referral percentage ever REACHES it — that is loadAccountDiscount's
+// job, and it is the half that can break every existing quote, because both of
+// its callers sit under every pricing surface in the app.
+//
+// Referral rows are seeded straight into D1: T2 deliberately does not wait on
+// the attribution UX (T3), and a discount that depends on a cookie would be
+// testing the wrong thing here.
+const aLine = (overrides = {}) => ({
+  code: "W01", location: "Referral probe", productSlug: "amj80-series-sliding-window",
+  width: "1200", height: "900", qty: 1,
+  options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+  lineTotal: 1,
+  ...overrides,
+});
+
+test("T2 — the referral discount reaches the price through loadAccountDiscount", { timeout: 600_000 }, async (t) => {
+  const runDir = await makeRunDir("referral-resolver");
+  const assets = join(runDir, "assets");
+  const state = join(runDir, "state");
+  const wranglerEnv = { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
+  let server;
+  try {
+    await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
+    await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env: wranglerEnv });
+    await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env: wranglerEnv });
+    const sql = async (command) => {
+      const r = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", command], { env: wranglerEnv });
+      return JSON.parse(r.stdout.slice(r.stdout.indexOf("[")))[0].results;
+    };
+
+    const port = await freePort();
+    const baseUrl = `http://127.0.0.1:${port}`;
+    server = start(process.execPath, [
+      wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port),
+      "--persist-to", state, "--assets", assets, "--log-level", "warn",
+      "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "AI_EXTRACTION_MODE:manual",
+    ], { env: wranglerEnv });
+    await waitForUrl(`${baseUrl}/api/health`, server);
+
+    // PUT /api/projects/current/lines is "THE pricing entry point" (lines.ts) —
+    // the save path every customer edit funnels through.
+    const saveLine = async (session, overrides) => {
+      const saved = await requestJson(session, "/api/projects/current/lines", {
+        method: "PUT", json: { title: "Referral probe", items: [aLine(overrides)] },
+      });
+      return saved.body.items[0].lineTotal;
+    };
+    const userIdFor = async (email) => (await sql(`SELECT id FROM user WHERE email='${email}'`))[0].id;
+    const seedReferral = async (referredUserId, overrides = {}) => {
+      const o = { status: "recorded", discountPercent: 2.5, expiresAt: "datetime('now','+12 months')", ...overrides };
+      await sql(
+        `INSERT INTO referral (id, referrer_user_id, referred_user_id, code, source, status,
+           rate_percent, min_order_amount, discount_percent, window_months, expires_at)
+         VALUES ('ref_${referredUserId}', 'u_demo', '${referredUserId}', 'ABC-DEF', 'manual', '${o.status}',
+           1, 2000, ${o.discountPercent}, 12, ${o.expiresAt})`,
+      );
+    };
+
+    await t.test("a referred tradie's line prices with the referral discount composed on top", async () => {
+      // Two accounts rather than one account priced twice: a line saved a second
+      // time with identical content is not necessarily re-priced, so re-saving
+      // would compare a fresh price against a stored one and prove nothing.
+      const anonTotal = await saveLine(new Session(baseUrl));
+
+      const control = new Session(baseUrl);
+      await login(control, "/api/auth", "referred.control@example.com");
+      const nonReferred = await saveLine(control);
+      assert.ok(nonReferred < anonTotal, "the standing account discount applies to a registered account");
+
+      const referred = new Session(baseUrl);
+      await login(referred, "/api/auth", "referred.pricing@example.com");
+      const referredUserId = await userIdFor("referred.pricing@example.com");
+      await seedReferral(referredUserId);
+      // Guard the guard: a silently failed INSERT would make this test pass for
+      // the wrong reason the moment the implementation lands.
+      const seeded = await sql(`SELECT status, discount_percent FROM referral WHERE referred_user_id='${referredUserId}'`);
+      assert.equal(seeded.length, 1, "the referral row seeded");
+      assert.equal(seeded[0].discount_percent, 2.5);
+
+      const referredTotal = await saveLine(referred);
+      assert.ok(
+        referredTotal < nonReferred,
+        `loadAccountDiscount must carry the referral percent into the price: referred ${referredTotal} is not below non-referred ${nonReferred}`,
+      );
+      // 5% + 2.5% off the unrounded subtotal, then the $10 grid.
+      assert.ok(
+        Math.abs(referredTotal - anonTotal * 0.925) <= 10,
+        `${referredTotal} should be within the $10 grid of 7.5% off ${anonTotal}`,
+      );
+    });
+
+    await t.test("AC-49b — a non-referred account prices identically whatever the program is doing", async () => {
+      // The criterion the whole feature lives or dies on, at the resolver. Every
+      // existing account has no referral row, and loadAccountDiscount must return
+      // their user.discount_percent and nothing else — with the program On, with
+      // it Off, and with the referred side switched off.
+      //
+      // A fresh account per state, because a line saved again with identical
+      // content is not necessarily re-priced.
+      const states = [
+        ["the program is On", "UPDATE referral_program SET active=1, referred_discount_active=1 WHERE id='default'"],
+        ["the program is Off", "UPDATE referral_program SET active=0 WHERE id='default'"],
+        ["the referred side is switched off", "UPDATE referral_program SET active=1, referred_discount_active=0 WHERE id='default'"],
+      ];
+      const totals = [];
+      for (const [label, change] of states) {
+        await sql(change);
+        const session = new Session(baseUrl);
+        await login(session, "/api/auth", `nonreferred.${totals.length}@example.com`);
+        totals.push([label, await saveLine(session)]);
+      }
+      // Restore, so a later subtest inherits a running program.
+      await sql("UPDATE referral_program SET active=1, referred_discount_active=1 WHERE id='default'");
+
+      const [, baseline] = totals[0];
+      for (const [label, total] of totals) {
+        assert.equal(total, baseline, `a non-referred line moved when ${label} — AC-49b`);
+      }
+    });
+
+    await t.test("an expired referral grants no discount", async () => {
+      const control = new Session(baseUrl);
+      await login(control, "/api/auth", "elig.control@example.com");
+      const nonReferred = await saveLine(control);
+
+      const expired = new Session(baseUrl);
+      await login(expired, "/api/auth", "elig.expired@example.com");
+      await seedReferral(await userIdFor("elig.expired@example.com"), { expiresAt: "datetime('now','-1 day')" });
+      assert.equal(await saveLine(expired), nonReferred, "a referral past its expires_at must price like no referral at all");
+    });
+  } finally {
+    await stop(server);
+    await removeRunDir(runDir);
+  }
 });
