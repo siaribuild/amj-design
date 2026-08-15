@@ -17,7 +17,10 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { makeRunDir, projectRoot, removeRunDir, run, wranglerCli } from "./helpers.mjs";
+import {
+  Session, freePort, login, makeRunDir, projectRoot, removeRunDir,
+  requestJson, run, start, stop, viteCli, waitForUrl, wranglerCli,
+} from "./helpers.mjs";
 
 const MIGRATION = "0051_referral_program.sql";
 
@@ -296,4 +299,53 @@ test("T3 — the payability predicate", { timeout: 120_000 }, async (t) => {
     // let anyone holding one guess the next.
     assert.ok(seen.size > 450, `500 codes produced only ${seen.size} distinct values`);
   });
+});
+
+// ── T3: codes and attribution, through the running stack ─────────────────────
+test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async (t) => {
+  const runDir = await makeRunDir("referral-t3");
+  const assets = join(runDir, "assets");
+  const state = join(runDir, "state");
+  const wranglerEnv = { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
+  let server;
+  try {
+    await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
+    await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env: wranglerEnv });
+    await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env: wranglerEnv });
+    const sql = async (command) => {
+      const r = await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", command], { env: wranglerEnv });
+      return JSON.parse(r.stdout.slice(r.stdout.indexOf("[")))[0].results;
+    };
+
+    const port = await freePort();
+    const baseUrl = `http://127.0.0.1:${port}`;
+    server = start(process.execPath, [
+      wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port),
+      "--persist-to", state, "--assets", assets, "--log-level", "warn",
+      "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "AI_EXTRACTION_MODE:manual",
+    ], { env: wranglerEnv });
+    await waitForUrl(`${baseUrl}/api/health`, server);
+
+    await t.test("D18 — an account without payout details holds no code at all", async () => {
+      // WITHHELD, not issued-inactive (ADR-8a). If no code exists there is
+      // nothing to click, nothing to type and no cookie to set — so the window
+      // in which a referral could be recorded against a referrer who cannot be
+      // paid does not exist, rather than being guarded against.
+      const session = new Session(baseUrl);
+      await login(session, "/api/auth", "gate.nodetails@example.com");
+      // Asserted rather than thrown: requestJson raises a plain Error on an
+      // unexpected status, which reads as a broken harness rather than as the
+      // behaviour under test being absent.
+      const response = await session.request("/api/account/referrals");
+      assert.equal(response.status, 200, "GET /api/account/referrals must exist and answer the D18 gate");
+      const body = await response.json();
+      assert.equal(body.referrerGate?.complete, false, "GET /api/account/referrals must report the D18 gate as incomplete");
+      assert.equal(body.code, null, "a code must be withheld until the payout details exist");
+    });
+
+
+  } finally {
+    await stop(server);
+    await removeRunDir(runDir);
+  }
 });

@@ -16,6 +16,7 @@ import { orders } from "./routes/orders";
 import { guest } from "./routes/guest";
 import { files } from "./routes/files";
 import { enquiries } from "./routes/enquiries";
+import { referrals } from "./routes/referrals";
 import { parse } from "./routes/parse";
 import { ops } from "./routes/ops";
 import { integrations } from "./routes/integrations";
@@ -72,6 +73,9 @@ api.route("/api", files);
 
 // Public Contact-page enquiries (question / showroom appointment).
 api.route("/api", enquiries);
+
+// Referral program — the referrer's own screen and the public program figures.
+api.route("/api", referrals);
 
 // Schedule upload → parse into estimator draft lines (quota-limited).
 api.route("/api", parse);
