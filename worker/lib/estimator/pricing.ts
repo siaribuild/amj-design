@@ -65,6 +65,12 @@ export interface PriceInput {
   /** The account's discount (0032), as a percentage off. 0 for anonymous quotes,
    *  which have no user row. Applied last, before rounding. */
   discountPercent?: number;
+  /** The referred tradie's first-order discount (0051), as a percentage off.
+   *  Absent or 0 for everyone who was not referred — which is everyone today —
+   *  and an absent value prices identically to no field at all. Composed with
+   *  `discountPercent` at the SAME step: it is one more input to the existing
+   *  discount, never a second discount. */
+  referralDiscountPercent?: number;
   /** Emit a step-by-step arithmetic trace (ops Pricing preview only). Off by
    *  default so the snapshot persisted on 70k lines does not carry it. */
   explain?: boolean;
@@ -101,6 +107,17 @@ export interface PriceSnapshot {
   /** The account discount that priced this line — recorded so a total can be
    *  reproduced later, when the account's rate may have changed. */
   discountPercent: number;
+  /** The two halves of `discountPercent`, present ONLY when a referral discount
+   *  actually applied — the same pattern `steps` uses. Their absence is what
+   *  keeps every non-referred snapshot byte-identical to the one this engine
+   *  wrote yesterday, so AC-49 holds by construction rather than by luck.
+   *
+   *  SERVER-SIDE ONLY. Neither may be serialised into a customer-facing
+   *  response: a combined total discloses the standing account discount by
+   *  subtraction exactly as effectively as printing it. Ops surfaces see the
+   *  composition; customers see the referral increment and nothing else. */
+  accountDiscountPercent?: number;
+  referralDiscountPercent?: number;
   /** Modifier ids applied, in order — audit trail, server-side only. */
   appliedModifiers: string[];
   computedAt: string;
@@ -189,10 +206,24 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
       amount: fired ? unit - before : null, runningTotal: unit, applied: fired,
     });
   }
-  // The account discount, last and before rounding, so a discounted total still
-  // lands on the customer-visible $10 grid. Clamped: a negative "discount" is a
-  // surcharge by another name, and >100% would pay the customer to order.
-  const discountPercent = Math.min(100, Math.max(0, input.discountPercent ?? 0));
+  // THE discount step — last, and before rounding, so a discounted total still
+  // lands on the customer-visible $10 grid.
+  //
+  // Two inputs reach it: the standing account discount (0032) and, for a
+  // referred tradie's first order, the referral discount (0051). They are ADDED
+  // — additive is what a human means by "5% plus 2.5%" — and the sum passes
+  // through the clamp that has always been here: a negative "discount" is a
+  // surcharge by another name, and >100% would pay the customer to order. Each
+  // component is bounded on its own first, so one bad input cannot drag the
+  // other out of range.
+  //
+  // THIS IS THE ONLY PLACE EITHER IS APPLIED. The referral discount is an input
+  // to this step, not a step of its own: no new totals row, no order column, and
+  // nothing downstream — deposit, balance, delivery, GST — needs to know it
+  // happened, because it lands inside the line total they all already read.
+  const accountPercent = Math.min(100, Math.max(0, input.discountPercent ?? 0));
+  const referralPercent = Math.min(100, Math.max(0, input.referralDiscountPercent ?? 0));
+  const discountPercent = Math.min(100, accountPercent + referralPercent);
   const beforeDiscount = unit;
   if (discountPercent > 0) unit = unit * (1 - discountPercent / 100);
   step({
@@ -219,6 +250,13 @@ export function computePrice(rate: RateCard, policy: PricingPolicy, input: Price
     pricingPolicyVersion: policy.version,
     depositPercent: DEPOSIT_PERCENT,
     discountPercent,
+    // Emitted ONLY for a referred line — the same pattern `steps` uses. A
+    // non-referred snapshot gains no key, so every snapshot already stored, and
+    // every one written from today, stays byte-identical. That is what makes
+    // AC-49 hold by construction rather than by luck.
+    ...(referralPercent > 0
+      ? { accountDiscountPercent: accountPercent, referralDiscountPercent: referralPercent }
+      : {}),
     appliedModifiers,
     computedAt: new Date().toISOString(),
     ...(input.explain ? { steps } : {}),

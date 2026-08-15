@@ -36,7 +36,7 @@
     "test:pairing": "node --test scripts/tests/pairing.test.mjs",
     "test:compatibility": "node --test scripts/tests/compatibility.test.mjs scripts/tests/composite-select.test.mjs",
     "test:delivery": "node --test --test-concurrency=1 scripts/tests/delivery.test.mjs",
-    "test:referral": "node --test --test-concurrency=1 scripts/tests/pricing-golden.test.mjs scripts/tests/referral-lifecycle.test.mjs",
+    "test:referral": "node --test --test-concurrency=1 scripts/tests/pricing-golden.test.mjs scripts/tests/referral-lifecycle.test.mjs scripts/tests/referral-pricing.test.mjs",
     "test:docs": "node --test scripts/tests/docs.test.mjs"
   },
   "dependencies": {
