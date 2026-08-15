@@ -86,9 +86,66 @@ prose, which reads `$2,000` — a separate `moneyRound()` used nowhere else.
 | Notices | `.quote-notice--info` / `--warning` / `--danger` (theme.css) | extend theme.css if a tone is missing; never inline rgba |
 | Ops shell, tabs, tables, confirm-in-place | `src/ops/Pricing.tsx` and `Projects.tsx` | copy verbatim; **no new ops components** |
 
-**One new shared component:** `JoinProgramFlow` — the two-part join described in §3.3, containing the
-conditions pane and the payout-details pane, with a single submit. It is used on `/refer` and in the
-Referrals section. `PayoutDetailsForm` is its second pane and is reused standalone for **Edit details**.
+### 2.1 Card pattern map — every card in the mock, and the pattern it uses
+
+**No new card variant is introduced anywhere.** Two card *tracks* already exist on this site and both are
+used as-is; everything else is `.card` at one of the site's two established paddings. If a card in the mock
+looks like a new shape, it is a bug in the mock — build the pattern named here.
+
+| Where | Pattern | Source |
+|---|---|---|
+| `/refer` three steps | **Track A — numbered steps.** `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0`; card `relative card p-6 flex flex-col sm:[&:nth-child(n+2)]:-mt-px lg:[&:nth-child(n+2)]:mt-0 lg:[&:nth-child(n+2)]:-ml-px`; badge `w-8 h-8 border border-sage/40 flex items-center justify-center text-sage font-data t-data-sm`; `h3 font-semibold text-ink mb-1.5 font-display t-bd`; `p text-body leading-relaxed t-bd`; `ChevronRight` on the seam at `lg` | `src/app/App.tsx:1061-1078` |
+| `/refer` conditions (6) | **Track B — two-column.** `grid grid-cols-1 md:grid-cols-2 gap-0`; card `card p-6 flex flex-col md:[&:nth-child(n+3)]:-mt-px md:[&:nth-child(even)]:-ml-px [&:nth-child(n+2)]:-mt-px md:[&:nth-child(2)]:mt-0`; `h3 … t-bd-lg`; `p text-body leading-relaxed flex-1 t-bd` | `src/app/App.tsx:1192-1206` |
+| `/refer` FAQ (4) | **Track B**, including its optional in-card sage link (`text-sage hover:text-sage-deep … ArrowRight`) — used on the last card for the Resources article | `src/app/App.tsx:1192-1206` |
+| Home / trade placements | `.split-row.is-center` inside a plain section; the signed-in code card is `.card p-5` + 3px sage `borderLeft` | `theme.css` `.split-row`; `AccountDashboard.tsx:231` |
+| Completed-order prompt | `.card p-5` + 3px sage `borderLeft` | `AccountDashboard.tsx:231` |
+| Join-flow card | `.card p-8` + 3px sage `borderLeft`, containing a 2-column layout grid. The **card** is the existing shape; the internal split is layout, not a variant | `AccountDashboard.tsx:231` (stripe), `.card` |
+| Join-flow "what you're agreeing to" / "what happens next" panels | `--recessive` fill — theme.css's named third surface for a subordinate panel inside a card | `theme.css:50` |
+| Account panels (referrals list, payments, how-you-get-paid) | `.card` + `.panel-head` | `theme.css:535` |
+| Earnings strip | `SummaryCell` in a `.card` row | `AccountDashboard.tsx:177-198` |
+| Discount card, join invitation, dormant/left notices | `.card p-5` + a 3px `borderLeft` in the relevant tone (`SAGE`, `TONE.mute`, `TONE.attn`) | `AccountDashboard.tsx:218/231/299/337` |
+| Empty states | `.card p-5` + 3px `TONE.mute` stripe | `AccountDashboard.tsx:299` |
+| Quote money panel | `QuoteTotals` unchanged; one extra row inside the existing sage band | `QuoteTotals.tsx` |
+| Ops panels and tables | `.card` + `.panel-head` + the ops table; ready-to-pay strip is `.card` + 3px sage stripe | `src/ops/Pricing.tsx`, `Projects.tsx` |
+
+**Two card paddings only**, and neither has a mobile variant — the site keeps them at every width:
+`p-6` (24px) for marketing tracks, `p-5` (20px) for account and ops panels. `p-8` (32px) exists for one
+case (`AccountDashboard.tsx:372`, EmptyHub) and is used once here, for the join-flow card.
+
+**Nothing genuinely new was needed.** Every card in this design maps to a pattern above.
+
+### 2.2 Non-card reuse audit
+
+| Element | Uses | Source |
+|---|---|---|
+| Buttons | `Btn` variants `sage`/`outline`/`ghost`/`primary`, sizes `sm`/`md`/`lg` — no new variant, no custom padding | `ui.tsx:72-101` |
+| Status chips | `StatusPill` with existing tones; icon + word always | `accountModel.tsx:40-50` |
+| Inline chips (durations, flags, conditions) | `.quote-chip` + `--ready`/`--neutral`/`--warning` | `theme.css:961-984` |
+| Form fields | `Input` + `FieldLabel`, `.field-control` | `ui.tsx:104-149`, `theme.css:602` |
+| Notices | `.quote-notice--info`/`--warning`/`--danger` | `theme.css:986-998` |
+| Section eyebrow | `SLabel` | `ui.tsx:60-69` |
+| Closing banner | `CtaBanner` with `ground="bone"` | `ui.tsx:165-204` |
+| Tabs (ops sub-nav) | the `Pricing.tsx` underline sub-tab row | `src/ops/Pricing.tsx` |
+
+**Corrections made during this audit, so the developer does not inherit them:**
+
+1. **`.figure` was being used inside cards** for the step numerals. `theme.css:1156` reserves `.figure` for
+   *a section's* headline number and its comment records the exact failure this reproduces — "on a process
+   card a 33px numeral sat beside a 16px heading — twice the weight of the thing it was annotating".
+   Replaced with Track A's 32px bordered badge. `.figure-sm` is the in-card numeral if one is ever needed.
+2. **Card padding had drifted to 12px and 16px** in the mobile frames. The site has no responsive card
+   padding; normalised to `p-5`/`p-6`.
+3. **53 cards carried an inline `background: var(--paper)`.** A card's fill is derived from its section's
+   ground via `--card-fill` (`theme.css:494-495`); hand-picking it is what produces white-on-white. All
+   removed — **never set a card background.**
+4. **The ops ready-to-pay stripe was 2px**; the site's stripe is 3px everywhere.
+
+### 2.3 One new shared component
+
+**`JoinProgramFlow`** is the two-part join described in §3.3 — the conditions pane and the payout-details
+pane, with a single submit. Used on `/refer` and in the Referrals section. `PayoutDetailsForm` is its
+second pane and is reused standalone for **Edit details**. It is a *flow*, not a new visual species: it is
+built from `.card` + a stripe + `Input`/`FieldLabel`/`Btn`, per §2.1.
 
 **The ops console is pending a redesign.** Build these three screens from what the console already has,
 reuse `Pricing.tsx` and `Projects.tsx` patterns literally, and spend no effort on appearance — it will be
@@ -243,12 +300,11 @@ One off-state, not two. Hero only; the conditions grid, steps, FAQ and state ban
 
 No rate, no discount, no code, in any variant.
 
-### 3.6 "How it works" — three cards
+### 3.6 "How it works" — Track A, three cards
 
-`SLabel` **How it works** · `t-ds2` **Three steps, and only one of them is yours.** (max 24ch) · a
-three-column `.card` grid with collapsed hairlines (`margin-right: -1px` on the first two), the site's own
-card-track pattern. Each card: a `.figure` numeral, an `h3` at `t-bd-lg`, body at `t-bd`. Cards take the
-ground's `--card-fill` (bone on paper) — **never set a card background inline.**
+`SLabel` **How it works** · `t-ds2` **Three steps, and only one of them is yours.** (max 24ch) ·
+**Track A exactly as `App.tsx:1061-1078` builds it** (§2.1): the numbered badge, the `t-bd` heading, the
+`t-bd` body, the seam chevron at `lg`. Cards take the ground's `--card-fill` — never set a background.
 
 | # | Heading | Body |
 |---|---|---|
@@ -256,7 +312,8 @@ ground's `--card-fill` (bone on paper) — **never set a card background inline.
 | 2 | They save. | Your mate gets **[discount] off their first order** — on their quote from the start. Nothing to enter, nothing to apply. |
 | 3 | You get paid. | Once they've paid that order in full, we transfer your **[rate]** — bank account, within **[payoutDays]**. |
 
-Stacks to one column below 768px with hairlines collapsed vertically.
+Track A carries its own responsive behaviour (1 col → 2 at `sm` → 3 at `lg`); do not add breakpoints.
+The step badge is **not** `.figure` — see §2.2 correction 1.
 
 ### 3.7 "The conditions" — its own section
 
@@ -264,23 +321,25 @@ Stacks to one column below 768px with hairlines collapsed vertically.
 line bottom-aligned on the right (max 38ch):
 > The whole of it. There's no seventh condition further down, and nothing here is different in the terms.
 
-Then **one `.card` on `--paper`** containing a two-column grid of six cells, each a `t-label` `--quiet`
-term over a `t-bd-sm` `--ink` sentence, hairline-separated (`border-right` on the left column,
-`border-bottom` on all but the last row). One object, six rows — not six cards.
+Then **Track B** (`App.tsx:1192-1206`) with six cards. Six items in two columns is three clean rows, and
+because Track B's negative margins collapse every adjacent border into a single hairline, the six read as
+**one object** rather than six tiles — which is the whole reason this is the right pattern here rather
+than a bespoke panel.
 
-| Term | Sentence |
+| Heading | Body |
 |---|---|
 | First order only | It's their **first order** that counts, and it has to be a tradie who's new to us. |
-| Minimum order | It needs to be at least **[minOrder]** ex GST, before delivery. |
-| How long it lasts | Placed within **[window]** of them signing up with your code. |
-| What the [rate] is on | The goods — excluding GST and delivery. Not the invoice total. |
-| How you're paid | Bank transfer within **[payoutDays]** of their payment clearing. You'll need an **ABN** and bank details on your account. |
+| At least [minOrder] | Ex GST, before delivery. Measured on the goods after the discount. |
+| Within [window] | Their first order has to be placed within [window] of them signing up with your code. |
+| [rate] of the goods | Worked out excluding GST and delivery — not the total on the invoice. |
+| Paid by bank transfer | Within **[payoutDays]** of their payment clearing. You'll need an ABN and bank details on your account. |
 | No chains | You get paid for the mates you refer, not for anyone they go on to refer. And you can't refer yourself. |
 
-Conditional seventh cell, only when `capAmount != null`: `Most you can earn` / *Up to **[cap]** per
-referral.* With seven cells the grid runs 2-2-2-1; the orphan cell spans both columns.
+Conditional seventh card, only when `capAmount != null`: **Capped at [cap]** / *That's the most you can earn
+on any one referral.* Seven cards leaves an orphan in the last row; that is Track B's normal behaviour with
+an odd count and needs no special handling.
 
-One column below 768px.
+Track B carries its own responsive behaviour (1 col → 2 at `md`); do not add breakpoints.
 
 Line under the panel (`t-cap`, `.measure`):
 > Amounts include any GST payable. What you do with it at tax time is between you and your accountant — we
@@ -294,24 +353,28 @@ Line under the panel (`t-cap`, `.measure`):
 it. Do not write "we prevent self-referral" or "self-referral is blocked" anywhere — the same-ABN gate is a
 signal, not a control, and one person may legitimately hold several ABNs (spec A13, §4.6.6).
 
-### 3.8 "Good to know" — three questions, and the article behind them
+### 3.8 "Good to know" — Track B, four questions, and the article behind them
 
-`SLabel` **Good to know** · `t-ds2` **The questions tradies actually ask.** · a three-column `.card` grid
-(cards on `--paper`, since the ground is bone), then a `Btn outline md` and a `t-cap` line beside it.
+`SLabel` **Good to know** · `t-ds2` **The questions tradies actually ask.** · **Track B**, four cards.
 
 - **Can I refer someone if I've never ordered?** — Yes. Any registered account can join and refer. Your own
   order history has nothing to do with it.
 - **What does my mate actually see?** — Their quote is [discount] lower from the first price they're shown.
   There's no code to enter at checkout and nothing for them to apply.
+- **What do I get to see about them?** — Their business name and how far along they are — signed up,
+  ordered, paid. Never their prices, their address or what's on their job.
 - **Do I earn on the mates they go on to refer?** — No. You get paid for the mates you refer, and that's
   it. No chains, no levels, no tiers.
 
-Below: `Btn outline md` **Referral program — full FAQ →** with, beside it, `t-cap`:
-> What you can see about the tradies you refer, what happens if an order is cancelled, how it works with a
-> second business — all in the Resources article.
+The fourth card carries **Track B's own optional in-card link** (`text-sage hover:text-sage-deep … ArrowRight`,
+`App.tsx:1199-1203`): **Referral program — full FAQ →**, to the Resources article.
 
-Three cards, not four, and the test still applies to the number: each of these is a question a tradie asks
-out loud, and none is answered by the conditions panel above. Anything else goes in the article.
+> **Why four and not three.** The reduce-the-count test still applies, and three was my previous answer —
+> but Track B is a two-column track, and three cards leaves a half-width orphan. Four fills 2×2 exactly,
+> which is the shape the pattern was built for. Rather than invent a three-across FAQ track that does not
+> exist on this site, the fourth question comes back — and it is a real question, not filler. **This is the
+> one place where "use the existing pattern" and "cut the card count" pulled against each other; the
+> pattern won.** Flagging it rather than quietly doing either.
 
 ### 3.9 The Resources article
 
@@ -878,7 +941,9 @@ The account rail folds into the site drawer below 1024 as today; Referrals joins
 - A half-joined membership state, or any screen explaining one.
 - Progress indicators, streaks, badges, leaderboards or a referral "level".
 - Any batch or bulk mutation, in ops or the account area.
-- A fourth card in either `/refer` grid. Three and three is the budget; anything else goes in the article.
+- **Any new card variant, anywhere.** Two tracks and two paddings, all pre-existing — §2.1.
+- A third card track. If a layout needs one, that is a design-system change to raise, not an artifact
+  improvisation.
 
 ---
 
