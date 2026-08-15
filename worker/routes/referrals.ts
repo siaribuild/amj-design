@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
-import { ensureReferralCode, payoutComplete, savePayoutDetails } from "../lib/referrals";
+import { ensureReferralCode, payoutComplete, recordReferral, savePayoutDetails } from "../lib/referrals";
 
 export const referrals = new Hono<{ Bindings: Env }>();
 
@@ -25,6 +25,22 @@ referrals.get("/account/referrals", async (c) => {
     // to click, read out, or set a cookie from.
     code: user ? await ensureReferralCode(c.env, user) : null,
   });
+});
+
+// Manual code entry — the referred side. Half of these introductions happen on a
+// job site: B reads the code out, A types it in later. A link-only program loses
+// every one of those.
+referrals.post("/account/referrals/claim", async (c) => {
+  const user = await resolveUser(c.env, c.req.raw);
+  if (!user) return c.json({ error: "unauthorised" }, 401);
+  const body = await c.req.json<{ code?: string }>().catch(() => ({ code: "" }));
+  const recorded = await recordReferral(c.env, {
+    referredUser: user,
+    code: String(body.code ?? ""),
+    source: "manual",
+  });
+  if (recorded.ok === false) return c.json({ error: recorded.error }, 400);
+  return c.json({ ok: true });
 });
 
 // The ENTRY step, under D18 — not a payout-time detail. Completing these is how a

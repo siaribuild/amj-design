@@ -400,6 +400,46 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(/063000/.test(JSON.stringify(log[0])), false, "nor the BSB");
     });
 
+    await t.test("a claimed code records the referral, with the promise frozen onto it", async () => {
+      // The manual path, which is the one a job-site introduction actually uses:
+      // B reads the code out, A types it in later. It is also the easier of the
+      // two to drive, so recordReferral is built here once and the link path
+      // calls the same function rather than growing a second set of gates.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "claim.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='claim.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+      assert.match(mine.code, /^[A-Z2-9]{3}-[A-Z2-9]{3}$/, "the referrer must hold a code to be claimable");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "claim.mate@example.com");
+      // requestJson throws unless the status matches, so reaching the next line
+      // IS the acceptance assertion — a 400 here would surface as its error text.
+      await requestJson(mate, "/api/account/referrals/claim", {
+        method: "POST", json: { code: mine.code },
+      });
+
+      const rows = await sql(
+        `SELECT source, status, rate_percent, discount_percent, min_order_amount, window_months, expires_at
+           FROM referral
+          WHERE referred_user_id = (SELECT id FROM user WHERE email='claim.mate@example.com')`,
+      );
+      assert.equal(rows.length, 1, "exactly one referral row");
+      assert.equal(rows[0].source, "manual");
+      assert.equal(rows[0].status, "recorded");
+      // M10: the promise is frozen onto the relationship at the moment it is made.
+      // Changing the rate in ops later must never move what someone was already
+      // promised, so these come from the row and never from the live config.
+      assert.equal(rows[0].rate_percent, 1);
+      assert.equal(rows[0].discount_percent, 2.5);
+      assert.equal(rows[0].min_order_amount, 2000);
+      assert.equal(rows[0].window_months, 12);
+      assert.ok(rows[0].expires_at > new Date().toISOString().slice(0, 10), "and it expires in the future");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

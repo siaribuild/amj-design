@@ -100,6 +100,61 @@ export function generateReferralCode(): string {
   return `${block()}-${block()}`;
 }
 
+/** Everything recording a referral is allowed to know.
+ *
+ *  ⚠️ THERE IS NO PARAMETER HERE FOR THE REFERRED PERSON'S DETAILS, AND THERE
+ *  MUST NEVER BE ONE. The referred tradie always self-identifies — they follow a
+ *  link or type a code while signed in as themselves. A referrer handing us a
+ *  mate's name, phone or email would be AMJ "providing a benefit to collect
+ *  personal information about another individual from someone else", which is
+ *  Privacy Act s 6D(4)(d) on its face; if it fires, the business loses the small
+ *  business exemption for EVERY record it holds, not just referral data. */
+export interface RecordReferralInput {
+  /** The signed-in account being referred. Identified by us, never supplied. */
+  referredUser: { id: string };
+  code: string;
+  source: "link" | "manual";
+}
+
+/** Record the relationship, freezing the program's terms onto it (M10).
+ *
+ *  The snapshot is the point: changing a rate in ops must never move what someone
+ *  was already promised, in either direction. Every figure that governs this
+ *  referral is copied here at the moment it is made, so nothing downstream reads
+ *  the live config to decide what is owed. */
+export async function recordReferral(
+  env: Env,
+  input: RecordReferralInput,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const code = input.code.trim().toUpperCase();
+  const referrer = await env.DB
+    .prepare("SELECT id FROM user WHERE referral_code = ?")
+    .bind(code)
+    .first<{ id: string }>();
+  if (!referrer) return { ok: false, error: "invalid_code" };
+
+  const program = await env.DB
+    .prepare("SELECT * FROM referral_program WHERE id = 'default'")
+    .first<{
+      rate_percent: number; cap_amount: number | null; min_order_amount: number;
+      discount_percent: number; window_months: number;
+    }>();
+  await env.DB
+    .prepare(
+      `INSERT INTO referral
+         (id, referrer_user_id, referred_user_id, code, source,
+          rate_percent, cap_amount, min_order_amount, discount_percent, window_months, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))`,
+    )
+    .bind(
+      uuid(), referrer.id, input.referredUser.id, code, input.source,
+      program!.rate_percent, program!.cap_amount, program!.min_order_amount,
+      program!.discount_percent, program!.window_months, `+${program!.window_months} months`,
+    )
+    .run();
+  return { ok: true };
+}
+
 /** What a referrer submits to become payable. Free text as typed. */
 export interface PayoutDetailsInput {
   bsb?: string | null;
