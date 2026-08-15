@@ -8,9 +8,9 @@ For substantive work — a new capability, schema change, or anything spanning m
 
 1. **product-manager** → spec with acceptance criteria
 2. **architect** → design (files, interfaces, migrations, test plan)
-3. **ux-designer** → interaction spec **+ visual mock**, using the intent UX skills (only if the feature adds/changes UI) — then the **UX mock gate** (below) before any implementation
+3. **ux-designer** → interaction spec **+ visual mock**, using the intent UX skills (only if the feature adds/changes UI) — then the **UX mock gate** (below) before any implementation. For **visually novel** work (a new surface or page, new component vocabulary, anything without established precedent in the app), the **ui-designer joins at this stage** to set the mock's visual treatment before it goes to the gate, so the user approves what will actually ship — not a wireframe that gets its look later.
 4. **developer** → test-first implementation
-5. **ui-designer** → visual polish/audit of implemented UI, using impeccable (only if UI changed)
+5. **ui-designer** → visual polish/audit of implemented UI, using impeccable (only if UI changed; always runs here even when it also helped with the mock)
 6. **tester** → independent verification against the acceptance criteria
 7. **architect** (returning) → design-conformance review of the final diff against the design — structure only, not a second bug hunt (skip when step 2 produced no design doc)
 8. **product-manager** (returning) → acceptance: walks the spec's criteria against the tester's evidence, checks for silent descoping/scope creep and unvetoed `ASSUMED:` tags, issues an acceptance verdict — then the orchestrator presents it to the user for final sign-off
