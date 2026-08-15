@@ -99,7 +99,8 @@ looks like a new shape, it is a bug in the mock — build the pattern named here
 | `/refer` FAQ (4) | **Track B**, including its optional in-card sage link (`text-sage hover:text-sage-deep … ArrowRight`) — used on the last card for the Resources article | `src/app/App.tsx:1192-1206` |
 | Home / trade placements | `.split-row.is-center` inside a plain section; the signed-in code card is `.card p-5` + 3px sage `borderLeft` | `theme.css` `.split-row`; `AccountDashboard.tsx:231` |
 | Completed-order prompt | `.card p-5` + 3px sage `borderLeft` | `AccountDashboard.tsx:231` |
-| Join-flow card | `.card p-8` + 3px sage `borderLeft`, containing a 2-column layout grid. The **card** is the existing shape; the internal split is layout, not a variant | `AccountDashboard.tsx:231` (stripe), `.card` |
+| Join band, signed out | **No card.** `bg-night section-pad` + a 2px sage top rule, content directly on the ground — §3.3.0 | `HowItWorksPage.tsx:294-296` |
+| Join-flow card, signed in | `.card p-8` + 3px sage `borderLeft`, containing a 2-column layout grid. The **card** is the existing shape; the internal split is layout, not a variant | `AccountDashboard.tsx:231` (stripe), `.card` |
 | Join-flow "what you're agreeing to" / "what happens next" panels | `--recessive` fill — theme.css's named third surface for a subordinate panel inside a card | `theme.css:50` |
 | Account panels (referrals list, payments, how-you-get-paid) | `.card` + `.panel-head` | `theme.css:535` |
 | Earnings strip | `SummaryCell` in a `.card` row | `AccountDashboard.tsx:177-198` |
@@ -165,7 +166,7 @@ image and `<head>` from the Sanity `page` record `pageId: "refer"`. Never 404s.
 | Hero | `ground-night` + `hero-scrim`/`hero-img` | eyebrow · `t-ds2` headline · **one sentence** · one button · one `t-cap` line |
 | How it works | `ground-paper` (grid decoration) | `SLabel` · `t-ds2` heading · **three cards**, hairlines collapsed |
 | The conditions | `ground-paper` | `SLabel` · `t-ds2` heading · **three hairline-separated fact rows** · the GST/tax + pointer line |
-| The join | `ground-paper` (grid decoration) | auth-dependent — §3.3 |
+| The join | **`bg-night`** when signed out; `ground-bone` when signed in | auth-dependent — §3.3 |
 | Good to know | `ground-bone` | `SLabel` · `t-ds2` heading · **three FAQ cards** · link to the Resources article |
 | Closing | `ground-paper` | `CtaBanner`, then the site footer |
 
@@ -231,6 +232,62 @@ again next time.
 
 The only thing that survives an abandon is what they typed, if they navigate within the session — ordinary
 form state, and it **must not be modelled as a membership fact**.
+
+### 3.3.0 The band's ground: dark when prompting, light when working
+
+**Signed out, the join band renders on `bg-night`.** It is the conversion moment on a page of otherwise
+light content, and it is the one band whose whole job is to be acted on. A dark band is established
+treatment here (`HowItWorksPage.tsx:294`, `App.tsx` HomePage), so this is reuse.
+
+Three things make it safe, and each must hold if the band ever moves:
+
+1. **It is mid-page.** Fourth of six, with the FAQ and the closing banner between it and the `bg-ink`
+   footer. A dark band directly above the footer would merge into one dark mass and the CTA would dissolve
+   — `App.tsx:355` records that concern explicitly. **If this band is ever moved last, it goes back to
+   light.**
+2. **It is not `CtaBanner`.** `CtaBanner` (`ui.tsx:165`) accepts `ground?: "paper" | "bone"` only, and its
+   inner panel is `bg-sage` — that component is already the site's way of saying "this is the moment", and
+   it stays exactly as it is for the page's closing banner. The join band is **its own section** using the
+   existing dark-section treatment. **No `CtaBanner` variant is added.**
+3. **Content sits directly on the ground — no `.card`.** `theme.css:494-495` defines `--card-fill` for
+   `ground-paper` and `ground-bone` only, so a `.card` on night falls back to `var(--bone)` and becomes a
+   light box on black. The site's dark sections never use `.card`: they either put content straight on the
+   ground or give a contained panel **its own** fill (`bg-white/[0.05] border border-white/15`,
+   `App.tsx:1139`, whose comment records the reason — "a border needs a known ground").
+
+**Construction**, all from existing dark-section vocabulary:
+
+```
+<section className="relative bg-night section-pad">
+  <span className="absolute inset-x-0 top-0 h-0.5 bg-sage" aria-hidden="true" />   ← HowItWorksPage.tsx:295
+  <div className="max-w-6xl mx-auto px-6">
+    <div className="split-row is-center">
+      <div className="split-prose">
+        <SLabel light>Join</SLabel>
+        <h2 className="text-white mb-2 t-hd1">Ready to join?</h2>
+        <p className="text-white/70 t-bd">Sign in, read the conditions and join. Any account can — ordering isn't part of it.</p>
+      </div>
+      <Btn variant="sage" size="lg">Sign in to join →</Btn>
+    </div>
+  </div>
+</section>
+```
+
+- `SLabel` takes its existing `light` prop — do not hand-colour the eyebrow.
+- Body copy is `text-white/70`, the value every dark section on the site uses. Hairlines, if any are ever
+  added, are `white/12`–`white/15`.
+- **`Btn variant="sage"`** — filled. `variant="outline"` is ink-bordered and vanishes here, and `primary`
+  is `bg-ink` on `bg-night`. The border-only `white` variant was deleted from `ui.tsx` on exactly this
+  reasoning; do not reinstate it. Sage filled on night is the complement of `CtaBanner`'s ink-on-sage.
+- No chips, no `.card`, no `t-cap` inside this band. If any are ever added they take dark-ground values
+  from an existing dark section, never hand-picked.
+
+**Signed in, the band stays light** (`ground-bone`, `.card` with a 3px sage left border). Parts 1 and 2 of
+the join flow are a working surface with a form in them, not a prompt — a bank-details form on black is
+wrong, and the reason for the dark treatment (be the one thing on the page to act on) does not apply once
+the person is already acting. Prompt = dark; work = light.
+
+### 3.3.1 The join flow itself
 
 **Part 1 — the conditions.** `.card` with a 3px sage left border, split `1.1fr / .9fr`.
 

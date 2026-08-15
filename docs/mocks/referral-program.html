@@ -381,13 +381,18 @@ section.surface{padding-top:56px}
             </div>
           </div>
 
-          <!-- SIGNED-OUT CTA BAND -->
-          <div class="ground-bone bt8 sect-sm">
+          <!-- THE JOIN — a dark band, mid-page. Content sits DIRECTLY on the
+               ground: theme.css defines --card-fill for paper and bone only, so
+               a .card here would fall back to bone and become a light box on
+               black. Dark sections on this site never use .card. -->
+          <div class="ground-night sect-sm" style="position:relative">
+            <span style="position:absolute;left:0;right:0;top:0;height:2px;background:var(--sage)"></span>
             <div class="wrap">
-              <div class="card p32 row jb ac g32 wr">
+              <div class="row jb ac g32 wr">
                 <div class="prose">
-                  <h3 class="t-hd1 c-ink mb8">Ready to join?</h3>
-                  <p class="t-bd c-body">Sign in, read the conditions and join. Any account can — ordering
+                  <div class="row g8 mb12"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="rgba(255,255,255,.5)" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="rgba(255,255,255,.5)" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="rgba(255,255,255,.5)" stroke-width="2"/></svg><span class="t-label c-w55">Join</span></div>
+                  <h2 class="t-hd1 c-white mb8">Ready to join?</h2>
+                  <p class="t-bd c-w70">Sign in, read the conditions and join. Any account can — ordering
                     isn't part of it.</p>
                 </div>
                 <span class="btn btn-lg b-sage" style="flex:none">Sign in to join →</span>
@@ -468,7 +473,14 @@ section.surface{padding-top:56px}
             </div>
             <p class="t-cap c-body mt16">Amounts include any GST payable, and we don't give tax advice. Self-referral, cancelled orders and second businesses are in the <a class="c-sage" style="text-decoration:underline">full rules and terms →</a> and the <a class="c-sage" style="text-decoration:underline">referral FAQ →</a>.</p>
           </div>
-          <div class="ground-bone" style="padding:28px 20px;border-top:1px solid rgba(0,0,0,.08)">
+          <div class="ground-night" style="position:relative;padding:32px 20px">
+            <span style="position:absolute;left:0;right:0;top:0;height:2px;background:var(--sage)"></span>
+            <div class="t-label c-w55 mb10">Join</div>
+            <h2 class="t-hd2 c-white mb8">Ready to join?</h2>
+            <p class="t-bd-sm c-w70 mb16">Sign in, read the conditions and join. Any account can — ordering isn't part of it.</p>
+            <span class="btn btn-md b-sage jc" style="width:100%">Sign in to join →</span>
+          </div>
+          <div class="ground-paper" style="padding:28px 20px">
             <div class="t-label c-sage mb10">Good to know</div>
             <h2 class="c-ink mb16" style="font:600 26px/32px var(--font-display);letter-spacing:-.5px">The questions tradies actually ask.</h2>
             <div class="track1">
@@ -510,9 +522,20 @@ section.surface{padding-top:56px}
       body-weight type, one band under the offer. <b>Compact is not fine print:</b> the prose is the same
       size as the offer's own body copy, and the one caption-sized line on the band carries no conditions at
       all — just a tax note and two links.</p>
-      <p><b>Six bands, and the texture alternates</b>: dark hero → card track → text rows → one wide card →
-      card track → sage block. Grounds run night → bone → paper → bone → paper → bone, following the
-      sequence <code>ContactPage</code> and <code>ProductsPage</code> already use. No two grids touch.</p>
+      <p><b>The join band is black.</b> It's the conversion moment on a page of otherwise light content, and
+      the only band whose job is to be acted on — so it gets the only other dark treatment, and the sage
+      button becomes the strongest thing on the page. It works because it sits <i>mid-page</i>: the FAQ and
+      the closing banner stand between it and the black footer. Put this band last and it would dissolve
+      into the footer, which is why it stays fourth of six.</p>
+      <p><b>Nothing on it is a card.</b> A card's fill comes from its section's ground, and the site defines
+      that only for the two light grounds — so a card on black would come out light. The site's own dark
+      sections put content straight on the ground, and this does the same.</p>
+      <p><b>Signed in, the same band is light.</b> By then it holds a form, and a bank-details form on black
+      is wrong. The dark treatment is for prompting, not for working.</p>
+      <p><b>Six bands, and the texture alternates</b>: dark hero → card track → text rows → <b>black band</b>
+      → card track → sage block. Grounds run night → bone → paper → night → paper → bone, following the
+      sequence <code>ContactPage</code> and <code>ProductsPage</code> already use. No two grids touch, and
+      the two dark bands have two light ones between them.</p>
       <p><b>Every bold number is a slot.</b> Raising the discount to 5% changes six figures on this page
       and not one word.</p>
     </div>
