@@ -25,6 +25,22 @@ export function abnValid(abn: string | null | undefined): boolean {
   return sum % 89 === 0;
 }
 
+/** No O, 0, I or 1. Half these introductions happen on a job site — B reads the
+ *  code out, A types it in later — and those are exactly the pairs that get
+ *  transcribed wrongly. Dropping them costs a little of a space that is already
+ *  vastly larger than the number of tradies in Australia. */
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+/** A fresh XXX-XXX code, drawn at random rather than issued from a counter: a
+ *  sequential code would let anyone holding one guess the next. ~8.9 × 10⁸
+ *  possibilities, so a collision is rare — and the caller retries against the
+ *  UNIQUE index rather than trusting that it cannot happen. */
+export function generateReferralCode(): string {
+  const pick = () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+  const block = () => `${pick()}${pick()}${pick()}`;
+  return `${block()}-${block()}`;
+}
+
 /** The four fields a payout needs, as stored on the user row. */
 export interface PayoutDetails {
   abn?: string | null;

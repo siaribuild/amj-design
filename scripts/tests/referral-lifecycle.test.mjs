@@ -226,7 +226,10 @@ test("T3 — the payability predicate", { timeout: 120_000 }, async (t) => {
   const outfile = join(runDir, "referrals-bundle.mjs");
   await build({
     stdin: {
-      contents: `export { abnValid, payoutComplete } from ${JSON.stringify(join(projectRoot, "worker/lib/referrals.ts"))};`,
+      // Namespace re-export, not a named list: a function that does not exist yet
+      // then arrives as `undefined` and fails an assertion, rather than breaking
+      // the bundle with a resolution error that proves nothing.
+      contents: `export * from ${JSON.stringify(join(projectRoot, "worker/lib/referrals.ts"))};`,
       resolveDir: projectRoot,
       sourcefile: "referrals-entry.ts",
       loader: "ts",
@@ -271,5 +274,26 @@ test("T3 — the payability predicate", { timeout: 120_000 }, async (t) => {
       M.payoutComplete.length, 1,
       "payoutComplete must take only a user row — an env parameter would let it query order history",
     );
+  });
+
+  await t.test("AC-2/AC-3 — a code survives being read out over a job-site phone call", () => {
+    assert.equal(typeof M.generateReferralCode, "function", "referrals.ts must export generateReferralCode");
+    // Half these introductions happen on a job site: B reads the code out, A
+    // types it in later. O/0 and I/1 are the pairs that get transcribed wrongly,
+    // so the alphabet simply does not contain them.
+    const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    const shape = new RegExp(`^[${ALPHABET}]{3}-[${ALPHABET}]{3}$`);
+    const seen = new Set();
+    for (let i = 0; i < 500; i += 1) {
+      const code = M.generateReferralCode();
+      assert.match(code, shape, "generateReferralCode must return XXX-XXX from the unambiguous alphabet");
+      seen.add(code);
+    }
+    for (const ambiguous of ["O", "0", "I", "1"]) {
+      assert.equal(ALPHABET.includes(ambiguous), false, `${ambiguous} is transcribed wrongly over the phone`);
+    }
+    // Drawn at random rather than issued from a counter — a sequential code would
+    // let anyone holding one guess the next.
+    assert.ok(seen.size > 450, `500 codes produced only ${seen.size} distinct values`);
   });
 });
