@@ -387,12 +387,12 @@ trigger touches existing tables. `scripts/db/clear.sql` gains the five new table
 | `worker/lib/estimator/pricing.ts` | `loadAccountDiscount` return type + composition; `PriceInput.referralDiscountPercent?`; snapshot fields; trace label (§5.1–5.3). Only file in `estimator/` that changes. |
 | `worker/lib/auth.ts` | `findOrCreateUser(env, email, referralCode?: string \| null)` — create branch calls `recordReferralAtSignup` inside a try/catch (a referral failure must never fail a signup), and the returned row gains `created: boolean` so the route knows to clear the cookie (§6.2). |
 | `worker/routes/auth.ts` | `/verify` reads the `of_ref` cookie, passes the code, clears the cookie when `created` (§6.2). |
-| `worker/index.ts` | `/r/<CODE>` branch in `route()` (§6.1); the terminated-`/refer` branch (410 anonymous / 302 `/referrals` signed-in, both `no-store` — §12A.2); `scheduled()` gains `referralSweep` (§8); mounts the two new route files. |
+| `worker/index.ts` | `/r/<CODE>` branch in `route()` (§6.1); `scheduled()` gains `referralSweep` (§8); mounts the two new route files. |
 | `worker/routes/quote.ts` | Accept route calls `onOrderCreated` after `createOrderFromProject` succeeds; `GET /projects/:id/quote` adds `referral` badge field (§5.4); `issueQuote` call path stamps `referral_percent_at_issue` (inside `worker/lib/issue.ts`). |
 | `worker/lib/issue.ts` | Stamps `project.referral_percent_at_issue` from `referralDiscountState` at issue (§5.4). |
 | `worker/routes/orders.ts`, `worker/routes/ops.ts` | The two `markPaid` sites call `onOrderBalancePaid` on success (balance kind only). `ops.ts` additionally: project record gains referral flag block (AC-58); `/summary` gains `referralPayoutsReady` (AC-46). |
 | `worker/lib/pricing-admin.ts` | `applyPricingChange.table` union gains `'referral_program'` — the program save reuses the one versioned-write helper (AC-38). |
-| `worker/lib/shell.ts` | `PUBLIC_PAGES` gains `"refer"`; the sitemap's `refer` entry is program-status-conditional and `RenderedShell.status` gains `410` (§12A.2; AC-33/AC-63 as amended §17). |
+| `worker/lib/shell.ts` | `PUBLIC_PAGES` gains `"refer"`; the sitemap's `refer` entry, and the rendered head's robots + title for `/refer`, become program-status-conditional (§12A.2; AC-33 as amended §17). |
 | `src/app/ui.tsx`, `src/app/routes.ts` | `Page` union + `PAGE_PATHS`: `refer: "/refer"`, `referrals: "/referrals"`. |
 | `src/pages/AccountShell.tsx` | `AccountSection` gains `"referrals"`; rail item gated per §7.5. |
 | `src/app/App.tsx` | Route wiring; the §8.6 offer panel renders beside the Price-display card in `AccountSettingsPage` (`App.tsx:1453`). |
@@ -529,13 +529,11 @@ will be pasted into WhatsApp, SMS and forums — exactly where crawlers harvest 
   last month and clicks it again would be redirected client-side without reaching the Worker — and
   no cookie would be set. The redirect's destination and cookie behaviour also vary with program
   status and referrer payability, which is the definition of a temporary redirect.
-- **Destination by status:** `active`/`paused` → `/refer` (cookie only when `active` and the
-  referrer payable). `terminated` → **302 to `/`**, no cookie, **identically for valid, invalid,
-  staff-owned and dormant codes** — the response must not leak whether a code was real, the same
-  no-disclosure rule as the dormant-code `invalid_code` (ADR-8b). Home rather than a 410 for the
-  URL a person was *handed*: `/r/` links are held by people mid-conversation and deserve a humane
-  landing; it is the search-held `/refer` page that gets the gone signal (§12A.2). `/r/` itself
-  never 404s or 410s in any status.
+- **Destination: `/refer`, in every status** — after termination the page answers the
+  code-holder's question directly (§12A.2), which is better than any other landing. Cookie only when
+  `active` and the referrer payable; unknown, staff-owned and dormant codes take the same redirect
+  with no cookie, so the response never leaks whether a code was real (the same no-disclosure rule
+  as the dormant-code `invalid_code`, ADR-8b). `/r/` never 404s or 410s in any status.
 
 ### 6.2 The signup hook — AC-7 by construction
 
@@ -639,7 +637,7 @@ day one does, and the test sets the columns directly (AC-21).
 | Code issuance | payability only (ADR-8a) | on demand | on demand | no (no code without a program) |
 | Discount on a pricing call | **snapshot** percent/expiry; live `referred_discount_active` only | yes | yes | **yes** (AC-66) |
 | Earning create / confirm / payout | **snapshot** values; live `referrer_reward_active` at create; payability at confirm (§7.2) | yes | yes | **yes** (AC-65) |
-| `/refer`, placements | live `status` | full | placements hidden; page "on hold" | placements removed; **no public page** — 410 anonymous, signed-in 302 → account (§12A.2) |
+| `/refer`, placements | live `status` | full | placements hidden; page "on hold" | placements removed; page 200 "this program has ended" for everyone, `noindex` + out of sitemap (§12A.2) |
 | Account Referrals section | live `status` + own history | full | full | read-only w/ history; absent without (AC-64) |
 | §8.6 offer panel | derived state only | shown per state | shown per state | shown per state (AC-64/66) |
 
@@ -875,8 +873,8 @@ code-review checklist for T3/T7 includes confirming none was added.
 ## 12A. Search-engine behaviour (SEO)
 
 Grounded in crawl/index mechanics, using the site's existing machinery (`resolveSeo` in
-`src/data/seo.ts`; the server-rendered head and status in `worker/lib/shell.ts` —
-`RenderedShell.status` gains `410`). One non-problem first: `/refer` serving different content
+`src/data/seo.ts` and the server-rendered head in `worker/lib/shell.ts`) with no new status
+plumbing. One non-problem first: `/refer` serving different content
 by auth state needs nothing — crawlers fetch anonymously, so the signed-out variant is the one
 stable indexable version; personalising for authenticated users at the same URL is not cloaking.
 
@@ -884,47 +882,49 @@ stable indexable version; personalising for authenticated users at the same URL 
 
 Summarised: `X-Robots-Tag: noindex` on the 302 in every status; crawlable (no robots.txt disallow,
 or the noindex is never seen); never in the sitemap; 302 not 301 (browser redirect-caching would
-skip the cookie set); destination `/refer` while the program runs, `/` after termination —
-uniform across valid and invalid codes so nothing leaks code validity.
+skip the cookie set); destination `/refer` in every status, uniform across valid and invalid
+codes so nothing leaks code validity.
 
-### 12A.2 Termination removes the public page — owner's decision, taken as given
+### 12A.2 Termination: one page for everyone, withdrawn from search
 
-**Owner (2026-08-15): "there should not be public /refer if the program is killed."** This
-supersedes the spec's §4.7 "/refer never 404s" and AC-63's public ended-program notice (§17).
-**Why the honour-what-was-promised principle does not keep the public page — recorded so nobody
-reinstates it from that principle later:** the obligation to people holding codes and unpaid money is
-discharged **in the account area, behind login** — the read-only legacy view with the ended notice
-(AC-64, spec §8.3(7)), which this design keeps intact. The public page is marketing, and marketing
-for a terminated program should not exist.
+**Owner (2026-08-15, second ruling — supersedes the first):** keep the landing page up when the
+program is killed, serving a short "this program has ended" notice, and stop handling special cases
+with little business value. Confirmed clarification: the ended notice shows to **everyone**,
+anonymous included — the thing actually worth avoiding was an anonymous visitor seeing the live
+pitch for a program that no longer exists.
 
-| `status` | Anonymous `GET /refer` | Signed-in `GET /refer` | In `/sitemap.xml` | Robots |
-|---|---|---|---|---|
-| `active` | 200, full pitch | 200, pitch + own code | yes | indexable |
-| `paused` | 200, "on hold" (AC-62 — pause is temporary; the page is honest and no dead offer is advertised, so accumulated ranking is kept for the resume) | 200, same | yes | indexable |
-| `terminated` | **410** — SPA shell served with status 410, client renders its not-found view; no program content, no figures | **302 → `/referrals`** (their account section carries the history, the ended notice, and any money still owed) | **no** | none needed — the 410 is the de-index signal |
+This replaces revision 3's terminated surface (a 410 branch, an authenticated-only redirect resolved
+from the session cookie, a redirect-to-home special case for `/r/`, and a `RenderedShell` status
+change) with:
 
-**Why 410, not 404 or a redirect, for the anonymous case:** 410 states the resource is intentionally
-gone and de-indexes fastest — which matters for a page that accumulated ranking while the program
-ran; 404 reads as possibly-temporary and lingers; a redirect to `/` would transplant
-"referral program" query relevance onto the storefront and keep the URL alive in indexes. The gone
-signal is also simply true.
+| `status` | `GET /refer` (everyone) | In `/sitemap.xml` | Robots |
+|---|---|---|---|
+| `active` | 200, full pitch (signed-in: + own code) | yes | indexable |
+| `paused` | 200, "on hold" (AC-62 — unchanged throughout; pause is temporary, the page is honest, ranking is kept for the resume) | yes | indexable |
+| `terminated` | 200, short "this program has ended" notice — same page for anonymous and signed-in; the only signed-in difference is a **link on the page** to the account Referrals section for their own history (AC-64's read-only view carries the honour-obligation). No figures, no pitch. | **no** | **`noindex`** |
 
-**Mechanism, and the one hazard in it:** a branch in `worker/index.ts route()` for `/refer` when
-`status='terminated'`: `resolveUser(env, request)` — session cookie present and valid → 302
-`/referrals`; otherwise serve the shell with status 410. Both branch responses set
-`Cache-Control: no-store` (they vary by cookie). **The redirect is authenticated-only by
-construction** — a crawler has no session, so no crawlable redirect surface is reintroduced through
-the back door. A signed-in user without referral history lands on `/referrals`, whose page
-implements AC-64's absent-state by rendering the account home — that logic lives in the client page,
-in one place. `buildSitemap` drops the `refer` entry when `terminated`. Reversal (AC-68)
-restores 200 + sitemap automatically; re-indexing after a 410 round-trip is slow, which the
-terminate confirmation copy states plainly.
-
-**API hardening to match:** `GET /api/referral/program` returns the full figure set only while
-`status='active'`; in `paused`/`terminated` it returns `{ status }` alone — no public surface
-renders figures in those states, and the account area's promises render from referral-row snapshots
-(ADR-6) and the authed `program` object in `GET /api/account/referrals`, not from the public
-endpoint.
+- **The whole SEO control is `noindex` + sitemap removal.** `renderShell`'s `refer` branch
+  reads program status (one D1 read) and, when `terminated`, emits `noindex` through the
+  route-level `noIndex` flag — which participates in `resolveSeo`'s monotonic OR
+  (`src/data/seo.ts:58-63`), so it can only ever add the restriction. `buildSitemap` (which
+  already receives `env`) drops the `refer` entry. `/refer` stays crawlable (nothing disallows
+  it), which is what lets the noindex be seen.
+- **The accepted cost, stated so it is a decision:** `noindex` de-indexes over weeks where a 410
+  does it in days. During that window some searchers land on an honest ended-notice. That is the
+  entire cost, and it is not worth three response paths and a status-code change.
+- **One residual the simplification touches — social previews.** Old shared `/refer` links keep
+  unfurling in WhatsApp/Facebook from the page's OG tags (a 410 would have killed the preview). So
+  the terminated branch of `renderShell` also swaps the head's title/description to the ended
+  notice — one more field in the same branch that already sets `noindex` — so a stale share
+  preview does not keep advertising the dead offer.
+- **No auth-dependent server behaviour** on this route: one page, one response shape, no
+  cookie-varying redirect, no caching subtleties.
+- Reversal (AC-68) restores the sitemap entry and lifts the route-level `noindex` automatically;
+  re-ranking after a noindex round-trip is slow, which the terminate confirmation copy states.
+- **API hardening (kept):** `GET /api/referral/program` returns the full figure set only while
+  `status='active'`; in `paused`/`terminated` it returns `{ status }` alone — the ended page
+  needs no figures, and the account area renders promises from referral-row snapshots (ADR-6) and
+  the authed `program` object in `GET /api/account/referrals`.
 
 ### 12A.3 The FAQ exists twice only as two different documents
 
@@ -1046,16 +1046,16 @@ exist, then generating them).
 
 ### 13.8 SEO and termination surface (§12A — lifecycle suite, plain fetches through the harness)
 
-1. `GET /r/<CODE>` → 302 with `X-Robots-Tag: noindex` in every status; destination `/refer`
-   while `active`/`paused`, `/` when `terminated`; cookie only when `active` + payable;
-   **byte-identical response for a valid and an invented code in `terminated`** (no validity leak).
+1. `GET /r/<CODE>` → 302 to `/refer` with `X-Robots-Tag: noindex`, in every program status;
+   cookie only when `active` + payable; a valid and an invented code get the same response shape in
+   `terminated` (no validity leak — trivially held, one destination for all).
 2. `/robots.txt` contains **no** `/r/` disallow (the noindex must remain crawlable — §6.1).
 3. `/sitemap.xml` lists `/refer` while `active`/`paused`, drops it when `terminated`, and
    never contains a `/r/` URL.
-4. Anonymous `GET /refer`: 200 while `active`/`paused`; **410** with `Cache-Control: no-store`
-   when `terminated`, body carrying no program figures. Signed-in `GET /refer` when
-   `terminated`: 302 → `/referrals`, `no-store`. Reversal restores the 200 and the sitemap
-   entry.
+4. `GET /refer` returns 200 in **every** status. When `terminated`, the served HTML head (what a
+   crawler's single fetch sees) carries `noindex` and the ended-notice title, and the body carries
+   no program figures; when `active`, no `noindex`. Reversal restores the sitemap entry and
+   drops the `noindex`.
 5. `GET /api/referral/program` carries figures only while `active`; `{ status }` alone in
    `paused`/`terminated` (§12A.2 hardening).
 
@@ -1072,7 +1072,7 @@ exist, then generating them).
 | **T4** | Earning lifecycle | §7; hooks at the three route sites; §7.2 payability predicate + pending-hold; derived cancel guard; expiry + late-confirmation sweep (sans email); §13.7 scenarios 4–5 | |
 | **T5** | Account area (both screens) | Referrer section (gate-first empty state, code, share, list, earnings, held copy) + §8.6 offer panel | UX-mock-gated. |
 | **T6** | Quote surface | Badge on `QuoteTotals`/issued quote/order; ops project-record flags | UX-mock-gated. |
-| **T7** | Landing + placements | `/refer` active/paused states incl. signed-in-without-details CTA (D18); the terminated surface (410 / authed redirect, §12A.2); Sanity `page` record, conditional sitemap, home/trade/footer/completed-order, s 32(2)/A18-vs-D18 copy placement (§12) | UX-mock-gated. |
+| **T7** | Landing + placements | `/refer` all states incl. signed-in-without-details CTA (D18) and the terminated ended-notice with its `noindex`/head swap (§12A.2); Sanity `page` record, conditional sitemap, home/trade/footer/completed-order, s 32(2)/A18-vs-D18 copy placement (§12) | UX-mock-gated. |
 | **T8** | Ops Referrals tab | Program + Referrals + Payouts screens (ready/accruing only — no blocked group), CSV, mark paid/failed, access-log wiring, dashboard row, aging display + long-stop (§9, ADR-8e); §13.7 scenario 6 | UX-mock-gated; one mock covers the tab. |
 | **T9** | Emails + content + privacy | Four templates + reminder send in sweep; rules/T&Cs posts (coordinator copy); `PrivacyPolicyPage` update | Last: pure content + one cron branch. |
 
@@ -1128,11 +1128,11 @@ so two documents do not describe the same situation differently:
 | **A13 note** | "No ABN exists at signup, so this cannot fire at capture time for most accounts." | Still true for the referred side; note that under D18 the **referrer** always has an ABN, so manual-entry capture can now fire the gate whenever the referred user has set one. §4.6.6's containment argument is unchanged. |
 | **A18** | Unchanged — and must visibly survive the D18 write-up: the gate is payability, never purchase (ADR-8d; ACL s 49). | Add one sentence distinguishing the two conditions so no later edit collapses them. |
 | **§8.4(c) payouts** | Implies a blocked-on-details group could exist in the run. | Ready + accruing only; blocked is unreachable (§9, §11). |
-| **§4.7 + AC-63** | `/refer` never 404s; `terminated` serves a public 200 "program has ended" notice. | **Owner reversal (2026-08-15): no public `/refer` once killed.** Anonymous → 410 (shell + not-found render, no program content); signed-in → 302 to the account Referrals section, which — with AC-64 — now carries the whole honour-obligation to code-holders. `/r/<CODE>` → 302 `/` uniformly, no validity leak (§6.1, §12A.2). AC-62 (paused, public 200 "on hold") is unchanged. |
-| **AC-33** | `/refer` indexable and in the sitemap, unconditionally. | Conditional on program status: indexable + sitemapped while `active`/`paused`; gone (410, out of sitemap) when `terminated` (§12A.2). |
-| **New AC (suggested AC-78)** | — | `GET /r/<CODE>` responds 302 with `X-Robots-Tag: noindex` in every status; `/r/` URLs never appear in the sitemap; `robots.txt` does not disallow `/r/`; in `terminated` the destination is `/` with a response identical for valid and invalid codes (§6.1, §12A.1, tested §13.8). |
+| **§4.7 + AC-63** | `/refer` never 404s; `terminated` serves a public 200 "program has ended" notice. | **Stands as written** (the intermediate 410 design was reverted by the owner, 2026-08-15). Two additions only: the ended page carries `noindex` and leaves the sitemap (§12A.2), and it may carry a link to the account Referrals section for signed-in users — a link on the page, never a server-side branch. AC-62 (paused, public 200 "on hold") is unchanged. |
+| **AC-33** | `/refer` indexable and in the sitemap, unconditionally. | Conditional on program status: indexable + sitemapped while `active`/`paused`; `noindex` + out of the sitemap when `terminated`, still 200 (§12A.2). |
+| **New AC (suggested AC-78)** | — | `GET /r/<CODE>` responds 302 to `/refer` with `X-Robots-Tag: noindex` in every program status; `/r/` URLs never appear in the sitemap; `robots.txt` does not disallow `/r/` (§6.1, §12A.1, tested §13.8). |
 | **New copy-review criterion (PM to decide: AC or copy checklist)** | — | The referral FAQ article extends the landing page's questions rather than restating them; the two pages interlink; no canonical between them (§12A.3). |
 
 New copy obligations from this design for the coordinator's terms/copy pass: the payment-timeframe
 sentence conditioned on the entry rule (§12), the threshold-hold disclosure whenever set (§12), and
-the ops-screen warning text for enabling `min_payout_balance` (ADR-8e), and the terminate confirmation stating that the public page is withdrawn from the site and from search, with slow re-indexing on any reversal (§12A.2).
+the ops-screen warning text for enabling `min_payout_balance` (ADR-8e), and the terminate confirmation stating that the page stays up with an ended notice but is withdrawn from search, with slow re-ranking on any reversal (§12A.2).
