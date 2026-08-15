@@ -343,6 +343,33 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(body.code, null, "a code must be withheld until the payout details exist");
     });
 
+    await t.test("AC-1 — completing the details issues a code, permanent thereafter", async () => {
+      const session = new Session(baseUrl);
+      await login(session, "/api/auth", "gate.complete@example.com");
+      // Seeded directly: the payout-details endpoint is a later red in this same
+      // ticket, and the code-issuing rule does not depend on how the details
+      // arrived — only on their being stored.
+      await sql(
+        `UPDATE user SET abn='51824753556', payout_bsb='063000',
+           payout_account_number='12345678', payout_account_name='A Tradie'
+         WHERE email='gate.complete@example.com'`,
+      );
+
+      const first = await requestJson(session, "/api/account/referrals");
+      assert.equal(first.body.referrerGate.complete, true, "with all four details stored the D18 gate must report complete");
+      assert.match(
+        String(first.body.code),
+        /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{3}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{3}$/,
+        "a payable account must be issued a real code",
+      );
+
+      // Only the ISSUE moment moves behind the gate. Once issued the code is
+      // permanent: a tradie who has already read it out to a mate must never
+      // find it changed underneath them.
+      const second = await requestJson(session, "/api/account/referrals");
+      assert.equal(second.body.code, first.body.code, "a code, once issued, never changes");
+    });
+
 
   } finally {
     await stop(server);
