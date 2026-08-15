@@ -33,9 +33,14 @@ answers "what percentage off does this user get?"* — **is verified against the
   base + surcharges + min-charge + modifiers, before `round10()`.
 - `loadAccountDiscount(env, userId)` at `pricing.ts:292` resolves the percentage server-side from the
   owning user, returning a bare `number`.
-- Exactly two callers, confirmed by grep: `createCachedPriceResolver` (`pricing.ts:334`, the AI batch
-  path) and `priceLine` (`pricing.ts:405`, everything else). Every pricing surface funnels through
-  them: the customer preview (`worker/routes/projects.ts:167-175` → `itemFields` → `priceItem` →
+- Exactly two callers **resolve a user's discount**, confirmed by grep: `createCachedPriceResolver`
+  (`pricing.ts:334`, the AI batch path) and `priceLine` (`pricing.ts:405`, everything else). One
+  further caller of `computePrice` exists — `previewSample` in `worker/lib/pricing-admin.ts:314`,
+  the ops rate-card tuning preview — which prices a synthetic sample against possibly-unsaved rate
+  cards with **no user context and no discount of any kind**, so no composition applies to it.
+  **Trap for later:** if that preview is ever given a user context, it must go through
+  `loadAccountDiscount` like the other two, or it becomes a second place a discount is decided.
+  Every surface that prices *for a user* funnels through the two: the customer preview (`worker/routes/projects.ts:167-175` → `itemFields` → `priceItem` →
   `priceLine`), every save path (`worker/lib/lines.ts:178-204` — "THE pricing entry point"), the ops
   preview and edit re-price (`worker/routes/ops.ts:1086-1103`, `:1004`), composite derivation
   (`worker/lib/composite.ts`), and the schedule parse (`worker/lib/parse.ts:284`). All pass
@@ -356,10 +361,18 @@ CREATE TABLE payout_details_access (
   context          TEXT,        -- 'ops_payouts' | 'ops_csv' | 'customer_update' + fingerprint
   at               TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- Every write is per-subject; no reader exists, but the table must not become a
+-- scan the day an investigation finally reads it.
+CREATE INDEX idx_payout_access_subject ON payout_details_access(subject_user_id);
 ```
 
 Notes: earning statuses are CHECK-constrained; any future status is a small additive migration. No
-trigger touches existing tables. `scripts/db/clear.sql` gains the five new tables.
+trigger touches existing tables. `scripts/db/clear.sql` clears the **four transactional tables**
+(`referral`, `referral_earning`, `referral_payout`, `payout_details_access`) and **spares
+`referral_program`** — it is configuration inserted by this migration and never recreated by
+`seed.sql`, exactly why `clear.sql` already spares `pricing_policy` and the rate cards; clearing it
+would leave the program permanently unconfigured after `npm run db:reset`. A test asserts both
+halves (cleared and spared).
 
 ---
 
@@ -400,7 +413,7 @@ trigger touches existing tables. `scripts/db/clear.sql` gains the five new table
 | `src/ops/OpsApp.tsx` | `Tab` union + `ALL_TABS` gain `referrals`; dashboard needs-us row. |
 | `worker/lib/email.ts` call sites | Four `notify` templateKeys with inline fallbacks (§8). |
 | `package.json` | `test:referral` script; appended to `test` (§13.1). |
-| `scripts/db/clear.sql` | New tables. |
+| `scripts/db/clear.sql` | Clears the four transactional referral tables; **spares `referral_program`** (config, like `pricing_policy`) — §3. |
 | `src/pages/PrivacyPolicyPage.tsx` | Referral data + payout details section (spec §11.8; copy from coordinator). |
 
 ---
@@ -424,8 +437,9 @@ export async function loadAccountDiscount(env, userId): Promise<DiscountResoluti
 ```
 
 It calls `referralDiscountState` (leaf, ADR-1) and never reads a number from the live config —
-`percent` comes from the referral row's snapshot (ADR-6). Both existing callers destructure into the
-new `PriceInput` fields:
+`percent` comes from the referral row's snapshot (ADR-6). Both discount-resolving callers
+destructure into the new `PriceInput` fields (`previewSample` in `pricing-admin.ts` stays as it is —
+no user, no discount, no composition; see §1):
 
 ```ts
 // PriceInput additions
