@@ -479,6 +479,46 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(rows.length, 1, "and no second row is written");
     });
 
+    await t.test("AC-84 — a code whose owner cannot be paid is refused as if it never existed", async () => {
+      // ADR-8b. Two ways a real code stops working: its owner removed their bank
+      // details, or it belongs to a staff account. Both answer invalid_code, the
+      // same as a code that was never issued.
+      //
+      // The sameness is the security property. A distinct "that referrer can't be
+      // paid right now" would tell a third party something about someone else's
+      // banking status, and it would let a stranger sort real codes from invented
+      // ones by the shape of the refusal.
+      const dormant = new Session(baseUrl);
+      await login(dormant, "/api/auth", "dormant.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='dormant.referrer@example.com'");
+      await requestJson(dormant, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: issued } = await requestJson(dormant, "/api/account/referrals");
+      await sql("UPDATE user SET payout_bsb=NULL WHERE email='dormant.referrer@example.com'");
+
+      const mateA = new Session(baseUrl);
+      await login(mateA, "/api/auth", "dormant.mate@example.com");
+      const refused = await requestJson(mateA, "/api/account/referrals/claim",
+        { method: "POST", json: { code: issued.code } }, 400);
+      assert.equal(refused.body.error, "invalid_code", "a dormant code must not be distinguishable");
+
+      // A14 — staff cannot be a referrer. The code is planted directly because no
+      // endpoint would ever issue one to an internal account (AC-5).
+      const planted = new Session(baseUrl);
+      await login(planted, "/api/auth", "staffcode.owner@example.com");
+      await sql(
+        `UPDATE user SET type='internal', referral_code='STF-001', abn='51824753556',
+           payout_bsb='063000', payout_account_number='12345678', payout_account_name='Staff'
+         WHERE email='staffcode.owner@example.com'`,
+      );
+      const mateB = new Session(baseUrl);
+      await login(mateB, "/api/auth", "staffcode.mate@example.com");
+      const staffRefused = await requestJson(mateB, "/api/account/referrals/claim",
+        { method: "POST", json: { code: "STF-001" } }, 400);
+      assert.equal(staffRefused.body.error, "invalid_code", "nor a staff-owned one");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

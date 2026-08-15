@@ -128,10 +128,17 @@ export async function recordReferral(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const code = input.code.trim().toUpperCase();
   const referrer = await env.DB
-    .prepare("SELECT id FROM user WHERE referral_code = ?")
+    .prepare("SELECT * FROM user WHERE referral_code = ?")
     .bind(code)
-    .first<{ id: string }>();
-  if (!referrer) return { ok: false, error: "invalid_code" };
+    .first<{ id: string; type: string | null } & PayoutDetails>();
+  // ONE ANSWER FOR THREE SITUATIONS, deliberately (ADR-8b): the code was never
+  // issued, it belongs to a staff account, or its owner has removed their bank
+  // details since. A distinct "that referrer cannot be paid right now" would tell
+  // a third party something about someone else's banking status, and it would let
+  // a stranger sort real codes from invented ones by the shape of the refusal.
+  if (!referrer || referrer.type === "internal" || !payoutComplete(referrer)) {
+    return { ok: false, error: "invalid_code" };
+  }
   // A11. The table has a CHECK for this too, but a constraint violation is a 500:
   // the rule has to be ANSWERED so the screen can say which rule was hit.
   if (referrer.id === input.referredUser.id) return { ok: false, error: "own_code" };
