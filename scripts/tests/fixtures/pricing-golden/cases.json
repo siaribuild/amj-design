@@ -1,0 +1,976 @@
+{
+  "capturedAt": "2026-08-15T03:53:54.301Z",
+  "capturedFromCommit": "9a8f1a06db957824d6fa660ba0ebb2f0567e5a6d",
+  "capturedFrom": "worker/lib/estimator/pricing.ts",
+  "note": "AC-49a characterisation corpus. Regenerate only on an unmodified engine (--recapture).",
+  "cases": [
+    {
+      "id": "anonymous-no-account",
+      "why": "an anonymous project prices at 0% — the discount is a reason to register",
+      "covers": [
+        "anonymous"
+      ],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "amj80-series-sliding-window",
+            "perimRate": 55,
+            "areaRate": 320,
+            "minCharge": 480,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj80-series-sliding-window",
+            "widthMm": 1200,
+            "heightMm": 900,
+            "qty": 1,
+            "optionSurcharges": [
+              {
+                "value": 85,
+                "basis": "per_unit"
+              }
+            ],
+            "modifiers": [],
+            "discountPercent": 0
+          },
+          "expected": {
+            "ok": true,
+            "unit": 660,
+            "total": 660,
+            "depositAmount": 330,
+            "currency": "AUD",
+            "rateCardId": "amj80-series-sliding-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 0,
+            "appliedModifiers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "registered-default-five-percent",
+      "why": "the same line for a registered account carries the standing 5% — the figure the referral composes with",
+      "covers": [
+        "registered-default"
+      ],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "amj80-series-sliding-window",
+            "perimRate": 55,
+            "areaRate": 320,
+            "minCharge": 480,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj80-series-sliding-window",
+            "widthMm": 1200,
+            "heightMm": 900,
+            "qty": 1,
+            "optionSurcharges": [
+              {
+                "value": 85,
+                "basis": "per_unit"
+              }
+            ],
+            "modifiers": [],
+            "discountPercent": 5
+          },
+          "expected": {
+            "ok": true,
+            "unit": 630,
+            "total": 630,
+            "depositAmount": 320,
+            "currency": "AUD",
+            "rateCardId": "amj80-series-sliding-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 5,
+            "appliedModifiers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "internal-staff-account",
+      "why": "a staff account prices at 0% and can never be referred",
+      "covers": [
+        "staff"
+      ],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "amj100t-fixed-window",
+            "perimRate": 48,
+            "areaRate": 295,
+            "minCharge": 420,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj100t-fixed-window",
+            "widthMm": 1750,
+            "heightMm": 700,
+            "qty": 1,
+            "optionSurcharges": [],
+            "modifiers": [],
+            "discountPercent": 0
+          },
+          "expected": {
+            "ok": true,
+            "unit": 600,
+            "total": 600,
+            "depositAmount": 300,
+            "currency": "AUD",
+            "rateCardId": "amj100t-fixed-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 0,
+            "appliedModifiers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "min-charge-drives-the-price",
+      "why": "a small opening is priced by min_charge, not the rate — the discount must apply after it",
+      "covers": [
+        "min-charge"
+      ],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "amj200-hinged-door",
+            "perimRate": 90,
+            "areaRate": 410,
+            "minCharge": 1300,
+            "version": "rc-2026-02"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj200-hinged-door",
+            "widthMm": 400,
+            "heightMm": 400,
+            "qty": 1,
+            "optionSurcharges": [],
+            "modifiers": [],
+            "discountPercent": 5
+          },
+          "expected": {
+            "ok": true,
+            "unit": 1240,
+            "total": 1240,
+            "depositAmount": 620,
+            "currency": "AUD",
+            "rateCardId": "amj200-hinged-door",
+            "rateCardVersion": "rc-2026-02",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 5,
+            "appliedModifiers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "modifiers-both-fire",
+      "why": "percent then fixed, in seq order, before the discount",
+      "covers": [
+        "modifier-fired"
+      ],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "amj80-series-sliding-window",
+            "perimRate": 55,
+            "areaRate": 320,
+            "minCharge": 480,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj80-series-sliding-window",
+            "widthMm": 1600,
+            "heightMm": 2100,
+            "qty": 1,
+            "optionSurcharges": [
+              {
+                "value": 85,
+                "basis": "per_unit"
+              }
+            ],
+            "modifiers": [
+              {
+                "id": "mod-wide-frame",
+                "seq": 1,
+                "label": "wide frame",
+                "whenField": "width",
+                "whenOp": ">",
+                "whenValue": 1200,
+                "thenType": "percent",
+                "thenValue": 10
+              },
+              {
+                "id": "mod-large-area",
+                "seq": 2,
+                "label": "large area",
+                "whenField": "area",
+                "whenOp": ">=",
+                "whenValue": 3,
+                "thenType": "fixed",
+                "thenValue": 250
+              }
+            ],
+            "discountPercent": 5
+          },
+          "expected": {
+            "ok": true,
+            "unit": 1880,
+            "total": 1880,
+            "depositAmount": 940,
+            "currency": "AUD",
+            "rateCardId": "amj80-series-sliding-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 5,
+            "appliedModifiers": [
+              "mod-wide-frame",
+              "mod-large-area"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "modifiers-do-not-fire",
+      "why": "the same rules on a small opening contribute nothing — appliedModifiers stays empty",
+      "covers": [
+        "modifier-not-fired"
+      ],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "amj80-series-sliding-window",
+            "perimRate": 55,
+            "areaRate": 320,
+            "minCharge": 480,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj80-series-sliding-window",
+            "widthMm": 900,
+            "heightMm": 900,
+            "qty": 1,
+            "optionSurcharges": [
+              {
+                "value": 85,
+                "basis": "per_unit"
+              }
+            ],
+            "modifiers": [
+              {
+                "id": "mod-wide-frame",
+                "seq": 1,
+                "label": "wide frame",
+                "whenField": "width",
+                "whenOp": ">",
+                "whenValue": 1200,
+                "thenType": "percent",
+                "thenValue": 10
+              },
+              {
+                "id": "mod-large-area",
+                "seq": 2,
+                "label": "large area",
+                "whenField": "area",
+                "whenOp": ">=",
+                "whenValue": 3,
+                "thenType": "fixed",
+                "thenValue": 250
+              }
+            ],
+            "discountPercent": 5
+          },
+          "expected": {
+            "ok": true,
+            "unit": 520,
+            "total": 520,
+            "depositAmount": 260,
+            "currency": "AUD",
+            "rateCardId": "amj80-series-sliding-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 5,
+            "appliedModifiers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "rounding-boundary",
+      "why": "$1,300.00 less 5% sits exactly on the $10 half-way mark — the discount is applied immediately before round10()",
+      "covers": [
+        "rounding-boundary"
+      ],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "synthetic-rounding-boundary",
+            "perimRate": 200,
+            "areaRate": 500,
+            "minCharge": 0,
+            "version": "rc-synthetic"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "synthetic-rounding-boundary",
+            "widthMm": 1000,
+            "heightMm": 1000,
+            "qty": 1,
+            "optionSurcharges": [],
+            "modifiers": [],
+            "discountPercent": 5
+          },
+          "expected": {
+            "ok": true,
+            "unit": 1240,
+            "total": 1240,
+            "depositAmount": 620,
+            "currency": "AUD",
+            "rateCardId": "synthetic-rounding-boundary",
+            "rateCardVersion": "rc-synthetic",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 5,
+            "appliedModifiers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "rounding-mid-band",
+      "why": "the same shape off the boundary, where an order-of-operations slip would hide",
+      "covers": [
+        "rounding-mid-band"
+      ],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "synthetic-rounding-mid-band",
+            "perimRate": 200,
+            "areaRate": 462,
+            "minCharge": 0,
+            "version": "rc-synthetic"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "synthetic-rounding-mid-band",
+            "widthMm": 1000,
+            "heightMm": 1000,
+            "qty": 1,
+            "optionSurcharges": [],
+            "modifiers": [],
+            "discountPercent": 5
+          },
+          "expected": {
+            "ok": true,
+            "unit": 1200,
+            "total": 1200,
+            "depositAmount": 600,
+            "currency": "AUD",
+            "rateCardId": "synthetic-rounding-mid-band",
+            "rateCardVersion": "rc-synthetic",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 5,
+            "appliedModifiers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "quantity-multiplies-after-rounding",
+      "why": "× qty happens after round10(), so four units are four rounded units and not one rounded four",
+      "covers": [
+        "qty-gt-1"
+      ],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "amj80-series-sliding-window",
+            "perimRate": 55,
+            "areaRate": 320,
+            "minCharge": 480,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj80-series-sliding-window",
+            "widthMm": 1200,
+            "heightMm": 900,
+            "qty": 4,
+            "optionSurcharges": [
+              {
+                "value": 85,
+                "basis": "per_unit"
+              }
+            ],
+            "modifiers": [],
+            "discountPercent": 5
+          },
+          "expected": {
+            "ok": true,
+            "unit": 630,
+            "total": 2520,
+            "depositAmount": 1260,
+            "currency": "AUD",
+            "rateCardId": "amj80-series-sliding-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 5,
+            "appliedModifiers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "surcharges-mixed-basis",
+      "why": "per_unit is flat, per_sqm scales with the glazed area, both inside the discounted subtotal",
+      "covers": [
+        "qty-gt-1"
+      ],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "amj100t-fixed-window",
+            "perimRate": 48,
+            "areaRate": 295,
+            "minCharge": 420,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj100t-fixed-window",
+            "widthMm": 2400,
+            "heightMm": 1200,
+            "qty": 2,
+            "optionSurcharges": [
+              {
+                "value": 85,
+                "basis": "per_unit"
+              },
+              {
+                "value": 180,
+                "basis": "per_sqm"
+              }
+            ],
+            "modifiers": [],
+            "discountPercent": 5
+          },
+          "expected": {
+            "ok": true,
+            "unit": 1710,
+            "total": 3420,
+            "depositAmount": 1710,
+            "currency": "AUD",
+            "rateCardId": "amj100t-fixed-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 5,
+            "appliedModifiers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "composite-parent-two-segments",
+      "why": "a 3500mm opening built as two 1750mm frames: the parent is never priced, its total IS the sum of the segments, and the wide-frame rule applies per frame",
+      "covers": [
+        "composite",
+        "modifier-fired"
+      ],
+      "parts": [
+        {
+          "label": "segment-1",
+          "rate": {
+            "id": "amj100t-fixed-window",
+            "perimRate": 48,
+            "areaRate": 295,
+            "minCharge": 420,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj100t-fixed-window",
+            "widthMm": 1750,
+            "heightMm": 700,
+            "qty": 1,
+            "optionSurcharges": [],
+            "modifiers": [
+              {
+                "id": "mod-wide-frame",
+                "seq": 1,
+                "label": "wide frame",
+                "whenField": "width",
+                "whenOp": ">",
+                "whenValue": 1200,
+                "thenType": "percent",
+                "thenValue": 10
+              },
+              {
+                "id": "mod-large-area",
+                "seq": 2,
+                "label": "large area",
+                "whenField": "area",
+                "whenOp": ">=",
+                "whenValue": 3,
+                "thenType": "fixed",
+                "thenValue": 250
+              }
+            ],
+            "discountPercent": 5
+          },
+          "expected": {
+            "ok": true,
+            "unit": 620,
+            "total": 620,
+            "depositAmount": 310,
+            "currency": "AUD",
+            "rateCardId": "amj100t-fixed-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 5,
+            "appliedModifiers": [
+              "mod-wide-frame"
+            ]
+          }
+        },
+        {
+          "label": "segment-2",
+          "rate": {
+            "id": "amj100t-fixed-window",
+            "perimRate": 48,
+            "areaRate": 295,
+            "minCharge": 420,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj100t-fixed-window",
+            "widthMm": 1750,
+            "heightMm": 700,
+            "qty": 1,
+            "optionSurcharges": [],
+            "modifiers": [
+              {
+                "id": "mod-wide-frame",
+                "seq": 1,
+                "label": "wide frame",
+                "whenField": "width",
+                "whenOp": ">",
+                "whenValue": 1200,
+                "thenType": "percent",
+                "thenValue": 10
+              },
+              {
+                "id": "mod-large-area",
+                "seq": 2,
+                "label": "large area",
+                "whenField": "area",
+                "whenOp": ">=",
+                "whenValue": 3,
+                "thenType": "fixed",
+                "thenValue": 250
+              }
+            ],
+            "discountPercent": 5
+          },
+          "expected": {
+            "ok": true,
+            "unit": 620,
+            "total": 620,
+            "depositAmount": 310,
+            "currency": "AUD",
+            "rateCardId": "amj100t-fixed-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 5,
+            "appliedModifiers": [
+              "mod-wide-frame"
+            ]
+          }
+        }
+      ],
+      "expectedCompositeTotal": 1240
+    },
+    {
+      "id": "discount-clamped-above-one-hundred",
+      "why": "the existing 0–100 clamp — the referral composition must live inside it, never beside it",
+      "covers": [],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "amj80-series-sliding-window",
+            "perimRate": 55,
+            "areaRate": 320,
+            "minCharge": 480,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj80-series-sliding-window",
+            "widthMm": 1200,
+            "heightMm": 900,
+            "qty": 1,
+            "optionSurcharges": [
+              {
+                "value": 85,
+                "basis": "per_unit"
+              }
+            ],
+            "modifiers": [],
+            "discountPercent": 150
+          },
+          "expected": {
+            "ok": true,
+            "unit": 0,
+            "total": 0,
+            "depositAmount": 0,
+            "currency": "AUD",
+            "rateCardId": "amj80-series-sliding-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 100,
+            "appliedModifiers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "discount-clamped-below-zero",
+      "why": "a negative discount is a surcharge by another name and is clamped to nothing",
+      "covers": [],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "amj80-series-sliding-window",
+            "perimRate": 55,
+            "areaRate": 320,
+            "minCharge": 480,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj80-series-sliding-window",
+            "widthMm": 1200,
+            "heightMm": 900,
+            "qty": 1,
+            "optionSurcharges": [
+              {
+                "value": 85,
+                "basis": "per_unit"
+              }
+            ],
+            "modifiers": [],
+            "discountPercent": -20
+          },
+          "expected": {
+            "ok": true,
+            "unit": 660,
+            "total": 660,
+            "depositAmount": 330,
+            "currency": "AUD",
+            "rateCardId": "amj80-series-sliding-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 0,
+            "appliedModifiers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "zero-dimension-is-not-priced",
+      "why": "ok=false still returns a snapshot, and the discount does not turn it into money",
+      "covers": [],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "amj80-series-sliding-window",
+            "perimRate": 55,
+            "areaRate": 320,
+            "minCharge": 480,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj80-series-sliding-window",
+            "widthMm": 0,
+            "heightMm": 900,
+            "qty": 1,
+            "optionSurcharges": [
+              {
+                "value": 85,
+                "basis": "per_unit"
+              }
+            ],
+            "modifiers": [
+              {
+                "id": "mod-wide-frame",
+                "seq": 1,
+                "label": "wide frame",
+                "whenField": "width",
+                "whenOp": ">",
+                "whenValue": 1200,
+                "thenType": "percent",
+                "thenValue": 10
+              },
+              {
+                "id": "mod-large-area",
+                "seq": 2,
+                "label": "large area",
+                "whenField": "area",
+                "whenOp": ">=",
+                "whenValue": 3,
+                "thenType": "fixed",
+                "thenValue": 250
+              }
+            ],
+            "discountPercent": 5
+          },
+          "expected": {
+            "ok": false,
+            "unit": 0,
+            "total": 0,
+            "depositAmount": 0,
+            "currency": "AUD",
+            "rateCardId": "amj80-series-sliding-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 5,
+            "appliedModifiers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "explain-trace-non-referred",
+      "why": "the ops price-explain trace, whole — including the 'account discount 5%' label that must not change for a non-referred line",
+      "covers": [],
+      "parts": [
+        {
+          "label": "line",
+          "rate": {
+            "id": "amj80-series-sliding-window",
+            "perimRate": 55,
+            "areaRate": 320,
+            "minCharge": 480,
+            "version": "rc-2026-01"
+          },
+          "policy": {
+            "gstMode": "inc",
+            "version": "v1"
+          },
+          "input": {
+            "family": "amj80-series-sliding-window",
+            "widthMm": 1600,
+            "heightMm": 900,
+            "qty": 1,
+            "optionSurcharges": [
+              {
+                "value": 85,
+                "basis": "per_unit"
+              }
+            ],
+            "modifiers": [
+              {
+                "id": "mod-wide-frame",
+                "seq": 1,
+                "label": "wide frame",
+                "whenField": "width",
+                "whenOp": ">",
+                "whenValue": 1200,
+                "thenType": "percent",
+                "thenValue": 10
+              },
+              {
+                "id": "mod-large-area",
+                "seq": 2,
+                "label": "large area",
+                "whenField": "area",
+                "whenOp": ">=",
+                "whenValue": 3,
+                "thenType": "fixed",
+                "thenValue": 250
+              }
+            ],
+            "discountPercent": 5,
+            "explain": true
+          },
+          "expected": {
+            "ok": true,
+            "unit": 860,
+            "total": 860,
+            "depositAmount": 430,
+            "currency": "AUD",
+            "rateCardId": "amj80-series-sliding-window",
+            "rateCardVersion": "rc-2026-01",
+            "pricingPolicyVersion": "v1",
+            "depositPercent": 50,
+            "discountPercent": 5,
+            "appliedModifiers": [
+              "mod-wide-frame"
+            ],
+            "steps": [
+              {
+                "key": "perimeter",
+                "label": "perimeter",
+                "detail": "5.00 m × $55.00",
+                "amount": 275,
+                "runningTotal": 275,
+                "applied": true
+              },
+              {
+                "key": "area",
+                "label": "area",
+                "detail": "1.44 m² × $320.00",
+                "amount": 460.79999999999995,
+                "runningTotal": 735.8,
+                "applied": true
+              },
+              {
+                "key": "options",
+                "label": "options",
+                "detail": "1 chargeable",
+                "amount": 85,
+                "runningTotal": 820.8,
+                "applied": true
+              },
+              {
+                "key": "min-charge",
+                "label": "minimum charge $480.00",
+                "detail": "no effect",
+                "amount": null,
+                "runningTotal": 820.8,
+                "applied": false
+              },
+              {
+                "key": "mod-wide-frame",
+                "label": "wide frame",
+                "detail": "+10%",
+                "amount": 82.08000000000004,
+                "runningTotal": 902.88,
+                "applied": true
+              },
+              {
+                "key": "mod-large-area",
+                "label": "large area",
+                "detail": "did not fire",
+                "amount": null,
+                "runningTotal": 902.88,
+                "applied": false
+              },
+              {
+                "key": "discount",
+                "label": "account discount 5%",
+                "detail": "off $902.88",
+                "amount": -45.144000000000005,
+                "runningTotal": 857.736,
+                "applied": true
+              },
+              {
+                "key": "round",
+                "label": "rounded to nearest $10",
+                "detail": "$857.74",
+                "amount": 2.26400000000001,
+                "runningTotal": 860,
+                "applied": true
+              },
+              {
+                "key": "qty",
+                "label": "× qty 1",
+                "amount": 0,
+                "runningTotal": 860,
+                "applied": false
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
