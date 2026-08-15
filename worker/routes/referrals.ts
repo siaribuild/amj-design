@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
-import { payoutComplete } from "../lib/referrals";
+import { ensureReferralCode, payoutComplete } from "../lib/referrals";
 
 export const referrals = new Hono<{ Bindings: Env }>();
 
@@ -12,6 +12,10 @@ export const referrals = new Hono<{ Bindings: Env }>();
 // joining?" before it answers anything about money.
 referrals.get("/account/referrals", async (c) => {
   const user = await resolveUser(c.env, c.req.raw);
-  // The code itself is still withheld — issuing it is the next red.
-  return c.json({ referrerGate: { complete: payoutComplete(user) }, code: null });
+  return c.json({
+    referrerGate: { complete: payoutComplete(user) },
+    // WITHHELD, never issued-inactive: until the details exist there is no code
+    // to click, read out, or set a cookie from.
+    code: user ? await ensureReferralCode(c.env, user) : null,
+  });
 });

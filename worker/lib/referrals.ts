@@ -3,6 +3,38 @@
 // ask it without closing an import cycle.
 //
 // Routes stay thin: the rules live here.
+import type { Env } from "../types";
+
+/** The account row this module needs to answer "may this user hold a code?". */
+export interface ReferrerRow extends PayoutDetails {
+  id: string;
+  referral_code?: string | null;
+}
+
+/** The user's referral code, or null when they may not hold one.
+ *
+ *  WITHHELD, never issued-inactive (ADR-8a). While the details are missing there
+ *  is no code to click, read out or set a cookie from, so the window in which a
+ *  referral could be recorded against a referrer who cannot be paid does not
+ *  exist rather than being guarded against somewhere else.
+ *
+ *  Only the ISSUE moment sits behind the gate. Once issued the code is permanent:
+ *  a tradie who has already read it out to a mate on a job site must never find
+ *  it changed underneath them. */
+export async function ensureReferralCode(env: Env, user: ReferrerRow): Promise<string | null> {
+  if (!payoutComplete(user)) return null;
+  if (user.referral_code) return user.referral_code;
+  await env.DB
+    .prepare("UPDATE user SET referral_code = ? WHERE id = ? AND referral_code IS NULL")
+    .bind(generateReferralCode(), user.id)
+    .run();
+  // Read back rather than return what was just generated. If a concurrent
+  // request issued a code first, the WHERE clause matched nothing and THAT code
+  // is the permanent one — and it may already have been read out over the phone.
+  const row = await env.DB.prepare("SELECT referral_code FROM user WHERE id = ?")
+    .bind(user.id).first<{ referral_code: string | null }>();
+  return row?.referral_code ?? null;
+}
 
 /** The ATO's published ABN checksum: weighted digits, one subtracted from the
  *  first, sum divisible by 89. */
