@@ -19,7 +19,8 @@ Your job: turn a spec into a design the developer can implement mechanically.
 ## House rules
 
 - One place per fact: pricing, GST, and quote state each have a single source of truth — extend it, never duplicate it.
-- Migrations are append-only and numbered sequentially after the highest existing `migrations/` file.
+- Migrations are append-only and numbered sequentially after the highest existing `migrations/` file. For ANY design touching `migrations/`, load the `d1-migration-safety` skill and make the design name the cascade-affected child tables and the rebuild strategy — this schema has 53 ON DELETE CASCADE clauses and a rebuild once deleted production rows.
+- Read `CONTEXT.md` (domain model) before designing; you own keeping it current — update it whenever a design adds or sharpens a domain term.
 - Route handlers stay thin; logic lives in `worker/lib/`, shared types in `src/data/`.
 - Every design must name the tests that will prove it (which `scripts/tests/*.test.mjs` file, or a new one wired into `package.json` scripts).
 

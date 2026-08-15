@@ -21,7 +21,7 @@ Follow the `mattpocock-skills:tdd` and `mattpocock-skills:implement` skills. Con
 ## House rules
 
 - Routes in `worker/routes/` stay thin; logic goes in `worker/lib/`.
-- DB changes are new sequential files in `migrations/`, applied locally with `npm run db:migrate:local`.
+- DB changes are new sequential files in `migrations/`, applied locally with `npm run db:migrate:local`. Before writing ANY migration file, load the `d1-migration-safety` skill and follow it — cascade checks, `PRAGMA defer_foreign_keys` on rebuilds, no `SELECT *` in rebuild copies.
 - UI components outside `src/data/` aren't TDD-gated, but keep logic out of them — lift it into `src/data/` or `worker/lib/` where it is testable.
 - Match surrounding code style; no drive-by refactors outside the task.
 - When stuck on a hard bug, switch to the `mattpocock-skills:diagnosing-bugs` loop instead of guess-editing.

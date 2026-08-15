@@ -64,6 +64,7 @@ Every loop in this pipeline must converge or escalate — never grind:
 - **TDD (Probity):** writes to `worker/**`, `src/data/**`, and `scripts/tests/**` are blocked unless recent session history shows a failing test the write addresses. Work red → green → refactor. Scope lives in `probity.config.ts`.
 - **Codex stop-gate:** when a turn changed code, a Codex review runs before the turn may end; address its findings rather than bypassing.
 - **Codex infrastructure failure ≠ review findings.** If the gate blocks with a *task failure* (network, service outage, auth, quota, timeout) rather than actual findings: retry once, and if it fails again, stop and tell the user plainly — the work is done but unreviewed, and the options are (a) wait and run `/codex:review --wait` later, (b) temporarily disable the gate with `/codex:setup --disable-review-gate` and re-enable after, or (c) user pressing Esc to end the turn. Never grind retries against a dead service, and never present unreviewed work as reviewed. If the gate *silently skips* because the Codex CLI is missing (that path fails open), flag the missing review to the user rather than letting it pass unmentioned.
+- **Security hooks (security-guidance + semgrep plugins):** pattern warnings on edits, semgrep scanning around tool use, and an LLM security diff-review on Stop — all automatic. Additionally, when a feature touches auth (customer/ops boundary), file uploads, payments, or session handling, the orchestrator runs the `security-review` skill on the branch before the product-manager acceptance step; its findings route to the developer like any review.
 - **agent-guard** (`.claude/hooks/agent-guard.mjs`): mechanically enforces the runaway caps — near-identical agent respawns, >20 agent spawns/session, >8 messages to one agent, >5 workflow runs all pause for explicit user approval. If it fires, treat it as a stall signal: diagnose, don't just re-approve. Thresholds: `.claude/hooks/agent-guard.config.json` (optional).
 
 ## Commands
@@ -77,6 +78,7 @@ Every loop in this pipeline must converge or escalate — never grind:
 ## House rules
 
 - One place per fact: pricing, GST, quote state each have a single source of truth — extend, don't duplicate.
-- Migrations are append-only; number after the highest existing file.
+- Migrations are append-only; number after the highest existing file. **Any `migrations/` change: load the `d1-migration-safety` skill first (`.claude/skills/d1-migration-safety/`) — a table rebuild once cascade-deleted production rows.**
+- Domain vocabulary lives in `CONTEXT.md` — read it before designing or speccing; update it (architect owns it) when a term is added or sharpened.
 - Keep logic out of React components — lift into `src/data/` or `worker/lib/` where it's testable.
 - GST display must respect the account's ex/inc preference on every customer surface.
