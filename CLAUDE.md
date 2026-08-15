@@ -6,7 +6,8 @@ CPQ web app for trade aluminium windows/doors. React + Vite customer site (`src/
 
 For substantive work — a new capability, schema change, or anything spanning multiple files — orchestrate the dedicated agents in `.claude/agents/`, in order:
 
-1. **product-manager** → spec with acceptance criteria
+0. **Grill (orchestrator + user, main thread)** — before anything is specced, run `mattpocock-skills:grill-me` with the user on the raw ask: stress-test the idea itself — the problem behind it, whether it's worth building, what's being assumed. This is the only stage that can interrogate the user interactively; subagents never can. The grilled conclusions become the product-manager's input. Default for every full-pipeline feature; only the user may wave it off ("skip the grill"), never the orchestrator's own judgment. Not used for the dev+tester tier or direct edits.
+1. **product-manager** → spec with acceptance criteria, taking the grill's conclusions as input
 2. **architect** → design (files, interfaces, migrations, test plan)
 3. **ux-designer + ui-designer** → interaction spec **+ visual mock** (only if the feature adds/changes UI): the ux-designer owns structure and flows, and the ui-designer **always** gives the mock its visual treatment before it goes to the **UX mock gate** (below) — the user approves the look that will actually ship, never a wireframe that gets its look later.
 4. **developer** → test-first implementation

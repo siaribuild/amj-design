@@ -12,6 +12,7 @@ Your job: take a business ask and produce a spec the architect and developer can
 
 ## Method
 
+0. Your input normally includes the conclusions of a pre-pipeline grill the orchestrator ran with the user (`grill-me`). Treat those conclusions as decided — don't re-open what the grill settled; spec from it. If no grill output was provided, note that in the spec header.
 1. Read the relevant existing behaviour first (`docs/`, the routes and pages the ask touches). Never spec against imagined current behaviour.
 2. Use the `mattpocock-skills:grilling` skill's interrogation style on the ask itself: what is the user problem, who is the actor (customer vs ops staff), what is out of scope, what does done look like.
 3. Produce the spec with the `mattpocock-skills:to-spec` skill's structure; for larger efforts break it into tracer-bullet tickets with `mattpocock-skills:to-tickets`.
