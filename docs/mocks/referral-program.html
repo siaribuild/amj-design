@@ -189,9 +189,12 @@ section.surface{padding-top:56px}
 .shead p{max-width:80ch;color:#A8ACAE;font-size:14px;margin-bottom:4px}
 .shead .path{font-family:ui-monospace,monospace;font-size:12px;color:#6E7376}
 .state{margin-top:36px}
-.state h3{color:#fff;font-size:16px;font-weight:620;margin-bottom:4px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-.state h3 .tag{font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#101112;background:#E8863A;padding:2px 7px}
-.state h3 .tag.g{background:#5A9A72}.state h3 .tag.b{background:#5F8AB0}.state h3 .tag.r{background:#C0392B;color:#fff}
+/* DIRECT CHILD ONLY. As a descendant selector this leaked into every <h3>
+   inside every product frame — white text, 16px, display:flex — because the
+   frames are nested in .state. Chrome must never reach into .screen. */
+.state > h3{color:#fff;font-size:16px;font-weight:620;margin-bottom:4px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.state > h3 .tag{font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#101112;background:#E8863A;padding:2px 7px}
+.state > h3 .tag.g{background:#5A9A72}.state > h3 .tag.b{background:#5F8AB0}.state > h3 .tag.r{background:#C0392B;color:#fff}
 .state > p{color:#9BA0A3;font-size:13.5px;max-width:82ch;margin-bottom:14px}
 .frames{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
 .dev{background:#0E0F10;border:1px solid #2E3133;padding:9px;flex:none}
@@ -201,12 +204,17 @@ section.surface{padding-top:56px}
 .dev.wide{width:1338px}.dev.wide .screen{width:1320px}
 .dev.mob{width:393px}.dev.mob .screen{width:375px}
 .note{margin-top:14px;border-left:2px solid #E8863A;padding:2px 0 2px 14px;max-width:88ch}
-.note b{color:#E8863A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:3px}
+/* DIRECT CHILD ONLY — the note's title. As `.note b` this also hit every
+   inline <b> inside the note's paragraphs, rendering mid-sentence emphasis as
+   an orange uppercase block label on its own line. */
+.note > b{color:#E8863A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:3px}
+.note p b{color:#D6DADC;font-weight:650}
 .note p{color:#A8ACAE;font-size:13px;line-height:1.6;margin-bottom:6px}
 .note p:last-child{margin-bottom:0}
 .note code,.intro code,.rules code{font-family:ui-monospace,monospace;font-size:12px;background:#2A2D2F;color:#D9C08F;padding:1px 4px}
 .flag{border:1px solid #C0392B;background:rgba(192,57,43,.12);padding:12px 14px;margin-top:14px;max-width:88ch}
-.flag b{color:#E9776A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:4px}
+.flag > b{color:#E9776A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:4px}
+.flag p b{color:#F0D3CF;font-weight:650}
 .flag p{color:#D8B7B2;font-size:13px;line-height:1.6;margin:0}
 </style>
 </head>
@@ -279,10 +287,10 @@ section.surface{padding-top:56px}
   <!-- 1A LOGGED OUT -->
   <div class="state">
     <h3><span class="tag">State A</span> Logged out — a visitor who has never seen us</h3>
-    <p>The whole page, and it is now four bands: hero, how it works, the join, the closing banner. One
-    headline and one sentence at the top; three facts and a conditions block below it. Nothing about bank
-    accounts appears anywhere on this page — that ask lives inside the join flow, after someone has decided
-    they want in.</p>
+    <p>The whole page. One headline and one sentence at the top; three cards for the offer; the conditions
+    in their own section beneath; the join; then the three questions everyone asks, with a link to the
+    fuller article in Resources. Nothing about bank accounts appears anywhere on this page — that ask lives
+    inside the join flow, after someone has decided they want in.</p>
     <div class="frames">
       <div class="dev desk">
         <div class="cap"><span>Desktop · 1180 × full page</span><span>/refer · signed out</span></div>
@@ -306,48 +314,57 @@ section.surface{padding-top:56px}
             </div>
           </div>
 
-          <!-- HOW IT WORKS — three facts, then the conditions, no cards -->
-          <div class="ground-paper gridpaper" style="padding:48px 0;border-top:1px solid rgba(0,0,0,.08)">
+          <!-- HOW IT WORKS — three cards -->
+          <div class="ground-paper gridpaper" style="padding:56px 0;border-top:1px solid rgba(0,0,0,.08)">
             <div class="wrap" style="position:relative">
               <div class="row g8 mb12"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="2"/></svg><span class="t-label c-sage">How it works</span></div>
+              <h2 class="t-ds2 c-ink mb24" style="max-width:24ch">Three steps, and only one of them is yours.</h2>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0">
+                <div class="card p24" style="margin-right:-1px"><p class="figure mb12">1</p>
+                  <h3 class="t-bd-lg c-ink sb fd mb6">Share your code.</h3>
+                  <p class="t-bd c-body">Text it, say it over the phone, send the link. However you'd normally tell someone.</p></div>
+                <div class="card p24" style="margin-right:-1px"><p class="figure mb12">2</p>
+                  <h3 class="t-bd-lg c-ink sb fd mb6">They save.</h3>
+                  <p class="t-bd c-body">Your mate gets <b class="c-ink">2.5% off their first order</b> — on their quote from the start. Nothing to enter, nothing to apply.</p></div>
+                <div class="card p24"><p class="figure mb12">3</p>
+                  <h3 class="t-bd-lg c-ink sb fd mb6">You get paid.</h3>
+                  <p class="t-bd c-body">Once they've paid that order in full, we transfer your <b class="c-ink">1%</b> — bank account, within <b class="c-ink">14 days</b>.</p></div>
+              </div>
+            </div>
+          </div>
 
-              <div class="col" style="max-width:72ch;border-top:1px solid var(--line)">
-                <div class="row g16 as" style="padding:18px 0;border-bottom:1px solid var(--line)">
-                  <span class="figure" style="font-size:1.6rem;flex:none;width:34px">1</span>
-                  <p class="t-bd-lg c-ink"><b>Share your code.</b> <span class="c-body">Text it, say it over the phone, send the link.</span></p>
+          <!-- THE CONDITIONS — its own section: the terms of the offer, not part of it -->
+          <div class="ground-bone" style="padding:56px 0;border-top:1px solid rgba(0,0,0,.08)">
+            <div class="wrap">
+              <div class="split-row is-top mb24" style="display:flex;justify-content:space-between;gap:40px;align-items:flex-start">
+                <div>
+                  <div class="row g8 mb12"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="2"/></svg><span class="t-label c-sage">The conditions</span></div>
+                  <h2 class="t-ds2 c-ink">What qualifies, in six lines.</h2>
                 </div>
-                <div class="row g16 as" style="padding:18px 0;border-bottom:1px solid var(--line)">
-                  <span class="figure" style="font-size:1.6rem;flex:none;width:34px">2</span>
-                  <p class="t-bd-lg c-ink"><b>Your mate gets 2.5% off their first order.</b> <span class="c-body">It's on their quote from the start — nothing to enter, nothing to apply.</span></p>
-                </div>
-                <div class="row g16 as" style="padding:18px 0">
-                  <span class="figure" style="font-size:1.6rem;flex:none;width:34px">3</span>
-                  <p class="t-bd-lg c-ink"><b>When they've paid it in full, you get 1% of it.</b> <span class="c-body">Bank transfer, within 14 days.</span></p>
+                <p class="t-bd c-body" style="max-width:38ch;flex:none;align-self:flex-end;padding-bottom:6px">The
+                  whole of it. There's no seventh condition further down, and nothing here is different in the
+                  terms.</p>
+              </div>
+              <div class="card" style="background:var(--paper)">
+                <div style="display:grid;grid-template-columns:1fr 1fr">
+                  <div class="p20" style="border-right:1px solid var(--line);border-bottom:1px solid var(--line)"><p class="t-label c-quiet mb6">First order only</p><p class="t-bd-sm c-ink">It's their <b>first order</b> that counts, and it has to be a tradie who's new to us.</p></div>
+                  <div class="p20" style="border-bottom:1px solid var(--line)"><p class="t-label c-quiet mb6">Minimum order</p><p class="t-bd-sm c-ink">It needs to be at least <b>$2,000</b> ex GST, before delivery.</p></div>
+                  <div class="p20" style="border-right:1px solid var(--line);border-bottom:1px solid var(--line)"><p class="t-label c-quiet mb6">How long it lasts</p><p class="t-bd-sm c-ink">Placed within <b>12 months</b> of them signing up with your code.</p></div>
+                  <div class="p20" style="border-bottom:1px solid var(--line)"><p class="t-label c-quiet mb6">What the 1% is on</p><p class="t-bd-sm c-ink">The goods — excluding GST and delivery. Not the invoice total.</p></div>
+                  <div class="p20" style="border-right:1px solid var(--line)"><p class="t-label c-quiet mb6">How you're paid</p><p class="t-bd-sm c-ink">Bank transfer within <b>14 days</b> of their payment clearing. You'll need an <b>ABN</b> and bank details on your account.</p></div>
+                  <div class="p20"><p class="t-label c-quiet mb6">No chains</p><p class="t-bd-sm c-ink">You get paid for the mates you refer, not for anyone they go on to refer. And you can't refer yourself.</p></div>
                 </div>
               </div>
-
-              <!-- THE CONDITIONS — adjacent to the claim, and subordinate to it -->
-              <div class="card mt24" style="max-width:72ch;background:var(--paper)">
-                <div class="panel-head px20 py12"><span class="t-label c-quiet">The conditions</span></div>
-                <div class="col">
-                  <p class="t-bd-sm c-ink px20 py12 bb5">It's their <b>first order</b> that counts, and it has to be a tradie who's new to us.</p>
-                  <p class="t-bd-sm c-ink px20 py12 bb5">The order needs to be at least <b>$2,000</b> ex GST, before delivery.</p>
-                  <p class="t-bd-sm c-ink px20 py12 bb5">It has to be placed within <b>12 months</b> of them signing up with your code.</p>
-                  <p class="t-bd-sm c-ink px20 py12 bb5">Your <b>1%</b> is worked out on the goods — excluding GST and delivery, not the invoice total.</p>
-                  <p class="t-bd-sm c-ink px20 py12 bb5">You'll need an <b>ABN</b> and bank details on your account — that's where we send it.</p>
-                  <p class="t-bd-sm c-ink px20 py12">You get paid for the mates you refer, not for anyone they go on to refer. And you can't refer yourself.</p>
-                </div>
-              </div>
-              <p class="t-cap c-body mt12" style="max-width:72ch">Amounts include any GST payable. What you do
-                with it at tax time is between you and your accountant — we don't give tax advice.
+              <p class="t-cap c-body mt12 measure">Amounts include any GST payable. What you do with it at tax
+                time is between you and your accountant — we don't give tax advice.
                 <a class="c-sage" style="text-decoration:underline;text-underline-offset:2px">Read the full rules and terms →</a></p>
             </div>
           </div>
 
           <!-- SIGNED-OUT CTA BAND -->
-          <div class="ground-bone bt8 sect-sm">
+          <div class="ground-paper gridpaper bt8 sect-sm">
             <div class="wrap">
-              <div class="card p32 row jb ac g32 wr" style="background:var(--paper)">
+              <div class="card p32 row jb ac g32 wr">
                 <div class="prose">
                   <h3 class="t-hd1 c-ink mb8">Ready to join?</h3>
                   <p class="t-bd c-body">Sign in, read the conditions and join. Any account can — ordering
@@ -358,8 +375,26 @@ section.surface{padding-top:56px}
             </div>
           </div>
 
+          <!-- FAQ — the three everyone asks, with the long tail in Resources -->
+          <div class="ground-bone" style="padding:56px 0;border-top:1px solid rgba(0,0,0,.08)">
+            <div class="wrap">
+              <div class="row g8 mb12"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="2"/></svg><span class="t-label c-sage">Good to know</span></div>
+              <h2 class="t-ds2 c-ink mb24" style="max-width:24ch">The questions tradies actually ask.</h2>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0">
+                <div class="card p24" style="margin-right:-1px;background:var(--paper)"><h3 class="t-bd-lg c-ink sb fd mb6">Can I refer someone if I've never ordered?</h3><p class="t-bd c-body">Yes. Any registered account can join and refer. Your own order history has nothing to do with it.</p></div>
+                <div class="card p24" style="margin-right:-1px;background:var(--paper)"><h3 class="t-bd-lg c-ink sb fd mb6">What does my mate actually see?</h3><p class="t-bd c-body">Their quote is 2.5% lower from the first price they're shown. There's no code to enter at checkout and nothing for them to apply.</p></div>
+                <div class="card p24" style="background:var(--paper)"><h3 class="t-bd-lg c-ink sb fd mb6">Do I earn on the mates they go on to refer?</h3><p class="t-bd c-body">No. You get paid for the mates you refer, and that's it. No chains, no levels, no tiers.</p></div>
+              </div>
+              <div class="row g16 ac wr mt16">
+                <a class="btn btn-md b-outline">Referral program — full FAQ →</a>
+                <p class="t-cap c-body">What you can see about the tradies you refer, what happens if an order
+                  is cancelled, how it works with a second business — all in the Resources article.</p>
+              </div>
+            </div>
+          </div>
+
           <!-- CLOSING BANNER (shared CtaBanner) -->
-          <div class="ground-bone bt8 sect-sm"><div class="wrap">
+          <div class="ground-paper bt8 sect-sm"><div class="wrap">
             <div style="background:var(--sage);padding:40px" class="row jb ac g32 wr">
               <div class="prose"><h2 class="t-hd1 c-white mb6">Your windows and doors, priced before you commit.</h2>
                 <p class="t-bd" style="color:rgba(255,255,255,.85)">Free, no account, and a person checks every quote before you pay a cent.</p></div>
@@ -385,7 +420,7 @@ section.surface{padding-top:56px}
 
       <div class="dev mob">
         <div class="cap"><span>Phone · 375</span><span>signed out</span></div>
-        <div class="screen" style="height:1180px;overflow-y:auto">
+        <div class="screen" style="height:1500px;overflow-y:auto">
           <div class="sitehdr" style="height:56px"><div class="row jb ac" style="width:100%;padding:0 20px">
             <div class="row g8"><svg class="mark" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span class="c-white sb fd" style="font-size:13px">OPENFRAME</span></div>
             <div class="col g4" style="width:20px"><span style="height:1.5px;background:#fff;display:block"></span><span style="height:1.5px;background:#fff;display:block"></span><span style="height:1.5px;background:#fff;display:block"></span></div>
@@ -398,25 +433,38 @@ section.surface{padding-top:56px}
             <p class="t-cap c-w55 mt10">Any account can join — you don't need to have ordered.</p>
           </div>
           <div class="ground-paper" style="padding:28px 20px">
-            <div class="t-label c-sage mb14">How it works</div>
-            <div class="col" style="border-top:1px solid var(--line)">
-              <div class="row g12 as" style="padding:14px 0;border-bottom:1px solid var(--line)"><span class="figure" style="font-size:1.3rem;flex:none;width:22px">1</span><p class="t-bd c-ink"><b>Share your code.</b> <span class="c-body">Text it, say it, send the link.</span></p></div>
-              <div class="row g12 as" style="padding:14px 0;border-bottom:1px solid var(--line)"><span class="figure" style="font-size:1.3rem;flex:none;width:22px">2</span><p class="t-bd c-ink"><b>Your mate gets 2.5% off their first order.</b> <span class="c-body">On their quote from the start — nothing to enter.</span></p></div>
-              <div class="row g12 as" style="padding:14px 0"><span class="figure" style="font-size:1.3rem;flex:none;width:22px">3</span><p class="t-bd c-ink"><b>When they've paid in full, you get 1% of it.</b> <span class="c-body">Bank transfer, within 14 days.</span></p></div>
+            <div class="t-label c-sage mb10">How it works</div>
+            <h2 class="c-ink mb16" style="font:600 26px/32px var(--font-display);letter-spacing:-.5px">Three steps, and only one of them is yours.</h2>
+            <div class="col">
+              <div class="card p16" style="margin-bottom:-1px"><p class="figure mb8" style="font-size:1.7rem">1</p><h3 class="t-bd c-ink sb fd mb4">Share your code.</h3><p class="t-bd-sm c-body">Text it, say it over the phone, send the link. However you'd normally tell someone.</p></div>
+              <div class="card p16" style="margin-bottom:-1px"><p class="figure mb8" style="font-size:1.7rem">2</p><h3 class="t-bd c-ink sb fd mb4">They save.</h3><p class="t-bd-sm c-body">Your mate gets <b class="c-ink">2.5% off their first order</b> — on their quote from the start. Nothing to enter, nothing to apply.</p></div>
+              <div class="card p16"><p class="figure mb8" style="font-size:1.7rem">3</p><h3 class="t-bd c-ink sb fd mb4">You get paid.</h3><p class="t-bd-sm c-body">Once they've paid that order in full, we transfer your <b class="c-ink">1%</b> — bank account, within <b class="c-ink">14 days</b>.</p></div>
             </div>
-            <div class="card mt20" style="background:var(--paper)">
-              <div class="panel-head px16 py10"><span class="t-label c-quiet">The conditions</span></div>
-              <div class="col">
-                <p class="t-bd-sm c-ink px16 py12 bb5">It's their <b>first order</b> that counts, and a tradie who's new to us.</p>
-                <p class="t-bd-sm c-ink px16 py12 bb5">At least <b>$2,000</b> ex GST, before delivery.</p>
-                <p class="t-bd-sm c-ink px16 py12 bb5">Placed within <b>12 months</b> of them signing up with your code.</p>
-                <p class="t-bd-sm c-ink px16 py12 bb5">Your <b>1%</b> is on the goods — excluding GST and delivery.</p>
-                <p class="t-bd-sm c-ink px16 py12 bb5">You'll need an <b>ABN</b> and bank details — that's where we send it.</p>
-                <p class="t-bd-sm c-ink px16 py12">You get paid for the mates you refer, not anyone they refer. And you can't refer yourself.</p>
-              </div>
+          </div>
+          <div class="ground-bone" style="padding:28px 20px;border-top:1px solid rgba(0,0,0,.08)">
+            <div class="t-label c-sage mb10">The conditions</div>
+            <h2 class="c-ink mb16" style="font:600 26px/32px var(--font-display);letter-spacing:-.5px">What qualifies, in six lines.</h2>
+            <div class="card" style="background:var(--paper)">
+              <div class="p16 bb5"><p class="t-label c-quiet mb4">First order only</p><p class="t-bd-sm c-ink">It's their <b>first order</b> that counts, and a tradie who's new to us.</p></div>
+              <div class="p16 bb5"><p class="t-label c-quiet mb4">Minimum order</p><p class="t-bd-sm c-ink">At least <b>$2,000</b> ex GST, before delivery.</p></div>
+              <div class="p16 bb5"><p class="t-label c-quiet mb4">How long it lasts</p><p class="t-bd-sm c-ink">Placed within <b>12 months</b> of them signing up with your code.</p></div>
+              <div class="p16 bb5"><p class="t-label c-quiet mb4">What the 1% is on</p><p class="t-bd-sm c-ink">The goods — excluding GST and delivery. Not the invoice total.</p></div>
+              <div class="p16 bb5"><p class="t-label c-quiet mb4">How you're paid</p><p class="t-bd-sm c-ink">Bank transfer within <b>14 days</b>. You'll need an <b>ABN</b> and bank details on your account.</p></div>
+              <div class="p16"><p class="t-label c-quiet mb4">No chains</p><p class="t-bd-sm c-ink">You get paid for the mates you refer, not anyone they refer. And you can't refer yourself.</p></div>
             </div>
             <p class="t-cap c-body mt12">Amounts include any GST payable. Your own tax is between you and your accountant — we don't give tax advice. <a class="c-sage" style="text-decoration:underline">Full rules →</a></p>
           </div>
+          <div class="ground-paper" style="padding:28px 20px;border-top:1px solid rgba(0,0,0,.08)">
+            <div class="t-label c-sage mb10">Good to know</div>
+            <h2 class="c-ink mb16" style="font:600 26px/32px var(--font-display);letter-spacing:-.5px">The questions tradies actually ask.</h2>
+            <div class="col">
+              <div class="card p16" style="margin-bottom:-1px"><h3 class="t-bd c-ink sb fd mb4">Can I refer someone if I've never ordered?</h3><p class="t-bd-sm c-body">Yes. Any registered account can join and refer. Your own order history has nothing to do with it.</p></div>
+              <div class="card p16" style="margin-bottom:-1px"><h3 class="t-bd c-ink sb fd mb4">What does my mate actually see?</h3><p class="t-bd-sm c-body">Their quote is 2.5% lower from the first price they're shown. No code to enter at checkout, nothing to apply.</p></div>
+              <div class="card p16"><h3 class="t-bd c-ink sb fd mb4">Do I earn on the mates they go on to refer?</h3><p class="t-bd-sm c-body">No. You get paid for the mates you refer, and that's it. No chains, no levels, no tiers.</p></div>
+            </div>
+            <a class="btn btn-md b-outline jc mt16" style="width:100%">Referral program — full FAQ →</a>
+          </div>
+
 
         </div>
       </div>
@@ -430,17 +478,20 @@ section.surface{padding-top:56px}
       "we need your ABN and bank details" fact now lives on step 2 of joining, which means the two facts the
       law requires to stay separate are no longer even on the same screen — a stronger separation than
       typography was giving them.</p>
-      <p><b>Thirteen cards became zero.</b> Six condition cards, three step cards and four FAQ cards were
-      the page arguing against its own simplicity — and presenting conditions as equal-weight tiles made
-      them read like features. Now there are <b>three facts</b> as three lines, and <b>the conditions</b> as
-      one compact panel underneath: adjacent to the claim, as the law requires, and visibly subordinate to
-      it, as the reading requires.</p>
-      <p><b>The FAQ is gone entirely.</b> Every fact in it now sits in the conditions panel or the join
-      screen — "you don't need to have ordered" is in the hero, "no chains" and "you can't refer yourself"
-      are the last condition, and "nothing to apply" is inside fact 2. Nothing was in there that a tradie
-      needed and cannot now find in one scroll.</p>
-      <p><b>The whole page is four bands</b> — hero, how it works, the join, the closing banner — and every
-      one of them survives an unfocused scroll on a phone.</p>
+      <p><b>Six condition cards became three step cards.</b> The problem was count and density, never the
+      container — thirteen cards across three grids was the page arguing against its own simplicity. Three
+      cards is a layout; three lines of text in a 1180px field is a narrow column with a dead right half,
+      which is what the previous revision actually produced.</p>
+      <p><b>The conditions get their own section, and that is honest rather than decorative.</b> The three
+      steps are the <b>offer</b>; the conditions are the <b>terms of it</b>. Different kinds of information,
+      so a section boundary is the truthful way to stop conditions reading as features — and adjacency to
+      the claim is satisfied by the section sitting directly beneath it, which is all the law asks. Six
+      items in one bordered two-column panel read as a single table-like object, not as six competing tiles.</p>
+      <p><b>The FAQ carries the three questions everyone asks</b>, and links out to a fuller article in
+      Resources for the long tail. That keeps the page short without losing the answers, and the long tail
+      becomes editable without a deploy — the same argument that put the T&amp;Cs there.</p>
+      <p><b>Six bands</b>: hero, how it works, the conditions, the join, good to know, the closing banner.
+      Grounds alternate night → paper → bone → paper → bone → paper, so every seam draws itself.</p>
       <p><b>Every bold number is a slot.</b> Raising the discount to 5% changes six figures on this page
       and not one word.</p>
     </div>
@@ -497,7 +548,7 @@ section.surface{padding-top:56px}
                     asks you to buy anything.</p>
                 </div>
 
-                <div class="p24" style="background:var(--recessive)">
+                <div class="p24" style="background:var(--recessive);align-self:start">
                   <div class="t-label c-quiet mb12">What happens next</div>
                   <div class="col g12">
                     <div class="row g10 as"><span class="t-data c-sage" style="flex:none">1</span><p class="t-bd-sm c-ink"><b>Accept the conditions</b> — you're reading them now.</p></div>
@@ -611,7 +662,7 @@ section.surface{padding-top:56px}
                   </div>
                 </div>
 
-                <div class="p24" style="background:var(--recessive)">
+                <div class="p24" style="background:var(--recessive);align-self:start">
                   <div class="t-label c-quiet mb12">What this unlocks</div>
                   <div class="row g10 ac mb16" style="border:1px dashed rgba(0,0,0,.2);padding:14px;background:var(--paper)">
                     <span class="t-hd2 fdata c-quietest" style="letter-spacing:.14em">ABC-123</span>
@@ -739,7 +790,7 @@ section.surface{padding-top:56px}
                   <b class="c-ink">2.5% off their first order</b>; when they've paid it in full, you get
                   <b class="c-ink">1%</b> of it.</p>
               </div>
-              <div class="p24" style="background:var(--recessive)">
+              <div class="p24" style="background:var(--recessive);align-self:start">
                 <div class="t-label c-quiet mb10">Ready to send</div>
                 <div class="p16 mb12" style="background:var(--paper);border:1px solid var(--line)">
                   <p class="t-bd-sm c-ink">"Get your windows through OpenFrame — use my code <b>KRA-7F2</b> and
@@ -892,7 +943,7 @@ section.surface{padding-top:56px}
         <div class="screen" style="width:682px">
           <div class="ground-paper gridpaper" style="padding:40px 32px"><div style="position:relative">
             <div class="t-label c-sage mb10">Your referral code</div>
-            <div class="card sagebar p20" style="background:var(--paper)">
+            <div class="card sagebar p20">
               <div class="row jb ac g16 wr">
                 <div class="row g16 ac wr">
                   <span class="fdata sb c-ink" style="font-size:30px;line-height:1;letter-spacing:.1em">KRA-7F2</span>
@@ -1641,7 +1692,7 @@ section.surface{padding-top:56px}
           <div class="card" style="background:var(--paper)">
             <div class="px20 py12 bb5"><p class="t-bd-sm c-ink sb">5 openings</p></div>
             <div style="background:rgba(90,122,106,.07);border-top:1px solid rgba(0,0,0,.1)" class="px20 py14">
-              <div class="row jb ab mb8" style="padding-bottom:9px;border-bottom:1px solid rgba(0,0,0,.08)">
+              <div class="col g4 mb8" style="padding-bottom:9px;border-bottom:1px solid rgba(0,0,0,.08)">
                 <span class="t-cap c-sagei">Referral discount — 2.5% off, thanks to Kirra Glazing</span>
                 <span class="t-cap c-sagei md">Already in the prices above</span>
               </div>
@@ -1659,7 +1710,7 @@ section.surface{padding-top:56px}
           <div class="card" style="background:var(--paper)">
             <div class="px20 py12 bb5"><p class="t-bd-sm c-ink sb">5 openings</p></div>
             <div style="background:rgba(90,122,106,.07);border-top:1px solid rgba(0,0,0,.1)" class="px20 py14">
-              <div class="row jb ab mb8" style="padding-bottom:9px;border-bottom:1px solid rgba(0,0,0,.08)">
+              <div class="col g4 mb8" style="padding-bottom:9px;border-bottom:1px solid rgba(0,0,0,.08)">
                 <span class="t-cap c-sagei">Referral discount — 2.5% off, thanks to Kirra Glazing</span>
                 <span class="t-cap c-sagei md">Already in the prices above</span>
               </div>
@@ -2076,9 +2127,9 @@ section.surface{padding-top:56px}
       <p><b>Bulk void</b> and the batch payout bar — every mutating action is now on the row it affects.</p>
       <p><b>The commission rate</b> from every account-area screen, which closes the one real privacy leak
       in the design: a rate beside an earned amount tells a referrer what their mate spent.</p>
-      <p><b>Thirteen cards on the landing page</b> — six conditions, three steps, four FAQ — and the FAQ
-      section with them. The page is four bands now instead of seven, and roughly a third of its former
-      height. Every fact survived; only the tiles didn't.</p></div>
+      <p><b>The landing page's card count</b>, from thirteen to six: three steps and three questions. The
+      conditions moved into their own section as one panel rather than six tiles, and the long tail of FAQ
+      answers moved to a Resources article — editable without a deploy, like the T&amp;Cs.</p></div>
     <div class="flag"><b>1 · The GST sentence is still a placeholder position</b>
       <p>Everywhere the payout is described, the copy says "Amounts include any GST payable." That follows
       the decision already taken, but the exact wording is an accountant question and it must not ship

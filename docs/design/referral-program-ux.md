@@ -101,30 +101,33 @@ re-skinned. Do not chase the explorations on `design/ops-redesign-prototype`.
 **Route.** New `Page` id `"refer"`, path `/refer`, added to `PUBLIC_PAGES` in `worker/lib/shell.ts`. Hero
 image and `<head>` from the Sanity `page` record `pageId: "refer"`. Never 404s.
 
-### 3.1 Structure — four bands, no card grids
+### 3.1 Structure — six bands, alternating grounds
 
 | Zone | Ground | Contents |
 |---|---|---|
 | Hero | `ground-night` + `hero-scrim`/`hero-img` | eyebrow · `t-ds2` headline · **one sentence** · one button · one `t-cap` line |
-| How it works | `ground-paper` | `SLabel` · **three facts** as three hairline-separated rows · **the conditions panel** · the GST/tax line |
-| The join | `ground-bone` | auth-dependent — §3.3 |
-| Closing | — | `CtaBanner`, then the site footer |
+| How it works | `ground-paper` (grid decoration) | `SLabel` · `t-ds2` heading · **three cards**, hairlines collapsed |
+| The conditions | `ground-bone` | `SLabel` · `t-ds2` heading + a right-aligned framing line · **one bordered 2-column panel, six cells** · the GST/tax line |
+| The join | `ground-paper` (grid decoration) | auth-dependent — §3.3 |
+| Good to know | `ground-bone` | `SLabel` · `t-ds2` heading · **three FAQ cards** · link to the Resources article |
+| Closing | `ground-paper` | `CtaBanner`, then the site footer |
 
-**Thirteen cards became zero.** The previous draft had a six-card conditions grid, a three-card steps grid
-and a four-card FAQ. Equal-weight tiles made conditions read like features, and the page argued against the
-one-sentence simplicity the program is built on. The measure to design against is the owner's own complaint
-about the hero — they had to *focus to work out what it was trying to say*. **The whole page must survive
-one unfocused scroll on a phone.**
+Grounds must alternate — night → paper → bone → paper → bone → paper — so every seam draws itself without
+a rule. Never two of the same in a row.
 
-**The FAQ section is deleted.** Every fact it carried now lives where it belongs: "you don't need to have
-ordered" is in the hero, "no chains" and "you can't refer yourself" are the last condition, "nothing to
-apply" is inside fact 2, and "what do I see about them" is on the Referrals screen where the list actually
-is. Nothing in it was a distinct fact a tradie needed and cannot now find in one scroll. **Do not
-reintroduce a card grid on this page.**
+**Card count, not card treatment, was the problem.** Thirteen cards across three grids (six conditions,
+three steps, four FAQ) was the page arguing against its own simplicity. The fix is **six cards across two
+grids**, not zero: at 1180px a three-item text list is short paragraphs in a narrow left column with a dead
+right half, and cards are what give the desktop layout something to be.
 
-The conditions panel stays **directly under the three facts, above the join band**. Adjacency is legally
-load-bearing (ACL s 32(2); fine print cannot cure a headline). It may be made denser but it may not be
-moved below the join, put behind a link, or collapsed into an accordion.
+**The conditions are their own section because they are a different kind of information.** The three steps
+are the **offer**; the conditions are the **terms of it**. A section boundary is the honest way to stop
+conditions reading as features — better than flattening them into the offer's block. Six items in one
+bordered two-column panel read as a single table-like object, not as six competing tiles.
+
+Adjacency is legally load-bearing (ACL s 32(2); fine print cannot cure a headline), and **a section
+directly beneath the offer satisfies it** — it never required same-block. The conditions section may be
+made denser, but it may not be moved below the join band, put behind a link, or collapsed into an accordion.
 
 ### 3.2 Hero — cut to one read
 
@@ -240,32 +243,46 @@ One off-state, not two. Hero only; the conditions grid, steps, FAQ and state ban
 
 No rate, no discount, no code, in any variant.
 
-### 3.6 "How it works" — three facts, then the conditions
+### 3.6 "How it works" — three cards
 
-**The three facts.** Three hairline-separated rows (`border-top` on the group, `border-bottom` on the first
-two), max 72ch. Each row is a `.figure` numeral at 1.6rem in a fixed 34px column, then one `t-bd-lg` line
-whose first clause is `c-ink` bold and whose remainder is `c-body`. No boxes, no fills, no icons.
+`SLabel` **How it works** · `t-ds2` **Three steps, and only one of them is yours.** (max 24ch) · a
+three-column `.card` grid with collapsed hairlines (`margin-right: -1px` on the first two), the site's own
+card-track pattern. Each card: a `.figure` numeral, an `h3` at `t-bd-lg`, body at `t-bd`. Cards take the
+ground's `--card-fill` (bone on paper) — **never set a card background inline.**
 
-| # | Bold clause | Rest |
+| # | Heading | Body |
 |---|---|---|
-| 1 | Share your code. | Text it, say it over the phone, send the link. |
-| 2 | Your mate gets **[discount]** off their first order. | It's on their quote from the start — nothing to enter, nothing to apply. |
-| 3 | When they've paid it in full, you get **[rate]** of it. | Bank transfer, within **[payoutDays]**. |
+| 1 | Share your code. | Text it, say it over the phone, send the link. However you'd normally tell someone. |
+| 2 | They save. | Your mate gets **[discount] off their first order** — on their quote from the start. Nothing to enter, nothing to apply. |
+| 3 | You get paid. | Once they've paid that order in full, we transfer your **[rate]** — bank account, within **[payoutDays]**. |
 
-**The conditions panel.** One `.card` + `.panel-head` (`t-label` **The conditions**), max 72ch, six
-hairline-separated `t-bd-sm` sentences on `--paper`. Not cards, not a grid, not labelled cells — running
-sentences, because these are qualifications on a claim rather than features of an offer.
+Stacks to one column below 768px with hairlines collapsed vertically.
 
-1. It's their **first order** that counts, and it has to be a tradie who's new to us.
-2. The order needs to be at least **[minOrder]** ex GST, before delivery.
-3. It has to be placed within **[window]** of them signing up with your code.
-4. Your **[rate]** is worked out on the goods — excluding GST and delivery, not the invoice total.
-5. You'll need an **ABN** and bank details on your account — that's where we send it.
-6. You get paid for the mates you refer, not for anyone they go on to refer. And you can't refer yourself.
+### 3.7 "The conditions" — its own section
 
-Conditional seventh row, only when `capAmount != null`: *The most you can earn on one referral is **[cap]**.*
+`SLabel` **The conditions** · `t-ds2` **What qualifies, in six lines.** on the left, with a `t-bd` framing
+line bottom-aligned on the right (max 38ch):
+> The whole of it. There's no seventh condition further down, and nothing here is different in the terms.
 
-Line under the panel (`t-cap`, max 72ch):
+Then **one `.card` on `--paper`** containing a two-column grid of six cells, each a `t-label` `--quiet`
+term over a `t-bd-sm` `--ink` sentence, hairline-separated (`border-right` on the left column,
+`border-bottom` on all but the last row). One object, six rows — not six cards.
+
+| Term | Sentence |
+|---|---|
+| First order only | It's their **first order** that counts, and it has to be a tradie who's new to us. |
+| Minimum order | It needs to be at least **[minOrder]** ex GST, before delivery. |
+| How long it lasts | Placed within **[window]** of them signing up with your code. |
+| What the [rate] is on | The goods — excluding GST and delivery. Not the invoice total. |
+| How you're paid | Bank transfer within **[payoutDays]** of their payment clearing. You'll need an **ABN** and bank details on your account. |
+| No chains | You get paid for the mates you refer, not for anyone they go on to refer. And you can't refer yourself. |
+
+Conditional seventh cell, only when `capAmount != null`: `Most you can earn` / *Up to **[cap]** per
+referral.* With seven cells the grid runs 2-2-2-1; the orphan cell spans both columns.
+
+One column below 768px.
+
+Line under the panel (`t-cap`, `.measure`):
 > Amounts include any GST payable. What you do with it at tax time is between you and your accountant — we
 > don't give tax advice. [Read the full rules and terms →]
 
@@ -273,9 +290,45 @@ Line under the panel (`t-cap`, max 72ch):
 > be reviewed before launch and must not simply be deleted — a stated figure with nothing said about GST is
 > the one formulation that is definitely wrong.
 
-**Note on condition 6.** "You can't refer yourself" is a statement of the rule, not a claim that we prevent
+**Note on "No chains".** "You can't refer yourself" is a statement of the rule, not a claim that we prevent
 it. Do not write "we prevent self-referral" or "self-referral is blocked" anywhere — the same-ABN gate is a
 signal, not a control, and one person may legitimately hold several ABNs (spec A13, §4.6.6).
+
+### 3.8 "Good to know" — three questions, and the article behind them
+
+`SLabel` **Good to know** · `t-ds2` **The questions tradies actually ask.** · a three-column `.card` grid
+(cards on `--paper`, since the ground is bone), then a `Btn outline md` and a `t-cap` line beside it.
+
+- **Can I refer someone if I've never ordered?** — Yes. Any registered account can join and refer. Your own
+  order history has nothing to do with it.
+- **What does my mate actually see?** — Their quote is [discount] lower from the first price they're shown.
+  There's no code to enter at checkout and nothing for them to apply.
+- **Do I earn on the mates they go on to refer?** — No. You get paid for the mates you refer, and that's
+  it. No chains, no levels, no tiers.
+
+Below: `Btn outline md` **Referral program — full FAQ →** with, beside it, `t-cap`:
+> What you can see about the tradies you refer, what happens if an order is cancelled, how it works with a
+> second business — all in the Resources article.
+
+Three cards, not four, and the test still applies to the number: each of these is a question a tradie asks
+out loud, and none is answered by the conditions panel above. Anything else goes in the article.
+
+### 3.9 The Resources article
+
+**A Sanity `post`, rendered at `/resources/<slug>`, listed on `/resources` beside the T&Cs and the plain-English
+rules.** This is the mechanism spec §4.5 already chose for the terms, so the referral FAQ sits naturally
+next to them and inherits the same benefit: the long tail is editable by a human who is not deploying code.
+
+- Title: **Referral program — frequently asked questions**
+- The landing FAQ carries the three above; the article repeats those three and adds the long tail: what you
+  can see about the tradies you refer, what happens if their order is cancelled or refunded, how it works
+  if you run two businesses, what happens if you leave the program, when exactly the clock starts, what
+  happens if their order is under the minimum.
+- **Same figure-slot rule as everywhere else.** The article is authored content, so it is the one place a
+  human could type "2.5%" by hand and strand it when the config changes. The article must reference the
+  program page for every number rather than restating one — the same constraint spec §11 already puts on
+  the terms. Call this out to whoever writes it.
+- The landing page links out; the article links back to `/refer`.
 
 ---
 
@@ -800,8 +853,10 @@ customer response.
 | Surface | ≥1024 | 768–1023 | <768 |
 |---|---|---|---|
 | `/refer` hero | `t-ds2` 40px | 30px | 26px, button full-width |
-| Three facts | `t-bd-lg`, 34px numeral column | same | `t-bd`, 22px numeral column, 1.3rem figure |
-| Conditions panel | one column, 72ch | one column | one column, 16px gutters |
+| How it works | 3 cards, hairlines collapsed | 3 cards | stacked, hairlines collapsed vertically |
+| Conditions panel | 2-column grid, 6 cells | 2 columns | 1 column, hairline rows |
+| Conditions heading row | h2 left, framing line right | stacked | stacked, framing line hidden |
+| Good to know | 3 cards | 3 cards | stacked; FAQ button full-width |
 | Join flow | split 1.1fr/.9fr | stacked (right pane below) | stacked, button full width |
 | Payout fields | 2-column grid | 1 column | 1 column |
 | Earnings strip | 3 cells in a row | 3 cells | stacked cells |
@@ -823,7 +878,7 @@ The account rail folds into the site drawer below 1024 as today; Referrals joins
 - A half-joined membership state, or any screen explaining one.
 - Progress indicators, streaks, badges, leaderboards or a referral "level".
 - Any batch or bulk mutation, in ops or the account area.
-- An FAQ, a steps grid, or any repeated-card block on `/refer`. Cards were carrying rhythm, not facts.
+- A fourth card in either `/refer` grid. Three and three is the budget; anything else goes in the article.
 
 ---
 
@@ -855,10 +910,14 @@ The account rail folds into the site drawer below 1024 as today; Referrals joins
   - I have **not** added the suggested referrer-side reassurance ("your mate is told you get paid…"),
     because with the disclosure removed it would not be true. If the owner wants that reassurance, the only
     honest way to earn it is to put the line back on the referred tradie's side.
-- **The landing page no longer restates anything.** Cutting thirteen cards means each fact appears exactly
-  once, so a reader who skips the conditions panel has no second chance at the minimum order or the window.
-  That is the correct trade — repetition was costing comprehension of the whole page — but it puts more
-  weight on that one panel, which is why it may be made denser and may not be moved, hidden or collapsed.
+- **The landing page states each condition once.** Thirteen cards down to six means a reader who skips the
+  conditions section has no second chance at the minimum order or the window. That is the correct trade —
+  repetition was costing comprehension of the whole page — but it puts weight on that one panel, which is
+  why it may be made denser and may not be moved, hidden or collapsed.
+- **The FAQ long tail now lives outside the repo.** Six answers move into a Sanity post, which is the point
+  — but it means they are no longer reviewed by the same pipeline as the rest of this copy, and they are
+  the one place a hand-typed "2.5%" could strand. §3.9 states the constraint; someone has to enforce it at
+  authoring time.
 - **A referred tradie still cannot verify their discount.** No published list price means "2.5% off" has
   nothing visible to be off. That is what makes showing the increment alone safe, and it means the claim
   rests on trust. A tradie who priced a job anonymously before signing up will see the price move by more
@@ -883,8 +942,7 @@ a document that now describes something different from what will be built.
 | Bulk void | spec §8.4(b), AC-67; design §10.3 `bulk-void` | Replaced by per-row void with a reason |
 | The batch `Mark paid` control | spec §8.4(c); design §10.3 `mark-paid {userIds}` | Becomes per-referrer-row `Record payment` with its own reference |
 | The disclosure line to the referred tradie | this document, rev 1 §5.6 | Owner decision |
-| The `/refer` FAQ section | spec §8.1 ("…link to the rules/T&Cs post; FAQ") | Deleted. Every fact relocated to the hero, the conditions panel or the Referrals screen. The rules/T&Cs link stays |
-| The `/refer` three-step card grid and six-card conditions grid | spec §8.1 ("three steps; what qualifies") | Both survive as **content**; neither survives as a card grid. Three facts as three lines, conditions as one panel |
+| The six-card conditions grid on `/refer` | spec §8.1 ("what qualifies") | Survives as **its own section** with one bordered 2-column panel — same six facts, one object instead of six tiles |
 
 ### Changed
 
@@ -901,6 +959,12 @@ a document that now describes something different from what will be built.
 | **Referral status vocabulary** | `signed_up`\|`quoting`\|`ordered`\|`paid_in_full`\|`not_eligible` | `signed_up`\|`ordered`\|`paid_in_full`\|`expired`\|`not_eligible`; `quoting` absorbed into `signed_up`, `void` presented as `not_eligible` |
 | **Ops payouts response** | `{ ready, accruing, readyTotal }` | `{ ready, readyTotal }`. `overPromise` and `daysWaiting` **stay** — they earn their place on ACL s 32(2) grounds alone |
 | **Mark failed** | `POST /payouts/:id/failed` | one reversal action with a **required reason**, covering both a bounce and a mis-recorded payment |
+
+### Added
+
+| Item | Where | Note |
+|---|---|---|
+| **A `Referral program — FAQ` Sanity `post`**, rendered at `/resources/<slug>` and listed on `/resources` | new; §3.9 | Sits beside the T&Cs and plain-English rules, which spec §4.5 already puts there. Carries the long tail so the landing page stays short, and is editable without a deploy. **Subject to the same no-typed-figures rule as the terms** (spec §11) — it references the program page for every number |
 
 ### New criteria worth adding
 
