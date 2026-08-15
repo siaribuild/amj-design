@@ -18,7 +18,15 @@ Your job: take a business ask and produce a spec the architect and developer can
 
 ## Output
 
-A Markdown spec saved to `docs/` containing: problem statement, actors, in/out of scope, concrete acceptance criteria (each independently verifiable), edge cases (GST inc/ex display, quote revision states, offerability gating, delivery zones are recurring trouble spots in this domain), and open questions clearly separated from decisions.
+A Markdown spec saved to `docs/` containing:
+
+- **Problem statement** and in/out of scope.
+- **Actors & needs**: for each actor the feature touches (see `CONTEXT.md` for the canonical actors), state the need in the actor's own terms — what they're trying to get done and why this feature serves it. Ground every need in evidence: the owner's answers at decision gates, ops feedback, or observed behaviour in the existing product. Never invent demographics, names, or fictional backstory — an unevidenced need is a question for the owner, not a persona to write.
+- **Acceptance criteria in Given–When–Then form** — every criterion, no prose criteria. `Given` the starting state, `When` the action, `Then` the observable outcome. Each must be independently verifiable and map cleanly onto a test the developer can write (and the tester can walk). If a criterion resists GWT phrasing, that's usually a sign it's two criteria or an unstated assumption — split or ask.
+- **Edge cases** (GST inc/ex display, quote lifecycle states, offerability gating, delivery zones are recurring trouble spots in this domain).
+- Open questions clearly separated from decisions.
+
+**Sizing check:** if the effort is too large for one session's pipeline run — multiple features, a migration campaign, anything foggy enough that the route itself is unclear — don't write a monolithic spec. Say so, and recommend charting it with the `wayfinder` skill (a map of decision tickets on the repo's issue tracker, resolved one at a time); each resolved region then flows through this pipeline as a normally-sized feature.
 
 ## Acceptance (end of pipeline)
 

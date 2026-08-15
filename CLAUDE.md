@@ -17,6 +17,10 @@ For substantive work — a new capability, schema change, or anything spanning m
 
 Pass each agent the previous agent's output. Steps 7–8 findings go back through the developer loop like any review.
 
+### Oversized efforts: wayfinder first
+
+When an effort is too big for one session's pipeline run — multiple features, a foggy migration, a route that isn't visible yet — chart it with the `mattpocock-skills:wayfinder` skill **before** the pipeline: a map issue plus decision tickets on the tracker (see `docs/agents/issue-tracker.md`), resolved one at a time. Each resolved region then runs through the pipeline as a normally-sized feature. The product-manager is instructed to flag when an ask needs this instead of a monolithic spec.
+
 ### Sizing: which stages engage
 
 - **Full pipeline** — anything that adds/changes a business rule or capability, touches DB schema/migrations, spans multiple concerns, or raises a question only the user/spec can answer. When any stage would have a real decision to make, it runs.
@@ -66,6 +70,14 @@ Every loop in this pipeline must converge or escalate — never grind:
 - **Codex infrastructure failure ≠ review findings.** If the gate blocks with a *task failure* (network, service outage, auth, quota, timeout) rather than actual findings: retry once, and if it fails again, stop and tell the user plainly — the work is done but unreviewed, and the options are (a) wait and run `/codex:review --wait` later, (b) temporarily disable the gate with `/codex:setup --disable-review-gate` and re-enable after, or (c) user pressing Esc to end the turn. Never grind retries against a dead service, and never present unreviewed work as reviewed. If the gate *silently skips* because the Codex CLI is missing (that path fails open), flag the missing review to the user rather than letting it pass unmentioned.
 - **Security hooks (security-guidance + semgrep plugins):** pattern warnings on edits, semgrep scanning around tool use, and an LLM security diff-review on Stop — all automatic. Additionally, when a feature touches auth (customer/ops boundary), file uploads, payments, or session handling, the orchestrator runs the `security-review` skill on the branch before the product-manager acceptance step; its findings route to the developer like any review.
 - **agent-guard** (`.claude/hooks/agent-guard.mjs`): mechanically enforces the runaway caps — near-identical agent respawns, >20 agent spawns/session, >8 messages to one agent, >5 workflow runs all pause for explicit user approval. If it fires, treat it as a stall signal: diagnose, don't just re-approve. Thresholds: `.claude/hooks/agent-guard.config.json` (optional).
+
+## Agent skills
+
+Per-repo configuration for the mattpocock engineering skills lives in `docs/agents/`:
+
+- `issue-tracker.md` — issues live on GitHub Issues at `siaribuild/apertly` (always pass `-R siaribuild/apertly` to `gh`); wayfinder maps are issues labelled `wayfinder:map` with decision tickets as sub-issues.
+- `domain.md` — single context: `CONTEXT.md` at root, ADRs in `docs/adr/`.
+- `triage-labels.md` — default five-label triage vocabulary.
 
 ## Commands
 
