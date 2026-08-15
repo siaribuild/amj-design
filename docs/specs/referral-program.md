@@ -1,14 +1,14 @@
 # Referral program — specification
 
 Branch: `feat/referral-program`
-Status: **revision 9 — FINAL. Every owner decision is answered; §12 is empty.**
+Status: **revision 10 — FINAL. Every owner decision is answered; §12 is empty.**
 Author: product-manager
 Date: 2026-08-15
 
 **Revision 2:** rate set to 1% and every number moved into ops config · cap removed (field kept,
-nullable) · minimum payout balance added (default off) · bank-detail audit logging dropped · terms
-drafted-pending-review rather than absent · launch ON · **program became double-sided — the referred
-tradie gets a discount on their first order (§4.6), which puts this feature inside the pricing path.**
+nullable) · minimum payout balance added (default off) · terms drafted-pending-review rather than
+absent · launch ON · **program became double-sided — the referred tradie gets a discount on their
+first order (§4.6), which puts this feature inside the pricing path.**
 
 **Revision 3:** discount settled at **2.5%, as a percentage** through the existing pricing step
 (fixed-dollar and free-delivery recorded as rejected alternatives) · stacking **additive**, no ceiling ·
@@ -30,29 +30,29 @@ ACL s 32(2) (§4.8) · A13's claim softened.
 "details missing" state is the **primary entry surface**, not an error; M11/M12 reconciled into one
 rule; `payout_timeframe_days` = 14 confirmed; **A18 and D18 kept un-conflatable** (§4.9.4, AC-87).
 
-**Revision 9 — the program has two states, and this revision is mostly deletion.**
+**Revision 9 — two states, not three.** The owner collapsed the program status to **On/Off**, and Off
+means *come back later*: the landing page is unchanged apart from one banner, and the join journey
+stops after login (§4.7). Everything a terminated state would have needed was deleted.
 
-Revisions 6–8 specified a three-state program (`active` / `paused` / `terminated`) and, in revision 8,
-a set of behaviours for the terminated public page. **The owner had already collapsed the status to
-On/Off, and Off means *come back later*, not *gone*:** *"leaving landing page as-is and stopping the
-journey after login only: future looking statement 'program being reimagined, come back later.'
-type… it feels least involving and hardly any damage is done as well."*
+**Revision 10 — three corrections found during implementation. All surgical; nothing else moves.**
 
-**There is no terminated state, so there is no termination surface to specify** — and the reason is
-structural rather than a matter of convenience (§4.7). Deleted outright: the ended-notice page variant,
-the `noindex` branch, the conditional sitemap entry, the head/OG rewrite, the status-dependent `/r/`
-destination, the disappearing footer link, the terminate confirmation copy, and the paused-vs-terminated
-fencing that existed only to keep two states apart. **AC-63 and AC-62 collapse into one criterion for
-the Off state; §12A.2 is gone.**
-
-**What Off changes, in full:** new referrals are not recorded, the join journey stops after login with
-a forward-looking message, and **one banner** appears on an otherwise unchanged landing page. That is
-all (§4.7).
-
-**Added:** that banner, with its reason — ACL **s 18** and **s 32(1)** (§4.7). **Kept and unchanged:**
-**AC-89** (the `/r/<CODE>` noindex bundle) and **AC-90** (FAQ governance), which stand on their own in
-any status. **Explicitly unaffected by the deletion:** everything about honouring money and discounts
-already promised (§4.7, AC-64/65/66) — none of it was ever a property of the public page.
+1. **AC-82(a) was self-contradictory and is fixed.** It required the payout bank-detail access log to
+   reuse `audit_event`; AC-82(b), §7.1 and §6 all forbid the log having any viewer. **`audit_event`
+   has a global viewer** — `GET /api/ops/audit` (`worker/routes/ops.ts:2096`) returns the last 200 rows
+   across **all** entity types when no `?entity` filter is given, so anything written there appears on
+   the ops Audit screen. Reusing it would have silently built the screen the owner refused, which was
+   the whole basis of their agreeing to the log. **The log now requires a dedicated
+   `payout_details_access` table with no read path anywhere, and `audit_event` is forbidden for this
+   purpose** (§7.1, §6, AC-82).
+2. **`referral_program` must survive `npm run db:reset`.** It is configuration written by the
+   migration and never recreated by `seed.sql`; clearing it would leave the program permanently
+   unconfigured. The four transactional tables are cleared, the config table is spared — the same
+   treatment `pricing_policy` and the rate cards already get (§7).
+3. **The "every pricing surface" claim was overstated.** `loadAccountDiscount` does have exactly two
+   callers, but `computePrice` has a third — `previewSample` in `worker/lib/pricing-admin.ts:314`, the
+   ops rate-card tuning preview, which prices a synthetic sample with **no user context and therefore
+   no discount**. That is correct and must stay that way; §4.6.1 and AC-51 now say so, so nobody
+   "fixes" it into applying the composition.
 
 > **Six things that must survive to implementation.** These are the ones most likely to be lost, or
 > "helpfully improved", between this document and working code:
@@ -70,13 +70,11 @@ already promised (§4.7, AC-64/65/66) — none of it was ever a property of the 
 > 4. **AC-87 — D18 gates on being PAYABLE, never on having PURCHASED.** No API, query, table or line of
 >    copy may condition any referrer capability on the referrer's own order history. "You must be a
 >    customer to refer" is the ACL s 49 fact pattern — strict liability, penalties to $100m.
-> 5. **§4.6.6 — the same-ABN gate cannot fire at the moment the discount is granted** for the referred
->    side, **and does not prove common identity even when it does fire**. The containment argument, not
->    the gate, is what makes the discount safe. **No later revision may upgrade this to "blocked
->    automatically".**
+> 5. **AC-82 — the access log has its own table and no reader.** Not `audit_event`, which has a global
+>    viewer. A later reviewer seeing a bespoke table where a shared one exists will want to "correct"
+>    it; §7.1 records why that would undo the owner's concession.
 > 6. **§8.6 — the panel is an offer with a deadline, not a receipt.** Accurate about mechanics (the
->    price already includes it; there is no redemption step) but urgent in tone, because the owner's
->    rationale is that this is *"an incentive to place an order"*.
+>    price already includes it; there is no redemption step) but urgent in tone.
 
 ---
 
@@ -283,17 +281,25 @@ conditional modifiers, and BEFORE the $10 rounding". In the engine:
 - `worker/lib/estimator/pricing.ts:292` — `loadAccountDiscount(env, userId)`, which resolves the
   percentage **server-side from the owning user**, never from the request: *"a percentage off the
   price is exactly the field a browser would love to supply."*
-- Two callers, and they are the only two: the batch pricer `pricerFor` (:334) and the single-line path
-  (:405). Both take `ownerUserId`. **Every pricing surface funnels through them** — the customer price
-  preview (`worker/routes/projects.ts:171`), the save path, and the ops staff preview and re-price,
-  which already go out of their way to price *in the project owner's context* precisely so "an account
+- **`loadAccountDiscount` has exactly two callers**: the batch pricer `pricerFor` (:334) and the
+  single-line path (:405). Both take `ownerUserId`. **Every pricing surface that prices a real
+  customer's line funnels through them** — the customer price preview
+  (`worker/routes/projects.ts:171`), the save path, and the ops staff preview and re-price, which
+  already go out of their way to price *in the project owner's context* precisely so "an account
   discount is neither invented nor dropped" (`worker/routes/ops.ts:1081`).
+
+**One deliberate exception, and it must stay an exception.** `computePrice` — the pure arithmetic
+underneath — has a **third** caller that bypasses `loadAccountDiscount` entirely: `previewSample` in
+`worker/lib/pricing-admin.ts:314`, the ops rate-card tuning preview. It prices a **synthetic** sample
+against possibly-unsaved rates, with no project and no owner, so no discount of any kind applies. That
+is correct: a rate card is a rate card, and showing a customer discount on a rate-tuning screen would
+misreport the thing being tuned. **It must not be "fixed" to compose the referral discount** (AC-51).
 
 **Therefore:** the referral discount is not a new pricing concept, a new totals row, a new order column
 or a new money panel. It is an additional input to the one function that already answers *"what
 percentage off does this user get?"* — `loadAccountDiscount` becomes the single place that composes
-account discount + referral discount, and every surface inherits it with no duplication. This is the
-house rule ("extend, don't duplicate") satisfied literally.
+account discount + referral discount, and every customer-facing surface inherits it with no
+duplication. This is the house rule ("extend, don't duplicate") satisfied literally.
 
 Consequences that fall out for free, and which the architect should not re-solve:
 
@@ -482,9 +488,8 @@ page resolves both, and is the least-involving thing that does.
 
 #### Switching Off honours what was already promised
 
-**One rule, two limbs, and it is unaffected by everything deleted in revision 9 — none of it was ever a
-property of the public page.** Off stops *new attribution*. It withdraws nothing already promised to a
-real person, and the two limbs must be implemented and tested together so they cannot drift apart:
+**One rule, two limbs.** Off stops *new attribution*. It withdraws nothing already promised to a real
+person, and the two limbs must be implemented and tested together so they cannot drift apart:
 
 - **Limb 1 — money.** A `pending` earning still confirms when its order reaches `balance_paid`, and a
   `confirmed` earning is still paid out in the next run, within the stated timeframe (M14). (AC-65)
@@ -641,26 +646,32 @@ Plus the disclosure obligation from §4.8b (AC-81).
 10. Transactional emails: referral recorded, earning confirmed, payout sent, and the 30-day
     discount-expiry reminder.
 11. Migration `0051_referral_program.sql` (next after `0050_order_line_position.sql`).
-12. **A minimal, invisible access log for payout bank details** (§7.1) — a write path only.
+12. **A minimal, invisible access log for payout bank details** (§7.1) — its own table, a write path
+    only, no reader anywhere.
 13. **The `/r/<CODE>` indexing directives and the FAQ governance rule** (§12A).
 14. Privacy policy update covering bank details and referral data; rules + T&Cs published as Sanity
     posts from the text the coordinator supplies.
 
 ## 6. Out of scope
 
+- **Writing the payout-details access log to `audit_event`** — actively wrong, not merely a style
+  choice: that table has a global viewer (§7.1, AC-82).
+- **Any UI for the payout-details access log** — no screen, no report, no filter, no export (§7.1).
 - **Any status-dependent behaviour on `/refer` beyond the single banner** — no ended-notice variant, no
   `noindex` branch, no conditional sitemap entry, no head or Open Graph rewrite, no auth-dependent
   server branching (§4.7).
 - **A third program status.** There is `active` and `off`. Anything naming *paused* or *terminated* is
   a leftover from a superseded revision — and §4.7 records why a third state was never going to be
   clean.
+- **Applying the referral composition to the ops rate-card preview** (`previewSample`) — it prices a
+  synthetic sample with no customer, and a discount there would misreport the rate being tuned
+  (§4.6.1, AC-51).
 - **A `robots.txt` disallow for `/r/`** — actively wrong, see §12A.1.
 - **A canonical link between the landing page and the FAQ article** — actively wrong, see §12A.2.
 - **A "blocked on missing details" group in the payouts queue** — unreachable by construction under
   D18 and not built (§8.4c).
 - **Unclaimed-money machinery** — no ops flag, no chasing workflow, no aged-earnings report. D18
   removes the state that would need them.
-- **Any UI for the payout-details access log** — no screen, no report, no filter, no export (§7.1).
 - **Any path by which a referrer supplies a mate's name, phone, email or other contact detail**
   (§7.0, AC-78). A compliance boundary, not a backlog item.
 - **Any predicate anywhere that conditions a referrer capability on the referrer's own orders**
@@ -699,6 +710,7 @@ architect owns the final schema — but these invariants are not negotiable:
   *Two tables, not one*: voiding a relationship and voiding a payment are different acts.
 - `referral_payout` — one row per referrer per payment run: amount, status, reference, `paid_at`,
   `paid_by`, note, **and a frozen copy of the ABN, BSB, account number and account name used**.
+- `payout_details_access` — **the access log, in its own table with no read path anywhere** (§7.1).
 - `referral_program` — singleton config (`id='default'`), versioned like `pricing_policy`
   (`migrations/0015_estimator_pricing.sql:35`): **`status` (`active`|`off`) — two values, not three**,
   `referrer_reward_active`, `referred_discount_active`, `rate_percent` (default 1), `cap_amount`
@@ -715,6 +727,12 @@ architect owns the final schema — but these invariants are not negotiable:
 
 **The migration is additive only.** It must not rewrite, recompute or touch a single existing
 `quote_line.line_total`, `order_line.line_total`, `"order".total` or `payment.amount` — AC-49c.
+
+**`referral_program` is configuration and must survive `npm run db:reset`.** The transactional tables
+(`referral`, `referral_earning`, `referral_payout`, `payout_details_access`) belong in `clear.sql`; the
+config row does **not**, because it is written by the migration and never recreated by `seed.sql` — so
+clearing it would leave the program permanently unconfigured and every advertised figure blank. This is
+the same treatment `pricing_policy` and the rate cards already get, and for the same reason.
 
 **Single-source rules that must not be violated:**
 
@@ -767,11 +785,19 @@ logs of access to financial information among its APP 11 security expectations, 
 **What is in:**
 
 - Every read and every change of payout bank details records **who, which record, and when**.
-- **Reuse the existing `audit_event` table** (`migrations/0001_customer_core.sql:179`) — one place per
-  fact.
-- **The log records the fact of access, never the value.** `before_json`/`after_json` must **not**
-  contain the BSB or account number. Copying the details into a log to protect the details is
-  self-defeating.
+- **Its own table — `payout_details_access` — with no read path anywhere.** *(Corrected in revision
+  10; revisions 6–9 said to reuse `audit_event` and were wrong.)*
+- **The log records the fact of access, never the value.** The row must **not** contain the BSB or
+  account number. Copying the details into a log to protect the details is self-defeating: it puts
+  sensitive data in a second place and widens the exposure the log exists to detect.
+
+**Why not `audit_event`, which would otherwise be the obvious "one place per fact" choice.** Because
+**`audit_event` has a global viewer.** `GET /api/ops/audit` (`worker/routes/ops.ts:2096`) returns the
+last 200 rows across **all** entity types whenever no `?entity` filter is supplied — so anything
+written there is on the ops Audit screen by default. Reusing it would have silently created exactly the
+screen the owner refused, and their refusal is the reason the log exists at all. A dedicated table with
+no reader is the only shape that satisfies both halves of the requirement. **A later reviewer seeing a
+bespoke table where a shared one exists should read this paragraph before "correcting" it.**
 
 **What is explicitly out — a constraint, not an omission:** **no UI, screen, tab, report, export,
 filter or workflow.** The owner accepted this on the basis that it is a table nobody looks at until
@@ -1178,8 +1204,12 @@ Four parts, all required:
 - **AC-50** The discount is applied by the **single existing discount step** in
   `worker/lib/estimator/pricing.ts` — there is no second place in the codebase where a referral
   discount is subtracted from a price. Verified by inspection as well as by test.
-- **AC-51** The same discounted figure is produced by every pricing surface for the same line: the
-  customer price preview, the save path, and the ops staff preview/re-price in the owner's context.
+- **AC-51** *(amended r10)* The same discounted figure is produced by every pricing surface that prices
+  **a real customer's line**: the customer price preview, the save path, and the ops staff
+  preview/re-price in the owner's context. **The ops rate-card preview (`previewSample`,
+  `worker/lib/pricing-admin.ts:314`) is explicitly excluded and must stay excluded** — it prices a
+  synthetic sample with no project and no owner, so no discount applies and none should; a discount
+  there would misreport the rate being tuned (§4.6.1).
 - **AC-52** The price snapshot records the account and referral components **separately** (server-side),
   so a stored total can be decomposed and reproduced.
 - **AC-53** Once the referred account's first order exists, the next pricing event on any of their
@@ -1280,11 +1310,14 @@ Four parts, all required:
   forward-looking message at the top, and below it their referrals, earnings, holds, payment details
   and payout history, all still working. A referrer **without** history sees the message and the
   invitation to come back. The §8.6 offer panel is unaffected for anyone whose discount is still live.
-- **AC-82** **The payout-details access log exists, is written, and has no interface.** (a) Viewing or
-  changing payout bank details writes an `audit_event` recording actor, record and time; (b) that
-  record contains **no BSB or account number** in any field; (c) **no route, screen, tab, report,
-  export or API endpoint exposes the log** — customer-facing or ops. Building one is a failure of this
-  criterion, not an enhancement.
+- **AC-82** *(amended r10)* **The payout-details access log exists, is written, and has no reader.**
+  (a) Viewing or changing payout bank details writes a row to the **dedicated `payout_details_access`
+  table** recording actor, record and time — **not to `audit_event`, which is forbidden for this
+  purpose because it has a global viewer** (`GET /api/ops/audit`, `worker/routes/ops.ts:2096`, returns
+  all entity types when unfiltered, so a row written there would appear on the ops Audit screen and
+  create exactly the surface the owner refused); (b) the row contains **no BSB or account number** in
+  any field; (c) **no route, screen, tab, report, export or API endpoint reads the table** —
+  customer-facing or ops. Building a reader is a failure of this criterion, not an enhancement.
 
 ### Landing page, placements, search and configurability
 - **AC-33** `/refer` is reachable, server-renders its `<head>` from the Sanity `page` record with site
@@ -1310,6 +1343,11 @@ Four parts, all required:
   and cross-canonicalising asks a search engine to discard one; (d) if FAQ structured data is ever
   added, it appears on exactly one of the two pages. Verified at copy review (T7/T9) against the
   rendered pages, not the source.
+- **AC-91** *(new r10)* **`npm run db:reset` leaves the program configured.** `clear.sql` empties the
+  four transactional tables (`referral`, `referral_earning`, `referral_payout`,
+  `payout_details_access`) and **does not touch `referral_program`** — after a reset the config row
+  still holds its values and every advertised figure still renders, exactly as `pricing_policy` and the
+  rate cards already behave.
 
 ### The On/Off switch
 - **AC-62** **Off changes exactly three things, and nothing else.** With `status='off'`:
@@ -1370,7 +1408,7 @@ Australian primary sources (ACCC / ATO / OAIC), at
 - **No number appears in the terms as a literal.** Where the terms must state a rate, minimum, window or
   payment timeframe, they reference the published program page (§4.5).
 
-**Copy obligations carried by this revision**, for the coordinator's terms pass: the payment-timeframe
+**Copy obligations carried by this spec**, for the coordinator's terms pass: the payment-timeframe
 sentence conditioned on the entry rule; the threshold-hold disclosure whenever a threshold is set; the
 ops-screen warning text for enabling `min_payout_balance`; the A18/D18 two-facts rule (§4.9.4) applied
 to every sentence that mentions either; and **the Off-state banner and post-login message** (§4.7).
@@ -1414,8 +1452,9 @@ Items still requiring the owner's accountant or a lawyer:
 
 **None. This list is empty.**
 
-All eighteen decisions raised across revisions 1–9 (D1–D18) are answered. Nothing rests on an
-unapproved assumption, and there are no `ASSUMED:` tags left to veto.
+All eighteen decisions raised across revisions 1–10 (D1–D18) are answered. Nothing rests on an
+unapproved assumption, and there are no `ASSUMED:` tags left to veto. Revision 10 fixed three
+implementation-found defects in this document; none of them reopened a decision.
 
 Two things I decided myself that the owner may still want to veto, flagged rather than buried:
 
@@ -1474,22 +1513,23 @@ The architect's design owns the final sequencing; this is the product view of wh
 end with.
 
 1. **T0/T1 — Golden capture, schema + config API.** Pricing fixtures captured from `main` first
-   (AC-49a), then migration `0051`, `worker/lib/referrals.ts` skeleton, `GET /api/referral/program`,
-   ops program GET/PUT including the On/Off switch and the threshold acknowledgement.
+   (AC-49a), then migration `0051` (including `payout_details_access`), `worker/lib/referrals.ts`
+   skeleton, `GET /api/referral/program`, ops program GET/PUT including the On/Off switch and the
+   threshold acknowledgement, **and the `clear.sql` split — four transactional tables cleared, the
+   config row spared** (AC-91).
 2. **T2 — Pricing composition.** Extend `loadAccountDiscount` (additive, server-side only); snapshot
    breakdown; eligibility ends on first order or expiry; the AC-72 re-price. **Highest-risk ticket —
    it carries AC-49 in full.** *Demo: two identical quotes, one referred, side by side, plus the
    unchanged fixture run.*
-3. **T3 — Codes and attribution.** Payability predicate, payout-details endpoint, code withheld until
-   complete, dormancy, `/r/<CODE>` with its **noindex directive** (AC-89), cookie, `findOrCreateUser`
-   hook, manual claim, all §4.2 gates, **the §7.0 boundary enforced at the endpoint layer** (AC-78),
-   **and the A18/D18 separation regression test** (AC-87).
+3. **T3 — Codes and attribution.** Payability predicate, payout-details endpoint **and its access-log
+   write** (AC-82), code withheld until complete, dormancy, `/r/<CODE>` with its **noindex directive**
+   (AC-89), cookie, `findOrCreateUser` hook, manual claim, all §4.2 gates, **the §7.0 boundary enforced
+   at the endpoint layer** (AC-78), **and the A18/D18 separation regression test** (AC-87).
 4. **T4 — Earning lifecycle.** Earning on order creation, confirm at `balance_paid` for a payable
    referrer, hold at `pending` otherwise, void on cancel/refund, expiry sweep, post-discount ex-GST
    base, payment-timeframe stamping.
 5. **T5 — Account area (both screens).** The referrer's Referrals section — **entry state first**
-   (AC-83) — and the referred tradie's §8.6 offer panel. Includes the §7.1 access-log write path, and
-   no viewer.
+   (AC-83) — and the referred tradie's §8.6 offer panel.
 6. **T6 — Quote surface.** The discount indicator on the money panel and issued quote; ops
    project-record visibility and review flags.
 7. **T7 — Landing page and placements.** `/refer` in all its states, the Sanity `page` record, sitemap
