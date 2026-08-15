@@ -1,309 +1,186 @@
 # Referral program — interaction specification
 
 Branch: `feat/referral-program`
-Status: **revision 1 — awaiting the UX mock gate.** Nothing in this document may be implemented until the
-owner has approved `docs/mocks/referral-program.html`.
+Status: **revision 2 — awaiting the UX mock gate.** Nothing here may be implemented until the owner has
+approved `docs/mocks/referral-program.html`.
 Author: ux-designer
 Date: 2026-08-15
 
 **Inputs.** Spec `docs/specs/referral-program.md` rev 6 · amendment `referral-program-pending-amendments.md`
-(D18) · design `docs/design/referral-program.md` rev 2 (ADR-8, §10 API contracts) · legal research
-`referral-program-legal-research.md` §§4.1, 4.3, 4.5, 5.1, 5.4, 10.
+(D18) · design `docs/design/referral-program.md` rev 2 (ADR-8, §10) · legal research
+`referral-program-legal-research.md` §§4.1, 4.3, 4.5, 5.1, 5.4, 10 · owner revision feedback 2026-08-15.
 
-**The mock is the contract.** `docs/mocks/referral-program.html` shows every screen and state named here.
-Where this document and the mock disagree, the mock is wrong and this document is right — but say so, and
-fix the mock, rather than building the difference.
+**The mock is the contract.** Where this document and the mock disagree, fix the mock — but say so.
+
+> ### Revision 2 changed the shape of the feature. §14 lists every spec and design item that must be
+> amended to match. Read it before building, and route it to the product-manager and architect.
 
 ---
 
-## 0. The five rules that outrank everything else in this document
+## 0. The rules that outrank everything else here
 
-Written first because each is the sort of thing a well-intentioned change quietly breaks.
-
-1. **No customer-facing surface ever prints a combined discount.** The referred tradie sees the referral
-   percentage and nothing else. A total discloses the standing account discount by subtraction. (AC-75)
+1. **No customer-facing surface prints a combined discount.** The referred tradie sees the referral
+   percentage and nothing else. (AC-75)
 2. **No copy makes the referrer's reward conditional on the referrer's own purchase.** "Any account can
-   refer" and "we need your payment details" are two facts, rendered as two visually separate statements,
-   on every surface that states either. (AC-79, ADR-8d)
-3. **There is no field anywhere into which a referrer types a mate's name, phone or email.** No invite, no
-   share-by-email that we send, no contact picker, no recipient field. (AC-78)
-4. **No program figure is ever typed into a string.** Every number renders from
-   `GET /api/referral/program`. (AC-76)
-5. **Payout figures do not respond to `price_gst_mode`; the referred tradie's discount does.** A payout is
-   cash and has no ex/inc pair. The discount sits inside `line_total` and moves with the preference like
-   every other price. (AC-31, AC-56, AC-74)
+   join" and "we need your bank details" are two facts, and they now live on *different steps* — the first
+   in the hero and on the join screen, the second inside the join flow's second part. They are never
+   adjacent, so they cannot be read as one condition. (AC-79, ADR-8d)
+3. **There is no field anywhere into which a referrer types a mate's name, phone or email.** (AC-78)
+4. **No program figure is typed into a string.** Everything renders from `GET /api/referral/program`. (AC-76)
+5. **Payout figures ignore `price_gst_mode`; the referred tradie's discount honours it.** (AC-31, AC-56)
+6. **The commission rate never appears on any account-area screen.** It lives on `/refer` and in the terms.
+   A rate beside an earned amount is invertible — 1% and $45.00 tells the referrer their mate spent $4,500.
+   (New in revision 2; legal research §5.4.)
+7. **Every mutating action lives on the row it affects.** No batch bars, no selection checkboxes, no
+   "apply to selected", anywhere in ops. Search, filters and CSV export may stay above a table — they
+   change nothing, so they have no wrong target.
+8. **No acknowledgement or "I understand" checkboxes, ops or customer side.** If a rule matters, enforce it
+   in code or the data model. A control that blocks a save while changing no behaviour is theatre, and it
+   shifts the appearance of responsibility onto someone who isn't carrying it. Two things this does *not*
+   cover: the type-TERMINATE confirmation (a guard against an accidental destructive act by the person
+   performing it) and the customer's acceptance of the terms in the join flow (the click *is* the operative
+   act).
 
 ---
 
 ## 1. Copy slots and formatting
 
-Every figure below arrives in `ReferralProgramPublic` (design §10.2). **Formatters, not string
-concatenation** — pluralisation and currency must be handled by the slot, or `window_months = 1` prints
-"1 months".
+Figures arrive in `ReferralProgramPublic`. **Formatters, not string concatenation** — otherwise
+`windowMonths = 1` prints "1 months".
 
 | Slot | Source | Renders as | Notes |
 |---|---|---|---|
 | `[discount]` | `discountPercent` | `2.5%` | trailing `.0` stripped: `5%`, not `5.0%` |
-| `[rate]` | `ratePercent` | `1%` | same rule |
-| `[minOrder]` | `minOrderAmount` | `$2,000` | `Intl.NumberFormat en-AU`, no cents when whole |
+| `[rate]` | `ratePercent` | `1%` | **`/refer` and the terms only** — never in the account area |
+| `[minOrder]` | `minOrderAmount` | `$2,000` | `moneyRound()`; no cents when whole |
 | `[window]` | `windowMonths` | `12 months` | pluralised |
 | `[payoutDays]` | `payoutTimeframeDays` | `14 days` | pluralised |
-| `[cap]` | `capAmount` | *nothing at all* when `null` | never an empty slot, never "up to $" (AC-35) |
-| `[threshold]` | `minPayoutBalance` | *nothing at all* when `0` | whole sentences vanish, not just the number (AC-61) |
+| `[cap]` | `capAmount` | *nothing at all* when `null` | gates a whole sentence, never an empty slot (AC-35) |
 | `[referrer]` | referral row | business name, else masked email | |
 | `[expiry]` | `expiresAt` | `14 MAR 2027` | `fmtDate` from `accountModel.tsx` |
 
-`[cap]` and `[threshold]` gate **whole sentences**, not words. Build them as conditional nodes, not as
-interpolations that can render blank.
+**`minPayoutBalance` / `[threshold]` is deleted.** See §14.
 
-**Currency helper.** Every dollar figure uses `money()` from `src/pages/accountModel.tsx` (`$1,240.00`,
-cents always). The only exception is `[minOrder]` in prose, which reads `$2,000` — implement as a separate
-`moneyRound()` and use it nowhere else.
+Dollar figures use `money()` from `accountModel.tsx` (`$1,240.00`). The one exception is `[minOrder]` in
+prose, which reads `$2,000` — a separate `moneyRound()` used nowhere else.
 
 ---
 
 ## 2. Component reuse map
 
-Nothing here is a new visual species. This table is the whole design system contract.
-
-| Need | Existing component / class | New props or notes |
+| Need | Existing component / class | Notes |
 |---|---|---|
-| Buttons | `Btn` (`src/app/ui.tsx`) | none — `sage` for the primary referral action, `outline` for Copy, `ghost` for Remove |
-| Text inputs | `Input` + `FieldLabel` (`ui.tsx`) | `Input` needs no change; the ABN/BSB/account fields pass `inputMode="numeric"`, `maxLength`, `autoComplete="off"`, `id`/`aria-describedby` for the error line |
-| Section eyebrow | `SLabel` (`ui.tsx`) | none |
-| Marketing section shell | `<section className="ground-paper|ground-bone border-t border-black/8 section-pad">` + `max-w-6xl mx-auto px-6` | the home and trade placements are ordinary sections; alternate the ground against their neighbour |
-| Two-column heading + action | `.split-row.is-center` + `.split-prose` | none |
-| Closing banner | `CtaBanner` (`ui.tsx`) | unchanged; `/refer` closes on the standard quote CTA |
-| Cards | `.card` + `ground-*` (theme.css derives the fill) | never pick a card colour |
-| Panel with a header band | `.card` + `.panel-head` | as `AccountDashboard` uses it |
-| Status chips | `StatusPill` (`accountModel.tsx`) with `tone` `pos`/`work`/`mute`/`draft`/`attn` | none — icon + word, never colour alone |
-| Small inline chips (durations, conditions) | `.quote-chip` variants (`theme.css`) | reuse `--ready` / `--neutral`; add no new modifier |
-| Earnings summary strip | `SummaryCell` (`AccountDashboard.tsx`) | **must be lifted out of `AccountDashboard`** into a shared component — currently module-private. Same markup, same `TONE` triple |
-| List rows (referrals, payouts) | the account area's row pattern: `.card` + `px-5 py-[18px]` + hairline dividers | referrals are **not** clickable — no `card-link`, no hover fill, no chevron |
-| Money panel | `QuoteTotals` (`components/quote-project/QuoteTotals.tsx`) | new optional prop `referral?: { percent: number; referrerName: string }` |
-| Account rail | `AccountShell` (`pages/AccountShell.tsx`) | `AccountSection` gains `"referrals"`; `SECTION_LABEL` gains `referrals: "Referrals"`; new nav entry in the **account/session group**, above `Account` |
-| Notices | new `.notice` variants are **not** needed — use `.quote-notice--info` / `--warning` / `--danger` from theme.css, which already carry the three tones | if a variant is missing, extend theme.css; do not write inline rgba |
-| Ops shell, tabs, tables, confirm-in-place | `src/ops/Pricing.tsx` is the template for all three sub-screens | copy its sub-tab row, its inline-editable table, its before/after review modal and its `HealthBanner` |
+| Buttons | `Btn` (`src/app/ui.tsx`) | `sage` primary, `outline` secondary, `ghost` for leave/void |
+| Text inputs | `Input` + `FieldLabel` (`ui.tsx`) | no change; pass `inputMode="numeric"`, `maxLength`, `autoComplete="off"`, `id`, `aria-describedby` |
+| Section eyebrow | `SLabel` | |
+| Marketing section shell | `<section className="ground-paper\|ground-bone border-t border-black/8 section-pad">` + `max-w-6xl mx-auto px-6` | alternate the ground against the neighbour |
+| Two-column heading + action | `.split-row.is-center` + `.split-prose` | |
+| Closing banner | `CtaBanner` | unchanged |
+| Cards | `.card` + `ground-*` | never pick a card fill |
+| Panel header band | `.card` + `.panel-head` | |
+| Status chips | `StatusPill` (`accountModel.tsx`), tones `pos`/`work`/`mute`/`draft` | icon + word, never colour alone |
+| Small inline chips | `.quote-chip--ready` / `--neutral` / `--warning` | add no new modifier |
+| Earnings summary strip | `SummaryCell` (`AccountDashboard.tsx`) | **must be lifted out** — currently module-private |
+| Money panel | `QuoteTotals` | new optional prop, §7 |
+| Account rail | `AccountShell` | `AccountSection` gains `"referrals"` |
+| Notices | `.quote-notice--info` / `--warning` / `--danger` (theme.css) | extend theme.css if a tone is missing; never inline rgba |
+| Ops shell, tabs, tables, confirm-in-place | `src/ops/Pricing.tsx` and `Projects.tsx` | copy verbatim; **no new ops components** |
 
-**One new shared component, and only one:** `PayoutDetailsForm`. It renders the four fields, their
-validation, the submit and the three reassurance lines, and it is used in exactly two places — the
-`/refer` signed-in-without-details band and the Referrals section's entry state. Two homes, one set of
-words, one endpoint (`PUT /api/account/payout-details`). Do not fork it.
+**One new shared component:** `JoinProgramFlow` — the two-part join described in §3.3, containing the
+conditions pane and the payout-details pane, with a single submit. It is used on `/refer` and in the
+Referrals section. `PayoutDetailsForm` is its second pane and is reused standalone for **Edit details**.
+
+**The ops console is pending a redesign.** Build these three screens from what the console already has,
+reuse `Pricing.tsx` and `Projects.tsx` patterns literally, and spend no effort on appearance — it will be
+re-skinned. Do not chase the explorations on `design/ops-redesign-prototype`.
 
 ---
 
-## 3. Screen: `/refer` — the public landing page
+## 3. Screen: `/refer`
 
-**Intent.** Explain the deal well enough that a visitor can repeat it from memory, and convert two
-audiences differently. Remove it and word of mouth stays invisible and unrewarded.
+**Route.** New `Page` id `"refer"`, path `/refer`, added to `PUBLIC_PAGES` in `worker/lib/shell.ts`. Hero
+image and `<head>` from the Sanity `page` record `pageId: "refer"`. Never 404s.
 
-**Route.** New `Page` id `"refer"` in `src/app/ui.tsx`, path `/refer` in `src/app/routes.ts`, added to
-`PUBLIC_PAGES` in `worker/lib/shell.ts`. Hero image and `<head>` from the Sanity `page` record
-`pageId: "refer"` via `getPage()`. Never 404s in any program status.
-
-### 3.1 Structure (top to bottom)
+### 3.1 Structure — four bands, no card grids
 
 | Zone | Ground | Contents |
 |---|---|---|
-| Hero | `ground-night` + `hero-scrim` + `hero-img` | `SLabel light` · `t-ds1` headline · `t-bd-lg` subline · **the rule box** · **the two facts** · CTA pair |
-| Conditions | `ground-bone`, `border-b` | `t-label` "What qualifies" + a 3×2 hairline grid (1 column below 768) + the GST/tax line |
-| Three steps | `ground-paper` (carries the drafting grid) | `SLabel` · `t-ds2` heading · three `.card` with `.figure` numerals |
-| State band | `ground-bone` | the auth-dependent block — see 3.3 |
-| FAQ | `ground-paper` | `SLabel` "Good to know" · `t-ds2` · 2×2 hairline-collapsed card grid, as the home page does it |
-| Closing | — | `CtaBanner` (quote CTA), then the site footer |
+| Hero | `ground-night` + `hero-scrim`/`hero-img` | eyebrow · `t-ds2` headline · **one sentence** · one button · one `t-cap` line |
+| How it works | `ground-paper` | `SLabel` · **three facts** as three hairline-separated rows · **the conditions panel** · the GST/tax line |
+| The join | `ground-bone` | auth-dependent — §3.3 |
+| Closing | — | `CtaBanner`, then the site footer |
 
-The conditions block sits **directly under the hero and above the sales narrative**. This placement is
-legally load-bearing (ACL s 32(2), and the ACCC's position that fine print cannot cure a headline). Do not
-move it below the steps, and do not collapse it into an accordion.
+**Thirteen cards became zero.** The previous draft had a six-card conditions grid, a three-card steps grid
+and a four-card FAQ. Equal-weight tiles made conditions read like features, and the page argued against the
+one-sentence simplicity the program is built on. The measure to design against is the owner's own complaint
+about the hero — they had to *focus to work out what it was trying to say*. **The whole page must survive
+one unfocused scroll on a phone.**
 
-### 3.2 Copy — hero and conditions
+**The FAQ section is deleted.** Every fact it carried now lives where it belongs: "you don't need to have
+ordered" is in the hero, "no chains" and "you can't refer yourself" are the last condition, "nothing to
+apply" is inside fact 2, and "what do I see about them" is on the Referrals screen where the list actually
+is. Nothing in it was a distinct fact a tradie needed and cannot now find in one scroll. **Do not
+reintroduce a card grid on this page.**
 
-**Eyebrow:** `Refer a mate`
+The conditions panel stays **directly under the three facts, above the join band**. Adjacency is legally
+load-bearing (ACL s 32(2); fine print cannot cure a headline). It may be made denser but it may not be
+moved below the join, put behind a link, or collapsed into an accordion.
 
-**Headline (`t-ds1`):** `Refer a mate. You both win.`
+### 3.2 Hero — cut to one read
 
-**Subline (`t-bd-lg`, `.prose`):**
-> You already tell other tradies where you get your windows. Now there's something in it for both of you.
+The previous draft stacked a headline, a subline, a bordered rule box, two numbered facts and two buttons.
+Six things competing to be read first is why it had to be concentrated on. Now:
 
-**The rule box** — a bordered box, `rgba(255,255,255,.22)` edge on `rgba(255,255,255,.04)` fill, max 60ch:
-> Share your code — your mate gets **[discount] off their first order**, and when they pay for it in full
-> we pay you **[rate] of it**, into your bank account within **[payoutDays]**.
+- **Eyebrow:** `Refer a mate`
+- **Headline (`t-ds2`, not `t-ds1`, max 20ch):** `Refer a mate. You both win.`
+- **One sentence (`t-bd-lg`, `c-white`, max 52ch):**
+  > Your mate gets **[discount] off their first order**. When they've paid it in full, we pay you
+  > **[rate] of it**, within **[payoutDays]**.
+- **One button (`Btn sage lg`):** `Join the program →` — signed out this reads `Sign in to join →`.
+- **One line beneath (`t-cap`, white/55):** `Any account can join — you don't need to have ordered.`
 
-Bold figures render `text-sage-light`.
+**Nothing about bank accounts appears anywhere on this page outside the join flow.** Hero padding drops
+from 76px to 56px.
 
-**The two facts** — a two-row list with a hairline above, between and none below. Each row is a
-`t-data` numeral (`01`, `02`) and a sentence. **They must never be joined into one sentence, never
-separated by "but", and never reordered.**
-> **01 — Any account can refer.** You don't need to have ordered anything yourself.
-> **02 — To get your code, we need your ABN and bank details.** That's the account we pay into.
+### 3.3 The join flow — one flow, one commit
 
-**Conditions grid** — six cells, each a `t-cap` uppercase `font-data` label over a `t-bd-sm` sentence:
+**There is no "joined but no details" state.** A person is a member when, and only when, ABN, BSB, account
+number and account name are stored. Accepting the conditions, storing the details, creating the membership
+and issuing the code are **one act at one instant**. Abandon partway and nothing has occurred: no
+half-member, no dormant record, no state to explain, no email to a partial joiner. They see the join CTA
+again next time.
 
-| Label | Sentence |
-|---|---|
-| FIRST ORDER ONLY | Theirs, not yours — and it has to be a tradie who's new to us. |
-| MINIMUM ORDER | At least **[minOrder]** ex GST, before delivery. |
-| WHAT THE [rate] IS ON | The goods — excluding GST and delivery. Not the invoice total. |
-| WHEN IT'S EARNED | When they've **paid in full**. Not when they order. |
-| HOW LONG IT LASTS | Their first order has to be placed within **[window]** of them signing up with your code. |
-| HOW YOU'RE PAID | Bank transfer within **[payoutDays]**. You'll need an ABN and bank details on your account. |
+The only thing that survives an abandon is what they typed, if they navigate within the session — ordinary
+form state, and it **must not be modelled as a membership fact**.
 
-Two conditional cells:
-- **Cap** — rendered only when `capAmount != null`: label `MOST YOU CAN EARN`, sentence
-  `Up to **[cap]** per referral.`
-- **Threshold** — rendered only when `minPayoutBalance > 0`: label `WHEN WE TRANSFER`, sentence
-  `We pay out once your balance reaches **[threshold]**.` (AC-81 — this must appear here, in the offer,
-  not only in the account area.)
+**Part 1 — the conditions.** `.card` with a 3px sage left border, split `1.1fr / .9fr`.
 
-**Line under the grid (`t-cap`, `.measure`):**
-> Amounts include any GST payable. What you do with it at tax time is between you and your accountant — we
-> don't give tax advice. [Read the full rules and terms →]
+- eyebrow `The conditions` + a two-segment progress rule (first filled sage, second `--shade`)
+- `t-hd1` **Join the referral program**
+- `t-bd` "Any account can join. You don't need to have ordered anything, and joining costs nothing."
+- A `--recessive` panel, `t-label` **What you're agreeing to**, five `t-bd-sm` lines:
+  - · Your mate gets **[discount]** off their first order; you get **[rate]** of it once they've paid in full.
+  - · Their order has to be at least **[minOrder]** ex GST before delivery, and placed within **[window]** of them using your code.
+  - · The **[rate]** is worked out on the goods, excluding GST and delivery — not the invoice total.
+  - · We pay by bank transfer within **[payoutDays]**, so you'll need to give us an account to pay into.
+  - · You get paid for the mates you refer — not for anyone they go on to refer.
+  - *(conditional, only when `capAmount != null`)* · The most you can earn on one referral is **[cap]**.
+- Checkbox: `I've read and accept the [referral program terms].`
+- `Btn sage md` **Continue →**, disabled until ticked.
+- `t-cap` "Nothing is saved yet. You can leave any time, and joining never asks you to buy anything."
+- Right pane, `--recessive`, `t-label` **What happens next**: two numbered lines (accept the conditions /
+  tell us where to send the money), then `t-bd-sm` "Then you're in, and your code is on this page.", then
+  `t-cap` "One button at the end does the lot. Stop before it and nothing has happened."
 
-> ⚠ **The GST sentence is a slot awaiting the accountant.** It states the position already taken (the
-> advertised commission is GST-inclusive). It must be reviewed before launch; it must not be deleted,
-> because a stated figure with nothing said about GST is the one formulation that is definitely wrong.
+**The button says "Continue", not "Join".** A button that starts part 2 must not claim something happened.
 
-### 3.3 The state band — four variants
+**Part 2 — where the money goes.** Same card. Eyebrow `Where the money goes`, both progress segments sage,
+plus `t-cap` "· conditions accepted [back]" — `back` returns to part 1 without losing anything typed.
 
-| Program status | Auth | Band |
-|---|---|---|
-| `active` | signed out | `.card` on `ground-bone`: `t-hd1` **Get your code** + "Sign in and add your ABN and bank details — that's the whole setup, and your code appears straight after. Ordering isn't part of it." + `Btn sage lg` **Sign in →** |
-| `active` | signed in, `referrerGate.complete === false` | `.card` with a 3px sage left border, split `1.15fr / .85fr`: `PayoutDetailsForm` left, the "What this unlocks" panel right (see 5.2) |
-| `active` | signed in, code issued | `.card` sage-bordered, split 50/50: code + share affordances left, the pre-written message + the no-details-collected note right |
-| `paused` | any | hero only. `t-hd1` **Refer a mate — on hold** / "We've paused new referrals for the moment. Anything you'd already earned is unaffected and still sitting in your account. When it's back on, it'll be on this page." **No rate, no discount, no code, no conditions grid.** |
-| `terminated` | any | hero only. `t-hd1` **This program has ended.** / "We're no longer taking new referrals. Anything you'd already earned is in your account and will still be paid, and any discount already given still runs to the date it was given." Same suppression. |
-
-Paused and terminated suppress the conditions grid, the steps, the FAQ and the state band. The hero and the
-`CtaBanner` remain, so the page is still a page.
-
-### 3.4 Sharing affordances — exactly three, and no fourth
-
-1. **Copy code** — `Btn outline sm`, puts `KRA-7F2` on the clipboard.
-2. **Copy link** — `Btn sage md`, puts `https://openframe.com.au/r/KRA-7F2` on the clipboard.
-3. **Share** — `Btn outline md`. Calls `navigator.share({ text, url })` when available; **falls back to
-   copying the pre-written message** when it is not (most desktops). Never a mailto, never a form.
-
-The pre-written message is shown in full on screen before it is sent, in a `.card` on `--recessive`:
-> "Get your windows through OpenFrame — use my code **KRA-7F2** and you'll get [discount] off your first
-> order. openframe.com.au/r/KRA-7F2"
-
-Beneath it: *"We hand this to your phone to send. We never see who you send it to, and there's nowhere here
-to give us their details."*
-
-**Copy feedback:** the button label swaps to `Copied` with a check glyph for 2000 ms, then reverts. No
-toast. An `aria-live="polite"` span announces "Link copied".
-
-### 3.5 FAQ copy (four cards)
-
-- **Can I refer someone if I've never ordered?** — Yes. Any registered account can refer. Your own order
-  history has nothing to do with it.
-- **What does my mate actually see?** — Their quote is [discount] lower from the first price they're shown.
-  There's no code to enter at checkout and nothing for them to apply.
-- **What do I get to see about them?** — Their business name and how far along they are — signed up,
-  quoting, ordered, paid. Never their prices, their address or what's on their job.
-- **Do I earn on the mates they go on to refer?** — No. You get paid for the mates you refer, and that's
-  it. No chains, no levels, no tiers.
-
-Closing line under the grid (`t-cap`, `.measure`):
-> Your mate is told, when they use your code, that you'll be notified once their first order is paid and
-> that you're paid a percentage of it. Nobody is surprised by this later.
-
----
-
-## 4. Screens: the four marketing placements
-
-All four read `program.status` and render **nothing** unless it is `active`. None appears inside a priced
-flow — not on a product page, the quote builder, review-and-accept or any payment screen.
-
-### 4.1 Home page section
-
-**Position:** between the "Good to know" section and the closing `CtaBanner`. `ground-paper` (its
-neighbours are bone), so the alternation holds. `SLabel` + `.split-row.is-center`.
-
-| Variant | Copy |
-|---|---|
-| Signed out | Eyebrow `Refer a mate` · `t-ds2` **Know another tradie?** · `t-bd-lg` "They get **[discount] off their first order**. You get **[rate] of it**, into your bank account within [payoutDays] of them paying." · `t-bd-sm` "Any account can refer — you don't need to have ordered." · `Btn sage lg` **How it works →** |
-| Signed in, no details | `t-hd1` **Know another tradie?** · "They get **[discount] off their first order** and you get **[rate] of it**, paid within [payoutDays] of them paying in full." · `t-bd-sm` "Add your ABN and bank details and your code is ready. You don't need to have ordered." · `Btn sage md` **Get my code →** |
-| Signed in, code issued | Eyebrow `Your referral code` · a sage-bordered `.card`: the code at `t-hd1`-scale `font-data`, `Copy link`, and two `t-label`/`t-data` pairs — **Referred** `n mates` and **Earned** `money(paid)` — plus `Referrals →`. Below the card, `t-cap`: "Your mate gets [discount] off their first order." |
-
-> **The third variant deliberately omits `[rate]`.** A rate printed beside an earned dollar figure lets a
-> referrer divide and recover their mate's order value. See §9.2. Do not "fix" this by adding the rate.
-
-### 4.2 `/trade-account` section
-
-Same shape, `ground-paper`, trade framing:
-> `t-ds2` **Bring another trade account with you.**
-> Your mate gets **[discount] off their first order**. You get **[rate] of it** by bank transfer, within
-> [payoutDays] of them paying in full.
-> `t-bd-sm` Any registered account can refer — ordering isn't part of it. Their first order needs to be at
-> least [minOrder] ex GST, before delivery.
-> `Btn sage lg` **See how it works →**
-
-### 4.3 Footer link
-
-One entry, in the **Service** column of `Footer` in `App.tsx`, between "Trade account" and "How it works":
-label `Refer a mate`, target `refer`. Identical signed in or out. Removed entirely when the program is not
-`active`.
-
-### 4.4 Completed-order prompt
-
-**Where:** foot of `RecordDetailPage` for an order in stage `delivered` or `after_sales`, after the last
-existing panel. Never on an in-progress order (AC-37).
-
-`.card` with a 3px sage left border, `.split-row.is-center`:
-> `t-hd3` **Happy with these? Refer a mate.**
-> `t-bd-sm` They get **[discount] off their first order**. You get **[rate] of it**, within [payoutDays] of
-> them paying in full.
-
-Right side: the code at 22px `font-data` + `Btn sage sm` **Copy link**. For a viewer whose gate has not
-passed, the right side becomes a single `Btn sage sm` **Add your details to get your code →** and the code
-is absent. No earnings figure appears here in either case.
-
----
-
-## 5. Screen: Account → Referrals (the referrer)
-
-**Intent.** One place that answers "who have I sent you, what am I owed, and when does it land". Remove it
-and the referrer has no way to trust the program.
-
-**Nav.** `AccountSection` gains `"referrals"`. The rail item sits in the **account/session group** above
-`Account`, not with `My Projects` — this is about money, not jobs. Icon: `Users` (lucide). When
-`earnings.confirmed > 0` the item carries a badge in the positive tone showing `money(confirmed)` rounded
-to whole dollars (`$124`), matching the existing count-badge geometry.
-
-Route `/referrals`. `programStatus === 'terminated'` **and** no referral history ⇒ the rail item is absent
-and the route redirects to `/account`.
-
-### 5.1 State machine
-
-Derived entirely from `GET /api/account/referrals`. No local state decides which state renders.
-
-| State | Condition | Section renders |
-|---|---|---|
-| **A · Details missing** | `referrerGate.complete === false` and no dormant history | entry form + unlocks panel + "Were you referred?" |
-| **B · Active, empty** | `code != null`, `referrals.length === 0` | code card · empty note · how-you-get-paid |
-| **C · Active, populated** | `code != null`, `referrals.length > 0` | earnings strip · referrals list · payments · how-you-get-paid · code card (demoted to the bottom) |
-| **D · Dormant** | `referrerGate.complete === false` **and** referral history exists | dormant banner · struck code · read-only list |
-| **E · Under threshold** | `payout.heldUnderThreshold != null` | as C, plus a warning notice in the earnings strip |
-| **F · Terminated** | `programStatus === 'terminated'` and history exists | ended banner · read-only earnings, list, payments. No code card, no share, no entry form |
-
-"Were you referred?" (§5.6) renders in **every** state where `canEnterCode === true`. It is never gated by
-`referrerGate`.
-
-### 5.2 State A — the entry state (the highest-leverage screen in the set)
-
-This is not an error state and must not be styled as one. **No amber, no warning icon, no "action
-required", no red asterisks.** A `.card` with a 3px **sage** left border, split `1.1fr / .9fr` at ≥1024px,
-stacked below.
-
-**Header:** `t-hd1` **Referrals** / `t-bd-sm` "Get paid for the tradies you send our way."
-
-**Left column — `PayoutDetailsForm`:**
-- Eyebrow (`t-label`, sage): `One step, then it's yours`
-- `t-hd2`: **Where do we send the money?**
-- `t-bd-sm`, max 44ch: "Add your ABN and bank details and your referral code appears right here. It's the
-  account we pay your [rate] into — nothing else uses it, and the tradies you refer never see it."
-- Fields, in a 2-column grid (ABN and Account name span both):
+- `t-hd1` **Where do we send the money?**
+- `t-bd` "Add your ABN and bank details and your referral code appears right here. It's the account we pay
+  your [rate] into — nothing else uses it, and the tradies you refer never see it."
+- Fields in a 2-column grid (ABN and Account name span both):
 
 | Field | `inputMode` | Validation | Error copy |
 |---|---|---|---|
@@ -312,265 +189,417 @@ stacked below.
 | Account number | numeric | 5–9 digits | *Account numbers are between 5 and 9 digits.* |
 | Account name | text | non-empty | *We need the name on the account, exactly as your bank has it.* |
 
-- `Btn sage md`: **Save and get my code**. Disabled (`b-disabled`, 40% opacity) until all four validate.
-- Below a hairline, three `t-cap` lines, each on its own row, in this order:
-  - `· You don't need to have ordered anything to refer. Any account can.`
-  - `· We only ever use these to pay you. Nobody else sees them.`
-  - `· You can change or remove them any time.`
+- `Btn sage md` **Join the program** — disabled until all four validate. This is the single commit.
+- Three `t-cap` lines beneath a hairline:
+  - · This is what joins you and issues your code — one button.
+  - · We only ever use these to pay you. Nobody else sees them.
+  - · You can change or remove them any time.
+- Right pane unchanged from part 1's position: `What this unlocks` — a dashed box containing `ABC-123` in
+  `--quietest` `font-data` beside `t-cap` "your code" (a greyed **example**, never a real or reserved
+  code), the deal restated, three `t-cap` conditions, and `Read the full rules and terms →`.
 
-  The first line is the ACL s 49 separation and is not optional decoration.
+**Validation** on blur, never on keystroke; clear on change. Server rejection above the button: *"We
+couldn't save that. Try again — nothing was changed."*
 
-**Right column — "What this unlocks",** a `--recessive` panel:
-- `t-label` `What this unlocks`
-- A dashed-bordered box on paper: `ABC-123` at `t-hd2` in `--quietest` `font-data`, beside `t-cap`
-  "your code". A greyed **example**, never a real or reserved code.
-- `t-bd-sm`: "Your mate gets **[discount] off their first order**. When they've paid it in full, your
-  **[rate]** goes out by bank transfer within **[payoutDays]**."
-- Three `t-cap` conditions under a hairline: minimum order · what the rate is on · the window.
-- `Read the full rules and terms →`
+**On success** the band re-renders into §3.4 in place — no navigation, no reload, no toast. Announce via
+`aria-live`: "You're in. Your referral code is KRA-7F2."
 
-**Validation timing.** Validate on blur, never on keystroke. Clear an error the moment the field changes.
-Server rejection surfaces above the button: *"We couldn't save that. Try again — nothing was changed."*
+**What is recorded at the commit:** the acceptance timestamp, the terms version, and the payout details, in
+one transaction. There is no window in which someone has accepted terms but isn't a member, and no
+ambiguity about which act made them one.
 
-**On success.** The response returns `referrerGate.complete === true` plus the code. The section
-re-renders into State B **in place** — no navigation, no reload, no toast. The code card takes the position
-the form occupied. Announce via `aria-live`: "Your referral code is KRA-7F2."
+### 3.4 Signed in with a code
 
-### 5.3 State B — code, no referrals yet
+`.card`, sage-bordered, split 50/50. Left: the code at 44px `font-data` semibold (`letter-spacing: .1em`),
+`Copy code`, the share URL in a read-only `.field mono`, `Copy link`, `Share`, and beneath:
+> Text it, say it over the phone, or send the link. Your mate gets **[discount] off their first order**;
+> when they've paid it in full, you get **[rate]** of it.
 
-- **Code card** (sage-bordered, `.card`): eyebrow `Your code` · the code at 40px `font-data` semibold,
-  `letter-spacing: .1em` · `Copy code` · the share URL in a read-only `.field mono` · `Copy link` · `Share`.
-  Under a hairline, the one-sentence rule with the conditions folded in:
-  > Your mate gets **[discount] off their first order**. When they've paid it in full, you get **[rate]**
-  > of it — bank transfer, within **[payoutDays]**. Their order needs to be at least **[minOrder]** ex GST
-  > before delivery, and placed within **[window]**. [Full rules →]
-- **Empty note** — a `.card` with a 3px `--tone-mute-bd` left border:
+Right, `--recessive`: the pre-written message shown in full before it is sent —
+> "Get your windows through OpenFrame — use my code **KRA-7F2** and you'll get [discount] off your first
+> order. openframe.com.au/r/KRA-7F2"
+
+— then `t-cap` "We hand this to your phone to send. We never see who you send it to, and there's nowhere
+here to give us their details.", then `See your referrals and earnings →`.
+
+**Exactly three sharing affordances and no fourth.** `Copy code` (for reading out), `Copy link`, and
+`Share` — `navigator.share({ text, url })` where available, **falling back to copying the message** where
+it isn't (most desktops). Never a mailto, never a recipient field.
+
+**Copy feedback:** label swaps to `Copied` with a check for 2000 ms. No toast. A visually-hidden
+`aria-live="polite"` region announces "Link copied".
+
+### 3.5 Program off
+
+One off-state, not two. Hero only; the conditions grid, steps, FAQ and state band are all suppressed. The
+`CtaBanner` and footer remain.
+
+> `t-hd1` **This program has ended.**
+> We're no longer taking new referrals. Anything you'd already earned is in your account and will still be
+> paid, and any discount already given still runs to the date it was given.
+
+No rate, no discount, no code, in any variant.
+
+### 3.6 "How it works" — three facts, then the conditions
+
+**The three facts.** Three hairline-separated rows (`border-top` on the group, `border-bottom` on the first
+two), max 72ch. Each row is a `.figure` numeral at 1.6rem in a fixed 34px column, then one `t-bd-lg` line
+whose first clause is `c-ink` bold and whose remainder is `c-body`. No boxes, no fills, no icons.
+
+| # | Bold clause | Rest |
+|---|---|---|
+| 1 | Share your code. | Text it, say it over the phone, send the link. |
+| 2 | Your mate gets **[discount]** off their first order. | It's on their quote from the start — nothing to enter, nothing to apply. |
+| 3 | When they've paid it in full, you get **[rate]** of it. | Bank transfer, within **[payoutDays]**. |
+
+**The conditions panel.** One `.card` + `.panel-head` (`t-label` **The conditions**), max 72ch, six
+hairline-separated `t-bd-sm` sentences on `--paper`. Not cards, not a grid, not labelled cells — running
+sentences, because these are qualifications on a claim rather than features of an offer.
+
+1. It's their **first order** that counts, and it has to be a tradie who's new to us.
+2. The order needs to be at least **[minOrder]** ex GST, before delivery.
+3. It has to be placed within **[window]** of them signing up with your code.
+4. Your **[rate]** is worked out on the goods — excluding GST and delivery, not the invoice total.
+5. You'll need an **ABN** and bank details on your account — that's where we send it.
+6. You get paid for the mates you refer, not for anyone they go on to refer. And you can't refer yourself.
+
+Conditional seventh row, only when `capAmount != null`: *The most you can earn on one referral is **[cap]**.*
+
+Line under the panel (`t-cap`, max 72ch):
+> Amounts include any GST payable. What you do with it at tax time is between you and your accountant — we
+> don't give tax advice. [Read the full rules and terms →]
+
+> ⚠ **The GST sentence is a slot awaiting the accountant.** It states the position already taken. It must
+> be reviewed before launch and must not simply be deleted — a stated figure with nothing said about GST is
+> the one formulation that is definitely wrong.
+
+**Note on condition 6.** "You can't refer yourself" is a statement of the rule, not a claim that we prevent
+it. Do not write "we prevent self-referral" or "self-referral is blocked" anywhere — the same-ABN gate is a
+signal, not a control, and one person may legitimately hold several ABNs (spec A13, §4.6.6).
+
+---
+
+## 4. The four marketing placements
+
+All four render nothing unless the program is on. None appears inside a priced flow.
+
+### 4.1 Home page section
+
+Between "Good to know" and the closing `CtaBanner`. `ground-paper`. `SLabel` + `.split-row.is-center`.
+
+| Variant | Copy |
+|---|---|
+| Signed out | `t-ds2` **Know another tradie?** · "They get **[discount] off their first order**. You get **[rate] of it**, into your bank account within [payoutDays] of them paying." · `t-bd-sm` "Any account can refer — you don't need to have ordered." · `Btn sage lg` **How it works →** |
+| Signed in, not a member | `t-hd1` **Know another tradie?** · same two-sided sentence · `t-bd-sm` "Any account can join — you don't need to have ordered." · `Btn sage md` **Join the program →** |
+| Signed in, member | eyebrow `Your referral code` · sage-bordered `.card`: the code in `font-data`, `Copy link`, and two `t-label`/`t-data` pairs — **Referred** `n mates` and **Earned** `money(paid)` — plus `Referrals →`. Below, `t-cap`: "Your mate gets [discount] off their first order." |
+
+**There is no fourth variant**, because there is no half-joined state. The member variant carries no rate
+(rule 6).
+
+### 4.2 `/trade-account` section
+
+`ground-paper`, same shape:
+> `t-ds2` **Bring another trade account with you.**
+> Your mate gets **[discount] off their first order**. You get **[rate] of it** by bank transfer, within
+> [payoutDays] of them paying in full.
+> `t-bd-sm` Any registered account can join — ordering isn't part of it. Their first order needs to be at
+> least [minOrder] ex GST, before delivery.
+> `Btn sage lg` **See how it works →**
+
+### 4.3 Footer link
+
+One entry in the **Service** column of `Footer` (`App.tsx`), between "Trade account" and "How it works":
+`Refer a mate` → `refer`. Identical signed in or out. Removed entirely when the program is off.
+
+### 4.4 Completed-order prompt
+
+Foot of `RecordDetailPage` for an order in stage `delivered` or `after_sales`, after the last existing
+panel. Never on an in-progress order (AC-37). `.card` with a 3px sage left border, `.split-row.is-center`:
+> `t-hd3` **Happy with these? Refer a mate.**
+> `t-bd-sm` They get **[discount] off their first order**. You get **[rate] of it**, within [payoutDays] of
+> them paying in full.
+
+Right: the code at 22px `font-data` + `Btn sage sm` **Copy link**. A non-member sees `Btn sage sm`
+**Join the program →** in place of the code. No earnings figure in either case.
+
+---
+
+## 5. Screen: Account → Referrals
+
+**Intent.** One place for everything referral. It serves **two different people** — someone who refers, and
+someone who *was* referred and has a discount — and often one person in both roles.
+
+**Nav.** `AccountSection` gains `"referrals"`; the rail item sits in the account/session group above
+`Account`. Icon `Users`. When `earnings.confirmed > 0` it carries a positive-tone badge showing confirmed
+money rounded to whole dollars (`$124`).
+
+**Visibility.** The section is present when the account has **a code, OR referral history, OR a referral
+offer (live, used or expired)**. Otherwise — including when the program is off and the account has neither —
+the rail item is absent and `/referrals` redirects to `/account`.
+
+> This rule replaces §8.6.1's third argument for putting the discount panel on the Account page ("it
+> survives the program"). Because the offer itself keeps the section alive, a referred tradie with a live
+> discount never loses the explanation for their price.
+
+### 5.1 Page structure — up to two blocks, always in this order
+
+```
+h1  Referrals
+h2  Your discount        ← only when `offer != null`
+    [the discount card — §6]
+h2  Refer a mate         ← always
+    [the referrer block — state-dependent, below]
+    [Were you referred? — while `canEnterCode`]
+```
+
+An `h2` per block, so someone with both never has to work out which half they are reading, and someone with
+one simply doesn't see the other heading. **No placeholder for the missing block.**
+
+### 5.2 The referrer block — five states
+
+| State | Condition | Renders |
+|---|---|---|
+| **A · Not a member** | no code, no history | the join invitation (below) |
+| **B · Member, empty** | code, `referrals.length === 0` | code card · empty note · how-you-get-paid |
+| **C · Member, working** | code, referrals exist | earnings strip · referrals list · payments · how-you-get-paid · code card (demoted) |
+| **D · Left, with history** | no code active, history exists | left-the-program notice + rejoin · read-only payments |
+| **E · Program off, with history** | program off | ended notice · read-only earnings, list, payments |
+
+**State A — the join invitation.** No form, no fields, no mention of a bank account. Joining is a flow;
+this is a door.
+
+*For someone with no discount of their own* — `.card` with a 3px sage left border:
+> `t-label` Refer a mate · `t-hd1` **You both win.**
+> Your mate gets **[discount] off their first order**. When they've paid it in full, we pay you **[rate] of
+> it**, within **[payoutDays]**.
+> `t-bd-sm` Any account can join — you don't need to have ordered.
+> `Btn sage lg` **Join the program →** · `t-cap` link `Read the conditions first`
+
+*For someone who was referred* (the discount card is above it) — a **muted** card, 3px `--tone-mute-bd`
+border, `Btn outline` not `Btn sage`:
+> You got **[discount]** off because someone passed you a code. You can do the same: your mate gets
+> **[discount] off their first order**, and when they've paid it in full we pay you **[rate] of it**,
+> within **[payoutDays]**.
+> `t-bd-sm` Any account can join — you don't need to have ordered.
+> `Btn outline md` **Join the program →**
+
+The argument is from what just happened to them — they are the best-qualified audience for this because
+they have experienced the benefit from the other side. Present, visibly the second subject on the page, and
+then it stops.
+
+**State B — member, empty.**
+- **Code card** (sage-bordered): eyebrow `Your code`, code at 40px `font-data`, `Copy code`, share URL,
+  `Copy link`, `Share`. Under a hairline:
+  > Your mate gets **[discount] off their first order**. When they've paid it in full, your share goes out
+  > by bank transfer within **[payoutDays]**. Their order needs to be at least **[minOrder]** ex GST before
+  > delivery, and placed within **[window]**. [How the program works →]
+
+  Note the phrasing: *"your share"*, not the rate. `How the program works →` goes to `/refer`.
+- **Empty note** — `.card`, 3px `--tone-mute-bd` border:
   > `t-bd-lg` **Nobody's used your code yet.**
   > `t-bd-sm` Share it with one tradie this week. They save on their first order, and you get paid when
   > they've paid us.
 
-  **Not** an empty table with five headers, not a zeroed summary strip.
-- **How you get paid** (§5.5).
+  Not an empty table, not a zeroed strip, not greyed-out share buttons.
+- **How you get paid** — §5.4.
 
-### 5.4 State C — the working state
+**State C — working.** Order on the page, top to bottom:
 
-Order on the page, top to bottom. This order is the design.
-
-1. **Header** — `t-hd1` **Referrals** · `t-bd-sm` "`n` mates referred · next payment due **[date]**" ·
-   right-aligned `fmtDayDate(today)` as the dashboard does.
+1. **Header** — `t-hd1` Referrals · `t-bd-sm` "`n` mates referred · next payment due **[date]**" ·
+   right-aligned `fmtDayDate(today)`.
 2. **Earnings strip** — `SummaryCell` × 3 in a `.card` row (stacks below 640px):
 
    | Cell | Value | Sub-line | Tone |
    |---|---|---|---|
    | Pending | `money(earnings.pending)` | waiting on their payment | neutral |
-   | Confirmed | `money(earnings.confirmed)` | due by **[date]** | `TONE.pos` background + text |
+   | Confirmed | `money(earnings.confirmed)` | due by **[date]** | `TONE.pos` |
    | Paid | `money(earnings.paid)` | lifetime | neutral |
 
-   Directly beneath, `t-cap`: *"These are cash amounts. Your ex/inc GST setting doesn't change them — a
-   payout isn't a price."* (AC-31 made visible rather than merely true.)
+   Beneath, `t-cap`: *"These are cash amounts. Your ex/inc GST setting doesn't change them — a payout isn't
+   a price."* The Confirmed cell **always names the due date** (`confirmedAt + payoutTimeframeDays`) —
+   that's the promise from the offer, restated where it can be checked (AC-80).
+3. **Your referrals** — `.card` + `.panel-head`. Header row `t-label`: Who · Signed up · Status. Rows are
+   **not clickable**: no `card-link`, no hover fill, no chevron. Nothing to open.
+4. **Payments to you** — Date · Amount (right) · Reference · Covers. Empty: *"Nothing paid out yet. Your
+   first transfer shows up here with its bank reference."*
+5. **How you get paid** — §5.4.
+6. **Code card, demoted** — compact: eyebrow, code at 28px, URL as `t-data-sm`, `Copy link`, `Share`. On a
+   working account the earnings are the point; the code is a tool.
 
-   The Confirmed cell **always names the due date** — `confirmedAt + payoutTimeframeDays`. That is the
-   promise from the offer, restated where it can be checked (AC-80).
-3. **Your referrals** — `.card` + `.panel-head` ("Your referrals", count right-aligned). Column header row
-   in `t-label`: Who · Signed up · Status. Rows are **not clickable**: no `card-link`, no hover fill, no
-   chevron. There is nothing to open.
+### 5.3 The referral status list — cut from six to five
 
-   | Column | Content |
-   |---|---|
-   | Who | `displayName` — business name, else masked email (`j••••@outlook.com`) |
-   | Signed up | `fmtDate(joinedAt)` in `t-data-sm` |
-   | Status | `StatusPill` |
+The old set was *Signed up · Quoting · Ordered · Paid in full · Not eligible · Expired*.
 
-   Status mapping:
+**"Quoting" is gone.** It tells a referrer their mate is shopping, which is neither theirs to know nor
+anything they can act on, and it never changes when they get paid. What remains answers the only two
+questions the screen exists for: is this happening, and when do I get paid.
 
-   | API `status` | Pill | Tone | Sub-line |
-   |---|---|---|---|
-   | `signed_up` | Signed up | `draft` | — |
-   | `quoting` | Quoting | `work` | — |
-   | `ordered` | Ordered | `work` | — |
-   | `paid_in_full` | Paid in full | `pos` | — |
-   | `not_eligible` | Not eligible | `mute` | the reason, `t-cap`: *First order was under [minOrder] ex GST* / *No first order within [window]* |
+| API `status` | Pill label | Tone | Sub-line |
+|---|---|---|---|
+| `signed_up` **(absorbs `quoting`)** | Signed up | `draft` | — |
+| `ordered` | Ordered | `work` | — |
+| `paid_in_full` | **Paid** | `pos` | — |
+| `expired` | Expired | `mute` | *No first order within [window]* |
+| `not_eligible` **(absorbs `void`)** | Not eligible | `mute` | *First order was under [minOrder] ex GST* |
 
-   Footer line under a hairline, `t-cap`: *"You see the business name and how far along they are, and
-   nothing else — never their prices, their address or what's on their job."*
+A referral voided by staff shows as **Not eligible** with the generic line. The ops void reason is an
+internal operational record and is not shown to the customer.
 
-   **Never a dollar figure against a name in this list.** (Legal research §5.4.)
+Columns: **Who** (`displayName` — business name, else masked email `j••••@outlook.com`), **Signed up**
+(`fmtDate`, `t-data-sm`), **Status** (`StatusPill`). Footer under a hairline, `t-cap`:
+> You see the business name and how far along they are, and nothing else — never their prices, their
+> address or what's on their job.
 
-   Below 768px the row becomes a stacked card: name and pill on one line, "Signed up [date]" beneath.
-4. **Payments to you** — `.card` + `.panel-head` "Payments to you". Columns: Date · Amount (right) ·
-   Reference · Covers. Empty: *"Nothing paid out yet. Your first transfer shows up here with its bank
-   reference."*
-5. **How you get paid** (§5.5).
-6. **Code card, demoted** — the same sage-bordered card as State B but compact: eyebrow, code at 28px, the
-   URL as `t-data-sm`, `Copy link` and `Share`. On a working account the earnings are the point; the code
-   is a tool.
+**Never a dollar figure against a person in this list** (legal research §5.4). Below 768px each row becomes
+a stacked card: name + pill on one line, "Signed up [date]" beneath.
 
-### 5.5 "How you get paid" panel
+### 5.4 "How you get paid" panel
 
 `.card` + `.panel-head`. Two columns at ≥640px:
-
 - **Bank account** — `t-data` `BSB 063-••• · ••••4417` (masked, always — AC-29), `t-bd-sm` account name.
-- **ABN** — `t-data` formatted `51 824 753 556`, plus `t-cap` `Checks out` in `--tone-pos`, or
-  `We can't read that as a valid ABN` in `--destructive`.
+- **ABN** — `t-data` formatted `51 824 753 556`, **and nothing else**.
+
+> **"Checks out" is deleted.** A valid ABN gets no comment. A green tick beside someone's ABN reads like we
+> ran a background check on them; it's a checksum. The field speaks **only** when something is wrong:
+> `We can't read that as a valid ABN` in `--destructive`, which is reachable only via Edit details.
 
 Under a hairline, `t-bd-sm`:
 > We pay by bank transfer within **[payoutDays]** of your mate's order being paid in full. Amounts include
 > any GST payable; your own tax is between you and your accountant — we don't give tax advice.
+> [How the program works →]
 
-Conditional sentence, appended only when `minPayoutBalance > 0`:
-> We pay out once your balance reaches **[threshold]**.
+Actions: `Btn outline sm` **Edit details** · `Btn ghost sm` **Leave the program**.
 
-Actions: `Btn outline sm` **Edit details** · `Btn ghost sm` **Remove details**.
+### 5.5 Leaving, and the one refusal
 
-**Edit** swaps the panel body for `PayoutDetailsForm` pre-filled with everything except the account number
-(which is masked and must be retyped). **Remove** is the refusal path in §5.7.
+**Because membership *is* having payout details, removing them is leaving.** The control says so. This
+collapses what was a separate "dormant code" state into an ordinary action with an ordinary confirmation —
+one concept instead of two.
+
+**Leave** opens a confirmation in place (never a modal), `--info` tone:
+> **Leave the referral program?**
+> We'll remove your bank details and your code stops working for new referrals. The mates you've already
+> referred keep their discount, and everything you've already been paid stays in your history. You can
+> rejoin any time and you'll get the same code back.
+> `Btn outline sm` **Leave the program** · `Btn ghost sm` **Cancel**
+
+Two promises survive leaving and the copy names both. **Rejoining runs the full join flow again** — terms
+re-accepted at the current version, details re-entered — and reissues **the same code** (ADR-8a's "stable
+thereafter" is preserved).
+
+**The refusal**, when `payout.clearBlocked != null` — a `--warning` notice in the same place:
+> **We can't do that just yet.**
+> **[amount]** is confirmed and hasn't gone out. We need this account to send it — it's due **[date]**. You
+> can leave once it's paid, and you can change your bank details in the meantime if they're wrong.
+
+The last clause matters: someone leaving *because their details are wrong* is the person most likely to hit
+this, and without it the refusal is a dead end for exactly them. The Leave control is **not** disabled — a
+disabled button explains nothing.
+
+**State D — left, with history.** `--info` notice with a 3px `--info` left border:
+> **You've left the program.**
+> Your code doesn't record new referrals and we're not holding your bank details. Everything you were paid
+> is below. Rejoin and you'll get **[code]** back.
+> `Btn sage sm` **Rejoin the program**
+
+Payment history renders read-only. No code card, no share, no earnings strip.
+
+**State E — program off, with history.** `--tone-mute`-bordered info notice:
+> **This program has ended.**
+> We're no longer taking new referrals. Anything you'd already earned is below and will still be paid, on
+> the timetable you were given.
+
+Earnings, list and payments read-only. No code card, no share, no join invitation.
 
 ### 5.6 "Were you referred?" — manual code entry
 
-Renders whenever `canEnterCode === true`, in every state, at the bottom of the section.
+Renders whenever `canEnterCode === true`, in **every** state including State A, at the bottom of the
+section. Never gated by membership.
 
 > `t-hd3` **Were you referred?**
 > `t-bd-sm` If a tradie gave you a code, put it in before your first order and **[discount]** comes off it.
 
-One `Input` (`className="mono"`, `maxLength={7}`, uppercased on input, `letter-spacing: .14em`,
+One `Input` (`mono`, `maxLength={7}`, uppercased on input, `letter-spacing: .14em`,
 `placeholder="ABC-123"`) + `Btn outline md` **Apply code**. Enter submits.
 
-**Success** — the field is replaced by a `.quote-notice--info`-toned sage notice:
+**Success** — the field is replaced by a sage notice:
 > **Done — [discount] is off your first order.**
-> It's already in every price you see, and it's yours until **[expiry]**.
-> [See the details on your Account page →]
+> It's already in every price you see, and it's yours until **[expiry]**. It's up the top of this page
+> whenever you want to check it.
 
-and beneath it, `t-cap`:
-> **[referrer] will be told when your first order is paid, and is paid a percentage of it.**
+No link: the discount card is now on this same page, so the confirmation points at it and stops. The
+"don't tell the story twice" rule gets easier rather than harder.
 
-That second line is a required disclosure, not a nicety (§9.2). It appears here and on the discount panel,
-and nowhere else.
+> **The disclosure line to the referred tradie is dropped**, per the owner. The program is openly
+> advertised as paying a percentage and the tradie deliberately entered a code to get their discount, so
+> the reasonable-expectation ground is already made out. See §13 for the one thing this costs.
 
-**Errors** — `t-cap` in `--destructive` under the field, field gets `.field.err`:
+**Errors** — `t-cap` in `--destructive` under the field, `.field.err` on the input:
 
 | Cause | Copy |
 |---|---|
-| unknown code, **or** a code whose owner has removed their payment details | That code isn't valid. Check it with the tradie who gave it to you. |
+| unknown code, **or** a code whose owner has left the program | That code isn't valid. Check it with the tradie who gave it to you. |
 | own code | That's your own code. |
 | already has a referral | Your account already has a referral — it's one per account. |
 | first order exists | A code can only be added before your first order. |
 | same ABN as the referrer | That code isn't valid. Check it with the tradie who gave it to you. |
 
-Two different situations share the first message deliberately: naming a dormant referrer's account state
-would disclose a third party's missing bank details.
-
-### 5.7 The refusal, the dormant state, and termination
-
-**Removing details while confirmed money is unpaid.** Pressing **Remove details** opens a confirmation in
-place (never a modal — the ops `ProjectRecord` pattern):
-> `t-bd-sm` **Remove your payment details?**
-> `t-cap` Your code stops recording new referrals. The mates you've already referred keep their discount,
-> and anything already paid stays in your history.
-
-When `payout.clearBlocked != null`, the same control instead reveals a `--warning` notice:
-> **We can't remove these yet.**
-> **[amount]** is confirmed and hasn't gone out. We need this account to send it — usually in the next
-> payment run, due **[date]**. You can remove them once it's paid.
-
-with a single `Btn outline sm` **OK** in the warning ink. The Remove control is *not* disabled — a disabled
-button explains nothing.
-
-**State D — dormant.** An `--info`-toned notice with a 3px `--info` left border, above everything:
-> **Your code is switched off.**
-> You removed your payment details, so **[code]** won't record new referrals. **[heldPendingDetails]** is
-> waiting to be confirmed and can't go out until we have somewhere to send it. Nothing you've already been
-> paid is affected, and the mates you've already referred keep their discount.
-> `Btn sage sm` **Add my details back**
-
-The `heldPendingDetails` sentence is omitted when the amount is zero. The code card renders at 55% opacity
-with the code struck through and a `.quote-chip--neutral` reading `Not recording new referrals`. Share
-controls are removed, not disabled.
-
-**State E — under threshold.** In the earnings strip the Confirmed cell takes `TONE.attn` instead of
-`TONE.pos` and its sub-line reads `accruing`. Beneath the strip, a `--warning` notice:
-> You've earned **[amount]**. We pay out once your balance reaches **[threshold]** — it keeps accruing
-> until then and it isn't going anywhere.
-
-Zero language of any kind about thresholds renders when `minPayoutBalance === 0`.
-
-**State F — terminated.** A `--tone-mute`-bordered info notice at the top:
-> **This program has ended.**
-> We're no longer taking new referrals. Anything you'd already earned is below and will still be paid, on
-> the timetable you were given.
-
-Earnings, list and payments render read-only. No code card, no share, no entry form. An account with no
-referral history never reaches this route.
+Two situations share the first message deliberately: naming a departed referrer's account state would
+disclose a third party's affairs.
 
 ---
 
-## 6. Screen: the discount panel (the referred tradie)
+## 6. The discount card
 
-**Intent.** Tell someone who is not in a program that their price is lower, why, and until when. Remove it
-and a time-limited offer expires silently — the one outcome that generates complaints rather than orders.
+**Home: the Referrals section**, under an `h2` **Your discount**, above **Refer a mate**.
 
-**Where.** `AccountSettingsPage` in `src/app/App.tsx`, inside the Settings block, as a **full-width card
-above** the existing `Price display` / `Sign-in & security` two-up grid.
+> **This moved in revision 2**, from the Account page beside the Price display preference. AC-69 and
+> §8.6.1 both need amending — see §14.
 
-> **Refinement on the spec.** §8.6.1 says "beside the Price display preference". A 50%-width column buries
-> an offer with a deadline beside a preference toggle. The panel keeps the same *home* — the one place on
-> the site where "how my prices work" lives — but takes the full column width and leads. This is a change
-> from the spec's wording and should be confirmed at the mock gate.
+Source: `GET /api/account/referral-offer`. `offer === null` ⇒ **the block and its heading render nothing at
+all** — no placeholder, no greyed card, no "you don't have a referral discount".
 
-Source: `GET /api/account/referral-offer`. `offer === null` ⇒ **nothing renders at all** — no placeholder,
-no greyed card, no "you don't have a referral discount". The Account page is byte-identical to today.
+All four states are a `.card` with a 3px left border.
 
-### 6.1 The four states
-
-All four are a `.card` with a 3px left border and the eyebrow `Your referral discount`.
-
-**Available** (`state === 'available'`, more than 30 days remaining) — sage border, sage eyebrow:
+**Available** (`available`, > 30 days remaining) — sage border:
 > `t-hd1` **[discount] off your first order**
 > `t-bd` It's already in every price you see — there's nothing to apply. This is a one-off from
 > **[referrer]**, and it's yours until **[expiry]**.
-> chips: `[n] months left` (`--ready`) · `First order only` (`--neutral`) · `One per account` (`--neutral`)
-> `t-cap` [referrer] is told when your first order is paid, and is paid a percentage of it.
-> action: `Btn sage md` **Finish your quote →** when a draft exists, else **Start a quote →**
+> chips: `[n] months left` (`--ready`) · `First order only` · `One per account`
+> `Btn sage md` **Finish your quote →** (or **Start a quote →** when no draft exists)
 
-**Expiring** (`state === 'available'`, ≤ 30 days remaining) — `--tone-attn` border and eyebrow:
+**Expiring** (`available`, ≤ 30 days) — `--tone-attn` border:
 > `t-hd1` **[discount] off your first order — [n] days left**
 > `t-bd` It runs out on **[expiry]**, and it's a one-off. It's already in every price you see; place your
 > first order before then and it's yours.
 > chips: `Expires [expiry]` (warning) · `First order only`
-> action: `Btn sage md` **Finish your quote →**
+> `Btn sage md` **Finish your quote →**
 
-The 30-day boundary is the same trigger as the reminder email, so the screen and the inbox agree.
-The remaining-time chip reads in months above 60 days and in days below.
+The 30-day boundary is the same trigger as the reminder email, so the screen and the inbox agree. The
+remaining-time chip reads in months above 60 days and in days below.
 
-**Used** (`state === 'used'`) — `--tone-mute-bd` border, `--quiet` eyebrow:
+**Used** (`used`) — `--tone-mute-bd` border:
 > `t-hd2` **Your [discount] referral discount was applied to order [usedOrderNo]**
 > `t-bd` On **[usedAt]**. That was the one-off — nice work.
-> link: `See that order →`
+> link `See that order →`
 
-**Expired** (`state === 'expired'`) — `--tone-mute-bd` border:
+**Expired** (`expired`) — `--tone-mute-bd` border:
 > `t-hd2` **Your [discount] referral discount expired on [expiredAt]**
 > `t-bd` It applied to a first order placed within **[window]** of signing up with [referrer]'s code. Your
 > prices are unchanged from here.
 
 No apology, no "sorry you missed out", no offer to reinstate.
 
-### 6.2 Prohibited vocabulary in this panel and everywhere near it
+**Prohibited vocabulary in and near this card:** apply · redeem · claim · use at checkout · voucher ·
+coupon · credit · balance · wallet · stored · load · activate. Also: any second percentage, any combined
+figure, any reference to the standing account discount, any dollar saving. (AC-70, AC-75.)
 
-Not: **apply · redeem · claim · use at checkout · voucher · coupon · credit · balance · wallet · stored ·
-load · activate**. There is no redemption moment in this system, and credit/balance language also
-undermines the reason the discount sits outside the gift-card regime.
-
-Not: any second percentage, any combined figure, any reference to the standing account discount, any
-dollar saving. (AC-75, and §6 of the spec on worked dollar figures.)
-
-### 6.3 GST
-
-Nothing in this panel moves with `price_gst_mode`, because a percentage is unit-free. **That is arithmetic,
-not an exemption** — do not implement it as a carve-out and do not copy the payout-side exemption here. If
-a worked dollar figure is ever added, it is a price and honours the preference like any other.
+**GST.** Nothing here moves with `price_gst_mode`, because a percentage is unit-free. **That is arithmetic,
+not an exemption** — do not implement it as a carve-out and do not copy the payout-side exemption here.
 
 ---
 
-## 7. Screen: the quote money panel
+## 7. The quote money panel
 
 `QuoteTotals` gains one optional prop:
 
@@ -578,186 +607,191 @@ a worked dollar figure is ever added, it is a price and honours the preference l
 referral?: { percent: number; referrerName: string }
 ```
 
-When present, one row renders **above** the existing figures, inside the sage band, separated from them by
-a hairline:
+When present, one row renders **above** the existing figures, inside the sage band, separated by a hairline:
 
-> left: `Referral discount — [percent]% off, thanks to [referrerName]` — `t-cap`, `--sage-ink`
-> right: `Already in the prices above` — `t-cap`, `--sage-ink`, medium
+> left `Referral discount — [percent]% off, thanks to [referrerName]` — `t-cap`, `--sage-ink`
+> right `Already in the prices above` — `t-cap`, `--sage-ink`, medium
 
-Below 640px the two halves stack, left-aligned.
+Below 640px the halves stack, left-aligned. It sits above the figures because it is a statement *about* the
+prices, not one of them.
 
-It sits above the figures because it is a statement *about* the prices, not one of them, and because a row
-in the middle of a totals column reads as a line item that should be arithmetically visible — which it
-deliberately is not.
-
-The prop is absent (and the row gone) at the first pricing event after the discount is used or expires
-(AC-57). An issued quote renders it from the issue-time stamp and never re-prices (AC-54).
-
-Everything else in `QuoteTotals` is unchanged, in both GST modes, for every non-referred account.
+The prop is absent at the first pricing event after the discount is used or expires (AC-57). An issued
+quote renders it from the issue-time stamp and never re-prices (AC-54). Everything else in `QuoteTotals` is
+unchanged, in both GST modes, for every non-referred account.
 
 ---
 
-## 8. Screens: the ops console
+## 8. The ops console
 
-New tab `Referrals` in `ALL_TABS` (`src/ops/OpsApp.tsx`), between Pricing and Files. Three sub-screens on
-the `Pricing.tsx` sub-tab pattern. Page container `max-w-5xl` for Program, full width for Referrals and
-Payouts. Everything below reuses `Pricing.tsx` verbatim in structure: `HealthBanner`, the underline sub-tab
-row, the inline-editable table, the before/after review modal, confirm-in-place.
+New tab `Referrals` in `ALL_TABS`, between Pricing and Files. Three sub-screens on the `Pricing.tsx`
+sub-tab pattern.
+
+**Minimum viable, deliberately.** Existing components only, no bespoke anything, no polish. These screens
+will be re-skinned by the console redesign; effort on appearance now is thrown away.
+
+**Rule 7 applies throughout: every mutating action is on the row it affects.** No batch bars, no selection
+checkboxes. Search, filter pills and CSV export stay at the top — they change nothing.
 
 ### 8.1 Program
 
-- **Health banner:** `Program active · referrer reward on · referred discount on · version [n], saved
-  [date] by [name]`, right side `[n] payouts ready — [amount] →`. Sage tone when active, warning tone when
-  paused or terminated.
-- **The restatement card** — a `.card` above the fields, whose whole job is to make a typo visible:
+- **Health banner:** `Program on · version [n], saved [date] by [name]`, right side `[n] payouts ready —
+  [amount] →`. Sage when on, warning when off.
+- **The restatement card**, recomputed live from unsaved field values so a mistyped 10% is visible before
+  saving:
   > A referred tradie gets **[discount]** off their first order. When that order is at least **[minOrder]**
   > ex GST (goods, after discount, excluding delivery) and paid in full, the referrer earns **[rate]** of
   > it, paid within **[payoutDays]**. A referral lapses if there's no first order within **[window]**.
-  > [No cap. | Capped at [cap] per referral.] [No payout threshold. | Paid out once a balance reaches
-  > [threshold].]
-
-  It recomputes live from the unsaved field values, so a mistyped 10% is visible before saving.
-- **Status card:** three buttons (Active / Paused / Terminated) + two checkboxes (`Referrer reward active`,
-  `Referred discount active`) + `t-cap` "Paused hides every placement and records nothing new; the landing
-  page stays up and says the program is on hold."
-- **Numbers table** — the `Pricing.tsx` inline-edit table: label left, `ops-in` input right with its unit.
-  Rows: commission rate · cap (blank = no cap) · qualifying minimum · referred discount · attribution
-  window · payment timeframe · minimum payout balance (0 = off).
-- **Threshold warning** — a `--warning` notice, shown whenever the threshold field holds a non-zero value:
-  > **Setting a minimum payout balance above $0**
-  > Money held under a threshold is still legally payable and must not sit unpaid for twelve months. The
-  > payout queue force-promotes any accruing group whose oldest confirmed earning passes eleven months,
-  > threshold or not. Turning this on also puts the threshold into the offer on the landing page — it can't
-  > be a surprise found later.
-  > ☐ I understand
-
-  The checkbox maps to `body.acknowledgeHold`; save is refused without it.
+  > [No cap. | Capped at [cap] per referral.]
+- **Settings table** — the `Pricing.tsx` inline-edit table. Rows: Program (On/Off) · Referrer reward
+  (On/Off) · Referred discount (On/Off) · commission rate · referred discount · qualifying minimum · cap
+  (blank = no cap) · attribution window · payment timeframe.
 - **Standing note:** *"Changes apply to referrals recorded from now on. Referrals already recorded keep the
   rate, discount, minimum, window and timeframe they were given."*
 - **Commit bar:** `Discard changes` (ghost) · `Review change →` (sage) → the before/after modal.
-- **Terminating** — confirm in place, `--destructive` tone:
-  > **End the referral program?**
+- **Switching off** — confirm in place, `--destructive`. **A program-level action on the program screen;
+  its target is unambiguous and it is not caught by rule 7.**
+  > **Switch the referral program off?**
   > New referrals stop being recorded and every placement disappears. **Nothing already promised is
   > withdrawn:** pending earnings still confirm when their order is paid, confirmed earnings are still paid
   > within their stated timeframe, and every discount already given runs to the date it was given. To stop
-  > those, use a bulk void — it is a separate, deliberate act.
-  > Type TERMINATE to confirm · [field] · `End the program` / `Cancel`
+  > one of those, void that referral on its own row in the Referrals list.
+  > Type TERMINATE to confirm · [field] · `Switch off` / `Cancel`
 
-  Reactivating uses the same shape with `REACTIVATE` and: *"Restarting attributes nothing retroactively.
-  Referrals that lapsed while it was off stay lapsed."*
-- **Stale save (409):** a `--warning` notice — *"Someone else saved first. These settings were changed by
+  Switching back on uses the same shape with `REACTIVATE`: *"Switching it back on attributes nothing
+  retroactively. Referrals that lapsed while it was off stay lapsed."*
+- **Stale save (409):** `--warning` notice — *"Someone else saved first. These settings were changed by
   [name] at [time], so your version ([n]) is no longer current. Reload to see theirs, then make your change
   again — nothing of yours was saved."* + `Reload settings`.
 
+**Deleted from this screen:** the minimum-payout-balance field, its held-money warning, and its
+acknowledgement checkbox. See §14.
+
 ### 8.2 Referrals list
 
-- **Filter pills** (the `Projects.tsx` pattern, sage fill when active): All · Recorded · Ordered · Earned ·
-  Paid · Expired · Void, each with a count.
-- **Search field**, 260px, placeholder `code, referrer or referred email…`.
-- **`Bulk void…`** as a secondary button, top right — the only path to stopping in-flight promises.
-- **Table** (`min-w-[1000px]`, `overflow-x-auto`): Referrer · Referred · Code · Recorded · Status ·
-  Earning (right) · Flags. Referrer and Referred cells carry the email as a `t-cap` second line. Status is
-  a chip with a `t-cap` reason beneath where one exists.
-- **Flag chips** — warning-brown outline, one per flag: `ABN` · `Phone` · `Name` · `Postcode [value]`. A row
-  with any flag takes a faint warning-tinted background. Footer note:
-  > Flags are a signal for a reviewer, not a control — one person can legitimately hold several ABNs, and a
-  > suburb full of tradies is the market, not fraud. Click a row to see both accounts and void it. There is
-  > no action here that creates a referral.
-- **Void** — confirm in place, sage tone, mandatory reason:
-  > **Void this referral?** [referrer] → [referred]. The earning of [amount] leaves the ready-to-pay queue.
-  > Any not-yet-issued quote can then be re-priced without the discount. An issued quote keeps its price.
+- **Filter pills** with counts (All · Recorded · Ordered · Earned · Paid · Expired · Void) and a **search
+  field** (`code, referrer or referred email…`) at the top. Both non-mutating.
+- **Table** (`min-w-[1020px]`, `overflow-x-auto`): Referrer · Referred · Code · Recorded · Status ·
+  Earning (right) · **Order** · actions. Referrer and Referred carry the email as a `t-cap` second line.
+  Status is a chip with a `t-cap` reason beneath where one exists.
+- **Order** is a link to the referred order's ops record (`OF-1088 →`), or `—`.
+- **Per-row `Void`** (or `Un-void`), expanding a confirmation in place beneath the row, sage tone,
+  mandatory reason:
+  > **Void this referral?** The earning of [amount] leaves the payable queue. Any not-yet-issued quote can
+  > then be re-priced without the discount. An issued quote keeps its price.
   > Reason — staff read this later to understand why money didn't go out · [field] · `Void referral`
 
-  `Void referral` stays disabled until the reason is non-empty. Un-void uses the same shape.
-- **Bulk void** — `--destructive` tone, reason + typed `VOID`:
-  > **Void [n] recorded referrals**
-  > This withdraws promises already made to real people: [n] referrers lose an expected payment and [n]
-  > referred tradies lose a discount they were told about. It is not what ending the program does, and it
-  > cannot be undone in bulk.
+  `Void referral` stays disabled until the reason is non-empty.
+- Footer note: *"Click a row to see both accounts side by side, including any matching ABN, phone, business
+  name or delivery postcode. There is no action here that creates a referral."*
 - **Empty:** the standard ops dashed box — *"No referrals in this view."*
 
-### 8.3 Payouts — the weekly job
+**Two things dropped, stated plainly rather than lost quietly:**
 
-Top strip, a `.card` with a 2px sage left border:
-> `t-hd2` **[n] referrers**  `t-hd2` **[total]**  `t-cap` ready to pay · [n] past its promised date
-> right: `Export CSV` (secondary) · `Mark paid…` (sage)
+- **The Flags column is gone**, replaced by the Order link. The shared-ABN / phone / business-name /
+  postcode signals still exist and still appear **on the ops project record, before a reviewer issues the
+  quote** — which is where AC-58 actually put them and the only place they can change an outcome. They also
+  appear on the referral's own row detail. What's gone is the column, which showed a reviewer a flag at a
+  moment when there was nothing to do about it. **AC-58 is unaffected.**
+- **Bulk void is gone.** Stopping referrals already recorded is done **one row at a time, each with its own
+  reason** — better evidence than one reason applied to forty relationships. At realistic volumes (38
+  referrals lifetime in the mock's data) switching the program off and then voiding the handful still in
+  flight is a few minutes' work. **AC-67's guarantee is unchanged** — a status change still never withdraws
+  a promise; only its mechanism changes from "an explicitly confirmed bulk void" to "an explicitly
+  confirmed per-referral void". See §14.
+  - *The one scenario that would argue for batch:* a single referrer found to have farmed dozens of fake
+    accounts — one referrer, many referrals. Filtering the list by that referrer and voiding row by row
+    handles a dozen; beyond that it is worth deciding against a real case rather than pre-building.
+
+### 8.3 Payouts
+
+Top strip, `.card` with a 2px sage left border:
+> `t-hd2` **[n] referrers** `t-hd2` **[total]** · `t-cap` to pay · [n] past its promised date
+> right: `Export CSV` (non-mutating, stays at the top)
 
 The "past its promised date" clause renders only when at least one group has `overPromise`.
 
-**Ready to pay** — `.card` + `.panel-head` ("Ready to pay" / "grouped per referrer — one transfer each").
-Columns: Referrer (with `n earnings` sub-line) · ABN · BSB · Account · Account name · Amount (right) ·
-Oldest confirmed · actions. All bank figures in `font-data`.
+**To pay** — `.card` + `.panel-head` ("To pay" / "one row per referrer — one transfer each"). Columns:
+Referrer (with `n earnings` sub-line) · ABN · BSB · Account · Account name · Amount (right) · **Waiting** ·
+action. All bank figures in `font-data`.
 
-Sorting: `overPromise` groups first, then oldest-confirmed ascending. An over-promise row takes a faint
-warning background and a `Over promise — [n] days` chip in its Oldest-confirmed cell. Each row carries a
-ghost `Mark failed` once a payout exists for it.
+- **Waiting** replaced "Oldest confirmed". Same underlying date; the name now says what it is for — how
+  long this person has waited against the [payoutDays] we promised. Over-promise rows sort to the top, take
+  a faint warning background, and carry a `Past the [payoutDays] promise` chip.
+- **Per-row `Record payment`**, expanding in place:
+  > **Record a [amount] payment to [referrer]**
+  > Do this **after** you've made the transfer. It marks the earning paid, freezes the bank details onto the
+  > record, and emails the referrer.
+  > Bank reference from the transfer you made · [field] · `Record payment` / `Cancel`
 
-**Accruing** — rendered only when `minPayoutBalance > 0`. `.panel-head` reads
-`Accruing — under the [threshold] threshold` / `[n] referrers · [total] · excluded from this run`. Three
-columns: name · amount · oldest, plus a per-row `Pay anyway` secondary. A force-promoted group shows a
-`Forced — 11 months` warning chip. Footer note:
-> This whole group only exists when a minimum payout balance is set. Anything past eleven months is
-> promoted into the run automatically.
-
-**Mark paid** — confirm in place, sage:
-> **Mark [n] payouts paid — [total]**
-> Do this **after** you've made the transfers. It flips [n] earnings to paid, freezes each referrer's bank
-> details onto their payment record, and emails all [n].
-> Bank reference from the transfer you made · [field]
-> ☐ Include the [n] accruing referrers ([amount])   ← only when an accruing group exists
-> `Mark [n] paid` / `Cancel`
-
-`Mark [n] paid` is disabled until the reference is non-empty.
-
-**Mark failed** — confirm in place, warning: *"Returns its [n] earnings to the ready queue. The failed
-payment stays in history with its reference, so the bank record and this one still agree."*
+  Disabled until the reference is non-empty. Six transfers means six rows, each recorded with the reference
+  its own transfer got — more accurate than one reference standing for six, and there is no way to act on
+  the wrong set.
 
 **Payments made** — `.panel-head` with a date-range control and `Export CSV`. Columns: Paid · Referrer ·
-Reference · Account paid · Amount (right) · By · Status. Footer note:
+Reference · Account paid · Amount (right) · By · Status · action. Footer note:
 > Bank details are frozen onto each payment as it goes out, so this stays correct after a referrer changes
-> or removes theirs. This is the accountant's record.
+> theirs or leaves. This is the accountant's record.
 
-**Empty:** top strip reads `Nothing ready`; the dashed box reads *"No referral payouts are ready. Earnings
+- **Per-row reversal — one action, both causes.** Label **`Didn't go through`**. Expanding in place,
+  `--warning` tone, **reason required**:
+  > **This payment didn't go through?**
+  > Its [n] earnings go back into the payable queue. The payment stays in history with the reference you
+  > recorded, so the bank record and this one still agree.
+  > What happened? — e.g. "bounced, account closed" or "recorded against the wrong referrer" · [field] ·
+  > `Reverse this payment` / `Cancel`
+
+  Reversed rows show a `Reversed` chip with the reason as a `t-cap` sub-line.
+
+  **Why one action and not two.** "Mark failed" only covered a bounce, and a bounce only happens when the
+  account details are *invalid* — money sent to a valid but wrong account never comes back. The likelier
+  error is a staff member recording the wrong row or the wrong amount, and nobody fixing that goes hunting
+  for a button called *failed*. One concept covers both; the required reason distinguishes them afterwards,
+  which is all anyone needs.
+
+**Deleted:** the Accruing group, `Pay anyway`, the eleven-month force-promotion, and the batch `Mark paid…`
+control. See §14.
+
+**Empty:** top strip reads `Nothing ready`; dashed box reads *"No referral payouts are waiting. Earnings
 appear here once the referred order is paid in full."*
 
 ### 8.4 Ops dashboard row
 
-One row in "Needs us", rendered only when `referralPayoutsReady.count > 0`:
-> `[n]` · **referral payouts ready — [amount][, one [n] days old]** · `Open →`
+One row in "Needs us", only when `referralPayoutsReady.count > 0`:
+> `[n]` · **referral payouts to make — [amount][, one [n] days old]** · `Open →`
 
-The age clause appears only when something is over promise. Zero count renders nothing at all, per the
-existing dashboard rule.
+The age clause appears only when something is over promise. Zero count renders nothing.
 
 ### 8.5 Ops project record
 
-The existing project record gains, in the pricing block: `Referral discount applied — [percent]% (referrer:
-[name])`, plus any review-flag chips, above the price. Staff see the full composition in the price-explain
-trace; that trace's discount step label becomes truthful about composition. Ops-only — none of this is
-serialised to a customer response.
+Gains, in the pricing block: `Referral discount applied — [percent]% (referrer: [name])`, plus the review
+flag chips (shared ABN / phone / business name / postcode), above the price. **This is where AC-58 lives**
+and it is unchanged by the list's Flags column being dropped. Ops-only; none of it is serialised to a
+customer response.
 
 ---
 
 ## 9. Accessibility
 
-- **Focus.** Every control keeps the site's `focus-visible:ring-2 ring-sage ring-offset-2`. The account
-  rail's new item is reachable in DOM order with `aria-current="page"` when active.
-- **Status is never colour alone.** Every `StatusPill` and every chip carries its icon and its word.
-- **The code** is rendered as text, selectable, with `aria-label="Your referral code, K R A dash 7 F 2"` so
-  it is read out as characters rather than as a word.
-- **Copy actions** announce through a visually-hidden `aria-live="polite"` region ("Link copied"), because
-  the only visual feedback is a transient label swap.
-- **Form fields** use `id`/`htmlFor` (`FieldLabel` is a sibling, not a wrapper) and `aria-describedby`
-  pointing at the error line, with `aria-invalid` on failure. The submit button is disabled rather than
-  hidden, so its state is announced.
-- **Tables** in ops use real `<th scope="col">`. The account referrals list is a definition-style list of
-  rows, not a table — each row is one non-interactive group.
-- **Contrast.** `--tone-attn` on `--tone-attn-bg`, `--tone-pos` on `--tone-pos-bg` and `--sage-ink` on
-  `--sage-wash` are the existing verified pairs; use no other combination. `--quietest` is used only for
-  the disabled example code and the "nothing here" placeholder, never for content.
-- **Touch targets** on phone: every button in the share cluster is at least 44px tall (`Btn md` at 12px
-  vertical padding + 21px line-height = 45px).
-- **Reduced motion:** there is no motion in any of these screens beyond the existing `.disclose`
-  transition, which already honours the preference.
+- **Focus:** the site's `focus-visible:ring-2 ring-sage ring-offset-2` throughout. The new rail item is in
+  DOM order with `aria-current="page"` when active.
+- **Status is never colour alone** — every pill and chip carries icon and word.
+- **The code** is selectable text with `aria-label="Your referral code, K R A dash 7 F 2"` so it is read
+  out as characters, not as a word.
+- **Copy actions** announce through a visually-hidden `aria-live="polite"` region.
+- **The join flow** is one `<form>` per part with a real `<fieldset>`/`<legend>`; the terms checkbox is a
+  native `<input type="checkbox">` with a `<label>` wrapping its text and the link inside the label but
+  focusable separately. `Continue` and `Join the program` are `type="submit"`, disabled rather than hidden
+  so their state is announced. Moving between parts moves focus to the new part's heading (`tabindex="-1"`).
+- **Form fields** use `id`/`htmlFor` (`FieldLabel` is a sibling, not a wrapper) with `aria-describedby`
+  → the error line and `aria-invalid` on failure.
+- **Tables** in ops use real `<th scope="col">`. The account referrals list is a list of non-interactive
+  row groups, not a table.
+- **Contrast:** `--tone-attn`/`--tone-attn-bg`, `--tone-pos`/`--tone-pos-bg`, `--sage-ink`/`--sage-wash`
+  are the existing verified pairs; use no others. `--quietest` only for the example code and "nothing here"
+  placeholders.
+- **Touch targets** ≥44px on phone (`Btn md` = 12px padding + 21px line-height = 45px).
+- **Reduced motion:** no motion in any of these screens beyond the existing `.disclose` transition, which
+  already honours the preference.
 
 ---
 
@@ -765,55 +799,125 @@ serialised to a customer response.
 
 | Surface | ≥1024 | 768–1023 | <768 |
 |---|---|---|---|
-| `/refer` hero | `t-ds1` 56px | 38px | 32px, CTAs stack full-width |
-| Conditions grid | 3 columns | 2 columns | 1 column, hairline-divided rows |
-| Three steps | 3 columns | 3 columns | stacked, hairlines collapsed |
-| `/refer` state band | split 1.15fr/.85fr | stacked | stacked |
-| Referrals entry form | 2-column field grid | 1 column | 1 column, button full width |
-| Earnings strip | 3 cells in a row | 3 cells in a row | stacked cells |
+| `/refer` hero | `t-ds2` 40px | 30px | 26px, button full-width |
+| Three facts | `t-bd-lg`, 34px numeral column | same | `t-bd`, 22px numeral column, 1.3rem figure |
+| Conditions panel | one column, 72ch | one column | one column, 16px gutters |
+| Join flow | split 1.1fr/.9fr | stacked (right pane below) | stacked, button full width |
+| Payout fields | 2-column grid | 1 column | 1 column |
+| Earnings strip | 3 cells in a row | 3 cells | stacked cells |
 | Referrals list | 3-column row | 3-column row | stacked card per row |
-| Discount panel | copy left, CTA right | stacked | stacked, CTA full width |
+| Discount card | copy left, CTA right | stacked | stacked, CTA full width |
 | Quote referral row | two halves | two halves | stacked, left-aligned |
-| Ops tables | table | table with `overflow-x-auto` | card-per-row (the `Projects.tsx` `lg:hidden` pattern) |
+| Ops tables | table | table + `overflow-x-auto` | card-per-row (`Projects.tsx` `lg:hidden` pattern) |
 
-The account rail folds into the site drawer below 1024 exactly as it does today; the Referrals entry joins
-the drawer's account group.
+The account rail folds into the site drawer below 1024 as today; Referrals joins the drawer's account group.
 
 ---
 
 ## 11. Things this design deliberately did not build
 
-- **Any invite, contact-import or send-on-their-behalf affordance.** Three share controls, no fourth.
-- **A referral detail page in the account area.** Rows are not clickable; there is nothing more we are
-  willing to show about another person.
-- **A "you saved $X" figure** on the discount panel or the quote. It needs a second pricing pass against an
-  undiscounted baseline and it is out of scope.
-- **A blocked-on-details payout group in ops.** Unreachable under the payability rule.
-- **Any viewer for the bank-detail access log.** No screen, no tab, no export, now or later.
-- **Progress indicators, streaks, badges, leaderboards or a referral "level".** Cash is the mechanic.
+- Any invite, contact-import or send-on-their-behalf affordance.
+- A referral detail page in the account area — rows are not clickable.
+- A "you saved $X" figure on the discount card or the quote.
+- Any viewer for the bank-detail access log.
+- A half-joined membership state, or any screen explaining one.
+- Progress indicators, streaks, badges, leaderboards or a referral "level".
+- Any batch or bulk mutation, in ops or the account area.
+- An FAQ, a steps grid, or any repeated-card block on `/refer`. Cards were carrying rhythm, not facts.
 
 ---
 
-## 12. Open questions the mock gate must settle
+## 12. Open questions for the mock gate
 
 | # | Question | Recommendation |
 |---|---|---|
-| Q1 | **The disclosure to the referred tradie** — "[referrer] is told when your first order is paid, and is paid a percentage of it" — appears on the code-applied confirmation and the discount panel. It is what makes it safe to show the referrer their rate and their earnings on one screen. | Approve it. The alternatives (hide the rate from the earnings screen, or show banded amounts) cost the referrer clarity about their own money, which is what that screen exists for. |
-| Q2 | **The discount panel takes the full column width** above the Price display card, rather than sitting beside it as §8.6.1 says. | Approve the full width. An offer with a deadline in a 50% column beside a preference toggle is a status field. |
-| Q3 | **The GST sentence on every payout surface** — "Amounts include any GST payable." | Keep as a slot, flag for the accountant, do not launch without review. It states the position already taken and must not simply be deleted. |
-| Q4 | **The account rail badge** shows confirmed money as a dollar figure (`$124`). | Approve. A count badge would say "1", which is not the fact the referrer cares about. |
-| Q5 | **The entry state's dashed example code reads `ABC-123`.** | Confirm the real code format is `XXX-NNN` from the unambiguous alphabet (no O/0/I/1) so the example is honest. |
+| Q1 | **The GST sentence** — "Amounts include any GST payable." | Keep as a slot, route to the accountant, do not launch without review. |
+| Q2 | **The account rail badge** shows confirmed money as a dollar figure (`$124`). | Approve. A count badge would say "1", which is not the fact the referrer cares about. |
+| Q3 | **The example code in the join flow reads `ABC-123`.** | Confirm the real format is `XXX-NNN` from the unambiguous alphabet (no O/0/I/1) so the example is honest. |
+| Q4 | **Rejoining reissues the same code.** | Approve — a code that has been read out over the phone should keep working if the person comes back. |
+| Q5 | **Per-row `Record payment` costs six clicks a week** instead of one batch action. | Approve. Each transfer carries its own bank reference, which is more accurate, and there is no way to act on the wrong set. |
 
 ---
 
-## 13. Acceptance criteria this document is answerable for
+## 13. What the revision cost, stated plainly
 
-Copy and layout obligations, mapped so a tester can find them:
+- **A referrer who wants to check their percentage must leave the account area.** That is the price of
+  taking the rate off the earnings screen (rule 6). It is one click via *How the program works →*, present
+  on both the code card and the how-you-get-paid panel.
+- **We can no longer count people who started joining and stopped.** Nothing is recorded until the single
+  commit, so a partial joiner is indistinguishable from someone who never looked. If that number is wanted
+  later it has to be front-end analytics, not a database state.
+- **The referred tradie is no longer told, in the product, that their referrer earns a percentage of their
+  order.** The owner's reasoning is sound — the program is openly advertised and the tradie deliberately
+  entered a code — and dropping it removes a sentence that made the transaction feel transactional. The
+  residual: a tradie who was given a code verbally, never visited `/refer`, and never read the terms will
+  first learn of it from their mate. The terms must therefore carry it clearly (§11 item 7 of the spec).
+  - I have **not** added the suggested referrer-side reassurance ("your mate is told you get paid…"),
+    because with the disclosure removed it would not be true. If the owner wants that reassurance, the only
+    honest way to earn it is to put the line back on the referred tradie's side.
+- **The landing page no longer restates anything.** Cutting thirteen cards means each fact appears exactly
+  once, so a reader who skips the conditions panel has no second chance at the minimum order or the window.
+  That is the correct trade — repetition was costing comprehension of the whole page — but it puts more
+  weight on that one panel, which is why it may be made denser and may not be moved, hidden or collapsed.
+- **A referred tradie still cannot verify their discount.** No published list price means "2.5% off" has
+  nothing visible to be off. That is what makes showing the increment alone safe, and it means the claim
+  rests on trust. A tradie who priced a job anonymously before signing up will see the price move by more
+  than 2.5%, because the standing account discount arrives at the same moment.
 
-AC-25 (share, no recipient field) §3.4, §5.3 · AC-26 (masked name, nothing else) §5.4 · AC-27, AC-31
-(earnings, GST-inert) §5.4 · AC-29 (masked read-back) §5.5 · AC-30 (payment history) §5.4 · AC-32, AC-76
-(every figure from config) §1 · AC-34 (logged-out vs logged-in) §3.3 · AC-35 (no cap clause) §1 · AC-36,
-AC-37 (placements) §4 · AC-61 (threshold language) §1, §5.7 · AC-64 (terminated) §5.1 · AC-69 (panel home)
-§6 · AC-70 (no redemption language) §6.2 · AC-71 (three states) §6.1 · AC-73, AC-74 (server-sourced, GST)
-§6.3 · AC-75 (never a total) §0, §6.2 · AC-78 (no contact fields) §0, §11 · AC-79 (no purchase coupling)
-§0, §3.2, §4 · AC-80 (payment timeframe stated) §3.2, §5.4, §5.5 · AC-81 (threshold in the offer) §3.2.
+---
+
+## 14. Spec and design amendments this revision requires
+
+**Route this section to the product-manager and the architect before implementation.** Every item below is
+a document that now describes something different from what will be built.
+
+### Deleted outright
+
+| Item | Where | Note |
+|---|---|---|
+| `min_payout_balance` / `minPayoutBalance` | spec M7, AC-61, AC-81; design §3 schema, §9, §10.2 `heldUnderThreshold`, §10.3 `acknowledgeHold`, §12 | Ships at 0/off, and under the payability rule everyone in the program is payable — it guarded a state that cannot occur |
+| `PAYOUT_LONG_STOP_MONTHS`, force-promotion, the Accruing group, `Pay anyway`, `forcedByLongStop` | design ADR-8e, §9, §10.3, §11, §13.7 scenario 6 | Existed only to stop threshold-held money ageing |
+| The ops acknowledgement checkbox | design §10.3 `body.acknowledgeHold === true` | And with it the pattern — no acknowledgement checkboxes anywhere |
+| Program status `paused` | spec §4.7, AC-62; design §7.5, §6.1, §6.3 `program_paused` error code | Verified not load-bearing: design §7.5 already keeps `status` out of the discount and earning predicates. Three states collapse to on/off; `terminated`'s semantics are what "off" means |
+| The Flags **column** on the ops referrals list | spec §8.4(b) | The signals survive on the ops project record (AC-58, unaffected) and the row detail |
+| Bulk void | spec §8.4(b), AC-67; design §10.3 `bulk-void` | Replaced by per-row void with a reason |
+| The batch `Mark paid` control | spec §8.4(c); design §10.3 `mark-paid {userIds}` | Becomes per-referrer-row `Record payment` with its own reference |
+| The disclosure line to the referred tradie | this document, rev 1 §5.6 | Owner decision |
+| The `/refer` FAQ section | spec §8.1 ("…link to the rules/T&Cs post; FAQ") | Deleted. Every fact relocated to the hero, the conditions panel or the Referrals screen. The rules/T&Cs link stays |
+| The `/refer` three-step card grid and six-card conditions grid | spec §8.1 ("three steps; what qualifies") | Both survive as **content**; neither survives as a card grid. Three facts as three lines, conditions as one panel |
+
+### Changed
+
+| Item | From | To |
+|---|---|---|
+| **ADR-8 / the payability gate** | `payoutComplete(user)` alone gates code issuance | Membership = terms accepted **and** payout details stored, committed together. `payoutComplete` remains the predicate but is no longer reached without an acceptance in the same transaction. **New storage needed: `referral_joined_at` and the accepted terms version** — architect's call on shape |
+| **AC-1** | code on first demand once details stored | code issued at the moment of joining; stable thereafter; **reissued unchanged on rejoin** |
+| **AC-28 / ADR-8c** | clearing details ⇒ dormant code, future earnings hold at `pending` | clearing details ⇒ **leaving the program**. The `heldPendingDetails` residue still exists for money pending at the moment of leaving and is still explained, never silent |
+| **AC-67** | "only through an explicitly confirmed bulk void" | "only through explicitly confirmed **per-referral** voids, each with a reason". The invariant that matters — a status change never withdraws a promise — is untouched |
+| **AC-69 / §8.6.1** | the offer panel lives on the Account page beside Price display | it lives in the **Referrals section** under an `h2` "Your discount". §8.6.1's third argument ("it survives the program") is replaced by the section-visibility rule in §5: the section is present whenever the account has a code, history **or** an offer |
+| **AC-63 / AC-64 / AC-68** | reference `terminated` | reference the off state |
+| **§8.3 item 1 / AC-25** | the code card carries "the one-sentence rule with live figures" | the same sentence **without the rate**, plus `How the program works →`. AC-32 is unaffected (it constrains figures that *do* appear) |
+| **AC-80** | timeframe stated on the landing page, placements, Referrals section, email | unchanged — the **timeframe** stays everywhere; only the **rate** leaves the account area |
+| **Referral status vocabulary** | `signed_up`\|`quoting`\|`ordered`\|`paid_in_full`\|`not_eligible` | `signed_up`\|`ordered`\|`paid_in_full`\|`expired`\|`not_eligible`; `quoting` absorbed into `signed_up`, `void` presented as `not_eligible` |
+| **Ops payouts response** | `{ ready, accruing, readyTotal }` | `{ ready, readyTotal }`. `overPromise` and `daysWaiting` **stay** — they earn their place on ACL s 32(2) grounds alone |
+| **Mark failed** | `POST /payouts/:id/failed` | one reversal action with a **required reason**, covering both a bounce and a mis-recorded payment |
+
+### New criteria worth adding
+
+- Joining requires an explicit acceptance; the acceptance timestamp and terms version are recorded, and
+  membership, payout details and code issuance commit in the same transaction.
+- Abandoning the join flow at any point leaves **no** referral-program record of any kind on the account.
+- No customer-facing surface in the account area renders the commission rate.
+- No ops screen presents a mutating control outside the row it affects.
+
+---
+
+## 15. Acceptance criteria this document answers for
+
+AC-25 (share, no recipient field) §3.4, §5.2 · AC-26 (masked name only) §5.3 · AC-27, AC-31 (earnings,
+GST-inert) §5.2 · AC-29 (masked read-back) §5.4 · AC-30 (payment history) §5.2 · AC-32, AC-76 (figures from
+config) §1 · AC-34 (logged-out vs logged-in) §3.3–3.4 · AC-35 (no cap clause) §1, §3.6 · AC-36, AC-37
+(placements) §4 · AC-58 (review flags before issue) §8.5 · AC-64 (program off) §5.2 · AC-69 (panel home)
+§6, §14 · AC-70 (no redemption language) §6 · AC-71 (three derived states) §6 · AC-73, AC-74 (server-sourced,
+GST) §6 · AC-75 (never a total) §0, §6 · AC-78 (no contact fields) §0, §11 · AC-79 (no purchase coupling)
+§0, §3.2, §3.3, §4 · AC-80 (timeframe stated) §3.2, §5.2, §5.4.
