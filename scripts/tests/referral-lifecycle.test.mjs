@@ -440,6 +440,45 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.ok(rows[0].expires_at > new Date().toISOString().slice(0, 10), "and it expires in the future");
     });
 
+    await t.test("AC-8/AC-9/AC-11 — a claim is refused on your own code, or a second time", async () => {
+      // Three refusals that share one setup. Each is a distinct rule, but they are
+      // one behaviour from the caller's side — "this claim does not count" — and
+      // the enumerated error is how the screen tells a tradie which it was.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "gates.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='gates.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      // A11 — you cannot refer yourself. The table also has a CHECK, but a
+      // constraint violation is a 500; the rule has to be answered, not thrown.
+      const own = await requestJson(referrer, "/api/account/referrals/claim",
+        { method: "POST", json: { code: mine.code } }, 400);
+      assert.equal(own.body.error, "own_code");
+
+      // An unknown code is refused the same way a dormant or staff-owned one is —
+      // deliberately indistinguishable, so a stranger cannot probe which codes are
+      // real or learn that a referrer has removed their bank details.
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "gates.mate@example.com");
+      const unknown = await requestJson(mate, "/api/account/referrals/claim",
+        { method: "POST", json: { code: "ZZZ-ZZZ" } }, 400);
+      assert.equal(unknown.body.error, "invalid_code");
+
+      // A9 — one referral per account, permanently. First recorded wins; a second
+      // code is refused rather than overwriting a relationship already promised.
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      const second = await requestJson(mate, "/api/account/referrals/claim",
+        { method: "POST", json: { code: mine.code } }, 400);
+      assert.equal(second.body.error, "already_referred");
+      const rows = await sql(
+        `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='gates.mate@example.com')`,
+      );
+      assert.equal(rows.length, 1, "and no second row is written");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

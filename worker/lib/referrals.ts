@@ -132,6 +132,16 @@ export async function recordReferral(
     .bind(code)
     .first<{ id: string }>();
   if (!referrer) return { ok: false, error: "invalid_code" };
+  // A11. The table has a CHECK for this too, but a constraint violation is a 500:
+  // the rule has to be ANSWERED so the screen can say which rule was hit.
+  if (referrer.id === input.referredUser.id) return { ok: false, error: "own_code" };
+  // A9 — one referral per account, permanently. First recorded wins: a second code
+  // is refused rather than overwriting a relationship already promised to someone.
+  const already = await env.DB
+    .prepare("SELECT id FROM referral WHERE referred_user_id = ?")
+    .bind(input.referredUser.id)
+    .first<{ id: string }>();
+  if (already) return { ok: false, error: "already_referred" };
 
   const program = await env.DB
     .prepare("SELECT * FROM referral_program WHERE id = 'default'")
