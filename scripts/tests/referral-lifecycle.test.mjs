@@ -226,7 +226,7 @@ test("T3 — the payability predicate", { timeout: 120_000 }, async (t) => {
   const outfile = join(runDir, "referrals-bundle.mjs");
   await build({
     stdin: {
-      contents: `export { abnValid } from ${JSON.stringify(join(projectRoot, "worker/lib/referrals.ts"))};`,
+      contents: `export { abnValid, payoutComplete } from ${JSON.stringify(join(projectRoot, "worker/lib/referrals.ts"))};`,
       resolveDir: projectRoot,
       sourcefile: "referrals-entry.ts",
       loader: "ts",
@@ -245,5 +245,31 @@ test("T3 — the payability predicate", { timeout: 120_000 }, async (t) => {
     assert.equal(M.abnValid("5182475355"), false, "ten digits is not an ABN");
     assert.equal(M.abnValid(""), false);
     assert.equal(M.abnValid(null), false);
+  });
+
+  await t.test("D18 — payability is four detail fields, and it cannot see order history", () => {
+    const complete = {
+      abn: "51824753556", payout_bsb: "063000",
+      payout_account_number: "12345678", payout_account_name: "A Tradie",
+    };
+    assert.equal(M.payoutComplete(complete), true, "payoutComplete must accept an account with all four details");
+    for (const field of ["abn", "payout_bsb", "payout_account_number", "payout_account_name"]) {
+      assert.equal(
+        M.payoutComplete({ ...complete, [field]: null }), false,
+        `payoutComplete must refuse an account missing ${field}`,
+      );
+      assert.equal(M.payoutComplete({ ...complete, [field]: "   " }), false, `whitespace is not a stored ${field}`);
+    }
+    assert.equal(M.payoutComplete({ ...complete, abn: "51824753557" }), false, "a checksum-invalid ABN is not a stored ABN");
+
+    // ACL s 49, structural. "You must be a customer to refer" is the referral-
+    // selling fact pattern — strict liability, penalties to $100m. The predicate
+    // takes a user row and NOTHING else: no env, no database handle, so it is
+    // incapable of consulting the referrer's orders even if someone later wanted
+    // it to. A18 is protected by the signature, not by a comment.
+    assert.equal(
+      M.payoutComplete.length, 1,
+      "payoutComplete must take only a user row — an env parameter would let it query order history",
+    );
   });
 });
