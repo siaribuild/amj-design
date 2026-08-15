@@ -4,6 +4,7 @@
 //
 // Routes stay thin: the rules live here.
 import type { Env } from "../types";
+import { uuid } from "./util";
 
 /** The account row this module needs to answer "may this user hold a code?". */
 export interface ReferrerRow extends PayoutDetails {
@@ -97,6 +98,50 @@ export function generateReferralCode(): string {
   const pick = () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
   const block = () => `${pick()}${pick()}${pick()}`;
   return `${block()}-${block()}`;
+}
+
+/** What a referrer submits to become payable. Free text as typed. */
+export interface PayoutDetailsInput {
+  bsb?: string | null;
+  accountNumber?: string | null;
+  accountName?: string | null;
+}
+
+/** Store a referrer's payout details, and record that they changed.
+ *
+ *  THE LOG IS NOT OPTIONAL AND NOT A SEPARATE CALL. Both writes go out in one
+ *  `batch`, so there is no path that stores banking details without the access
+ *  row landing with them. ADR-4 asks for that obligation to be structural rather
+ *  than a convention a future endpoint has to remember, and a second endpoint
+ *  that forgot the log would have to forget the storage too.
+ *
+ *  Recording WHO, WHICH RECORD and WHEN — never the value. Copying the details
+ *  into a log in order to protect the details is self-defeating, so `context`
+ *  carries a masked fingerprint and nothing else. */
+export async function savePayoutDetails(
+  env: Env,
+  user: { id: string },
+  input: PayoutDetailsInput,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  // Humans type a BSB with a hyphen and an account number with spaces. Normalise
+  // once, here, so no caller and no screen has to.
+  const bsb = String(input.bsb ?? "").replace(/\D/g, "");
+  const accountNumber = String(input.accountNumber ?? "").replace(/\D/g, "");
+  const accountName = String(input.accountName ?? "").trim();
+  if (!/^\d{6}$/.test(bsb)) return { ok: false, error: "invalid_bsb" };
+  if (!/^\d{5,9}$/.test(accountNumber)) return { ok: false, error: "invalid_account_number" };
+  if (!accountName) return { ok: false, error: "invalid_account_name" };
+
+  const masked = `bsb=${bsb.slice(0, 3)}-*** acct=****${accountNumber.slice(-4)}`;
+  await env.DB.batch([
+    env.DB
+      .prepare("UPDATE user SET payout_bsb = ?, payout_account_number = ?, payout_account_name = ? WHERE id = ?")
+      .bind(bsb, accountNumber, accountName, user.id),
+    env.DB
+      .prepare("INSERT INTO payout_details_access (id, subject_user_id, actor_user_id, action, context) VALUES (?, ?, ?, 'change', ?)")
+      .bind(uuid(), user.id, user.id, masked),
+  ]);
+  return { ok: true };
 }
 
 /** The four fields a payout needs, as stored on the user row. */

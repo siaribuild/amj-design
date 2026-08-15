@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
-import { ensureReferralCode, payoutComplete } from "../lib/referrals";
+import { ensureReferralCode, payoutComplete, savePayoutDetails } from "../lib/referrals";
 
 export const referrals = new Hono<{ Bindings: Env }>();
 
@@ -25,4 +25,20 @@ referrals.get("/account/referrals", async (c) => {
     // to click, read out, or set a cookie from.
     code: user ? await ensureReferralCode(c.env, user) : null,
   });
+});
+
+// The ENTRY step, under D18 — not a payout-time detail. Completing these is how a
+// referrer joins, so this answers with the gate rather than with a bare ok: the
+// screen that called it needs to know whether a code now exists.
+referrals.put("/account/payout-details", async (c) => {
+  const user = await resolveUser(c.env, c.req.raw);
+  if (!user) return c.json({ error: "unauthorised" }, 401);
+  if (user.type === "internal") return c.json({ error: "forbidden" }, 403);
+  const saved = await savePayoutDetails(c.env, user, await c.req.json().catch(() => ({})));
+  if (saved.ok === false) return c.json({ error: saved.error }, 400);
+  // Re-read: savePayoutDetails wrote the columns, and the gate is computed from
+  // them. Answering from the stale request-time row would report the gate the
+  // caller had BEFORE their own save.
+  const fresh = await c.env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(user.id).first<typeof user>();
+  return c.json({ referrerGate: { complete: payoutComplete(fresh) } });
 });
