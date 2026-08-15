@@ -144,6 +144,13 @@
    "twice the weight of the thing it was annotating". */
 .stepbadge{width:32px;height:32px;flex:none;border:1px solid rgba(90,122,106,.4);display:flex;align-items:center;justify-content:center;color:var(--sage);font:500 12px/16px var(--font-data);font-variant-numeric:tabular-nums}
 .seamchev{position:absolute;right:-10px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:rgba(90,122,106,.6);background:var(--paper);z-index:10;display:grid;place-items:center;font-size:13px}
+/* The fact row — App.tsx:1169-1174 (the AS 2047 strip): a quiet fixed-width
+   data-face key beside body prose at reading width. No cells, no fills, no
+   boxes: the hairline between rows is the only structure. */
+.condrow{display:flex;align-items:baseline;gap:24px;padding:14px 0;border-bottom:1px solid var(--line)}
+.condkey{flex:none;width:180px;color:var(--sage-deep);font:500 var(--t-dat)/var(--t-dat-lh) var(--font-data);font-variant-numeric:tabular-nums}
+.condrow.stacked{flex-direction:column;align-items:stretch;gap:4px}
+.condrow.stacked .condkey{width:auto}
 .sagebar{border-left:3px solid var(--sage)}
 .attnbar{border-left:3px solid var(--tone-attn)}
 .mutebar{border-left:3px solid var(--tone-mute-bd)}
@@ -346,13 +353,13 @@ section.surface{padding-top:56px}
                 <div class="card p24 col" style="position:relative">
                   <span class="stepbadge mb16">2</span>
                   <h3 class="sb c-ink fd t-bd" style="margin-bottom:6px">They save.</h3>
-                  <p class="c-body t-bd">Your mate gets <b class="c-ink">2.5% off their first order</b> — on their quote from the start. Nothing to enter, nothing to apply.</p>
+                  <p class="c-body t-bd">Your mate gets <b class="c-ink">2.5% off their first order</b> — on their quote from the start, and it's theirs for <b class="c-ink">12 months</b>. Nothing to enter, nothing to apply.</p>
                   <span class="seamchev" aria-hidden="true">›</span>
                 </div>
                 <div class="card p24 col">
                   <span class="stepbadge mb16">3</span>
                   <h3 class="sb c-ink fd t-bd" style="margin-bottom:6px">You get paid.</h3>
-                  <p class="c-body t-bd">Once they've paid that order in full, we transfer your <b class="c-ink">1%</b> — bank account, within <b class="c-ink">14 days</b>.</p>
+                  <p class="c-body t-bd">Once they've paid that order in full, we transfer <b class="c-ink">1% of the goods</b> — excluding GST and delivery — to your bank account within <b class="c-ink">14 days</b>.</p>
                 </div>
               </div>
             </div>
@@ -361,26 +368,16 @@ section.surface{padding-top:56px}
           <!-- THE CONDITIONS — its own section: the terms of the offer, not part of it -->
           <div class="ground-paper gridpaper" style="padding:56px 0;border-top:1px solid rgba(0,0,0,.08)">
             <div class="wrap" style="position:relative">
-              <div class="split-row is-top mb24" style="display:flex;justify-content:space-between;gap:40px;align-items:flex-start">
-                <div>
-                  <div class="row g8 mb12"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="2"/></svg><span class="t-label c-sage">The conditions</span></div>
-                  <h2 class="t-ds2 c-ink">What qualifies, in six lines.</h2>
-                </div>
-                <p class="t-bd c-body" style="max-width:38ch;flex:none;align-self:flex-end;padding-bottom:6px">The
-                  whole of it. There's no seventh condition further down, and nothing here is different in the
-                  terms.</p>
+              <div class="row g8 mb12"><svg width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="2"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="2"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="2"/></svg><span class="t-label c-sage">The conditions</span></div>
+              <h2 class="t-ds2 c-ink mb20">Before you share it.</h2>
+              <div class="col" style="border-top:1px solid var(--line)">
+                <div class="condrow"><p class="condkey">$2,000</p><p class="t-bd c-body" style="max-width:62ch">Their first order has to be at least <b class="c-ink">$2,000</b> ex GST, before delivery. Below that, nothing is earned on it.</p></div>
+                <div class="condrow"><p class="condkey">First order only</p><p class="t-bd c-body" style="max-width:62ch">You're paid on their <b class="c-ink">first order</b> — one payment per mate, not a cut of everything they buy afterwards.</p></div>
+                <div class="condrow"><p class="condkey">An ABN</p><p class="t-bd c-body" style="max-width:62ch">You'll need an <b class="c-ink">ABN</b> and bank details on your account before your code is issued. That's the account we pay into.</p></div>
               </div>
-              <div class="track2">
-                <div class="card p24 col"><h3 class="sb c-ink fd t-bd-lg mb8">First order only</h3><p class="c-body t-bd grow">It's their <b class="c-ink">first order</b> that counts, and it has to be a tradie who's new to us.</p></div>
-                <div class="card p24 col"><h3 class="sb c-ink fd t-bd-lg mb8">At least $2,000</h3><p class="c-body t-bd grow">Ex GST, before delivery. Measured on the goods after the discount.</p></div>
-                <div class="card p24 col"><h3 class="sb c-ink fd t-bd-lg mb8">Within 12 months</h3><p class="c-body t-bd grow">Their first order has to be placed within 12 months of them signing up with your code.</p></div>
-                <div class="card p24 col"><h3 class="sb c-ink fd t-bd-lg mb8">1% of the goods</h3><p class="c-body t-bd grow">Worked out excluding GST and delivery — not the total on the invoice.</p></div>
-                <div class="card p24 col"><h3 class="sb c-ink fd t-bd-lg mb8">Paid by bank transfer</h3><p class="c-body t-bd grow">Within <b class="c-ink">14 days</b> of their payment clearing. You'll need an ABN and bank details on your account.</p></div>
-                <div class="card p24 col"><h3 class="sb c-ink fd t-bd-lg mb8">No chains</h3><p class="c-body t-bd grow">You get paid for the mates you refer, not for anyone they go on to refer. And you can't refer yourself.</p></div>
-              </div>
-              <p class="t-cap c-body mt12 measure">Amounts include any GST payable. What you do with it at tax
-                time is between you and your accountant — we don't give tax advice.
-                <a class="c-sage" style="text-decoration:underline;text-underline-offset:2px">Read the full rules and terms →</a></p>
+              <p class="t-cap c-body mt16 measure">Amounts include any GST payable, and we don't give tax advice. Self-referral, cancelled orders and second businesses are in the
+                <a class="c-sage" style="text-decoration:underline;text-underline-offset:2px">full rules and terms →</a>
+                and the <a class="c-sage" style="text-decoration:underline;text-underline-offset:2px">referral FAQ →</a>.</p>
             </div>
           </div>
 
@@ -457,22 +454,19 @@ section.surface{padding-top:56px}
             <h2 class="c-ink mb16" style="font:600 26px/32px var(--font-display);letter-spacing:-.5px">Three steps, and only one of them is yours.</h2>
             <div class="track1">
               <div class="card p24 col"><span class="stepbadge mb12">1</span><h3 class="sb c-ink fd t-bd mb4">Share your code.</h3><p class="c-body t-bd-sm">Text it, say it over the phone, send the link. However you'd normally tell someone.</p></div>
-              <div class="card p24 col"><span class="stepbadge mb12">2</span><h3 class="sb c-ink fd t-bd mb4">They save.</h3><p class="c-body t-bd-sm">Your mate gets <b class="c-ink">2.5% off their first order</b> — on their quote from the start. Nothing to enter, nothing to apply.</p></div>
-              <div class="card p24 col"><span class="stepbadge mb12">3</span><h3 class="sb c-ink fd t-bd mb4">You get paid.</h3><p class="c-body t-bd-sm">Once they've paid that order in full, we transfer your <b class="c-ink">1%</b> — bank account, within <b class="c-ink">14 days</b>.</p></div>
+              <div class="card p24 col"><span class="stepbadge mb12">2</span><h3 class="sb c-ink fd t-bd mb4">They save.</h3><p class="c-body t-bd-sm">Your mate gets <b class="c-ink">2.5% off their first order</b> — on their quote from the start, and it's theirs for <b class="c-ink">12 months</b>. Nothing to enter, nothing to apply.</p></div>
+              <div class="card p24 col"><span class="stepbadge mb12">3</span><h3 class="sb c-ink fd t-bd mb4">You get paid.</h3><p class="c-body t-bd-sm">Once they've paid that order in full, we transfer <b class="c-ink">1% of the goods</b> — excluding GST and delivery — to your bank account within <b class="c-ink">14 days</b>.</p></div>
             </div>
           </div>
           <div class="ground-paper" style="padding:28px 20px;border-top:1px solid rgba(0,0,0,.08)">
             <div class="t-label c-sage mb10">The conditions</div>
-            <h2 class="c-ink mb16" style="font:600 26px/32px var(--font-display);letter-spacing:-.5px">What qualifies, in six lines.</h2>
-            <div class="track1">
-              <div class="card p24 col"><h3 class="sb c-ink fd t-bd mb4">First order only</h3><p class="c-body t-bd-sm">It's their <b class="c-ink">first order</b> that counts, and a tradie who's new to us.</p></div>
-              <div class="card p24 col"><h3 class="sb c-ink fd t-bd mb4">At least $2,000</h3><p class="c-body t-bd-sm">Ex GST, before delivery. Measured on the goods after the discount.</p></div>
-              <div class="card p24 col"><h3 class="sb c-ink fd t-bd mb4">Within 12 months</h3><p class="c-body t-bd-sm">Their first order has to be placed within 12 months of them signing up with your code.</p></div>
-              <div class="card p24 col"><h3 class="sb c-ink fd t-bd mb4">1% of the goods</h3><p class="c-body t-bd-sm">Worked out excluding GST and delivery — not the total on the invoice.</p></div>
-              <div class="card p24 col"><h3 class="sb c-ink fd t-bd mb4">Paid by bank transfer</h3><p class="c-body t-bd-sm">Within <b class="c-ink">14 days</b> of their payment clearing. You'll need an ABN and bank details on your account.</p></div>
-              <div class="card p24 col"><h3 class="sb c-ink fd t-bd mb4">No chains</h3><p class="c-body t-bd-sm">You get paid for the mates you refer, not anyone they refer. And you can't refer yourself.</p></div>
+            <h2 class="c-ink mb14" style="font:600 26px/32px var(--font-display);letter-spacing:-.5px">Before you share it.</h2>
+            <div class="col" style="border-top:1px solid var(--line)">
+              <div class="condrow stacked"><p class="condkey">$2,000</p><p class="t-bd-sm c-body">Their first order has to be at least <b class="c-ink">$2,000</b> ex GST, before delivery. Below that, nothing is earned on it.</p></div>
+              <div class="condrow stacked"><p class="condkey">First order only</p><p class="t-bd-sm c-body">You're paid on their <b class="c-ink">first order</b> — one payment per mate, not a cut of everything they buy afterwards.</p></div>
+              <div class="condrow stacked"><p class="condkey">An ABN</p><p class="t-bd-sm c-body">You'll need an <b class="c-ink">ABN</b> and bank details on your account before your code is issued. That's the account we pay into.</p></div>
             </div>
-            <p class="t-cap c-body mt12">Amounts include any GST payable. Your own tax is between you and your accountant — we don't give tax advice. <a class="c-sage" style="text-decoration:underline">Full rules →</a></p>
+            <p class="t-cap c-body mt16">Amounts include any GST payable, and we don't give tax advice. Self-referral, cancelled orders and second businesses are in the <a class="c-sage" style="text-decoration:underline">full rules and terms →</a> and the <a class="c-sage" style="text-decoration:underline">referral FAQ →</a>.</p>
           </div>
           <div class="ground-bone" style="padding:28px 20px;border-top:1px solid rgba(0,0,0,.08)">
             <div class="t-label c-sage mb10">Good to know</div>
@@ -499,20 +493,26 @@ section.surface{padding-top:56px}
       "we need your ABN and bank details" fact now lives on step 2 of joining, which means the two facts the
       law requires to stay separate are no longer even on the same screen — a stronger separation than
       typography was giving them.</p>
-      <p><b>Six condition cards became three step cards.</b> The problem was count and density, never the
-      container — thirteen cards across three grids was the page arguing against its own simplicity. Three
-      cards is a layout; three lines of text in a 1180px field is a narrow column with a dead right half,
-      which is what the previous revision actually produced.</p>
-      <p><b>The conditions get their own section, and that is honest rather than decorative.</b> The three
-      steps are the <b>offer</b>; the conditions are the <b>terms of it</b>. Different kinds of information,
-      so a section boundary is the truthful way to stop conditions reading as features — and adjacency to
-      the claim is satisfied by the section sitting directly beneath it, which is all the law asks. Six
-      items in one bordered two-column panel read as a single table-like object, not as six competing tiles.</p>
-      <p><b>The FAQ carries the three questions everyone asks</b>, and links out to a fuller article in
-      Resources for the long tail. That keeps the page short without losing the answers, and the long tail
-      becomes editable without a deploy — the same argument that put the T&amp;Cs there.</p>
-      <p><b>Six bands</b>: hero, how it works, the conditions, the join, good to know, the closing banner.
-      Grounds alternate night → paper → bone → paper → bone → paper, so every seam draws itself.</p>
+      <p><b>One grid on the page, and it's the FAQ.</b> Two card grids in sequence read as monotony whatever
+      is in them — and six conditions at equal weight in a bordered panel is the same as no hierarchy, which
+      is why it read as a table. The fix wasn't a third arrangement of six items. It was asking which
+      conditions change whether a tradie bothers.</p>
+      <p><b>Three of the six were never conditions.</b> The 14 days was already in the offer sentence. The
+      "1% of the goods, excluding GST and delivery" is the basis of the headline claim, so it belongs inside
+      step 3 rather than in a list under it. The 12 months is a property of the mate's discount, so it sits
+      in step 2. All three moved into the offer, where they read as part of the deal instead of caveats on
+      it.</p>
+      <p><b>Two moved off the page</b> — no self-referral and the cancelled-order detail — into the terms
+      and the FAQ article. Neither changes whether someone shares a code.</p>
+      <p><b>Three remain, because each one decides it.</b> The minimum order (if your mates buy small, this
+      is worth nothing to you), first-order-only (it bounds the upside — one payment per mate, not a cut of
+      everything after), and the ABN (a precondition on you). They're three hairline-separated rows in
+      body-weight type, one band under the offer. <b>Compact is not fine print:</b> the prose is the same
+      size as the offer's own body copy, and the one caption-sized line on the band carries no conditions at
+      all — just a tax note and two links.</p>
+      <p><b>Six bands, and the texture alternates</b>: dark hero → card track → text rows → one wide card →
+      card track → sage block. Grounds run night → bone → paper → bone → paper → bone, following the
+      sequence <code>ContactPage</code> and <code>ProductsPage</code> already use. No two grids touch.</p>
       <p><b>Every bold number is a slot.</b> Raising the discount to 5% changes six figures on this page
       and not one word.</p>
     </div>

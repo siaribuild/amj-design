@@ -95,7 +95,7 @@ looks like a new shape, it is a bug in the mock — build the pattern named here
 | Where | Pattern | Source |
 |---|---|---|
 | `/refer` three steps | **Track A — numbered steps.** `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0`; card `relative card p-6 flex flex-col sm:[&:nth-child(n+2)]:-mt-px lg:[&:nth-child(n+2)]:mt-0 lg:[&:nth-child(n+2)]:-ml-px`; badge `w-8 h-8 border border-sage/40 flex items-center justify-center text-sage font-data t-data-sm`; `h3 font-semibold text-ink mb-1.5 font-display t-bd`; `p text-body leading-relaxed t-bd`; `ChevronRight` on the seam at `lg` | `src/app/App.tsx:1061-1078` |
-| `/refer` conditions (6) | **Track B — two-column.** `grid grid-cols-1 md:grid-cols-2 gap-0`; card `card p-6 flex flex-col md:[&:nth-child(n+3)]:-mt-px md:[&:nth-child(even)]:-ml-px [&:nth-child(n+2)]:-mt-px md:[&:nth-child(2)]:mt-0`; `h3 … t-bd-lg`; `p text-body leading-relaxed flex-1 t-bd` | `src/app/App.tsx:1192-1206` |
+| `/refer` conditions (3) | **Fact row — not a card at all.** `flex flex-col md:flex-row md:items-baseline gap-2 md:gap-6` per row, hairline between; key `flex-shrink-0 font-data t-data text-sage-deep` at a fixed width; prose `t-bd text-body max-w-[62ch]` | `src/app/App.tsx:1169-1174` |
 | `/refer` FAQ (4) | **Track B**, including its optional in-card sage link (`text-sage hover:text-sage-deep … ArrowRight`) — used on the last card for the Resources article | `src/app/App.tsx:1192-1206` |
 | Home / trade placements | `.split-row.is-center` inside a plain section; the signed-in code card is `.card p-5` + 3px sage `borderLeft` | `theme.css` `.split-row`; `AccountDashboard.tsx:231` |
 | Completed-order prompt | `.card p-5` + 3px sage `borderLeft` | `AccountDashboard.tsx:231` |
@@ -164,7 +164,7 @@ image and `<head>` from the Sanity `page` record `pageId: "refer"`. Never 404s.
 |---|---|---|
 | Hero | `ground-night` + `hero-scrim`/`hero-img` | eyebrow · `t-ds2` headline · **one sentence** · one button · one `t-cap` line |
 | How it works | `ground-paper` (grid decoration) | `SLabel` · `t-ds2` heading · **three cards**, hairlines collapsed |
-| The conditions | `ground-bone` | `SLabel` · `t-ds2` heading + a right-aligned framing line · **one bordered 2-column panel, six cells** · the GST/tax line |
+| The conditions | `ground-paper` | `SLabel` · `t-ds2` heading · **three hairline-separated fact rows** · the GST/tax + pointer line |
 | The join | `ground-paper` (grid decoration) | auth-dependent — §3.3 |
 | Good to know | `ground-bone` | `SLabel` · `t-ds2` heading · **three FAQ cards** · link to the Resources article |
 | Closing | `ground-paper` | `CtaBanner`, then the site footer |
@@ -172,19 +172,38 @@ image and `<head>` from the Sanity `page` record `pageId: "refer"`. Never 404s.
 Grounds must alternate — night → paper → bone → paper → bone → paper — so every seam draws itself without
 a rule. Never two of the same in a row.
 
-**Card count, not card treatment, was the problem.** Thirteen cards across three grids (six conditions,
-three steps, four FAQ) was the page arguing against its own simplicity. The fix is **six cards across two
-grids**, not zero: at 1180px a three-item text list is short paragraphs in a narrow left column with a dead
-right half, and cards are what give the desktop layout something to be.
+**Only one grid on the page, and it is the FAQ.** Two card grids in sequence read as monotony regardless of
+their contents, and six conditions given equal weight in a bordered panel is indistinguishable from no
+hierarchy — which is why it read as a table. The fix was not a third arrangement of six items; it was
+asking **which conditions a tradie needs before deciding, and which they want afterwards.**
 
-**The conditions are their own section because they are a different kind of information.** The three steps
-are the **offer**; the conditions are the **terms of it**. A section boundary is the honest way to stop
-conditions reading as features — better than flattening them into the offer's block. Six items in one
-bordered two-column panel read as a single table-like object, not as six competing tiles.
+**Three of the six were never conditions — they are properties of the offer**, and they moved into it:
 
-Adjacency is legally load-bearing (ACL s 32(2); fine print cannot cure a headline), and **a section
-directly beneath the offer satisfies it** — it never required same-block. The conditions section may be
-made denser, but it may not be moved below the join band, put behind a link, or collapsed into an accordion.
+| Item | Where it went | Why |
+|---|---|---|
+| Paid within **[payoutDays]** | already in the hero sentence and step 3 | It was never a separate condition |
+| The **[rate]** is on the goods, ex GST and delivery | **step 3**, beside the rate | Spec §4.4 requires the basis stated wherever the rate appears. It is the basis of the headline claim, so it belongs *in* the claim — not in a list beneath it |
+| The **[window]** | **step 2**, beside the mate's discount | It is a property of the discount, not a separate rule |
+
+**Two moved off the page**, into the terms and the FAQ article: no self-referral (an anti-abuse eligibility
+rule, not a limit on an honest referrer's benefit) and the detail of what happens to cancelled orders.
+
+**Three remain, because each one changes whether someone bothers:** the minimum order, first-order-only,
+and the ABN requirement. These are the decision facts and they cannot move.
+
+> **On the [window] specifically — I pushed back on moving it.** It reads like reference material, but it
+> is a real limitation on the advertised benefit: refer someone, they order thirteen months later, you are
+> paid nothing. Deleting it from the page would be an ACL judgement I should not make quietly. Folding it
+> into step 2 keeps it in body weight, inside the offer, where it is a property of the thing being offered.
+
+**The conditions keep their own section.** The offer and its terms are different contexts and the section
+boundary is honest. What changed is the treatment and the count — three fact rows, not six cells.
+
+**Adjacency is legally load-bearing** (ACL s 32(2); fine print cannot cure a headline). The three remaining
+conditions are in **body-weight type, in the visual flow of the offer, one band below it.** They may not be
+shrunk into a caption, moved below the join band, put behind a link, or collapsed into an accordion.
+**Compact is not the same as fine print** — the row list is lighter than the panel it replaces but every
+word is at `t-bd`, which is the same size as the offer's own body copy.
 
 ### 3.2 Hero — cut to one read
 
@@ -309,8 +328,12 @@ No rate, no discount, no code, in any variant.
 | # | Heading | Body |
 |---|---|---|
 | 1 | Share your code. | Text it, say it over the phone, send the link. However you'd normally tell someone. |
-| 2 | They save. | Your mate gets **[discount] off their first order** — on their quote from the start. Nothing to enter, nothing to apply. |
-| 3 | You get paid. | Once they've paid that order in full, we transfer your **[rate]** — bank account, within **[payoutDays]**. |
+| 2 | They save. | Your mate gets **[discount] off their first order** — on their quote from the start, and it's theirs for **[window]**. Nothing to enter, nothing to apply. |
+| 3 | You get paid. | Once they've paid that order in full, we transfer **[rate] of the goods** — excluding GST and delivery — to your bank account within **[payoutDays]**. |
+
+Steps 2 and 3 each carry a qualifier that used to be a separate condition. **Do not strip them back to
+shorter copy** — step 3's "of the goods — excluding GST and delivery" is the spec §4.4 basis disclosure and
+is the only place on the page it appears.
 
 Track A carries its own responsive behaviour (1 col → 2 at `sm` → 3 at `lg`); do not add breakpoints.
 The step badge is **not** `.figure` — see §2.2 correction 1.
@@ -321,25 +344,44 @@ The step badge is **not** `.figure` — see §2.2 correction 1.
 line bottom-aligned on the right (max 38ch):
 > The whole of it. There's no seventh condition further down, and nothing here is different in the terms.
 
-Then **Track B** (`App.tsx:1192-1206`) with six cards. Six items in two columns is three clean rows, and
-because Track B's negative margins collapse every adjacent border into a single hairline, the six read as
-**one object** rather than six tiles — which is the whole reason this is the right pattern here rather
-than a bespoke panel.
+`SLabel` **The conditions** · `t-ds2` **Before you share it.** (one line — do not let it wrap) · **three
+fact rows**, then the GST/pointer line.
 
-| Heading | Body |
+**The fact row is an existing pattern**, not a new one: `App.tsx:1169-1174`, the AS 2047 strip. A quiet
+fixed-width `font-data t-data` key beside `t-bd` prose at reading width —
+`flex flex-col md:flex-row md:items-baseline gap-2 md:gap-6`, key `flex-shrink-0`, prose `max-w-[62ch]`.
+Rows are separated by a hairline and nothing else: **no cells, no fills, no boxes, no borders around
+anything.** The key takes `--sage-deep` so it is scannable by colour rather than by weight.
+
+| Key | Prose |
 |---|---|
-| First order only | It's their **first order** that counts, and it has to be a tradie who's new to us. |
-| At least [minOrder] | Ex GST, before delivery. Measured on the goods after the discount. |
-| Within [window] | Their first order has to be placed within [window] of them signing up with your code. |
-| [rate] of the goods | Worked out excluding GST and delivery — not the total on the invoice. |
-| Paid by bank transfer | Within **[payoutDays]** of their payment clearing. You'll need an ABN and bank details on your account. |
-| No chains | You get paid for the mates you refer, not for anyone they go on to refer. And you can't refer yourself. |
+| **[minOrder]** | Their first order has to be at least **[minOrder]** ex GST, before delivery. Below that, nothing is earned on it. |
+| **First order only** | You're paid on their **first order** — one payment per mate, not a cut of everything they buy afterwards. |
+| **An ABN** | You'll need an **ABN** and bank details on your account before your code is issued. That's the account we pay into. |
 
-Conditional seventh card, only when `capAmount != null`: **Capped at [cap]** / *That's the most you can earn
-on any one referral.* Seven cards leaves an orphan in the last row; that is Track B's normal behaviour with
-an odd count and needs no special handling.
+Conditional fourth row, only when `capAmount != null`: key **Capped at [cap]** / *That's the most you can
+earn on any one referral.*
 
-Track B carries its own responsive behaviour (1 col → 2 at `md`); do not add breakpoints.
+Beneath, `t-cap`, `.measure`:
+> Amounts include any GST payable, and we don't give tax advice. Self-referral, cancelled orders and second
+> businesses are in the [full rules and terms →] and the [referral FAQ →].
+
+**This line contains no conditions** — only a tax note and two pointers. That is deliberate: it is the one
+element on the band at caption size, so nothing load-bearing may be put in it. If a new condition ever
+needs stating, it becomes a fourth row at `t-bd`, never an addition to this sentence.
+
+> ⚠ **The GST sentence is a slot awaiting the accountant.** It states the position already taken. It must
+> be reviewed before launch and must not simply be deleted — a stated figure with nothing said about GST is
+> the one formulation that is definitely wrong.
+
+**Weight budget.** The conditions band must stay shorter than the offer band above it — a qualifier that
+outweighs the thing it qualifies has the hierarchy backwards. At 1180 the offer is ~484px and the
+conditions ~517px; if either grows, the conditions band gets tightened, not the offer.
+
+**Note on "no self-referral".** It is now in the terms and the article. Wherever it is written, it is a
+statement of the rule and never a claim that we prevent it — do not write "we prevent self-referral" or
+"self-referral is blocked". The same-ABN gate is a signal, not a control, and one person may legitimately
+hold several ABNs (spec A13, §4.6.6).
 
 Line under the panel (`t-cap`, `.measure`):
 > Amounts include any GST payable. What you do with it at tax time is between you and your accountant — we
@@ -369,12 +411,14 @@ signal, not a control, and one person may legitimately hold several ABNs (spec A
 The fourth card carries **Track B's own optional in-card link** (`text-sage hover:text-sage-deep … ArrowRight`,
 `App.tsx:1199-1203`): **Referral program — full FAQ →**, to the Resources article.
 
-> **Why four and not three.** The reduce-the-count test still applies, and three was my previous answer —
-> but Track B is a two-column track, and three cards leaves a half-width orphan. Four fills 2×2 exactly,
-> which is the shape the pattern was built for. Rather than invent a three-across FAQ track that does not
-> exist on this site, the fourth question comes back — and it is a real question, not filler. **This is the
-> one place where "use the existing pattern" and "cut the card count" pulled against each other; the
-> pattern won.** Flagging it rather than quietly doing either.
+> **Why four, reassessed now that this is the only grid on the page.** The earlier reason was the orphan —
+> three cards in a two-column track leaves a half-width cell. That reason is weaker than I made it, because
+> the orphan is a property of the track and not of what sits above it. So the honest test is whether each
+> of the four earns its place on merit, and they do: Q1 is the s 49 question and the one most asked; Q2
+> answers "is there a code at checkout"; Q4 is spec A10, which says explicitly that a tradie will ask it;
+> and **Q3 is now the only place on the page that says what a referrer learns about the people they refer**
+> — which matters more since the conditions section shrank. Four questions, four reasons, and the 2×2 fill
+> is a consequence rather than the cause.
 
 ### 3.9 The Resources article
 
@@ -944,6 +988,8 @@ The account rail folds into the site drawer below 1024 as today; Referrals joins
 - **Any new card variant, anywhere.** Two tracks and two paddings, all pre-existing — §2.1.
 - A third card track. If a layout needs one, that is a design-system change to raise, not an artifact
   improvisation.
+- **A second card grid on `/refer`.** The FAQ is the only one. Two grids in sequence is what failed the
+  scroll test, and the conditions are not allowed to become a grid again to solve a layout problem.
 
 ---
 
@@ -975,10 +1021,13 @@ The account rail folds into the site drawer below 1024 as today; Referrals joins
   - I have **not** added the suggested referrer-side reassurance ("your mate is told you get paid…"),
     because with the disclosure removed it would not be true. If the owner wants that reassurance, the only
     honest way to earn it is to put the line back on the referred tradie's side.
-- **The landing page states each condition once.** Thirteen cards down to six means a reader who skips the
-  conditions section has no second chance at the minimum order or the window. That is the correct trade —
-  repetition was costing comprehension of the whole page — but it puts weight on that one panel, which is
-  why it may be made denser and may not be moved, hidden or collapsed.
+- **Two conditions now live only in the terms and the FAQ article.** No self-referral and the
+  cancelled-order detail are off the landing page entirely. I am satisfied neither is decision material —
+  one is an anti-abuse rule that does not limit an honest referrer, the other is an edge case — but the
+  judgement is mine and it is the kind that should be checked when the terms go to review (spec §11).
+- **Each remaining condition appears exactly once.** A reader who skips the conditions band has no second
+  chance at the minimum order. That is the right trade — repetition was costing comprehension of the whole
+  page — but it puts weight on three rows, which is why they may not be shrunk, moved or hidden.
 - **The FAQ long tail now lives outside the repo.** Six answers move into a Sanity post, which is the point
   — but it means they are no longer reviewed by the same pipeline as the rest of this copy, and they are
   the one place a hand-typed "2.5%" could strand. §3.9 states the constraint; someone has to enforce it at
