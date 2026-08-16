@@ -12,6 +12,7 @@ export const PAGE_PATHS: Record<Page, string> = {
   login: "/login",
   dashboard: "/projects", // the merged account home ("My Projects")
   account: "/account",
+  referrals: "/referrals",
   help: "/help",
   "track-order": "/track-order",
   order: "/order",

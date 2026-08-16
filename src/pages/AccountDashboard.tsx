@@ -8,12 +8,12 @@
 // guide, never dead-end (spec §8).
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useState, type ReactNode } from "react";
-import { ArrowRight, ArrowDown, ChevronRight, Upload, CheckCircle } from "lucide-react";
+import { ArrowRight, ChevronRight, Upload, CheckCircle } from "lucide-react";
 import { type Page, SAGE, WindowMark, Btn } from "../app/ui";
 import type { ApiProjectSummary, ApiOrder } from "../data/api";
 import {
   useAccount, orderMeta, projectMeta, quoteProjects, projectAnchor,
-  money, fmtDayDate, greeting, StatusPill, TONE,
+  money, fmtDayDate, greeting, StatusPill, SummaryCell, TONE,
 } from "./accountModel";
 
 type OpenRecord = (rec: { orderId?: string; projectId?: string; status?: string }) => void;
@@ -172,29 +172,6 @@ function ProjectsSection({ projects, orders, setPage, onOpenRecord, tab, setTab 
       <UnifiedList projects={view.p} orders={view.o} setPage={setPage} onOpenRecord={onOpenRecord} emptyNote={emptyNote} enriched={tab === "needs-you"} />
     </section>
   );
-}
-
-function SummaryCell({ label, value, small, hot, onClick }: { label: string; value: string; small?: string; hot?: boolean; onClick?: () => void }) {
-  const cls = "flex-1 min-w-[150px] px-5 py-[15px] flex flex-col gap-[3px] border-r border-black/[0.07] last:border-r-0";
-  const body = (
-    <>
-      <span className="text-body font-data t-label">{label}</span>
-      <span className="font-semibold flex items-baseline gap-2 t-hd2 font-display" style={{ color: hot ? TONE.attn.text : "var(--ink)" }}>
-        {value}{small && <small className="font-medium text-body font-body t-cap">{small}</small>}
-        {onClick && <ArrowDown className="w-[15px] h-[15px] self-center" style={{ color: hot ? TONE.attn.text : "var(--body)" }} aria-hidden="true" />}
-      </span>
-    </>
-  );
-  if (onClick) {
-    // "Need you now" jumps straight to the attention gates rather than restating them.
-    return (
-      <button onClick={onClick} aria-label={`${label}: ${value} — jump to what needs you`}
-        className={`${cls} text-left cursor-pointer transition-colors hover:brightness-[0.97]`} style={{ background: hot ? TONE.attn.bg : "transparent" }}>
-        {body}
-      </button>
-    );
-  }
-  return <div className={cls} style={hot ? { background: TONE.attn.bg } : undefined}>{body}</div>;
 }
 
 // The customer's single in-progress project (the "cart") — a dedicated section at

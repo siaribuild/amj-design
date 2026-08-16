@@ -16,6 +16,7 @@ import { ProductDetailPage } from "../pages/ProductDetailPage";
 import { AccountShell, type AccountSection } from "../pages/AccountShell";
 import { AccountDashboard } from "../pages/AccountDashboard";
 import { HelpPage } from "../pages/AccountSections";
+import { ReferralsPage } from "../pages/ReferralsPage";
 import { OrderDetail, ProjectDetail } from "../pages/RecordDetailPage";
 import { QuoteReviewPage } from "../pages/QuoteReviewPage";
 import { initialsOf } from "../pages/accountModel";
@@ -2152,6 +2153,7 @@ export default function App() {
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
       case "dashboard":        return inShell("projects", <AccountDashboard user={user!} setPage={navigateTo} onOpenRecord={openRecord} />);
       case "account":          return inShell("account", <AccountPage user={user} setPage={navigateTo} setUser={setUser} authLoading={authLoading} />);
+      case "referrals":        return inShell("referrals", <ReferralsPage />);
       case "help":             return inShell("help", <HelpPage setPage={navigateTo} />);
       case "track-order":      return <TrackOrderPage setPage={navigateTo} />;
       case "order":            return inShell("projects", renderRecord());

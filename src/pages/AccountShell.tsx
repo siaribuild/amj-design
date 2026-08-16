@@ -10,16 +10,19 @@
 // and the content shows a compact breadcrumb.
 // ═══════════════════════════════════════════════════════════════════════════════
 import type { ReactNode } from "react";
-import { User, HelpCircle, LogOut } from "lucide-react";
+import { User, Users, HelpCircle, LogOut } from "lucide-react";
 import { type Page, SAGE, WindowMark as Mark } from "../app/ui";
 import { AccountDataCtx, useAccountData, useAccount, initialsOf, quoteProjects } from "./accountModel";
 
-// Three destinations after the object-model + IA collapse.
-export type AccountSection = "projects" | "account" | "help";
+// Destinations after the object-model + IA collapse, plus Referrals — which is
+// one section serving two different people: someone who refers, and someone who
+// was referred and has a discount. Often the same person in both roles.
+export type AccountSection = "projects" | "account" | "referrals" | "help";
 
 export const SECTION_LABEL: Record<AccountSection, string> = {
   projects: "My Projects",
   account: "Account",
+  referrals: "Referrals",
   help: "Help",
 };
 
@@ -64,6 +67,10 @@ function Rail({ section, setPage, user, onSignOut }: {
     { key: "projects", page: "dashboard", label: "My Projects", icon: <Mark size={17} color="currentColor" />, badge: listCount || undefined },
   ];
   const account: { key: AccountSection; page: Page; label: string; icon: ReactNode }[] = [
+    // Above Account, in the account/session group. The confirmed-earnings badge
+    // and the "only show this when the account has a code, history or an offer"
+    // rule both read the referrals API, so they land with it.
+    { key: "referrals", page: "referrals", label: "Referrals", icon: <Users className="w-[17px] h-[17px]" /> },
     { key: "account", page: "account", label: "Account", icon: <User className="w-[17px] h-[17px]" /> },
     { key: "help", page: "help", label: "Help & contact", icon: <HelpCircle className="w-[17px] h-[17px]" /> },
   ];

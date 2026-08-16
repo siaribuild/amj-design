@@ -10,7 +10,7 @@
 // This module owns the account-wide data context.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { AlertCircle, Check, Loader2, Lock, Pencil } from "lucide-react";
+import { AlertCircle, ArrowDown, Check, Loader2, Lock, Pencil } from "lucide-react";
 import {
   getProjects, getOrders,
   type ApiProjectSummary, type ApiOrder,
@@ -37,6 +37,37 @@ const PILL_ICON: Record<Tone, ReactNode> = {
 };
 
 // Status pill — icon + text label (accessibility: never colour alone).
+/** One cell of a summary strip: label, a figure, an optional sub-line.
+ *
+ *  Lifted out of AccountDashboard, where it was module-private, because the
+ *  referrals earnings strip is the same shape — three cells in a `.card` row —
+ *  and a second copy would be the thing that drifts. `hot` is the attention
+ *  treatment; `onClick` turns the cell into a jump and is what the arrow
+ *  annotates, so a cell without one shows no affordance it does not have. */
+export function SummaryCell({ label, value, small, hot, onClick }: {
+  label: string; value: string; small?: string; hot?: boolean; onClick?: () => void;
+}) {
+  const cls = "flex-1 min-w-[150px] px-5 py-[15px] flex flex-col gap-[3px] border-r border-black/[0.07] last:border-r-0";
+  const body = (
+    <>
+      <span className="text-body font-data t-label">{label}</span>
+      <span className="font-semibold flex items-baseline gap-2 t-hd2 font-display" style={{ color: hot ? TONE.attn.text : "var(--ink)" }}>
+        {value}{small && <small className="font-medium text-body font-body t-cap">{small}</small>}
+        {onClick && <ArrowDown className="w-[15px] h-[15px] self-center" style={{ color: hot ? TONE.attn.text : "var(--body)" }} aria-hidden="true" />}
+      </span>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button onClick={onClick} aria-label={`${label}: ${value} — jump to what needs you`}
+        className={`${cls} text-left cursor-pointer transition-colors hover:brightness-[0.97]`} style={{ background: hot ? TONE.attn.bg : "transparent" }}>
+        {body}
+      </button>
+    );
+  }
+  return <div className={cls} style={hot ? { background: TONE.attn.bg } : undefined}>{body}</div>;
+}
+
 export function StatusPill({ tone, children, icon }: { tone: Tone; children: ReactNode; icon?: ReactNode }) {
   const style = tone === "draft"
     ? { color: "var(--body)", background: "transparent", borderColor: "rgba(0,0,0,.10)", borderStyle: "dashed" as const }
