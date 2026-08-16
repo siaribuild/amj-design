@@ -198,7 +198,7 @@ window is now closed at both ends: attribution happens at account creation or no
 | # | Decision | |
 |---|---|---|
 | A1 | **Two capture paths, both self-identifying, both before the account exists.** (a) **Account request form** — the applicant types the code into the trade account request themselves; Ops links it during or right after account creation (A19). **This is the normal path.** (b) **Self-signup** — `https://<site>/r/<CODE>` sets an httpOnly cookie and 302-redirects to `/refer`; the cookie is consumed when `findOrCreateUser` creates a row for someone signing in through the quote path. | OWNER |
-| A2 | **The `of_ref` cookie prefills the request form's code field** (AC-105). Without this, `/r/<CODE>` is decorative for everyone on the normal path: the link sets a cookie, the applicant fills in a form, and nothing joins the two. | OWNER |
+| A2 | **The `of_ref` cookie prefills the request form's code field** (AC-105). Without this, `/r/<CODE>` is decorative for everyone on the normal path: the link sets a cookie, the applicant fills in a form, and nothing joins the two. **⚠️ DESIGN, NOT BEHAVIOUR — deferred with the form (D19, option c).** Until the form thread lands, nothing joins the cookie to anything, and attribution on the normal path depends on the applicant mentioning their code to Ops. That is the cost this deferral accepts, stated here so A2 is not read as shipped behaviour. | OWNER — deferred |
 | A3 | **The code is never asked for on the sign-in screen.** `POST /api/auth/challenge` is deliberately non-enumerating (`worker/routes/auth.ts:35`), so the server cannot reveal whether an email is new and cannot conditionally show a "new user" field. | DECIDED |
 | A4 | **A referral is only recorded when the `user` row is CREATED**, by either path. An existing customer clicking a referral link is not a referral, ever. **Doubly load-bearing after revision 12** — it is now the *whole* rule, not one guard among several. | DECIDED |
 | A5 | **~~Manual code entry by the account holder~~ — REMOVED, not narrowed.** There is no surface and no endpoint by which a customer attaches a referral to their own account, at any time, in any account state. `POST /api/account/referrals/claim` is deleted (§6, AC-107). | OWNER (r12) |
@@ -225,11 +225,12 @@ true today**, verified in the code rather than inferred:
 So the normal path currently ends in a button that does nothing, and the "request" Ops act on arrives
 by some other means entirely. **Delivering A1(a) requires wiring that form, adding an intent, and
 carrying three new fields.** That work is real, it was in nobody's ticket, and **D19 asks how much of
-it this feature absorbs.** It is the one thing in this document that is not settled.
+it this feature absorbs.** **Settled in revision 13 as option (c): a separate thread. This feature
+builds none of it.**
 
-**What is unaffected either way:** A1(b), the self-signup path, works today and needs nothing new. If
-D19 lands on the smaller option, the program still functions — for the minority who sign up through
-the quote path.
+**What is unaffected:** A1(b), the self-signup path, works today and needs nothing new. With D19 settled
+as (c), that is the only path attribution runs on automatically — the program still functions, for the
+minority who sign up through the quote path, plus everyone Ops links by hand.
 
 ### 4.2 Abuse and self-referral
 
@@ -521,9 +522,9 @@ The two facts are always stated separately — *no purchase needed* (A18) and *p
    dormancy on clearing, the `pending`-hold residue (§4.9).
 3. **Attribution at account creation only** (§4.1): the cookie consumed at `findOrCreateUser` on the
    self-signup path, and **the Ops link action** on the normal path (A19), both through the same gates.
-4. **The referral code field on the account request form, prefilled from the `of_ref` cookie**
-   (AC-105) — **subject to D19**, which decides how much of the unwired form this feature builds
-   (§4.1.1).
+4. ~~**The referral code field on the account request form, prefilled from the `of_ref` cookie**
+   (AC-105).~~ **OUT OF SCOPE — D19 settled as (c): a separate thread builds the form.** Until it does,
+   Ops enters codes by hand (§8.0, §4.1.1).
 5. **The referred tradie's 2.5% first-order discount** via `loadAccountDiscount` (§4.6), its quote-surface
    badge, its §8.6 offer panel, its expiry handling, and its snapshot breakdown.
 6. Earning creation at order creation, confirmation at `balance_paid` **for a payable referrer**,
@@ -680,7 +681,11 @@ content** only.
 
 ### 8.0 The account request form — where a referral begins *(new in revision 12)*
 
-**Subject to D19** (§4.1.1) — the form is currently a static mock.
+**⚠️ DEFERRED IN FULL — this section is not built by this feature.** D19 settled as option (c): the
+form is a static mock, the owner has not yet decided whether it stays separate or merges into the
+contact page, and that is a separate thread's question. Kept here because it is the design the form
+thread should implement, and because §4.1.1's attribution model assumes it. **Nothing below is in
+scope for T7, and AC-105 is struck.**
 
 - **One optional field: "Referral code".** Placed after the business details, with one line of help:
   *"Got a code from another tradie? Enter it here — you'll both get something."*
@@ -926,11 +931,11 @@ Each is independently verifiable. **The forbidden actions are in §10A**, verifi
   available immediately, and the referrer sees the referral on their screen.
 - **AC-9** *(replaced r12 — see AC-108)* — the old "manual entry refused once the account has an order"
   criterion is gone with the surface it described.
-- **AC-105** *(new r12)* **The account request form captures a code and the link prefills it.** Given a
-  visitor who arrives via `/r/<CODE>`, when they open the trade account request form, then the referral
-  code field is **prefilled with that code and remains editable**; and when they submit, the code
-  reaches Ops with the request. Given a visitor with no cookie, the field is empty and optional, and
-  submitting without it succeeds.
+- ~~**AC-105** *(new r12)* **The account request form captures a code and the link prefills it.**~~
+  **STRUCK in revision 13 — not a defect, a scope decision (D19, option c).** The trade account form is
+  a static mock and this feature does not build it; the work moved to a separate thread. **A tester must
+  not attempt this criterion** — it cannot pass, and failing it would report a scoping decision as an
+  implementation fault. It returns, unchanged, with the form thread.
 - **AC-106** *(new r12)* **The Ops link action runs every gate.** Given each of: an unknown code, a
   dormant code, a staff-owned code, the applicant's own code, and a code whose referrer shares the
   applicant's ABN — when Ops attempts to link it, then **each is refused with its specific reason
@@ -1261,10 +1266,18 @@ Items still requiring the accountant or a lawyer:
 
 ## 12. Decisions needed (owner)
 
-**One. I am not returning an empty list, because revision 12 uncovered a genuine scope question with
-cost, and hiding it would be the wrong kind of tidy.**
+**None. D19 is settled — see below.**
 
-**D19 — The account request form is a static mock. How much of it does this feature build?**
+**D19 — SETTLED (option c, 2026-08-17). The account request form is a separate thread; this feature
+builds none of it, and Ops enters referral codes by hand meanwhile.** The owner's reasoning: the form
+is unwired because they have not yet decided whether it stays its own form or merges into the contact
+page, and that question is not this feature's to answer. The accepted cost is recorded at §4.1.1 —
+until the form exists, attribution on the normal path depends on the applicant mentioning their code
+to Ops, because nothing joins the `of_ref` cookie to a form that does not submit.
+
+The original question and its costed options are kept below, because the form thread will need them.
+
+**D19 (as asked) — The account request form is a static mock. How much of it does this feature build?**
 
 The new attribution rule depends on a code arriving with a trade account request. Today the form
 submits nothing (`src/app/App.tsx:1691-1699` — no state, no handler) and `/api/enquiries` has no
@@ -1355,7 +1368,8 @@ The landing page carries three or four conversion questions; the Sanity `post` c
 7. **T7 — Landing page and placements.** `/refer` in all states; the Sanity `page` record; sitemap;
    placements and footer; the Off-state banner and post-login message (AC-62); every figure from
    config; the s 49 / two-facts copy constraints. **Plus the §8.0 code field and its cookie prefill
-   (AC-105) — scoped by D19.**
+   (AC-105) — REMOVED from T7 by D19's settlement (option c). The form is a separate thread; T7 builds
+   no code field and no prefill.**
 8. **T8 — Ops tab and the link action.** Program screen; referrals list + void + bulk void; payouts
    queue with both groups, deadline flagging, long-stop promotion, CSV export, mark paid/failed, frozen
    snapshot, dashboard row; **the §10A ops-side abuse cases** (AC-102 to AC-104); **and the referral
