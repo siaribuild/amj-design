@@ -281,6 +281,24 @@ export interface PayoutDetails {
  *  is structurally incapable of asking whether the referrer has ever ordered, and
  *  a later edit cannot quietly make it so. Payability and purchase are two
  *  different facts and must stay un-conflatable. */
+/** Which halves of the gate are still outstanding, in the order a screen asks for
+ *  them.
+ *
+ *  `complete: false` alone cannot tell the account area whether to say "add your
+ *  ABN" or "you are not eligible", and under D18 this is the PRIMARY entry state
+ *  for every new referrer rather than an error case. Two groups, not four fields:
+ *  the three bank fields are collected together on one form, so splitting them
+ *  would offer a distinction no screen can act on. */
+export function payoutMissing(user: PayoutDetails | null | undefined): ("abn" | "bank_details")[] {
+  const stored = (value: string | null | undefined) => String(value ?? "").trim().length > 0;
+  const missing: ("abn" | "bank_details")[] = [];
+  if (!abnValid(user?.abn)) missing.push("abn");
+  if (!stored(user?.payout_bsb) || !stored(user?.payout_account_number) || !stored(user?.payout_account_name)) {
+    missing.push("bank_details");
+  }
+  return missing;
+}
+
 export function payoutComplete(user: PayoutDetails | null | undefined): boolean {
   if (!user) return false;
   const stored = (value: string | null | undefined) => String(value ?? "").trim().length > 0;

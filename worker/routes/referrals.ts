@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
-import { ensureReferralCode, payoutComplete, recordReferral, savePayoutDetails } from "../lib/referrals";
+import { ensureReferralCode, payoutComplete, payoutMissing, recordReferral, savePayoutDetails } from "../lib/referrals";
 
 export const referrals = new Hono<{ Bindings: Env }>();
 
@@ -20,7 +20,7 @@ referrals.get("/account/referrals", async (c) => {
   // is ever minted into a staff row.
   if (user?.type === "internal") return c.json({ error: "forbidden" }, 403);
   return c.json({
-    referrerGate: { complete: payoutComplete(user) },
+    referrerGate: { complete: payoutComplete(user), missing: payoutMissing(user) },
     // WITHHELD, never issued-inactive: until the details exist there is no code
     // to click, read out, or set a cookie from.
     code: user ? await ensureReferralCode(c.env, user) : null,
@@ -56,5 +56,5 @@ referrals.put("/account/payout-details", async (c) => {
   // them. Answering from the stale request-time row would report the gate the
   // caller had BEFORE their own save.
   const fresh = await c.env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(user.id).first<typeof user>();
-  return c.json({ referrerGate: { complete: payoutComplete(fresh) } });
+  return c.json({ referrerGate: { complete: payoutComplete(fresh), missing: payoutMissing(fresh) } });
 });

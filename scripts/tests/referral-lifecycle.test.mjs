@@ -689,6 +689,29 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.doesNotMatch(bogus.headers.get("set-cookie") ?? "", /of_ref=/, "an invented code sets no cookie");
     });
 
+    await t.test("AC-83 — the gate says WHICH detail is missing, not just that one is", async () => {
+      // Under D18 this is the primary entry state for every new referrer, not an
+      // error. "Add your ABN" and "you are not eligible" are different sentences,
+      // and a bare complete:false cannot tell the screen which to say.
+      const joining = new Session(baseUrl);
+      await login(joining, "/api/auth", "missing.joiner@example.com");
+
+      const { body: empty } = await requestJson(joining, "/api/account/referrals");
+      assert.equal(empty.referrerGate.complete, false);
+      assert.deepEqual(empty.referrerGate.missing, ["abn", "bank_details"]);
+
+      await sql("UPDATE user SET abn='51824753556' WHERE email='missing.joiner@example.com'");
+      const { body: half } = await requestJson(joining, "/api/account/referrals");
+      assert.deepEqual(half.referrerGate.missing, ["bank_details"], "an ABN alone leaves the bank details");
+
+      await requestJson(joining, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: done } = await requestJson(joining, "/api/account/referrals");
+      assert.equal(done.referrerGate.complete, true);
+      assert.deepEqual(done.referrerGate.missing, [], "and nothing is outstanding once they are in");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank
