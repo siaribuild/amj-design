@@ -657,6 +657,38 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(none.length, 0, "an existing customer clicking a referral link records nothing");
     });
 
+    await t.test("AC-4/AC-89 — /r/<CODE> sets the cookie, redirects, and stays out of the index", async () => {
+      // The link half of attribution. It sets a cookie and sends the visitor to
+      // the offer; the recording happens later, at signup, through the same
+      // function the typed path uses.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "rlink.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='rlink.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const visitor = await fetch(new URL(`/r/${mine.code}`, baseUrl), { redirect: "manual" });
+      assert.equal(visitor.status, 302);
+      assert.equal(visitor.headers.get("location"), "/refer");
+      const setCookie = visitor.headers.get("set-cookie") ?? "";
+      assert.match(setCookie, new RegExp(`of_ref=${mine.code}`), "the code travels in the cookie");
+      assert.match(setCookie, /HttpOnly/i, "and is not readable by script");
+      // AC-89. One per member, pasted into WhatsApp and forums — exactly where a
+      // crawler finds links. Deliberately still crawlable rather than disallowed in
+      // robots.txt: a disallow would stop this header being read at all, and a
+      // widely-shared blocked URL can still reach the index with no content.
+      assert.equal(visitor.headers.get("x-robots-tag"), "noindex");
+
+      // An unknown code redirects identically and sets nothing. Sameness again:
+      // a probe must not be able to sort real codes from invented ones.
+      const bogus = await fetch(new URL("/r/ZZZ-ZZZ", baseUrl), { redirect: "manual" });
+      assert.equal(bogus.status, 302);
+      assert.equal(bogus.headers.get("location"), "/refer");
+      assert.doesNotMatch(bogus.headers.get("set-cookie") ?? "", /of_ref=/, "an invented code sets no cookie");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

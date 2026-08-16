@@ -152,6 +152,41 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     // Crawler-facing files are GENERATED, not static, so they must be handled
     // before the asset check — both end in an extension and would otherwise be
     // looked up in the bundle and 404.
+    // ── /r/<CODE> — the referral link ───────────────────────────────────────
+    // Sits here, ahead of the asset check and the SPA shell, because it is a
+    // worker-level redirect rather than a client route: the cookie has to be set
+    // by the server, and a code containing a dot would otherwise look like an
+    // asset.
+    //
+    // It redirects identically whatever the code is. Recording happens later, at
+    // signup, and only for an account that did not already exist (AC-7) — so a
+    // stranger clicking a link, or inventing one, cannot learn anything from the
+    // response and cannot cause anything to be written.
+    const referralLink = /^\/r\/([A-Za-z2-9]{3}-[A-Za-z2-9]{3})$/.exec(url.pathname);
+    if (referralLink && (request.method === "GET" || request.method === "HEAD")) {
+      const code = referralLink[1].toUpperCase();
+      const known = await env.DB
+        .prepare("SELECT 1 AS ok FROM user WHERE referral_code = ?")
+        .bind(code)
+        .first<{ ok: number }>();
+      const headers = new Headers({ Location: "/refer" });
+      // ONE PER MEMBER, and they get pasted into WhatsApp, Facebook groups and
+      // forums — precisely where crawlers harvest links. A 302's source URL is
+      // usually not indexed, but "usually" is not a control.
+      //
+      // Deliberately NOT disallowed in robots.txt: a disallow prevents crawling,
+      // so this header would never be fetched, and a widely-shared blocked URL can
+      // still land in the index with no content at all. A directive has to be seen
+      // to be obeyed.
+      headers.set("X-Robots-Tag", "noindex");
+      if (known) {
+        const attrs = [`of_ref=${code}`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=7776000"];
+        if (env.APP_ENV === "production") attrs.push("Secure");
+        headers.set("Set-Cookie", attrs.join("; "));
+      }
+      return new Response(null, { status: 302, headers });
+    }
+
     const isOps = host.startsWith("ops.");
     if (!isOps && url.pathname === "/sitemap.xml") {
       await ensureCatalogue(env);           // products come from the live catalogue
