@@ -226,7 +226,7 @@ the quote path.
 | A12 | Same email = same account | Structural — email is UNIQUE on `user` |
 | A13 | **Same ABN as the referrer → refused.** A cheap signal, **not a proof of common identity**: the ABR confirms one person may legitimately hold several ABNs across different structures. **Revision 12 improves its reach:** the request form asks for an ABN, so on the normal path both sides now have one **at the moment of linking**, and the gate fires where it previously could not. It still runs again at earn time. It does **not** protect the discount — §4.6.6 does. | Automatic; **now early on the normal path** |
 | A14 | **Staff accounts cannot refer or be referred** (`user.type='internal'`) | Automatic |
-| A15 | **Same delivery postcode is NOT a block** — a suburb full of tradies is the target market. A review flag only. | Manual review |
+| A15 | **Postcode is not compared at all** — revised. It was specified as a review flag on the reasoning that a suburb full of tradies is the target market, not fraud. Implementation found there is no data to support it: `postcode` and `suburb` exist only on `project`, as the **delivery destination for that job**, and nothing on `user` carries an address. Comparing them asks "did these two ever deliver to the same suburb", which for a Melbourne trade supplier is true constantly — and a flag that fires on ordinary customers trains the reviewer to skim past the ones that mean something. An honest version needs a business address on the account: a schema change and a form field, not a query. | Not implemented — see §4.6.6 |
 | A16 | Referrer's account must be `active` at payout time | Automatic gate, ops-overridable |
 | A17 | **Ops can void any referral or earning, with a mandatory reason, before it is paid.** | Manual |
 | A18 | **Anyone with a registered account may refer, including someone who has never ordered.** **⚠️ COMPLIANCE-LOAD-BEARING (§4.8a)** — most likely what keeps the business outside ACL s 49. Must not be "tightened" into requiring the referrer to have ordered. **D18 does not qualify it:** D18 gates on being *payable*, A18 is about *purchase* (§4.9.4, AC-87). | DECIDED (compliance) |
@@ -375,10 +375,11 @@ not remove it.
   the normal path adds a second human — Ops creating the account and linking the code**. The
   perpetrator must place and pay for a real order to a real address. Maximum gain is the discount
   percentage of one order they actually buy — **bounded, and self-funding.** No cash-out path exists.
-- **What we add:** ops review flags where the two accounts share an ABN, phone, business name or
-  postcode, visible before a reviewer issues the quote (AC-58).
-- **What we do not add:** identity verification, ABN-at-signup for the self-signup path, or blocking on
-  postcode.
+- **What we add:** ops review flags where the two accounts share an **ABN, phone or business name**,
+  visible before a reviewer issues the quote (AC-58). **Three, not four:** postcode was specified and
+  dropped — there is no account-level address, only a per-job delivery destination (A15).
+- **What we do not add:** identity verification, ABN-at-signup for the self-signup path, blocking on
+  any flag, or a postcode comparison of any kind.
 
 #### 4.6.7 Independently switchable
 
@@ -737,7 +738,7 @@ sentence. Refuses a stale save. **A non-zero payout threshold requires explicit 
 Switching Off states what it does and does not do — **and that everything already promised is still
 honoured**.
 
-**(b) Referrals** — list with review flags (shared ABN / phone / business name / postcode — a signal
+**(b) Referrals** — list with review flags (shared ABN / phone / business name — a signal
 for a human, not a control). Filter and search. **Void** (mandatory reason), **un-void**, and a
 separately confirmed **bulk void**, the only way to stop in-flight promises. **This list shows no
 banking** (AC-102).
@@ -995,6 +996,9 @@ Not satisfied by "we didn't mean to change anything"; the tester must *prove* it
   does for a non-referred account.
 - **AC-57** The quote indicator disappears at the first pricing event after use or expiry.
 - **AC-58** The ops project record shows the discount and any review flag **before** a reviewer issues.
+  The flags are **ABN, phone and business name** — three, not four. Postcode is not compared: there is
+  no account-level address to compare, and a flag derived from a per-job delivery destination would
+  fire on ordinary customers and teach the reviewer to ignore the rest (A15).
 - **AC-59** An ops price override keeps its price; the referral discount does not re-apply.
 - **AC-60** With `referred_discount_active` off, referrals record and commissions earn but no quote
   receives a discount — and vice versa for `referrer_reward_active`.
