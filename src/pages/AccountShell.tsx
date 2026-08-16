@@ -12,7 +12,8 @@
 import type { ReactNode } from "react";
 import { User, Users, HelpCircle, LogOut } from "lucide-react";
 import { type Page, SAGE, WindowMark as Mark } from "../app/ui";
-import { AccountDataCtx, useAccountData, useAccount, initialsOf, quoteProjects } from "./accountModel";
+import { AccountDataCtx, useAccountData, useAccount, initialsOf, quoteProjects, TONE } from "./accountModel";
+import { ReferralDataProvider, useReferrals, hasReferralSection, confirmedBadge } from "./referralModel";
 
 // Destinations after the object-model + IA collapse, plus Referrals — which is
 // one section serving two different people: someone who refers, and someone who
@@ -38,6 +39,7 @@ export function AccountShell({ section, setPage, user, onSignOut, children }: {
   const data = useAccountData();
   return (
     <AccountDataCtx.Provider value={data}>
+      <ReferralDataProvider>
       <div className="min-h-screen ground-bone pt-16">
         {/* Content LEFT, identity/nav rail RIGHT. */}
         <div className="max-w-6xl mx-auto px-6 pt-[26px] pb-[60px] grid lg:grid-cols-[1fr_236px] gap-0 lg:gap-[34px] items-start">
@@ -52,6 +54,7 @@ export function AccountShell({ section, setPage, user, onSignOut, children }: {
           <Rail section={section} setPage={setPage} user={user} onSignOut={onSignOut} />
         </div>
       </div>
+      </ReferralDataProvider>
     </AccountDataCtx.Provider>
   );
 }
@@ -60,22 +63,30 @@ function Rail({ section, setPage, user, onSignOut }: {
   section: AccountSection; setPage: (p: Page) => void; user: ShellUser; onSignOut: () => void;
 }) {
   const { projects, orders } = useAccount();
+  const referrals = useReferrals();
+  const referralsPresent = hasReferralSection(referrals);
+  const referralBadge = confirmedBadge(referrals);
   const listCount = (orders?.length ?? 0) + quoteProjects(projects ?? []).filter((p) => p.status_customer !== "expired").length;
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
 
   const nav: { key: AccountSection; page: Page; label: string; icon: ReactNode; badge?: number }[] = [
     { key: "projects", page: "dashboard", label: "My Projects", icon: <Mark size={17} color="currentColor" />, badge: listCount || undefined },
   ];
-  const account: { key: AccountSection; page: Page; label: string; icon: ReactNode }[] = [
-    // Above Account, in the account/session group. The confirmed-earnings badge
-    // and the "only show this when the account has a code, history or an offer"
-    // rule both read the referrals API, so they land with it.
-    { key: "referrals", page: "referrals", label: "Referrals", icon: <Users className="w-[17px] h-[17px]" /> },
+  const account: { key: AccountSection; page: Page; label: string; icon: ReactNode; badge?: string; badgeTone?: "pos" }[] = [
+    // Present only when the account has a code, history or a live offer — an
+    // empty section is worse than no section. The badge is confirmed money in
+    // whole dollars, and it is absent rather than zero when there is none.
+    ...(referralsPresent
+      ? [{
+        key: "referrals" as const, page: "referrals" as const, label: "Referrals",
+        icon: <Users className="w-[17px] h-[17px]" />, badge: referralBadge, badgeTone: "pos" as const,
+      }]
+      : []),
     { key: "account", page: "account", label: "Account", icon: <User className="w-[17px] h-[17px]" /> },
     { key: "help", page: "help", label: "Help & contact", icon: <HelpCircle className="w-[17px] h-[17px]" /> },
   ];
 
-  const Item = ({ it }: { it: { key: AccountSection; page: Page; label: string; icon: ReactNode; badge?: number } }) => {
+  const Item = ({ it }: { it: { key: AccountSection; page: Page; label: string; icon: ReactNode; badge?: string | number; badgeTone?: "pos" } }) => {
     const on = section === it.key;
     return (
       <button onClick={() => go(it.page)} aria-current={on ? "page" : undefined}
@@ -83,7 +94,14 @@ function Rail({ section, setPage, user, onSignOut }: {
         <span className={on ? "text-sage" : "text-body"}>{it.icon}</span>
         {it.label}
         {it.badge != null && (
-          <span className="ml-auto text-body bg-black/[0.045] px-[7px] py-px font-data t-data-sm">{it.badge}</span>
+          // Money owed to you reads positive; a count of your own projects is
+          // just a count.
+          <span className="ml-auto px-[7px] py-px font-data t-data-sm"
+            style={it.badgeTone === "pos"
+              ? { color: TONE.pos.text, background: TONE.pos.bg }
+              : { color: "var(--body)", background: "rgba(0,0,0,.045)" }}>
+            {it.badge}
+          </span>
         )}
       </button>
     );
