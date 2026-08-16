@@ -128,9 +128,34 @@ consultation and adjudication as inseparable —
 conversationally and its normal outcome is a change, not a tick.
 
 **Design consequences, all load-bearing:** edits fast enough to keep pace with
-speech; a total that moves as options change; trivial reversal when a customer
-changes their mind back; and per-line comments captured while the reason is still
-in the room (per-line comments already exist and are used).
+speech; a total that moves as options change; and per-line comments captured while
+the reason is still in the room (per-line comments already exist and are used).
+
+**Corrected 2026-08-17 — no undo, no change history.** This section previously
+listed "trivial reversal when a customer changes their mind back" as a fourth
+consequence. That was **an inference made while grilling, not something the owner
+asked for**, and he has since vetoed it:
+
+> "We don't expect customer's changing their mind as such: we consult them and
+> make product decisions. No need to track change history for undo purposes."
+
+The consultation model is *decide, then move on* — not a negotiation replayed.
+There is to be no undo stack, no per-edit history, and no per-field before/after
+journal kept for reverting. This is consistent with C5's objection to the platform
+being polluted on every save.
+
+**Three things this does not touch, and they are easily confused with it:**
+
+1. The **divergence record** (§3) stands. One record per quote at issue, covering
+   every field whose issued value differs from the original information. It is a
+   snapshot comparison at a single moment, not a history, and needs no journal to
+   produce.
+2. The **baseline resolution** that record depends on stands — something must
+   reconcile the estimator's proposal and the extracted values into one comparable
+   baseline at issue time. It now serves exactly one purpose.
+3. The **existing audit trail** — entity, action, actor, time — is untouched and
+   remains a carry-across obligation. "No change history for undo" is not licence
+   to thin it.
 
 ---
 
