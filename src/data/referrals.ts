@@ -181,3 +181,57 @@ export const getReferrerScreen = () => json<ReferrerScreen>("/api/account/referr
 /** The referred tradie's own discount panel. null when nobody referred them. */
 export const getReferralOffer = () =>
   json<{ offer: ReferralOffer | null }>("/api/account/referral-offer").then((r) => r.offer);
+
+/** Claim a code. Resolves to the API's reason for refusing, or null when it worked.
+ *
+ *  RETURNS the reason rather than throwing it. Each of the six refusals maps to a
+ *  different sentence a tradie reads, and a thrown Error would collapse them into
+ *  one "something went wrong" — but "that's your own code" and "a code can only be
+ *  added before your first order" are different problems with different fixes. */
+export async function claimReferralCode(code: string): Promise<string | null> {
+  const response = await fetch("/api/account/referrals/claim", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (response.ok) return null;
+  const body = await response.json().catch(() => ({})) as { error?: string };
+  return body.error ?? "invalid_code";
+}
+
+/** Join, or change where the money goes. Answers with the gate as it now stands.
+ *
+ *  Completing these details IS joining, so the response says whether the gate is
+ *  now open. Re-fetching to find out would let the screen render a half-joined
+ *  moment — a state the model deliberately does not have. */
+export async function savePayoutDetails(details: {
+  bsb: string; accountNumber: string; accountName: string;
+}): Promise<{ referrerGate: ReferrerScreen["referrerGate"]; error?: string }> {
+  const response = await fetch("/api/account/payout-details", {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(details),
+  });
+  return response.json();
+}
+
+/** Leave — which is to say, remove the account we would pay into.
+ *
+ *  The refusal carries the amount that caused it, because §5.5's message names
+ *  the figure: "$124 is confirmed and hasn't gone out yet." A bare failure would
+ *  leave the screen unable to say why, on the one screen where why is the whole
+ *  message — the number is what tells someone this resolves itself shortly rather
+ *  than being a wall. */
+export async function leaveProgram(): Promise<
+  { ok: true; referrerGate: ReferrerScreen["referrerGate"] } | { ok: false; error: string; amount: number }
+> {
+  const response = await fetch("/api/account/payout-details", {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (response.ok) return { ok: true, referrerGate: body.referrerGate as ReferrerScreen["referrerGate"] };
+  return { ok: false, error: String(body.error ?? "failed"), amount: Number(body.amount ?? 0) };
+}

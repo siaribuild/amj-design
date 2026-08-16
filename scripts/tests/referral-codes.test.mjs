@@ -89,6 +89,92 @@ test("AC-3 — a drawn code that is already held is redrawn, never surfaced as a
   assert.equal(env.state.updates, 2, "and the redraw must actually reach the database");
 });
 
+test("a refused claim returns its reason, rather than throwing it", async (t) => {
+  // The six refusal codes each map to a sentence a tradie reads. A thrown Error
+  // would collapse them into one "something went wrong", and the field's whole
+  // job is to say WHICH thing — "that's your own code" and "a code can only be
+  // added before your first order" are different problems with different fixes.
+  const runDir = await makeRunDir("referral-client");
+  t.after(async () => { await removeRunDir(runDir); });
+  const outfile = join(runDir, "client-bundle.mjs");
+  await build({
+    stdin: {
+      contents: `export * from ${p("src/data/referrals.ts")};`,
+      resolveDir: projectRoot,
+      sourcefile: "referral-client-entry.ts",
+      loader: "ts",
+    },
+    bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+  });
+  const { claimReferralCode } = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
+
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+
+  globalThis.fetch = async () => new Response(JSON.stringify({ error: "has_order" }), { status: 400 });
+  assert.equal(await claimReferralCode("ABC-123"), "has_order", "the reason reaches the caller");
+
+  globalThis.fetch = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
+  assert.equal(await claimReferralCode("ABC-123"), null, "and null means it worked");
+});
+
+test("a refused leave carries the amount that refused it", async (t) => {
+  // §5.5's refusal names the figure — "$124 is confirmed and hasn't gone out
+  // yet." A bare failure would leave the screen unable to say why, on the one
+  // screen where why IS the message: the person is being told they cannot do
+  // something, and the number is the reason it will resolve itself shortly.
+  const runDir = await makeRunDir("referral-leave");
+  t.after(async () => { await removeRunDir(runDir); });
+  const outfile = join(runDir, "leave-bundle.mjs");
+  await build({
+    stdin: {
+      contents: `export * from ${p("src/data/referrals.ts")};`,
+      resolveDir: projectRoot,
+      sourcefile: "referral-leave-entry.ts",
+      loader: "ts",
+    },
+    bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+  });
+  const { leaveProgram } = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
+
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ error: "clear_blocked", amount: 124.5 }), { status: 409 });
+
+  const refused = await leaveProgram();
+  assert.equal(refused.ok, false);
+  assert.equal(refused.amount, 124.5, "the figure the refusal is about reaches the screen");
+});
+
+test("saving payout details answers with the gate, so the screen knows it joined", async (t) => {
+  // Completing these details IS joining, so the response has to say whether the
+  // gate is now open — the screen that called it needs to know a code exists,
+  // and re-fetching to find out would let it render a half-joined moment that
+  // does not exist in the model.
+  const runDir = await makeRunDir("referral-save");
+  t.after(async () => { await removeRunDir(runDir); });
+  const outfile = join(runDir, "save-bundle.mjs");
+  await build({
+    stdin: {
+      contents: `export * from ${p("src/data/referrals.ts")};`,
+      resolveDir: projectRoot,
+      sourcefile: "referral-save-entry.ts",
+      loader: "ts",
+    },
+    bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
+  });
+  const { savePayoutDetails } = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
+
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ referrerGate: { complete: true, missing: [] } }), { status: 200 });
+
+  const saved = await savePayoutDetails({ bsb: "063000", accountNumber: "12345678", accountName: "A Tradie" });
+  assert.equal(saved.referrerGate.complete, true, "the gate comes back with the save");
+});
+
 test("AC-3 — exhausting the redraws is an error, not a quiet null", async (t) => {
   // null is ALREADY the answer to "this user may not hold a code" — the D18
   // gate's answer. Reusing it for exhaustion would tell a tradie who has
