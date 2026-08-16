@@ -1,0 +1,95 @@
+# {{PROJECT NAME}}
+
+{{One paragraph: what the product is, the stack, the code layout (which dirs hold routes/logic/UI/migrations), and where tests live + which script owns which suite.}}
+
+**Recurring trouble spots:** {{list the domain areas that repeatedly cause subtle bugs — agents probe these at spec, test, and review time.}}
+
+## Feature pipeline (agent workflow)
+
+For substantive work — a new capability, schema change, or anything spanning multiple files — orchestrate the dedicated agents in `.claude/agents/`, in order:
+
+0. **Grill (orchestrator + user, main thread)** — before anything is specced, run `mattpocock-skills:grill-me` with the user on the raw ask: stress-test the idea itself — the problem behind it, whether it's worth building, what's being assumed — **and pin down the actors**: who is this for, which canonical actor in `CONTEXT.md` (or a new/sharpened one), and what they need in their own terms. The user is the only primary source on actor needs available to this pipeline; the grill is where that knowledge is extracted, not assumed. Grilled conclusions must include an actors-and-needs section that feeds the spec verbatim; a new or sharpened actor definition also goes to the architect for `CONTEXT.md`. This is the only stage that can interrogate the user interactively; subagents never can. Default for every full-pipeline feature; only the user may wave it off ("skip the grill"), never the orchestrator's own judgment. Not used for the dev+tester tier or direct edits.
+1. **product-manager** → spec with acceptance criteria, taking the grill's conclusions as input
+2. **architect** → design (files, interfaces, migrations, test plan)
+3. **ux-designer + ui-designer** → interaction spec **+ visual mock** (only if the feature adds/changes UI): the ux-designer owns structure and flows, and the ui-designer **always** gives the mock its visual treatment before it goes to the **UX mock gate** (below) — the user approves the look that will actually ship, never a wireframe that gets its look later.
+4. **developer** → test-first implementation
+5. **ui-designer** → visual polish/audit of implemented UI (only if UI changed; always runs here in addition to its mock-stage pass)
+6. **tester** → independent verification against the acceptance criteria
+7. **architect** (returning) → design-conformance review of the final diff against the design — structure only, not a second bug hunt (skip when step 2 produced no design doc)
+8. **product-manager** (returning) → acceptance: walks the spec's criteria against the tester's evidence, checks for silent descoping/scope creep and unvetoed `ASSUMED:` tags, issues an acceptance verdict — then the orchestrator presents it to the user for final sign-off
+
+Pass each agent the previous agent's output. Steps 7–8 findings go back through the developer loop like any review.
+
+**Cross-cutting — Codex external review (not a stage by design):** the Codex stop-gate reviews every code-changing turn before it may end, automatically. Because turns end at each decision gate, the mock gate, and completion, a full-pipeline feature gets externally reviewed segment by segment as work lands — not once at the end. Its BLOCK findings route to the developer (see Review loops); it runs read-only and its verdict is independent of every agent above. Nothing in the pipeline needs to invoke it, and nothing in the pipeline can skip it.
+
+### Oversized efforts: wayfinder first
+
+When an effort is too big for one session's pipeline run — multiple features, a foggy migration, a route that isn't visible yet — chart it with the `mattpocock-skills:wayfinder` skill **before** the pipeline: a map issue plus decision tickets on the tracker (see `docs/agents/issue-tracker.md`), resolved one at a time. Each resolved region then runs through the pipeline as a normally-sized feature. The product-manager is instructed to flag when an ask needs this instead of a monolithic spec.
+
+### Sizing: which stages engage
+
+- **Full pipeline** — anything that adds/changes a business rule or capability, touches DB schema/migrations, spans multiple concerns, or raises a question only the user/spec can answer. When any stage would have a real decision to make, it runs.
+- **Developer + tester only** — a bounded bug fix or refactor whose correct behaviour is already unambiguous (reproducible bug, clear expected output, no schema change, no new interface). No PM/architect/design stages: nothing for them to decide.
+- **Direct (no agents)** — mechanical edits where a wrong guess is impossible or trivially caught: typos, copy/wording, comments/docs, config values, formatting, dependency bumps.
+
+Deciding rule: it's the *decision content* that sizes a change, not the line count. If genuinely torn between tiers, ask the user in one line rather than guessing expensive.
+
+**Manual overrides (always win over the heuristic):**
+- "quick" / "no pipeline" / "just do it directly" → direct mode, no agents, regardless of size.
+- "full pipeline" / "run the team" → full pipeline, even for something tiny.
+- The enforced guardrails below are NOT disabled by any tier or override. Skipping the team never means skipping review.
+
+### Decision gates (iterative — loop until no questions remain)
+
+Subagents cannot talk to the user mid-run, so decisions are batched at stage boundaries — but the gate is a **loop, not a single exchange**. When the product-manager or architect returns with a "Decisions needed" section:
+
+1. The orchestrator puts the questions to the user (AskUserQuestion, with the agent's recommendations).
+2. The answers go back **to the same agent via SendMessage** (so it keeps its context — never a fresh spawn), which revises the spec/design accordingly.
+3. If the answers changed decisions or raised new questions, the agent returns a new "Decisions needed" section → repeat from 1.
+4. The next pipeline stage starts only when the agent returns with an empty "Decisions needed" list.
+
+**UX mock gate (hard rule — no assumption fallback):** when a feature adds or changes UI, implementation must not start until the user has seen a visual representation of the intended solution and explicitly approved it. The designers deliver a self-contained static HTML mock (saved under `docs/mocks/`); the orchestrator renders it to the user and asks for approval. Feedback goes back to the same designers via SendMessage; revised mock → re-present; loop until the user says it's acceptable. If the user is unavailable, the pipeline **pauses at this gate** — unlike question gates, there is no `ASSUMED:` fallback here. "Approved with tweaks" must be re-stated in the interaction spec so the developer builds the approved version, not the first draft.
+
+The list should shrink every round; if a gate is still churning after ~3 rounds, that usually means the underlying goal is unsettled — say so to the user plainly instead of another round of questions. Ask only user-owned decisions — business rules, scope, trade-offs with cost or customer-facing consequences; never things derivable from the code or spec. If the user is unavailable or a point is minor, proceed on an assumption explicitly tagged `ASSUMED:` in the spec/design so it can be vetoed at review. Developer/tester never open new question channels — a gap they hit is a spec/design defect and goes back up the pipeline as a finding.
+
+### Review loops (fixes always go through the developer)
+
+Reviewers report; only the developer fixes implementation code. Never patch a reviewer's finding inline in the orchestrator, and never let a reviewer "just fix it while in there".
+
+- **tester ⇄ developer loop:** a FAIL verdict goes back to the developer as findings (each with its failing test or reproducing command). The developer fixes test-first; the tester then re-verifies from scratch — findings fixed, nothing regressed, criteria still met. Repeat until PASS. After 3 failed rounds, stop and surface the impasse to the user instead of grinding.
+- **Codex ⇄ developer loop:** the stop-gate's BLOCK findings are routed to the developer the same way (for a code defect, first write the failing test that captures it, then fix). The gate re-reviews automatically on the next stop attempt. Codex runs in a read-only sandbox — it can never edit the repo, only report.
+
+### Runaway protection (token burn)
+
+Every loop in this pipeline must converge or escalate — never grind:
+
+- **Round caps:** tester⇄developer and each decision gate cap at 3 rounds; the Codex stop-gate fix cycle caps at 3 consecutive BLOCKs on the same piece of work. Hitting a cap means stop and present the impasse to the user with both sides' positions — a stalled loop is a disagreement to adjudicate, not a retry problem.
+- **No zombie respawns:** if an agent returns empty, off-topic, or the same output twice, do not relaunch it with the same prompt — diagnose (wrong inputs? missing context? task too big?) or escalate. Kill visibly stuck background agents (TaskStop) rather than waiting them out.
+- **Progress test between rounds:** each loop round must change something concrete (a finding resolved, a question answered, a diff advanced). Two rounds with no delta = stalled = escalate.
+- **Scale honestly:** small fixes skip the pipeline entirely; don't spawn six agents for a one-line change.
+
+## Enforced guardrails (don't fight them)
+
+- **TDD (Probity):** writes to the paths scoped in `probity.config.ts` are blocked unless recent session history shows a failing test the write addresses. Work red → green → refactor.
+- **Codex stop-gate:** when a turn changed code, a Codex review runs before the turn may end; address its findings rather than bypassing.
+- **Codex infrastructure failure ≠ review findings.** If the gate blocks with a *task failure* (network, service outage, auth, quota, timeout) rather than actual findings: retry once, and if it fails again, stop and tell the user plainly — the work is done but unreviewed, and the options are (a) wait and run `/codex:review --wait` later, (b) temporarily disable the gate with `/codex:setup --disable-review-gate` and re-enable after, or (c) user pressing Esc to end the turn. Never grind retries against a dead service, and never present unreviewed work as reviewed. If the gate *silently skips* because the Codex CLI is missing (that path fails open), flag the missing review to the user rather than letting it pass unmentioned.
+- **Security hooks (security-guidance + semgrep plugins):** pattern warnings on edits, semgrep scanning around tool use, and an LLM security diff-review on Stop — all automatic. Additionally, when a feature touches auth, file uploads, payments, or session handling, the orchestrator runs the `security-review` skill on the branch before the product-manager acceptance step; its findings route to the developer like any review.
+- **agent-guard** (`.claude/hooks/agent-guard.mjs`): mechanically enforces the runaway caps — near-identical agent respawns, >20 agent spawns/session, >8 messages to one agent, >5 workflow runs all pause for explicit user approval. If it fires, treat it as a stall signal: diagnose, don't just re-approve. Thresholds: `.claude/hooks/agent-guard.config.json` (optional).
+
+## Agent skills
+
+Per-repo configuration for the mattpocock engineering skills lives in `docs/agents/`:
+
+- `issue-tracker.md` — where issues, wayfinder maps, and tickets live.
+- `domain.md` — single context: `CONTEXT.md` at root, ADRs in `docs/adr/`.
+- `triage-labels.md` — default five-label triage vocabulary.
+
+## Commands
+
+{{The project's real commands: typecheck gate, full test battery + per-suite scripts, dev servers, local DB migrate. Keep this list accurate — the developer and tester run these verbatim.}}
+
+## House rules
+
+{{The project's non-negotiables: single sources of truth, layering rules (where logic lives vs UI), migration policy + pointer to a migration-safety skill if the project has a database, display/formatting rules that must hold on every surface. One line each.}}
+
+- Domain vocabulary lives in `CONTEXT.md` — read it before designing or speccing; update it (architect owns it) when a term is added or sharpened.
