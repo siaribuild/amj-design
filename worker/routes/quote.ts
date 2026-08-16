@@ -7,6 +7,7 @@ import { resolveStaff } from "../lib/staff";
 import { isEmail, normEmail, resolveUser } from "../lib/auth";
 import { createOrderFromProject, orderDto, depositOf, balanceOf, type OrderRow } from "../lib/orders";
 import { onOrderCreated } from "../lib/referrals";
+import { issuedReferralBadge } from "../lib/referral-discount";
 import { issueQuote } from "../lib/issue";
 import { loadLines } from "./projects";
 import { logEvent } from "../lib/activity";
@@ -429,6 +430,10 @@ quote.get("/projects/:id/quote", async (c) => {
     live: true, status: proj.status_customer,
     total, goods, delivery, deliveryPostcode: proj.delivery_postcode ?? null,
     deposit: depositOf(goods, delivery), balance: balanceOf(goods, delivery),
+    // The badge reads the stamp taken at issue, not live eligibility. This quote
+    // said what it said; ordering ends the eligibility but does not make the
+    // sentence untrue of the document.
+    referral: await issuedReferralBadge(c.env, p.id),
     issuedAt: proj.issued_at, lines,
   });
 });

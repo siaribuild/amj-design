@@ -5,6 +5,7 @@
 import type { Env } from "../types";
 import { uuid } from "./util";
 import { getProductBySlug } from "../../src/data/catalogue";
+import { issuedReferralBadge } from "./referral-discount";
 
 function safeParse(s: string | null | undefined): Record<string, unknown> {
   try { const v = JSON.parse(s || "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; }
@@ -135,6 +136,11 @@ export async function orderDto(env: Env, o: OrderRow) {
     // Source files carried onto the order (the uploaded schedule) — surfaced in
     // the account order view, the ops panel, and the order emails.
     files: await orderFiles(env, o.id, o.project_id),
+    // The badge follows the purchase onto the order, from the stamp taken at
+    // issue. Ordering is exactly what ends the eligibility, so a live lookup here
+    // would erase the label at the moment it became a permanent fact about this
+    // order — and the order is what the customer looks at from now on.
+    referral: await issuedReferralBadge(env, o.project_id),
   };
 }
 

@@ -1254,6 +1254,50 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(back.code, left.retainedCode, "the same code, not a new one");
     });
 
+    await t.test("AC-54 — the issued quote's badge is frozen, and its price is never re-priced", async () => {
+      // Two different things freeze here, and only one of them is a price. The
+      // LABEL is stamped at issue so the badge cannot drift when eligibility ends
+      // — a quote that said "includes your 2.5% referral discount" must keep
+      // saying so, because it does. The PRICE was already frozen by issuing, and
+      // nothing here touches it.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "badge.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556', company='Kirra Glazing' WHERE email='badge.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "badge.mate@example.com");
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await sql(
+        `INSERT INTO project
+           (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+         VALUES ('p-badge', (SELECT id FROM user WHERE email='badge.mate@example.com'),
+                 'Badge quote','OF-Q-88011','quote_issued','issued',0);
+         INSERT INTO quote_line
+           (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+         VALUES ('ql-badge','p-badge','W01','amj80-series-awning-window',
+                 '{"width":"900","height":"1200"}','{}',1,10000,'ready',0);
+         UPDATE project SET referral_percent_at_issue = 2.5 WHERE id = 'p-badge';`,
+      );
+
+      const { body: quote } = await requestJson(mate, "/api/projects/p-badge/quote");
+      assert.equal(quote.live, true, `the quote must be issued for a badge to exist: ${JSON.stringify(quote)}`);
+      assert.ok(quote.referral, `the issued quote must carry a badge: ${JSON.stringify(quote).slice(0, 400)}`);
+      assert.equal(quote.referral.percent, 2.5, "the badge names the percentage as issued");
+      assert.equal(quote.referral.referrerName, "Kirra Glazing", "and who to thank");
+
+      // Eligibility ends the moment they order. The badge must survive onto the
+      // order, because the order is what they will look at from now on — and it
+      // still describes what happened: this purchase carried that discount.
+      const { body: placed } = await requestJson(mate, "/api/projects/p-badge/accept", { method: "POST" });
+      const { body: order } = await requestJson(mate, `/api/orders/${placed.order.id}`);
+      assert.equal(order.order.referral.percent, 2.5, "a frozen label does not move when eligibility does");
+      assert.equal(order.order.referral.referrerName, "Kirra Glazing");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

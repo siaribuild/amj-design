@@ -73,3 +73,34 @@ export async function referralDiscountState(
   if (!Number.isFinite(percent) || percent <= 0) return NONE;
   return { ...base, state: "available", percent };
 }
+
+/** The badge an ISSUED quote or order carries, from the frozen stamp.
+ *
+ *  A LABEL is frozen here, never a price. The price was already locked by issuing;
+ *  what this preserves is the sentence — a quote that said "includes your 2.5%
+ *  referral discount" must keep saying so after the tradie orders and their
+ *  eligibility ends, because it remains true of that quote.
+ *
+ *  Derived from the stamped column rather than from live state for exactly that
+ *  reason: live state moves, and a document describing what already happened must
+ *  not move with it. */
+export async function issuedReferralBadge(
+  env: Env,
+  projectId: string,
+): Promise<{ percent: number; referrerName: string } | null> {
+  const row = await env.DB
+    .prepare(
+      `SELECT p.referral_percent_at_issue AS percent, u.company, u.name
+         FROM project p
+         LEFT JOIN referral r ON r.referred_user_id = p.owner_user_id
+         LEFT JOIN user u ON u.id = r.referrer_user_id
+        WHERE p.id = ?`,
+    )
+    .bind(projectId)
+    .first<{ percent: number | null; company: string | null; name: string | null }>();
+  if (!row?.percent) return null;
+  return {
+    percent: row.percent,
+    referrerName: row.company?.trim() || row.name?.trim() || "a tradie you know",
+  };
+}
