@@ -26,6 +26,7 @@ import { ensureCatalogue } from "./lib/catalogue";
 import { getActiveLocations } from "../src/data/catalogue";
 import { drainLearningOutbox } from "./lib/issue";
 import { reconcilePricing } from "./lib/pricing-admin";
+import { referralSweep } from "./lib/referrals";
 import { applySecurity, securityOptions } from "./lib/headers";
 
 const api = new Hono<{ Bindings: Env }>();
@@ -246,6 +247,10 @@ export default {
     // Sweep for pricing gaps, so a missed publish webhook cannot hide one
     // indefinitely. Caught separately: neither job may sink the other.
     await reconcilePricing(env).catch((e) => console.log(`[reconcile] scheduled sweep failed: ${String(e)}`));
+    // Release referral money held because its referrer was briefly unpayable.
+    // Caught separately like its peers: a referral sweep must not sink pricing
+    // reconciliation, and vice versa.
+    await referralSweep(env).catch((e) => console.log(`[referral] scheduled sweep failed: ${String(e)}`));
     // Release AI jobs whose worker died mid-run; without this a customer sits
     // on "reading your documents" until they clear their own project.
     await reapAbandonedAiJobs(env)

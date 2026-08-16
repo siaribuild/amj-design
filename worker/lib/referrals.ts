@@ -6,6 +6,7 @@
 import type { Env } from "../types";
 import { uuid } from "./util";
 import { taxBreakdown } from "../../src/data/gst";
+import { STAGES } from "./orders";
 
 /** The account row this module needs to answer "may this user hold a code?". */
 export interface ReferrerRow extends PayoutDetails {
@@ -386,6 +387,36 @@ export async function onOrderBalancePaid(env: Env, orderId: string): Promise<voi
     )
     .bind(orderId)
     .run();
+}
+
+/** Stages at or past "paid in full", for the sweep's candidate query.
+ *
+ *  Derived from `STAGES` rather than typed out, so an order lifecycle that gains
+ *  a stage after `balance_paid` does not silently fall out of the sweep. */
+const PAID_IN_FULL_ONWARDS = STAGES.slice(STAGES.indexOf("balance_paid"));
+
+/** Release money that was held, and only that.
+ *
+ *  The residue of the payability hold: a referrer cleared their bank details, the
+ *  order was paid while they were unpayable, and later they put the details back.
+ *  Nothing in that last request touches the earning — the order was paid long ago
+ *  and the account form knows nothing about referrals — so there is no request to
+ *  hang the release on. A sweep is the only honest place for it.
+ *
+ *  It re-uses `onOrderBalancePaid` rather than repeating its conditions, so the
+ *  refund guard, the same-business re-check and the payability test cannot drift
+ *  between the two paths that confirm money. */
+export async function referralSweep(env: Env): Promise<void> {
+  const placeholders = PAID_IN_FULL_ONWARDS.map(() => "?").join(", ");
+  const { results } = await env.DB
+    .prepare(
+      `SELECT DISTINCT e.order_id FROM referral_earning e
+         JOIN "order" o ON o.id = e.order_id
+        WHERE e.status = 'pending' AND o.stage IN (${placeholders})`,
+    )
+    .bind(...PAID_IN_FULL_ONWARDS)
+    .all<{ order_id: string }>();
+  for (const row of results ?? []) await onOrderBalancePaid(env, row.order_id);
 }
 
 /** What a referrer submits to become payable. Free text as typed. */

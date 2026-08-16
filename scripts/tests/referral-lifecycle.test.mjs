@@ -321,6 +321,10 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
     const baseUrl = `http://127.0.0.1:${port}`;
     server = start(process.execPath, [
       wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port),
+      // The sweep is cron work, and cron is not something a test can wait for.
+      // --test-scheduled exposes the scheduled handler over HTTP so it can be
+      // driven deliberately — the real handler, not a copy of it wired for tests.
+      "--test-scheduled",
       "--persist-to", state, "--assets", assets, "--log-level", "warn",
       "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:", "--var", "SANITY_PROJECT_ID:", "--var", "AI_EXTRACTION_MODE:manual",
     ], { env: wranglerEnv });
@@ -993,6 +997,63 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(rows[0].status, "void", "one business referring itself is not paid");
       assert.equal(rows[0].void_reason, "same_abn");
       assert.equal(rows[0].confirmed_at, null);
+    });
+
+    await t.test("AC-28 late limb — the sweep releases money once the referrer can be paid again", async () => {
+      // The other half of the pending-hold. Money held because a referrer cleared
+      // their bank details has to be released when they put them back, and there
+      // is no request to hang that on — the order was paid long ago and nothing
+      // about the referrer's own account touches the earning.
+      //
+      // confirmed_at is stamped NOW rather than backdated to the payment. It is
+      // the instant the money genuinely became payable, and the advertised payment
+      // window runs from it — backdating would start the clock during a period
+      // when we had nowhere to send the money.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "sweep.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='sweep.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "sweep.mate@example.com");
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await sql(
+        `INSERT INTO project
+           (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+         VALUES ('p-sweep', (SELECT id FROM user WHERE email='sweep.mate@example.com'),
+                 'Sweep quote','OF-Q-88007','quote_issued','issued',0);
+         INSERT INTO quote_line
+           (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+         VALUES ('ql-sweep','p-sweep','W01','amj80-series-awning-window',
+                 '{"width":"900","height":"1200"}','{}',1,10000,'ready',0);`,
+      );
+      await requestJson(mate, "/api/projects/p-sweep/accept", { method: "POST" });
+      const orderId = (await sql(`SELECT id FROM "order" WHERE project_id='p-sweep'`))[0].id;
+
+      // Details gone, order paid, money held.
+      await sql("UPDATE user SET payout_bsb=NULL WHERE email='sweep.referrer@example.com'");
+      const staff = new Session(baseUrl);
+      await login(staff, "/api/auth", staffEmail);
+      await sql(`UPDATE "order" SET stage='balance_invoiced' WHERE id='${orderId}'`);
+      await requestJson(staff, `/api/orders/${orderId}/pay`, { method: "POST", json: { kind: "balance" } });
+      const held = await sql(`SELECT status FROM referral_earning WHERE order_id='${orderId}'`);
+      assert.equal(held[0].status, "pending", "held while unpayable");
+
+      // They come back and fix their details. No request touches the earning.
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const stillHeld = await sql(`SELECT status FROM referral_earning WHERE order_id='${orderId}'`);
+      assert.equal(stillHeld[0].status, "pending", "and nothing in that request releases it");
+
+      await fetch(new URL("/__scheduled", baseUrl));
+
+      const released = await sql(`SELECT status, confirmed_at FROM referral_earning WHERE order_id='${orderId}'`);
+      assert.equal(released[0].status, "confirmed", "the sweep is what releases it");
+      assert.ok(released[0].confirmed_at, "stamped when it truly became payable, not when the order was paid");
     });
 
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
