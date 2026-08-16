@@ -80,6 +80,12 @@ export interface EarningRow {
   status: EarningStatus;
   /** The instant it became payable — what the stated payment window runs from. */
   confirmedAt: string | null;
+  /** When we have promised to have paid it by, resolved server-side.
+   *
+   *  Not derived in the browser, deliberately: this is the date the business
+   *  commits to under ACL s 32(2), which requires the window to be met and not
+   *  merely stated. Its arithmetic lives in one place. null until payable. */
+  dueAt: string | null;
 }
 
 /** The state of being payable, as its owner sees it.
@@ -87,6 +93,9 @@ export interface EarningRow {
  *  Masked, always. The unmasked values exist in exactly one place a human can
  *  read them — the ops payouts run — and nowhere else, including here. */
 export interface PayoutState {
+  /** The ABN itself. A public business identifier, and the person reading it is
+   *  its owner — so unlike the bank fields there is nothing here to mask. */
+  abn: string | null;
   abnPresent: boolean;
   abnValid: boolean;
   bsbMasked: string | null;
@@ -116,6 +125,12 @@ export interface ReferrerScreen {
   referrerGate: { complete: boolean; missing: ("abn" | "bank_details")[] };
   /** null until the gate passes — the code is withheld, never issued inactive. */
   code: string | null;
+  /** The code a former member would get back if they rejoin. DISPLAY ONLY.
+   *
+   *  A former member's `code` is null by definition, so the one screen whose copy
+   *  names their code would otherwise have none to name. Never treat this as an
+   *  active code — it is a promise about the past, not a shareable link. */
+  retainedCode: string | null;
   shareUrl: string | null;
   /** The REFERRED side's ability to type a code. Never gated by D18: becoming a
    *  referrer needs payout details, being referred does not. */
@@ -137,8 +152,32 @@ export interface ReferralOffer {
   /** The referral percentage ALONE. Never summed with anything. */
   referralPercent: number;
   expiresAt: string | null;
+  /** The link target for "see that order". Routing on the display number would
+   *  couple a URL to a label. */
+  usedOrderId?: string | null;
   usedOrderNo?: string | null;
   usedAt?: string | null;
   expiredAt?: string | null;
   referrerName: string;
 }
+
+// ── Reading it ───────────────────────────────────────────────────────────────
+// The fetch lives here rather than in components, per the house rule that logic
+// belongs where it can be tested. Components receive data, never a promise.
+
+async function json<T>(path: string): Promise<T> {
+  const response = await fetch(path, { credentials: "same-origin" });
+  if (!response.ok) throw new Error(path + ": " + response.status);
+  return response.json() as Promise<T>;
+}
+
+/** The offer as advertised. PUBLIC — the landing page calls this logged out. */
+export const getReferralProgram = () =>
+  json<{ program: ReferralProgramPublic }>("/api/referral/program").then((r) => r.program);
+
+/** The referrer's whole screen. */
+export const getReferrerScreen = () => json<ReferrerScreen>("/api/account/referrals");
+
+/** The referred tradie's own discount panel. null when nobody referred them. */
+export const getReferralOffer = () =>
+  json<{ offer: ReferralOffer | null }>("/api/account/referral-offer").then((r) => r.offer);

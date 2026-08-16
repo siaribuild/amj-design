@@ -8,7 +8,8 @@ import { uuid } from "./util";
 import { taxBreakdown } from "../../src/data/gst";
 import { STAGES } from "./orders";
 import { stripReferralFromDrafts } from "./lines";
-import type { ReferralProgramPublic } from "../../src/data/referrals";
+import type { ReferralOffer, ReferralProgramPublic } from "../../src/data/referrals";
+import { referralDiscountState } from "./referral-discount";
 
 /** The account row this module needs to answer "may this user hold a code?". */
 export interface ReferrerRow extends PayoutDetails {
@@ -585,6 +586,58 @@ export async function referrerScreen(env: Env, user: ReferrerRow & { id: string 
     payoutHistory: [] as { paidAt: string; amount: number; reference: string | null; referralIds: string[] }[],
     program,
   };
+}
+
+/** The referred tradie's own panel — their discount, from their side.
+ *
+ *  DERIVED on every read from three records that already exist: the referral, its
+ *  expiry, and whether the account has ordered. No stored status, so nothing can
+ *  go stale — and no sweep is needed to keep a status column honest.
+ *
+ *  It reads the promise, never the switch. A discount already given runs to its
+ *  own date whether or not the program is still taking new joiners. */
+export async function referralOffer(env: Env, userId: string): Promise<ReferralOffer | null> {
+  const live = await referralDiscountState(env, userId);
+  // 'none' is nobody referred them; 'void' is a relationship that never happened
+  // from their side. Both mean no panel at all rather than an empty one.
+  if (live.state === "none" || live.state === "void") return null;
+
+  const referrer = await env.DB
+    .prepare(
+      `SELECT u.company, u.name, u.email FROM referral r
+         JOIN user u ON u.id = r.referrer_user_id WHERE r.id = ?`,
+    )
+    .bind(live.referralId)
+    .first<{ company: string | null; name: string | null; email: string }>();
+
+  const order = live.usedOrderId
+    ? await env.DB.prepare('SELECT order_no, created_at FROM "order" WHERE id = ?')
+        .bind(live.usedOrderId).first<{ order_no: string; created_at: string }>()
+    : null;
+
+  return {
+    state: live.state,
+    // Their percentage ALONE. The standing account discount is not summed into
+    // this and has no field to be summed into — see src/data/referrals.ts.
+    referralPercent: live.percent || (await snapshotPercent(env, live.referralId)),
+    expiresAt: live.expiresAt,
+    usedOrderId: live.usedOrderId ?? null,
+    usedOrderNo: order?.order_no ?? null,
+    usedAt: order?.created_at ?? null,
+    expiredAt: live.state === "expired" ? live.expiresAt : null,
+    referrerName: referrer?.company?.trim() || referrer?.name?.trim() || "a tradie you know",
+  };
+}
+
+/** The percentage as promised, for the states where it is no longer live.
+ *
+ *  A used or expired panel still names the figure — "your 2.5% discount was
+ *  applied" — and that figure is the one from the snapshot, not today's config. */
+async function snapshotPercent(env: Env, referralId: string | null): Promise<number> {
+  if (!referralId) return 0;
+  const row = await env.DB.prepare("SELECT discount_percent FROM referral WHERE id = ?")
+    .bind(referralId).first<{ discount_percent: number }>();
+  return row?.discount_percent ?? 0;
 }
 
 /** What a referrer submits to become payable. Free text as typed. */

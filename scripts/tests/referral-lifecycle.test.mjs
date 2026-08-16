@@ -1189,6 +1189,40 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(screen.program.ratePercent, 1, "figures for the copy, from config");
     });
 
+    await t.test("AC-53 — the referred tradie's offer is derived, and says nothing of a total", async () => {
+      // Three records already answer this — the referral, its expiry, and whether
+      // the account has ordered — so there is no stored state to go stale. It is
+      // also why the discount survives the program being switched off: the panel
+      // reads a promise already made, not a switch.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "offer.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556', company='Kirra Glazing' WHERE email='offer.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      // Nobody referred them: no panel at all, rather than an empty one.
+      const stranger = new Session(baseUrl);
+      await login(stranger, "/api/auth", "offer.stranger@example.com");
+      const { body: none } = await requestJson(stranger, "/api/account/referral-offer");
+      assert.equal(none.offer, null, "a tradie nobody referred sees no panel");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "offer.mate@example.com");
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+
+      const { body: live } = await requestJson(mate, "/api/account/referral-offer");
+      assert.equal(live.offer.state, "available");
+      assert.equal(live.offer.referralPercent, 2.5, "their percentage alone — never summed with anything");
+      assert.equal(live.offer.referrerName, "Kirra Glazing", "who to thank");
+      assert.ok(live.offer.expiresAt, "an offer with a clock on it");
+
+      // AC-75 again, on the shape a customer actually receives.
+      const forbidden = /account.?discount|combined|totalDiscount|effectiveDiscount/i;
+      assert.deepEqual(Object.keys(live.offer).filter((k) => forbidden.test(k)), []);
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

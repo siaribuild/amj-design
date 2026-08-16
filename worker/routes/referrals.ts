@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
-import { ensureReferralCode, payoutComplete, payoutMissing, publicProgram, recordReferral, referrerScreen, savePayoutDetails } from "../lib/referrals";
+import { ensureReferralCode, payoutComplete, payoutMissing, publicProgram, recordReferral, referralOffer, referrerScreen, savePayoutDetails } from "../lib/referrals";
 
 export const referrals = new Hono<{ Bindings: Env }>();
 
@@ -66,4 +66,12 @@ referrals.put("/account/payout-details", async (c) => {
   // caller had BEFORE their own save.
   const fresh = await c.env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(user.id).first<typeof user>();
   return c.json({ referrerGate: { complete: payoutComplete(fresh), missing: payoutMissing(fresh) } });
+});
+
+// The REFERRED tradie's panel. Their own discount, from their side — derived, so
+// it cannot go stale, and read from the promise rather than from the switch.
+referrals.get("/account/referral-offer", async (c) => {
+  const user = await resolveUser(c.env, c.req.raw);
+  if (!user) return c.json({ error: "unauthorised" }, 401);
+  return c.json({ offer: await referralOffer(c.env, user.id) });
 });
