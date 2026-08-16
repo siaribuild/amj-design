@@ -137,18 +137,24 @@ export async function consumeChallenge(env: Env, email: string, code: string): P
   return false;
 }
 
-export async function findOrCreateUser(env: Env, email: string): Promise<UserRow> {
+/** Whether this sign-in CREATED the account, reported rather than inferred.
+ *
+ *  Referral attribution hangs off this flag, and AC-7 — an existing customer
+ *  clicking a mate's link is never a referral — is regression-critical. Returning
+ *  the fact makes it impossible for a caller to guess wrongly: there is no
+ *  heuristic at the call site about row counts or timestamps that could drift. */
+export async function findOrCreateUser(env: Env, email: string): Promise<{ user: UserRow; created: boolean }> {
   const existing = await env.DB.prepare("SELECT * FROM user WHERE email = ?").bind(email).first<UserRow>();
   if (existing) {
     await env.DB.prepare("UPDATE user SET last_verified_at = datetime('now') WHERE id = ?").bind(existing.id).run();
-    return existing;
+    return { user: existing, created: false };
   }
   const id = uuid();
   const name = email.split("@")[0];
   await env.DB.prepare(
     "INSERT INTO user (id, email, name, last_verified_at) VALUES (?, ?, ?, datetime('now'))",
   ).bind(id, email, name).run();
-  return (await env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(id).first<UserRow>())!;
+  return { user: (await env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(id).first<UserRow>())!, created: true };
 }
 
 // ── Sessions ────────────────────────────────────────────────────────────────

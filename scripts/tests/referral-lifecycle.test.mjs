@@ -621,6 +621,42 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(rows.length, 1, "a different business is a real referral");
     });
 
+    await t.test("AC-7 — the link records at signup, and never for someone who already exists", async () => {
+      // REGRESSION-CRITICAL. An existing customer clicking a mate's link is not a
+      // referral and never can be — they were already ours. The guarantee is
+      // structural rather than a check: only the branch of findOrCreateUser that
+      // CREATES a row records anything, so there is no path where an existing
+      // account could be attributed, however the cookie got there.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "link.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='link.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      // A brand-new account arriving with the cookie: recorded, source 'link'.
+      const fresh = new Session(baseUrl);
+      fresh.cookies.set("of_ref", mine.code);
+      await login(fresh, "/api/auth", "link.fresh@example.com");
+      const recorded = await sql(
+        `SELECT source FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='link.fresh@example.com')`,
+      );
+      assert.equal(recorded.length, 1, "a new account arriving on a link is a referral");
+      assert.equal(recorded[0].source, "link");
+
+      // The same cookie, an account that already existed: nothing, ever.
+      const returning = new Session(baseUrl);
+      await login(returning, "/api/auth", "link.returning@example.com");
+      const again = new Session(baseUrl);
+      again.cookies.set("of_ref", mine.code);
+      await login(again, "/api/auth", "link.returning@example.com");
+      const none = await sql(
+        `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='link.returning@example.com')`,
+      );
+      assert.equal(none.length, 0, "an existing customer clicking a referral link records nothing");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

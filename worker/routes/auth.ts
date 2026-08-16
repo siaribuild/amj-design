@@ -12,6 +12,7 @@ import {
   challengeAllowed, challengeSourceAllowed, clearCookie, consumeChallenge, createSession, destroySession,
   findOrCreateUser, isDevEnv, isEmail, normEmail, resolveUser, sessionCookie, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
+import { recordReferral } from "../lib/referrals";
 import { sourceIp, verifyTurnstile } from "../lib/captcha";
 import { notify } from "../lib/email";
 
@@ -78,7 +79,17 @@ auth.post("/verify", async (c) => {
     return c.json({ error: "invalid_code" }, 400);
   }
 
-  const user = await findOrCreateUser(c.env, email);
+  const { user, created } = await findOrCreateUser(c.env, email);
+
+  // AC-7, REGRESSION-CRITICAL: only a newly CREATED account can be attributed. An
+  // existing customer clicking a mate's link was already ours, whatever cookie
+  // they arrive with, and `created` is reported by findOrCreateUser rather than
+  // guessed here so no call site can drift into inferring it.
+  const referralCode = parseCookies(c.req.header("Cookie"))["of_ref"];
+  if (created && referralCode) {
+    await recordReferral(c.env, { referredUser: user, code: referralCode, source: "link" });
+    c.header("Set-Cookie", clearCookie("of_ref", c.env), { append: true });
+  }
 
   // Merge: attach the anonymous claim project (if any, still unowned) to the user,
   // enforcing one draft per customer (merges lines if they already have a draft).
