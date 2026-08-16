@@ -17,7 +17,11 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useEffect, useState } from "react";
 import { INK, QUIET as MUTED } from "../styles/tokens";
-import { opsReferralProgram, opsSaveReferralProgram, OpsApiError, type OpsReferralProgram } from "./api";
+import {
+  opsReferralProgram, opsSaveReferralProgram, opsReferralList, opsVoidReferral,
+  opsUnvoidReferral, opsLinkReferral, OpsApiError,
+  type OpsReferralProgram, type OpsReferralRow,
+} from "./api";
 
 /** A number the form holds as typed, so a half-typed "2." is not coerced. */
 type Draft = Record<string, string | boolean>;
@@ -41,7 +45,7 @@ const pctText = (v: number) => `${Number(Number(v).toFixed(2))}%`;
 const moneyText = (v: number) => `$${Math.round(v).toLocaleString("en-AU")}`;
 const plural = (n: number, u: string) => `${n} ${u}${Math.abs(n) === 1 ? "" : "s"}`;
 
-export function OpsReferrals() {
+function ProgramScreen() {
   const [program, setProgram] = useState<OpsReferralProgram | null>(null);
   const [version, setVersion] = useState("");
   const [draft, setDraft] = useState<Draft>({});
@@ -215,6 +219,198 @@ export function OpsReferrals() {
           Discard
         </button>
       </div>
+    </div>
+  );
+}
+
+// ── Screen 2: the referrals list ─────────────────────────────────────────────
+// Three flags only — ABN, phone, business name. The postcode flag was specified,
+// found to have no supporting data behind it, and struck: a suburb full of
+// tradies is the target market, not evidence of anything.
+const FLAG_LABEL: Record<string, string> = {
+  abn: "Shared ABN", phone: "Shared phone", business_name: "Shared business name",
+};
+
+function ReferralsList() {
+  const [rows, setRows] = useState<OpsReferralRow[]>([]);
+  const [status, setStatus] = useState("");
+  const [q, setQ] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [voiding, setVoiding] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = () => opsReferralList({ status: status || undefined, q: q || undefined })
+    .then((r) => { setRows(r.referrals); setError(null); },
+      (e) => setError(e instanceof OpsApiError ? e.code : "Could not load referrals."));
+  useEffect(() => { void load(); }, [status]);
+
+  const doVoid = async (id: string) => {
+    if (!reason.trim()) return;
+    setBusy(true);
+    try {
+      await opsVoidReferral(id, reason.trim());
+      setVoiding(null); setReason("");
+      await load();
+    } catch (e) {
+      setError(e instanceof OpsApiError ? e.code : "Could not void.");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap gap-2 items-center">
+        <input value={q} onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void load(); }}
+          placeholder="Code, referrer or referred name"
+          className="field-control border px-2 py-1 t-bd-sm min-w-[260px]" />
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className="field-control border px-2 py-1 t-bd-sm">
+          <option value="">All statuses</option>
+          <option value="recorded">recorded</option>
+          <option value="void">void</option>
+        </select>
+        <button onClick={() => void load()} className="px-3 py-1 t-bd-sm" style={{ color: MUTED }}>Search</button>
+      </div>
+
+      {error && <p className="t-bd-sm" style={{ color: "var(--destructive)" }}>{error}</p>}
+
+      <section className="card">
+        <div className="panel-head px-4 py-2.5 t-label" style={{ color: MUTED }}>
+          {rows.length} referral{rows.length === 1 ? "" : "s"}
+        </div>
+        {rows.length === 0 && <p className="px-4 py-3 t-bd-sm" style={{ color: MUTED }}>Nothing matches.</p>}
+        {rows.map((r) => (
+          <div key={r.id} className="px-4 py-3 border-t border-black/[0.07] flex flex-col gap-2">
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <span className="font-data t-data" style={{ color: INK }}>{r.code}</span>
+              <span className="t-bd-sm" style={{ color: INK }}>{r.referrerName} → {r.referredName}</span>
+              <span className="t-cap" style={{ color: MUTED }}>{r.source} · {String(r.createdAt).slice(0, 10)}</span>
+              <span className="t-cap" style={{ color: r.status === "void" ? "var(--destructive)" : MUTED }}>{r.status}</span>
+              {r.orderNo && <span className="t-cap" style={{ color: MUTED }}>order {r.orderNo}</span>}
+              {/* What is owed, stated before anyone decides to void. Voiding a
+                  row with confirmed money behind it is a different act from
+                  voiding one that owes nothing. */}
+              {r.earning
+                ? <span className="t-cap" style={{ color: INK }}>{moneyText(r.earning.amount)} {r.earning.status}</span>
+                : <span className="t-cap" style={{ color: MUTED }}>nothing owed</span>}
+            </div>
+            {r.flags.length > 0 && (
+              <div className="flex flex-wrap gap-2 items-center">
+                {r.flags.map((f) => <span key={f} className="quote-chip quote-chip--neutral">{FLAG_LABEL[f]}</span>)}
+                <span className="t-cap" style={{ color: MUTED }}>shared with the referrer — nothing is blocked</span>
+              </div>
+            )}
+            {r.voidReason && <p className="t-cap" style={{ color: MUTED }}>Voided: {r.voidReason}</p>}
+
+            {/* The reason is a FIELD, not a confirm dialog with a default
+                string. Whoever asks later is usually the person not being paid,
+                and "voided" answers nothing. */}
+            {voiding === r.id ? (
+              <div className="flex flex-wrap gap-2 items-center">
+                <input autoFocus value={reason} onChange={(e) => setReason(e.target.value)}
+                  placeholder="Why is this being voided?" className="field-control border px-2 py-1 t-bd-sm min-w-[300px]" />
+                <button onClick={() => void doVoid(r.id)} disabled={!reason.trim() || busy}
+                  className="px-3 py-1 t-bd-sm disabled:opacity-40" style={{ background: "var(--destructive)", color: "#fff" }}>
+                  Void referral
+                </button>
+                <button onClick={() => { setVoiding(null); setReason(""); }} className="px-3 py-1 t-bd-sm" style={{ color: MUTED }}>Cancel</button>
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                {r.status === "void"
+                  ? <button onClick={() => void opsUnvoidReferral(r.id).then(load)} className="t-cap" style={{ color: MUTED }}>Un-void</button>
+                  : <button onClick={() => { setVoiding(r.id); setReason(""); }} className="t-cap" style={{ color: "var(--destructive)" }}>Void…</button>}
+              </div>
+            )}
+          </div>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+// ── Screen 4: the link action ────────────────────────────────────────────────
+// Goes through recordReferral, so every gate the customer paths run applies
+// identically — a privileged path that skipped them would become the way around
+// all of them.
+//
+// Its refusals are SPECIFIC, unlike the customer-facing ones. Their vagueness
+// exists so a stranger cannot probe which codes are real; there is no stranger
+// on an internal screen, and Ops needs to know whether to ring the applicant
+// back or drop it.
+const LINK_ERROR: Record<string, string> = {
+  no_such_account: "No account with that email.",
+  invalid_code: "That code isn't usable — check it, or the referrer may have left the program and have no bank details stored.",
+  own_code: "That's this account's own code.",
+  already_referred: "This account already has a referral. One per account, permanently.",
+  has_order: "This account has already ordered — a code can only be attached before the first order.",
+  not_eligible: "The two accounts share an ABN.",
+  program_off: "The program is off, so nothing would be recorded.",
+};
+
+function LinkAction() {
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const submit = async () => {
+    if (!email.trim() || !code.trim() || busy) return;
+    setBusy(true); setResult(null);
+    try {
+      await opsLinkReferral({ email: email.trim(), code: code.trim().toUpperCase() });
+      setResult({ ok: true, text: `Linked ${email.trim()} to ${code.trim().toUpperCase()}.` });
+      setEmail(""); setCode("");
+    } catch (e) {
+      const failed = e instanceof OpsApiError ? e.code : "";
+      setResult({ ok: false, text: LINK_ERROR[failed] ?? "Could not link that code." });
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <section className="card max-w-2xl">
+      <div className="panel-head px-4 py-2.5 t-label" style={{ color: MUTED }}>Attach a code to an account</div>
+      <div className="px-4 py-3 flex flex-col gap-3">
+        <p className="t-cap" style={{ color: MUTED }}>
+          For an applicant who gave a code when they applied. This runs the same gates as every other path,
+          so it cannot attach a code the customer paths would have refused.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Account email"
+            className="field-control border px-2 py-1 t-bd-sm min-w-[260px]" />
+          <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="ABC-123"
+            maxLength={7} className="field-control border px-2 py-1 font-data t-data-sm w-[130px]" />
+          <button onClick={() => void submit()} disabled={busy || !email.trim() || !code.trim()}
+            className="px-3 py-1 t-bd-sm disabled:opacity-40" style={{ background: "var(--sage)", color: "#fff" }}>
+            {busy ? "Linking…" : "Link"}
+          </button>
+        </div>
+        {result && <p className="t-bd-sm" style={{ color: result.ok ? INK : "var(--destructive)" }}>{result.text}</p>}
+      </div>
+    </section>
+  );
+}
+
+const SUB_TABS = [
+  { id: "program", label: "Program" },
+  { id: "referrals", label: "Referrals" },
+] as const;
+
+export function OpsReferrals() {
+  const [sub, setSub] = useState<(typeof SUB_TABS)[number]["id"]>("program");
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex gap-4 border-b border-black/10">
+        {SUB_TABS.map((t) => (
+          <button key={t.id} onClick={() => setSub(t.id)} className="pb-2 -mb-px border-b-2 t-bd-sm"
+            style={sub === t.id ? { borderColor: "var(--sage)", color: INK } : { borderColor: "transparent", color: MUTED }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {sub === "program"
+        ? <ProgramScreen />
+        : <div className="flex flex-col gap-5"><LinkAction /><ReferralsList /></div>}
     </div>
   );
 }

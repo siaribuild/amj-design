@@ -683,3 +683,37 @@ export const opsSaveReferralProgram = (body: Partial<OpsReferralProgram> & { exp
     "/api/ops/referrals/program",
     { method: "PUT", body: JSON.stringify(body) },
   );
+
+export interface OpsReferralRow {
+  id: string; code: string; source: string; status: string;
+  createdAt: string; expiresAt: string; voidReason: string | null;
+  referrerName: string; referredName: string;
+  orderId: string | null; orderNo: string | null;
+  /** null when nothing is owed yet. Voiding a row with confirmed money behind
+   *  it is a different act from voiding one that owes nothing. */
+  earning: { amount: number; status: string } | null;
+  flags: ("abn" | "phone" | "business_name")[];
+}
+
+export const opsReferralList = (params: { status?: string; q?: string } = {}) => {
+  const qs = new URLSearchParams();
+  if (params.status) qs.set("status", params.status);
+  if (params.q) qs.set("q", params.q);
+  const suffix = qs.toString();
+  return req<{ referrals: OpsReferralRow[] }>(`/api/ops/referrals${suffix ? `?${suffix}` : ""}`);
+};
+
+/** The reason is mandatory and is a FIELD, not a confirm dialog with a default
+ *  string. Whoever asks later is usually the person not being paid, and
+ *  "voided" answers nothing. */
+export const opsVoidReferral = (id: string, reason: string) =>
+  req<{ ok: boolean }>(`/api/ops/referrals/${id}/void`, { method: "POST", body: JSON.stringify({ reason }) });
+
+export const opsUnvoidReferral = (id: string) =>
+  req<{ ok: boolean }>(`/api/ops/referrals/${id}/unvoid`, { method: "POST", body: "{}" });
+
+/** Attach a code to an account. Goes through recordReferral, so every gate the
+ *  customer paths run applies identically — a privileged path that skipped them
+ *  would become the way around all of them. */
+export const opsLinkReferral = (body: { email?: string; userId?: string; code: string }) =>
+  req<{ ok: boolean }>("/api/ops/referrals/link", { method: "POST", body: JSON.stringify(body) });
