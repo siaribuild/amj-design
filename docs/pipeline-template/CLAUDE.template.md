@@ -91,6 +91,15 @@ Per-repo configuration for the mattpocock engineering skills lives in `docs/agen
 - `domain.md` — single context: `CONTEXT.md` at root, ADRs in `docs/adr/`.
 - `triage-labels.md` — default five-label triage vocabulary.
 
+## Deploy protocol
+
+{{Adapt to the project's deploy mechanism. Keep the invariants:}}
+
+1. Full local gates green before any production deploy.
+2. The deployed commit's **security-sweep CI run is green** — never deploy a commit whose sweep failed or hasn't finished.
+3. Sensitive-surface changes get a preview/staging smoke test before production traffic.
+4. Production deploys always require the user's explicit confirmation.
+
 ## Commands
 
 {{The project's real commands: typecheck gate, full test battery + per-suite scripts, dev servers, local DB migrate. Keep this list accurate — the developer and tester run these verbatim.}}

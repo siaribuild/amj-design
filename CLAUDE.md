@@ -89,6 +89,15 @@ Per-repo configuration for the mattpocock engineering skills lives in `docs/agen
 - `domain.md` — single context: `CONTEXT.md` at root, ADRs in `docs/adr/`.
 - `triage-labels.md` — default five-label triage vocabulary.
 
+## Deploy protocol
+
+Deploys are manual and explicit — a git push never deploys anything. Before any production deploy (`npm run cf:deploy` / `wrangler deploy` / `npx sanity deploy`):
+
+1. Full local gates green (`npm test`, `npm run typecheck:gate`).
+2. The deployed commit's **security-sweep CI run is green** — check with `gh run list -R siaribuild/apertly --commit <sha>`; never deploy a commit whose sweep failed or hasn't finished.
+3. For changes touching sensitive surfaces (auth, payout/bank data, payments, uploads): smoke-test a preview first — `npx wrangler versions upload` gives a preview URL without moving production traffic; verify, then promote with `npx wrangler versions deploy`. Preview versions share production bindings (including the live D1) — read-only smoke checks only, never destructive tests.
+4. Production deploys always require the user's explicit confirmation (enforced by auto-mode) — the old blanket deploy authorization is superseded.
+
 ## Commands
 
 - `npm run typecheck:gate` — TS gate (fatal errors only)
