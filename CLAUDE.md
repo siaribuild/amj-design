@@ -18,6 +18,8 @@ For substantive work — a new capability, schema change, or anything spanning m
 
 Pass each agent the previous agent's output. Steps 7–8 findings go back through the developer loop like any review.
 
+**Cross-cutting — Codex external review (not a stage by design):** the Codex stop-gate reviews every code-changing turn before it may end, automatically. Because turns end at each decision gate, the mock gate, and completion, a full-pipeline feature gets externally reviewed segment by segment as work lands — not once at the end. Its BLOCK findings route to the developer (see Review loops); it runs read-only and its verdict is independent of every agent above. Nothing in the pipeline needs to invoke it, and nothing in the pipeline can skip it.
+
 ### Oversized efforts: wayfinder first
 
 When an effort is too big for one session's pipeline run — multiple features, a foggy migration, a route that isn't visible yet — chart it with the `mattpocock-skills:wayfinder` skill **before** the pipeline: a map issue plus decision tickets on the tracker (see `docs/agents/issue-tracker.md`), resolved one at a time. Each resolved region then runs through the pipeline as a normally-sized feature. The product-manager is instructed to flag when an ask needs this instead of a monolithic spec.
