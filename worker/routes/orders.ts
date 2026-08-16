@@ -6,6 +6,7 @@ import { resolveUser } from "../lib/auth";
 import { isStaff } from "../lib/staff";
 import { guestGrantProjectId } from "../lib/access";
 import { orderDto, orderLines, applyTransition, markPaid, TRANSITIONS, type OrderRow } from "../lib/orders";
+import { onOrderBalancePaid } from "../lib/referrals";
 
 export const orders = new Hono<{ Bindings: Env }>();
 
@@ -132,6 +133,9 @@ orders.post("/:id/pay", async (c) => {
   const kind = body?.kind === "balance" ? "balance" : "deposit";
   const err = await markPaid(c.env, order, kind, typeof body?.reference === "string" ? body.reference : null);
   if (err) return c.json({ error: err, stage: order.stage }, 409);
+  // Paid in full is the instant a referrer's commission becomes payable. A
+  // deposit is not — the job is not done and the money is not ours yet.
+  if (kind === "balance") await onOrderBalancePaid(c.env, order.id);
   const fresh = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(order.id).first<OrderRow>();
   return c.json({ order: await orderDto(c.env, fresh!) });
 });

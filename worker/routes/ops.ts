@@ -23,6 +23,7 @@ import {
   updateSegment, addSegment, removeSegment, loadCompositePolicy, compatibilityConflict,
 } from "../lib/composite";
 import { orderDto, orderLines, applyTransition, markPaid, availableActions, STAGE_LABEL, type Stage, type OrderRow } from "../lib/orders";
+import { onOrderBalancePaid } from "../lib/referrals";
 import { lifecycleOf, daysSince } from "../lib/lifecycle";
 import { actionsFor } from "../lib/ops-actions";
 import { uuid, normNote } from "../lib/util";
@@ -1372,6 +1373,9 @@ ops.post("/orders/:id/pay", async (c) => {
   const kind = body?.kind === "balance" ? "balance" : "deposit";
   const err = await markPaid(c.env, order, kind, typeof body?.reference === "string" ? body.reference : null);
   if (err) return c.json({ error: err, stage: order.stage }, 409);
+  // Same instant, same rule, from the ops side: paid in full is what makes a
+  // referrer's commission payable.
+  if (kind === "balance") await onOrderBalancePaid(c.env, order.id);
   await logEvent(c.env, { actor: staff.id, entityType: "order", entityId: order.id, action: `recorded ${kind} payment` });
   const fresh = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(order.id).first<OrderRow>();
   return c.json({ order: await orderDto(c.env, fresh!), actions: availableActions(fresh!) });

@@ -19,7 +19,7 @@ import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   Session, freePort, login, makeRunDir, projectRoot, removeRunDir,
-  requestJson, run, start, stop, viteCli, waitForUrl, wranglerCli,
+  requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
 const MIGRATION = "0051_referral_program.sql";
@@ -761,6 +761,55 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       // The rate is copied from the referral's snapshot, not re-read from config.
       assert.equal(rows[0].rate_percent, 1);
       assert.equal(rows[0].amount, 90.91);
+    });
+
+    await t.test("AC-20 — paid in full is the payability instant; a deposit is not", async () => {
+      // M8. Full payment is the maturation, and it is a state the system already
+      // tracks — so no hold period is invented and no clawback is needed: the
+      // customer has paid before the referrer does.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "paid.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='paid.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "paid.mate@example.com");
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await sql(
+        `INSERT INTO project
+           (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+         VALUES ('p-paid', (SELECT id FROM user WHERE email='paid.mate@example.com'),
+                 'Paid quote','OF-Q-88002','quote_issued','issued',0);
+         INSERT INTO quote_line
+           (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+         VALUES ('ql-paid','p-paid','W01','amj80-series-awning-window',
+                 '{"width":"900","height":"1200"}','{}',1,10000,'ready',0);`,
+      );
+      await requestJson(mate, "/api/projects/p-paid/accept", { method: "POST" });
+      const orderId = (await sql(`SELECT id FROM "order" WHERE project_id='p-paid'`))[0].id;
+
+      // The deposit is paid. Nothing matures — the job is not done and the money
+      // is not ours yet.
+      await sql(`UPDATE "order" SET stage='deposit_invoiced' WHERE id='${orderId}'`);
+      // Payments are recorded by staff, which is also the honest shape: the
+      // referrer's money matures on an act inside the business, not a customer's.
+      const staff = new Session(baseUrl);
+      await login(staff, "/api/auth", staffEmail);
+      await requestJson(staff, `/api/orders/${orderId}/pay`, { method: "POST", json: { kind: "deposit" } });
+      const afterDeposit = await sql(`SELECT status, confirmed_at FROM referral_earning WHERE order_id='${orderId}'`);
+      assert.equal(afterDeposit[0].status, "pending", "a deposit does not make anything payable");
+      assert.equal(afterDeposit[0].confirmed_at, null);
+
+      // Paid in full. Now it is payable, and the instant is stamped, because that
+      // is what the advertised payment window is measured from.
+      await sql(`UPDATE "order" SET stage='balance_invoiced' WHERE id='${orderId}'`);
+      await requestJson(staff, `/api/orders/${orderId}/pay`, { method: "POST", json: { kind: "balance" } });
+      const afterBalance = await sql(`SELECT status, confirmed_at FROM referral_earning WHERE order_id='${orderId}'`);
+      assert.equal(afterBalance[0].status, "confirmed", "paid in full is what makes it payable");
+      assert.ok(afterBalance[0].confirmed_at, "and the payability instant is stamped");
     });
 
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {

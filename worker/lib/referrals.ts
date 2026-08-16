@@ -273,6 +273,27 @@ export async function onOrderCreated(env: Env, orderId: string): Promise<void> {
     .run();
 }
 
+/** The referred order has been paid in full — the money becomes payable.
+ *
+ *  M8. Full payment IS the maturation, and it is a state the system already
+ *  tracks, so no hold period is invented and no clawback is needed: the customer
+ *  has paid us before we pay the referrer. A deposit does nothing here — the job
+ *  is not done and the money is not ours yet.
+ *
+ *  `confirmed_at` is stamped because it is the instant the advertised payment
+ *  window is measured from. ACL s 32(2) makes that window a promise that has to
+ *  be met, not merely stated, and the ops queue measures against this column. */
+export async function onOrderBalancePaid(env: Env, orderId: string): Promise<void> {
+  await env.DB
+    .prepare(
+      `UPDATE referral_earning
+          SET status = 'confirmed', confirmed_at = datetime('now')
+        WHERE order_id = ? AND status = 'pending'`,
+    )
+    .bind(orderId)
+    .run();
+}
+
 /** What a referrer submits to become payable. Free text as typed. */
 export interface PayoutDetailsInput {
   bsb?: string | null;
