@@ -712,6 +712,57 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.deepEqual(done.referrerGate.missing, [], "and nothing is outstanding once they are in");
     });
 
+    await t.test("AC-16/AC-19 — the referred first order creates a pending earning", async () => {
+      // The money half begins here. The earning is created when the order is —
+      // the customer accepted a quote — but it is only PENDING: nothing becomes
+      // payable until that order is paid in full.
+      //
+      // base_amount is the ex-GST goods figure, excluding delivery, and it comes
+      // from the same per-line taxable-supply rule the customer's own order screen
+      // renders. A fresh /1.1 here would disagree with that screen by cents.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "earn.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='earn.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "earn.mate@example.com");
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+
+      // An issued quote of their own, accepted the way a customer accepts one —
+      // the real path, so the hook is exercised where it actually hangs rather
+      // than through a seam invented for the test.
+      await sql(
+        `INSERT INTO project
+           (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+         VALUES
+           ('p-earn', (SELECT id FROM user WHERE email='earn.mate@example.com'),
+            'Earning quote','OF-Q-88001','quote_issued','issued',1000);
+         INSERT INTO quote_line
+           (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+         VALUES
+           ('ql-earn','p-earn','W01','amj80-series-awning-window',
+            '{"width":"900","height":"1200"}','{}',1,10000,'ready',0);`,
+      );
+      await requestJson(mate, "/api/projects/p-earn/accept", { method: "POST" });
+
+      const rows = await sql(
+        `SELECT e.status, e.base_amount, e.rate_percent, e.amount
+           FROM referral_earning e JOIN "order" o ON o.id = e.order_id
+          WHERE o.project_id = 'p-earn'`,
+      );
+      assert.equal(rows.length, 1, "exactly one earning per order, ever");
+      assert.equal(rows[0].status, "pending", "created on the order, not payable until it is paid");
+      // $10,000 inc GST of goods, delivery excluded entirely → $9,090.91 ex GST.
+      assert.equal(rows[0].base_amount, 9090.91, "ex-GST goods only, and never the delivery");
+      // The rate is copied from the referral's snapshot, not re-read from config.
+      assert.equal(rows[0].rate_percent, 1);
+      assert.equal(rows[0].amount, 90.91);
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

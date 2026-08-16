@@ -5,6 +5,7 @@
 // Routes stay thin: the rules live here.
 import type { Env } from "../types";
 import { uuid } from "./util";
+import { taxBreakdown } from "../../src/data/gst";
 
 /** The account row this module needs to answer "may this user hold a code?". */
 export interface ReferrerRow extends PayoutDetails {
@@ -212,6 +213,64 @@ export async function recordReferral(
     )
     .run();
   return { ok: true };
+}
+
+/** The referred tradie's first order exists — create the earning it owes.
+ *
+ *  PENDING, not payable. The customer has accepted a quote, which is not the same
+ *  as having paid for it; nothing becomes payable until that order is paid in
+ *  full. Called from the route that creates the order rather than from inside
+ *  `orders.ts`, so the order lifecycle does not have to know this feature exists.
+ *
+ *  Every figure that governs the money comes from the referral's own snapshot,
+ *  never the live config: the rate that applies is the one the referrer was
+ *  promised on the day the introduction was recorded. */
+export async function onOrderCreated(env: Env, orderId: string): Promise<void> {
+  const order = await env.DB
+    .prepare(`SELECT o.id, o.created_at, p.owner_user_id
+                FROM "order" o JOIN project p ON p.id = o.project_id WHERE o.id = ?`)
+    .bind(orderId)
+    .first<{ id: string; created_at: string; owner_user_id: string | null }>();
+  if (!order?.owner_user_id) return;
+
+  const referral = await env.DB
+    .prepare("SELECT * FROM referral WHERE referred_user_id = ? AND status = 'recorded'")
+    .bind(order.owner_user_id)
+    .first<{ id: string; rate_percent: number; cap_amount: number | null; expires_at: string }>();
+  if (!referral) return;
+  // Derived-expired: an order placed after the window closed earns nothing, and
+  // the referral needs no stored "expired" flag to say so.
+  if (order.created_at > referral.expires_at) return;
+
+  const program = await env.DB
+    .prepare("SELECT referrer_reward_active FROM referral_program WHERE id = 'default'")
+    .first<{ referrer_reward_active: number }>();
+  if (!program?.referrer_reward_active) return;
+
+  // Parent lines only — a composite's segments are already counted in their
+  // parent's total, the same rule every other money read here follows.
+  const lines = await env.DB
+    .prepare("SELECT line_total FROM order_line WHERE order_id = ? AND parent_line_id IS NULL")
+    .bind(orderId)
+    .all<{ line_total: number }>();
+  const lineTotalsInc = (lines.results ?? []).map((line) => line.line_total);
+  const goodsInc = lineTotalsInc.reduce((sum, n) => sum + n, 0);
+  // THE SAME per-line taxable-supply rule the customer's own order screen renders
+  // (M3). A fresh /1.1 written here would disagree with that screen by cents, and
+  // the customer would be right. Delivery is excluded by construction, not by
+  // subtraction: it is never passed in.
+  const base = taxBreakdown("ex", { lineTotalsInc, deliveryInc: 0, totalInc: goodsInc }).goods;
+
+  await env.DB
+    .prepare(
+      `INSERT INTO referral_earning (id, referral_id, order_id, base_amount, rate_percent, amount, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+    )
+    .bind(
+      uuid(), referral.id, orderId, base, referral.rate_percent,
+      Math.round(base * referral.rate_percent) / 100,
+    )
+    .run();
 }
 
 /** What a referrer submits to become payable. Free text as typed. */

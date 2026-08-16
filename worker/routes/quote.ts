@@ -6,6 +6,7 @@ import { ownedProject } from "../lib/access";
 import { resolveStaff } from "../lib/staff";
 import { isEmail, normEmail, resolveUser } from "../lib/auth";
 import { createOrderFromProject, orderDto, depositOf, balanceOf, type OrderRow } from "../lib/orders";
+import { onOrderCreated } from "../lib/referrals";
 import { issueQuote } from "../lib/issue";
 import { loadLines } from "./projects";
 import { logEvent } from "../lib/activity";
@@ -505,6 +506,11 @@ quote.post("/projects/:id/accept", async (c) => {
   // so an accepted quote can never be left without an order.
   const orderId = await createOrderFromProject(c.env, p.id);
   if (!orderId) return c.json({ error: "not_acceptable" }, 409);
+  // The referred tradie's first order now exists, so the earning it owes is
+  // created here rather than inside createOrderFromProject: the order lifecycle
+  // does not need to know this feature exists, and pricing already imports the
+  // referral module, so calling it from there would close an import cycle.
+  await onOrderCreated(c.env, orderId);
   const order = await c.env.DB.prepare('SELECT * FROM "order" WHERE id = ?').bind(orderId).first<OrderRow>();
   return c.json({ order: await orderDto(c.env, order!) });
 });
