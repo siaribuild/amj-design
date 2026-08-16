@@ -128,20 +128,20 @@ capability beyond D-1/D-2/D-3 stands behind an unset variable: the remaining uns
 | 89 | State collapsed to `ready` / `needs review`, word carries it | R1 | PROD |  |  |
 | 90 | `edit` ⇄ `close` and `split` / `units` links, editable states only | R1 | PROD |  |  |
 | 91 | No margin, cost, markup, discount or override column anywhere | R1 | PROD |  |  |
-| 92 | No add-line, delete-line, duplicate or reorder | R1 | PROD |  |  |
+| 92 | No add-line, delete-line, duplicate or reorder | R1 | PROD |  | Superseded in part by owner decision 2026-08-17: line add and hard delete ARE built at R1 (`POST /projects/:id/lines`, `DELETE /lines/:id`). Duplicate and reorder remain absent. The "no line may be added or deleted" sentence is not carried. |
 | 93 | No per-line notes UI (`comment.line_id` exists, never written by the UI) | R1 | PROD |  |  |
 | 94 | No per-line file link, audit link, or comment thread | R1 | PROD |  |  |
 | 95 | `ItemForm` reused verbatim from the customer estimator | R1 | PROD |  |  |
 | 96 | Item ID (`maxLength 10`, uppercased), duplicate → `Item ID already exist` | R1 | PROD |  |  |
 | 97 | Product type / Product selects, `— withdrawn from sale`, `— different frame system` suffixes, `includeDisabled` | R1 | PROD |  |  |
-| 98 | Dimensions disclosure, live elevation, height-first fields, range hint, undersize danger copy | R1 | PROD |  |  |
+| 98 | Dimensions disclosure, live elevation, height-first fields, range hint, undersize danger copy | R1 | PROD |  | Undersize copy carried as a warning only — the blocking guard is removed (owner ruling 2026-08-17: warn-never-block). |
 | 99 | Note field (`maxLength 500`) → `quote_line.room_label` | R1 | PROD |  |  |
 | 100 | Options disclosures, glazing picker, colour swatches, `· required` | R1 | PROD |  |  |
 | 101 | Debounced (250 ms) server price preview with GST suffix and ` · {unit} ea` | R1 | PROD |  |  |
 | 102 | `Confirmed on technical review before any deposit. Supply only.` | R1 | PROD |  |  |
 | 103 | Issue line joining `itemIssues` messages | R1 | PROD |  |  |
 | 104 | `Cancel` / `Save line` (`Saving…`), discard guard `Discard changes? Discard / Keep editing` | R1 | PROD |  |  |
-| 105 | `canSave` guards (price preview, undersize, duplicate code, blocking issues) | R1 | PROD |  |  |
+| 105 | `canSave` guards (price preview, undersize, duplicate code, blocking issues) | R1 | PROD |  | `canSave` loses the undersize guard (owner ruling 2026-08-17: warn-never-block); the rest of the set is carried. |
 | 106 | Exact frame + glazing configuration select for AI-managed lines | R1 | PROD |  |  |
 | 107 | Its 4 states: `Loading eligible configurations...` / `Select a currently eligible configuration` / `Eligible configurations could not be loaded.` + `Try again` / `No eligible, exactly priceable thermal configuration is available for this opening.` | R1 | PROD |  |  |
 | 108 | Option label composition (`{product} · {frameTech} · {glazing} · Uw · SHGC`) | R1 | PROD |  |  |

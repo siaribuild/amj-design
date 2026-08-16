@@ -41,7 +41,7 @@ What ops2 adds server-side, region by region:
 
 | Region | Server-side additions |
 |---|---|
-| R1 | ops2 shell serving in `worker/index.ts`; save-conflict cause codes + `quoteTotals` in `PATCH /lines/:id` (§5.4). No migration. |
+| R1 | ops2 shell serving in `worker/index.ts`; save-conflict cause codes + `quoteTotals` on every line-mutating response; **ops line create and delete** — `POST /projects/:id/lines`, `DELETE /lines/:id` (owner decision 2026-08-17; R1 detail §2.2). No migration. |
 | R2 | `worker/lib/rbac.ts` (capabilities, route manifest, default-deny floor); role-vocabulary data migration; staff admin endpoint updates. |
 | R3 | `worker/lib/original.ts` + `worker/lib/divergence.ts`; `line_baseline` + `quote_divergence` tables; `candidate_result` read endpoint; wiring `GET /projects/:id/building-model` to a caller. |
 | R4 | `project.with_manufacturer_since` column; `lifecycleOf` gains the stored input (§7); queue sort gains the fourth rank. |
@@ -239,7 +239,18 @@ ignores unknown response fields, and its unknown-code fallback sentence covers t
    project outside the editable set → **409 `not_editable` with `statusInternal`**, from
    which the client renders the real sentence ("This quote is issued — lines are read-only
    until it returns to pricing.") and offers reload. The editable-state set itself stays
-   exactly where it is — one place per fact; the route change is answer-shaping only.
+   exactly where it is — one place per fact; the route change is answer-shaping only — and it lands inside the existing asker:
+   `editableParent` (`worker/routes/ops.ts:817`, over the `EDITABLE_STATES` const at `:814`)
+   is extended to answer with cause (`ok | not_found | not_editable+statusInternal`) and
+   remains the only place the editability question is asked.
+
+The two R1 line-management endpoints (owner decision 2026-08-17 — `POST /projects/:id/lines`,
+`DELETE /lines/:id`; R1 detail §2.2) follow both conventions rather than inventing a third:
+the same 404/409 `not_editable` split, the same `quoteTotals` response shape, and the same
+server-side `EDITABLE_STATES` containment — every state in that set is pre-issue, which is
+what keeps both endpoints from ever reaching an order line, a payment, or an issued quote.
+Record-level deletion is **not wanted** (owner, 2026-08-17): no record delete path, no
+withdraw/archive, no cascade decision.
 
 ---
 
@@ -272,7 +283,10 @@ is its own fact, captured once:
   model: any future `quote_line` rebuild must count `line_baseline` among its children),
   `project_id`, `fields_json` (map of field → `{ value, origin: "extracted" | "submitted" |
   "proposed" }`), `captured_at`. Write-once is enforced by `INSERT … WHERE NOT EXISTS`, the
-  same discipline `staff.ts` uses for the admin bootstrap.
+  same discipline `staff.ts` uses for the admin bootstrap. Ops line deletion (an R1
+  capability, owner decision 2026-08-17) fires this cascade once R3 ships — intended: a
+  deleted line has no divergence to report. An ops-*created* line is staff-authored — no
+  non-staff source, so no baseline row and, by AC-7b, no divergence; nobody backfills one.
 - **`worker/lib/original.ts`** exposes exactly two functions — the deep-module seam:
   `captureBaseline(env, lineId)` (idempotent) and `resolveBaseline(env, projectId)`
   (read for issue-time comparison and for R3's derivation surface, which shows original

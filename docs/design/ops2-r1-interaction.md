@@ -25,7 +25,6 @@ can be vetoed rather than absorbed. **N4 and N5 were added at the mock gate, fro
 | **N1** | **The customer's phone number is on the record, as a tap-to-call control.** | Register row 53 records that `contactPhone` is *fetched and never rendered*. The console's entire operating premise is that it is used **while on the phone to that customer** (§3.1, §3.4). Rendering a datum the API already returns is a register repair, not a new capability. |
 | **N2** | **The totals bar** — one component pinned to the bottom edge of the record at every width, carrying the quote total, and carrying the line total plus Save/Cancel while the editor is open. | AC-16 ("both totals visible within 1200 ms of the input event") and AC-19 ("the quote total reflects it without a page reload"). Making both totals a permanent fixture is the cheapest way for that criterion to hold at 320 px, where the header total is off-screen. |
 | **N3** | **The reference blocks (Files, History, Payments) fold closed when the record is narrow**, heading and count still visible, one tap to open. Notes never folds. | I4's *first* failure mode — "a mobile app stretched across a desktop" has a twin, "a desktop poured into a phone as an endless page". At 320 px the unfolded record is ~4,200 px of scroll; folded it is ~3,400 px with the working content on top. Nothing is hidden and nothing is gated. Notes is exempt because it is the block used **during** the call (§4, per-line comments). |
-
 | **N4** | **A size outside the product's range is a junction, not an error** — the notice names the two routes out and puts both within reach, instead of leaving the operator to remember the remedy while a customer waits. | Owner, at the R1 mock gate: *"typically, when the opening is too large, the proposal would be to split the opening and install 2+ products instead. For example, if opening is too large for awning, the proposal is awning+fixed… A human may also confirm with manufacturer if a larger than standard product could be made for the non-standard price."* Both routes already exist as mechanisms — split/merge, and D10's "with manufacturer". §4.6a. |
 | **N5** | **Add and delete an opening**, in R1. | Owner, at the R1 mock gate: *"yes, full capabilities to manage any record(s), including adding new or deleting"*. §4.5a. **Requires two Worker endpoints that do not exist today** — §13, which the architect must own. |
 
@@ -205,12 +204,14 @@ Exactly one of, directly under the ribbon:
 | Condition | Band | Copy |
 |---|---|---|
 | Unresolved lines exist | warning | **`{n} lines are unpriced or unresolved`** — a quote cannot be issued until they are settled. + `Show only those lines` |
-| Quote outside the editable set | info | **`This quote is issued`** — lines are read-only. Return it to pricing to change anything. Nothing is hidden: everything below is exactly what was issued. |
+| Quote outside the editable set | info | **`This quote is issued`** — nothing can be added, changed or removed. Return it to pricing to work on it. Nothing is hidden: everything below is exactly what was issued. |
 | No lines yet | info | Nothing has been configured yet. Lines appear here when a schedule is parsed or the customer submits a configuration. |
 | none of the above | — | no band |
 
 The read-only band **names the actual state and the way back** (AC-81, row 74), replacing legacy's
-`Viewing an issued revision — read-only.` — a sentence about revisions, which no longer exist.
+`Viewing an issued revision — read-only.` — a sentence about revisions, which no longer exist. It says
+*added, changed or removed* rather than *read-only* because, since §4.5a, three capabilities close at
+that boundary and not one; the sentence should name what actually stops.
 
 ### 4.4 Action bar (rows 60–64)
 
@@ -282,12 +283,30 @@ title truncates, and only because the full title is one scroll away in the ident
 ### 4.5a Adding and deleting an opening (N5)
 
 Settled by the owner at the mock gate: *"full capabilities to manage any record(s), including adding new
-or deleting"*. Both controls exist **only in the editable states** — the same `EDITABLE_STATES` set that
-decides whether the editor renders at all (`submitted`, `triage_pending`, `estimator_assigned`,
-`technical_review_required`, `customer_clarification_required`; `worker/routes/ops.ts:640`). Outside it
-neither control is present and the read-only band already says why. That containment is doing real work:
-it puts add and delete entirely inside Intake and Pricing, so no order line, payment or issued quote is
-ever within reach of them.
+or deleting"*, then sharpened by him when asked how far "deleting" reached:
+
+> "I was referring to order lines, not orders themselves: hard delete for order lines before the final
+> quote is submitted to the customer. Once accepted, order becomes read-only."
+
+**Delete is a hard delete, and its boundary is the owner's ruling rather than a designer's caution.**
+Both controls exist **only in the editable states** — the same `EDITABLE_STATES` set that decides whether
+the editor renders at all: `submitted`, `triage_pending`, `estimator_assigned`,
+`technical_review_required`, `customer_clarification_required` (`worker/routes/ops.ts:814`). Every one of
+those is pre-issue, so that set already *is* "before the final quote is submitted to the customer" — the
+containment was inferred when it was written and is now confirmed. Outside it neither control is present
+and the read-only band says why. It does real work: add and delete live entirely inside Intake and
+Pricing, so no order line, payment or issued quote is ever within reach of them.
+
+> **A discrepancy, left visible rather than quietly reconciled.** The owner's sentence puts read-only at
+> **acceptance**. The code freezes at **issue**, one step earlier — quote revisions were deliberately
+> removed on the principle that a quote is a quote, and `EDITABLE_STATES` stops before `issued`
+> accordingly, so there is no editable window between issuing and acceptance today. **This design follows
+> the code: issue is the freeze.** The discrepancy is with the owner for veto. If he wants that window
+> reopened, it is a lifecycle change owned by the spec and the architect, not a screen change — nothing
+> in this document would move except which states render the controls.
+
+**Record-level deletion does not exist, and is not deferred.** The clause meant lines. No delete,
+withdraw or archive control appears anywhere on a record, and none is designed here.
 
 **Add — `+ Add opening`**, a quiet full-width control at the foot of the openings list, and the empty
 state's `+ Add the first opening`.
@@ -647,7 +666,7 @@ the server's confirm sentences.
 
 | Where | Copy |
 |---|---|
-| Read-only band | **This quote is issued** — lines are read-only. Return it to pricing to change anything. Nothing is hidden: everything below is exactly what was issued. |
+| Read-only band | **This quote is issued** — nothing can be added, changed or removed. Return it to pricing to work on it. Nothing is hidden: everything below is exactly what was issued. |
 | Empty record band | Nothing has been configured yet. Lines appear here when a schedule is parsed or the customer submits a configuration. |
 | Connection band | **Not connected.** Nothing can be saved until this clears. What is on screen has not been sent. |
 | Conflict at the save control | **This quote was issued while you had it open — your edit wasn't saved.** Lines are read-only until it returns to pricing. Nothing on this screen has been sent. |
@@ -740,29 +759,15 @@ the register or the conclusions.
 - ~~*Undersize — warn or block?*~~ **Warn, never block**, and the answer carried domain that turned the
   oversize case into §4.6a's junction.
 - ~~*Add and delete a line?*~~ **Yes, in R1** — §4.5a.
+- ~~*Record-level deletion — withdraw/archive, or hard delete?*~~ **Neither. The question was mine, from
+  a misreading of one clause, and it is closed rather than deferred.** The owner meant lines:
+  *"I was referring to order lines, not orders themselves."* Line delete is a hard delete inside the
+  editable states, and that is the whole of it. The withdraw/archive proposal is withdrawn — no such
+  capability is wanted, so recording it as "later" would misrepresent an answer as a postponement.
 
 **Open:**
 
-1. **Record-level deletion — withdraw/archive, or hard delete?** The owner's words were *"full
-   capabilities to manage any record(s), including adding new or deleting"*, and I am deliberately not
-   reading a delete-the-project control out of that clause. **Recommendation: `Withdraw record`, not
-   hard delete**, with hard delete reserved for genuine mistakes and specified separately if wanted.
-   Three reasons:
-   - **It is a data decision, not a UI one.** A project cascades to quote lines, order lines, payments,
-     files, comments, events and the R3/R4 tables. This repo has already lost production rows to an
-     unexamined cascade (20 `order_line`, 4 `payment`). Any hard delete needs the architect and the
-     `d1-migration-safety` procedure before a control is drawn for it.
-   - **The codebase already prefers the gentler pattern** and it is in `CONTEXT.md`: a product is
-     *withdrawn from sale* rather than deleted, and the offerability gate withholds it. A withdrawn
-     record would leave the queue and the lists, keep its history, and stay reachable by its ref.
-   - **Line deletion, which he definitely asked for, is already safe** because it is confined to the
-     editable states (§4.5a) — so the capability he named is delivered in R1 either way, and this
-     question is only about the record itself.
-   What I need: whether "deleting" meant *"get this off my list"* (withdraw) or *"this record should
-   never have existed"* (hard delete). If both, they are two controls with two consequence sentences,
-   and the second needs the architect first.
-
-2. **On a phone, should the bottom bar carry the primary action (`Issue`) as well as the totals?**
+1. **On a phone, should the bottom bar carry the primary action (`Issue`) as well as the totals?**
    The mock does, dimmed with its reason, because at 320 px the action bar is a scroll away. The cost is
    that the record's most consequential control is under the thumb all the time. **Recommendation: keep
    it** — it is dimmed and reason-stated whenever it is not available, and confirm-in-place stands
