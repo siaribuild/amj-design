@@ -17,14 +17,17 @@ seen the mock and accepted it. Accepted tweaks get folded back into this file be
 
 ## 0. What is new here, and why
 
-Three things this design introduces that no input document asked for by name. Each is called out so it
-can be vetoed rather than absorbed.
+Five things this design introduces that no input document asked for by name. Each is called out so it
+can be vetoed rather than absorbed. **N4 and N5 were added at the mock gate, from the owner's answers.**
 
 | # | Introduced | Grounded in |
 |---|---|---|
 | **N1** | **The customer's phone number is on the record, as a tap-to-call control.** | Register row 53 records that `contactPhone` is *fetched and never rendered*. The console's entire operating premise is that it is used **while on the phone to that customer** (§3.1, §3.4). Rendering a datum the API already returns is a register repair, not a new capability. |
 | **N2** | **The totals bar** — one component pinned to the bottom edge of the record at every width, carrying the quote total, and carrying the line total plus Save/Cancel while the editor is open. | AC-16 ("both totals visible within 1200 ms of the input event") and AC-19 ("the quote total reflects it without a page reload"). Making both totals a permanent fixture is the cheapest way for that criterion to hold at 320 px, where the header total is off-screen. |
 | **N3** | **The reference blocks (Files, History, Payments) fold closed when the record is narrow**, heading and count still visible, one tap to open. Notes never folds. | I4's *first* failure mode — "a mobile app stretched across a desktop" has a twin, "a desktop poured into a phone as an endless page". At 320 px the unfolded record is ~4,200 px of scroll; folded it is ~3,400 px with the working content on top. Nothing is hidden and nothing is gated. Notes is exempt because it is the block used **during** the call (§4, per-line comments). |
+
+| **N4** | **A size outside the product's range is a junction, not an error** — the notice names the two routes out and puts both within reach, instead of leaving the operator to remember the remedy while a customer waits. | Owner, at the R1 mock gate: *"typically, when the opening is too large, the proposal would be to split the opening and install 2+ products instead. For example, if opening is too large for awning, the proposal is awning+fixed… A human may also confirm with manufacturer if a larger than standard product could be made for the non-standard price."* Both routes already exist as mechanisms — split/merge, and D10's "with manufacturer". §4.6a. |
+| **N5** | **Add and delete an opening**, in R1. | Owner, at the R1 mock gate: *"yes, full capabilities to manage any record(s), including adding new or deleting"*. §4.5a. **Requires two Worker endpoints that do not exist today** — §13, which the architect must own. |
 
 Everything else on the screen traces to a register row, an acceptance criterion, or a `CONTEXT.md` term.
 
@@ -265,13 +268,68 @@ the ` · A + B` suffix when units differ (rows 84–85); `frame system · {name}
 - Each row carries a `note` action with a count. (AC-18, row 93.)
 
 Quantity is displayed, never editable on the row (row 88). There is no margin, cost, markup, discount or
-override column (row 91), and no add / delete / duplicate / reorder (row 92) — R1 carries today's set.
+override column (row 91). **Add and delete arrive in R1** — §4.5a. Duplicate and reorder do not: neither
+was asked for, reorder has no stored order to write to, and both can be added later without moving
+anything designed here.
 
-Empty state: **`No lines on this project.`** (row 79, verbatim).
+Empty state: **`No lines on this project.`** (row 79, verbatim) — followed, in the editable states, by
+`+ Add the first opening`.
 
 **Long content:** a 60-character product name wraps to two lines and the row grows; it never truncates,
 because the operator is reading it aloud. Room, configuration and flags wrap freely. Only the top-bar
 title truncates, and only because the full title is one scroll away in the identity block.
+
+### 4.5a Adding and deleting an opening (N5)
+
+Settled by the owner at the mock gate: *"full capabilities to manage any record(s), including adding new
+or deleting"*. Both controls exist **only in the editable states** — the same `EDITABLE_STATES` set that
+decides whether the editor renders at all (`submitted`, `triage_pending`, `estimator_assigned`,
+`technical_review_required`, `customer_clarification_required`; `worker/routes/ops.ts:640`). Outside it
+neither control is present and the read-only band already says why. That containment is doing real work:
+it puts add and delete entirely inside Intake and Pricing, so no order line, payment or issued quote is
+ever within reach of them.
+
+**Add — `+ Add opening`**, a quiet full-width control at the foot of the openings list, and the empty
+state's `+ Add the first opening`.
+
+1. Pressing it appends a **draft row at the end of the list** with its editor already open and focus in
+   the Item ID field, pre-filled with the next free code in the record's own sequence (`W07`).
+2. The draft row is marked `not saved yet` and is not counted in `{n} lines` or in any total. Nothing
+   exists server-side until Save.
+3. `Save line` creates it; `Cancel` removes the draft row with no request and no confirmation — there is
+   nothing to lose that the operator did not just type.
+4. Adding while offline is refused the same way any write is: level-3 failure at the Save control, values
+   retained, `Try again`.
+
+**Delete — `Remove opening`**, in the **editor's footer**, not on the row.
+
+Placement, argued rather than assumed: this is the one act on the record that cannot be taken back (undo
+is vetoed by decree), and a `delete` link sitting beside `edit` / `split` / `note` on every row is a
+40 px thumb target next to three others on a phone held one-handed. Putting it inside the editor for
+that line is **placement, not a gate** — it is one press away, it is never disabled, and no reason is
+ever asked for.
+
+Confirm-in-place, in exactly the shape the console already uses for removing a unit (row 115):
+
+> **Remove W03?**
+> Its 2 joined units go with it. Notes written against this line stay on the record.
+> `Remove` · `Keep`
+
+The consequence sentence is composed from what is actually true of that line, and it is honest about the
+cascade because the schema is: a composite parent's units are `quote_line.parent_line_id ON DELETE
+CASCADE` (`migrations/0028`), while comments, parse items, opening instances and the two learning tables
+are all `ON DELETE SET NULL` — so notes, provenance and learning survive the line. The second sentence is
+dropped when the line has no units; it never claims a cascade that will not happen.
+
+On success the row leaves the list, the totals bar and the Value block take their new figures from the
+same response, and a level-4 sentence is **not** shown — a completed act needs no notice. The `audit_event`
+records it exactly as every other ops action is recorded (AC-40c); that is the existing trail, not a new
+journal.
+
+**Deleting the line you are looking at via a deep link** (`/record/:ref/line/:id`): the row goes, the URL
+falls back to `/record/:ref`, and the list states `That opening was removed.` for as long as the record
+stays open. Reloading the old URL lands on the record with `That opening no longer exists on this record.`
+— never a 404 and never a blank (AC-26).
 
 ### 4.6 The line editor (rows 95–111)
 
@@ -293,9 +351,10 @@ Contents, in order:
    `{product} · {frameTech} · {glazing} · Uw · SHGC` (row 108).
 4. **`ItemForm`, reused — not forked** (row 95). Item ID (max 10, uppercased, `Item ID already exist`);
    product selects with the `— withdrawn from sale` and `— different frame system` suffixes and
-   `includeDisabled`; the Dimensions disclosure, **height first**, with the live elevation, range hint
-   and undersize copy; the note field (max 500) → `room_label`; the Options disclosures with glazing
-   first, colour swatches and ` · required`.
+   `includeDisabled`; the Dimensions disclosure, **height first**, with the live elevation and the range
+   hint `Fits {minH}–{maxH} high, {minW}–{maxW} wide.`; **the size junction, §4.6a**; the note field
+   (max 500) → `room_label`; the Options disclosures with glazing first, colour swatches and
+   ` · required`.
 5. **Price preview** — debounced 250 ms, server-priced, with the GST suffix and ` · {unit} ea`
    (row 101). Presentation is adjusted through the wrapper only; the shared component is not copied.
 6. **`Cancel` / `Save line` (`Saving…`)** and the standing footnote
@@ -305,9 +364,9 @@ Contents, in order:
    side effect of saving.
 
 **Save is disabled only where no request could be formed** — no product chosen, a duplicate item ID, a
-missing required option. It is **never** disabled because a value disagrees with the estimator, and the
-reason is always printed at the control rather than left to be guessed (repairing row 105's silent
-`canSave`). *Undersize dimensions are a warning, not a block* — see the decision in §11.
+missing required option. It is **never** disabled by a dimension, and never because a value disagrees
+with the estimator; and the reason is always printed at the control rather than left to be guessed
+(repairing row 105's silent `canSave`). See §4.6a for the dimension half, which is now settled.
 
 **Closing the editor with unsaved values does not open a dialog.** Legacy's
 `Discard changes? / Discard / Keep editing` (row 104) is replaced: the values stay in the record's
@@ -316,12 +375,81 @@ discarded when the operator leaves the record. This is **not** an undo affordanc
 nothing is written anywhere, nothing is retrievable after leaving, and no previous value is stored — it
 is simply not throwing away input the operator is still holding.
 
+### 4.6a The size junction (N4) — replaces "the undersize block"
+
+**A correction to my first draft, and it matters.** I asked whether undersize should warn or block. The
+answer is *warn, never block*, and reading the code to design that answer showed my question had the
+domain the wrong way round:
+
+- **Oversize does not block today and never did.** `ItemComposer.tsx:693–735`: an oversize line saves,
+  takes `status: "Needs review"` and carries `review.fit` = *"No single unit is made at this size — we
+  will confirm how it is built and price it at technical review."* The owner deliberately removed the
+  customer-facing oversize notice (`ItemComposer.tsx:169`) because a customer cannot change the size of
+  their wall.
+- **Undersize is the blocker** (`canSave` … `&& !tooSmall`), with the copy *"{product} starts at {minH}
+  high and {minW} wide. Check the measurement."* — and the code's own comment calls it a typo guard.
+
+So the owner's ruling lands in two places, not one.
+
+**Undersize, in ops2: warns, does not block.** The typo guard was written for a customer typing their own
+schedule. The ops operator has usually just been told the measurement over the phone, and the rule is
+categorical — *"warn, do not block humans decisions."* The existing sentence is carried verbatim, moved
+from a blocking danger notice to a warning at the field, and `Save line` stays live. If the server refuses
+it, level-3 failure states that plainly, which is the honest outcome either way.
+
+**Oversize, in ops2: a junction with two routes, both in reach.** This is the substance of the owner's
+answer. A bare "too large" makes the operator recall the remedy while a customer waits; the notice should
+carry it. Rendered at the dimensions field, `role="status"`, taking no focus and disabling nothing:
+
+> **2400 mm is wider than a Awning window is made — 1810 mm is the maximum.**
+> This is normal on a large opening. Two ways forward:
+> `Split this opening into units` — build it as 2+ joined products, e.g. awning + fixed.
+> `Ask the manufacturer` — confirm whether a larger-than-standard unit can be made, and at what price.
+> Saving is not affected. This line carries a **fit** flag either way, and prices best-fit until it is settled.
+
+**Route 1 — Split this opening.** Reuses the existing planner (`POST /lines/:id/split`, register rows
+121–126) with nothing invented. The control opens the same panel the row's `split` link opens, with two
+values **proposed, not imposed**:
+
+- **Axis** from which dimension is over: wider than the maximum → `Side by side`; taller → `One above
+  another`. Both radios remain selectable.
+- **Units** = the smallest count that brings each unit inside the range (2 for almost everything), with
+  the planner's existing even-split sizes.
+
+The awning + fixed case completes through paths that already exist: apply the split, then open unit 2 and
+change its product. The unit editor is `ItemForm scope="unit"` with
+`compatibility={{siblingSlugs, enforce:false}}` (rows 117–118), so a different product — even one on a
+different frame system — stays selectable and is marked rather than refused. **The one addition is a
+sentence in the units panel after a split lands**, so the next step is not a guess:
+*"Each unit can be a different product — open a unit to change it."*
+
+**Route 2 — Ask the manufacturer.** This is D10's "with manufacturer" state, and **it is R4's, not R1's**
+(`project.with_manufacturer_since`, `POST /projects/:id/with-manufacturer`; arch §7). R1 shows the seam
+honestly rather than pretending the junction has one route:
+
+- The control renders, labelled `Ask the manufacturer`, and is marked as arriving with the work queue —
+  the same visual treatment as the R3 derivation seam, so an unbuilt thing never looks built.
+- Until R4, the route that works is the one the console already has: `Add a note` on the record, whose
+  composer opens pre-filled with `Manufacturer: can this be made at {height} × {width}? ` and the caret
+  after it. That is a real capability today (row 149, `POST /projects/:id/note`), and it is what the
+  founders do now.
+- **When R4 lands, the seam becomes the real control and the pre-filled note stops being offered.** That
+  swap is a one-component change and is recorded here so R4 does not leave two ways to do it.
+
+**The `fit` flag is the through-line.** Whichever route is taken — or neither — the line keeps
+`review.fit` and the row shows it via `reviewReasons()` (row 83), so an unsettled oversize opening is
+visible on the record without anyone having to remember it. Resolving it is the operator's explicit act
+through the resolve checkbox (rows 109–110), never a side effect of saving.
+
 ### 4.7 Composites (rows 112–126)
 
 Unit rows render nested beneath their parent on a recessive fill, using the same folding row component:
 ordinal · product + `SpecSummary` (`Spec: as the opening` / `Spec: {n} changed — {key} {value}`) ·
 size · `{n}× per opening` · total · `edit` / `remove`. `not priced` marks a unit whose status is not
 ready. Removing a unit confirms in place: `Remove unit {n}?` / `Remove` / `Keep`.
+
+After a split lands, the units panel carries one sentence so the awning + fixed route does not have to be
+remembered: *"Each unit can be a different product — open a unit to change it."* (§4.6a, Route 1.)
 
 Coverage is **reported, never vetoed** (AC-86) — the footer row carries `+ Add unit` (or
 `Maximum {n} units` at the cap) and one of the coverage sentences verbatim, including
@@ -488,7 +616,7 @@ regardless of the account. Mounting it is the fix, not a new prop.
 |---|---|---|
 | **R3 — Derivation** | A labelled, deliberately flat placeholder block at the top of the context pane, naming what will be there and the question it answers. | Asking a line's "why" opens derivation at the top of the context pane, pushing the record blocks down. At ≥1440 it is beside the openings list, not instead of it (AC-14). |
 | **R4 — Work** | The interim record list at `/`, with a band saying so in the owner's own terms. | The attention surface replaces the whole screen; `Work` is already the first nav destination. |
-| **R4 — with manufacturer** | Nothing. The waiting-on caption is already a sentence that takes a fourth value without changing shape. | The mark's control joins the action bar as a server-declared action. |
+| **R4 — with manufacturer** | The `Ask the manufacturer` route on the size junction (§4.6a), rendered as a seam, with the pre-filled note as the working stand-in. The waiting-on caption already takes a fourth value without changing shape. | The seam becomes the real control; the mark also joins the action bar as a server-declared action; **the pre-filled note stops being offered**, so there are not two ways to do it. |
 | **R2 — RBAC** | Nothing. R1 ships against today's staff gates (arch §5, R1 design §5). | Destinations a role may not reach stop being rendered; the refusal stays server-side regardless (AC-67). |
 | **R5 — Files** | The record Files block states each file; no download, no rescan. | Downloads and the global Files list. |
 
@@ -504,7 +632,10 @@ lie about what has been built.
 Sign-in rows 5–13 · `No lines on this project.` · `Item ID already exist` ·
 `Confirmed on technical review before any deposit. Supply only.` · `Save line` / `Saving…` ·
 the four `ItemForm` validation sentences · the exact-configuration select's four states (row 107) ·
-`I checked and resolved: {reasons}` · all eleven composite validation sentences · the three coverage
+`I checked and resolved: {reasons}` · `Fits {minH}–{maxH} high, {minW}–{maxW} wide.` ·
+`{product} starts at {minH} high and {minW} wide. Check the measurement.` (undersize — carried, no longer
+blocking) · `No single unit is made at this size — we will confirm how it is built and price it at
+technical review.` (the `fit` flag's own text) · all eleven composite validation sentences · the three coverage
 sentences · `Split into units` / `Applying…` / `Merge back to one` / `Merging…` · the three split/merge
 errors · `Remove unit {n}?` / `Remove` / `Keep` · all thirteen `ACTION_ERRORS` sentences plus
 `That action could not be completed.` · `No payments recorded.` ·
@@ -528,6 +659,14 @@ the server's confirm sentences.
 | Delivery, unpriced | not yet priced — Zone: {zone}, matched by postcode. The zone has no rates yet, so no delivery figure can be shown — this is not $0. |
 | GST switched away | Prices shown ex GST — this customer's mode is inc |
 | Row marked with unsaved input | unsaved edits |
+| Oversize junction | **{n} mm is wider than a {product} is made — {max} mm is the maximum.** This is normal on a large opening. Two ways forward: `Split this opening into units` — build it as 2+ joined products, e.g. awning + fixed. `Ask the manufacturer` — confirm whether a larger-than-standard unit can be made, and at what price. Saving is not affected. This line carries a **fit** flag either way, and prices best-fit until it is settled. *(“taller than … is made — {max} mm is the maximum” for the height case.)* |
+| After a split | Each unit can be a different product — open a unit to change it. |
+| Pre-filled manufacturer note (until R4) | Manufacturer: can this be made at {height} × {width}? |
+| Add controls | `+ Add opening` · `+ Add the first opening` |
+| Draft row | not saved yet |
+| Delete confirm | **Remove {code}?** Its {n} joined units go with it. Notes written against this line stay on the record. `Remove` · `Keep` |
+| Deleted line, same session | That opening was removed. |
+| Deleted line, reloaded deep link | That opening no longer exists on this record. |
 | Unknown path | That address doesn't exist in ops. + `Go to work` |
 | Crash screen | This screen stopped working / Something in the console failed, not your record. Nothing you had on screen was saved. Reload to carry on — you will come back to this same address. |
 | Interim list band | **Interim list.** R4 replaces this with the attention surface — what needs doing, and where the catalogue has gaps. Until then this is how you reach a record without pasting a URL. |
@@ -550,6 +689,9 @@ has the proposed state to verify against.
 | 74 | `Viewing an issued revision — read-only. [Back to the live draft]` | **RESTATED** | Same capability — a read-only state named on screen — but naming the *real* cause and the real way back (AC-81). |
 | 75 | Panel header `Draft lines / Contract lines / Issued lines` | **RESTATED** | One list, headed `Openings`. The state is carried by the read-only band. |
 | 76 | Contract-line shim (flattens rows to `ready`, drops composite structure) | **DROPPED** | It existed to render the revision snapshot. With one list there is nothing to flatten; composite structure is never dropped. |
+| 92 | No add-line, delete-line, duplicate or reorder | **REPAIRED (add, delete) · carried (duplicate, reorder)** | Owner settled add and delete into R1 at the mock gate (§4.5a). Duplicate and reorder were not asked for and reorder has no stored order to write to. |
+| 98 | Dimensions disclosure … undersize danger copy | **REPAIRED** | The sentence is carried verbatim; it stops blocking Save and becomes a warning at the field (§4.6a). |
+| 105 | `canSave` guards (price preview, undersize, duplicate code, blocking issues) | **REPAIRED** | Undersize leaves the guard set entirely; the remaining guards are the "no request could be formed" set and each prints its reason at the control instead of silently deadening the button. |
 | 7 | Invalid email → the button silently does nothing | **REPAIRED** | Silent failure is what I6 exists to end. `Enter a work email address.` at the field. |
 | 13 | No expiry stated (server expires at 10 min) | **REPAIRED** | `The code expires 10 minutes after it is sent.` |
 | 26 | No manual refresh control anywhere | **REPAIRED** | `Loaded HH:MM` + `⟳`. |
@@ -567,22 +709,24 @@ has the proposed state to verify against.
 
 ## 11. Assumptions
 
-- `ASSUMED:` **Undersize dimensions warn, they do not block.** Legacy's `canSave` refuses a save when a
-  dimension is below the product minimum. I read that as a *manufacturability* limit rather than an
-  estimator opinion, so C4 does not strictly reach it — but §3.1 says consultation "can involve changing
-  any parameters", and an operator who has just been told by the manufacturer that a smaller unit is
-  buildable should not be stopped by the catalogue. Designed as: undersize renders the existing danger
-  copy at the field, Save stays enabled, the line saves. **If the server rejects it, level-3 failure
-  handling states that plainly** — which is the honest outcome either way. Vetoable; see §12.
+- ~~`ASSUMED:` Undersize dimensions warn, they do not block.~~ **Settled by the owner at the mock gate —
+  warn, never block — and widened by the domain he supplied. See §4.6a, which is now a design, not an
+  assumption.**
+- `ASSUMED:` **The oversize junction proposes an axis and a unit count.** Which dimension is over decides
+  the axis; the smallest count that brings each unit inside the range decides the number. Both are
+  proposals in a planner whose controls stay fully live — but they are proposals the console did not make
+  before, and a founder may find the proposed split wrong often enough to prefer a blank planner.
+- `ASSUMED:` **`+ Add opening` appends to the end of the list.** There is no stored line order to insert
+  into, so "at the end" is the only honest position.
+- `ASSUMED:` **A deleted item code is immediately reusable.** The duplicate check runs against lines that
+  exist, so deleting `W03` frees `W03`. No design prevents it and none should.
 - `ASSUMED:` **Notes never folds.** All four reference blocks could fold; Notes is exempt because it is
   the one used during the call.
 - `ASSUMED:` **The reference fold threshold is 640 px of record width**, and the fold is remembered per
   block once the operator touches it (`data-user`), so a manual open is not undone by a resize.
 - `ASSUMED:` **The GST view switch lives in the `⋯` menu, not on the record surface.** It is used rarely;
   a permanent segmented control would be a permanent invitation to read a number in the wrong mode.
-- `ASSUMED:` **Deleting nothing:** R1 adds no add/delete/duplicate/reorder line controls, matching today
-  (row 92), even though the editor exists. If the owner expects to add a line by hand during a call, that
-  is a capability today's console also lacks and it belongs in a decision, not an assumption.
+- ~~`ASSUMED:` Deleting nothing.~~ **Settled: add and delete are in R1 (§4.5a).**
 
 ---
 
@@ -591,21 +735,93 @@ has the proposed state to verify against.
 Only the owner can settle these. Everything else in this document is derived from the spec, the design,
 the register or the conclusions.
 
-1. **Undersize dimensions — warn, or block?** (§11, first assumption.) Today the console refuses to save
-   a line whose opening is below the product's minimum. The non-negotiable rule says the human decides;
-   the catalogue minimum says the thing cannot be made. **Recommendation: warn, never block** — state the
-   minimum at the field, let it save, and let the manufacturer conversation be the authority. The
-   opposite reading is entirely defensible if an undersize line has ever reached a manufacturer and cost
-   money.
+**Answered at the R1 mock gate, recorded so the trail is readable:**
 
-2. **Should the operator be able to add or delete a line during a consultation?** Today's console cannot
-   (register row 92) and R1 carries that. But the thesis is that the normal outcome of a call is a
-   *change* — and "drop the study window" is in the sample data as a customer note precisely because it
-   is a real thing customers say. **Recommendation: not in R1** — it is a new capability, not a
-   carry-across, and it wants its own spec pass. Worth knowing now whether it is missed daily.
+- ~~*Undersize — warn or block?*~~ **Warn, never block**, and the answer carried domain that turned the
+  oversize case into §4.6a's junction.
+- ~~*Add and delete a line?*~~ **Yes, in R1** — §4.5a.
 
-3. **On a phone, should the bottom bar carry the primary action (`Issue`) as well as the totals?**
+**Open:**
+
+1. **Record-level deletion — withdraw/archive, or hard delete?** The owner's words were *"full
+   capabilities to manage any record(s), including adding new or deleting"*, and I am deliberately not
+   reading a delete-the-project control out of that clause. **Recommendation: `Withdraw record`, not
+   hard delete**, with hard delete reserved for genuine mistakes and specified separately if wanted.
+   Three reasons:
+   - **It is a data decision, not a UI one.** A project cascades to quote lines, order lines, payments,
+     files, comments, events and the R3/R4 tables. This repo has already lost production rows to an
+     unexamined cascade (20 `order_line`, 4 `payment`). Any hard delete needs the architect and the
+     `d1-migration-safety` procedure before a control is drawn for it.
+   - **The codebase already prefers the gentler pattern** and it is in `CONTEXT.md`: a product is
+     *withdrawn from sale* rather than deleted, and the offerability gate withholds it. A withdrawn
+     record would leave the queue and the lists, keep its history, and stay reachable by its ref.
+   - **Line deletion, which he definitely asked for, is already safe** because it is confined to the
+     editable states (§4.5a) — so the capability he named is delivered in R1 either way, and this
+     question is only about the record itself.
+   What I need: whether "deleting" meant *"get this off my list"* (withdraw) or *"this record should
+   never have existed"* (hard delete). If both, they are two controls with two consequence sentences,
+   and the second needs the architect first.
+
+2. **On a phone, should the bottom bar carry the primary action (`Issue`) as well as the totals?**
    The mock does, dimmed with its reason, because at 320 px the action bar is a scroll away. The cost is
    that the record's most consequential control is under the thumb all the time. **Recommendation: keep
    it** — it is dimmed and reason-stated whenever it is not available, and confirm-in-place stands
-   between it and the act. Say if that feels too close to hand.
+   between it and the act. Say if that feels too close to hand. *(Held until the treated mock is seen.)*
+
+---
+
+## 13. Server work R1 now needs that the R1 design does not have
+
+**A finding for the architect, not a decision for the owner.** `docs/design/ops2-r1-frame-and-record.md`
+§2.2 states *"No new endpoints. No migrations."* That was true of the design as written. **N5 makes the
+first half false**, and it should be corrected there rather than discovered by the developer.
+
+Verified against the current tree:
+
+| Need | Exists? |
+|---|---|
+| Create a quote line as staff | **No.** `worker/routes/ops.ts` has `POST /lines/:id/split`, `/merge`, `/price-preview`, `/segments`, `PATCH /lines/:id`, `DELETE /segments/:id` — and no line create. |
+| Delete a quote line as staff | **No.** `DELETE /segments/:id` removes a *unit*, not a line. |
+| Nearest existing thing | `PUT /api/projects/current/lines` (`worker/routes/projects.ts:266`) — the customer's own bulk line replace, scoped to the claim/session, not usable from ops. |
+
+So R1 needs two additions, both inside the existing staff gates and the existing editable-state guard:
+
+- `POST /api/ops/projects/:id/lines` → creates one line on a project in `EDITABLE_STATES`, returns the
+  created line **and `quoteTotals`** (arch §5.4's contract, so the totals bar moves on the same response).
+- `DELETE /api/ops/lines/:id` → 404 `not_found` when missing, **409 `not_editable` with `statusInternal`**
+  when the project is outside the editable set (the same split the architect already specified for
+  `PATCH /lines/:id`), returns `quoteTotals`. Units cascade by the existing
+  `quote_line.parent_line_id ON DELETE CASCADE`; everything else on `quote_line` is `ON DELETE SET NULL`.
+  Both write an `audit_event` as every other ops action does.
+
+**No migration.** The cascade already exists (`migrations/0028`); nothing is added to the schema. The
+`d1-safety` note worth carrying forward: **R3's `line_baseline` will become a second cascade child of
+`quote_line`**, which is already recorded in arch §6.2 — the delete path must be re-read when R3 lands,
+not because it breaks, but because that is the discipline.
+
+`AC-40`'s endpoint accounting gains two rows. `AC-4`'s "no control is disabled" sweep gains two controls.
+
+---
+
+## 14. Changes required in the mock
+
+The mock is with the ui-designer for its visual pass, so this section is the change list to apply
+afterwards — not applied here. Nothing below alters the layout system, the change points, or any
+existing component's structure; every item is content or one control inside a frame that already exists.
+
+| # | Screen / place | Change |
+|---|---|---|
+| M1 | `record`, `editing` — foot of the openings list | Add the `+ Add opening` control, quiet, full width, inside the list card. |
+| M2 | `empty` | Add `+ Add the first opening` beneath `No lines on this project.` |
+| M3 | new state on the `editing` screen (or a sixth record variant, `adding`) | A draft row `W07` at the end of the list, marked `not saved yet`, editor open, Item ID focused, product empty. |
+| M4 | `editing` — editor footer | Add `Remove opening`, and show its confirm-in-place panel: **Remove W02?** / *Notes written against this line stay on the record.* / `Remove` · `Keep`. Use W03 in one frame so the units sentence appears. |
+| M5 | `editing` — dimensions area | Replace nothing; **add** the size junction band (§4.6a) with its two routes as controls. Set the sample line's width over its maximum so the band is truthful for the data on screen. |
+| M6 | `editing` — the `Ask the manufacturer` control | Render it with the **same seam treatment as the R3 derivation block**, and put the pre-filled note text (`Manufacturer: can this be made at 2100 × 3600?`) beside it as the R1 stand-in. |
+| M7 | `record`, `editing` — W02's flag list | Add the `fit` flag sentence *"No single unit is made at this size — we will confirm how it is built and price it at technical review."* so the row and the junction agree. |
+| M8 | `editing` — composite units panel (W03) | Add *"Each unit can be a different product — open a unit to change it."* |
+| M9 | `issued` | Confirm `+ Add opening` and `Remove opening` are **absent** — that screen is the proof that both are confined to the editable states. |
+| M10 | harness | Screen list gains `Record · adding` if M3 becomes its own variant. |
+
+Two things that must **not** change: the openings list's column set (add/delete introduce no column), and
+the change-point table — the junction band and the draft row live inside containers that already reflow,
+and both were checked against the 320 px measure before being specified.
