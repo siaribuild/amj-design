@@ -1470,6 +1470,57 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(unknown.body.error, "no_such_account");
     });
 
+    await t.test("a voided referral does not block the correction that follows it", async () => {
+      // The trap this closes: Ops mistypes a code, credit lands on the wrong
+      // tradie, they void it — and the account is now permanently unlinkable,
+      // because "one referral per account" counted the voided row too. The
+      // correct referrer could never be credited, and the only remedy would be
+      // editing the database.
+      //
+      // A voided referral is a relationship that DID NOT happen. Permanence is
+      // about not letting someone shop for a better referrer, not about making a
+      // typo unfixable.
+      const wrong = new Session(baseUrl);
+      await login(wrong, "/api/auth", "fix.wrong@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='fix.wrong@example.com'");
+      await requestJson(wrong, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "Wrong Tradie" },
+      });
+      const { body: wrongCode } = await requestJson(wrong, "/api/account/referrals");
+
+      const right = new Session(baseUrl);
+      await login(right, "/api/auth", "fix.right@example.com");
+      await sql("UPDATE user SET abn='53004085616' WHERE email='fix.right@example.com'");
+      await requestJson(right, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "87654321", accountName: "Right Tradie" },
+      });
+      const { body: rightCode } = await requestJson(right, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "fix.mate@example.com");
+
+      // The mistake.
+      await requestJson(staff, "/api/ops/referrals/link",
+        { method: "POST", json: { email: "fix.mate@example.com", code: wrongCode.code } });
+      const mistaken = await sql(
+        `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='fix.mate@example.com')`,
+      );
+      await requestJson(staff, `/api/ops/referrals/${mistaken[0].id}/void`,
+        { method: "POST", json: { reason: "linked to the wrong tradie — my error" } });
+
+      // The correction must be possible.
+      await requestJson(staff, "/api/ops/referrals/link",
+        { method: "POST", json: { email: "fix.mate@example.com", code: rightCode.code } });
+
+      const live = await sql(
+        `SELECT code, status FROM referral
+          WHERE referred_user_id = (SELECT id FROM user WHERE email='fix.mate@example.com')
+            AND status = 'recorded'`,
+      );
+      assert.equal(live.length, 1, "exactly one live referral after the correction");
+      assert.equal(live[0].code, rightCode.code, "and it is the right tradie's");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

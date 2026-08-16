@@ -168,10 +168,16 @@ export async function recordReferral(
   // A11. The table has a CHECK for this too, but a constraint violation is a 500:
   // the rule has to be ANSWERED so the screen can say which rule was hit.
   if (referrer.id === input.referredUser.id) return { ok: false, error: "own_code" };
-  // A9 — one referral per account, permanently. First recorded wins: a second code
-  // is refused rather than overwriting a relationship already promised to someone.
+  // A9 — one LIVE referral per account. First recorded wins: a second code is
+  // refused rather than overwriting a relationship already promised to someone.
+  //
+  // A VOIDED ROW DOES NOT BLOCK, and that distinction is load-bearing. Counting
+  // voided rows made an Ops typo permanent: link the wrong tradie, void it, and
+  // the account could never be linked to the right one — the only remedy left
+  // being a hand-edit of the database. Permanence is meant to stop someone
+  // shopping for a better referrer, not to make a mistake uncorrectable.
   const already = await env.DB
-    .prepare("SELECT id FROM referral WHERE referred_user_id = ?")
+    .prepare("SELECT id FROM referral WHERE referred_user_id = ? AND status = 'recorded'")
     .bind(input.referredUser.id)
     .first<{ id: string }>();
   if (already) return { ok: false, error: "already_referred" };
@@ -220,10 +226,33 @@ export async function recordReferral(
 
   await env.DB
     .prepare(
+      // ONE ROW PER REFERRED ACCOUNT — the UNIQUE index is the last word, and it
+      // stays that way. A correction REVIVES the existing row rather than adding
+      // a second, so "one referral per account" remains true in the schema and
+      // not merely in the code above it.
+      //
+      // Guarded on `status = 'void'`: a live relationship is never overwritten,
+      // which is the promise A9 actually makes. Without the upsert, voiding a
+      // mistaken link left the account permanently unlinkable — the constraint
+      // held the slot even though the relationship had been cancelled.
       `INSERT INTO referral
          (id, referrer_user_id, referred_user_id, code, source,
           rate_percent, cap_amount, min_order_amount, discount_percent, window_months, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))
+       ON CONFLICT(referred_user_id) DO UPDATE SET
+         referrer_user_id = excluded.referrer_user_id,
+         code = excluded.code,
+         source = excluded.source,
+         status = 'recorded',
+         rate_percent = excluded.rate_percent,
+         cap_amount = excluded.cap_amount,
+         min_order_amount = excluded.min_order_amount,
+         discount_percent = excluded.discount_percent,
+         window_months = excluded.window_months,
+         expires_at = excluded.expires_at,
+         void_reason = NULL, voided_by = NULL, voided_at = NULL,
+         created_at = datetime('now')
+       WHERE referral.status = 'void'`,
     )
     .bind(
       uuid(), referrer.id, input.referredUser.id, code, input.source,
