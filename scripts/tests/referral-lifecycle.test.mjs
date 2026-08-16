@@ -1521,6 +1521,64 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(live[0].code, rightCode.code, "and it is the right tradie's");
     });
 
+    await t.test("AC-40 — the payout queue groups by referrer and reads the details once", async () => {
+      // The weekly job. One transfer per referrer, not one per earning, because
+      // a person with three referrals gets one payment and one bank line.
+      const earner = new Session(baseUrl);
+      await login(earner, "/api/auth", "queue.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556', company='Queue Glazing' WHERE email='queue.referrer@example.com'");
+      await requestJson(earner, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "Queue Glazing" },
+      });
+      const { body: mine } = await requestJson(earner, "/api/account/referrals");
+
+      // Two referred mates, both ordered and paid in full.
+      for (const n of [1, 2]) {
+        const mate = new Session(baseUrl);
+        await login(mate, "/api/auth", `queue.mate${n}@example.com`);
+        await requestJson(staff, "/api/ops/referrals/link",
+          { method: "POST", json: { email: `queue.mate${n}@example.com`, code: mine.code } });
+        await sql(
+          `INSERT INTO project
+             (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+           VALUES ('p-queue${n}', (SELECT id FROM user WHERE email='queue.mate${n}@example.com'),
+                   'Queue ${n}','OF-Q-8802${n}','quote_issued','issued',0);
+           INSERT INTO quote_line
+             (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+           VALUES ('ql-queue${n}','p-queue${n}','W01','amj80-series-awning-window',
+                   '{"width":"900","height":"1200"}','{}',1,10000,'ready',0);`,
+        );
+        await requestJson(mate, `/api/projects/p-queue${n}/accept`, { method: "POST" });
+        const orderId = (await sql(`SELECT id FROM "order" WHERE project_id='p-queue${n}'`))[0].id;
+        await sql(`UPDATE "order" SET stage='balance_invoiced' WHERE id='${orderId}'`);
+        await requestJson(staff, `/api/orders/${orderId}/pay`, { method: "POST", json: { kind: "balance" } });
+      }
+
+      const { body: queue } = await requestJson(staff, "/api/ops/referrals/payouts");
+      const group = queue.ready.find((g) => g.name === "Queue Glazing");
+      assert.ok(group, "the referrer appears once, not once per earning");
+      assert.equal(group.amount, 181.82, "with both earnings summed into one transfer");
+      assert.equal(group.earningIds.length, 2);
+      // Codes, not opaque ids: someone reconciling a bank statement should see
+      // what the referrer sees on their own screen.
+      assert.deepEqual(group.referralRefs, [mine.code, mine.code]);
+      // The bank details a human types into a transfer — the ONLY place they are
+      // readable, and reading them is itself recorded.
+      assert.equal(group.bsb, "063000");
+      assert.equal(group.accountNumber, "12345678");
+      assert.equal(typeof group.daysWaiting, "number");
+      assert.equal(group.overPromise, false, "nothing is late yet");
+
+      const log = await sql(
+        `SELECT action, context FROM payout_details_access
+          WHERE subject_user_id = (SELECT id FROM user WHERE email='queue.referrer@example.com')
+            AND action = 'view'`,
+      );
+      assert.ok(log.length >= 1, "reading the numbers is itself recorded");
+      assert.equal(log[0].context, "ops_payouts");
+      assert.equal(/12345678/.test(JSON.stringify(log)), false, "and the record holds no numbers");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

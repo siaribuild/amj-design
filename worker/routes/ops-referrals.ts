@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveStaff } from "../lib/staff";
 import { applyPricingChange, VersionConflict } from "../lib/pricing-admin";
-import { publicProgram, recordReferral } from "../lib/referrals";
+import { payoutQueue, publicProgram, recordReferral } from "../lib/referrals";
 
 export const opsReferrals = new Hono<{ Bindings: Env }>();
 
@@ -225,6 +225,15 @@ opsReferrals.post("/:id/unvoid", async (c) => {
     .bind(c.req.param("id"))
     .run();
   return c.json({ ok: true });
+});
+
+// The weekly run. Reading this screen reads bank details in the clear, which is
+// why the queue is built by a function that records the read — the route cannot
+// obtain them any other way.
+opsReferrals.get("/payouts", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  return c.json(await payoutQueue(c.env, staff.id));
 });
 
 // Attach a code to an account, on the customer's say-so.

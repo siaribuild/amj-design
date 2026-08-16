@@ -813,3 +813,132 @@ export function payoutComplete(user: PayoutDetails | null | undefined): boolean 
     && stored(user.payout_account_number)
     && stored(user.payout_account_name);
 }
+
+/** Read a referrer's bank details in the clear, and record that it happened.
+ *
+ *  ⚠️ THE ONLY PATH BY WHICH UNMASKED BANKING REACHES A HUMAN. Two callers, both
+ *  in the ops payout run: the queue a staff member types transfers from, and the
+ *  CSV they hand the accountant. Everything else — the referrer's own screen
+ *  included — sees a masked shape.
+ *
+ *  The access row is written HERE rather than by the callers, so a third caller
+ *  cannot appear without one. It records who looked, at whose record, and when,
+ *  and carries no numbers itself: copying the details into a log in order to
+ *  protect the details would be self-defeating.
+ *
+ *  Nothing reads the log back, and no viewer should be built — the owner accepted
+ *  this only on that basis, and a screen for it would recreate what they refused. */
+export async function unmaskedPayoutDetails(
+  env: Env,
+  subjectUserIds: string[],
+  actorUserId: string,
+  context: "ops_payouts" | "ops_csv",
+): Promise<Map<string, PayoutDetails>> {
+  const details = new Map<string, PayoutDetails>();
+  if (subjectUserIds.length === 0) return details;
+
+  const placeholders = subjectUserIds.map(() => "?").join(", ");
+  const { results } = await env.DB
+    .prepare(
+      `SELECT id, abn, payout_bsb, payout_account_number, payout_account_name
+         FROM user WHERE id IN (${placeholders})`,
+    )
+    .bind(...subjectUserIds)
+    .all<{ id: string } & PayoutDetails>();
+  for (const row of results ?? []) details.set(row.id, row);
+
+  await env.DB.batch(
+    subjectUserIds.map((subject) =>
+      env.DB
+        .prepare(
+          `INSERT INTO payout_details_access (id, subject_user_id, actor_user_id, action, context)
+           VALUES (?, ?, ?, 'view', ?)`,
+        )
+        .bind(uuid(), subject, actorUserId, context),
+    ),
+  );
+  return details;
+}
+
+/** ~11 months: one clear month before the twelve-month unclaimed-money rule. */
+const LONG_STOP_DAYS = 334;
+
+/** One group per referrer: one transfer, one bank line, one record.
+ *
+ *  Grouped rather than listed per earning because a tradie with three referrals
+ *  gets one payment — and a staff member typing three transfers to the same
+ *  account is how a duplicate happens. */
+export async function payoutQueue(env: Env, actorUserId: string) {
+  const program = await publicProgram(env);
+  const { results } = await env.DB
+    .prepare(
+      `SELECT e.id AS earning_id, e.amount, e.confirmed_at,
+              r.referrer_user_id, r.code, u.company, u.name, u.email
+         FROM referral_earning e
+         JOIN referral r ON r.id = e.referral_id
+         JOIN user u ON u.id = r.referrer_user_id
+        WHERE e.status = 'confirmed' AND e.payout_id IS NULL
+        ORDER BY e.confirmed_at`,
+    )
+    .all<{
+      earning_id: string; amount: number; confirmed_at: string;
+      referrer_user_id: string; code: string;
+      company: string | null; name: string | null; email: string;
+    }>();
+
+  const byReferrer = new Map<string, {
+    userId: string; name: string; amount: number;
+    earningIds: string[]; referralRefs: string[]; oldestConfirmedAt: string;
+  }>();
+  for (const row of results ?? []) {
+    const group = byReferrer.get(row.referrer_user_id) ?? {
+      userId: row.referrer_user_id,
+      name: String(row.company ?? "").trim() || String(row.name ?? "").trim() || row.email,
+      amount: 0, earningIds: [], referralRefs: [], oldestConfirmedAt: row.confirmed_at,
+    };
+    group.amount = Math.round((group.amount + row.amount) * 100) / 100;
+    group.earningIds.push(row.earning_id);
+    // The code, not the id: someone reconciling a bank statement should read the
+    // same string the referrer sees on their own screen.
+    group.referralRefs.push(row.code);
+    byReferrer.set(row.referrer_user_id, group);
+  }
+
+  const groups = [...byReferrer.values()];
+  const details = await unmaskedPayoutDetails(env, groups.map((g) => g.userId), actorUserId, "ops_payouts");
+  const now = Date.now();
+
+  const decorated = groups.map((g) => {
+    const daysWaiting = Math.floor((now - new Date(`${g.oldestConfirmedAt}Z`).getTime()) / 86_400_000);
+    const bank = details.get(g.userId);
+    return {
+      ...g,
+      abn: bank?.abn ?? null,
+      bsb: bank?.payout_bsb ?? null,
+      accountNumber: bank?.payout_account_number ?? null,
+      accountName: bank?.payout_account_name ?? null,
+      daysWaiting,
+      // Computed here, never in the browser: the payment window is a promise the
+      // law requires us to MEET rather than merely state, so the arithmetic that
+      // says we are late lives in one place.
+      overPromise: daysWaiting > program.payoutTimeframeDays,
+    };
+  });
+
+  // TWO GROUPS ONLY. A "blocked on missing details" group is unreachable: a
+  // confirmed earning's referrer was payable at confirmation, and clearing is
+  // refused while confirmed money is outstanding. Building it would be a screen
+  // for a state the lifecycle tests already assert cannot arise.
+  const threshold = program.minPayoutBalance;
+  const isReady = (g: { amount: number; daysWaiting: number }) =>
+    g.amount >= threshold || g.daysWaiting >= LONG_STOP_DAYS;
+  const ready = decorated.filter(isReady);
+  return {
+    // Force-promoted past a threshold rather than held indefinitely: money owed
+    // and unpaid for twelve months stops being an IOU and becomes a statutory
+    // obligation, so the long-stop fires a month before that.
+    ready: ready.map((g) => (g.amount < threshold ? { ...g, forcedByLongStop: true } : g)),
+    accruing: decorated.filter((g) => !isReady(g)),
+    readyTotal: Math.round(ready.reduce((sum, g) => sum + g.amount, 0) * 100) / 100,
+  };
+}
