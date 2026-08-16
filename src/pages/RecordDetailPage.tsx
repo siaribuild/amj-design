@@ -16,6 +16,7 @@ import {
   Landmark, MessageSquare, Phone, Loader2, Lock, Send,
 } from "lucide-react";
 import { type Page, Btn } from "../app/ui";
+import { ReferralOrderPrompt } from "../components/referral/ReferralPlacement";
 import {
   getOrder, getProject, getProjectFiles, getClarifications, replyClarification,
   confirmDrawings, confirmQa,
@@ -419,6 +420,10 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
 
         {/* Files */}
         <FilesBlock files={files} note={order.stageIndex >= 5 ? undefined : "Quality & pre-despatch photos appear here after manufacturing."} />
+
+        {/* After the last panel, and only once the goods have landed. Asking
+            mid-production is asking before they know whether they're happy. */}
+        <ReferralOrderPrompt stage={order.stage} signedIn setPage={setPage} />
 
         {/* Summary band */}
         <SummaryBand><ContactCard setPage={setPage} /></SummaryBand>

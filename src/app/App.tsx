@@ -18,6 +18,8 @@ import { AccountDashboard } from "../pages/AccountDashboard";
 import { HelpPage } from "../pages/AccountSections";
 import { ReferralsPage } from "../pages/ReferralsPage";
 import { ReferPage } from "../pages/ReferPage";
+import { ReferralPlacement } from "../components/referral/ReferralPlacement";
+import { getReferralProgram } from "../data/referrals";
 import { OrderDetail, ProjectDetail } from "../pages/RecordDetailPage";
 import { QuoteReviewPage } from "../pages/QuoteReviewPage";
 import { initialsOf } from "../pages/accountModel";
@@ -347,6 +349,14 @@ function Footer({ setPage, onSelectCategory, user }: {
    *  category tiles on the page itself do. */
   onSelectCategory: (c: CategorySlug) => void;
 }) {
+  // The one link here that depends on program state. Absent while the program is
+  // off, for the same reason the placements are.
+  const [referralOn, setReferralOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    getReferralProgram().then((p) => { if (live) setReferralOn(p.active); }, () => {});
+    return () => { live = false; };
+  }, []);
   const go = (p: Page, category?: CategorySlug) => {
     if (category) onSelectCategory(category);
     setPage(p);
@@ -392,7 +402,11 @@ function Footer({ setPage, onSelectCategory, user }: {
               // product happened to be current, which is a developer's route into
               // the page, not a destination a visitor can mean.
               { h: "Products", ls: [["Windows", "products", "windows"], ["Doors", "products", "doors"]] },
-              { h: "Service",  ls: [["Get a quote", "quote"], ["Trade account", "trade"], ["How it works", "how-it-works"], ["Privacy Policy", "privacy"]] },
+              // "Refer a mate" sits between Trade account and How it works. It
+              // is identical signed in or out, and disappears entirely when the
+              // program is off — a footer link to an offer nobody can take up is
+              // the same problem as a placement that still pitches one.
+              { h: "Service",  ls: [["Get a quote", "quote"], ["Trade account", "trade"], ...(referralOn ? [["Refer a mate", "refer"] as const] : []), ["How it works", "how-it-works"], ["Privacy Policy", "privacy"]] },
               // "Sign in" was the ONLY sign-in control on the site that survived
               // signing in — the header hides it and the mobile drawer turns it
               // into Sign out, so the footer was the odd one out. It sent a
@@ -572,7 +586,7 @@ function Meter({ paid, light = false }: { paid: "0%" | "50%" | "100%"; light?: b
 // `setPage` is App's navigateTo, which takes an optional path override — the hero
 // uses it to land on /quote?upload=1 so the primary action opens the file picker
 // on arrival rather than dropping the visitor on a fork it already promised past.
-function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => void }) {
+function HomePage({ setPage, signedIn }: { setPage: (p: Page, pathOverride?: string) => void; signedIn: boolean }) {
   const go = (p: Page, pathOverride?: string) => { setPage(p, pathOverride); window.scrollTo(0, 0); };
 
   // The sample, matched for real. Never throws the page away if the parser does:
@@ -1209,6 +1223,10 @@ function HomePage({ setPage }: { setPage: (p: Page, pathOverride?: string) => vo
         </div>
       </section>
 
+      {/* Between "Good to know" and the closing banner, and absent entirely
+          while the program is off. */}
+      <ReferralPlacement variant="home" signedIn={signedIn} setPage={setPage} />
+
       {/* ─── FINAL CTA ───────────────────────────────────────────────────────
           The owner's own headline, kept verbatim and moved here — commitment
           framing belongs at the point of commitment, and the hero leads with
@@ -1655,7 +1673,7 @@ function TrackOrderPage({ setPage }: { setPage: (p: Page) => void }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // TRADE ACCOUNT
 // ═══════════════════════════════════════════════════════════════════════════════
-function TradePage({ setPage }: { setPage: (p: Page) => void }) {
+function TradePage({ setPage, signedIn }: { setPage: (p: Page) => void; signedIn: boolean }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   return (
     <div className="bg-bone min-h-screen">
@@ -1706,6 +1724,7 @@ function TradePage({ setPage }: { setPage: (p: Page) => void }) {
           </div>
         </div>
       </section>
+      <ReferralPlacement variant="trade" signedIn={signedIn} setPage={setPage} />
       <CtaBanner
         title="Got a schedule sitting on your desk?"
         sub="Upload it and every line comes back priced in about a minute. No account needed to start."
@@ -2125,7 +2144,7 @@ export default function App() {
 
   const renderPage = () => {
     switch (page) {
-      case "home":             return <HomePage setPage={navigateTo} />;
+      case "home":             return <HomePage setPage={navigateTo} signedIn={Boolean(user)} />;
       case "products":         return <ProductsPage setPage={navigateTo} category={catCategory} family={catFamily} onSelectCategory={selectCategory} onSelectFamily={setCatFamily} onOpenProduct={openProduct} />;
       // A slug that resolves to nothing, or to a product withdrawn from sale, is
       // NOT a product page. It used to fall back to products[0] — a real product
@@ -2150,7 +2169,7 @@ export default function App() {
       case "contact":          return <ContactPage setPage={navigateTo} user={user} />;
       case "privacy":          return <PrivacyPolicyPage setPage={navigateTo} />;
       case "not-found":        return <NotFoundPage setPage={navigateTo} />;
-      case "trade":            return <TradePage setPage={navigateTo} />;
+      case "trade":            return <TradePage setPage={navigateTo} signedIn={Boolean(user)} />;
       case "refer":            return <ReferPage setPage={navigateTo} signedIn={Boolean(user)} />;
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
       case "dashboard":        return inShell("projects", <AccountDashboard user={user!} setPage={navigateTo} onOpenRecord={openRecord} />);
@@ -2159,7 +2178,7 @@ export default function App() {
       case "help":             return inShell("help", <HelpPage setPage={navigateTo} />);
       case "track-order":      return <TrackOrderPage setPage={navigateTo} />;
       case "order":            return inShell("projects", renderRecord());
-      default:                 return <HomePage setPage={navigateTo} />;
+      default:                 return <HomePage setPage={navigateTo} signedIn={Boolean(user)} />;
     }
   };
 
