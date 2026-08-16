@@ -9,7 +9,9 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveStaff } from "../lib/staff";
 import { applyPricingChange, VersionConflict } from "../lib/pricing-admin";
-import { markPayoutsPaid, payoutQueue, publicProgram, recordReferral, reversePayout } from "../lib/referrals";
+import {
+  markPayoutsPaid, payoutCsv, payoutHistory, payoutQueue, publicProgram, recordReferral, reversePayout,
+} from "../lib/referrals";
 
 export const opsReferrals = new Hono<{ Bindings: Env }>();
 
@@ -234,6 +236,41 @@ opsReferrals.get("/payouts", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
   return c.json(await payoutQueue(c.env, staff.id));
+});
+
+// What already went out. Registered ahead of /payouts/:id/failed for the same
+// reason as the export: a literal segment must never be read as an id.
+opsReferrals.get("/payouts/history", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  return c.json({
+    payouts: await payoutHistory(c.env, { from: c.req.query("from"), to: c.req.query("to") }),
+  });
+});
+
+// The same run, as a file to work from beside the banking screen.
+//
+// Registered BEFORE /payouts/:id/failed so a literal path can never be read as
+// an id, and staff-gated exactly like its siblings: this is every referrer's
+// banking in one download.
+//
+// The route does no reading of its own — payoutCsv obtains the numbers through
+// the one function that records having been used. A handler that built the same
+// file from the user table would leave no trace of the largest single disclosure
+// in the feature.
+opsReferrals.get("/payouts/export.csv", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const csv = await payoutCsv(c.env, staff.id);
+  const date = new Date().toISOString().slice(0, 10);
+  return new Response(csv, {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="referral-payouts-${date}.csv"`,
+      // It contains bank details. Nothing may hold a copy.
+      "Cache-Control": "no-store",
+    },
+  });
 });
 
 // Money went out. Recorded after the transfer is made, not before — this screen

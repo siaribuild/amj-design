@@ -197,7 +197,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
     if (!isOps && url.pathname === "/robots.txt") return buildRobots(url.origin, env.APP_ENV === "production");
 
-    const isAsset = /\.[a-zA-Z0-9]+$/.test(url.pathname) && !url.pathname.endsWith(".html");
+    // An /api/ path is never a file in the bundle. Without that exclusion any API
+    // route whose last segment carries an extension — the payout CSV export, and
+    // anything like it later — is looked up as a static asset and 404s before it
+    // reaches a handler, which reads as "the route isn't registered" and is not.
+    const isAsset = !url.pathname.startsWith("/api/")
+      && /\.[a-zA-Z0-9]+$/.test(url.pathname) && !url.pathname.endsWith(".html");
     if (isAsset) return env.ASSETS.fetch(request);
 
     // The liveness probe must stay cheap — it also never waits on Sanity.

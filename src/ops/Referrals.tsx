@@ -20,7 +20,8 @@ import { INK, QUIET as MUTED } from "../styles/tokens";
 import {
   opsReferralProgram, opsSaveReferralProgram, opsReferralList, opsVoidReferral,
   opsUnvoidReferral, opsLinkReferral, OpsApiError,
-  type OpsReferralProgram, type OpsReferralRow,
+  opsPayoutQueue, opsPayoutHistory, opsMarkPayoutsPaid, opsReversePayout, OPS_PAYOUT_CSV_URL,
+  type OpsReferralProgram, type OpsReferralRow, type OpsPayoutGroup, type OpsPayoutRecord,
 } from "./api";
 
 /** A number the form holds as typed, so a half-typed "2." is not coerced. */
@@ -391,9 +392,175 @@ function LinkAction() {
   );
 }
 
+// ── Screen 3: the payout run ─────────────────────────────────────────────────
+// FUNCTION ONLY. The console is due a redesign, so this borrows ReferralsList's
+// markup wholesale and spends nothing on appearance.
+//
+// Three things are deliberate rather than unfinished:
+//   · No checkboxes and no bulk control. Six transfers is six rows, each recorded
+//     with the reference its own transfer actually got — one reference standing
+//     for six is a reconciliation someone loses an afternoon to.
+//   · Record payment and Didn't go through both live ON THE ROW. An action above
+//     a table acts on a selection, and a selection is the thing that is wrong
+//     when money goes to the wrong person.
+//   · Export CSV is a plain link. It downloads a file, and — like opening this
+//     screen — it is recorded as a read of everyone's bank details.
+//
+// ⚠️ OPENING THIS SCREEN READS BANK DETAILS IN THE CLEAR and writes an access-log
+// row saying so. It is not a screen to leave sitting open or to poll.
+const money2 = (v: number) => `$${v.toFixed(2)}`;
+const days = (n: number) => (n === 1 ? "1 day" : `${n} days`);
+
+function PayoutsScreen() {
+  const [queue, setQueue] = useState<{ ready: OpsPayoutGroup[]; accruing: OpsPayoutGroup[]; readyTotal: number } | null>(null);
+  const [history, setHistory] = useState<OpsPayoutRecord[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [paying, setPaying] = useState<string | null>(null);
+  const [reference, setReference] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = () => Promise.all([opsPayoutQueue(), opsPayoutHistory()]).then(
+    ([q, h]) => { setQueue(q); setHistory(h.payouts); setError(null); },
+    (e) => setError(e instanceof OpsApiError ? e.code : "Could not load the payout run."),
+  );
+  useEffect(() => { void load(); }, []);
+
+  const record = async (userId: string) => {
+    if (!reference.trim() || busy) return;
+    setBusy(true);
+    try {
+      await opsMarkPayoutsPaid({ userIds: [userId], reference: reference.trim() });
+      setPaying(null); setReference("");
+      await load();
+    } catch (e) {
+      setError(e instanceof OpsApiError ? e.code : "Could not record that payment.");
+    } finally { setBusy(false); }
+  };
+
+  const reverse = async (payoutId: string) => {
+    setBusy(true);
+    try {
+      await opsReversePayout(payoutId);
+      await load();
+    } catch (e) {
+      setError(e instanceof OpsApiError ? e.code : "Could not reverse that payment.");
+    } finally { setBusy(false); }
+  };
+
+  if (!queue) return <div className="t-bd-sm" style={{ color: MUTED }}>{error ?? "Loading…"}</div>;
+
+  const row = (g: OpsPayoutGroup, payable: boolean) => (
+    <div key={g.userId} className="px-4 py-3 border-t border-black/[0.07] flex flex-col gap-2">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span className="t-bd-sm" style={{ color: INK }}>{g.name}</span>
+        <span className="t-cap" style={{ color: MUTED }}>{g.earningIds.length} earning{g.earningIds.length === 1 ? "" : "s"}</span>
+        <span className="font-data t-data-sm" style={{ color: INK }}>{money2(g.amount)}</span>
+        {/* The three fields a transfer is typed from. */}
+        <span className="font-data t-data-sm" style={{ color: MUTED }}>ABN {g.abn ?? "—"}</span>
+        <span className="font-data t-data-sm" style={{ color: MUTED }}>BSB {g.bsb ?? "—"}</span>
+        <span className="font-data t-data-sm" style={{ color: MUTED }}>Acct {g.accountNumber ?? "—"}</span>
+        <span className="t-cap" style={{ color: MUTED }}>{g.accountName ?? "—"}</span>
+      </div>
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        {/* Oldest confirmed — how long this person has been waiting, which is the
+            only thing on the row that can already be a broken promise. */}
+        <span className="t-cap" style={{ color: MUTED }}>
+          Oldest confirmed {String(g.oldestConfirmedAt).slice(0, 10)} · waiting {days(g.daysWaiting)}
+        </span>
+        {g.overPromise && <span className="quote-chip quote-chip--neutral" style={{ color: "var(--destructive)" }}>Past the promised date</span>}
+        {g.forcedByLongStop && <span className="quote-chip quote-chip--neutral">Held 11 months — pay now</span>}
+        <span className="t-cap" style={{ color: MUTED }}>{g.referralRefs.join(", ")}</span>
+      </div>
+      {paying === g.userId ? (
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="t-cap" style={{ color: MUTED }}>Record this AFTER the transfer is made:</span>
+          <input autoFocus value={reference} onChange={(e) => setReference(e.target.value)}
+            placeholder="Bank reference from the transfer"
+            className="field-control border px-2 py-1 t-bd-sm min-w-[260px]" />
+          <button onClick={() => void record(g.userId)} disabled={!reference.trim() || busy}
+            className="px-3 py-1 t-bd-sm disabled:opacity-40" style={{ background: "var(--sage)", color: "#fff" }}>
+            Record {money2(g.amount)} paid
+          </button>
+          <button onClick={() => { setPaying(null); setReference(""); }} className="px-3 py-1 t-bd-sm" style={{ color: MUTED }}>Cancel</button>
+        </div>
+      ) : (
+        <div className="flex gap-3">
+          <button onClick={() => { setPaying(g.userId); setReference(""); }} className="t-cap" style={{ color: INK }}>
+            {payable ? "Record payment…" : "Pay anyway…"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      {error && <p className="t-bd-sm" style={{ color: "var(--destructive)" }}>{error}</p>}
+
+      <div className="flex flex-wrap gap-3 items-baseline">
+        <span className="t-bd-sm" style={{ color: INK }}>
+          {queue.ready.length} referrer{queue.ready.length === 1 ? "" : "s"} · {money2(queue.readyTotal)} to pay
+        </span>
+        {/* A link, not a button: it is a file download, and the browser does that
+            better than any handler here would. */}
+        <a href={OPS_PAYOUT_CSV_URL} className="t-cap" style={{ color: INK }}>Export CSV</a>
+        <span className="t-cap" style={{ color: MUTED }}>
+          Bank details are read in the clear on this screen, and that read is recorded.
+        </span>
+      </div>
+
+      <section className="card">
+        <div className="panel-head px-4 py-2.5 t-label" style={{ color: MUTED }}>
+          To pay — one row per referrer, one transfer each
+        </div>
+        {queue.ready.length === 0 && <p className="px-4 py-3 t-bd-sm" style={{ color: MUTED }}>Nothing owed right now.</p>}
+        {queue.ready.map((g) => row(g, true))}
+      </section>
+
+      {queue.accruing.length > 0 && (
+        <section className="card">
+          <div className="panel-head px-4 py-2.5 t-label" style={{ color: MUTED }}>
+            Accruing — under the payout threshold. Still owed, and payable early if someone asks.
+          </div>
+          {queue.accruing.map((g) => row(g, false))}
+        </section>
+      )}
+
+      <section className="card">
+        <div className="panel-head px-4 py-2.5 t-label" style={{ color: MUTED }}>Payments made</div>
+        {history.length === 0 && <p className="px-4 py-3 t-bd-sm" style={{ color: MUTED }}>Nothing has gone out yet.</p>}
+        {history.map((p) => (
+          <div key={p.id} className="px-4 py-3 border-t border-black/[0.07] flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <span className="t-cap" style={{ color: MUTED }}>{String(p.paidAt).slice(0, 10)}</span>
+            <span className="t-bd-sm" style={{ color: INK }}>{p.referrerName}</span>
+            <span className="font-data t-data-sm" style={{ color: INK }}>{money2(p.amount)}</span>
+            <span className="font-data t-data-sm" style={{ color: MUTED }}>{p.reference ?? "—"}</span>
+            <span className="font-data t-data-sm" style={{ color: MUTED }}>{p.accountMasked ?? "—"}</span>
+            <span className="t-cap" style={{ color: p.status === "failed" ? "var(--destructive)" : MUTED }}>{p.status}</span>
+            {/* ON THE LINE. Reversing the wrong payment is the mistake this
+                screen can make, and a control at the top of a table is how it
+                gets made. */}
+            {p.status === "paid" && (
+              <button onClick={() => void reverse(p.id)} disabled={busy} className="t-cap disabled:opacity-40"
+                style={{ color: "var(--destructive)" }}>
+                Didn't go through
+              </button>
+            )}
+          </div>
+        ))}
+        <p className="px-4 py-3 border-t border-black/[0.07] t-cap" style={{ color: MUTED }}>
+          Bank details are frozen onto each payment as it goes out, so this stays correct after a referrer
+          changes theirs or leaves. Reversing puts the earnings back in the queue and keeps the payment here.
+        </p>
+      </section>
+    </div>
+  );
+}
+
 const SUB_TABS = [
   { id: "program", label: "Program" },
   { id: "referrals", label: "Referrals" },
+  { id: "payouts", label: "Payouts" },
 ] as const;
 
 export function OpsReferrals() {
@@ -408,8 +575,8 @@ export function OpsReferrals() {
           </button>
         ))}
       </div>
-      {sub === "program"
-        ? <ProgramScreen />
+      {sub === "program" ? <ProgramScreen />
+        : sub === "payouts" ? <PayoutsScreen />
         : <div className="flex flex-col gap-5"><LinkAction /><ReferralsList /></div>}
     </div>
   );

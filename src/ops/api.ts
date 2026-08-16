@@ -717,3 +717,72 @@ export const opsUnvoidReferral = (id: string) =>
  *  would become the way around all of them. */
 export const opsLinkReferral = (body: { email?: string; userId?: string; code: string }) =>
   req<{ ok: boolean }>("/api/ops/referrals/link", { method: "POST", body: JSON.stringify(body) });
+
+// ── Payouts (T8) ─────────────────────────────────────────────────────────────
+
+/** One referrer's owed money, with the details a transfer needs.
+ *
+ *  ⚠️ THE BANK FIELDS ARE UNMASKED, and fetching this screen writes a row in
+ *  `payout_details_access` recording that they were read. That is by design —
+ *  the server has no other way to hand them over. Do not cache this response and
+ *  do not put it anywhere it would be re-fetched idly. */
+export interface OpsPayoutGroup {
+  userId: string;
+  email: string;
+  name: string;
+  amount: number;
+  earningIds: string[];
+  referralRefs: string[];
+  abn: string | null;
+  bsb: string | null;
+  accountNumber: string | null;
+  accountName: string | null;
+  oldestConfirmedAt: string;
+  daysWaiting: number;
+  /** Waiting longer than the timeframe the offer states. ACL s 32(2) makes that
+   *  window a promise to meet, not merely to state. */
+  overPromise: boolean;
+  /** Promoted out of the accruing group at ~11 months so money owed never sits
+   *  long enough to become unclaimed money. */
+  forcedByLongStop?: true;
+}
+
+export const opsPayoutQueue = () =>
+  req<{ ready: OpsPayoutGroup[]; accruing: OpsPayoutGroup[]; readyTotal: number }>(
+    "/api/ops/referrals/payouts",
+  );
+
+/** Record a transfer that has ALREADY been made. The reference is what makes it
+ *  reconcilable against the bank statement later. */
+export const opsMarkPayoutsPaid = (body: { userIds: string[]; reference: string; note?: string }) =>
+  req<{ paid: { userId: string; payoutId: string; amount: number }[] }>(
+    "/api/ops/referrals/payouts/mark-paid",
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export interface OpsPayoutRecord {
+  id: string;
+  amount: number;
+  status: string;
+  reference: string | null;
+  note: string | null;
+  paidAt: string;
+  paidBy: string | null;
+  referrerName: string;
+  /** Masked. Which account it went to — the frozen record, not a directory of
+   *  account numbers. */
+  accountMasked: string | null;
+  earningCount: number;
+}
+
+export const opsPayoutHistory = () =>
+  req<{ payouts: OpsPayoutRecord[] }>("/api/ops/referrals/payouts/history");
+
+/** It bounced, or it was recorded against the wrong row. The earnings go back
+ *  into the queue; the payment stays in history. */
+export const opsReversePayout = (payoutId: string) =>
+  req<{ ok: boolean }>(`/api/ops/referrals/payouts/${payoutId}/failed`, { method: "POST", body: "{}" });
+
+/** A plain link, not a fetch: it must land in the browser's downloads, and the
+ *  response is a file rather than JSON. */
+export const OPS_PAYOUT_CSV_URL = "/api/ops/referrals/payouts/export.csv";

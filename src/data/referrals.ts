@@ -111,10 +111,22 @@ export interface PayoutState {
   heldUnderThreshold: null | { balance: number; threshold: number };
 }
 
+/** One transfer, as its recipient sees it.
+ *
+ *  NO BANKING. The payout row carries a frozen copy of the account it went to —
+ *  that copy is the accountant's record and belongs to the ops payout run, not
+ *  here (AC-29). Its owner reads a date, an amount and the bank reference, which
+ *  is what they need to match it against their statement.
+ *
+ *  A `failed` payment stays in this list rather than disappearing: "we tried to
+ *  pay you and it came back" is the thing someone rings up about, and a history
+ *  that quietly drops it answers nothing. */
 export interface PayoutRecord {
   paidAt: string;
   amount: number;
   reference: string | null;
+  /** `paid` stands; `failed` bounced and the money went back into the queue. */
+  status: "paid" | "failed";
   referralIds: string[];
 }
 

@@ -279,6 +279,85 @@ test("T3 — the payability predicate", { timeout: 120_000 }, async (t) => {
     );
   });
 
+  await t.test("AC-43/§10A.2 — the payout email is never handed the bank digits", () => {
+    // The function takes the WHOLE payout group, because that is what the run
+    // holds, and hands on four facts. A compromised or mis-authored Sanity
+    // template cannot interpolate what it was never given — which is a property
+    // of this function rather than a rule someone has to remember at the call
+    // site, and this is the test that keeps it one.
+    assert.equal(typeof M.payoutPaidNotification, "function", "referrals.ts must export payoutPaidNotification");
+    const opts = M.payoutPaidNotification(
+      {
+        userId: "u-1", email: "queue.referrer@example.com", name: "Queue Glazing", amount: 181.82,
+        abn: "51824753556", bsb: "063000", accountNumber: "12345678", accountName: "Queue Glazing",
+        earningIds: ["e-1", "e-2"], referralRefs: ["ABC-234", "ABC-234"],
+      },
+      "TFR-99321",
+      "2026-08-17T03:04:05.000Z",
+    );
+
+    assert.equal(opts.recipient, "queue.referrer@example.com");
+    assert.equal(opts.eventType, "referral.paid");
+    assert.equal(opts.templateKey, "referral_payout_sent", "the naming the other four referral templates use");
+
+    const vars = JSON.stringify(opts.vars);
+    for (const secret of ["063000", "12345678", "51824753556"]) {
+      assert.equal(vars.includes(secret), false, `the template vars must never carry ${secret}`);
+    }
+    // What it MAY carry, and must: the three facts that let someone match this
+    // against their own bank statement.
+    assert.match(vars, /181\.82/, "the amount transferred belongs in the email");
+    assert.match(vars, /TFR-99321/, "and the bank reference, which is how it is found");
+    assert.match(vars, /2026-08-17/, "and the date it went out");
+    // The inline fallback is what sends when Sanity is unreachable, so it is
+    // held to the same rule as the template it stands in for.
+    const fallback = JSON.stringify(opts.email);
+    for (const secret of ["063000", "12345678", "51824753556"]) {
+      assert.equal(fallback.includes(secret), false, `the fallback copy must never carry ${secret} either`);
+    }
+  });
+
+  await t.test("AC-42 — the payout CSV survives Excel, and refuses to become a formula", () => {
+    assert.equal(typeof M.formatPayoutCsv, "function", "referrals.ts must export formatPayoutCsv");
+    const csv = M.formatPayoutCsv([
+      {
+        userId: "u-1", email: "a@example.com", name: "Queue Glazing", amount: 181.82,
+        // A real account number with a leading zero, and an account name typed by
+        // the person being paid — the one field on this row an attacker controls.
+        abn: "51824753556", bsb: "063000", accountNumber: "00123456",
+        accountName: "=cmd|' /c calc'!A1", earningIds: ["e1"], referralRefs: ["ABC-234", "XYZ-789"],
+      },
+      {
+        userId: "u-2", email: "b@example.com", name: 'Ross "Rossco" Glass, Pty', amount: 40,
+        abn: null, bsb: null, accountNumber: null, accountName: null,
+        earningIds: ["e2"], referralRefs: ["QRS-111"],
+      },
+    ]);
+
+    const lines = csv.replace(/^﻿/, "").trim().split("\r\n");
+    assert.equal(lines.length, 3, "a header and one line per referrer");
+    assert.match(lines[0], /^Name,ABN,BSB,Account number,Account name,Amount,Referral references$/,
+      "the columns the design's §9 names, in that order");
+
+    // A dropped leading zero is a transfer to the wrong account, and a long
+    // account number rendered as 1.2E+08 is a transfer to nothing at all.
+    assert.ok(lines[1].includes('="00123456"'), "the account number is handed over as text, zeros intact");
+    assert.ok(lines[1].includes('="063000"'), "and so is the BSB");
+    assert.ok(lines[1].includes('="51824753556"'), "and the ABN");
+
+    // The injection surface. A cell opening with = + - or @ executes in Excel,
+    // Sheets and LibreOffice alike.
+    assert.equal(lines[1].includes('"=cmd'), false, "a leading = must not survive into a cell");
+    assert.ok(lines[1].includes(`"'=cmd`), "it is neutralised, not silently dropped");
+
+    assert.ok(lines[1].includes(",181.82,"), "the amount stays a bare number, so a column of them sums");
+    assert.ok(lines[1].includes('"ABC-234; XYZ-789"'), "every referral this transfer covers, in one cell");
+
+    // Ordinary punctuation must not shear the row into extra columns.
+    assert.ok(lines[2].includes('"Ross ""Rossco"" Glass, Pty"'), "commas and quotes are escaped, not mangled");
+    assert.ok(csv.startsWith("﻿"), "a BOM, or Excel mis-reads a business name with an accent in it");
+  });
+
   await t.test("AC-2/AC-3 — a code survives being read out over a job-site phone call", () => {
     assert.equal(typeof M.generateReferralCode, "function", "referrals.ts must export generateReferralCode");
     // Half these introductions happen on a job site: B reads the code out, A
@@ -1579,6 +1658,48 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(/12345678/.test(JSON.stringify(log)), false, "and the record holds no numbers");
     });
 
+    await t.test("AC-42/AC-47 — the CSV is staff-only, and taking it is recorded", async () => {
+      // A customer asking for the transfer file gets nothing. This is the whole
+      // of everyone's banking in one download, so the gate is checked here
+      // against a running server rather than read off the route.
+      const outsider = new Session(baseUrl);
+      await login(outsider, "/api/auth", "csv.outsider@example.com");
+      const refused = await outsider.request("/api/ops/referrals/payouts/export.csv");
+      assert.equal(refused.status, 403, "a customer session must not be able to download the payout CSV");
+
+      const before = await sql(
+        `SELECT COUNT(*) AS n FROM payout_details_access
+          WHERE context = 'ops_csv' AND action = 'view'`,
+      );
+
+      const response = await staff.request("/api/ops/referrals/payouts/export.csv");
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("content-type") ?? "", /text\/csv/);
+      assert.match(response.headers.get("content-disposition") ?? "", /attachment; filename=/,
+        "it downloads rather than rendering as a wall of text in the browser");
+
+      const body = await response.text();
+      assert.ok(body.includes("Queue Glazing"), "the referrer waiting to be paid is in the file");
+      assert.ok(body.includes('="063000"'), "with the BSB the transfer needs, as text");
+      assert.ok(body.includes('="12345678"'), "and the account number");
+
+      // ADR-4: the numbers are obtained through the reader that records having
+      // been used, and through nothing else. A route that read the columns
+      // directly would produce an identical file and no log row — which is the
+      // exact failure this assertion exists to catch.
+      const after = await sql(
+        `SELECT COUNT(*) AS n FROM payout_details_access
+          WHERE context = 'ops_csv' AND action = 'view'`,
+      );
+      assert.ok(after[0].n > before[0].n, "taking the CSV must write a 'view' row with context ops_csv");
+      const logged = await sql(
+        `SELECT actor_user_id, subject_user_id FROM payout_details_access
+          WHERE context = 'ops_csv' ORDER BY at DESC LIMIT 1`,
+      );
+      assert.notEqual(logged[0].actor_user_id, logged[0].subject_user_id,
+        "ops looking at a referrer's details is an actor/subject divergence, not a self-edit");
+    });
+
     await t.test("AC-45 — a payout freezes what it paid, and a reversal returns the money", async () => {
       const { body: before } = await requestJson(staff, "/api/ops/referrals/payouts");
       const group = before.ready.find((g) => g.name === "Queue Glazing");
@@ -1655,6 +1776,77 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(real.length, 1, "the first payment stands, once");
       const attached = await sql(`SELECT id FROM referral_earning WHERE payout_id = '${real[0].id}'`);
       assert.equal(attached.length, 2, "with its earnings attached to it");
+    });
+
+    await t.test("AC-43 — marking paid tells the referrer, and a silent send is not one", async () => {
+      // TFR-FIRST went out in the subtest above. Somebody was told about it: a
+      // transfer arriving in a bank account with a reference nobody explained is
+      // how a referrer ends up ringing to ask what the money is.
+      const sent = await sql(
+        `SELECT event_type, template_key, delivery_state FROM notification
+          WHERE recipient_subject = 'queue.referrer@example.com' AND event_type = 'referral.paid'`,
+      );
+      assert.ok(sent.length >= 1, "markPayoutsPaid must notify the referrer that the money went out");
+      assert.equal(sent[0].template_key, "referral_payout_sent", "through the editable template, like every other referral email");
+      assert.notEqual(sent[0].delivery_state, "queued", "a notification row with nothing behind it is not a send");
+    });
+
+    await t.test("AC-44 — the payments made are readable, so a bounce can be reversed later", async () => {
+      // A transfer bounces days after it went out, and the person fixing it was
+      // not the person who recorded it. Without a reader the only payout ids that
+      // exist are the ones mark-paid handed back in a response nobody kept, and
+      // the reversal AC-44 requires can only be done by someone with database
+      // access.
+      const { body } = await requestJson(staff, "/api/ops/referrals/payouts/history");
+      const rows = body.payouts ?? [];
+      const first = rows.find((p) => p.reference === "TFR-FIRST");
+      assert.ok(first, "the payment that stands is in the accountant's view");
+      assert.ok(first.id, "with the id the reversal needs");
+      assert.equal(first.amount, 181.82);
+      assert.equal(first.status, "paid");
+      assert.equal(first.referrerName, "Queue Glazing");
+      assert.equal(first.earningCount, 2, "and what it covered");
+
+      const bounced = rows.find((p) => p.reference === "TFR-99321");
+      assert.ok(bounced, "a reversed payment stays in the record — it is the history");
+      assert.equal(bounced.status, "failed");
+
+      // The frozen banking is the accountant's record of where money went, and
+      // this is a list screen. Which account, not the account (AC-29's reasoning,
+      // and it keeps an unlogged disclosure off a route that never needed one).
+      assert.equal(/12345678|99998888/.test(JSON.stringify(rows)), false, "the frozen account number is not spread across a list");
+      // TFR-FIRST went out AFTER the referrer changed their details, and TFR-99321
+      // before — so the two rows name different accounts. That is the freezing
+      // working, seen from the list: each payment says where it actually went.
+      assert.match(first.accountMasked ?? "", /8888$/, "enough to say which account it went to");
+      assert.match(bounced.accountMasked ?? "", /5678$/, "and the earlier payment names the account it used");
+    });
+
+    await t.test("AC-46/AC-30/AC-29 — the referrer's own screen carries their payment history, masked", async () => {
+      // Two payments exist for this referrer by now: TFR-99321, which was
+      // reversed, and TFR-FIRST, which stands. BOTH belong on their screen —
+      // "we tried to pay you and it came back" is the thing someone rings up
+      // about, and a history that quietly drops it answers nothing.
+      const earner = new Session(baseUrl);
+      await login(earner, "/api/auth", "queue.referrer@example.com");
+      const { body: screen } = await requestJson(earner, "/api/account/referrals");
+
+      const paid = (screen.payoutHistory ?? []).find((p) => p.reference === "TFR-FIRST");
+      assert.ok(paid, "referrerScreen must carry the payment that went out in payoutHistory");
+      assert.equal(paid.amount, 181.82, "the amount actually transferred");
+      assert.equal(paid.status, "paid");
+      assert.ok(paid.paidAt, "with the date it went out");
+
+      const bounced = (screen.payoutHistory ?? []).find((p) => p.reference === "TFR-99321");
+      assert.ok(bounced, "a failed payment stays visible rather than vanishing");
+      assert.equal(bounced.status, "failed");
+
+      // AC-29. This is a CUSTOMER surface, and the payout row carries a frozen
+      // copy of the banking it went to. None of it may travel with the history.
+      assert.equal(
+        /12345678|063000|99998888|083004/.test(JSON.stringify(screen.payoutHistory)), false,
+        "no payout row's frozen bank details may reach a customer response",
+      );
     });
 
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {

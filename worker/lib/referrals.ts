@@ -10,6 +10,7 @@ import { STAGES } from "./orders";
 import { stripReferralFromDrafts } from "./lines";
 import type { ReferralOffer, ReferralProgramPublic } from "../../src/data/referrals";
 import { referralDiscountState } from "./referral-discount";
+import { notify } from "./email";
 
 /** The account row this module needs to answer "may this user hold a code?". */
 export interface ReferrerRow extends PayoutDetails {
@@ -550,6 +551,41 @@ export async function referrerScreen(env: Env, user: ReferrerRow & { id: string 
   const confirmed = sum("confirmed");
   const payable = payoutComplete(user);
 
+  // What has actually gone out, scoped to the session user (§10A.3).
+  //
+  // ⚠️ IT SELECTS NO BANKING. The payout row carries a frozen copy of the ABN and
+  // account the transfer went to — that copy is the accountant's record and is
+  // read only by the ops run. Its owner needs a date, an amount and the bank
+  // reference: enough to find the line on their own statement (AC-29).
+  //
+  // `failed` rows are included deliberately. Their earnings have already gone
+  // back into the queue, so the money is not lost — but a transfer that bounced
+  // is the thing someone rings up about, and a history that omits it answers
+  // nothing.
+  const { results: payoutRows } = await env.DB
+    .prepare(
+      `SELECT p.id, p.paid_at, p.amount, p.reference, p.status,
+              (SELECT group_concat(e.referral_id) FROM referral_earning e WHERE e.payout_id = p.id) AS referral_ids
+         FROM referral_payout p
+        WHERE p.referrer_user_id = ?
+        ORDER BY p.paid_at DESC`,
+    )
+    .bind(user.id)
+    .all<{
+      id: string; paid_at: string; amount: number;
+      reference: string | null; status: string; referral_ids: string | null;
+    }>();
+
+  const payoutHistory = (payoutRows ?? []).map((p) => ({
+    paidAt: p.paid_at,
+    amount: p.amount,
+    reference: p.reference,
+    status: p.status === "failed" ? ("failed" as const) : ("paid" as const),
+    // Empty on a reversed payment: its earnings detached when the money went
+    // back into the queue, which is the same fact the status already states.
+    referralIds: p.referral_ids ? String(p.referral_ids).split(",") : [],
+  }));
+
   return {
     referrerGate: { complete: payable, missing: payoutMissing(user) },
     code,
@@ -612,7 +648,7 @@ export async function referrerScreen(env: Env, user: ReferrerRow & { id: string 
         ? { balance: confirmed, threshold: program.minPayoutBalance }
         : null,
     },
-    payoutHistory: [] as { paidAt: string; amount: number; reference: string | null; referralIds: string[] }[],
+    payoutHistory,
     program,
   };
 }
@@ -863,6 +899,117 @@ export async function unmaskedPayoutDetails(
 /** ~11 months: one clear month before the twelve-month unclaimed-money rule. */
 const LONG_STOP_DAYS = 334;
 
+/** What one referrer is owed, as the run holds it. Unmasked: it exists so a
+ *  human can type a transfer, and it was obtained through `unmaskedPayoutDetails`
+ *  so that reading it is recorded. */
+export interface PayoutGroup {
+  userId: string;
+  email: string;
+  name: string;
+  amount: number;
+  earningIds: string[];
+  referralRefs: string[];
+  abn: string | null;
+  bsb: string | null;
+  accountNumber: string | null;
+  accountName: string | null;
+}
+
+// ── The transfer file (AC-42) ────────────────────────────────────────────────
+// Written by hand rather than pulled in as a dependency, because the two things
+// that can go wrong here are specific and neither is served by a generic writer.
+
+/** A text cell, quoted and escaped — and DEFUSED.
+ *
+ *  A cell opening with `=`, `+`, `-` or `@` is a formula to Excel, Sheets and
+ *  LibreOffice alike, and the account name on this row is typed by the person
+ *  being paid. The leading apostrophe is kept rather than the character dropped:
+ *  the accountant needs to see what the referrer actually entered, because it is
+ *  what the bank will be told. */
+const csvText = (value: string | null | undefined): string => {
+  const raw = String(value ?? "");
+  const defused = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  return `"${defused.replace(/"/g, '""')}"`;
+};
+
+/** A run of digits that must reach the bank unchanged.
+ *
+ *  ⚠️ THIS IS THE ONE PLACE A FORMULA IS EMITTED ON PURPOSE. A BSB of `063000`
+ *  imported as a number becomes `63000` and a long account number becomes
+ *  `1.2E+08`; either is a transfer that does not arrive. `="063000"` is how a
+ *  spreadsheet is told "this is text", and it is safe here precisely because the
+ *  value is proven to be digits first — anything else falls through to the
+ *  defused text path, so a non-conforming stored value can never come out of
+ *  here as a live formula. */
+const csvDigits = (value: string | null | undefined): string => {
+  const raw = String(value ?? "").replace(/[\s-]/g, "");
+  if (raw === "") return '""';
+  if (!/^\d+$/.test(raw)) return csvText(value);
+  return `="${raw}"`;
+};
+
+const CSV_HEADER = ["Name", "ABN", "BSB", "Account number", "Account name", "Amount", "Referral references"];
+
+/** The file a staff member opens beside their banking screen (design §9).
+ *
+ *  Pure, and separate from the query that feeds it, so the two failure modes can
+ *  be tested apart: this one is "does it survive Excel", and the caller's is
+ *  "was reading these numbers recorded". */
+export function formatPayoutCsv(groups: PayoutGroup[]): string {
+  const lines = [CSV_HEADER.join(",")];
+  for (const g of groups) {
+    lines.push([
+      csvText(g.name),
+      csvDigits(g.abn),
+      csvDigits(g.bsb),
+      csvDigits(g.accountNumber),
+      csvText(g.accountName),
+      // Bare, so a column of them sums.
+      g.amount.toFixed(2),
+      csvText(g.referralRefs.join("; ")),
+    ].join(","));
+  }
+  // CRLF and a BOM: Excel mis-reads a business name with an accent in it
+  // otherwise, and this file is opened in Excel by definition.
+  return `﻿${lines.join("\r\n")}\r\n`;
+}
+
+/** The email a referrer gets when their transfer goes out (AC-43).
+ *
+ *  ⚠️ IT TAKES THE WHOLE GROUP AND HANDS ON THREE FACTS. The group carries the
+ *  ABN and the account the money went to, because the run needs them to make the
+ *  transfer; the template `vars` carry the amount, the bank reference and the
+ *  date, because a compromised or mis-authored Sanity template cannot interpolate
+ *  what it was never given (design §10A.2).
+ *
+ *  Selecting HERE rather than at the call site is the whole point: it makes the
+ *  exclusion a property of one function with one test on it, instead of a rule
+ *  every future caller has to remember while holding a group that contains the
+ *  digits. The inline fallback is held to the same rule — it is what sends when
+ *  Sanity is unreachable.
+ *
+ *  The three facts it does carry are the three someone needs to find the line on
+ *  their own bank statement. */
+export function payoutPaidNotification(group: PayoutGroup, reference: string, paidAt: string) {
+  const amount = group.amount.toFixed(2);
+  const date = paidAt.slice(0, 10);
+  return {
+    recipient: group.email,
+    eventType: "referral.paid",
+    templateKey: "referral_payout_sent",
+    vars: { name: group.name, amount, reference, date },
+    email: {
+      to: group.email,
+      subject: `We've paid you $${amount}`,
+      text:
+        `Hi ${group.name},\n\n` +
+        `We've transferred $${amount} to you for your referrals, on ${date}.\n` +
+        `It will show on your statement with the reference ${reference}.\n\n` +
+        `You can see this payment, and everything else you've earned, in your account.\n`,
+    },
+  };
+}
+
 /** Record that money went out, and freeze what it went to.
  *
  *  The frozen copy of ABN, BSB, account number and name is the point. It is the
@@ -883,7 +1030,7 @@ export async function markPayoutsPaid(
   for (const group of paying) {
     const payoutId = uuid();
     const placeholders = group.earningIds.map(() => "?").join(", ");
-    await env.DB.batch([
+    const written = await env.DB.batch([
       env.DB
         .prepare(
           // CONDITIONAL, so the row cannot outlive the money it claims to have
@@ -916,6 +1063,25 @@ export async function markPayoutsPaid(
         )
         .bind(payoutId, ...group.earningIds),
     ]);
+    // Tell them the money went out (AC-43). A transfer landing in someone's
+    // account with a reference nobody explained is how a referrer ends up ringing
+    // to ask what it is.
+    //
+    // GATED ON THE CLAIM ACTUALLY LANDING. In the concurrent double-submit the
+    // loser's UPDATE claims nothing, and an email saying "we've paid you $181.82"
+    // for a transfer that was never recorded is worse than the duplicate success
+    // message below.
+    //
+    // AND IT CANNOT BLOCK THE PAYMENT. The money has already moved — a template
+    // outage, a provider 500 or a Sanity hiccup must not unwind a bank transfer
+    // that happened, nor stop the rest of the run's recipients being told.
+    if ((written[1]?.meta?.changes ?? 0) > 0) {
+      try {
+        await notify(env, payoutPaidNotification(group, args.reference, new Date().toISOString()));
+      } catch (error) {
+        console.log(`[referral] payout email failed for ${group.userId}: ${String(error)}`);
+      }
+    }
     // NOTE: in a true concurrent double-submit the loser still reports its group as
     // paid, while the guard above correctly kept the row out of the ledger. The
     // ledger is the authority and the queue self-corrects on the next read, so the
@@ -948,7 +1114,14 @@ export async function reversePayout(env: Env, payoutId: string): Promise<void> {
  *  Grouped rather than listed per earning because a tradie with three referrals
  *  gets one payment — and a staff member typing three transfers to the same
  *  account is how a duplicate happens. */
-export async function payoutQueue(env: Env, actorUserId: string) {
+export async function payoutQueue(
+  env: Env,
+  actorUserId: string,
+  // Which surface is asking. It reaches the access log unchanged, so the CSV and
+  // the screen are distinguishable afterwards — "who downloaded everyone's
+  // banking" is a different question from "who opened the run".
+  context: "ops_payouts" | "ops_csv" = "ops_payouts",
+) {
   const program = await publicProgram(env);
   const { results } = await env.DB
     .prepare(
@@ -967,12 +1140,16 @@ export async function payoutQueue(env: Env, actorUserId: string) {
     }>();
 
   const byReferrer = new Map<string, {
-    userId: string; name: string; amount: number;
+    userId: string; email: string; name: string; amount: number;
     earningIds: string[]; referralRefs: string[]; oldestConfirmedAt: string;
   }>();
   for (const row of results ?? []) {
     const group = byReferrer.get(row.referrer_user_id) ?? {
       userId: row.referrer_user_id,
+      // Carried so the run can tell them the money went out (AC-43). It is the
+      // one contact detail here; the banking beside it arrives separately,
+      // through the reader that records having been used.
+      email: row.email,
       name: String(row.company ?? "").trim() || String(row.name ?? "").trim() || row.email,
       amount: 0, earningIds: [], referralRefs: [], oldestConfirmedAt: row.confirmed_at,
     };
@@ -985,7 +1162,7 @@ export async function payoutQueue(env: Env, actorUserId: string) {
   }
 
   const groups = [...byReferrer.values()];
-  const details = await unmaskedPayoutDetails(env, groups.map((g) => g.userId), actorUserId, "ops_payouts");
+  const details = await unmaskedPayoutDetails(env, groups.map((g) => g.userId), actorUserId, context);
   const now = Date.now();
 
   const decorated = groups.map((g) => {
@@ -1021,4 +1198,71 @@ export async function payoutQueue(env: Env, actorUserId: string) {
     accruing: decorated.filter((g) => !isReady(g)),
     readyTotal: Math.round(ready.reduce((sum, g) => sum + g.amount, 0) * 100) / 100,
   };
+}
+
+/** The transfer file, and the record that someone took it (AC-42, ADR-4).
+ *
+ *  ⚠️ IT GOES THROUGH THE QUEUE, NOT THROUGH THE `user` TABLE. Reading the four
+ *  banking columns directly would produce a byte-identical file and no log row —
+ *  which is precisely the failure ADR-4 exists to prevent, and why the only
+ *  reader of those columns writes the log itself. The context it passes is what
+ *  distinguishes "downloaded everyone's banking" from "opened the run".
+ *
+ *  It carries the READY groups: the file is what a staff member types transfers
+ *  from, and money still accruing under a threshold is not being transferred. */
+export async function payoutCsv(env: Env, actorUserId: string): Promise<string> {
+  const { ready } = await payoutQueue(env, actorUserId, "ops_csv");
+  return formatPayoutCsv(ready);
+}
+
+/** What has actually gone out — the accountant's view (AC-44, design §10.3).
+ *
+ *  Reads the FROZEN copies on the payout rows, never the live `user` columns, so
+ *  it stays correct after a referrer edits their details or leaves. That is also
+ *  why it needs no access-log row: it discloses nothing about where money would
+ *  go next, only where it went.
+ *
+ *  The account is MASKED even here. This is a list of everyone paid, and its job
+ *  is to say which account a transfer went to — not to put every account number
+ *  on one screen. The unmasked figures live in the run and the CSV, both logged.
+ *
+ *  It exists because a bounce arrives days later and reaches whoever is at the
+ *  desk. Without it the only payout ids in the world are the ones a mark-paid
+ *  response handed back, and reversing yesterday's payment needs the database. */
+export async function payoutHistory(
+  env: Env,
+  range: { from?: string | null; to?: string | null } = {},
+) {
+  const { results } = await env.DB
+    .prepare(
+      `SELECT p.id, p.amount, p.status, p.reference, p.note, p.paid_at, p.paid_by,
+              p.account_number, u.company, u.name, u.email,
+              (SELECT COUNT(*) FROM referral_earning e WHERE e.payout_id = p.id) AS earning_count
+         FROM referral_payout p
+         JOIN user u ON u.id = p.referrer_user_id
+        WHERE (?1 IS NULL OR p.paid_at >= ?1) AND (?2 IS NULL OR p.paid_at <= ?2)
+        ORDER BY p.paid_at DESC
+        LIMIT 500`,
+    )
+    .bind(range.from ?? null, range.to ?? null)
+    .all<{
+      id: string; amount: number; status: string; reference: string | null; note: string | null;
+      paid_at: string; paid_by: string | null; account_number: string | null;
+      company: string | null; name: string | null; email: string; earning_count: number;
+    }>();
+
+  return (results ?? []).map((p) => ({
+    id: p.id,
+    amount: p.amount,
+    status: p.status,
+    reference: p.reference,
+    note: p.note,
+    paidAt: p.paid_at,
+    paidBy: p.paid_by,
+    referrerName: String(p.company ?? "").trim() || String(p.name ?? "").trim() || p.email,
+    accountMasked: maskAccount(p.account_number),
+    // A reversed payment's earnings have detached, so this reads 0 — which is
+    // the same fact the status already states, from the other side.
+    earningCount: p.earning_count,
+  }));
 }

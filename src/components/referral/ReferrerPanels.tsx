@@ -110,8 +110,14 @@ export function PaymentsPanel({ history }: { history: PayoutRecord[] }) {
               <span className="text-body font-data t-data-sm">{fmtDate(p.paidAt)}</span>
               <span className="text-ink font-semibold t-bd-sm sm:text-right">{money(p.amount)}</span>
               <span className="text-body font-data t-data-sm">{p.reference ?? "—"}</span>
+              {/* A reversed transfer must never read as money received. It stays
+                  on the list because "we tried to pay you and it came back" is
+                  what someone rings up about — but it says what happened, and
+                  says the money is not lost. */}
               <span className="text-body t-cap">
-                {p.referralIds.length === 1 ? "1 referral" : `${p.referralIds.length} referrals`}
+                {p.status === "failed"
+                  ? "Didn't go through — back in your balance"
+                  : p.referralIds.length === 1 ? "1 referral" : `${p.referralIds.length} referrals`}
               </span>
             </li>
           ))}
