@@ -277,6 +277,17 @@ export interface ApiOrder {
   qaConfirmedAt: string | null;
   createdAt: string;
   payments: ApiPayment[];
+  /** The referral badge, frozen at issue — the percentage this purchase carried
+   *  and who to thank for it.
+   *
+   *  ONE percentage, never a total. The standing account discount is deliberately
+   *  invisible, and a combined figure would disclose it by subtraction.
+   *
+   *  Read from the stamp taken when the quote was issued rather than from live
+   *  eligibility: ordering is exactly what ends a tradie's eligibility, so a live
+   *  lookup would erase the label at the moment it became a permanent fact about
+   *  this order. `null` means render nothing — not "0%", not an empty chip. */
+  referral?: { percent: number; referrerName: string } | null;
   // Project context for the account area (absent on the guest-tracking DTO).
   projectId?: string;
   projectTitle?: string | null;
@@ -309,6 +320,10 @@ export type ApiQuote =
     deposit: number;
     balance: number;
     issuedAt: string | null;
+    /** The referral badge, frozen at issue. On the `live: true` arm only —
+     *  there is no badge to show for a quote that is not issued, and a quote
+     *  that never carried a referral has none either (`null`). */
+    referral?: { percent: number; referrerName: string } | null;
     lines: ApiItem[];
   }
   | { live: false; status: string };
