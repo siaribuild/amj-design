@@ -16,6 +16,7 @@ import { opsMe, opsChallenge, opsVerify, opsLogout, opsSummary, opsSearch, opsBr
 import { Projects } from "./Projects";
 import { Customers } from "./Customers";
 import { Pricing } from "./Pricing";
+import { OpsReferrals } from "./Referrals";
 import { Enquiries } from "./Enquiries";
 import { Files, Audit, Admin } from "./AdminTabs";
 
@@ -64,13 +65,14 @@ function OpsLogo({ height = 24, className = "" }: { height?: number; className?:
   );
 }
 
-type Tab = "dashboard" | "projects" | "customers" | "pricing" | "enquiries" | "files" | "audit" | "admin";
+type Tab = "dashboard" | "projects" | "customers" | "pricing" | "referrals" | "enquiries" | "files" | "audit" | "admin";
 const ALL_TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
   { id: "projects", label: "Projects", icon: <FileText className="w-4 h-4" /> },
   { id: "customers", label: "Customers", icon: <Users className="w-4 h-4" /> },
   { id: "enquiries", label: "Enquiries", icon: <Mail className="w-4 h-4" /> },
   { id: "pricing", label: "Pricing", icon: <Boxes className="w-4 h-4" /> },
+  { id: "referrals", label: "Referrals", icon: <Users className="w-4 h-4" /> },
   { id: "files", label: "Files", icon: <FolderOpen className="w-4 h-4" /> },
   { id: "audit", label: "Audit", icon: <ScrollText className="w-4 h-4" /> },
   { id: "admin", label: "Admin", icon: <Settings className="w-4 h-4" /> },
@@ -259,6 +261,7 @@ function OpsShell({ user, onSignOut }: { user: OpsUser; onSignOut: () => void })
             : tab === "customers" ? <Customers user={user} />
             : tab === "enquiries" ? <Enquiries user={user} />
             : tab === "pricing" ? <Pricing />
+            : tab === "referrals" ? <OpsReferrals />
             : tab === "files" ? <Files />
             : tab === "audit" ? <Audit />
             : tab === "admin" ? <Admin />

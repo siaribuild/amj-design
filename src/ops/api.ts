@@ -651,3 +651,35 @@ export const opsSplitLine = (lineId: string, body: {
 
 export const opsMergeComposite = (lineId: string) =>
   req<{ ok: boolean }>(`/api/ops/lines/${lineId}/merge`, { method: "POST", body: "{}" });
+
+// ── Referral program (T8) ────────────────────────────────────────────────────
+
+/** The eleven configurable facts of the program. Every figure the site
+ *  advertises renders from these, which is why they are editable at all. */
+export interface OpsReferralProgram {
+  active: boolean;
+  referrerRewardActive: boolean;
+  referredDiscountActive: boolean;
+  ratePercent: number;
+  /** null = no cap clause is rendered anywhere. NOT the same as 0. */
+  capAmount: number | null;
+  minOrderAmount: number;
+  /** 0 = no threshold language anywhere. A legitimate value, not an absence. */
+  minPayoutBalance: number;
+  windowMonths: number;
+  discountPercent: number;
+  payoutTimeframeDays: number;
+}
+
+export const opsReferralProgram = () =>
+  req<{ program: OpsReferralProgram; version: string }>("/api/ops/referrals/program");
+
+/** Save. `expectedVersion` is what makes a second editor holding a stale copy
+ *  get a 409 instead of silently overwriting the first one's change. The reply
+ *  carries the PUBLIC shape too, so the screen can state what the site now
+ *  advertises rather than echoing what was typed. */
+export const opsSaveReferralProgram = (body: Partial<OpsReferralProgram> & { expectedVersion: string }) =>
+  req<{ program: OpsReferralProgram; version: string; public: unknown }>(
+    "/api/ops/referrals/program",
+    { method: "PUT", body: JSON.stringify(body) },
+  );
