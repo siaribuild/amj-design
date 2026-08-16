@@ -1,5 +1,21 @@
 # Ops console redesign — UX pass
 
+> **Status, 2026-08-16 — none of this is binding.** Everything in this directory is
+> exploratory: a good step toward the right direction and a fair representation of *what
+> ops needs to be able to do*, but **not a set of instructions to follow and not a rule
+> set to implement**. The owner's position on reopening the work: every point here is
+> open to challenge, and a better answer at the end is the goal, not fidelity to these
+> documents.
+>
+> Read them as (a) an inventory of required capability and (b) an argument already had —
+> so it need not be had again from scratch. The one part that *is* factual rather than
+> proposed is the no-regression contract in `UX-SPEC.md` §B.4, which describes the console
+> that exists today.
+>
+> New in this directory: `BRAINSTORM-TRANSCRIPT.md` (the conversation that started it,
+> recovered from a session that never synced) and `mocks/` (two further prototypes
+> recovered from published artifacts — `ops-v2-full-site.html` is the later direction).
+
 Brainstorming and UX only. **No application code was changed.** The deliverable is
 `ops-redesign-prototype.html` at the repo root: one self-contained, interactive file with no
 build step, no network and no backend. Open it from the filesystem; add `?dev=1` for the
