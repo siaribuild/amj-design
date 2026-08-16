@@ -583,6 +583,44 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(rows.length, 0, "and nothing is recorded");
     });
 
+    await t.test("AC-12 — two logins for one business is not a referral", async () => {
+      // A13. Compared on digits only, because people write an ABN with spaces.
+      //
+      // This gate is narrower than it looks and the spec says so plainly: it can
+      // only fire when BOTH sides have an ABN, and the referred side usually has
+      // none at signup. It does not prevent self-referral — the ABR confirms one
+      // person may legitimately hold several ABNs — it removes the laziest version
+      // of it. What actually contains the rest is that no price leaves this
+      // business without a human reviewing it.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "abn.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='abn.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const sameAbn = new Session(baseUrl);
+      await login(sameAbn, "/api/auth", "abn.same@example.com");
+      // Spaced differently on purpose: the same business, typed by a human.
+      await sql("UPDATE user SET abn='51 824 753 556' WHERE email='abn.same@example.com'");
+      const refused = await requestJson(sameAbn, "/api/account/referrals/claim",
+        { method: "POST", json: { code: mine.code } }, 400);
+      // Deliberately unspecific. Naming the ABN match would tell someone probing
+      // the rules exactly which check to route around next time.
+      assert.equal(refused.body.error, "not_eligible");
+
+      // A different ABN is an ordinary referral and must still work.
+      const otherAbn = new Session(baseUrl);
+      await login(otherAbn, "/api/auth", "abn.other@example.com");
+      await sql("UPDATE user SET abn='53004085616' WHERE email='abn.other@example.com'");
+      await requestJson(otherAbn, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      const rows = await sql(
+        `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='abn.other@example.com')`,
+      );
+      assert.equal(rows.length, 1, "a different business is a real referral");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

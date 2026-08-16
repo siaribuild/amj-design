@@ -168,6 +168,25 @@ export async function recordReferral(
     if (ordered) return { ok: false, error: "has_order" };
   }
 
+  // A13 — two logins for one business is not a referral. Digits only, because
+  // people write an ABN with spaces.
+  //
+  // Narrower than it looks, and deliberately so: it can only fire when BOTH sides
+  // have an ABN, and the referred side usually has none at signup. It does not
+  // PREVENT self-referral — the ABR confirms one person may legitimately hold
+  // several ABNs across different structures — it removes the laziest version.
+  // What contains the rest is that no price leaves this business unreviewed.
+  const digits = (abn: string | null | undefined) => String(abn ?? "").replace(/\D/g, "");
+  const referred = await env.DB
+    .prepare("SELECT abn FROM user WHERE id = ?")
+    .bind(input.referredUser.id)
+    .first<{ abn: string | null }>();
+  if (digits(referred?.abn) && digits(referred?.abn) === digits(referrer.abn)) {
+    // Unspecific on purpose: naming the ABN match would tell someone probing the
+    // rules exactly which check to route around next time.
+    return { ok: false, error: "not_eligible" };
+  }
+
   const program = await env.DB
     .prepare("SELECT * FROM referral_program WHERE id = 'default'")
     .first<{
