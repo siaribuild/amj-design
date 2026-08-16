@@ -87,6 +87,20 @@ export function abnValid(abn: string | null | undefined): boolean {
   return sum % 89 === 0;
 }
 
+/** Do these two ABNs identify the same business?
+ *
+ *  Digits only, because people write an ABN with spaces and the same number typed
+ *  twice should still match. Two absent ABNs are NOT a match — an unanswered
+ *  question is not evidence, and treating it as one would refuse every referral
+ *  where neither side had filled the field in.
+ *
+ *  Asked at recording and again at confirmation, so it lives here rather than
+ *  inline at either. */
+function sameBusiness(a: string | null | undefined, b: string | null | undefined): boolean {
+  const digits = (abn: string | null | undefined) => String(abn ?? "").replace(/\D/g, "");
+  return digits(a).length > 0 && digits(a) === digits(b);
+}
+
 /** No O, 0, I or 1. Half these introductions happen on a job site — B reads the
  *  code out, A types it in later — and those are exactly the pairs that get
  *  transcribed wrongly. Dropping them costs a little of a space that is already
@@ -170,19 +184,20 @@ export async function recordReferral(
   }
 
   // A13 — two logins for one business is not a referral. Digits only, because
-  // people write an ABN with spaces.
+  // people write an ABN with spaces. Asked here AND again at confirmation: at
+  // signup the referred side usually has no ABN to compare, so a check that ran
+  // only once would be defeated by filling it in afterwards.
   //
   // Narrower than it looks, and deliberately so: it can only fire when BOTH sides
   // have an ABN, and the referred side usually has none at signup. It does not
   // PREVENT self-referral — the ABR confirms one person may legitimately hold
   // several ABNs across different structures — it removes the laziest version.
   // What contains the rest is that no price leaves this business unreviewed.
-  const digits = (abn: string | null | undefined) => String(abn ?? "").replace(/\D/g, "");
   const referred = await env.DB
     .prepare("SELECT abn FROM user WHERE id = ?")
     .bind(input.referredUser.id)
     .first<{ abn: string | null }>();
-  if (digits(referred?.abn) && digits(referred?.abn) === digits(referrer.abn)) {
+  if (sameBusiness(referred?.abn, referrer.abn)) {
     // Unspecific on purpose: naming the ABN match would tell someone probing the
     // rules exactly which check to route around next time.
     return { ok: false, error: "not_eligible" };
@@ -334,16 +349,34 @@ export async function onOrderBalancePaid(env: Env, orderId: string): Promise<voi
     return;
   }
 
-  const referrer = await env.DB
+  const parties = await env.DB
     .prepare(
-      `SELECT u.* FROM referral_earning e
+      `SELECT u.*, referred.abn AS referred_abn
+         FROM referral_earning e
          JOIN referral r ON r.id = e.referral_id
          JOIN user u ON u.id = r.referrer_user_id
+         JOIN user referred ON referred.id = r.referred_user_id
         WHERE e.order_id = ? AND e.status = 'pending'`,
     )
     .bind(orderId)
-    .first<PayoutDetails>();
-  if (!payoutComplete(referrer)) return;
+    .first<PayoutDetails & { referred_abn: string | null }>();
+
+  // A13's late limb. At signup the referred side usually has no ABN, so the
+  // recording-time check had nothing to compare. Asked again here, because
+  // otherwise the rule is defeated by filling the field in afterwards.
+  if (sameBusiness(parties?.referred_abn, parties?.abn)) {
+    await env.DB
+      .prepare(
+        `UPDATE referral_earning
+            SET status = 'void', void_reason = 'same_abn', voided_at = datetime('now')
+          WHERE order_id = ? AND status = 'pending'`,
+      )
+      .bind(orderId)
+      .run();
+    return;
+  }
+
+  if (!payoutComplete(parties)) return;
 
   await env.DB
     .prepare(
