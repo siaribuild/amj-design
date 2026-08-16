@@ -17,6 +17,7 @@ import { AccountShell, type AccountSection } from "../pages/AccountShell";
 import { AccountDashboard } from "../pages/AccountDashboard";
 import { HelpPage } from "../pages/AccountSections";
 import { ReferralsPage } from "../pages/ReferralsPage";
+import { ReferPage } from "../pages/ReferPage";
 import { OrderDetail, ProjectDetail } from "../pages/RecordDetailPage";
 import { QuoteReviewPage } from "../pages/QuoteReviewPage";
 import { initialsOf } from "../pages/accountModel";
@@ -2150,6 +2151,7 @@ export default function App() {
       case "privacy":          return <PrivacyPolicyPage setPage={navigateTo} />;
       case "not-found":        return <NotFoundPage setPage={navigateTo} />;
       case "trade":            return <TradePage setPage={navigateTo} />;
+      case "refer":            return <ReferPage setPage={navigateTo} signedIn={Boolean(user)} />;
       case "login":            return <LoginPage setPage={navigateTo} setUser={setUser} />;
       case "dashboard":        return inShell("projects", <AccountDashboard user={user!} setPage={navigateTo} onOpenRecord={openRecord} />);
       case "account":          return inShell("account", <AccountPage user={user} setPage={navigateTo} setUser={setUser} authLoading={authLoading} />);

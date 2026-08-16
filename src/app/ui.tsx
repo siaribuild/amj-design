@@ -22,7 +22,7 @@ export type Page =
   | "home" | "products" | "product-detail" | "quote"
   | "how-it-works" | "resources" | "contact"
   | "trade" | "login" | "dashboard"
-  | "account" | "help" | "referrals"
+  | "account" | "help" | "referrals" | "refer"
   | "track-order" | "order"
   | "privacy" | "post" | "not-found";
 
