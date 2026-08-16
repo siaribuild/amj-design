@@ -519,6 +519,42 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(staffRefused.body.error, "invalid_code", "nor a staff-owned one");
     });
 
+    await t.test("AC-62 — while the program is off, nothing new is attributed", async () => {
+      // Off means joining is paused: no new referrals recorded, no new codes
+      // issued. It deliberately does NOT reach anything already promised — that
+      // rule lives in the discount and earning paths, which never read this flag
+      // at all, so a switch that is never consulted cannot be consulted wrongly.
+      const joiner = new Session(baseUrl);
+      await login(joiner, "/api/auth", "off.joiner@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='off.joiner@example.com'");
+      await requestJson(joiner, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: live } = await requestJson(joiner, "/api/account/referrals");
+
+      await sql("UPDATE referral_program SET active=0 WHERE id='default'");
+      try {
+        const mate = new Session(baseUrl);
+        await login(mate, "/api/auth", "off.mate@example.com");
+        const refused = await requestJson(mate, "/api/account/referrals/claim",
+          { method: "POST", json: { code: live.code } }, 400);
+        assert.equal(refused.body.error, "program_off");
+
+        // And a payable account that had not yet asked gets no code while off.
+        const late = new Session(baseUrl);
+        await login(late, "/api/auth", "off.late@example.com");
+        await sql(
+          `UPDATE user SET abn='51824753556', payout_bsb='063000',
+             payout_account_number='12345678', payout_account_name='A Tradie'
+           WHERE email='off.late@example.com'`,
+        );
+        const { body: none } = await requestJson(late, "/api/account/referrals");
+        assert.equal(none.code, null, "joining is paused, so no code is issued");
+      } finally {
+        await sql("UPDATE referral_program SET active=1 WHERE id='default'");
+      }
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

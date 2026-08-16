@@ -53,6 +53,10 @@ function fakeEnv(held) {
             return { success: true };
           },
           async first() {
+            // Issuance is paused while the program is off, so the resolver asks.
+            // Answering every SELECT with a user row would have this fake quietly
+            // reporting "program off" and the collision behaviour would never run.
+            if (/referral_program/.test(binder.sql)) return { active: 1 };
             return { referral_code: state.code };
           },
         };

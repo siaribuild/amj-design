@@ -28,7 +28,14 @@ export async function ensureReferralCode(
   generate: () => string = generateReferralCode,
 ): Promise<string | null> {
   if (!payoutComplete(user)) return null;
+  // A code already issued is PERMANENT and survives the program being switched
+  // off — it may have been read out over a phone months ago. Only new issuance
+  // pauses, which is why this check sits after the early return and not before it.
   if (user.referral_code) return user.referral_code;
+  const program = await env.DB
+    .prepare("SELECT active FROM referral_program WHERE id = 'default'")
+    .first<{ active: number }>();
+  if (!program?.active) return null;
   for (let attempt = 0; attempt < CODE_ISSUE_ATTEMPTS; attempt += 1) {
     const drawn = generate();
     // NOT EXISTS rather than letting the UNIQUE index throw. Matching on D1's
@@ -153,9 +160,14 @@ export async function recordReferral(
   const program = await env.DB
     .prepare("SELECT * FROM referral_program WHERE id = 'default'")
     .first<{
-      rate_percent: number; cap_amount: number | null; min_order_amount: number;
+      active: number; rate_percent: number; cap_amount: number | null; min_order_amount: number;
       discount_percent: number; window_months: number;
     }>();
+  // Off stops NEW attribution and nothing else. Whether an existing discount or a
+  // promised commission still stands is decided elsewhere, by paths that never
+  // read this flag — see referral-discount.ts.
+  if (!program?.active) return { ok: false, error: "program_off" };
+
   await env.DB
     .prepare(
       `INSERT INTO referral
