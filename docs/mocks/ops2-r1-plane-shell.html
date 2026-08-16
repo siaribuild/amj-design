@@ -1,0 +1,2061 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ops2 R1 — the frame and the record (plane shell)</title>
+<!--
+  ═══════════════════════════════════════════════════════════════════════════
+  ops2 R1 — THE FRAME AND THE RECORD, on the plane shell.
+  Rework of docs/mocks/ops2-r1-frame-and-record.html, which the owner rejected.
+
+  This file is a COMMUNICATION ARTIFACT, not production code. The markup is
+  throwaway; the structure, the navigation model and the copy are the contract.
+
+  It is ONE console implementation, mounted into seven device frames at
+  different widths. Every frame is live: tap through it. The phone frames are
+  the design; the wider frames are the same zones revealed.
+
+  Width class is an attribute on the CONSOLE CONTAINER, resolved from its own
+  measured width by ResizeObserver — never a viewport media query, never a
+  user-agent branch (arch §4.1/§4.3, C1). That is why seven widths can be
+  correct on one page at once.
+
+  Colour/typography values are the ui-designer's to replace: every one is a
+  token in the block below, quarried from the settled mock's 00-tokens.css so
+  a visual pass is a rebind, not a rebuild (LEARNINGS §5, R-174).
+  ═══════════════════════════════════════════════════════════════════════════
+-->
+<style>
+/* ══ TOKENS — the only place a literal value appears (R-174) ══════════════ */
+:root{
+  color-scheme: light;
+
+  /* §1 palette primitives — a rebrand lands here */
+  --p-n-000:#ffffff; --p-n-025:#fbfbf9; --p-n-050:#f6f6f3; --p-n-100:#eeeeea;
+  --p-n-150:#e4e4df; --p-n-200:#d8d8d2; --p-n-300:#c0c0b8; --p-n-400:#9d9d94;
+  --p-n-500:#7a7a71; --p-n-600:#5d5d55; --p-n-700:#45453f; --p-n-800:#2e2e2a;
+  --p-n-900:#1c1c19; --p-n-950:#121210;
+  --p-sage-050:#f3f6ec; --p-sage-100:#e5ebd6; --p-sage-200:#cfd9b4;
+  --p-sage-300:#b4c391; --p-sage-500:#8a9a5b; --p-sage-600:#74844a;
+  --p-sage-700:#5c6a39; --p-sage-900:#363f21;
+  --p-pos-050:#e9f4ed; --p-pos-200:#b7dcc6; --p-pos-600:#2f7d4f; --p-pos-800:#1d5334;
+  --p-attn-050:#fdf4e3; --p-attn-200:#ecd49c; --p-attn-600:#97690f; --p-attn-800:#6a4907;
+  --p-crit-050:#fdeeec; --p-crit-200:#f2beb8; --p-crit-600:#b3261e; --p-crit-800:#7d1a14;
+  --p-info-050:#eaeffb; --p-info-200:#bccbf0; --p-info-600:#3a56b8; --p-info-800:#26397c;
+  --p-shadow-rgb:28 28 25;
+
+  /* §2 semantic roles — a component-library swap rebinds here */
+  --surface-0:var(--p-n-050); --surface-1:var(--p-n-000); --surface-2:var(--p-n-025);
+  --surface-3:var(--p-n-100); --surface-sunken:var(--p-n-150);
+  --surface-overlay:var(--p-n-000); --surface-scrim:rgb(28 28 25 / .42);
+  --surface-selected:var(--p-sage-050); --surface-hover:var(--p-n-050);
+  --surface-active:var(--p-n-100); --surface-disabled:var(--p-n-050);
+  --rule:var(--p-n-150); --rule-strong:var(--p-n-200); --rule-quiet:var(--p-n-100);
+  --rule-inverse:rgb(255 255 255 / .14); --divider:1px;
+  --text-0:var(--p-n-900); --text-1:var(--p-n-800); --text-2:var(--p-n-600);
+  --text-3:var(--p-n-500); --text-4:var(--p-n-400);   /* absence, "not recorded" */
+  --text-disabled:var(--p-n-400); --text-inverse:var(--p-n-000);
+  --text-link:var(--p-sage-700);
+  --brand:var(--p-sage-500); --brand-strong:var(--p-sage-700);
+  --brand-tint:var(--p-sage-050); --brand-border:var(--p-sage-300);
+  --brand-on:var(--p-n-000); --accent-underline:var(--p-sage-600);
+
+  --tone-neutral-fg:var(--text-2);   --tone-neutral-bg:var(--p-n-100);   --tone-neutral-border:var(--p-n-200);
+  --tone-positive-fg:var(--p-pos-800);  --tone-positive-bg:var(--p-pos-050);  --tone-positive-border:var(--p-pos-200);
+  --tone-attention-fg:var(--p-attn-800);--tone-attention-bg:var(--p-attn-050);--tone-attention-border:var(--p-attn-200);
+  --tone-critical-fg:var(--p-crit-800); --tone-critical-bg:var(--p-crit-050); --tone-critical-border:var(--p-crit-200);
+  --tone-info-fg:var(--p-info-800);     --tone-info-bg:var(--p-info-050);     --tone-info-border:var(--p-info-200);
+
+  --ctl-bg:var(--p-n-000); --ctl-bg-hover:var(--p-n-050); --ctl-border:var(--p-n-200);
+  --ctl-fg:var(--text-1); --ctl-primary-bg:var(--p-sage-600);
+  --ctl-primary-bg-hover:var(--p-sage-700); --ctl-primary-fg:var(--p-n-000);
+  --ctl-danger-fg:var(--p-crit-600);
+  --ctl-disabled-bg:var(--p-n-050); --ctl-disabled-fg:var(--p-n-400); --ctl-disabled-border:var(--p-n-150);
+  --field-bg:var(--p-n-000); --field-border:var(--p-n-300); --field-border-focus:var(--p-sage-600);
+  --focus-ring:var(--p-sage-700); --focus-ring-w:2px; --focus-ring-offset:2px;
+  --skeleton-base:var(--p-n-100); --skeleton-sheen:var(--p-n-050);
+
+  /* §3 chrome — the console's ONE dark surface. A surface, not a theme. */
+  --ops-bg:var(--p-n-900); --ops-bg-raised:var(--p-n-800); --ops-fg:var(--p-n-050);
+  --ops-fg-quiet:var(--p-n-300); --ops-fg-faint:var(--p-n-400);
+  --ops-rule:var(--rule-inverse); --ops-hover:rgb(255 255 255 / .08);
+  --ops-active:rgb(255 255 255 / .14); --ops-accent:var(--p-sage-300);
+
+  /* §5 type */
+  --font-ui:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-data:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --fvn-data:tabular-nums slashed-zero;
+  --t-hd1:600 20px/26px var(--font-ui);
+  --t-hd2:600 15px/20px var(--font-ui);
+  --t-body:400 13.5px/19px var(--font-ui);
+  --t-body-strong:600 13.5px/19px var(--font-ui);
+  --t-quiet:400 12.5px/17px var(--font-ui);
+  --t-label:600 11px/14px var(--font-ui);
+  --t-cap:400 11.5px/15px var(--font-ui);
+  --t-dat:500 13.5px/19px var(--font-data);
+  --t-dat-lg:600 17px/22px var(--font-data);
+  --t-datsm:500 12px/16px var(--font-data);
+  --tracking-label:.055em;
+
+  /* §6 layout */
+  --nav-w:224px;                 /* register row 17: w-56 */
+  --drawer-w:min(82%,264px);     /* register row 19: 264px / 82vw */
+  --rail-w:320px; --rail-w-desktop:264px; --rail-collapsed:48px;
+  --pane-w:400px; --pane-w-wide:440px; --pane-compact-w:380px;
+  --sheet-w:min(88%,520px); --rail-overlay-w:min(88%,420px);
+  --ident-h:48px;                /* §13.6 the line plane's identity band */
+  --footer-phone-h:56px;         /* §13.5 the phone action footer */
+  --footer-h:48px;
+  --planebar-h:44px;
+  --pad-phone:16px; --pad-tablet:20px; --pad-desktop:24px; --pad:var(--pad-desktop);
+  --space-1:2px; --space-2:4px; --space-3:6px; --space-4:8px; --space-5:12px;
+  --space-6:16px; --space-7:20px; --space-8:24px; --space-9:32px; --space-10:40px;
+
+  /* §7 density — ours, never the library's (R-178) */
+  --row-scan:32px; --row-work:44px; --row-line:66px; --row-unit:40px;
+  --tap-min:44px; --row-card-min:72px;
+
+  /* §8 shape / elevation / motion */
+  --r-xs:2px; --r-sm:3px; --r-md:6px; --r-lg:10px; --r-pill:999px;
+  --shadow-1:0 1px 2px rgb(var(--p-shadow-rgb)/.06);
+  --shadow-2:0 2px 6px rgb(var(--p-shadow-rgb)/.08),0 1px 2px rgb(var(--p-shadow-rgb)/.06);
+  --shadow-3:0 10px 28px rgb(var(--p-shadow-rgb)/.16),0 2px 6px rgb(var(--p-shadow-rgb)/.08);
+  --shadow-plane:-6px 0 24px rgb(var(--p-shadow-rgb)/.12);
+  --dur-instant:0ms; --dur-fast:120ms; --dur-push:240ms; --dur-pop:200ms;
+  --ease-std:cubic-bezier(.2,0,0,1);
+
+  /* §9 stacking */
+  --z-sticky:10; --z-ident:20; --z-sheet:50; --z-plane:55; --z-drawer:60;
+  --z-modal:70; --z-live:99;
+
+  /* §10 viewport / safe area / keyboard */
+  --kb-inset:0px;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+}
+
+/* ══ PAGE SCAFFOLD — this is the mock's own frame, not the console ════════ */
+*{box-sizing:border-box}
+body{margin:0;background:var(--p-n-100);color:var(--text-1);font:var(--t-body);
+  -webkit-font-smoothing:antialiased}
+.doc{max-width:1560px;margin:0 auto;padding:32px 20px 80px}
+.doc h1{font:var(--t-hd1);font-size:24px;color:var(--text-0);margin:0 0 6px}
+.doc h2{font:var(--t-hd2);font-size:16px;color:var(--text-0);margin:44px 0 4px;
+  padding-top:20px;border-top:2px solid var(--p-n-300)}
+.doc p{max-width:78ch;margin:8px 0;color:var(--text-2);font:var(--t-body)}
+.doc code{font:var(--t-mono);font-family:var(--font-mono);font-size:12px;
+  background:var(--p-n-050);border:1px solid var(--rule);border-radius:var(--r-xs);padding:0 4px}
+.doc .lede{font-size:14px;color:var(--text-1)}
+.law{background:var(--surface-1);border:1px solid var(--rule);border-left:3px solid var(--brand);
+  border-radius:var(--r-md);padding:14px 16px;margin:16px 0;max-width:78ch}
+.law b{color:var(--text-0)}
+.rack{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start;margin-top:18px}
+.dev{display:flex;flex-direction:column;gap:8px}
+.dev-cap{font:var(--t-label);letter-spacing:var(--tracking-label);text-transform:uppercase;
+  color:var(--text-3)}
+.dev-cap b{color:var(--text-1);font-weight:600}
+.dev-note{font:var(--t-cap);color:var(--text-3);max-width:340px}
+.frame{background:var(--p-n-300);border:1px solid var(--p-n-400);border-radius:14px;
+  padding:8px;box-shadow:var(--shadow-2)}
+.frame > .console{border-radius:7px;overflow:hidden}
+
+/* ══ THE CONSOLE ═════════════════════════════════════════════════════════ */
+.console{position:relative;display:flex;background:var(--surface-0);color:var(--text-1);
+  font:var(--t-body);overflow:hidden;isolation:isolate}
+.console *{box-sizing:border-box}
+.console button{font:inherit;color:inherit;font-family:var(--font-ui)}
+.console :focus-visible{outline:var(--focus-ring-w) solid var(--focus-ring);
+  outline-offset:var(--focus-ring-offset)}
+.dat{font-family:var(--font-data);font-variant-numeric:var(--fvn-data)}
+
+/* padding rebinds by width class — never a media query */
+.console[data-wc="phone"]{--pad:var(--pad-phone)}
+.console[data-wc="tabletp"]{--pad:var(--pad-tablet)}
+
+/* ── NAVIGATION: ONE surface, two mount states ───────────────────────────
+   <1024 it is a drawer (overlay, never a route — register row 19).
+   >=1024 it is the persistent 224px dark rail (register row 17).
+   Same content function. This is "growth is revelation" applied to the frame
+   itself, and it is why C6 ("a second navigation band is forbidden") holds. */
+.nav{background:var(--ops-bg);color:var(--ops-fg);display:flex;flex-direction:column;
+  flex:none;min-height:0}
+.console[data-wc="compact"] .nav,
+.console[data-wc="desktop"] .nav,
+.console[data-wc="wide"] .nav{position:static;width:var(--nav-w);transform:none}
+.console[data-wc="phone"] .nav,
+.console[data-wc="tabletp"] .nav{position:absolute;inset-block:0;left:0;width:var(--drawer-w);
+  z-index:var(--z-drawer);transform:translateX(-101%);
+  transition:transform var(--dur-push) var(--ease-std);box-shadow:var(--shadow-3)}
+.console[data-drawer="open"] .nav{transform:translateX(0)}
+.scrim{position:absolute;inset:0;background:var(--surface-scrim);z-index:calc(var(--z-drawer) - 1);
+  opacity:0;pointer-events:none;transition:opacity var(--dur-fast) linear;border:0;padding:0;display:block}
+.console[data-drawer="open"] .scrim{opacity:1;pointer-events:auto}
+.console[data-wc="compact"] .scrim,.console[data-wc="desktop"] .scrim,
+.console[data-wc="wide"] .scrim{display:none}
+
+.nav-brand{height:56px;flex:none;display:flex;align-items:center;gap:var(--space-4);
+  padding:0 var(--space-6);border-bottom:var(--divider) solid var(--ops-rule);
+  padding-top:var(--safe-top)}
+.nav-brand .mark{width:24px;height:24px;border-radius:var(--r-sm);background:var(--ops-accent);
+  flex:none;display:grid;place-items:center;color:var(--p-n-900);font:var(--t-label)}
+.nav-brand .word{font:var(--t-body-strong);color:var(--ops-fg);letter-spacing:.01em}
+.nav-list{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:var(--space-4) 0;min-height:0}
+.nav-item{display:flex;align-items:center;gap:var(--space-5);width:100%;
+  min-height:var(--tap-min);padding:0 var(--space-6);background:none;border:0;
+  border-left:2px solid transparent;color:var(--ops-fg-quiet);cursor:pointer;text-align:left}
+.nav-item:hover{background:var(--ops-hover);color:var(--ops-fg)}
+.nav-item[aria-current="page"]{background:var(--ops-active);color:var(--ops-fg);
+  border-left-color:var(--ops-accent);font:var(--t-body-strong)}
+.nav-item .ico{width:16px;flex:none;text-align:center;opacity:.9}
+.nav-item .soon{margin-left:auto;font:var(--t-cap);color:var(--ops-fg-faint)}
+.nav-foot{flex:none;border-top:var(--divider) solid var(--ops-rule);padding:var(--space-5) var(--space-6);
+  padding-bottom:calc(var(--space-5) + var(--safe-bottom));display:flex;flex-direction:column;gap:var(--space-4)}
+.nav-who{font:var(--t-cap);color:var(--ops-fg-quiet);line-height:1.5}
+.nav-who b{display:block;color:var(--ops-fg);font:var(--t-body-strong)}
+.nav-who .role{color:var(--ops-fg-faint)}
+.gstwrap{display:flex;align-items:center;gap:var(--space-4);flex-wrap:wrap}
+.gstwrap .lbl{font:var(--t-cap);color:var(--ops-fg-faint)}
+.gsttoggle{display:inline-flex;border:1px solid var(--ops-rule);border-radius:var(--r-sm);overflow:hidden}
+.gsttoggle button{min-height:28px;padding:0 var(--space-5);background:none;border:0;
+  color:var(--ops-fg-quiet);font:var(--t-cap);cursor:pointer}
+.gsttoggle button[aria-pressed="true"]{background:var(--ops-accent);color:var(--p-n-900);font:var(--t-body-strong);font-size:11.5px}
+.nav-signout{min-height:var(--tap-min);border:1px solid var(--ops-rule);border-radius:var(--r-sm);
+  background:none;color:var(--ops-fg);cursor:pointer;font:var(--t-body)}
+.nav-signout:hover{background:var(--ops-hover)}
+
+/* ── DESTINATION AREA ────────────────────────────────────────────────────── */
+.dest{flex:1 1 auto;min-width:0;position:relative;display:flex;flex-direction:column;
+  background:var(--surface-0)}
+
+/* ── PLANE (phone) — full-frame destination, absolutely positioned ───────
+   inset:0 · identity band · scrolling body · footer flex:none INSIDE the
+   plane's flex column, never viewport-fixed (R-152). */
+.stack{position:absolute;inset:0;overflow:hidden}
+.plane{position:absolute;inset:0;z-index:var(--z-plane);display:flex;flex-direction:column;
+  background:var(--surface-1);height:100%}
+.plane[data-depth="0"]{z-index:calc(var(--z-plane) - 1);box-shadow:none}
+.plane[data-depth]:not([data-depth="0"]){box-shadow:var(--shadow-plane)}
+/* Only a PUSHED plane animates in. A root plane has nowhere to arrive from,
+   and an entrance transform on it is one interrupted animation away from a
+   plane sitting permanently off-frame — the failure mode §3.3 records. The
+   stack clips regardless, so it can never paint outside the frame. */
+.plane[data-depth="0"].plane-anim{animation:none}
+.plane-anim{animation:planepush var(--dur-push) var(--ease-std)}
+@keyframes planepush{from{transform:translateX(14%);opacity:.6}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){
+  .plane-anim{animation:planefade var(--dur-fast) linear}
+  @keyframes planefade{from{opacity:.4}to{opacity:1}}
+  .nav{transition:none!important}
+}
+.plane-body{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;min-height:0;
+  -webkit-overflow-scrolling:touch}
+.plane-foot{flex:none;min-height:var(--footer-phone-h);display:flex;align-items:center;
+  gap:var(--space-4);padding:var(--space-4) var(--pad);
+  padding-bottom:calc(var(--space-4) + var(--kb-inset) + var(--safe-bottom));
+  background:var(--surface-2);border-top:var(--divider) solid var(--rule);flex-wrap:wrap}
+.plane-foot > *{min-width:0}
+
+/* ── IDENTITY BAND ───────────────────────────────────────────────────────
+   The LEADING SLOT is owned by the shell and is never empty:
+     stack depth 0  → the drawer opener (or nothing at >=1024, where the rail
+                      is persistent)
+     stack depth >0 → the back control
+   A region cannot delete it, because a region does not render it. This is the
+   structural answer to the regression that removed the drawer's only opener. */
+.ident{flex:none;background:var(--surface-2);border-bottom:var(--divider) solid var(--rule);
+  padding-top:var(--safe-top);z-index:var(--z-ident)}
+.ident-row{display:flex;align-items:center;gap:var(--space-3);min-height:var(--ident-h);
+  padding:0 var(--space-3) 0 var(--space-2)}
+.ident-title{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;
+  padding:var(--space-2) var(--space-2)}
+.ident-title .l1{font:var(--t-body-strong);color:var(--text-0);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.ident-title .l1 .code{font-family:var(--font-data);font-variant-numeric:var(--fvn-data);
+  color:var(--brand-strong)}
+.ident-title .l2{font:var(--t-cap);color:var(--text-2);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.ident-life{padding:0 var(--pad) var(--space-4);font:var(--t-cap);color:var(--text-2)}
+.ident-life .word{color:var(--text-0);font-weight:600}
+.blockrow{display:flex;align-items:center;gap:var(--space-4);width:100%;
+  min-height:var(--tap-min);padding:var(--space-3) var(--pad);background:var(--tone-attention-bg);
+  border:0;border-top:var(--divider) solid var(--tone-attention-border);
+  color:var(--tone-attention-fg);font:var(--t-cap);text-align:left;cursor:pointer}
+.blockrow .arw{margin-left:auto;flex:none;opacity:.7}
+
+.iconbtn{flex:none;width:var(--tap-min);height:var(--tap-min);display:grid;place-items:center;
+  background:none;border:0;border-radius:var(--r-sm);color:var(--text-1);cursor:pointer;
+  font-size:17px;line-height:1}
+.iconbtn:hover{background:var(--surface-active)}
+.iconbtn[disabled]{color:var(--text-disabled);cursor:default;background:none}
+
+/* stepper (R-155) — moves through the FILTERED set without returning to the list */
+.stepper{flex:none;display:flex;align-items:center;gap:var(--space-1);
+  border:var(--divider) solid var(--ctl-border);border-radius:var(--r-sm);
+  background:var(--ctl-bg);height:36px}
+.stepper button{width:32px;height:34px;background:none;border:0;cursor:pointer;
+  color:var(--text-1);font-size:15px;line-height:1}
+.stepper button[disabled]{color:var(--text-disabled);cursor:default}
+.stepper .pos{font:var(--t-datsm);font-family:var(--font-data);
+  font-variant-numeric:var(--fvn-data);color:var(--text-2);padding:0 var(--space-2);
+  white-space:nowrap}
+/* R-178 — pointer:coarse raises EVERY control to --tap-min at ANY width.
+   The stepper's own buttons included: at 320 that leaves ~106px for the
+   identity, which fits the code and truncates the room. The code never
+   truncates; the subtitle does, and its separator goes with it. */
+.console[data-pointer="coarse"] .stepper{height:auto}
+.console[data-pointer="coarse"] .stepper button{height:var(--tap-min);width:var(--tap-min)}
+.console[data-pointer="coarse"] .gsttoggle button{min-height:var(--tap-min);padding:0 var(--space-6)}
+
+/* ── PLANEBAR (R-151) — segmented, visible, accessible. Two segments, both
+      always live. The editor is NOT a segment: it is pushed by a visible
+      button, so no segment can ever be dead. ─────────────────────────────── */
+.planebar{flex:none;display:flex;gap:var(--space-3);padding:var(--space-3) var(--pad);
+  background:var(--surface-2);border-bottom:var(--divider) solid var(--rule)}
+.planebar button{flex:1 1 0;min-width:0;min-height:var(--tap-min);
+  border:var(--divider) solid var(--ctl-border);background:var(--ctl-bg);
+  border-radius:var(--r-md);font:var(--t-quiet);color:var(--text-2);cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 var(--space-4)}
+.planebar button[aria-selected="true"]{background:var(--surface-selected);color:var(--text-0);
+  border-color:var(--brand-border);font:var(--t-body-strong)}
+
+/* ── BUTTONS ─────────────────────────────────────────────────────────────── */
+.btn{min-height:var(--tap-min);padding:0 var(--space-6);border-radius:var(--r-sm);
+  border:var(--divider) solid var(--ctl-border);background:var(--ctl-bg);color:var(--ctl-fg);
+  cursor:pointer;font:var(--t-body);display:inline-flex;align-items:center;
+  justify-content:center;gap:var(--space-4);white-space:nowrap}
+.btn:hover{background:var(--ctl-bg-hover)}
+.btn-primary{background:var(--ctl-primary-bg);border-color:var(--ctl-primary-bg);
+  color:var(--ctl-primary-fg);font:var(--t-body-strong)}
+.btn-primary:hover{background:var(--ctl-primary-bg-hover)}
+.btn-danger{color:var(--ctl-danger-fg);border-color:var(--tone-critical-border)}
+.btn[disabled]{background:var(--ctl-disabled-bg);color:var(--ctl-disabled-fg);
+  border-color:var(--ctl-disabled-border);cursor:default}
+.btn-grow{flex:1 1 auto}
+.foot-reason{flex:1 1 100%;margin:0;font:var(--t-cap);color:var(--tone-attention-fg)}
+
+/* ── LISTS / ROWS — one folding component, columns fold into meta lines ──── */
+.listhead{display:flex;align-items:center;gap:var(--space-4);padding:var(--space-5) var(--pad);
+  border-bottom:var(--divider) solid var(--rule);background:var(--surface-1);
+  position:sticky;top:0;z-index:var(--z-sticky)}
+.listhead h2{margin:0;font:var(--t-label);letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--text-3)}
+.listhead .n{margin-left:auto;font:var(--t-datsm);font-family:var(--font-data);color:var(--text-3)}
+
+.lrow{display:grid;width:100%;text-align:left;background:var(--surface-1);border:0;
+  border-bottom:var(--divider) solid var(--rule-quiet);cursor:pointer;
+  padding:var(--space-5) var(--pad);gap:var(--space-1) var(--space-5);align-items:start;
+  min-height:var(--row-card-min);grid-template-columns:1fr auto}
+.lrow:hover{background:var(--surface-hover)}
+.lrow[aria-selected="true"]{background:var(--surface-selected)}
+.lrow[aria-selected="true"] .lcode{color:var(--brand-strong)}
+.lcode{font:var(--t-dat);font-family:var(--font-data);font-variant-numeric:var(--fvn-data);
+  color:var(--brand-strong);grid-column:1}
+.lprod{font:var(--t-body);color:var(--text-0);grid-column:1;white-space:normal}
+.lmeta{font:var(--t-cap);color:var(--text-2);grid-column:1;
+  font-family:var(--font-data);font-variant-numeric:var(--fvn-data)}
+.lsub{font:var(--t-cap);color:var(--text-3);grid-column:1}
+.lmoney{grid-column:2;grid-row:1/span 2;text-align:right;font:var(--t-dat);
+  font-family:var(--font-data);font-variant-numeric:var(--fvn-data);color:var(--text-0);white-space:nowrap}
+.lmoney .absent{color:var(--text-4);font:var(--t-cap);font-family:var(--font-ui)}
+.lstate{grid-column:2;text-align:right}
+.lflags{grid-column:1/-1;margin:var(--space-3) 0 0;padding:0;list-style:none;
+  display:flex;flex-direction:column;gap:2px}
+.lflags li{font:var(--t-cap);color:var(--tone-attention-fg);padding-left:14px;position:relative}
+.lflags li::before{content:"!";position:absolute;left:2px;font-weight:700}
+
+/* dense row presentation at wider classes — density through tokens, one IA */
+.console[data-wc="desktop"] .lrow,.console[data-wc="wide"] .lrow{min-height:var(--row-line)}
+
+.chip{display:inline-flex;align-items:center;gap:var(--space-2);padding:1px var(--space-4);
+  border-radius:var(--r-pill);font:var(--t-cap);border:var(--divider) solid var(--tone-neutral-border);
+  background:var(--tone-neutral-bg);color:var(--tone-neutral-fg);white-space:nowrap}
+.chip[data-tone="positive"]{background:var(--tone-positive-bg);color:var(--tone-positive-fg);border-color:var(--tone-positive-border)}
+.chip[data-tone="attention"]{background:var(--tone-attention-bg);color:var(--tone-attention-fg);border-color:var(--tone-attention-border)}
+.chip[data-tone="critical"]{background:var(--tone-critical-bg);color:var(--tone-critical-fg);border-color:var(--tone-critical-border)}
+.chip[data-tone="info"]{background:var(--tone-info-bg);color:var(--tone-info-fg);border-color:var(--tone-info-border)}
+
+/* push-row list (R-70) — job scope, at EVERY width. Not a chip strip. */
+.pushrow{display:flex;align-items:center;gap:var(--space-5);width:100%;text-align:left;
+  background:var(--surface-1);border:0;border-bottom:var(--divider) solid var(--rule-quiet);
+  padding:var(--space-5) var(--pad);min-height:var(--row-card-min);cursor:pointer}
+.pushrow:hover{background:var(--surface-hover)}
+.pushrow .pr-t{flex:1 1 auto;min-width:0}
+.pushrow .pr-t b{display:block;font:var(--t-body-strong);color:var(--text-0)}
+.pushrow .pr-t span{display:block;font:var(--t-cap);color:var(--text-2);margin-top:1px}
+.pushrow .pr-t span.absent{color:var(--text-4)}
+.pushrow .arw{flex:none;color:var(--text-3);font-size:16px}
+
+/* ── PANEL / BLOCK ───────────────────────────────────────────────────────── */
+.blk{padding:var(--pad);border-bottom:var(--divider) solid var(--rule)}
+.blk:last-child{border-bottom:0}
+.blk h3{margin:0 0 var(--space-5);font:var(--t-label);letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--text-3)}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:var(--space-3) var(--space-6);margin:0}
+.facts dt{font:var(--t-cap);color:var(--text-3);white-space:nowrap}
+.facts dd{margin:0;font:var(--t-body);color:var(--text-1)}
+.facts dd.d{font-family:var(--font-data);font-variant-numeric:var(--fvn-data)}
+.facts dd.absent{color:var(--text-4)}
+/* at a narrow measure the pair stacks — label over value (R-69: reflow, not truncation) */
+.console[data-wc="phone"] .facts{grid-template-columns:1fr}
+.console[data-wc="phone"] .facts dt{margin-top:var(--space-4)}
+
+.note{display:flex;flex-direction:column;gap:2px;border-left:2px solid var(--brand);
+  padding:var(--space-3) 0 var(--space-3) var(--space-5);margin-bottom:var(--space-5)}
+.note .m{font:var(--t-cap);color:var(--text-3)}
+.note .b{font:var(--t-body);color:var(--text-1)}
+
+.ribbon{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:var(--divider) solid var(--rule);
+  border-radius:var(--r-sm);overflow:hidden}
+.ribbon div{padding:var(--space-4) var(--space-2);text-align:center;font:var(--t-cap);
+  color:var(--text-3);background:var(--surface-1);border-right:var(--divider) solid var(--rule);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ribbon div:last-child{border-right:0}
+.ribbon div[data-s="passed"]{background:var(--brand-tint);color:var(--text-2)}
+.ribbon div[data-s="current"]{color:var(--text-0);font:var(--t-body-strong);font-size:11.5px;
+  box-shadow:inset 0 -2px 0 var(--accent-underline)}
+
+/* ── STATE SHAPES — four distinct pictures, never one (R-161) ───────────── */
+.state{display:grid;align-content:start;justify-items:start;gap:var(--space-4);
+  padding:var(--space-9) var(--pad);margin:var(--pad);border-radius:var(--r-md)}
+.state b{font:var(--t-body-strong);color:var(--text-1)}
+.state p{margin:0;font:var(--t-cap);color:var(--text-3);max-width:44ch}
+.state[data-kind="empty"]{border:1px dashed var(--rule-strong);background:var(--surface-2)}
+.state[data-kind="error"]{border:1px solid var(--tone-critical-border);background:var(--tone-critical-bg)}
+.state[data-kind="error"] b{color:var(--tone-critical-fg)}
+.state[data-kind="gated"]{border:1px solid var(--tone-info-border);background:var(--tone-info-bg)}
+.state[data-kind="gated"] b{color:var(--tone-info-fg)}
+.state .code{font-family:var(--font-mono);font-size:11px;color:var(--text-3)}
+.skel{padding:var(--pad);display:grid;gap:var(--space-5)}
+.skel i{display:block;height:12px;border-radius:var(--r-xs);background:var(--skeleton-base)}
+.skel i.w60{width:60%}.skel i.w40{width:40%}.skel i.w80{width:80%}
+.skel .grp{display:grid;gap:var(--space-3);padding-bottom:var(--space-5);
+  border-bottom:var(--divider) solid var(--rule-quiet)}
+
+/* warnings — unobtrusive by construction (AC-2): never focus, never a dialog,
+   never disabling, never dismissible */
+.warn{display:flex;gap:var(--space-4);padding:var(--space-4) var(--space-5);border-radius:var(--r-sm);
+  background:var(--tone-attention-bg);border:var(--divider) solid var(--tone-attention-border);
+  color:var(--tone-attention-fg);font:var(--t-cap);margin:var(--space-5) 0}
+.warn .g{flex:none;font-weight:700}
+.readonly{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-5);
+  padding:var(--space-5) var(--pad);background:var(--tone-info-bg);
+  border-bottom:var(--divider) solid var(--tone-info-border);color:var(--tone-info-fg);font:var(--t-cap)}
+
+/* at-the-control write failure (L8 / AC-20) — under the row that caused it */
+.wfail{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-4);margin-top:var(--space-4);
+  padding:var(--space-4) var(--space-5);border-radius:var(--r-sm);
+  background:var(--tone-critical-bg);border:var(--divider) solid var(--tone-critical-border);
+  color:var(--tone-critical-fg);font:var(--t-cap)}
+
+/* confirm strip — expands upward from the footer, in place, never modal (R-39) */
+.confirm{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-4);
+  padding:var(--space-4) 0;font:var(--t-cap);color:var(--text-1)}
+.confirm .q{flex:1 1 100%;color:var(--text-0);font:var(--t-body-strong)}
+
+/* read-back strip (R-159) — the ladder's CONCLUSION, pinned above the footer.
+   Here: the two totals AC-16/AC-19 require to move together. */
+.readback{flex:none;background:var(--surface-3);border-top:var(--divider) solid var(--rule);
+  padding:var(--space-4) var(--pad);display:grid;gap:var(--space-2)}
+.rb-row{display:flex;align-items:baseline;gap:var(--space-4);font:var(--t-cap);color:var(--text-2)}
+.rb-row .v{margin-left:auto;font-family:var(--font-data);font-variant-numeric:var(--fvn-data);
+  font:var(--t-dat);color:var(--text-0);white-space:nowrap}
+.rb-row .was{color:var(--text-4);text-decoration:line-through;font-family:var(--font-data);
+  font-size:12px;margin-left:auto}
+.rb-row .v.moved{color:var(--tone-positive-fg)}
+.rb-row.total .v{font:var(--t-dat-lg);font-family:var(--font-data)}
+
+/* ── FORM ────────────────────────────────────────────────────────────────── */
+.form{padding:var(--pad);display:grid;gap:var(--space-6)}
+.fld{display:grid;gap:var(--space-3);min-width:0}
+.fld label{font:var(--t-label);letter-spacing:var(--tracking-label);text-transform:uppercase;
+  color:var(--text-3)}
+.fld input,.fld select,.fld textarea{min-height:var(--tap-min);width:100%;min-width:0;
+  border:var(--divider) solid var(--field-border);border-radius:var(--r-sm);
+  background:var(--field-bg);color:var(--text-0);padding:0 var(--space-5);
+  font:var(--t-body);font-family:var(--font-ui)}
+/* a <select>'s min-content width is its longest option; without this it pushes
+   the plane wider than the frame (LEARNINGS §3.3) */
+.fld select{text-overflow:ellipsis}
+.fld textarea{padding:var(--space-4) var(--space-5);min-height:66px;resize:vertical}
+.fld .hint{font:var(--t-cap);color:var(--text-3)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-5)}
+.disc{border:var(--divider) solid var(--rule);border-radius:var(--r-md);overflow:hidden}
+.disc>summary{min-height:var(--tap-min);display:flex;align-items:center;gap:var(--space-4);
+  padding:0 var(--space-5);background:var(--surface-2);cursor:pointer;font:var(--t-body-strong);
+  color:var(--text-1);list-style:none}
+.disc>summary::-webkit-details-marker{display:none}
+.disc>summary::after{content:"▾";margin-left:auto;color:var(--text-3)}
+.disc[open]>summary::after{content:"▴"}
+.disc .inner{padding:var(--space-5);display:grid;gap:var(--space-5);
+  border-top:var(--divider) solid var(--rule)}
+.req{color:var(--tone-attention-fg);font:var(--t-cap)}
+
+/* ── SHEETS: overlay layers inside the console frame ─────────────────────── */
+.sheet{position:absolute;inset-block:0;right:0;width:var(--sheet-w);background:var(--surface-overlay);
+  z-index:var(--z-sheet);display:flex;flex-direction:column;box-shadow:var(--shadow-3);
+  border-left:var(--divider) solid var(--rule)}
+.sheet[data-side="left"]{right:auto;left:0;width:var(--rail-overlay-w);border-left:0;
+  border-right:var(--divider) solid var(--rule)}
+.console[data-wc="phone"] .sheet{inset:0;width:100%;border:0}
+.sheet-head{flex:none;display:flex;align-items:center;gap:var(--space-3);min-height:var(--ident-h);
+  padding:0 var(--space-3);background:var(--surface-2);border-bottom:var(--divider) solid var(--rule)}
+.sheet-head h2{flex:1 1 auto;margin:0;font:var(--t-body-strong);color:var(--text-0);min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:var(--space-3)}
+.sheet-body{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;min-height:0}
+
+/* action sheet (the ⋯ overflow) — bottom sheet on phone */
+.actsheet{position:absolute;inset-inline:0;bottom:0;z-index:var(--z-modal);
+  background:var(--surface-overlay);border-top:var(--divider) solid var(--rule);
+  border-radius:var(--r-lg) var(--r-lg) 0 0;box-shadow:var(--shadow-3);
+  padding:var(--space-5) 0 calc(var(--space-5) + var(--safe-bottom));max-height:70%;overflow-y:auto}
+.actsheet .ah{padding:0 var(--pad) var(--space-4);font:var(--t-label);
+  letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--text-3)}
+.actsheet button{display:flex;align-items:center;gap:var(--space-5);width:100%;
+  min-height:var(--tap-min);padding:0 var(--pad);background:none;border:0;text-align:left;
+  color:var(--text-1);font:var(--t-body);cursor:pointer}
+.actsheet button:hover{background:var(--surface-hover)}
+.actsheet button[disabled]{color:var(--text-disabled);cursor:default}
+.actsheet button .why{margin-left:auto;font:var(--t-cap);color:var(--tone-attention-fg);text-align:right}
+.actsheet button.danger{color:var(--ctl-danger-fg)}
+
+/* ── ZONES at >=1024: the same zones, simultaneous ───────────────────────── */
+.zones{flex:1 1 auto;min-height:0;min-width:0;display:grid;overflow:hidden}
+.console[data-wc="compact"] .zones{grid-template-columns:var(--rail-collapsed) minmax(0,1fr) var(--pane-compact-w)}
+.console[data-wc="desktop"] .zones{grid-template-columns:var(--rail-w-desktop) minmax(0,1fr) var(--pane-w)}
+.console[data-wc="wide"] .zones{grid-template-columns:var(--rail-w) minmax(0,1fr) var(--pane-w-wide)}
+.zone{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--surface-1);
+  border-right:var(--divider) solid var(--rule);overflow:hidden}
+.zone:last-child{border-right:0}
+.zone-body{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;min-height:0}
+.zone-head{flex:none;display:flex;align-items:center;gap:var(--space-4);min-height:var(--ident-h);
+  padding:0 var(--space-5);background:var(--surface-2);border-bottom:var(--divider) solid var(--rule)}
+.zone-head h2{margin:0;font:var(--t-label);letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--text-3);min-width:0;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.zone-head .n{margin-left:auto;font:var(--t-datsm);font-family:var(--font-data);color:var(--text-3)}
+.zone-foot{flex:none;min-height:var(--footer-h);display:flex;align-items:center;gap:var(--space-4);
+  padding:var(--space-3) var(--space-5);background:var(--surface-2);
+  border-top:var(--divider) solid var(--rule);flex-wrap:wrap}
+
+/* the 48px code strip at compact — the rail yields, never the pane (R-13) */
+.codestrip{display:flex;flex-direction:column;align-items:stretch}
+.codestrip button{min-height:var(--row-work);border:0;border-bottom:var(--divider) solid var(--rule-quiet);
+  background:var(--surface-1);color:var(--brand-strong);font:var(--t-datsm);
+  font-family:var(--font-data);cursor:pointer;padding:0 2px}
+.codestrip button[aria-selected="true"]{background:var(--surface-selected);
+  box-shadow:inset 2px 0 0 var(--accent-underline)}
+.codestrip button .dot{display:block;width:5px;height:5px;border-radius:50%;margin:2px auto 0;
+  background:var(--tone-attention-mark,var(--p-attn-600))}
+
+/* record header at >=1024 — one row, clipped at its own boundary, never
+   painting over its neighbour (LEARNINGS §3.5) */
+.rechead{flex:none;display:flex;align-items:center;gap:var(--space-6);min-height:56px;
+  padding:0 var(--pad);background:var(--surface-2);border-bottom:var(--divider) solid var(--rule);
+  overflow:hidden}
+.rechead .lft{min-width:0;flex:1 1 auto;overflow:hidden;display:flex;align-items:baseline;gap:var(--space-4)}
+.rechead .ref{font:var(--t-dat);font-family:var(--font-data);color:var(--brand-strong);flex:none}
+.rechead .ttl{font:var(--t-body-strong);color:var(--text-0);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.rechead .cust{font:var(--t-cap);color:var(--text-2);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;min-width:0}
+.rechead .rgt{flex:none;display:flex;align-items:center;gap:var(--space-6)}
+.rechead .val{text-align:right}
+.rechead .val b{display:block;font:var(--t-dat-lg);font-family:var(--font-data);
+  font-variant-numeric:var(--fvn-data);color:var(--text-0)}
+.rechead .val span{display:block;font:var(--t-cap);color:var(--text-3)}
+.backlink{display:inline-flex;align-items:center;min-height:36px;padding:0 var(--space-4);
+  border-radius:var(--r-sm);background:none;border:0;color:var(--text-link);font:var(--t-cap);
+  cursor:pointer;flex:none}
+.backlink:hover{background:var(--surface-active)}
+.asof{font:var(--t-cap);color:var(--text-3);display:flex;align-items:center;gap:var(--space-4)}
+.asof button{background:none;border:0;color:var(--text-link);cursor:pointer;font:var(--t-cap);
+  min-height:36px;padding:0 var(--space-3)}
+
+.sronly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<h1>ops2 R1 — the frame and the record</h1>
+<p class="lede">Rework on the plane shell (ADR 0004). Every frame below is the <b>same console</b>, mounted at a different width. All of them are live — tap through them. The phone frames are the design; the wide frames are the same zones revealed.</p>
+
+<div class="law">
+<b>The growth law — two moves, and only two.</b><br>
+1. A <b>zone</b> that was a plane becomes a <b>pane</b>. Which zones are simultaneous is the width class's only structural decision.<br>
+2. A <b>push</b> that was a plane becomes a <b>disclosure in place</b>. Same row, same route, different arrival.<br>
+Nothing is rearranged and no content changes zones at any width. A zone always reads its <i>own</i> measured width, so a 380px pane on a desktop folds exactly as a phone does — which is why revealing a zone never assumes it got wide (C1: the Fold, open, with apps beside it).
+</div>
+
+<h2>1 · The phone — the whole design, at the floor and at reference width</h2>
+<p>Three zones (<code>index</code> · <code>work</code> · <code>edit</code>) and a bounded push stack. Nothing is a long scroll: at job scope the work zone is a <b>push-row list</b>, not a stack of blocks. Every plane is identity band → scrolling body → footer, with the footer sticky <i>inside the plane's flex column</i>, never viewport-fixed.</p>
+
+<div class="rack">
+  <div class="dev">
+    <div class="dev-cap"><b>320 × 568</b> — the floor</div>
+    <div class="frame"><div class="console" data-mount data-w="320" data-h="568" data-route="/record/OF-Q-10482" data-pointer="coarse"></div></div>
+    <div class="dev-note">The record plane. Leading slot = <b>☰</b>, because stack depth is 0. Blocker row is tappable and filters the list. Footer: one primary, <code>⋯</code> for everything else.</div>
+  </div>
+  <div class="dev">
+    <div class="dev-cap"><b>390 × 844</b> — record · job scope</div>
+    <div class="frame"><div class="console" data-mount data-w="390" data-h="844" data-route="/record/OF-Q-10482?seg=job" data-pointer="coarse"></div></div>
+    <div class="dev-note">The <code>Job</code> segment: a push-row list (R-70). Seven headlines at once beat a strip that scrolls sideways — and it is what stops the rejected single column.</div>
+  </div>
+  <div class="dev">
+    <div class="dev-cap"><b>390 × 844</b> — a line</div>
+    <div class="frame"><div class="console" data-mount data-w="390" data-h="844" data-route="/record/OF-Q-10482/line/l04" data-pointer="coarse"></div></div>
+    <div class="dev-note">Its own 48px identity band — <b>not</b> the job bar. <code>‹ 4/18 ›</code> steps the filtered set without returning to the list. That is what makes a phone a review device.</div>
+  </div>
+  <div class="dev">
+    <div class="dev-cap"><b>390 × 844</b> — the editor</div>
+    <div class="frame"><div class="console" data-mount data-w="390" data-h="844" data-route="/record/OF-Q-10482/line/l04/edit" data-pointer="coarse"></div></div>
+    <div class="dev-note">Change the glazing select. The <b>read-back strip</b> above the footer carries both totals moving together — AC-16/AC-19's requirement, and the "did I just do something stupid" check that makes a phone edit safe.</div>
+  </div>
+  <div class="dev">
+    <div class="dev-cap"><b>390 × 844</b> — navigation</div>
+    <div class="frame"><div class="console" data-mount data-w="390" data-h="844" data-route="/record/OF-Q-10482" data-drawer="open" data-pointer="coarse"></div></div>
+    <div class="dev-note">Drawer: 264px/82vw, scrim, Esc, 44px rows, overlay-never-a-route (register row 19). Carries who you are, your role, the GST view and <b>Sign out</b> — the things whose loss below 768px was the twice-repeated regression.</div>
+  </div>
+</div>
+
+<h2>2 · Growth — the same zones, revealed</h2>
+<p>No layout is re-authored. <code>index</code> is the Lines plane, then an overlay list, then a 48px code strip, then a full rail. <code>work</code> is the ground at every width. <code>edit</code> is a pushed plane, then a right sheet, then a persistent pane. The rail yields; the pane never does (R-13) — which is why the live totals loop survives down to 1024.</p>
+
+<div class="rack">
+  <div class="dev">
+    <div class="dev-cap"><b>768 × 1024</b> — tablet portrait</div>
+    <div class="frame"><div class="console" data-mount data-w="768" data-h="1024" data-route="/record/OF-Q-10482/line/l04" data-pointer="coarse"></div></div>
+    <div class="dev-note">One ground zone; <code>index</code> and <code>edit</code> are summoned. Tap <b>Lines · 18</b> in the header for the overlay list. The back control persists.</div>
+  </div>
+  <div class="dev">
+    <div class="dev-cap"><b>1024 × 720</b> — compact</div>
+    <div class="frame"><div class="console" data-mount data-w="1024" data-h="720" data-route="/record/OF-Q-10482/line/l04/edit"></div></div>
+    <div class="dev-note">Zones become simultaneous. The rail compresses to the 48px code strip so the editor can stay a column — the rail yields, never the pane.</div>
+  </div>
+</div>
+<div class="rack">
+  <div class="dev">
+    <div class="dev-cap"><b>1440 × 860</b> — desktop</div>
+    <div class="frame"><div class="console" data-mount data-w="1440" data-h="860" data-route="/record/OF-Q-10482/line/l04/edit"></div></div>
+    <div class="dev-note">Full rail · canvas · pane, plus the persistent 224px nav. Density rises through row tokens, not through a different IA. AC-14: the openings list and the work content are usable at once, and no primary column sits at a phone measure.</div>
+  </div>
+</div>
+
+<h2>3 · The states that matter</h2>
+<p>Four distinct pictures, never one (R-161). Loading is never failure; failure is never a spinner; both differ from an empty filter and from a gate. Every one carries a way forward.</p>
+<div class="rack">
+  <div class="dev">
+    <div class="dev-cap"><b>390</b> — loading</div>
+    <div class="frame"><div class="console" data-mount data-w="390" data-h="560" data-route="/record/OF-Q-10482?state=loading" data-pointer="coarse"></div></div>
+    <div class="dev-note">A skeleton of the shape that is coming; layout reserved. Never a bare or full-viewport spinner.</div>
+  </div>
+  <div class="dev">
+    <div class="dev-cap"><b>390</b> — failed read</div>
+    <div class="frame"><div class="console" data-mount data-w="390" data-h="560" data-route="/record/OF-Q-10482?state=error" data-pointer="coarse"></div></div>
+    <div class="dev-note">A bordered card in the zone that failed, with the code and <b>Retry</b>. Navigation still works — the failure is the zone's, not the frame's.</div>
+  </div>
+  <div class="dev">
+    <div class="dev-cap"><b>390</b> — no lines</div>
+    <div class="frame"><div class="console" data-mount data-w="390" data-h="560" data-route="/record/OF-Q-10499?state=empty" data-pointer="coarse"></div></div>
+    <div class="dev-note">Delete-to-empty is allowed (AC-99). The issue primary is disabled with its reason — visible, never hidden.</div>
+  </div>
+  <div class="dev">
+    <div class="dev-cap"><b>390</b> — read-only (issued)</div>
+    <div class="frame"><div class="console" data-mount data-w="390" data-h="560" data-route="/record/OF-Q-10471/line/r04" data-pointer="coarse"></div></div>
+    <div class="dev-note">AC-81: no editor, no add, no delete; the bar names the real cause. One line and a route back — never a form full of disabled inputs.</div>
+  </div>
+  <div class="dev">
+    <div class="dev-cap"><b>390</b> — save failed at the control</div>
+    <div class="frame"><div class="console" data-mount data-w="390" data-h="700" data-route="/record/OF-Q-10482/line/l04/edit?state=savefail" data-pointer="coarse"></div></div>
+    <div class="dev-note">AC-20/21/22: the error renders at the control that failed, the typed values stay on screen, and <b>Retry</b> re-sends the same payload. No toast — there is no toast system.</div>
+  </div>
+</div>
+
+</div><!-- /doc -->
+
+<script>
+(function(){
+"use strict";
+
+/* ═══ FIXTURES ═════════════════════════════════════════════════════════════
+   HONEST ABSENCE: every entity carries at least one genuinely missing value,
+   so the "not recorded" rendering is proved rather than bypassed. null means
+   "the system does not hold this" and the UI says so in words (L9).
+   COHERENCE: an unpriced line has lineTotal null — never 0. The quote total
+   is Σ(parent line totals); it is derived here, never typed.            */
+
+var PRODUCTS = [
+  "AMJ150T Series Lift-Sliding Door","AMJ67T Series Awning Window",
+  "AMJ67T Series Fixed Light","AMJ92T Series Sliding Window",
+  "AMJ150T Series Stacking Door","AMJ67T Series Casement Window"
+];
+var ROOMS = ["Bed 1","Bed 2","Bed 3","Living","Kitchen","Ensuite","Bath","Study",
+             "Hall","Laundry","Alfresco","Garage","Media","Pantry","WIR","Rumpus",
+             "Entry","Store"];
+
+function mkLines(){
+  var out=[],i;
+  for(i=0;i<18;i++){
+    var isDoor=(i%6===0);
+    var code=(isDoor?"D":"W")+String(i+1).padStart(2,"0");
+    var l={
+      id:"l"+String(i+1).padStart(2,"0"),
+      code:code, room:ROOMS[i], product:PRODUCTS[i%PRODUCTS.length],
+      h:isDoor?2100:1200, w:isDoor?2400:900, qty:(i%5===0?2:1),
+      total:1180+(i*137)%2600, flags:[], variant:"AMJ-"+(4400+i*7),
+      frame:"Thermally broken", glazing:"Double · clear · argon",
+      state:"ready", withdrawn:false, units:null, notes:[]
+    };
+    out.push(l);
+  }
+  /* the honest cases */
+  out[3].room="Bed 1"; out[3].code="W04";
+  out[3].flags=["Glazing does not meet the requirement on this elevation."];
+  out[3].state="needs review";
+  out[3].notes=[{kind:"note",author:"Dan",when:"today 09:40",
+    body:"Ana asked about dropping to double clear here — check the Uw before we price it."}];
+
+  out[7].total=null; out[7].state="needs review";
+  out[7].flags=["No price — the selected colour has no rate card."];
+
+  out[11].total=null; out[11].state="needs review";
+  out[11].flags=["No price — this configuration is not exactly priceable."];
+
+  out[9].withdrawn=true;
+
+  out[5].units=[
+    {i:1,product:PRODUCTS[0],h:2100,w:1200,spec:"Spec: as the opening",total:2340,priced:true},
+    {i:2,product:PRODUCTS[0],h:2100,w:1200,spec:"Spec: 1 changed — glazing Double · low-e",total:2610,priced:true},
+    {i:3,product:PRODUCTS[4],h:2100,w:600,spec:"Spec: 1 changed — product",total:null,priced:false}
+  ];
+  out[5].frameMixed=true;
+  return out;
+}
+
+var RECORDS={
+  "OF-Q-10482":{
+    ref:"OF-Q-10482", title:"Wattle Grove — Lot 14",
+    org:"Marchetti Constructions", customer:"Ana Bianchi",
+    email:"ana@marchetti.com.au", phone:null,
+    stateLabel:"Technical review", waitingOn:"us", days:3, phaseIx:2,
+    editable:true, issued:false, orderNo:null,
+    delivery:{amount:null, basis:"unpriced_table", zone:"Zone 4 — Outer metro"},
+    files:3, events:12,
+    notes:[
+      {kind:"note",author:"Dan",when:"today 09:41",body:"Ana on the phone — wants the alfresco stacker widened before we issue."},
+      {kind:"status",author:"System",when:"yesterday 16:02",body:"Moved to technical review."}
+    ],
+    payments:[], lines:mkLines()
+  },
+  "OF-Q-10499":{
+    ref:"OF-Q-10499", title:"Hillcrest — Unit 3",
+    org:"Pellegrini Homes", customer:"Marco Pellegrini",
+    email:"marco@pellegrini.com.au", phone:null,
+    stateLabel:"Estimating", waitingOn:"us", days:1, phaseIx:1,
+    editable:true, issued:false, orderNo:null,
+    delivery:{amount:null,basis:"unresolved",zone:null},
+    files:1, events:3, notes:[], payments:[], lines:[]
+  },
+  "OF-Q-10471":{
+    ref:"OF-Q-10471", title:"Brookfield — Lot 2",
+    org:"Redgum Building Co", customer:"Sarah Nguyen",
+    email:"sarah@redgum.com.au", phone:null,
+    stateLabel:"Quote issued", waitingOn:"the customer", days:6, phaseIx:3,
+    editable:false, issued:true, orderNo:null,
+    delivery:{amount:410,basis:"table",zone:"Zone 2 — Metro"},
+    files:2, events:19,
+    notes:[], payments:[], lines:(function(){
+      var l=mkLines().slice(0,6); l.forEach(function(x,i){
+        x.id="r"+String(i+1).padStart(2,"0"); x.flags=[]; x.state="ready";
+        if(x.total===null) x.total=1990; x.units=null;
+      }); return l;
+    })()
+  }
+};
+
+var NAV=[
+  {id:"work",   label:"Work",         ico:"◧", soon:"R4"},
+  {id:"records",label:"Records",      ico:"▤", live:true},
+  {id:"cust",   label:"Customers",    ico:"◍", soon:"R5"},
+  {id:"enq",    label:"Enquiries",    ico:"✉", soon:"R5"},
+  {id:"prod",   label:"Products",     ico:"▦", soon:"R6"},
+  {id:"pricing",label:"Pricing",      ico:"$", soon:"R6"},
+  {id:"files",  label:"Files",        ico:"⛁", soon:"R5"},
+  {id:"admin",  label:"Settings",     ico:"⚙", soon:"R6"}
+];
+
+var ME={name:"Dan Bereznevicius", email:"dan@openframe.com.au", role:"Administrator"};
+
+/* ═══ HELPERS ═════════════════════════════════════════════════════════════ */
+var GST_RATE=0.10;
+function money(n,mode){
+  if(n===null||n===undefined) return null;
+  var v = mode==="inc" ? n*(1+GST_RATE) : n;
+  return "$"+v.toLocaleString("en-AU",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function gstLabel(mode){ return mode==="inc" ? "inc GST" : "ex GST"; }
+function goodsTotal(rec){
+  var s=0,any=false;
+  rec.lines.forEach(function(l){ if(l.total!==null){ s+=l.total*l.qty; any=true; } });
+  return any||rec.lines.length===0 ? s : 0;
+}
+function unpricedCount(rec){
+  return rec.lines.filter(function(l){return l.total===null;}).length;
+}
+function el(tag,cls,txt){
+  var e=document.createElement(tag);
+  if(cls) e.className=cls;
+  if(txt!==undefined&&txt!==null) e.textContent=txt;
+  return e;
+}
+function btn(cls,txt,on){
+  var b=el("button",cls,txt); b.type="button";
+  if(on) b.addEventListener("click",function(ev){ev.stopPropagation();on(ev);});
+  return b;
+}
+function widthClass(w){
+  return w>=1680?"wide":w>=1280?"desktop":w>=1024?"compact":w>=768?"tabletp":"phone";
+}
+function sizeStr(l){ /* register row 87 — HEIGHT × WIDTH, binding everywhere */
+  return l.h.toLocaleString()+" × "+l.w.toLocaleString()+" mm";
+}
+
+/* ═══ THE CONSOLE INSTANCE ════════════════════════════════════════════════ */
+function Console(host){
+  var S={
+    host:host,
+    /* the route is the state. The active plane is DERIVED from it, never held
+       as module state — held as state, a line opened from a link left you
+       looking at the list and the line plane was unreachable. */
+    path:"/record/OF-Q-10482", seg:"lines", forced:null,
+    drawer:false, gst:"ex", overlay:null, sheet:null,
+    confirmDelete:null, saveFailed:false, filter:null,
+    edit:null, wc:"phone", history:[]
+  };
+
+  /* ── route parsing ────────────────────────────────────────────────────── */
+  function parse(){
+    var p=S.path, m;
+    if(p==="/") return {dest:"home"};
+    m=p.match(/^\/record\/([^\/]+)(?:\/line\/([^\/]+))?(?:\/(edit))?$/);
+    if(m) return {dest:"record",ref:m[1],lineId:m[2]||null,edit:m[3]==="edit"};
+    m=p.match(/^\/record\/([^\/]+)\/job\/([^\/]+)$/);
+    if(m) return {dest:"record",ref:m[1],block:m[2]};
+    return {dest:"notfound"};
+  }
+  function go(path,seg,replace){
+    /* The stepper REPLACES rather than pushes: moving 4→5 does not change the
+       plane, only its subject, so it is lateral movement inside a zone and not
+       a push. Pushing it would make Back walk you backwards through every line
+       you reviewed instead of returning you to the record. */
+    if(!replace) S.history.push({p:S.path,s:S.seg});
+    S.path=path; if(seg) S.seg=seg;
+    S.overlay=null; S.sheet=null; S.confirmDelete=null; S.saveFailed=false;
+    render(true);
+  }
+  function back(){
+    var h=S.history.pop();
+    if(h){S.path=h.p;S.seg=h.s;} else {
+      var r=parse();
+      if(r.edit) S.path="/record/"+r.ref+"/line/"+r.lineId;
+      else if(r.lineId||r.block) S.path="/record/"+r.ref;
+      else S.path="/";
+    }
+    S.overlay=null;S.sheet=null;S.confirmDelete=null;S.saveFailed=false;
+    render(true);
+  }
+  function depth(){
+    var r=parse();
+    if(r.dest!=="record") return 0;
+    if(r.edit) return 2;
+    if(r.lineId||r.block) return 1;
+    return 0;
+  }
+  function rec(){ var r=parse(); return RECORDS[r.ref]||RECORDS["OF-Q-10482"]; }
+  function line(){ var r=parse(),R=rec();
+    return R.lines.filter(function(l){return l.id===r.lineId;})[0]||null; }
+  function visibleLines(){
+    var R=rec();
+    if(S.filter==="unpriced") return R.lines.filter(function(l){return l.total===null;});
+    return R.lines;
+  }
+
+  /* ── NAV (one content function, two mount states) ─────────────────────── */
+  function navEl(){
+    var n=el("nav","nav");
+    n.setAttribute("aria-label","Console sections");
+
+    var brand=el("div","nav-brand");
+    var mark=el("span","mark","OF");           /* logo → business name → the word */
+    brand.appendChild(mark);
+    brand.appendChild(el("span","word","OpenFrame"));
+    n.appendChild(brand);
+
+    var list=el("div","nav-list");
+    NAV.forEach(function(it){
+      var b=btn("nav-item",null,function(){ if(it.live){S.drawer=false;go("/");} });
+      b.appendChild(el("span","ico",it.ico));
+      b.appendChild(el("span",null,it.label));
+      if(it.soon) b.appendChild(el("span","soon",it.soon));
+      if(it.id==="records") b.setAttribute("aria-current","page");
+      if(!it.live){ b.disabled=true; b.style.opacity=".55"; }
+      list.appendChild(b);
+    });
+    n.appendChild(list);
+
+    /* the account block — who you are, your role, the GST view, and sign out.
+       Below 1024 this is the ONLY place they exist, which is exactly why the
+       opener above may never be deleted. */
+    var f=el("div","nav-foot");
+    var who=el("div","nav-who");
+    who.appendChild(el("b",null,ME.name));
+    who.appendChild(el("span",null,ME.email));
+    var role=el("span","role","Role · "+ME.role);
+    who.appendChild(role);
+    f.appendChild(who);
+
+    var gw=el("div","gstwrap");
+    gw.appendChild(el("span","lbl","Show money"));
+    var tg=el("div","gsttoggle");
+    tg.setAttribute("role","group");
+    tg.setAttribute("aria-label","GST view");
+    ["ex","inc"].forEach(function(m){
+      var b=btn(null,m==="ex"?"ex GST":"inc GST",function(){S.gst=m;render();});
+      b.setAttribute("aria-pressed",String(S.gst===m));
+      tg.appendChild(b);
+    });
+    gw.appendChild(tg);
+    f.appendChild(gw);
+    var hint=el("div","nav-who");
+    hint.style.opacity=".7";
+    hint.appendChild(el("span",null,"A view only. The customer's own quote is unchanged."));
+    f.appendChild(hint);
+
+    f.appendChild(btn("nav-signout","Sign out",function(){}));
+    n.appendChild(f);
+    return n;
+  }
+
+  /* ── identity band ────────────────────────────────────────────────────── */
+  function leadingSlot(){
+    /* Owned by the shell. Depth 0 → drawer opener; deeper → back.
+       Never absent below 1024. */
+    var d=depth();
+    if(d>0){
+      var b=btn("iconbtn","‹",function(){back();});
+      b.setAttribute("aria-label", parse().edit ? "Close the editor" : "Back to the record");
+      return b;
+    }
+    if(S.wc==="phone"||S.wc==="tabletp"){
+      var m=btn("iconbtn","☰",function(){S.drawer=true;render();});
+      m.setAttribute("aria-label","Open menu");
+      m.setAttribute("aria-expanded",String(S.drawer));
+      m.setAttribute("aria-controls","ops-nav-drawer");
+      return m;
+    }
+    return null;
+  }
+
+  function identBand(opts){
+    var band=el("header","ident");
+    var row=el("div","ident-row");
+    var lead=leadingSlot();
+    if(lead) row.appendChild(lead);
+
+    var t=el("div","ident-title");
+    var l1=el("div","l1");
+    if(opts.code){
+      var c=el("span","code",opts.code); l1.appendChild(c);
+      if(opts.sub){ l1.appendChild(document.createTextNode(" · "+opts.sub)); }
+    } else {
+      l1.textContent=opts.title;
+    }
+    t.appendChild(l1);
+    if(opts.l2) t.appendChild(el("div","l2",opts.l2));
+    /* a heading focus target on every plane push (R-164) */
+    l1.setAttribute("tabindex","-1");
+    l1.setAttribute("role","heading");
+    l1.setAttribute("aria-level","1");
+    row.appendChild(t);
+
+    /* THREE SLOTS, ONE RULE: [leading] [identity] [stepper?].
+       The band carries no ⋯. Every plane's overflow lives in ONE place — its
+       footer's ⋯ — because at 320 a second overflow control costs 44px the
+       identity cannot spare, and two ⋯ on one plane meaning different things
+       is a coin-flip for the operator. */
+    if(opts.stepper) row.appendChild(opts.stepper);
+    band.appendChild(row);
+
+    if(opts.life) band.appendChild(opts.life);
+    if(opts.blocker) band.appendChild(opts.blocker);
+    return band;
+  }
+
+  function lifeSentence(R){
+    /* register row 58, verbatim shape:
+       Now · {stateLabel} · waiting on {x} · {n} days in this state */
+    var d=el("div","ident-life");
+    d.appendChild(document.createTextNode("Now · "));
+    d.appendChild(el("span","word",R.stateLabel));
+    d.appendChild(document.createTextNode(" · waiting on "+R.waitingOn+" · "+R.days+" days in this state"));
+    return d;
+  }
+
+  function blockerRow(R){
+    /* R-19 — the blocked primary's reason is rendered ONCE, here, as a
+       tappable sentence that filters the list. It is NOT echoed in the
+       footer: echoing it is what turned a 48px footer into three rows. */
+    var n=unpricedCount(R);
+    if(!R.editable||n===0) return null;
+    var b=btn("blockrow",null,function(){
+      S.filter=(S.filter==="unpriced"?null:"unpriced"); S.seg="lines"; render();
+    });
+    b.appendChild(el("span",null,
+      (S.filter==="unpriced"?"Showing ":"")+n+(n===1?" line is":" lines are")+" unpriced"));
+    b.appendChild(el("span","arw",S.filter==="unpriced"?"✕":"›"));
+    return b;
+  }
+
+  function stepperEl(){
+    var R=rec(), L=line(), pool=visibleLines();
+    var at=-1,i;
+    for(i=0;i<pool.length;i++) if(pool[i].id===L.id) at=i;
+    var s=el("div","stepper");
+    s.setAttribute("role","group");
+    s.setAttribute("aria-label","Move through the lines");
+    var prev=btn(null,"‹",function(){
+      if(at>0) go("/record/"+R.ref+"/line/"+pool[at-1].id,null,true);
+    });
+    prev.setAttribute("aria-label","Previous line");
+    prev.disabled=(at<=0);
+    var pos=el("span","pos",(at+1)+"/"+pool.length);
+    var next=btn(null,"›",function(){
+      if(at>=0&&at<pool.length-1) go("/record/"+R.ref+"/line/"+pool[at+1].id,null,true);
+    });
+    next.setAttribute("aria-label","Next line");
+    next.disabled=(at<0||at>=pool.length-1);
+    s.appendChild(prev); s.appendChild(pos); s.appendChild(next);
+    return s;
+  }
+
+  /* ── ZONE: index (the openings list) ──────────────────────────────────── */
+  function zoneIndex(inZone){
+    var R=rec(), pool=visibleLines(), wrap=el("div",null);
+    if(S.forced==="loading"){ return skeleton("list"); }
+    if(S.forced==="error"){
+      return stateBox("error","That list could not be loaded.",
+        "The server answered 503. Nothing has changed.","HTTP 503 · GET /projects/OF-Q-10482",
+        "Retry");
+    }
+    if(R.lines.length===0){
+      return stateBox("empty","No lines on this project.",
+        R.editable? "Add a line to start the quote." :
+                    "This quote was issued with no lines.",null,
+        R.editable?"Add a line":null);
+    }
+    if(pool.length===0){
+      return stateBox("empty","No lines match this filter.",
+        "The filter is “unpriced”. Clear it to see all "+R.lines.length+" lines.",null,"Clear the filter");
+    }
+
+    if(S.filter){
+      var fb=el("div","readonly");
+      fb.style.background="var(--brand-tint)";
+      fb.style.borderColor="var(--brand-border)";
+      fb.style.color="var(--text-1)";
+      fb.appendChild(el("span",null,"Showing "+pool.length+" unpriced of "+R.lines.length+" lines."));
+      fb.appendChild(btn("backlink","Show all lines",function(){S.filter=null;render();}));
+      wrap.appendChild(fb);
+    }
+
+    var cur=parse().lineId;
+    pool.forEach(function(l){
+      var row=btn("lrow",null,function(){ go("/record/"+R.ref+"/line/"+l.id); });
+      row.setAttribute("aria-selected",String(l.id===cur));
+      row.appendChild(el("span","lcode",l.code));
+
+      var money$=el("span","lmoney");
+      if(l.total===null){
+        /* L9 / I8 — a money figure never appears without its basis; null is
+           never $0, and the absence is said in words. */
+        money$.appendChild(el("span","absent","not priced"));
+      } else {
+        money$.textContent=money(l.total*l.qty,S.gst);
+      }
+      row.appendChild(money$);
+
+      var prod=el("span","lprod",l.product);
+      row.appendChild(prod);
+
+      var meta=el("span","lmeta",sizeStr(l)+(l.qty>1?"  ·  ×"+l.qty:""));
+      row.appendChild(meta);
+
+      var subTxt=l.room;
+      if(l.units) subTxt+="  ·  composite · "+l.units.length+" joined units";
+      if(l.withdrawn) subTxt+="  ·  withdrawn from sale";
+      var sub=el("span","lsub",subTxt);
+      row.appendChild(sub);
+
+      var st=el("span","lstate");
+      st.appendChild(el("span","chip",l.state));
+      st.firstChild.setAttribute("data-tone",l.state==="ready"?"positive":"attention");
+      row.appendChild(st);
+
+      if(l.flags.length){
+        var ul=el("ul","lflags");
+        l.flags.forEach(function(f){ ul.appendChild(el("li",null,f)); });
+        row.appendChild(ul);
+      }
+      wrap.appendChild(row);
+    });
+
+    if(R.editable){
+      var add=btn("pushrow",null,function(){});
+      var t=el("span","pr-t");
+      t.appendChild(el("b",null,"+  Add a line"));
+      t.appendChild(el("span",null,"Opens the editor with an empty configuration."));
+      add.appendChild(t);
+      wrap.appendChild(add);
+    }
+
+    /* the totals footer states the TOTAL, never the blocker (R-19) */
+    if(!inZone) wrap.appendChild(totalsPanel(R));
+    return wrap;
+  }
+
+  function totalsPanel(R){
+    var p=el("div","blk");
+    p.style.background="var(--surface-2)";
+    var dl=el("dl","facts");
+    function add(k,v,cls){
+      dl.appendChild(el("dt",null,k));
+      dl.appendChild(el("dd",cls||"d",v));
+    }
+    add("Goods ("+gstLabel(S.gst)+")",money(goodsTotal(R),S.gst));
+    if(R.delivery.amount===null){
+      /* AC-85 — unpriced reads distinctly from $0 and from unresolved,
+         and the zone basis is stated. */
+      dl.appendChild(el("dt",null,"Delivery"));
+      var dd=el("dd","absent",
+        R.delivery.basis==="unpriced_table"
+          ? "not priced — "+R.delivery.zone+" has no rate"
+          : "zone not resolved");
+      dl.appendChild(dd);
+    } else {
+      add("Delivery",money(R.delivery.amount,S.gst));
+    }
+    dl.appendChild(el("dt",null,"Quote total"));
+    var t=el("dd","d");
+    t.style.font="var(--t-dat-lg)";
+    t.style.fontFamily="var(--font-data)";
+    t.textContent=money(goodsTotal(R)+(R.delivery.amount||0),S.gst);
+    dl.appendChild(t);
+    p.appendChild(dl);
+    var cap=el("div","state");
+    cap.style.padding="0";cap.style.margin="8px 0 0";
+    cap.appendChild(el("p",null,
+      "estimate · "+gstLabel(S.gst)+" · this account's setting"));
+    p.appendChild(cap);
+    return p;
+  }
+
+  /* ── ZONE: work, job scope — the PUSH-ROW LIST (R-70) ─────────────────── */
+  function jobRows(){
+    var R=rec(), wrap=el("div",null);
+    function row(title,sub,absent,onGo){
+      var b=btn("pushrow",null,onGo);
+      var t=el("span","pr-t");
+      t.appendChild(el("b",null,title));
+      var s=el("span",absent?"absent":null,sub);
+      t.appendChild(s);
+      b.appendChild(t);
+      b.appendChild(el("span","arw","›"));
+      wrap.appendChild(b);
+      return b;
+    }
+    row("Progress", R.stateLabel+" · waiting on "+R.waitingOn+" · "+R.days+" days",false,
+      function(){go("/record/"+R.ref+"/job/progress");});
+    row("Payments", R.payments.length?R.payments.length+" recorded":"No payments recorded.",
+      !R.payments.length, function(){go("/record/"+R.ref+"/job/payments");});
+    row("Files", R.files?R.files+" attached":"Nothing is attached to this job.",
+      !R.files, function(){go("/record/"+R.ref+"/job/files");});
+    row("History", R.events+" events", false, function(){go("/record/"+R.ref+"/job/history");});
+    row("Notes", R.notes.length?R.notes.length+" on this job":"No notes on this job yet.",
+      !R.notes.length, function(){go("/record/"+R.ref+"/job/notes");});
+    wrap.appendChild(totalsPanel(R));
+    return wrap;
+  }
+
+  function jobBlock(which){
+    var R=rec(), wrap=el("div",null), b;
+    if(which==="progress"){
+      b=el("div","blk");
+      b.appendChild(el("h3",null,"Phase"));
+      var rib=el("div","ribbon");
+      ["Enquiry","Estimating","Technical review","Quoted","Accepted","In production"]
+        .forEach(function(p,i){
+          var d=el("div",null,p);
+          d.setAttribute("data-s", i<R.phaseIx?"passed":i===R.phaseIx?"current":"future");
+          rib.appendChild(d);
+        });
+      b.appendChild(rib);
+      var cap=el("p",null,"Now · "+R.stateLabel+" · waiting on "+R.waitingOn+" · "+R.days+" days in this state");
+      cap.style.font="var(--t-cap)";cap.style.color="var(--text-2)";cap.style.margin="10px 0 0";
+      b.appendChild(cap);
+      wrap.appendChild(b);
+    }
+    if(which==="payments"){
+      if(!R.payments.length){
+        wrap.appendChild(stateBox("empty","No payments recorded.",
+          R.orderNo? "Order no. "+R.orderNo+" · appears on invoices"
+                   : "Payments are recorded once the quote is accepted and an order exists.",null,null));
+      }
+    }
+    if(which==="files"){
+      b=el("div","blk");
+      b.appendChild(el("h3",null,"Files"));
+      [["Wattle Grove Lot 14 — window schedule.pdf","482 KB · clean"],
+       ["Elevations rev C.pdf","1.2 MB · clean"],
+       ["Site photos.zip","—","scan pending"]].forEach(function(f){
+        var r=el("div","note");
+        r.style.borderLeftColor="var(--rule-strong)";
+        r.appendChild(el("div","b",f[0]));
+        var m=el("div","m",f[2]?f[2]:f[1]);
+        if(f[2]) m.style.color="var(--text-4)";
+        r.appendChild(m);
+        b.appendChild(r);
+      });
+      wrap.appendChild(b);
+    }
+    if(which==="history"){
+      b=el("div","blk");
+      b.appendChild(el("h3",null,"History"));
+      [["Moved to technical review","System","yesterday 16:02"],
+       ["Line W04 updated","Dan","yesterday 15:58"],
+       ["Schedule parsed — 18 openings","System","yesterday 15:31"],
+       ["Project submitted","Ana Bianchi","yesterday 15:29"]].forEach(function(e){
+        var r=el("div","note");
+        r.style.borderLeftColor="var(--rule-strong)";
+        r.appendChild(el("div","b",e[0]));
+        r.appendChild(el("div","m",e[1]+" · "+e[2]));
+        b.appendChild(r);
+      });
+      var more=btn("backlink","Show all "+R.events+" events →",function(){});
+      b.appendChild(more);
+      wrap.appendChild(b);
+    }
+    if(which==="notes"){
+      b=el("div","blk");
+      b.appendChild(el("h3",null,"Notes"));
+      if(!R.notes.length){
+        b.appendChild(stateBox("empty","No notes on this job yet.",
+          "Notes taken here stay on the job. To attach one to a line, open the line.",null,null));
+      } else {
+        R.notes.forEach(function(n){
+          var r=el("div","note");
+          r.appendChild(el("div","m",n.kind+" · "+n.author+" · "+n.when));
+          r.appendChild(el("div","b",n.body));
+          b.appendChild(r);
+        });
+      }
+      var f=el("div","fld");
+      f.appendChild(el("label",null,"Add a note"));
+      var ta=el("textarea"); ta.placeholder="What was said, while it is still in the room";
+      ta.setAttribute("maxlength","500");
+      f.appendChild(ta);
+      b.appendChild(f);
+      wrap.appendChild(b);
+    }
+    return wrap;
+  }
+
+  /* ── ZONE: work, line scope ───────────────────────────────────────────── */
+  function lineDetail(){
+    var R=rec(), L=line(), wrap=el("div",null);
+    if(!L) return stateBox("empty","That line is not on this record.",
+      "It may have been deleted. The record itself is open.",null,null);
+
+    if(!R.editable){
+      var ro=el("div","readonly");
+      ro.appendChild(el("span",null,
+        "This quote was issued on 12 August, so it is read-only. Nothing on it can be changed."));
+      wrap.appendChild(ro);
+    }
+
+    var b=el("div","blk");
+    var dl=el("dl","facts");
+    function fact(k,v,cls){
+      dl.appendChild(el("dt",null,k));
+      dl.appendChild(el("dd",cls||null,v));
+    }
+    fact("Product", L.product + (L.withdrawn?"  — withdrawn from sale":""),
+         L.withdrawn?"absent":null);
+    fact("Size (height × width)", sizeStr(L), "d");
+    fact("Quantity", String(L.qty), "d");
+    fact("Frame system", L.frame);
+    fact("Glazing", L.glazing);
+    fact("Configuration", "configuration · "+L.variant, "d");
+    dl.appendChild(el("dt",null,"Line total"));
+    if(L.total===null){
+      dl.appendChild(el("dd","absent","not priced — this configuration is not exactly priceable"));
+    } else {
+      var d=el("dd","d",money(L.total*L.qty,S.gst)+"  "+gstLabel(S.gst));
+      dl.appendChild(d);
+    }
+    b.appendChild(dl);
+
+    if(L.flags.length){
+      L.flags.forEach(function(f){
+        var w=el("div","warn");
+        w.appendChild(el("span","g","!"));
+        w.appendChild(el("span",null,f));
+        b.appendChild(w);
+      });
+    }
+    if(L.withdrawn){
+      var w2=el("div","warn");
+      w2.appendChild(el("span","g","!"));
+      w2.appendChild(el("span",null,
+        "This product is withdrawn from sale. The line still prices from its stored configuration."));
+      b.appendChild(w2);
+    }
+    wrap.appendChild(b);
+
+    if(L.units){
+      var u=el("div","blk");
+      u.appendChild(el("h3",null,"Composite · "+L.units.length+" joined units"));
+      L.units.forEach(function(un){
+        var r=el("div","note");
+        r.style.borderLeftColor="var(--rule-strong)";
+        r.appendChild(el("div","b","Unit "+un.i+" · "+un.product));
+        r.appendChild(el("div","m",un.h.toLocaleString()+" × "+un.w.toLocaleString()+" mm · "+un.spec));
+        var m2=el("div","m", un.priced? money(un.total,S.gst) : "not priced");
+        if(!un.priced) m2.style.color="var(--text-4)";
+        r.appendChild(m2);
+        u.appendChild(r);
+      });
+      /* coverage sentence — right-aligned, NEVER a veto */
+      var cov=el("div","warn");
+      cov.appendChild(el("span","g","i"));
+      cov.appendChild(el("span",null,
+        "Units span 2,410 mm, 10 mm more than the opening. Allowed — recorded on the line."));
+      u.appendChild(cov);
+      if(L.frameMixed){
+        var mf=el("div","warn");
+        mf.appendChild(el("span","g","!"));
+        mf.appendChild(el("span",null,
+          "mixed frame systems · AMJ150T + AMJ92T — confirm these couple"));
+        u.appendChild(mf);
+      }
+      wrap.appendChild(u);
+    }
+
+    var nb=el("div","blk");
+    nb.appendChild(el("h3",null,"Notes on this line"));
+    if(!L.notes.length){
+      nb.appendChild(stateBox("empty","No notes on this line yet.",
+        "A note added here is stored against "+L.code+" and shows against it thereafter.",null,null));
+    } else {
+      L.notes.forEach(function(n){
+        var r=el("div","note");
+        r.appendChild(el("div","m",n.kind+" · "+n.author+" · "+n.when));
+        r.appendChild(el("div","b",n.body));
+        nb.appendChild(r);
+      });
+    }
+    if(R.editable){
+      var f=el("div","fld");
+      f.appendChild(el("label",null,"Add a note to "+L.code));
+      var ta=el("textarea");
+      ta.placeholder="Why this changed, while the reason is still in the room";
+      ta.setAttribute("maxlength","500");
+      f.appendChild(ta);
+      nb.appendChild(f);
+    }
+    wrap.appendChild(nb);
+    return wrap;
+  }
+
+  /* ── ZONE: edit ───────────────────────────────────────────────────────── */
+  var EDIT={glazing:"Double · clear · argon", h:1200, w:900};
+  var GLAZE=[
+    {v:"Double · clear · argon", d:0},
+    {v:"Double · low-e · argon", d:250},
+    {v:"Double · low-e · argon · acoustic", d:640}
+  ];
+  function editDelta(){
+    var g=GLAZE.filter(function(x){return x.v===EDIT.glazing;})[0];
+    return g?g.d:0;
+  }
+  function editForm(){
+    var R=rec(), L=line(), wrap=el("div","form");
+    function fld(label,node,hint){
+      var f=el("div","fld");
+      f.appendChild(el("label",null,label));
+      f.appendChild(node);
+      if(hint) f.appendChild(el("div","hint",hint));
+      return f;
+    }
+    var id=el("input"); id.value=L.code; id.setAttribute("maxlength","10");
+    wrap.appendChild(fld("Item ID",id));
+
+    var prod=el("select");
+    PRODUCTS.forEach(function(p){
+      var o=el("option",null,p); if(p===L.product) o.selected=true; prod.appendChild(o);
+    });
+    var o2=el("option",null,"AMJ67T Series Louvre — withdrawn from sale");
+    prod.appendChild(o2);
+    wrap.appendChild(fld("Product",prod));
+
+    var pair=el("div","pair");
+    var hIn=el("input"); hIn.value=String(EDIT.h); hIn.inputMode="numeric";
+    var wIn=el("input"); wIn.value=String(EDIT.w); wIn.inputMode="numeric";
+    hIn.addEventListener("input",function(){EDIT.h=+hIn.value||0;paintReadback();});
+    wIn.addEventListener("input",function(){EDIT.w=+wIn.value||0;paintReadback();});
+    var fh=el("div","fld"); fh.appendChild(el("label",null,"Height (mm)")); fh.appendChild(hIn);
+    var fw=el("div","fld"); fw.appendChild(el("label",null,"Width (mm)")); fw.appendChild(wIn);
+    pair.appendChild(fh); pair.appendChild(fw);
+    var dims=el("div","fld");
+    dims.appendChild(pair);
+    dims.appendChild(el("div","hint","Height first, then width — the trade convention this console uses everywhere."));
+    wrap.appendChild(dims);
+
+    /* AC-101 — undersize WARNS, never blocks. It does not take focus, is not a
+       dialog, does not disable Save, and needs no dismissal. */
+    var undersizeHost=el("div");
+    undersizeHost.id="undersize";
+    wrap.appendChild(undersizeHost);
+
+    var opt=el("details","disc"); opt.open=true;
+    var sm=el("summary",null,"Options"); opt.appendChild(sm);
+    var inner=el("div","inner");
+    var gsel=el("select");
+    GLAZE.forEach(function(g){
+      var o=el("option",null,g.v); if(g.v===EDIT.glazing)o.selected=true;
+      gsel.appendChild(o);
+    });
+    gsel.addEventListener("change",function(){EDIT.glazing=gsel.value;paintReadback();});
+    var gf=el("div","fld");
+    var gl=el("label",null,"Glazing");
+    gl.appendChild(el("span","req","  · required"));
+    gf.appendChild(gl); gf.appendChild(gsel);
+    inner.appendChild(gf);
+
+    var csel=el("select");
+    ["Monument","Surfmist","Woodland Grey","Anodised natural"].forEach(function(c){
+      csel.appendChild(el("option",null,c));
+    });
+    var cf=el("div","fld"); cf.appendChild(el("label",null,"Colour")); cf.appendChild(csel);
+    inner.appendChild(cf);
+    opt.appendChild(inner);
+    wrap.appendChild(opt);
+
+    var note=el("textarea"); note.setAttribute("maxlength","500");
+    note.placeholder="Room label or a short note";
+    note.value=L.room;
+    wrap.appendChild(fld("Note",note));
+
+    var cap=el("div","hint","Confirmed on technical review before any deposit. Supply only.");
+    wrap.appendChild(cap);
+    return wrap;
+  }
+
+  function paintUndersize(root){
+    var host=root.querySelector("#undersize");
+    if(!host) return;
+    host.textContent="";
+    if(EDIT.h>0&&EDIT.h<600){
+      var w=el("div","warn");
+      w.appendChild(el("span","g","!"));
+      w.appendChild(el("span",null,
+        "Height "+EDIT.h+" mm is below this product's range (600–2,400 mm). Often a typo — save anyway if it is right."));
+      host.appendChild(w);
+    }
+  }
+
+  function readbackEl(){
+    var R=rec(), L=line();
+    var base=L.total||0;
+    var now=base+editDelta();
+    var moved=editDelta()!==0;
+    var quoteWas=goodsTotal(R)+(R.delivery.amount||0);
+    var quoteNow=quoteWas+editDelta()*L.qty;
+
+    var rb=el("div","readback");
+    rb.id="readback";
+    rb.setAttribute("aria-live","polite");
+    function row(label,was,val,isTotal){
+      var r=el("div","rb-row"+(isTotal?" total":""));
+      r.appendChild(el("span",null,label));
+      if(moved){ r.appendChild(el("span","was",money(was,S.gst))); }
+      var v=el("span","v"+(moved?" moved":""),money(val,S.gst));
+      r.appendChild(v);
+      rb.appendChild(r);
+    }
+    row("This line",base*L.qty,now*L.qty,false);
+    row("Quote total",quoteWas,quoteNow,true);
+    var f=el("div","rb-row");
+    f.appendChild(el("span",null,gstLabel(S.gst)+" · updates as you change an option"));
+    rb.appendChild(f);
+    return rb;
+  }
+  function paintReadback(){
+    var host=S.host.querySelector("#readback");
+    if(host){ var n=readbackEl(); host.replaceWith(n); }
+    paintUndersize(S.host);
+  }
+
+  /* ── state shapes ─────────────────────────────────────────────────────── */
+  function stateBox(kind,title,body,code,cta){
+    var s=el("div","state");
+    s.setAttribute("data-kind",kind);
+    s.appendChild(el("b",null,title));
+    if(body) s.appendChild(el("p",null,body));
+    if(code) s.appendChild(el("span","code",code));
+    if(cta) s.appendChild(btn("btn",cta,function(){S.forced=null;render();}));
+    return s;
+  }
+  function skeleton(){
+    var s=el("div","skel");
+    var i;
+    for(i=0;i<4;i++){
+      var g=el("div","grp");
+      g.appendChild(el("i","w40")); g.appendChild(el("i","w80")); g.appendChild(el("i","w60"));
+      s.appendChild(g);
+    }
+    s.setAttribute("aria-busy","true");
+    s.appendChild(el("span","sronly","Loading the record"));
+    return s;
+  }
+
+  /* ── ACTION FOOTER (R-153) ────────────────────────────────────────────── */
+  function footer(kind){
+    var R=rec(), f=el("div","plane-foot");
+
+    if(S.confirmDelete){
+      /* R-39 — the confirm strip expands upward from the footer, in place,
+         never modal. */
+      var L2=line();
+      var c=el("div","confirm");
+      c.appendChild(el("span","q","Delete "+(L2?L2.code:"this line")+"?"));
+      c.appendChild(el("span",null,
+        "Its "+(L2&&L2.units?L2.units.length+" units go with it. Notes stay.":"notes stay on the job.")));
+      f.appendChild(c);
+      f.appendChild(btn("btn btn-danger btn-grow","Delete",function(){
+        S.confirmDelete=null;S.sheet=null;render();
+      }));
+      f.appendChild(btn("btn","Keep",function(){S.confirmDelete=null;render();}));
+      return f;
+    }
+
+    if(kind==="edit"){
+      f.appendChild(btn("btn btn-primary btn-grow","Save line",function(){
+        S.saveFailed=false;back();
+      }));
+      f.appendChild(btn("btn","Cancel",function(){back();}));
+      if(S.saveFailed){
+        var wf=el("div","wfail");
+        wf.style.flex="1 1 100%";
+        wf.appendChild(el("span",null,
+          "Not saved — the connection dropped. Your values are still here."));
+        wf.appendChild(btn("btn","Retry",function(){S.saveFailed=false;render();}));
+        f.appendChild(wf);
+      }
+      return f;
+    }
+
+    if(kind==="line"){
+      var L=line();
+      if(R.editable){
+        var e=btn("btn btn-primary btn-grow","Edit "+(L?L.code:"line"),function(){
+          go("/record/"+R.ref+"/line/"+L.id+"/edit");
+        });
+        f.appendChild(e);
+      } else {
+        var ro=btn("btn btn-grow","Back to the record",function(){back();});
+        f.appendChild(ro);
+      }
+      var mo=btn("btn","⋯",function(){S.sheet="line";render();});
+      mo.setAttribute("aria-label","More actions for this line");
+      f.appendChild(mo);
+      return f;
+    }
+
+    /* record scope */
+    var n=unpricedCount(R);
+    var blocked=R.editable&&(n>0||R.lines.length===0);
+    if(R.editable){
+      var p=btn("btn btn-primary btn-grow","Issue quote",function(){});
+      if(blocked){
+        p.disabled=true;
+        /* L7 — the blocked action stays VISIBLE and disabled. Its reason is
+           rendered once, in the identity band above, as a tappable filter. */
+        p.setAttribute("aria-describedby","blockreason");
+      }
+      f.appendChild(p);
+      if(R.lines.length===0){
+        var fr=el("p","foot-reason");
+        fr.id="blockreason";
+        fr.textContent="A quote with no lines cannot be issued.";
+        f.appendChild(fr);
+      }
+    } else {
+      var back2=btn("btn btn-grow","← All projects",function(){go("/");});
+      f.appendChild(back2);
+    }
+    var m2=btn("btn","⋯",function(){S.sheet="record";render();});
+    m2.setAttribute("aria-label","More actions for this record");
+    f.appendChild(m2);
+    return f;
+  }
+
+  /* ── ACTION SHEET — every non-primary action, one tap away ────────────── */
+  function actionSheet(){
+    var R=rec(), L=line(), which=S.sheet;
+    var s=el("div","actsheet");
+    s.setAttribute("role","dialog");
+    s.setAttribute("aria-label","More actions");
+    s.appendChild(el("div","ah",which==="line"?("Line "+(L?L.code:"")):"This record"));
+
+    function item(label,opts){
+      opts=opts||{};
+      var b=btn(opts.danger?"danger":null,label,opts.on||function(){S.sheet=null;render();});
+      if(opts.why){ b.disabled=true; b.appendChild(el("span","why",opts.why)); }
+      s.appendChild(b);
+      return b;
+    }
+
+    if(which==="line"){
+      if(R.editable){
+        item("Split into units");
+        if(L&&L.units) item("Merge back to one");
+        item("Add a note to "+L.code);
+        item("Copy a link to "+L.code);
+        item("Delete "+L.code,{danger:true,on:function(){
+          S.sheet=null;S.confirmDelete=L.id;render();
+        }});
+      } else {
+        item("Copy a link to "+(L?L.code:"this line"));
+      }
+      /* the job's own bands, reachable from the line plane without going back
+         — the band's ⋯ used to carry these; one ⋯ carries them now */
+      s.appendChild(el("div","ah","This job"));
+      item("Progress · "+R.stateLabel,{on:function(){S.sheet=null;go("/record/"+R.ref+"/job/progress");}});
+      item("Payments",{on:function(){S.sheet=null;go("/record/"+R.ref+"/job/payments");}});
+      item("Files · "+R.files,{on:function(){S.sheet=null;go("/record/"+R.ref+"/job/files");}});
+      item("History",{on:function(){S.sheet=null;go("/record/"+R.ref+"/job/history");}});
+    } else if(which==="record"){
+      item("Add a line");
+      item("Request clarification");
+      item("Add a note");
+      item("Copy a link to this record");
+      item("Refresh · updated 09:14");
+      if(!R.editable) item("This quote is issued",{why:"read-only"});
+    } else {
+      /* the job's other bands, from the line plane's ⋯ */
+      item("Progress · "+R.stateLabel,{on:function(){S.sheet=null;go("/record/"+R.ref+"/job/progress");}});
+      item("Payments",{on:function(){S.sheet=null;go("/record/"+R.ref+"/job/payments");}});
+      item("Files · "+R.files,{on:function(){S.sheet=null;go("/record/"+R.ref+"/job/files");}});
+      item("History",{on:function(){S.sheet=null;go("/record/"+R.ref+"/job/history");}});
+      item("Notes",{on:function(){S.sheet=null;go("/record/"+R.ref+"/job/notes");}});
+      item("Refresh · updated 09:14");
+    }
+    return s;
+  }
+
+  /* ── PRESENTERS ───────────────────────────────────────────────────────── */
+  function presentPhone(dest){
+    var R=rec(), r=parse(), stack=el("div","stack");
+    var plane=el("section","plane plane-anim");
+    plane.setAttribute("data-depth",String(depth()));
+
+    if(r.edit){
+      var L=line();
+      plane.appendChild(identBand({
+        code:L.code, sub:"Edit", l2:R.ref+" · "+R.title
+      }));
+      var b1=el("div","plane-body"); b1.appendChild(editForm()); plane.appendChild(b1);
+      plane.appendChild(readbackEl());
+      plane.appendChild(footer("edit"));
+    } else if(r.block){
+      plane.appendChild(identBand({
+        title:({progress:"Progress",payments:"Payments",files:"Files",
+                history:"History",notes:"Notes"})[r.block]||"Job",
+        l2:R.ref+" · "+R.title
+      }));
+      var b2=el("div","plane-body"); b2.appendChild(jobBlock(r.block)); plane.appendChild(b2);
+    } else if(r.lineId){
+      var L2=line();
+      plane.appendChild(identBand({
+        code:L2?L2.code:"—", sub:L2?(L2.room||L2.product):null,
+        stepper:L2?stepperEl():null
+      }));
+      var b3=el("div","plane-body"); b3.appendChild(lineDetail()); plane.appendChild(b3);
+      plane.appendChild(footer("line"));
+    } else {
+      /* the record plane — §13.5's short stack, not a single band */
+      plane.appendChild(identBand({
+        title:R.ref+" · "+R.title,
+        l2:R.org+" · "+R.customer,
+        life:lifeSentence(R),
+        blocker:blockerRow(R),
+        /* overflow lives in the footer */
+      }));
+      /* R-151 — two segments, both always live. The editor is never a segment. */
+      var pb=el("div","planebar");
+      pb.setAttribute("role","tablist");
+      pb.setAttribute("aria-label","Record sections");
+      [["lines","Lines · "+R.lines.length],["job","Job"]].forEach(function(p){
+        var b=btn(null,p[1],function(){S.seg=p[0];render();});
+        b.setAttribute("role","tab");
+        b.setAttribute("aria-selected",String(S.seg===p[0]));
+        pb.appendChild(b);
+      });
+      plane.appendChild(pb);
+      var b4=el("div","plane-body");
+      b4.appendChild(S.seg==="job"?jobRows():zoneIndex(false));
+      plane.appendChild(b4);
+      plane.appendChild(footer("record"));
+    }
+    stack.appendChild(plane);
+    dest.appendChild(stack);
+    if(S.sheet) dest.appendChild(actionSheet());
+  }
+
+  function presentTablet(dest){
+    var R=rec(), r=parse();
+    var col=el("div","zone");
+    col.style.borderRight="0";
+
+    /* the ground zone is the line when one is selected, else the index */
+    var head=el("div","ident");
+    var row=el("div","ident-row");
+    var lead=leadingSlot(); if(lead) row.appendChild(lead);
+    var t=el("div","ident-title");
+    var l1=el("div","l1");
+    if(r.lineId&&line()){
+      l1.appendChild(el("span","code",line().code));
+      l1.appendChild(document.createTextNode(" · "+(line().room||line().product)));
+    } else { l1.textContent=R.ref+" · "+R.title; }
+    l1.setAttribute("tabindex","-1");
+    t.appendChild(l1);
+    t.appendChild(el("div","l2",R.org+" · "+R.customer));
+    row.appendChild(t);
+    /* the summon control for the index zone — a visible route, never a gesture only */
+    var sum=btn("btn","Lines · "+R.lines.length+" ▾",function(){S.overlay="index";render();});
+    row.appendChild(sum);
+    if(r.lineId&&line()) row.appendChild(stepperEl());
+    var mb=btn("iconbtn","⋯",function(){S.sheet=r.lineId?"line":"record";render();});
+    mb.setAttribute("aria-label","More actions");
+    row.appendChild(mb);
+    head.appendChild(row);
+    if(!r.lineId){ head.appendChild(lifeSentence(R)); var bl=blockerRow(R); if(bl) head.appendChild(bl); }
+    col.appendChild(head);
+
+    var body=el("div","zone-body");
+    body.appendChild(r.block?jobBlock(r.block): r.lineId?lineDetail():zoneIndex(false));
+    col.appendChild(body);
+    col.appendChild(footer(r.lineId?"line":"record"));
+    dest.appendChild(col);
+
+    if(S.overlay==="index"){
+      var sh=el("aside","sheet");
+      sh.setAttribute("data-side","left");
+      var h=el("div","sheet-head");
+      var x=btn("iconbtn","✕",function(){S.overlay=null;render();});
+      x.setAttribute("aria-label","Close the line list");
+      h.appendChild(x);
+      h.appendChild(el("h2",null,"Lines · "+R.lines.length));
+      sh.appendChild(h);
+      var sb=el("div","sheet-body"); sb.appendChild(zoneIndex(true)); sh.appendChild(sb);
+      dest.appendChild(sh);
+      var sc=btn("scrim",null,function(){S.overlay=null;render();});
+      sc.setAttribute("aria-label","Close");
+      sc.style.zIndex="49"; sc.style.opacity="1"; sc.style.pointerEvents="auto";
+      dest.appendChild(sc);
+    }
+    if(r.edit){
+      /* §13.3 — at tablet portrait the editor sheet carries NO scrim, so the
+         line stays legible beside it. */
+      var es=el("aside","sheet");
+      var eh=el("div","sheet-head");
+      var ex=btn("iconbtn","✕",function(){back();});
+      ex.setAttribute("aria-label","Close the editor");
+      eh.appendChild(ex);
+      eh.appendChild(el("h2",null,"Edit "+line().code));
+      es.appendChild(eh);
+      var eb=el("div","sheet-body"); eb.appendChild(editForm()); es.appendChild(eb);
+      es.appendChild(readbackEl());
+      es.appendChild(footer("edit"));
+      dest.appendChild(es);
+    }
+    if(S.sheet) dest.appendChild(actionSheet());
+  }
+
+  function presentWide(dest){
+    var R=rec(), r=parse(), compact=(S.wc==="compact");
+
+    var hd=el("header","rechead");
+    var lft=el("div","lft");
+    lft.appendChild(btn("backlink","← All projects",function(){go("/");}));
+    lft.appendChild(el("span","ref",R.ref));
+    lft.appendChild(el("span","ttl",R.title));
+    lft.appendChild(el("span","cust",R.org+" · "+R.customer));
+    hd.appendChild(lft);
+    var rgt=el("div","rgt");
+    var asof=el("div","asof");
+    asof.appendChild(el("span",null,"Updated 09:14"));
+    asof.appendChild(btn(null,"Refresh",function(){}));
+    rgt.appendChild(asof);
+    var val=el("div","val");
+    val.appendChild(el("b",null,money(goodsTotal(R)+(R.delivery.amount||0),S.gst)));
+    val.appendChild(el("span",null,"estimate · "+gstLabel(S.gst)));
+    rgt.appendChild(val);
+    hd.appendChild(rgt);
+    dest.appendChild(hd);
+
+    var lb=el("div","ident");
+    lb.style.borderBottom="var(--divider) solid var(--rule)";
+    lb.appendChild(lifeSentence(R));
+    var blk=blockerRow(R); if(blk) lb.appendChild(blk);
+    dest.appendChild(lb);
+
+    var zones=el("div","zones");
+
+    /* zone 1 — index. At compact it is the 48px code strip: the rail yields,
+       never the pane (R-13), which is what keeps the editor a column here. */
+    var z1=el("div","zone");
+    if(compact){
+      var strip=el("div","zone-body codestrip");
+      visibleLines().forEach(function(l){
+        var b=btn(null,null,function(){go("/record/"+R.ref+"/line/"+l.id+(r.edit?"/edit":""));});
+        b.setAttribute("aria-selected",String(l.id===r.lineId));
+        b.setAttribute("title",l.code+" · "+l.room);
+        b.appendChild(document.createTextNode(l.code));
+        if(l.state!=="ready") b.appendChild(el("span","dot"));
+        strip.appendChild(b);
+      });
+      z1.appendChild(strip);
+    } else {
+      var h1=el("div","zone-head");
+      h1.appendChild(el("h2",null,"Lines"));
+      h1.appendChild(el("span","n",String(R.lines.length)));
+      z1.appendChild(h1);
+      var b1=el("div","zone-body"); b1.appendChild(zoneIndex(true)); z1.appendChild(b1);
+      var f1=el("div","zone-foot");
+      f1.appendChild(btn("btn","+ Add a line",function(){}));
+      var tot=el("span","asof");
+      tot.style.marginLeft="auto";
+      tot.textContent=money(goodsTotal(R),S.gst)+" goods";
+      f1.appendChild(tot);
+      z1.appendChild(f1);
+    }
+    zones.appendChild(z1);
+
+    /* zone 2 — work. Same content as the phone's work plane. */
+    var z2=el("div","zone");
+    var h2=el("div","zone-head");
+    if(r.lineId&&line()){
+      h2.appendChild(el("h2",null,line().code+" · "+line().room));
+      h2.appendChild(stepperEl());
+    } else {
+      h2.appendChild(el("h2",null,"This job"));
+    }
+    z2.appendChild(h2);
+    var b2=el("div","zone-body");
+    if(r.lineId&&line()){
+      b2.appendChild(lineDetail());
+    } else {
+      /* growth move 2: the push rows become disclosures in place — same rows,
+         same routes, expanded rather than pushed. */
+      ["progress","payments","files","history","notes"].forEach(function(k){
+        var d=el("details","disc");
+        d.style.margin="var(--space-5) var(--pad)";
+        d.open=(k==="progress");
+        var sm=el("summary",null,({progress:"Progress",payments:"Payments",files:"Files",
+          history:"History",notes:"Notes"})[k]);
+        d.appendChild(sm);
+        var inner=el("div","inner");
+        inner.appendChild(jobBlock(k));
+        d.appendChild(inner);
+        b2.appendChild(d);
+      });
+      b2.appendChild(totalsPanel(R));
+    }
+    z2.appendChild(b2);
+    var f2=el("div","zone-foot");
+    if(R.editable){
+      var p2=btn("btn btn-primary","Issue quote",function(){});
+      if(unpricedCount(R)>0||R.lines.length===0) p2.disabled=true;
+      f2.appendChild(p2);
+      f2.appendChild(btn("btn","Request clarification",function(){}));
+      f2.appendChild(btn("btn","Add a note",function(){}));
+    } else {
+      f2.appendChild(el("span","asof","This quote was issued on 12 August — read-only."));
+    }
+    z2.appendChild(f2);
+    zones.appendChild(z2);
+
+    /* zone 3 — edit. A persistent column here; the same zone that is a plane
+       on the phone. */
+    var z3=el("div","zone");
+    var h3=el("div","zone-head");
+    h3.appendChild(el("h2",null, r.edit? ("Edit "+line().code) : "Editor"));
+    if(r.edit){
+      var x3=btn("iconbtn","✕",function(){back();});
+      x3.setAttribute("aria-label","Close the editor");
+      x3.style.marginLeft="auto";
+      h3.appendChild(x3);
+    }
+    z3.appendChild(h3);
+    var b3=el("div","zone-body");
+    if(r.edit){ b3.appendChild(editForm()); }
+    else if(r.lineId&&R.editable){
+      b3.appendChild(stateBox("empty","Nothing is being edited.",
+        "Open "+line().code+" for editing to change its configuration here.",null,null));
+      var open=btn("btn","Edit "+line().code,function(){go("/record/"+R.ref+"/line/"+r.lineId+"/edit");});
+      b3.querySelector(".state").appendChild(open);
+    } else {
+      b3.appendChild(stateBox("empty","No line is selected.",
+        "Choose a line on the left to see and change it here.",null,null));
+    }
+    z3.appendChild(b3);
+    if(r.edit){
+      z3.appendChild(readbackEl());
+      var f3=el("div","zone-foot");
+      f3.appendChild(btn("btn btn-primary","Save line",function(){back();}));
+      f3.appendChild(btn("btn","Cancel",function(){back();}));
+      z3.appendChild(f3);
+    }
+    zones.appendChild(z3);
+
+    dest.appendChild(zones);
+    if(S.sheet) dest.appendChild(actionSheet());
+  }
+
+  /* ── RENDER ───────────────────────────────────────────────────────────── */
+  function render(pushed){
+    var w=host.clientWidth||parseInt(host.dataset.w,10);
+    S.wc=widthClass(w);
+    host.setAttribute("data-wc",S.wc);
+    host.setAttribute("data-drawer",S.drawer?"open":"closed");
+    host.textContent="";
+
+    var n=navEl();
+    n.id="ops-nav-drawer";
+    host.appendChild(n);
+
+    var sc=btn("scrim",null,function(){S.drawer=false;render();});
+    sc.setAttribute("aria-label","Close the menu");
+    sc.setAttribute("tabindex",S.drawer?"0":"-1");
+    host.appendChild(sc);
+
+    var dest=el("div","dest");
+    host.appendChild(dest);
+
+    var r=parse();
+    if(r.dest==="home"){
+      dest.appendChild(homeList());
+    } else if(S.forced==="loading"){
+      var pl=el("section","plane");
+      pl.setAttribute("data-depth","0");
+      pl.appendChild(identBand({title:"Loading…",l2:" "}));
+      var bb=el("div","plane-body"); bb.appendChild(skeleton()); pl.appendChild(bb);
+      var st=el("div","stack"); st.appendChild(pl); dest.appendChild(st);
+    } else if(S.wc==="phone"){
+      presentPhone(dest);
+    } else if(S.wc==="tabletp"){
+      presentTablet(dest);
+    } else {
+      presentWide(dest);
+    }
+
+    paintUndersize(host);
+
+    /* R-164 — focus moves to the pushed plane's heading. Guarded so a repaint
+       does not steal focus. */
+    if(pushed){
+      var h=host.querySelector(".plane .l1[tabindex], .sheet-head h2");
+      if(h&&h.focus) try{ h.focus({preventScroll:true}); }catch(e){}
+    }
+  }
+
+  function homeList(){
+    var wrap=el("div","dest");
+    wrap.style.position="static";
+    var head=el("div","ident");
+    var row=el("div","ident-row");
+    var lead=leadingSlot(); if(lead) row.appendChild(lead);
+    var t=el("div","ident-title");
+    var l1=el("div","l1","Records"); l1.setAttribute("tabindex","-1");
+    t.appendChild(l1);
+    t.appendChild(el("div","l2","Interim list — the queue arrives with R4"));
+    row.appendChild(t);
+    head.appendChild(row);
+    wrap.appendChild(head);
+    var body=el("div","plane-body");
+    Object.keys(RECORDS).forEach(function(k){
+      var R=RECORDS[k];
+      var b=btn("lrow",null,function(){go("/record/"+R.ref);});
+      b.appendChild(el("span","lcode",R.ref));
+      b.appendChild(el("span","lmoney",money(goodsTotal(R),S.gst)));
+      b.appendChild(el("span","lprod",R.title));
+      b.appendChild(el("span","lsub",R.org+" · waiting on "+R.waitingOn));
+      var st=el("span","lstate");
+      var c=el("span","chip",R.stateLabel);
+      c.setAttribute("data-tone",R.editable?"attention":"neutral");
+      st.appendChild(c);
+      b.appendChild(st);
+      body.appendChild(b);
+    });
+    wrap.appendChild(body);
+    return wrap;
+  }
+
+  /* ── boot this instance ───────────────────────────────────────────────── */
+  var raw=host.dataset.route||"/";
+  var q=raw.split("?");
+  S.path=q[0];
+  if(q[1]){
+    q[1].split("&").forEach(function(kv){
+      var p=kv.split("=");
+      if(p[0]==="seg") S.seg=p[1];
+      if(p[0]==="state"){
+        if(p[1]==="savefail"){ S.saveFailed=true; }
+        else if(p[1]==="empty"){ /* the fixture is already empty */ }
+        else S.forced=p[1];
+      }
+    });
+  }
+  if(host.dataset.drawer==="open") S.drawer=true;
+
+  /* width class from the console's OWN measured width — never a viewport
+     media query, never a user-agent branch (arch §4.1 / §4.3, C1). */
+  if(window.ResizeObserver){
+    new ResizeObserver(function(){ render(false); }).observe(host);
+  }
+  render(false);
+
+  host.addEventListener("keydown",function(e){
+    if(e.key==="Escape"){
+      /* Esc pops exactly one level per press: sheet → overlay → drawer */
+      if(S.sheet){S.sheet=null;render();}
+      else if(S.overlay){S.overlay=null;render();}
+      else if(S.drawer){S.drawer=false;render();}
+    }
+  });
+}
+
+/* ═══ MOUNT ═══════════════════════════════════════════════════════════════ */
+document.querySelectorAll("[data-mount]").forEach(function(host){
+  host.style.width=host.dataset.w+"px";
+  host.style.height=host.dataset.h+"px";
+  Console(host);
+});
+})();
+</script>
+</body>
+</html>
