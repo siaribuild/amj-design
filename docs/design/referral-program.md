@@ -833,6 +833,96 @@ AC-46). The ops project record (`GET /api/ops/projects/:id`) gains
 
 ---
 
+## 10A. Security
+
+This feature stores **financial PII** (bank/payout details, ABNs — classified as such in
+`CONTEXT.md`) and creates one new anonymous entry point. Every statement below is about what is
+built or specified in this document, not policy in the abstract.
+
+### 10A.1 Data classification
+
+| Data | Class | Where it lives | Surface rules |
+|---|---|---|---|
+| `user.payout_bsb`, `user.payout_account_number`, `user.payout_account_name` | **Financial PII** | `user` row (0051) | Read back **masked** on every customer response (AC-29); unmasked only via `unmaskedPayoutDetails` (ADR-4), which logs by construction. |
+| `user.abn` | Financial/personal PII (a sole trader's ABN resolves to a person — research §5.3) | Existing profile field | Shown to its owner and to staff; used digits-only in the A13 gate; never on a customer-facing surface about anyone else. |
+| Frozen copies on `referral_payout` (abn/bsb/account_number/account_name) | Financial PII | Payout rows | The accountant's record (spec §7.1); staff payout screen + CSV only; never mutated, never customer-served. |
+| `payout_details_access` | Access metadata | Own table | Holds actor, subject, action, timestamp and a **masked fingerprint** (`{bsb: '063-***', accountLast4}`) — **never the values**. No reader exists in the app (ADR-4). |
+| Referral relationship (who referred whom) | Personal PII | `referral` | Referrer sees business name or masked email only (AC-26); order contents/value never disclosed to the referrer beyond their own commission (research §5.4). |
+| `user.discount_percent` + snapshot composition | Commercial | `user` / snapshots | Never serialised to a customer response, alone or as a total (AC-75, §10.1). |
+| Program config figures | Public by design | `referral_program` | Advertised; carries no account data. |
+
+**Where payout values are allowed to travel — exhaustively:** the owner's own masked read-back; the
+ops payouts screen and CSV (both through `unmaskedPayoutDetails`, both logged); the frozen payout
+row. **Nowhere else**: not in any other customer response, not in the ops referrals list or project
+record, **not in any email** (the payout email carries amount, date and bank reference — never
+account digits; the `notify` vars for every referral template exclude them), not in
+`audit_event`, not in `console.log`.
+
+**Smallest-surface mechanics already implemented and locked here as design:**
+`savePayoutDetails` writes the `user` columns and the `change` log row in **one `env.DB.batch`**
+(the log cannot silently miss a change); the raw columns have exactly one reading function; the
+masked formatter is the default read path.
+
+### 10A.2 Trust boundaries
+
+| Crossing | What crosses | What validates |
+|---|---|---|
+| **Anonymous ↔ Worker**: `GET /r/<CODE>` | A code string in the URL | Shape regex before any DB read; existence + referrer payability + program On decide only whether a cookie is set; the response is a 302 either way and carries nothing but the code the visitor already held. |
+| **Anonymous ↔ Worker**: `GET /api/referral/program` | Nothing in | Public program facts out; no account data in the shape (§10.1). |
+| **Signup**: `of_ref` cookie at `/api/auth/verify` | An untrusted client-held code | Treated as a claim, not a fact: `recordReferral` re-validates every gate server-side (§6.3). The cookie never carries identity — only a code. |
+| **Customer ↔ Worker**: account referral endpoints | Session cookie + minimal bodies | `resolveUser` (KV session, epoch-checked); the subject of every query is the **session user id — no route accepts a user id parameter** (structural, §10A.3); payout fields format-validated (BSB 6 digits, account 5–9 digits, ABN checksum); the claim body's only field is the code. |
+| **Ops ↔ Worker**: `/api/ops/referrals/*` (T8) | Staff session | Cloudflare Access at the edge (ops host) **and** `resolveStaff` (`type='internal'`) per route, same as every existing ops route (AC-47); config writes versioned (`applyPricingChange`) and `logEvent`-ed; unmasked details only via the logging reader. |
+| **Worker ↔ third parties**: Sanity templates, email provider | Template ids out; rendered mail out | Bank digits are never among template `vars`; a compromised or mis-authored template cannot interpolate what it is never given. |
+
+### 10A.3 Authorization model per endpoint — the exact scoping filter
+
+The canonical failure this table exists to prevent: auth check present, query unfiltered. Customer
+routes are immune **by construction** — no customer referral route has a subject parameter; the
+subject is always `resolveUser(...)`'s id.
+
+| Route | Who | The scoping filter (the actual WHERE) |
+|---|---|---|
+| `GET /api/account/referrals` | Session user, `type='customer'` | Referrals: `WHERE referral.referrer_user_id = :session`. Earnings: `JOIN referral r ON r.id = e.referral_id AND r.referrer_user_id = :session`. Payout history: `WHERE referral_payout.referrer_user_id = :session`. Details/gate: `WHERE user.id = :session`. |
+| `GET /api/account/referral-offer` | Session user | `WHERE referral.referred_user_id = :session` (+ first-order lookup `WHERE project.owner_user_id = :session`). |
+| `POST /api/account/referrals/claim` | Session user | INSERT sets `referred_user_id = :session` — the code selects the *referrer*, it grants the caller nothing; `UNIQUE(referred_user_id)` is the concurrency backstop (A9). Order-existence gate: `WHERE project.owner_user_id = :session`. |
+| `PUT /api/account/payout-details` | Session user | `UPDATE user SET ... WHERE id = :session` — the route has no subject parameter at all; actor = subject structurally. Clearing refusal: `WHERE e.status='confirmed' AND e.payout_id IS NULL AND r.referrer_user_id = :session`. |
+| `GET /r/<CODE>` | Anonymous | Grants nothing; reads `WHERE user.referral_code = :code AND type != 'internal'` plus payability + switch, deciding only cookie-set; writes nothing. |
+| `GET /api/referral/program` | Anonymous | No account table touched. |
+| Quote/draft/order DTO badge | Project owner via existing `ownedProject`/`resolveCurrentProject` | Badge derives from `WHERE referral.referred_user_id = project.owner_user_id` — the **owner's** referral, never the requester's. Ops preview prices in the owner's context (existing rule, `ops.ts:1081`). |
+| `GET/PUT /api/ops/referrals/program`, `GET /api/ops/referrals`, void/unvoid/bulk-void, payouts list/CSV/history | Staff (`resolveStaff`) | Cross-account **by role** — the staff gate is the scope. Writes are constrained: void `WHERE id = :id AND status != 'paid'` + mandatory reason; PUT via version check. |
+| `POST .../payouts/mark-paid` | Staff | `WHERE referral_earning.id IN (:ids) AND status = 'confirmed' AND payout_id IS NULL` and each id's referral joined to the named referrer — a tampered id list cannot pay pending, void, already-paid or another referrer's earnings; row-count checked against the request. |
+| `POST .../payouts/:id/failed` | Staff | `WHERE referral_payout.id = :id AND status = 'paid'`; earnings reverted `WHERE payout_id = :id`. |
+
+**The actor/subject divergence (settled here, before T8 builds it).** Today
+`savePayoutDetails` writes `actor_user_id = subject_user_id` — an account changing its own
+details. In T8, ops **views** diverge actor from subject: `unmaskedPayoutDetails` logs
+`actor = staff id, subject = referrer id, context = 'ops_payouts' | 'ops_csv'` — already designed
+(ADR-4). **Ops editing of a referrer's payout details is default-deny: no such endpoint exists in
+this design and T8 must not add one.** Redirecting where money lands is the single highest-risk
+action in the feature (spec §7.1's own risk flag); the correction path is the customer editing
+their own details. If a genuine need emerges (a referrer phoning details in), that is a new
+capability for the owner to approve, and any future endpoint must carry, at minimum: admin role
+(not merely staff), a mandatory reason, the `change` log row with the staff actor, and a
+notification email to the customer — because the attack this guards is a silent redirection of a
+payout.
+
+### 10A.4 Abuse cases
+
+| Abuse | Handling | Status |
+|---|---|---|
+| Cross-account read (another user's referrals/earnings/bank details) | No customer route accepts a foreign id — subject is session-derived everywhere (§10A.3) | Handled structurally; AC-47 tests it |
+| Parameter tampering: discount percent | Never read from any request — server-resolved (`loadAccountDiscount`, existing rule) | Handled; AC-73/75 |
+| Parameter tampering: mark-paid earning ids | Status + payout_id + referrer WHERE constraints (§10A.3) | Handled; tested in payouts suite |
+| Enumeration: does this email have an account? | Unchanged non-enumerating challenge (A3, existing) | Handled (pre-existing) |
+| Enumeration: is this code real / whose is it / has its owner lapsed? | `/r/<CODE>` answers 302 identically for any code (AC-4); manual claim returns one `invalid_code` for unknown, staff-owned **and** dormant codes (ADR-8b) — a third party cannot learn a referrer's payability state; the ABN gate returns deliberately unspecific `not_eligible` (§6.3) | Handled by design |
+| Code-space probing via the claim endpoint | Authed endpoint; one referral per account **permanently** (A9) — a successful probe is spent on the prober's own account; codes are 32⁶ (~8.9 × 10⁸) | **Residual risk, accepted for v1:** no per-account rate limit on claim attempts. Cheap to add later (KV counter, the OTP pattern) if probing is ever observed. |
+| Replay: clicking `/r/` twice, re-submitting claim, double mark-paid | Cookie carries only a code (re-set is idempotent); claim collides on `UNIQUE(referred_user_id)`; mark-paid re-run finds `payout_id IS NOT NULL` → no-op; failed→retry cycle keeps history (AC-44) | Handled |
+| Self-referral for the discount | Unchanged §4.6.6 containment (bounded, self-funding, human-reviewed quotes); D18 raises the cash-out bar further — the payout side needs a real ABN + bank account | Handled / accepted per spec |
+| Tampering with the access log | No read, update or delete path exists in the application; writes are batched with the change they record | Handled by construction (ADR-4) |
+| A staff account browsing bank details without trace | Impossible via the app: the only unmasked reader logs; direct D1 access is outside the app's threat model (Cloudflare dashboard access, already the case for all data) | Handled in-app; platform access is a pre-existing residual, unchanged by this feature |
+
+---
+
 ## 11. Unclaimed money (Victoria) under D18 — what remains, what was cut
 
 D18 closes the front door: commission can never be earned by someone unpayable, and the §7.2

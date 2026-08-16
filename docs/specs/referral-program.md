@@ -1,9 +1,9 @@
 # Referral program — specification
 
 Branch: `feat/referral-program`
-Status: **revision 10 — FINAL. Every owner decision is answered; §12 is empty.**
+Status: **revision 11 — FINAL. Every owner decision is answered; §12 is empty.**
 Author: product-manager
-Date: 2026-08-15
+Date: 2026-08-16
 
 **Revision 2:** rate set to 1% and every number moved into ops config · cap removed (field kept,
 nullable) · minimum payout balance added (default off) · terms drafted-pending-review rather than
@@ -32,27 +32,20 @@ rule; `payout_timeframe_days` = 14 confirmed; **A18 and D18 kept un-conflatable*
 
 **Revision 9 — two states, not three.** The owner collapsed the program status to **On/Off**, and Off
 means *come back later*: the landing page is unchanged apart from one banner, and the join journey
-stops after login (§4.7). Everything a terminated state would have needed was deleted.
+stops after login (§4.7).
 
-**Revision 10 — three corrections found during implementation. All surgical; nothing else moves.**
+**Revision 10 — three implementation-found corrections.** The access log gets **its own table**, not
+`audit_event`, which has a global viewer (§7.1, AC-82) · `referral_program` survives `db:reset`
+(AC-91) · the ops rate-card preview is a **deliberate** exception to the composition (§4.6.1, AC-51).
 
-1. **AC-82(a) was self-contradictory and is fixed.** It required the payout bank-detail access log to
-   reuse `audit_event`; AC-82(b), §7.1 and §6 all forbid the log having any viewer. **`audit_event`
-   has a global viewer** — `GET /api/ops/audit` (`worker/routes/ops.ts:2096`) returns the last 200 rows
-   across **all** entity types when no `?entity` filter is given, so anything written there appears on
-   the ops Audit screen. Reusing it would have silently built the screen the owner refused, which was
-   the whole basis of their agreeing to the log. **The log now requires a dedicated
-   `payout_details_access` table with no read path anywhere, and `audit_event` is forbidden for this
-   purpose** (§7.1, §6, AC-82).
-2. **`referral_program` must survive `npm run db:reset`.** It is configuration written by the
-   migration and never recreated by `seed.sql`; clearing it would leave the program permanently
-   unconfigured. The four transactional tables are cleared, the config table is spared — the same
-   treatment `pricing_policy` and the rate cards already get (§7).
-3. **The "every pricing surface" claim was overstated.** `loadAccountDiscount` does have exactly two
-   callers, but `computePrice` has a third — `previewSample` in `worker/lib/pricing-admin.ts:314`, the
-   ops rate-card tuning preview, which prices a synthetic sample with **no user context and therefore
-   no discount**. That is correct and must stay that way; §4.6.1 and AC-51 now say so, so nobody
-   "fixes" it into applying the composition.
+**Revision 11 — abuse-case criteria (§10A).** The pipeline now requires negative Given–When–Then
+criteria for any feature touching sensitive data or auth. This one stores **bank details and ABNs —
+"financial PII, the most sensitive data class in the product"** (`CONTEXT.md:105`), so it qualifies.
+Thirteen criteria added, **AC-92 to AC-104**, each naming a concrete forbidden attempt rather than a
+property. **A criterion in §10A verified by code inspection alone is not verified** — the tester makes
+the request and records the denial. Where the behaviour already exists and is covered, the criterion
+says so and cites the test; most do not yet exist as tests, and only `AC-47` moves elsewhere in the
+document (it now points at §10A for its verifiable form).
 
 > **Six things that must survive to implementation.** These are the ones most likely to be lost, or
 > "helpfully improved", between this document and working code:
@@ -73,8 +66,9 @@ stops after login (§4.7). Everything a terminated state would have needed was d
 > 5. **AC-82 — the access log has its own table and no reader.** Not `audit_event`, which has a global
 >    viewer. A later reviewer seeing a bespoke table where a shared one exists will want to "correct"
 >    it; §7.1 records why that would undo the owner's concession.
-> 6. **§8.6 — the panel is an offer with a deadline, not a receipt.** Accurate about mechanics (the
->    price already includes it; there is no redemption step) but urgent in tone.
+> 6. **§10A — the abuse cases are attempts, not assertions.** Each one is a request someone must
+>    actually make and be refused. They exist because the forbidden actions are the ones no happy-path
+>    test will ever exercise.
 
 ---
 
@@ -110,6 +104,8 @@ repeats out loud.
   deploy and without a copy edit.
 - **Nobody who is not part of the program notices it exists** — no existing price moves, and no
   existing commercial arrangement becomes visible.
+- **No account can see another account's money or banking**, and every attempt is refused without
+  revealing whether the other account exists (§10A).
 
 ---
 
@@ -121,7 +117,8 @@ repeats out loud.
 | **Prospective referrer** | A registered user without complete payout details | Meets the entry step: what they get, then one short form. **This is the primary state for every new referrer** (§8.3). |
 | **Referred tradie (A)** | A person with no OpenFrame account yet | Arrives via link or types a code, registers, **quotes at a discount**, orders. **Always self-identifies** (§7.0, AC-78), and is **never gated by D18**. |
 | **Visitor** | Logged-out, no account | Reads the landing page, sees the pitch on marketing pages |
-| **Ops staff** | `user.type='internal'`, ops console behind Cloudflare Access | Configures every number, reviews/voids referrals, runs the weekly payout, records payment references |
+| **Ops staff** | `user.type='internal'`, ops console behind Cloudflare Access | Configures every number, reviews/voids referrals, runs the weekly payout, records payment references. **The only actor who may see another person's banking** (§10A, AC-103/104). |
+| **Manufacturer partner** | Reaches the same console behind the same Access policy, but is not staff (`manufacturerDomains`, `worker/lib/staff.ts:34`) | Nothing in this feature. Refused every referral endpoint (AC-103). |
 | **Accountant** | External, not a system user | Reconciles referral payments from an exported record |
 
 **B and A are different people with different needs, and the spec keeps them apart.** For the
@@ -189,6 +186,8 @@ Every row is **DECIDED** (mine — derivable from the code, the house rules, or 
 | A10 | **No chains, no levels.** A referred tradie can refer others and earns on their own referrals; nothing flows upward. Stated in the rules explicitly, because a tradie will ask. | DECIDED |
 
 ### 4.2 Abuse and self-referral
+
+*(The rules. Their verifiable, attempt-based form is §10A.)*
 
 | # | Rule | Enforcement |
 |---|---|---|
@@ -649,7 +648,9 @@ Plus the disclosure obligation from §4.8b (AC-81).
 12. **A minimal, invisible access log for payout bank details** (§7.1) — its own table, a write path
     only, no reader anywhere.
 13. **The `/r/<CODE>` indexing directives and the FAQ governance rule** (§12A).
-14. Privacy policy update covering bank details and referral data; rules + T&Cs published as Sanity
+14. **The abuse-case defences in §10A** — cross-account refusal, unauthenticated refusal, enumeration
+    resistance and leak prevention, each an attempt the tester must make and see denied.
+15. Privacy policy update covering bank details and referral data; rules + T&Cs published as Sanity
     posts from the text the coordinator supplies.
 
 ## 6. Out of scope
@@ -666,6 +667,8 @@ Plus the disclosure obligation from §4.8b (AC-81).
 - **Applying the referral composition to the ops rate-card preview** (`previewSample`) — it prices a
   synthetic sample with no customer, and a discount there would misreport the rate being tuned
   (§4.6.1, AC-51).
+- **Any account endpoint that takes a user, referral or earning id** — scoping is by session only, and
+  that absence is a defence, not an omission (§10A, AC-95).
 - **A `robots.txt` disallow for `/r/`** — actively wrong, see §12A.1.
 - **A canonical link between the landing page and the FAQ article** — actively wrong, see §12A.2.
 - **A "blocked on missing details" group in the payouts queue** — unreachable by construction under
@@ -710,7 +713,9 @@ architect owns the final schema — but these invariants are not negotiable:
   *Two tables, not one*: voiding a relationship and voiding a payment are different acts.
 - `referral_payout` — one row per referrer per payment run: amount, status, reference, `paid_at`,
   `paid_by`, note, **and a frozen copy of the ABN, BSB, account number and account name used**.
-- `payout_details_access` — **the access log, in its own table with no read path anywhere** (§7.1).
+- `payout_details_access` — **the access log, in its own table with no read path anywhere** (§7.1). Its
+  `subject_user_id` / `actor_user_id` split is what makes the ops-side read (actor ≠ subject)
+  recordable (AC-104).
 - `referral_program` — singleton config (`id='default'`), versioned like `pricing_policy`
   (`migrations/0015_estimator_pricing.sql:35`): **`status` (`active`|`off`) — two values, not three**,
   `referrer_reward_active`, `referred_discount_active`, `rate_percent` (default 1), `cap_amount`
@@ -740,6 +745,7 @@ the same treatment `pricing_policy` and the rate cards already get, and for the 
 |---|---|
 | **Who a referred person is** | **The `user` row they created themselves** (§7.0) — a legal constraint, not an engineering preference. |
 | **Whether someone may be a referrer** | **One payability predicate over the four detail fields** (§4.9). It reads nothing else — and specifically never order history (§4.9.4). |
+| **Whose data a request may touch** | **The session**, resolved server-side. No account endpoint accepts an id naming a subject (§10A, AC-95). |
 | **Whether joining is open** | `referral_program.status`, read server-side. It gates recording, the post-login journey and the banner — and nothing else (§4.7). |
 | What percentage off a user gets | `loadAccountDiscount()` in `worker/lib/estimator/pricing.ts` — extended to compose account + referral. **Server-side only; never serialised to a customer response.** |
 | How a discount is applied to a price | The existing discount step, `pricing.ts:195-203`. No second application point. |
@@ -778,6 +784,10 @@ built.
 
 ### 7.1 Handling of payout bank details
 
+Bank details and ABNs are **financial PII — "the most sensitive data class in the product: minimal
+storage, never logged, never exposed on a customer-facing surface beyond the owning account"**
+(`CONTEXT.md:105`). §10A is that sentence turned into attempts someone has to make and be refused.
+
 **A minimal, invisible access log**, reinstated in revision 6 on new evidence: the OAIC lists audit
 logs of access to financial information among its APP 11 security expectations, and the research's
 §5.1 finding on s 6D(4)(d) means the business may be a full APP entity.
@@ -790,6 +800,8 @@ logs of access to financial information among its APP 11 security expectations, 
 - **The log records the fact of access, never the value.** The row must **not** contain the BSB or
   account number. Copying the details into a log to protect the details is self-defeating: it puts
   sensitive data in a second place and widens the exposure the log exists to detect.
+- **No path stores or reveals payout details without writing the row** — the write and the log go in
+  one `batch`, so a partial success cannot leave an unlogged change (AC-100).
 
 **Why not `audit_event`, which would otherwise be the obvious "one place per fact" choice.** Because
 **`audit_event` has a global viewer.** `GET /api/ops/audit` (`worker/routes/ops.ts:2096`) returns the
@@ -861,7 +873,8 @@ disclosure, and they stay.)
 ### 8.3 Account area — the "Referrals" section (the REFERRER's screen)
 
 A rail item in `src/pages/AccountShell.tsx` (`AccountSection`), route `/referrals`. **This screen is
-about money owed to the account holder for introductions they made.**
+about money owed to the account holder for introductions they made**, and it shows **only their own** —
+every field on it is session-scoped (§10A, AC-92).
 
 **Two shapes, and the first one is the primary state**, because under D18 it is what every new referrer
 meets:
@@ -902,7 +915,8 @@ being open.
 
 Added to `ALL_TABS` in `src/ops/OpsApp.tsx`; API under `/api/ops/referrals/*`. Three sub-screens,
 following the `Pricing.tsx` sub-tab pattern. **There is no fourth sub-screen for the access log**
-(§7.1).
+(§7.1). **Every endpoint under this prefix is staff-only and refuses manufacturer partners** (§10A,
+AC-103).
 
 **(a) Program** — every number, plus the **On/Off switch** and the two side switches: commission rate,
 cap (blank = no cap), qualifying minimum, minimum payout balance, attribution window, discount percent,
@@ -916,7 +930,7 @@ already promised is still honoured** (§4.7).
 phone / business name / postcode — a signal for a human, not a control; A13). Filter by status; search
 by code, referrer or referred email. Actions: **void** (mandatory reason) and **un-void**, plus a
 separate, explicitly-confirmed **bulk void** which is the *only* way to stop in-flight promises.
-**There is no "create referral" action** (§7.0).
+**There is no "create referral" action** (§7.0). **This list shows no banking** (AC-102).
 
 **(c) Payouts — the weekly job.**
 
@@ -927,6 +941,9 @@ separate, explicitly-confirmed **bulk void** which is the *only* way to stop in-
 - **Two groups only: ready and accruing.** A "blocked on missing details" group is unreachable under
   D18 and is not built (§6).
 - Confirmed earnings group **per referrer**, so one person with three earnings gets one transfer.
+- **This is the one screen where an actor sees another person's banking**, and the only one. Unmasked
+  BSB and account number are returned to staff so a transfer can be made — and **every such read writes
+  an access-log row with `actor ≠ subject`** (§7.1, AC-104).
 - **Anything approaching its stated payment deadline (M14) sorts to the top and is flagged.**
 - **Accruing** is visible, excluded from the run, payable by explicit override — **and force-promoted
   to ready at 11 months** by the long-stop (§4.9.5), with the reason shown on the row.
@@ -980,6 +997,8 @@ discount is not surfaced here or anywhere (§4.6.3). **Never gated by D18.**
   at checkout", "voucher" (AC-70).
 - **No worked dollar figure in v1**; if one is ever added it is a price and honours ex/inc (AC-74).
 - **A non-referred account never sees this panel at all.**
+- **The referrer's business name is the only thing it says about the other party** — never their email,
+  phone or anything else (AC-93).
 
 #### 8.6.3 Interaction with the GST preference
 
@@ -1047,6 +1066,9 @@ All of it is subject to the s 49 constraints (§4.8a, §4.9.4).
 > **Re-add your payment details** — **`[$]`** is waiting to be confirmed. Your mates' discounts aren't
 > affected.
 
+**Manual code entry — every refusal a stranger can trigger** *(deliberately uninformative, §10A)*
+> That code isn't valid.
+
 **Home/trade placement, logged out**
 > **Know another tradie?** They get **[discount]% off** their first order, you get **[rate]%** of it.
 > Any account can refer. →
@@ -1090,7 +1112,7 @@ All of it is subject to the s 49 constraints (§4.8a, §4.9.4).
 > `[name]`'s order is paid in full, so you've earned **`[$]`**. It'll be in your account within
 > **[payoutDays] days**.
 
-**Email — paid**
+**Email — paid** *(no bank details, ever — AC-102)*
 > **`[$]` is on its way to your account.** Sent `[date]`, reference `[ref]`. Thanks for the
 > introduction — keep them coming.
 
@@ -1099,7 +1121,7 @@ All of it is subject to the s 49 constraints (§4.8a, §4.9.4).
 ## 10. Acceptance criteria
 
 Each is independently verifiable. Figures are whatever the ops config holds; no criterion hard-codes a
-rate.
+rate. **The forbidden actions are in §10A**, and they are verified by attempting them.
 
 ### The referrer entry gate (D18)
 - **AC-1** *(amended r7)* Every registered customer account **with complete payout details (ABN, BSB,
@@ -1113,7 +1135,7 @@ rate.
 - **AC-84** **A dormant code is inert end to end.** For a referrer whose details are incomplete or
   cleared: the link route sets no cookie and redirects normally, and manual entry of that code returns
   the **same generic invalid-code error** as an unknown code — never a message disclosing that the
-  referrer's bank details are missing.
+  referrer's bank details are missing. *(Covered: `scripts/tests/referral-lifecycle.test.mjs:482-519`.)*
 - **AC-85** **Clearing details behaves as specified.** (a) Refused while any earning is `confirmed` and
   unpaid, with the amount and reason stated; (b) otherwise allowed, after which the code is dormant,
   existing referrals' referred-side promises are untouched (the mate's discount still applies), and any
@@ -1132,12 +1154,13 @@ rate.
 - **AC-2** Codes use an unambiguous uppercase alphabet with no `O`, `0`, `I` or `1`, so a code can be
   read out over a job-site phone call and typed back correctly.
 - **AC-3** Codes are unique across all accounts; a generation collision retries rather than failing or
-  reusing.
+  reusing. *(Covered: `referral-codes.test.mjs:68`, `:92`.)*
 - **AC-4** `GET /r/<CODE>` responds 302 to `/refer` in **every** program status and never errors. It
   sets the httpOnly cookie only for a valid code belonging to a currently-payable referrer while the
   program is On; for an unknown, staff-owned or dormant code, or while the program is Off, it redirects
   with **no cookie**.
-- **AC-5** An internal (staff) account has no referral code and no referral surfaces.
+- **AC-5** An internal (staff) account has no referral code and no referral surfaces. *(Covered:
+  `referral-lifecycle.test.mjs:768-783`.)*
 - **AC-89** **`/r/<CODE>` indexing directives, as one bundle.** (a) The 302 carries
   `X-Robots-Tag: noindex` in **every** program status; (b) no `/r/` URL ever appears in the sitemap;
   (c) **`robots.txt` does not disallow `/r/`** — and this is deliberate, not an oversight: a disallow
@@ -1153,8 +1176,9 @@ rate.
   same `referral` row, marked `source='manual'`.
 - **AC-9** Manual entry is refused once the account has an order, and the field is not shown.
 - **AC-10** A second referral attempt on an account that already has one is refused with a clear
-  message; the original row is unchanged.
-- **AC-11** A user entering their own code is refused with a specific message.
+  message; the original row is unchanged. *(Covered: `referral-lifecycle.test.mjs:470-479`.)*
+- **AC-11** A user entering their own code is refused with a specific message. *(Covered:
+  `referral-lifecycle.test.mjs:455-459`.)*
 - **AC-12** A signup whose ABN matches the referrer's (digits compared, spacing ignored) records no
   referral; if the ABN is added later and then matches, the earning is voided with the reason visible
   in ops. **This is a signal, not a proof of common identity (A13).**
@@ -1318,6 +1342,7 @@ Four parts, all required:
   create exactly the surface the owner refused); (b) the row contains **no BSB or account number** in
   any field; (c) **no route, screen, tab, report, export or API endpoint reads the table** —
   customer-facing or ops. Building a reader is a failure of this criterion, not an enhancement.
+  *(Covered for (b): `referral-lifecycle.test.mjs:194-199`. Write path: `:392`.)*
 
 ### Landing page, placements, search and configurability
 - **AC-33** `/refer` is reachable, server-renders its `<head>` from the Sanity `page` record with site
@@ -1390,8 +1415,128 @@ Four parts, all required:
 - **AC-46** The ops dashboard shows a "referral payouts ready" row when at least one earning is
   confirmed, unpaid and above any threshold, and nothing when there are none. **The payout run works
   identically with the program On or Off.**
-- **AC-47** Referral endpoints are refused to non-staff; a customer cannot read another user's
-  referrals, earnings or bank details by id.
+- **AC-47** *(superseded in form by §10A)* Referral endpoints are refused to non-staff, and a customer
+  cannot read another user's referrals, earnings or bank details. **This is the property; AC-92 to
+  AC-104 are the attempts that verify it**, and they are what the tester runs.
+
+---
+
+## 10A. Abuse cases — the forbidden actions, and the attempts that prove they fail
+
+**Why this section exists.** This feature stores **financial PII** (`CONTEXT.md:105`), so security
+acceptance is specified up front rather than discovered at review. Everything above describes what the
+system should do; this section describes **what it must refuse**, and each criterion names a concrete
+request rather than a property.
+
+**How these are verified — this is binding on the tester.** **A criterion in this section verified by
+code inspection alone is NOT verified.** The forbidden action must actually be attempted against a
+running system and the denial recorded: the status code, the response body, and — where the criterion
+says so — the absence of any state change. These are the only criteria in the document with that rule,
+because they are the only ones no happy-path test will ever exercise by accident.
+
+**Two general rules that apply to every criterion below:**
+
+- **A refusal must not disclose whether the other party exists.** Every "not yours" and every "no such
+  thing" answer identically. This is the same discipline the sign-in challenge already applies
+  (`worker/routes/auth.ts:35`), for the same reason.
+- **A refused request changes nothing.** After each attempt, the target's data is byte-unchanged.
+
+### Cross-account reads and writes
+
+- **AC-92 — one account cannot read another's referral screen.**
+  **Given** customers A and B, each with a referral code, at least one referral and stored payout
+  details, **when** A calls `GET /api/account/referrals` by any means — including replaying a request
+  captured from B's session with A's cookie, or supplying B's user id, email or referral code as a
+  query parameter or body field — **then** the response contains **only A's** code, referrals,
+  earnings, payout details and history, **and no value belonging to B appears anywhere in the body**.
+- **AC-93 — one account cannot read another's offer panel.**
+  **Given** referred tradies A and B with different referrers, **when** A calls
+  `GET /api/account/referral-offer` with any parameter naming B, **then** A receives A's own offer (or
+  none), never B's, and the response names no party other than A's own referrer's business name.
+- **AC-94 — one account cannot write another's payout details.**
+  **Given** customers A and B, **when** A calls `PUT /api/account/payout-details` with a body that also
+  carries B's user id, email or referral code alongside the bank fields, **then** only **A's** row is
+  written, **B's `payout_bsb`, `payout_account_number` and `payout_account_name` are byte-unchanged**,
+  and the access-log row records A as both actor and subject.
+- **AC-95 — the account endpoints take no subject id, and that is the defence.**
+  **Given** the three account endpoints (`GET /api/account/referrals`,
+  `PUT /api/account/payout-details`, `POST /api/account/referrals/claim`), **when** a request supplies
+  a `userId`, `referralId`, `earningId` or equivalent in query, body or header, **then** the value is
+  **not used for scoping under any circumstances** — the request either succeeds scoped to the caller's
+  own session or is refused — and no code path exists that resolves a subject from request input.
+  *Recorded as a defence, not an assumption: under D18 the payout endpoints are session-scoped by
+  design, and any future change that introduces a subject id must re-verify this whole section.*
+
+### Unauthenticated access
+
+- **AC-96 — every account endpoint refuses an anonymous caller.**
+  **Given** no session cookie (and given an expired or tampered one), **when** each of
+  `GET /api/account/referrals`, `PUT /api/account/payout-details`,
+  `POST /api/account/referrals/claim` and `GET /api/account/referral-offer` is called, **then** each
+  returns **401**, no body field carries a code, an earning, a name or any bank value, and — for the
+  write endpoints — **no row is created or modified**. Each of the four is attempted separately; one
+  passing does not stand in for the others.
+
+### Enumeration resistance
+
+- **AC-97 — real, dormant and staff-owned codes are indistinguishable from invented ones.**
+  **Given** four codes — a valid payable one belonging to someone else, a **dormant** one (owner
+  cleared their bank details), a **staff-owned** one, and one that has never existed — **when** a
+  signed-in stranger submits each to `POST /api/account/referrals/claim` in a state where the claim
+  cannot succeed, **then** every response is the **same status and the same `invalid_code` body**, with
+  no timing or wording difference that separates "real but unusable" from "never existed".
+  *(Covered: `referral-lifecycle.test.mjs:461-468` unknown, `:482-519` dormant and staff-owned. The
+  tester still attempts all four and compares the responses to each other.)*
+- **AC-98 — `/r/<CODE>` reveals nothing about a code.**
+  **Given** the same four codes, **when** each is fetched at `GET /r/<CODE>` while unauthenticated,
+  **then** every response is the same 302 to `/refer` with the same headers, differing only by the
+  presence of the attribution cookie for the one code entitled to set it — and **no response body,
+  status or header states or implies whether the code exists, who owns it, or why it did not work**.
+- **AC-99 — the ABN refusal is deliberately unspecific.**
+  **Given** a referred tradie whose ABN matches their referrer's, **when** they attempt to claim that
+  code, **then** the refusal does **not** state that the ABNs match, does not name the referrer, and
+  does not distinguish itself from other ineligibility answers — a stranger must not be able to use the
+  claim endpoint to test whether a guessed ABN belongs to a particular account.
+
+### The access log's own integrity
+
+- **AC-100 — payout details cannot be written or revealed without the log row.**
+  **Given** every path that stores, changes or discloses payout details (the customer write, the ops
+  unmasked read, the CSV export), **when** each is exercised, **then** a `payout_details_access` row
+  exists for it; and **when** the log insert is made to fail, **then the payout write fails with it and
+  nothing is persisted** — the two go in one `batch` precisely so a partial success cannot leave an
+  unlogged change.
+- **AC-101 — the log never becomes a second copy of the data.**
+  **Given** any sequence of payout-detail writes and reads, **when** every `payout_details_access` row
+  is dumped, **then** no column — `context` included — contains a BSB, an account number, an account
+  name or an ABN. *(Covered at the schema level: `referral-lifecycle.test.mjs:194-199`. The tester
+  additionally dumps the rows produced by a real write and inspects their values, since a permissive
+  `context` column could carry what the DDL does not forbid.)*
+
+### What must never appear where
+
+- **AC-102 — bank values appear on exactly one surface, and it is staff-only.**
+  **Given** a referrer with stored payout details and a paid payout, **when** the tester inspects
+  (a) every referral email — recorded, confirmed, paid, expiry reminder; (b) the ops **referrals** list
+  and the ops **project** record; (c) every customer-facing API response including the referrer's own
+  `GET /api/account/referrals`; **then** **no full account number and no unmasked BSB appears in any of
+  them**. The referrer's own screen shows the masked form only (AC-29); the **ops payouts screen and
+  its CSV export are the sole surfaces carrying unmasked values** (§8.4c).
+
+### Ops-side: where actor and subject diverge
+
+- **AC-103 — the ops referral endpoints refuse everyone who is not staff.**
+  **Given** (a) an anonymous caller, (b) a signed-in **customer**, and (c) a signed-in **manufacturer
+  partner** (`manufacturerDomains`, `worker/lib/staff.ts:34`), **when** each calls
+  `GET /api/ops/referrals/payouts`, `GET /api/ops/referrals`, the program `PUT` and the CSV export,
+  **then** every call is refused, **no bank value or referrer name is returned in any refusal**, and no
+  state changes. The manufacturer case is attempted explicitly: they reach the console behind the same
+  Access policy as staff, so hiding the tab is not a control.
+- **AC-104 — a staff read of someone else's banking is recorded as such.**
+  **Given** a staff member opening the payouts queue or exporting the CSV for a referrer who is not
+  them, **when** the unmasked details are returned, **then** a `payout_details_access` row is written
+  with **`actor_user_id` = the staff member and `subject_user_id` = the referrer** — the one place in
+  the system where those two differ — and it still contains no bank values (AC-101).
 
 ---
 
@@ -1426,7 +1571,7 @@ Items still requiring the owner's accountant or a lawyer:
 3. **No-ABN withholding.** Requiring an ABN before a code is issued (§4.9) sidesteps it entirely.
    *Accountant to confirm.*
 4. **Privacy Act status.** §7.0's attribution boundary keeps this design outside s 6D(4)(d); §7.1's
-   access log is the APP 11 response. *Legal to confirm.*
+   access log and §10A's refusals are the APP 11 response. *Legal to confirm.*
 5. **ACL s 49 (referral selling)** — A18, the §8.2 copy constraint and the §4.9.4 two-facts rule are
    the design's answer. *Legal to confirm — and to check the drafted copy specifically, since this is a
    wording risk as much as a design one.*
@@ -1452,9 +1597,9 @@ Items still requiring the owner's accountant or a lawyer:
 
 **None. This list is empty.**
 
-All eighteen decisions raised across revisions 1–10 (D1–D18) are answered. Nothing rests on an
-unapproved assumption, and there are no `ASSUMED:` tags left to veto. Revision 10 fixed three
-implementation-found defects in this document; none of them reopened a decision.
+All eighteen decisions raised across revisions 1–11 (D1–D18) are answered. Nothing rests on an
+unapproved assumption, and there are no `ASSUMED:` tags left to veto. Revision 11 added security
+acceptance criteria for behaviour already required; it reopened nothing.
 
 Two things I decided myself that the owner may still want to veto, flagged rather than buried:
 
@@ -1522,9 +1667,10 @@ end with.
    it carries AC-49 in full.** *Demo: two identical quotes, one referred, side by side, plus the
    unchanged fixture run.*
 3. **T3 — Codes and attribution.** Payability predicate, payout-details endpoint **and its access-log
-   write** (AC-82), code withheld until complete, dormancy, `/r/<CODE>` with its **noindex directive**
-   (AC-89), cookie, `findOrCreateUser` hook, manual claim, all §4.2 gates, **the §7.0 boundary enforced
-   at the endpoint layer** (AC-78), **and the A18/D18 separation regression test** (AC-87).
+   write** (AC-82, AC-100), code withheld until complete, dormancy, `/r/<CODE>` with its **noindex
+   directive** (AC-89), cookie, `findOrCreateUser` hook, manual claim, all §4.2 gates, **the §7.0
+   boundary enforced at the endpoint layer** (AC-78), **the A18/D18 separation regression test**
+   (AC-87), **and the §10A account-side abuse cases** (AC-92 to AC-101).
 4. **T4 — Earning lifecycle.** Earning on order creation, confirm at `balance_paid` for a payable
    referrer, hold at `pending` otherwise, void on cancel/refund, expiry sweep, post-discount ex-GST
    base, payment-timeframe stamping.
@@ -1537,7 +1683,8 @@ end with.
    figure from config, and the s 49 / two-facts copy constraints applied.
 8. **T8 — Ops tab.** Program screen with the On/Off switch, referrals list + void + bulk void, payouts
    queue with ready/accruing groups, deadline flagging, long-stop promotion, CSV export, mark
-   paid/failed, frozen banking snapshot, dashboard row.
+   paid/failed, frozen banking snapshot, dashboard row, **and the §10A ops-side abuse cases — staff-only
+   refusal including manufacturer partners, and the actor ≠ subject log row** (AC-102 to AC-104).
 9. **T9 — Emails, rules pages, privacy policy.** Four transactional templates with inline fallbacks;
    rules and T&Cs published as posts **under the §12A.2 governance rule** (AC-90); privacy policy
    update covering referral data, payout details and the access log.
