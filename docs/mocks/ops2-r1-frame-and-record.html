@@ -671,6 +671,81 @@ select.inp{cursor:pointer}
   display:flex;gap:var(--s3);flex-wrap:wrap;justify-content:space-between;align-items:center;
   background:var(--recessive);
 }
+.coverage .next{flex:1 1 100%;font-size:var(--t-datsm);line-height:17px;color:var(--secondary);margin:0}
+
+/* ─── Add / remove an opening (spec §4.5a) ───────────────────────────────────
+   The add control is the list's own last row, not a floating button: it belongs
+   to the list, it scrolls with it, and at 320 it is a full-width 44px target
+   with nothing beside it to collide with. It is quiet — adding a line is
+   ordinary work, not the record's primary act, which is still Issue. */
+.addrow{
+  display:flex;align-items:center;justify-content:center;gap:var(--s2);
+  width:100%;min-height:44px;padding:var(--s3) var(--pad-card);
+  background:var(--bone);border:none;border-top:1px solid var(--line);
+  color:var(--sage-ink);font:600 var(--t-cap)/18px var(--font-body);cursor:pointer;
+  transition:background .12s var(--ease),color .12s var(--ease);
+}
+.addrow svg{width:15px;height:15px;flex:0 0 auto}
+.addrow:hover{background:var(--sage-wash);color:var(--sage-deep)}
+.empty .addrow{margin-top:var(--s3);border-radius:var(--r-ctl);border:1px solid var(--line-strong)}
+/* A row that exists only on this screen until it is saved. Dashed, so it reads
+   as not-yet-a-line, and it says so in words as well. */
+.linelist > li.draft{
+  background:var(--bone);
+  box-shadow:inset 3px 0 0 var(--line-strong);
+}
+.draftmark{
+  font:600 var(--t-datsm)/16px var(--font-display);letter-spacing:.04em;
+  text-transform:uppercase;color:var(--body-soft);
+}
+/* The destructive control sits under a rule at the foot of the editor, away
+   from Save. It is never inert, never asks for a reason, and — like every
+   blocked control here — expresses state with tokens, not opacity. */
+.removebar{
+  margin-top:var(--s4);padding-top:var(--s3);border-top:1px solid var(--line);
+  display:flex;flex-wrap:wrap;gap:var(--s3);align-items:center;
+}
+.btn.danger{
+  color:var(--attention-ink);border-color:color-mix(in oklab,var(--attention) 34%,#fff);
+  background:var(--paper);
+}
+.btn.danger:hover{border-color:var(--attention);background:color-mix(in oklab,var(--attention) 6%,#fff);color:var(--attention-ink)}
+.btn.danger svg{width:15px;height:15px}
+.confirm.destructive{
+  flex:1 1 100%;margin-top:0;
+  background:color-mix(in oklab,var(--attention) 6%,#fff);
+  border-color:color-mix(in oklab,var(--attention) 34%,#fff);
+}
+.confirm.destructive h4{color:var(--attention-ink)}
+.confirm.destructive .btn.primary{
+  background:var(--attention);border-color:var(--attention);color:#fff;
+}
+.confirm.destructive .btn.primary:hover{background:var(--attention-ink);border-color:var(--attention-ink)}
+
+/* ─── The size junction (spec §4.6a) ─────────────────────────────────────────
+   A size outside the product's range is not an error and must not be dressed
+   as one: the band states the fact and then carries the two routes out as real
+   controls, so the remedy is on screen rather than in the operator's memory
+   while a customer waits. It uses .warn — the register the ui-designer reserved
+   for "the record stating a condition of itself" — which is exactly what an
+   unsettled fit is, and which reads distinctly from the .note band directly
+   above it carrying the estimator's observation. */
+.routes{
+  display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s3);align-items:flex-start;
+}
+.routes .route{flex:1 1 210px;min-width:0}
+.routes .btn{width:100%;justify-content:flex-start;text-align:left}
+/* The R4 stand-in. NOT hatched: the route works today — a note is really sent —
+   so drawing it as scaffolding would call a working control broken. What is
+   reserved is the MARK, and the caption is what says so. */
+.routes .later{
+  margin:var(--s1) 0 0;font-size:var(--t-datsm);line-height:16px;color:var(--secondary);
+  display:flex;gap:var(--s1);align-items:baseline;
+}
+.routes .later .tick{
+  color:var(--body-soft);font:600 var(--t-lbl)/1 var(--font-display);
+  letter-spacing:var(--t-lbl-track);text-transform:uppercase;white-space:nowrap;
+}
 
 /* FOLD 1 (480px): size and qty leave the stacked meta line and become columns.
    The quantity is one datum with two slots — `.qty-inline` inside the size cell
@@ -968,6 +1043,8 @@ select.inp{cursor:pointer}
     <div class="hgroup"><span>Screen</span>
       <button class="hbtn" data-screen="record">Record</button>
       <button class="hbtn" data-screen="editing">Record · editing</button>
+      <button class="hbtn" data-screen="adding">Record · adding</button>
+      <button class="hbtn" data-screen="removing">Record · removing</button>
       <button class="hbtn" data-screen="failure">Record · failure</button>
       <button class="hbtn" data-screen="issued">Record · issued</button>
       <button class="hbtn" data-screen="empty">Record · empty</button>
@@ -1021,6 +1098,9 @@ const ICON = {
   phone:   'M6.5 3.5h3l1.5 4-2 1.4a12 12 0 0 0 6.1 6.1l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.5 5.7a2 2 0 0 1 2-2.2z',
   pin:     'M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z M12 10h.01',
   chev:    'M5 8l7 7 7-7',
+  plus:    'M12 5v14M5 12h14',
+  trash:   'M4 7h16 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3',
+  split:   'M4 4h16v16H4z M12 4v16',
   warn:    'M12 3.5 1.8 20.5h20.4L12 3.5z M12 10v4.5 M12 17.5h.01',
   work:    'M4 5h16v5H4z M4 14h7v5H4z M14 14h6v5h-6z',
   records: 'M6 3h9l4 4v14H6z M15 3v4h4 M9 12h7 M9 16h7',
@@ -1060,10 +1140,11 @@ const LINES = [
   { code:"W01", name:"Awning window — 2 sash", room:"Bedroom 1, north elevation",
     cfg:"configuration · AWN-2S-DG-LOWE", size:"1210 × 1810", qty:2, total:"$4,240",
     state:"ready", frame:"frame system · Elevate 60" },
-  { code:"W02", name:"Sliding door — 3 panel, centre-opening, low-threshold sill",
-    room:"Living, west elevation", cfg:"configuration · SLD-3P-DG-LOWE",
-    size:"2100 × 3600", qty:1, total:"$9,860", state:"review",
-    flags:["Thermal configuration: proposed Uw 2.41 against a target of ≤ 2.27",
+  { code:"W02", name:"Awning window — 3 sash, high-level", max:"1810",
+    room:"Living, west elevation", cfg:"configuration · AWN-3S-DG-LOWE",
+    size:"1210 × 3600", qty:1, total:"$9,860", state:"review",
+    flags:["Fit: no single unit is made at this size — we will confirm how it is built and price it at technical review.",
+           "Thermal configuration: proposed Uw 2.41 against a target of ≤ 2.27",
            "No longer in current documents"],
     frame:"frame system · Elevate 60" },
   { code:"W03", name:"Fixed + Sliding — corner assembly", room:"Kitchen, north-west corner",
@@ -1216,8 +1297,9 @@ function lineRow(l, opts={}){
     l.withdrawn ? `<div class="tag warn">${esc(l.withdrawn)}</div>` : ""
   ].join("");
   const notesCount = opts.notes || 0;
+  const cls = [opts.draft ? "draft" : "", opts.target ? "target" : ""].filter(Boolean).join(" ");
   return `
-  <li ${opts.target?'class="target" id="line-w02"':""}>
+  <li${cls ? ` class="${cls}"` : ""}${opts.target ? ' id="line-target"' : ""}>
     <div class="lrow">
       <div class="c-code mono">${l.code}</div>
       <div class="c-prod">
@@ -1225,17 +1307,19 @@ function lineRow(l, opts={}){
         <div class="psub">${esc(l.room||"")}</div>
         ${tags}${flags}
       </div>
-      <div class="c-size"><span class="size">${l.size}</span><span class="unit-suffix"> h × w</span><span class="qty-inline unit-suffix"> · ×${l.qty}</span></div>
-      <div class="c-qty">×${l.qty}</div>
+      <div class="c-size">${l.size ? `<span class="size">${l.size}</span><span class="unit-suffix"> h × w</span><span class="qty-inline unit-suffix"> · ×${l.qty}</span>` : '<span class="dim">—</span>'}</div>
+      <div class="c-qty">${l.size ? `×${l.qty}` : ""}</div>
       <div class="c-total">${l.total ?? '<span class="dim">—</span>'}</div>
-      <div class="c-state"><span class="state ${l.state==="ready"?"ok":"rev"}">${l.state==="ready"?"ready":"needs review"}</span></div>
-      <div class="c-act">
+      <div class="c-state">${opts.draft
+        ? '<span class="draftmark">not saved yet</span>'
+        : `<span class="state ${l.state==="ready"?"ok":"rev"}">${l.state==="ready"?"ready":"needs review"}</span>`}</div>
+      <div class="c-act">${opts.draft ? "" : `
         <button class="link">${opts.editing?"close":"edit"}</button>
         <button class="link">${l.composite?"units":"split"}</button>
-        <button class="link">note${notesCount?` (${notesCount})`:""}</button>
+        <button class="link">note${notesCount?` (${notesCount})`:""}</button>`}
       </div>
     </div>
-    ${opts.editing ? editor(opts) : ""}
+    ${opts.editing ? editor({...opts, line:l}) : ""}
   </li>
   ${(l.units||[]).map(u=>`
   <li class="unit">
@@ -1252,56 +1336,119 @@ function lineRow(l, opts={}){
   ${l.coverage ? `<li class="unit"><div class="coverage">
       <button class="link">+ Add unit</button>
       <span class="cap">${esc(l.coverage)}</span>
+      <p class="next">Each unit can be a different product — open a unit to change it.</p>
     </div></li>` : ""}`;
 }
 
 function editor(opts={}){
-  return `
-  <div class="editor">
-    <h4>W02 · Sliding door — 3 panel</h4>
-    <p class="hint">Everything here is a proposal. Change anything; nothing has to be justified.</p>
+  const l = opts.line || {};
+  const draft = !!opts.draft;
 
+  /* The size junction (spec §4.6a). Not an error state: the band names the
+     condition and carries the two routes out as controls. `Split` is the
+     existing planner; `Ask the manufacturer` is R4's mark, standing in today
+     as the note the founders already send. */
+  const junction = opts.junction ? `
+    <div class="band warn bandgap" role="status">
+      <span class="glyph" aria-hidden="true"></span>
+      <div>
+        <b>3600 mm is wider than an Awning window is made — 1810 mm is the maximum.</b><br>
+        This is normal on a large opening. Saving is not affected: the line carries a
+        <b>fit</b> flag either way and prices best-fit until it is settled. Two ways forward:
+        <div class="routes">
+          <div class="route">
+            <button class="btn sm">${ic("split")}Split this opening into units</button>
+            <p class="later">Builds it as 2+ joined products — e.g. awning + fixed.</p>
+          </div>
+          <div class="route">
+            <button class="btn sm">${ic("mail")}Ask the manufacturer</button>
+            <p class="later"><span class="tick">R4</span> Adds a note for now — the
+              with-manufacturer mark arrives with the work queue.</p>
+          </div>
+        </div>
+      </div>
+    </div>` : "";
+
+  /* The estimator's observation. Deliberately the mildest register on screen. */
+  const divergence = (!draft && opts.divergence) ? `
     <div class="band note" role="status">
       <span class="glyph" aria-hidden="true"></span>
       <span>The estimator proposed this configuration to meet <b>Uw ≤ 2.27</b>; what is selected reaches <b>Uw 2.41</b>.
       <span class="qualifier">Saving is not affected.</span> <button class="link">See the derivation</button></span>
-    </div>
+    </div>` : "";
+
+  /* Delete: hard, confined to the editable states, one press away, never
+     disabled and never asking for a reason. The consequence sentence is
+     composed from what is true of THIS line — the units clause appears only
+     when there are units to go. */
+  const removeBar = draft ? "" : (opts.confirmRemove ? `
+    <div class="removebar">
+      <div class="confirm destructive" role="group" aria-label="Confirm: remove opening">
+        <h4>Remove ${l.code}?</h4>
+        <p>${l.units ? `Its ${l.units.length} joined units go with it. ` : ""}Notes written against this line stay on the record.</p>
+        <div class="btnrow">
+          <button class="btn primary">Remove</button>
+          <button class="btn quiet">Keep</button>
+        </div>
+      </div>
+    </div>` : `
+    <div class="removebar">
+      <button class="btn danger sm">${ic("trash")}Remove opening</button>
+    </div>`);
+
+  const heading = draft ? "New opening" : `${l.code} · ${esc(l.name)}`;
+  const hint = draft
+    ? "Nothing exists until you save. Cancel leaves no trace."
+    : "Everything here is a proposal. Change anything; nothing has to be justified.";
+
+  return `
+  <div class="editor">
+    <h4>${heading}</h4>
+    <p class="hint">${hint}</p>
+
+    ${divergence}
+    ${junction}
 
     <div class="fields">
       <div class="field">
         <label for="f-id">Item ID</label>
-        <input class="inp" id="f-id" value="W02" maxlength="10">
+        <input class="inp" id="f-id" value="${draft ? "W07" : l.code}" maxlength="10">
+        ${draft ? '<p class="help">Next free code on this record. Change it if you want.</p>' : ""}
       </div>
       <div class="field">
         <label for="f-prod">Product</label>
         <select class="inp" id="f-prod">
-          <option>Sliding door — 3 panel</option>
+          ${draft ? "<option>Choose a product</option>" : ""}
+          <option>Awning window — 3 sash, high-level</option>
+          <option>Awning window — 2 sash</option>
+          <option>Fixed lite</option>
           <option>Sliding door — 2 panel</option>
           <option>Stacking door — 4 panel — withdrawn from sale</option>
         </select>
       </div>
       <div class="field">
         <label for="f-h">Height — vertical (mm)</label>
-        <input class="inp mono" id="f-h" value="2100">
+        <input class="inp mono" id="f-h" value="${draft ? "" : "1210"}">
         <p class="help">Height first, the trade convention. Sizes read h × w everywhere in ops2.</p>
       </div>
       <div class="field">
         <label for="f-w">Width — horizontal (mm)</label>
-        <input class="inp mono" id="f-w" value="3600">
+        <input class="inp mono" id="f-w" value="${draft ? "" : "3600"}">
+        ${draft ? '<p class="help">Fits 400–1810 high, 400–1810 wide.</p>' : ""}
       </div>
       <div class="field full">
-        <details class="disclose" open>
+        <details class="disclose"${draft ? "" : " open"}>
           <summary>Options <span class="summary-sub">Glazing · Colour · Hardware</span></summary>
           <div>
             <p class="lbl optlbl first">Glazing · required</p>
             <div class="opt-grid">
-              <button class="opt sel">Double glazed low-E<span class="p">included</span></button>
+              <button class="opt${draft ? "" : " sel"}">Double glazed low-E<span class="p">included</span></button>
               <button class="opt">Double glazed clear<span class="p">− $310</span></button>
               <button class="opt">Triple glazed<span class="p">+ $1,140</span></button>
             </div>
             <p class="lbl optlbl">Colour · required</p>
             <div class="opt-grid">
-              <button class="opt sel">Monument<span class="p">included</span></button>
+              <button class="opt${draft ? "" : " sel"}">Monument<span class="p">included</span></button>
               <button class="opt">Surfmist<span class="p">included</span></button>
               <button class="opt">Anodised<span class="p">+ $460</span></button>
             </div>
@@ -1316,11 +1463,14 @@ function editor(opts={}){
 
     <div class="preview">
       <div><span class="lbl">Estimated price</span>
-        <div><span class="amt">$9,860</span> <span class="ea">inc GST · $9,860 ea</span></div></div>
+        <div>${draft
+          ? '<span class="ea">Priced once a product and a size are set.</span>'
+          : '<span class="amt">$9,860</span> <span class="ea">inc GST · $9,860 ea</span>'}</div></div>
       <div class="actions previewacts">
         <button class="btn quiet">Cancel</button>
-        <button class="btn primary">Save line</button>
+        <button class="btn primary"${draft ? ' aria-disabled="true"' : ""}>Save line</button>
       </div>
+      ${draft ? '<p class="blocked">Choose a product and enter a size</p>' : ""}
     </div>
     <p class="footnote">Confirmed on technical review before any deposit. Supply only.</p>
 
@@ -1333,28 +1483,49 @@ function editor(opts={}){
         <button class="btn quiet sm">Reload this record</button>
       </div>
     </div>` : ""}
+
+    ${removeBar}
   </div>`;
 }
 
 function linesCard(state, opts={}){
+  const editable = state === "pricing";          // add + delete live only here
+  const addRow = editable
+    ? `<button class="addrow">${ic("plus")}Add opening</button>` : "";
+
   if(state==="empty"){
     return `<section class="card" aria-label="Openings">
       <header><span class="lbl">Openings</span><span class="meta">0 lines</span></header>
-      <div class="empty">No lines on this project.</div>
+      <div class="empty">No lines on this project.
+        <button class="addrow">${ic("plus")}Add the first opening</button>
+      </div>
     </section>`;
   }
   const title = state==="issued" ? "Issued lines" : "Openings";
+  const count = opts.adding ? "7 lines <span class=\"sep-dot\">·</span> <em>1 not saved</em>"
+                            : "6 lines <span class=\"sep-dot\">·</span> <em>2 need review</em>";
+  const draftLine = { code:"W07", name:"—", room:"", size:null, qty:1, total:null, state:"review" };
+
   return `
   <section class="card" aria-label="Openings">
-    <header><span class="lbl">${title}</span><span class="meta">6 lines <span class="sep-dot">·</span> <em>2 need review</em></span></header>
+    <header><span class="lbl">${title}</span><span class="meta">${count}</span></header>
     <div class="body flush">
       <ul class="linelist">
         <li class="rhead" aria-hidden="true">
           <span>Code</span><span>Product</span><span class="r">Size h × w</span><span class="r">Qty</span>
           <span class="r">Line total</span><span>State</span><span></span>
         </li>
-        ${LINES.map((l,i)=>lineRow(l, i===1 ? {editing:opts.editing, target:opts.target, savefail:opts.savefail, notes:1} : {notes: i===0?2:0})).join("")}
+        ${LINES.map((l,i)=>{
+          if(opts.editLine === i) return lineRow(l, {
+            editing:true, target:true, savefail:opts.savefail,
+            junction:opts.junction, divergence:opts.divergence,
+            confirmRemove:opts.confirmRemove, notes:1
+          });
+          return lineRow(l, { notes: i===0 ? 2 : 0 });
+        }).join("")}
+        ${opts.adding ? lineRow(draftLine, { draft:true, editing:true }) : ""}
       </ul>
+      ${addRow}
     </div>
   </section>`;
 }
@@ -1468,21 +1639,33 @@ function totalsbar(mode){
 
 /* ─── screens ───────────────────────────────────────────────────────────── */
 function screenRecord(kind){
-  const editing = kind==="editing" || kind==="failure";
+  const editing = kind==="editing" || kind==="failure" || kind==="removing";
   const failure = kind==="failure";
   const issued  = kind==="issued";
   const empty   = kind==="empty";
+  const adding  = kind==="adding";
 
   const banner = issued
     ? `<div class="band info"><span class="glyph" aria-hidden="true"></span>
-        <span>This quote is <b>issued</b> — lines are read-only. Return it to pricing to change anything.
-        Nothing is hidden: everything below is exactly what was issued.</span></div>`
+        <span>This quote is <b>issued</b> — nothing can be added, changed or removed. Return it to pricing
+        to work on it. Nothing is hidden: everything below is exactly what was issued.</span></div>`
     : empty
       ? `<div class="band info"><span class="glyph" aria-hidden="true"></span>
           <span>Nothing has been configured yet. Lines appear here when a schedule is parsed or the customer submits a configuration.</span></div>`
       : `<div class="band warn"><span class="glyph" aria-hidden="true"></span>
           <span><b>2 lines are unpriced or unresolved</b> — a quote cannot be issued until they are settled.
           <button class="link">Show only those lines</button></span></div>`;
+
+  // W02 (index 1) is the size junction; W03 (index 2) is the composite whose
+  // removal has units to name.
+  const listOpts = {
+    savefail: failure,
+    adding,
+    editLine: kind==="removing" ? 2 : (editing ? 1 : undefined),
+    junction: editing && kind!=="removing",
+    divergence: editing && kind!=="removing",
+    confirmRemove: kind==="removing"
+  };
 
   return `
   <div class="app">
@@ -1501,8 +1684,7 @@ function screenRecord(kind){
             </div>
             <div class="cols">
               <div class="work">
-                ${linesCard(issued?"issued":empty?"empty":"pricing",
-                  {editing, target:editing, savefail:failure})}
+                ${linesCard(issued?"issued":empty?"empty":"pricing", listOpts)}
               </div>
               <div class="ctx"><div class="ctxgrid">
                 ${money(issued?"issued":"pricing")}
@@ -1515,7 +1697,7 @@ function screenRecord(kind){
             </div>
           </div>
         </div>
-        ${totalsbar(editing?"editing":"idle")}
+        ${totalsbar(editing||adding?"editing":"idle")}
       </main>
     </div>
   </div>`;
@@ -1612,6 +1794,8 @@ function screenBoot(){
 const SCREENS = {
   record:  ()=>screenRecord("record"),
   editing: ()=>screenRecord("editing"),
+  adding:  ()=>screenRecord("adding"),
+  removing:()=>screenRecord("removing"),
   failure: ()=>screenRecord("failure"),
   issued:  ()=>screenRecord("issued"),
   empty:   ()=>screenRecord("empty"),

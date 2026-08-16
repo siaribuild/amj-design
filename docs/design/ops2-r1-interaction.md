@@ -10,7 +10,7 @@ Inputs, in order of authority: `docs/specs/ops2.md` (rev 6) → `docs/design/ops
 `docs/ops2/register.md` → `CONTEXT.md`. `docs/ops-redesign/UX-SPEC.md`, `UX-AUDIT.md` and the two
 mocks were read for capability only and are not a rule set here.
 
-**Status: awaiting the UX mock gate.** Nothing in this document is implementable until the owner has
+**Status: ready for the UX mock gate.** Mock and spec agree (§14). Nothing here is implementable until the owner has
 seen the mock and accepted it. Accepted tweaks get folded back into this file before the developer starts.
 
 ---
@@ -82,9 +82,13 @@ One block, one home — `src/ops2/layout/tokens.css`. **All are container widths
 | `--cp-ctx-2up` | 720 px | `ctx` | Context blocks pair two-across (single-column record only — the rail is never this wide). |
 | `--cp-fold-ref` | 640 px | `record` | Reference fold: Files / History / Payments closed below, open above. |
 
-**Engineering floor: 320 px.** Verified in the mock: no horizontal overflow at 320 on any of the eight
-screens. The mock's measured behaviour at 320 / 375 / 412 / 480 / 560 / 680 / 768 / 900 / 1024 / 1180 /
-1280 / 1440 / 1920 is monotonic — every change point crosses once, in one direction.
+**Engineering floor: 320 px.** Re-verified in the mock after the visual treatment and after add/delete
+and the size junction landed: **320 width × screen combinations measured — 32 widths from 320 to 1920,
+across all ten screens — zero horizontal overflow, and no element wider than its frame at any of them.**
+Each change point crosses once in each direction it should: the rail at 1024→1060, the two-column record
+at 1280→1366, the editor's two-up fields at 600→640, the row's first fold at 520→540 and its second at
+720→740. The context pair-up crosses twice by design — on at 740→768 when the record is one column and
+off at 1280→1366 when it becomes a narrow rail — which is the correct answer, not a wobble.
 
 **One honest consequence, stated rather than hidden.** Because the openings list responds to *its own*
 width, the list is briefly narrower when the context rail appears than it was just before. With the
@@ -100,18 +104,18 @@ re-checked — it is the one coupling between two change points in the system.
 
 | Slot | Narrow (< `--cp-shell-rail`) | Wide |
 |---|---|---|
-| Menu | ☰, opens the drawer | hidden (rail is present) |
+| Menu | menu icon, opens the drawer | hidden (rail is present) |
 | Brand | shown **only when there is no record crumb** — otherwise the brand lives in the drawer/rail | in the rail |
-| Back | `←`, one destination up | same |
+| Back | back icon, one destination up | same |
 | Crumb | `{publicRef}` (data face, never truncated) · `{title}` (truncates) | same |
 | Freshness | hidden | `Loaded 14:38` |
-| Refresh | `⟳` | `⟳` |
-| Options | `⋯` | `⋯` |
+| Refresh | refresh icon | refresh icon |
+| Options | overflow icon | overflow icon |
 
 The crumb is the record's identity **kept on screen while the page scrolls** — replacing register row
 18's sticky header that carried only a capitalised tab name. Reference: rows 18, 51.
 
-`⋯` opens a plain menu (not a dialog): `Showing prices inc GST — this customer's mode` with an
+The overflow control opens a plain menu (not a dialog): `Showing prices inc GST — this customer's mode` with an
 inc/ex switch, `Copy link to this record`, `Sign out`.
 
 ### 3.2 Navigation — one component, two presentations
@@ -186,9 +190,14 @@ an anonymous submitter. Then the phone control (N1) and `Delivery to {suburb}`.
 
 ### 4.2 Phase ribbon (rows 57–59)
 
-Six equal cells: **Intake · Pricing · Issued · Accepted · Production · Delivered**. Passed cells filled
-sage/white, current cell tinted with a 2 px sage underline and `aria-current="step"`, future cells
-recessive. Never colour alone — position and weight carry it too.
+Six equal cells: **Intake · Pricing · Issued · Accepted · Production · Delivered**.
+
+**Where the record is now is the loudest cell, and where it has been is the quietest of the three
+states.** My first draft had this inverted — passed cells solid sage, the current cell a pale wash —
+which made the brightest thing on the ribbon the place the record *used to be*. Corrected in the
+treatment and corrected here: passed cells read **settled** (sage ink on sage-wash), the current cell
+reads **present** (ink at weight, on paper, with a 2 px sage underline), future cells recede. Never
+colour alone — weight, ground and `aria-current="step"` each carry it independently.
 
 Caption, verbatim shape: `Now · {stateLabel} · waiting on {us|customer|nobody} · {n} days in this state`.
 `stateLabel` uses `lifecycleOf`'s own vocabulary (10 internal labels, 12 order stage labels) with no
@@ -446,14 +455,23 @@ sentence in the units panel after a split lands**, so the next step is not a gue
 (`project.with_manufacturer_since`, `POST /projects/:id/with-manufacturer`; arch §7). R1 shows the seam
 honestly rather than pretending the junction has one route:
 
-- The control renders, labelled `Ask the manufacturer`, and is marked as arriving with the work queue —
-  the same visual treatment as the R3 derivation seam, so an unbuilt thing never looks built.
-- Until R4, the route that works is the one the console already has: `Add a note` on the record, whose
-  composer opens pre-filled with `Manufacturer: can this be made at {height} × {width}? ` and the caret
-  after it. That is a real capability today (row 149, `POST /projects/:id/note`), and it is what the
-  founders do now.
-- **When R4 lands, the seam becomes the real control and the pre-filled note stops being offered.** That
-  swap is a one-component change and is recorded here so R4 does not leave two ways to do it.
+- The control renders, labelled `Ask the manufacturer`, and **works today**: it opens the record's note
+  composer pre-filled with `Manufacturer: can this be made at {height} × {width}? `, caret after it.
+  That is a real capability (row 149, `POST /projects/:id/note`) and it is what the founders do now.
+- Beneath it, one caption tagged `R4`: *"Adds a note for now — the with-manufacturer mark arrives with
+  the work queue."*
+- **When R4 lands the caption goes, the control sets the mark, and the pre-filled note stops being
+  offered** — one component change, recorded here so R4 does not leave two ways to do it.
+
+> **Why this seam is drawn differently from R3's, decided rather than drifted into.** The obvious move
+> was to give it the R3 block's dashed hatch. Two hatched blocks on one record would read as *unfinished
+> work*, which is the opposite of what a seam is for — and it would be a lie about this one specifically.
+> **They are different kinds of not-yet.** R3's is a whole region reserved: a block holding space for
+> something that does not exist, and hatch is exactly right for scaffolding. This is a **control that
+> works** — a note really is sent — where only the *mark* is reserved. Hatching a working control would
+> draw it as broken. So: R3 keeps the hatch, this renders as an ordinary secondary control, and the
+> `R4` caption is what carries the reservation. The rule the two share is the one that matters — nothing
+> unbuilt is allowed to look built.
 
 **The `fit` flag is the through-line.** Whichever route is taken — or neither — the line keeps
 `review.fit` and the row shows it via `reviewReasons()` (row 83), so an unsettled oversize opening is
@@ -498,7 +516,7 @@ rates yet, so no delivery figure can be shown — this is not $0.
   while the embedded `ItemForm` says `inc GST` — the two disagree in silence. Primary figures are in the
   **project owner's** `price_gst_mode`, resolved through `src/data/gst.ts`, and the basis word
   (`estimate` / `issued` / `contract`) is kept (row 54).
-- The `⋯` menu's inc/ex switch is **view-only**: it changes nothing stored and no customer surface
+- The overflow menu's inc/ex switch is **view-only**: it changes nothing stored and no customer surface
   moves (AC-80). While it is switched away from the customer's mode the label reads
   `Prices shown ex GST — this customer's mode is inc`, so a number can never be read aloud in the wrong
   mode without the screen saying so.
@@ -563,8 +581,9 @@ The editor renders, at the save control:
 
 The entered values remain on screen; nothing is rendered as saved; no generic failure and no silent 404.
 
-**Freshness.** The top bar states `Loaded HH:MM` and offers `⟳` (repairing row 26 — no refresh control
-exists anywhere today). `⟳` refetches the record; the timestamp updates only on a successful response.
+**Freshness.** The top bar states `Loaded HH:MM` and offers a refresh control (repairing row 26 — no
+refresh control exists anywhere today). It refetches the record; the timestamp updates only on a
+successful response.
 
 ---
 
@@ -743,7 +762,7 @@ has the proposed state to verify against.
   the one used during the call.
 - `ASSUMED:` **The reference fold threshold is 640 px of record width**, and the fold is remembered per
   block once the operator touches it (`data-user`), so a manual open is not undone by a resize.
-- `ASSUMED:` **The GST view switch lives in the `⋯` menu, not on the record surface.** It is used rarely;
+- `ASSUMED:` **The GST view switch lives in the overflow menu, not on the record surface.** It is used rarely;
   a permanent segmented control would be a permanent invitation to read a number in the wrong mode.
 - ~~`ASSUMED:` Deleting nothing.~~ **Settled: add and delete are in R1 (§4.5a).**
 
@@ -808,25 +827,39 @@ not because it breaks, but because that is the discipline.
 
 ---
 
-## 14. Changes required in the mock
+## 14. The mock — applied, and what the treatment settled
 
-The mock is with the ui-designer for its visual pass, so this section is the change list to apply
-afterwards — not applied here. Nothing below alters the layout system, the change points, or any
-existing component's structure; every item is content or one control inside a frame that already exists.
+**Status: applied and re-verified. Spec and mock agree.** The visual pass (`5160fee6`) installed the
+token system this section now builds on: an 8-step type ramp, a 4 px space grid, the product's 2/3 px
+radii, one soft shadow at two strengths, all inline styles lifted into classes, and a drawn 1.6 px icon
+set replacing the typed Unicode glyphs. Everything below was added inside that system — **no inline
+style and no Unicode standing in for an icon was reintroduced** (verified: zero `style="` attributes;
+the only glyphs left in the file sit inside the comment explaining their removal).
 
-| # | Screen / place | Change |
-|---|---|---|
-| M1 | `record`, `editing` — foot of the openings list | Add the `+ Add opening` control, quiet, full width, inside the list card. |
-| M2 | `empty` | Add `+ Add the first opening` beneath `No lines on this project.` |
-| M3 | new state on the `editing` screen (or a sixth record variant, `adding`) | A draft row `W07` at the end of the list, marked `not saved yet`, editor open, Item ID focused, product empty. |
-| M4 | `editing` — editor footer | Add `Remove opening`, and show its confirm-in-place panel: **Remove W02?** / *Notes written against this line stay on the record.* / `Remove` · `Keep`. Use W03 in one frame so the units sentence appears. |
-| M5 | `editing` — dimensions area | Replace nothing; **add** the size junction band (§4.6a) with its two routes as controls. Set the sample line's width over its maximum so the band is truthful for the data on screen. |
-| M6 | `editing` — the `Ask the manufacturer` control | Render it with the **same seam treatment as the R3 derivation block**, and put the pre-filled note text (`Manufacturer: can this be made at 2100 × 3600?`) beside it as the R1 stand-in. |
-| M7 | `record`, `editing` — W02's flag list | Add the `fit` flag sentence *"No single unit is made at this size — we will confirm how it is built and price it at technical review."* so the row and the junction agree. |
-| M8 | `editing` — composite units panel (W03) | Add *"Each unit can be a different product — open a unit to change it."* |
-| M9 | `issued` | Confirm `+ Add opening` and `Remove opening` are **absent** — that screen is the proof that both are confined to the editable states. |
-| M10 | harness | Screen list gains `Record · adding` if M3 becomes its own variant. |
+| # | Applied |
+|---|---|
+| M1 | `Add opening` is the openings list's own last row — full-width, 46 px, quiet on `--bone`, plus icon drawn. Not a floating button: it belongs to the list, scrolls with it, and at 320 px has nothing beside it to collide with. |
+| M2 | `Add the first opening` under `No lines on this project.` |
+| M3 | New screen **Record · adding**: draft row `W07` at the end of the list, `not saved yet` in `--body-soft`, editor open with the Item ID pre-filled and the help line *"Next free code on this record. Change it if you want."*; Save inert **by token** with `Choose a product and enter a size` beneath it. |
+| M4 | `Remove opening` in the editor footer, under a rule, away from Save — outlined in the attention tone, never inert. New screen **Record · removing** shows its confirm expanded on **W03**, so the units clause appears: *"Its 2 joined units go with it. Notes written against this line stay on the record."* |
+| M5 | The size junction band on the open editor, in the `.warn` register — the one the treatment reserved for *the record stating a condition of itself*, which is exactly what an unsettled fit is, and which reads distinctly from the `.note` divergence band directly above it. |
+| M6 | `Ask the manufacturer` renders as an ordinary secondary control with an `R4` caption — **not** the R3 hatch. Reasoning in §4.6a. |
+| M7 | **W02 is now the owner's own example**: `Awning window — 3 sash, high-level` at 1210 × 3600, over the 1810 mm maximum, carrying the `fit` flag on its row so the row and the junction agree. Its thermal flag and divergence band stay, which is what demonstrates the two registers side by side. |
+| M8 | *"Each unit can be a different product — open a unit to change it."* in W03's units footer. |
+| M9 | **Record · issued** carries neither control — verified programmatically, not by eye. That screen is the proof that add and delete are confined to the editable states. |
+| M10 | Harness gains **Record · adding** and **Record · removing**; ten screens in all. |
+| M11 | Read-only band restated: *"nothing can be added, changed or removed. Return it to pricing to work on it."* Since §4.5a, three capabilities close at that boundary, not one, and the sentence should name what actually stops. |
 
-Two things that must **not** change: the openings list's column set (add/delete introduce no column), and
-the change-point table — the junction band and the draft row live inside containers that already reflow,
-and both were checked against the 320 px measure before being specified.
+**Re-verification, after all of the above:**
+
+- **320 width × screen combinations** (32 widths, 320→1920, × 10 screens): **zero horizontal overflow**,
+  and **no element wider than its frame** at any of them.
+- Every change point still crosses once in each direction it should (§2).
+- All ten screens build without error; the reference fold and the 320/768/1440 gallery still work.
+- Every piece of new text measured for contrast on its actual ground: junction headline 5.8:1, route
+  caption 5.9:1, `R4` tick 4.5:1, `not saved yet` 5.0:1, the draft's blocked reason 6.8:1, the inert
+  Save label **4.7:1** — which is the point of inert-by-token rather than by opacity — `Remove W03?`
+  7.4:1, its consequence sentence 6.3:1, the Remove button 5.4:1. All pass AA at their size and weight.
+
+Two things deliberately **not** changed: the openings list's column set — add and delete introduce no
+column — and the change-point table.
