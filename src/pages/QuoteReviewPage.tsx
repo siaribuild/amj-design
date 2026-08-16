@@ -211,6 +211,7 @@ export function QuoteReviewPage({ projectId, setPage, backToList, onOpenRecord }
             lineTotals={current.lines.map((l) => l.lineTotal ?? 0)}
             deliveryInc={current.delivery}
             postcode={current.deliveryPostcode}
+            referral={current.referral}
             deposit={deposit} />
         </Blk>
 

@@ -29,7 +29,7 @@ function TotalRow({ label, value, big, attn }: { label: string; value: string; b
   );
 }
 
-export function QuoteTotals({ lineTotals, deliveryInc, postcode, deposit, pending, conservative }: {
+export function QuoteTotals({ lineTotals, deliveryInc, postcode, deposit, pending, conservative, referral }: {
   /** Per-line GST-INCLUSIVE totals. Passed per line, not pre-summed, because
    *  the ATO taxable-supply rule works out GST on each supply and sums it —
    *  which is also what makes the line prices above add up to the subtotal
@@ -46,6 +46,18 @@ export function QuoteTotals({ lineTotals, deliveryInc, postcode, deposit, pendin
   pending?: boolean;
   /** Pending + the postcode fell to the fallback zone ⇒ "allowed generously". */
   conservative?: boolean;
+  /** The referred tradie's first-order discount, when one priced this document.
+   *
+   *  ONE PERCENTAGE, AND NEVER A TOTAL. Every registered account also carries a
+   *  standing discount the business has decided never to show, so a combined
+   *  figure would disclose it by subtraction. The prop carries the referral
+   *  number alone and there is nothing here to build the other from.
+   *
+   *  On an issued quote and on an order this comes from the stamp taken at
+   *  ISSUE, not from live eligibility — ordering is exactly what ends a tradie's
+   *  eligibility, so a live lookup would erase the label at the moment it became
+   *  a permanent fact about the purchase. */
+  referral?: { percent: number; referrerName: string } | null;
 }) {
   const gstMode = useGstMode();
   const goodsInc = lineTotals.reduce((sum, n) => sum + (n || 0), 0);
@@ -56,6 +68,17 @@ export function QuoteTotals({ lineTotals, deliveryInc, postcode, deposit, pendin
   return (
     <>
       <div className="bg-sage/[0.07] border-t border-black/10 px-5 py-[15px] flex flex-col gap-[9px]">
+        {/* Above the figures, because it is a statement ABOUT the prices rather
+            than one of them — and in the past tense, because it has already
+            happened. There is no redemption step on this site: the discount is
+            inside the numbers below, not something still to be applied. */}
+        {referral && (
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-1 pb-[9px] border-b border-black/10 t-cap"
+            style={{ color: "var(--sage-ink)" }}>
+            <span>Referral discount — {referral.percent}% off, thanks to {referral.referrerName}</span>
+            <span className="font-medium">Already in the prices above</span>
+          </div>
+        )}
         <TotalRow label={`Windows and doors (${tax.suffix})`} value={money(tax.goods)} />
         <TotalRow
           label={`Delivery to ${postcode ?? "your site"}${deliveryInc == null ? "" : ` (${tax.suffix})`}`}

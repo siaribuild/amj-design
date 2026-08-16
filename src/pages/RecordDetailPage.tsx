@@ -407,6 +407,10 @@ export function OrderDetail({ orderId, setPage, backToList }: { orderId: string;
             lineTotals={lines.map((l) => l.lineTotal ?? 0)}
             deliveryInc={order.delivery}
             postcode={order.deliveryPostcode ?? null}
+            /* From the issue-time stamp the order inherited, not live state:
+               placing this order is what ended the eligibility, so a live lookup
+               would erase the label at the moment it became permanent. */
+            referral={order.referral}
             /* No deposit row: it is invoiced by now, and the journey above says so. */
           />
         </Blk>
