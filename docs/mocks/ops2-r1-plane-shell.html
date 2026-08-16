@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ops2 R1 — the frame and the record (plane shell)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <!--
   ═══════════════════════════════════════════════════════════════════════════
   ops2 R1 — THE FRAME AND THE RECORD, on the plane shell.
@@ -31,73 +34,148 @@
 :root{
   color-scheme: light;
 
-  /* §1 palette primitives — a rebrand lands here */
-  --p-n-000:#ffffff; --p-n-025:#fbfbf9; --p-n-050:#f6f6f3; --p-n-100:#eeeeea;
-  --p-n-150:#e4e4df; --p-n-200:#d8d8d2; --p-n-300:#c0c0b8; --p-n-400:#9d9d94;
-  --p-n-500:#7a7a71; --p-n-600:#5d5d55; --p-n-700:#45453f; --p-n-800:#2e2e2a;
-  --p-n-900:#1c1c19; --p-n-950:#121210;
-  --p-sage-050:#f3f6ec; --p-sage-100:#e5ebd6; --p-sage-200:#cfd9b4;
-  --p-sage-300:#b4c391; --p-sage-500:#8a9a5b; --p-sage-600:#74844a;
-  --p-sage-700:#5c6a39; --p-sage-900:#363f21;
-  --p-pos-050:#e9f4ed; --p-pos-200:#b7dcc6; --p-pos-600:#2f7d4f; --p-pos-800:#1d5334;
-  --p-attn-050:#fdf4e3; --p-attn-200:#ecd49c; --p-attn-600:#97690f; --p-attn-800:#6a4907;
-  --p-crit-050:#fdeeec; --p-crit-200:#f2beb8; --p-crit-600:#b3261e; --p-crit-800:#7d1a14;
-  --p-info-050:#eaeffb; --p-info-200:#bccbf0; --p-info-600:#3a56b8; --p-info-800:#26397c;
-  --p-shadow-rgb:28 28 25;
+  /* §1 PALETTE PRIMITIVES — a rebrand lands here, and this pass IS that rebrand.
+     Every step below is the shipping product's own token from src/styles/theme.css,
+     named in the comment. Where the product states a colour as an alpha over
+     white (its tone triples) the value is composited here, because a console
+     surface is not always white and an alpha would drift. Six values are
+     derived — marked (derived) — and each is a shade step of a real product hue,
+     never a new one. */
 
-  /* §2 semantic roles — a component-library swap rebinds here */
+  /* the warm neutral ramp — paper · bone · recessive · shade · line · ink */
+  --p-n-000:#FFFFFF;  /* --paper      */
+  --p-n-025:#FBFAF8;  /* --bone       */
+  --p-n-050:#F5F3F0;  /* --recessive  */
+  --p-n-100:#F0EDE8;  /* --secondary  */
+  --p-n-150:#E8E5DF;  /* --shade      */
+  --p-n-200:#D5D5D3;  /* --line, composited on paper  */
+  --p-n-250:#C8C5BE;  /* --switch-background          */
+  --p-n-300:#BDBDBB;  /* --line-strong, composited    */
+  --p-n-350:#B5B2AC;  /* --quietest   */
+  --p-n-400:#9A9894;  /* --quieter    */
+  --p-n-500:#8B8880;  /* --quiet      */
+  --p-n-550:#767369;  /* (derived) the quietest ink that still clears 4.5:1 */
+  --p-n-600:#6F6C67;  /* --body-soft  */
+  --p-n-700:#5C5A56;  /* --body       */
+  --p-n-800:#3A3835;  /* --ink-soft   */
+  --p-n-900:#131311;  /* --ink        */
+  --p-n-950:#0C0C0A;  /* --night      */
+
+  /* sage — the one accent, rationed */
+  --p-sage-050:#F7FAF8;  /* --sage-veil   */
+  --p-sage-100:#F3F6F5;  /* --sage-wash — opaque on purpose: the same alpha over
+                            bone drops the hue and reads as dirty grey */
+  --p-sage-200:#DCE7E1;  /* (derived) the border that pairs with the wash */
+  --p-sage-300:#8CA99B;  /* --sage-light — sage on a dark ground */
+  --p-sage-500:#5A7A6A;  /* --sage        */
+  --p-sage-600:#4A6858;  /* --sage-hover  */
+  --p-sage-700:#3F5A4C;  /* --sage-deep   */
+  --p-sage-900:#355344;  /* --sage-ink — text on the wash */
+
+  /* states. The product draws a hard line between a WARNING (ours to resolve,
+     stops nobody — amber) and ATTENTION (nothing proceeds — red). This file
+     keeps its own role names, and binds `attention` to the amber family and
+     `critical` to the red one, so the distinction survives the rebind. */
+  --p-pos-050:#EBF4EF;  /* (derived) --tone-pos-bg on paper */
+  --p-pos-200:#C0DACD;  /* (derived) --tone-pos-bd on paper */
+  --p-pos-600:#2C7A54;  /* --positive / --tone-pos */
+  --p-pos-800:#1D5537;  /* (derived) the text step */
+  --p-attn-050:#F8F1E5; /* (derived) --tone-attn-bg on paper */
+  --p-attn-200:#E3CDA6; /* (derived) --tone-attn-bd on paper */
+  --p-attn-600:#A2610A; /* --tone-attn  */
+  --p-attn-800:#7A5410; /* --warning-ink */
+  --p-crit-050:#FBEDEB; /* (derived) --attention at .08 on paper */
+  --p-crit-200:#EDC4BE; /* (derived) --attention at .30 on paper */
+  --p-crit-600:#C0392B; /* --attention / --destructive */
+  --p-crit-800:#96271B; /* --attention-ink */
+  --p-info-050:#EEF1F4; /* (derived) --tone-work-bg on paper */
+  --p-info-200:#C6D0DA; /* (derived) --tone-work-bd on paper */
+  --p-info-600:#4C6A88; /* --info      */
+  --p-info-800:#31485F; /* --info-ink  */
+  --p-shadow-rgb:12 12 10;   /* --night */
+
+  /* §2 SEMANTIC ROLES — a component-library swap rebinds here.
+     THE LEGIBILITY FLOOR IS PART OF THE CONTRACT. This console is read
+     one-handed, on a phone, with a customer waiting on the line. Every role
+     that can carry a word clears 4.5:1 on the surface it is used on — including
+     the two roles a previous pass got wrong: the ABSENCE ramp (which says
+     "not priced", a fact) and the DISABLED ramp (which says why an action is
+     unavailable). Quiet is expressed by weight, face and word order. It is
+     never expressed by making the text hard to read. */
   --surface-0:var(--p-n-050); --surface-1:var(--p-n-000); --surface-2:var(--p-n-025);
   --surface-3:var(--p-n-100); --surface-sunken:var(--p-n-150);
-  --surface-overlay:var(--p-n-000); --surface-scrim:rgb(28 28 25 / .42);
-  --surface-selected:var(--p-sage-050); --surface-hover:var(--p-n-050);
-  --surface-active:var(--p-n-100); --surface-disabled:var(--p-n-050);
-  --rule:var(--p-n-150); --rule-strong:var(--p-n-200); --rule-quiet:var(--p-n-100);
-  --rule-inverse:rgb(255 255 255 / .14); --divider:1px;
-  --text-0:var(--p-n-900); --text-1:var(--p-n-800); --text-2:var(--p-n-600);
-  --text-3:var(--p-n-500); --text-4:var(--p-n-400);   /* absence, "not recorded" */
-  --text-disabled:var(--p-n-400); --text-inverse:var(--p-n-000);
+  --surface-overlay:var(--p-n-000); --surface-scrim:rgb(12 12 10 / .48);
+  --surface-selected:var(--p-sage-100); --surface-hover:var(--p-n-025);
+  --surface-active:var(--p-n-100); --surface-disabled:var(--p-n-100);
+  --rule:var(--p-n-200); --rule-strong:var(--p-n-300); --rule-quiet:var(--p-n-150);
+  --rule-inverse:rgb(255 255 255 / .16); --divider:1px;
+  --text-0:var(--p-n-900);   /* 16.9:1 — the subject                        */
+  --text-1:var(--p-n-800);   /* 11.0:1 — body                               */
+  --text-2:var(--p-n-700);   /*  7.6:1 — secondary, captions                */
+  --text-3:var(--p-n-600);   /*  5.2:1 — quiet: labels, sub-lines           */
+  --text-4:var(--p-n-550);   /*  4.8:1 — ABSENCE, "not priced". Readable.   */
+  --text-disabled:var(--p-n-700);  /* 7.6:1 on the inert surface — a blocked
+                                      control must be READ, not merely seen */
+  --text-inverse:var(--p-n-000);
   --text-link:var(--p-sage-700);
-  --brand:var(--p-sage-500); --brand-strong:var(--p-sage-700);
-  --brand-tint:var(--p-sage-050); --brand-border:var(--p-sage-300);
-  --brand-on:var(--p-n-000); --accent-underline:var(--p-sage-600);
+  --brand:var(--p-sage-500); --brand-strong:var(--p-sage-900);
+  --brand-tint:var(--p-sage-100); --brand-tint-quiet:var(--p-sage-050);
+  --brand-border:var(--p-sage-200); --brand-border-strong:var(--p-sage-300);
+  --brand-on:var(--p-n-000); --accent-underline:var(--p-sage-500);
 
-  --tone-neutral-fg:var(--text-2);   --tone-neutral-bg:var(--p-n-100);   --tone-neutral-border:var(--p-n-200);
-  --tone-positive-fg:var(--p-pos-800);  --tone-positive-bg:var(--p-pos-050);  --tone-positive-border:var(--p-pos-200);
-  --tone-attention-fg:var(--p-attn-800);--tone-attention-bg:var(--p-attn-050);--tone-attention-border:var(--p-attn-200);
-  --tone-critical-fg:var(--p-crit-800); --tone-critical-bg:var(--p-crit-050); --tone-critical-border:var(--p-crit-200);
-  --tone-info-fg:var(--p-info-800);     --tone-info-bg:var(--p-info-050);     --tone-info-border:var(--p-info-200);
+  --tone-neutral-fg:var(--text-2);   --tone-neutral-bg:var(--p-n-100);   --tone-neutral-border:var(--p-n-250);   --tone-neutral-mark:var(--p-n-500);
+  --tone-positive-fg:var(--p-pos-800);  --tone-positive-bg:var(--p-pos-050);  --tone-positive-border:var(--p-pos-200);  --tone-positive-mark:var(--p-pos-600);
+  --tone-attention-fg:var(--p-attn-800);--tone-attention-bg:var(--p-attn-050);--tone-attention-border:var(--p-attn-200);--tone-attention-mark:var(--p-attn-600);
+  --tone-critical-fg:var(--p-crit-800); --tone-critical-bg:var(--p-crit-050); --tone-critical-border:var(--p-crit-200); --tone-critical-mark:var(--p-crit-600);
+  --tone-info-fg:var(--p-info-800);     --tone-info-bg:var(--p-info-050);     --tone-info-border:var(--p-info-200);     --tone-info-mark:var(--p-info-600);
 
-  --ctl-bg:var(--p-n-000); --ctl-bg-hover:var(--p-n-050); --ctl-border:var(--p-n-200);
-  --ctl-fg:var(--text-1); --ctl-primary-bg:var(--p-sage-600);
-  --ctl-primary-bg-hover:var(--p-sage-700); --ctl-primary-fg:var(--p-n-000);
-  --ctl-danger-fg:var(--p-crit-600);
-  --ctl-disabled-bg:var(--p-n-050); --ctl-disabled-fg:var(--p-n-400); --ctl-disabled-border:var(--p-n-150);
-  --field-bg:var(--p-n-000); --field-border:var(--p-n-300); --field-border-focus:var(--p-sage-600);
+  --ctl-bg:var(--p-n-000); --ctl-bg-hover:var(--p-n-050); --ctl-border:var(--p-n-300);
+  --ctl-fg:var(--text-1); --ctl-primary-bg:var(--p-sage-500);
+  --ctl-primary-bg-hover:var(--p-sage-600); --ctl-primary-fg:var(--p-n-000);
+  --ctl-danger-fg:var(--p-crit-800); --ctl-danger-border:var(--p-crit-200);
+  /* INERT BY TOKEN. Not a fade. The control loses its fill and its shadow —
+     that is what says "unavailable" — and keeps a legible label and a real
+     border, so the operator can still read what it is. */
+  --ctl-disabled-bg:var(--p-n-100); --ctl-disabled-fg:var(--text-disabled);
+  --ctl-disabled-border:var(--p-n-250);
+  --field-bg:var(--p-n-000); --field-border:var(--p-n-300); --field-border-focus:var(--p-sage-500);
   --focus-ring:var(--p-sage-700); --focus-ring-w:2px; --focus-ring-offset:2px;
-  --skeleton-base:var(--p-n-100); --skeleton-sheen:var(--p-n-050);
+  --skeleton-base:var(--p-n-150); --skeleton-sheen:var(--p-n-050);
 
   /* §3 chrome — the console's ONE dark surface. A surface, not a theme. */
-  --ops-bg:var(--p-n-900); --ops-bg-raised:var(--p-n-800); --ops-fg:var(--p-n-050);
-  --ops-fg-quiet:var(--p-n-300); --ops-fg-faint:var(--p-n-400);
-  --ops-rule:var(--rule-inverse); --ops-hover:rgb(255 255 255 / .08);
-  --ops-active:rgb(255 255 255 / .14); --ops-accent:var(--p-sage-300);
+  --ops-bg:#14150F;                    /* --ops   */
+  --ops-bg-raised:#1D1E17;             /* --ops-panel */
+  --ops-fg:var(--p-n-025);
+  --ops-fg-quiet:var(--p-n-350);       /* 8.4:1 on the chrome */
+  --ops-fg-inert:var(--p-n-500);       /* 4.7:1 — a destination you cannot open
+                                          yet is still a word you can read */
+  --ops-rule:var(--rule-inverse); --ops-hover:rgb(255 255 255 / .07);
+  --ops-active:rgb(255 255 255 / .12); --ops-accent:var(--p-sage-300);
 
-  /* §5 type */
-  --font-ui:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  --font-data:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  /* §5 TYPE — the product's three roles, at console density.
+       display/data  Space Grotesk — every code, dimension, money figure and
+                     reference, plus the plane identities: the things compared
+                     down a column rather than read along a line
+       ui            Inter — every label and sentence
+     The sizes are the shipping scale's, tightened one step for a console: the
+     marketing site reads at arm's length, this reads at 300mm with one thumb. */
+  --font-ui:'Inter',ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-data:'Space Grotesk',ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --font-mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --fvn-data:tabular-nums slashed-zero;
-  --t-hd1:600 20px/26px var(--font-ui);
-  --t-hd2:600 15px/20px var(--font-ui);
-  --t-body:400 13.5px/19px var(--font-ui);
-  --t-body-strong:600 13.5px/19px var(--font-ui);
-  --t-quiet:400 12.5px/17px var(--font-ui);
-  --t-label:600 11px/14px var(--font-ui);
-  --t-cap:400 11.5px/15px var(--font-ui);
-  --t-dat:500 13.5px/19px var(--font-data);
-  --t-dat-lg:600 17px/22px var(--font-data);
+  --t-hd1:600 17px/22px var(--font-data);      /* the plane's identity        */
+  --t-hd2:600 15px/20px var(--font-data);      /* a zone or sheet identity    */
+  --t-body:400 14px/20px var(--font-ui);
+  --t-body-strong:600 14px/20px var(--font-ui);
+  --t-quiet:400 13px/18px var(--font-ui);      /* sub-lines, reasons, warnings*/
+  --t-label:600 11px/14px var(--font-data);    /* the eyebrow, tracked        */
+  --t-cap:400 12px/16px var(--font-ui);        /* the basis on a figure       */
+  --t-mono:400 11px/16px var(--font-mono);     /* an HTTP code, a payload     */
+  --t-dat:500 14px/20px var(--font-data);
+  --t-money:600 15px/20px var(--font-data);    /* a figure in a column        */
+  --t-dat-lg:600 20px/26px var(--font-data);   /* the conclusion              */
   --t-datsm:500 12px/16px var(--font-data);
-  --tracking-label:.055em;
+  --tracking-label:.09em; --tracking-hd:-.1px;
 
   /* §6 layout */
   --nav-w:224px;                 /* register row 17: w-56 */
@@ -117,12 +195,16 @@
   --row-scan:32px; --row-work:44px; --row-line:66px; --row-unit:40px;
   --tap-min:44px; --row-card-min:72px;
 
-  /* §8 shape / elevation / motion */
-  --r-xs:2px; --r-sm:3px; --r-md:6px; --r-lg:10px; --r-pill:999px;
-  --shadow-1:0 1px 2px rgb(var(--p-shadow-rgb)/.06);
-  --shadow-2:0 2px 6px rgb(var(--p-shadow-rgb)/.08),0 1px 2px rgb(var(--p-shadow-rgb)/.06);
-  --shadow-3:0 10px 28px rgb(var(--p-shadow-rgb)/.16),0 2px 6px rgb(var(--p-shadow-rgb)/.08);
-  --shadow-plane:-6px 0 24px rgb(var(--p-shadow-rgb)/.12);
+  /* §8 shape / elevation / motion.
+     The product's shape language is square: --radius .125rem, hairline borders,
+     and NO shadow except on a surface that genuinely floats. A console that
+     rounds and shades every box reads as a consumer app pretending to be
+     serious; boundaries here are drawn by a rule and a fill step, which is what
+     survives at 320px where a 10px radius is a quarter of a control. */
+  --r-xs:2px; --r-sm:2px; --r-md:4px; --r-lg:8px; --r-pill:999px;
+  --shadow-2:0 1px 2px rgb(var(--p-shadow-rgb)/.07);
+  --shadow-3:0 12px 32px rgb(var(--p-shadow-rgb)/.22),0 2px 8px rgb(var(--p-shadow-rgb)/.10);
+  --shadow-plane:-10px 0 28px rgb(var(--p-shadow-rgb)/.14);
   --dur-instant:0ms; --dur-fast:120ms; --dur-push:240ms; --dur-pop:200ms;
   --ease-std:cubic-bezier(.2,0,0,1);
 
@@ -139,33 +221,40 @@
 /* ══ PAGE SCAFFOLD — this is the mock's own frame, not the console ════════ */
 *{box-sizing:border-box}
 body{margin:0;background:var(--p-n-100);color:var(--text-1);font:var(--t-body);
-  -webkit-font-smoothing:antialiased}
-.doc{max-width:1560px;margin:0 auto;padding:32px 20px 80px}
-.doc h1{font:var(--t-hd1);font-size:24px;color:var(--text-0);margin:0 0 6px}
-.doc h2{font:var(--t-hd2);font-size:16px;color:var(--text-0);margin:44px 0 4px;
-  padding-top:20px;border-top:2px solid var(--p-n-300)}
-.doc p{max-width:78ch;margin:8px 0;color:var(--text-2);font:var(--t-body)}
-.doc code{font:var(--t-mono);font-family:var(--font-mono);font-size:12px;
-  background:var(--p-n-050);border:1px solid var(--rule);border-radius:var(--r-xs);padding:0 4px}
-.doc .lede{font-size:14px;color:var(--text-1)}
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.doc{max-width:1560px;margin:0 auto;padding:36px 20px 96px}
+.doc h1{font:600 30px/36px var(--font-data);letter-spacing:-.6px;color:var(--text-0);margin:0 0 8px}
+.doc h2{font:600 20px/26px var(--font-data);letter-spacing:-.3px;color:var(--text-0);
+  margin:56px 0 4px;padding-top:22px;border-top:2px solid var(--p-n-300)}
+.doc p{max-width:74ch;margin:8px 0;color:var(--text-2);font:var(--t-body)}
+.doc code{font-family:var(--font-mono);font-size:12px;
+  background:var(--p-n-025);border:1px solid var(--rule);border-radius:var(--r-xs);padding:1px 4px}
+.doc .lede{font-size:16px;line-height:25px;color:var(--text-1);max-width:70ch}
 .law{background:var(--surface-1);border:1px solid var(--rule);border-left:3px solid var(--brand);
-  border-radius:var(--r-md);padding:14px 16px;margin:16px 0;max-width:78ch}
+  padding:16px 18px;margin:18px 0;max-width:74ch;box-shadow:var(--shadow-2)}
 .law b{color:var(--text-0)}
-.rack{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start;margin-top:18px}
-.dev{display:flex;flex-direction:column;gap:8px}
+.rack{display:flex;flex-wrap:wrap;gap:30px;align-items:flex-start;margin-top:22px}
+.dev{display:flex;flex-direction:column;gap:10px}
 .dev-cap{font:var(--t-label);letter-spacing:var(--tracking-label);text-transform:uppercase;
   color:var(--text-3)}
-.dev-cap b{color:var(--text-1);font-weight:600}
-.dev-note{font:var(--t-cap);color:var(--text-3);max-width:340px}
-.frame{background:var(--p-n-300);border:1px solid var(--p-n-400);border-radius:14px;
-  padding:8px;box-shadow:var(--shadow-2)}
-.frame > .console{border-radius:7px;overflow:hidden}
+.dev-cap b{color:var(--text-0);font-weight:600}
+.dev-note{font:var(--t-quiet);color:var(--text-2);max-width:340px}
+.frame{background:var(--p-n-950);border-radius:16px;padding:9px;
+  box-shadow:0 18px 40px rgb(var(--p-shadow-rgb)/.18),0 2px 6px rgb(var(--p-shadow-rgb)/.12)}
+.frame > .console{border-radius:8px;overflow:hidden}
 
 /* ══ THE CONSOLE ═════════════════════════════════════════════════════════ */
 .console{position:relative;display:flex;background:var(--surface-0);color:var(--text-1);
   font:var(--t-body);overflow:hidden;isolation:isolate}
 .console *{box-sizing:border-box}
-.console button{font:inherit;color:inherit;font-family:var(--font-ui)}
+/* :where() drops this reset to (0,0,0) — LOAD-BEARING, and it is the defect
+   family LEARNINGS §3.4 records twice. As `.console button` it scored (0,1,1)
+   and beat `.btn-primary`'s (0,1,0) regardless of source order, so the primary
+   action inherited the footer's ink instead of taking white on sage and sat at
+   2.4:1: the one control the whole plane is built around, unreadable, on every
+   plane, at every width. At (0,0,0) any class the button carries wins, and a
+   row that WANTS to inherit (.lrow, .pushrow) still does. */
+:where(.console) :where(button){font:inherit;color:inherit;font-family:var(--font-ui)}
 .console :focus-visible{outline:var(--focus-ring-w) solid var(--focus-ring);
   outline-offset:var(--focus-ring-offset)}
 .dat{font-family:var(--font-data);font-variant-numeric:var(--fvn-data)}
@@ -195,35 +284,56 @@ body{margin:0;background:var(--p-n-100);color:var(--text-1);font:var(--t-body);
 .console[data-wc="compact"] .scrim,.console[data-wc="desktop"] .scrim,
 .console[data-wc="wide"] .scrim{display:none}
 
-.nav-brand{height:56px;flex:none;display:flex;align-items:center;gap:var(--space-4);
-  padding:0 var(--space-6);border-bottom:var(--divider) solid var(--ops-rule);
-  padding-top:var(--safe-top)}
-.nav-brand .mark{width:24px;height:24px;border-radius:var(--r-sm);background:var(--ops-accent);
-  flex:none;display:grid;place-items:center;color:var(--p-n-900);font:var(--t-label)}
-.nav-brand .word{font:var(--t-body-strong);color:var(--ops-fg);letter-spacing:.01em}
-.nav-list{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;padding:var(--space-4) 0;min-height:0}
+.nav-brand{min-height:60px;flex:none;display:flex;align-items:center;gap:var(--space-5);
+  padding:var(--space-4) var(--space-6);border-bottom:var(--divider) solid var(--ops-rule);
+  padding-top:calc(var(--space-4) + var(--safe-top))}
+.nav-brand .mark{width:26px;height:26px;border-radius:var(--r-sm);background:var(--ops-accent);
+  flex:none;display:grid;place-items:center;color:var(--p-n-950);
+  font:700 11px/1 var(--font-data);letter-spacing:.04em}
+.nav-brand .word{font:600 16px/20px var(--font-data);color:var(--ops-fg);letter-spacing:-.1px}
+.nav-list{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;
+  padding:var(--space-5) 0;min-height:0}
 .nav-item{display:flex;align-items:center;gap:var(--space-5);width:100%;
   min-height:var(--tap-min);padding:0 var(--space-6);background:none;border:0;
-  border-left:2px solid transparent;color:var(--ops-fg-quiet);cursor:pointer;text-align:left}
+  border-left:2px solid transparent;color:var(--ops-fg-quiet);cursor:pointer;text-align:left;
+  font:var(--t-body)}
 .nav-item:hover{background:var(--ops-hover);color:var(--ops-fg)}
 .nav-item[aria-current="page"]{background:var(--ops-active);color:var(--ops-fg);
   border-left-color:var(--ops-accent);font:var(--t-body-strong)}
-.nav-item .ico{width:16px;flex:none;text-align:center;opacity:.9}
-.nav-item .soon{margin-left:auto;font:var(--t-cap);color:var(--ops-fg-faint)}
-.nav-foot{flex:none;border-top:var(--divider) solid var(--ops-rule);padding:var(--space-5) var(--space-6);
-  padding-bottom:calc(var(--space-5) + var(--safe-bottom));display:flex;flex-direction:column;gap:var(--space-4)}
-.nav-who{font:var(--t-cap);color:var(--ops-fg-quiet);line-height:1.5}
-.nav-who b{display:block;color:var(--ops-fg);font:var(--t-body-strong)}
-.nav-who .role{color:var(--ops-fg-faint)}
-.gstwrap{display:flex;align-items:center;gap:var(--space-4);flex-wrap:wrap}
-.gstwrap .lbl{font:var(--t-cap);color:var(--ops-fg-faint)}
-.gsttoggle{display:inline-flex;border:1px solid var(--ops-rule);border-radius:var(--r-sm);overflow:hidden}
-.gsttoggle button{min-height:28px;padding:0 var(--space-5);background:none;border:0;
-  color:var(--ops-fg-quiet);font:var(--t-cap);cursor:pointer}
-.gsttoggle button[aria-pressed="true"]{background:var(--ops-accent);color:var(--p-n-900);font:var(--t-body-strong);font-size:11.5px}
-.nav-signout{min-height:var(--tap-min);border:1px solid var(--ops-rule);border-radius:var(--r-sm);
-  background:none;color:var(--ops-fg);cursor:pointer;font:var(--t-body)}
-.nav-signout:hover{background:var(--ops-hover)}
+/* A destination that is not built yet is INERT, not faded: the label stays at
+   4.7:1 and the release that brings it does the explaining. The previous
+   generation set opacity:.45 here and an operator could see that something was
+   unavailable without being able to read what. */
+.nav-item[disabled]{color:var(--ops-fg-inert);cursor:default}
+.nav-item[disabled]:hover{background:none}
+.nav-item .ico{width:18px;flex:none;text-align:center;font-size:14px}
+.nav-item .soon{margin-left:auto;font:600 10px/14px var(--font-data);
+  letter-spacing:.08em;color:var(--ops-fg-inert);border:1px solid var(--ops-rule);
+  border-radius:var(--r-xs);padding:1px 5px}
+.nav-foot{flex:none;border-top:var(--divider) solid var(--ops-rule);
+  background:var(--ops-bg-raised);padding:var(--space-6);
+  padding-bottom:calc(var(--space-6) + var(--safe-bottom));
+  display:flex;flex-direction:column;gap:var(--space-6)}
+.nav-who{font:var(--t-cap);color:var(--ops-fg-quiet);line-height:1.55}
+.nav-who b{display:block;color:var(--ops-fg);font:var(--t-body-strong);margin-bottom:1px}
+.nav-who .role{display:block;margin-top:var(--space-3);color:var(--ops-fg);
+  font:600 11px/14px var(--font-data);letter-spacing:var(--tracking-label);
+  text-transform:uppercase}
+.gstwrap{display:flex;flex-direction:column;align-items:stretch;gap:var(--space-4)}
+.gstwrap .lbl{font:var(--t-label);letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--ops-fg-quiet)}
+.gsttoggle{display:flex;border:1px solid var(--ops-rule);border-radius:var(--r-sm);
+  overflow:hidden;background:rgb(0 0 0 / .25)}
+.gsttoggle button{flex:1 1 0;min-width:0;min-height:36px;padding:0 var(--space-5);
+  background:none;border:0;color:var(--ops-fg-quiet);
+  font:500 13px/16px var(--font-data);cursor:pointer;white-space:nowrap}
+.gsttoggle button:hover{color:var(--ops-fg)}
+.gsttoggle button[aria-pressed="true"]{background:var(--ops-accent);color:var(--p-n-950);
+  font:600 13px/16px var(--font-data)}
+.nav-hint{font:var(--t-cap);color:var(--ops-fg-inert);line-height:1.5;margin-top:-2px}
+.nav-signout{min-height:var(--tap-min);border:1px solid var(--p-n-500);border-radius:var(--r-sm);
+  background:none;color:var(--ops-fg);cursor:pointer;font:var(--t-body-strong)}
+.nav-signout:hover{background:var(--ops-hover);border-color:var(--ops-fg-quiet)}
 
 /* ── DESTINATION AREA ────────────────────────────────────────────────────── */
 .dest{flex:1 1 auto;min-width:0;position:relative;display:flex;flex-direction:column;
@@ -251,10 +361,13 @@ body{margin:0;background:var(--p-n-100);color:var(--text-1);font:var(--t-body);
 }
 .plane-body{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;min-height:0;
   -webkit-overflow-scrolling:touch}
+/* THE ACTION FOOTER — 56px, one primary and one ⋯, and nothing else ever.
+   It is the plane's single action site: the blocked reason is never echoed here,
+   because echoing it is what turned a 48px footer into three wrapped rows. */
 .plane-foot{flex:none;min-height:var(--footer-phone-h);display:flex;align-items:center;
-  gap:var(--space-4);padding:var(--space-4) var(--pad);
-  padding-bottom:calc(var(--space-4) + var(--kb-inset) + var(--safe-bottom));
-  background:var(--surface-2);border-top:var(--divider) solid var(--rule);flex-wrap:wrap}
+  gap:var(--space-5);padding:var(--space-3) var(--pad);
+  padding-bottom:calc(var(--space-3) + var(--kb-inset) + var(--safe-bottom));
+  background:var(--surface-2);border-top:var(--divider) solid var(--rule-strong);flex-wrap:wrap}
 .plane-foot > *{min-width:0}
 
 /* ── IDENTITY BAND ───────────────────────────────────────────────────────
@@ -264,76 +377,127 @@ body{margin:0;background:var(--p-n-100);color:var(--text-1);font:var(--t-body);
      stack depth >0 → the back control
    A region cannot delete it, because a region does not render it. This is the
    structural answer to the regression that removed the drawer's only opener. */
-.ident{flex:none;background:var(--surface-2);border-bottom:var(--divider) solid var(--rule);
+.ident{flex:none;background:var(--surface-2);border-bottom:var(--divider) solid var(--rule-strong);
   padding-top:var(--safe-top);z-index:var(--z-ident)}
+/* Zero vertical padding is load-bearing, not tidiness: under a coarse pointer
+   the stepper inside this row is 44px of tappable plus its own 1px border, and
+   the band's budget is 48. Any vertical padding here spends a budget that
+   §13.6 measured as the scarcest in the console. */
 .ident-row{display:flex;align-items:center;gap:var(--space-3);min-height:var(--ident-h);
   padding:0 var(--space-3) 0 var(--space-2)}
 .ident-title{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;
-  padding:var(--space-2) var(--space-2)}
-.ident-title .l1{font:var(--t-body-strong);color:var(--text-0);white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
-.ident-title .l1 .code{font-family:var(--font-data);font-variant-numeric:var(--fvn-data);
-  color:var(--brand-strong)}
-.ident-title .l2{font:var(--t-cap);color:var(--text-2);white-space:nowrap;overflow:hidden;
+  padding:0 var(--space-3);gap:1px}
+/* The subject, in the display face at 17px. Two thirds of what this console is
+   for is answering "which line am I looking at" from a metre away with a
+   customer talking — so the identity is the largest thing on the plane, and the
+   CODE inside it is the one string that never truncates. */
+.ident-title .l1{font:var(--t-hd1);letter-spacing:var(--tracking-hd);color:var(--text-0);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ident-title .l1:focus{outline:none}
+.ident-title .l1 .code{font-variant-numeric:var(--fvn-data);color:var(--brand-strong)}
+.ident-title .l1 .sep{color:var(--text-4);font-weight:400;padding:0 1px}
+.ident-title .l2{font:var(--t-cap);color:var(--text-3);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
-.ident-life{padding:0 var(--pad) var(--space-4);font:var(--t-cap);color:var(--text-2)}
-.ident-life .word{color:var(--text-0);font-weight:600}
-.blockrow{display:flex;align-items:center;gap:var(--space-4);width:100%;
-  min-height:var(--tap-min);padding:var(--space-3) var(--pad);background:var(--tone-attention-bg);
+/* the lifecycle sentence — told exactly twice in the console, and this is once */
+.ident-life{padding:0 var(--pad) var(--space-4);font:var(--t-quiet);line-height:17px;
+  color:var(--text-2);display:flex;flex-wrap:wrap;align-items:baseline;gap:0 var(--space-3)}
+.ident-life .word{color:var(--text-0);font:var(--t-body-strong);
+  border-bottom:2px solid var(--accent-underline);padding-bottom:1px}
+/* THE BLOCKER ROW. The reason a primary is disabled, rendered once, as a
+   sentence you can act on — it filters the list to the lines it names. Amber,
+   not red: this is a state to resolve, not an alarm, and nothing here is the
+   machine refusing a human decision. */
+.blockrow{display:flex;align-items:center;gap:var(--space-5);width:100%;
+  min-height:var(--tap-min);padding:var(--space-4) var(--pad);background:var(--tone-attention-bg);
   border:0;border-top:var(--divider) solid var(--tone-attention-border);
-  color:var(--tone-attention-fg);font:var(--t-cap);text-align:left;cursor:pointer}
-.blockrow .arw{margin-left:auto;flex:none;opacity:.7}
+  box-shadow:inset 3px 0 0 var(--tone-attention-mark);
+  color:var(--tone-attention-fg);font:var(--t-quiet);text-align:left;cursor:pointer}
+.blockrow:hover{background:var(--p-attn-200)}
+.blockrow > span:first-child{font:var(--t-body-strong);color:var(--tone-attention-fg)}
+.blockrow .arw{margin-left:auto;flex:none;font-size:16px}
 
 .iconbtn{flex:none;width:var(--tap-min);height:var(--tap-min);display:grid;place-items:center;
   background:none;border:0;border-radius:var(--r-sm);color:var(--text-1);cursor:pointer;
-  font-size:17px;line-height:1}
+  font-size:19px;line-height:1}
 .iconbtn:hover{background:var(--surface-active)}
 .iconbtn[disabled]{color:var(--text-disabled);cursor:default;background:none}
 
 /* stepper (R-155) — moves through the FILTERED set without returning to the list */
-.stepper{flex:none;display:flex;align-items:center;gap:var(--space-1);
+.stepper{flex:none;display:flex;align-items:stretch;
   border:var(--divider) solid var(--ctl-border);border-radius:var(--r-sm);
-  background:var(--ctl-bg);height:36px}
-.stepper button{width:32px;height:34px;background:none;border:0;cursor:pointer;
-  color:var(--text-1);font-size:15px;line-height:1}
-.stepper button[disabled]{color:var(--text-disabled);cursor:default}
-.stepper .pos{font:var(--t-datsm);font-family:var(--font-data);
-  font-variant-numeric:var(--fvn-data);color:var(--text-2);padding:0 var(--space-2);
-  white-space:nowrap}
+  background:var(--ctl-bg);height:36px;overflow:hidden}
+.stepper button{width:32px;background:none;border:0;cursor:pointer;
+  color:var(--text-1);font-size:17px;line-height:1}
+.stepper button:hover{background:var(--surface-active)}
+/* disabled at an end of the run: still legible, and the position beside it is
+   the thing that says why */
+.stepper button[disabled]{color:var(--text-disabled);background:var(--ctl-disabled-bg);
+  cursor:default}
+.stepper .pos{display:grid;place-items:center;font:600 13px/16px var(--font-data);
+  font-variant-numeric:var(--fvn-data);color:var(--text-1);padding:0 var(--space-4);
+  white-space:nowrap;background:var(--surface-2);
+  border-inline:var(--divider) solid var(--rule)}
 /* R-178 — pointer:coarse raises EVERY control to --tap-min at ANY width.
    The stepper's own buttons included: at 320 that leaves ~106px for the
    identity, which fits the code and truncates the room. The code never
    truncates; the subtitle does, and its separator goes with it. */
+/* height:auto, not height:44 — a 44px box with a 1px border gives its buttons
+   42px of tappable, which is the sub-44 defect a previous pass caught by
+   driving the mock rather than by reading it */
 .console[data-pointer="coarse"] .stepper{height:auto}
-.console[data-pointer="coarse"] .stepper button{height:var(--tap-min);width:var(--tap-min)}
+.console[data-pointer="coarse"] .stepper button{width:var(--tap-min);min-height:var(--tap-min)}
 .console[data-pointer="coarse"] .gsttoggle button{min-height:var(--tap-min);padding:0 var(--space-6)}
+/* Every remaining control that is smaller than a thumb at a fine pointer. The
+   text-shaped ones — "Show all lines", "Refresh" — were the ones a previous
+   pass caught below 44px, and they are exactly the controls that look like copy
+   and so never get measured. */
+.console[data-pointer="coarse"] .backlink,
+.console[data-pointer="coarse"] .asof button{min-height:var(--tap-min);
+  padding-inline:var(--space-5)}
 
 /* ── PLANEBAR (R-151) — segmented, visible, accessible. Two segments, both
       always live. The editor is NOT a segment: it is pushed by a visible
       button, so no segment can ever be dead. ─────────────────────────────── */
-.planebar{flex:none;display:flex;gap:var(--space-3);padding:var(--space-3) var(--pad);
-  background:var(--surface-2);border-bottom:var(--divider) solid var(--rule)}
+/* ONE segmented control, not two buttons that happen to sit together: a shared
+   border and a shared baseline, so the pair reads as a choice between two
+   states of one thing. Selected is the sage wash plus a 2px underline — the
+   brand's active mark is an underline, never a fill. */
+.planebar{flex:none;display:flex;padding:var(--space-3) var(--pad);
+  background:var(--surface-2);border-bottom:var(--divider) solid var(--rule-strong)}
 .planebar button{flex:1 1 0;min-width:0;min-height:var(--tap-min);
-  border:var(--divider) solid var(--ctl-border);background:var(--ctl-bg);
-  border-radius:var(--r-md);font:var(--t-quiet);color:var(--text-2);cursor:pointer;
+  border:var(--divider) solid var(--ctl-border);border-left-width:0;
+  background:var(--ctl-bg);font:var(--t-body);color:var(--text-2);cursor:pointer;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 var(--space-4)}
+.planebar button:first-child{border-left-width:var(--divider);
+  border-radius:var(--r-sm) 0 0 var(--r-sm)}
+.planebar button:last-child{border-radius:0 var(--r-sm) var(--r-sm) 0}
+.planebar button:hover{background:var(--surface-hover);color:var(--text-0)}
 .planebar button[aria-selected="true"]{background:var(--surface-selected);color:var(--text-0);
-  border-color:var(--brand-border);font:var(--t-body-strong)}
+  font:var(--t-body-strong);box-shadow:inset 0 -2px 0 var(--accent-underline)}
 
 /* ── BUTTONS ─────────────────────────────────────────────────────────────── */
 .btn{min-height:var(--tap-min);padding:0 var(--space-6);border-radius:var(--r-sm);
   border:var(--divider) solid var(--ctl-border);background:var(--ctl-bg);color:var(--ctl-fg);
-  cursor:pointer;font:var(--t-body);display:inline-flex;align-items:center;
-  justify-content:center;gap:var(--space-4);white-space:nowrap}
+  cursor:pointer;font:var(--t-body-strong);display:inline-flex;align-items:center;
+  justify-content:center;gap:var(--space-4);white-space:nowrap;
+  transition:background var(--dur-fast) linear}
 .btn:hover{background:var(--ctl-bg-hover)}
 .btn-primary{background:var(--ctl-primary-bg);border-color:var(--ctl-primary-bg);
   color:var(--ctl-primary-fg);font:var(--t-body-strong)}
-.btn-primary:hover{background:var(--ctl-primary-bg-hover)}
-.btn-danger{color:var(--ctl-danger-fg);border-color:var(--tone-critical-border)}
+.btn-primary:hover{background:var(--ctl-primary-bg-hover);border-color:var(--ctl-primary-bg-hover)}
+.btn-danger{color:var(--ctl-danger-fg);border-color:var(--ctl-danger-border);
+  background:var(--tone-critical-bg)}
+.btn-danger:hover{background:var(--p-crit-200)}
+/* A BLOCKED PRIMARY IS READ, NOT GUESSED AT. It loses the sage fill — that is
+   the whole signal — and keeps a 7.6:1 label and a real border. Nothing here is
+   set at an opacity, because an opacity took the last generation's labels to
+   2.5:1 and the operator could see that something was unavailable without being
+   able to read what it was. The reason itself lives once, in the band above. */
 .btn[disabled]{background:var(--ctl-disabled-bg);color:var(--ctl-disabled-fg);
   border-color:var(--ctl-disabled-border);cursor:default}
+.btn[disabled]:hover{background:var(--ctl-disabled-bg)}
 .btn-grow{flex:1 1 auto}
-.foot-reason{flex:1 1 100%;margin:0;font:var(--t-cap);color:var(--tone-attention-fg)}
+.foot-reason{flex:1 1 100%;margin:0;font:var(--t-quiet);color:var(--tone-attention-fg)}
 
 /* ── LISTS / ROWS — one folding component, columns fold into meta lines ──── */
 .listhead{display:flex;align-items:center;gap:var(--space-4);padding:var(--space-5) var(--pad);
@@ -343,154 +507,259 @@ body{margin:0;background:var(--p-n-100);color:var(--text-1);font:var(--t-body);
   text-transform:uppercase;color:var(--text-3)}
 .listhead .n{margin-left:auto;font:var(--t-datsm);font-family:var(--font-data);color:var(--text-3)}
 
+/* THE OPENING ROW.
+   Four facts and a price, and the reason the last attempt read as overload was
+   that all five arrived at one weight. They are ranked here: the product name
+   is the headline, the price is the figure, the code is the handle, and the
+   size and room are the quiet pair that confirms you have the right one.
+   Nothing is removed at any width — the restack is the whole responsive
+   answer — so the ranking has to do the work instead. */
+/* The vertical budget is the whole argument here. Four lines and a price at
+   390 is 104px, which puts between five and six openings on screen with the
+   flagged one showing its warning in full. Every pixel of that came out of
+   padding and gaps rather than out of a fact, because nothing may be removed
+   at any width — the restack IS the responsive answer. */
 .lrow{display:grid;width:100%;text-align:left;background:var(--surface-1);border:0;
   border-bottom:var(--divider) solid var(--rule-quiet);cursor:pointer;
-  padding:var(--space-5) var(--pad);gap:var(--space-1) var(--space-5);align-items:start;
-  min-height:var(--row-card-min);grid-template-columns:1fr auto}
+  padding:var(--space-4) var(--pad);row-gap:1px;column-gap:var(--space-6);
+  align-items:start;
+  min-height:var(--row-card-min);grid-template-columns:minmax(0,1fr) auto;
+  box-shadow:inset 3px 0 0 transparent}
 .lrow:hover{background:var(--surface-hover)}
-.lrow[aria-selected="true"]{background:var(--surface-selected)}
-.lrow[aria-selected="true"] .lcode{color:var(--brand-strong)}
-.lcode{font:var(--t-dat);font-family:var(--font-data);font-variant-numeric:var(--fvn-data);
-  color:var(--brand-strong);grid-column:1}
-.lprod{font:var(--t-body);color:var(--text-0);grid-column:1;white-space:normal}
-.lmeta{font:var(--t-cap);color:var(--text-2);grid-column:1;
-  font-family:var(--font-data);font-variant-numeric:var(--fvn-data)}
-.lsub{font:var(--t-cap);color:var(--text-3);grid-column:1}
-.lmoney{grid-column:2;grid-row:1/span 2;text-align:right;font:var(--t-dat);
-  font-family:var(--font-data);font-variant-numeric:var(--fvn-data);color:var(--text-0);white-space:nowrap}
-.lmoney .absent{color:var(--text-4);font:var(--t-cap);font-family:var(--font-ui)}
-.lstate{grid-column:2;text-align:right}
-.lflags{grid-column:1/-1;margin:var(--space-3) 0 0;padding:0;list-style:none;
-  display:flex;flex-direction:column;gap:2px}
-.lflags li{font:var(--t-cap);color:var(--tone-attention-fg);padding-left:14px;position:relative}
-.lflags li::before{content:"!";position:absolute;left:2px;font-weight:700}
+/* selection survives a segment change and a plane change, so it has to be
+   legible after you have been somewhere else and come back */
+.lrow[aria-selected="true"]{background:var(--surface-selected);
+  box-shadow:inset 3px 0 0 var(--brand)}
+.lcode{font:600 13px/18px var(--font-data);font-variant-numeric:var(--fvn-data);
+  letter-spacing:.02em;color:var(--brand-strong);grid-column:1}
+.lprod{font:var(--t-body);color:var(--text-0);grid-column:1;white-space:normal;
+  margin-top:1px}
+.lmeta{font:500 13px/18px var(--font-data);font-variant-numeric:var(--fvn-data);
+  color:var(--text-2);grid-column:1;margin-top:var(--space-2);align-self:center}
+.lsub{font:var(--t-quiet);color:var(--text-3);grid-column:1}
+.lmoney{grid-column:2;grid-row:1/span 2;text-align:right;display:flex;
+  flex-direction:column;align-items:flex-end;gap:1px;white-space:nowrap}
+.lmoney .v{font:var(--t-money);font-variant-numeric:var(--fvn-data);color:var(--text-0)}
+/* EVERY money figure carries its basis. Not a footnote, not a column heading a
+   thumb has already scrolled past — on the figure, at 12px, at 5.2:1, in the
+   account's own ex/inc setting. */
+.lmoney .basis{font:var(--t-cap);color:var(--text-3)}
+/* absence is a SENTENCE where a number should be: the body face says at a
+   glance that this is not a figure, and 4.8:1 says it is still a fact */
+.lmoney .absent{color:var(--text-4);font:var(--t-quiet);font-style:italic}
+/* the state word shares the size line rather than claiming one of its own */
+.lstate{grid-column:2;text-align:right;align-self:center;margin-top:var(--space-2)}
+.lflags{grid-column:1/-1;margin:var(--space-4) 0 0;padding:0;list-style:none;
+  display:flex;flex-direction:column;gap:var(--space-2)}
+.lflags li{font:var(--t-quiet);color:var(--tone-attention-fg);padding-left:22px;position:relative}
+.lflags li::before{content:"!";position:absolute;left:0;top:1px;width:16px;height:16px;
+  display:grid;place-items:center;border-radius:var(--r-xs);
+  background:var(--tone-attention-mark);color:var(--p-n-000);
+  font:700 11px/1 var(--font-data)}
 
 /* dense row presentation at wider classes — density through tokens, one IA */
 .console[data-wc="desktop"] .lrow,.console[data-wc="wide"] .lrow{min-height:var(--row-line)}
 
-.chip{display:inline-flex;align-items:center;gap:var(--space-2);padding:1px var(--space-4);
-  border-radius:var(--r-pill);font:var(--t-cap);border:var(--divider) solid var(--tone-neutral-border);
+/* THE WORD CARRIES THE STATE; the colour agrees with it. In greyscale this
+   chip loses nothing, which is the test. */
+.chip{display:inline-flex;align-items:center;gap:var(--space-3);padding:2px var(--space-5);
+  border-radius:var(--r-pill);font:600 12px/17px var(--font-ui);
+  border:var(--divider) solid var(--tone-neutral-border);
   background:var(--tone-neutral-bg);color:var(--tone-neutral-fg);white-space:nowrap}
 .chip[data-tone="positive"]{background:var(--tone-positive-bg);color:var(--tone-positive-fg);border-color:var(--tone-positive-border)}
 .chip[data-tone="attention"]{background:var(--tone-attention-bg);color:var(--tone-attention-fg);border-color:var(--tone-attention-border)}
 .chip[data-tone="critical"]{background:var(--tone-critical-bg);color:var(--tone-critical-fg);border-color:var(--tone-critical-border)}
 .chip[data-tone="info"]{background:var(--tone-info-bg);color:var(--tone-info-fg);border-color:var(--tone-info-border)}
 
-/* push-row list (R-70) — job scope, at EVERY width. Not a chip strip. */
-.pushrow{display:flex;align-items:center;gap:var(--space-5);width:100%;text-align:left;
+/* PUSH-ROW LIST (R-70) — job scope, at EVERY width. Five destinations, each
+   carrying the one fact that tells you whether it is worth opening. This is
+   what makes a long scroll inexpressible at job scope, so it has to read as a
+   list of places, not as a list of headings above content. */
+.pushrow{display:flex;align-items:center;gap:var(--space-6);width:100%;text-align:left;
   background:var(--surface-1);border:0;border-bottom:var(--divider) solid var(--rule-quiet);
   padding:var(--space-5) var(--pad);min-height:var(--row-card-min);cursor:pointer}
 .pushrow:hover{background:var(--surface-hover)}
 .pushrow .pr-t{flex:1 1 auto;min-width:0}
-.pushrow .pr-t b{display:block;font:var(--t-body-strong);color:var(--text-0)}
-.pushrow .pr-t span{display:block;font:var(--t-cap);color:var(--text-2);margin-top:1px}
-.pushrow .pr-t span.absent{color:var(--text-4)}
-.pushrow .arw{flex:none;color:var(--text-3);font-size:16px}
+.pushrow .pr-t b{display:block;font:var(--t-hd2);letter-spacing:var(--tracking-hd);
+  color:var(--text-0)}
+.pushrow .pr-t span{display:block;font:var(--t-quiet);color:var(--text-2);margin-top:2px}
+/* what is NOT there is stated in words, in the absence ramp, and it still reads */
+.pushrow .pr-t span.absent{color:var(--text-4);font-style:italic}
+.pushrow .arw{flex:none;color:var(--text-4);font-size:18px}
+.pushrow:hover .arw{color:var(--text-2)}
+/* the add row is an action among destinations, so it says so in the brand ink */
+.pushrow.add{min-height:var(--row-work);border-bottom:0}
+.pushrow.add .pr-t b{color:var(--brand-strong);font:var(--t-body-strong)}
 
 /* ── PANEL / BLOCK ───────────────────────────────────────────────────────── */
-.blk{padding:var(--pad);border-bottom:var(--divider) solid var(--rule)}
+.blk{padding:var(--space-7) var(--pad);border-bottom:var(--divider) solid var(--rule)}
 .blk:last-child{border-bottom:0}
-.blk h3{margin:0 0 var(--space-5);font:var(--t-label);letter-spacing:var(--tracking-label);
+.blk h3{margin:0 0 var(--space-6);font:var(--t-label);letter-spacing:var(--tracking-label);
   text-transform:uppercase;color:var(--text-3)}
-.facts{display:grid;grid-template-columns:auto 1fr;gap:var(--space-3) var(--space-6);margin:0}
-.facts dt{font:var(--t-cap);color:var(--text-3);white-space:nowrap}
-.facts dd{margin:0;font:var(--t-body);color:var(--text-1)}
-.facts dd.d{font-family:var(--font-data);font-variant-numeric:var(--fvn-data)}
-.facts dd.absent{color:var(--text-4)}
-/* at a narrow measure the pair stacks — label over value (R-69: reflow, not truncation) */
-.console[data-wc="phone"] .facts{grid-template-columns:1fr}
-.console[data-wc="phone"] .facts dt{margin-top:var(--space-4)}
+/* the configuration facts. On a phone these are the answer to "why does it say
+   that?" while the customer is still on the line, so they are set as a record
+   to be read down, not as a form to be filled. */
+.facts{display:grid;grid-template-columns:auto minmax(0,1fr);
+  gap:var(--space-4) var(--space-7);margin:0;align-items:baseline}
+.facts dt{font:var(--t-label);letter-spacing:var(--tracking-label);text-transform:uppercase;
+  color:var(--text-3);white-space:nowrap}
+.facts dd{margin:0;font:var(--t-body);color:var(--text-1);min-width:0}
+.facts dd.d{font:var(--t-dat);font-variant-numeric:var(--fvn-data);color:var(--text-0)}
+.facts dd.absent{color:var(--text-4);font-style:italic}
+.facts dd.money{display:flex;align-items:baseline;gap:var(--space-4);flex-wrap:wrap}
+.facts dd.money .v{font:var(--t-dat-lg);font-variant-numeric:var(--fvn-data);color:var(--text-0)}
+.facts dd.money .basis{font:var(--t-cap);color:var(--text-3)}
+/* at a narrow measure the pair stacks — label over value (R-69: reflow, not
+   truncation). The label keeps its own line rather than competing for the row. */
+.console[data-wc="phone"] .facts{grid-template-columns:minmax(0,1fr);gap:0}
+.console[data-wc="phone"] .facts dt{margin-top:var(--space-6)}
+.console[data-wc="phone"] .facts dt:first-child{margin-top:0}
+.console[data-wc="phone"] .facts dd{margin-top:var(--space-2)}
 
-.note{display:flex;flex-direction:column;gap:2px;border-left:2px solid var(--brand);
-  padding:var(--space-3) 0 var(--space-3) var(--space-5);margin-bottom:var(--space-5)}
+.note{display:flex;flex-direction:column;gap:var(--space-2);
+  border-left:2px solid var(--brand);background:var(--surface-2);
+  padding:var(--space-5) var(--space-6);margin-bottom:var(--space-5)}
+.note[data-kind="plain"]{border-left-color:var(--rule-strong)}
 .note .m{font:var(--t-cap);color:var(--text-3)}
+.note .m.absent{color:var(--text-4);font-style:italic}
 .note .b{font:var(--t-body);color:var(--text-1)}
 
-.ribbon{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:var(--divider) solid var(--rule);
-  border-radius:var(--r-sm);overflow:hidden}
-.ribbon div{padding:var(--space-4) var(--space-2);text-align:center;font:var(--t-cap);
+/* THE PHASE RIBBON — six cells, and the current one carries a 2px underline
+   rather than a fill, so the sequence still reads in greyscale. */
+.ribbon{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;
+  border:var(--divider) solid var(--rule-strong);border-radius:var(--r-sm);overflow:hidden}
+.ribbon div{padding:var(--space-5) var(--space-2);text-align:center;
+  font:500 11px/15px var(--font-ui);
   color:var(--text-3);background:var(--surface-1);border-right:var(--divider) solid var(--rule);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ribbon div:last-child{border-right:0}
 .ribbon div[data-s="passed"]{background:var(--brand-tint);color:var(--text-2)}
-.ribbon div[data-s="current"]{color:var(--text-0);font:var(--t-body-strong);font-size:11.5px;
-  box-shadow:inset 0 -2px 0 var(--accent-underline)}
+.ribbon div[data-s="current"]{color:var(--text-0);font:600 11px/15px var(--font-ui);
+  background:var(--surface-1);box-shadow:inset 0 -3px 0 var(--accent-underline)}
 
 /* ── STATE SHAPES — four distinct pictures, never one (R-161) ───────────── */
-.state{display:grid;align-content:start;justify-items:start;gap:var(--space-4);
-  padding:var(--space-9) var(--pad);margin:var(--pad);border-radius:var(--r-md)}
-.state b{font:var(--t-body-strong);color:var(--text-1)}
-.state p{margin:0;font:var(--t-cap);color:var(--text-3);max-width:44ch}
+/* Four DISTINCT PICTURES. align-content:start on every one of them, because a
+   state grid taller than its rows stretches them by default and spreads
+   "Nothing is selected." over 700px — which reads as a broken layout rather
+   than as an empty one. */
+.state{display:grid;align-content:start;justify-items:start;gap:var(--space-5);
+  padding:var(--space-8) var(--space-7);margin:var(--pad);border-radius:var(--r-sm)}
+.state b{font:var(--t-hd2);letter-spacing:var(--tracking-hd);color:var(--text-0)}
+.state p{margin:0;font:var(--t-quiet);color:var(--text-2);max-width:44ch}
 .state[data-kind="empty"]{border:1px dashed var(--rule-strong);background:var(--surface-2)}
-.state[data-kind="error"]{border:1px solid var(--tone-critical-border);background:var(--tone-critical-bg)}
+.state[data-kind="empty"] b{color:var(--text-1)}
+/* FAILURE IS LOUD. A dropped connection is not a grey line: it is a red plate
+   with a 3px edge, the code that came back, and a control that re-sends. */
+.state[data-kind="error"]{border:1px solid var(--tone-critical-border);
+  border-left:3px solid var(--tone-critical-mark);background:var(--tone-critical-bg)}
 .state[data-kind="error"] b{color:var(--tone-critical-fg)}
-.state[data-kind="gated"]{border:1px solid var(--tone-info-border);background:var(--tone-info-bg)}
+.state[data-kind="error"] p{color:var(--tone-critical-fg)}
+.state[data-kind="gated"]{border:1px solid var(--tone-info-border);
+  border-left:3px solid var(--tone-info-mark);background:var(--tone-info-bg)}
 .state[data-kind="gated"] b{color:var(--tone-info-fg)}
-.state .code{font-family:var(--font-mono);font-size:11px;color:var(--text-3)}
-.skel{padding:var(--pad);display:grid;gap:var(--space-5)}
+.state .code{font:var(--t-mono);color:var(--text-2);
+  background:var(--surface-1);border:1px solid var(--rule);border-radius:var(--r-xs);
+  padding:2px 6px;max-width:100%;overflow-wrap:anywhere}
+/* a skeleton OF THE SHAPE THAT IS COMING — the row rhythm is the real one */
+.skel{padding:var(--space-5) var(--pad);display:grid;gap:var(--space-6)}
 .skel i{display:block;height:12px;border-radius:var(--r-xs);background:var(--skeleton-base)}
 .skel i.w60{width:60%}.skel i.w40{width:40%}.skel i.w80{width:80%}
-.skel .grp{display:grid;gap:var(--space-3);padding-bottom:var(--space-5);
+.skel .grp{display:grid;gap:var(--space-4);padding-bottom:var(--space-6);
   border-bottom:var(--divider) solid var(--rule-quiet)}
 
-/* warnings — unobtrusive by construction (AC-2): never focus, never a dialog,
-   never disabling, never dismissible */
-.warn{display:flex;gap:var(--space-4);padding:var(--space-4) var(--space-5);border-radius:var(--r-sm);
+/* WARNINGS — unobtrusive by construction (AC-2): never focus, never a dialog,
+   never disabling, never dismissible. Visible without obstructing is the whole
+   requirement, so this is a plate that sits in the flow and can be read past. */
+.warn{display:flex;gap:var(--space-5);padding:var(--space-5) var(--space-6);
+  border-radius:var(--r-sm);
   background:var(--tone-attention-bg);border:var(--divider) solid var(--tone-attention-border);
-  color:var(--tone-attention-fg);font:var(--t-cap);margin:var(--space-5) 0}
-.warn .g{flex:none;font-weight:700}
+  color:var(--tone-attention-fg);font:var(--t-quiet);margin:var(--space-6) 0}
+.warn .g{flex:none;width:18px;height:18px;display:grid;place-items:center;
+  border-radius:var(--r-xs);background:var(--tone-attention-mark);color:var(--p-n-000);
+  font:700 12px/1 var(--font-data);margin-top:1px}
+.warn[data-tone="info"]{background:var(--tone-info-bg);border-color:var(--tone-info-border);
+  color:var(--tone-info-fg)}
+.warn[data-tone="info"] .g{background:var(--tone-info-mark)}
 .readonly{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-5);
   padding:var(--space-5) var(--pad);background:var(--tone-info-bg);
-  border-bottom:var(--divider) solid var(--tone-info-border);color:var(--tone-info-fg);font:var(--t-cap)}
+  border-bottom:var(--divider) solid var(--tone-info-border);
+  box-shadow:inset 3px 0 0 var(--tone-info-mark);
+  color:var(--tone-info-fg);font:var(--t-quiet)}
 
-/* at-the-control write failure (L8 / AC-20) — under the row that caused it */
-.wfail{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-4);margin-top:var(--space-4);
-  padding:var(--space-4) var(--space-5);border-radius:var(--r-sm);
+/* AT-THE-CONTROL WRITE FAILURE (L8 / AC-20) — under the row that caused it, and
+   loud enough to stop a thumb: there is no toast system to fall back on, and a
+   save that quietly did not happen is the worst thing this console could do. */
+.wfail{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-5);
+  margin-top:var(--space-5);padding:var(--space-5) var(--space-6);border-radius:var(--r-sm);
   background:var(--tone-critical-bg);border:var(--divider) solid var(--tone-critical-border);
-  color:var(--tone-critical-fg);font:var(--t-cap)}
+  border-left:3px solid var(--tone-critical-mark);
+  color:var(--tone-critical-fg);font:var(--t-quiet)}
+.wfail > span:first-child{flex:1 1 14ch;font:var(--t-body-strong);color:var(--tone-critical-fg)}
+.wfail .btn{border-color:var(--tone-critical-border);color:var(--tone-critical-fg);
+  background:var(--surface-1)}
 
-/* confirm strip — expands upward from the footer, in place, never modal (R-39) */
-.confirm{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-4);
-  padding:var(--space-4) 0;font:var(--t-cap);color:var(--text-1)}
-.confirm .q{flex:1 1 100%;color:var(--text-0);font:var(--t-body-strong)}
+/* CONFIRM STRIP — expands upward from the footer, in place, never modal (R-39).
+   This is the one confirmation in R1 and it guards a misclick on a destructive
+   act. It is not a gate on disagreeing with the machine, so it does not shout. */
+.confirm{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--space-3);
+  padding:var(--space-3) 0 var(--space-5);font:var(--t-quiet);color:var(--text-2)}
+.confirm .q{flex:1 1 100%;color:var(--text-0);font:var(--t-hd2);
+  letter-spacing:var(--tracking-hd);margin-bottom:var(--space-2)}
 
-/* read-back strip (R-159) — the ladder's CONCLUSION, pinned above the footer.
-   Here: the two totals AC-16/AC-19 require to move together. */
-.readback{flex:none;background:var(--surface-3);border-top:var(--divider) solid var(--rule);
-  padding:var(--space-4) var(--pad);display:grid;gap:var(--space-2)}
-.rb-row{display:flex;align-items:baseline;gap:var(--space-4);font:var(--t-cap);color:var(--text-2)}
-.rb-row .v{margin-left:auto;font-family:var(--font-data);font-variant-numeric:var(--fvn-data);
-  font:var(--t-dat);color:var(--text-0);white-space:nowrap}
-.rb-row .was{color:var(--text-4);text-decoration:line-through;font-family:var(--font-data);
-  font-size:12px;margin-left:auto}
-.rb-row .v.moved{color:var(--tone-positive-fg)}
-.rb-row.total .v{font:var(--t-dat-lg);font-family:var(--font-data)}
+/* THE READ-BACK STRIP (R-159) — the conclusion, pinned above the footer.
+   On a phone the editor covers the list and the totals, so this is the only
+   "did I just do something stupid" check the operator gets. It is given the
+   sage edge and the largest figure on the plane on purpose: it is the single
+   most important thing in the editor, and both totals move together. */
+.readback{flex:none;background:var(--surface-2);border-top:2px solid var(--brand);
+  padding:var(--space-5) var(--pad) var(--space-6);display:grid;gap:var(--space-3)}
+.rb-row{display:flex;align-items:baseline;gap:var(--space-5);font:var(--t-quiet);
+  color:var(--text-2)}
+.rb-row .v{margin-left:auto;font:var(--t-money);font-variant-numeric:var(--fvn-data);
+  color:var(--text-0);white-space:nowrap}
+.rb-row .was{color:var(--text-4);text-decoration:line-through;
+  font:500 13px/18px var(--font-data);font-variant-numeric:var(--fvn-data);margin-left:auto}
+/* a figure that just changed is MARKED, not recoloured: green would say the
+   price went the right way, and this strip has no opinion about that */
+.rb-row .v.moved{box-shadow:inset 0 -2px 0 var(--accent-underline)}
+.rb-row.total{padding-top:var(--space-4);border-top:var(--divider) solid var(--rule)}
+.rb-row.total > span:first-child{font:var(--t-body-strong);color:var(--text-1)}
+.rb-row.total .v{font:var(--t-dat-lg);font-variant-numeric:var(--fvn-data)}
+.rb-row.basis{font:var(--t-cap);color:var(--text-3)}
 
 /* ── FORM ────────────────────────────────────────────────────────────────── */
-.form{padding:var(--pad);display:grid;gap:var(--space-6)}
+.form{padding:var(--space-7) var(--pad);display:grid;gap:var(--space-7)}
 .fld{display:grid;gap:var(--space-3);min-width:0}
 .fld label{font:var(--t-label);letter-spacing:var(--tracking-label);text-transform:uppercase;
   color:var(--text-3)}
+/* Dimensions and codes are typed, then read back down a column, so the fields
+   that hold them are set in the data face with tabular figures — a 1200 that
+   does not align with the 900 beneath it cannot be checked at a glance. */
 .fld input,.fld select,.fld textarea{min-height:var(--tap-min);width:100%;min-width:0;
   border:var(--divider) solid var(--field-border);border-radius:var(--r-sm);
   background:var(--field-bg);color:var(--text-0);padding:0 var(--space-5);
   font:var(--t-body);font-family:var(--font-ui)}
+.fld input{font:var(--t-dat);font-variant-numeric:var(--fvn-data)}
+.fld input:focus,.fld select:focus,.fld textarea:focus{border-color:var(--field-border-focus)}
 /* a <select>'s min-content width is its longest option; without this it pushes
    the plane wider than the frame (LEARNINGS §3.3) */
 .fld select{text-overflow:ellipsis}
-.fld textarea{padding:var(--space-4) var(--space-5);min-height:66px;resize:vertical}
+.fld textarea{padding:var(--space-4) var(--space-5);min-height:72px;resize:vertical;
+  font:var(--t-body)}
 .fld .hint{font:var(--t-cap);color:var(--text-3)}
 .pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-5)}
-.disc{border:var(--divider) solid var(--rule);border-radius:var(--r-md);overflow:hidden}
+.disc{border:var(--divider) solid var(--rule);border-radius:var(--r-sm);overflow:hidden}
 .disc>summary{min-height:var(--tap-min);display:flex;align-items:center;gap:var(--space-4);
-  padding:0 var(--space-5);background:var(--surface-2);cursor:pointer;font:var(--t-body-strong);
-  color:var(--text-1);list-style:none}
+  padding:0 var(--space-6);background:var(--surface-2);cursor:pointer;
+  font:var(--t-hd2);letter-spacing:var(--tracking-hd);color:var(--text-0);list-style:none}
+.disc>summary:hover{background:var(--surface-active)}
 .disc>summary::-webkit-details-marker{display:none}
-.disc>summary::after{content:"▾";margin-left:auto;color:var(--text-3)}
+.disc>summary::after{content:"▾";margin-left:auto;color:var(--text-3);font-size:12px}
 .disc[open]>summary::after{content:"▴"}
-.disc .inner{padding:var(--space-5);display:grid;gap:var(--space-5);
+.disc .inner{padding:var(--space-6);display:grid;gap:var(--space-6);
   border-top:var(--divider) solid var(--rule)}
-.req{color:var(--tone-attention-fg);font:var(--t-cap)}
+.req{color:var(--tone-attention-fg);font:var(--t-cap);text-transform:none;
+  letter-spacing:0;font-weight:600}
 
 /* ── SHEETS: overlay layers inside the console frame ─────────────────────── */
 .sheet{position:absolute;inset-block:0;right:0;width:var(--sheet-w);background:var(--surface-overlay);
@@ -500,25 +769,37 @@ body{margin:0;background:var(--p-n-100);color:var(--text-1);font:var(--t-body);
   border-right:var(--divider) solid var(--rule)}
 .console[data-wc="phone"] .sheet{inset:0;width:100%;border:0}
 .sheet-head{flex:none;display:flex;align-items:center;gap:var(--space-3);min-height:var(--ident-h);
-  padding:0 var(--space-3);background:var(--surface-2);border-bottom:var(--divider) solid var(--rule)}
-.sheet-head h2{flex:1 1 auto;margin:0;font:var(--t-body-strong);color:var(--text-0);min-width:0;
+  padding:0 var(--space-3);background:var(--surface-2);
+  border-bottom:var(--divider) solid var(--rule-strong)}
+.sheet-head h2{flex:1 1 auto;margin:0;font:var(--t-hd1);letter-spacing:var(--tracking-hd);
+  color:var(--text-0);min-width:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:var(--space-3)}
+.sheet-head h2:focus{outline:none}
 .sheet-body{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;min-height:0}
 
-/* action sheet (the ⋯ overflow) — bottom sheet on phone */
+/* ACTION SHEET (the ⋯ overflow) — one per plane, arriving from the bottom
+   edge, where a thumb already is. Rows at 44 with generous leading, because
+   this is the surface that gets used at arm's length with the phone in one
+   hand and a customer in the other ear. */
 .actsheet{position:absolute;inset-inline:0;bottom:0;z-index:var(--z-modal);
-  background:var(--surface-overlay);border-top:var(--divider) solid var(--rule);
+  background:var(--surface-overlay);border-top:var(--divider) solid var(--rule-strong);
   border-radius:var(--r-lg) var(--r-lg) 0 0;box-shadow:var(--shadow-3);
-  padding:var(--space-5) 0 calc(var(--space-5) + var(--safe-bottom));max-height:70%;overflow-y:auto}
-.actsheet .ah{padding:0 var(--pad) var(--space-4);font:var(--t-label);
+  padding:var(--space-6) 0 calc(var(--space-6) + var(--safe-bottom));
+  max-height:70%;overflow-y:auto}
+.actsheet .ah{padding:var(--space-4) var(--pad) var(--space-4);font:var(--t-label);
   letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--text-3)}
+.actsheet .ah + button{border-top:var(--divider) solid var(--rule-quiet)}
 .actsheet button{display:flex;align-items:center;gap:var(--space-5);width:100%;
-  min-height:var(--tap-min);padding:0 var(--pad);background:none;border:0;text-align:left;
+  min-height:var(--tap-min);padding:var(--space-3) var(--pad);background:none;border:0;
+  border-bottom:var(--divider) solid var(--rule-quiet);text-align:left;
   color:var(--text-1);font:var(--t-body);cursor:pointer}
 .actsheet button:hover{background:var(--surface-hover)}
-.actsheet button[disabled]{color:var(--text-disabled);cursor:default}
-.actsheet button .why{margin-left:auto;font:var(--t-cap);color:var(--tone-attention-fg);text-align:right}
-.actsheet button.danger{color:var(--ctl-danger-fg)}
+/* an unavailable action still says what it is and why, at 7.6:1 */
+.actsheet button[disabled]{color:var(--text-disabled);cursor:default;
+  background:var(--surface-disabled)}
+.actsheet button .why{margin-left:auto;font:var(--t-cap);color:var(--tone-attention-fg);
+  text-align:right;font-weight:600}
+.actsheet button.danger{color:var(--ctl-danger-fg);font:var(--t-body-strong)}
 
 /* ── ZONES at >=1024: the same zones, simultaneous ───────────────────────── */
 .zones{flex:1 1 auto;min-height:0;min-width:0;display:grid;overflow:hidden}
@@ -529,49 +810,97 @@ body{margin:0;background:var(--p-n-100);color:var(--text-1);font:var(--t-body);
   border-right:var(--divider) solid var(--rule);overflow:hidden}
 .zone:last-child{border-right:0}
 .zone-body{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;min-height:0}
-.zone-head{flex:none;display:flex;align-items:center;gap:var(--space-4);min-height:var(--ident-h);
-  padding:0 var(--space-5);background:var(--surface-2);border-bottom:var(--divider) solid var(--rule)}
+.zone-head{flex:none;display:flex;align-items:center;gap:var(--space-5);min-height:var(--ident-h);
+  padding:0 var(--space-6);background:var(--surface-2);
+  border-bottom:var(--divider) solid var(--rule-strong)}
 .zone-head h2{margin:0;font:var(--t-label);letter-spacing:var(--tracking-label);
   text-transform:uppercase;color:var(--text-3);min-width:0;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
-.zone-head .n{margin-left:auto;font:var(--t-datsm);font-family:var(--font-data);color:var(--text-3)}
-.zone-foot{flex:none;min-height:var(--footer-h);display:flex;align-items:center;gap:var(--space-4);
-  padding:var(--space-3) var(--space-5);background:var(--surface-2);
-  border-top:var(--divider) solid var(--rule);flex-wrap:wrap}
+.zone-head .n{margin-left:auto;font:var(--t-datsm);font-family:var(--font-data);
+  font-variant-numeric:var(--fvn-data);color:var(--text-2)}
+.zone-foot{flex:none;min-height:var(--footer-h);display:flex;align-items:center;gap:var(--space-5);
+  padding:var(--space-4) var(--space-6);background:var(--surface-2);
+  border-top:var(--divider) solid var(--rule-strong);flex-wrap:wrap}
+.zone-foot > *{min-width:0}
+.zonetot{margin-left:auto;display:flex;align-items:baseline;gap:var(--space-4);
+  white-space:nowrap}
+.zonetot .v{font:var(--t-money);font-variant-numeric:var(--fvn-data);color:var(--text-0)}
+.zonetot .k{font:var(--t-cap);color:var(--text-3)}
+/* a state box inside a block already has the block's gutter */
+.blk .state{margin-inline:0}
+.blkcap{margin:var(--space-5) 0 0;font:var(--t-quiet);color:var(--text-2)}
 
-/* the 48px code strip at compact — the rail yields, never the pane (R-13) */
+/* the 48px code strip at compact — the rail yields, never the pane (R-13).
+   48px is enough for a code and a dot and nothing else, so both have to be
+   unambiguous: tabular figures, and the dot in the attention mark. */
 .codestrip{display:flex;flex-direction:column;align-items:stretch}
-.codestrip button{min-height:var(--row-work);border:0;border-bottom:var(--divider) solid var(--rule-quiet);
-  background:var(--surface-1);color:var(--brand-strong);font:var(--t-datsm);
-  font-family:var(--font-data);cursor:pointer;padding:0 2px}
+.codestrip button{min-height:var(--row-work);border:0;
+  border-bottom:var(--divider) solid var(--rule-quiet);
+  background:var(--surface-1);color:var(--brand-strong);
+  font:600 12px/16px var(--font-data);font-variant-numeric:var(--fvn-data);
+  letter-spacing:.02em;cursor:pointer;padding:0 2px}
+.codestrip button:hover{background:var(--surface-hover)}
 .codestrip button[aria-selected="true"]{background:var(--surface-selected);
-  box-shadow:inset 2px 0 0 var(--accent-underline)}
-.codestrip button .dot{display:block;width:5px;height:5px;border-radius:50%;margin:2px auto 0;
-  background:var(--tone-attention-mark,var(--p-attn-600))}
+  box-shadow:inset 3px 0 0 var(--brand);color:var(--text-0)}
+.codestrip button .dot{display:block;width:6px;height:6px;border-radius:50%;margin:3px auto 0;
+  background:var(--tone-attention-mark)}
 
 /* record header at >=1024 — one row, clipped at its own boundary, never
    painting over its neighbour (LEARNINGS §3.5) */
-.rechead{flex:none;display:flex;align-items:center;gap:var(--space-6);min-height:56px;
-  padding:0 var(--pad);background:var(--surface-2);border-bottom:var(--divider) solid var(--rule);
-  overflow:hidden}
-.rechead .lft{min-width:0;flex:1 1 auto;overflow:hidden;display:flex;align-items:baseline;gap:var(--space-4)}
-.rechead .ref{font:var(--t-dat);font-family:var(--font-data);color:var(--brand-strong);flex:none}
-.rechead .ttl{font:var(--t-body-strong);color:var(--text-0);white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis}
-.rechead .cust{font:var(--t-cap);color:var(--text-2);white-space:nowrap;overflow:hidden;
+.rechead{flex:none;display:flex;align-items:center;gap:var(--space-7);min-height:60px;
+  padding:0 var(--pad);background:var(--surface-2);
+  border-bottom:var(--divider) solid var(--rule-strong);overflow:hidden}
+.rechead .lft{min-width:0;flex:1 1 auto;overflow:hidden;display:flex;align-items:baseline;
+  gap:var(--space-5)}
+.rechead .ref{font:600 15px/20px var(--font-data);font-variant-numeric:var(--fvn-data);
+  letter-spacing:.02em;color:var(--brand-strong);flex:none}
+.rechead .ttl{font:var(--t-hd2);letter-spacing:var(--tracking-hd);color:var(--text-0);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rechead .cust{font:var(--t-quiet);color:var(--text-2);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;min-width:0}
-.rechead .rgt{flex:none;display:flex;align-items:center;gap:var(--space-6)}
+.rechead .rgt{flex:none;display:flex;align-items:center;gap:var(--space-7)}
 .rechead .val{text-align:right}
-.rechead .val b{display:block;font:var(--t-dat-lg);font-family:var(--font-data);
+.rechead .val b{display:block;font:var(--t-dat-lg);
   font-variant-numeric:var(--fvn-data);color:var(--text-0)}
 .rechead .val span{display:block;font:var(--t-cap);color:var(--text-3)}
 .backlink{display:inline-flex;align-items:center;min-height:36px;padding:0 var(--space-4);
-  border-radius:var(--r-sm);background:none;border:0;color:var(--text-link);font:var(--t-cap);
-  cursor:pointer;flex:none}
-.backlink:hover{background:var(--surface-active)}
+  border-radius:var(--r-sm);background:none;border:0;color:var(--text-link);
+  font:var(--t-body-strong);cursor:pointer;flex:none}
+.backlink:hover{background:var(--surface-active);text-decoration:underline;
+  text-underline-offset:3px}
 .asof{font:var(--t-cap);color:var(--text-3);display:flex;align-items:center;gap:var(--space-4)}
-.asof button{background:none;border:0;color:var(--text-link);cursor:pointer;font:var(--t-cap);
-  min-height:36px;padding:0 var(--space-3)}
+.asof button{background:none;border:0;color:var(--text-link);cursor:pointer;
+  font:var(--t-body-strong);font-size:13px;min-height:36px;padding:0 var(--space-3);
+  border-radius:var(--r-sm)}
+.asof button:hover{background:var(--surface-active)}
+
+/* THE TOTALS PANEL — the zone's own conclusion. It states the total and never
+   the blocker. Every figure carries its basis and the grand total is the
+   largest number on the plane, because it is the number the customer is being
+   read on the phone. */
+.totals{padding:var(--space-6) var(--pad) var(--space-7);background:var(--surface-2);
+  border-top:var(--divider) solid var(--rule-strong)}
+.totals .tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 var(--space-6);
+  padding:var(--space-4) 0;border-bottom:var(--divider) solid var(--rule-quiet)}
+.totals .tr .k{font:var(--t-quiet);color:var(--text-2)}
+.totals .tr .v{margin-left:auto;font:var(--t-dat);font-variant-numeric:var(--fvn-data);
+  color:var(--text-0);text-align:right}
+/* delivery with no rate is a SENTENCE, on its own line, in the absence ramp —
+   distinct from $0.00 and distinct from a zone that did not resolve */
+.totals .tr .v.absent{flex:1 1 100%;margin-left:0;margin-top:var(--space-2);
+  font:var(--t-quiet);color:var(--text-4);font-style:italic;text-align:left}
+.totals .tr.grand{border-bottom:0;border-top:2px solid var(--rule-strong);
+  margin-top:var(--space-3);padding-top:var(--space-5)}
+.totals .tr.grand .k{font:var(--t-body-strong);color:var(--text-0)}
+.totals .tr.grand .v{font:var(--t-dat-lg);font-variant-numeric:var(--fvn-data)}
+.totals .cap{margin:var(--space-4) 0 0;font:var(--t-cap);color:var(--text-3)}
+
+/* the active filter, stated in its own words with the way out beside it */
+.filterbar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-4);
+  padding:var(--space-4) var(--pad);background:var(--brand-tint);
+  border-bottom:var(--divider) solid var(--brand-border);
+  box-shadow:inset 3px 0 0 var(--brand);color:var(--text-1);font:var(--t-quiet)}
+.filterbar .backlink{margin-left:auto}
 
 .sronly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
   clip:rect(0 0 0 0);white-space:nowrap;border:0}
@@ -901,7 +1230,8 @@ function Console(host){
       b.appendChild(el("span",null,it.label));
       if(it.soon) b.appendChild(el("span","soon",it.soon));
       if(it.id==="records") b.setAttribute("aria-current","page");
-      if(!it.live){ b.disabled=true; b.style.opacity=".55"; }
+      /* inert by TOKEN, never by opacity — see .nav-item[disabled] */
+      if(!it.live){ b.disabled=true; }
       list.appendChild(b);
     });
     n.appendChild(list);
@@ -929,10 +1259,7 @@ function Console(host){
     });
     gw.appendChild(tg);
     f.appendChild(gw);
-    var hint=el("div","nav-who");
-    hint.style.opacity=".7";
-    hint.appendChild(el("span",null,"A view only. The customer's own quote is unchanged."));
-    f.appendChild(hint);
+    f.appendChild(el("div","nav-hint","A view only. The customer's own quote is unchanged."));
 
     f.appendChild(btn("nav-signout","Sign out",function(){}));
     n.appendChild(f);
@@ -969,7 +1296,13 @@ function Console(host){
     var l1=el("div","l1");
     if(opts.code){
       var c=el("span","code",opts.code); l1.appendChild(c);
-      if(opts.sub){ l1.appendChild(document.createTextNode(" · "+opts.sub)); }
+      /* the separator belongs to the subtitle: when the ladder drops the
+         subtitle the separator goes with it, because punctuation pointing at
+         an absence is worse than the absence */
+      if(opts.sub){
+        l1.appendChild(el("span","sep"," · "));
+        l1.appendChild(document.createTextNode(opts.sub));
+      }
     } else {
       l1.textContent=opts.title;
     }
@@ -1062,10 +1395,7 @@ function Console(host){
     }
 
     if(S.filter){
-      var fb=el("div","readonly");
-      fb.style.background="var(--brand-tint)";
-      fb.style.borderColor="var(--brand-border)";
-      fb.style.color="var(--text-1)";
+      var fb=el("div","filterbar");
       fb.appendChild(el("span",null,"Showing "+pool.length+" unpriced of "+R.lines.length+" lines."));
       fb.appendChild(btn("backlink","Show all lines",function(){S.filter=null;render();}));
       wrap.appendChild(fb);
@@ -1083,7 +1413,9 @@ function Console(host){
            never $0, and the absence is said in words. */
         money$.appendChild(el("span","absent","not priced"));
       } else {
-        money$.textContent=money(l.total*l.qty,S.gst);
+        money$.appendChild(el("span","v",money(l.total*l.qty,S.gst)));
+        /* AC-79/80 — the basis travels WITH the figure, on every one of them */
+        money$.appendChild(el("span","basis",gstLabel(S.gst)));
       }
       row.appendChild(money$);
 
@@ -1113,7 +1445,7 @@ function Console(host){
     });
 
     if(R.editable){
-      var add=btn("pushrow",null,function(){});
+      var add=btn("pushrow add",null,function(){});
       var t=el("span","pr-t");
       t.appendChild(el("b",null,"+  Add a line"));
       t.appendChild(el("span",null,"Opens the editor with an empty configuration."));
@@ -1127,38 +1459,26 @@ function Console(host){
   }
 
   function totalsPanel(R){
-    var p=el("div","blk");
-    p.style.background="var(--surface-2)";
-    var dl=el("dl","facts");
-    function add(k,v,cls){
-      dl.appendChild(el("dt",null,k));
-      dl.appendChild(el("dd",cls||"d",v));
+    var p=el("div","totals");
+    function tr(k,v,cls,grand){
+      var r=el("div","tr"+(grand?" grand":""));
+      r.appendChild(el("span","k",k));
+      r.appendChild(el("span","v"+(cls?" "+cls:""),v));
+      p.appendChild(r);
     }
-    add("Goods ("+gstLabel(S.gst)+")",money(goodsTotal(R),S.gst));
+    tr("Goods ("+gstLabel(S.gst)+")",money(goodsTotal(R),S.gst));
     if(R.delivery.amount===null){
       /* AC-85 — unpriced reads distinctly from $0 and from unresolved,
          and the zone basis is stated. */
-      dl.appendChild(el("dt",null,"Delivery"));
-      var dd=el("dd","absent",
+      tr("Delivery",
         R.delivery.basis==="unpriced_table"
           ? "not priced — "+R.delivery.zone+" has no rate"
-          : "zone not resolved");
-      dl.appendChild(dd);
+          : "zone not resolved","absent");
     } else {
-      add("Delivery",money(R.delivery.amount,S.gst));
+      tr("Delivery",money(R.delivery.amount,S.gst));
     }
-    dl.appendChild(el("dt",null,"Quote total"));
-    var t=el("dd","d");
-    t.style.font="var(--t-dat-lg)";
-    t.style.fontFamily="var(--font-data)";
-    t.textContent=money(goodsTotal(R)+(R.delivery.amount||0),S.gst);
-    dl.appendChild(t);
-    p.appendChild(dl);
-    var cap=el("div","state");
-    cap.style.padding="0";cap.style.margin="8px 0 0";
-    cap.appendChild(el("p",null,
-      "estimate · "+gstLabel(S.gst)+" · this account's setting"));
-    p.appendChild(cap);
+    tr("Quote total",money(goodsTotal(R)+(R.delivery.amount||0),S.gst),null,true);
+    p.appendChild(el("p","cap","estimate · "+gstLabel(S.gst)+" · this account's setting"));
     return p;
   }
 
@@ -1202,8 +1522,7 @@ function Console(host){
           rib.appendChild(d);
         });
       b.appendChild(rib);
-      var cap=el("p",null,"Now · "+R.stateLabel+" · waiting on "+R.waitingOn+" · "+R.days+" days in this state");
-      cap.style.font="var(--t-cap)";cap.style.color="var(--text-2)";cap.style.margin="10px 0 0";
+      var cap=el("p","blkcap","Now · "+R.stateLabel+" · waiting on "+R.waitingOn+" · "+R.days+" days in this state");
       b.appendChild(cap);
       wrap.appendChild(b);
     }
@@ -1221,10 +1540,10 @@ function Console(host){
        ["Elevations rev C.pdf","1.2 MB · clean"],
        ["Site photos.zip","—","scan pending"]].forEach(function(f){
         var r=el("div","note");
-        r.style.borderLeftColor="var(--rule-strong)";
+        r.setAttribute("data-kind","plain");
         r.appendChild(el("div","b",f[0]));
-        var m=el("div","m",f[2]?f[2]:f[1]);
-        if(f[2]) m.style.color="var(--text-4)";
+        /* a pending scan is an ABSENCE of a verdict, and says so in words */
+        var m=el("div",f[2]?"m absent":"m",f[2]?f[2]:f[1]);
         r.appendChild(m);
         b.appendChild(r);
       });
@@ -1238,7 +1557,7 @@ function Console(host){
        ["Schedule parsed — 18 openings","System","yesterday 15:31"],
        ["Project submitted","Ana Bianchi","yesterday 15:29"]].forEach(function(e){
         var r=el("div","note");
-        r.style.borderLeftColor="var(--rule-strong)";
+        r.setAttribute("data-kind","plain");
         r.appendChild(el("div","b",e[0]));
         r.appendChild(el("div","m",e[1]+" · "+e[2]));
         b.appendChild(r);
@@ -1302,7 +1621,11 @@ function Console(host){
     if(L.total===null){
       dl.appendChild(el("dd","absent","not priced — this configuration is not exactly priceable"));
     } else {
-      var d=el("dd","d",money(L.total*L.qty,S.gst)+"  "+gstLabel(S.gst));
+      /* the figure at the size a figure is read at, and its basis beside it —
+         never below legibility, never decorative */
+      var d=el("dd","money");
+      d.appendChild(el("span","v",money(L.total*L.qty,S.gst)));
+      d.appendChild(el("span","basis",gstLabel(S.gst)));
       dl.appendChild(d);
     }
     b.appendChild(dl);
@@ -1329,16 +1652,17 @@ function Console(host){
       u.appendChild(el("h3",null,"Composite · "+L.units.length+" joined units"));
       L.units.forEach(function(un){
         var r=el("div","note");
-        r.style.borderLeftColor="var(--rule-strong)";
+        r.setAttribute("data-kind","plain");
         r.appendChild(el("div","b","Unit "+un.i+" · "+un.product));
         r.appendChild(el("div","m",un.h.toLocaleString()+" × "+un.w.toLocaleString()+" mm · "+un.spec));
-        var m2=el("div","m", un.priced? money(un.total,S.gst) : "not priced");
-        if(!un.priced) m2.style.color="var(--text-4)";
+        var m2=el("div",un.priced?"m":"m absent",
+          un.priced? money(un.total,S.gst)+"  "+gstLabel(S.gst) : "not priced");
         r.appendChild(m2);
         u.appendChild(r);
       });
-      /* coverage sentence — right-aligned, NEVER a veto */
+      /* coverage sentence — informational, and NEVER a veto */
       var cov=el("div","warn");
+      cov.setAttribute("data-tone","info");
       cov.appendChild(el("span","g","i"));
       cov.appendChild(el("span",null,
         "Units span 2,410 mm, 10 mm more than the opening. Allowed — recorded on the line."));
@@ -1497,7 +1821,7 @@ function Console(host){
     }
     row("This line",base*L.qty,now*L.qty,false);
     row("Quote total",quoteWas,quoteNow,true);
-    var f=el("div","rb-row");
+    var f=el("div","rb-row basis");
     f.appendChild(el("span",null,gstLabel(S.gst)+" · updates as you change an option"));
     rb.appendChild(f);
     return rb;
@@ -1558,7 +1882,6 @@ function Console(host){
       f.appendChild(btn("btn","Cancel",function(){back();}));
       if(S.saveFailed){
         var wf=el("div","wfail");
-        wf.style.flex="1 1 100%";
         wf.appendChild(el("span",null,
           "Not saved — the connection dropped. Your values are still here."));
         wf.appendChild(btn("btn","Retry",function(){S.saveFailed=false;render();}));
@@ -1698,7 +2021,7 @@ function Console(host){
     } else {
       /* the record plane — §13.5's short stack, not a single band */
       plane.appendChild(identBand({
-        title:R.ref+" · "+R.title,
+        code:R.ref, sub:R.title,
         l2:R.org+" · "+R.customer,
         life:lifeSentence(R),
         blocker:blockerRow(R),
@@ -1847,9 +2170,9 @@ function Console(host){
       var b1=el("div","zone-body"); b1.appendChild(zoneIndex(true)); z1.appendChild(b1);
       var f1=el("div","zone-foot");
       f1.appendChild(btn("btn","+ Add a line",function(){}));
-      var tot=el("span","asof");
-      tot.style.marginLeft="auto";
-      tot.textContent=money(goodsTotal(R),S.gst)+" goods";
+      var tot=el("span","zonetot");
+      tot.appendChild(el("span","v",money(goodsTotal(R),S.gst)));
+      tot.appendChild(el("span","k","goods · "+gstLabel(S.gst)));
       f1.appendChild(tot);
       z1.appendChild(f1);
     }
@@ -2001,7 +2324,10 @@ function Console(host){
       var R=RECORDS[k];
       var b=btn("lrow",null,function(){go("/record/"+R.ref);});
       b.appendChild(el("span","lcode",R.ref));
-      b.appendChild(el("span","lmoney",money(goodsTotal(R),S.gst)));
+      var m$=el("span","lmoney");
+      m$.appendChild(el("span","v",money(goodsTotal(R),S.gst)));
+      m$.appendChild(el("span","basis",gstLabel(S.gst)));
+      b.appendChild(m$);
       b.appendChild(el("span","lprod",R.title));
       b.appendChild(el("span","lsub",R.org+" · waiting on "+R.waitingOn));
       var st=el("span","lstate");
