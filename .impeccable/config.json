@@ -20,6 +20,15 @@
         ],
         "createdAt": "2026-08-16T10:16:33.594Z",
         "reason": "Owner instruction 'utilise existing card designs, DO NOT create a new variation' + approved mock rev 6; UX spec 2.1 maps these cards to the existing AccountDashboard.tsx:218/231/299/337 pattern. Changing only referral components would break consistency with the surrounding account area."
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/components/referral/JoinProgramFlow.tsx"
+        ],
+        "createdAt": "2026-08-16T11:46:09.200Z",
+        "reason": "Owner instruction 'utilise existing card designs, DO NOT create a new variation' + approved mock rev 6; UX spec 2.1 maps the join-flow card to the existing AccountDashboard.tsx:231 stripe pattern. Third referral component under the same precedent as ReferrerBlock and DiscountCard."
       }
     ]
   }
