@@ -168,7 +168,7 @@ decided are recorded as one fact about that quote.
 | D2 | **Replacement, then deletion. No parallel running.** Ops2 is not adopted until it is complete; the old console is then deleted. | "once new version of ops is ready — we will start using it and delete the old one." |
 | D3 | **Full capability parity at every width.** Everything works on a phone. | "everything works on the phone" — justified by the lost-day cost, §1.1. |
 | D4 | **Neither failure mode is acceptable.** No mobile app stretched across a desktop; no cramped desktop crushed onto a phone. | "I will not accept mobile app on big screen, nor cramped interface in the small screen." |
-| D5 | **RBAC ships inside ops2**, per user, replacing domain-based identity. | "I'm happy RBAC to go with ops2 exclusively. We're not sharing access to legacy ops to anyone, nor I see reason to invest any time improving it." |
+| D5 | **RBAC ships inside ops2**, per user. It replaces domain-based *role assignment* — **not** authentication, which stays with Cloudflare Access (see C8). | "I'm happy RBAC to go with ops2 exclusively. We're not sharing access to legacy ops to anyone, nor I see reason to invest any time improving it." |
 | D6 | **No component framework decision is pre-made.** The architect costs the options against D4 as the criterion. Fluent UI 2 is rejected; Ionic was never used by any mock. | "Whether it can be achieved via Ionic, something else, or combination of frameworks — that's beyond my knowledge. I will judge the output." |
 | D7 | **Workspace (the record) is built first**, though the switch waits for everything. | "Workplace first; we won't switch until everything is done though." |
 | D8 | **The derivation pane is built from words and data, not drawings.** Origin, reasoning, extracted text, the requirement, the candidates. The absent visual is stated, not blank. | Region rendering rejected as unrealistic: "typically information would be scattered across multiple pages". |
@@ -182,6 +182,7 @@ decided are recorded as one fact about that quote.
 | D16 | **No presence indicators in phase 1**, cheap or otherwise. | Round 4, Q17: "no". |
 | D17 | **Referral's ops surface is built into legacy ops now, as disposable work.** Ops2 carries its *requirements* across, not its screens. | "yes, it will build some screens into legacy, it's about to start doing that." |
 | D18 | **Acceptance is the owner's judgement on quality**; the PM stage still holds completeness criteria (nothing that works today may silently disappear). | "I will be accepting that and I consider myself competent in UX." |
+| D19 | **No customer-facing note when a human overrides a requirement.** The divergence is recorded internally at quote issue (§3) and stays internal. | "no need to client facing notes." |
 
 ---
 
@@ -203,6 +204,33 @@ decided are recorded as one fact about that quote.
   hard gate, not a nice-to-have. **Switch-over and deletion are two separate
   events** — see §7, which is how D2 is honoured without betting the business on a
   single deploy.
+- **C8 — RBAC must work with Cloudflare Zero Trust, and MFA is retained.**
+  Owner's words: *"I have full intention to keep Cloudflare Zero Trust/MFA setup.
+  Whatever RBAC implementation is, it MUST work with CFZT."*
+
+  The two layers are distinct and compose; nothing here weakens the perimeter:
+
+  - **Cloudflare Access answers *who you are*.** It enforces the policy and the MFA
+    challenge, then injects a signed `Cf-Access-Jwt-Assertion`, which the Worker
+    verifies against the team JWKS and a fixed audience
+    (`worker/lib/staff.ts:174`). **Unchanged by this project.** Nobody reaches ops2
+    without passing Access first, exactly as today.
+  - **RBAC answers *what you may do*.** Once Access has established the identity,
+    the application decides permissions for that person. Today that decision is
+    made from the email *domain* (`staff.ts:34`) — which is what D5 replaces, and
+    why a partner on an `@openframe.com.au` address is currently indistinguishable
+    from a founder.
+
+  Therefore admitting anyone — a future hire, the AMJ contact — is **two gates, not
+  one**: added to the Access policy, *and* granted a role. Neither alone is
+  sufficient, and revoking either is sufficient to lock someone out.
+
+  **Architect decision-point (not assumed here):** whether role membership lives in
+  Cloudflare Access groups (managed in the CF dashboard, arriving as JWT claims) or
+  in the application database per user (managed from an ops2 admin screen). The
+  owner's framing — "per user", with future limited-access hires in mind — points at
+  the database, but this is to be costed at the design stage, not decided in this
+  document.
 
 ---
 
@@ -244,16 +272,23 @@ promote — the procedure `CLAUDE.md` already mandates for sensitive surfaces). 
 bad switch-over is reversed in the time it takes to promote the prior version,
 not in the time it takes to restore a console.
 
-**The one real hazard is RBAC.** D5 replaces domain-based identity with per-user
-roles *inside ops2*. If that migration removes or repurposes what the old console
-authenticates against, the fire escape is already on fire — rolling the Worker
-back would restore a console that can no longer sign anyone in. So:
+**The one real hazard is RBAC — and C8 makes it narrower than it first looks.**
+Authentication does not change: Cloudflare Access and its MFA challenge are
+identical before, during and after the changeover, so no rollback scenario can
+leave anyone unable to *sign in*. What D5 changes is **role assignment** — how the
+application decides what a signed-in person may do. The old console reads that
+from the email domain. If the migration repurposes or removes what it reads, then
+rolling the Worker back restores a console whose users authenticate correctly and
+then find themselves with no permissions, which is a subtler failure and easier to
+miss. So:
 
 - The RBAC migration must be **additive**. `migrations/` is append-only by house
-  rule; this additionally requires that the existing domain-based path keeps
+  rule; this additionally requires that the existing domain-based role path keeps
   working, untouched, for as long as the old console exists.
-- Both identity paths must be live simultaneously through the soak. Removing the
-  domain path is part of **deletion**, not switch-over.
+- Both role-resolution paths must be live simultaneously through the soak.
+  Removing the domain path is part of **deletion**, not switch-over.
+- The rollback drill therefore has to check *authorization*, not just a sign-in:
+  roll back, open a record, confirm the old console can still read and write it.
 - The migration is a `migrations/` change, so it loads the `d1-migration-safety`
   skill first — a table rebuild once cascade-deleted production rows, and a clean
   local run proved nothing.
@@ -274,10 +309,9 @@ been done in it, not how long it has been sitting there.
 
 ## 8. Open — for the PM to raise
 
-- **O1.** When a human overrides a requirement (D9 — the cheaper, marginally
-  non-compliant option), does anything appear on the **customer-facing** quote?
-  The internal record is settled (§3); the customer surface was not answered.
-  Flagged rather than assumed because it concerns liability, not layout.
+- ~~**O1.**~~ **Closed 2026-08-17 — see D19.** No customer-facing note.
+- **O2.** How long the soak in §7 runs before deletion. Recommendation: measured in
+  real quotes issued through ops2 across a full working week, not in days elapsed.
 
 ---
 
