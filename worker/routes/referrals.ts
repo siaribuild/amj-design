@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
-import { ensureReferralCode, payoutComplete, payoutMissing, publicProgram, recordReferral, savePayoutDetails } from "../lib/referrals";
+import { ensureReferralCode, payoutComplete, payoutMissing, publicProgram, recordReferral, referrerScreen, savePayoutDetails } from "../lib/referrals";
 
 export const referrals = new Hono<{ Bindings: Env }>();
 
@@ -27,6 +27,7 @@ referrals.get("/account/referrals", async (c) => {
   // through it ACL s 49, depends on. Refused before ensureReferralCode so no code
   // is ever minted into a staff row.
   if (user?.type === "internal") return c.json({ error: "forbidden" }, 403);
+  if (user) return c.json(await referrerScreen(c.env, user, new URL(c.req.url).origin));
   return c.json({
     referrerGate: { complete: payoutComplete(user), missing: payoutMissing(user) },
     // WITHHELD, never issued-inactive: until the details exist there is no code

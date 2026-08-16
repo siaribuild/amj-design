@@ -1132,6 +1132,63 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.deepEqual(offenders, [], "no customer shape may carry an account or combined discount");
     });
 
+    await t.test("AC-27/AC-30 — the referrer screen carries the list, the money and the masked details", async () => {
+      // Everything §5 renders. The shape matters as much as the numbers: a
+      // referrer sees WHO (business name or masked email), HOW FAR ALONG, and
+      // WHAT THEY EARNED — never what their mate bought or what it cost.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "screen.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='screen.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "screen.mate@example.com");
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await sql(
+        `INSERT INTO project
+           (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+         VALUES ('p-screen', (SELECT id FROM user WHERE email='screen.mate@example.com'),
+                 'Screen quote','OF-Q-88010','quote_issued','issued',0);
+         INSERT INTO quote_line
+           (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+         VALUES ('ql-screen','p-screen','W01','amj80-series-awning-window',
+                 '{"width":"900","height":"1200"}','{}',1,10000,'ready',0);`,
+      );
+      await requestJson(mate, "/api/projects/p-screen/accept", { method: "POST" });
+
+      const { body: screen } = await requestJson(referrer, "/api/account/referrals");
+
+      assert.equal(screen.referrals.length, 1);
+      assert.equal(screen.referrals[0].status, "ordered", "they have ordered but not yet paid in full");
+      assert.match(screen.referrals[0].displayName, /\*/, "a masked email, never the address itself");
+      assert.ok(screen.shareUrl?.endsWith(`/r/${mine.code}`), "the link is built for them, not by them");
+
+      assert.equal(screen.earnings.pending, 90.91, "sums, so the screen never adds up rows itself");
+      assert.equal(screen.earnings.confirmed, 0);
+      assert.equal(screen.earnings.paid, 0);
+      assert.equal(screen.earningRows.length, 1);
+      assert.equal(screen.earningRows[0].dueAt, null, "nothing is due until it is payable");
+
+      // Masked, always. The unmasked values exist in exactly one place a human
+      // reads them — the ops payouts run — and this is not it.
+      assert.equal(screen.payout.abnValid, true);
+      assert.equal(screen.payout.abn, "51824753556", "their own ABN is a public business identifier");
+      assert.match(screen.payout.bsbMasked, /^063-\*+$/, "a BSB is shown masked");
+      assert.match(screen.payout.accountMasked, /^\*+5678$/, "and an account number by its last four");
+      assert.equal(/12345678/.test(JSON.stringify(screen.payout)), false, "the full number never leaves the server");
+
+      // Being a referrer and being referred are independent. This account has
+      // never been referred and has never ordered, so it may still type someone
+      // else's code — the referred side is never gated by the payout details that
+      // gate becoming a referrer.
+      assert.equal(screen.canEnterCode, true, "not yet referred and not yet ordered");
+      assert.equal(screen.payoutHistory.length, 0);
+      assert.equal(screen.program.ratePercent, 1, "figures for the copy, from config");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

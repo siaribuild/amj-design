@@ -456,6 +456,137 @@ export async function publicProgram(env: Env): Promise<ReferralProgramPublic> {
   };
 }
 
+/** How a referrer is allowed to see the person they referred (AC-26).
+ *
+ *  Business name if they gave one, otherwise a masked email. Never the address
+ *  itself, never a phone number, never what they bought. The referrer already
+ *  knows who they introduced — this is for recognising the row, not for learning
+ *  anything new about them. */
+function displayName(company: string | null, email: string): string {
+  if (company?.trim()) return company.trim();
+  const [local, domain] = email.split("@");
+  const shown = local.slice(0, 2);
+  return `${shown}${"*".repeat(Math.max(1, local.length - shown.length))}@${domain}`;
+}
+
+/** Mask a stored number to its shape, not its value. */
+const maskBsb = (bsb: string | null | undefined) =>
+  bsb ? `${bsb.slice(0, 3)}-${"*".repeat(Math.max(1, bsb.length - 3))}` : null;
+const maskAccount = (account: string | null | undefined) =>
+  account ? `${"*".repeat(Math.max(1, account.length - 4))}${account.slice(-4)}` : null;
+
+/** Everything the referrer's screen renders, assembled once.
+ *
+ *  The screen adds nothing up and derives no dates. Sums arrive summed and the
+ *  payment-due date arrives resolved, because that date is a promise the business
+ *  makes under ACL s 32(2) and its arithmetic belongs in one place. */
+export async function referrerScreen(env: Env, user: ReferrerRow & { id: string }, origin: string) {
+  const program = await publicProgram(env);
+  const code = await ensureReferralCode(env, user);
+
+  const referrals = await env.DB
+    .prepare(
+      `SELECT r.id, r.created_at, r.expires_at, r.status,
+              u.company, u.email,
+              (SELECT o.stage FROM "order" o JOIN project p ON p.id = o.project_id
+                WHERE p.owner_user_id = r.referred_user_id ORDER BY o.created_at LIMIT 1) AS stage,
+              (SELECT e.status FROM referral_earning e WHERE e.referral_id = r.id LIMIT 1) AS earning_status
+         FROM referral r JOIN user u ON u.id = r.referred_user_id
+        WHERE r.referrer_user_id = ? ORDER BY r.created_at DESC`,
+    )
+    .bind(user.id)
+    .all<{
+      id: string; created_at: string; expires_at: string; status: string;
+      company: string | null; email: string; stage: string | null; earning_status: string | null;
+    }>();
+
+  const paidStages = new Set<string>(PAID_IN_FULL_ONWARDS);
+  const now = new Date().toISOString();
+
+  const { results: earningResults } = await env.DB
+    .prepare(
+      `SELECT e.id, e.referral_id, e.amount, e.status, e.confirmed_at
+         FROM referral_earning e JOIN referral r ON r.id = e.referral_id
+        WHERE r.referrer_user_id = ? ORDER BY e.created_at DESC`,
+    )
+    .bind(user.id)
+    .all<{ id: string; referral_id: string; amount: number; status: string; confirmed_at: string | null }>();
+
+  const sum = (status: string) => Math.round(
+    (earningResults ?? []).filter((e) => e.status === status).reduce((t, e) => t + e.amount, 0) * 100,
+  ) / 100;
+
+  const held = sum("pending");
+  const confirmed = sum("confirmed");
+  const payable = payoutComplete(user);
+
+  return {
+    referrerGate: { complete: payable, missing: payoutMissing(user) },
+    code,
+    // The code a former member would get back. `code` is null for them by
+    // definition — the gate is open — so the one screen whose copy names a code
+    // would otherwise have none to name.
+    retainedCode: code ? null : (user.referral_code ?? null),
+    shareUrl: code ? `${origin}/r/${code}` : null,
+    // The REFERRED side's own ability, never gated by D18: becoming a referrer
+    // needs payout details, being referred does not.
+    // Closed by either of the two things that end it: already referred (A9, one
+    // per account permanently) or already ordered (A5, the window for a typed
+    // code closes at the first order).
+    canEnterCode: !(await env.DB
+      .prepare(
+        `SELECT 1 AS taken FROM referral WHERE referred_user_id = ?1
+          UNION ALL
+         SELECT 1 FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.owner_user_id = ?1`,
+      )
+      .bind(user.id).first()),
+    referrals: (referrals.results ?? []).map((r) => ({
+      id: r.id,
+      displayName: displayName(r.company, r.email),
+      joinedAt: r.created_at,
+      status: r.status !== "recorded" || r.earning_status === "void"
+        ? "not_eligible"
+        : r.stage && paidStages.has(r.stage) ? "paid_in_full"
+        : r.stage ? "ordered"
+        : r.expires_at <= now ? "expired"
+        : "signed_up",
+    })),
+    earnings: { pending: held, confirmed, paid: sum("paid") },
+    earningRows: (earningResults ?? []).map((e) => ({
+      id: e.id,
+      referralId: e.referral_id,
+      amount: e.amount,
+      status: e.status,
+      confirmedAt: e.confirmed_at,
+      // Resolved here, never in the browser: this is the date the business
+      // promises to pay by, and ACL s 32(2) makes it a commitment to meet rather
+      // than merely state.
+      dueAt: e.confirmed_at
+        ? new Date(new Date(e.confirmed_at + "Z").getTime() + program.payoutTimeframeDays * 86_400_000).toISOString()
+        : null,
+    })),
+    payout: {
+      abn: user.abn ?? null,
+      abnPresent: Boolean(user.abn?.trim()),
+      abnValid: abnValid(user.abn),
+      bsbMasked: maskBsb(user.payout_bsb),
+      accountMasked: maskAccount(user.payout_account_number),
+      accountName: user.payout_account_name ?? null,
+      // Details cannot be removed while confirmed money is waiting on them —
+      // those are the details we are about to pay into.
+      clearBlocked: confirmed > 0 ? { amount: confirmed } : null,
+      // The ADR-8c residue: money held because the details were cleared. Re-adding
+      // them releases it on the next sweep.
+      heldPendingDetails: !payable && held > 0 ? { amount: held } : null,
+      heldUnderThreshold: program.minPayoutBalance > 0 && confirmed > 0 && confirmed < program.minPayoutBalance
+        ? { balance: confirmed, threshold: program.minPayoutBalance }
+        : null,
+    },
+    payoutHistory: [] as { paidAt: string; amount: number; reference: string | null; referralIds: string[] }[],
+    program,
+  };
+}
+
 /** What a referrer submits to become payable. Free text as typed. */
 export interface PayoutDetailsInput {
   bsb?: string | null;
