@@ -20,6 +20,15 @@ What survives untouched: the divergence record (§6 below), the baseline resolut
 and the existing audit trail. This simplification is real: the mutation model in §5 is
 pessimistic request/response with no client-side history of any kind.
 
+**Amended 2026-08-17 (design pass B, ADR 0004):** the component-framework decision was
+reopened after the owner rejected the R1 mock's narrow-width behaviour; the criterion is
+now ordered — drive established mobile IA and navigation practice first; grow desktop from
+it. §4 gains the plane shell (§4.0), §3.3's navigation frame is restated against it, §10
+gains the grammar assertions, §13 gains the framework rows. The mobile interaction model
+is the settled exploratory mock's (`docs/ops-redesign/mocks/ops-ux-mock.html` §13); the
+R1 interaction spec's narrow model returns to the ux-designer for rework on the plane
+shell before implementation.
+
 ---
 
 ## 1. Shape of the system
@@ -140,12 +149,51 @@ render a not-found screen with a link home — never a blank.
 `src/ops2/App.tsx` composes, in order: error boundary (module-level, catches render errors
 into a reload screen — AC-26's back still works), boot gate (`/api/ops/me` → sign-in screen
 in non-Access environments, per register rows 5–13), brand (reuse of the one-request pattern),
-the navigation frame (rail/drawer selected by container width, §4), and the route outlet.
+the navigation frame — presented by the plane shell per measured width class (§4.0): plane stack below 768 px, summoned overlays at 768–1023, simultaneous zones at 1024+ — and the route outlet.
 The sign-in screen is carried from register rows 5–13 **verbatim** (D-2, NON-PROD).
 
 ---
 
 ## 4. The responsive layout system (R1 builds it; I3/I4/C1 bind every region)
+
+### 4.0 The plane shell — the navigation pattern layer (ADR 0004; design pass B amendment)
+
+**Added after the R1 mock rejection.** As first written, this section supplied layout
+*mechanisms* (§4.1–4.3) with no navigation pattern layer above them — and the first
+interaction design built on that vacuum produced narrow-width behaviour the owner rejected
+outright (columns collapsing into one long scroll behind a drawer). The corrected
+criterion is ordered: drive established mobile IA first; grow desktop from it. ADR 0004
+carries the costing, including the owner-named Ionic option.
+
+The shell (`src/ops2/shell/`) is one deep module owning **all presentation**, implementing
+the mobile grammar the settled exploratory mock established
+(`docs/ops-redesign/mocks/ops-ux-mock.html` §13; `docs/ops-redesign/LEARNINGS.md` joins it
+as the written companion when its extraction lands):
+
+- **Plane stack below 768 px** — full-screen planes, push 240 ms / pop 200 ms, slide
+  replaced under reduced motion, every push a history entry, the active plane **derived
+  from the route, never held as state**; segmented planebar switcher (gesture never the
+  only route); per-plane identity bands; the phone action footer (one primary, overflow
+  behind a single control, the blocked primary's reason inside the footer, ConfirmInline
+  in place of modals); safe-area + keyboard insets; focus moves to the pushed plane's
+  heading.
+- **Summoned overlays at 768–1023** — the primary zone holds the ground; secondary zones
+  arrive as overlay rail / sheet; the back control persists.
+- **Simultaneous zones at 1024+** — compact's 48 px code-strip rail, then full rail ·
+  pane · canvas; density rises through tokens, never through a different IA.
+
+**The zone contract is the seam.** A region declares each destination as an ordered set of
+zones with width appetites (the work/context allocator from the R1 interaction design,
+generalised) plus per-zone header and action content — and never renders navigation
+chrome; the plane primitives are not exported outside the shell. The route table's element
+type accepts zone declarations only, so a long-scroll page is inexpressible, not merely
+reviewable. Growth to desktop is **revelation, not rearrangement**: a plane and a pane are
+the same zone at different measured widths, which is what holds D4's two failure modes
+apart with one IA.
+
+§4.1–4.3 below survive unchanged as the shell's internal mechanisms: container queries
+and the folding component govern layout *within* a zone; the shell governs which zones
+are present and how they are reached.
 
 ### 4.1 Principle: one component, measured width, no device branches
 
@@ -471,6 +519,11 @@ count-before-after protocol.
   (320 / 375 / 768 / 1024 / 1440 px) and a mid-task resize helper — AC-11/12/15's harness.
   Device-lab passes on the two reference devices (AC-15) are a manual tester step recorded in
   the register, not automated.
+- **Plane-shell grammar assertions** (ADR 0004) join the width-matrix fixture: at 320 and
+  390 px, every registered destination renders exactly one plane; the scroll container is
+  the plane body, never the document; the action footer carries the declared primary when
+  one exists; planebar/back control are reachable; focus lands on the pushed plane's
+  heading. The route table's zone-only element type is the compile-time half.
 - **Register discharge** is a tester activity per region (AC-36): each row exercised in its
   recorded environment, evidence noted in `docs/ops2/register.md`.
 - **The layout-purity static check** (§4.3) and the **route-manifest coverage check** (§8.3)
@@ -585,6 +638,10 @@ made explicit:
 | A query-cache/state library (react-query et al.) | Two users, cheap refetches, and I6's loudness is easier to guarantee when staleness doesn't exist. The `Loadable` seam leaves room to add dedup behind the hooks if ever needed. |
 | Device-class breakpoints (`md:`/UA sniffing) for ops2 layout | Disqualified by C1; the Fold changes width mid-session. Container queries + one folding component. |
 | A second hostname for ops2 | Security-path changes (`ACCESS_AUD` list, `isOps` widening, new Access app) for cosmetics. Spec §6.3 already forbids it; confirmed here with the code evidence. |
+| Ionic React as navigation/component framework (owner-named) | Costed in ADR 0004: `@ionic/react-router` pins React Router v5 against the repo's 7.13; shadow-DOM theming against the Tailwind v4 token layer; `ion-split-pane`'s media-query desktop story fails D4/C1; and it would replace the settled mock's §13 grammar rather than implement it. The stack-navigation practice is adopted; the implementation is owned (§4.0). |
+| Framework7 | Its own router cannot serve AC-24/26 path deep links; desktop theme removed in v8 — mobile-only idiom; DOM-first beside React. ADR 0004. |
+| Konsta UI as the pattern layer | Presentational widgets only — no navigation stack, which is the load-bearing half; a second visual idiom against the approved treatment. ADR 0004. |
+| A pattern-free headless substrate (§4 as first written) | Mechanisms without a pattern layer enforce no mobile IA — empirically failed at the R1 mock gate. Superseded by §4.0. ADR 0004. |
 
 ---
 
@@ -611,5 +668,6 @@ made explicit:
 - `docs/adr/0001-rbac-role-store-in-application-db.md`
 - `docs/adr/0002-ops2-path-routing-not-hash.md`
 - `docs/adr/0003-original-information-captured-at-line-birth.md`
+- `docs/adr/0004-ops2-plane-shell-owned-not-adopted.md`
 - `CONTEXT.md` — created on this branch (the planning branch predates it) carrying the
   current dev-line glossary plus spec §14's terms; merges forward with the branch.

@@ -32,7 +32,7 @@ The container for one customer job: its lines, delivery details, documents, and 
 _Avoid_: job, enquiry (that's a separate pre-account concept)
 
 **Record**:
-The merged plane of a project and its order, addressed as one thing in ops. `Project` remains the container; `Record` is what ops opens. Orders are not a separate ops destination.
+The merged view of a project and its order, addressed as one thing in ops. `Project` remains the container; `Record` is what ops opens. Orders are not a separate ops destination.
 _Avoid_: workspace, project page
 
 **Phase**:
@@ -67,6 +67,23 @@ _Avoid_: permission level, access level
 **Dormant capability**:
 Code that implements a capability which has never been reachable in production — a variable is unset, a guard excludes it, or no user of the required kind exists. Not dead code and not a regression: a decision about the future, made visible in the carry-across register rather than left to scope silence.
 _Avoid_: dead code (different fact), unused feature
+
+**Zone**:
+A region-declared unit of an ops2 destination's content, carrying a width appetite (work
+or context). The same zone is presented as a plane at narrow widths and a pane at wide
+ones — one information architecture at every width.
+_Avoid_: panel, column (those are presentations, not the thing)
+
+**Plane**:
+A full-screen presentation of one zone at narrow widths, pushed and popped as route
+changes on the plane stack; every push is a history entry and the active plane is derived
+from the route. Carries its own identity band and action footer.
+_Avoid_: screen, page, view (none imply the stack)
+
+**Width class**:
+One of the five presentation tiers (phone, tabletp, compact, desktop, wide) resolved from
+measured width, moment to moment — never from device class.
+_Avoid_: breakpoint (implies viewport media queries), device type
 
 ### Catalogue
 
