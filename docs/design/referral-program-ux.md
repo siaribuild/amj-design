@@ -117,6 +117,7 @@ looks like a new shape, it is a bug in the mock — build the pattern named here
 | Discount card, join invitation, dormant/left notices | `.card p-5` + a 3px `borderLeft` in the relevant tone (`SAGE`, `TONE.mute`, `TONE.attn`) | `AccountDashboard.tsx:218/231/299/337` |
 | Empty states | `.card p-5` + 3px `TONE.mute` stripe | `AccountDashboard.tsx:299` |
 | Quote money panel | `QuoteTotals` unchanged; one extra row inside the existing sage band | `QuoteTotals.tsx` |
+| Quote-time code entry (§7.1) | No card. The same sage-band row; input `.quote-code-field`, reveal `.disclose`, `Btn outline`/`ghost` at `sm` | `ItemComposer.tsx:1047`, `theme.css:1284` |
 | Ops panels and tables | `.card` + `.panel-head` + the ops table; ready-to-pay strip is `.card` + 3px sage stripe | `src/ops/Pricing.tsx`, `Projects.tsx` |
 
 **Two card paddings only**, and neither has a mobile variant — the site keeps them at every width:
@@ -560,13 +561,21 @@ someone who *was* referred and has a discount — and often one person in both r
 `Account`. Icon `Users`. When `earnings.confirmed > 0` it carries a positive-tone badge showing confirmed
 money rounded to whole dollars (`$124`).
 
-**Visibility.** The section is present when the account has **a code, OR referral history, OR a referral
-offer (live, used or expired)**. Otherwise — including when the program is off and the account has neither —
-the rail item is absent and `/referrals` redirects to `/account`.
+**Visibility.** The section is present for **every signed-in customer account.** No condition, no
+redirect. Staff accounts (`type='internal'`) never see it (AC-5).
 
-> This rule replaces §8.6.1's third argument for putting the discount panel on the Account page ("it
-> survives the program"). Because the offer itself keeps the section alive, a referred tradie with a live
-> discount never loses the explanation for their price.
+> **Corrected in revision 3, and why the two rules disagreed.** This previously read "present when the
+> account has a code, OR referral history, OR a referral offer" — which contradicted §5.6's "renders
+> whenever `canEnterCode` is true, in every state including State A". A tradie handed a code on a job site
+> has no code of their own, no history and no offer *until they enter it*, so the gated rule hid the very
+> field that was supposed to be reachable, and manual entry — which exists because half these
+> introductions happen where a link is never clicked — was unreachable.
+>
+> The two rules were written for different jobs and neither noticed the other: the visibility rule was
+> reasoning about the *referrer* (don't show an empty money screen), §5.6 about the *referred tradie*
+> (always let a code in). The section serves both, so the permissive rule wins. **Do not re-gate this** —
+> the empty-screen concern it was protecting against is already handled by State A's join invitation, which
+> is a real screen with a real purpose rather than an empty table.
 
 ### 5.1 Page structure — up to two blocks, always in this order
 
@@ -632,8 +641,11 @@ then it stops.
 
 **State C — working.** Order on the page, top to bottom:
 
-1. **Header** — `t-hd1` Referrals · `t-bd-sm` "`n` mates referred · next payment due **[date]**" ·
-   right-aligned `fmtDayDate(today)`.
+1. **Header** — `t-hd1` Referrals · `t-bd-sm` "`n` mates referred · next payment due **[date]**".
+   **No right-aligned `fmtDayDate(today)`.** *Corrected in revision 3:* the dashboard carries today's date
+   because it is a hub that orients you on arrival; here it sat a few characters from the payment due date
+   in near-identical type, and the two read as a pair when only one is a fact about the account. The due
+   date is the only date this header needs.
 2. **Earnings strip** — `SummaryCell` × 3 in a `.card` row (stacks below 640px):
 
    | Cell | Value | Sub-line | Tone |
@@ -805,7 +817,7 @@ All four states are a `.card` with a 3px left border.
 > `t-hd1` **[discount] off your first order — [n] days left**
 > `t-bd` It runs out on **[expiry]**, and it's a one-off. It's already in every price you see; place your
 > first order before then and it's yours.
-> chips: `Expires [expiry]` (warning) · `First order only`
+> chips: `Expires [expiry]` (`.quote-chip--attention`) · `First order only` (`.quote-chip--neutral`)
 > `Btn sage md` **Finish your quote →**
 
 The 30-day boundary is the same trigger as the reminder email, so the screen and the inbox agree. The
@@ -855,6 +867,94 @@ prices, not one of them.
 The prop is absent at the first pricing event after the discount is used or expires (AC-57). An issued
 quote renders it from the issue-time stamp and never re-prices (AC-54). Everything else in `QuoteTotals` is
 unchanged, in both GST modes, for every non-referred account.
+
+### 7.1 Entering a code at quote time — `ReferralCodeRow` — ⚠️ WITHDRAWN, NOT BUILT
+
+> **The owner reversed this after it was designed (2026-08-16). Do not implement it.** Their reasoning:
+> *"most people would not come via referrals. No point of showing the banner."* The quote flow is walked
+> by every customer and the overwhelming majority have no code to enter, so a field for a minority sits in
+> everyone's path.
+>
+> It was commissioned to fix a real hole — a tradie handed a code had nowhere to type it — but **§5's
+> visibility fix already closed that hole on its own**: the Referrals section is now present for every
+> signed-in account, so manual entry is always reachable. This was the second of two fixes and turned out
+> to be the redundant one.
+>
+> Kept rather than deleted because the reasoning is sound and specific, and if the account-area route ever
+> proves too obscure this is the alternative already worked out — including the two constraints that make
+> it safe: it must never render on an issued quote (applying a code there would re-price an offer the
+> customer can accept), and it survives §8.2 only while it carries no pitch, no rate and no link to
+> `/refer`. The five mock frames stay for the same reason.
+>
+> **Consequence to hold onto:** the Referrals section is now the *only* place a code can be entered, so
+> the rail item carries the whole discoverability job for someone who has never heard of the program.
+
+**Intent.** Manual entry exists because half these introductions happen where a link is never clicked, and
+until now the only place to type a code was the account area. The moment a code matters most is while
+someone is looking at the price it changes — and it catches the tradie who remembers the code as they are
+about to order. *New in revision 3.*
+
+**One component, `ReferralCodeRow`, rendered in two places** — the same two-homes-one-component approach
+`PayoutDetailsForm` uses, so the copy and the error handling cannot drift:
+
+1. The **quote builder**, at the foot of the opening list, directly above the sticky `ProjectActionBar`.
+   Not *inside* the action bar: that bar is one figure and one action, and a form in it is the
+   "never interrupt a priced flow" failure §8.2 warns about.
+2. **`QuoteTotals` when `pending`** — the submitted project record.
+
+**Where it must never render:** the issued quote and the order. Both call `QuoteTotals` without `pending`.
+An issued quote is a price offer the customer can accept, and applying a code would re-price it under them
+(AC-54). Gate on the pre-issue states only.
+
+**It renders nothing at all** unless `canEnterCode === true` and the account has no referral. No greyed
+field, no "already used" note. Manual entry closes at the first order and the row must not sit there
+implying otherwise (AC-9).
+
+**The slot.** It occupies **exactly the position the discount row occupies** — inside the sage band, above
+the figures, separated from them by the same hairline. Resting it asks; applied it reports. Putting it
+*below* the total would make it a checkout coupon box, which is the one reading this site cannot afford:
+there is no redemption step.
+
+**Three states.**
+
+*Resting* — one line, `t-cap`, `--sage-ink`, a real `<button>`:
+> Got a referral code from another tradie? **Add it →**
+
+*Open* — `.disclose` (`theme.css:1284`, the site's one disclosure behaviour) reveals:
+> `t-cap` A referral code takes **[discount]** off this first order. It comes off the prices below straight
+> away.
+> `Input` (`.quote-code-field`, `ItemComposer.tsx:1047`) `maxLength={7}`, uppercased, `letter-spacing:.14em`,
+> `placeholder="ABC-123"` · `Btn outline sm` **Apply** · `Btn ghost sm` **Cancel**
+
+Enter submits. Focus moves to the field on open, and back to the resting button on cancel.
+
+*Applied* — the row becomes the §7 discount row, and the figures below have changed. **On the first render
+after applying only**, the right-hand label reads `Prices below have come down`; on every render after it
+reads `Already in the prices above`. Same row, one clause of difference — the customer sees the movement
+they caused, and thereafter sees the standing fact. Announce the change via `aria-live="polite"`:
+"Referral discount applied. Prices updated."
+
+**Errors** — `t-cap` in `--destructive` beneath the field, `.quote-code-field[data-attention="true"]` on
+the input. The messages are §5.6's, unchanged:
+
+| Cause | Copy |
+|---|---|
+| unknown code · owner has left the program · same ABN as the referrer | That code isn't valid. Check it with the tradie who gave it to you. |
+| own code | That's your own code. |
+| already has a referral | Your account already has a referral — it's one per account. |
+| first order exists | A code can only be added before your first order. |
+
+Three causes deliberately share one message: naming which would disclose a third party's account state to
+whoever typed the code.
+
+**Constraints carried in full.** The referral percentage alone, never a combined total (AC-75). No rate —
+this surface shows money, so §0 rule 6 excludes it. No pitch, no link to `/refer`: it is pricing
+disclosure, not a placement, which is what keeps it inside §8.2's carve-out for the discount badge rather
+than outside its ban on marketing in a priced flow. `[discount]` renders from config.
+
+**Pattern map** (§2.1): no new card. The row lives inside `QuoteTotals`' existing sage band; the input is
+`.quote-code-field` (`ItemComposer.tsx:1047`); the reveal is `.disclose` (`theme.css:1284`); the buttons
+are `Btn` `outline`/`ghost` at `sm`.
 
 ---
 
@@ -1167,6 +1267,11 @@ a document that now describes something different from what will be built.
   that displays pending, confirmed or paid money. Testable as a pairing, not as a blanket absence — §0
   rule 6.
 - No ops screen presents a mutating control outside the row it affects.
+- **A referral code can be entered from a signed-in account with no code, no history and no offer** — the
+  case that was previously unreachable. Verified against a running system, not by reading the visibility
+  rule.
+- **The quote-time code row renders on pre-issue surfaces only** — never on an issued quote or an order,
+  and never once the account has a referral or a first order.
 
 ---
 

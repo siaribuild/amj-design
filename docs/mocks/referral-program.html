@@ -1342,7 +1342,7 @@ section.surface{padding-top:56px}
         <div class="screen">
           <div class="ground-bone" style="padding:26px 0 60px"><div class="wrap" style="display:grid;grid-template-columns:1fr 236px;gap:34px;align-items:start">
             <div>
-              <header class="mb20 row jb ab wr g16"><div><h1 class="t-hd1 c-ink">Referrals</h1><p class="t-bd-sm c-body mt4">5 mates referred · next payment due <b class="c-ink">29 AUG 2026</b></p></div><span class="t-data-sm c-body">MON 17 AUG 2026</span></header>
+              <header class="mb20"><div><h1 class="t-hd1 c-ink">Referrals</h1><p class="t-bd-sm c-body mt4">5 mates referred · next payment due <b class="c-ink">29 AUG 2026</b></p></div></header>
 
               <h2 class="t-bd-lg sb fd c-ink mb12">Your discount</h2>
               <div class="card mutebar p20 mb32">
@@ -1788,6 +1788,132 @@ section.surface{padding-top:56px}
       of them.</p>
       <p>It disappears at the first re-price after the discount is used or expires. An already-issued quote
       keeps the price it offered, always.</p>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">New</span> Entering a code at quote time <span class="tag">pre-issue only</span></h3>
+    <p>A tradie handed a code on a job site has nowhere natural to type it — and the moment it matters most
+    is while they're looking at the price it changes. The prompt occupies <b>exactly the slot the discount
+    row will occupy</b>, so the field literally becomes the thing it produces. That is what stops it reading
+    as a checkout coupon box: it sits <i>above</i> the figures it changes, not below the total.</p>
+    <div class="frames">
+      <div class="dev desk" style="width:420px"><div class="cap"><span>1 · resting</span><span>eligible, no code yet</span></div>
+        <div class="screen" style="width:402px"><div class="ground-bone p20">
+          <div class="card">
+            <div class="px20 py12 bb5"><p class="t-bd-sm c-ink sb">5 openings</p></div>
+            <div style="background:rgba(90,122,106,.07);border-top:1px solid rgba(0,0,0,.1)" class="px20 py14">
+              <div class="mb8" style="padding-bottom:9px;border-bottom:1px solid rgba(0,0,0,.08)">
+                <span class="t-cap c-sagei">Got a referral code from another tradie? <span class="md" style="text-decoration:underline;text-underline-offset:2px">Add it →</span></span>
+              </div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Windows and doors (inc GST)</span><span class="fdata md c-ink">$18,890.00</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Delivery to 3149 (inc GST)</span><span class="fdata md c-ink">$540.00</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Includes GST</span><span class="fdata md c-ink">$1,766.36</span></div>
+              <div class="row jb ac sb c-ink" style="border-top:1px solid rgba(0,0,0,.1);padding-top:11px"><span class="t-bd">Estimated total (inc GST)</span><span class="fdata t-bd-lg">$19,430.00</span></div>
+            </div>
+          </div>
+        </div></div></div>
+
+      <div class="dev desk" style="width:420px"><div class="cap"><span>2 · open</span><span>one field, one action</span></div>
+        <div class="screen" style="width:402px"><div class="ground-bone p20">
+          <div class="card">
+            <div class="px20 py12 bb5"><p class="t-bd-sm c-ink sb">5 openings</p></div>
+            <div style="background:rgba(90,122,106,.07);border-top:1px solid rgba(0,0,0,.1)" class="px20 py14">
+              <div class="mb8" style="padding-bottom:11px;border-bottom:1px solid rgba(0,0,0,.08)">
+                <p class="t-cap c-sagei mb6">A referral code takes <b>2.5%</b> off this first order. It comes off the prices below straight away.</p>
+                <div class="row g8 ac"><span class="field mono" style="width:130px;letter-spacing:.14em;color:var(--quieter);padding:6px 10px">ABC-123</span><span class="btn btn-sm b-outline">Apply</span><span class="btn btn-sm b-ghost">Cancel</span></div>
+              </div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Windows and doors (inc GST)</span><span class="fdata md c-ink">$18,890.00</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Delivery to 3149 (inc GST)</span><span class="fdata md c-ink">$540.00</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Includes GST</span><span class="fdata md c-ink">$1,766.36</span></div>
+              <div class="row jb ac sb c-ink" style="border-top:1px solid rgba(0,0,0,.1);padding-top:11px"><span class="t-bd">Estimated total (inc GST)</span><span class="fdata t-bd-lg">$19,430.00</span></div>
+            </div>
+          </div>
+        </div></div></div>
+
+      <div class="dev desk" style="width:420px"><div class="cap"><span>3 · refused</span><span>one message, three causes</span></div>
+        <div class="screen" style="width:402px"><div class="ground-bone p20">
+          <div class="card">
+            <div class="px20 py12 bb5"><p class="t-bd-sm c-ink sb">5 openings</p></div>
+            <div style="background:rgba(90,122,106,.07);border-top:1px solid rgba(0,0,0,.1)" class="px20 py14">
+              <div class="mb8" style="padding-bottom:11px;border-bottom:1px solid rgba(0,0,0,.08)">
+                <div class="row g8 ac mb6"><span class="field mono err" style="width:130px;letter-spacing:.14em;padding:6px 10px">XYZ-999</span><span class="btn btn-sm b-outline">Apply</span><span class="btn btn-sm b-ghost">Cancel</span></div>
+                <p class="t-cap c-dest">That code isn't valid. Check it with the tradie who gave it to you.</p>
+              </div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Windows and doors (inc GST)</span><span class="fdata md c-ink">$18,890.00</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Delivery to 3149 (inc GST)</span><span class="fdata md c-ink">$540.00</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Includes GST</span><span class="fdata md c-ink">$1,766.36</span></div>
+              <div class="row jb ac sb c-ink" style="border-top:1px solid rgba(0,0,0,.1);padding-top:11px"><span class="t-bd">Estimated total (inc GST)</span><span class="fdata t-bd-lg">$19,430.00</span></div>
+            </div>
+          </div>
+        </div></div></div>
+
+      <div class="dev desk" style="width:420px"><div class="cap"><span>4 · just applied</span><span>the prices below have moved</span></div>
+        <div class="screen" style="width:402px"><div class="ground-bone p20">
+          <div class="card">
+            <div class="px20 py12 bb5"><p class="t-bd-sm c-ink sb">5 openings</p></div>
+            <div style="background:rgba(90,122,106,.07);border-top:1px solid rgba(0,0,0,.1)" class="px20 py14">
+              <div class="col g4 mb8" style="padding-bottom:9px;border-bottom:1px solid rgba(0,0,0,.08)">
+                <span class="t-cap c-sagei">Referral discount — 2.5% off, thanks to Kirra Glazing</span>
+                <span class="t-cap c-sagei md">Prices below have come down</span>
+              </div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Windows and doors (inc GST)</span><span class="fdata md c-ink">$18,420.00</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Delivery to 3149 (inc GST)</span><span class="fdata md c-ink">$540.00</span></div>
+              <div class="row jb ac" style="margin-bottom:9px"><span class="c-body t-cap">Includes GST</span><span class="fdata md c-ink">$1,723.64</span></div>
+              <div class="row jb ac sb c-ink" style="border-top:1px solid rgba(0,0,0,.1);padding-top:11px"><span class="t-bd">Estimated total (inc GST)</span><span class="fdata t-bd-lg">$18,960.00</span></div>
+            </div>
+          </div>
+        </div></div></div>
+
+      <div class="dev mob"><div class="cap"><span>Phone · 375</span><span>resting, then open</span></div>
+        <div class="screen" style="height:560px">
+          <div class="ground-bone p16" style="height:100%">
+            <div class="card mb16">
+              <div class="px16 py10 bb5"><p class="t-bd-sm c-ink sb">5 openings</p></div>
+              <div style="background:rgba(90,122,106,.07);border-top:1px solid rgba(0,0,0,.1)" class="px16 py12">
+                <div class="mb8" style="padding-bottom:9px;border-bottom:1px solid rgba(0,0,0,.08)"><span class="t-cap c-sagei">Got a referral code from another tradie? <span class="md" style="text-decoration:underline">Add it →</span></span></div>
+                <div class="row jb ac" style="margin-bottom:8px"><span class="c-body t-cap">Windows and doors (inc GST)</span><span class="fdata md c-ink">$18,890.00</span></div>
+                <div class="row jb ac sb c-ink" style="border-top:1px solid rgba(0,0,0,.1);padding-top:10px"><span class="t-bd-sm">Estimated total</span><span class="fdata t-bd">$19,430.00</span></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="px16 py10 bb5"><p class="t-bd-sm c-ink sb">5 openings</p></div>
+              <div style="background:rgba(90,122,106,.07);border-top:1px solid rgba(0,0,0,.1)" class="px16 py12">
+                <div class="mb8" style="padding-bottom:10px;border-bottom:1px solid rgba(0,0,0,.08)">
+                  <p class="t-cap c-sagei mb6">A referral code takes <b>2.5%</b> off this first order. It comes off the prices below straight away.</p>
+                  <div class="col g8"><span class="field mono" style="letter-spacing:.14em;color:var(--quieter);padding:6px 10px">ABC-123</span><div class="row g8"><span class="btn btn-sm b-outline">Apply</span><span class="btn btn-sm b-ghost">Cancel</span></div></div>
+                </div>
+                <div class="row jb ac" style="margin-bottom:8px"><span class="c-body t-cap">Windows and doors (inc GST)</span><span class="fdata md c-ink">$18,890.00</span></div>
+                <div class="row jb ac sb c-ink" style="border-top:1px solid rgba(0,0,0,.1);padding-top:10px"><span class="t-bd-sm">Estimated total</span><span class="fdata t-bd">$19,430.00</span></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+    </div>
+    <div class="note"><b>Why it sits above the figures</b>
+      <p><b>The prompt and the discount row share one slot.</b> Resting, it asks; applied, it reports. The
+      thing that appears is the thing the field produced, in the place the field was — which is the clearest
+      way to say the change has already happened.</p>
+      <p><b>Above the total, never below it.</b> A field under a total is a checkout coupon box, and this
+      site has no redemption step. Above the figures it reads as a statement about what follows.</p>
+      <p><b>"Prices below have come down"</b> on the first render after applying, then "Already in the prices
+      above" on every render after. Same row, one clause of difference, and the customer sees the movement
+      they just caused.</p>
+      <p><b>One refusal message for three causes</b> — unknown code, a code whose owner has left the program,
+      and a code belonging to the same business. Naming which would tell whoever typed it something about a
+      third party's account.</p>
+      <p><b>It disappears completely</b> once the first order exists or the account already has a referral.
+      No greyed field, no "already used" note — nothing.</p>
+    </div>
+    <div class="flag"><b>Where it does NOT appear, and why that matters</b>
+      <p><b>Not on an issued quote.</b> An issued quote is a price offer the customer can accept; applying a
+      code there would re-price it under them, which AC-54 forbids. The money panel is the same component at
+      all three stages, so the prompt is gated to the pre-issue ones — the draft in the builder and the
+      submitted project — and the issued quote and the order never render it.</p>
+      <p><b>This is pricing, not a placement.</b> Spec §8.2 says never interrupt a priced flow with a
+      marketing offer, and at a glance this looks like one. It is the same category as the discount row it
+      replaces: a statement about the price, on the price surface. It carries no pitch, no commission rate
+      and no link to <code>/refer</code> — just the field and what it does.</p>
     </div>
   </div>
 </section>
