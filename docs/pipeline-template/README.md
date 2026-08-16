@@ -16,6 +16,7 @@ Everything project-specific lives in `{{PLACEHOLDERS}}` or in two files the agen
 | `probity.config.template.ts` | `probity.config.ts` — set the scope globs |
 | `docs-agents/*.md` | `docs/agents/` — set `{{OWNER/REPO}}` in issue-tracker.md |
 | `skills/d1-migration-safety/` | `.claude/skills/` — **only if the project uses Cloudflare D1**; otherwise write an equivalent safety skill for the project's own database, or skip |
+| `security-sweep.yml` | `.github/workflows/` — deterministic Semgrep-OSS sweep in CI (no account, telemetry off); adjust the exclude dirs |
 
 ## 2. Per-project setup (run in the new repo)
 
@@ -33,7 +34,7 @@ npm install -D @nizos/probity
 
 Already satisfied on the machine this template was authored on. A new machine needs:
 
-- **Plugins** (user scope, via `/plugin` or the marketplaces): `codex@openai-codex`, `mattpocock-skills@mattpocock`, `intent@intent` (ghaida/intent), `impeccable@impeccable` (pbakaus/impeccable), `security-guidance@claude-plugins-official`, `semgrep@claude-plugins-official`. Do **not** enable the `probity@probity` plugin — the TDD gate runs through `hooks/probity-subagent-shim.mjs` instead (the plugin's own hook can't see subagent transcripts; the shim fixes that and is wired in `settings.json`).
+- **Plugins** (user scope, via `/plugin` or the marketplaces): `codex@openai-codex`, `mattpocock-skills@mattpocock`, `intent@intent` (ghaida/intent), `impeccable@impeccable` (pbakaus/impeccable), `security-guidance@claude-plugins-official`, `claude-security@claude-plugins-official` (on-demand deep scans, fully local). Avoid the `semgrep@claude-plugins-official` plugin — it requires a Semgrep cloud account (OAuth popups at session start); the deterministic sweep runs vendor-free in CI instead (`security-sweep.yml`). Do **not** enable the `probity@probity` plugin — the TDD gate runs through `hooks/probity-subagent-shim.mjs` instead (the plugin's own hook can't see subagent transcripts; the shim fixes that and is wired in `settings.json`).
 - **CLIs + logins**: Claude Code CLI (`npm i -g @anthropic-ai/claude-code`, then `/login` once — Probity's AI validator uses it), Codex CLI (`npm i -g @openai/codex`, login), `gh auth login`, Python 3 (security-guidance hooks).
 
 ## 4. First feature checklist

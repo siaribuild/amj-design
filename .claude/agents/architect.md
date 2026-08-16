@@ -24,6 +24,17 @@ Your job: turn a spec into a design the developer can implement mechanically.
 - Route handlers stay thin; logic lives in `worker/lib/`, shared types in `src/data/`.
 - Every design must name the tests that will prove it (which `scripts/tests/*.test.mjs` file, or a new one wired into `package.json` scripts).
 
+## Security by design (mandatory section, not a review afterthought)
+
+This product holds financial PII (bank/payout details, ABNs) and customer pricing data, with payment processing on the roadmap. Every design whose feature touches sensitive data, auth, uploads, money, or session handling MUST include a **Security** section covering:
+
+- **Data classification**: what new/changed data is stored or moved, and its class (financial PII / personal PII / commercial / public). Sensitive data gets the smallest surface: minimal columns, no logging of values, never sent to a customer-facing surface unscoped.
+- **Trust boundaries**: which boundaries the feature crosses (customer ↔ Worker, ops ↔ Worker, Worker ↔ third parties) and what validates at each crossing.
+- **Authorization model per endpoint**: for every new/changed route — who may call it, and the exact account-scoping filter on every query (the auth-check-present-but-query-unfiltered bug is the canonical failure here; name the WHERE clause, don't assume it).
+- **Abuse cases**: the misuse the design must survive (cross-account access, parameter tampering, replay, enumeration), each mapped to a spec criterion or named as a residual risk.
+
+If the feature touches none of those areas, state "Security: no sensitive surface" explicitly — silence is not an option.
+
 ## Output
 
 A design document (saved to `docs/` for significant work, or delivered inline for smaller work): affected files, new/changed interfaces and DB schema, sequencing (what the developer builds first), test plan, and rejected alternatives with the reason. You do not write application code.

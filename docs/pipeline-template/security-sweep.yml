@@ -1,0 +1,44 @@
+# Deterministic security sweep (Semgrep OSS engine, no account, no telemetry).
+# The fast pattern layer of the security stack — semantic/LLM layers run in the
+# agent pipeline (security-guidance, Codex, claude-security, /security-review).
+# Fails the job on ERROR-severity findings only; WARNING/INFO are reported in
+# the log without blocking. Remove this file to remove the layer — nothing
+# else depends on it.
+name: security-sweep
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  semgrep:
+    name: semgrep scan (deterministic rules)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan
+        env:
+          SEMGREP_SEND_METRICS: "off"
+        run: |
+          semgrep scan \
+            --config p/default \
+            --config p/secrets \
+            --config p/typescript \
+            --metrics=off \
+            --severity ERROR \
+            --error \
+            --exclude node_modules --exclude dist --exclude .codex-tmp
+      - name: Full report (informational, never fails the job)
+        if: always()
+        env:
+          SEMGREP_SEND_METRICS: "off"
+        run: |
+          semgrep scan \
+            --config p/default \
+            --config p/secrets \
+            --config p/typescript \
+            --metrics=off \
+            --exclude node_modules --exclude dist --exclude .codex-tmp || true

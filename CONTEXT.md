@@ -100,3 +100,7 @@ A code issued to a payable, non-staff account once its payout details are stored
 
 **Referral discount state**:
 The life of a referred customer's discount: `none` → `available` → `used`, or terminally `expired` / `void`.
+
+**Payout details**:
+The bank-account and ABN information an account supplies to become payable. Financial PII — the most sensitive data class in the product: minimal storage, never logged, never exposed on a customer-facing surface beyond the owning account.
+
