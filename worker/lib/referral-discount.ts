@@ -104,12 +104,7 @@ export async function opsReferralReview(
       `SELECT r.discount_percent, r.status,
               ref.company AS ref_company, ref.name AS ref_name, ref.abn AS ref_abn,
               ref.phone AS ref_phone,
-              mate.company AS mate_company, mate.abn AS mate_abn, mate.phone AS mate_phone,
-              p.delivery_postcode AS mate_postcode,
-              (SELECT p2.delivery_postcode FROM project p2
-                WHERE p2.owner_user_id = r.referrer_user_id
-                  AND p2.delivery_postcode IS NOT NULL
-                ORDER BY p2.created_at DESC LIMIT 1) AS ref_postcode
+              mate.company AS mate_company, mate.abn AS mate_abn, mate.phone AS mate_phone
          FROM project p
          JOIN referral r ON r.referred_user_id = p.owner_user_id
          JOIN user ref ON ref.id = r.referrer_user_id
@@ -129,7 +124,17 @@ export async function opsReferralReview(
   if (same(row.ref_abn, row.mate_abn, /\D/g)) flags.push("abn");
   if (same(row.ref_phone, row.mate_phone, /\D/g)) flags.push("phone");
   if (same(row.ref_company, row.mate_company)) flags.push("business_name");
-  if (same(row.ref_postcode, row.mate_postcode)) flags.push("postcode");
+  // NO POSTCODE FLAG, though the spec lists one. There is no account-level
+  // address anywhere — postcode and suburb live on `project`, as the DELIVERY
+  // destination for that job. Comparing them would ask "did these two ever
+  // deliver to the same suburb", which for a Melbourne trade supplier is true
+  // constantly and means nothing.
+  //
+  // The first version of this did exactly that, against the referrer's most
+  // recent project that happened to carry a postcode: arbitrary, potentially
+  // years stale, and about a job site rather than either business. A flag that
+  // fires on ordinary customers is worse than no flag — it teaches the reviewer
+  // to skim past the two flags that do mean something.
 
   return {
     applied: row.status === "recorded",
