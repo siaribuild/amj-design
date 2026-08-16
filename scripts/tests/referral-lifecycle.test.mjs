@@ -330,6 +330,14 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
     ], { env: wranglerEnv });
     await waitForUrl(`${baseUrl}/api/health`, server);
 
+    // ONE staff session for the whole block. The OTP challenge is capped per
+    // address per window (MAX_CHALLENGES_PER_WINDOW), so a fresh staff login in
+    // every test trips the limit partway through the suite — and it fails as
+    // "no development OTP returned", which reads like a broken harness rather
+    // than a rate limit doing its job.
+    const staff = new Session(baseUrl);
+    await login(staff, "/api/auth", staffEmail);
+
     await t.test("D18 — an account without payout details holds no code at all", async () => {
       // WITHHELD, not issued-inactive (ADR-8a). If no code exists there is
       // nothing to click, nothing to type and no cookie to set — so the window
@@ -800,8 +808,6 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       await sql(`UPDATE "order" SET stage='deposit_invoiced' WHERE id='${orderId}'`);
       // Payments are recorded by staff, which is also the honest shape: the
       // referrer's money matures on an act inside the business, not a customer's.
-      const staff = new Session(baseUrl);
-      await login(staff, "/api/auth", staffEmail);
       await requestJson(staff, `/api/orders/${orderId}/pay`, { method: "POST", json: { kind: "deposit" } });
       const afterDeposit = await sql(`SELECT status, confirmed_at FROM referral_earning WHERE order_id='${orderId}'`);
       assert.equal(afterDeposit[0].status, "pending", "a deposit does not make anything payable");
@@ -854,8 +860,6 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       // They leave, or simply clear the account they were being paid into.
       await sql("UPDATE user SET payout_bsb=NULL WHERE email='held.referrer@example.com'");
 
-      const staff = new Session(baseUrl);
-      await login(staff, "/api/auth", staffEmail);
       await sql(`UPDATE "order" SET stage='balance_invoiced' WHERE id='${orderId}'`);
       await requestJson(staff, `/api/orders/${orderId}/pay`, { method: "POST", json: { kind: "balance" } });
 
@@ -937,8 +941,6 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       // The money came back. Set directly, because nothing in the product sets it
       // yet — that is exactly the point of a derived guard.
-      const staff = new Session(baseUrl);
-      await login(staff, "/api/auth", staffEmail);
       await sql(`UPDATE "order" SET stage='balance_invoiced', payment_status='refunded' WHERE id='${orderId}'`);
       await requestJson(staff, `/api/orders/${orderId}/pay`, { method: "POST", json: { kind: "balance" } });
 
@@ -988,8 +990,6 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       await requestJson(mate, "/api/projects/p-lateabn/accept", { method: "POST" });
       const orderId = (await sql(`SELECT id FROM "order" WHERE project_id='p-lateabn'`))[0].id;
 
-      const staff = new Session(baseUrl);
-      await login(staff, "/api/auth", staffEmail);
       await sql(`UPDATE "order" SET stage='balance_invoiced' WHERE id='${orderId}'`);
       await requestJson(staff, `/api/orders/${orderId}/pay`, { method: "POST", json: { kind: "balance" } });
 
@@ -1035,8 +1035,6 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       // Details gone, order paid, money held.
       await sql("UPDATE user SET payout_bsb=NULL WHERE email='sweep.referrer@example.com'");
-      const staff = new Session(baseUrl);
-      await login(staff, "/api/auth", staffEmail);
       await sql(`UPDATE "order" SET stage='balance_invoiced' WHERE id='${orderId}'`);
       await requestJson(staff, `/api/orders/${orderId}/pay`, { method: "POST", json: { kind: "balance" } });
       const held = await sql(`SELECT status FROM referral_earning WHERE order_id='${orderId}'`);
@@ -1296,6 +1294,48 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       const { body: order } = await requestJson(mate, `/api/orders/${placed.order.id}`);
       assert.equal(order.order.referral.percent, 2.5, "a frozen label does not move when eligibility does");
       assert.equal(order.order.referral.referrerName, "Kirra Glazing");
+    });
+
+    await t.test("AC-58 — the ops record shows the discount and its review flags before issue", async () => {
+      // The half a reviewer sees BEFORE issuing, which is the half that matters:
+      // this business issues no price without a human looking at it, and that
+      // human is the only control standing between a self-referral and a discount.
+      // The automatic gates cannot catch a second account at the same address, so
+      // the answer is not another gate — it is showing the reviewer what is odd.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "flag.referrer@example.com");
+      await sql(
+        `UPDATE user SET abn='51824753556', company='Kirra Glazing', phone='0400111222'
+          WHERE email='flag.referrer@example.com'`,
+      );
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "flag.mate@example.com");
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      // Same phone and the same business name as the referrer. Neither is refused
+      // — a shared phone is a father and son on one number as often as it is fraud
+      // — but a reviewer should be told before they price the job.
+      await sql(
+        `UPDATE user SET phone='0400111222', company='Kirra Glazing' WHERE email='flag.mate@example.com'`,
+      );
+      await sql(
+        `INSERT INTO project (id, owner_user_id, title, public_ref, status_customer, status_internal)
+         VALUES ('p-flag', (SELECT id FROM user WHERE email='flag.mate@example.com'),
+                 'Flagged quote','OF-Q-88012','submitted','triage_pending')`,
+      );
+
+      const { body: record } = await requestJson(staff, "/api/ops/projects/p-flag");
+
+      assert.ok(record.referral, "a referred project must say so on the ops record");
+      assert.equal(record.referral.applied, true);
+      assert.equal(record.referral.percent, 2.5);
+      assert.equal(record.referral.referrerName, "Kirra Glazing");
+      assert.deepEqual([...record.referral.flags].sort(), ["business_name", "phone"],
+        "what is shared is named, so the reviewer knows what to look at");
     });
 
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {

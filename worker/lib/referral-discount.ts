@@ -84,6 +84,61 @@ export async function referralDiscountState(
  *  Derived from the stamped column rather than from live state for exactly that
  *  reason: live state moves, and a document describing what already happened must
  *  not move with it. */
+/** What a reviewer needs to know before they put a price on a referred job.
+ *
+ *  THE FLAGS ARE NOT GATES. Nothing here refuses anything — a shared phone is a
+ *  father and son on one number at least as often as it is one person with two
+ *  logins, and refusing on it would cost real referrals to catch few frauds.
+ *
+ *  The automatic gates cannot see this class of thing at all: at signup the
+ *  referred side usually has no ABN, and nothing compares addresses. What
+ *  actually contains self-referral here is that this business issues no price
+ *  without a human looking at the job — so the honest control is to tell that
+ *  human what is odd, while they are still deciding, and let them judge. */
+export async function opsReferralReview(
+  env: Env,
+  projectId: string,
+): Promise<{ applied: boolean; percent: number; referrerName: string; flags: string[] } | null> {
+  const row = await env.DB
+    .prepare(
+      `SELECT r.discount_percent, r.status,
+              ref.company AS ref_company, ref.name AS ref_name, ref.abn AS ref_abn,
+              ref.phone AS ref_phone,
+              mate.company AS mate_company, mate.abn AS mate_abn, mate.phone AS mate_phone,
+              p.delivery_postcode AS mate_postcode,
+              (SELECT p2.delivery_postcode FROM project p2
+                WHERE p2.owner_user_id = r.referrer_user_id
+                  AND p2.delivery_postcode IS NOT NULL
+                ORDER BY p2.created_at DESC LIMIT 1) AS ref_postcode
+         FROM project p
+         JOIN referral r ON r.referred_user_id = p.owner_user_id
+         JOIN user ref ON ref.id = r.referrer_user_id
+         JOIN user mate ON mate.id = r.referred_user_id
+        WHERE p.id = ?`,
+    )
+    .bind(projectId)
+    .first<Record<string, string | number | null>>();
+  if (!row) return null;
+
+  const same = (a: unknown, b: unknown, strip = /\s/g) => {
+    const norm = (v: unknown) => String(v ?? "").replace(strip, "").toLowerCase();
+    return norm(a).length > 0 && norm(a) === norm(b);
+  };
+
+  const flags: string[] = [];
+  if (same(row.ref_abn, row.mate_abn, /\D/g)) flags.push("abn");
+  if (same(row.ref_phone, row.mate_phone, /\D/g)) flags.push("phone");
+  if (same(row.ref_company, row.mate_company)) flags.push("business_name");
+  if (same(row.ref_postcode, row.mate_postcode)) flags.push("postcode");
+
+  return {
+    applied: row.status === "recorded",
+    percent: Number(row.discount_percent ?? 0),
+    referrerName: String(row.ref_company ?? row.ref_name ?? "").trim() || "a tradie",
+    flags,
+  };
+}
+
 export async function issuedReferralBadge(
   env: Env,
   projectId: string,

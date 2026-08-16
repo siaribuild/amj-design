@@ -24,6 +24,7 @@ import {
 } from "../lib/composite";
 import { orderDto, orderLines, applyTransition, markPaid, availableActions, STAGE_LABEL, type Stage, type OrderRow } from "../lib/orders";
 import { onOrderBalancePaid } from "../lib/referrals";
+import { opsReferralReview } from "../lib/referral-discount";
 import { lifecycleOf, daysSince } from "../lib/lifecycle";
 import { actionsFor } from "../lib/ops-actions";
 import { uuid, normNote } from "../lib/util";
@@ -532,6 +533,13 @@ ops.get("/projects/:id", async (c) => {
       contactPhone: p.contact_phone ?? null, deliverySuburb: p.delivery_suburb ?? null,
       updatedAt: p.updated_at,
     },
+    // Shown BEFORE the reviewer prices the job, which is the only moment it can
+    // change an outcome. The flags refuse nothing — a shared phone is a father
+    // and son on one number as often as it is one person with two logins — but
+    // the automatic gates cannot see this class of thing at all, and a human
+    // looks at every price this business issues. Telling them what is odd while
+    // they are still deciding is the control.
+    referral: await opsReferralReview(c.env, p.id),
     lines: lines.map((l) => ({
       ...opsLineDto(l),
       segments: (segments ?? []).filter((s2: any) => s2.parent_line_id === l.id).map((s2: any) => {
