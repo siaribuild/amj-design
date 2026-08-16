@@ -121,3 +121,108 @@ opsReferrals.put("/program", async (c) => {
   // site now advertises rather than what was typed into the form.
   return c.json({ program: dto(fresh), version: fresh.version, public: await publicProgram(c.env) });
 });
+
+// The list a staff member works from. Both parties named, the money at stake,
+// and the review flags — because this is the screen where someone decides to
+// take money away, and the row has to say what is at stake before they click.
+opsReferrals.get("/", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const status = c.req.query("status") ?? "";
+  const q = (c.req.query("q") ?? "").trim().toLowerCase();
+
+  const { results } = await c.env.DB
+    .prepare(
+      `SELECT r.id, r.code, r.source, r.status, r.created_at, r.expires_at, r.void_reason,
+              ref.company AS ref_company, ref.name AS ref_name, ref.email AS ref_email,
+              ref.abn AS ref_abn, ref.phone AS ref_phone,
+              mate.company AS mate_company, mate.name AS mate_name, mate.email AS mate_email,
+              mate.abn AS mate_abn, mate.phone AS mate_phone,
+              e.amount AS earning_amount, e.status AS earning_status,
+              o.id AS order_id, o.order_no
+         FROM referral r
+         JOIN user ref ON ref.id = r.referrer_user_id
+         JOIN user mate ON mate.id = r.referred_user_id
+         LEFT JOIN referral_earning e ON e.referral_id = r.id
+         LEFT JOIN "order" o ON o.id = e.order_id
+        ORDER BY r.created_at DESC
+        LIMIT 500`,
+    )
+    .all<Record<string, string | number | null>>();
+
+  const name = (company: unknown, fallbackName: unknown, email: unknown) =>
+    String(company ?? "").trim() || String(fallbackName ?? "").trim() || String(email ?? "");
+  const same = (a: unknown, b: unknown, strip = /\s/g) => {
+    const norm = (v: unknown) => String(v ?? "").replace(strip, "").toLowerCase();
+    return norm(a).length > 0 && norm(a) === norm(b);
+  };
+
+  const referrals = (results ?? [])
+    .map((row) => {
+      const flags: string[] = [];
+      if (same(row.ref_abn, row.mate_abn, /\D/g)) flags.push("abn");
+      if (same(row.ref_phone, row.mate_phone, /\D/g)) flags.push("phone");
+      if (same(row.ref_company, row.mate_company)) flags.push("business_name");
+      return {
+        id: String(row.id),
+        code: String(row.code),
+        source: String(row.source),
+        status: String(row.status),
+        createdAt: String(row.created_at),
+        expiresAt: String(row.expires_at),
+        voidReason: row.void_reason ?? null,
+        referrerName: name(row.ref_company, row.ref_name, row.ref_email),
+        referredName: name(row.mate_company, row.mate_name, row.mate_email),
+        orderId: row.order_id ?? null,
+        orderNo: row.order_no ?? null,
+        // null when nothing is owed yet. The difference between voiding this and
+        // voiding a row with confirmed money is the whole reason it is here.
+        earning: row.earning_amount === null || row.earning_amount === undefined
+          ? null
+          : { amount: Number(row.earning_amount), status: String(row.earning_status) },
+        flags,
+      };
+    })
+    .filter((r) => (status ? r.status === status : true))
+    .filter((r) => (q
+      ? [r.code, r.referrerName, r.referredName].some((v) => v.toLowerCase().includes(q))
+      : true));
+
+  return c.json({ referrals });
+});
+
+// A REASON IS MANDATORY. Money not going out is a thing someone asks about
+// later — often the person who is not being paid — and "voided" with no reason
+// answers nothing. The customer-facing refusals are deliberately vague; this one
+// is for the person who has to explain it.
+opsReferrals.post("/:id/void", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const reason = String(body.reason ?? "").trim();
+  if (!reason) return c.json({ error: "reason_required" }, 400);
+
+  await c.env.DB
+    .prepare(
+      `UPDATE referral SET status = 'void', void_reason = ?, voided_by = ?, voided_at = datetime('now')
+        WHERE id = ? AND status = 'recorded'`,
+    )
+    .bind(reason, staff.id, c.req.param("id"))
+    .run();
+  return c.json({ ok: true });
+});
+
+// Reversible, because it is a judgement call. One made on a phone call that
+// turns out to be wrong should be corrected here rather than in the database.
+opsReferrals.post("/:id/unvoid", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  await c.env.DB
+    .prepare(
+      `UPDATE referral SET status = 'recorded', void_reason = NULL, voided_by = NULL, voided_at = NULL
+        WHERE id = ? AND status = 'void'`,
+    )
+    .bind(c.req.param("id"))
+    .run();
+  return c.json({ ok: true });
+});

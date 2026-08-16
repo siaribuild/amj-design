@@ -1398,6 +1398,37 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       await sql("UPDATE referral_program SET rate_percent=1 WHERE id='default'");
     });
 
+    await t.test("the ops list carries what a decision needs, and a void needs a reason", async () => {
+      // This is the screen where someone decides to take money away, so the row
+      // has to say what is at stake BEFORE they click: voiding a referral with
+      // confirmed money owed is a different act from voiding one with none.
+      const { body: list } = await requestJson(staff, "/api/ops/referrals");
+      assert.ok(Array.isArray(list.referrals), "a list to work from");
+      const withEarning = list.referrals.find((r) => r.earning);
+      assert.ok(withEarning, "and rows carry their earning, or null");
+      assert.ok(withEarning.referrerName && withEarning.referredName, "both parties, named");
+      assert.ok(Array.isArray(withEarning.flags), "with the review flags");
+
+      // A reason is mandatory. Money not going out is a thing someone will ask
+      // about later, and "voided" with no reason answers nothing.
+      const target = list.referrals.find((r) => r.status === "recorded");
+      const noReason = await requestJson(staff, `/api/ops/referrals/${target.id}/void`,
+        { method: "POST", json: { reason: "  " } }, 400);
+      assert.equal(noReason.body.error, "reason_required");
+
+      await requestJson(staff, `/api/ops/referrals/${target.id}/void`,
+        { method: "POST", json: { reason: "duplicate account, confirmed by phone" } });
+      const voided = await sql(`SELECT status, void_reason FROM referral WHERE id='${target.id}'`);
+      assert.equal(voided[0].status, "void");
+      assert.equal(voided[0].void_reason, "duplicate account, confirmed by phone");
+
+      // Reversible: a judgement call that went the wrong way is corrected here,
+      // not by editing the database.
+      await requestJson(staff, `/api/ops/referrals/${target.id}/unvoid`, { method: "POST" });
+      const restored = await sql(`SELECT status FROM referral WHERE id='${target.id}'`);
+      assert.equal(restored[0].status, "recorded");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank
