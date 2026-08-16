@@ -28,9 +28,19 @@ Date: 2026-08-15
 3. **There is no field anywhere into which a referrer types a mate's name, phone or email.** (AC-78)
 4. **No program figure is typed into a string.** Everything renders from `GET /api/referral/program`. (AC-76)
 5. **Payout figures ignore `price_gst_mode`; the referred tradie's discount honours it.** (AC-31, AC-56)
-6. **The commission rate never appears on any account-area screen.** It lives on `/refer` and in the terms.
-   A rate beside an earned amount is invertible — 1% and $45.00 tells the referrer their mate spent $4,500.
-   (New in revision 2; legal research §5.4.)
+6. **The commission rate may appear on an account-area screen only where no earned amount is shown.**
+   The hazard is inversion, not the rate itself: a rate *beside an earned amount* is arithmetic — 1% and
+   $45.00 tells the referrer their mate spent $4,500. Where there is no figure to divide into, there is
+   nothing to disclose.
+   - **Permitted:** the non-member join invitation (§5.2 State A). A non-member has no earnings, so the
+     pitch states the deal in full, exactly as `/refer` does.
+   - **Excluded:** every screen from State B onward, all of which show money. Those say *"your share"* and
+     link to `/refer` via *How the program works →* (§5.2 State B, §5.4).
+
+   *Corrected in revision 3.* This previously read "never appears on any account-area screen", which the
+   blanket wording made false against §5.2's own State A copy. The narrower rule is the one that was
+   settled, and it is why State B was already written as "your share, not the rate" — the intent was
+   coherent throughout; only the summary was overstated. (Legal research §5.4.)
 7. **Every mutating action lives on the row it affects.** No batch bars, no selection checkboxes, no
    "apply to selected", anywhere in ops. Search, filters and CSV export may stay above a table — they
    change nothing, so they have no wrong target.
@@ -716,8 +726,14 @@ disabled button explains nothing.
 **State D — left, with history.** `--info` notice with a 3px `--info` left border:
 > **You've left the program.**
 > Your code doesn't record new referrals and we're not holding your bank details. Everything you were paid
-> is below. Rejoin and you'll get **[code]** back.
+> is below. Rejoin and you'll get **[retainedCode]** back.
 > `Btn sage sm` **Rejoin the program**
+
+**`retainedCode`, not `code`.** A former member's `code` is null — that is what "not a member" means — so
+this is the one state whose copy names a code it could not otherwise render. The API returns
+`retainedCode` alongside `code` for exactly this sentence: the code held against the account for reissue
+on rejoin (§5.5, "Rejoining … reissues **the same code**"). It is display-only here and must not be used
+as an active code anywhere.
 
 Payment history renders read-only. No code card, no share, no earnings strip.
 
@@ -799,6 +815,10 @@ remaining-time chip reads in months above 60 days and in days below.
 > `t-hd2` **Your [discount] referral discount was applied to order [usedOrderNo]**
 > `t-bd` On **[usedAt]**. That was the one-off — nice work.
 > link `See that order →`
+
+**Two fields, two jobs.** `usedOrderNo` is the human-readable label in the headline (`OF-1042`);
+`usedOrderId` is the link target for *See that order →*. The spec previously named only `usedOrderNo`,
+which left the link without a destination — do not route on the display number.
 
 **Expired** (`expired`) — `--tone-mute-bd` border:
 > `t-hd2` **Your [discount] referral discount expired on [expiredAt]**
@@ -1142,7 +1162,10 @@ a document that now describes something different from what will be built.
 - Joining requires an explicit acceptance; the acceptance timestamp and terms version are recorded, and
   membership, payout details and code issuance commit in the same transaction.
 - Abandoning the join flow at any point leaves **no** referral-program record of any kind on the account.
-- No customer-facing surface in the account area renders the commission rate.
+- **No customer-facing surface renders the commission rate together with an earned amount.** The rate is
+  permitted where no earnings are shown (the non-member join invitation); it is absent from every screen
+  that displays pending, confirmed or paid money. Testable as a pairing, not as a blanket absence — §0
+  rule 6.
 - No ops screen presents a mutating control outside the row it affects.
 
 ---
