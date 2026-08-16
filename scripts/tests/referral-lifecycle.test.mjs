@@ -1223,6 +1223,37 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.deepEqual(Object.keys(live.offer).filter((k) => forbidden.test(k)), []);
     });
 
+    await t.test("AC-85 — leaving is clearing your details, and it waits on money owed", async () => {
+      // Membership IS having payout details, so there is no separate "leave"
+      // record to keep — removing them is the act. The control says so rather
+      // than offering a second concept that could disagree with the first.
+      const leaver = new Session(baseUrl);
+      await login(leaver, "/api/auth", "leave.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='leave.referrer@example.com'");
+      await requestJson(leaver, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: joined } = await requestJson(leaver, "/api/account/referrals");
+      assert.ok(joined.code, "a member");
+
+      await requestJson(leaver, "/api/account/payout-details", { method: "DELETE" });
+
+      const { body: left } = await requestJson(leaver, "/api/account/referrals");
+      assert.equal(left.referrerGate.complete, false, "no longer a member");
+      assert.equal(left.code, null, "and the code is no longer shareable");
+      // The code itself is NOT destroyed. It was permanent from the moment it was
+      // issued, and a tradie who read it out over the phone must get the same one
+      // back if they rejoin.
+      assert.ok(left.retainedCode, "but it is kept, so rejoining returns the same code");
+
+      const rejoined = await requestJson(leaver, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      assert.equal(rejoined.body.referrerGate.complete, true);
+      const { body: back } = await requestJson(leaver, "/api/account/referrals");
+      assert.equal(back.code, left.retainedCode, "the same code, not a new one");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

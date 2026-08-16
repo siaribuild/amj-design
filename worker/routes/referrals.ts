@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
-import { ensureReferralCode, payoutComplete, payoutMissing, publicProgram, recordReferral, referralOffer, referrerScreen, savePayoutDetails } from "../lib/referrals";
+import { ensureReferralCode, leaveProgram, payoutComplete, payoutMissing, publicProgram, recordReferral, referralOffer, referrerScreen, savePayoutDetails } from "../lib/referrals";
 
 export const referrals = new Hono<{ Bindings: Env }>();
 
@@ -64,6 +64,17 @@ referrals.put("/account/payout-details", async (c) => {
   // Re-read: savePayoutDetails wrote the columns, and the gate is computed from
   // them. Answering from the stale request-time row would report the gate the
   // caller had BEFORE their own save.
+  const fresh = await c.env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(user.id).first<typeof user>();
+  return c.json({ referrerGate: { complete: payoutComplete(fresh), missing: payoutMissing(fresh) } });
+});
+
+// Leaving the program IS clearing the account we would pay into — membership is
+// having payout details, so there is nothing else to end.
+referrals.delete("/account/payout-details", async (c) => {
+  const user = await resolveUser(c.env, c.req.raw);
+  if (!user) return c.json({ error: "unauthorised" }, 401);
+  const left = await leaveProgram(c.env, user);
+  if (left.ok === false) return c.json({ error: left.error, amount: left.amount }, 409);
   const fresh = await c.env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(user.id).first<typeof user>();
   return c.json({ referrerGate: { complete: payoutComplete(fresh), missing: payoutMissing(fresh) } });
 });

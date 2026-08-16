@@ -684,6 +684,57 @@ export async function savePayoutDetails(
   return { ok: true };
 }
 
+/** Leave the program by removing the account we would pay into.
+ *
+ *  MEMBERSHIP IS HAVING PAYOUT DETAILS, so removing them is the act of leaving —
+ *  there is no separate membership record to end. A second concept would be a
+ *  second source of truth about the same fact, and the two would eventually
+ *  disagree.
+ *
+ *  THE CODE IS NOT DESTROYED. It was permanent from the moment it was issued, and
+ *  a tradie may have read it out over a phone months ago. Rejoining returns the
+ *  same code rather than minting a new one that makes every card and text message
+ *  they sent wrong.
+ *
+ *  Refused while confirmed money is outstanding: those are the details we are
+ *  about to pay into. Pending money does not block — it is not payable yet, and
+ *  holding someone in the program over money that may never mature would be
+ *  keeping them for our convenience. */
+export async function leaveProgram(
+  env: Env,
+  user: { id: string },
+): Promise<{ ok: true } | { ok: false; error: string; amount: number }> {
+  const owed = await env.DB
+    .prepare(
+      `SELECT COALESCE(SUM(e.amount), 0) AS amount FROM referral_earning e
+         JOIN referral r ON r.id = e.referral_id
+        WHERE r.referrer_user_id = ? AND e.status = 'confirmed'`,
+    )
+    .bind(user.id)
+    .first<{ amount: number }>();
+  if ((owed?.amount ?? 0) > 0) {
+    return { ok: false, error: "clear_blocked", amount: owed!.amount };
+  }
+
+  await env.DB.batch([
+    env.DB
+      .prepare(
+        `UPDATE user SET payout_bsb = NULL, payout_account_number = NULL,
+                         payout_account_name = NULL WHERE id = ?`,
+      )
+      .bind(user.id),
+    // Logged for the same reason a change is: this is a write to the account we
+    // send money to, and "it went blank" is a question someone may have to answer.
+    env.DB
+      .prepare(
+        `INSERT INTO payout_details_access (id, subject_user_id, actor_user_id, action, context)
+         VALUES (?, ?, ?, 'change', 'left the program — details cleared')`,
+      )
+      .bind(uuid(), user.id, user.id),
+  ]);
+  return { ok: true };
+}
+
 /** The four fields a payout needs, as stored on the user row. */
 export interface PayoutDetails {
   abn?: string | null;
