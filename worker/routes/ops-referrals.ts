@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveStaff } from "../lib/staff";
 import { applyPricingChange, VersionConflict } from "../lib/pricing-admin";
-import { publicProgram } from "../lib/referrals";
+import { publicProgram, recordReferral } from "../lib/referrals";
 
 export const opsReferrals = new Hono<{ Bindings: Env }>();
 
@@ -224,5 +224,44 @@ opsReferrals.post("/:id/unvoid", async (c) => {
     )
     .bind(c.req.param("id"))
     .run();
+  return c.json({ ok: true });
+});
+
+// Attach a code to an account, on the customer's say-so.
+//
+// ⚠️ IT CALLS recordReferral, IT DOES NOT INSERT. Every gate the customer paths
+// run — code valid, referrer payable and not staff, not self-referral, not the
+// same business, not already referred, no order yet — applies identically here.
+// A privileged path that skips them becomes the way around all of them, and the
+// person using it is the one taking the phone call from a mate.
+//
+// `source: 'manual'` is accurate rather than a compromise: the customer wrote
+// the code on their own account request and staff transcribed it. That needs no
+// new provenance value and no migration.
+//
+// The refusals here are SPECIFIC, where the customer-facing ones are deliberately
+// vague. That is not an inconsistency: vagueness exists so a stranger cannot probe
+// which codes are real, and an internal screen has no stranger on it — Ops needs
+// to know whether to ring the applicant back or drop it.
+opsReferrals.post("/link", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const email = String(body.email ?? "").trim().toLowerCase();
+  const code = String(body.code ?? "").trim();
+
+  const user = String(body.userId ?? "")
+    ? await c.env.DB.prepare("SELECT id FROM user WHERE id = ?").bind(String(body.userId)).first<{ id: string }>()
+    : await c.env.DB.prepare("SELECT id FROM user WHERE email = ?").bind(email).first<{ id: string }>();
+  if (!user) return c.json({ error: "no_such_account" }, 404);
+
+  const recorded = await recordReferral(c.env, {
+    referredUser: user,
+    code,
+    // Not 'link': no cookie was involved. A tradie wrote a code on a form and a
+    // human typed it in, which is what manual has always meant here.
+    source: "manual",
+  });
+  if (recorded.ok === false) return c.json({ error: recorded.error }, 400);
   return c.json({ ok: true });
 });

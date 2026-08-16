@@ -1429,6 +1429,47 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(restored[0].status, "recorded");
     });
 
+    await t.test("A19 — Ops links a referral through the same gates, and is told which one refused", async () => {
+      // The privileged path. It calls recordReferral rather than inserting a row,
+      // because a path that skips the gates becomes the way around all of them —
+      // and the person using it is the one taking the phone call from a mate.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "opslink.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='opslink.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "opslink.mate@example.com");
+
+      const linked = await requestJson(staff, "/api/ops/referrals/link", {
+        method: "POST", json: { email: "opslink.mate@example.com", code: mine.code },
+      });
+      assert.equal(linked.body.ok, true);
+      const rows = await sql(
+        `SELECT source FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='opslink.mate@example.com')`,
+      );
+      assert.equal(rows.length, 1);
+      // 'manual' is accurate: the customer wrote the code on their request and
+      // staff transcribed it. Not a new provenance concept.
+      assert.equal(rows[0].source, "manual");
+
+      // SPECIFIC refusals, unlike the customer-facing ones. Ops needs to know
+      // whether to ring the applicant; an internal screen is not an oracle a
+      // stranger can probe.
+      const again = await requestJson(staff, "/api/ops/referrals/link", {
+        method: "POST", json: { email: "opslink.mate@example.com", code: mine.code },
+      }, 400);
+      assert.equal(again.body.error, "already_referred");
+
+      const unknown = await requestJson(staff, "/api/ops/referrals/link", {
+        method: "POST", json: { email: "nobody.here@example.com", code: mine.code },
+      }, 404);
+      assert.equal(unknown.body.error, "no_such_account");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank
