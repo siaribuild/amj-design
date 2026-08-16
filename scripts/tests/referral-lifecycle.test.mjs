@@ -232,7 +232,11 @@ test("T3 — the payability predicate", { timeout: 120_000 }, async (t) => {
       // Namespace re-export, not a named list: a function that does not exist yet
       // then arrives as `undefined` and fails an assertion, rather than breaking
       // the bundle with a resolution error that proves nothing.
-      contents: `export * from ${JSON.stringify(join(projectRoot, "worker/lib/referrals.ts"))};`,
+      // referral-discount.ts is bundled alongside because it is the LEAF that owns
+      // the review-flag rules — the module pricing can import without closing the
+      // pricing→referrals→lines→pricing cycle.
+      contents: `export * from ${JSON.stringify(join(projectRoot, "worker/lib/referrals.ts"))};\n`
+        + `export * from ${JSON.stringify(join(projectRoot, "worker/lib/referral-discount.ts"))};`,
       resolveDir: projectRoot,
       sourcefile: "referrals-entry.ts",
       loader: "ts",
@@ -276,6 +280,52 @@ test("T3 — the payability predicate", { timeout: 120_000 }, async (t) => {
     assert.equal(
       M.payoutComplete.length, 1,
       "payoutComplete must take only a user row — an env parameter would let it query order history",
+    );
+  });
+
+  await t.test("AC-58 — the review-flag rules are one function, not two copies", () => {
+    // They existed verbatim in referral-discount.ts and in the ops list route.
+    // That already cost something once: removing the postcode flag had to be done
+    // in both places, and the next change gets made in one. These flags decide
+    // what a human is told before they price a job — the one control standing
+    // between a self-referral and a discount — so the two surfaces disagreeing is
+    // a reviewer seeing a flag on one screen and not the other.
+    assert.equal(typeof M.referralReviewFlags, "function", "referral-discount.ts must export referralReviewFlags");
+
+    const referrer = { abn: "51 824 753 556", phone: "0400 111 222", company: "Kirra Glazing" };
+    assert.deepEqual(M.referralReviewFlags(referrer, { ...referrer }), ["abn", "phone", "business_name"],
+      "the same business on both sides raises all three");
+    assert.deepEqual(M.referralReviewFlags(referrer, { abn: "53004085616", phone: "0499 000 111", company: "Other Glass" }), [],
+      "two unrelated tradies raise nothing");
+
+    // Normalisation is the substance of each rule, not decoration: people write an
+    // ABN and a phone number however they like, and a flag that only fires on an
+    // exact string match is a flag that never fires.
+    assert.deepEqual(
+      M.referralReviewFlags({ abn: "51824753556" }, { abn: "51 824 753 556" }), ["abn"],
+      "spacing is how humans write an ABN",
+    );
+    assert.deepEqual(
+      M.referralReviewFlags({ phone: "0400-111-222" }, { phone: "0400 111 222" }), ["phone"],
+      "and punctuation is how they write a phone number",
+    );
+    assert.deepEqual(
+      M.referralReviewFlags({ company: "Kirra Glazing" }, { company: "kirra  glazing" }), ["business_name"],
+      "a business name matches on case and spacing, but its digits are not stripped",
+    );
+
+    // Empty is not a match. Two accounts that have both left a field blank are not
+    // evidence of anything, and a flag that fires on them teaches the reviewer to
+    // skim past the ones that mean something.
+    assert.deepEqual(M.referralReviewFlags({ abn: "", phone: null, company: undefined }, { abn: "", phone: null }), [],
+      "two blanks are not a match");
+
+    // NO POSTCODE FLAG, though the spec lists one. There is no account-level
+    // address; postcode lives on a project as a delivery destination, and for a
+    // Melbourne trade supplier "delivered to the same suburb" is constantly true.
+    assert.equal(
+      M.referralReviewFlags({ postcode: "3000" }, { postcode: "3000" }).length, 0,
+      "a postcode is about a job site, not about either business",
     );
   });
 
@@ -764,6 +814,54 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
         `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='link.returning@example.com')`,
       );
       assert.equal(none.length, 0, "an existing customer clicking a referral link records nothing");
+    });
+
+    await t.test("§6.2 — a referral that blows up never costs someone their sign-in", async () => {
+      // The hook runs AFTER the account row exists and BEFORE the session is
+      // created. An exception there fails the whole of /verify: the customer
+      // cannot log in, and when they retry, the retry takes the existing-user
+      // branch — which by design never looks at a code (AC-7). So one transient
+      // database error costs the sign-in AND loses the attribution permanently.
+      //
+      // Injected for real rather than reasoned about. A trigger that makes the
+      // referral INSERT fail is the exact shape of the transient error, and it is
+      // reachable no other way from outside the Worker.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "boom.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='boom.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      await sql(
+        `CREATE TRIGGER referral_boom BEFORE INSERT ON referral
+           BEGIN SELECT RAISE(FAIL, 'transient'); END`,
+      );
+      try {
+        const fresh = new Session(baseUrl);
+        fresh.cookies.set("of_ref", mine.code);
+        const headers = { "X-Forwarded-For": "198.19.7.1" };
+        const { body: challenge } = await requestJson(fresh, "/api/auth/challenge",
+          { method: "POST", json: { email: "boom.mate@example.com" }, headers });
+        const verify = await fresh.request("/api/auth/verify", {
+          method: "POST", json: { email: "boom.mate@example.com", code: challenge.devCode }, headers,
+        });
+
+        assert.equal(verify.status, 200, "a failed attribution must not fail the sign-in");
+        assert.equal((await verify.json()).authenticated, true, "they are signed in, not left at the door");
+        assert.match(verify.headers.get("set-cookie") ?? "", /apertly_session=/,
+          "and the session cookie is actually issued — the hook sits before it");
+      } finally {
+        await sql("DROP TRIGGER IF EXISTS referral_boom");
+      }
+
+      // The attribution is the thing that is lost, and losing it silently is the
+      // accepted cost. Losing the customer's ability to log in is not.
+      const none = await sql(
+        `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='boom.mate@example.com')`,
+      );
+      assert.equal(none.length, 0, "nothing was written, which is what makes the sign-in the only casualty to avoid");
     });
 
     await t.test("AC-4/AC-89 — /r/<CODE> sets the cookie, redirects, and stays out of the index", async () => {
@@ -1994,6 +2092,77 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
         /12345678|063000|99998888|083004/.test(JSON.stringify(screen.payoutHistory)), false,
         "no payout row's frozen bank details may reach a customer response",
       );
+    });
+
+    await t.test("AC-44 — a reversal can say which kind it was, without being made to", async () => {
+      // "Bounced, account closed" and "recorded against the wrong row" need
+      // OPPOSITE responses: one means stop paying into that account, the other
+      // means pay somebody else. Both currently look identical afterwards, so next
+      // week's run sends the same money into the same closed account.
+      //
+      // OPTIONAL, deliberately. The reason a void is mandatory is that someone is
+      // not being paid and will ask why; here the bank statement already says what
+      // happened and the earnings return to the queue on their own. The note earns
+      // its place by telling the next run what to do differently, not by being a
+      // form to fill in.
+      const target = (await sql(`SELECT id FROM referral_payout WHERE reference = 'TFR-FIRST'`))[0];
+
+      await requestJson(staff, `/api/ops/referrals/payouts/${target.id}/failed`, {
+        method: "POST", json: { note: "bounced — account closed" },
+      });
+
+      const row = (await sql(`SELECT status, note FROM referral_payout WHERE id = '${target.id}'`))[0];
+      assert.equal(row.status, "failed");
+      assert.match(String(row.note ?? ""), /bounced — account closed/,
+        "the note is stored on the payment it explains");
+
+      // Readable where the decision gets made — a note only visible in the
+      // database tells next week's run nothing.
+      const { body: history } = await requestJson(staff, "/api/ops/referrals/payouts/history");
+      const listed = history.payouts.find((p) => p.id === target.id);
+      assert.match(String(listed.note ?? ""), /account closed/, "and it comes back on the accountant's view");
+
+      // The actor, through the mechanism ops already uses for who-did-what. No new
+      // column, no new table, and no ceremony around it.
+      const logged = await sql(
+        `SELECT actor, action FROM audit_event WHERE entity_type = 'referral_payout' AND entity_id = '${target.id}'`,
+      );
+      assert.equal(logged.length, 1, "a reversal is recorded as an ops action");
+      assert.ok(logged[0].actor && logged[0].actor !== "system", "with the staff member who did it");
+
+      // And the money is back, which is the part that must never depend on the note.
+      const revived = await sql(`SELECT status FROM referral_earning WHERE payout_id = '${target.id}'`);
+      assert.equal(revived.length, 0, "the earnings detached from the failed payment");
+    });
+
+    await t.test("AC-44 — a reversal with no note is still a reversal", async () => {
+      // The whole point of optional. If the absence of a note could block the
+      // reversal, or leave something invented in the column, the field would be
+      // mandatory in effect and the money would be hostage to a text box.
+      const { body: queue } = await requestJson(staff, "/api/ops/referrals/payouts");
+      const group = queue.ready.find((g) => g.name === "Queue Glazing");
+      assert.ok(group, "the reversed earnings are owed again");
+      const { body: paid } = await requestJson(staff, "/api/ops/referrals/payouts/mark-paid", {
+        method: "POST", json: { userIds: [group.userId], reference: "TFR-NONOTE" },
+      });
+
+      await requestJson(staff, `/api/ops/referrals/payouts/${paid.paid[0].payoutId}/failed`, { method: "POST" });
+      const row = (await sql(`SELECT status, note FROM referral_payout WHERE reference = 'TFR-NONOTE'`))[0];
+      assert.equal(row.status, "failed", "no note, and it still reverses");
+      assert.equal(row.note, null, "and nothing is invented to fill the column");
+    });
+
+    await t.test("§10.2 — the referrer screen is authed, and says so to an anonymous caller", async () => {
+      // Specified as an authed endpoint. It answered 200 with an empty gate, which
+      // is not a leak — there is nothing in that shape — but it is an account
+      // endpoint telling a stranger it served them, and the dead `user ? … : null`
+      // arms behind it were reachable only in the branch where `user` is null.
+      const stranger = new Session(baseUrl);
+      const response = await stranger.request("/api/account/referrals");
+      assert.equal(response.status, 401, "an account endpoint must not answer 200 to someone with no account");
+      const body = await response.json().catch(() => ({}));
+      assert.equal(body.referrerGate, undefined, "and hands back nothing shaped like a screen");
+      assert.equal(body.code, undefined);
     });
 
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {

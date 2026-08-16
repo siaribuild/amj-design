@@ -20,7 +20,8 @@ import { INK, QUIET as MUTED } from "../styles/tokens";
 import {
   opsReferralProgram, opsSaveReferralProgram, opsReferralList, opsVoidReferral,
   opsUnvoidReferral, opsLinkReferral, OpsApiError,
-  opsPayoutQueue, opsPayoutHistory, opsMarkPayoutsPaid, opsReversePayout, OPS_PAYOUT_CSV_URL,
+  opsPayoutQueue, opsPayoutHistory, opsMarkPayoutsPaid, opsReversePayout,
+  OPS_PAYOUT_CSV_URL, OPS_REFERRAL_FLAG_LABEL,
   type OpsReferralProgram, type OpsReferralRow, type OpsPayoutGroup, type OpsPayoutRecord,
 } from "./api";
 
@@ -196,10 +197,14 @@ function ProgramScreen() {
               We hold your earnings until they reach <b>{moneyText(threshold)}</b>.
             </p>
           )}
+          {/* This has to describe what the operator will actually see. It said the
+              landing page carries a banner; the page in fact replaces its pitch
+              with a paused notice, and the customer-facing wording is the same
+              "paused", never "ended". */}
           {!Boolean(draft.active) && (
             <p className="t-bd-sm" style={{ color: MUTED }}>
-              Joining is paused — the landing page carries the come-back-later banner, the placements
-              disappear, and nothing already promised is withdrawn.
+              Joining is paused — the landing page stays up and says joining is paused instead of pitching
+              the offer, the placements disappear, and nothing already promised is withdrawn.
             </p>
           )}
           <p className="t-cap" style={{ color: MUTED }}>
@@ -228,9 +233,8 @@ function ProgramScreen() {
 // Three flags only — ABN, phone, business name. The postcode flag was specified,
 // found to have no supporting data behind it, and struck: a suburb full of
 // tradies is the target market, not evidence of anything.
-const FLAG_LABEL: Record<string, string> = {
-  abn: "Shared ABN", phone: "Shared phone", business_name: "Shared business name",
-};
+// The labels live in api.ts beside the flag type, because the ops project record
+// shows the same three and the two copies had already drifted.
 
 function ReferralsList() {
   const [rows, setRows] = useState<OpsReferralRow[]>([]);
@@ -297,7 +301,7 @@ function ReferralsList() {
             </div>
             {r.flags.length > 0 && (
               <div className="flex flex-wrap gap-2 items-center">
-                {r.flags.map((f) => <span key={f} className="quote-chip quote-chip--neutral">{FLAG_LABEL[f]}</span>)}
+                {r.flags.map((f) => <span key={f} className="quote-chip quote-chip--neutral">{OPS_REFERRAL_FLAG_LABEL[f]}</span>)}
                 <span className="t-cap" style={{ color: MUTED }}>shared with the referrer — nothing is blocked</span>
               </div>
             )}
@@ -417,6 +421,8 @@ function PayoutsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState<string | null>(null);
   const [reference, setReference] = useState("");
+  const [reversing, setReversing] = useState<string | null>(null);
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = () => Promise.all([opsPayoutQueue(), opsPayoutHistory()]).then(
@@ -440,7 +446,8 @@ function PayoutsScreen() {
   const reverse = async (payoutId: string) => {
     setBusy(true);
     try {
-      await opsReversePayout(payoutId);
+      await opsReversePayout(payoutId, note.trim() || undefined);
+      setReversing(null); setNote("");
       await load();
     } catch (e) {
       setError(e instanceof OpsApiError ? e.code : "Could not reverse that payment.");
@@ -530,22 +537,44 @@ function PayoutsScreen() {
         <div className="panel-head px-4 py-2.5 t-label" style={{ color: MUTED }}>Payments made</div>
         {history.length === 0 && <p className="px-4 py-3 t-bd-sm" style={{ color: MUTED }}>Nothing has gone out yet.</p>}
         {history.map((p) => (
-          <div key={p.id} className="px-4 py-3 border-t border-black/[0.07] flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <span className="t-cap" style={{ color: MUTED }}>{String(p.paidAt).slice(0, 10)}</span>
-            <span className="t-bd-sm" style={{ color: INK }}>{p.referrerName}</span>
-            <span className="font-data t-data-sm" style={{ color: INK }}>{money2(p.amount)}</span>
-            <span className="font-data t-data-sm" style={{ color: MUTED }}>{p.reference ?? "—"}</span>
-            <span className="font-data t-data-sm" style={{ color: MUTED }}>{p.accountMasked ?? "—"}</span>
-            <span className="t-cap" style={{ color: p.status === "failed" ? "var(--destructive)" : MUTED }}>{p.status}</span>
+          <div key={p.id} className="px-4 py-3 border-t border-black/[0.07] flex flex-col gap-2">
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <span className="t-cap" style={{ color: MUTED }}>{String(p.paidAt).slice(0, 10)}</span>
+              <span className="t-bd-sm" style={{ color: INK }}>{p.referrerName}</span>
+              <span className="font-data t-data-sm" style={{ color: INK }}>{money2(p.amount)}</span>
+              <span className="font-data t-data-sm" style={{ color: MUTED }}>{p.reference ?? "—"}</span>
+              <span className="font-data t-data-sm" style={{ color: MUTED }}>{p.accountMasked ?? "—"}</span>
+              <span className="t-cap" style={{ color: p.status === "failed" ? "var(--destructive)" : MUTED }}>{p.status}</span>
+              {/* What happened, where the next run will read it. A closed account
+                  and a mis-recorded row need opposite responses. */}
+              {p.note && <span className="t-cap" style={{ color: MUTED }}>{p.note}</span>}
+            </div>
             {/* ON THE LINE. Reversing the wrong payment is the mistake this
                 screen can make, and a control at the top of a table is how it
                 gets made. */}
-            {p.status === "paid" && (
-              <button onClick={() => void reverse(p.id)} disabled={busy} className="t-cap disabled:opacity-40"
-                style={{ color: "var(--destructive)" }}>
-                Didn't go through
-              </button>
-            )}
+            {p.status === "paid" && (reversing === p.id ? (
+              <div className="flex flex-wrap gap-2 items-center">
+                {/* OPTIONAL. The button is never disabled — money going back into
+                    the queue must not wait on a text box. The placeholder names
+                    both real cases, because an empty optional field is one nobody
+                    fills in. */}
+                <input autoFocus value={note} onChange={(e) => setNote(e.target.value)}
+                  placeholder="Optional — e.g. bounced, account closed / recorded against the wrong referrer"
+                  className="field-control border px-2 py-1 t-bd-sm min-w-[380px]" />
+                <button onClick={() => void reverse(p.id)} disabled={busy}
+                  className="px-3 py-1 t-bd-sm disabled:opacity-40" style={{ background: "var(--destructive)", color: "#fff" }}>
+                  Reverse this payment
+                </button>
+                <button onClick={() => { setReversing(null); setNote(""); }} className="px-3 py-1 t-bd-sm" style={{ color: MUTED }}>Cancel</button>
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                <button onClick={() => { setReversing(p.id); setNote(""); }} className="t-cap"
+                  style={{ color: "var(--destructive)" }}>
+                  Didn't go through…
+                </button>
+              </div>
+            ))}
           </div>
         ))}
         <p className="px-4 py-3 border-t border-black/[0.07] t-cap" style={{ color: MUTED }}>

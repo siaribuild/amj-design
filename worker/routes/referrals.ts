@@ -27,13 +27,12 @@ referrals.get("/account/referrals", async (c) => {
   // through it ACL s 49, depends on. Refused before ensureReferralCode so no code
   // is ever minted into a staff row.
   if (user?.type === "internal") return c.json({ error: "forbidden" }, 403);
-  if (user) return c.json(await referrerScreen(c.env, user, new URL(c.req.url).origin));
-  return c.json({
-    referrerGate: { complete: payoutComplete(user), missing: payoutMissing(user) },
-    // WITHHELD, never issued-inactive: until the details exist there is no code
-    // to click, read out, or set a cookie from.
-    code: user ? await ensureReferralCode(c.env, user) : null,
-  });
+  // Authed, per §10.2. It answered an anonymous caller 200 with an empty gate:
+  // no leak — there is nothing in that shape — but an account endpoint saying it
+  // served someone who has no account, and the branch behind it carried
+  // `user ? … : null` arms that only ran when `user` was already null.
+  if (!user) return c.json({ error: "unauthorised" }, 401);
+  return c.json(await referrerScreen(c.env, user, new URL(c.req.url).origin));
 });
 
 // Manual code entry — the referred side. Half of these introductions happen on a

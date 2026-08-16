@@ -170,16 +170,22 @@ export function ReferrerBlock({ screen, hasOffer, onJoin, onEdit, onLeave, onHow
   const hasHistory = referrals.length > 0 || payoutHistory.length > 0;
   const dueAt = nextPaymentDueAt(earningRows);
 
-  // E — the program ended. Nothing new is taken; everything already earned stays
+  // E — joining is paused. Nothing new is taken; everything already earned stays
   // and is still paid on the timetable it was promised on.
+  //
+  // PAUSED, NEVER ENDED. Spec §4.7 has two states, and Off means "come back
+  // later" — the terminated state was cut precisely because a hard termination
+  // cannot be clean while commitments are still being served. "Ended" is a claim
+  // about the future that the program coming back has to contradict, and it
+  // contradicts what the ops panel tells the operator the switch does.
   if (!program.active && hasHistory) {
     return (
       <div className="flex flex-col gap-4">
         <div className="card p-5 flex flex-col gap-1.5" style={stripe(TONE.mute.bd)}>
-          <p className="text-ink t-bd-lg font-display">This program has ended.</p>
+          <p className="text-ink t-bd-lg font-display">Joining is paused.</p>
           <p className="text-body t-bd-sm">
-            We're no longer taking new referrals. Anything you'd already earned is below and will still be paid,
-            on the timetable you were given.
+            We're reworking the program, so we're not taking new referrals for now. Anything you'd already
+            earned is below and will still be paid, on the timetable you were given.
           </p>
         </div>
         <EarningsStrip earnings={earnings} nextDueAt={dueAt} />

@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveStaff } from "../lib/staff";
 import { applyPricingChange, VersionConflict } from "../lib/pricing-admin";
+import { referralReviewFlags } from "../lib/referral-discount";
 import {
   markPayoutsPaid, payoutCsv, payoutHistory, payoutQueue, publicProgram, recordReferral, reversePayout,
 } from "../lib/referrals";
@@ -154,17 +155,16 @@ opsReferrals.get("/", async (c) => {
 
   const name = (company: unknown, fallbackName: unknown, email: unknown) =>
     String(company ?? "").trim() || String(fallbackName ?? "").trim() || String(email ?? "");
-  const same = (a: unknown, b: unknown, strip = /\s/g) => {
-    const norm = (v: unknown) => String(v ?? "").replace(strip, "").toLowerCase();
-    return norm(a).length > 0 && norm(a) === norm(b);
-  };
 
   const referrals = (results ?? [])
     .map((row) => {
-      const flags: string[] = [];
-      if (same(row.ref_abn, row.mate_abn, /\D/g)) flags.push("abn");
-      if (same(row.ref_phone, row.mate_phone, /\D/g)) flags.push("phone");
-      if (same(row.ref_company, row.mate_company)) flags.push("business_name");
+      // THE SAME RULES the ops project record shows a reviewer before they issue
+      // a price. Called, not restated — the two screens disagreeing is a reviewer
+      // seeing a flag on one and not the other.
+      const flags = referralReviewFlags(
+        { abn: row.ref_abn as string | null, phone: row.ref_phone as string | null, company: row.ref_company as string | null },
+        { abn: row.mate_abn as string | null, phone: row.mate_phone as string | null, company: row.mate_company as string | null },
+      );
       return {
         id: String(row.id),
         code: String(row.code),
@@ -299,7 +299,13 @@ opsReferrals.post("/payouts/mark-paid", async (c) => {
 opsReferrals.post("/payouts/:id/failed", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
-  await reversePayout(c.env, c.req.param("id"));
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  // The note is NOT required. A reversal with nothing typed is still a reversal —
+  // the money going back into the queue can never wait on a text box.
+  await reversePayout(c.env, c.req.param("id"), {
+    note: typeof body.note === "string" ? body.note : null,
+    actorUserId: staff.id,
+  });
   return c.json({ ok: true });
 });
 

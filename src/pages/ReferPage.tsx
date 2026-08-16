@@ -68,10 +68,17 @@ export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; s
         <section className="bg-night relative pt-[112px] md:pt-[120px] pb-14">
           <div className="max-w-6xl mx-auto px-6 relative">
             <SLabel light>Refer a mate</SLabel>
-            <h1 className="text-white mt-3 t-hd1 font-display max-w-[20ch]">This program has ended.</h1>
+            {/* PAUSED, NEVER ENDED. Spec §4.7: there are two states and Off means
+                "come back later". "Ended" is a claim about the future that a
+                returning program has to contradict — and the switch is expected to
+                come back, which is why the third state was cut rather than built.
+                It also misdescribes the switch to the operator, whose own panel
+                says joining is paused. */}
+            <h1 className="text-white mt-3 t-hd1 font-display max-w-[20ch]">Joining is paused.</h1>
             <p className="text-white/70 mt-4 t-bd-lg max-w-[52ch]">
-              We're no longer taking new referrals. Anything you'd already earned is in your account and will
-              still be paid, and any discount already given still runs to the date it was given.
+              We're reworking the program, so we're not taking new referrals for now — check back soon.
+              Anything you'd already earned is in your account and will still be paid, and any discount
+              already given still runs to the date it was given.
             </p>
           </div>
         </section>

@@ -11,6 +11,7 @@ import { stripReferralFromDrafts } from "./lines";
 import type { ReferralOffer, ReferralProgramPublic } from "../../src/data/referrals";
 import { referralDiscountState } from "./referral-discount";
 import { notify } from "./email";
+import { logEvent } from "./activity";
 
 /** The account row this module needs to answer "may this user hold a code?". */
 export interface ReferrerRow extends PayoutDetails {
@@ -1151,9 +1152,38 @@ export async function markPayoutsPaid(
  *  pay you and it came back" is a thing someone will ask about. Its earnings go
  *  back to owed and detach, so the next run picks them up as if the payment had
  *  never happened, which from the referrer's side it did not. */
-export async function reversePayout(env: Env, payoutId: string): Promise<void> {
+export async function reversePayout(
+  env: Env,
+  payoutId: string,
+  // OPTIONAL, and it must stay optional. The reason a void demands a reason is
+  // that somebody is not being paid and will ask why; here the bank statement
+  // already says what happened and the earnings return to the queue on their own.
+  // Making this mandatory would hold the money hostage to a text box.
+  //
+  // It earns its place by telling the NEXT run what to do differently: "bounced,
+  // account closed" and "recorded against the wrong referrer" need opposite
+  // responses, and without the distinction next week's run sends the same money
+  // into the same closed account. That is operational, not audit — nobody is
+  // being policed here.
+  opts: { note?: string | null; actorUserId?: string } = {},
+): Promise<void> {
+  const note = String(opts.note ?? "").trim();
   await env.DB.batch([
-    env.DB.prepare("UPDATE referral_payout SET status = 'failed' WHERE id = ?").bind(payoutId),
+    env.DB
+      .prepare(
+        // APPENDED, never overwritten: a note may already have been recorded when
+        // the payment was made, and losing it to explain the reversal trades one
+        // fact for another.
+        `UPDATE referral_payout
+            SET status = 'failed',
+                note = CASE
+                         WHEN ?2 = '' THEN note
+                         WHEN note IS NULL OR note = '' THEN ?2
+                         ELSE note || ' · ' || ?2
+                       END
+          WHERE id = ?1`,
+      )
+      .bind(payoutId, note),
     env.DB
       .prepare(
         `UPDATE referral_earning SET status = 'confirmed', payout_id = NULL
@@ -1161,6 +1191,17 @@ export async function reversePayout(env: Env, payoutId: string): Promise<void> {
       )
       .bind(payoutId),
   ]);
+  // Through the mechanism ops already uses for who-did-what, rather than a column
+  // on the payout row: a reversal is an ops action, and audit_event is where ops
+  // actions go. No migration, and nothing here is a bank detail — payout_details_access
+  // stays reserved for reads of the numbers themselves.
+  await logEvent(env, {
+    actor: opts.actorUserId,
+    entityType: "referral_payout",
+    entityId: payoutId,
+    action: "reversed payout",
+    after: note ? { note } : undefined,
+  });
 }
 
 /** One group per referrer: one transfer, one bank line, one record.

@@ -87,7 +87,25 @@ auth.post("/verify", async (c) => {
   // guessed here so no call site can drift into inferring it.
   const referralCode = parseCookies(c.req.header("Cookie"))["of_ref"];
   if (created && referralCode) {
-    await recordReferral(c.env, { referredUser: user, code: referralCode, source: "link" });
+    // ⚠️ ATTRIBUTION IS NEVER WORTH A SIGN-IN (design §6.2). This hook sits after
+    // the account row exists and before the session is created, so an exception
+    // here fails /verify outright: the customer cannot log in, and their retry
+    // takes the existing-user branch, which by design never looks at a code
+    // (AC-7). One transient database error would cost the sign-in AND lose the
+    // attribution permanently.
+    //
+    // Refusals return rather than throw, so this catches nothing on any ordinary
+    // path — it exists for the transient failure, and it swallows deliberately.
+    // The marketing consequence of a lost referral is smaller than a tradie who
+    // cannot get into their account.
+    try {
+      await recordReferral(c.env, { referredUser: user, code: referralCode, source: "link" });
+    } catch (error) {
+      console.log(`[referral] attribution failed at signup for ${user.id}: ${String(error)}`);
+    }
+    // Cleared either way. A cookie kept for a retry would only be read by the
+    // existing-user branch, which ignores it — so keeping it buys nothing and
+    // leaves a stale code on the device for three months.
     c.header("Set-Cookie", clearCookie("of_ref", c.env), { append: true });
   }
 

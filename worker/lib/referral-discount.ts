@@ -84,6 +84,57 @@ export async function referralDiscountState(
  *  Derived from the stamped column rather than from live state for exactly that
  *  reason: live state moves, and a document describing what already happened must
  *  not move with it. */
+/** The identifying fields of one side of a referral, however they are stored. */
+export interface ReferralParty {
+  abn?: string | null;
+  phone?: string | null;
+  company?: string | null;
+}
+
+export type ReferralReviewFlag = "abn" | "phone" | "business_name";
+
+/** THE review-flag rules. One definition, two surfaces.
+ *
+ *  ⚠️ IT LIVES IN THE LEAF ON PURPOSE. This module imports `../types` and nothing
+ *  else from `lib/`, which is what keeps the pricing→referrals→lines→pricing cycle
+ *  broken — so the ops list route can import this without dragging the whole
+ *  referral module into the pricing path. Nothing new may be imported here.
+ *
+ *  These rules existed verbatim in two files, and it already cost something:
+ *  removing the postcode flag had to be done in both, and the next change gets
+ *  made in one. They decide what a human is told before they price a referred job
+ *  — the only control standing between a self-referral and a discount — so two
+ *  surfaces disagreeing means a reviewer sees a flag on one screen and not on the
+ *  other.
+ *
+ *  Normalisation is the substance of each rule, not tidiness: an ABN and a phone
+ *  number are written however the person felt like writing them, and a rule that
+ *  needs an exact string match is a rule that never fires. A business name keeps
+ *  its digits — "Glass 4 U" and "Glass U" are different businesses.
+ *
+ *  NO POSTCODE FLAG, though the spec lists one. There is no account-level address
+ *  anywhere: postcode and suburb live on `project`, as the DELIVERY destination
+ *  for that job. Comparing them asks "did these two ever deliver to the same
+ *  suburb", which for a Melbourne trade supplier is constantly true and means
+ *  nothing. The first version did exactly that against the referrer's most recent
+ *  project that happened to carry one — arbitrary, potentially years stale, and
+ *  about a job site rather than either business. A flag that fires on ordinary
+ *  customers is worse than no flag: it teaches the reviewer to skim past the two
+ *  that do mean something. */
+export function referralReviewFlags(referrer: ReferralParty, referred: ReferralParty): ReferralReviewFlag[] {
+  // Empty never matches. Two accounts that both left a field blank are not
+  // evidence of anything.
+  const same = (a: unknown, b: unknown, strip = /\s/g) => {
+    const norm = (v: unknown) => String(v ?? "").replace(strip, "").toLowerCase();
+    return norm(a).length > 0 && norm(a) === norm(b);
+  };
+  const flags: ReferralReviewFlag[] = [];
+  if (same(referrer.abn, referred.abn, /\D/g)) flags.push("abn");
+  if (same(referrer.phone, referred.phone, /\D/g)) flags.push("phone");
+  if (same(referrer.company, referred.company)) flags.push("business_name");
+  return flags;
+}
+
 /** What a reviewer needs to know before they put a price on a referred job.
  *
  *  THE FLAGS ARE NOT GATES. Nothing here refuses anything — a shared phone is a
@@ -115,26 +166,10 @@ export async function opsReferralReview(
     .first<Record<string, string | number | null>>();
   if (!row) return null;
 
-  const same = (a: unknown, b: unknown, strip = /\s/g) => {
-    const norm = (v: unknown) => String(v ?? "").replace(strip, "").toLowerCase();
-    return norm(a).length > 0 && norm(a) === norm(b);
-  };
-
-  const flags: string[] = [];
-  if (same(row.ref_abn, row.mate_abn, /\D/g)) flags.push("abn");
-  if (same(row.ref_phone, row.mate_phone, /\D/g)) flags.push("phone");
-  if (same(row.ref_company, row.mate_company)) flags.push("business_name");
-  // NO POSTCODE FLAG, though the spec lists one. There is no account-level
-  // address anywhere — postcode and suburb live on `project`, as the DELIVERY
-  // destination for that job. Comparing them would ask "did these two ever
-  // deliver to the same suburb", which for a Melbourne trade supplier is true
-  // constantly and means nothing.
-  //
-  // The first version of this did exactly that, against the referrer's most
-  // recent project that happened to carry a postcode: arbitrary, potentially
-  // years stale, and about a job site rather than either business. A flag that
-  // fires on ordinary customers is worse than no flag — it teaches the reviewer
-  // to skim past the two flags that do mean something.
+  const flags = referralReviewFlags(
+    { abn: row.ref_abn as string | null, phone: row.ref_phone as string | null, company: row.ref_company as string | null },
+    { abn: row.mate_abn as string | null, phone: row.mate_phone as string | null, company: row.mate_company as string | null },
+  );
 
   return {
     applied: row.status === "recorded",

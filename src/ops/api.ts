@@ -62,6 +62,25 @@ export const opsLogout = () =>
 
 export const opsSummary = () => req<OpsSummary>("/api/ops/summary");
 
+/** What two accounts on a referral have in common.
+ *
+ *  ONE LIST AND ONE LABEL MAP, because two screens show these: the ops project
+ *  record, where a reviewer sees them before pricing a job, and the referrals
+ *  list. They were duplicated, and a stale `postcode` entry survived on one side
+ *  after the flag itself was removed — a label for something the server can no
+ *  longer emit.
+ *
+ *  Named as FACTS, not accusations. "Shared ABN" is something a reviewer can go
+ *  and check; "suspicious" is a conclusion the screen has no business drawing for
+ *  them. The rules that produce these live in `worker/lib/referral-discount.ts`. */
+export type OpsReferralFlag = "abn" | "phone" | "business_name";
+
+export const OPS_REFERRAL_FLAG_LABEL: Record<OpsReferralFlag, string> = {
+  abn: "Shared ABN",
+  phone: "Shared phone",
+  business_name: "Shared business name",
+};
+
 // ── Quotes queue + workspace (O2) ────────────────────────────────────────────
 export interface OpsSubmission {
   id: string;
@@ -150,7 +169,7 @@ export interface OpsWorkspace {
     /** The snapshot percentage this job was priced at, not today's config. */
     percent: number;
     referrerName: string;
-    flags: ("abn" | "phone" | "business_name" | "postcode")[];
+    flags: OpsReferralFlag[];
   } | null;
   order?: {
     id: string; orderNo: string; stage: string; stageLabel: string;
@@ -779,9 +798,15 @@ export const opsPayoutHistory = () =>
   req<{ payouts: OpsPayoutRecord[] }>("/api/ops/referrals/payouts/history");
 
 /** It bounced, or it was recorded against the wrong row. The earnings go back
- *  into the queue; the payment stays in history. */
-export const opsReversePayout = (payoutId: string) =>
-  req<{ ok: boolean }>(`/api/ops/referrals/payouts/${payoutId}/failed`, { method: "POST", body: "{}" });
+ *  into the queue; the payment stays in history.
+ *
+ *  `note` is OPTIONAL and must stay so — the money returning to the queue can
+ *  never wait on a text box. It is worth asking for because the two causes need
+ *  opposite responses: a closed account must not be paid into again next week,
+ *  where a mis-recorded payment just needs re-pointing. */
+export const opsReversePayout = (payoutId: string, note?: string) =>
+  req<{ ok: boolean }>(`/api/ops/referrals/payouts/${payoutId}/failed`,
+    { method: "POST", body: JSON.stringify({ note: note ?? null }) });
 
 /** A plain link, not a fetch: it must land in the browser's downloads, and the
  *  response is a file rather than JSON. */

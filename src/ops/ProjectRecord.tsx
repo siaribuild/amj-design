@@ -23,21 +23,12 @@
 //  • NO progress ring, badge or colour-only state. Every state carries its word.
 import { SAGE, INK, QUIET as MUTED } from "../styles/tokens";
 
-/** What two accounts have in common. Named as facts, not accusations — "shared
- *  ABN" is a thing a reviewer can go and check, "suspicious" is a conclusion the
- *  screen has no business drawing for them. */
-const REFERRAL_FLAG: Record<"abn" | "phone" | "business_name" | "postcode", string> = {
-  abn: "Shared ABN",
-  phone: "Shared phone",
-  business_name: "Shared business name",
-  postcode: "Shared postcode",
-};
 import { Fragment, useEffect, useState } from "react";
 import { Check, ChevronLeft, Loader2, FileText, Paperclip, History as HistoryIcon } from "lucide-react";
 import {
   OpsApiError, opsProject, opsStartPricing, opsSetStatus, opsIssueQuote,
   opsRequestClarification, opsAddNote, opsPatchLine, opsAdvanceOrder, opsPayOrder,
-  opsSplitLine, opsMergeComposite,
+  opsSplitLine, opsMergeComposite, OPS_REFERRAL_FLAG_LABEL,
   opsPatchSegment, opsAddSegment, opsRemoveSegment, opsLinePricePreview,
   opsLineConfigurations, opsRecommendationOutcomes, opsAdjudicateRecommendationOutcome,
   opsThermal, opsSetDelivery, opsSetLinePrice,
@@ -219,7 +210,7 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
                 : `Referral voided — no discount applied (referrer: ${ws.referral.referrerName})`}
             </span>
             {ws.referral.flags.map((flag) => (
-              <span key={flag} className="quote-chip quote-chip--neutral">{REFERRAL_FLAG[flag]}</span>
+              <span key={flag} className="quote-chip quote-chip--neutral">{OPS_REFERRAL_FLAG_LABEL[flag]}</span>
             ))}
             {ws.referral.flags.length > 0 && (
               <span className="t-cap" style={{ color: MUTED }}>shared with the referrer — nothing is blocked</span>
