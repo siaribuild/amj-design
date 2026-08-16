@@ -284,6 +284,31 @@ export async function onOrderCreated(env: Env, orderId: string): Promise<void> {
  *  window is measured from. ACL s 32(2) makes that window a promise that has to
  *  be met, not merely stated, and the ops queue measures against this column. */
 export async function onOrderBalancePaid(env: Env, orderId: string): Promise<void> {
+  // ADR-8c. Details are a precondition of joining, so the referrer WAS payable
+  // when this was recorded — but they may have cleared them since, and this order
+  // may be paid afterwards. Such money stays PENDING.
+  //
+  // Pending is not merely a label. Confirmed money is payable, and payable-but-
+  // unpaid is what starts Victoria's twelve-month unclaimed-money clock.
+  // Confirming money we cannot send would recreate the very state D18 was chosen
+  // to make unreachable.
+  //
+  // The payability test is `payoutComplete` and NOT a SQL rewrite of it. Written
+  // as a WHERE clause it silently becomes a different, weaker rule — four
+  // non-empty columns, where payoutComplete also validates the ABN checksum — so
+  // a referrer with a malformed ABN would be paid by one path and refused by the
+  // other. One place per fact, even when the fact is cheap to restate.
+  const referrer = await env.DB
+    .prepare(
+      `SELECT u.* FROM referral_earning e
+         JOIN referral r ON r.id = e.referral_id
+         JOIN user u ON u.id = r.referrer_user_id
+        WHERE e.order_id = ? AND e.status = 'pending'`,
+    )
+    .bind(orderId)
+    .first<PayoutDetails>();
+  if (!payoutComplete(referrer)) return;
+
   await env.DB
     .prepare(
       `UPDATE referral_earning

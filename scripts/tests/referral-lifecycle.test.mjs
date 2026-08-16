@@ -812,6 +812,54 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.ok(afterBalance[0].confirmed_at, "and the payability instant is stamped");
     });
 
+    await t.test("AC-28 — money held because the referrer cannot be paid stays pending", async () => {
+      // ADR-8c, and the ONE reachable residue under D18. Details are a precondition
+      // of joining, so a referrer is payable when the referral is recorded — but
+      // they may clear them later, and the order they already earned on may be
+      // paid afterwards.
+      //
+      // It stays PENDING rather than confirming, and that distinction carries the
+      // weight: pending money is not yet payable, so Victoria's twelve-month
+      // unclaimed-money clock never starts on money we are holding for someone we
+      // cannot pay. Confirmed-but-unpayable is the state D18 exists to make
+      // unreachable, and reintroducing it here would undo the whole decision.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "held.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='held.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "held.mate@example.com");
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await sql(
+        `INSERT INTO project
+           (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+         VALUES ('p-held', (SELECT id FROM user WHERE email='held.mate@example.com'),
+                 'Held quote','OF-Q-88003','quote_issued','issued',0);
+         INSERT INTO quote_line
+           (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+         VALUES ('ql-held','p-held','W01','amj80-series-awning-window',
+                 '{"width":"900","height":"1200"}','{}',1,10000,'ready',0);`,
+      );
+      await requestJson(mate, "/api/projects/p-held/accept", { method: "POST" });
+      const orderId = (await sql(`SELECT id FROM "order" WHERE project_id='p-held'`))[0].id;
+
+      // They leave, or simply clear the account they were being paid into.
+      await sql("UPDATE user SET payout_bsb=NULL WHERE email='held.referrer@example.com'");
+
+      const staff = new Session(baseUrl);
+      await login(staff, "/api/auth", staffEmail);
+      await sql(`UPDATE "order" SET stage='balance_invoiced' WHERE id='${orderId}'`);
+      await requestJson(staff, `/api/orders/${orderId}/pay`, { method: "POST", json: { kind: "balance" } });
+
+      const held = await sql(`SELECT status, confirmed_at FROM referral_earning WHERE order_id='${orderId}'`);
+      assert.equal(held[0].status, "pending", "unpayable money must not become payable");
+      assert.equal(held[0].confirmed_at, null, "and the payability clock must not start");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank
