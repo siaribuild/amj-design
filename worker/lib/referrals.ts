@@ -310,6 +310,30 @@ export async function onOrderBalancePaid(env: Env, orderId: string): Promise<voi
   // non-empty columns, where payoutComplete also validates the ABN checksum — so
   // a referrer with a malformed ABN would be paid by one path and refused by the
   // other. One place per fact, even when the fact is cheap to restate.
+  // DERIVED, not event-driven: no live path cancels or refunds an order today, so
+  // there is no event to subscribe to. The columns are read at the one moment it
+  // matters — when money would otherwise become payable. Building the guard now
+  // costs a read; retrofitting it the day refunds ship would cost finding every
+  // payout already made on money that came back.
+  const order = await env.DB
+    .prepare('SELECT stage, payment_status FROM "order" WHERE id = ?')
+    .bind(orderId)
+    .first<{ stage: string; payment_status: string }>();
+  const reversal = order?.payment_status === "refunded"
+    ? "order_refunded"
+    : order?.stage === "cancelled" ? "order_cancelled" : null;
+  if (reversal) {
+    await env.DB
+      .prepare(
+        `UPDATE referral_earning
+            SET status = 'void', void_reason = ?, voided_at = datetime('now')
+          WHERE order_id = ? AND status = 'pending'`,
+      )
+      .bind(reversal, orderId)
+      .run();
+    return;
+  }
+
   const referrer = await env.DB
     .prepare(
       `SELECT u.* FROM referral_earning e

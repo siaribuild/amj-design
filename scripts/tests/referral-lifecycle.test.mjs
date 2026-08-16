@@ -898,6 +898,52 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(rows[0].amount, 0, "and nothing is owed");
     });
 
+    await t.test("AC-21 — a refunded order voids the earning instead of confirming it", async () => {
+      // The guard is DERIVED rather than event-driven, because no live code path
+      // cancels or refunds an order today — `payment_status` is vestigial, left
+      // over from before `stage` superseded it. There is no event to subscribe to,
+      // so the columns are read at the moment money would become payable.
+      //
+      // Which means this is a guard for a day that has not arrived. Building it
+      // now costs a WHERE clause; retrofitting it the day refunds ship costs
+      // finding every path that already paid out on money that came back.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "refund.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='refund.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "refund.mate@example.com");
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await sql(
+        `INSERT INTO project
+           (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+         VALUES ('p-refund', (SELECT id FROM user WHERE email='refund.mate@example.com'),
+                 'Refunded quote','OF-Q-88005','quote_issued','issued',0);
+         INSERT INTO quote_line
+           (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+         VALUES ('ql-refund','p-refund','W01','amj80-series-awning-window',
+                 '{"width":"900","height":"1200"}','{}',1,10000,'ready',0);`,
+      );
+      await requestJson(mate, "/api/projects/p-refund/accept", { method: "POST" });
+      const orderId = (await sql(`SELECT id FROM "order" WHERE project_id='p-refund'`))[0].id;
+
+      // The money came back. Set directly, because nothing in the product sets it
+      // yet — that is exactly the point of a derived guard.
+      const staff = new Session(baseUrl);
+      await login(staff, "/api/auth", staffEmail);
+      await sql(`UPDATE "order" SET stage='balance_invoiced', payment_status='refunded' WHERE id='${orderId}'`);
+      await requestJson(staff, `/api/orders/${orderId}/pay`, { method: "POST", json: { kind: "balance" } });
+
+      const rows = await sql(`SELECT status, void_reason, confirmed_at FROM referral_earning WHERE order_id='${orderId}'`);
+      assert.equal(rows[0].status, "void", "refunded money owes no commission");
+      assert.equal(rows[0].void_reason, "order_refunded");
+      assert.equal(rows[0].confirmed_at, null, "and it never became payable");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank
