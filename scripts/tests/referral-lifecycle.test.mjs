@@ -1056,6 +1056,56 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.ok(released[0].confirmed_at, "stamped when it truly became payable, not when the order was paid");
     });
 
+    await t.test("AC-72 — the other drafts are re-priced when eligibility ends", async () => {
+      // Line totals are STORED, not recomputed on read. So a referred tradie with
+      // two drafts, who orders one, is left holding a second one still carrying a
+      // discount they are no longer entitled to — and it would stay wrong until
+      // something else happened to re-price it.
+      //
+      // Eligibility itself needs no write: "used" is derived from the order
+      // existing. This exists only to make the stored figures agree with it.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "stale.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='stale.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "stale.mate@example.com");
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+
+      // Two projects: one they will order, one left as a draft carrying a stale
+      // price. The draft's total is deliberately wrong so a re-price is visible.
+      await sql(
+        `INSERT INTO project
+           (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+         VALUES
+           ('p-stale-order', (SELECT id FROM user WHERE email='stale.mate@example.com'),
+            'Ordered','OF-Q-88008','quote_issued','issued',0),
+           ('p-stale-draft', (SELECT id FROM user WHERE email='stale.mate@example.com'),
+            'Still a draft','OF-Q-88009','draft','draft',0);
+         INSERT INTO quote_line
+           (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+         VALUES
+           ('ql-stale-order','p-stale-order','W01','amj80-series-awning-window',
+            '{"width":"900","height":"1200"}','{}',1,10000,'ready',0),
+           ('ql-stale-draft','p-stale-draft','W01','amj80-series-awning-window',
+            '{"width":"900","height":"1200"}','{}',1,999999,'ready',0);`,
+      );
+
+      await requestJson(mate, "/api/projects/p-stale-order/accept", { method: "POST" });
+
+      const draft = await sql(`SELECT line_total FROM quote_line WHERE id='ql-stale-draft'`);
+      assert.notEqual(draft[0].line_total, 999999, "the stale draft must be re-priced, not left as it was");
+
+      // And the issued quote they ordered is untouched: an issued price is a
+      // price someone agreed to, and re-pricing it would change a contract.
+      const issued = await sql(`SELECT line_total FROM quote_line WHERE id='ql-stale-order'`);
+      assert.equal(issued[0].line_total, 10000, "an issued quote is never re-priced");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

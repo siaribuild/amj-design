@@ -324,3 +324,58 @@ function safeParse(s: string): Record<string, unknown> {
     return {};
   }
 }
+
+/** Re-price a user's pre-issue drafts after their referral eligibility changed.
+ *
+ *  WHY THIS EXISTS AT ALL: line totals are STORED, not recomputed on read. A
+ *  referred tradie with two drafts who orders one is left holding a second still
+ *  carrying a discount they are no longer entitled to, and it would stay wrong
+ *  until something unrelated happened to re-price it.
+ *
+ *  Eligibility itself needs no write — "used" is derived from the order existing.
+ *  This only makes the stored figures agree with that derivation.
+ *
+ *  ISSUED QUOTES ARE EXCLUDED BY THE STATE FILTER, and that is the point rather
+ *  than an oversight: an issued price is one a customer has been shown and may
+ *  have accepted, so re-pricing it would change a number after the fact. Only
+ *  pre-issue states are touched.
+ *
+ *  Lives here beside `priceItem` because it is a pricing act, not a referral one.
+ */
+export async function stripReferralFromDrafts(
+  env: Env,
+  ownerUserId: string,
+  excludeProjectId?: string,
+): Promise<void> {
+  const { results } = await env.DB
+    .prepare(
+      `SELECT l.id, l.product_slug, l.dims_json, l.options_json, l.qty
+         FROM quote_line l JOIN project p ON p.id = l.project_id
+        WHERE p.owner_user_id = ?
+          AND (? IS NULL OR p.id <> ?)
+          AND l.parent_line_id IS NULL
+          -- An operator's deliberate price stands. AC-59: an override is a
+          -- decision, and a sweep must not quietly undo one.
+          AND l.price_calculated IS NULL
+          AND NOT EXISTS (SELECT 1 FROM "order" o WHERE o.project_id = p.id)
+          AND (p.status_customer = 'draft' OR p.status_internal IN
+               ('submitted','triage_pending','estimator_assigned',
+                'technical_review_required','customer_clarification_required'))`,
+    )
+    .bind(ownerUserId, excludeProjectId ?? null, excludeProjectId ?? null)
+    .all<{ id: string; product_slug: string; dims_json: string | null; options_json: string | null; qty: number }>();
+
+  for (const line of results ?? []) {
+    const dims = safeParse(line.dims_json ?? "") as { width?: string; height?: string };
+    const total = await priceItem(env, {
+      productSlug: line.product_slug,
+      width: String(dims.width ?? ""),
+      height: String(dims.height ?? ""),
+      options: safeParse(line.options_json ?? "") as Record<string, string>,
+      qty: line.qty,
+      ownerUserId,
+    });
+    if (total === null) continue;
+    await env.DB.prepare("UPDATE quote_line SET line_total = ? WHERE id = ?").bind(total, line.id).run();
+  }
+}

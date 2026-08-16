@@ -7,6 +7,7 @@ import type { Env } from "../types";
 import { uuid } from "./util";
 import { taxBreakdown } from "../../src/data/gst";
 import { STAGES } from "./orders";
+import { stripReferralFromDrafts } from "./lines";
 
 /** The account row this module needs to answer "may this user hold a code?". */
 export interface ReferrerRow extends PayoutDetails {
@@ -243,10 +244,10 @@ export async function recordReferral(
  *  promised on the day the introduction was recorded. */
 export async function onOrderCreated(env: Env, orderId: string): Promise<void> {
   const order = await env.DB
-    .prepare(`SELECT o.id, o.created_at, p.owner_user_id
+    .prepare(`SELECT o.id, o.created_at, o.project_id, p.owner_user_id
                 FROM "order" o JOIN project p ON p.id = o.project_id WHERE o.id = ?`)
     .bind(orderId)
-    .first<{ id: string; created_at: string; owner_user_id: string | null }>();
+    .first<{ id: string; created_at: string; project_id: string; owner_user_id: string | null }>();
   if (!order?.owner_user_id) return;
 
   const referral = await env.DB
@@ -299,6 +300,11 @@ export async function onOrderCreated(env: Env, orderId: string): Promise<void> {
       qualifies ? null : new Date().toISOString(),
     )
     .run();
+
+  // Their eligibility just ended — the first order exists. Any OTHER draft they
+  // are holding still carries the discount in its stored total, and stored totals
+  // do not notice that the world moved.
+  await stripReferralFromDrafts(env, order.owner_user_id, order.project_id);
 }
 
 /** The referred order has been paid in full — the money becomes payable.
