@@ -20,10 +20,9 @@ import type { Page } from "../app/ui";
 import { Btn } from "../app/ui";
 import { useReferrals, hasReferralSection } from "./referralModel";
 import { money, fmtDate } from "./accountModel";
-import { claimReferralCode, leaveProgram } from "../data/referrals";
+import { leaveProgram } from "../data/referrals";
 import { DiscountCard } from "../components/referral/DiscountCard";
 import { ReferrerBlock } from "../components/referral/ReferrerBlock";
-import { WereYouReferred } from "../components/referral/WereYouReferred";
 import { JoinProgramFlow, PayoutDetailsForm } from "../components/referral/JoinProgramFlow";
 
 type Mode = "view" | "join" | "edit" | "leaving";
@@ -130,20 +129,12 @@ export function ReferralsPage({ setPage }: { setPage: (p: Page) => void }) {
               />
             )}
 
-            {/* The REFERRED side. canEnterCode means "may still be referred" — it
-                closes on having been referred or having ordered, never on the
-                payout gate, so this shows for members and non-members alike. */}
-            {screen.canEnterCode && mode === "view" && (
-              <WereYouReferred
-                program={screen.program}
-                expiresAt={offer?.expiresAt}
-                onApply={async (code) => {
-                  const failed = await claimReferralCode(code);
-                  if (!failed) reload();
-                  return failed;
-                }}
-              />
-            )}
+            {/* There is deliberately NO code field here. An existing account
+                linking itself to a referrer is the abuse the owner ruled out:
+                sign up, get quoted, shop around, then find a code and enter it
+                just before ordering — backward linking, with the discount landing
+                on the very order it was hunted for. A code is entered when an
+                account is applied for, and only Ops can link one afterwards. */}
           </div>
         </section>
       )}
