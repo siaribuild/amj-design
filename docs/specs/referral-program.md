@@ -1,10 +1,10 @@
 # Referral program — specification
 
 Branch: `feat/referral-program`
-Status: **revision 12 — one open decision (§12 D19), on the scope of a prerequisite this revision
-uncovered. Everything else is settled.**
+Status: **revision 13 — the postcode review flag is removed; D19 is settled (deferred, separate
+thread). Everything is settled.**
 Author: product-manager
-Date: 2026-08-16
+Date: 2026-08-17
 
 **Revision 2:** rate set to 1% and every number moved into ops config · cap removed (field kept,
 nullable) · minimum payout balance added (default off) · launch ON · **program became double-sided —
@@ -37,6 +37,21 @@ preview is a **deliberate** exception to the composition (§4.6.1, AC-51).
 
 **Revision 11 — abuse-case criteria (§10A), AC-92 to AC-104.** Negative Given–When–Thens for financial
 PII, each a concrete attempt the tester must make and see denied.
+
+**Revision 13 — the postcode review flag is removed, because it could not be built.** The first Codex
+review found it had no supporting data. There is no account-level address anywhere in the schema:
+`delivery_postcode` (`0044:139`) and `delivery_suburb` (`0006:13`) live on `project`, and no column on
+`user` has ever carried an address. The flag compared the referred job's delivery destination against
+whichever of the referrer's projects last happened to carry one — arbitrary, potentially stale, and
+not a shared account fact at all. **A flag that fires on ordinary customers is worse than no flag**,
+because it teaches the reviewer to skim past the ones that mean something. Three flags now — ABN,
+phone, business name — which are exactly the account-level identity facts `user` holds
+(§4.2 A15, §4.6.6, §8.4b, AC-58).
+
+**D19 is settled, and not by this document.** The trade account request form is a static mock and
+`/api/enquiries` has no trade-account intent, so the capture point the revision-12 rule depends on does
+not exist yet. The owner's ruling: the form is **a separate thread**, and Ops enters referral codes by
+hand in the meantime. Option (c). Nothing in this feature builds it.
 
 **Revision 12 — the attribution model changes, because revision 1's foundation was incomplete.**
 
@@ -545,6 +560,11 @@ The two facts are always stated separately — *no purchase needed* (A18) and *p
   that absence is a defence (§10A, AC-95).
 - **A `robots.txt` disallow for `/r/`** — actively wrong (§12A.1).
 - **A canonical link between the landing page and the FAQ article** — actively wrong (§12A.2).
+- **A postcode or delivery-address review flag** — removed in revision 13 because no account-level
+  address exists to compare, only a per-job delivery destination. Reintroducing it over `project` rows
+  would fire on ordinary customers and teach the reviewer to ignore the flags that mean something
+  (§4.6.6, A15). An honest version needs a business address on the account: a schema change and a form
+  field, not a query.
 - **A "blocked on missing details" group in the payouts queue** — unreachable under D18.
 - **Unclaimed-money machinery** — D18 removes the state that would need it.
 - **Any path by which a referrer supplies a mate's name, phone, email or contact detail** (§7.0, AC-78).
