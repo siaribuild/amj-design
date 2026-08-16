@@ -1348,11 +1348,20 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.match(await sitemap.text(), /\/refer</, "the sitemap must list it");
 
       // Server-rendered, not just an SPA route: a crawler that runs no JavaScript
-      // still has to get a title and a description.
+      // has to get a title of the page's OWN, not the bare business name. That
+      // comes from the named-title map in shell.ts and needs no CMS record —
+      // being in the sitemap with nothing to say about yourself is worse than
+      // not being listed.
+      //
+      // The meta DESCRIPTION deliberately is not asserted: it comes from the
+      // Sanity page record (`pageId: "refer"`), which is content rather than
+      // code, and asserting it here would make this suite fail on an empty CMS.
+      // The absence is a content task, not a defect.
       const page = await fetch(new URL("/refer", baseUrl));
       assert.equal(page.status, 200, "and it never 404s");
       const html = await page.text();
-      assert.match(html, /<title>[^<]+<\/title>/, "with a real title in the markup");
+      const title = /<title>([^<]+)<\/title>/.exec(html)?.[1] ?? "";
+      assert.match(title, /refer a mate/i, "with a title about this page, not the site's default");
     });
 
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {

@@ -129,6 +129,12 @@ export async function renderShell(env: Env, shellHtml: string, url: URL): Promis
       // Absent before, so /resources served a crawler the bare business name
       // while the client set "Resources — <brand>". Same page, two titles.
       resources: `Resources${suffix}`,
+      // Same omission as /resources had, caught the same way: added to
+      // PUBLIC_PAGES without a named title, so a crawler got the bare business
+      // name while the client rendered a real one. A page in the sitemap with no
+      // title of its own is worse than one that is not listed at all — it invites
+      // indexing and then says nothing about itself.
+      refer: `Refer a mate — earn on every tradie you introduce${suffix}`,
       "not-found": `Page not found${suffix}`,
     };
     title = pg?.seo?.metaTitle || named[pageId] || title;
