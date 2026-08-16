@@ -15,7 +15,7 @@ An ops-console operator working for AMJ. Staff-ness is its own axis on an accoun
 _Avoid_: admin, operator
 
 **Payable account**:
-An account with complete, ABN-valid payout details. Payability gates what an account can *receive* (e.g. a referral code); it is a different axis from staff-ness, which gates what an account can *participate in*.
+An account with complete, ABN-valid payout details. Payability gates what an account can *receive* (e.g. a referral code); it is a different axis from staff-ness, which gates what an account can *participate in*. It is never a purchase gate — nothing anywhere may condition a referrer's capabilities on the referrer's own order history.
 
 ### Projects, quotes, and orders
 
@@ -95,12 +95,38 @@ _Avoid_: quote (an estimator output is not a quote)
 
 ### Referrals
 
-**Referral code**:
-A code issued to a payable, non-staff account once its payout details are stored. Issued once and never changes thereafter.
+**Referral**:
+The *relationship*: one referred account, one referrer, recorded once and permanently (one live referral per referred account). It is created only by an act of the referred person — following a `/r/<CODE>` link in their own browser, or typing a code into their own signed-in account. No API accepts a referred party's name, email or phone from a referrer, ever.
+_Avoid_: invite, lead, introduction record
+
+**Earning**:
+The *money* a referral owes: one row per referred first order. A separate record from the relationship, because voiding a relationship and voiding a payment are different acts with different reasons. `pending` → `confirmed` → `paid`, or terminally `void`.
+_Avoid_: commission record, credit, balance (there is no stored balance — see *Referral discount state*)
+
+**Payout**:
+One *transfer* to one referrer, covering all their confirmed earnings at that moment. It carries a frozen copy of the ABN and bank account the money actually went to — the accountant's record of what was paid, which must never follow the referrer's later edits. A reversed (`failed`) payout stays in history and returns its earnings to the queue.
+_Avoid_: payment (reserved for a customer paying AMJ)
+
+**Promise snapshot**:
+The program's terms (rate, cap, minimum order, discount percentage, window, expiry) copied onto the referral row when it is recorded. Every function that later computes money or a discount for that referral reads the snapshot and is never handed the live config: the config is the source of truth for *new* referrals; the snapshot is the source of truth for a promise already made to a real person.
 
 **Referral discount state**:
-The life of a referred customer's discount: `none` → `available` → `used`, or terminally `expired` / `void`.
+The life of a referred customer's discount: `none` → `available` → `used`, or terminally `expired` / `void`. Derived on every read from three records that already exist (the referral row, its expiry, whether the account has an order) — never a stored status column, and never a decrementing credit or stored balance.
+
+**Referral code**:
+A code issued to a payable, non-staff account once its payout details are stored — withheld until then, never issued inactive. Issued once and never changes thereafter: it survives the program being switched off, and it comes back unchanged if its owner leaves and rejoins.
+
+**Dormant code**:
+An issued code whose owner is no longer payable (they cleared their payout details). It records nothing, and every customer-facing refusal treats it exactly like an unknown code — a third party must not learn another account's banking status from the shape of an error.
 
 **Payout details**:
-The bank-account and ABN information an account supplies to become payable. Financial PII — the most sensitive data class in the product: minimal storage, never logged, never exposed on a customer-facing surface beyond the owning account.
+The bank-account and ABN information an account supplies to become payable. Financial PII — the most sensitive data class in the product: minimal storage, never logged, never exposed on a customer-facing surface beyond the owning account. Read unmasked by exactly one function, which records the read as it happens; every other reader sees a masked shape.
 
+**Joining / leaving the program**:
+Membership *is* having complete payout details — there is no separate membership record. Storing them joins; clearing them leaves (refused only while confirmed, unpaid money is waiting on those details). Leaving never destroys the code, and never withdraws a discount already promised to the referred side.
+
+**Payability instant (`confirmed_at`)**:
+The moment an earning becomes payable: the referred order paid in full, with a payable referrer. It is what the advertised payment timeframe is measured from, and what an unclaimed-money clock would run from — so money that is not yet payable is held as `pending` rather than recorded as confirmed-and-unpaid.
+
+**Review flag**:
+A fact two accounts in a referral share (ABN, phone, business name), shown to staff before they price a referred job. Flags are context for a human, never gates: nothing is refused on one.
