@@ -1106,6 +1106,32 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(issued[0].line_total, 10000, "an issued quote is never re-priced");
     });
 
+    await t.test("AC-35/AC-75 — the public program endpoint carries the figures, and no total", async () => {
+      // Every figure in the copy renders from here. Nothing on the landing page,
+      // the placements or the account section may type a number into a string —
+      // otherwise raising the rate in ops advertises one figure while the engine
+      // applies another, and the config screen's promise is a lie.
+      const response = await fetch(new URL("/api/referral/program", baseUrl));
+      assert.equal(response.status, 200, "public: a logged-out visitor reads the offer");
+      const { program } = await response.json();
+
+      assert.equal(program.ratePercent, 1);
+      assert.equal(program.discountPercent, 2.5);
+      assert.equal(program.minOrderAmount, 2000);
+      assert.equal(program.windowMonths, 12);
+      assert.equal(program.payoutTimeframeDays, 14, "s 32(2): the payment window is part of the offer");
+      assert.equal(program.capAmount, null, "null means render no cap clause at all");
+      assert.equal(program.minPayoutBalance, 0, "0 means render no threshold language at all");
+      assert.equal(program.active, true);
+
+      // AC-75, structurally. A combined total would leak the standing account
+      // discount by subtraction, so no shape may carry one — and the check is a
+      // scan rather than a list, because the failure is a field APPEARING.
+      const forbidden = /account.?discount|combined|totalDiscount|effectiveDiscount/i;
+      const offenders = Object.keys(program).filter((key) => forbidden.test(key));
+      assert.deepEqual(offenders, [], "no customer shape may carry an account or combined discount");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

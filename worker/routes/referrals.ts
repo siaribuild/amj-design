@@ -3,9 +3,17 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
-import { ensureReferralCode, payoutComplete, payoutMissing, recordReferral, savePayoutDetails } from "../lib/referrals";
+import { ensureReferralCode, payoutComplete, payoutMissing, publicProgram, recordReferral, savePayoutDetails } from "../lib/referrals";
 
 export const referrals = new Hono<{ Bindings: Env }>();
+
+// PUBLIC — no auth. The landing page is read by strangers, and every figure in
+// its copy comes from here rather than from a typed string. That is what makes
+// the ops config screen's promise true: change the rate there and the site
+// advertises the new one, with no deploy and no copy edit.
+referrals.get("/referral/program", async (c) => {
+  return c.json({ program: await publicProgram(c.env) });
+});
 
 // The REFERRER's screen. Under D18, "details missing" is the primary entry state
 // for every new referrer rather than an error, so this answers "where are you in

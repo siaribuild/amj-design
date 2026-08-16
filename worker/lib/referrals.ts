@@ -8,6 +8,7 @@ import { uuid } from "./util";
 import { taxBreakdown } from "../../src/data/gst";
 import { STAGES } from "./orders";
 import { stripReferralFromDrafts } from "./lines";
+import type { ReferralProgramPublic } from "../../src/data/referrals";
 
 /** The account row this module needs to answer "may this user hold a code?". */
 export interface ReferrerRow extends PayoutDetails {
@@ -423,6 +424,36 @@ export async function referralSweep(env: Env): Promise<void> {
     .bind(...PAID_IN_FULL_ONWARDS)
     .all<{ order_id: string }>();
   for (const row of results ?? []) await onOrderBalancePaid(env, row.order_id);
+}
+
+/** The program as every customer surface is allowed to see it.
+ *
+ *  One reader for every figure, so the landing page, the placements, the account
+ *  section and the emails cannot drift apart from each other or from the config. */
+export async function publicProgram(env: Env): Promise<ReferralProgramPublic> {
+  const row = await env.DB
+    .prepare("SELECT * FROM referral_program WHERE id = 'default'")
+    .first<{
+      active: number; discount_percent: number; rate_percent: number;
+      min_order_amount: number; window_months: number; cap_amount: number | null;
+      min_payout_balance: number; payout_timeframe_days: number;
+      referrer_reward_active: number; referred_discount_active: number;
+    }>();
+  return {
+    active: Boolean(row?.active),
+    discountPercent: row?.discount_percent ?? 0,
+    ratePercent: row?.rate_percent ?? 0,
+    minOrderAmount: row?.min_order_amount ?? 0,
+    windowMonths: row?.window_months ?? 0,
+    // Kept NULLABLE rather than defaulted to 0: null means "render no cap clause
+    // at all", where 0 would mean "capped at nothing". The screen needs to be able
+    // to say nothing, and a number cannot express silence.
+    capAmount: row?.cap_amount ?? null,
+    minPayoutBalance: row?.min_payout_balance ?? 0,
+    payoutTimeframeDays: row?.payout_timeframe_days ?? 0,
+    referrerRewardActive: Boolean(row?.referrer_reward_active),
+    referredDiscountActive: Boolean(row?.referred_discount_active),
+  };
 }
 
 /** What a referrer submits to become payable. Free text as typed. */
