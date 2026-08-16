@@ -63,8 +63,20 @@ export function ReferralList({ referrals, program }: {
 
   return (
     <section className="card">
-      <div className="panel-head px-5 py-3 grid grid-cols-[1fr_auto_auto] gap-4 text-body font-data t-label">
-        <span>Who</span><span>Signed up</span><span>Status</span>
+      {/* Two bands, not one. The panel-head names the panel — it is the only
+          panel in this section that had no name, so between the payments panel
+          above and the how-you-get-paid panel below it read as a stray table.
+          The column labels are their own row beneath, and they go away below
+          768px where the rows stop being rows: each becomes a stacked card
+          carrying its own "Signed up" label, so a three-column header sat over
+          one-column content labelling nothing under it. */}
+      <div className="panel-head px-5 py-3 text-body font-data t-label">Your referrals</div>
+      {/* Fixed track widths, and the SAME ones on the rows below. `auto` columns
+          resolve per grid, and each row is its own grid — so an auto-sized header
+          lined up over nothing and the two right-hand columns drifted row to
+          row. */}
+      <div className="px-5 py-2.5 hidden md:grid grid-cols-[1fr_130px_220px] gap-4 text-body font-data t-label">
+        <span>Who</span><span className="text-right">Signed up</span><span className="text-right">Status</span>
       </div>
       <ul>
         {referrals.map((r) => {
@@ -74,14 +86,21 @@ export function ReferralList({ referrals, program }: {
             // Deliberately not clickable: no card-link, no hover fill, no chevron.
             // There is nothing to open, and an affordance that opens nothing is a
             // promise the screen can't keep.
-            <li key={r.id} className="px-5 py-3.5 border-t border-black/[0.07] grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-1 md:gap-4 md:items-center">
-              <span className="text-ink t-bd-sm">{r.displayName}</span>
-              <span className="text-body font-data t-data-sm md:text-right">
+            // Below 768px this is a stacked card, not a row: who and where they
+            // are on one line — the two things being compared — with the date
+            // beneath. Three separate lines put the pill a full line away from
+            // the name it belongs to. `order` does the rearranging so the DOM
+            // stays in reading order for a screen reader at both widths.
+            // `first:border-t-0` below md, where the column-label row is gone and
+            // the first row would otherwise sit under two hairlines in a row.
+            <li key={r.id} className="px-5 py-3.5 border-t border-black/[0.07] first:border-t-0 md:first:border-t grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 md:grid-cols-[1fr_130px_220px]">
+              <span className="order-1 md:order-none text-ink font-semibold t-bd-sm">{r.displayName}</span>
+              <span className="order-3 md:order-none col-span-2 md:col-span-1 text-body font-data t-data-sm md:text-right">
                 <span className="md:hidden">Signed up </span>{fmtDate(r.joinedAt)}
               </span>
-              <span className="flex flex-col gap-0.5 md:items-end">
+              <span className="order-2 md:order-none flex flex-col gap-1 items-end">
                 <StatusPill tone={s.tone}>{s.label}</StatusPill>
-                {sub && <span className="text-body t-cap">{sub}</span>}
+                {sub && <span className="text-body t-cap text-right">{sub}</span>}
               </span>
             </li>
           );

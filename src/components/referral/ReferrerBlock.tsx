@@ -11,7 +11,7 @@
 // amount is built from components that are not given the rate at all (§5.4 file).
 import { useState } from "react";
 import type { ReferrerScreen } from "../../data/referrals";
-import { TONE, fmtDate, fmtDayDate } from "../../pages/accountModel";
+import { TONE, fmtDate } from "../../pages/accountModel";
 import { SAGE, Btn } from "../../app/ui";
 import { pct, moneyRound, months, days } from "./format";
 import { EarningsStrip, ReferralList, PaymentsPanel, HowYouGetPaid, nextPaymentDueAt } from "./ReferrerPanels";
@@ -36,34 +36,41 @@ export function JoinInvitation({ program, muted, eyebrow, onJoin, onReadConditio
 }) {
   const discount = pct(program.discountPercent);
   return (
-    <div className="card p-5 flex flex-col gap-3" style={stripe(muted ? TONE.mute.bd : SAGE)}>
-      {eyebrow && !muted && (
-        <span className="text-body font-data t-label">Refer a mate</span>
-      )}
-      {muted ? (
-        <p className="text-body t-bd">
-          You got <b className="text-ink">{discount}</b> off because someone passed you a code. You can do the
-          same: your mate gets <b className="text-ink">{discount} off their first order</b>, and when they've
-          paid it in full we pay you <b className="text-ink">{pct(program.ratePercent)} of it</b>, within{" "}
-          <b className="text-ink">{days(program.payoutTimeframeDays)}</b>.
-        </p>
-      ) : (
-        <>
-          <h3 className="text-ink t-hd1 font-display">You both win.</h3>
+    // Prose left, the action right, from 768px. Stacked, the button sat a full
+    // paragraph below the offer it belongs to and the card grew to five ragged
+    // lines of nothing — this is the same two-column shape the closing banner
+    // and every other copy-plus-action block on the site already uses.
+    <div className="card p-5 split-row is-top" style={stripe(muted ? TONE.mute.bd : SAGE)}>
+      <div className="split-prose flex flex-col gap-3">
+        {eyebrow && !muted && (
+          <span className="text-body font-data t-label">Refer a mate</span>
+        )}
+        {muted ? (
           <p className="text-body t-bd">
-            Your mate gets <b className="text-ink">{discount} off their first order</b>. When they've paid it in
-            full, we pay you <b className="text-ink">{pct(program.ratePercent)} of it</b>, within{" "}
+            You got <b className="text-ink">{discount}</b> off because someone passed you a code. You can do the
+            same: your mate gets <b className="text-ink">{discount} off their first order</b>, and when they've
+            paid it in full we pay you <b className="text-ink">{pct(program.ratePercent)} of it</b>, within{" "}
             <b className="text-ink">{days(program.payoutTimeframeDays)}</b>.
           </p>
-        </>
-      )}
-      <p className="text-body t-bd-sm">Any account can join — you don't need to have ordered.</p>
-      <div className="flex flex-wrap items-center gap-4">
+        ) : (
+          <>
+            <h3 className="text-ink t-hd1 font-display">You both win.</h3>
+            <p className="text-body t-bd">
+              Your mate gets <b className="text-ink">{discount} off their first order</b>. When they've paid it in
+              full, we pay you <b className="text-ink">{pct(program.ratePercent)} of it</b>, within{" "}
+              <b className="text-ink">{days(program.payoutTimeframeDays)}</b>.
+            </p>
+          </>
+        )}
+        <p className="text-body t-bd-sm">Any account can join — you don't need to have ordered.</p>
+      </div>
+      <div className="flex flex-col items-start md:items-center gap-2.5 md:flex-shrink-0">
         <Btn variant={muted ? "outline" : "sage"} size={muted ? "md" : "lg"} onClick={onJoin}>
           Join the program →
         </Btn>
         {!muted && onReadConditions && (
-          <button onClick={onReadConditions} className="text-body hover:text-sage cursor-pointer t-cap">
+          <button onClick={onReadConditions}
+            className="text-sage hover:text-sage-deep cursor-pointer underline underline-offset-2 t-cap">
             Read the conditions first
           </button>
         )}
@@ -100,12 +107,24 @@ export function CodeCard({ code, shareUrl, program, demoted, onHowItWorks }: {
   return (
     <div className="card p-5 flex flex-col gap-3" style={stripe(SAGE)}>
       <span className="text-body font-data t-label">Your code</span>
-      <p className={`text-ink font-data ${demoted ? "t-hd2" : "t-hd1"}`} style={{ letterSpacing: ".08em" }}>{code}</p>
-      <p className={`text-body font-data break-all ${demoted ? "t-data-sm" : "t-data"}`}>{shareUrl}</p>
-      <div className="flex flex-wrap gap-2">
-        {!demoted && <CopyButton value={code} label="Copy code" />}
-        <CopyButton value={shareUrl} label="Copy link" />
-        <Btn variant="ghost" size="sm" onClick={share}>Share</Btn>
+      {/* The code is the object of this card, so it is set as one — 40px, tight
+          leading, wide tracking, the way a code is meant to be read aloud off a
+          screen. At heading size it was just another line of the card. Demoted
+          (state C, where the earnings are the point) it steps down to 28px. */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <span className="text-ink font-data font-semibold flex-none"
+          style={{ fontSize: demoted ? 28 : 40, lineHeight: 1, letterSpacing: ".1em" }}>{code}</span>
+        {/* The share link in a read-only field rather than as loose prose: it is
+            a value to be taken away, and the field says so and stops it from
+            `break-all`-ing itself across three ragged lines. */}
+        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[240px]">
+          <input readOnly value={shareUrl} aria-label="Your referral link"
+            onFocus={(e) => e.currentTarget.select()}
+            className={`field-control font-data flex-1 min-w-[200px] ${demoted ? "t-data-sm" : "t-data"}`} />
+          {!demoted && <CopyButton value={code} label="Copy code" />}
+          <CopyButton value={shareUrl} label="Copy link" />
+          <Btn variant="ghost" size="sm" onClick={share}>Share</Btn>
+        </div>
       </div>
       {!demoted && (
         <p className="pt-3 border-t border-black/[0.07] text-body t-bd-sm">
@@ -207,13 +226,15 @@ export function ReferrerBlock({ screen, hasOffer, onJoin, onEdit, onLeave, onHow
   // C — working. Earnings first, code last: the money is the point.
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-body t-bd-sm">
-          {referrals.length === 1 ? "1 mate referred" : `${referrals.length} mates referred`}
-          {dueAt && <> · next payment due <b className="text-ink">{fmtDate(dueAt)}</b></>}
-        </p>
-        <span className="text-body font-data t-data-sm">{fmtDayDate(new Date())}</span>
-      </div>
+      {/* One date only. Today's date used to sit right-aligned here, a few
+          characters from the payment due date and in near-identical type, and the
+          two read as a pair when only one is a fact about this account. The
+          dashboard carries today's date because it is a hub that orients you on
+          arrival; this screen has one date worth knowing. */}
+      <p className="text-body t-bd-sm">
+        {referrals.length === 1 ? "1 mate referred" : `${referrals.length} mates referred`}
+        {dueAt && <> · next payment due <b className="text-ink">{fmtDate(dueAt)}</b></>}
+      </p>
       <EarningsStrip earnings={earnings} nextDueAt={dueAt} />
       <ReferralList referrals={referrals} program={program} />
       <PaymentsPanel history={payoutHistory} />

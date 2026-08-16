@@ -38,6 +38,16 @@ export function DiscountCard({ offer, program, onStartQuote, hasDraft, onOpenOrd
   const card = (accent: string, children: React.ReactNode) => (
     <div className="card p-5 flex flex-col gap-3" style={{ borderLeft: `3px solid ${accent}` }}>{children}</div>
   );
+  /** The two live states carry an action, so they take the site's copy-plus-action
+   *  shape: the offer reads down the left, the button sits beside it from 768px.
+   *  Stacked, the CTA ended up below three chips and a paragraph — a long way
+   *  from the sentence that earns the click. */
+  const offerCard = (accent: string, prose: React.ReactNode, action: React.ReactNode) => (
+    <div className="card p-5 split-row is-top" style={{ borderLeft: `3px solid ${accent}` }}>
+      <div className="split-prose flex flex-col gap-3">{prose}</div>
+      <div className="md:flex-shrink-0">{action}</div>
+    </div>
+  );
 
   if (offer.state === "used") {
     return card(TONE.mute.bd, (
@@ -81,7 +91,7 @@ export function DiscountCard({ offer, program, onStartQuote, hasDraft, onOpenOrd
   // Inside 30 days the card changes its tone and leads with the deadline — the
   // same trigger as the reminder email, so the screen and the inbox agree.
   if (isExpiring(offer.expiresAt)) {
-    return card(TONE.attn.bd, (
+    return offerCard(TONE.attn.bd, (
       <>
         <h3 className="text-ink t-hd1 font-display">
           {discount} off your first order — {daysUntil(offer.expiresAt)} days left
@@ -94,12 +104,11 @@ export function DiscountCard({ offer, program, onStartQuote, hasDraft, onOpenOrd
           <Chip tone="attention">Expires {fmtDate(offer.expiresAt)}</Chip>
           <Chip>First order only</Chip>
         </div>
-        {cta}
       </>
-    ));
+    ), cta);
   }
 
-  return card(SAGE, (
+  return offerCard(SAGE, (
     <>
       <h3 className="text-ink t-hd1 font-display">{discount} off your first order</h3>
       <p className="text-body t-bd">
@@ -112,7 +121,6 @@ export function DiscountCard({ offer, program, onStartQuote, hasDraft, onOpenOrd
         <Chip>First order only</Chip>
         <Chip>One per account</Chip>
       </div>
-      {cta}
     </>
-  ));
+  ), cta);
 }

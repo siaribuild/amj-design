@@ -27,7 +27,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useEffect, useState } from "react";
 import { ArrowRight, ChevronRight } from "lucide-react";
-import { type Page, SAGE, Btn, SLabel, CtaBanner } from "../app/ui";
+import { type Page, Btn, SLabel, CtaBanner } from "../app/ui";
 import { getReferralProgram, getReferrerScreen, type ReferralProgramPublic, type ReferrerScreen } from "../data/referrals";
 import { pct, moneyRound, months, days } from "../components/referral/format";
 import { JoinProgramFlow } from "../components/referral/JoinProgramFlow";
@@ -65,11 +65,11 @@ export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; s
   if (!program.active) {
     return (
       <div className="min-h-screen">
-        <section className="ground-night section-pad relative pt-[104px]">
+        <section className="bg-night relative pt-[112px] md:pt-[120px] pb-14">
           <div className="max-w-6xl mx-auto px-6 relative">
             <SLabel light>Refer a mate</SLabel>
-            <h1 className="c-white mt-3 t-hd1 font-display max-w-[20ch]">This program has ended.</h1>
-            <p className="c-white/70 mt-4 t-bd-lg max-w-[52ch]">
+            <h1 className="text-white mt-3 t-hd1 font-display max-w-[20ch]">This program has ended.</h1>
+            <p className="text-white/70 mt-4 t-bd-lg max-w-[52ch]">
               We're no longer taking new referrals. Anything you'd already earned is in your account and will
               still be paid, and any discount already given still runs to the date it was given.
             </p>
@@ -89,13 +89,21 @@ export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; s
   return (
     <div className="min-h-screen">
       {/* ── Hero — one read ─────────────────────────────────────────────── */}
-      <section className="ground-night section-pad relative pt-[104px]">
+      {/* Hero padding is 56px, not the 96px `section-pad` — an offer this short
+          in an oversized band reads as a page with nothing on it (spec §3.2).
+          The top figure is that 56px plus the fixed header's height. */}
+      <section className="bg-night relative pt-[112px] md:pt-[120px] pb-14">
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel light>Refer a mate</SLabel>
-          <h1 className="c-white mt-3 t-ds2 font-display max-w-[20ch]">Refer a mate. You both win.</h1>
-          <p className="c-white mt-4 t-bd-lg max-w-[52ch]">
-            Your mate gets <b>{discount} off their first order</b>. When they've paid it in full, we pay you{" "}
-            <b>{rate} of it</b>, within <b>{payout}</b>.
+          <h1 className="text-white mt-3 t-ds2 font-display max-w-[20ch]">Refer a mate. You both win.</h1>
+          {/* The three figures carry the whole offer, so they are the one thing
+              lifted off the sentence — in --sage-light, the token that exists for
+              exactly this (sage on a dark ground). White-on-white bold made them
+              indistinguishable from the prose they sit in. */}
+          <p className="text-white mt-4 t-bd-lg max-w-[52ch]">
+            Your mate gets <b className="text-sage-light">{discount} off their first order</b>. When they've paid
+            it in full, we pay you <b className="text-sage-light">{rate} of it</b>, within{" "}
+            <b className="text-sage-light">{payout}</b>.
           </p>
           <div className="mt-6">
             <Btn variant="sage" size="lg" onClick={() => {
@@ -107,15 +115,21 @@ export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; s
           </div>
           {/* s 49: the reward is not conditioned on the referrer having bought.
               This line says so, and it never sits beside the ABN requirement. */}
-          <p className="c-white/55 mt-4 t-cap">Any account can join — you don't need to have ordered.</p>
+          <p className="text-white/55 mt-4 t-cap">Any account can join — you don't need to have ordered.</p>
         </div>
       </section>
 
-      {/* ── How it works — Track A, three cards ─────────────────────────── */}
-      <section className="ground-paper border-t border-black/8 section-pad">
+      {/* ── How it works — Track A, three cards ───────────────────────────
+          BONE, and it is the first band after the hero on purpose: that is the
+          site's own sequence and the one the owner approved. The grounds then
+          alternate night → bone → paper → night → paper → bone, so every seam
+          draws itself and no two neighbours share a fill. No border-top here —
+          the night/bone seam is already a hard edge and a black hairline on it
+          is invisible work. */}
+      <section className="ground-bone section-pad">
         <div className="max-w-6xl mx-auto px-6">
           <SLabel>How it works</SLabel>
-          <h2 className="text-ink mt-3 mb-8 t-ds2 font-display max-w-[24ch]">Three steps, and only one of them is yours.</h2>
+          <h2 className="text-ink mt-3 mb-6 t-ds2 font-display max-w-[24ch]">Three steps, and only one of them is yours.</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0">
             {[
               ["Share your code.", <>Text it, say it over the phone, send the link. However you'd normally tell someone.</>],
@@ -126,10 +140,17 @@ export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; s
               ["You get paid.", <>Once they've paid that order in full, we transfer <b className="text-ink">{rate} of the goods</b> — excluding GST and delivery — to your bank account within <b className="text-ink">{payout}</b>.</>],
             ].map(([heading, body], i) => (
               <div key={String(heading)} className="relative card p-6 flex flex-col sm:[&:nth-child(n+2)]:-mt-px lg:[&:nth-child(n+2)]:mt-0 lg:[&:nth-child(n+2)]:-ml-px">
-                <span className="w-8 h-8 border border-sage/40 flex items-center justify-center text-sage font-data t-data-sm mb-3">{i + 1}</span>
+                <span className="w-8 h-8 flex-none border border-sage/40 flex items-center justify-center text-sage font-data t-data-sm mb-4">{i + 1}</span>
                 <h3 className="font-semibold text-ink mb-1.5 font-display t-bd">{heading}</h3>
                 <p className="text-body leading-relaxed t-bd">{body}</p>
-                {i < 2 && <ChevronRight className="hidden lg:block absolute -right-2 top-1/2 w-4 h-4 text-sage/50" aria-hidden="true" />}
+                {/* Centred on the seam, and painted on the card fill so it masks
+                    the hairline instead of straddling it. Without the Y offset it
+                    sat half its own height below centre. */}
+                {i < 2 && (
+                  <ChevronRight
+                    className="hidden lg:block absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-sage/60"
+                    style={{ background: "var(--card-fill)" }} aria-hidden="true" />
+                )}
               </div>
             ))}
           </div>
@@ -137,11 +158,14 @@ export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; s
       </section>
 
       {/* ── The conditions — three fact rows, body weight ───────────────── */}
-      <section className="ground-bone border-t border-black/8 section-pad">
-        <div className="max-w-6xl mx-auto px-6">
+      <section className="ground-paper border-t border-black/8 section-pad">
+        <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>The conditions</SLabel>
-          <h2 className="text-ink mt-3 mb-8 t-ds2 font-display">Before you share it.</h2>
-          <div className="flex flex-col">
+          <h2 className="text-ink mt-3 mb-5 t-ds2 font-display">Before you share it.</h2>
+          {/* Closed top and bottom: the rows are a list, and a list that is ruled
+              between its items but open at the head reads as a fragment of a
+              longer one that has been cut off. */}
+          <div className="flex flex-col border-t border-black/[0.08]">
             {[
               [moneyRound(program.minOrderAmount), <>Their first order has to be at least <b className="text-ink">{moneyRound(program.minOrderAmount)}</b> ex GST, before delivery. Below that, nothing is earned on it.</>],
               ["First order only", <>You're paid on their <b className="text-ink">first order</b> — one payment per mate, not a cut of everything they buy afterwards.</>],
@@ -150,8 +174,8 @@ export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; s
                 ? [[`Capped at ${moneyRound(program.capAmount)}`, <>That's the most you can earn on any one referral.</>] as const]
                 : []),
             ].map(([key, prose]) => (
-              <div key={String(key)} className="flex flex-col md:flex-row md:items-baseline gap-2 md:gap-6 py-4 border-b border-black/[0.08]">
-                <span className="flex-shrink-0 font-data t-data md:w-[150px]" style={{ color: "var(--sage-deep)" }}>{key}</span>
+              <div key={String(key)} className="flex flex-col md:flex-row md:items-baseline gap-1 md:gap-6 py-3.5 border-b border-black/[0.08]">
+                <span className="flex-shrink-0 font-data t-data md:w-[180px]" style={{ color: "var(--sage-deep)" }}>{key}</span>
                 <p className="text-body t-bd max-w-[62ch]">{prose}</p>
               </div>
             ))}
@@ -159,25 +183,40 @@ export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; s
           {/* Caption size, and deliberately carrying NO condition — only a tax
               note and two pointers. If a new condition is ever needed it becomes
               a fourth row at body weight, never an addition to this sentence. */}
-          <p className="text-body mt-5 t-cap measure">
+          {/* Underlined, not sage-only: a link inside running prose distinguished
+              by colour alone fails WCAG 1.4.1, and at caption size the sage/body
+              difference is the smallest it gets anywhere on the site. */}
+          <p className="text-body mt-4 t-cap measure">
             Amounts include any GST payable, and we don't give tax advice. Self-referral, cancelled orders and
             second businesses are in the{" "}
-            <button onClick={() => go("resources")} className="text-sage hover:text-sage-deep cursor-pointer">full rules and terms →</button>
+            <button onClick={() => go("resources")}
+              className="text-sage hover:text-sage-deep cursor-pointer underline underline-offset-2">full rules and terms →</button>
           </p>
         </div>
       </section>
 
       {/* ── The join band — dark when prompting, light when working ─────── */}
-      <section id="refer-join" className={signedIn ? "ground-paper border-t border-black/8 section-pad" : "bg-night section-pad"}>
+      {/* Signed out this is the one band on the page whose whole job is to be
+          acted on, so it takes the site's dark-section treatment plus the 2px
+          sage top rule (HowItWorksPage.tsx:295) — the rule is what stops a black
+          band reading as a gap between two light ones. Signed in it goes light:
+          a form is a working surface, not a prompt. */}
+      <section id="refer-join"
+        className={signedIn ? "ground-bone border-t border-black/8 section-pad" : "relative bg-night section-pad"}>
+        {!signedIn && <span className="absolute inset-x-0 top-0 h-0.5 bg-sage" aria-hidden="true" />}
         <div className="max-w-6xl mx-auto px-6">
           {!signedIn ? (
-            <div className="flex flex-col gap-4 items-start">
-              <SLabel light>Joining</SLabel>
-              <h2 className="c-white t-ds2 font-display max-w-[24ch]">Sign in and you're two minutes from a code.</h2>
-              <p className="c-white/70 t-bd max-w-[52ch]">
-                Accept the conditions, tell us where to send the money, and your code is issued on the spot.
-              </p>
-              <Btn variant="sage" size="lg" onClick={() => go("login")}>Sign in to join →</Btn>
+            <div className="split-row is-center">
+              <div className="split-prose">
+                <SLabel light>Joining</SLabel>
+                <h2 className="text-white mt-3 mb-2 t-hd1 font-display">Sign in and you're two minutes from a code.</h2>
+                <p className="text-white/70 t-bd">
+                  Accept the conditions, tell us where to send the money, and your code is issued on the spot.
+                </p>
+              </div>
+              <div className="md:flex-shrink-0">
+                <Btn variant="sage" size="lg" onClick={() => go("login")}>Sign in to join →</Btn>
+              </div>
             </div>
           ) : member && screen ? (
             <CodeCard code={screen.code!} shareUrl={screen.shareUrl ?? ""} program={program} onHowItWorks={() => go("referrals")} />
@@ -188,10 +227,10 @@ export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; s
       </section>
 
       {/* ── Good to know — Track B, the questions tradies actually ask ──── */}
-      <section className="ground-bone border-t border-black/8 section-pad">
-        <div className="max-w-6xl mx-auto px-6">
+      <section className="ground-paper border-t border-black/8 section-pad">
+        <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel>Good to know</SLabel>
-          <h2 className="text-ink mt-3 mb-8 t-ds2 font-display">The questions tradies actually ask.</h2>
+          <h2 className="text-ink mt-3 mb-6 t-ds2 font-display">The questions tradies actually ask.</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
             {[
               ["Can I refer someone if I've never ordered?", <>Yes. Any registered account can join and refer. Your own order history has nothing to do with it.</>],
@@ -200,18 +239,30 @@ export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; s
               ["Do I earn on the mates they go on to refer?", <>No. You get paid for the mates you refer, and that's it. No chains, no levels, no tiers.</>],
             ].map(([q, a], i) => (
               <div key={String(q)} className={`card p-6 flex flex-col ${i % 2 === 1 ? "sm:-ml-px" : ""} ${i > 1 ? "sm:-mt-px" : ""}`}>
-                <h3 className="font-semibold text-ink mb-1.5 font-display t-bd">{q}</h3>
-                <p className="text-body leading-relaxed t-bd">{a}</p>
+                {/* The question is the card's heading and has to outrank the
+                    answer it sits on — at t-bd both were the same size and the
+                    card had no first read. */}
+                <h3 className="font-semibold text-ink mb-2 font-display t-bd-lg">{q}</h3>
+                <p className="text-body leading-relaxed t-bd flex-1">{a}</p>
+                {/* Track B's own in-card link, on the card whose answer it
+                    continues — outside the track it read as a page-level action
+                    and left the fourth card looking unfinished. */}
+                {i === 3 && (
+                  <button onClick={() => go("resources")}
+                    className="self-start flex items-center gap-1.5 mt-3 text-sage hover:text-sage-deep cursor-pointer t-bd-sm">
+                    The full referral FAQ <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                )}
               </div>
             ))}
           </div>
-          <button onClick={() => go("resources")} className="flex items-center gap-1.5 mt-6 text-sage hover:text-sage-deep cursor-pointer t-bd-sm">
-            The full referral FAQ <ArrowRight className="w-4 h-4" />
-          </button>
         </div>
       </section>
 
+      {/* Bone, because the FAQ above it is paper — the banner's own default
+          assumes it follows a bone section, which is true everywhere but here. */}
       <CtaBanner
+        ground="bone"
         title="Got a schedule sitting on your desk?"
         sub="Upload it and every line comes back priced in about a minute. No account needed to start."
         onQuote={() => go("quote")}
