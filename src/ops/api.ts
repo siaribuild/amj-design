@@ -134,6 +134,24 @@ export interface OpsWorkspace {
   // merged plane is built beside it.
   lifecycle?: OpsLifecycle;
   daysInStage?: number | null;
+  /** What the reviewer needs to know about a referral BEFORE issuing — the
+   *  discount that priced this job, and what the two accounts have in common.
+   *
+   *  The flags refuse nothing and are not evidence of anything. They exist
+   *  because the automatic gates cannot see this class of thing (at signup the
+   *  referred side usually has no ABN, and nothing compares addresses) and
+   *  because a human prices every job here. A shared phone is a father and son
+   *  on one number at least as often as it is one person with two logins.
+   *
+   *  Ops-only; never serialised to a customer response. */
+  referral?: {
+    /** False when the relationship was voided — recorded, but no discount. */
+    applied: boolean;
+    /** The snapshot percentage this job was priced at, not today's config. */
+    percent: number;
+    referrerName: string;
+    flags: ("abn" | "phone" | "business_name" | "postcode")[];
+  } | null;
   order?: {
     id: string; orderNo: string; stage: string; stageLabel: string;
     paymentStatus: string; createdAt: string;

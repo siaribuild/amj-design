@@ -22,6 +22,16 @@
 //    a coarse phase ribbon to orient, and a ledger of what actually happened.
 //  • NO progress ring, badge or colour-only state. Every state carries its word.
 import { SAGE, INK, QUIET as MUTED } from "../styles/tokens";
+
+/** What two accounts have in common. Named as facts, not accusations — "shared
+ *  ABN" is a thing a reviewer can go and check, "suspicious" is a conclusion the
+ *  screen has no business drawing for them. */
+const REFERRAL_FLAG: Record<"abn" | "phone" | "business_name" | "postcode", string> = {
+  abn: "Shared ABN",
+  phone: "Shared phone",
+  business_name: "Shared business name",
+  postcode: "Shared postcode",
+};
 import { Fragment, useEffect, useState } from "react";
 import { Check, ChevronLeft, Loader2, FileText, Paperclip, History as HistoryIcon } from "lucide-react";
 import {
@@ -193,6 +203,29 @@ export function ProjectRecord({ id, onBack }: { id: string; onBack: () => void }
           customer's own record already makes that call, and a staffer reading a
           number down the phone must be reading the one the customer is looking at. */}
       <div className="card px-5 py-4 mb-4">
+        {/* AC-58 — above the price, because the point is that a reviewer sees it
+            while they are still deciding. After issue it changes nothing.
+            Informational, deliberately: the flags REFUSE nothing. A shared phone
+            is a father and son on one number at least as often as it is one
+            person with two logins, and the automatic gates cannot see this class
+            of thing at all — at signup the referred side usually has no ABN, and
+            nothing compares addresses. Neutral chips, no warning colour, no
+            icon: this is context for a human who is already pricing the job. */}
+        {ws.referral && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pb-3 mb-3 border-b" style={{ borderColor: "var(--line)" }}>
+            <span className="t-cap" style={{ color: INK }}>
+              {ws.referral.applied
+                ? `Referral discount applied — ${ws.referral.percent}% (referrer: ${ws.referral.referrerName})`
+                : `Referral voided — no discount applied (referrer: ${ws.referral.referrerName})`}
+            </span>
+            {ws.referral.flags.map((flag) => (
+              <span key={flag} className="quote-chip quote-chip--neutral">{REFERRAL_FLAG[flag]}</span>
+            ))}
+            {ws.referral.flags.length > 0 && (
+              <span className="t-cap" style={{ color: MUTED }}>shared with the referrer — nothing is blocked</span>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="t-bd-lg font-display" style={{ color: INK }}>
