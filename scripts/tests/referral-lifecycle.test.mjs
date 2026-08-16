@@ -1626,6 +1626,37 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.ok(revived.every((e) => e.payout_id === null), "and detached from the failed payment");
     });
 
+    await t.test("paying twice does not record a payment that never happened", async () => {
+      // A double-click, a retried request, or two staff on the same queue. The
+      // second attempt finds the earnings already claimed — and must record
+      // NOTHING, rather than a payout row attached to no money.
+      //
+      // A phantom row is worse than a failed request: it says a transfer was made
+      // that was not, and the person reconciling the bank statement is left
+      // looking for it.
+      const { body: queue } = await requestJson(staff, "/api/ops/referrals/payouts");
+      const group = queue.ready.find((g) => g.name === "Queue Glazing");
+      assert.ok(group, "the reversed earnings are owed again");
+
+      await requestJson(staff, "/api/ops/referrals/payouts/mark-paid", {
+        method: "POST", json: { userIds: [group.userId], reference: "TFR-FIRST" },
+      });
+      const { body: second } = await requestJson(staff, "/api/ops/referrals/payouts/mark-paid", {
+        method: "POST", json: { userIds: [group.userId], reference: "TFR-SECOND" },
+      });
+
+      assert.deepEqual(second.paid, [], "the second attempt pays nobody");
+      const phantom = await sql(`SELECT id FROM referral_payout WHERE reference = 'TFR-SECOND'`);
+      assert.equal(phantom.length, 0, "and writes no record of a transfer that never happened");
+
+      const real = await sql(
+        `SELECT id, amount FROM referral_payout WHERE reference = 'TFR-FIRST' AND status = 'paid'`,
+      );
+      assert.equal(real.length, 1, "the first payment stands, once");
+      const attached = await sql(`SELECT id FROM referral_earning WHERE payout_id = '${real[0].id}'`);
+      assert.equal(attached.length, 2, "with its earnings attached to it");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

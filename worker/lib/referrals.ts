@@ -886,14 +886,28 @@ export async function markPayoutsPaid(
     await env.DB.batch([
       env.DB
         .prepare(
+          // CONDITIONAL, so the row cannot outlive the money it claims to have
+          // paid. Re-reading the queue protects the sequential case — a second
+          // request finds nothing owed — but two requests that both read before
+          // either writes would each insert, and the loser's UPDATE would claim
+          // nothing. The result is a payout row attached to no earnings: a record
+          // saying a transfer was made that was not, with someone later hunting
+          // the bank statement for it.
+          //
+          // Guarded in the same batch as the claim, so the two act together.
           `INSERT INTO referral_payout
              (id, referrer_user_id, amount, status, reference, note, paid_at, paid_by,
               abn, bsb, account_number, account_name)
-           VALUES (?, ?, ?, 'paid', ?, ?, datetime('now'), ?, ?, ?, ?, ?)`,
+           SELECT ?, ?, ?, 'paid', ?, ?, datetime('now'), ?, ?, ?, ?, ?
+            WHERE EXISTS (
+              SELECT 1 FROM referral_earning
+               WHERE id IN (${placeholders}) AND status = 'confirmed' AND payout_id IS NULL
+            )`,
         )
         .bind(
           payoutId, group.userId, group.amount, args.reference, args.note ?? null, args.actorUserId,
           group.abn, group.bsb, group.accountNumber, group.accountName,
+          ...group.earningIds,
         ),
       env.DB
         .prepare(
@@ -902,6 +916,10 @@ export async function markPayoutsPaid(
         )
         .bind(payoutId, ...group.earningIds),
     ]);
+    // NOTE: in a true concurrent double-submit the loser still reports its group as
+    // paid, while the guard above correctly kept the row out of the ledger. The
+    // ledger is the authority and the queue self-corrects on the next read, so the
+    // cost is a duplicate success message rather than a duplicate payment.
     paid.push({ userId: group.userId, payoutId, amount: group.amount });
   }
   return paid;
