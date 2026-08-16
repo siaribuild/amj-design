@@ -1338,6 +1338,23 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
         "what is shared is named, so the reviewer knows what to look at");
     });
 
+    await t.test("AC-33 — /refer is a real page: sitemapped, and served with a head", async () => {
+      // A referral program nobody can find is a referral program nobody joins.
+      // The page is the one surface a stranger reaches without an account, so it
+      // has to be indexable — which on this site means being in PUBLIC_PAGES,
+      // the single list that drives both the sitemap and the server-rendered head.
+      const sitemap = await fetch(new URL("/sitemap.xml", baseUrl));
+      assert.equal(sitemap.status, 200);
+      assert.match(await sitemap.text(), /\/refer</, "the sitemap must list it");
+
+      // Server-rendered, not just an SPA route: a crawler that runs no JavaScript
+      // still has to get a title and a description.
+      const page = await fetch(new URL("/refer", baseUrl));
+      assert.equal(page.status, 200, "and it never 404s");
+      const html = await page.text();
+      assert.match(html, /<title>[^<]+<\/title>/, "with a real title in the markup");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank
