@@ -156,6 +156,17 @@ export async function recordReferral(
     .bind(input.referredUser.id)
     .first<{ id: string }>();
   if (already) return { ok: false, error: "already_referred" };
+  // A5 — MANUAL ONLY. The link path records at signup, before an order can exist,
+  // so this gate belongs to typed codes alone. Without it a customer could enter a
+  // mate's code years in, long after whatever introduction supposedly caused the
+  // sale, and claim a commission for it.
+  if (input.source === "manual") {
+    const ordered = await env.DB
+      .prepare(`SELECT o.id FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.owner_user_id = ?`)
+      .bind(input.referredUser.id)
+      .first<{ id: string }>();
+    if (ordered) return { ok: false, error: "has_order" };
+  }
 
   const program = await env.DB
     .prepare("SELECT * FROM referral_program WHERE id = 'default'")

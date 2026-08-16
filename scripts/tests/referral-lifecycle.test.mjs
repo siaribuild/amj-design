@@ -555,6 +555,34 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       }
     });
 
+    await t.test("AC-9 — manual entry closes once the account has ordered", async () => {
+      // A5. The link path records at signup, before any order can exist, so this
+      // gate is the manual path's alone. Without it a customer could type a mate's
+      // code years in, after the introduction that supposedly caused the sale.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "late.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='late.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const buyer = new Session(baseUrl);
+      await login(buyer, "/api/auth", "late.buyer@example.com");
+      await sql(
+        `INSERT INTO project (id, owner_user_id) VALUES ('p-late', (SELECT id FROM user WHERE email='late.buyer@example.com'));
+         INSERT INTO "order" (id, project_id, order_no) VALUES ('o-late', 'p-late', 'OF-O-LATE');`,
+      );
+
+      const refused = await requestJson(buyer, "/api/account/referrals/claim",
+        { method: "POST", json: { code: mine.code } }, 400);
+      assert.equal(refused.body.error, "has_order");
+      const rows = await sql(
+        `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='late.buyer@example.com')`,
+      );
+      assert.equal(rows.length, 0, "and nothing is recorded");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank
