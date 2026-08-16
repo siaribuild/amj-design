@@ -2290,6 +2290,13 @@ export default function App() {
       quote: { pageId: "quote", title: `Get a Quote${suffix}` },
       resources: { pageId: "resources", title: `Resources${suffix}` },
       trade: { pageId: "trade", title: `Trade Accounts${suffix}` },
+      // Third page to be caught by the omission described above, and the most
+      // confusing kind: the SERVER lists /refer in the sitemap and serves it a
+      // real title, while the client — absent from this map — would fall through
+      // to the catch-all and declare noindex after hydration. Two opposite
+      // signals about the same URL, and the crawler that runs JavaScript sees
+      // the second one. A page cannot be half-indexable.
+      refer: { pageId: "refer", title: `Refer a mate — earn on every tradie you introduce${suffix}` },
     };
     const m = marketing[page];
     if (m) {
