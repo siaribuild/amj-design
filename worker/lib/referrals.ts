@@ -141,6 +141,20 @@ export interface RecordReferralInput {
   referredUser: { id: string };
   code: string;
   source: "link" | "manual";
+  /** May this overwrite a VOIDED referral? Staff only, and default-deny.
+   *
+   *  ⚠️ NEVER SET FROM A REQUEST BODY. The one caller that passes `true` is the
+   *  Ops link action, and it passes a literal — a customer route that read this
+   *  from JSON would hand the caller the staff remedy.
+   *
+   *  Voiding is how staff say money is not going out and why. Revival is how they
+   *  fix their own mistyped link. Letting the referred party reach it turns the
+   *  remedy into the attack: void a self-referral, and the person it was voted
+   *  against simply claims the code again — fresh window, live commission, and the
+   *  recorded reason erased by the same statement. `source` cannot express this:
+   *  the Ops link action is `'manual'` precisely because a human transcribed a
+   *  code, which is also what the customer's own claim endpoint is. */
+  revive?: boolean;
 }
 
 /** Record the relationship, freezing the program's terms onto it (M10).
@@ -169,19 +183,31 @@ export async function recordReferral(
   // A11. The table has a CHECK for this too, but a constraint violation is a 500:
   // the rule has to be ANSWERED so the screen can say which rule was hit.
   if (referrer.id === input.referredUser.id) return { ok: false, error: "own_code" };
-  // A9 — one LIVE referral per account. First recorded wins: a second code is
-  // refused rather than overwriting a relationship already promised to someone.
+  // A9 — one referral per account, permanently. First recorded wins: a second
+  // code is refused rather than overwriting a relationship already promised to
+  // someone.
   //
-  // A VOIDED ROW DOES NOT BLOCK, and that distinction is load-bearing. Counting
+  // A VOIDED ROW STILL OCCUPIES THE SLOT — for everyone except staff. Counting
   // voided rows made an Ops typo permanent: link the wrong tradie, void it, and
-  // the account could never be linked to the right one — the only remedy left
-  // being a hand-edit of the database. Permanence is meant to stop someone
-  // shopping for a better referrer, not to make a mistake uncorrectable.
+  // the account could never be linked to the right one, the only remedy left
+  // being a hand-edit of the database. So the remedy exists — and it is
+  // DEFAULT-DENY, because the same function serves the customer's own claim
+  // endpoint, and there the remedy is the attack.
+  //
+  // The reachable exploit, if this read `status = 'recorded'` for everyone: A
+  // signs up on B's link, Ops sees the shared phone and voids it with a reason,
+  // and A — who has not ordered, so the A5 gate passes — POSTs the code again.
+  // The relationship returns with a fresh window, the commission and discount go
+  // live, and the void's reason, `voided_by` and `voided_at` are nulled by the
+  // upsert. A void must not be undoable by the party it was decided against, and
+  // it must not become a way to go shopping for a different referrer either.
   const already = await env.DB
-    .prepare("SELECT id FROM referral WHERE referred_user_id = ? AND status = 'recorded'")
+    .prepare("SELECT id, status FROM referral WHERE referred_user_id = ?")
     .bind(input.referredUser.id)
-    .first<{ id: string }>();
-  if (already) return { ok: false, error: "already_referred" };
+    .first<{ id: string; status: string }>();
+  if (already && !(input.revive === true && already.status === "void")) {
+    return { ok: false, error: "already_referred" };
+  }
   // A5 — MANUAL ONLY. The link path records at signup, before an order can exist,
   // so this gate belongs to typed codes alone. Without it a customer could enter a
   // mate's code years in, long after whatever introduction supposedly caused the
@@ -264,6 +290,31 @@ export async function recordReferral(
   return { ok: true };
 }
 
+/** What one referral earns on a qualifying order — the whole of the arithmetic.
+ *
+ *  ⚠️ THE CAP IS A PUBLISHED PROMISE, NOT A DISPLAY FIELD. `/refer` and the join
+ *  flow both render "the most you can earn on any one referral is $X" from the
+ *  same number, so a cap that is stored, snapshotted and advertised but never
+ *  subtracted advertises a maximum the engine ignores. That is misleading
+ *  conduct before it is an overpayment.
+ *
+ *  ⚠️ NULL IS NOT 0. Blank in the ops field means "render no cap clause at all";
+ *  a typed 0 means "capped at nothing". Two different promises, and collapsing
+ *  them here would make the uncapped case pay nothing.
+ *
+ *  Pure and exported so the ceiling can be tested without an order, a project and
+ *  a running Worker behind it — the reason it went unnoticed was that the only
+ *  way to see this number was to place an order. */
+export function earningAmount(
+  base: number,
+  ratePercent: number,
+  capAmount: number | null | undefined,
+): number {
+  const gross = Math.round(base * ratePercent) / 100;
+  if (capAmount === null || capAmount === undefined || !Number.isFinite(capAmount)) return gross;
+  return Math.min(gross, capAmount);
+}
+
 /** The referred tradie's first order exists — create the earning it owes.
  *
  *  PENDING, not payable. The customer has accepted a quote, which is not the same
@@ -326,7 +377,10 @@ export async function onOrderCreated(env: Env, orderId: string): Promise<void> {
       // eligible" with a reason rather than a referral that appears to have
       // silently evaporated, and ops needs a row to un-void when a judgement call
       // goes the other way on a near-miss.
-      qualifies ? Math.round(base * referral.rate_percent) / 100 : 0,
+      // Measured against the SNAPSHOT cap, exactly as the minimum above is: the
+      // ceiling that applies is the one the referrer was told about when the
+      // introduction was made, never a figure someone changed in ops afterwards.
+      qualifies ? earningAmount(base, referral.rate_percent, referral.cap_amount) : 0,
       qualifies ? "pending" : "void",
       qualifies ? null : "below_minimum_order",
       qualifies ? null : new Date().toISOString(),

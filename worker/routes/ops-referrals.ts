@@ -337,6 +337,12 @@ opsReferrals.post("/link", async (c) => {
     // Not 'link': no cookie was involved. A tradie wrote a code on a form and a
     // human typed it in, which is what manual has always meant here.
     source: "manual",
+    // ⚠️ THE ONLY PLACE THIS IS TRUE, and it is a literal rather than anything
+    // read from the body. Correcting a mistyped link means writing over the void
+    // that undid it — a remedy that belongs to the person who made the mistake,
+    // not to the account it was decided against. The customer's own claim
+    // endpoint calls this same function and never passes it.
+    revive: true,
   });
   if (recorded.ok === false) return c.json({ error: recorded.error }, 400);
   return c.json({ ok: true });

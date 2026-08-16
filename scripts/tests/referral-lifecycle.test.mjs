@@ -279,6 +279,24 @@ test("T3 — the payability predicate", { timeout: 120_000 }, async (t) => {
     );
   });
 
+  await t.test("AC-19 — the advertised cap is arithmetic, not decoration", () => {
+    // /refer and the join flow both promise "the most you can earn on any one
+    // referral is $X" from this figure. A cap that is snapshotted, published and
+    // rendered but never subtracted is an advertised maximum the engine ignores —
+    // which is the misleading-conduct shape, not merely an overpayment.
+    assert.equal(typeof M.earningAmount, "function", "referrals.ts must export earningAmount");
+
+    // $9,090.91 ex-GST goods at 1% — the figure the AC-16 order test produces.
+    assert.equal(M.earningAmount(9090.91, 1, null), 90.91, "NULL is uncapped, and stays uncapped");
+    assert.equal(M.earningAmount(9090.91, 1, undefined), 90.91, "and so is an absent cap");
+    assert.equal(M.earningAmount(9090.91, 5, 100), 100, "over the cap earns exactly the cap, to the cent");
+    assert.equal(M.earningAmount(9090.91, 1, 100), 90.91, "under the cap is untouched — a cap is a ceiling, not a rate");
+    // ⚠️ NULL IS NOT 0. Blank in the ops field means "render no cap clause at
+    // all"; a typed 0 means "capped at nothing". They are different promises and
+    // must stay different values.
+    assert.equal(M.earningAmount(9090.91, 1, 0), 0, "a cap of 0 is a real cap of zero");
+  });
+
   await t.test("AC-43/§10A.2 — the payout email is never handed the bank digits", () => {
     // The function takes the WHOLE payout group, because that is what the run
     // holds, and hands on four facts. A compromised or mis-authored Sanity
@@ -852,6 +870,62 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       // The rate is copied from the referral's snapshot, not re-read from config.
       assert.equal(rows[0].rate_percent, 1);
       assert.equal(rows[0].amount, 90.91);
+    });
+
+    await t.test("AC-19/AC-23 — the cap that applies is the one snapshotted, not today's", async () => {
+      // The cap is set BEFORE the introduction is made and raised afterwards. What
+      // the referrer was told at the time is what governs — the same rule the
+      // qualifying minimum already follows, and the reason every figure is frozen
+      // onto the referral row rather than read live at payout.
+      await sql("UPDATE referral_program SET cap_amount = 50 WHERE id = 'default'");
+      try {
+        const referrer = new Session(baseUrl);
+        await login(referrer, "/api/auth", "cap.referrer@example.com");
+        await sql("UPDATE user SET abn='51824753556' WHERE email='cap.referrer@example.com'");
+        await requestJson(referrer, "/api/account/payout-details", {
+          method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+        });
+        const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+        const mate = new Session(baseUrl);
+        await login(mate, "/api/auth", "cap.mate@example.com");
+        await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+
+        const snapshot = await sql(
+          `SELECT cap_amount FROM referral
+            WHERE referred_user_id = (SELECT id FROM user WHERE email='cap.mate@example.com')`,
+        );
+        assert.equal(snapshot[0].cap_amount, 50, "the cap is frozen onto the referral when it is recorded");
+
+        // Ops raises it after the fact. Nothing already promised may move.
+        await sql("UPDATE referral_program SET cap_amount = 500 WHERE id = 'default'");
+
+        await sql(
+          `INSERT INTO project
+             (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+           VALUES ('p-cap', (SELECT id FROM user WHERE email='cap.mate@example.com'),
+                   'Capped quote','OF-Q-88031','quote_issued','issued',0);
+           INSERT INTO quote_line
+             (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+           VALUES ('ql-cap','p-cap','W01','amj80-series-awning-window',
+                   '{"width":"900","height":"1200"}','{}',1,10000,'ready',0);`,
+        );
+        await requestJson(mate, "/api/projects/p-cap/accept", { method: "POST" });
+
+        const rows = await sql(
+          `SELECT e.base_amount, e.amount, e.status FROM referral_earning e
+             JOIN "order" o ON o.id = e.order_id WHERE o.project_id = 'p-cap'`,
+        );
+        assert.equal(rows.length, 1);
+        assert.equal(rows[0].base_amount, 9090.91, "the base is unaffected by the ceiling above it");
+        // 1% of $9,090.91 is $90.91, and the referrer was promised at most $50.
+        assert.equal(rows[0].amount, 50, "an over-cap order earns exactly the cap that was advertised to them");
+        assert.equal(rows[0].status, "pending", "capped is not the same as disqualified");
+      } finally {
+        // Left set, every later referral in this file would snapshot a cap and the
+        // queue arithmetic below would quietly become a test of something else.
+        await sql("UPDATE referral_program SET cap_amount = NULL WHERE id = 'default'");
+      }
     });
 
     await t.test("AC-20 — paid in full is the payability instant; a deposit is not", async () => {
@@ -1598,6 +1672,79 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       );
       assert.equal(live.length, 1, "exactly one live referral after the correction");
       assert.equal(live[0].code, rightCode.code, "and it is the right tradie's");
+    });
+
+    await t.test("AC-47/A9 — a customer cannot undo a void, or shop for another referrer", async () => {
+      // The revival above is a STAFF remedy, and the same function serves the
+      // customer's claim endpoint. Unguarded, the remedy is the attack: A signs up
+      // on B's link, Ops sees the shared phone and voids it with a reason, and A —
+      // who has not ordered — simply POSTs the code again. The relationship comes
+      // back with a fresh window, the commission and discount go live, and the
+      // staff member's recorded reason is erased by the same statement.
+      //
+      // `canEnterCode` on the referrer screen already considers void rows. That is
+      // a check on the client and nowhere on the server, which is not a check.
+      const host = new Session(baseUrl);
+      await login(host, "/api/auth", "revive.host@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='revive.host@example.com'");
+      await requestJson(host, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "Host Tradie" },
+      });
+      const { body: hostCode } = await requestJson(host, "/api/account/referrals");
+
+      const other = new Session(baseUrl);
+      await login(other, "/api/auth", "revive.other@example.com");
+      await sql("UPDATE user SET abn='53004085616' WHERE email='revive.other@example.com'");
+      await requestJson(other, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "87654321", accountName: "Other Tradie" },
+      });
+      const { body: otherCode } = await requestJson(other, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "revive.mate@example.com");
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: hostCode.code } });
+      const recorded = await sql(
+        `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='revive.mate@example.com')`,
+      );
+      await requestJson(staff, `/api/ops/referrals/${recorded[0].id}/void`,
+        { method: "POST", json: { reason: "same person — self-referral" } });
+
+      // The forbidden action, attempted against the running system.
+      const retry = await mate.request("/api/account/referrals/claim", {
+        method: "POST", json: { code: hostCode.code },
+      });
+      assert.equal(retry.status, 400, "re-claiming a voided code must be refused");
+      assert.equal((await retry.json()).error, "already_referred");
+
+      // And the other half: a void must not become a way to go shopping.
+      const shopping = await mate.request("/api/account/referrals/claim", {
+        method: "POST", json: { code: otherCode.code },
+      });
+      assert.equal(shopping.status, 400, "nor may a different referrer be claimed after a void");
+      assert.equal((await shopping.json()).error, "already_referred");
+
+      // The staff decision, intact. This is the part that makes it more than an
+      // overpayment: the reason someone recorded is the record of why money did
+      // not go out, and the revival statement nulls it.
+      const after = await sql(
+        `SELECT status, void_reason, voided_by, voided_at, code FROM referral WHERE id = '${recorded[0].id}'`,
+      );
+      assert.equal(after[0].status, "void", "the void stands");
+      assert.equal(after[0].void_reason, "same person — self-referral", "and its reason survives the attempt");
+      assert.ok(after[0].voided_by, "with who decided it");
+      assert.ok(after[0].voided_at, "and when");
+      assert.equal(after[0].code, hostCode.code, "and it was not quietly re-pointed at someone else");
+
+      // Ops keeps the remedy. Nothing above may cost staff the correction path.
+      await requestJson(staff, "/api/ops/referrals/link",
+        { method: "POST", json: { email: "revive.mate@example.com", code: otherCode.code } });
+      const corrected = await sql(
+        `SELECT code, status FROM referral
+          WHERE referred_user_id = (SELECT id FROM user WHERE email='revive.mate@example.com')`,
+      );
+      assert.equal(corrected.length, 1, "still one row per account");
+      assert.equal(corrected[0].status, "recorded");
+      assert.equal(corrected[0].code, otherCode.code, "staff can still correct a mistaken void");
     });
 
     await t.test("AC-40 — the payout queue groups by referrer and reads the details once", async () => {
