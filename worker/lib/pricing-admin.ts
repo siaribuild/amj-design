@@ -50,7 +50,7 @@ export class VersionConflict extends Error {
  *  mechanism sitting beside Cloudflare's own observability tooling. A bad
  *  edit is corrected by typing the right numbers back in. */
 export async function applyPricingChange(env: Env, args: {
-  table: "pricing_rate_card" | "pricing_option_surcharge" | "pricing_modifier" | "pricing_policy" | "delivery_zone";
+  table: "pricing_rate_card" | "pricing_option_surcharge" | "pricing_modifier" | "pricing_policy" | "delivery_zone" | "referral_program";
   rowId: string;
   actor: string;
   before: Record<string, unknown> & { version?: string };

@@ -19,6 +19,7 @@ import { enquiries } from "./routes/enquiries";
 import { referrals } from "./routes/referrals";
 import { parse } from "./routes/parse";
 import { ops } from "./routes/ops";
+import { opsReferrals } from "./routes/ops-referrals";
 import { integrations } from "./routes/integrations";
 import { debug } from "./routes/debug";
 import { buildSitemap, buildRobots, renderShell } from "./lib/shell";
@@ -83,6 +84,7 @@ api.route("/api", parse);
 
 // Internal ops console API (staff-gated).
 api.route("/api/ops", ops);
+api.route("/api/ops/referrals", opsReferrals);
 
 // Inbound webhooks (Sanity publish → catalogue cache invalidation).
 api.route("/api/integrations", integrations);

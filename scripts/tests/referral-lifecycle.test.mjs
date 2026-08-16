@@ -1364,6 +1364,40 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.match(title, /refer a mate/i, "with a title about this page, not the site's default");
     });
 
+    await t.test("AC-63 — ops reads and writes the program, and a stale save is refused", async () => {
+      // Every advertised figure in the feature comes from this row, so the screen
+      // that edits it is the one place a typo becomes a public promise. The
+      // versioned write is why: two founders both in the console on the same
+      // afternoon is an ordinary event, and a silent last-write-wins is how one
+      // of them loses a change without ever knowing.
+      const { body: read } = await requestJson(staff, "/api/ops/referrals/program");
+      assert.equal(read.program.ratePercent, 1);
+      assert.equal(read.program.discountPercent, 2.5);
+      assert.ok(read.version, "a version to write back against");
+
+      const { body: saved } = await requestJson(staff, "/api/ops/referrals/program", {
+        method: "PUT",
+        json: { ...read.program, ratePercent: 1.5, expectedVersion: read.version },
+      });
+      assert.equal(saved.program.ratePercent, 1.5);
+      assert.notEqual(saved.version, read.version, "the version moves on every write");
+
+      // The public endpoint must now advertise the new rate — that is the whole
+      // point of the figure living in config rather than in a string.
+      const { program: live } = await (await fetch(new URL("/api/referral/program", baseUrl))).json();
+      assert.equal(live.ratePercent, 1.5, "the site advertises what ops just set");
+
+      // A second editor holding the old version is refused rather than silently
+      // overwriting the first.
+      const stale = await requestJson(staff, "/api/ops/referrals/program", {
+        method: "PUT",
+        json: { ...read.program, ratePercent: 9, expectedVersion: read.version },
+      }, 409);
+      assert.equal(stale.body.error, "version_conflict");
+
+      await sql("UPDATE referral_program SET rate_percent=1 WHERE id='default'");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank
