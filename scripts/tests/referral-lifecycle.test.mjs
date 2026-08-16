@@ -860,6 +860,44 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(held[0].confirmed_at, null, "and the payability clock must not start");
     });
 
+    await t.test("AC-18 — an order under the minimum is recorded as void, not skipped", async () => {
+      // The row is CREATED and voided rather than never written. A referrer whose
+      // mate ordered $900 of windows should see "Not eligible" with a reason, not
+      // a referral that appears to have silently evaporated — and ops needs
+      // something to un-void when a judgement call goes the other way.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "small.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='small.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "small.mate@example.com");
+      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await sql(
+        `INSERT INTO project
+           (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+         VALUES ('p-small', (SELECT id FROM user WHERE email='small.mate@example.com'),
+                 'Small quote','OF-Q-88004','quote_issued','issued',0);
+         INSERT INTO quote_line
+           (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+         VALUES ('ql-small','p-small','W01','amj80-series-awning-window',
+                 '{"width":"900","height":"1200"}','{}',1,1100,'ready',0);`,
+      );
+      await requestJson(mate, "/api/projects/p-small/accept", { method: "POST" });
+
+      const rows = await sql(
+        `SELECT e.status, e.void_reason, e.amount FROM referral_earning e
+           JOIN "order" o ON o.id = e.order_id WHERE o.project_id = 'p-small'`,
+      );
+      assert.equal(rows.length, 1, "the row exists so the referrer can be told why");
+      assert.equal(rows[0].status, "void");
+      assert.equal(rows[0].void_reason, "below_minimum_order");
+      assert.equal(rows[0].amount, 0, "and nothing is owed");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank

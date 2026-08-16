@@ -236,7 +236,7 @@ export async function onOrderCreated(env: Env, orderId: string): Promise<void> {
   const referral = await env.DB
     .prepare("SELECT * FROM referral WHERE referred_user_id = ? AND status = 'recorded'")
     .bind(order.owner_user_id)
-    .first<{ id: string; rate_percent: number; cap_amount: number | null; expires_at: string }>();
+    .first<{ id: string; rate_percent: number; cap_amount: number | null; min_order_amount: number; expires_at: string }>();
   if (!referral) return;
   // Derived-expired: an order placed after the window closed earns nothing, and
   // the referral needs no stored "expired" flag to say so.
@@ -260,15 +260,27 @@ export async function onOrderCreated(env: Env, orderId: string): Promise<void> {
   // the customer would be right. Delivery is excluded by construction, not by
   // subtraction: it is never passed in.
   const base = taxBreakdown("ex", { lineTotalsInc, deliveryInc: 0, totalInc: goodsInc }).goods;
+  // Measured against the SNAPSHOT minimum, not today's config: the floor that
+  // applies is the one the referrer was told about when the introduction was made.
+  const qualifies = base >= referral.min_order_amount;
 
   await env.DB
     .prepare(
-      `INSERT INTO referral_earning (id, referral_id, order_id, base_amount, rate_percent, amount, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+      `INSERT INTO referral_earning
+         (id, referral_id, order_id, base_amount, rate_percent, amount, status, void_reason, voided_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       uuid(), referral.id, orderId, base, referral.rate_percent,
-      Math.round(base * referral.rate_percent) / 100,
+      // Below the qualifying minimum the row is still WRITTEN, and voided — not
+      // skipped. A referrer whose mate ordered under the floor should see "Not
+      // eligible" with a reason rather than a referral that appears to have
+      // silently evaporated, and ops needs a row to un-void when a judgement call
+      // goes the other way on a near-miss.
+      qualifies ? Math.round(base * referral.rate_percent) / 100 : 0,
+      qualifies ? "pending" : "void",
+      qualifies ? null : "below_minimum_order",
+      qualifies ? null : new Date().toISOString(),
     )
     .run();
 }
