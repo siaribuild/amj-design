@@ -310,8 +310,26 @@ been done in it, not how long it has been sitting there.
 ## 8. Open — for the PM to raise
 
 - ~~**O1.**~~ **Closed 2026-08-17 — see D19.** No customer-facing note.
-- **O2.** How long the soak in §7 runs before deletion. Recommendation: measured in
-  real quotes issued through ops2 across a full working week, not in days elapsed.
+- ~~**O2.**~~ **Closed 2026-08-17.** No fixed soak period. Deletion happens when the
+  owner judges ops2 ready, on the same basis as everything else in this project:
+
+  > "I'm not fussed about that. The fact is, anything that will come up from that
+  > will be better than the current ops. So I'm not going to judge unknowns (ops2)
+  > with unknow unknowns (ops2 that might have been even better). Let's just build
+  > the best one from the get go, and I will be a judge and a guide along the way."
+
+  The §7 mechanism stands unchanged — switch-over and deletion remain two events,
+  the fire escape exists, the RBAC paths stay additive — but its duration is a
+  judgement call, not a metric to satisfy.
+
+  **This is also standing guidance for every stage that follows.** Do not spend
+  effort hedging against hypothetical better versions of the work, and do not
+  design process to manage that risk. Build the best thing available now; the owner
+  reviews and steers as it goes. Where a decision is genuinely reversible, take it
+  and move — the cost of deliberation is real and the cost of being wrong usually
+  is not.
+
+**The frontier is empty. No decisions remain outstanding.**
 
 ---
 
