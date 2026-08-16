@@ -70,9 +70,20 @@ function main() {
 
   const cwd = payload?.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd()
   const bin = probityBin(cwd)
-  const result = bin
-    ? spawnSync(process.execPath, [bin, '--agent', 'claude-code'], { input: forward, encoding: 'utf8' })
-    : spawnSync('npx', ['@nizos/probity', '--agent', 'claude-code'], { input: forward, encoding: 'utf8', shell: true })
+  if (!bin) {
+    // Fail closed, like Probity itself: no local @nizos/probity means the TDD
+    // gate cannot run, so block rather than silently skip. (No shell fallback
+    // on purpose — a shell-spawned npx is needless attack surface.)
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: 'probity-subagent-shim: @nizos/probity is not installed in this repo (node_modules/@nizos/probity missing). Run `npm install` so the TDD gate can evaluate this action.'
+      }
+    }) + '\n')
+    return
+  }
+  const result = spawnSync(process.execPath, [bin, '--agent', 'claude-code'], { input: forward, encoding: 'utf8' })
 
   if (result.stdout) process.stdout.write(result.stdout)
   if (result.stderr) process.stderr.write(result.stderr)
