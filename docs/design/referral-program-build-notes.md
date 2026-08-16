@@ -68,6 +68,29 @@ Departs from the design's table in one place, for reasons found during the build
    handler, so it has the highest blast radius in the ticket — a mistake there affects request
    routing for the whole site. Do it when everything it depends on is already proven.
 
+## Known defect inherited, not introduced: the versioned write is not atomic
+
+`applyPricingChange` (`worker/lib/pricing-admin.ts:52`) reads the current version, compares it to the
+caller's `expectedVersion`, and then calls `write(version)` — and the writes it drives are plain
+`UPDATE … WHERE id = ?` with **no `AND version = ?`**. That is time-of-check-to-time-of-use: two
+editors can both read `v1`, both pass the comparison, and the second silently overwrites the first.
+The 409 only catches an editor whose *form* was stale when they opened it, not one whose row moved
+between the check and the write.
+
+Found by the Codex review on the referral program screen. **It is not a referral defect.** The helper
+has six call sites — rate cards, option surcharges, modifiers, pricing policy, delivery zones, and now
+`referral_program` — and the referral endpoint inherited the behaviour by using the shared helper,
+which was the right thing to do rather than writing a bespoke update beside it.
+
+**Fixing it properly means changing the helper and every caller's `write` callback** to make the
+update conditional on the version and to treat "zero rows changed" as a conflict. That is a change to
+the pricing admin path, with a blast radius well outside this feature, so it is recorded here rather
+than done inside a referral ticket.
+
+**The window is small but not theoretical:** two founders both in the console on one afternoon is the
+scenario the versioning was written for in the first place, and it is the scenario where both hold the
+same version.
+
 ## For the tester
 
 **The pricing work wants the hardest re-check.** AC-49 holds on all four parts, but the golden corpus
