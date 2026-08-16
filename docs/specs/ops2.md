@@ -1,7 +1,7 @@
 # ops2 — the staff operations console, rebuilt
 
 Branch: `design/ops2-planning`
-Status: **revision 4 — governing spec. Decisions needed: none (§16 is empty).**
+Status: **revision 6 — governing spec. Decisions needed: none (§16 is empty).**
 Author: product-manager (pipeline stage 1)
 Date: 2026-08-17
 
@@ -9,7 +9,11 @@ Date: 2026-08-17
 
 **Revision 3 — the owner answered all five decisions.** Roles settled as recommended (§9.7). Triage sort settled, and it turns out to be a **type and derivation change, not a sort change** (§9.10). **Divergence is wider than I proposed and its baseline moved**: the comparison is against *the original information* — including extracted opening dimensions — not merely the estimator's recommendation, and there is no field allow-list (§9.2). **The attention surface is cut to two items**, with four moved to phase 2 rather than deleted (§9.10, §6.2). Decomposition accepted unchanged.
 
-**Revision 4 — the reversal requirement is vetoed and removed.** Owner: *"We don't expect customer's changing their mind as such: we consult them and make product decisions. No need to track change history for undo purposes."* It originated as an inference during stage 0, entered GRILL-CONCLUSIONS §2 as a load-bearing design consequence and C3 as a constraint, and reached revision 1 from there — **it was never the owner's ask.** Removed from §4, §5 (I5), §9.4 (AC-17 struck) and §9.9 (AC-45a struck); added as an explicit exclusion in §6.3. The conclusions document is being corrected upstream. **Three things are unchanged: the divergence record (§9.2), the baseline-resolution problem as R3's design work (now serving one purpose), and the audit trail — which §9.2a now defends by name**, because "no change history for undo" is precisely the sentence a later region would misread as licence to thin it.
+**Revision 4 — the reversal requirement is vetoed and removed.** Owner: *"We don't expect customer's changing their mind as such: we consult them and make product decisions. No need to track change history for undo purposes."* It originated as an inference during stage 0, entered GRILL-CONCLUSIONS §2 as a load-bearing design consequence and C3 as a constraint, and reached revision 1 from there — **it was never the owner's ask.** Removed from §4, §5 (I5), §9.4 (AC-17 struck) and §9.9 (AC-45a struck); added as an explicit exclusion in §6.3. The conclusions document is being corrected upstream.
+
+**Revision 5 — the veto's reach, scoped. A precision fix, not a change of position.** Revision 4 overreached: AC-7d claimed *the system* holds no record of intermediate values, which contradicted AC-40c's requirement that the audit trail stay unreduced. **Both requirements were right; only the claim's subject was wrong.** The audit trail *does* record before-and-after state for some actions — `audit_event.before_json` / `after_json` have existed since `migrations/0001_customer_core.sql:185-186`, `worker/lib/activity.ts:18` binds both, and production carries 90 events of which 8 have before-state and 22 have after-state. So AC-7d is rescoped to the **divergence record**, AC-6 is rephrased so an ordinary `audit_event` write is not a violation, and **§9.2a now holds the boundary explicitly in both directions.** What the owner vetoed was **building an undo capability and a new per-field, per-save journal to serve it**. He said nothing about the existing trail and was never asked to.
+
+**Revision 6 — corrections from the architect's design pass, plus one gap that pass revealed.** Three corrections, none an owner decision. **(a) §7.1 said "hash routing", which fails this spec's own AC-24** — a URL fragment never reaches the server, so Cloudflare Access's stored redirect cannot carry a deep link through a cold interactive sign-in. ops2 uses **path routing**; see `docs/adr/0002-ops2-path-routing-not-hash.md`. **(b) URL shape and shell selection** are now stated where they touch scope (§9.6, §12): `/r/<CODE>` is intercepted on every host for referrals, so ops2 records live at `/record/…`, and the fire escape is one `opsShellFor()` function with three states. **(c) A gap `docs/adr/0003` revealed:** the baseline is captured at line birth with **no backfill**, so lines predating R3 have no original to compare against — and an empty divergence record for such a line would read as *"the human agreed"* when the truth is *"we never knew"*. **AC-8a** closes that. The carry-across register now exists at `docs/ops2/register.md`; AC-35 and AC-40a are discharged.
 
 ## Inputs, and their standing
 
@@ -17,6 +21,8 @@ Date: 2026-08-17
 |---|---|
 | `docs/ops-redesign/GRILL-CONCLUSIONS.md` | **Binding**, with one correction in flight: §2's "trivial reversal" consequence and C3's "and reversals" were stage-0 inferences the owner has since vetoed (revision 4). Otherwise: D1–D19, C1–C8, §1 actors, §6 deferrals, §9 verified facts, §10 rejections. §1 is carried into §3 below **verbatim**. |
 | **The owner's answers at the revision-3 and revision-4 gates** | **Binding**, quoted verbatim where he gave words. Folded into §9.2, §9.7, §9.10, §6.2, and revision 4's removals. |
+| **`docs/adr/0001`, `0002`, `0003`** | **Architect decisions, binding on implementation.** Where one corrects an incidental claim in this spec — as `0002` corrects "hash routing" — the ADR wins and this spec is amended, because the acceptance criterion (AC-24) was always the governing statement and the routing mechanism was never a spec-level decision. |
+| **`docs/ops2/register.md`** | **The carry-across register**, built at the R1 design gate. The instrument §8 describes; discharges AC-35 and AC-40a. |
 | `docs/ops-redesign/UX-SPEC.md` **§B.4, left column only** | **Factual.** 291 rows describing the console that exists **today**. The basis of the completeness contract (§8) — with the blind spot §8.1 corrects. |
 | `docs/ops-redesign/UX-SPEC.md` **§B.4 right column, §A, §C–§G, `UX-AUDIT.md`, `README.md`, `mocks/`** | **Exploratory. Not a rule set.** Owner: *"that is not a set of instructions to follow. It is a good representation of what ops need to be able to do."* Mined for capability, never for rules, layouts or numbered rules. Not validated functionally — they were never built against real data. |
 | `docs/specs/referral-program.md`, `docs/design/referral-program-ux.md` | **Requirement source for §13.** In flight in the legacy console right now (D17); the requirement set may still move, and §13 says how that is handled. |
@@ -132,7 +138,9 @@ Adjudication is real, but it is performed conversationally and **its normal outc
 >
 > *"We don't expect customer's changing their mind as such: we consult them and make product decisions. No need to track change history for undo purposes."*
 >
-> **ops2 builds no undo, no per-edit change history, and no per-field before/after journal.** The consultation produces a decision; the decision is saved. Recorded here rather than deleted silently, because it was load-bearing across three revisions and its absence would otherwise read as an oversight. **This is not a licence to thin the audit trail — see §9.2a.**
+> **ops2 builds no undo capability, and no new per-field, per-save journal to serve one.** The consultation produces a decision; the decision is saved. Recorded here rather than deleted silently, because it was load-bearing across three revisions and its absence would otherwise read as an oversight.
+>
+> **The veto's reach, stated precisely (revision 5).** It forbids *building* a new capability. It does not reach the existing `audit_event` trail, which goes on recording exactly what it records today — including the before-and-after state it already carries for some actions. Those are different things and §9.2a holds the line between them in both directions.
 
 ---
 
@@ -165,13 +173,13 @@ Eight properties that every region of ops2 must hold. They are not features; the
 4. **Losing candidates, ranked, with reasons, one tap away** (D9).
 5. **RBAC, per user** (D5), with the three roles settled in §9.7 — replacing domain-based **role assignment**, with the domain path kept alive additively through soak (§12).
 6. **The "with manufacturer" state** on the work, visible in the queue (D10). Not a messaging system. *(Its landing-page surfacing is phase 2 — §6.2.)*
-7. **Deep links to every record and every line** (D11).
+7. **Deep links to every record and every line** (D11), on **paths** rather than fragments (ADR 0002) — see §9.6.
 8. **The landing page as an attention surface** (D12), carrying **two item classes in phase 1** — work requiring attention, and product catalogue gaps (§9.10).
-9. **Record-scoped Audit and Files, with the global lists retained** (D13). **The audit trail is carried unchanged** — §9.2a.
+9. **Record-scoped Audit and Files, with the global lists retained** (D13). **The audit trail is carried unchanged, including the before/after state it already records** — §9.2a.
 10. **Installability — add-to-home-screen** (D14). Not an App Store / Play Store app.
 11. **The referral program's ops requirements**, carried across from the legacy build (D17, §13).
 12. **Switch-over, the soak fire escape, and deletion** as three separate events (D2, C7, §12).
-13. **The carry-across register** (§8), including its dormant-capability entries (§8.1), created, discharged and closed.
+13. **The carry-across register** (§8), including its dormant-capability entries (§8.1) — **now built at `docs/ops2/register.md`** — discharged and closed.
 
 ### 6.2 Out of scope — deferred to phase 2 or later
 
@@ -198,7 +206,7 @@ Directly from GRILL-CONCLUSIONS.md §6:
 
 ### 6.3 Out of scope — permanently, or by another thread
 
-- **Undo, per-edit change history, and any per-field before/after journal kept for reverting** — vetoed by the owner at the revision-4 gate (§4). **This is not a licence to thin the audit trail, which is a different thing and is carried unchanged — §9.2a.**
+- **An undo capability, and any new per-field, per-save journal built to serve one** — vetoed by the owner at the revision-4 gate (§4). **Scoped precisely (revision 5): this forbids building something new. It does not touch the existing `audit_event` trail, which continues to record everything it records today, including the before-and-after state it already carries for some actions.** The two are different things and §9.2a holds the boundary. A save that writes an `audit_event` is not a violation of this exclusion. *(Nor is the write-once `line_baseline` of ADR 0003, which is captured at line birth and never per save — §9.2.)*
 - **Any change to Cloudflare Access, its policy, or MFA** (C8).
 - **A new hostname for ops2.** Ops is served by host prefix; Access protects that hostname and the Worker verifies a single `ACCESS_AUD`. ops2 on the **same host** under a path prefix needs no Zero Trust change and no edit to the authentication path. A new hostname would require a new audience, a list-valued `ACCESS_AUD` and widening `isOps` — security-path changes for a cosmetic reason.
 - **Multi-tenancy, ever** (C6).
@@ -209,6 +217,7 @@ Directly from GRILL-CONCLUSIONS.md §6:
 - **Building RBAC into the legacy console first** — rejected (D5).
 - **The trade account request form** — a separate thread (referral spec D19, option c). ops2 does not build it.
 - **An order Cancel control.** No cancel endpoint exists; recorded so nobody designs the button.
+- **Backfilling an original baseline onto lines that predate R3** — rejected in ADR 0003, and rightly: inventing an original from current values would fabricate the very fact the divergence record exists to report. The consequence is stated on screen instead (AC-8a).
 - **The debug thermal endpoint** (`/api/debug/thermal`, disabled whenever `THERMAL_DEBUG_KEY` is unset — which it is). Not a console surface and not surfaced by ops2. Recorded so it is not rediscovered as a gap.
 - **Estimator engine selection** (`PARSE_ENGINE`, `AI_STAGE_CACHE`, `AI_ESCALATION_MODE`, `SCAN_ENGINE` and their companions). ops2 renders what these produce; it does not expose or change them.
 
@@ -222,7 +231,7 @@ The exploratory UX-SPEC resolved `candidate_result` by *stating its absence on s
 
 Losing candidates are **shown, one tap away, ranked, with reasons**. The data is there — 3,989 rows in production, carrying exactly rank, reason and per-filter pass/fail. **The conclusions win, so ops2 adds the read endpoint.** Likewise `GET /projects/:id/building-model`, which exists and has zero callers, is called by ops2.
 
-**Revision 3 widens this further, for one purpose.** Because the divergence baseline is *the original information* including extracted opening dimensions (§9.2), the original extracted values must be **resolvable per line field at issue time**. That is a second, independent reason the evidence and building-model read paths are in scope, and it is R3's largest single design problem. *(Revision 4 note: this justification now rests on the divergence record alone. It previously also carried the reversal need, which is gone — the requirement is unchanged, only its reasons are fewer.)*
+**Revision 3 widens this further, for one purpose.** Because the divergence baseline is *the original information* including extracted opening dimensions (§9.2), the original value per field must be **available at issue time**. That is a second, independent reason the evidence and building-model read paths are in scope, and it was R3's largest single design problem — now settled by ADR 0003 (see §9.2). *(Revision 4 note: this justification rests on the divergence record alone. It previously also carried the reversal need, which is gone — the requirement is unchanged, only its reasons are fewer.)*
 
 What genuinely stays *unwired and stated* is only what has no data behind it, verified against production: `evidence_items.page_no`, `sheet_ref` and `region_json` are **NULL on all 1,000 rows** because the extractor never produces them (the write path binds real values; the producer does not). D8 covers this exactly: **the absent visual is stated, not blank.**
 
@@ -250,16 +259,16 @@ D7 fixes the first: *"Workplace first; we won't switch until everything is done 
 
 | # | Region | Contains | Why here |
 |---|---|---|---|
-| **R1** | **The frame and the record** | The responsive layout system; hash routing and deep links (D11); boot, brand, sign-in, error boundary; loud-failure handling (I6); the record — identity, phase ribbon, action bar, line table, line editor, composites, split/merge, save. | **D7.** Also the tracer bullet: sign in → open a record → change a line → watch the total move → issue. It is the thinnest slice that proves I3, I4, I5, I6 and I1 all at once, and the only honest place to discover that the layout system does not work. |
+| **R1** | **The frame and the record** | The responsive layout system; **path routing and deep links** (D11, ADR 0002); boot, brand, sign-in, error boundary; loud-failure handling (I6); the record — identity, phase ribbon, action bar, line table, line editor, composites, split/merge, save. | **D7.** Also the tracer bullet: sign in → open a record → change a line → watch the total move → issue. It is the thinnest slice that proves I3, I4, I5, I6 and I1 all at once, and the only honest place to discover that the layout system does not work. |
 | **R2** | **Identity and permission** | RBAC per user, three roles (§9.7); role assignment moved off email domain; per-endpoint authorization; the staff administration screen; the additive migration; the rollback drill. | Second, so **every region after it is built against the final gate** and the abuse battery in §10 is executed once against a stable surface rather than re-run after each new screen. R1 ships against the existing role resolution, which stays live regardless (§12). |
-| **R3** | **Derivation** | The derivation surface (D8); losing candidates ranked with reasons (D9); the `candidate_result` and `building-model` read paths (§6.4); thermal audit; learning/teach; evidence; **the divergence record at issue and its original-value resolution** (I2, §9.2). | The record's other half, and the highest-value unmet need in §3.1 — *"it should be on the screen, ready for consumption."* Depends on R1's record. **Revision 3 made this the heaviest region** — see §9.2. |
+| **R3** | **Derivation** | The derivation surface (D8); losing candidates ranked with reasons (D9); the `candidate_result` and `building-model` read paths (§6.4); thermal audit; learning/teach; evidence; **the divergence record at issue and the `line_baseline` capture** (I2, §9.2, ADR 0003). | The record's other half, and the highest-value unmet need in §3.1 — *"it should be on the screen, ready for consumption."* Depends on R1's record. **Revision 3 made this the heaviest region** — see §9.2. |
 | **R4** | **Work** | The landing page as an attention surface, two item classes (D12, §9.10); the merged queue and its saved views; the "with manufacturer" state and the four-value triage sort (D10). | The front door needs records to point at, so it follows them. |
 | **R5** | **People and archive** | Customers, enquiries/leads **including the live manufacturer handoff panel** (§3.3), the global Files list, the global Events list, record-scoped Files and Audit (D13). | Independent of R1–R4 once the frame exists; sequenced here because R6 is harder. |
 | **R6** | **Catalogue and commerce** | Products, rate cards, options, the worked-example trace, reconciliation, Settings (Commercial, Policy, Catalogue, Staff-facing policy). | **The hardest width problem in the console** (I4's consequence) — it benefits from the layout system being proven across five prior regions. |
 | **R7** | **Referrals** | The referral program's ops requirements, re-satisfied in ops2 (§13). | Sequenced after the legacy referral work settles, so the requirement set is stable when it is carried (D17). |
 | **R8** | **Installable, switched over, deleted** | Installability (D14); the switch-over deploy; the soak fire escape; the deletion commit (D2, C7, §12). | Last by definition. |
 
-**R1 does not exit design review until the carry-across register exists and every one of its rows is assigned to a region.** That is what stops region 7 discovering that nobody owned rows 233–272.
+**R1 does not exit design review until the carry-across register exists and every one of its rows is assigned to a region.** *(Discharged: `docs/ops2/register.md`, AC-35 and AC-40a.)* That is what stops region 7 discovering that nobody owned rows 233–272.
 
 ---
 
@@ -267,7 +276,7 @@ D7 fixes the first: *"Workplace first; we won't switch until everything is done 
 
 D18 gives quality to the owner: *"I will be accepting that and I consider myself competent in UX."* That is his to judge, and this spec does not attempt to score it. **What this spec carries instead is completeness**, and completeness needs an instrument that can fail.
 
-**The register** is a table with one row per capability that exists in the console today. Its rows come from **`UX-SPEC.md` §B.4's left column only** — the 291-row inventory of current behaviour, which is factual — **plus §8.1's dormant entries**, which §B.4 could not see. Its right column (the exploratory proposal of where each lands) is discarded, along with the rest of that document's rules.
+**The register lives at `docs/ops2/register.md`.** It is a table with one row per capability that exists in the console today. Its rows come from **`UX-SPEC.md` §B.4's left column only** — the 291-row inventory of current behaviour, which is factual — **plus §8.1's dormant entries**, which §B.4 could not see. Its right column (the exploratory proposal of where each lands) is discarded, along with the rest of that document's rules.
 
 Each row carries: the capability, its verbatim copy where copy is part of it, its region, **the environment in which it is exercisable**, its state, and — where let go — the owner's decision.
 
@@ -307,8 +316,8 @@ A sweep of the Worker's environment surface (`worker/types.ts`, `wrangler.jsonc`
 
 **Two things this sweep did not turn up, recorded so the next reviewer does not redo it.** `STAFF_EMAIL_DOMAINS` has a live default (`openframe.com.au`) and is set in production, so nothing behind it is dormant. `MANUFACTURER_TO` **is** set in production, so the manufacturer email handoff and the staff-side handoff panel on an enquiry are live capabilities and ordinary carry-across obligations (§3.3, region R5) — **not** part of D-1's deferral. Conflating those two is the easiest mistake available here.
 
-- **AC-40a** `[R1]` **Given** the register is created, **when** it is reviewed at R1 design review, **then** every row carries an environment value, and §8.1's three entries are present as rows with the states and dispositions recorded above.
-- **AC-40b** `[R1]` **Given** the sweep method in §8.1, **when** the register is created, **then** the sweep has been repeated over the then-current `worker/types.ts`, `wrangler.jsonc` and production role data, and any capability it finds that is not D-1, D-2 or D-3 is added as its own row rather than left to scope silence.
+- **AC-40a** `[R1]` — **discharged.** Every row in `docs/ops2/register.md` carries an environment value, and §8.1's three entries are present with the states and dispositions recorded above.
+- **AC-40b** `[R1]` **Given** the sweep method in §8.1, **when** the register is created, **then** the sweep has been repeated over the then-current `worker/types.ts`, `wrangler.jsonc` and production role data, and any capability it finds that is not D-1, D-2 or D-3 is added as its own row rather than left to scope silence. *(Partly discharged: the configuration half is recorded in the register's sweep note and found nothing new. **The production role-data half remains outstanding for R1 implementation** — a read-only query under the deploy protocol.)*
 
 ---
 
@@ -333,37 +342,44 @@ Every criterion is Given–When–Then and independently verifiable. `[Rn]` mark
 **This is wider than revision 1 proposed, in two ways that both matter.**
 
 1. **There is no field allow-list.** Revision 1 enumerated five fields. That is replaced by a rule: **every line field that carries an original value is in the comparison set.** A spec that names five fields is a spec that silently stops recording the sixth.
-2. **The baseline is the original information, not the estimator's recommendation.** A dimension read off a schedule *is* original information, so **correcting an extracted opening dimension is a divergence and is recorded** — even though the estimator never "proposed" it in the recommendation sense. The comparison set therefore spans the estimator's product proposal **and** the extracted values (`evidence_items`, the building model), resolved to one original value per line field.
+2. **The baseline is the original information, not the estimator's recommendation.** A dimension read off a schedule *is* original information, so **correcting an extracted opening dimension is a divergence and is recorded** — even though the estimator never "proposed" it in the recommendation sense. The comparison set therefore spans the estimator's product proposal **and** the extracted values.
 
 **What is unchanged:** one record per quote, written at issue, never per save and never per line (C5). Internal only (D19).
 
-> **It is a two-point comparison, not a history — and it must not be built as one.** The record compares **two values at one moment**: the original information, and what is being issued. It requires **no journal of intermediate edits, no per-save snapshots and no change log**, and nothing in this spec may be read as asking for one. If a line was edited nine times between parse and issue, the record still holds a single pair of values for each differing field. This is consistent with what the system already says about itself: `ai_review_deltas` carries the sentence *"Intermediate values between edits were not kept."*
+> **It is a two-point comparison, not a history — and it must not be built as one.** The record compares **two values at one moment**: the original information, and what is being issued. **The divergence record** requires no journal of intermediate edits, no per-save snapshots and no change log of its own, and nothing in this spec may be read as asking for one. If a line was edited nine times between parse and issue, the record still holds a single pair of values for each differing field.
+>
+> **What other subsystems record independently is not this record's business** (revision 5). The `audit_event` trail goes on doing what it does; the estimator's own tables go on holding what they hold. This paragraph constrains **how the divergence record is built**, not what the rest of the system may log.
 
-**The design consequence, stated because it is R3's largest problem.** The original value per field must be *resolvable at issue time*. Today the estimator's proposal and the extracted values live in different places (`draft_order_line` / `proposed_config_json` / `candidate_result` on one side, `evidence_items` and the building model on the other), and nothing resolves them into a single per-field baseline. Establishing that resolution — one place per fact, per the house rule — is R3's design work, not an implementation detail. **It serves the divergence record, and nothing else.**
+**How the baseline is obtained — settled by ADR 0003.** Resolving it from live tables at issue time fails on the schema's facts: `opening_instance` is updated in place by re-extraction, and a customer-configured `quote_line` is edited in place with no prior-value journal. So the baseline is a **write-once `line_baseline` row captured when a line first receives values from a non-staff source** — proposal application, schedule-parse application, or customer submission (spec A-9) — read and written only by `worker/lib/original.ts`. **This is not the journal §6.3 forbids:** it is one frozen fact per line, written once at birth, never per save, following the codebase's existing precedent for moment-frozen values (`configuration_snapshot_json`, `referral_percent_at_issue`, the delivery settle snapshot).
 
-- **AC-6** `[R3]` **Given** a quote of three lines, two of which differ from their original information, each edited five times, **when** every edit is saved, **then** **no** divergence record is written by any save, **and no per-edit or per-field history row is written by any save.**
+- **AC-6** `[R3]` **Given** a quote of three lines, two of which differ from their original information, each edited five times, **when** every edit is saved, **then** **no** divergence record is written by any save, **and no new per-field, per-save journal is written by any save.** *(Neither an `audit_event` nor the write-once `line_baseline` is a violation — the first is a different thing carried unchanged, §9.2a; the second is written at line birth, not by these saves.)*
 - **AC-7** `[R3]` **Given** that same quote, **when** it is issued, **then** exactly **one** divergence record is written for the quote, enumerating **every line field whose issued value differs from its original value**, with both values, and no per-line or per-save record exists anywhere.
 - **AC-7a** `[R3]` **Given** a line whose opening dimensions were extracted from an uploaded schedule and then corrected by staff, **when** the quote is issued, **then** that correction appears in the divergence record, with the **extracted** value as the original — demonstrating that the baseline is the original information and not only the product recommendation.
-- **AC-7b** `[R3]` **Given** a line field for which no original value exists — nothing was extracted, submitted or proposed for it — **when** the quote is issued, **then** it is **not** reported as a divergence. Absence of a baseline is not a difference.
-- **AC-7c** `[R3]` **Given** a field is added to a line in some future change, **when** it carries an original value and the issued value differs, **then** it appears in the divergence record without this spec being amended — the rule is "every field with an original value", not a list.
-- **AC-7d** `[R3]` **Given** a line edited nine times between parse and issue, **when** the quote is issued, **then** the divergence record holds exactly one original/issued pair for each differing field, and the system holds no record of the seven intermediate values.
-- **AC-8** `[R3]` **Given** a quote with no divergences at all, **when** it is issued, **then** a divergence record is written recording none, and it is distinguishable from a quote that was never issued. `ASSUMED:` an explicit empty record rather than no record — the absence of a record must not be ambiguous between "agreed with the original" and "never issued".
+- **AC-7b** `[R3]` **Given** a line field for which no original value exists — nothing was extracted, submitted or proposed for it — **when** the quote is issued, **then** it is **not** reported as a divergence. Absence of a baseline entry is not a difference.
+- **AC-7c** `[R3]` **Given** a field is added to a line in some future change, **when** it carries an original value and the issued value differs, **then** it appears in the divergence record without this spec being amended — the rule is "every field present in the baseline", not a list.
+- **AC-7d** `[R3]` **Given** a line edited nine times between parse and issue, **and** re-extraction or re-estimation having run in between, **when** the quote is issued, **then** **the divergence record** holds exactly one original/issued pair for each differing field, measured against the value the line was *born* with, and carries no intermediate values. *(Rescoped at revision 5. The subject is the record, not the system: whether the audit trail independently logged an event along the way is not this criterion's concern — §9.2a.)*
+- **AC-8** `[R3]` **Given** a quote all of whose lines have a baseline and none of which differ from it, **when** it is issued, **then** a divergence record is written recording none, and it is distinguishable from a quote that was never issued. `ASSUMED:` an explicit empty record rather than no record — the absence of a record must not be ambiguous between "agreed with the original" and "never issued".
+- **AC-8a** `[R3]` **A line with no baseline must never read as agreement.** **Given** a line created before `line_baseline` capture shipped — ADR 0003 deliberately does no backfill, so such lines exist among in-flight quotes — **when** the quote is issued, **then** the divergence record marks that line as **having no recorded original**, in a state distinct from "matched its original", and the derivation surface says the same on screen. *(Without this, the third state collapses into the second and the record would assert the human agreed with a machine proposal that was never captured. That is the one way this record could state something false.)*
 - **AC-9** `[R3]` **Given** a quote issued, returned to pricing, and issued again, **when** the second issue occurs, **then** a new divergence record is written for that issue and the prior one is retained. `ASSUMED:` supersede-and-retain rather than overwrite. *(Two issue-time snapshots is not a change history — it is one record per issue event, which is what C5 asks for.)*
 - **AC-10** `[R3]` **Given** a quote with a divergence record, **when** any customer-facing response body, email or PDF for that quote is produced, **then** no divergence text, flag or count appears in it (D19).
 
-### 9.2a The audit trail is a different thing, and it is carried unchanged
+### 9.2a Three different things, and the boundaries between them
 
-**Why this subsection exists.** Revision 4 removed undo and per-edit change history. **"No change history for undo" is not "less audit".** The two answer different questions, are read by different people for different reasons, and a later region reading §6.3 without this paragraph could reasonably thin the wrong one.
+**Why this subsection exists.** Revision 4 removed undo and per-edit change history, and revision 5 found that the removal had been phrased too widely — AC-7d claimed *the system* kept no intermediate values, which contradicted the audit trail's carry-across obligation. **The two misreadings run in opposite directions and this section guards both:** "no change history for undo" must not become licence to thin the trail, and "the audit trail is unreduced" must not become an argument for building the per-field journal the owner vetoed.
 
-| | Purpose | Granularity | Status in ops2 |
-|---|---|---|---|
-| **Undo / change history** | Let an operator put a value back | Per edit, per field | **Not built.** Vetoed (§4, §6.3). |
-| **Divergence record** | Say where the human differed from the original, once, at issue | One record per quote per issue | **In scope** (§9.2). |
-| **Audit trail** | Say who did what to which entity, when | One event per action, as today | **Carried unchanged.** |
+| | Purpose | Granularity | Consulted to revert? | Status in ops2 |
+|---|---|---|---|---|
+| **Undo / a per-field, per-save journal** | Let an operator put a value back | Per edit, per field | Yes — that is its whole point | **Not built.** Building it is vetoed (§4, §6.3). |
+| **`line_baseline`** | Hold what a line was born with, so divergence is measurable | One frozen row per line, written once | No | **In scope** (ADR 0003). |
+| **Divergence record** | Say where the human differed from the original, once, at issue | One record per quote per issue | No | **In scope** (§9.2). |
+| **Audit trail** | Say who did what to which entity, when — accountability | **Per event, not per field** | **No, never** | **Carried unchanged**, including its before/after state. |
 
-The audit trail is the existing `audit_event` stream — entity type, action, actor, timestamp, and the stored `after` payload — surfaced today as the record's History block and the global Audit list with its entity facets. Every one of those is an ordinary carry-across obligation (§B.4 rows 151, 152, 210–214).
+**What the audit trail actually is, verified rather than assumed.** `audit_event` has carried `before_json` and `after_json` since the very first migration (`migrations/0001_customer_core.sql:185-186`), and `worker/lib/activity.ts:18` binds both on every insert. In production it holds **90 events, of which 8 carry before-state and 22 carry after-state** — so it is emphatically **event-level, not field-level**, and it has never been a complete per-edit history of everything. The code says why in its own comment: `before` matters *"wherever the question is 'what did it change FROM' — money, above all"*, and the column went unused until the ops Pricing screen made rate edits a routine act rather than a migration.
+
+**So the veto does not reach it, and could not have.** What the owner declined was **building an undo capability and a new journal to serve it**. He said nothing about `audit_event`, and was never asked to — it is not a change-history-for-reverting, it is a record of what happened, kept for accountability and never consulted to put a value back. **A save in ops2 that writes an `audit_event` with before-and-after state is doing exactly what today's console does, and is required to keep doing it.**
 
 - **AC-40c** `[R5, all]` **Given** the audit trail as it exists today, **when** ops2 is complete, **then** every event kind still written is still written, the record-scoped History block and the global Events list both still render, the actor and timestamp are still shown, and **no event kind, field or retention is reduced** relative to the legacy console. Removing undo removes nothing from this trail.
+- **AC-40d** `[R6, R5]` **Given** the actions that today record before-and-after state — a rate-card edit above all — **when** ops2 performs the same action, **then** an `audit_event` is still written with the same `before_json` and `after_json` content, and the ops Pricing change history that reads it still renders. *(The specific regression this guards: a developer reading §6.3's exclusion and concluding that before-state is no longer wanted.)*
 
 ### 9.3 Width, and the two failure modes (I3, I4)
 
@@ -389,13 +405,17 @@ The audit trail is the existing `audit_event` stream — entity type, action, ac
 
 ### 9.6 Deep links (D11)
 
-- **AC-24** `[R1]` **Given** a URL addressing a specific record, **when** it is opened cold in a browser with no ops session, **then** Cloudflare Access authenticates, and after authentication the same record opens — the target survives sign-in.
+**Routing is path-based, not fragment-based** (ADR 0002). AC-24 is why: a URL fragment is never sent to the server, so Cloudflare Access's stored redirect cannot carry a deep-link target through a cold interactive sign-in, and the user lands at the console root instead of the record they were sent. The mechanism is the ADR's; the criterion below is the spec's and governs.
+
+**One URL-shape constraint that is a scope fact, not a design preference:** `worker/index.ts` intercepts `GET /r/<CODE>` **on every host** for referral redirects, ahead of the ops shell. **ops2 therefore never uses a `/r/…` path**; records live at `/record/…`. A future surface that wants a short record URL must not reach for `/r/`.
+
+- **AC-24** `[R1]` **Given** a URL addressing a specific record, **when** it is opened cold in a browser with no ops session and no Access session, **then** Cloudflare Access authenticates interactively, and after authentication **the same record opens** — the target survives sign-in. *(The half that must be verified in production, since it exercises the real Access redirect.)*
 - **AC-25** `[R1]` **Given** a URL addressing a specific line within a record, **when** it is opened, **then** that record opens with that line in view.
-- **AC-26** `[all]` **Given** any destination in ops2, **when** it is reached by navigation, **then** the address bar carries a URL that reproduces it, and the browser back control returns to the prior destination.
+- **AC-26** `[all]` **Given** any destination in ops2, **when** it is reached by navigation, **then** the address bar carries a URL that reproduces it, the browser back control returns to the prior destination, and **reloading that URL directly returns the console rather than a 404**.
 
 ### 9.7 Permission — the roles, decided (I7, D5)
 
-**Settled at the revision-3 gate: three roles ship, and the three label roles are retired.** Today four role values exist (`estimator`, `technical_reviewer`, `manager`, `admin`) but only `admin` gates anything at all; production holds three users, all `admin`.
+**Settled at the revision-3 gate: three roles ship, and the three label roles are retired.** Today four role values exist (`estimator`, `technical_reviewer`, `manager`, `admin`) but only `admin` gates anything at all; production holds three users, all `admin`. *(Where the grant is stored is ADR 0001's decision, not this spec's.)*
 
 | Role | May | May not |
 |---|---|---|
@@ -419,13 +439,13 @@ The audit trail is the existing `audit_event` stream — entity type, action, ac
 
 ### 9.8 Completeness (I8)
 
-- **AC-35** `[R1]` **Given** the carry-across register, **when** R1's design review concludes, **then** the register exists with one row per capability in `UX-SPEC.md` §B.4's left column plus §8.1's dormant entries, and every row is assigned to a region.
+- **AC-35** `[R1]` — **discharged.** The register exists at `docs/ops2/register.md` with one row per capability in `UX-SPEC.md` §B.4's left column (rows 1–272) plus §8.1's dormant entries and the appendix of non-obligations, every row assigned to a region.
 - **AC-36** `[all]` **Given** a region's implementation is complete, **when** the tester walks the register rows assigned to it, **then** every row is in one of the six states with the evidence that state requires, exercised in the environment the row records, and no row is left unassigned or unevidenced.
 - **AC-37** `[all]` **Given** a row moving to `DROPPED` or `DORMANT`, **when** it is proposed, **then** an owner-visible entry names what is let go and why, and the row is not closed until the owner has seen it.
 - **AC-38** `[R8]` **Given** the register, **when** switch-over is proposed, **then** no row is unaccounted for and every `DROPPED` and `DORMANT` row has been seen by the owner.
 - **AC-39** `[all]` **Given** copy recorded verbatim in the register — error sentences, refutations, empty states, the GST refutation paragraph, the split-coverage sentences, the worked-example step trace including the steps that did nothing — **when** the corresponding ops2 surface renders, **then** that copy is present as recorded, or the row is let go under AC-37.
 - **AC-40** `[all]` **Given** the set of API endpoints the legacy console calls, **when** ops2 is complete, **then** each is either called by ops2 or recorded as deliberately unsurfaced with a reason. Machine-checkable, and a cheap cross-check on the register.
-- **AC-40a**, **AC-40b** — see §8.1. **AC-40c** — see §9.2a.
+- **AC-40a**, **AC-40b** — see §8.1. **AC-40c**, **AC-40d** — see §9.2a.
 
 ### 9.9 Derivation (D8, D9) `[R3]`
 
@@ -434,7 +454,7 @@ The audit trail is the existing `audit_event` stream — entity type, action, ac
 - **AC-43** **Given** evidence rows whose `page_no`, `sheet_ref` and `region_json` are NULL — which is all of them in production — **when** the derivation renders, **then** the absence is stated in words on screen, and the section is neither blank nor omitted.
 - **AC-44** **Given** the derivation surface, **when** it renders, **then** every value shown is present in the data; no candidate, reason, score or page reference is invented or inferred for display.
 - **AC-45** **Given** a customer on the phone asking "why that one, and why not the cheaper one?", **when** the reviewer answers, **then** both answers are readable from the record without opening a file, a PDF, or another destination.
-- **AC-45a** — **struck at the revision-4 gate.** It required the original extracted value to be shown beside the current one, justified partly by the reversal need. Reversal is vetoed (§4), and the divergence record needs the original value **resolvable at issue** (§9.2), not displayed beside every field. Whether the derivation surface chooses to show origin values is now an ordinary design question for R3, not a requirement. *(Recorded rather than renumbered so the removal stays visible.)*
+- **AC-45a** — **struck at the revision-4 gate.** It required the original extracted value to be shown beside the current one, justified partly by the reversal need. Reversal is vetoed (§4), and the divergence record needs the original value **available at issue** (§9.2), not displayed beside every field. Whether the derivation surface chooses to show origin values is now an ordinary design question for R3, not a requirement. *(AC-8a does require the derivation surface to state the **absence** of a baseline — a different and narrower thing.)*
 
 ### 9.10 Work — the attention surface and the triage sort (D12, D10) `[R4]`
 
@@ -546,12 +566,18 @@ Recurring trouble spots in this domain, each of which must be answered by design
 
 D2 is the owner's decision and is not reopened: *"once new version of ops is ready — we will start using it and delete the old one."* No parallel running as a way of working. That is not the same as no fire escape during the changeover, and §7 of the conclusions sets out the mechanism, which this spec adopts unchanged.
 
-- **Switch-over and deletion are two events**, different commits, different deploys, separated by a soak. Between them the old console is in the bundle but not routed by default: reachable by the two founders at an unadvertised path, used only if ops2 fails at something. Nobody works in it.
+**The mechanism is one function.** Shell selection lives in a single `opsShellFor()` in `worker/index.ts` — the successor to today's `const shell = isOps ? "/ops.html" : "/index.html"` — with **three states**, each flip a one-line, versions-revertible deploy (ADR 0002):
+
+1. **Build** — legacy at the ops root, ops2 reachable at `/ops2`. Nobody's daily work moves.
+2. **Switch-over** — ops2 at the root, **legacy at `/legacy`**: the fire escape, unadvertised, reachable by the two founders, used only if ops2 fails at something. Nobody works in it.
+3. **Deletion** — legacy gone from the bundle, along with its Vite entry and the domain-based identity path.
+
+- **Switch-over and deletion are two events**, different commits, different deploys, separated by a soak.
 - **Rollback is a deploy, not a rebuild.** `wrangler versions upload` for a preview that does not move production traffic, then `wrangler versions deploy` to promote — the procedure `CLAUDE.md` already mandates for sensitive surfaces.
 - **The one real hazard is RBAC, and C8 narrows it.** Authentication does not change, so no rollback can leave anyone unable to *sign in*. What changes is role **assignment**. So the migration must be **additive**: the existing domain-based role path keeps working, untouched, for as long as the old console exists. Both resolution paths run simultaneously through the soak. Removing the domain path is part of **deletion**, not switch-over. This is why AC-34 tests a **write**, not a sign-in.
-- **Deletion** removes the old console, its Vite entry, and the domain-based identity path in one commit — trivially revertible from git. **It also removes the legacy manufacturer tab branch** (register entry D-1), which is the moment that dormant code actually leaves the build.
+- **Deletion** is trivially revertible from git. **It also removes the legacy manufacturer tab branch** (register entry D-1), which is the moment that dormant code actually leaves the build.
 
-- **AC-88** **Given** switch-over is deployed, **when** a founder opens the unadvertised legacy path, **then** the old console loads and works.
+- **AC-88** **Given** switch-over is deployed, **when** a founder opens `/legacy`, **then** the old console loads and works.
 - **AC-89** **Given** the soak, **when** deletion is proposed, **then** the register's gate (AC-38) has passed and the owner has judged ops2 ready. No fixed soak period is imposed (O2, closed).
 - **AC-90** **Given** deletion is deployed, **when** the domain-based role path is removed, **then** every ops2 identity resolves by granted role alone and no capability is lost — including the manufacturer role, which after deletion exists **only** as a per-user grant (AC-32) and whose refusals are unchanged (AC-66a).
 
@@ -593,12 +619,12 @@ The referral program's ops screens are being built **into the legacy console rig
 
 | Term | What it must capture |
 |---|---|
-| **Record** | The merged plane of a project and its order, addressed as one thing in ops. `Project` remains the container; `Record` is what ops opens. Needed because ops2 stops treating orders as a separate destination. |
+| **Record** | The merged plane of a project and its order, addressed as one thing in ops — at `/record/…`, never `/r/…`, which the Worker intercepts for referrals on every host. `Project` remains the container; `Record` is what ops opens. |
 | **Derivation** | The chain from an uploaded schedule to a proposed line: origin, extracted text, requirement derived, candidates considered, selection. Words and data, never drawings (D8). |
 | **Candidate** | One evaluated product × variant for an opening, carrying per-filter pass/fail, a human-readable reason, six score components and a rank. Recorded in `candidate_result`. **A losing candidate is a first-class thing ops shows, not an internal artefact** (D9). |
-| **Original information** | The value a line field first carried, whatever its origin — extracted from a schedule, submitted by the customer, or proposed by the estimator. **The baseline the divergence record compares against** (§9.2). One resolved original value per field, resolved at issue — **not a running journal of edits**. |
+| **Original information** | The value a line field first carried, whatever its origin — extracted from a schedule, submitted by the customer, or proposed by the estimator. **The baseline the divergence record compares against** (§9.2). Held as a write-once `line_baseline` captured at line birth (ADR 0003) — one frozen fact per line, **not a running journal of edits**. A line may have none, and that is its own state (AC-8a). |
 | **Divergence record** | The single fact recorded on a quote **at issue** naming every line field whose issued value differs from its original information. **A two-point comparison, not a history.** One per issue, never per save or per line, never customer-facing (C5, D19). |
-| **Audit trail** *(sharpen)* | Who did what to which entity, when — the existing `audit_event` stream. **A different thing from both the divergence record and from change history**, and carried into ops2 unchanged (§9.2a). |
+| **Audit trail** *(sharpen)* | Who did what to which entity, when — the existing `audit_event` stream, **event-level rather than field-level**, carrying `before_json` / `after_json` for the actions where "what did it change from" matters (money above all). **A different thing from both the divergence record and from an undo journal**, never consulted to revert anything, and carried into ops2 unchanged (§9.2a). |
 | **With manufacturer** | A state on the work meaning it is waiting on the manufacturer. **Orthogonal to `Phase`** — it is not a phase. It is the fourth value of `waitingOn`, and **the only one set by a human rather than derived** from lifecycle state (§9.10). |
 | **Attention surface** | The console's landing page: what needs doing or is critically wrong. Explicitly not a metrics dashboard (D12). Two item classes in phase 1. |
 | **Role** | A per-user grant deciding what a signed-in person may do — **Admin, Reviewer, or Manufacturer partner** (§9.7). **Distinct from Cloudflare Access**, which decides who they are. Both are required; either revocation locks someone out (C8). |
@@ -622,10 +648,10 @@ Every `ASSUMED:` in this document, collected so none is buried. Each is vetoable
 | A-6 | The tracking issue on `siaribuild/apertly` carries build regions as sub-issues and is **not** labelled `wayfinder:map`, because the frontier is empty. | §7 |
 | A-7 | `DORMANT` is a distinct register state rather than a use of `DEAD` or `DROPPED`, and dormant entries carry the same owner-visibility requirement as `DROPPED`. | §8 |
 | A-8 | The manufacturer Enquiries view (D-1) is let go rather than carried, on the basis that it has never had a user and its surface is deferred. **The owner sees this as a register entry; it is his to reverse.** | §8.1 |
-| A-9 | For a line the customer configured themselves rather than one parsed from a schedule, the **original information** is the customer's submitted values. | §9.2, §14 |
+| A-9 | For a line the customer configured themselves rather than one parsed from a schedule, the **original information** is the customer's submitted values. | §9.2, ADR 0003, §14 |
 | A-10 | The referral payouts **landing-page row** is deferred with the other four phase-2 attention items, while the payouts **screen** stays fully in scope. | §13 |
-
-*(An eleventh tag, covering the visibility affordance the reversal requirement needed, was removed at revision 4 with the requirement itself.)*
+| A-11 | **The undo veto does not reach the existing `audit_event` trail.** The owner declined building an undo capability and a journal to serve it; he was never asked about the audit trail, and it is not a revert mechanism. If he intended the trail to shrink too, this is the tag to pull. | §4, §6.3, §9.2a |
+| A-12 | **Lines predating R3 carry no original, and ops2 says so rather than guessing.** ADR 0003 does no backfill; AC-8a makes the resulting third state visible instead of letting it read as agreement. The alternative — inventing an original from current values — would make the record assert something false. | AC-8a, §6.3 |
 
 ---
 
@@ -633,9 +659,11 @@ Every `ASSUMED:` in this document, collected so none is buried. Each is vetoable
 
 **None. This list is empty.**
 
-All five decisions raised at revision 1 were answered and folded in: roles (§9.7), the triage sort (§9.10), the divergence definition (§9.2), the attention surface (§9.10 and §6.2), and the decomposition (§7). Revision 2's review finding was a silence to fix, not a scope question. **Revision 4's veto removed a requirement and created no new question** — undo was the only thing depending on it, and the divergence record, the baseline resolution and the audit trail each stand on their own.
+All five decisions raised at revision 1 were answered and folded in: roles (§9.7), the triage sort (§9.10), the divergence definition (§9.2), the attention surface (§9.10 and §6.2), and the decomposition (§7). Revision 2's review finding was a silence to fix. Revision 4's veto removed a requirement and created no new question. Revision 5 scoped a claim that had overreached. **Revision 6 folds in three architect corrections and closes one gap they revealed (AC-8a); none is an owner decision** — routing mechanism, URL shape and shell selection are engineering choices governed by criteria the spec already had, and AC-8a prevents the record from asserting something untrue, which is a correctness fix rather than a policy choice.
 
-**Two things to watch at review rather than decide now**, both tagged above so they can be vetoed rather than discovered:
+**Four things to watch at review rather than decide now**, all tagged above so they can be vetoed rather than discovered:
 
 - **A-4** — my reading of "orders requiring attention" as work in general. If the owner meant committed orders only, AC-46a narrows and the landing page loses quotes-awaiting-review, which would be a significant change to the console's front door.
 - **A-10** — deferring the referral payouts landing-page row. It is the one place where the attention-surface cut meets a carry-across obligation from work shipping right now. The loss is small (navigate rather than be prompted) and the payouts screen is untouched, but the owner should see it at R7 under AC-37.
+- **A-11** — that the undo veto stops at the audit trail. My reading is that the owner was answering a question about undo and change history, not about accountability logging, and the production data supports it: 8 before-states across 90 events is not a per-edit history by any reading. But it is his sentence, so the tag exists.
+- **A-12** — that in-flight quotes will issue with lines marked "no recorded original". This is visible to the owner the first time he issues one after R3 ships, so it is worth him knowing it is deliberate rather than a bug.
