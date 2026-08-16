@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveStaff } from "../lib/staff";
 import { applyPricingChange, VersionConflict } from "../lib/pricing-admin";
-import { payoutQueue, publicProgram, recordReferral } from "../lib/referrals";
+import { markPayoutsPaid, payoutQueue, publicProgram, recordReferral, reversePayout } from "../lib/referrals";
 
 export const opsReferrals = new Hono<{ Bindings: Env }>();
 
@@ -234,6 +234,36 @@ opsReferrals.get("/payouts", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
   return c.json(await payoutQueue(c.env, staff.id));
+});
+
+// Money went out. Recorded after the transfer is made, not before — this screen
+// tells staff who to pay; the bank is where it actually happens.
+opsReferrals.post("/payouts/mark-paid", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const body: Record<string, unknown> = await c.req.json().catch(() => ({}));
+  const userIds = Array.isArray(body.userIds) ? body.userIds.map(String) : [];
+  const reference = String(body.reference ?? "").trim();
+  if (userIds.length === 0) return c.json({ error: "no_recipients" }, 400);
+  // The bank's reference is how this is reconciled later. Without it the row
+  // says money moved and gives nobody a way to find it.
+  if (!reference) return c.json({ error: "reference_required" }, 400);
+
+  const paid = await markPayoutsPaid(c.env, {
+    userIds, reference, actorUserId: staff.id,
+    note: typeof body.note === "string" ? body.note : undefined,
+  });
+  return c.json({ paid });
+});
+
+// It bounced. One action for both real cases — a rejected transfer and a
+// mis-recorded one — because the reason is what distinguishes them and the
+// remedy is identical.
+opsReferrals.post("/payouts/:id/failed", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  await reversePayout(c.env, c.req.param("id"));
+  return c.json({ ok: true });
 });
 
 // Attach a code to an account, on the customer's say-so.

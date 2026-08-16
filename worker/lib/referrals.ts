@@ -863,6 +863,68 @@ export async function unmaskedPayoutDetails(
 /** ~11 months: one clear month before the twelve-month unclaimed-money rule. */
 const LONG_STOP_DAYS = 334;
 
+/** Record that money went out, and freeze what it went to.
+ *
+ *  The frozen copy of ABN, BSB, account number and name is the point. It is the
+ *  accountant's record of what was ACTUALLY paid, and it must not change when the
+ *  referrer later edits their details — a payment record that follows the current
+ *  value is a record of nothing.
+ *
+ *  Scoped to `status='confirmed' AND payout_id IS NULL` so a tampered or repeated
+ *  request cannot pay a pending earning, an already-paid one, or someone else's. */
+export async function markPayoutsPaid(
+  env: Env,
+  args: { userIds: string[]; reference: string; actorUserId: string; note?: string },
+): Promise<{ userId: string; payoutId: string; amount: number }[]> {
+  const queue = await payoutQueue(env, args.actorUserId);
+  const paying = [...queue.ready, ...queue.accruing].filter((g) => args.userIds.includes(g.userId));
+  const paid: { userId: string; payoutId: string; amount: number }[] = [];
+
+  for (const group of paying) {
+    const payoutId = uuid();
+    const placeholders = group.earningIds.map(() => "?").join(", ");
+    await env.DB.batch([
+      env.DB
+        .prepare(
+          `INSERT INTO referral_payout
+             (id, referrer_user_id, amount, status, reference, note, paid_at, paid_by,
+              abn, bsb, account_number, account_name)
+           VALUES (?, ?, ?, 'paid', ?, ?, datetime('now'), ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          payoutId, group.userId, group.amount, args.reference, args.note ?? null, args.actorUserId,
+          group.abn, group.bsb, group.accountNumber, group.accountName,
+        ),
+      env.DB
+        .prepare(
+          `UPDATE referral_earning SET status = 'paid', payout_id = ?
+            WHERE id IN (${placeholders}) AND status = 'confirmed' AND payout_id IS NULL`,
+        )
+        .bind(payoutId, ...group.earningIds),
+    ]);
+    paid.push({ userId: group.userId, payoutId, amount: group.amount });
+  }
+  return paid;
+}
+
+/** The transfer bounced, or was recorded against the wrong row.
+ *
+ *  The failed payout row IS the history — it is not deleted, because "we tried to
+ *  pay you and it came back" is a thing someone will ask about. Its earnings go
+ *  back to owed and detach, so the next run picks them up as if the payment had
+ *  never happened, which from the referrer's side it did not. */
+export async function reversePayout(env: Env, payoutId: string): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare("UPDATE referral_payout SET status = 'failed' WHERE id = ?").bind(payoutId),
+    env.DB
+      .prepare(
+        `UPDATE referral_earning SET status = 'confirmed', payout_id = NULL
+          WHERE payout_id = ? AND status = 'paid'`,
+      )
+      .bind(payoutId),
+  ]);
+}
+
 /** One group per referrer: one transfer, one bank line, one record.
  *
  *  Grouped rather than listed per earning because a tradie with three referrals

@@ -1579,6 +1579,53 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(/12345678/.test(JSON.stringify(log)), false, "and the record holds no numbers");
     });
 
+    await t.test("AC-45 — a payout freezes what it paid, and a reversal returns the money", async () => {
+      const { body: before } = await requestJson(staff, "/api/ops/referrals/payouts");
+      const group = before.ready.find((g) => g.name === "Queue Glazing");
+      assert.ok(group, "the group from the queue test is still waiting");
+
+      const { body: paid } = await requestJson(staff, "/api/ops/referrals/payouts/mark-paid", {
+        method: "POST", json: { userIds: [group.userId], reference: "TFR-99321" },
+      });
+      assert.equal(paid.paid.length, 1);
+
+      const row = (await sql(`SELECT * FROM referral_payout WHERE reference = 'TFR-99321'`))[0];
+      assert.ok(row, "one payout row per referrer per run");
+      assert.equal(row.amount, 181.82);
+      // FROZEN. The accountant's record of what was actually paid must not change
+      // when the referrer later edits their bank details.
+      assert.equal(row.bsb, "063000");
+      assert.equal(row.account_number, "12345678");
+
+      const earnings = await sql(
+        `SELECT status, payout_id FROM referral_earning WHERE payout_id = '${row.id}'`,
+      );
+      assert.equal(earnings.length, 2, "both earnings attached to the one payment");
+      assert.ok(earnings.every((e) => e.status === "paid"));
+
+      // The referrer edits their details afterwards; the record of what was paid
+      // must not follow them.
+      const earner = new Session(baseUrl);
+      await login(earner, "/api/auth", "queue.referrer@example.com");
+      await requestJson(earner, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "083-004", accountNumber: "99998888", accountName: "Queue Glazing" },
+      });
+      const unchanged = (await sql(`SELECT bsb, account_number FROM referral_payout WHERE id='${row.id}'`))[0];
+      assert.equal(unchanged.bsb, "063000", "the payout record is history, not a mirror");
+      assert.equal(unchanged.account_number, "12345678");
+
+      // The transfer bounced. The money goes back to owed, and the failed row is
+      // the history rather than being deleted.
+      await requestJson(staff, `/api/ops/referrals/payouts/${row.id}/failed`, { method: "POST" });
+      const failed = (await sql(`SELECT status FROM referral_payout WHERE id='${row.id}'`))[0];
+      assert.equal(failed.status, "failed");
+      const revived = await sql(
+        `SELECT status, payout_id FROM referral_earning WHERE id IN ('${group.earningIds.join("','")}')`,
+      );
+      assert.ok(revived.every((e) => e.status === "confirmed"), "owed again");
+      assert.ok(revived.every((e) => e.payout_id === null), "and detached from the failed payment");
+    });
+
     await t.test("AC-5 — an internal account has no referral surfaces, details or not", async () => {
       // Staff and customers share the user table. Exclusion here is a different
       // axis from payability: a staff member may well have a valid ABN and bank
