@@ -22,18 +22,22 @@ const stripe = (colour: string) => ({ borderLeft: `3px solid ${colour}` });
  *  and this is the door to it. The two facts that must never be adjacent live on
  *  different steps: "any account can join" here, "we need your bank details"
  *  inside the flow, so they cannot be read as one condition. */
-export function JoinInvitation({ program, muted, onJoin, onReadConditions }: {
+export function JoinInvitation({ program, muted, eyebrow, onJoin, onReadConditions }: {
   program: ReferrerScreen["program"];
   /** True when the reader has a discount card above this — the argument changes
    *  to what just happened to them, and the card steps back visually. */
   muted?: boolean;
+  /** The card's "Refer a mate" eyebrow. Off in the account section, where §5.1's
+   *  h2 already says exactly that directly above it and the two read as a
+   *  stutter; on for /refer, where the card carries its own context. */
+  eyebrow?: boolean;
   onJoin?: () => void;
   onReadConditions?: () => void;
 }) {
   const discount = pct(program.discountPercent);
   return (
     <div className="card p-5 flex flex-col gap-3" style={stripe(muted ? TONE.mute.bd : SAGE)}>
-      {!muted && (
+      {eyebrow && !muted && (
         <span className="text-body font-data t-label">Refer a mate</span>
       )}
       {muted ? (

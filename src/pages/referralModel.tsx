@@ -49,18 +49,25 @@ export function ReferralDataProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={{ screen, offer, loading, reload }}>{children}</Ctx.Provider>;
 }
 
-/** Does this account have a Referrals section at all?
+/** Does this account have a Referrals section at all? Yes — always.
  *
- *  Present when they have a code, OR history, OR an offer — a referred tradie
- *  with a live discount keeps the explanation for their price even when the
- *  program itself is off, because the offer is one of the three things that
- *  keeps the section alive. Otherwise the rail item is absent and /referrals
- *  sends them to /account: an empty section is worse than no section. */
-export function hasReferralSection(data: ReferralData): boolean {
-  const { screen, offer } = data;
-  if (offer) return true;
-  if (!screen) return false;
-  return Boolean(screen.code) || screen.referrals.length > 0 || screen.payoutHistory.length > 0;
+ *  It used to be conditional: a code, OR history, OR a live offer. That hid it
+ *  from the one person who most needed it. A tradie handed a code on a job site
+ *  has none of those three things, so the section — and with it the only field
+ *  in the account area for typing a code — was invisible to exactly the people
+ *  the manual capture path exists for. Half of these introductions happen where
+ *  a link never gets clicked, so that was half the attribution design out of
+ *  reach.
+ *
+ *  The owner's ruling is that it is unconditional. The cost is a rail item on
+ *  accounts that never engage; the gain is that a referral program is
+ *  discoverable rather than hidden until you already know it exists, which was
+ *  always an odd property for one to have.
+ *
+ *  Kept as a predicate rather than deleted: the callers read better for it, and
+ *  the reason above is worth somewhere to live. */
+export function hasReferralSection(_data: ReferralData): boolean {
+  return true;
 }
 
 /** Confirmed money, whole dollars, for the rail badge. Undefined when there is
