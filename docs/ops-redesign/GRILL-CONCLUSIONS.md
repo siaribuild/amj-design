@@ -198,8 +198,11 @@ decided are recorded as one fact about that quote.
 - **C5 — Recording is quote-level at issue**, never per-save (§3).
 - **C6 — Internal only.** No multi-tenancy, ever. Access by identity, admitted by
   the founders.
-- **C7 — No fallback console.** D2 means there is no old console to retreat to on
-  a bad Friday; the carry-across list is a hard gate, not a nice-to-have.
+- **C7 — No fallback console, once deletion has happened.** D2 means that after
+  switch-over completes there is nothing to retreat to; the carry-across list is a
+  hard gate, not a nice-to-have. **Switch-over and deletion are two separate
+  events** — see §7, which is how D2 is honoured without betting the business on a
+  single deploy.
 
 ---
 
@@ -215,7 +218,61 @@ decided are recorded as one fact about that quote.
   feature with its own justification, never a dependency of this redesign.
 - Offline editing with conflict resolution — explicitly not wanted (D15).
 
-## 7. Open — for the PM to raise
+## 7. Rollout and rollback
+
+D2 ("start using it and delete the old one") is the owner's decision and is not
+reopened here. What follows is how it is executed without a single bad deploy
+costing a working week — the constraint says *no parallel running as a way of
+working*, which is not the same as *no fire escape during the changeover*.
+
+**The two events are separate.** Switch-over — ops2 becomes what `ops.*` serves —
+and deletion — the old console leaves the build — are different commits, different
+deploys, separated by a soak period. Between them the old console is still in the
+bundle but not routed by default: reachable by the two founders at an explicit
+path, unadvertised, used only if ops2 fails at something. Nobody works in it. It
+is a fire escape, not a second office.
+
+**Why this costs almost nothing here:** ops2 and the old console share one API,
+one database and one Worker. There is no data migration to unwind, no second
+deploy target, no divergent state. The old console's cost during soak is bundle
+size.
+
+**Rollback is a deploy, not a rebuild.** Cloudflare Workers versioning gives an
+instant return to the previous version (`wrangler versions upload` for a preview
+URL that does not move production traffic, then `wrangler versions deploy` to
+promote — the procedure `CLAUDE.md` already mandates for sensitive surfaces). A
+bad switch-over is reversed in the time it takes to promote the prior version,
+not in the time it takes to restore a console.
+
+**The one real hazard is RBAC.** D5 replaces domain-based identity with per-user
+roles *inside ops2*. If that migration removes or repurposes what the old console
+authenticates against, the fire escape is already on fire — rolling the Worker
+back would restore a console that can no longer sign anyone in. So:
+
+- The RBAC migration must be **additive**. `migrations/` is append-only by house
+  rule; this additionally requires that the existing domain-based path keeps
+  working, untouched, for as long as the old console exists.
+- Both identity paths must be live simultaneously through the soak. Removing the
+  domain path is part of **deletion**, not switch-over.
+- The migration is a `migrations/` change, so it loads the `d1-migration-safety`
+  skill first — a table rebuild once cascade-deleted production rows, and a clean
+  local run proved nothing.
+
+**Deletion proceeds only when:** the soak has elapsed with the fire escape unused,
+and every carry-across item has been exercised on real work rather than ticked off
+a list. Deletion then removes the old console, the old Vite entry, and the
+domain-based identity path in one commit — trivially revertible from git, which is
+the last line of defence and the reason the code being deleted is not the risk
+people assume it is.
+
+**Owner's call (O2):** how long the soak runs. My recommendation is *until you
+have issued real quotes through ops2 across a full working week*, rather than a
+fixed number of days — the measure that matters is whether the work has actually
+been done in it, not how long it has been sitting there.
+
+---
+
+## 8. Open — for the PM to raise
 
 - **O1.** When a human overrides a requirement (D9 — the cheaper, marginally
   non-compliant option), does anything appear on the **customer-facing** quote?
@@ -224,7 +281,7 @@ decided are recorded as one fact about that quote.
 
 ---
 
-## 8. Facts established against the code and production data
+## 9. Facts established against the code and production data
 
 Gathered during the grill; all verified, not inferred.
 
@@ -243,7 +300,7 @@ Gathered during the grill; all verified, not inferred.
 
 ---
 
-## 9. Rejected, and why
+## 10. Rejected, and why
 
 - **Adjudication-only framing** — too passive; edits happen live on a call (§2).
 - **Region-highlighted drawing viewer** — the data does not exist, and even with it
