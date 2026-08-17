@@ -144,9 +144,6 @@ export interface ReferrerScreen {
    *  active code — it is a promise about the past, not a shareable link. */
   retainedCode: string | null;
   shareUrl: string | null;
-  /** The REFERRED side's ability to type a code. Never gated by D18: becoming a
-   *  referrer needs payout details, being referred does not. */
-  canEnterCode: boolean;
   referrals: ReferralSummary[];
   earnings: { pending: number; confirmed: number; paid: number };
   earningRows: EarningRow[];
@@ -194,23 +191,11 @@ export const getReferrerScreen = () => json<ReferrerScreen>("/api/account/referr
 export const getReferralOffer = () =>
   json<{ offer: ReferralOffer | null }>("/api/account/referral-offer").then((r) => r.offer);
 
-/** Claim a code. Resolves to the API's reason for refusing, or null when it worked.
- *
- *  RETURNS the reason rather than throwing it. Each of the six refusals maps to a
- *  different sentence a tradie reads, and a thrown Error would collapse them into
- *  one "something went wrong" — but "that's your own code" and "a code can only be
- *  added before your first order" are different problems with different fixes. */
-export async function claimReferralCode(code: string): Promise<string | null> {
-  const response = await fetch("/api/account/referrals/claim", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
-  });
-  if (response.ok) return null;
-  const body = await response.json().catch(() => ({})) as { error?: string };
-  return body.error ?? "invalid_code";
-}
+// ⚠️ NO `claimReferralCode`, AND NO SUCCESSOR TO IT (A5 r12, §6, AC-107). A
+// customer never attaches a referral to their own account, so there is nothing
+// for a client helper to call: the route is gone from the worker and answers 404.
+// Attribution happens at account creation — the `of_ref` cookie, or a staff
+// member using the Ops link action — or it does not happen.
 
 /** Join, or change where the money goes. Answers with the gate as it now stands.
  *

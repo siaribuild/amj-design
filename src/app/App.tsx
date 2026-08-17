@@ -19,7 +19,6 @@ import { HelpPage } from "../pages/AccountSections";
 import { ReferralsPage } from "../pages/ReferralsPage";
 import { ReferPage } from "../pages/ReferPage";
 import { ReferralPlacement } from "../components/referral/ReferralPlacement";
-import { getReferralProgram } from "../data/referrals";
 import { OrderDetail, ProjectDetail } from "../pages/RecordDetailPage";
 import { QuoteReviewPage } from "../pages/QuoteReviewPage";
 import { initialsOf } from "../pages/accountModel";
@@ -349,14 +348,14 @@ function Footer({ setPage, onSelectCategory, user }: {
    *  category tiles on the page itself do. */
   onSelectCategory: (c: CategorySlug) => void;
 }) {
-  // The one link here that depends on program state. Absent while the program is
-  // off, for the same reason the placements are.
-  const [referralOn, setReferralOn] = useState(false);
-  useEffect(() => {
-    let live = true;
-    getReferralProgram().then((p) => { if (live) setReferralOn(p.active); }, () => {});
-    return () => { live = false; };
-  }, []);
+  // ⚠️ THE FOOTER LINK DOES NOT DEPEND ON PROGRAM STATE (spec §4.7, AC-36,
+  // AC-62). It was gated on `active` by analogy with the placements, and the
+  // analogy does not hold: a placement PITCHES the offer in the present tense,
+  // which is the ACL s 18 / s 32(1) exposure while nobody can join (register
+  // A10). A footer link is wayfinding — it says the page exists, and the page
+  // does exist, unconditionally, indexed and in the sitemap (AC-33). Removing it
+  // while Off deletes the route to the very notice that explains the pause, for
+  // the person most likely to be looking for it.
   const go = (p: Page, category?: CategorySlug) => {
     if (category) onSelectCategory(category);
     setPage(p);
@@ -402,11 +401,11 @@ function Footer({ setPage, onSelectCategory, user }: {
               // product happened to be current, which is a developer's route into
               // the page, not a destination a visitor can mean.
               { h: "Products", ls: [["Windows", "products", "windows"], ["Doors", "products", "doors"]] },
-              // "Refer a mate" sits between Trade account and How it works. It
-              // is identical signed in or out, and disappears entirely when the
-              // program is off — a footer link to an offer nobody can take up is
-              // the same problem as a placement that still pitches one.
-              { h: "Service",  ls: [["Get a quote", "quote"], ["Trade account", "trade"], ...(referralOn ? [["Refer a mate", "refer"] as const] : []), ["How it works", "how-it-works"], ["Privacy Policy", "privacy"]] },
+              // "Refer a mate" sits between Trade account and How it works. It is
+              // identical signed in or out, and identical whether the program is
+              // On or Off (AC-36, AC-62): the page it points at is served in
+              // every status, and while Off it is where the pause is explained.
+              { h: "Service",  ls: [["Get a quote", "quote"], ["Trade account", "trade"], ["Refer a mate", "refer"], ["How it works", "how-it-works"], ["Privacy Policy", "privacy"]] },
               // "Sign in" was the ONLY sign-in control on the site that survived
               // signing in — the header hides it and the mobile drawer turns it
               // into Sign out, so the footer was the odd one out. It sent a

@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveUser } from "../lib/auth";
-import { ensureReferralCode, leaveProgram, payoutComplete, payoutMissing, publicProgram, recordReferral, referralOffer, referrerScreen, savePayoutDetails } from "../lib/referrals";
+import { ensureReferralCode, leaveProgram, payoutComplete, payoutMissing, publicProgram, referralOffer, referrerScreen, savePayoutDetails } from "../lib/referrals";
 
 export const referrals = new Hono<{ Bindings: Env }>();
 
@@ -35,21 +35,18 @@ referrals.get("/account/referrals", async (c) => {
   return c.json(await referrerScreen(c.env, user, new URL(c.req.url).origin));
 });
 
-// Manual code entry — the referred side. Half of these introductions happen on a
-// job site: B reads the code out, A types it in later. A link-only program loses
-// every one of those.
-referrals.post("/account/referrals/claim", async (c) => {
-  const user = await resolveUser(c.env, c.req.raw);
-  if (!user) return c.json({ error: "unauthorised" }, 401);
-  const body = await c.req.json<{ code?: string }>().catch(() => ({ code: "" }));
-  const recorded = await recordReferral(c.env, {
-    referredUser: user,
-    code: String(body.code ?? ""),
-    source: "manual",
-  });
-  if (recorded.ok === false) return c.json({ error: recorded.error }, 400);
-  return c.json({ ok: true });
-});
+// ⚠️ THERE IS NO `POST /account/referrals/claim` HERE, AND NONE MAY BE ADDED.
+// A5 (revision 12, owner-stated): a customer never attaches a referral to their
+// own account, at any time, in any account state. The gate this route used to
+// carry — "not once you have ordered" — bounded the window without closing it:
+// sign up, get quoted, shop the price around, then type a code the day before
+// ordering, and the discount lands on the order you were already placing. That
+// is a discount being harvested, not an introduction being rewarded.
+//
+// Attribution now happens at account creation or not at all: the `of_ref` cookie
+// consumed by `findOrCreateUser`, or `POST /api/ops/referrals/link`, which is a
+// deliberate staff act running the same `recordReferral` gates (A19, AC-106).
+// AC-107 asserts this route answers 404 — not 401, not 405.
 
 // The ENTRY step, under D18 — not a payout-time detail. Completing these is how a
 // referrer joins, so this answers with the gate rather than with a bare ok: the

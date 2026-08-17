@@ -1,0 +1,25 @@
+-- One referral owes ONE commission — the invariant, as a constraint.
+--
+-- A8, owner-stated: "Scope: FIRST ORDER ONLY, for both the commission and the
+-- discount." 0051 encoded half of that: `referral_earning.order_id UNIQUE`, with
+-- the comment "first order only: one earning per order, ever". It says one per
+-- ORDER. The rule is one per REFERRAL, and a second order carries a second id, so
+-- every order a referred tradie ever placed inside the attribution window minted
+-- another earning at the snapshot rate — each confirming at balance_paid and
+-- arriving in the payout queue as money to send.
+--
+-- `onOrderCreated` now refuses any order that is not the account's earliest, and
+-- its INSERT is conditional on this same predicate so a race cannot slip a second
+-- row past the read. This index is the guarantee behind both: a future path that
+-- writes an earning — an ops adjustment, a re-import, a replayed webhook — cannot
+-- pay one introduction twice, whatever its author believed about the caller.
+--
+-- SAFETY (d1-migration-safety): additive only. CREATE UNIQUE INDEX — no DROP, no
+-- table rebuild, no ALTER, so no ON DELETE CASCADE path is touched and no
+-- PRAGMA defer_foreign_keys is required.
+--   children affected: none — nothing in the schema REFERENCES referral_earning.
+-- It WILL refuse to apply if any referral already holds two earnings. That is the
+-- correct failure: such a pair is a commission owed twice, and it wants a human
+-- deciding which row is real before the constraint hides the question.
+CREATE UNIQUE INDEX idx_referral_earning_one_per_referral
+  ON referral_earning(referral_id);

@@ -22,7 +22,14 @@ import {
   requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
-const MIGRATION = "0051_referral_program.sql";
+// The referral program's migrations, in order. 0051 creates the four tables;
+// 0052 adds the "one earning per referral" UNIQUE index that A8's first-order
+// rule always implied and 0051 encoded only per ORDER. The AC-49c proof spans
+// the SET rather than one file: what the criterion protects is that turning the
+// referral program on disturbs no stored price, and that promise is about the
+// whole tail, not about whichever file happens to be last today.
+const MIGRATIONS = ["0051_referral_program.sql", "0052_referral_earning_one_per_referral.sql"];
+const FIRST_MIGRATION = MIGRATIONS[0];
 
 // Columns each new table must carry, from the design's §3. Named rather than
 // counted: a test that asserts a column count tells you something changed but
@@ -63,7 +70,10 @@ test("referral program — migration 0051", { timeout: 600_000 }, async (t) => {
     const priorDir = join(runDir, "migrations-pre-0051");
     await mkdir(priorDir, { recursive: true });
     const allMigrations = (await readdir(join(projectRoot, "migrations"))).filter((f) => f.endsWith(".sql")).sort();
-    for (const file of allMigrations.filter((f) => f !== MIGRATION)) {
+    // Everything BELOW the referral set, not "everything except it". Filtering by
+    // name would copy 0052 into a directory with no 0051 in it, and 0052 indexes
+    // a table 0051 creates — the "before" database would fail to build at all.
+    for (const file of allMigrations.filter((f) => f < FIRST_MIGRATION)) {
       await cp(join(projectRoot, "migrations", file), join(priorDir, file));
     }
     const priorConfig = join(runDir, "wrangler.pre-0051.json");
@@ -97,20 +107,25 @@ test("referral program — migration 0051", { timeout: 600_000 }, async (t) => {
     await d1(["migrations", "apply"]);
     const after = await checksums();
 
-    await t.test("0051 is the next migration and nothing has been renumbered past it", async () => {
-      assert.ok(allMigrations.includes(MIGRATION), `migrations/${MIGRATION} does not exist`);
-      const highest = allMigrations[allMigrations.length - 1];
-      assert.equal(highest, MIGRATION, `migrations are append-only; ${highest} sits after ${MIGRATION}`);
-      const applied = await sql("SELECT name FROM d1_migrations ORDER BY id DESC LIMIT 1");
-      assert.equal(applied[0]?.name, MIGRATION, "0051 was applied by the migration runner, not by hand");
+    await t.test("the referral migrations are the append-only tail of the directory", async () => {
+      for (const m of MIGRATIONS) assert.ok(allMigrations.includes(m), `migrations/${m} does not exist`);
+      assert.deepEqual(
+        allMigrations.slice(-MIGRATIONS.length), MIGRATIONS,
+        "migrations are append-only; something has been numbered into or past the referral set",
+      );
+      const applied = await sql(`SELECT name FROM d1_migrations ORDER BY id DESC LIMIT ${MIGRATIONS.length}`);
+      assert.deepEqual(
+        applied.map((r) => r.name).reverse(), MIGRATIONS,
+        "the referral migrations were applied by the migration runner, not by hand",
+      );
     });
 
-    await t.test("AC-49c — applying 0051 leaves every stored price bitwise unchanged", () => {
+    await t.test("AC-49c — applying the referral migrations leaves every stored price bitwise unchanged", () => {
       // Guard the guard: an empty database would make this pass vacuously.
       const quoteLines = before.find((r) => r.metric === "quote_line.line_total");
       assert.ok(quoteLines.row_count > 0, "the seeded database has priced quote lines to disturb");
       assert.notEqual(quoteLines.sum_cents, 0, "those lines carry real money");
-      assert.deepEqual(after, before, "0051 moved a stored price — see scripts/db/price-checksums.sql");
+      assert.deepEqual(after, before, "a referral migration moved a stored price — see scripts/db/price-checksums.sql");
     });
 
     for (const [table, expected] of Object.entries(EXPECTED_COLUMNS)) {
@@ -485,6 +500,21 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
     const staff = new Session(baseUrl);
     await login(staff, "/api/auth", staffEmail);
 
+    /** Attach a code to an account the way the product now allows it: a staff
+     *  member acting on an account request that carried the code (A19, AC-106).
+     *
+     *  ⚠️ THIS IS THE ONLY REMAINING WAY TO ATTACH A CODE TO A NAMED ACCOUNT, and
+     *  that is why so much of this file goes through it. The customer's own claim
+     *  endpoint was deleted in revision 12 (A5, AC-107); the other live path is
+     *  the `of_ref` cookie, which only fires inside account CREATION and so cannot
+     *  be used to set up an account a test already logged in as.
+     *
+     *  It runs the identical `recordReferral` gates, so the refusal reasons below
+     *  are the same rules the cookie path enforces — but they arrive as the ops
+     *  route's specific errors rather than the deliberately vague customer ones. */
+    const linkCode = (email, code, expected = 200) =>
+      requestJson(staff, "/api/ops/referrals/link", { method: "POST", json: { email, code } }, expected);
+
     await t.test("D18 — an account without payout details holds no code at all", async () => {
       // WITHHELD, not issued-inactive (ADR-8a). If no code exists there is
       // nothing to click, nothing to type and no cookie to set — so the window
@@ -559,11 +589,11 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(/063000/.test(JSON.stringify(log[0])), false, "nor the BSB");
     });
 
-    await t.test("a claimed code records the referral, with the promise frozen onto it", async () => {
-      // The manual path, which is the one a job-site introduction actually uses:
-      // B reads the code out, A types it in later. It is also the easier of the
-      // two to drive, so recordReferral is built here once and the link path
-      // calls the same function rather than growing a second set of gates.
+    await t.test("AC-8 — Ops linking a code at account creation records the referral, promise frozen onto it", async () => {
+      // A19. The normal path: the applicant wrote the code on their trade account
+      // request and a staff member transcribes it. `source` is 'manual' because
+      // that is exactly what happened — a human typed it — and it needed no new
+      // provenance value and no migration.
       const referrer = new Session(baseUrl);
       await login(referrer, "/api/auth", "claim.referrer@example.com");
       await sql("UPDATE user SET abn='51824753556' WHERE email='claim.referrer@example.com'");
@@ -571,15 +601,13 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
         method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
       });
       const { body: mine } = await requestJson(referrer, "/api/account/referrals");
-      assert.match(mine.code, /^[A-Z2-9]{3}-[A-Z2-9]{3}$/, "the referrer must hold a code to be claimable");
+      assert.match(mine.code, /^[A-Z2-9]{3}-[A-Z2-9]{3}$/, "the referrer must hold a code to be linkable");
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "claim.mate@example.com");
-      // requestJson throws unless the status matches, so reaching the next line
-      // IS the acceptance assertion — a 400 here would surface as its error text.
-      await requestJson(mate, "/api/account/referrals/claim", {
-        method: "POST", json: { code: mine.code },
-      });
+      // linkCode throws unless the status matches, so reaching the next line IS
+      // the acceptance assertion — a 400 here would surface as its error text.
+      await linkCode("claim.mate@example.com", mine.code);
 
       const rows = await sql(
         `SELECT source, status, rate_percent, discount_percent, min_order_amount, window_months, expires_at
@@ -599,10 +627,11 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.ok(rows[0].expires_at > new Date().toISOString().slice(0, 10), "and it expires in the future");
     });
 
-    await t.test("AC-8/AC-9/AC-11 — a claim is refused on your own code, or a second time", async () => {
+    await t.test("AC-10/AC-11/AC-106 — the link is refused on the applicant's own code, an unknown one, or a second time", async () => {
       // Three refusals that share one setup. Each is a distinct rule, but they are
-      // one behaviour from the caller's side — "this claim does not count" — and
-      // the enumerated error is how the screen tells a tradie which it was.
+      // one behaviour from the operator's side — "this link does not take" — and
+      // the enumerated error is what tells the staff member whether to ring the
+      // applicant back or drop it (AC-106: each refused with its specific reason).
       const referrer = new Session(baseUrl);
       await login(referrer, "/api/auth", "gates.referrer@example.com");
       await sql("UPDATE user SET abn='51824753556' WHERE email='gates.referrer@example.com'");
@@ -613,24 +642,22 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       // A11 — you cannot refer yourself. The table also has a CHECK, but a
       // constraint violation is a 500; the rule has to be answered, not thrown.
-      const own = await requestJson(referrer, "/api/account/referrals/claim",
-        { method: "POST", json: { code: mine.code } }, 400);
+      const own = await linkCode("gates.referrer@example.com", mine.code, 400);
       assert.equal(own.body.error, "own_code");
 
-      // An unknown code is refused the same way a dormant or staff-owned one is —
-      // deliberately indistinguishable, so a stranger cannot probe which codes are
-      // real or learn that a referrer has removed their bank details.
+      // An unknown code is refused the same way a dormant or staff-owned one is.
+      // The refusal is only specific about WHICH RULE, never about whose code it
+      // was: a stranger must not be able to sort real codes from invented ones,
+      // nor learn that a referrer has removed their bank details.
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "gates.mate@example.com");
-      const unknown = await requestJson(mate, "/api/account/referrals/claim",
-        { method: "POST", json: { code: "ZZZ-ZZZ" } }, 400);
+      const unknown = await linkCode("gates.mate@example.com", "ZZZ-ZZZ", 400);
       assert.equal(unknown.body.error, "invalid_code");
 
       // A9 — one referral per account, permanently. First recorded wins; a second
       // code is refused rather than overwriting a relationship already promised.
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
-      const second = await requestJson(mate, "/api/account/referrals/claim",
-        { method: "POST", json: { code: mine.code } }, 400);
+      await linkCode("gates.mate@example.com", mine.code);
+      const second = await linkCode("gates.mate@example.com", mine.code, 400);
       assert.equal(second.body.error, "already_referred");
       const rows = await sql(
         `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='gates.mate@example.com')`,
@@ -658,8 +685,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mateA = new Session(baseUrl);
       await login(mateA, "/api/auth", "dormant.mate@example.com");
-      const refused = await requestJson(mateA, "/api/account/referrals/claim",
-        { method: "POST", json: { code: issued.code } }, 400);
+      const refused = await linkCode("dormant.mate@example.com", issued.code, 400);
       assert.equal(refused.body.error, "invalid_code", "a dormant code must not be distinguishable");
 
       // A14 — staff cannot be a referrer. The code is planted directly because no
@@ -673,8 +699,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       );
       const mateB = new Session(baseUrl);
       await login(mateB, "/api/auth", "staffcode.mate@example.com");
-      const staffRefused = await requestJson(mateB, "/api/account/referrals/claim",
-        { method: "POST", json: { code: "STF-001" } }, 400);
+      const staffRefused = await linkCode("staffcode.mate@example.com", "STF-001", 400);
       assert.equal(staffRefused.body.error, "invalid_code", "nor a staff-owned one");
     });
 
@@ -695,8 +720,10 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       try {
         const mate = new Session(baseUrl);
         await login(mate, "/api/auth", "off.mate@example.com");
-        const refused = await requestJson(mate, "/api/account/referrals/claim",
-          { method: "POST", json: { code: live.code } }, 400);
+        // AC-62(a) — "no new referral is recorded by ANY path — cookie, or the
+        // Ops link action". Status is one of recordReferral's gates, so the
+        // privileged path is refused exactly like the automatic one.
+        const refused = await linkCode("off.mate@example.com", live.code, 400);
         assert.equal(refused.body.error, "program_off");
 
         // And a payable account that had not yet asked gets no code while off.
@@ -714,10 +741,53 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       }
     });
 
-    await t.test("AC-9 — manual entry closes once the account has ordered", async () => {
-      // A5. The link path records at signup, before any order can exist, so this
-      // gate is the manual path's alone. Without it a customer could type a mate's
-      // code years in, after the introduction that supposedly caused the sale.
+    await t.test("AC-107 — there is no self-link endpoint, and no affordance that implies one", async () => {
+      // A5, revision 12, owner-stated: "There is no surface and no endpoint by
+      // which a customer attaches a referral to their own account, at any time,
+      // in any account state."
+      //
+      // 404, NOT 401 AND NOT 405. The distinction is the whole criterion: a 401
+      // says "sign in and this will work" and a 405 says "wrong verb" — both
+      // describe a surface that exists and is merely closed to this caller. The
+      // route has to be absent, because the removed UI plus a live endpoint is
+      // exactly the state revision 12 was written to end: sign up, get quoted,
+      // shop the price around, then claim a code the day before ordering.
+      //
+      // Driven by an AUTHENTICATED, unreferred, order-free caller — the one
+      // account state under which the old endpoint returned 200 and wrote a row.
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "noclaim.mate@example.com");
+      const gone = await mate.request("/api/account/referrals/claim", {
+        method: "POST", json: { code: "ABC-123" },
+      });
+      assert.equal(gone.status, 404, "the route does not exist");
+
+      // And the screen carries no flag that would tell a client to render such a
+      // field. `canEnterCode` was the server side of the deleted surface: while
+      // it is served, a client can be written against it, and the answer it gives
+      // ("yes, this account may type a code") is one the product no longer has.
+      const { body: screen } = await requestJson(mate, "/api/account/referrals");
+      assert.equal(
+        "canEnterCode" in screen, false,
+        `the referrer screen must not advertise a code-entry affordance (${JSON.stringify(Object.keys(screen))})`,
+      );
+    });
+
+    await t.test("AC-108 — not even Ops can attach a code to an account that has already bought", async () => {
+      // ⚠️ THIS IS NOT THE OLD AC-9. That criterion described the customer's own
+      // manual-entry surface and was STRUCK in revision 12 along with the surface
+      // (A5). What survives is the gate itself, now guarding the only transcribing
+      // path left — and it is worth more there, because the Ops link is the one
+      // remaining way to attach a code to a named, preexisting account.
+      //
+      // AC-108's governing rule is "if an account already exists, it is not a
+      // referral", with the Ops link as the deliberate exception for an account
+      // being CREATED. An account that has already placed an order is past that
+      // moment by any reading: attributing it would reward an introduction that
+      // demonstrably did not cause the sale, and it is the retro-attribution the
+      // owner cut the self-link window to prevent. So the exception stops here,
+      // and it stops for staff too — a privileged path that skipped this gate
+      // would become the way around it.
       const referrer = new Session(baseUrl);
       await login(referrer, "/api/auth", "late.referrer@example.com");
       await sql("UPDATE user SET abn='51824753556' WHERE email='late.referrer@example.com'");
@@ -733,8 +803,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
          INSERT INTO "order" (id, project_id, order_no) VALUES ('o-late', 'p-late', 'OF-O-LATE');`,
       );
 
-      const refused = await requestJson(buyer, "/api/account/referrals/claim",
-        { method: "POST", json: { code: mine.code } }, 400);
+      const refused = await linkCode("late.buyer@example.com", mine.code, 400);
       assert.equal(refused.body.error, "has_order");
       const rows = await sql(
         `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='late.buyer@example.com')`,
@@ -763,17 +832,17 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       await login(sameAbn, "/api/auth", "abn.same@example.com");
       // Spaced differently on purpose: the same business, typed by a human.
       await sql("UPDATE user SET abn='51 824 753 556' WHERE email='abn.same@example.com'");
-      const refused = await requestJson(sameAbn, "/api/account/referrals/claim",
-        { method: "POST", json: { code: mine.code } }, 400);
-      // Deliberately unspecific. Naming the ABN match would tell someone probing
-      // the rules exactly which check to route around next time.
+      const refused = await linkCode("abn.same@example.com", mine.code, 400);
+      // Deliberately unspecific even here. Naming the ABN match would tell an
+      // operator — who may be reading the reason out to the applicant on the
+      // phone — exactly which check to route around next time.
       assert.equal(refused.body.error, "not_eligible");
 
       // A different ABN is an ordinary referral and must still work.
       const otherAbn = new Session(baseUrl);
       await login(otherAbn, "/api/auth", "abn.other@example.com");
       await sql("UPDATE user SET abn='53004085616' WHERE email='abn.other@example.com'");
-      await requestJson(otherAbn, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("abn.other@example.com", mine.code);
       const rows = await sql(
         `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='abn.other@example.com')`,
       );
@@ -937,7 +1006,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "earn.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("earn.mate@example.com", mine.code);
 
       // An issued quote of their own, accepted the way a customer accepts one —
       // the real path, so the hook is exercised where it actually hangs rather
@@ -987,7 +1056,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
         const mate = new Session(baseUrl);
         await login(mate, "/api/auth", "cap.mate@example.com");
-        await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+        await linkCode("cap.mate@example.com", mine.code);
 
         const snapshot = await sql(
           `SELECT cap_amount FROM referral
@@ -1026,6 +1095,125 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       }
     });
 
+    await t.test("AC-22 — a second order earns nothing more; the commission is the FIRST order only", async () => {
+      // A8: "Scope: FIRST ORDER ONLY, for BOTH the commission and the discount."
+      // The discount half is derived and correct — referralDiscountState reads the
+      // account's earliest order and reports `used` from then on. The commission
+      // half has no such guard: onOrderCreated finds the referral by
+      // `referred_user_id AND status='recorded'` and inserts, and the only
+      // uniqueness in the schema is on `order_id`, which a second order never
+      // collides with. So every order that account ever places inside the
+      // attribution window mints another earning at the snapshot rate, each one
+      // confirming at balance_paid and arriving in the payout queue as money to
+      // send. One introduction, paid for forever.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "second.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='second.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "second.mate@example.com");
+      // Through the Ops link action, which is the path A19 leaves open — not the
+      // customer claim endpoint, whose very existence is a separate finding.
+      await requestJson(staff, "/api/ops/referrals/link", {
+        method: "POST", json: { email: "second.mate@example.com", code: mine.code },
+      });
+
+      for (const [id, ref] of [["p-2nd-a", "OF-Q-88041"], ["p-2nd-b", "OF-Q-88042"]]) {
+        await sql(
+          `INSERT INTO project
+             (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+           VALUES ('${id}', (SELECT id FROM user WHERE email='second.mate@example.com'),
+                   'Second-order job','${ref}','quote_issued','issued',0);
+           INSERT INTO quote_line
+             (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+           VALUES ('ql-${id}','${id}','W01','amj80-series-awning-window',
+                   '{"width":"900","height":"1200"}','{}',1,10000,'ready',0);`,
+        );
+        await requestJson(mate, `/api/projects/${id}/accept`, { method: "POST" });
+      }
+
+      // The discount half, for contrast: correct, and derived rather than stored.
+      const { body: offer } = await requestJson(mate, "/api/account/referral-offer");
+      assert.equal(offer.offer.state, "used", "eligibility ends at the FIRST order — this half is right");
+
+      const earnings = await sql(
+        `SELECT e.amount, e.status FROM referral_earning e
+           JOIN referral r ON r.id = e.referral_id
+          WHERE r.referred_user_id = (SELECT id FROM user WHERE email='second.mate@example.com')`,
+      );
+      assert.equal(
+        earnings.length, 1,
+        `one referral owes ONE commission, on the first order only — the second order minted another (${earnings.length} rows: ${JSON.stringify(earnings)})`,
+      );
+    });
+
+    await t.test("AC-22/AC-60 — 'first order only' is about the ORDER, not about whether the first one paid", async () => {
+      // ⚠️ THE CASE THAT SEPARATES THE TWO PLAUSIBLE GUARDS. "Has this referral
+      // earned yet?" and "is this the account's first order?" agree everywhere
+      // except here, and here the first one is wrong.
+      //
+      // AC-60: with `referrer_reward_active` off, referrals still record and
+      // discounts still apply, but no commission is earned. So this mate's first
+      // order mints no earning row at all. If the guard asked "has this referral
+      // earned yet?" the answer would be no, and their SECOND order — placed
+      // after the switch came back on — would earn the commission the first one
+      // deliberately did not. One introduction, one order too late, full rate.
+      //
+      // A8 scopes the commission to the FIRST ORDER, full stop. An order that was
+      // never the first cannot become it because the first one paid nothing.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "reward.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='reward.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "reward.mate@example.com");
+      await linkCode("reward.mate@example.com", mine.code);
+
+      const job = async (id, ref) => {
+        await sql(
+          `INSERT INTO project
+             (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
+           VALUES ('${id}', (SELECT id FROM user WHERE email='reward.mate@example.com'),
+                   'Reward-switch job','${ref}','quote_issued','issued',0);
+           INSERT INTO quote_line
+             (id, project_id, external_ref, product_slug, dims_json, options_json, qty, line_total, status, position)
+           VALUES ('ql-${id}','${id}','W01','amj80-series-awning-window',
+                   '{"width":"900","height":"1200"}','{}',1,10000,'ready',0);`,
+        );
+        await requestJson(mate, `/api/projects/${id}/accept`, { method: "POST" });
+      };
+
+      await sql("UPDATE referral_program SET referrer_reward_active=0 WHERE id='default'");
+      try {
+        await job("p-rwd-a", "OF-Q-88051");
+      } finally {
+        await sql("UPDATE referral_program SET referrer_reward_active=1 WHERE id='default'");
+      }
+      const afterFirst = await sql(
+        `SELECT e.id FROM referral_earning e JOIN referral r ON r.id = e.referral_id
+          WHERE r.referred_user_id = (SELECT id FROM user WHERE email='reward.mate@example.com')`,
+      );
+      assert.equal(afterFirst.length, 0, "the reward side was off, so the first order earns nothing (AC-60)");
+
+      await job("p-rwd-b", "OF-Q-88052");
+      const afterSecond = await sql(
+        `SELECT e.amount, e.order_id FROM referral_earning e JOIN referral r ON r.id = e.referral_id
+          WHERE r.referred_user_id = (SELECT id FROM user WHERE email='reward.mate@example.com')`,
+      );
+      assert.equal(
+        afterSecond.length, 0,
+        `the second order was never the first, so it earns nothing either (${JSON.stringify(afterSecond)})`,
+      );
+    });
+
     await t.test("AC-20 — paid in full is the payability instant; a deposit is not", async () => {
       // M8. Full payment is the maturation, and it is a state the system already
       // tracks — so no hold period is invented and no clawback is needed: the
@@ -1040,7 +1228,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "paid.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("paid.mate@example.com", mine.code);
       await sql(
         `INSERT INTO project
            (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
@@ -1094,7 +1282,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "held.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("held.mate@example.com", mine.code);
       await sql(
         `INSERT INTO project
            (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
@@ -1134,7 +1322,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "small.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("small.mate@example.com", mine.code);
       await sql(
         `INSERT INTO project
            (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
@@ -1176,7 +1364,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "refund.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("refund.mate@example.com", mine.code);
       await sql(
         `INSERT INTO project
            (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
@@ -1220,7 +1408,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       // No ABN yet, so the recording-time check has nothing to compare and passes.
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "late-abn.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("late-abn.mate@example.com", mine.code);
       const recorded = await sql(
         `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='late-abn.mate@example.com')`,
       );
@@ -1270,7 +1458,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "sweep.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("sweep.mate@example.com", mine.code);
       await sql(
         `INSERT INTO project
            (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
@@ -1323,7 +1511,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "stale.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("stale.mate@example.com", mine.code);
 
       // Two projects: one they will order, one left as a draft carrying a stale
       // price. The draft's total is deliberately wrong so a re-price is visible.
@@ -1395,7 +1583,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "screen.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("screen.mate@example.com", mine.code);
       await sql(
         `INSERT INTO project
            (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
@@ -1429,16 +1617,15 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.match(screen.payout.accountMasked, /^\*+5678$/, "and an account number by its last four");
       assert.equal(/12345678/.test(JSON.stringify(screen.payout)), false, "the full number never leaves the server");
 
-      // Being a referrer and being referred are independent. This account has
-      // never been referred and has never ordered, so it may still type someone
-      // else's code — the referred side is never gated by the payout details that
-      // gate becoming a referrer.
-      assert.equal(screen.canEnterCode, true, "not yet referred and not yet ordered");
       assert.equal(screen.payoutHistory.length, 0);
       assert.equal(screen.program.ratePercent, 1, "figures for the copy, from config");
     });
 
-    await t.test("AC-53 — the referred tradie's offer is derived, and says nothing of a total", async () => {
+    // AC-71/AC-75, not AC-53. AC-53 is about the next PRICING event after the
+    // first order, and this test never places an order: what it drives is the
+    // derived three-state panel (AC-71) and the rule that it carries the referral
+    // percentage alone, never a combined total (AC-75).
+    await t.test("AC-71/AC-75 — the referred tradie's offer is derived, and says nothing of a total", async () => {
       // Three records already answer this — the referral, its expiry, and whether
       // the account has ordered — so there is no stored state to go stale. It is
       // also why the discount survives the program being switched off: the panel
@@ -1459,7 +1646,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "offer.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("offer.mate@example.com", mine.code);
 
       const { body: live } = await requestJson(mate, "/api/account/referral-offer");
       assert.equal(live.offer.state, "available");
@@ -1519,7 +1706,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "badge.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("badge.mate@example.com", mine.code);
       await sql(
         `INSERT INTO project
            (id, owner_user_id, title, public_ref, status_customer, status_internal, delivery_amount)
@@ -1566,7 +1753,7 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "flag.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: mine.code } });
+      await linkCode("flag.mate@example.com", mine.code);
       // Same phone and the same business name as the referrer. Neither is refused
       // — a shared phone is a father and son on one number as often as it is fraud
       // — but a reviewer should be told before they price the job.
@@ -1615,7 +1802,9 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.match(title, /refer a mate/i, "with a title about this page, not the site's default");
     });
 
-    await t.test("AC-63 — ops reads and writes the program, and a stale save is refused", async () => {
+    // AC-38, not AC-63. There is no AC-63 in the spec — the numbering runs 62, 64
+    // — so the tag pointed at nothing and this behaviour appeared untested.
+    await t.test("AC-38 — ops reads and writes the program, and a stale save is refused", async () => {
       // Every advertised figure in the feature comes from this row, so the screen
       // that edits it is the one place a typo becomes a public promise. The
       // versioned write is why: two founders both in the console on the same
@@ -1772,16 +1961,20 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(live[0].code, rightCode.code, "and it is the right tradie's");
     });
 
-    await t.test("AC-47/A9 — a customer cannot undo a void, or shop for another referrer", async () => {
-      // The revival above is a STAFF remedy, and the same function serves the
-      // customer's claim endpoint. Unguarded, the remedy is the attack: A signs up
-      // on B's link, Ops sees the shared phone and voids it with a reason, and A —
-      // who has not ordered — simply POSTs the code again. The relationship comes
-      // back with a fresh window, the commission and discount go live, and the
-      // staff member's recorded reason is erased by the same statement.
+    await t.test("AC-47/AC-107 — a customer cannot undo a void, or shop for another referrer", async () => {
+      // The revival above is a STAFF remedy. Under revision 11 the same function
+      // also served the customer's own claim endpoint, and the remedy was
+      // therefore the attack: A signs up on B's link, Ops sees the shared phone
+      // and voids it with a reason, and A — who has not ordered — simply POSTs
+      // the code again. The relationship comes back with a fresh window, the
+      // commission and discount go live, and the staff member's recorded reason
+      // is nulled by the same statement.
       //
-      // `canEnterCode` on the referrer screen already considers void rows. That is
-      // a check on the client and nowhere on the server, which is not a check.
+      // Revision 12 closes it by construction rather than by guard: there is no
+      // customer-reachable path into recordReferral at all. The `revive`
+      // default-deny inside it stands as the second line — an argument only the
+      // ops route passes, and passes as a literal — but the attempt below can no
+      // longer reach the function to be refused by it.
       const host = new Session(baseUrl);
       await login(host, "/api/auth", "revive.host@example.com");
       await sql("UPDATE user SET abn='51824753556' WHERE email='revive.host@example.com'");
@@ -1800,26 +1993,25 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
 
       const mate = new Session(baseUrl);
       await login(mate, "/api/auth", "revive.mate@example.com");
-      await requestJson(mate, "/api/account/referrals/claim", { method: "POST", json: { code: hostCode.code } });
+      await linkCode("revive.mate@example.com", hostCode.code);
       const recorded = await sql(
         `SELECT id FROM referral WHERE referred_user_id = (SELECT id FROM user WHERE email='revive.mate@example.com')`,
       );
       await requestJson(staff, `/api/ops/referrals/${recorded[0].id}/void`,
         { method: "POST", json: { reason: "same person — self-referral" } });
 
-      // The forbidden action, attempted against the running system.
+      // The forbidden actions, attempted against the running system as the voided
+      // party. 404 rather than 400: there is nothing left to refuse them.
       const retry = await mate.request("/api/account/referrals/claim", {
         method: "POST", json: { code: hostCode.code },
       });
-      assert.equal(retry.status, 400, "re-claiming a voided code must be refused");
-      assert.equal((await retry.json()).error, "already_referred");
+      assert.equal(retry.status, 404, "re-claiming a voided code has no surface to be refused by");
 
       // And the other half: a void must not become a way to go shopping.
       const shopping = await mate.request("/api/account/referrals/claim", {
         method: "POST", json: { code: otherCode.code },
       });
-      assert.equal(shopping.status, 400, "nor may a different referrer be claimed after a void");
-      assert.equal((await shopping.json()).error, "already_referred");
+      assert.equal(shopping.status, 404, "nor may a different referrer be reached after a void");
 
       // The staff decision, intact. This is the part that makes it more than an
       // overpayment: the reason someone recorded is the record of why money did
@@ -1845,7 +2037,9 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(corrected[0].code, otherCode.code, "staff can still correct a mistaken void");
     });
 
-    await t.test("AC-40 — the payout queue groups by referrer and reads the details once", async () => {
+    // AC-41, not AC-40. AC-40 is voiding-requires-a-reason; per-referrer grouping
+    // into exactly two groups is AC-41, which is what this drives.
+    await t.test("AC-41 — the payout queue groups by referrer and reads the details once", async () => {
       // The weekly job. One transfer per referrer, not one per earning, because
       // a person with three referrals gets one payment and one bank line.
       const earner = new Session(baseUrl);
@@ -2067,7 +2261,10 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.match(bounced.accountMasked ?? "", /5678$/, "and the earlier payment names the account it used");
     });
 
-    await t.test("AC-46/AC-30/AC-29 — the referrer's own screen carries their payment history, masked", async () => {
+    // AC-46 dropped: that criterion is the OPS DASHBOARD's "payouts ready" row,
+    // and nothing here touches the dashboard. AC-30 (history survives an edit)
+    // and AC-29 (masked on read-back) are what this actually proves.
+    await t.test("AC-30/AC-29 — the referrer's own screen carries their payment history, masked", async () => {
       // Two payments exist for this referrer by now: TFR-99321, which was
       // reversed, and TFR-FIRST, which stands. BOTH belong on their screen —
       // "we tried to pay you and it came back" is the thing someone rings up

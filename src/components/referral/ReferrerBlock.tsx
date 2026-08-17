@@ -4,7 +4,7 @@
 // B · member, empty   → code card · empty note · how you get paid
 // C · member, working → earnings · referrals · payments · how you get paid · code
 // D · left, history   → left notice + rejoin · read-only payments
-// E · program off     → ended notice · read-only earnings, list, payments
+// E · program off     → paused notice · earnings, list, payments · how you get paid
 //
 // The rate appears in exactly one of those: the invitation, where there is no
 // money on screen for it to be inverted against. Every state that shows an earned
@@ -14,7 +14,7 @@ import type { ReferrerScreen } from "../../data/referrals";
 import { TONE, fmtDate } from "../../pages/accountModel";
 import { SAGE, Btn } from "../../app/ui";
 import { pct, moneyRound, months, days } from "./format";
-import { EarningsStrip, ReferralList, PaymentsPanel, HowYouGetPaid, nextPaymentDueAt } from "./ReferrerPanels";
+import { EarningsStrip, PayoutHolds, ReferralList, PaymentsPanel, HowYouGetPaid, nextPaymentDueAt } from "./ReferrerPanels";
 
 const stripe = (colour: string) => ({ borderLeft: `3px solid ${colour}` });
 
@@ -189,8 +189,18 @@ export function ReferrerBlock({ screen, hasOffer, onJoin, onEdit, onLeave, onHow
           </p>
         </div>
         <EarningsStrip earnings={earnings} nextDueAt={dueAt} />
+        <PayoutHolds payout={payout} />
         {referrals.length > 0 && <ReferralList referrals={referrals} program={program} />}
         <PaymentsPanel history={payoutHistory} />
+        {/* ⚠️ NOT OPTIONAL WHILE OFF — THIS IS WHERE THE MONEY IS GOING. Off stops
+            new attribution and withdraws nothing already promised (AC-65): pending
+            earnings still confirm, confirmed ones still go out on the timetable
+            they were given. This panel is the only place the bank account we are
+            paying into is shown, and the only place it can be corrected or
+            withdrawn. Omitting it left a referrer watching payments land in an
+            account they could no longer read, for as long as the switch stayed
+            off — and AC-64 lists their details among the things still working. */}
+        <HowYouGetPaid payout={payout} program={program} onEdit={onEdit} onLeave={onLeave} />
       </div>
     );
   }
@@ -208,6 +218,12 @@ export function ReferrerBlock({ screen, hasOffer, onJoin, onEdit, onLeave, onHow
           </p>
           <Btn variant="sage" size="sm" onClick={onJoin}>Rejoin the program</Btn>
         </div>
+        {/* The hold that matters most here. Leaving is allowed while money is
+            still PENDING — only CONFIRMED money refuses it — and pending money
+            cannot be sent to an account we no longer hold. Without this the
+            departing referrer's screen shows a payment history and no sign that
+            anything is still owed to them. */}
+        <PayoutHolds payout={payout} />
         <PaymentsPanel history={payoutHistory} />
       </div>
     );
@@ -242,6 +258,7 @@ export function ReferrerBlock({ screen, hasOffer, onJoin, onEdit, onLeave, onHow
         {dueAt && <> · next payment due <b className="text-ink">{fmtDate(dueAt)}</b></>}
       </p>
       <EarningsStrip earnings={earnings} nextDueAt={dueAt} />
+      <PayoutHolds payout={payout} />
       <ReferralList referrals={referrals} program={program} />
       <PaymentsPanel history={payoutHistory} />
       <HowYouGetPaid payout={payout} program={program} onEdit={onEdit} onLeave={onLeave} />

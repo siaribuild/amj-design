@@ -89,11 +89,15 @@ test("AC-3 — a drawn code that is already held is redrawn, never surfaced as a
   assert.equal(env.state.updates, 2, "and the redraw must actually reach the database");
 });
 
-test("a refused claim returns its reason, rather than throwing it", async (t) => {
-  // The six refusal codes each map to a sentence a tradie reads. A thrown Error
-  // would collapse them into one "something went wrong", and the field's whole
-  // job is to say WHICH thing — "that's your own code" and "a code can only be
-  // added before your first order" are different problems with different fixes.
+test("AC-107 — the client offers no way to claim a code for your own account", async (t) => {
+  // A5 (r12, owner): there is no surface AND no endpoint. The endpoint is gone
+  // from the worker; this is the other half — the helper that called it.
+  //
+  // Asserted on the BUNDLE rather than by grep, because a helper that survives as
+  // an export is a helper a future screen can import in one line. The six refusal
+  // reasons this used to translate ("that's your own code", "a code can only be
+  // added before your first order") describe a conversation the product no longer
+  // has with anyone: attribution happens at account creation or not at all.
   const runDir = await makeRunDir("referral-client");
   t.after(async () => { await removeRunDir(runDir); });
   const outfile = join(runDir, "client-bundle.mjs");
@@ -106,16 +110,17 @@ test("a refused claim returns its reason, rather than throwing it", async (t) =>
     },
     bundle: true, format: "esm", platform: "node", outfile, logLevel: "silent",
   });
-  const { claimReferralCode } = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
+  const client = await import(`${pathToFileURL(outfile).href}?run=${Date.now()}`);
 
-  const original = globalThis.fetch;
-  t.after(() => { globalThis.fetch = original; });
-
-  globalThis.fetch = async () => new Response(JSON.stringify({ error: "has_order" }), { status: 400 });
-  assert.equal(await claimReferralCode("ABC-123"), "has_order", "the reason reaches the caller");
-
-  globalThis.fetch = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
-  assert.equal(await claimReferralCode("ABC-123"), null, "and null means it worked");
+  assert.equal(
+    "claimReferralCode" in client, false,
+    `src/data/referrals.ts must export no code-claiming helper (${JSON.stringify(Object.keys(client))})`,
+  );
+  // And nothing else in the module may reach the deleted route by another name.
+  assert.equal(
+    Object.keys(client).some((name) => /claim/i.test(name)), false,
+    "nor any successor to it (§6: 'and any successor')",
+  );
 });
 
 test("a refused leave carries the amount that refused it", async (t) => {

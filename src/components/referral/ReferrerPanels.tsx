@@ -49,6 +49,46 @@ export function EarningsStrip({ earnings, nextDueAt }: {
   );
 }
 
+/** AC-28 — the two ways a referrer's money sits still, said out loud.
+ *
+ *  ⚠️ NEITHER OF THESE MAY BE SILENT. The server has always computed both; for a
+ *  while nothing rendered either, so the strip above showed a figure that would
+ *  not move and the screen offered no account of why. That is the state a person
+ *  rings up about, and the answer they get on the phone is one they could have
+ *  read.
+ *
+ *  EACH NAMES ITS OWN RELEASE, and the two releases are nothing alike. One is a
+ *  minute of the referrer's own work — put the bank details back — and the other
+ *  is simply not yet, with no action available and none implied. Collapsing them
+ *  into one "on hold" line would tell the person who can fix it that they cannot,
+ *  and the person who cannot that they should.
+ *
+ *  NO RATE HERE, per this file's rule: these sit beside earned amounts. */
+export function PayoutHolds({ payout }: { payout: PayoutState }) {
+  const { heldPendingDetails, heldUnderThreshold } = payout;
+  if (!heldPendingDetails && !heldUnderThreshold) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      {heldPendingDetails && (
+        <p className="card px-4 py-3 text-body t-bd-sm" style={{ borderLeft: "3px solid var(--tone-work-bd)" }}>
+          <b className="text-ink">{money(heldPendingDetails.amount)}</b> is waiting on your payout details.
+          We're not holding a bank account for you, so nothing can be sent — add your details back and it
+          goes out on the next run.
+        </p>
+      )}
+      {heldUnderThreshold && (
+        <p className="card px-4 py-3 text-body t-bd-sm" style={{ borderLeft: "3px solid var(--tone-mute-bd)" }}>
+          {/* Not a problem, and phrased so it cannot be read as one: nothing is
+              wrong, nothing is owed by them, and there is no action to take. */}
+          You've <b className="text-ink">{money(heldUnderThreshold.balance)}</b> confirmed. We send payments
+          once that reaches <b className="text-ink">{money(heldUnderThreshold.threshold)}</b> — it'll go out
+          with your next referral.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ReferralList({ referrals, program }: {
   referrals: ReferralSummary[];
   program: ReferralProgramPublic;
@@ -186,9 +226,22 @@ export function HowYouGetPaid({ payout, program, onEdit, onLeave }: {
         mate's order being paid in full. Amounts include any GST payable; your own tax is between you and your
         accountant — we don't give tax advice.
       </div>
-      <div className="px-5 py-3 border-t border-black/[0.07] flex flex-wrap gap-2">
+      <div className="px-5 py-3 border-t border-black/[0.07] flex flex-wrap items-center gap-2">
         <Btn variant="outline" size="sm" onClick={onEdit}>Edit details</Btn>
         <Btn variant="ghost" size="sm" onClick={onLeave}>Leave the program</Btn>
+        {/* §5.5 — the refusal, BEFORE the click. `DELETE /account/payout-details`
+            already answers with this figure, so the alternative is a person
+            pressing Leave and being told no. Said here it is a rule with a date
+            attached; said after the click it is a rebuff.
+            The button is left enabled on purpose: disabling it would remove the
+            only place the reason can be found by someone who has not read this
+            line, and the server refuses it either way. */}
+        {payout.clearBlocked && (
+          <p className="text-body t-cap basis-full sm:basis-auto sm:flex-1 sm:min-w-[22ch]">
+            <b className="text-ink">{money(payout.clearBlocked.amount)}</b> is confirmed and hasn't gone out
+            yet — you can leave once it has.
+          </p>
+        )}
       </div>
     </section>
   );

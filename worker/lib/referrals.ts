@@ -145,16 +145,17 @@ export interface RecordReferralInput {
   /** May this overwrite a VOIDED referral? Staff only, and default-deny.
    *
    *  ⚠️ NEVER SET FROM A REQUEST BODY. The one caller that passes `true` is the
-   *  Ops link action, and it passes a literal — a customer route that read this
-   *  from JSON would hand the caller the staff remedy.
+   *  Ops link action, and it passes a literal.
    *
    *  Voiding is how staff say money is not going out and why. Revival is how they
-   *  fix their own mistyped link. Letting the referred party reach it turns the
-   *  remedy into the attack: void a self-referral, and the person it was voted
-   *  against simply claims the code again — fresh window, live commission, and the
-   *  recorded reason erased by the same statement. `source` cannot express this:
-   *  the Ops link action is `'manual'` precisely because a human transcribed a
-   *  code, which is also what the customer's own claim endpoint is. */
+   *  fix their own mistyped link. Letting the referred party reach it would turn
+   *  the remedy into the attack: void a self-referral, and the person it was
+   *  decided against records the code again — fresh window, live commission, and
+   *  the recorded reason erased by the same statement. No customer path reaches
+   *  this function at all since A5 (r12), so the default-deny is now the second
+   *  line rather than the first; it stays because `source` cannot express it —
+   *  the Ops link is `'manual'` because a human transcribed a code, and a future
+   *  transcribing surface would inherit the value without inheriting the right. */
   revive?: boolean;
 }
 
@@ -191,17 +192,14 @@ export async function recordReferral(
   // A VOIDED ROW STILL OCCUPIES THE SLOT — for everyone except staff. Counting
   // voided rows made an Ops typo permanent: link the wrong tradie, void it, and
   // the account could never be linked to the right one, the only remedy left
-  // being a hand-edit of the database. So the remedy exists — and it is
-  // DEFAULT-DENY, because the same function serves the customer's own claim
-  // endpoint, and there the remedy is the attack.
+  // being a hand-edit of the database. So the remedy exists, and it is
+  // DEFAULT-DENY: revival is a staff act, and a void must not be undoable by the
+  // party it was decided against, nor become a way to go shopping for a
+  // different referrer.
   //
-  // The reachable exploit, if this read `status = 'recorded'` for everyone: A
-  // signs up on B's link, Ops sees the shared phone and voids it with a reason,
-  // and A — who has not ordered, so the A5 gate passes — POSTs the code again.
-  // The relationship returns with a fresh window, the commission and discount go
-  // live, and the void's reason, `voided_by` and `voided_at` are nulled by the
-  // upsert. A void must not be undoable by the party it was decided against, and
-  // it must not become a way to go shopping for a different referrer either.
+  // The exploit this shape was written against is now unreachable — since A5
+  // (r12) no customer path calls this function — but the guard is cheap and the
+  // next transcribing surface would otherwise inherit the remedy by default.
   const already = await env.DB
     .prepare("SELECT id, status FROM referral WHERE referred_user_id = ?")
     .bind(input.referredUser.id)
@@ -209,10 +207,12 @@ export async function recordReferral(
   if (already && !(input.revive === true && already.status === "void")) {
     return { ok: false, error: "already_referred" };
   }
-  // A5 — MANUAL ONLY. The link path records at signup, before an order can exist,
-  // so this gate belongs to typed codes alone. Without it a customer could enter a
-  // mate's code years in, long after whatever introduction supposedly caused the
-  // sale, and claim a commission for it.
+  // AC-108 — TRANSCRIBED CODES ONLY. The cookie path records inside account
+  // creation, before an order can exist, so this gate belongs to the one path
+  // that attaches a code to a named, preexisting account: the Ops link (A19).
+  // Without it a code could be attached years in, long after whatever
+  // introduction supposedly caused the sale — and the privileged path would be
+  // the way around the rule the rest of the design is built on.
   if (input.source === "manual") {
     const ordered = await env.DB
       .prepare(`SELECT o.id FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.owner_user_id = ?`)
@@ -316,12 +316,26 @@ export function earningAmount(
   return Math.min(gross, capAmount);
 }
 
-/** The referred tradie's first order exists — create the earning it owes.
+/** An order has been created — if it is the referred tradie's FIRST, create the
+ *  earning it owes.
  *
  *  PENDING, not payable. The customer has accepted a quote, which is not the same
  *  as having paid for it; nothing becomes payable until that order is paid in
  *  full. Called from the route that creates the order rather than from inside
  *  `orders.ts`, so the order lifecycle does not have to know this feature exists.
+ *
+ *  ⚠️ FIRST ORDER ONLY (A8), AND THE FIRST ORDER IS A FACT ABOUT THE ACCOUNT.
+ *  This ran on EVERY order the referred account ever placed inside the window,
+ *  minting a fresh commission each time at the snapshot rate — one introduction
+ *  paid for forever. `referral_earning.order_id UNIQUE` did not catch it: a second
+ *  order carries a second id and collides with nothing.
+ *
+ *  The guard is "is this the account's earliest order", NOT "has this referral
+ *  earned yet". They agree everywhere except the case that matters: with
+ *  `referrer_reward_active` off the first order deliberately earns nothing
+ *  (AC-60), and under the second phrasing the account's next order would collect
+ *  the commission the first one was refused. An order that was never the first
+ *  cannot become it.
  *
  *  Every figure that governs the money comes from the referral's own snapshot,
  *  never the live config: the rate that applies is the one the referrer was
@@ -333,6 +347,22 @@ export async function onOrderCreated(env: Env, orderId: string): Promise<void> {
     .bind(orderId)
     .first<{ id: string; created_at: string; project_id: string; owner_user_id: string | null }>();
   if (!order?.owner_user_id) return;
+
+  // THE SAME EARLIEST-ORDER READ the discount half already derives `used` from
+  // (`referral-discount.ts`), so the two halves of A8 cannot disagree about which
+  // order was the first.
+  //
+  // `o.id` is a tiebreak, not decoration: `created_at` is a second-resolution
+  // datetime string, and two orders accepted inside the same second are ordinary
+  // rather than exotic — a tradie accepting two issued quotes back to back does
+  // it. Without the tiebreak SQLite is free to answer either row, and two
+  // invocations racing each other could each believe they were the first.
+  const first = await env.DB
+    .prepare(`SELECT o.id FROM "order" o JOIN project p ON p.id = o.project_id
+               WHERE p.owner_user_id = ? ORDER BY o.created_at, o.id LIMIT 1`)
+    .bind(order.owner_user_id)
+    .first<{ id: string }>();
+  if (first?.id !== orderId) return;
 
   const referral = await env.DB
     .prepare("SELECT * FROM referral WHERE referred_user_id = ? AND status = 'recorded'")
@@ -365,11 +395,20 @@ export async function onOrderCreated(env: Env, orderId: string): Promise<void> {
   // applies is the one the referrer was told about when the introduction was made.
   const qualifies = base >= referral.min_order_amount;
 
+  // CONDITIONAL ON THE INVARIANT, evaluated inside the write rather than before
+  // it. The earliest-order read above is a read, and two acceptances arriving
+  // together can both complete it before either order row is visible to the
+  // other — at which point both believe they are the first. SQLite serialises
+  // writes, so `WHERE NOT EXISTS` re-asks the question at the only moment where
+  // the answer cannot change underneath it. `migrations/0052` carries the same
+  // rule as a UNIQUE index, which is the guarantee; this is what stops the
+  // guarantee from arriving as a 500 on a customer's order acceptance.
   await env.DB
     .prepare(
       `INSERT INTO referral_earning
          (id, referral_id, order_id, base_amount, rate_percent, amount, status, void_reason, voided_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE NOT EXISTS (SELECT 1 FROM referral_earning WHERE referral_id = ?)`,
     )
     .bind(
       uuid(), referral.id, orderId, base, referral.rate_percent,
@@ -385,6 +424,7 @@ export async function onOrderCreated(env: Env, orderId: string): Promise<void> {
       qualifies ? "pending" : "void",
       qualifies ? null : "below_minimum_order",
       qualifies ? null : new Date().toISOString(),
+      referral.id,
     )
     .run();
 
@@ -649,18 +689,11 @@ export async function referrerScreen(env: Env, user: ReferrerRow & { id: string 
     // would otherwise have none to name.
     retainedCode: code ? null : (user.referral_code ?? null),
     shareUrl: code ? `${origin}/r/${code}` : null,
-    // The REFERRED side's own ability, never gated by D18: becoming a referrer
-    // needs payout details, being referred does not.
-    // Closed by either of the two things that end it: already referred (A9, one
-    // per account permanently) or already ordered (A5, the window for a typed
-    // code closes at the first order).
-    canEnterCode: !(await env.DB
-      .prepare(
-        `SELECT 1 AS taken FROM referral WHERE referred_user_id = ?1
-          UNION ALL
-         SELECT 1 FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.owner_user_id = ?1`,
-      )
-      .bind(user.id).first()),
+    // ⚠️ NO `canEnterCode`. It answered "may this account type a referral code?",
+    // a question A5 (r12) removed rather than narrowed: the answer is no for
+    // every account, in every state, so a field carrying it can only mislead the
+    // client into rendering a field the server would refuse. AC-107 asserts its
+    // absence, not merely that it reads false.
     referrals: (referrals.results ?? []).map((r) => ({
       id: r.id,
       displayName: displayName(r.company, r.email),

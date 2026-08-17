@@ -197,14 +197,17 @@ function ProgramScreen() {
               We hold your earnings until they reach <b>{moneyText(threshold)}</b>.
             </p>
           )}
-          {/* This has to describe what the operator will actually see. It said the
-              landing page carries a banner; the page in fact replaces its pitch
-              with a paused notice, and the customer-facing wording is the same
-              "paused", never "ended". */}
+          {/* ⚠️ THIS PANEL EXISTS TO SHOW AN OPERATOR THE EFFECT OF THE SWITCH, so
+              it has to describe what the site will actually do — the whole point
+              of it is that nobody has to go and look. It has been wrong twice for
+              the same reason: the page changed and this sentence did not. Change
+              the Off behaviour of /refer and change this line in the same commit.
+              Spec §4.7 lists exactly three effects, and they are these three. */}
           {!Boolean(draft.active) && (
             <p className="t-bd-sm" style={{ color: MUTED }}>
-              Joining is paused — the landing page stays up and says joining is paused instead of pitching
-              the offer, the placements disappear, and nothing already promised is withdrawn.
+              Joining is paused — the landing page stays exactly as it is, with a banner at the top saying
+              joining is paused; the join step stops after sign-in; and the placements on other pages
+              disappear. The footer link stays, and nothing already promised is withdrawn.
             </p>
           )}
           <p className="t-cap" style={{ color: MUTED }}>

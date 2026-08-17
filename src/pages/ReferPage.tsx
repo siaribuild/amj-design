@@ -51,55 +51,69 @@ export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; s
   useEffect(load, [signedIn]);
 
   if (loading || !program) return <div className="min-h-screen ground-bone pt-16" />;
+  return <ReferPageBody program={program} screen={screen} signedIn={signedIn} go={go} onJoined={load} />;
+}
 
+/** The page itself, as a pure function of what was fetched.
+ *
+ *  ⚠️ SPLIT FROM THE FETCHING SHELL SO THE OFF STATE CAN BE TESTED. What Off does
+ *  to this page is the whole of the owner's decision in §4.7, and it is a claim
+ *  about rendered output ("the same page, plus one banner") that no API test can
+ *  reach. Given props, this renders synchronously under
+ *  `renderToStaticMarkup` — see `scripts/tests/referral-screens.test.mjs`. */
+export function ReferPageBody({ program, screen, signedIn, go, onJoined }: {
+  program: ReferralProgramPublic;
+  screen: ReferrerScreen | null;
+  signedIn: boolean;
+  go: (p: Page) => void;
+  onJoined?: () => void;
+}) {
   const discount = pct(program.discountPercent);
   const rate = pct(program.ratePercent);
   const payout = days(program.payoutTimeframeDays);
-
-  // ── Program off ──────────────────────────────────────────────────────────
-  // One off-state, not two. The hero carries the notice and every other band is
-  // suppressed — no rate, no discount, no code, in any variant. The page itself
-  // stays up, indexed and in the sitemap: it is still the answer to "what was
-  // that referral thing?", and an offer advertised in the present tense that
-  // nobody can take up is the s 18 / s 32(1) exposure the notice exists to close.
-  if (!program.active) {
-    return (
-      <div className="min-h-screen">
-        <section className="bg-night relative pt-[112px] md:pt-[120px] pb-14">
-          <div className="max-w-6xl mx-auto px-6 relative">
-            <SLabel light>Refer a mate</SLabel>
-            {/* PAUSED, NEVER ENDED. Spec §4.7: there are two states and Off means
-                "come back later". "Ended" is a claim about the future that a
-                returning program has to contradict — and the switch is expected to
-                come back, which is why the third state was cut rather than built.
-                It also misdescribes the switch to the operator, whose own panel
-                says joining is paused. */}
-            <h1 className="text-white mt-3 t-hd1 font-display max-w-[20ch]">Joining is paused.</h1>
-            <p className="text-white/70 mt-4 t-bd-lg max-w-[52ch]">
-              We're reworking the program, so we're not taking new referrals for now — check back soon.
-              Anything you'd already earned is in your account and will still be paid, and any discount
-              already given still runs to the date it was given.
-            </p>
-          </div>
-        </section>
-        <CtaBanner
-          title="Got a schedule sitting on your desk?"
-          sub="Upload it and every line comes back priced in about a minute. No account needed to start."
-          onQuote={() => go("quote")}
-        />
-      </div>
-    );
-  }
-
   const member = Boolean(screen?.code);
 
   return (
     <div className="min-h-screen">
+      {/* ── Off: ONE BANNER, AND THAT IS THE WHOLE DIFFERENCE ─────────────
+          Spec §4.7. This used to return an entirely different page — a paused
+          hero and a generic quote CTA, 608 characters against 3,234 — which threw
+          away every figure and every answer a returning tradie came here for, and
+          told them the program "has ended", the one framing the owner removed
+          when they cut the third state.
+
+          The banner is not a softer version of that page; it is the reason the
+          page can stay as it is. The pitch below speaks in the present tense, and
+          ACL s 18 / s 32(1) bite on an offer advertised while nobody can take it
+          up — so the correction has to sit ON the offer, where the offer is read.
+          A deleted page advertises nothing, and corrects nothing either.
+
+          Above the hero rather than inside it: the hero is the offer, and a line
+          that qualifies the offer has to be readable before it, not woven into
+          it. It carries no heading of its own — it is a status, not a band.
+
+          The top padding is the fixed header (56px, 64px from md) plus 16px — the
+          same arithmetic the hero's own padding uses, with a status strip's gap
+          rather than a band's. At the hero's 56px it floated in the middle of a
+          field of nothing and read as a band in its own right. */}
+      {!program.active && (
+        <div role="status" className="bg-sage/10 border-b border-sage/30 pt-[72px] md:pt-[80px] pb-4">
+          <div className="max-w-6xl mx-auto px-6">
+            <p className="text-ink t-bd">
+              <b className="text-ink">Joining is paused</b> while we rework the program — check back soon.
+              Anything already earned will still be paid, and any discount already given still runs to
+              the date it was given.
+            </p>
+          </div>
+        </div>
+      )}
       {/* ── Hero — one read ─────────────────────────────────────────────── */}
       {/* Hero padding is 56px, not the 96px `section-pad` — an offer this short
           in an oversized band reads as a page with nothing on it (spec §3.2).
-          The top figure is that 56px plus the fixed header's height. */}
-      <section className="bg-night relative pt-[112px] md:pt-[120px] pb-14">
+          The top figure is that 56px plus the fixed header's height — unless the
+          Off banner is above it, in which case the banner has already cleared the
+          header and the hero takes its 56px alone. */}
+      <section className={`bg-night relative pb-14 ${program.active ? "pt-[112px] md:pt-[120px]" : "pt-14"}`}>
         <div className="max-w-6xl mx-auto px-6 relative">
           <SLabel light>Refer a mate</SLabel>
           <h1 className="text-white mt-3 t-ds2 font-display max-w-[20ch]">Refer a mate. You both win.</h1>
@@ -225,10 +239,37 @@ export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; s
                 <Btn variant="sage" size="lg" onClick={() => go("login")}>Sign in to join →</Btn>
               </div>
             </div>
+          ) : !program.active ? (
+            /* §4.7's second limb, and the ONLY thing Off changes below the banner:
+               "the join journey stops after login… in place of the entry step or
+               the code/share affordance". Above the fold the page is unchanged
+               because the pitch is still true — this is where it stops being
+               actionable, so this is where the pause is restated, once, in the
+               band whose job was to be acted on.
+
+               Forward-looking, not an error and not a disabled button: there is
+               nothing wrong with this reader, and a greyed-out control invites
+               them to keep trying it. Their earnings, referrals and details all
+               live on the account screen, which keeps working while Off (AC-64) —
+               so this points there rather than restating any of it. */
+            <div className="split-row is-center">
+              <SLabel>Joining</SLabel>
+              <div className="split-prose">
+                <h2 className="text-ink mt-3 mb-2 t-hd1 font-display">Joining is paused just now.</h2>
+                <p className="text-body t-bd">
+                  We're not issuing new codes while we rework the program — check back soon. If you've
+                  already referred someone, nothing changes: your earnings are in your account and will
+                  still be paid on the timetable you were given.
+                </p>
+              </div>
+              <div className="md:flex-shrink-0">
+                <Btn variant="outline" size="lg" onClick={() => go("referrals")}>Go to your account →</Btn>
+              </div>
+            </div>
           ) : member && screen ? (
             <CodeCard code={screen.code!} shareUrl={screen.shareUrl ?? ""} program={program} onHowItWorks={() => go("referrals")} />
           ) : (
-            <JoinProgramFlow program={program} onJoined={load} onReadTerms={() => go("resources")} />
+            <JoinProgramFlow program={program} onJoined={onJoined} onReadTerms={() => go("resources")} />
           )}
         </div>
       </section>
