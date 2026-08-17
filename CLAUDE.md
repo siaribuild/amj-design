@@ -10,10 +10,10 @@ For substantive work — a new capability, schema change, or anything spanning m
 1. **product-manager** → spec with acceptance criteria, taking the grill's conclusions as input
 2. **architect** → design (files, interfaces, migrations, test plan)
 3. **ux-designer + ui-designer** → interaction spec **+ visual mock** (only if the feature adds/changes UI): the ux-designer owns structure and flows, and the ui-designer **always** gives the mock its visual treatment before it goes to the **UX mock gate** (below) — the user approves the look that will actually ship, never a wireframe that gets its look later.
-4. **developer** → test-first implementation
+4. **developer** → test-first implementation. **Every test artifact the design named must exist when this stage ends** — a design that names `scripts/tests/web/foo.spec.ts` is not evidence the file was written. Deciding not to build one is legitimate; doing it silently is not, and the reason goes to the user at the moment of the decision, never in the final report.
 5. **ui-designer** → visual polish/audit of implemented UI, using impeccable (only if UI changed; always runs here in addition to its mock-stage pass)
-6. **tester** → independent verification against the acceptance criteria
-7. **architect** (returning) → design-conformance review of the final diff against the design — structure only, not a second bug hunt (skip when step 2 produced no design doc)
+6. **tester** → independent verification against the acceptance criteria. **A feature that adds or changes UI cannot PASS without Playwright coverage in `scripts/tests/web/`.** node:test suites exercise the worker and the data layer; they cannot see anything the client decides. Two MAJOR referral findings — a program-Off switch that replaced the whole landing page, and payment holds the API served and nothing rendered — were invisible to 104 green node tests because the server-served HTML was byte-identical in both states.
+7. **architect** (returning) → design-conformance review of the final diff against the design — structure only, not a second bug hunt (skip when step 2 produced no design doc). Conformance includes **absence**: a file the design named and the diff never created is a divergence, and the easiest one to miss, because a review that reads the diff only sees what was written.
 8. **product-manager** (returning) → acceptance: walks the spec's criteria against the tester's evidence, checks for silent descoping/scope creep and unvetoed `ASSUMED:` tags, issues an acceptance verdict — then the orchestrator presents it to the user for final sign-off
 
 Pass each agent the previous agent's output. Steps 7–8 findings go back through the developer loop like any review.
