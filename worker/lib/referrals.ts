@@ -7,7 +7,7 @@ import type { Env } from "../types";
 import { uuid } from "./util";
 import { taxBreakdown } from "../../src/data/gst";
 import { STAGES } from "./orders";
-import { stripReferralFromDrafts } from "./lines";
+import { repriceReferralDrafts } from "./lines";
 import type { ReferralOffer, ReferralProgramPublic } from "../../src/data/referrals";
 import { referralDiscountState } from "./referral-discount";
 import { notify } from "./email";
@@ -279,6 +279,10 @@ export async function recordReferral(
          window_months = excluded.window_months,
          expires_at = excluded.expires_at,
          void_reason = NULL, voided_by = NULL, voided_at = NULL,
+         -- Whatever "drafts reconciled" meant for the row being written over, it
+         -- is not true of the relationship replacing it. Left set, a revived
+         -- referral would be invisible to the sweep for the rest of its life.
+         expired_processed_at = NULL,
          created_at = datetime('now')
        WHERE referral.status = 'void'`,
     )
@@ -288,6 +292,13 @@ export async function recordReferral(
       program!.discount_percent, program!.window_months, `+${program!.window_months} months`,
     )
     .run();
+  // A referral was just made or revived, so this account's stored draft totals
+  // are now wrong in the customer's favour's opposite direction: they say full
+  // price for someone who is owed a discount. The Ops link (A19) is the path that
+  // reaches an ACCOUNT WITH DRAFTS — it attaches a code to a preexisting account,
+  // and reviving a void one restores drafts that the void stripped. At signup
+  // there is nothing to re-price and this costs one empty SELECT.
+  await repriceReferralDrafts(env, input.referredUser.id);
   return { ok: true };
 }
 
@@ -431,7 +442,7 @@ export async function onOrderCreated(env: Env, orderId: string): Promise<void> {
   // Their eligibility just ended — the first order exists. Any OTHER draft they
   // are holding still carries the discount in its stored total, and stored totals
   // do not notice that the world moved.
-  await stripReferralFromDrafts(env, order.owner_user_id, order.project_id);
+  await repriceReferralDrafts(env, order.owner_user_id, order.project_id);
 }
 
 /** The referred order has been paid in full — the money becomes payable.
@@ -550,10 +561,51 @@ export async function referralSweep(env: Env): Promise<void> {
     .bind(...PAID_IN_FULL_ONWARDS)
     .all<{ order_id: string }>();
   for (const row of results ?? []) await onOrderBalancePaid(env, row.order_id);
-  await sweepLapsedReferrals(env);
+  await sweepEndedReferrals(env);
 }
 
-/** The other ending, and the one nobody asks for.
+/** Make one referral's stored draft totals agree with its eligibility, and record
+ *  that they now do — but ONLY if they actually do.
+ *
+ *  ⚠️ THE STAMP IS A CLAIM, AND IT HAS TO BE TRUE. The old code stamped
+ *  unconditionally while `repriceReferralDrafts` skipped any line it could not
+ *  price, so a line whose product had left the catalogue kept its lapsed discount
+ *  and the stamp guaranteed nothing would ever look at it again. `issueQuote`
+ *  reads the stored total and only refuses a NULL, so that quote goes out at the
+ *  lapsed price, permanently.
+ *
+ *  The choice made here is DON'T STAMP: an unpriceable line leaves the referral
+ *  unreconciled and the next sweep tries again, which is what the comment on the
+ *  stamp always claimed and what re-pricing being idempotent makes safe. It has a
+ *  cost — a permanently unpriceable line is re-attempted every ten minutes for as
+ *  long as it exists — and that cost is accepted, because the alternative is a
+ *  discount we no longer owe leaving the door on a real quote. The retry is
+ *  bounded by one `priceItem` call per line of one account, it is self-healing the
+ *  moment the catalogue or the line is fixed, and the warning below is what tells
+ *  a human it is happening. */
+async function reconcileReferralDrafts(
+  env: Env,
+  referral: { id: string; referred_user_id: string },
+): Promise<void> {
+  const { unpriceableLineIds } = await repriceReferralDrafts(env, referral.referred_user_id);
+  if (unpriceableLineIds.length > 0) {
+    // The only surface a human has for this today. It names the lines, because
+    // "a referral did not reconcile" is not actionable and "these three lines
+    // will not price" is.
+    console.warn(
+      `referral ${referral.id}: ${unpriceableLineIds.length} draft line(s) would not price ` +
+      `(${unpriceableLineIds.join(", ")}) — left unstamped so the next sweep retries; ` +
+      `those lines still carry the total they were last priced with`,
+    );
+    return;
+  }
+  await env.DB
+    .prepare("UPDATE referral SET expired_processed_at = datetime('now') WHERE id = ?")
+    .bind(referral.id)
+    .run();
+}
+
+/** The endings nobody asks for.
  *
  *  When a referral is USED, `onOrderCreated` strips the discount from whatever
  *  else that account was holding — there is a request to hang it on. When a
@@ -578,32 +630,114 @@ export async function referralSweep(env: Env): Promise<void> {
  *  finishing. It is also why the stamp is written even when the account had no
  *  drafts to re-price: "considered" is the fact worth recording, not "changed".
  *
- *  Status stays `recorded`. Expiry is DERIVED from `expires_at` everywhere that
- *  reads it, and the CHECK constraint has no `expired` value — inventing a stored
- *  status would put a second answer to "has this lapsed?" beside the dates that
- *  already answer it. */
-async function sweepLapsedReferrals(env: Env): Promise<void> {
+ *  Status stays `recorded` for a lapse. Expiry is DERIVED from `expires_at`
+ *  everywhere that reads it, and the CHECK constraint has no `expired` value —
+ *  inventing a stored status would put a second answer to "has this lapsed?"
+ *  beside the dates that already answer it.
+ *
+ *  ⚠️ IT COVERS THE VOID ENDING TOO, and that is why it is no longer named for
+ *  lapsing. A void is handled synchronously by `voidReferral` — a person just
+ *  decided, and they should not wait ten minutes to see the price move — so what
+ *  this limb is for is the RETRY: a void whose re-price hit an unpriceable line,
+ *  or (the reason it is written this way rather than as a backfill script) any
+ *  referral voided before this fix shipped, whose drafts were never touched at
+ *  all. `expires_at` is irrelevant to a void, so the limb is separate; the
+ *  no-earning guard is too, because a voided referral's drafts should come off
+ *  the discount whether or not the account went on to order.
+ *
+ *  ⚠️ `expired_processed_at` NOW MEANS "drafts reconciled at" for three endings
+ *  rather than one. The column keeps its name because renaming it is a migration
+ *  and a rewrite of every test that reads it, for no behaviour — but the name is
+ *  narrower than the fact, and this is the note that says so. */
+async function sweepEndedReferrals(env: Env): Promise<void> {
   const { results } = await env.DB
     .prepare(
       `SELECT r.id, r.referred_user_id FROM referral r
-        WHERE r.status = 'recorded'
-          AND r.expired_processed_at IS NULL
-          AND r.expires_at < datetime('now')
-          AND NOT EXISTS (SELECT 1 FROM referral_earning e WHERE e.referral_id = r.id)`,
+        WHERE r.expired_processed_at IS NULL
+          AND (
+            r.status = 'void'
+            OR (r.status = 'recorded'
+                AND r.expires_at < datetime('now')
+                AND NOT EXISTS (SELECT 1 FROM referral_earning e WHERE e.referral_id = r.id))
+          )`,
     )
     .all<{ id: string; referred_user_id: string }>();
 
-  for (const referral of results ?? []) {
-    await stripReferralFromDrafts(env, referral.referred_user_id);
-    // Stamped AFTER the re-price, so a failure part-way is retried on the next
-    // run rather than swallowed. Re-pricing is idempotent — a line already at its
-    // undiscounted total prices to the same number again — so the retry costs
-    // work, never correctness.
-    await env.DB
-      .prepare("UPDATE referral SET expired_processed_at = datetime('now') WHERE id = ?")
-      .bind(referral.id)
-      .run();
-  }
+  // Stamped AFTER the re-price and only when nothing was left behind, so a
+  // failure part-way is retried on the next run rather than swallowed. Re-pricing
+  // is idempotent — a line already at its undiscounted total prices to the same
+  // number again — so the retry costs work, never correctness.
+  for (const referral of results ?? []) await reconcileReferralDrafts(env, referral);
+}
+
+/** Staff withdraw the promise. THE THIRD ENDING, and the only one with a person
+ *  behind it.
+ *
+ *  ⚠️ IT LIVES HERE RATHER THAN IN THE ROUTE because the withdrawal is two facts,
+ *  not one: the row says the promise is off, and the stored draft totals have to
+ *  agree with it. The route wrote only the first, and the discount stayed on
+ *  every not-yet-issued quote that account was holding — `issueQuote` reads the
+ *  stored total and never re-prices, so those quotes issued at the price the
+ *  business had just decided it no longer owed, with
+ *  `referral_percent_at_issue = NULL` so the document did not even claim the
+ *  discount it applied. Two of the three endings re-priced; the one somebody
+ *  chose did not.
+ *
+ *  The stamp is CLEARED before the re-price, not set: eligibility just changed, so
+ *  whatever "reconciled" meant a moment ago is no longer true, and clearing it is
+ *  what puts this referral in front of the sweep if the re-price cannot finish. */
+export async function voidReferral(
+  env: Env,
+  input: { referralId: string; reason: string; staffId: string },
+): Promise<void> {
+  // Guarded on `recorded` in the write, and the read is only to learn whose
+  // drafts to re-price — so two staff voiding at once cannot double-strip or
+  // overwrite each other's reason.
+  const changed = await env.DB
+    .prepare(
+      `UPDATE referral
+          SET status = 'void', void_reason = ?, voided_by = ?, voided_at = datetime('now'),
+              expired_processed_at = NULL
+        WHERE id = ? AND status = 'recorded'
+        RETURNING referred_user_id`,
+    )
+    .bind(input.reason, input.staffId, input.referralId)
+    .first<{ referred_user_id: string }>();
+  if (!changed) return;
+  await reconcileReferralDrafts(env, { id: input.referralId, referred_user_id: changed.referred_user_id });
+}
+
+/** The same act, reversed — including the prices.
+ *
+ *  ⚠️ UN-VOIDING PUTS THE DISCOUNT BACK, deliberately. "A re-price on the
+ *  customer's next save is enough" was the alternative and it is not enough:
+ *  `issueQuote` reads the stored total, and staff can price and issue a quote
+ *  without the customer touching the project again — so the quote would go out at
+ *  full price against a promise the business had just re-affirmed, and nothing on
+ *  any screen would explain why. A judgement call the route's own comment calls
+ *  reversible has to be reversible in both facts it changed, or it is only half
+ *  reversible in the direction that costs the customer money.
+ *
+ *  It is the SAME call, not a mirrored one: `priceItem` derives the discount from
+ *  live eligibility, so re-pricing a restored referral's drafts restores the
+ *  discount — and restores nothing if the window has since closed, which is
+ *  correct and would be easy to get wrong by hand.
+ *
+ *  No stamp afterwards: a live referral has not ended, and stamping it here would
+ *  be a standing instruction to the sweep to ignore it when it finally lapses. */
+export async function unvoidReferral(env: Env, referralId: string): Promise<void> {
+  const changed = await env.DB
+    .prepare(
+      `UPDATE referral
+          SET status = 'recorded', void_reason = NULL, voided_by = NULL, voided_at = NULL,
+              expired_processed_at = NULL
+        WHERE id = ? AND status = 'void'
+        RETURNING referred_user_id`,
+    )
+    .bind(referralId)
+    .first<{ referred_user_id: string }>();
+  if (!changed) return;
+  await repriceReferralDrafts(env, changed.referred_user_id);
 }
 
 /** The program as every customer surface is allowed to see it.

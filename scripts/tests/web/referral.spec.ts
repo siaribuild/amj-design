@@ -1011,3 +1011,73 @@ test.describe("the referrer's money", () => {
     });
   });
 });
+
+test.describe("voiding, from the console", () => {
+  // AC-67 — THE SENTENCE THAT WOULD HAVE EXPOSED THE MISSING FIX.
+  //
+  // The criterion asks the confirmation to state what leaves the payable queue
+  // AND what happens to quotes. The screen asked for a reason and offered a red
+  // button, and said neither. That is not only a copy gap: nobody could write
+  // the quotes half of the sentence truthfully, because voiding stripped nothing
+  // from the drafts it was voiding — which is exactly why the sentence was
+  // specified.
+  //
+  // ⚠️ THE BROWSER IS THE ONLY PLACE THIS IS VISIBLE. The confirmation exists
+  // entirely in `src/ops/Referrals.tsx`; no API response contains a word of it,
+  // so every node suite in the repo is blind to whether it says anything at all.
+  //
+  // The amount is READ from the ops list, never typed — and it is asserted with
+  // the CENTS formatter, because this figure is somebody's commission arriving
+  // in a bank account rather than an advertised threshold. Rounding it in a
+  // sentence about money leaving a queue misstates the money.
+  test("AC-67: the void confirmation names the amount leaving the queue and what happens to quotes", async ({ page }) => {
+    const stamp = Date.now().toString(36);
+    const referrer = await newAccount("void-copy-referrer");
+    const code = await joinProgram(referrer, `Void Copy Referrer ${stamp}`);
+    const mate = await newReferredAccount("void-copy-mate", code, `Void Copy Mate ${stamp}`);
+    await orderFor(mate, `AC-67 void copy ${stamp}`, "accepted");
+
+    const list = await staff.get(`${BASE}/api/ops/referrals?q=${code}`, { headers: opsHeaders });
+    expect(list.ok(), "GET /api/ops/referrals").toBeTruthy();
+    const row = ((await list.json()).referrals as Record<string, any>[]).find((r) => r.code === code);
+    expect(row?.earning?.amount, "the fixture only means something with money on the row").toBeGreaterThan(0);
+
+    // The shared ops session, carried into the browser by hand: it was issued
+    // against 127.0.0.1 with a Host header, and the console is served on the
+    // ops.* name. Same trick as ops.spec.ts, and it spends no OTP budget.
+    const { cookies } = await staff.storageState();
+    const token = cookies.find((c) => c.name === "apertly_session")?.value;
+    expect(token, "the ops session cookie").toBeTruthy();
+    await page.context().addCookies([
+      { name: "apertly_session", value: token as string, domain: "ops.localhost", path: "/" },
+    ]);
+
+    await page.goto(OPS_ORIGIN, { waitUntil: "domcontentloaded" });
+    // Two buttons carry this name once the tab is open — the sidebar's and the
+    // section's own sub-tab. Role and text, per house rule 4.
+    await page.getByRole("button", { name: "Referrals", exact: true }).first().click();
+    await page.getByRole("button", { name: "Referrals", exact: true }).last().click();
+    await page.getByPlaceholder("Code, referrer or referred name").fill(code);
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    // ⚠️ WAIT FOR THE LIST TO NARROW, not for the code to appear. The unfiltered
+    // first load already contains this row, so asserting the code is visible
+    // passes instantly and races the search's own fetch — which is how the first
+    // run of this test ended up clicking into a list of eleven rows.
+    await expect(page.getByRole("button", { name: "Void…" }), "the search narrowed to the one referral")
+      .toHaveCount(1);
+    await expect(page.getByText(code, { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "Void…" }).click();
+    // The lead-in is emphasised, so text-matching it resolves to that element
+    // alone; the sentence the criterion is about is its parent. Asserting on the
+    // parent rather than on a regex that already contains the answer keeps the
+    // assertions below from grading their own locator.
+    const confirmation = page.getByText("Void this referral?", { exact: true }).locator("xpath=..");
+    await expect(confirmation, "the destructive action confirms in words").toBeVisible();
+    await expect(confirmation).toContainText(money(row!.earning.amount));
+    await expect(confirmation).toContainText(/payable queue/i);
+    // The second limb, and the one AC-67 names explicitly.
+    await expect(confirmation).toContainText(/re-priced without the discount/i);
+    await expect(confirmation).toContainText(/issued quote keeps its price/i);
+  });
+});

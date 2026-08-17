@@ -1625,6 +1625,203 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       );
     });
 
+    await t.test("AC-67/AC-72 void limb — a voided referral must not leave a discounted draft to be issued", async () => {
+      // THE THIRD ENDING, AND THE ONLY ONE WITH A HUMAN BEHIND IT. Used strips
+      // drafts (`onOrderCreated`); expired strips them (`sweepLapsedReferrals`).
+      // A staff VOID — the one act the design calls "an explicit, confirmed,
+      // reasoned withdrawal of a promise" — strips nothing at all: no caller, and
+      // the sweep cannot reach it because its query is `status = 'recorded'`.
+      //
+      // So the stored total keeps the discount, `issueQuote` reads the stored
+      // total and never re-prices, and the quote goes out at a price the business
+      // decided minutes earlier it no longer owed. It is AC-110's defect on the
+      // one path where somebody deliberately said no.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "voided.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='voided.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "voided.mate@example.com");
+      await linkCode("voided.mate@example.com", mine.code);
+
+      const item = {
+        code: "W01", location: "Void probe", productSlug: "amj80-series-sliding-window",
+        width: "1200", height: "900", qty: 1,
+        options: {
+          colour: "Dover White", hardware: "AMJ Standard D Shape Handle",
+          flyscreen: "None", installation: "Sub Sill & Head",
+        },
+      };
+      const { body: saved } = await requestJson(mate, "/api/projects/current/lines", {
+        method: "PUT", json: { title: "Voided draft", items: [item] },
+      });
+      const discounted = saved.items[0].lineTotal;
+
+      // The undiscounted figure for the SAME line, from a second account that was
+      // never referred — so "the discount came off" is measured against the
+      // engine rather than against a number this test typed.
+      const stranger = new Session(baseUrl);
+      await login(stranger, "/api/auth", "voided.stranger@example.com");
+      const { body: plain } = await requestJson(stranger, "/api/projects/current/lines", {
+        method: "PUT", json: { title: "Never referred", items: [item] },
+      });
+      const undiscounted = plain.items[0].lineTotal;
+      assert.ok(discounted < undiscounted, "the fixture is only meaningful if the draft was discounted");
+
+      const mateId = "(SELECT id FROM user WHERE email='voided.mate@example.com')";
+      const referral = await sql(`SELECT id FROM referral WHERE referred_user_id = ${mateId}`);
+      await requestJson(staff, `/api/ops/referrals/${referral[0].id}/void`, {
+        method: "POST", json: { reason: "farmed accounts" },
+      });
+      await fetch(new URL("/__scheduled", baseUrl));
+
+      const line = await sql(
+        `SELECT l.line_total FROM quote_line l JOIN project p ON p.id = l.project_id
+          WHERE p.owner_user_id = ${mateId}`,
+      );
+      assert.equal(
+        line[0].line_total, undiscounted,
+        `a withdrawn promise must come off the stored total: ${line[0].line_total} is still the discounted figure (undiscounted is ${undiscounted})`,
+      );
+    });
+
+    await t.test("AC-72 un-void limb — reversing the withdrawal puts the discount back", async () => {
+      // THE DECISION THIS TEST EXISTS TO PIN DOWN. Once voiding re-prices the
+      // drafts, un-voiding has to as well, and "the customer's next save will
+      // fix it" is not an answer: `issueQuote` reads the stored total and never
+      // re-prices, and staff can price and issue a quote without the customer
+      // touching the project again. A judgement call the console calls
+      // reversible would then be reversible only in the direction that costs the
+      // customer money — the mistake gets made, the price goes up, and undoing
+      // the mistake leaves the price up.
+      //
+      // Measured against the SAME line's own discounted figure from before the
+      // void, so "the discount came back" means the engine produced the number
+      // again rather than a test asserting a constant.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "unvoid.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='unvoid.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "unvoid.mate@example.com");
+      await linkCode("unvoid.mate@example.com", mine.code);
+
+      const { body: saved } = await requestJson(mate, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Un-void draft",
+          items: [{
+            code: "W01", location: "Un-void probe", productSlug: "amj80-series-sliding-window",
+            width: "1200", height: "900", qty: 1,
+            options: {
+              colour: "Dover White", hardware: "AMJ Standard D Shape Handle",
+              flyscreen: "None", installation: "Sub Sill & Head",
+            },
+          }],
+        },
+      });
+      const discounted = saved.items[0].lineTotal;
+
+      const mateId = "(SELECT id FROM user WHERE email='unvoid.mate@example.com')";
+      const lineTotal = async () => (await sql(
+        `SELECT l.line_total FROM quote_line l JOIN project p ON p.id = l.project_id
+          WHERE p.owner_user_id = ${mateId}`,
+      ))[0].line_total;
+      const referral = await sql(`SELECT id FROM referral WHERE referred_user_id = ${mateId}`);
+
+      await requestJson(staff, `/api/ops/referrals/${referral[0].id}/void`, {
+        method: "POST", json: { reason: "mistyped the code" },
+      });
+      const voided = await lineTotal();
+      assert.ok(voided > discounted, "the void took the discount off, which is what makes the reversal meaningful");
+
+      await requestJson(staff, `/api/ops/referrals/${referral[0].id}/unvoid`, { method: "POST" });
+      assert.equal(
+        await lineTotal(), discounted,
+        "un-voiding must put the discount back on the stored total, not wait for a save that may never come",
+      );
+      // And the referral is live again rather than merely re-priced — including
+      // the reconciliation stamp, which would otherwise tell the sweep to ignore
+      // this referral for the rest of its life when it finally lapses.
+      const row = (await sql(
+        `SELECT status, expired_processed_at FROM referral WHERE referred_user_id = ${mateId}`,
+      ))[0];
+      assert.equal(row.status, "recorded");
+      assert.equal(row.expired_processed_at, null, "a live referral is not stamped as already reconciled");
+    });
+
+    await t.test("AC-110 — a line the sweep cannot re-price must not be stamped as processed", async () => {
+      // `stripReferralFromDrafts` swallows an unpriceable line (`continue`), and
+      // `sweepLapsedReferrals` stamps `expired_processed_at` regardless — so the
+      // stale discounted total is frozen in place and no later run will ever look
+      // at it again. The stamp's own comment says a part-way failure "is retried
+      // on the next run"; for this failure it is not.
+      //
+      // A product leaving the catalogue, or an option's surcharge row going away
+      // in an ops price-list rework, is all it takes: `priceItem` returns null,
+      // `issueQuote` still accepts the row because it only refuses a NULL total,
+      // and the quote issues at the lapsed discount permanently.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "unpriceable.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='unpriceable.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "unpriceable.mate@example.com");
+      await linkCode("unpriceable.mate@example.com", mine.code);
+
+      const { body: saved } = await requestJson(mate, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Unpriceable draft",
+          items: [{
+            code: "W01", location: "Gone probe", productSlug: "amj80-series-sliding-window",
+            width: "1200", height: "900", qty: 1,
+            options: {
+              colour: "Dover White", hardware: "AMJ Standard D Shape Handle",
+              flyscreen: "None", installation: "Sub Sill & Head",
+            },
+          }],
+        },
+      });
+      const discounted = saved.items[0].lineTotal;
+
+      const mateId = "(SELECT id FROM user WHERE email='unpriceable.mate@example.com')";
+      // The product leaves the catalogue between the save and the sweep.
+      await sql(
+        `UPDATE quote_line SET product_slug = 'a-product-that-left-the-catalogue'
+          WHERE project_id IN (SELECT id FROM project WHERE owner_user_id = ${mateId})`,
+      );
+      await sql(`UPDATE referral SET expires_at = datetime('now','-1 day') WHERE referred_user_id = ${mateId}`);
+      await fetch(new URL("/__scheduled", baseUrl));
+
+      const after = await sql(
+        `SELECT l.line_total FROM quote_line l JOIN project p ON p.id = l.project_id
+          WHERE p.owner_user_id = ${mateId}`,
+      );
+      const referral = await sql(
+        `SELECT expired_processed_at FROM referral WHERE referred_user_id = ${mateId}`,
+      );
+      // Either the discount came off, or the referral is left unstamped so the
+      // next run tries again. Stamped AND unchanged is the one combination that
+      // makes the stale price permanent.
+      assert.ok(
+        after[0].line_total !== discounted || !referral[0].expired_processed_at,
+        `the sweep stamped expired_processed_at=${referral[0].expired_processed_at} while the line kept its lapsed discount (${after[0].line_total}), so nothing will revisit it`,
+      );
+    });
+
     await t.test("AC-35/AC-75 — the public program endpoint carries the figures, and no total", async () => {
       // Every figure in the copy renders from here. Nothing on the landing page,
       // the placements or the account section may type a number into a string —

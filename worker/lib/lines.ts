@@ -341,12 +341,26 @@ function safeParse(s: string): Record<string, unknown> {
  *  pre-issue states are touched.
  *
  *  Lives here beside `priceItem` because it is a pricing act, not a referral one.
+ *
+ *  ⚠️ IT RE-PRICES IN BOTH DIRECTIONS, which is why it is no longer called
+ *  "strip". `priceItem` derives the discount live from `referralDiscountState`,
+ *  so this function takes the discount OFF when eligibility ended (used, lapsed,
+ *  voided) and puts it BACK when a void is reversed. One function, because there
+ *  is one question — what should these lines cost today? — and two answers to it
+ *  would drift.
+ *
+ *  ⚠️ IT REPORTS WHAT IT COULD NOT PRICE. A line whose product has left the
+ *  catalogue, or whose option lost its surcharge row in a price-list rework,
+ *  prices to null and is skipped — it keeps whatever total it was last written
+ *  with. Silently swallowing that is how a lapsed discount became permanent: the
+ *  caller stamped the referral as processed and nothing ever looked again. The
+ *  ids come back so a caller with a retry can decline to stamp.
  */
-export async function stripReferralFromDrafts(
+export async function repriceReferralDrafts(
   env: Env,
   ownerUserId: string,
   excludeProjectId?: string,
-): Promise<void> {
+): Promise<{ unpriceableLineIds: string[] }> {
   const { results } = await env.DB
     .prepare(
       `SELECT l.id, l.product_slug, l.dims_json, l.options_json, l.qty
@@ -365,6 +379,7 @@ export async function stripReferralFromDrafts(
     .bind(ownerUserId, excludeProjectId ?? null, excludeProjectId ?? null)
     .all<{ id: string; product_slug: string; dims_json: string | null; options_json: string | null; qty: number }>();
 
+  const unpriceableLineIds: string[] = [];
   for (const line of results ?? []) {
     const dims = safeParse(line.dims_json ?? "") as { width?: string; height?: string };
     const total = await priceItem(env, {
@@ -375,7 +390,14 @@ export async function stripReferralFromDrafts(
       qty: line.qty,
       ownerUserId,
     });
-    if (total === null) continue;
+    // Reported, not swallowed. The stale total stays on the row — there is no
+    // honest number to replace it with — but the caller is told, so a referral
+    // is not stamped "reconciled" over the top of a line that is not.
+    if (total === null) {
+      unpriceableLineIds.push(line.id);
+      continue;
+    }
     await env.DB.prepare("UPDATE quote_line SET line_total = ? WHERE id = ?").bind(total, line.id).run();
   }
+  return { unpriceableLineIds };
 }

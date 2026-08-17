@@ -45,6 +45,14 @@ const SWITCHES: { key: keyof OpsReferralProgram; label: string; hint: string }[]
 
 const pctText = (v: number) => `${Number(Number(v).toFixed(2))}%`;
 const moneyText = (v: number) => `$${Math.round(v).toLocaleString("en-AU")}`;
+// NOT INTERCHANGEABLE WITH moneyText, which rounds. That one renders ADVERTISED
+// FIGURES — a $2,000 qualifying minimum, a $50 payout threshold — where the cents
+// are noise. This one renders somebody's commission, which is a sum of money
+// arriving in a bank account: rounding $34.18 to $34 in a sentence about money
+// leaving the payable queue misstates the amount, and the person not being paid
+// is the one who does the arithmetic afterwards.
+const audExact = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" });
+const moneyExact = (v: number) => audExact.format(v);
 const plural = (n: number, u: string) => `${n} ${u}${Math.abs(n) === 1 ? "" : "s"}`;
 
 function ProgramScreen() {
@@ -299,7 +307,7 @@ function ReferralsList() {
                   row with confirmed money behind it is a different act from
                   voiding one that owes nothing. */}
               {r.earning
-                ? <span className="t-cap" style={{ color: INK }}>{moneyText(r.earning.amount)} {r.earning.status}</span>
+                ? <span className="t-cap" style={{ color: INK }}>{moneyExact(r.earning.amount)} {r.earning.status}</span>
                 : <span className="t-cap" style={{ color: MUTED }}>nothing owed</span>}
             </div>
             {r.flags.length > 0 && (
@@ -314,14 +322,35 @@ function ReferralsList() {
                 string. Whoever asks later is usually the person not being paid,
                 and "voided" answers nothing. */}
             {voiding === r.id ? (
-              <div className="flex flex-wrap gap-2 items-center">
-                <input autoFocus value={reason} onChange={(e) => setReason(e.target.value)}
-                  placeholder="Why is this being voided?" className="field-control border px-2 py-1 t-bd-sm min-w-[300px]" />
-                <button onClick={() => void doVoid(r.id)} disabled={!reason.trim() || busy}
-                  className="px-3 py-1 t-bd-sm disabled:opacity-40" style={{ background: "var(--destructive)", color: "#fff" }}>
-                  Void referral
-                </button>
-                <button onClick={() => { setVoiding(null); setReason(""); }} className="px-3 py-1 t-bd-sm" style={{ color: MUTED }}>Cancel</button>
+              <div className="flex flex-col gap-2">
+                {/* AC-67 — WHAT LEAVES THE PAYABLE QUEUE, AND WHAT HAPPENS TO
+                    QUOTES. Both limbs, because they are two different people's
+                    money: the referrer stops being owed a commission, and the
+                    referred tradie's un-issued quotes go up in price.
+
+                    The tense is deliberate and it is not the mock's. The design
+                    said quotes "can then be re-priced", which described a system
+                    where voiding stripped nothing and somebody would have to go
+                    and do it. `voidReferral` now re-prices them as part of the
+                    void, so the sentence says so — copy that describes the
+                    behaviour, not the behaviour we meant to have. */}
+                <p className="t-bd-sm" style={{ color: INK }}>
+                  <b>Void this referral?</b>{" "}
+                  {r.earning
+                    ? <>The earning of {moneyExact(r.earning.amount)} leaves the payable queue.</>
+                    : <>Nothing is owed yet, so no earning leaves the payable queue.</>}{" "}
+                  Any not-yet-issued quote of theirs is re-priced without the discount straight away.
+                  An issued quote keeps its price.
+                </p>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <input autoFocus value={reason} onChange={(e) => setReason(e.target.value)}
+                    placeholder="Why is this being voided?" className="field-control border px-2 py-1 t-bd-sm min-w-[300px]" />
+                  <button onClick={() => void doVoid(r.id)} disabled={!reason.trim() || busy}
+                    className="px-3 py-1 t-bd-sm disabled:opacity-40" style={{ background: "var(--destructive)", color: "#fff" }}>
+                    Void referral
+                  </button>
+                  <button onClick={() => { setVoiding(null); setReason(""); }} className="px-3 py-1 t-bd-sm" style={{ color: MUTED }}>Cancel</button>
+                </div>
               </div>
             ) : (
               <div className="flex gap-3">

@@ -12,6 +12,7 @@ import { applyPricingChange, VersionConflict } from "../lib/pricing-admin";
 import { referralReviewFlags } from "../lib/referral-discount";
 import {
   markPayoutsPaid, payoutCsv, payoutHistory, payoutQueue, publicProgram, recordReferral, reversePayout,
+  unvoidReferral, voidReferral,
 } from "../lib/referrals";
 
 export const opsReferrals = new Hono<{ Bindings: Env }>();
@@ -204,28 +205,24 @@ opsReferrals.post("/:id/void", async (c) => {
   const reason = String(body.reason ?? "").trim();
   if (!reason) return c.json({ error: "reason_required" }, 400);
 
-  await c.env.DB
-    .prepare(
-      `UPDATE referral SET status = 'void', void_reason = ?, voided_by = ?, voided_at = datetime('now')
-        WHERE id = ? AND status = 'recorded'`,
-    )
-    .bind(reason, staff.id, c.req.param("id"))
-    .run();
+  // ⚠️ IT CALLS voidReferral, IT DOES NOT UPDATE. Withdrawing the promise is two
+  // facts — the row, and the stored totals of every not-yet-issued quote priced
+  // while the promise stood. This route used to write the first and leave the
+  // second, so a voided referral's quotes issued at the discount anyway. Both
+  // live in lib/referrals.ts beside the other two endings.
+  await voidReferral(c.env, { referralId: c.req.param("id"), reason, staffId: staff.id });
   return c.json({ ok: true });
 });
 
 // Reversible, because it is a judgement call. One made on a phone call that
-// turns out to be wrong should be corrected here rather than in the database.
+// turns out to be wrong should be corrected here rather than in the database —
+// and reversing it puts the discount back on the drafts the void took it off,
+// for the same reason voiding took it off in the first place: nothing else
+// re-prices them before they can be issued.
 opsReferrals.post("/:id/unvoid", async (c) => {
   const staff = await resolveStaff(c.env, c.req.raw);
   if (!staff) return c.json({ error: "forbidden" }, 403);
-  await c.env.DB
-    .prepare(
-      `UPDATE referral SET status = 'recorded', void_reason = NULL, voided_by = NULL, voided_at = NULL
-        WHERE id = ? AND status = 'void'`,
-    )
-    .bind(c.req.param("id"))
-    .run();
+  await unvoidReferral(c.env, c.req.param("id"));
   return c.json({ ok: true });
 });
 
