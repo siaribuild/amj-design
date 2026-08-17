@@ -374,4 +374,54 @@ test.describe("the referral landing page", () => {
     await expect(page.getByRole("button", { name: /join the program/i })).toHaveCount(0);
     await expect(page.getByText(/\b[A-Z2-9]{3}-[A-Z2-9]{3}\b/)).toHaveCount(0);
   });
+
+  // AC-62 / AC-36 — THE REGRESSION THIS FILE EXISTS FOR.
+  //
+  // Switching the program off replaced the entire landing page: 3,234 characters
+  // became 608, the hero, the steps, the conditions and the FAQ all went, and the
+  // footer link disappeared with them. 104 green node tests could not see any of
+  // it, because the server-served HTML is byte-identical in both states — the
+  // substitution happens in the client. This is the layer that sees it.
+  //
+  // Asserted STRUCTURALLY. A length comparison would pass the moment two rewrites
+  // happened to balance, and §4.7's claim is not about size: Off is the same page,
+  // plus one banner, and that is the entire behavioural difference.
+  test("AC-62/AC-36: Off is the same page plus one banner, and the footer link survives", async ({ page }) => {
+    // `allInnerTexts()` does NOT auto-wait. Read the skeleton before React has
+    // rendered and a slow hydration looks exactly like a missing section — the
+    // test would "catch" a regression that is really its own impatience. Waiting
+    // on the LAST section's heading is what makes the read safe.
+    const settled = async () => {
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expect(page.getByRole("heading", { name: /questions tradies actually ask/i })).toBeVisible();
+    };
+
+    await open(page, "/refer");
+    await settled();
+    const onSkeleton = await skeleton(page);
+    const onFooterLinks = await page.getByRole("link", { name: /refer a mate/i }).count();
+    expect(onSkeleton.length, "the On page has a skeleton worth comparing against").toBeGreaterThan(4);
+
+    await withProgram({ active: false }, async () => {
+      await open(page, "/refer");
+      await settled();
+
+      // The one addition, and the only one.
+      await expect(page.getByRole("status")).toBeVisible();
+
+      expect(
+        await skeleton(page),
+        "every heading survives the switch — Off is the same page, not a variant",
+      ).toEqual(onSkeleton);
+
+      expect(
+        await page.getByRole("link", { name: /refer a mate/i }).count(),
+        "AC-36: the footer link is untouched by the switch",
+      ).toBe(onFooterLinks);
+
+      // The framing the owner removed when he cut the third state: a paused
+      // program is coming back, and must never claim otherwise.
+      await expect(page.getByText(/has ended/i)).toHaveCount(0);
+    });
+  });
 });

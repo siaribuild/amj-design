@@ -550,6 +550,60 @@ export async function referralSweep(env: Env): Promise<void> {
     .bind(...PAID_IN_FULL_ONWARDS)
     .all<{ order_id: string }>();
   for (const row of results ?? []) await onOrderBalancePaid(env, row.order_id);
+  await sweepLapsedReferrals(env);
+}
+
+/** The other ending, and the one nobody asks for.
+ *
+ *  When a referral is USED, `onOrderCreated` strips the discount from whatever
+ *  else that account was holding — there is a request to hang it on. When a
+ *  referral simply LAPSES, nothing happens at all: a window closes, no one calls
+ *  anything, and the drafts keep the discounted totals they were priced with.
+ *  `issueQuote` reads the stored `line_total` and never re-prices — it only
+ *  refuses a NULL — so a draft priced while the discount was live could be issued
+ *  months after the referral lapsed, at the lapsed price. Money out the door
+ *  after we stopped owing it.
+ *
+ *  ONLY REFERRALS THAT NEVER EARNED. An earning means the first order was placed
+ *  inside the window, which is what the window governs — it does not govern when
+ *  that order is PAID. A referral whose earning is still pending has done its job
+ *  and must not be treated as lapsed, or the sweep would strip a discount from an
+ *  account that is currently owed one. Anything that did earn has already been
+ *  stripped by `onOrderCreated`, including the below-minimum case, whose earning
+ *  is written and voided rather than skipped.
+ *
+ *  The stamp is not bookkeeping. Without it this re-prices every lapsed
+ *  referral's every draft on every ten-minute cron, for as long as the row
+ *  exists — one `priceItem` call per line, growing with the table and never
+ *  finishing. It is also why the stamp is written even when the account had no
+ *  drafts to re-price: "considered" is the fact worth recording, not "changed".
+ *
+ *  Status stays `recorded`. Expiry is DERIVED from `expires_at` everywhere that
+ *  reads it, and the CHECK constraint has no `expired` value — inventing a stored
+ *  status would put a second answer to "has this lapsed?" beside the dates that
+ *  already answer it. */
+async function sweepLapsedReferrals(env: Env): Promise<void> {
+  const { results } = await env.DB
+    .prepare(
+      `SELECT r.id, r.referred_user_id FROM referral r
+        WHERE r.status = 'recorded'
+          AND r.expired_processed_at IS NULL
+          AND r.expires_at < datetime('now')
+          AND NOT EXISTS (SELECT 1 FROM referral_earning e WHERE e.referral_id = r.id)`,
+    )
+    .all<{ id: string; referred_user_id: string }>();
+
+  for (const referral of results ?? []) {
+    await stripReferralFromDrafts(env, referral.referred_user_id);
+    // Stamped AFTER the re-price, so a failure part-way is retried on the next
+    // run rather than swallowed. Re-pricing is idempotent — a line already at its
+    // undiscounted total prices to the same number again — so the retry costs
+    // work, never correctness.
+    await env.DB
+      .prepare("UPDATE referral SET expired_processed_at = datetime('now') WHERE id = ?")
+      .bind(referral.id)
+      .run();
+  }
 }
 
 /** The program as every customer surface is allowed to see it.

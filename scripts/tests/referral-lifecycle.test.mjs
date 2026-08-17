@@ -1543,6 +1543,88 @@ test("T3 — codes, the D18 gate, and attribution", { timeout: 900_000 }, async 
       assert.equal(issued[0].line_total, 10000, "an issued quote is never re-priced");
     });
 
+    await t.test("AC-72 expiry limb — a lapsed referral's drafts are re-priced by the sweep, once", async () => {
+      // The USED ending strips stale drafts (above). The EXPIRED ending is the
+      // same problem arriving without a request to hang it on: nobody does
+      // anything when a window closes, so nothing re-prices, and a stored line
+      // total does not notice that the world moved. `issueQuote` reads the stored
+      // total and never re-prices — it only refuses a NULL — so a draft priced
+      // while the discount was live can be issued months after the referral
+      // lapsed, at the lapsed price. That is money going out the door after we
+      // stopped owing it.
+      const referrer = new Session(baseUrl);
+      await login(referrer, "/api/auth", "lapse.referrer@example.com");
+      await sql("UPDATE user SET abn='51824753556' WHERE email='lapse.referrer@example.com'");
+      await requestJson(referrer, "/api/account/payout-details", {
+        method: "PUT", json: { bsb: "063-000", accountNumber: "12345678", accountName: "A Tradie" },
+      });
+      const { body: mine } = await requestJson(referrer, "/api/account/referrals");
+
+      const mate = new Session(baseUrl);
+      await login(mate, "/api/auth", "lapse.mate@example.com");
+      await linkCode("lapse.mate@example.com", mine.code);
+
+      // PRICED THROUGH THE REAL SAVE PATH WHILE THE DISCOUNT IS LIVE, rather than
+      // seeded with a number a test typed in. That is what makes "the stored total
+      // went up" mean "the discount came off" instead of merely "something wrote
+      // to the row".
+      const { body: saved } = await requestJson(mate, "/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title: "Lapsing draft",
+          items: [{
+            code: "W01", location: "Lapse probe", productSlug: "amj80-series-sliding-window",
+            width: "1200", height: "900", qty: 1,
+            options: {
+              colour: "Dover White", hardware: "AMJ Standard D Shape Handle",
+              flyscreen: "None", installation: "Sub Sill & Head",
+            },
+            lineTotal: 1,
+          }],
+        },
+      });
+      const discounted = saved.items[0].lineTotal;
+      assert.ok(discounted > 0, "the draft priced while the referral was live");
+
+      const mateId = "(SELECT id FROM user WHERE email='lapse.mate@example.com')";
+      const lineRow = async () => (await sql(
+        `SELECT l.id, l.line_total FROM quote_line l JOIN project p ON p.id = l.project_id
+          WHERE p.owner_user_id = ${mateId}`,
+      ))[0];
+      const referralRow = async () => (await sql(
+        `SELECT status, expired_processed_at FROM referral WHERE referred_user_id = ${mateId}`,
+      ))[0];
+
+      // The window closes. NOTHING ABOUT THAT IS A REQUEST — which is the whole
+      // reason it needs the sweep and not a route.
+      await sql(`UPDATE referral SET expires_at = datetime('now','-1 day') WHERE referred_user_id = ${mateId}`);
+      assert.equal((await lineRow()).line_total, discounted, "the stored total still carries the lapsed discount");
+
+      await fetch(new URL("/__scheduled", baseUrl));
+
+      const swept = await lineRow();
+      assert.ok(
+        swept.line_total > discounted,
+        `the lapsed discount must come off the stored total: ${swept.line_total} is not above ${discounted}`,
+      );
+      const processed = await referralRow();
+      assert.ok(processed.expired_processed_at, "and the referral is stamped processed");
+      // 'expired' is DERIVED (spec §7, and the CHECK constraint has no such
+      // value). The sweep re-prices; it does not invent a stored status.
+      assert.equal(processed.status, "recorded", "the sweep must not write an expiry the dates already state");
+
+      // IDEMPOTENCE IS NOT DECORATION. Without the stamp this re-prices every
+      // lapsed referral's every draft on every ten-minute cron, forever — one
+      // `priceItem` call per line, growing with the table and never finishing.
+      await sql(`UPDATE quote_line SET line_total = 1 WHERE id = '${swept.id}'`);
+      await fetch(new URL("/__scheduled", baseUrl));
+      assert.equal((await lineRow()).line_total, 1, "a stamped referral is not swept a second time");
+      assert.equal(
+        (await referralRow()).expired_processed_at, processed.expired_processed_at,
+        "and the stamp is not moved by the sweep that skipped it",
+      );
+    });
+
     await t.test("AC-35/AC-75 — the public program endpoint carries the figures, and no total", async () => {
       // Every figure in the copy renders from here. Nothing on the landing page,
       // the placements or the account section may type a number into a string —
