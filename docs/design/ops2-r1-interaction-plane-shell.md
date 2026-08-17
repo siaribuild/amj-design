@@ -56,6 +56,13 @@ Nothing is rearranged; no content changes zones at any width. This is ADR 0004's
 "revelation, not rearrangement", extended: revelation alone has no answer for the pushed
 sub-planes (the job bands), and move 2 is that answer.
 
+> ⚠ **Amended 2026-08-18 (owner ruling):** move 2 is **withdrawn** — disclosure-in-place
+> is rejected (*"don't like the approach. not great UX pattern"*), and no accordion
+> substitutes for it. Move 1 stands as the whole growth law. The job blocks stay real
+> routes at every width; the replacement presentation (steer: master-detail — the list
+> persists, the selected block renders beside it) lands in the reworked Ionic mock.
+> Binding detail: `docs/design/ops2-ionic-boundary.md` §1.6.
+
 A zone always reads **its own** measured width, never the viewport's, so a 380px pane on a
 desktop folds exactly as a phone does. That is what makes revelation safe: revealing a zone
 never assumes it got wide. (C1: the Fold, open, resized mid-session with apps beside it.)
@@ -238,6 +245,10 @@ Below the rows, the same totals panel as §3.2.
 At ≥1024 these five rows become `<details>` disclosures in the canvas, open in place — growth
 move 2. Same rows, same routes, same block components.
 
+> ⚠ **Amended 2026-08-18:** superseded with move 2 (§1 note) — at ≥1024 the five rows do
+> **not** become disclosures; they persist as a list and the routed block renders beside
+> it (form owned by the reworked mock). Rows, routes and block components unchanged.
+
 ### 3.4 `/record/:ref/job/:block` — a job band (depth 1)
 
 Identity band: `‹` back · the block name · `{ref} · {title}` as the subtitle. No footer
@@ -270,6 +281,12 @@ to the job plane, which is one tap away.
 ```
 ‹    W04 · Bed 1                     ‹  4/18  ›
 ```
+
+> ⚠ **Amended 2026-08-18:** the band stepper is replaced by a **bottom-edge scroller**
+> through the filtered set (owner-endorsed direction; form owned by the reworked mock).
+> Everything below transfers to the scroller whole: the filtered set, replace-not-push
+> (§10.3), disabled at the ends, position stated. See
+> `docs/design/ops2-ionic-boundary.md` §1.7.
 
 **The stepper (R-155)** is the reason a phone is a review device rather than a reader: it
 moves through the **filtered** set — `visibleLines()`, i.e. whatever the index is currently

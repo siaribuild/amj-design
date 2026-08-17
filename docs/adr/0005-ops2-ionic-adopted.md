@@ -39,9 +39,17 @@ never touch the page scaffold). Everything else is Ionic.
 - ADR 0004's sacrifices S4 (chrome fidelity ceiling) and S5 (ARIA letter vs meaning)
   **stop being sacrifices** — fidelity to `theme.css` is no longer the goal. ops2 is
   permitted to look like Ionic. The custom 240/200 ms transition builder and the
-  metric-normalisation CSS planned to make Ionic wear the mock's exact face are **cut**;
-  only the ~70-line token→`--ion-*` palette/type binding remains, so ops2 is one colour
-  world. S6 inverts: Ionic is now the primary vocabulary and light DOM the exception.
+  metric-normalisation CSS planned to make Ionic wear the mock's exact face are **cut**.
+  *(Amended 2026-08-18, second ruling the same day: the ~70-line token→`--ion-*` binding
+  this ADR originally retained is withdrawn too — "happy to reuse standard
+  components/themes, if such are available" — ops2 ships Ionic's **default theme**
+  outright, and the fidelity ledger closes entirely. What survives are three functional
+  requirements on any theme — legibility of fact-carrying text with blocked controls
+  inert-not-faded, the warning/danger hard distinction, the GST basis on every figure —
+  recorded as required overrides in `docs/design/ops2-ionic-boundary.md` §1.5. The same
+  ruling round withdrew disclosure-in-place: growth-law move 2 is out and `IonAccordion`
+  joins the banned list — boundary doc §1.6.)* S6 inverts: Ionic is now the primary
+  vocabulary and light DOM the exception.
 - The **router interim is accepted by the owner** (he chose this option knowing it):
   ops2 rides React Router 5 via `@ionic/react-router@8.8.18` while the customer site stays
   on React Router 7 — two router majors in one *repo* (never one bundle; the entries are

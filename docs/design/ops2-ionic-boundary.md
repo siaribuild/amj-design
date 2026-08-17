@@ -34,8 +34,8 @@ says "ux-designer's call", the reworked mock and the mock gate decide, not the d
 - `ops2.html` — new Vite entry, input of the ops2 config only
 - `scripts/tests/ops2-deps.test.mjs` — **new**, the import-boundary guard (§2.4)
 - `src/ops2/` — per `ops2-r1-frame-and-record.md` §2.1, with `shell/` re-scoped to Ionic hosts (§5)
-- `src/ops2/styles/theme-ionic.css` — token → `--ion-*` binding (productionise the spike's "THE BINDING" section)
-- `src/ops2/styles/compat-customer-tokens.css` — the small token set reused customer components consume (§3.3)
+- `src/ops2/styles/functional-overrides.css` — the ONLY permitted theme overrides: the three functional requirements of §1.5 (no `theme-ionic.css` exists — the token binding was withdrawn by the 2026-08-18 second ruling; ops2 ships Ionic's default theme)
+- `src/ops2/styles/compat-reused-components.css` — render-correctness shim for the reused customer components (§3.3); binds what they consume to Ionic's own variables, not to the customer palette
 
 **Reused verbatim (import in place; zero edits to these files):**
 - `src/components/ItemComposer.tsx` — `ItemForm` at line 528; already renders `Elevation` (import line 25, usage line 136) so the in-form drawing (R-51) arrives free
@@ -74,9 +74,12 @@ says "ux-designer's call", the reworked mock and the mock gate decide, not the d
 
 Corollary of the ruling: the comparison doc's planned **motion builder is cut** (Ionic's
 platform-native transitions are the point — "no surprises"), and the **metric
-normalisation CSS shrinks to nothing mandatory**. What remains ours is the ~70-line
-palette/type binding (`theme-ionic.css`) so ops2 is one colour world. If the ux-designer's
-reworked mock pins any Ionic metric, it is pinned in that one file — never per-component.
+normalisation CSS is cut with it**. The token→`--ion-*` palette/type binding is **gone
+too** — a second ruling the same day (§1.5) put ops2 on Ionic's **default theme**
+outright. The style layer we own is exactly two small files: the functional overrides
+(§1.5) and the reused-component shim (§3.3). `tokens.css` narrows to *layout* tokens only
+(width change points, `--pane-w-*`, `--edit-sheet-w`); any layout metric the reworked
+mock pins lands there — colour and type pinning is withdrawn with the binding.
 
 ### 1.2 What comes from Ionic (the concrete inventory)
 
@@ -117,6 +120,7 @@ cannot delete), `IonSplitPane when={measuredWidth >= 1024}`, `IonSegment` (the p
 | `IonInfiniteScroll` | Lists are bounded and paged by explicit "Show all {n}" rows (register row 151) |
 | `IonModal` **with** backdrop for the edit sheet | The tabletp sheet deliberately carries no scrim so the line stays legible beside it (interaction spec §5) |
 | `IonItemSliding` / swipe-to-act | Gesture is never the only route (R-158); long-press and hidden-gesture affordances are forbidden (§13.8) |
+| `IonAccordion` / any collapsible section for information groups | Owner ruling 2026-08-18: *"collapsable sections for all the different information groups … don't like the approach. not great UX pattern."* Growth-law move 2 is withdrawn (§1.6); the direction is master-detail, not collapse. Does **not** reach inside `ItemForm` (disqualifier 1 — §1.6) |
 
 ### 1.4 What stays light-DOM (disqualifiers 1 and 3)
 
@@ -126,7 +130,107 @@ cannot delete), `IonSplitPane when={measuredWidth >= 1024}`, `IonSegment` (the p
 the ≥1024 pane grid with `react-resizable-panels` drag handles, and everything in
 `src/data/`. These sit *inside* Ionic scaffolding as slotted light-DOM content — the
 spike demonstrated the coexistence (an `IonToolbar` and a native `<select>` on one
-screen, both reading `--ops-*` values).
+screen, both reading `--ops-*` values). *(The spike wore the ops2 palette; shipped ops2
+wears Ionic's default theme — §1.5. The coexistence mechanics are identical either way:
+light-DOM content simply inherits whatever the page's variables say.)*
+
+### 1.5 The theme: Ionic's default — and the three overrides that are functional, not brand
+
+Second ruling (2026-08-18): *"you still keeping (or haven't touched yet) the frontend
+styling. as I mentioned, happy to reuse standard components/themes, if such are
+available."* — **ops2 ships on Ionic's default theme.** The ~70-line token binding is
+withdrawn entirely, not kept in reduced form; no file under `src/ops2/` restates the
+customer palette. He has now said twice that ops is a separate platform for a separate
+audience.
+
+Three requirements survive **on any theme** — recorded as overrides that are *permitted
+and required*, because they are product behaviour, not brand fidelity. All three live in
+one file, `src/ops2/styles/functional-overrides.css`; nothing else in ops2 may override an
+Ionic theme value:
+
+1. **Fact-carrying text stays legible.** Text that carries a fact — the absence ramp
+   (`not priced`, `No payments recorded.`), a disabled control's label — keeps **≥ 4.5:1**
+   contrast. A blocked control is **inert, not faded**: real `disabled` semantics with a
+   full-contrast label and its reason beside it (L7) — never Ionic's default disabled
+   opacity wash on the words that explain the block. I8/L9 make absence a stated fact; a
+   fact rendered below legibility is a fact withheld.
+2. **`warning` versus `danger` carries the product's hard distinction.** Ionic's two
+   colours map to the two meanings and are never collapsed: *warning* = ours to resolve,
+   the human proceeds (R-65 warn-never-veto — undersize, oversize, mixed frames);
+   *danger* = nothing proceeds / destructive (the delete confirm, hard failure).
+   Collapsing them makes the machine read as objecting to a human decision, which I1
+   forbids.
+3. **Every money figure carries its GST basis, legibly, in the account's setting**
+   (AC-79/80; `src/data/gst.ts` the single source). If Ionic's default note/caption type
+   renders the basis below legible size, the override raises it — here, once.
+
+And one principle, recorded because it reconciles two rulings that otherwise look
+contradictory (no hidden destinations, yet a horizontally scrolling line strip endorsed):
+
+> **Destinations must never require horizontal scrolling; content may scroll.** A fixed
+> set that must all be reachable — nav destinations, planebar segments, the five job
+> blocks — can never hide members off-screen. Material being worked through — eighteen
+> openings, a filtered line set — is content, and a horizontal scroller over it is
+> legitimate.
+
+### 1.6 Disclosure-in-place is withdrawn — the growth law loses move 2
+
+Owner ruling (2026-08-18): *"I can see you creating collapsable sections for all the
+different information groups. Will stop you here - don't like the approach. not great UX
+pattern."*
+
+- The interaction spec's growth-law **move 2** ("a push that was a plane becomes a
+  disclosure in place") is **withdrawn**, and `IonAccordion` is banned (§1.3) — it is not
+  a substitute. **Move 1** (a zone that was a plane becomes a pane) stands, and is now
+  the whole growth law.
+- Blast radius, precisely: move 2 only ever served the **job blocks**
+  (`/record/:ref/job/:block`) — the interaction spec §3.3's `<details>`-at-≥1024 answer.
+  The line surface and the editor were always move-1 zones (canvas, pane) and are
+  untouched.
+- The replacement is the **ux-designer's to land at the mock gate**. Steer given:
+  **master-detail** — the job blocks stay routes at every width, the push-row list
+  persists as a list, and the selected block renders beside it. Whatever the mock lands,
+  four constraints bind it architecturally: (a) each block remains a real route and
+  history entry at every width (LEARNINGS §1.3 — derive from the route, always);
+  (b) no disclosure-in-place, no accordion; (c) the list persists as a list, with the
+  selection visible in it; (d) the block set is never horizontally scrolled (§1.5's
+  principle — blocks are destinations).
+- **Zone contract interface: unchanged — precisely.** Regions still declare zones with
+  width appetites plus per-zone header/action content, and the compile-time page ban
+  stands. Move 2 was never in the shell's zone→host mapping — the `<details>` were the
+  region's own rendering inside the work zone — so its removal takes nothing out of the
+  contract. What changes is *inside the work zone's body*: at widths where that zone is a
+  persistent surface, it renders list + selected block from its **own measured width**
+  (arch §4.1 machinery), with the selected block driven by route state it already
+  receives. No new context, no new slot, no type change.
+- Scope fence against over-rotation: the ban is on disclosure as an
+  **information-architecture pattern**. `ItemForm`'s internal option-section disclosures
+  sit inside a verbatim-reuse mandate (disqualifier 1) and are untouched — R-88
+  (flatten one outer level in a narrow pane) still applies as presentation via the
+  `LineEditor` wrapper.
+
+### 1.7 The bottom-edge line scroller (replacing the band stepper)
+
+The owner endorsed replacing the line surface's band stepper (`‹ 4/18 ›`) with a
+**bottom-edge scroller** through the filtered line set; the ux-designer owns its form.
+The architectural consequences, folded in now:
+
+- **The semantics transfer whole from the stepper.** It moves through `visibleLines()` —
+  the filtered set, whatever the index currently shows — and it **replaces the history
+  entry, never pushes** (interaction spec §10.3's reasoning is control-independent: it
+  attaches to whichever control moves laterally between lines). The route still changes,
+  so deep links and refresh are unaffected.
+- **It is content, not destinations** (§1.5's principle): a horizontally scrolling strip
+  over the working set is legitimate, and its horizontal scroll container is
+  self-contained.
+- **It rides the existing footer inset stack.** Bottom-edge chrome sits above
+  `env(safe-area-inset-bottom)` + `--kb-inset` exactly as the action footer does; the
+  shell's plane host already owns that stack, and the scroller mounts into the plane's
+  bottom-edge slot rather than inventing its own positioning.
+- **`useZoneScroll()` is unaffected.** That signal is the zone body's *vertical* scroll
+  (R-18's plate pinning consumes it); the scroller neither publishes nor consumes it.
+- Coarse-pointer rule unchanged: every stop in the scroller is ≥ 44 px in its constrained
+  axis (R-178).
 
 ---
 
@@ -298,12 +402,15 @@ R6 (products region).
 
 `Elevation` draws in `currentColor` and uses exactly one external token: `var(--paper)`
 (leader-text halo and break-line mask), plus two CSS hooks (`elev-dim`, `elev-break`)
-styled today from `src/styles/theme.css`. ops2 does not import the customer theme, so:
-**`src/ops2/styles/compat-customer-tokens.css`** defines the token set the reused
-components consume — `--paper` bound to the ops2 surface token, and the `elev-break`
-visibility rule (container-query form). One file, one place; when `ItemForm`'s Tailwind
-classes surface further token needs during build, they land in this same file — never
-scattered, never by importing `theme.css` wholesale.
+styled today from `src/styles/theme.css`. ops2 does not import the customer theme — and
+under §1.5 it has no palette of its own to bind to. So:
+**`src/ops2/styles/compat-reused-components.css`** is a **render-correctness shim, not a
+theme layer**: it defines what the reused components literally consume, bound to Ionic's
+own variables — `--paper: var(--ion-background-color, #fff)` — plus the `elev-break`
+visibility rule (container-query form). Without it the leader halo is transparent; that
+is the entire reason the file exists. One file, one place; when `ItemForm`'s Tailwind
+classes surface further needs during build, they land here the same way — bound to Ionic
+variables, never by importing `theme.css` wholesale.
 
 ### 3.4 The architectural seam this creates: the zone scroll signal
 
@@ -357,8 +464,9 @@ ux-designer's reworked Ionic mock must be approved before UI implementation — 
 
 1. **Dependency work** — §2.1 manifest, `vite.ops2.config.ts`, scripts;
    `ops2-deps.test.mjs` red → green. No app code.
-2. **Token binding** — `theme-ionic.css` (productionise the spike's binding),
-   `compat-customer-tokens.css` (§3.3).
+2. **Style wiring** — Ionic's default theme imported as shipped;
+   `functional-overrides.css` (§1.5's three requirements — nothing else);
+   `compat-reused-components.css` (§3.3).
 3. **Shell hosts** — `IonApp`/`IonReactRouter`/`IonSplitPane`/`IonMenu`, the zone-typed
    route table (compile-time page ban carried from ADR 0004), `useZoneScroll` (§3.4),
    `useBackGuard` (§2.3), the edit-host ladder (§4).
@@ -380,12 +488,23 @@ ux-designer's reworked Ionic mock must be approved before UI implementation — 
   (interaction spec §9) run against Ionic selectors (`.ion-page-hidden` for covered
   planes). Add: **editor-host assertion** — at 1024 and 1440 with the editor open, the
   editor container's width is ≤ 520 and the record remains visible beside it (§4).
-- **`scripts/tests/web/ops2-record.spec.ts`** — add the schematic assertions:
+- **`scripts/tests/web/ops2-record.spec.ts`** — add the §1.5 functional-override
+  assertions: (a) `not priced` and a blocked primary's label each compute ≥ 4.5:1
+  contrast against their rendered background, and the blocked primary is `disabled` with
+  an unfaded label (computed opacity 1 on the text); (b) the delete confirm's confirm
+  action and the undersize warning render in *different* Ionic colour roles (danger vs
+  warning — computed colours differ); (c) every rendered money figure has a GST-basis
+  caption in its accessible text. Also add the schematic assertions:
   `[data-elevation]` present on the line surface; after 24 px+ of zone scroll the plate
   is a ~56 px strip and **still visible** (R-18's "never disappears" — assert *not*
   `display:none`, the failure LEARNINGS records at line 1178); scroll-top restores it.
 - **`scripts/tests/web/ops2-edit.spec.ts`** — unchanged scope (AC-16 totals loop); runs
   against the sheet host at 768–1023 and the pane host at ≥1024.
+- The interaction spec §9.10 assertion (lateral movement walks the **filtered** set and
+  adds **no** history entries) **re-targets from the stepper to the bottom-edge scroller**
+  unchanged in substance; §1.6 adds: at ≥1024 with a job block open, the block's route is
+  live, the push-row list is still rendered as a list, and no accordion/`<details>`
+  element exists on the surface.
 
 ## 7. Security
 
