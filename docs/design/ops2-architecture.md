@@ -122,9 +122,13 @@ URL fragment (`#/record/…`) is never sent to the server, so the interactive lo
 "the router resolves the hash after auth" is true only when an Access session already exists.
 With the target in the **path**, Access's stored redirect URL carries it by construction.
 
-So: **ops2 routes are paths**, served by the §2.2 asset-fallback rule. React Router 7 is
-already a dependency (`react-router@7.13.0`, used by the customer site) — no new dependency.
-ADR-0002 records this decision; the PM folds the wording fix into the spec.
+So: **ops2 routes are paths**, served by the §2.2 asset-fallback rule. ADR-0002 records
+this decision; the PM folds the wording fix into the spec.
+*(Amended by ADR 0005, 2026-08-18: the router is no longer "RR7, no new dependency" —
+ops2 rides `@ionic/react-router` on React Router 5 until Ionic ships RR6/RR7, in its own
+Vite graph with a single aliased v5 copy and an import-boundary test. Path routing and
+the AC-24 reasoning are unchanged — Access preserves path URLs under either router major.
+Design: `docs/design/ops2-ionic-boundary.md` §2.)*
 
 ### 3.2 Route table (R1 ships the record routes; later regions add theirs)
 
@@ -157,6 +161,16 @@ The sign-in screen is carried from register rows 5–13 **verbatim** (D-2, NON-P
 ## 4. The responsive layout system (R1 builds it; I3/I4/C1 bind every region)
 
 ### 4.0 The plane shell — the navigation pattern layer (ADR 0004; design pass B amendment)
+
+> **Design pass C (2026-08-18, ADR 0005):** the owner ruled to **adopt Ionic** — the
+> plane shell's *implementation* below 1024 px is now Ionic's stack
+> (`IonRouterOutlet`/`IonPage`, menu, split-pane, segment, action sheet), and Ionic is
+> ops2's default component library beyond the shell. Everything structural in this
+> section survives: the zone contract as the seam, the compile-time page ban, zone
+> bodies host-agnostic, growth as revelation, the ≥1024 three-zone layer bespoke.
+> §4.1–4.3 survive as written (container queries and the folding component govern layout
+> *within* a zone). The component boundary, router split and sequencing:
+> `docs/design/ops2-ionic-boundary.md`.
 
 **Added after the R1 mock rejection.** As first written, this section supplied layout
 *mechanisms* (§4.1–4.3) with no navigation pattern layer above them — and the first

@@ -1,7 +1,14 @@
 # ops2 — the adoption option, designed and costed against the bespoke plane shell
 
-Author: architect · Date: 2026-08-17 · Status: **comparison for the owner's call — not a
-decision.** ADR 0004 stands until the owner rules; this document is the strongest case
+Author: architect · Date: 2026-08-17 · Status: **decided — the owner ruled for Option B
+(adopt Ionic) on 2026-08-18**, judging the two artifacts on his phone: *"I genuinely
+prefer the experience of the ionic option on mobile."* He also released the fidelity
+constraint (*"I don't necessarily chase to replicate design language of the main page for
+ops"*), which widens §4's boundary beyond the shell — ADR 0005 records the decision and
+`docs/design/ops2-ionic-boundary.md` is now the binding design (D-A → B; D-B → dual idiom
+kept, ASSUMED, vetoable at the mock gate; D-C → interim accepted). This document remains
+the costing record. Original status line: comparison for the owner's call — not a
+decision; ADR 0004 stood until the owner ruled. It was the strongest case
 for adoption, built as instructed: adopt as much as possible, then state honestly what
 it costs. The owner's challenge names Ionic, Capacitor and "shadcn + typescript" — the
 three sit at different layers, so §2 maps the layers before anything is ranked.

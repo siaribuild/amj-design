@@ -23,6 +23,14 @@ Spec ownership: `docs/specs/ops2.md` §7.1 R1 row, plus every criterion tagged `
    survives as a warning. Oversize never blocked. No server-side size constraint is assumed
    anywhere in this design.
 
+4. **2026-08-18 (Ionic adoption — ADR 0005):** the owner ruled for the Ionic shell and
+   default component library. This design's worker seams, endpoints, state shapes, reuse
+   mandates and zero-migration claim are untouched. Superseded in part: §2.1's `shell/`
+   file list (Ionic hosts replace the bespoke plane primitives) and its "`ops2.html`
+   added to `build.rollupOptions.input`" line (ops2 gets its own Vite config). The
+   product schematic (`Elevation`) joins R1 scope — it appeared in no prior R1 document.
+   Binding follow-on design: `docs/design/ops2-ionic-boundary.md`.
+
 **One discrepancy, deliberately not designed around (with the owner via the PM):** the owner
 described read-only as beginning *at acceptance*; the system freezes at **issue** — quote
 revisions were removed on the principle that a quote is a quote, so no editable window

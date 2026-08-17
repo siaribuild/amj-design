@@ -1,5 +1,9 @@
 ---
-status: accepted
+status: superseded by ADR 0005 (2026-08-18) — the framework decision only. The zone
+  contract, the enforcement harness, the mobile grammar and the width-class growth ladder
+  codified here all carry forward under Ionic. Two of the four grounds below were found
+  stale on re-verification (corrections inline, marked ⚠); the full re-check is
+  docs/design/ops2-shell-adoption-comparison.md §1.
 supersedes: the component-framework position of design pass A (the mechanism-only layer
   implicit in docs/design/ops2-architecture.md §4 as first written, and the R1 interaction
   spec's narrow-width model built on it — drawer navigation over a one-column scroll)
@@ -115,14 +119,27 @@ navigation-free scroll. That property is the thing worth stealing, and this ADR 
    Q3 2026 — a wait-state on the critical path of D7's first region, for a dependency
    the owner's lost-day constraint cannot absorb. Driving `IonNav` by hand from RR7
    means owning the hardest part of Ionic ourselves while shipping all of its weight.
-2. **Two theming systems.** Ionic components are Stencil web components behind shadow
+2. **Two theming systems.** ⚠ *Correction (2026-08-18): stale as written. CSS custom
+   properties inherit through shadow boundaries — Ionic's entire theming API exists
+   because of that platform fact — so the token layer reaches Ionic components by
+   binding (~70 lines assigning token values to Ionic's documented variables), not by
+   piercing. The Ionic spike demonstrably wears the ops2 palette. What remains true:
+   Tailwind utilities and arbitrary selectors cannot reach shadow internals, and
+   anything not exposed as a variable or `::part()` is unstylable. See the comparison
+   doc §1.2. The original text follows for the record.* Ionic components are Stencil web components behind shadow
    DOM, themed through Ionic's CSS custom-property API. The approved ops2 visual
    treatment lives in Tailwind v4 tokens (`tokens.css`), and the settled mock's own
    header says its token layer was built so a component substrate "rebinds §2" — but
    shadow roots are exactly where Tailwind utilities and our tokens stop working.
    Every plane, footer and band in the settled model would be re-expressed through a
    second variable vocabulary, forever.
-3. **The desktop story fails D4/C1 rather than being merely hard.** Ionic's growth
+3. **The desktop story fails D4/C1 rather than being merely hard.** ⚠ *Correction
+   (2026-08-18): partly stale. `ion-split-pane`'s `when` accepts `boolean | string`; a
+   boolean driven from measured width satisfies C1's moment-to-moment rule (the spike
+   drives it that way). What stands: split-pane is a two-zone construct, so the
+   three-simultaneous-zone desktop with the 48px code strip remains bespoke under either
+   option — a shared cost, not a differentiator. See the comparison doc §1.3. The
+   original text follows for the record.* Ionic's growth
    answer is `ion-split-pane` — two zones, toggled by viewport media query. The settled
    model needs five width classes, three simultaneous zones with drag handles at
    desktop, a 48 px code-strip rail at compact, and panes that respond to **their own
