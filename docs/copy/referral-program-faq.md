@@ -79,8 +79,12 @@ in the position of being paid and then asked for it back because something fell 
 
 **How do I know when something's happened?**
 
-We email you when a referral is recorded, when a reward is confirmed, and when we've paid it. Your
-account's Referrals section shows the same thing at any time.
+Your account's Referrals section is the live picture: who you've referred, how far along each one is,
+what's confirmed, and the date each payment is due. We email you when we've actually paid you, with
+the reference you'll see on your statement.
+
+Everything else is on the screen rather than in your inbox — deliberately. A referral moves through
+several stages that need nothing from you, and an email for each one is noise you'd learn to ignore.
 
 **What if my mate's order is cancelled or refunded?**
 
