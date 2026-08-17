@@ -28,16 +28,27 @@
 import { useEffect, useState } from "react";
 import { ArrowRight, ChevronRight } from "lucide-react";
 import { type Page, Btn, SLabel, CtaBanner } from "../app/ui";
+import { pathForPage } from "../app/routes";
 import { getReferralProgram, getReferrerScreen, type ReferralProgramPublic, type ReferrerScreen } from "../data/referrals";
 import { pct, moneyRound, months, days } from "../components/referral/format";
 import { JoinProgramFlow } from "../components/referral/JoinProgramFlow";
 import { CodeCard } from "../components/referral/ReferrerBlock";
 
-export function ReferPage({ setPage, signedIn }: { setPage: (p: Page) => void; signedIn: boolean }) {
+/** The two published articles this page sends people to.
+ *
+ *  Slugs, not paths, so `pathForPage` stays the single place a post URL is built —
+ *  and NOT a link to `/resources`, which is what these three buttons did before
+ *  the articles existed. A control labelled "full rules and terms" that lands on
+ *  an index is worse than no link: on the join screen it sits beside a checkbox
+ *  saying the terms have been read, and nobody could have read them. */
+const TERMS_SLUG = "referral-program-terms";
+const FAQ_SLUG = "referral-program-detail";
+
+export function ReferPage({ setPage, signedIn }: { setPage: (p: Page, pathOverride?: string) => void; signedIn: boolean }) {
   const [program, setProgram] = useState<ReferralProgramPublic | null>(null);
   const [screen, setScreen] = useState<ReferrerScreen | null>(null);
   const [loading, setLoading] = useState(true);
-  const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
+  const go = (p: Page, pathOverride?: string) => { setPage(p, pathOverride); window.scrollTo(0, 0); };
 
   const load = () => {
     setLoading(true);
@@ -65,7 +76,7 @@ export function ReferPageBody({ program, screen, signedIn, go, onJoined }: {
   program: ReferralProgramPublic;
   screen: ReferrerScreen | null;
   signedIn: boolean;
-  go: (p: Page) => void;
+  go: (p: Page, pathOverride?: string) => void;
   onJoined?: () => void;
 }) {
   const discount = pct(program.discountPercent);
@@ -210,7 +221,7 @@ export function ReferPageBody({ program, screen, signedIn, go, onJoined }: {
           <p className="text-body mt-4 t-cap measure">
             Amounts include any GST payable, and we don't give tax advice. Self-referral, cancelled orders and
             second businesses are in the{" "}
-            <button onClick={() => go("resources")}
+            <button onClick={() => go("post", pathForPage("post", TERMS_SLUG))}
               className="text-sage hover:text-sage-deep cursor-pointer underline underline-offset-2">full rules and terms →</button>
           </p>
         </div>
@@ -269,7 +280,7 @@ export function ReferPageBody({ program, screen, signedIn, go, onJoined }: {
           ) : member && screen ? (
             <CodeCard code={screen.code!} shareUrl={screen.shareUrl ?? ""} program={program} onHowItWorks={() => go("referrals")} />
           ) : (
-            <JoinProgramFlow program={program} onJoined={onJoined} onReadTerms={() => go("resources")} />
+            <JoinProgramFlow program={program} onJoined={onJoined} onReadTerms={() => go("post", pathForPage("post", TERMS_SLUG))} />
           )}
         </div>
       </section>
@@ -296,7 +307,7 @@ export function ReferPageBody({ program, screen, signedIn, go, onJoined }: {
                     continues — outside the track it read as a page-level action
                     and left the fourth card looking unfinished. */}
                 {i === 3 && (
-                  <button onClick={() => go("resources")}
+                  <button onClick={() => go("post", pathForPage("post", FAQ_SLUG))}
                     className="self-start flex items-center gap-1.5 mt-3 text-sage hover:text-sage-deep cursor-pointer t-bd-sm">
                     The full referral FAQ <ArrowRight className="w-4 h-4" aria-hidden="true" />
                   </button>
