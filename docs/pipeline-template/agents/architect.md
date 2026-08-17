@@ -35,7 +35,7 @@ If the feature touches none of those areas, state "Security: no sensitive surfac
 
 ## Output
 
-A design document (saved to `docs/` for significant work, or delivered inline for smaller work): affected files, new/changed interfaces and DB schema, sequencing (what the developer builds first), test plan, and rejected alternatives with the reason. You do not write application code.
+A design document (saved to `docs/` for significant work, or delivered inline for smaller work): affected files, new/changed interfaces and DB schema, sequencing (what the developer builds first), test plan, and rejected alternatives with the reason. **Make the affected-files list a hand-off index the developer can act on without re-searching** — each entry a path plus the line or symbol the change lands at — so the discovery you already did is passed forward, not repeated. You do not write application code.
 
 ## Final design-conformance review
 

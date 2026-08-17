@@ -68,6 +68,15 @@ Every loop in this pipeline must converge or escalate — never grind:
 - **Progress test between rounds:** each loop round must change something concrete (a finding resolved, a question answered, a diff advanced). Two rounds with no delta = stalled = escalate.
 - **Scale honestly:** small fixes skip the pipeline entirely; don't spawn six agents for a one-line change.
 
+### Token economy (spend agents where they buy something)
+
+A spawn costs a full context rebuild: the new agent re-discovers what the orchestrator already knows, and *exploration* — not reasoning — is the dominant cost of an agent run. A spawn earns its keep when it buys independence, parallelism, context hygiene, or a test of whether the written artifact is self-sufficient. When it buys none of those, it is overhead.
+
+- **Warm agents, not fresh spawns.** One agent per role per feature, continued with SendMessage for the next slice, the next round, the next set of findings — never a new spawn for more of the same work. A resumed agent keeps its context and its cache; a fresh one pays for the codebase again. agent-guard's per-agent send cap (`.claude/hooks/agent-guard.config.json`) is set to allow this — hitting it is a convergence checkpoint, never a cue to respawn.
+- **Pass discovery, don't make agents redo it.** Everything already found — file paths with line numbers, grep results, the design's affected-files index, which suite owns which test — goes into the next agent's prompt verbatim, with an instruction to trust it rather than re-derive it. Agents must *read* the files they edit; they must not *search* for them twice.
+- **The orchestrator may implement bounded slices.** When the design is fully specified, the slice is small, and the orchestrator already holds the design and those files in context, implementing inline beats briefing a cold developer — and it plays well with the TDD gate, since the orchestrator runs the red test then writes in the same transcript the validator reads. Spawn the developer instead when the work is large or parallelisable, when it would flood the orchestrator's context, or when the design is a durable deliverable whose self-sufficiency deserves testing by a cold reader. **The orchestrator may implement, but never reviews its own work** — the tester is always a separate agent.
+- **Batch turns; don't narrate.** Every turn that changed code pays a Stop-hook toll (external review when enabled, security-diff review, any design-pass hooks). Ending a turn to report progress nobody asked for pays those tolls for nothing. **The orchestrator decides the batch** — it ends a turn only where the user must decide, approve, or see something (a decision gate, the mock gate, a finished-and-verifiable slice, an impasse, or a genuine need for input), not to announce progress. When in doubt, keep working: the user can always interrupt, but a toll already paid cannot be refunded.
+
 ## Enforced guardrails (don't fight them)
 
 - **TDD (Probity):** writes to the paths scoped in `probity.config.ts` are blocked unless recent session history shows a failing test the write addresses. Work red → green → refactor.
