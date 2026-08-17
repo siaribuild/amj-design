@@ -44,12 +44,16 @@ account, no previous order, and not the same business as you under a different l
 There are two ways a referral gets recorded, and only two:
 
 - Someone follows your referral link and creates an account.
-- Someone types your referral code into their own account after signing in, before they place their
-  first order.
+- Someone gives us your code when we set their account up for them.
 
-Both work the same way, and both depend on the other person identifying themselves. **There is no way
-for you to give us someone else's name, phone number or email address**, and we will not accept those
-details if offered.
+Both work the same way, and both depend on the other person identifying themselves — they follow the
+link as themselves, or they hand us the code as themselves. **There is no way for you to give us
+someone else's name, phone number or email address**, and we will not accept those details if
+offered.
+
+**You cannot add a code to an account after it exists.** A referral is part of how an account is
+created or it is nothing, which is what stops anyone claiming an introduction for a customer who was
+already ours.
 
 Some other rules that decide who gets credit:
 

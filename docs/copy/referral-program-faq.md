@@ -36,9 +36,9 @@ even a dormant one they made years ago and forgot about — following your link 
 
 **What if two of us refer the same tradie?**
 
-The first referral recorded is the one that counts, permanently. If someone follows your link and then
-later types a different code, the second one is refused rather than replacing yours. It works the same
-way in reverse, so it's worth sharing your code early rather than assuming.
+The first referral recorded is the one that counts, permanently. If someone follows your link and a
+different code is given when their account is set up, the second one is refused rather than replacing
+yours. It works the same way in reverse, so it's worth sharing your code early rather than assuming.
 
 **I told someone about you months ago and they're only ordering now. Do I get anything?**
 
@@ -54,9 +54,10 @@ different email. The program is for introducing other people's businesses.
 
 **Do they have to use the link, or is the code enough?**
 
-Either. The link sets things up automatically; the code can be typed into their account after they
-sign in, any time before their first order. Reading your code out over the phone or on site works
-perfectly well — that's what it's for.
+Either, but the code has to be given when their account is set up — not added afterwards. The link
+does that automatically. Otherwise they just tell us the code when we're setting them up, so reading
+it out over the phone or on site works perfectly well; that's what it's for. What can't happen is
+adding a code to an account that already exists.
 
 ### Getting paid
 
