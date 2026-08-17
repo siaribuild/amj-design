@@ -1,10 +1,20 @@
 # Referral program — specification
 
 Branch: `feat/referral-program`
-Status: **revision 13 — the postcode review flag is removed; D19 is settled (deferred, separate
-thread). Everything is settled.**
+Status: **revision 14 — the as-built amendments. The `/r/<CODE>` cookie rule is deleted rather than
+narrowed (AC-4); the offer panel's home is `/referrals` (AC-69); the quote-panel badge, AC-46, AC-57
+and the three unbuilt emails are descoped with reasons; §4.10 records the open tails handed to the
+account-creation feature. Everything is settled.**
 Author: product-manager
 Date: 2026-08-17
+
+> ⚠️ **READ `referral-program-revision-14.md` BESIDE THIS FILE.** Revision 14 is an amendment
+> register that **governs wherever it and the body below disagree** — and several criteria now assert
+> the *opposite* of what this document still says (AC-4, AC-84, AC-98, AC-62a), while others are
+> struck (AC-57, AC-51's display half, AC-46, AC-77). The body below is revision 13 prose until the
+> register is merged into it; the merge is deferred deliberately, so that 1,383 lines of settled
+> requirements are not reproduced wholesale while the feature is still moving. Anyone reading a
+> criterion here must check the register before relying on it.
 
 **Revision 2:** rate set to 1% and every number moved into ops config · cap removed (field kept,
 nullable) · minimum payout balance added (default off) · launch ON · **program became double-sided —
