@@ -17,6 +17,15 @@ _Avoid_: admin, operator
 **Payable account**:
 An account with complete, ABN-valid payout details. Payability gates what an account can *receive* (e.g. a referral code); it is a different axis from staff-ness, which gates what an account can *participate in*. It is never a purchase gate — nothing anywhere may condition a referrer's capabilities on the referrer's own order history.
 
+### Registration and the submission gate
+
+**Submission gate**:
+The single point where anonymity ends. Browsing, configuring, live pricing, autosave and uploads are all anonymous; *submitting a project for review* requires a signed-in account with complete account details — a name the person typed, an AU-valid phone, a full address, and an OTP-verified email. Identity at submission comes from the session, never the request body.
+_Avoid_: registration wall, login gate (browsing is never gated)
+
+**Account address**:
+The account holder's own address, stored on `user` (one per account). The project's **delivery destination** is a different fact in a different place (`project.delivery_*`): it pre-fills from the account address when empty and stays editable per project — a tradie's delivery address is a site, not their office. Neither ever writes the other.
+
 ### Projects, quotes, and orders
 
 **Project**:
