@@ -438,9 +438,9 @@ test("T-C5: the issued quote asks for half of goods plus delivery", async ({ pag
   // name, phone and address. Created here through the API so the test's own
   // subject — the issued quote's deposit arithmetic — is what it exercises.
   const challenge = await page.request.post("/api/auth/challenge", { data: { email } });
-  const { devCode } = await challenge.json();
-  expect(devCode, `dev OTP for ${email}`).toBeTruthy();
-  expect((await page.request.post("/api/auth/verify", { data: { email, code: devCode } })).ok()).toBeTruthy();
+  const { devCode: customerCode } = await challenge.json();
+  expect(customerCode, `dev OTP for ${email}`).toBeTruthy();
+  expect((await page.request.post("/api/auth/verify", { data: { email, code: customerCode } })).ok()).toBeTruthy();
   expect((await page.request.post("/api/auth/profile", {
     data: {
       name: "TC5 Customer", phone: "0412 345 678", addressLine1: "12 Bridge Street",

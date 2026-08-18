@@ -24,7 +24,9 @@ The single point where anonymity ends. Browsing, configuring, live pricing, auto
 _Avoid_: registration wall, login gate (browsing is never gated)
 
 **Account address**:
-The account holder's own address, stored on `user` (one per account). The project's **delivery destination** is a different fact in a different place (`project.delivery_*`): it pre-fills from the account address when empty and stays editable per project — a tradie's delivery address is a site, not their office. Neither ever writes the other.
+The account holder's own address, stored on `user` (one per account). It is quote and paperwork data.
+
+The project's **delivery destination** is a different fact in a different place (`project.delivery_*`), and **is never derived from the account address** — not on a first quote, not on a fifth, not as a placeholder. A tradie's delivery address is their customer's site, different nearly every time, and a prefill that is wrong nearly every time is worse than a blank field: it is wrong *and* it stops the field being read. Its precedence is the project's stored destination, then the postcode the visitor typed before the gate, then empty. Neither fact ever writes the other.
 
 ### Projects, quotes, and orders
 
