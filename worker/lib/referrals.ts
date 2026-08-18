@@ -6,6 +6,7 @@
 import type { Env } from "../types";
 import { uuid } from "./util";
 import { taxBreakdown } from "../../src/data/gst";
+import { abnValid } from "../../src/data/abn";
 import { STAGES } from "./orders";
 import { repriceReferralDrafts } from "./lines";
 import type { ReferralOffer, ReferralProgramPublic } from "../../src/data/referrals";
@@ -72,26 +73,14 @@ export async function ensureReferralCode(
   throw new Error(`could not issue a referral code after ${CODE_ISSUE_ATTEMPTS} attempts`);
 }
 
-/** The ATO's published ABN checksum: weighted digits, one subtracted from the
- *  first, sum divisible by 89. */
-const ABN_WEIGHTS = [10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19];
-
-/** Is this an ABN?
+/** Is this an ABN? The checksum, and nothing else.
  *
- *  The checksum, and nothing else. v1 makes no ABN Lookup call: the checksum
- *  catches a transposed digit — the realistic error — without putting a network
- *  round trip in front of a tradie who is trying to join the program. */
-export function abnValid(abn: string | null | undefined): boolean {
-  // Humans write an ABN with spaces, and every form in this system should let
-  // them. Normalising here means no caller has to remember to.
-  const digits = String(abn ?? "").replace(/\s/g, "");
-  if (!/^\d{11}$/.test(digits)) return false;
-  const sum = ABN_WEIGHTS.reduce((total, weight, index) => {
-    const digit = Number(digits[index]) - (index === 0 ? 1 : 0);
-    return total + digit * weight;
-  }, 0);
-  return sum % 89 === 0;
-}
+ *  MOVED (registration Phase 2, design §7.4): the implementation now lives in
+ *  `src/data/abn.ts` so the browser's field check and the Worker's are literally
+ *  the same function — the precedent `normalizePhone` → `src/data/phone.ts` set
+ *  in Phase 1. This re-export keeps every existing caller (payoutComplete,
+ *  payoutMissing, the referral suites) untouched. */
+export { abnValid };
 
 /** Do these two ABNs identify the same business?
  *

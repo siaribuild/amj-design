@@ -25,6 +25,9 @@ await build({
       export { normEmail, isEmail, sixDigit, sha256hex, userDto } from ${p("worker/lib/auth.ts")};
       export { normalizePhone, enquiryReference, validateEnquiry } from ${p("worker/lib/enquiry.ts")};
       export { isValidAuPhone, normalizePhone as normalizePhoneShared } from ${p("src/data/phone.ts")};
+      export { abnValid, normalizeAbn, formatAbn } from ${p("src/data/abn.ts")};
+      export { abnValid as abnValidViaReferrals } from ${p("worker/lib/referrals.ts")};
+      export { normalizeBusinessName, businessNameCandidates, nameMatches, emailDomainPlausible, FREE_MAIL_DOMAINS } from ${p("worker/lib/trade-match.ts")};
       export { AU_STATES, DETAIL_LIMITS, detailsPatchProblems, submitMissing } from ${p("src/data/accountDetails.ts")};
       export { availableActions, ACTION_LABEL, TRANSITIONS, STAGES, STAGE_LABEL, DEPOSIT_PERCENT, depositOf, balanceOf } from ${p("worker/lib/orders.ts")};
       export { editedFieldsAfterSave } from ${p("worker/lib/lines.ts")};
@@ -969,6 +972,37 @@ test("isValidAuPhone: accepted AU shapes, rejected junk", () => {
 // route's export must BE the shared one, not a second copy that agrees today.
 test("one AU phone normaliser: worker/lib/enquiry re-exports src/data/phone", () => {
   assert.equal(M.normalizePhone, M.normalizePhoneShared);
+});
+
+// Phase-2 design §7.4 / step (a)1: ONE home for ABN validity — src/data/abn.ts.
+// The browser's client-side format check (AC-P2-7/16) and the Worker's checksum
+// must be the same function, so worker/lib/referrals.ts re-exports it rather
+// than keeping the copy that lived there through Phase 1.
+test("abnValid / normalizeAbn / formatAbn: one ABN validator, two callers", () => {
+  // The move is a re-export, not a second copy that agrees today.
+  assert.equal(M.abnValid, M.abnValidViaReferrals, "worker/lib/referrals must re-export src/data/abn's abnValid");
+
+  // Real, checksum-valid ABNs (the seeded fixture plus two from the ABR register).
+  for (const good of ["33629698013", "33 629 698 013", "51824753556", "53004085616"]) {
+    assert.equal(M.abnValid(good), true, `${good} must pass the ATO checksum`);
+  }
+  // A transposed digit is the realistic error the checksum exists to catch.
+  for (const bad of ["33629698031", "12345678901", "1234567890", "123456789012", "", null, undefined, "abcdefghijk", "3362969801x"]) {
+    assert.equal(M.abnValid(bad), false, `${JSON.stringify(bad)} must be rejected`);
+  }
+
+  // Normalisation strips whitespace only — it never invents or truncates digits.
+  assert.equal(M.normalizeAbn(" 33 629 698 013 "), "33629698013");
+  assert.equal(M.normalizeAbn("33 629\t698\n013"), "33629698013");
+  assert.equal(M.normalizeAbn(null), "");
+  // Non-ASCII digit lookalikes are simply not digits (AB-P2-13).
+  assert.equal(M.abnValid("３３６２９６９８０１３"), false);
+
+  // Display formatting: 2-3-3-3, and anything that is not 11 digits comes back untouched.
+  assert.equal(M.formatAbn("33629698013"), "33 629 698 013");
+  assert.equal(M.formatAbn("33 629 698 013"), "33 629 698 013");
+  assert.equal(M.formatAbn("123"), "123");
+  assert.equal(M.formatAbn(null), "");
 });
 
 // What blocks SUBMISSION (spec §4.3 / AC-17 / AC-23). A stored-but-invalid phone
