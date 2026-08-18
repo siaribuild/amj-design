@@ -422,11 +422,18 @@ export function QuoteReviewSubmit({
    *  button and an empty caption: the one gap on the screen was the only one
    *  nothing named. Delivery starts blank every project on purpose (MG-2: a tradie
    *  delivers to a different site every time), which makes naming it not a
-   *  courtesy but the whole instruction — one field, then one press. */
-  const outstanding = [
-    ...missing.map((f) => FIELD_LABEL[f]),
-    ...(postcode.length === 4 ? [] : ["delivery postcode"]),
-  ];
+   *  courtesy but the whole instruction — one field, then one press.
+   *
+   *  STAGE-AWARE, because the account half is only the customer's problem once
+   *  they have an account. An anonymous visitor is missing all six account fields
+   *  by definition, and reciting them on the pre-gate screen would be a wall of
+   *  demands at someone who has not been asked to sign in yet — the exact thing
+   *  the two-stage gate exists to avoid. Pre-gate, the only thing outstanding is
+   *  the one field actually on the screen. */
+  const deliveryOutstanding = postcode.length === 4 ? [] : ["delivery postcode"];
+  const outstanding = stage === "details"
+    ? [...missing.map((f) => FIELD_LABEL[f]), ...deliveryOutstanding]
+    : deliveryOutstanding;
 
   const errId = (field: DetailField) => `detail-err-${field}`;
 
@@ -784,14 +791,19 @@ export function QuoteReviewSubmit({
             keyboard or scripted path reaches it against a merge-deleted id. */}
         {stage !== "resolving" && (
           <>
+            {/* A disabled Submit is never unexplained, on any stage. Pre-gate the
+                blocker sits ABOVE the pre-announcement rather than replacing it:
+                §16.2 puts that caption directly against the button and it still
+                belongs there — it says what pressing this will do, which is a
+                different question from why it cannot be pressed yet. */}
+            {outstanding.length > 0 && (stage === "pregate" || stage === "details") && (
+              <p className="text-body mb-2 text-center sm:text-right t-cap">
+                Still needed: {outstanding.join(", ")}.
+              </p>
+            )}
             {stage === "pregate" && (
               <p className="text-body mb-2 text-center sm:text-right t-cap">
                 Submitting needs an account — we'll email you a code. About a minute.
-              </p>
-            )}
-            {stage === "details" && outstanding.length > 0 && (
-              <p className="text-body mb-2 text-center sm:text-right t-cap">
-                Still needed: {outstanding.join(", ")}.
               </p>
             )}
             {/* Full-width on a phone, right-aligned on desktop (§16.10): the one

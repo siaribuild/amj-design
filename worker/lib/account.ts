@@ -18,7 +18,7 @@
 import type { Env } from "../types";
 import type { UserRow } from "./auth";
 import {
-  AU_STATES, detailsPatchProblems,
+  detailsPatchProblems,
   type AccountDetails, type DetailField,
 } from "../../src/data/accountDetails";
 

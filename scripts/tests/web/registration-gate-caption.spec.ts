@@ -138,3 +138,40 @@ test("account gaps and the delivery gap are named together, in form order", asyn
   await expect(page.getByRole("heading", { name: "Your details" })).toBeVisible();
   await expect(page.getByText(/^Still needed:/)).toHaveText("Still needed: phone, delivery postcode.");
 });
+
+// ─── The same dead end, one stage earlier ────────────────────────────────────
+// PM decision 1, owner-approved: an ANONYMOUS visitor meets the identical defect
+// on the pre-gate screen. `postcode.length !== 4` disables Submit there too, and
+// stage 0 carried only the friction pre-announcement — which says what pressing
+// the button will DO, never why it cannot be pressed.
+//
+// The account fields must NOT appear in this list. An anonymous visitor has no
+// account to be missing anything from, and reciting six demands at someone who
+// has not been asked to sign in yet is the wall the gate exists to avoid.
+test("the anonymous pre-gate screen names the delivery postcode, and nothing else", async ({ page }) => {
+  const saved = await page.request.put("/api/projects/current/lines", {
+    data: { title: `Pre-gate caption ${stamp}`, items: [A_LINE] },
+  });
+  expect(saved.ok(), `save lines: ${await saved.text()}`).toBeTruthy();
+
+  await openReview(page);
+  // Stage 0: no sign-in panel yet, and no details panel either.
+  await expect(page.getByRole("heading", { name: "Sign in or create your account" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Your details" })).toHaveCount(0);
+
+  const submit = page.getByRole("button", { name: /Submit for technical review/ });
+  await expect(submit).toBeDisabled();
+
+  const caption = page.getByText(/^Still needed:/);
+  await expect(caption).toHaveText("Still needed: delivery postcode.");
+  // The pre-announcement still sits with the button — this adds to it, replaces
+  // nothing (§16.2).
+  await expect(page.getByText(/Submitting needs an account/)).toBeVisible();
+
+  // One field clears it, and the button becomes the gate it always was.
+  await page.getByLabel("Delivery postcode").fill("3072");
+  await expect(caption).toHaveCount(0);
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect(page.getByRole("heading", { name: "Sign in or create your account" })).toBeVisible();
+});
