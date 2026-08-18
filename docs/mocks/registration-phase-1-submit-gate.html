@@ -82,12 +82,20 @@
 .b-outline{border-color:var(--ink);color:var(--ink);background:transparent}
 .b-ghost{color:var(--body);background:transparent}
 .b-danger{background:var(--destructive);color:#fff}
-.b-disabled{background:var(--ink);color:#fff;opacity:.4}
-/* Inputs — .field-control */
-.field{width:100%;border:1px solid var(--line-strong);background:var(--paper);padding:10px 12px;color:var(--ink);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.b-sage is-disabled{background:var(--ink);color:#fff;opacity:.4}
+/* A disabled Btn keeps its OWN fill and drops to 40% (ui.tsx:96 disabled:opacity-40;
+   /login uses opacity-50 for the not-yet-valid case). So a not-yet-ready sage
+   Submit is a faded SAGE button, never a dark ink one — it must read as the same
+   button waiting, not a different button. */
+.is-disabled{opacity:.4}
+.is-pending{opacity:.5}
+/* Inputs — .field-control. theme.css:602 fills from --control-fill, which
+   .quote-panel sets to --bone; focus lifts it to paper and the border to sage.
+   A white-on-white field was the mock's own invention. */
+.field{width:100%;border:1px solid var(--line-strong);background:var(--control-fill,var(--paper));padding:10px 12px;color:var(--ink);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
 .field.mono{font-family:var(--font-data);font-variant-numeric:tabular-nums;letter-spacing:.06em}
 .field.err{border-color:var(--attention);background:color-mix(in oklab,var(--attention) 7%,var(--paper));color:var(--attention-ink)}
-.field.focus{border-color:var(--sage)}
+.field.focus{border-color:var(--sage);background:var(--paper)}
 .field-label{display:block;color:var(--ink-soft);margin-bottom:6px;font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase}
 /* Status pill — pages/accountModel StatusPill (icon + word, never colour alone) */
 .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid;white-space:nowrap;font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-display);letter-spacing:1px;text-transform:uppercase}
@@ -248,38 +256,108 @@ section.surface{padding-top:56px}
 /* ── Extra frame sizes + review-screen helpers for THIS mock ────────────── */
 .dev.mid{width:938px}.dev.mid .screen{width:920px}
 .dev.half{width:698px}.dev.half .screen{width:680px}
+/* Page shell — QuoteReviewSubmit.tsx:124  max-w-2xl mx-auto px-6 py-10, on
+   .quote-page (ground bone, card fill paper). px-6 is unconditional: the real
+   screen does NOT narrow its gutter on a phone, so neither does this mock. */
 .revwrap{max-width:672px;margin:0 auto;padding:0 24px}
 .revpage{background:var(--bone);--card-fill:var(--paper);padding:22px 0 40px}
 .slabel{display:flex;align-items:center;gap:8px;margin-bottom:12px}
 .slabel span{color:var(--sage);font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase}
-.qpanel{border:1px solid var(--line);background:var(--paper);padding:20px;margin-bottom:16px}
-.qrow{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(0,0,0,.06);padding:6px 0;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+/* .quote-panel (theme.css:560) — and the --control-fill it hands its inputs. */
+.qpanel{border:1px solid var(--line);background:var(--paper);--control-fill:var(--bone);padding:20px;margin-bottom:16px}
+/* The panel the gate is currently standing on. Same vocabulary the configurator
+   already uses for the live card — quote-item-card[data-state="added"],
+   theme.css:576 — a 55%-mixed sage border plus the 3px inset spine. Full-strength
+   sage was louder than anything the product actually draws. The spine overlaps
+   the padding rather than being added to it, which is what the built card does. */
+.qpanel.live{border-color:color-mix(in oklab,var(--sage) 55%,var(--line));box-shadow:inset 3px 0 0 var(--sage)}
+/* A panel shown only for context, dimmed so the gate reads. */
+.qpanel.ctx{opacity:.55}
+.qrow{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-bottom:1px solid rgba(0,0,0,.06);padding:6px 0;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
 .qrow:last-of-type{border-bottom:0}
-.qrow .lbl{color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The label truncates; anything AFTER it must not. Before this the "Just added"
+   chip lived inside the truncating span, so on the longest merged line it was the
+   first thing the ellipsis ate — the one element on the screen that must survive. */
+.qrow .lbl{color:var(--ink);min-width:0;display:flex;align-items:baseline;gap:6px}
+.qrow .lbl > .txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .qrow .amt{color:var(--body);flex:none;font-family:var(--font-data);font-variant-numeric:tabular-nums}
-.totrow{display:flex;justify-content:space-between;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
-.totrow .k{color:var(--body)}.totrow .v{color:var(--ink);font-family:var(--font-data);font-variant-numeric:tabular-nums}
-.totrow.big{border-top:1px solid rgba(0,0,0,.08);padding-top:8px;margin-top:2px}
+.totrow{display:flex;justify-content:space-between;gap:12px;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.totrow .k{color:var(--body)}.totrow .v{color:var(--ink);flex:none;font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.totrow.big{border-top:1px solid rgba(0,0,0,.08);padding-top:8px;margin-top:8px}
 .totrow.big .k,.totrow.big .v{font-weight:600;color:var(--ink)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
 .mob .grid2,.mob .grid3{grid-template-columns:1fr}
-.backlink{display:flex;align-items:center;gap:4px;color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);margin-bottom:18px}
-.stagehead{display:flex;align-items:flex-start;gap:12px;margin-bottom:4px}
-.stagenum{width:26px;height:26px;flex:none;border:1px solid rgba(90,122,106,.45);color:var(--sage);display:flex;align-items:center;justify-content:center;font:500 12px/1 var(--font-data)}
-.ts{border:1px solid var(--line-strong);background:var(--recessive);padding:10px 12px;display:flex;align-items:center;gap:10px;max-width:302px}
-.ts .box{width:22px;height:22px;border:1px solid var(--line-strong);background:#fff;flex:none}
-.ts .box.done{background:var(--sage);border-color:var(--sage);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px}
-.helptext{color:var(--body);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:5px}
-.errtext{color:var(--attention-ink);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:5px}
+.backlink{display:flex;align-items:center;gap:4px;color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);margin-bottom:20px}
+/* Stage head. The numeral is optically centred on the heading's cap-height, not
+   on its line box — flex-start alone floated it a couple of px high. */
+.stagehead{display:flex;align-items:flex-start;gap:12px}
+.stagenum{width:26px;height:26px;flex:none;margin-top:1px;border:1px solid rgba(90,122,106,.45);color:var(--sage);display:flex;align-items:center;justify-content:center;font:500 12px/1 var(--font-data);font-variant-numeric:tabular-nums}
+/* Turnstile's own footprint: the managed widget renders at a fixed 300×65 and
+   does NOT stretch to its container. Drawing it at container width oversold how
+   much room it takes, especially at 375. */
+.ts{width:300px;max-width:100%;height:65px;border:1px solid var(--line-strong);background:var(--recessive);padding:0 12px;display:flex;align-items:center;gap:10px}
+.ts .box{width:24px;height:24px;border:1px solid var(--line-strong);background:#fff;flex:none}
+.ts .box.done{background:var(--sage);border-color:var(--sage);color:#fff;display:flex;align-items:center;justify-content:center}
+.ts .cf{margin-left:auto;flex:none;text-align:right;color:var(--quiet);font:400 9px/11px var(--font-body);letter-spacing:.02em}
+.helptext{color:var(--body);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:4px}
+/* Errors carry a mark as well as a colour — the product's own rule (StatusPill:
+   icon + word, never colour alone), applied to inline field errors too. */
+.errtext{color:var(--attention-ink);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:4px;display:flex;align-items:flex-start;gap:5px}
+.errtext > svg{flex:none;margin-top:3px}
 .readonly{border:1px solid var(--line);background:var(--recessive);padding:10px 12px;color:var(--ink);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);display:flex;justify-content:space-between;align-items:center;gap:10px}
 .linkbtn{color:var(--sage-ink);text-decoration:underline;text-underline-offset:2px;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);background:none}
-.spinner{width:14px;height:14px;border:2px solid rgba(90,122,106,.3);border-top-color:var(--sage);border-radius:50%;display:inline-block;vertical-align:-2px}
+.spinner{width:14px;height:14px;border:2px solid rgba(90,122,106,.3);border-top-color:var(--sage);border-radius:50%;display:inline-block;vertical-align:-2px;animation:spin .8s linear infinite}
+.btn .spinner{border-color:rgba(255,255,255,.35);border-top-color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
 .focusring{outline:2px solid var(--sage);outline-offset:2px}
 .sub{color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
-.newchip{display:inline-flex;align-items:center;padding:1px 6px;border:1px solid rgba(90,122,106,.35);background:var(--sage-wash);color:var(--sage-ink);font:600 10px/14px var(--font-data);letter-spacing:.09em;text-transform:uppercase;margin-left:6px;vertical-align:1px}
-select.field{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--body) 50%),linear-gradient(135deg,var(--body) 50%,transparent 50%);background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+/* "Just added" — the quietest thing that can still be found. Sage wash, data
+   face, no fill strong enough to read as a warning: a merge is a convenience. */
+.newchip{display:inline-flex;align-items:center;flex:none;padding:1px 6px;border:1px solid rgba(90,122,106,.35);background:var(--sage-wash);color:var(--sage-ink);font:600 10px/14px var(--font-data);letter-spacing:.08em;text-transform:uppercase;position:relative;top:-1px}
+/* The stage/section rule inside a panel — a hairline plus a data-face label,
+   the same "no cells, no fills" structure the product uses for fact rows. */
+.grouprule{border-top:1px solid var(--line);padding-top:16px;margin-top:4px}
+/* The merge notice. It reports a convenience, so it is built out of the sage
+   "this changed for the better" vocabulary — the same 3px spine the live panel
+   and quote-item-card[data-state="added"] use — and never out of warning
+   colour. A CheckCircle, not an AlertCircle: nothing here went wrong. The
+   headline leads in sage-ink; the explanation steps back to --body so the
+   notice informs at a glance and rewards a second read. */
+.mergenotice{display:flex;gap:12px;align-items:flex-start;padding:16px 16px 16px 17px;border:1px solid rgba(90,122,106,.35);background:rgba(90,122,106,.06);box-shadow:inset 3px 0 0 var(--sage)}
+.mergenotice > svg{color:var(--sage);margin-top:2px}
+.mergenotice h4{color:var(--sage-ink);font:600 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-display);letter-spacing:-.1px;margin-bottom:3px}
+.mergenotice p{color:var(--ink-soft);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);max-width:58ch}
+.resolving{display:flex;flex-direction:column;align-items:center;gap:6px;padding:32px 0;text-align:center}
+select.field{appearance:none;padding-right:32px;background-image:linear-gradient(45deg,transparent 50%,var(--body) 50%),linear-gradient(135deg,var(--body) 50%,transparent 50%);background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--attention-ink) 50%),linear-gradient(135deg,var(--attention-ink) 50%,transparent 50%)}
+/* The submit foot: caption and action share one right-aligned column so the
+   ragged edge that matters (the button's) is the one they line up on. */
+.submitfoot{display:flex;flex-direction:column;align-items:flex-end;gap:8px;text-align:right}
+.submitfoot > p{max-width:46ch}
+/* ── Icons ────────────────────────────────────────────────────────────────
+   The product draws lucide-react at w-4/h-4 (ChevronLeft, Send, AlertCircle,
+   CheckCircle). The mock had been standing in text glyphs — "→" for the Send
+   paper-plane, "‹" for ChevronLeft, "ⓘ" for AlertCircle — which is the tell
+   that separates a mock from a screenshot. Same paths, inlined as a sprite so
+   the file still makes no external request. */
+.ic{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ic-12{width:12px;height:12px}.ic-13{width:13px;height:13px}.ic-14{width:14px;height:14px}
+/* SLabel's WindowMark is size={10} (ui.tsx:63). The mock's markup asked for 10
+   via width/height attributes but carried class="mark", whose CSS width:20px
+   beat them — so every section label wore a double-size mark. */
+.mark10{width:10px;height:10px;flex:none;fill:none}
 </style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><path d="M21.8 10A10 10 0 1 1 17 3.34"/><path d="m9 11 3 3L22 4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-mark" viewBox="0 0 20 20"><rect x="1" y="1" width="18" height="18" stroke-width="1.5"/><path d="M10 1v18M1 10h18" stroke-width="1.5"/></symbol>
+</defs></svg>
 
 <div id="top"><div class="in">
   <b>User registration Phase 1 — the submission gate</b>
@@ -328,22 +406,22 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
       <div class="dev half">
         <div class="cap"><span>Desktop · 1280w (content column)</span><span>anonymous</span></div>
         <div class="screen"><div class="revpage"><div class="revwrap">
-          <div class="backlink">‹ Back to MyProject</div>
-          <div class="slabel"><svg class="mark" width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span>Review quote</span></div>
+          <div class="backlink"><svg class="ic" aria-hidden="true"><use href="#i-chevron-left"/></svg>Back to MyProject</div>
+          <div class="slabel"><svg class="mark10" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><span>Review quote</span></div>
           <h1 class="t-hd1 c-ink mb8">Review and submit</h1>
           <p class="sub mb20">No payment at this stage. A reviewed quote is issued after manual technical review.</p>
 
           <div class="qpanel">
-            <div class="slabel"><svg class="mark" width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span>Your quote</span></div>
+            <div class="slabel"><svg class="mark10" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><span>Your quote</span></div>
             <div class="mb12">
-              <div class="qrow"><span class="lbl">01 · Awning window — 600 × 900 ×2</span><span class="amt">$1,240.00</span></div>
-              <div class="qrow"><span class="lbl">02 · Sliding door — 2100 × 1800 ×1</span><span class="amt">$3,180.00</span></div>
-              <div class="qrow"><span class="lbl">03 · Fixed window — 1200 × 900 ×1</span><span class="amt">$860.00</span></div>
+              <div class="qrow"><span class="lbl"><span class="txt">01 · Awning window — 600 × 900 ×2</span></span><span class="amt">$1,240.00</span></div>
+              <div class="qrow"><span class="lbl"><span class="txt">02 · Sliding door — 2100 × 1800 ×1</span></span><span class="amt">$3,180.00</span></div>
+              <div class="qrow"><span class="lbl"><span class="txt">03 · Fixed window — 1200 × 900 ×1</span></span><span class="amt">$860.00</span></div>
               <p class="t-cap c-body" style="padding-top:6px">+ 1 uploaded file for review</p>
             </div>
             <div class="bt8" style="padding-top:12px">
-              <div class="totrow mb4"><span class="k">Windows and doors</span><span class="v">$5,280.00 inc GST</span></div>
-              <div class="totrow mb4"><span class="k">Delivery to 3072</span><span class="v">$340.00 inc GST</span></div>
+              <div class="totrow"><span class="k">Windows and doors</span><span class="v">$5,280.00 inc GST</span></div>
+              <div class="totrow"><span class="k">Delivery to 3072</span><span class="v">$340.00 inc GST</span></div>
               <div class="totrow big"><span class="k">Project total</span><span class="v">$5,620.00 inc GST</span></div>
               <p class="t-cap c-body mt8">An estimate. A person checks the delivery against real freight before your quote is issued.</p>
             </div>
@@ -355,41 +433,41 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
             <p class="helptext">We price delivery from this.</p>
           </div>
 
-          <div class="notice n-info mb20" style="font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)">
-            ⓘ Delivery is priced from your postcode and confirmed on technical review. No deposit until you approve the reviewed quote. Supply only — tailgate to the kerb, installation not included.
+          <div class="notice n-info mb24" style="font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)">
+            <svg class="ic ic-12" aria-hidden="true" style="vertical-align:-1px;display:inline-block;margin-right:5px"><use href="#i-alert"/></svg>Delivery is priced from your postcode and confirmed on technical review. No deposit until you approve the reviewed quote. Supply only — tailgate to the kerb, installation not included.
           </div>
 
-          <div style="text-align:right">
-            <p class="t-cap c-body mb8">Submitting needs an account — we'll email you a code. About a minute.</p>
-            <span class="btn btn-lg b-sage">Submit for technical review →</span>
+          <div class="submitfoot">
+            <p class="t-cap c-body">Submitting needs an account — we'll email you a code. About a minute.</p>
+            <span class="btn btn-lg b-sage">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span>
           </div>
         </div></div></div>
       </div>
 
       <div class="dev mob">
         <div class="cap"><span>Mobile · 375w</span><span>anonymous</span></div>
-        <div class="screen mob"><div class="revpage"><div class="revwrap" style="padding:0 20px">
-          <div class="backlink">‹ Back to MyProject</div>
+        <div class="screen mob"><div class="revpage"><div class="revwrap">
+          <div class="backlink"><svg class="ic" aria-hidden="true"><use href="#i-chevron-left"/></svg>Back to MyProject</div>
           <h1 class="t-hd1 c-ink mb8">Review and submit</h1>
           <p class="sub mb16">No payment at this stage. A reviewed quote is issued after manual technical review.</p>
-          <div class="qpanel" style="padding:16px">
-            <div class="slabel"><svg class="mark" width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span>Your quote</span></div>
-            <div class="qrow"><span class="lbl">01 · Awning window ×2</span><span class="amt">$1,240.00</span></div>
-            <div class="qrow"><span class="lbl">02 · Sliding door ×1</span><span class="amt">$3,180.00</span></div>
-            <div class="qrow"><span class="lbl">03 · Fixed window ×1</span><span class="amt">$860.00</span></div>
+          <div class="qpanel">
+            <div class="slabel"><svg class="mark10" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><span>Your quote</span></div>
+            <div class="qrow"><span class="lbl"><span class="txt">01 · Awning window ×2</span></span><span class="amt">$1,240.00</span></div>
+            <div class="qrow"><span class="lbl"><span class="txt">02 · Sliding door ×1</span></span><span class="amt">$3,180.00</span></div>
+            <div class="qrow"><span class="lbl"><span class="txt">03 · Fixed window ×1</span></span><span class="amt">$860.00</span></div>
             <div class="bt8 mt12" style="padding-top:12px">
-              <div class="totrow mb4"><span class="k">Windows and doors</span><span class="v">$5,280.00</span></div>
-              <div class="totrow mb4"><span class="k">Delivery to 3072</span><span class="v">$340.00</span></div>
+              <div class="totrow"><span class="k">Windows and doors</span><span class="v">$5,280.00</span></div>
+              <div class="totrow"><span class="k">Delivery to 3072</span><span class="v">$340.00</span></div>
               <div class="totrow big"><span class="k">Project total</span><span class="v">$5,620.00 inc GST</span></div>
             </div>
           </div>
-          <div class="qpanel" style="padding:16px">
+          <div class="qpanel">
             <label class="field-label" for="m1m-pc">Delivery postcode</label>
             <div style="max-width:160px"><input class="field" id="m1m-pc" value="3072"></div>
             <p class="helptext">We price delivery from this.</p>
           </div>
-          <p class="t-cap c-body mb8 tc">Submitting needs an account — we'll email you a code. About a minute.</p>
-          <span class="btn btn-lg b-sage" style="width:100%;justify-content:center">Submit for technical review →</span>
+          <p class="t-cap c-body mb12 tc">Submitting needs an account — we'll email you a code. About a minute.</p>
+          <span class="btn btn-lg b-sage" style="width:100%;justify-content:center">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span>
         </div></div></div>
       </div>
 
@@ -418,13 +496,13 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
       <div class="dev half">
         <div class="cap"><span>Desktop</span><span>stage 1 · email</span></div>
         <div class="screen"><div class="revpage"><div class="revwrap">
-          <div class="qpanel" style="opacity:.55">
-            <div class="slabel"><svg class="mark" width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span>Your quote</span></div>
+          <div class="qpanel ctx">
+            <div class="slabel"><svg class="mark10" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><span>Your quote</span></div>
             <div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,620.00 inc GST</span></div>
             <p class="t-cap c-quiet mt8">(panel unchanged — shown collapsed here so the gate reads clearly)</p>
           </div>
 
-          <div class="qpanel" style="border-color:var(--sage);box-shadow:inset 3px 0 0 var(--sage)">
+          <div class="qpanel live">
             <div class="stagehead">
               <div class="stagenum">1</div>
               <div>
@@ -432,11 +510,11 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
                 <p class="sub mt4">A person reviews every quote, so we need to know whose it is. Enter your email and we'll send a 6-digit code — no password. If you don't have an account yet, this creates one.</p>
               </div>
             </div>
-            <div class="mt16 mb12" style="max-width:340px">
+            <div class="mt16 mb16" style="max-width:340px">
               <label class="field-label" for="m2-em">Email</label>
               <input class="field focusring" id="m2-em" value="sam@buildright.com.au" placeholder="your@email.com">
             </div>
-            <div class="ts mb16"><div class="box done">✓</div><div><div class="t-cap c-ink">Success!</div><div class="t-cap c-quiet">Cloudflare Turnstile</div></div></div>
+            <div class="ts mb16"><div class="box done"><svg class="ic ic-14" aria-hidden="true"><use href="#i-check"/></svg></div><div class="t-cap c-ink">Success!</div><div class="cf">CLOUDFLARE<br>Privacy · Terms</div></div>
             <div class="row g16 ac">
               <span class="btn btn-md b-sage">Email me a code</span>
               <span class="linkbtn">Back to my quote</span>
@@ -447,16 +525,16 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
 
       <div class="dev mob">
         <div class="cap"><span>Mobile · 375w</span><span>stage 1 · email</span></div>
-        <div class="screen mob"><div class="revpage"><div class="revwrap" style="padding:0 20px">
-          <div class="qpanel" style="padding:16px;opacity:.55">
+        <div class="screen mob"><div class="revpage"><div class="revwrap">
+          <div class="qpanel ctx">
             <div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,620.00</span></div>
           </div>
-          <div class="qpanel" style="padding:16px;border-color:var(--sage);box-shadow:inset 3px 0 0 var(--sage)">
+          <div class="qpanel live">
             <h2 class="t-hd2 c-ink mb4">Sign in or create your account</h2>
             <p class="sub mb16">A person reviews every quote, so we need to know whose it is. We'll email a 6-digit code — no password. If you're new, this creates your account.</p>
             <label class="field-label" for="m2m-em">Email</label>
             <input class="field focusring mb12" id="m2m-em" value="sam@buildright.com.au">
-            <div class="ts mb16" style="max-width:100%"><div class="box done">✓</div><div><div class="t-cap c-ink">Success!</div><div class="t-cap c-quiet">Cloudflare Turnstile</div></div></div>
+            <div class="ts mb16"><div class="box done"><svg class="ic ic-14" aria-hidden="true"><use href="#i-check"/></svg></div><div class="t-cap c-ink">Success!</div><div class="cf">CLOUDFLARE<br>Privacy · Terms</div></div>
             <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Email me a code</span>
             <div class="tc mt12"><span class="linkbtn">Back to my quote</span></div>
           </div>
@@ -476,7 +554,7 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
       <div class="dev half">
         <div class="cap"><span>Desktop</span><span>stage 1 · code</span></div>
         <div class="screen"><div class="revpage"><div class="revwrap">
-          <div class="qpanel" style="border-color:var(--sage);box-shadow:inset 3px 0 0 var(--sage)">
+          <div class="qpanel live">
             <div class="stagehead">
               <div class="stagenum">1</div>
               <div>
@@ -484,16 +562,16 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
                 <p class="sub mt4">We sent a 6-digit code to <span class="c-ink">sam@buildright.com.au</span>. It expires in 10 minutes.</p>
               </div>
             </div>
-            <div class="mt16 mb12" style="max-width:200px">
+            <div class="mt16 mb16" style="max-width:200px">
               <label class="field-label" for="m2-cd">6-digit code</label>
-              <input class="field mono focusring" id="m2-cd" value="418 260" style="letter-spacing:.22em;font-size:18px">
+              <input class="field mono focusring" id="m2-cd" value="418 260" style="letter-spacing:.22em;font-size:18px;line-height:24px">
             </div>
-            <div class="row g16 ac mb12">
+            <div class="row g16 ac mb16">
               <span class="btn btn-md b-sage">Verify &amp; continue</span>
               <span class="linkbtn">Resend code</span>
               <span class="linkbtn">Use a different email</span>
             </div>
-            <p class="t-cap c-quiet">Your quote is safe — nothing is submitted until you press Submit for technical review.</p>
+            <p class="t-cap c-body">Your quote is safe — nothing is submitted until you press Submit for technical review.</p>
           </div>
         </div></div></div>
       </div>
@@ -501,18 +579,18 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
       <div class="dev half">
         <div class="cap"><span>Desktop</span><span>error + busy states</span></div>
         <div class="screen"><div class="revpage"><div class="revwrap">
-          <div class="qpanel" style="border-color:var(--sage);box-shadow:inset 3px 0 0 var(--sage)">
+          <div class="qpanel live">
             <p class="t-label c-quiet mb12">Wrong code (existence-neutral, attempt burn unchanged)</p>
-            <div class="mb12" style="max-width:200px">
+            <div class="mb16" style="max-width:200px">
               <label class="field-label">6-digit code</label>
-              <input class="field err mono" value="111 111" style="letter-spacing:.22em;font-size:18px">
-              <p class="errtext">That code didn't match. Check it and try again, or resend a new one.</p>
+              <input class="field err mono" value="111 111" style="letter-spacing:.22em;font-size:18px;line-height:24px">
+              <p class="errtext"><svg class="ic ic-12" aria-hidden="true"><use href="#i-alert"/></svg>That code didn't match. Check it and try again, or resend a new one.</p>
             </div>
             <div class="bt8 mt16" style="padding-top:16px">
               <p class="t-label c-quiet mb12">Too many code requests (HTTP 429)</p>
               <div class="notice n-warn mb16" style="font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)">Too many code requests from this connection. Try again in a few minutes — your quote is saved and nothing is lost.</div>
               <p class="t-label c-quiet mb12">Verifying (button busy, fields locked)</p>
-              <span class="btn btn-md b-disabled"><span class="spinner"></span> Verifying…</span>
+              <span class="btn btn-md b-sage is-disabled"><span class="spinner"></span> Verifying…</span>
               <p class="t-cap c-quiet mt8">Resend and "use a different email" are suppressed while a verify is in flight.</p>
             </div>
           </div>
@@ -540,10 +618,10 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
       <div class="dev half">
         <div class="cap"><span>Desktop</span><span>stage 2 · fresh account</span></div>
         <div class="screen"><div class="revpage"><div class="revwrap">
-          <div class="qpanel" style="opacity:.55">
+          <div class="qpanel ctx">
             <div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,620.00 inc GST</span></div>
           </div>
-          <div class="qpanel" style="border-color:var(--sage);box-shadow:inset 3px 0 0 var(--sage)">
+          <div class="qpanel live">
             <div class="stagehead">
               <div class="stagenum">2</div>
               <div>
@@ -555,19 +633,19 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
               <label class="field-label" for="m3-nm">Full name</label>
               <input class="field focusring" id="m3-nm" placeholder="e.g. Sam Taylor">
             </div>
-            <span class="btn btn-md b-disabled">Save and continue</span>
+            <span class="btn btn-md b-sage is-disabled">Save and continue</span>
           </div>
         </div></div></div>
       </div>
       <div class="dev mob">
         <div class="cap"><span>Mobile · 375w</span><span>error state</span></div>
-        <div class="screen mob"><div class="revpage"><div class="revwrap" style="padding:0 20px">
-          <div class="qpanel" style="padding:16px;border-color:var(--sage);box-shadow:inset 3px 0 0 var(--sage)">
+        <div class="screen mob"><div class="revpage"><div class="revwrap">
+          <div class="qpanel live">
             <h2 class="t-hd2 c-ink mb4">What's your name?</h2>
             <p class="sub mb16">You're signed in as <span class="c-ink">sam@…</span>. This is the name that goes on your quote.</p>
             <label class="field-label" for="m3m-nm">Full name</label>
             <input class="field err" id="m3m-nm" value="   ">
-            <p class="errtext mb16">Enter your name to continue.</p>
+            <p class="errtext mb16"><svg class="ic ic-12" aria-hidden="true"><use href="#i-alert"/></svg>Enter your name to continue.</p>
             <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Save and continue</span>
           </div>
         </div></div></div>
@@ -596,7 +674,7 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
       <div class="dev half">
         <div class="cap"><span>Desktop</span><span>stage 3 · empty</span></div>
         <div class="screen"><div class="revpage"><div class="revwrap">
-          <div class="qpanel" style="opacity:.55"><div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,620.00 inc GST</span></div></div>
+          <div class="qpanel ctx"><div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,620.00 inc GST</span></div></div>
           <div class="qpanel">
             <div class="stagehead mb16">
               <div class="stagenum">3</div>
@@ -612,29 +690,29 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
             </div>
             <div class="mb20">
               <label class="field-label">Email</label>
-              <div class="readonly"><span>sam@buildright.com.au</span><span class="chip ch-sage">Verified</span></div>
+              <div class="readonly"><span>sam@buildright.com.au</span><span class="chip ch-sage"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Verified</span></div>
               <p class="helptext">This is your sign-in email. Contact us if you need it changed.</p>
             </div>
 
-            <p class="t-label c-quiet mb12" style="border-top:1px solid var(--line);padding-top:16px">Your address</p>
+            <p class="t-label c-sage mb12 grouprule">Your address</p>
             <div class="mb16"><label class="field-label" for="m4-a1">Street address</label><input class="field" id="m4-a1" placeholder="12 Bridge Street"></div>
-            <div class="mb16"><label class="field-label" for="m4-a2">Unit, level or building <span class="c-quiet" style="text-transform:none;letter-spacing:0;font-weight:400">(optional)</span></label><input class="field" id="m4-a2"></div>
+            <div class="mb16"><label class="field-label" for="m4-a2">Unit, level or building <span class="c-body" style="text-transform:none;letter-spacing:0;font-weight:400">(optional)</span></label><input class="field" id="m4-a2"></div>
             <div class="grid3 mb20">
               <div><label class="field-label" for="m4-sb">Suburb</label><input class="field" id="m4-sb" placeholder="Preston"></div>
               <div><label class="field-label" for="m4-st">State</label><select class="field" id="m4-st"><option>Choose…</option><option>NSW</option><option>VIC</option><option>QLD</option><option>SA</option><option>WA</option><option>TAS</option><option>NT</option><option>ACT</option></select></div>
               <div><label class="field-label" for="m4-pc">Postcode</label><input class="field" id="m4-pc" placeholder="3072"></div>
             </div>
 
-            <p class="t-label c-quiet mb4" style="border-top:1px solid var(--line);padding-top:16px">Delivery for this project</p>
+            <p class="t-label c-sage mb4 grouprule">Delivery for this project</p>
             <p class="t-cap c-body mb12">Where these windows and doors go. Change it if the site isn't your address.</p>
             <div class="grid2 mb20">
               <div><label class="field-label" for="m4-ds">Delivery suburb</label><input class="field" id="m4-ds" placeholder="e.g. Preston VIC"></div>
               <div><label class="field-label" for="m4-dp">Delivery postcode</label><input class="field" id="m4-dp" value="3072"><p class="helptext">We price delivery from this.</p></div>
             </div>
 
-            <div class="bt8" style="padding-top:16px;text-align:right">
-              <p class="t-cap c-body mb8">Still needed: phone, street address, suburb, state, postcode.</p>
-              <span class="btn btn-lg b-disabled">Submit for technical review →</span>
+            <div class="bt8 submitfoot" style="padding-top:16px">
+              <p class="t-cap c-body">Still needed: phone, street address, suburb, state, postcode.</p>
+              <span class="btn btn-lg b-sage is-disabled">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span>
             </div>
           </div>
         </div></div></div>
@@ -642,15 +720,15 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
 
       <div class="dev mob">
         <div class="cap"><span>Mobile · 375w</span><span>stage 3 · empty</span></div>
-        <div class="screen mob"><div class="revpage"><div class="revwrap" style="padding:0 20px">
-          <div class="qpanel" style="padding:16px">
+        <div class="screen mob"><div class="revpage"><div class="revwrap">
+          <div class="qpanel">
             <h2 class="t-hd2 c-ink mb4">Your details</h2>
             <p class="sub mb16">So we can quote you properly and get the delivery right. We'll keep these on your account.</p>
             <label class="field-label" for="m4m-nm">Full name</label><input class="field mb12" id="m4m-nm" value="Sam Taylor">
             <label class="field-label" for="m4m-ph">Phone</label><input class="field" id="m4m-ph" placeholder="0412 345 678"><p class="helptext" style="margin-bottom:12px">Mobile, landline or 1300/1800.</p>
             <label class="field-label">Email</label>
-            <div class="readonly mb16"><span style="overflow:hidden;text-overflow:ellipsis">sam@buildright.com.au</span><span class="chip ch-sage">Verified</span></div>
-            <p class="t-label c-quiet mb12" style="border-top:1px solid var(--line);padding-top:14px">Your address</p>
+            <div class="readonly mb16"><span style="overflow:hidden;text-overflow:ellipsis">sam@buildright.com.au</span><span class="chip ch-sage"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Verified</span></div>
+            <p class="t-label c-sage mb12 grouprule">Your address</p>
             <label class="field-label" for="m4m-a1">Street address</label><input class="field mb12" id="m4m-a1" placeholder="12 Bridge Street">
             <label class="field-label" for="m4m-a2">Unit, level or building (optional)</label><input class="field mb12" id="m4m-a2">
             <label class="field-label" for="m4m-sb">Suburb</label><input class="field mb12" id="m4m-sb" placeholder="Preston">
@@ -658,12 +736,12 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
               <div><label class="field-label" for="m4m-st">State</label><select class="field" id="m4m-st"><option>Choose…</option><option>VIC</option></select></div>
               <div><label class="field-label" for="m4m-pc">Postcode</label><input class="field" id="m4m-pc" placeholder="3072"></div>
             </div>
-            <p class="t-label c-quiet mb4" style="border-top:1px solid var(--line);padding-top:14px">Delivery for this project</p>
+            <p class="t-label c-sage mb4 grouprule">Delivery for this project</p>
             <p class="t-cap c-body mb12">Change it if the site isn't your address.</p>
             <label class="field-label" for="m4m-ds">Delivery suburb</label><input class="field mb12" id="m4m-ds" placeholder="e.g. Preston VIC">
             <label class="field-label" for="m4m-dp">Delivery postcode</label><input class="field mb16" id="m4m-dp" value="3072">
             <p class="t-cap c-body mb8">Still needed: phone, street address, suburb, state, postcode.</p>
-            <span class="btn btn-lg b-disabled" style="width:100%;justify-content:center">Submit for technical review →</span>
+            <span class="btn btn-lg b-sage is-disabled" style="width:100%;justify-content:center">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span>
           </div>
         </div></div></div>
       </div>
@@ -679,23 +757,23 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
         <div class="screen"><div class="revpage"><div class="revwrap">
           <div class="qpanel">
             <div class="grid2 mb16">
-              <div><label class="field-label">Full name</label><input class="field err" value=""><p class="errtext">Enter your full name.</p></div>
-              <div><label class="field-label">Phone</label><input class="field err" value="12345"><p class="errtext">That doesn't look like an Australian number. Try a mobile (0412 345 678), a landline (03 9000 0000) or a service number (1300 123 456).</p></div>
+              <div><label class="field-label">Full name</label><input class="field err" value=""><p class="errtext"><svg class="ic ic-12" aria-hidden="true"><use href="#i-alert"/></svg>Enter your full name.</p></div>
+              <div><label class="field-label">Phone</label><input class="field err" value="12345"><p class="errtext"><svg class="ic ic-12" aria-hidden="true"><use href="#i-alert"/></svg>That doesn't look like an Australian number. Try a mobile (0412 345 678), a landline (03 9000 0000) or a service number (1300 123 456).</p></div>
             </div>
-            <div class="mb16"><label class="field-label">Street address</label><input class="field err" value=""><p class="errtext">Enter your street address.</p></div>
+            <div class="mb16"><label class="field-label">Street address</label><input class="field err" value=""><p class="errtext"><svg class="ic ic-12" aria-hidden="true"><use href="#i-alert"/></svg>Enter your street address.</p></div>
             <div class="grid3 mb16">
-              <div><label class="field-label">Suburb</label><input class="field err" value=""><p class="errtext">Enter your suburb.</p></div>
-              <div><label class="field-label">State</label><select class="field err"><option>Choose…</option></select><p class="errtext">Choose your state.</p></div>
-              <div><label class="field-label">Postcode</label><input class="field err" value="307"><p class="errtext">Enter a 4-digit postcode.</p></div>
+              <div><label class="field-label">Suburb</label><input class="field err" value=""><p class="errtext"><svg class="ic ic-12" aria-hidden="true"><use href="#i-alert"/></svg>Enter your suburb.</p></div>
+              <div><label class="field-label">State</label><select class="field err"><option>Choose…</option></select><p class="errtext"><svg class="ic ic-12" aria-hidden="true"><use href="#i-alert"/></svg>Choose your state.</p></div>
+              <div><label class="field-label">Postcode</label><input class="field err" value="307"><p class="errtext"><svg class="ic ic-12" aria-hidden="true"><use href="#i-alert"/></svg>Enter a 4-digit postcode.</p></div>
             </div>
             <div class="grid2 mb16">
               <div><label class="field-label">Delivery suburb</label><input class="field" value="Preston VIC"></div>
-              <div><label class="field-label">Delivery postcode</label><input class="field err" value="30"><p class="errtext">Enter your 4-digit delivery postcode.</p></div>
+              <div><label class="field-label">Delivery postcode</label><input class="field err" value="30"><p class="errtext"><svg class="ic ic-12" aria-hidden="true"><use href="#i-alert"/></svg>Enter your 4-digit delivery postcode.</p></div>
             </div>
             <div class="notice n-dest mb16" style="font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)">
               <b>Before we can submit, we need:</b> your phone number, street address, suburb, state and postcode.
             </div>
-            <div style="text-align:right"><span class="btn btn-lg b-disabled">Submit for technical review →</span></div>
+            <div style="text-align:right"><span class="btn btn-lg b-sage is-disabled">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span></div>
           </div>
         </div></div></div>
       </div>
@@ -710,7 +788,7 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
             <div class="notice n-dest mb20" style="font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)">We still need your phone number before this can go to review.</div>
 
             <p class="t-label c-quiet mb12">Over-length value (AB-13 / E12)</p>
-            <div class="mb20"><label class="field-label">Street address</label><input class="field err" value="Unit 14, Level 3, The Riverside Commercial Exchange Bui…"><p class="errtext">That's longer than we can store — keep the street address under 120 characters.</p></div>
+            <div class="mb20"><label class="field-label">Street address</label><input class="field err" value="Unit 14, Level 3, The Riverside Commercial Exchange Bui…"><p class="errtext"><svg class="ic ic-12" aria-hidden="true"><use href="#i-alert"/></svg>That's longer than we can store — keep the street address under 120 characters.</p></div>
 
             <p class="t-label c-quiet mb12">Long content, no truncation of the customer's own words</p>
             <div class="mb20">
@@ -720,7 +798,7 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
             </div>
 
             <p class="t-label c-quiet mb12">Submitting</p>
-            <span class="btn btn-lg b-disabled"><span class="spinner"></span> Submitting…</span>
+            <span class="btn btn-lg b-sage is-disabled"><span class="spinner"></span> Submitting…</span>
           </div>
         </div></div></div>
       </div>
@@ -748,13 +826,13 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
         <div class="cap"><span>Desktop</span><span>projectResolving = true</span></div>
         <div class="screen"><div class="revpage"><div class="revwrap">
           <div class="qpanel">
-            <div class="slabel"><svg class="mark" width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span>Your quote</span></div>
-            <div style="padding:28px 0;text-align:center">
-              <p class="t-bd-sm c-ink mb4"><span class="spinner"></span> &nbsp;Updating your project…</p>
+            <div class="slabel"><svg class="mark10" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><span>Your quote</span></div>
+            <div class="resolving">
+              <p class="t-bd-sm c-ink row g8 ac"><span class="spinner"></span>Updating your project…</p>
               <p class="t-cap c-body">We're checking for anything already saved to your account.</p>
             </div>
           </div>
-          <div class="qpanel" style="opacity:.5">
+          <div class="qpanel ctx">
             <p class="t-cap c-quiet">Details and Submit are withheld until this finishes — no request is ever made against a project id that the merge deleted.</p>
           </div>
         </div></div></div>
@@ -763,23 +841,26 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
       <div class="dev half">
         <div class="cap"><span>Desktop</span><span>merge complete</span></div>
         <div class="screen"><div class="revpage"><div class="revwrap">
-          <div class="notice n-sage mb16">
-            <p class="t-bd-sm sb" style="color:var(--sage-ink);margin-bottom:4px">Your quotes have been combined</p>
-            <p class="t-cap" style="color:var(--sage-ink)">You already had a saved quote on this account, so the three items you just built have been added to it. The list below is the whole project — have a look before you submit.</p>
+          <div class="mergenotice mb16">
+            <svg class="ic" aria-hidden="true"><use href="#i-check-circle"/></svg>
+            <div>
+              <h4>Your quotes have been combined</h4>
+              <p>You already had a saved quote on this account, so the three items you just built have been added to it. The list below is the whole project — have a look before you submit.</p>
+            </div>
           </div>
           <div class="qpanel">
-            <div class="slabel"><svg class="mark" width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span>Your quote · 5 items</span></div>
+            <div class="slabel"><svg class="mark10" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><span>Your quote · 5 items</span></div>
             <div class="mb12">
-              <div class="qrow"><span class="lbl">01 · Double-hung window — 900 × 1200 ×2</span><span class="amt">$2,180.00</span></div>
-              <div class="qrow"><span class="lbl">02 · Entry door — 2100 × 900 ×1</span><span class="amt">$1,680.00</span></div>
-              <div class="qrow"><span class="lbl">03 · Awning window — 600 × 900 ×2 <span class="newchip">Just added</span></span><span class="amt">$1,240.00</span></div>
-              <div class="qrow"><span class="lbl">04 · Sliding door — 2100 × 1800 ×1 <span class="newchip">Just added</span></span><span class="amt">$3,180.00</span></div>
-              <div class="qrow"><span class="lbl">05 · Fixed window — 1200 × 900 ×1 <span class="newchip">Just added</span></span><span class="amt">$860.00</span></div>
+              <div class="qrow"><span class="lbl"><span class="txt">01 · Double-hung window — 900 × 1200 ×2</span></span><span class="amt">$2,180.00</span></div>
+              <div class="qrow"><span class="lbl"><span class="txt">02 · Entry door — 2100 × 900 ×1</span></span><span class="amt">$1,680.00</span></div>
+              <div class="qrow"><span class="lbl"><span class="txt">03 · Awning window — 600 × 900 ×2</span><span class="newchip">Just added</span><span class="amt">$1,240.00</span></div>
+              <div class="qrow"><span class="lbl"><span class="txt">04 · Sliding door — 2100 × 1800 ×1</span><span class="newchip">Just added</span><span class="amt">$3,180.00</span></div>
+              <div class="qrow"><span class="lbl"><span class="txt">05 · Fixed window — 1200 × 900 ×1</span><span class="newchip">Just added</span><span class="amt">$860.00</span></div>
               <p class="t-cap c-body" style="padding-top:6px">+ 1 uploaded file for review</p>
             </div>
             <div class="bt8" style="padding-top:12px">
-              <div class="totrow mb4"><span class="k">Windows and doors</span><span class="v">$9,140.00 inc GST</span></div>
-              <div class="totrow mb4"><span class="k">Delivery to 3072</span><span class="v">$340.00 inc GST</span></div>
+              <div class="totrow"><span class="k">Windows and doors</span><span class="v">$9,140.00 inc GST</span></div>
+              <div class="totrow"><span class="k">Delivery to 3072</span><span class="v">$340.00 inc GST</span></div>
               <div class="totrow big"><span class="k">Project total</span><span class="v">$9,480.00 inc GST</span></div>
             </div>
           </div>
@@ -788,7 +869,7 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
             <p class="sub">Pre-filled from your account — edit if needed.</p>
             <p class="t-cap c-quiet mt12">(fields as Surface 4)</p>
           </div>
-          <div style="text-align:right"><span class="btn btn-lg b-sage">Submit for technical review →</span></div>
+          <div style="text-align:right"><span class="btn btn-lg b-sage">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span></div>
         </div></div></div>
       </div>
     </div>
@@ -819,12 +900,12 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
         <div class="cap"><span>Before sign-in</span><span>mode: inc (default)</span></div>
         <div class="screen"><div class="revpage"><div class="revwrap">
           <div class="qpanel">
-            <div class="qrow"><span class="lbl">01 · Awning window ×2</span><span class="amt">$1,240.00</span></div>
-            <div class="qrow"><span class="lbl">02 · Sliding door ×1</span><span class="amt">$3,180.00</span></div>
-            <div class="qrow"><span class="lbl">03 · Fixed window ×1</span><span class="amt">$860.00</span></div>
+            <div class="qrow"><span class="lbl"><span class="txt">01 · Awning window ×2</span></span><span class="amt">$1,240.00</span></div>
+            <div class="qrow"><span class="lbl"><span class="txt">02 · Sliding door ×1</span></span><span class="amt">$3,180.00</span></div>
+            <div class="qrow"><span class="lbl"><span class="txt">03 · Fixed window ×1</span></span><span class="amt">$860.00</span></div>
             <div class="bt8 mt12" style="padding-top:12px">
-              <div class="totrow mb4"><span class="k">Windows and doors</span><span class="v">$5,280.00 inc GST</span></div>
-              <div class="totrow mb4"><span class="k">Delivery to 3072</span><span class="v">$340.00 inc GST</span></div>
+              <div class="totrow"><span class="k">Windows and doors</span><span class="v">$5,280.00 inc GST</span></div>
+              <div class="totrow"><span class="k">Delivery to 3072</span><span class="v">$340.00 inc GST</span></div>
               <div class="totrow big"><span class="k">Project total</span><span class="v">$5,620.00 inc GST</span></div>
             </div>
           </div>
@@ -834,12 +915,12 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
         <div class="cap"><span>After verifying (no page reload)</span><span>mode: ex (account)</span></div>
         <div class="screen"><div class="revpage"><div class="revwrap">
           <div class="qpanel">
-            <div class="qrow"><span class="lbl">01 · Awning window ×2</span><span class="amt">$1,127.27</span></div>
-            <div class="qrow"><span class="lbl">02 · Sliding door ×1</span><span class="amt">$2,890.91</span></div>
-            <div class="qrow"><span class="lbl">03 · Fixed window ×1</span><span class="amt">$781.82</span></div>
+            <div class="qrow"><span class="lbl"><span class="txt">01 · Awning window ×2</span></span><span class="amt">$1,127.27</span></div>
+            <div class="qrow"><span class="lbl"><span class="txt">02 · Sliding door ×1</span></span><span class="amt">$2,890.91</span></div>
+            <div class="qrow"><span class="lbl"><span class="txt">03 · Fixed window ×1</span></span><span class="amt">$781.82</span></div>
             <div class="bt8 mt12" style="padding-top:12px">
-              <div class="totrow mb4"><span class="k">Windows and doors</span><span class="v">$4,800.00 ex GST</span></div>
-              <div class="totrow mb4"><span class="k">Delivery to 3072</span><span class="v">$309.09 ex GST</span></div>
+              <div class="totrow"><span class="k">Windows and doors</span><span class="v">$4,800.00 ex GST</span></div>
+              <div class="totrow"><span class="k">Delivery to 3072</span><span class="v">$309.09 ex GST</span></div>
               <div class="totrow big"><span class="k">Project total</span><span class="v">$5,109.09 ex GST</span></div>
               <p class="t-cap c-body mt8">Now showing prices ex GST, the setting on your account. <span class="linkbtn">Change in your profile</span></p>
             </div>
@@ -873,15 +954,15 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
           <div class="qpanel">
             <div class="row jb as g16 mb16">
               <div>
-                <p class="t-label c-quiet mb6">Your details</p>
+                <p class="t-label c-sage mb6">Your details</p>
                 <p class="t-bd-sm c-ink">Sam Taylor · 0412 345 678</p>
                 <p class="t-bd-sm c-body">12 Bridge Street, Preston VIC 3072</p>
-                <p class="t-cap c-quiet mt4">sam@buildright.com.au</p>
+                <p class="t-cap c-body mt4">sam@buildright.com.au</p>
               </div>
               <span class="linkbtn" style="flex:none">Edit details</span>
             </div>
             <div class="bt8" style="padding-top:16px">
-              <p class="t-label c-quiet mb4">Delivery for this project</p>
+              <p class="t-label c-sage mb4">Delivery for this project</p>
               <p class="t-cap c-body mb12">Pre-filled from your address — change it if the site is somewhere else.</p>
               <div class="grid2">
                 <div><label class="field-label" for="m7-ds">Delivery suburb</label><input class="field" id="m7-ds" value="Preston"></div>
@@ -889,15 +970,15 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
               </div>
             </div>
           </div>
-          <div style="text-align:right"><span class="btn btn-lg b-sage">Submit for technical review →</span></div>
+          <div style="text-align:right"><span class="btn btn-lg b-sage">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span></div>
         </div></div></div>
       </div>
       <div class="dev mob">
         <div class="cap"><span>Mobile · 375w</span><span>expanded to edit</span></div>
-        <div class="screen mob"><div class="revpage"><div class="revwrap" style="padding:0 20px">
-          <div class="qpanel" style="padding:16px">
-            <div class="row jb ac mb16"><p class="t-label c-quiet">Your details</p><span class="linkbtn t-cap">Done</span></div>
-            <p class="sub mb16" style="color:var(--sage-ink)">✓ Pre-filled from your account — edit if needed.</p>
+        <div class="screen mob"><div class="revpage"><div class="revwrap">
+          <div class="qpanel">
+            <div class="row jb ac mb16"><p class="t-label c-sage">Your details</p><span class="linkbtn t-cap">Done</span></div>
+            <p class="row g6 ac mb16" style="color:var(--sage);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)"><svg class="ic" aria-hidden="true"><use href="#i-check-circle"/></svg>Pre-filled from your account — edit if needed.</p>
             <label class="field-label">Full name</label><input class="field mb12" value="Sam Taylor">
             <label class="field-label">Phone</label><input class="field mb12" value="0412 345 678">
             <label class="field-label">Street address</label><input class="field mb12" value="12 Bridge Street">
@@ -954,8 +1035,8 @@ select.field{appearance:none;background-image:linear-gradient(45deg,transparent 
           </div>
           <div class="card p24 mb16">
             <label class="field-label">Email</label><input class="field mb16" placeholder="your@email.com">
-            <div class="ts mb16" style="max-width:100%"><div class="box"></div><div><div class="t-cap c-ink">Verify you are human</div><div class="t-cap c-quiet">Cloudflare Turnstile</div></div></div>
-            <span class="btn btn-md b-disabled" style="width:100%;justify-content:center">Send code</span>
+            <div class="ts mb16"><div class="box"></div><div class="t-cap c-ink">Verify you are human</div><div class="cf">CLOUDFLARE<br>Privacy · Terms</div></div>
+            <span class="btn btn-md b-sage is-disabled" style="width:100%;justify-content:center">Send code</span>
           </div>
           <div class="notice" style="background:var(--bone);border-color:rgba(0,0,0,.08);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);color:var(--body)">Your quote is saved as you go. Sign in to keep it against your account across devices, and to send it in for review.</div>
         </div></div></div>
