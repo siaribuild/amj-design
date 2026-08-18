@@ -239,7 +239,7 @@ test("queued AI work is labelled as document preparation, not file securing", as
 
 test("customer OTP login lands on the attention-first dashboard with real data", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByText(/Sign in or register/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in or create account" })).toBeVisible();
   await otpLogin(page, /your@email\.com/, DEMO_EMAIL, /verify & continue/i);
   // Greeting + the "Needs you" action tab on the unified list (the successor of
   // the retired "Needs your attention" gate section)
@@ -437,10 +437,11 @@ test("T-C5: the issued quote asks for half of goods plus delivery", async ({ pag
   // The submission gate: a session that owns the project, and an account with a
   // name, phone and address. Created here through the API so the test's own
   // subject — the issued quote's deposit arithmetic — is what it exercises.
-  const challenge = await page.request.post("/api/auth/challenge", { data: { email } });
+  const signInHeaders = { "X-Forwarded-For": "198.21.2.1" };
+  const challenge = await page.request.post("/api/auth/challenge", { data: { email }, headers: signInHeaders });
   const { devCode: customerCode } = await challenge.json();
   expect(customerCode, `dev OTP for ${email}`).toBeTruthy();
-  expect((await page.request.post("/api/auth/verify", { data: { email, code: customerCode } })).ok()).toBeTruthy();
+  expect((await page.request.post("/api/auth/verify", { data: { email, code: customerCode }, headers: signInHeaders })).ok()).toBeTruthy();
   expect((await page.request.post("/api/auth/profile", {
     data: {
       name: "TC5 Customer", phone: "0412 345 678", addressLine1: "12 Bridge Street",
@@ -451,8 +452,11 @@ test("T-C5: the issued quote asks for half of goods plus delivery", async ({ pag
     data: { delivery: { postcode: "3072" } },
   });
   expect(submitted.ok()).toBeTruthy();
-  // …and this device forgets the session, so the UI half below signs in for real.
-  await page.request.post("/api/auth/logout", { data: {} });
+  // The session is KEPT rather than dropped and re-earned through the UI. A
+  // second code for the same address inside the 60-second resend cooldown is
+  // deliberately not issued, which would leave the sign-in screen with no code to
+  // type — and this test is about the issued quote's arithmetic, not about
+  // signing in, which customer.spec's own OTP tests already cover.
 
   const OPS_HOST = "ops.localhost:8788";
   const rawEmail = `tc5-ops-${stamp}@openframe.com.au`;
@@ -470,16 +474,15 @@ test("T-C5: the issued quote asks for half of goods plus delivery", async ({ pag
   await request.put(`http://127.0.0.1:8788/api/ops/projects/${projectId}/delivery`, { headers: { Host: OPS_HOST }, data: { amount: 640 } });
   await request.post(`http://127.0.0.1:8788/api/ops/projects/${projectId}/issue-quote`, { headers: { Host: OPS_HOST }, data: {} });
 
-  await page.goto("/login");
-  await otpLogin(page, /your@email\.com/, email, /verify & continue/i);
+  await page.goto("/dashboard");
   await page.getByText(title).locator("visible=true").first().click();
 
   await expect(page.getByRole("heading", { name: "Review and submit" })).toHaveCount(0);
   const total = goods + 640;
-  await expect(page.getByText(/Delivery to 3072/).first()).toBeVisible();
+  await expect(page.getByText(/Delivery to 3072/).locator("visible=true").first()).toBeVisible();
   await expect(page.getByText(/40%/)).toHaveCount(0);
-  await expect(page.getByText(`Total (inc GST)`)).toBeVisible();
-  await expect(page.getByText(new RegExp(`\\$${total.toLocaleString("en-AU")}`))).toBeVisible();
+  await expect(page.getByText("Total (inc GST)", { exact: true })).toBeVisible();
+  await expect(page.getByText(new RegExp(`\\$${total.toLocaleString("en-AU")}`)).locator("visible=true").first()).toBeVisible();
   const halfTotal = Math.round(total / 2);
   await expect(page.getByText(new RegExp(`\\$${halfTotal.toLocaleString("en-AU")}`)).first()).toBeVisible();
 });

@@ -37,11 +37,16 @@ async function staffLogin(page: Page) {
  *  submits a quote for ops to look at has to satisfy it. Done through the API
  *  rather than the UI: these are ops tests, and driving the customer sign-in
  *  screen here would burn an OTP challenge on something none of them assert. */
+let opsFixtureSource = 0;
 async function signInAndComplete(page: Page, email: string, name: string) {
-  const challenge = await page.request.post("/api/auth/challenge", { data: { email } });
+  // Its own source address. Code issuance is capped per SOURCE as well as per
+  // recipient, and browser traffic all lands in one bucket — a fixture that
+  // borrows it makes the whole suite fail as though auth were broken.
+  const headers = { "X-Forwarded-For": `198.21.0.${opsFixtureSource++ % 250}` };
+  const challenge = await page.request.post("/api/auth/challenge", { data: { email }, headers });
   const { devCode } = await challenge.json();
   expect(devCode, `dev OTP for ${email}`).toBeTruthy();
-  const verified = await page.request.post("/api/auth/verify", { data: { email, code: devCode } });
+  const verified = await page.request.post("/api/auth/verify", { data: { email, code: devCode }, headers });
   expect(verified.ok(), `verify ${email}`).toBeTruthy();
   const profile = await page.request.post("/api/auth/profile", {
     data: {

@@ -204,9 +204,17 @@ test("a returning customer's details are live inputs — no sign-in stage, nothi
 
   // One action submits: the delivery postcode is the only thing left to think
   // about, because it is the only fact that genuinely changes per project.
+  //
+  // AC-19 — and correcting something on the way through persists it: the gate is
+  // the account's EDITING surface as well as its collection surface, so a stale
+  // phone number is fixed once, here, and is right on the next quote.
+  await page.getByLabel("Phone").fill("1300 123 456");
   await page.getByLabel("Delivery postcode").fill("3072");
   await page.getByRole("button", { name: /Submit for technical review/ }).click();
   await expect(page.getByRole("heading", { name: "Quote submitted" })).toBeVisible();
+
+  const account = await (await page.request.get("/api/auth/me")).json();
+  expect(account.user.phone, "an edit made at the gate is persisted to the account").toBe("1300 123 456");
 });
 
 // ─── 3. Missing details are named individually, full name among them ───────────
@@ -462,6 +470,9 @@ test.describe("AC-12 — the Turnstile gate on the sign-in step", () => {
   let runDir = "";
 
   test.beforeAll(async () => {
+    // A vite build, a migration run and a seed, before anything is asserted. The
+    // suite's 45s default is a per-TEST budget and this is a whole second harness.
+    test.setTimeout(600_000);
     runDir = await mkdtemp(join(projectRoot, ".codex-tmp", "web-turnstile-"));
     const assets = join(runDir, "assets");
     const state = join(runDir, "state");
