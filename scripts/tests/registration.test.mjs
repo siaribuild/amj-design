@@ -10,11 +10,23 @@
 // this file has to be able to tell them apart.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  Session, completeAccount, freePort, login, makeRunDir, removeRunDir,
+  Session, completeAccount, freePort, login, makeRunDir, projectRoot, removeRunDir,
   run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
+
+/** Every .ts file under worker/, for the absence assertion (AB-12). */
+async function workerSources(dir) {
+  const found = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...await workerSources(full));
+    else if (entry.name.endsWith(".ts")) found.push(full);
+  }
+  return found;
+}
 
 test("user registration — creation values, the submission gate, and its abuse cases", { timeout: 1_800_000 }, async (t) => {
   const runDir = await makeRunDir("registration");
@@ -335,6 +347,157 @@ test("user registration — creation values, the submission gate, and its abuse 
       assert.equal(ok.status, 200, "a 1300 number is accepted");
       assert.equal(await statusOf(draft.id), "submitted");
     });
+    await t.test("AB-5 / AB-6 / AB-7: the relabel changed no OTP property", async () => {
+      // AB-5 — anti-enumeration. The two responses must be indistinguishable. In
+      // a development env the body carries the dev code, so the comparison masks
+      // the six digits and compares everything else byte for byte: status, header
+      // set, key set and every other value.
+      const known = "gediminas.bereznevicius@gmail.com";  // seeded account
+      const unknown = `reg-nobody-${stamp}@example.com`;  // no account, ever
+      const probe = async (email) => {
+        const s = new Session(baseUrl);
+        const response = await s.request("/api/auth/challenge", {
+          method: "POST", json: { email },
+          headers: { "X-Forwarded-For": `198.19.${seq % 255}.${(seq += 1) % 255}` },
+        });
+        const text = (await response.text()).replace(/\d{6}/g, "######");
+        return { status: response.status, type: response.headers.get("content-type"), text };
+      };
+      const a = await probe(known);
+      const b = await probe(unknown);
+      assert.deepEqual(a, b, "an address with an account and one without answer identically");
+
+      // AB-6 — the per-source cap. One source address, more than the ceiling.
+      const flooded = "198.19.250.250";
+      let sawRateLimit = false;
+      for (let i = 0; i < 65 && !sawRateLimit; i += 1) {
+        const s = new Session(baseUrl);
+        const response = await s.request("/api/auth/challenge", {
+          method: "POST",
+          json: { email: `reg-flood-${stamp}-${i}@example.com` },
+          headers: { "X-Forwarded-For": flooded },
+        });
+        if (response.status === 429) {
+          assert.deepEqual(await response.json(), { error: "rate_limited" });
+          sawRateLimit = true;
+        }
+      }
+      assert.ok(sawRateLimit, "the per-source cap still returns 429");
+
+      // AB-7 — wrong codes burn the challenge and the answer never says whether
+      // the account exists.
+      const burnEmail = freshEmail("burn");
+      const burner = new Session(baseUrl);
+      const challenge = await burner.request("/api/auth/challenge", {
+        method: "POST", json: { email: burnEmail },
+        headers: { "X-Forwarded-For": "198.19.200.7" },
+      });
+      const devCode = (await challenge.json()).devCode;
+      assert.match(String(devCode), /^\d{6}$/);
+      for (let i = 0; i < 6; i += 1) {
+        const wrong = await burner.request("/api/auth/verify", {
+          method: "POST", json: { email: burnEmail, code: "000000" },
+        });
+        assert.equal(wrong.status, 400);
+        assert.deepEqual(await wrong.json(), { error: "invalid_code" },
+          "the refusal never says whether the account existed");
+      }
+      const afterBurn = await burner.request("/api/auth/verify", {
+        method: "POST", json: { email: burnEmail, code: devCode },
+      });
+      assert.equal(afterBurn.status, 400, "the challenge was burned, so even the right code fails");
+      assert.equal(await userRow(burnEmail), null, "and no account was created");
+    });
+
+    await t.test("AC-29 / AC-30 / AC-31 / AB-8 / AB-9: the referral seam is untouched by the gate", async () => {
+      // A payable referrer, provisioned straight in D1 — this file is about the
+      // GATE, not about how a code is minted, and the referral suites own that.
+      const referrer = await newAccount("referrer");
+      const referrerId = (await userRow(referrer.email)).id;
+      const code = "REG-SEA";
+      await sql(`UPDATE user SET referral_code = '${code}', abn = '51824753556', payout_bsb = '063000', payout_account_number = '91234567', payout_account_name = 'Referrer Pty Ltd' WHERE id = '${esc(referrerId)}'`);
+
+      const referralsFor = async (email) => {
+        const row = await userRow(email);
+        return sql(`SELECT id, code, status FROM referral WHERE referred_user_id = '${esc(row.id)}'`);
+      };
+
+      // AC-29 / AB-8 — a brand-new account created at the gate. `redirect:
+      // "manual"` is load-bearing: the of_ref cookie is set on the 302 and a
+      // followed redirect drops it before the jar sees it.
+      const mate = new Session(baseUrl);
+      const landing = await mate.request(`/r/${code}`, { redirect: "manual" });
+      assert.equal(landing.status, 302);
+      const mateEmail = freshEmail("mate");
+      await login(mate, "/api/auth", mateEmail);
+      assert.equal((await referralsFor(mateEmail)).length, 1, "exactly one referral row");
+      assert.equal(mate.cookies.get("of_ref"), undefined, "the attribution cookie is cleared");
+
+      // AB-8 second half — sign out, sign in again on a fresh link; still one.
+      await mate.request("/api/auth/logout", { method: "POST" });
+      const again = new Session(baseUrl);
+      await again.request(`/r/${code}`, { redirect: "manual" });
+      await login(again, "/api/auth", mateEmail);
+      await completeAccount(again);
+      assert.equal((await referralsFor(mateEmail)).length, 1, "a second sign-in attributes nothing");
+
+      // AC-30 — an EXISTING account arriving on a link is never attributed.
+      const established = await newAccount("established");
+      const returning = new Session(baseUrl);
+      await returning.request(`/r/${code}`, { redirect: "manual" });
+      await login(returning, "/api/auth", established.email);
+      assert.equal((await referralsFor(established.email)).length, 0,
+        "the created branch is the only attributing branch");
+
+      // AC-31 — attribution is never worth a sign-in. A code that resolves to
+      // nobody must cost the customer nothing: they are signed in, and they can
+      // submit.
+      const orphan = new Session(baseUrl);
+      await orphan.request("/r/ZZZ-ZZZ", { redirect: "manual" });
+      const orphanEmail = freshEmail("orphan");
+      const verified = await login(orphan, "/api/auth", orphanEmail);
+      assert.equal(verified.body.authenticated, true, "a dud code does not cost the sign-in");
+      assert.equal((await referralsFor(orphanEmail)).length, 0);
+      await completeAccount(orphan);
+      const orphanDraft = await anonDraft("orphan draft");
+      await login(orphanDraft.session, "/api/auth", orphanEmail);
+      const submitted = await orphanDraft.session.request(`/api/projects/${orphanDraft.id}/submit`, {
+        method: "POST", json: { delivery: { postcode: "3072" } },
+      });
+      assert.equal(submitted.status, 200, "and it does not cost the submission either");
+
+      // AB-9 — a referral code posted to the gate's own endpoints is ignored.
+      const smuggler = await newAccount("smuggler");
+      await smuggler.session.request("/api/auth/profile", {
+        method: "POST", json: { ...validDetails, referralCode: code, referral_code: code },
+      });
+      const smuggled = await anonDraft("smuggled draft");
+      await login(smuggled.session, "/api/auth", smuggler.email);
+      await smuggled.session.request(`/api/projects/${smuggled.id}/submit`, {
+        method: "POST", json: { delivery: { postcode: "3072" }, referralCode: code, referral_code: code },
+      });
+      assert.equal((await referralsFor(smuggler.email)).length, 0,
+        "no code is accepted anywhere outside the /r/<CODE> link path");
+    });
+
+    await t.test("AB-12 absence: the submit route is the ONLY writer of status_customer='submitted'", async () => {
+      // Absence is the half a diff review cannot see. A second route that could
+      // move a project to submitted would make every refusal above decorative,
+      // and it would not show up as a failing assertion anywhere else.
+      const files = await workerSources(join(projectRoot, "worker"));
+      const writers = [];
+      for (const file of files) {
+        const source = await readFile(file, "utf8");
+        // A WRITE is an assignment in a SET clause; the same text inside a WHERE
+        // or an AND is a read, and there are many of those.
+        if (/SET[^;]*status_customer\s*=\s*'submitted'/s.test(source)) {
+          writers.push(file.slice(projectRoot.length + 1).replace(/\\/g, "/"));
+        }
+      }
+      assert.deepEqual(writers, ["worker/routes/quote.ts"],
+        "exactly one route may submit a project, and it is the session-gated one");
+    });
+
   } finally {
     await stop(server);
     await removeRunDir(runDir);
