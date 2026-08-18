@@ -144,7 +144,11 @@ export function Input({
       placeholder={placeholder} inputMode={inputMode} maxLength={maxLength} autoComplete={autoComplete}
       aria-invalid={ariaInvalid} aria-describedby={ariaDescribedby}
       onKeyDown={onKeyDown} autoFocus={autoFocus}
-      className={`field-control w-full border px-3 py-2.5 text-ink placeholder-quieter focus:outline-none transition-colors disabled:cursor-not-allowed ${className} t-bd-sm`} />
+      // An invalid field says so in the control itself, not only in the sentence
+      // underneath it. `aria-invalid` was already being set on every gated field
+      // and nothing was drawing it, so an errored input was pixel-identical to a
+      // valid one — the message below was carrying the whole state on its own.
+      className={`field-control w-full border px-3 py-2.5 text-ink placeholder-quieter focus:outline-none transition-colors disabled:cursor-not-allowed aria-[invalid=true]:border-attention aria-[invalid=true]:bg-attention/6 ${className} t-bd-sm`} />
   );
 }
 
