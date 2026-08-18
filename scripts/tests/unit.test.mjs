@@ -25,6 +25,7 @@ await build({
       export { normEmail, isEmail, sixDigit, sha256hex, userDto } from ${p("worker/lib/auth.ts")};
       export { normalizePhone, enquiryReference, validateEnquiry } from ${p("worker/lib/enquiry.ts")};
       export { isValidAuPhone, normalizePhone as normalizePhoneShared } from ${p("src/data/phone.ts")};
+      export { AU_STATES, DETAIL_LIMITS, detailsPatchProblems, submitMissing } from ${p("src/data/accountDetails.ts")};
       export { availableActions, ACTION_LABEL, TRANSITIONS, STAGES, STAGE_LABEL, DEPOSIT_PERCENT, depositOf, balanceOf } from ${p("worker/lib/orders.ts")};
       export { editedFieldsAfterSave } from ${p("worker/lib/lines.ts")};
       export { pricingOptionSlugsFromOptions } from ${p("worker/lib/estimator/estimate.ts")};
@@ -961,4 +962,48 @@ test("isValidAuPhone: accepted AU shapes, rejected junk", () => {
 // route's export must BE the shared one, not a second copy that agrees today.
 test("one AU phone normaliser: worker/lib/enquiry re-exports src/data/phone", () => {
   assert.equal(M.normalizePhone, M.normalizePhoneShared);
+});
+
+// What blocks SUBMISSION (spec §4.3 / AC-17 / AC-23). A stored-but-invalid phone
+// counts as missing on purpose: a legacy row with junk in it must be corrected at
+// the gate, not submitted around.
+const completeDetails = {
+  name: "Sam Taylor", phone: "0412 345 678",
+  addressLine1: "12 Bridge Street", addressLine2: null,
+  addressSuburb: "Preston", addressState: "VIC", addressPostcode: "3072",
+};
+test("submitMissing: the required set, and what counts as absent", () => {
+  assert.deepEqual(M.submitMissing(completeDetails), []);
+  assert.deepEqual(M.submitMissing({ ...completeDetails, addressLine2: "Unit 4" }), [],
+    "unit/level is optional");
+  assert.deepEqual(M.submitMissing({
+    name: null, phone: null, addressLine1: null, addressLine2: null,
+    addressSuburb: null, addressState: null, addressPostcode: null,
+  }), ["name", "phone", "addressLine1", "addressSuburb", "addressState", "addressPostcode"]);
+  assert.deepEqual(M.submitMissing({ ...completeDetails, name: "   " }), ["name"], "whitespace is not a name");
+  assert.deepEqual(M.submitMissing({ ...completeDetails, phone: "12345" }), ["phone"], "stored-invalid phone blocks");
+  assert.deepEqual(M.submitMissing({ ...completeDetails, addressState: "XXX" }), ["addressState"]);
+  assert.deepEqual(M.submitMissing({ ...completeDetails, addressPostcode: "307" }), ["addressPostcode"]);
+  assert.deepEqual(M.AU_STATES.slice(), ["NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"]);
+});
+
+// What a PATCH may store (AB-13 / E12 / AC-22 / AC-23 server floor). Clearing a
+// field is legal here; refusing an over-limit or malformed one is not optional.
+test("detailsPatchProblems: refuses over-limit and malformed, allows clearing", () => {
+  assert.deepEqual(M.detailsPatchProblems({}), [], "an empty patch has nothing wrong with it");
+  assert.deepEqual(M.detailsPatchProblems({
+    name: "Sam Taylor", phone: "1300 123 456", addressLine1: "12 Bridge St",
+    addressSuburb: "Preston", addressState: "vic", addressPostcode: "3072",
+  }), [], "a lowercase state is accepted and uppercased on write");
+  assert.deepEqual(M.detailsPatchProblems({ name: "", phone: "", addressSuburb: "" }), [],
+    "clearing a field is legal at the profile layer");
+  assert.deepEqual(M.detailsPatchProblems({ phone: "12345" }), ["phone"]);
+  assert.deepEqual(M.detailsPatchProblems({ addressState: "XX" }), ["addressState"]);
+  assert.deepEqual(M.detailsPatchProblems({ addressPostcode: "30721" }), ["addressPostcode"]);
+  assert.deepEqual(M.detailsPatchProblems({ name: "x".repeat(M.DETAIL_LIMITS.name + 1) }), ["name"]);
+  assert.deepEqual(M.detailsPatchProblems({ addressLine1: "x".repeat(100_000) }), ["addressLine1"],
+    "nothing unbounded reaches D1");
+  assert.deepEqual(
+    M.detailsPatchProblems({ phone: "nope", addressPostcode: "abcd" }).sort(),
+    ["addressPostcode", "phone"], "every bad field is named, not just the first");
 });
