@@ -373,6 +373,15 @@ test("an existing draft and an anonymous one merge, and the merged list is shown
   await expect(page.getByRole("heading", { name: "Your details" })).toBeVisible();
   await expect(page.getByText(/Your quote · 2 items/)).toBeVisible();
 
+  // §16.6.2 — and the list says WHICH lines just arrived. A notice that two
+  // quotes were combined, over a list that looks like one quote, leaves the
+  // customer to work out what changed by counting; the chip is what makes the
+  // merge legible on the thing being submitted. Exactly one line just arrived.
+  await expect(page.getByText("Just added")).toHaveCount(1);
+  const justAddedRow = page.locator("[data-line-row]").filter({ hasText: "Just added" });
+  await expect(justAddedRow).toHaveCount(1);
+  await expect(justAddedRow).toContainText("Sliding Window");
+
   await page.getByRole("button", { name: /Submit for technical review/ }).click();
   await expect(page.getByRole("heading", { name: "Quote submitted" })).toBeVisible();
 

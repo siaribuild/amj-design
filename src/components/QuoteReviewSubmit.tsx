@@ -213,6 +213,13 @@ export function QuoteReviewSubmit({
   const [submitError, setSubmitError] = useState("");
 
   // ── The merge moment ───────────────────────────────────────────────────────
+  // WHICH lines just arrived, not merely how many. The count alone cannot mark a
+  // row, but the client does not need the server to tell it: it was holding the
+  // anonymous draft's own line ids before it signed in, and claimAnonProjectForUser
+  // RE-PARENTS those rows rather than recreating them (`UPDATE quote_line SET
+  // project_id = ?`), so the ids survive the merge untouched. Nothing new crosses
+  // the wire for this, and /verify is not asked for anything extra.
+  const anonLineIds = useRef<Set<string>>(new Set());
   const linesBeforeAuth = useRef<number | null>(null);
   const [mergedCount, setMergedCount] = useState(0);
   const wasResolving = useRef(false);
@@ -258,6 +265,9 @@ export function QuoteReviewSubmit({
   const openGate = () => {
     if (attentionCount > 0) { onFixBlocked(); return; }
     linesBeforeAuth.current = quote.items.length;
+    anonLineIds.current = new Set(
+      quote.items.map((it) => it.serverId).filter((id): id is string => !!id),
+    );
     // Only a value the visitor typed here counts as carried; a project's own
     // stored destination was already theirs and needs no explaining.
     if (/^\d{4}$/.test(postcode) && !storedDelivery?.postcode) setCarriedPostcode(postcode);
@@ -399,16 +409,26 @@ export function QuoteReviewSubmit({
           ) : (
             <>
               <div className="space-y-2 mb-3">
-                {quote.items.map((it, i) => (
-                  <div key={it.id} className="flex justify-between gap-3 border-b border-black/6 last:border-0 py-1.5 t-bd-sm">
-                    <span className="text-ink min-w-0 truncate">{String(i + 1).padStart(2, "0")} · {productLabel(it.productSlug)} — {mm(it.height)} × {mm(it.width)} ×{it.qty}</span>
+                {quote.items.map((it, i) => {
+                  const justAdded = mergedCount > 0 && !!it.serverId && anonLineIds.current.has(it.serverId);
+                  return (
+                  <div key={it.id} data-line-row className="flex justify-between gap-3 border-b border-black/6 last:border-0 py-1.5 t-bd-sm">
+                    <span className="text-ink min-w-0 truncate">
+                      {String(i + 1).padStart(2, "0")} · {productLabel(it.productSlug)} — {mm(it.height)} × {mm(it.width)} ×{it.qty}
+                      {justAdded && (
+                        <span className="ml-2 align-middle whitespace-nowrap bg-sage-wash text-sage-ink border border-sage/25 px-1.5 py-0.5 t-label">
+                          Just added
+                        </span>
+                      )}
+                    </span>
                     <span className="text-body flex-shrink-0 font-data">
                       {it.review?.customerConfigurationChanged && (typeof it.lineTotal !== "number" || !Number.isFinite(it.lineTotal))
                         ? "Pending final price"
                         : lineBlocksSubmission(it) ? "Review" : fmt(gstAdjust(linePriceTotal(it), gstMode))}
                     </span>
                   </div>
-                ))}
+                  );
+                })}
                 {quote.files.length > 0 && <p className="text-body pt-1 t-cap">+ {quote.files.length} uploaded file{quote.files.length !== 1 ? "s" : ""} for review</p>}
               </div>
               {delivery ? (
