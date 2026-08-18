@@ -130,3 +130,37 @@ CONTEXT.md's Customer definition, which currently says accounts are trade busine
 - ABN checksum helper exists (`abnValid`, checksum-only). ABR live lookup is the new part.
 - Prod reality (2026-08-18): 3 customer accounts (all team test), 3 internal; 2 anonymous
   post-submission projects; referral config: 2.5% referred / 1% commission / $2k min order.
+
+---
+
+## Phase 2 decisions — owner, 2026-08-19
+
+The five questions deferred at the Phase 1 grill were put to the owner at Phase 2 kickoff.
+Binding, same status as D1–D10.
+
+| # | Decision | Answer |
+|---|---|---|
+| **P2-D1** | Is ABN capture reachable before quoting? | **Both paths.** Verify-then-shop is the **primary** path: `/trade-account` becomes the real signup — the same email-OTP flow extended with ABN + business name, reachable cold — so a verified tradie browses and configures at trade prices from the start. Adding an ABN **later** is also available, for someone who missed it or who converts from private to business. |
+| **P2-D2** | Where does an existing account add its ABN? | **The profile/account page, as a first-class affordance** ("add your ABN, get trade pricing"), running the same verification. ABN keeps ONE home — the account row. No separate application page. |
+| **P2-D3** | Does the submit gate show an ABN field? | **YES — as an optional field.** *(This overrides the orchestrator's recommendation to keep the gate minimal.)* So there are **three entry points** into the same verification: the `/trade-account` signup, the profile page, and an optional field at the submit gate. Phase 1's AC-41 silence about trade ends here, by design. |
+| **P2-D4** | Pending verification vs a live quote | **No silent repricing.** Ops reviews every quote anyway, so an approved tradie's *reviewed* quote simply comes back at trade pricing; trade rates apply from approval onward. Nothing recalculates behind the customer's back. |
+
+**Owner note attached to P2-D4 — deferred, NOT in Phase 2 scope:**
+
+> "Currently prices are adjusted per line item and there are no 'tradie discount' shown in the
+> quote at all. Which is fine. The UX challenge is whether to make prices standard and apply
+> discount at the total, or to make sure that OPS apply correct prices — i.e. to be able to easily
+> identify that a client/quote is for a trade account, but also to have an easy way of applying the
+> trade account discount. None of this is in scope for this phase — just make a note somewhere to
+> revisit."
+
+Recorded as its own ticket (see the tracker). The tension is real: the current model folds the
+account discount into each line's price with no discount line anywhere (the
+never-disclose-by-subtraction rule), which keeps the percentage private but gives ops no obvious
+signal that a quote is a trade quote, and no single lever to apply or correct trade pricing during
+review.
+
+**Consequence to carry into the Phase 2 spec:** because ABN can arrive at the submit gate
+(P2-D3) while the customer is mid-submission, `ASSUMED:` entering it there must NOT block or
+delay submission — the quote submits, verification runs asynchronously, and per P2-D4 trade
+pricing applies from approval onward rather than retroactively. Veto at the spec gate if wrong.
