@@ -18,7 +18,7 @@
 import type { Env } from "../types";
 import type { UserRow } from "./auth";
 import {
-  AU_STATES, DETAIL_LIMITS, detailsPatchProblems,
+  AU_STATES, detailsPatchProblems,
   type AccountDetails, type DetailField,
 } from "../../src/data/accountDetails";
 
@@ -90,4 +90,3 @@ export async function updateAccountDetails(
   return { ok: true, user: fresh };
 }
 
-export { AU_STATES, DETAIL_LIMITS };

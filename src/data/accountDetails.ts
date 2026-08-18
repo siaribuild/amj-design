@@ -50,7 +50,10 @@ export function detailsPatchProblems(patch: Partial<Record<DetailField, string>>
     const raw = patch[field];
     if (raw === undefined) continue;
     const value = trimmed(raw);
-    if (String(raw).length > DETAIL_LIMITS[field]) { problems.push(field); continue; }
+    // Measured as it will be STORED. Checking the raw length made "3072 " an
+    // over-limit postcode — refused for a trailing space the customer cannot see,
+    // against a limit their visible value never came near.
+    if (value.length > DETAIL_LIMITS[field]) { problems.push(field); continue; }
     if (!value) continue; // clearing is legal
     if (field === "phone" && !isValidAuPhone(value)) problems.push(field);
     else if (field === "addressState" && !(AU_STATES as readonly string[]).includes(value.toUpperCase())) problems.push(field);

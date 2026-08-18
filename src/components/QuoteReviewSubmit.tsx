@@ -215,6 +215,10 @@ export function QuoteReviewSubmit({
   // The gate panel, so pressing Submit at stage 0 brings the thing it just
   // opened into view instead of leaving it below the fold on a long quote.
   const gatePanelRef = useRef<HTMLDivElement>(null);
+  // The details stage's heading, as a focus target. Announcing a stage change to
+  // a screen reader without moving the cursor to it leaves the reading position
+  // wherever the last stage left it — usually a button that no longer exists.
+  const detailsHeadingRef = useRef<HTMLHeadingElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
@@ -290,6 +294,19 @@ export function QuoteReviewSubmit({
     gatePanelRef.current.scrollIntoView({ block: "start", behavior: reduced ? "auto" : "smooth" });
   }, [stage]);
 
+  // §16.9: focus follows the stage. Stage 1's own field takes it (a single-field
+  // step is the obvious target and OtpSignIn autoFocuses); stage 3 is a form, so
+  // the heading takes it instead of the first of eleven inputs.
+  const focusedStage = useRef<string | null>(null);
+  useEffect(() => {
+    if (stage !== "details" || focusedStage.current === stage) return;
+    // Only on a TRANSITION into details, never on a first render for someone who
+    // was already signed in — stealing focus on arrival is its own rudeness.
+    if (focusedStage.current !== null) detailsHeadingRef.current?.focus();
+    focusedStage.current = stage;
+  }, [stage]);
+  useEffect(() => { if (stage !== "details") focusedStage.current = stage; }, [stage]);
+
   /** What the live region says when the stage changes (§16.9). */
   const stageHeading =
     stage === "signin" ? OTP_COPY.gate.heading
@@ -355,7 +372,12 @@ export function QuoteReviewSubmit({
           onAuthed?.(saved.user);
         } catch (e) {
           if (e instanceof ApiError && e.code === "invalid_fields") {
-            setSubmitError("We couldn't save your details — check them, then try again.");
+            // §16.5.3: "check {field list}", not "check them". The server names
+            // what it refused and the panel has the prose for every field.
+            const named = (e.fields ?? []).filter((f): f is DetailField => f in FIELD_PROSE);
+            setSubmitError(named.length
+              ? `We couldn't save your details — check ${prose(named, FIELD_PROSE)}, then try again.`
+              : "We couldn't save your details — check them, then try again.");
           } else {
             setSubmitError("Couldn't save your details. Please try again.");
           }
@@ -603,7 +625,8 @@ export function QuoteReviewSubmit({
                     2
                   </span>
                 )}
-                <h2 className="font-semibold text-ink font-display t-hd2">Your details</h2>
+                <h2 ref={detailsHeadingRef} tabIndex={-1}
+                  className="font-semibold text-ink font-display outline-none t-hd2">Your details</h2>
               </div>
               <p className="text-body mt-1 t-bd-sm">So we can quote you properly and get the delivery right. We'll keep these on your account — next quote, they're already filled in.</p>
               {fromAccount && (

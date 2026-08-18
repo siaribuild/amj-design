@@ -1328,6 +1328,13 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROFILE
 // ═══════════════════════════════════════════════════════════════════════════════
+/** The server's field keys as this screen labels them. */
+const PROFILE_FIELD_LABEL: Record<string, string> = {
+  name: "your full name", phone: "your phone number",
+  addressLine1: "your street address", addressLine2: "your unit or level",
+  addressSuburb: "your suburb", addressState: "your state", addressPostcode: "your postcode",
+};
+
 function ProfilePage({ user, setPage, setUser, authLoading, embedded }: { user: AuthUser | null; setPage: (p: Page) => void; setUser: (u: AuthUser) => void; authLoading?: boolean; embedded?: boolean }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [name, setName] = useState(user?.name ?? "");
@@ -1358,8 +1365,17 @@ function ProfilePage({ user, setPage, setUser, authLoading, embedded }: { user: 
         phone: r.user.phone || "", company: r.user.company || "", abn: r.user.abn || "",
       });
       setSaved(true); setTimeout(() => setSaved(false), 2500);
-    } catch {
-      setSaveError("Couldn't save your changes. Please try again.");
+    } catch (e) {
+      // The server names what it refused; saying only "something went wrong"
+      // leaves the customer to guess which of four fields to change. Nothing was
+      // written either — the patch is refused whole — so the message has to be
+      // able to say which one cost them the rest.
+      const named = e instanceof ApiError && e.code === "invalid_fields" && e.fields?.length
+        ? e.fields.map((f) => PROFILE_FIELD_LABEL[f] ?? f).join(", ")
+        : "";
+      setSaveError(named
+        ? `We couldn't save your changes — check ${named}, then try again. Nothing was saved.`
+        : "Couldn't save your changes. Please try again.");
     } finally {
       setSaving(false);
     }

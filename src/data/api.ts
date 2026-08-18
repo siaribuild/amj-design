@@ -100,7 +100,10 @@ export function hydrateQuoteItems(items: ApiItem[], localIdSeed = Date.now(), pr
 // Same shape as src/ops/api.ts's OpsApiError, ported here rather than shared —
 // the ops client only ever talks to /api/ops/*.
 export class ApiError extends Error {
-  constructor(public status: number, public code: string) { super(code); }
+  /** `fields` carries the server's own list of what it refused, when it named one
+   *  (`invalid_fields`). Dropping it here left every caller able to say only that
+   *  something was wrong — which is the one thing the person already knows. */
+  constructor(public status: number, public code: string, public fields?: string[]) { super(code); }
 }
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -110,7 +113,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, (body as any)?.error ?? `http_${res.status}`);
+    const fields = (body as any)?.fields;
+    throw new ApiError(
+      res.status,
+      (body as any)?.error ?? `http_${res.status}`,
+      Array.isArray(fields) ? fields.map(String) : undefined,
+    );
   }
   return res.json() as Promise<T>;
 }

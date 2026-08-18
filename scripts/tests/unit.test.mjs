@@ -1014,3 +1014,14 @@ test("detailsPatchProblems: refuses over-limit and malformed, allows clearing", 
     M.detailsPatchProblems({ phone: "nope", addressPostcode: "abcd" }).sort(),
     ["addressPostcode", "phone"], "every bad field is named, not just the first");
 });
+
+// A value is measured as it will be STORED, which is trimmed. Checking the raw
+// length first made "3072 " an over-limit postcode — a value the customer cannot
+// see anything wrong with, refused for a space they cannot see either.
+test("detailsPatchProblems: the limit applies to the trimmed value, not the keystrokes", () => {
+  assert.deepEqual(M.detailsPatchProblems({ addressPostcode: "3072 " }), []);
+  assert.deepEqual(M.detailsPatchProblems({ addressState: "  VIC  " }), []);
+  assert.deepEqual(M.detailsPatchProblems({ name: `  ${"x".repeat(M.DETAIL_LIMITS.name)}  ` }), []);
+  // …and a genuinely over-limit value is still refused once trimmed.
+  assert.deepEqual(M.detailsPatchProblems({ name: `  ${"x".repeat(M.DETAIL_LIMITS.name + 1)}  ` }), ["name"]);
+});

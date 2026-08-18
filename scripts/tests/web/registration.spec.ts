@@ -682,3 +682,34 @@ test("each stage announces itself, and stored values are credited however they a
   await expect(page.getByLabel("Phone")).toHaveValue(COMPLETE.phone);
   await expect(page.getByText("From your account — edit if anything's changed.")).toBeVisible();
 });
+
+// ─── §16.5.3 — a refusal names the field it is about ─────────────────────────
+// The Worker already answers `{ error: "invalid_fields", fields: [...] }`, and it
+// already refuses the whole patch rather than writing half of it. The client threw
+// that list away at the ApiError boundary, so the one screen that can reach this
+// path told the customer "couldn't save your changes" and named nothing — with a
+// business-name edit in the same patch silently not saved either.
+test("a refused profile save names the field that caused it", async ({ page }) => {
+  const email = freshEmail("refusal");
+  await apiSignIn(page.request, email);
+  expect((await page.request.post("/api/auth/profile", { data: COMPLETE })).ok()).toBeTruthy();
+
+  await page.goto("/account");
+  await expect(page.getByRole("heading", { name: "Account", exact: true })).toBeVisible({ timeout: 30_000 });
+
+  const personal = page.locator(".card").filter({ hasText: "Personal details" });
+  const business = page.locator(".card").filter({ hasText: "Business details" });
+  await personal.getByRole("textbox").nth(1).fill("12345");          // phone
+  await business.getByRole("textbox").first().fill("Bridge St Joinery"); // business name
+  await page.getByRole("button", { name: /Save changes/ }).click();
+
+  const refusal = page.getByRole("alert");
+  await expect(refusal).toBeVisible();
+  await expect(refusal).toContainText(/phone/i);
+
+  // …and the refusal is honest about what it did NOT save: the whole patch was
+  // refused, so the business name the customer typed beside it is not stored.
+  const me = await (await page.request.get("/api/auth/me")).json();
+  expect(me.user.phone, "the invalid value never reached the account").toBe(COMPLETE.phone);
+  expect(me.user.company ?? "", "and neither did the good field beside it").toBe("");
+});
