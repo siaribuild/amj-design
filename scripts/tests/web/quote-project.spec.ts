@@ -12,8 +12,6 @@
 // use the real API for anything that must actually persist.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 const SLIDING = "amj80-series-sliding-window";
 
@@ -951,22 +949,37 @@ test("a unit's size stays lighter than its opening's", async ({ page }) => {
 const OPS_API = "http://127.0.0.1:8788";
 const OPS_HOST = "ops.localhost:8788";
 
-// Same read as ops.spec.ts's staffLogin: dev-mode OTP, code returned in the
-// challenge response body — no UI needed for an API-only login.
-function seedStaffEmail(): string {
-  const seedSql = readFileSync(join(process.cwd(), "scripts", "db", "seed.sql"), "utf8");
-  const row = seedSql.split("\n").find((l) => l.includes("'u_staff1'") && l.includes("@"));
-  const email = row?.match(/'([^']+@[^']+)'/)?.[1];
-  if (!email) throw new Error("seed.sql: no email for u_staff1");
-  return email;
-}
+// A UNIQUE STAFFER PER CALL — never the seeded admin.
+//
+// Code issuance is capped per RECIPIENT (5 addresses-worth per 15 minutes) as
+// well as per source, and ops.spec.ts spends that entire budget on the seeded
+// u_staff1 address through the UI before this file ever runs. Borrowing it here
+// meant the 6th and 7th challenges were refused — and a refused challenge still
+// answers a neutral 200 with no code, so the failure landed on the verify two
+// lines later and read like a broken sign-in.
+//
+// isStaffEmail (worker/lib/staff.ts) allowlists by DOMAIN and pricing access is
+// flat (`const isStaffUser = (s) => !!s`), so any @openframe.com.au address can
+// price a zone. Exactly the fix ops.spec.ts already applies in T-C6, for exactly
+// this reason — this was the last caller still drawing on the shared address.
+let opsStaffSeq = 0;
+const opsStaffEmail = () => `qp-ops-${Date.now().toString(36)}-${opsStaffSeq++}@openframe.com.au`;
 
 async function opsLogin(request: APIRequestContext): Promise<void> {
-  const email = seedStaffEmail();
-  const challenge = await request.post(`${OPS_API}/api/ops/auth/challenge`, { headers: { Host: OPS_HOST }, data: { email } });
+  const email = opsStaffEmail();
+  // Its own source address too: the per-SOURCE cap pools all browser and Node
+  // traffic into one "unknown" bucket, and a whole-suite run is not far off it.
+  const headers = { Host: OPS_HOST, "X-Forwarded-For": `198.22.0.${opsStaffSeq}` };
+  const challenge = await request.post(`${OPS_API}/api/ops/auth/challenge`, { headers, data: { email } });
   const { devCode } = await challenge.json();
-  const verify = await request.post(`${OPS_API}/api/ops/auth/verify`, { headers: { Host: OPS_HOST }, data: { email, code: devCode } });
-  expect(verify.ok(), "ops dev-mode OTP login").toBeTruthy();
+  // ASSERT THE CODE, NOT JUST THE VERIFY. The challenge route is deliberately
+  // neutral: when a cap refuses it, it still answers 200 {ok:true} and simply
+  // issues nothing. Without this the refusal surfaced two lines later as
+  // "verify returned 400" and sent every reader to the verify handler, which was
+  // working perfectly.
+  expect(devCode, `no dev code issued for ${email} — an OTP cap refused the challenge, it did not fail`).toMatch(/^\d{6}$/);
+  const verify = await request.post(`${OPS_API}/api/ops/auth/verify`, { headers, data: { email, code: devCode } });
+  expect(verify.ok(), `ops dev-mode OTP login: ${verify.status()} ${await verify.text()}`).toBeTruthy();
 }
 
 // Idempotent: reads the zone's current version and re-prices it. Safe to call
