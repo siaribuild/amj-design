@@ -37,7 +37,7 @@
 // false confirmation.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, AlertCircle, CheckCircle, Send } from "lucide-react";
+import { ChevronLeft, AlertCircle, CheckCircle, Loader2, Send } from "lucide-react";
 import { SAGE, WindowMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import {
   type QuoteState, linePriceTotal, fmt, mm, productLabel, lineBlocksSubmission,
@@ -103,6 +103,18 @@ function prose(fields: DetailField[], map: Record<DetailField, string>): string 
   const parts = fields.map((f) => map[f]);
   if (parts.length <= 1) return parts[0] ?? "";
   return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/** A field message carries a MARK as well as a colour — the product's own rule
+ *  (StatusPill: icon + word, never colour alone), applied to inline field errors.
+ *  The colour is `--attention-ink` on paper, the pairing §16.9 names; Tailwind's
+ *  `red-700` is a different red that belongs to no token on this site. */
+function FieldError({ id, children }: { id: string; children: string }) {
+  return (
+    <p id={id} role="alert" className="text-attention-ink flex items-start gap-1.5 mt-1 t-cap">
+      <AlertCircle className="w-3 h-3 flex-shrink-0 mt-[3px]" aria-hidden="true" />{children}
+    </p>
+  );
 }
 
 /** Confirmation screen after a submission the server accepted. */
@@ -342,22 +354,39 @@ export function QuoteReviewSubmit({
         <h1 className="font-semibold text-ink mb-2 font-display t-hd1">Review and submit</h1>
         <p className="text-body mb-6 t-bd-sm">No payment at this stage. A reviewed quote is issued after manual technical review.</p>
 
+        {/* A merge is a CONVENIENCE, not a fault — so this is built out of the
+            sage "this changed for the better" vocabulary the product already
+            owns (`.quote-item-card[data-state="added"]`: a 55%-mixed sage border
+            plus a 3px inset spine) and a CheckCircle, never a warning colour.
+            Sage-wash on its own was too weak to carry the moment: with no spine
+            and no mark it read as a neutral grey box. */}
         {mergedCount > 0 && (
-          <div className="quote-notice--info border border-sage/30 bg-sage-wash p-4 mb-4">
-            <p className="font-semibold text-ink t-bd-sm">Your quotes have been combined</p>
-            <p className="text-body mt-1 t-cap">
-              You already had a saved quote on this account, so the {mergedCount} item{mergedCount === 1 ? "" : "s"} you
-              just built have been added to it. The list below is the whole project — have a look before you submit.
-            </p>
+          <div
+            className="flex items-start gap-3 bg-sage-wash border p-4 pl-[17px] mb-4"
+            style={{
+              borderColor: "color-mix(in oklab, var(--sage) 55%, var(--line))",
+              boxShadow: "inset 3px 0 0 var(--sage)",
+            }}>
+            <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-sage" aria-hidden="true" />
+            <div>
+              <p className="font-semibold text-sage-ink font-display t-bd-sm">Your quotes have been combined</p>
+              <p className="text-ink-soft mt-0.5 max-w-[58ch] t-cap">
+                You already had a saved quote on this account, so the {mergedCount} item{mergedCount === 1 ? "" : "s"} you
+                just built have been added to it. The list below is the whole project — have a look before you submit.
+              </p>
+            </div>
           </div>
         )}
 
         <div className="quote-panel p-5 mb-4">
           <SLabel>{mergedCount > 0 ? `Your quote · ${quote.items.length} items` : "Your quote"}</SLabel>
           {projectResolving ? (
-            <div className="py-4">
-              <p className="text-ink t-bd-sm">Updating your project…</p>
-              <p className="text-body mt-1 t-cap">We're checking for anything already saved to your account.</p>
+            <div className="flex flex-col items-center gap-1.5 py-8 text-center">
+              <p className="text-ink flex items-center gap-2 t-bd-sm">
+                <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin motion-reduce:animate-none text-sage" aria-hidden="true" />
+                Updating your project…
+              </p>
+              <p className="text-body t-cap">We're checking for anything already saved to your account.</p>
             </div>
           ) : (
             <>
@@ -399,7 +428,10 @@ export function QuoteReviewSubmit({
         {/* ── Stage 0: pre-gate ─────────────────────────────────────────────── */}
         {stage === "pregate" && (
           <div className="quote-panel p-5 space-y-4 mb-4">
-            <div className="max-w-xs">
+            {/* A four-digit field is four digits wide-ish, not 320px: an input
+                sized far past its longest possible value reads as an invitation
+                to type something longer. */}
+            <div className="max-w-[180px]">
               <FieldLabel htmlFor="delivery-postcode">Delivery postcode</FieldLabel>
               <Input id="delivery-postcode" value={postcode} inputMode="numeric" maxLength={4}
                 aria-invalid={!!postcodeError || undefined}
@@ -408,18 +440,28 @@ export function QuoteReviewSubmit({
                 onBlur={() => { if (postcode && postcode.length !== 4) setPostcodeError("Enter your 4-digit delivery postcode."); }}
                 placeholder="3072" />
               {postcodeError
-                ? <p id="postcode-err" role="alert" className="text-red-700 mt-1 t-cap">{postcodeError}</p>
+                ? <FieldError id="postcode-err">{postcodeError}</FieldError>
                 : <p id="postcode-help" className="text-body mt-1 t-cap">We price delivery from this.</p>}
             </div>
           </div>
         )}
 
         {/* ── Stage 1: sign in or create ────────────────────────────────────── */}
+        {/* The active-step treatment, at the strength the product actually draws
+            it: `.quote-item-card[data-state="added"]` mixes sage 55% into the
+            hairline rather than swapping it for full-strength sage, which was
+            louder than anything else on the screen. */}
         {stage === "signin" && (
-          <div className="quote-panel p-5 mb-4 border-sage" style={{ boxShadow: "inset 3px 0 0 var(--sage)" }}>
+          <div
+            className="quote-panel p-5 mb-4"
+            style={{
+              borderColor: "color-mix(in oklab, var(--sage) 55%, var(--line))",
+              boxShadow: "inset 3px 0 0 var(--sage)",
+            }}>
             <OtpSignIn
               heading={OTP_COPY.gate.heading}
               subcopy={OTP_COPY.gate.subcopy}
+              layout="inline"
               onAuthed={handleAuthed}
               onCancel={() => setGateOpened(false)}
               cancelLabel="Back to my quote"
@@ -447,7 +489,7 @@ export function QuoteReviewSubmit({
                   aria-describedby={fieldError("name") ? errId("name") : undefined}
                   onChange={(e) => setName(e.target.value)} onBlur={() => markTouched("name")}
                   placeholder="e.g. Sam Taylor" />
-                {fieldError("name") && <p id={errId("name")} role="alert" className="text-red-700 mt-1 t-cap">{fieldError("name")}</p>}
+                {fieldError("name") && <FieldError id={errId("name")}>{fieldError("name")}</FieldError>}
               </div>
               <div>
                 <FieldLabel htmlFor="detail-phone">Phone</FieldLabel>
@@ -457,7 +499,7 @@ export function QuoteReviewSubmit({
                   onChange={(e) => setPhone(e.target.value)} onBlur={() => markTouched("phone")}
                   placeholder="0412 345 678" />
                 {fieldError("phone")
-                  ? <p id={errId("phone")} role="alert" className="text-red-700 mt-1 t-cap">{fieldError("phone")}</p>
+                  ? <FieldError id={errId("phone")}>{fieldError("phone")}</FieldError>
                   : <p id="detail-phone-help" className="text-body mt-1 t-cap">Mobile, landline or 1300/1800.</p>}
               </div>
             </div>
@@ -466,15 +508,20 @@ export function QuoteReviewSubmit({
                 and an accidental edit is a lockout. */}
             <div>
               <FieldLabel>Email</FieldLabel>
-              <p className="text-ink flex items-center gap-2 t-bd-sm">
-                {user.email}
-                <span className="chip bg-sage-wash text-sage border border-sage/20 px-1.5 py-0.5 t-cap">Verified</span>
-              </p>
+              {/* A read-only ROW, sized and bordered like the inputs around it,
+                  rather than loose text that a long address wraps mid-domain and
+                  that leaves the chip floating. `.chip` was never a class in this
+                  codebase; `.quote-chip--ready` is the real one, and it carries
+                  sage-INK, which clears AA on sage-wash where `--sage` does not. */}
+              <div className="border border-line bg-recessive flex items-center justify-between gap-2.5 px-3 py-2.5">
+                <span className="text-ink min-w-0 truncate t-bd-sm">{user.email}</span>
+                <span className="quote-chip quote-chip--ready flex-shrink-0 t-cap">Verified</span>
+              </div>
               <p className="text-body mt-1 t-cap">This is your sign-in email. Contact us if you need it changed.</p>
             </div>
 
             <div className="border-t border-black/8 pt-4">
-              <p className="text-ink-soft mb-3 t-label">Your address</p>
+              <p className="text-sage mb-3 t-label">Your address</p>
               <div className="space-y-4">
                 <div>
                   <FieldLabel htmlFor="detail-address1">Street address</FieldLabel>
@@ -483,22 +530,25 @@ export function QuoteReviewSubmit({
                     aria-describedby={fieldError("addressLine1") ? errId("addressLine1") : undefined}
                     onChange={(e) => setAddressLine1(e.target.value)} onBlur={() => markTouched("addressLine1")}
                     placeholder="12 Bridge Street" />
-                  {fieldError("addressLine1") && <p id={errId("addressLine1")} role="alert" className="text-red-700 mt-1 t-cap">{fieldError("addressLine1")}</p>}
+                  {fieldError("addressLine1") && <FieldError id={errId("addressLine1")}>{fieldError("addressLine1")}</FieldError>}
                 </div>
                 <div>
                   <FieldLabel htmlFor="detail-address2">Unit, level or building (optional)</FieldLabel>
                   <Input id="detail-address2" value={addressLine2} autoComplete="address-line2" maxLength={DETAIL_LIMITS.addressLine2}
                     onChange={(e) => setAddressLine2(e.target.value)} />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="sm:col-span-1">
+                {/* State and postcode stay side by side at 375 (§16.10): both are
+                    short, and giving each its own full-width row wastes most of a
+                    phone screen. Suburb takes the full row above them. */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  <div className="col-span-2 sm:col-span-1">
                     <FieldLabel htmlFor="detail-suburb">Suburb</FieldLabel>
                     <Input id="detail-suburb" value={addressSuburb} autoComplete="address-level2" maxLength={DETAIL_LIMITS.addressSuburb}
                       aria-invalid={!!fieldError("addressSuburb") || undefined}
                       aria-describedby={fieldError("addressSuburb") ? errId("addressSuburb") : undefined}
                       onChange={(e) => setAddressSuburb(e.target.value)} onBlur={() => markTouched("addressSuburb")}
                       placeholder="Preston" />
-                    {fieldError("addressSuburb") && <p id={errId("addressSuburb")} role="alert" className="text-red-700 mt-1 t-cap">{fieldError("addressSuburb")}</p>}
+                    {fieldError("addressSuburb") && <FieldError id={errId("addressSuburb")}>{fieldError("addressSuburb")}</FieldError>}
                   </div>
                   <div>
                     <FieldLabel htmlFor="detail-state">State</FieldLabel>
@@ -506,11 +556,16 @@ export function QuoteReviewSubmit({
                       aria-invalid={!!fieldError("addressState") || undefined}
                       aria-describedby={fieldError("addressState") ? errId("addressState") : undefined}
                       onChange={(e) => setAddressState(e.target.value)} onBlur={() => markTouched("addressState")}
-                      className="field-control w-full border px-3 py-2.5 text-ink focus:outline-none transition-colors t-bd-sm">
+                      // 43px is exactly what the sibling Inputs compute to
+                      // (21px line box + 10px padding + 1px border, doubled): a
+                      // native select derives its own line box and came out ~3px
+                      // short, which threw the error messages under Suburb /
+                      // State / Postcode onto three different baselines.
+                      className="field-control w-full h-[43px] border px-3 py-2.5 text-ink focus:outline-none transition-colors aria-[invalid=true]:border-attention aria-[invalid=true]:bg-attention/6 t-bd-sm">
                       <option value="">Choose…</option>
                       {AU_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
-                    {fieldError("addressState") && <p id={errId("addressState")} role="alert" className="text-red-700 mt-1 t-cap">{fieldError("addressState")}</p>}
+                    {fieldError("addressState") && <FieldError id={errId("addressState")}>{fieldError("addressState")}</FieldError>}
                   </div>
                   <div>
                     <FieldLabel htmlFor="detail-postcode">Postcode</FieldLabel>
@@ -519,14 +574,14 @@ export function QuoteReviewSubmit({
                       aria-describedby={fieldError("addressPostcode") ? errId("addressPostcode") : undefined}
                       onChange={(e) => setAddressPostcode(e.target.value.replace(/\D/g, "").slice(0, 4))} onBlur={() => markTouched("addressPostcode")}
                       placeholder="3072" />
-                    {fieldError("addressPostcode") && <p id={errId("addressPostcode")} role="alert" className="text-red-700 mt-1 t-cap">{fieldError("addressPostcode")}</p>}
+                    {fieldError("addressPostcode") && <FieldError id={errId("addressPostcode")}>{fieldError("addressPostcode")}</FieldError>}
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="border-t border-black/8 pt-4">
-              <p className="text-ink-soft mb-1 t-label">Delivery for this project</p>
+              <p className="text-sage mb-1 t-label">Delivery for this project</p>
               <p className="text-body mb-3 t-cap">Where these windows and doors go — usually a site, not an office. We don't assume it, so it starts blank each time.</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -547,7 +602,7 @@ export function QuoteReviewSubmit({
                     onBlur={() => { if (postcode && postcode.length !== 4) setPostcodeError("Enter your 4-digit delivery postcode."); }}
                     placeholder="3072" />
                   {postcodeError
-                    ? <p id="postcode-err" role="alert" className="text-red-700 mt-1 t-cap">{postcodeError}</p>
+                    ? <FieldError id="postcode-err">{postcodeError}</FieldError>
                     : <p id="postcode-help" className="text-body mt-1 t-cap">We price delivery from this.</p>}
                 </div>
               </div>
@@ -555,9 +610,17 @@ export function QuoteReviewSubmit({
           </div>
         )}
 
-        <div className="quote-notice--info border border-line p-4 mb-6 text-body t-cap"><AlertCircle className="w-3 h-3 inline mr-1" />Delivery is priced from your postcode and confirmed on technical review. Estimated totals are confirmed on that same review. No deposit until you approve the reviewed quote. Supply only — tailgate to the kerb, and installation is not included.</div>
+        <div className="quote-notice--info border border-info/30 flex items-start gap-2 p-4 mb-6 t-cap"><AlertCircle className="w-3 h-3 flex-shrink-0 mt-[3px]" aria-hidden="true" /><span>Delivery is priced from your postcode and confirmed on technical review. Estimated totals are confirmed on that same review. No deposit until you approve the reviewed quote. Supply only — tailgate to the kerb, and installation is not included.</span></div>
 
-        {submitError && <p role="alert" className="quote-notice--danger text-red-700 flex items-center gap-1.5 mb-3 justify-end t-bd-sm"><AlertCircle className="w-4 h-4" />{submitError}</p>}
+        {/* A panel-level refusal is a notice, not a floating red sentence: it had
+            a danger tint and no padding at all, so the fill sat flush against the
+            glyphs, and right-justifying it left the message ragged on the edge a
+            reader starts from. */}
+        {submitError && (
+          <div role="alert" className="quote-notice--danger border border-destructive/35 text-attention-ink flex items-start gap-2 p-3.5 mb-4 t-cap">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" aria-hidden="true" />{submitError}
+          </div>
+        )}
 
         {/* Submit is NOT RENDERED while re-resolving — not merely disabled — so no
             keyboard or scripted path reaches it against a merge-deleted id. */}
@@ -573,9 +636,13 @@ export function QuoteReviewSubmit({
                 Still needed: {missing.map((f) => FIELD_LABEL[f]).join(", ")}.
               </p>
             )}
+            {/* Full-width on a phone, right-aligned on desktop (§16.10): the one
+                action on the screen should not be a 230px target floating against
+                the right gutter of a 375px viewport. */}
             {stage !== "signin" && (
               <div className="flex justify-end">
                 <Btn variant="sage" size="lg" disabled={submitDisabled}
+                  className="w-full sm:w-auto justify-center"
                   onClick={stage === "pregate" ? openGate : handleSubmit}>
                   {submitting ? "Submitting…" : aiReading ? "Refining estimate…" : <>Submit for technical review <Send className="w-4 h-4" /></>}
                 </Btn>
