@@ -16,6 +16,7 @@
 // what made this site invent "j.smith92" and put it on a quote.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useState } from "react";
+import { AlertCircle } from "lucide-react";
 import { SAGE, WindowMark, Btn, FieldLabel, Input } from "../app/ui";
 import { updateProfile, type AuthUserDto } from "../data/api";
 
@@ -65,7 +66,11 @@ export function NameStep({ email, onSaved, variant = "login" }: {
               onChange={(e) => { setName(e.target.value); if (error) setError(""); }}
               onKeyDown={(e) => e.key === "Enter" && save()}
               placeholder="e.g. Sam Taylor" />
-            {error && <p id="name-step-err" role="alert" className="text-red-700 mt-1 t-cap">{error}</p>}
+            {error && (
+              <p id="name-step-err" role="alert" className="text-attention-ink flex items-start gap-1.5 mt-1 t-cap">
+                <AlertCircle className="w-3 h-3 flex-shrink-0 mt-[3px]" aria-hidden="true" />{error}
+              </p>
+            )}
           </div>
           <Btn variant="sage" size="md" onClick={save}
             disabled={!name.trim() || saving}
