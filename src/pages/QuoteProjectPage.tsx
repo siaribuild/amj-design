@@ -23,7 +23,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, Upload, UploadCloud, Paperclip, Trash2, X, AlertCircle, CheckCircle } from "lucide-react";
 import { type Page, SLabel, Btn } from "../app/ui";
 import { type QuoteState } from "../data/configurator";
-import { type SubmitContact, type SubmitResult } from "../data/api";
+import { type AuthUserDto, type SubmitDelivery, type SubmitResult } from "../data/api";
 import { quoteSummary } from "../data/quoteSummary";
 import { useProjectDocuments } from "../data/useProjectDocuments";
 import { DocumentProgress } from "../components/DocumentProgress";
@@ -42,7 +42,9 @@ import {
 } from "../components/quote-project/identity";
 import { fixTargetFor, rowStateFor, unitLabel } from "../components/quote-project/rowState";
 
-type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
+// The richer account shape the gate needs (name raw + displayName split,
+// account address). Owned by QuoteReviewSubmit, which is where it is consumed.
+import { type QuoteUser } from "../components/QuoteReviewSubmit";
 
 /** WHAT THE SYSTEM DETECTED EACH DOCUMENT AS.
  *
@@ -63,7 +65,7 @@ const DOC_TYPE: Record<string, { label: string; tint: string }> = {
   supporting: { label: "SUPPORTING", tint: "border-dashed border-black/15 bg-black/[0.03] text-body-soft" },
 };
 
-export function QuoteProjectPage({ setPage, user, quote, projectId, onSubmit }: {
+export function QuoteProjectPage({ setPage, user, quote, projectId, onSubmit, onAuthed, projectResolving, storedDelivery }: {
   setPage: (p: Page) => void;
   user: QuoteUser;
   quote: QuoteState;
@@ -71,7 +73,14 @@ export function QuoteProjectPage({ setPage, user, quote, projectId, onSubmit }: 
    *  estimate preview (E9) needs a saved project id to price against, and
    *  degrades to no preview rather than erroring when there isn't one yet. */
   projectId: string | null;
-  onSubmit?: (contact: SubmitContact) => Promise<SubmitResult>;
+  onSubmit?: (delivery: SubmitDelivery) => Promise<SubmitResult>;
+  /** A fresh user from the gate's inline sign-in or a profile save. */
+  onAuthed?: (user: AuthUserDto) => void;
+  /** The identity-keyed hydration has a fetch in flight — a claim-merge may be
+   *  replacing the project id this screen is holding. */
+  projectResolving?: boolean;
+  /** The project's own delivery destination, if it already has one. */
+  storedDelivery?: { suburb: string | null; postcode: string | null } | null;
 }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
   const [view, setView] = useState<"build" | "review">("build");
@@ -205,6 +214,9 @@ export function QuoteProjectPage({ setPage, user, quote, projectId, onSubmit }: 
         quote={quote} user={user} projectId={projectId}
         backLabel="Back to your project"
         aiReading={aiPhase?.kind === "reading"}
+        projectResolving={projectResolving}
+        storedDelivery={storedDelivery}
+        onAuthed={onAuthed}
         onBack={() => setView("build")}
         onSubmit={onSubmit}
         onSubmitted={(email) => { setSubmittedEmail(email); setSubmitted(true); }}

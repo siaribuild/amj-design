@@ -1,16 +1,42 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// REVIEW + SUBMIT — the shared final step of the customer quote
+// REVIEW + SUBMIT — the shared final step of the customer quote, and THE GATE.
 //
-// Extracted from QuotePage so the /quote-project A/B arm reuses the SAME
-// submission lifecycle, contact gating and technical-review promise rather than
-// inventing a second one. The brief is explicit: this route changes the
-// presentation of the builder, not the workflow.
+// Anonymity ends here and nowhere else. Browsing, configuring, live pricing,
+// autosave and uploads are all anonymous and unchanged; submitting a project for
+// review requires a signed-in account with a name the person typed, an AU-valid
+// phone, a full address and an OTP-verified email.
+//
+// ONE SCREEN, FOUR STAGES. The quote panel never leaves — at every stage the
+// customer is looking at the thing they are about to submit:
+//
+//   0  pre-gate        anonymous, gate not yet opened — postcode + the friction
+//                      pre-announcement, so the screen does not open with an
+//                      email field in a stranger's face
+//   1  sign in/create  the inline OTP flow
+//   2  re-resolving    a claim-merge may have replaced the project id; the
+//                      details panel and Submit are NOT RENDERED until it lands
+//   3  your details    name, phone, address, delivery — one pass, every field a
+//                      live input
+//
+// ⚠️ THERE IS NO NAME STAGE. A fresh account reaches stage 3 with an empty,
+// required Full name field; a returning account reaches the same stage with it
+// filled. Same panel, different starting values (design §16, MG-1). Asking for
+// the name on its own screen and then again in the details form is one question
+// asked twice, and the owner removed it.
+//
+// ⚠️ DELIVERY IS NEVER SEEDED FROM THE ACCOUNT ADDRESS (MG-2). The primary actor
+// is a tradie whose delivery destination is their customer's site — different
+// nearly every time. A prefill that is wrong nearly every time is worse than
+// blank twice over: it is wrong AND it stops the field being read. Precedence is
+// the project's stored delivery, else the postcode typed at stage 0, else empty,
+// and the two delivery fields carry no autoComplete so browser address autofill
+// cannot reintroduce the account address by the back door.
 //
 // The success screen is shown ONLY on a server-confirmed submission — never
 // optimistically — so a failed or lost request surfaces an error instead of a
 // false confirmation.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, AlertCircle, CheckCircle, Send } from "lucide-react";
 import { SAGE, WindowMark, SLabel, Btn, FieldLabel, Input } from "../app/ui";
 import {
@@ -18,9 +44,66 @@ import {
 } from "../data/configurator";
 import { useGstMode, gstAdjust, gstSuffix } from "../data/gst";
 import { quoteSummary } from "../data/quoteSummary";
-import { getDeliveryEstimate, type SubmitContact, type SubmitResult } from "../data/api";
+import {
+  getDeliveryEstimate, updateProfile, ApiError,
+  type AuthUserDto, type SubmitDelivery, type SubmitResult,
+} from "../data/api";
+import { AU_STATES, DETAIL_LIMITS, submitMissing, type DetailField } from "../data/accountDetails";
+import { OtpSignIn, OTP_COPY } from "./OtpSignIn";
 
-type QuoteUser = { name: string; email: string; phone: string; type: string } | null;
+export type QuoteUser = {
+  name: string;            // RAW stored value ("" when NULL) — never the fallback
+  displayName: string;     // display-only derivation, never written back
+  email: string;
+  phone: string;
+  addressLine1: string;
+  addressLine2: string;
+  addressSuburb: string;
+  addressState: string;
+  addressPostcode: string;
+  priceGstMode: "inc" | "ex";
+  type: string;
+} | null;
+
+/** DetailField → prose, one mapping, used by every message on this screen. */
+const FIELD_PROSE: Record<DetailField, string> = {
+  name: "your full name",
+  phone: "your phone number",
+  addressLine1: "your street address",
+  addressLine2: "your unit or level",
+  addressSuburb: "your suburb",
+  addressState: "your state",
+  addressPostcode: "your postcode",
+};
+/** The same fields as the "Still needed:" caption says them — form order,
+ *  lowercase, the label rather than the sentence. */
+const FIELD_LABEL: Record<DetailField, string> = {
+  name: "full name",
+  phone: "phone",
+  addressLine1: "street address",
+  addressLine2: "unit or level",
+  addressSuburb: "suburb",
+  addressState: "state",
+  addressPostcode: "postcode",
+};
+const FIELD_ERROR: Record<DetailField, string> = {
+  name: "Enter your full name.",
+  phone: "Enter a phone number we can reach you on.",
+  addressLine1: "Enter your street address.",
+  addressLine2: "",
+  addressSuburb: "Enter your suburb.",
+  addressState: "Choose your state.",
+  addressPostcode: "Enter a 4-digit postcode.",
+};
+const PHONE_INVALID =
+  "That doesn't look like an Australian number. Try a mobile (0412 345 678), a landline (03 9000 0000) or a service number (1300 123 456).";
+
+/** "your phone number, street address and suburb" — a list a person reads. */
+function prose(fields: DetailField[], map: Record<DetailField, string>): string {
+  const parts = fields.map((f) => map[f]);
+  if (parts.length <= 1) return parts[0] ?? "";
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
 
 /** Confirmation screen after a submission the server accepted. */
 export function QuoteSubmitted({ email, user, onGo }: {
@@ -43,7 +126,8 @@ export function QuoteSubmitted({ email, user, onGo }: {
 }
 
 export function QuoteReviewSubmit({
-  quote, user, projectId, backLabel = "Back to MyProject", aiReading, onBack, onSubmit, onSubmitted, onFixBlocked,
+  quote, user, projectId, backLabel = "Back to MyProject", aiReading, projectResolving = false,
+  storedDelivery, onBack, onSubmit, onSubmitted, onFixBlocked, onAuthed,
 }: {
   quote: QuoteState;
   user: QuoteUser;
@@ -54,57 +138,180 @@ export function QuoteReviewSubmit({
   backLabel?: string;
   /** Documents are still being read — submitting now would race the estimate. */
   aiReading: boolean;
+  /** A sign-in just happened and the current project is being re-resolved. The
+   *  claim-merge may have DELETED the id this screen was holding, so nothing may
+   *  be rendered — or requested — against it until the answer lands (AC-26/27). */
+  projectResolving?: boolean;
+  /** The project's own delivery destination, if it already has one. Precedence
+   *  #1 for the delivery fields; the ACCOUNT ADDRESS IS NEVER PRECEDENCE. */
+  storedDelivery?: { suburb: string | null; postcode: string | null } | null;
   onBack: () => void;
-  onSubmit?: (contact: SubmitContact) => Promise<SubmitResult>;
+  onSubmit?: (delivery: SubmitDelivery) => Promise<SubmitResult>;
   /** Server-confirmed; carries the address the confirmation went to. */
   onSubmitted: (email: string) => void;
   /** Blocking lines exist — send the customer back to fix them. */
   onFixBlocked: () => void;
+  /** A fresh user from the inline sign-in or a profile save — App owns identity. */
+  onAuthed?: (user: AuthUserDto) => void;
 }) {
   const gstMode = useGstMode();
   const { total, pendingPriceCount, attentionCount } = quoteSummary(quote);
-  const [contactName, setContactName] = useState(user?.name || "");
-  const [contactEmail, setContactEmail] = useState(user?.email || "");
-  const [contactPhone, setContactPhone] = useState(user?.phone || "");
-  const [suburb, setSuburb] = useState("");
-  const [postcode, setPostcode] = useState("");
+
+  // Component-local, never persisted: no stale stage can survive an auth change
+  // elsewhere in the app, because every other stage is derived from props.
+  const [gateOpened, setGateOpened] = useState(false);
+
+  // ── Account details, as live inputs ────────────────────────────────────────
+  const [name, setName] = useState(user?.name ?? "");
+  const [phone, setPhone] = useState(user?.phone ?? "");
+  const [addressLine1, setAddressLine1] = useState(user?.addressLine1 ?? "");
+  const [addressLine2, setAddressLine2] = useState(user?.addressLine2 ?? "");
+  const [addressSuburb, setAddressSuburb] = useState(user?.addressSuburb ?? "");
+  const [addressState, setAddressState] = useState(user?.addressState ?? "");
+  const [addressPostcode, setAddressPostcode] = useState(user?.addressPostcode ?? "");
+  const [touched, setTouched] = useState<Partial<Record<DetailField, boolean>>>({});
+  const [serverFieldErrors, setServerFieldErrors] = useState<DetailField[]>([]);
+
+  // Adopt the account's values when identity arrives (the inline sign-in) or
+  // changes. Only fields the customer has not touched are overwritten, so typing
+  // is never undone by a late fetch.
+  const adoptedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!user || adoptedFor.current === user.email) return;
+    adoptedFor.current = user.email;
+    setName(user.name); setPhone(user.phone);
+    setAddressLine1(user.addressLine1); setAddressLine2(user.addressLine2);
+    setAddressSuburb(user.addressSuburb); setAddressState(user.addressState);
+    setAddressPostcode(user.addressPostcode);
+    setTouched({});
+  }, [user]);
+
+  // ── Delivery for THIS project ──────────────────────────────────────────────
+  // Precedence: the project's stored destination, else the postcode typed before
+  // the gate, else empty. There is no fourth entry, and the account address is
+  // not one of them.
+  const [suburb, setSuburb] = useState(storedDelivery?.suburb ?? "");
+  const [postcode, setPostcode] = useState(storedDelivery?.postcode ?? "");
   const [postcodeError, setPostcodeError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
-  // The delivery figure at submit (design doc §8.3, Q1 recommendation (a)) —
-  // shown once four digits are entered, labelled as an estimate a person will
-  // check. Never called while the customer is building (D8); this effect only
-  // runs on THIS screen, and only once a project id and a complete postcode
-  // both exist.
+  // ── The merge moment ───────────────────────────────────────────────────────
+  const linesBeforeAuth = useRef<number | null>(null);
+  const [mergedCount, setMergedCount] = useState(0);
+  const wasResolving = useRef(false);
+  useEffect(() => {
+    if (projectResolving) { wasResolving.current = true; return; }
+    if (!wasResolving.current) return;
+    wasResolving.current = false;
+    const before = linesBeforeAuth.current;
+    if (before != null && quote.items.length > before) setMergedCount(quote.items.length - before);
+  }, [projectResolving, quote.items.length]);
+
+  // ── GST (AC-35) ────────────────────────────────────────────────────────────
+  // Nothing to wire: GstContext reads the account's mode, so every price on this
+  // screen re-renders the instant the user lands. The caption exists only so a
+  // visible ~9% drop reads as a preference rather than a bug.
+  const [gstFlipped, setGstFlipped] = useState(false);
+
+  const stage: "pregate" | "signin" | "resolving" | "details" =
+    !user ? (gateOpened ? "signin" : "pregate")
+      : projectResolving ? "resolving"
+        : "details";
+
+  const details = useMemo(() => ({
+    name, phone,
+    addressLine1, addressLine2, addressSuburb, addressState, addressPostcode,
+  }), [name, phone, addressLine1, addressLine2, addressSuburb, addressState, addressPostcode]);
+  const missing = useMemo(() => submitMissing(details), [details]);
+
+  // The delivery figure at submit — shown once four digits are entered, labelled
+  // as an estimate a person will check. Never called while the customer is
+  // building (D8), and never while the project id may be about to be replaced by
+  // a merge (E6).
   const [delivery, setDelivery] = useState<{ amount: number; conservative: boolean } | null>(null);
   useEffect(() => {
-    if (!projectId || postcode.length !== 4) { setDelivery(null); return; }
+    if (!projectId || projectResolving || postcode.length !== 4) { setDelivery(null); return; }
     let cancelled = false;
     getDeliveryEstimate(projectId, postcode)
       .then((r) => { if (!cancelled) setDelivery(r.ok && typeof r.amount === "number" ? { amount: r.amount, conservative: !!r.conservative } : null); })
       .catch(() => { if (!cancelled) setDelivery(null); });
     return () => { cancelled = true; };
-  }, [projectId, postcode]);
+  }, [projectId, postcode, projectResolving]);
+
+  const openGate = () => {
+    if (attentionCount > 0) { onFixBlocked(); return; }
+    linesBeforeAuth.current = quote.items.length;
+    setGateOpened(true);
+  };
+
+  const handleAuthed = (fresh: AuthUserDto) => {
+    if (fresh.priceGstMode === "ex" && gstMode !== "ex") setGstFlipped(true);
+    onAuthed?.(fresh);
+  };
+
+  const fieldError = (field: DetailField): string => {
+    if (serverFieldErrors.includes(field)) {
+      return `That's longer than we can store — keep ${FIELD_LABEL[field]} under ${DETAIL_LIMITS[field]} characters.`;
+    }
+    if (!touched[field] || !missing.includes(field)) return "";
+    if (field === "phone" && phone.trim()) return PHONE_INVALID;
+    return FIELD_ERROR[field];
+  };
+  const markTouched = (field: DetailField) => setTouched((t) => ({ ...t, [field]: true }));
 
   const handleSubmit = async () => {
-    if (submitting) return;
+    if (submitting || !user) return;
     if (aiReading) {
       setSubmitError("Please wait while we finish refining this estimate from your documents.");
       return;
     }
     if (attentionCount > 0) { onFixBlocked(); return; }
-    if (!contactName.trim() || !contactEmail.trim()) { setSubmitError("Add your name and email to submit."); return; }
+    if (missing.length) {
+      setTouched(Object.fromEntries(missing.map((f) => [f, true])));
+      return;
+    }
     if (!/^\d{4}$/.test(postcode)) { setPostcodeError("Enter your 4-digit delivery postcode."); return; }
-    setSubmitting(true); setSubmitError(""); setPostcodeError("");
+
+    setSubmitting(true); setSubmitError(""); setPostcodeError(""); setServerFieldErrors([]);
     try {
-      const result = await onSubmit?.({
-        name: contactName.trim(), email: contactEmail.trim(), phone: contactPhone.trim(),
-        suburb: suburb.trim(), postcode,
-      });
-      if (!result || result.ok) { onSubmitted(contactEmail); return; } // no handler = design preview
+      // The account is the single home of these facts, and the profile endpoint
+      // is its single writer. Only the changed ones are sent, and the button
+      // never narrates the save as a separate step.
+      const patch: Record<string, string> = {};
+      if (name.trim() !== user.name) patch.name = name.trim();
+      if (phone.trim() !== user.phone) patch.phone = phone.trim();
+      if (addressLine1.trim() !== user.addressLine1) patch.addressLine1 = addressLine1.trim();
+      if (addressLine2.trim() !== user.addressLine2) patch.addressLine2 = addressLine2.trim();
+      if (addressSuburb.trim() !== user.addressSuburb) patch.addressSuburb = addressSuburb.trim();
+      if (addressState.trim() !== user.addressState) patch.addressState = addressState.trim();
+      if (addressPostcode.trim() !== user.addressPostcode) patch.addressPostcode = addressPostcode.trim();
+      if (Object.keys(patch).length) {
+        try {
+          const saved = await updateProfile(patch);
+          onAuthed?.(saved.user);
+        } catch (e) {
+          if (e instanceof ApiError && e.code === "invalid_fields") {
+            setSubmitError("We couldn't save your details — check them, then try again.");
+          } else {
+            setSubmitError("Couldn't save your details. Please try again.");
+          }
+          return;
+        }
+      }
+
+      const result = await onSubmit?.({ suburb: suburb.trim(), postcode });
+      if (!result || result.ok) { onSubmitted(user.email); return; } // no handler = design preview
       if (result.error === "missing_postcode" || result.error === "invalid_postcode") {
         setPostcodeError("Enter your 4-digit delivery postcode.");
+        return;
+      }
+      if (result.error === "incomplete_profile") {
+        setSubmitError(`We still need ${prose(missing.length ? missing : ["name"], FIELD_PROSE)} before this can go to review.`);
+        return;
+      }
+      if (result.error === "unauthorized") {
+        setSubmitError("Your sign-in expired. Sign in again to send this quote for review.");
         return;
       }
       setSubmitError(
@@ -119,6 +326,12 @@ export function QuoteReviewSubmit({
     }
   };
 
+  const submitDisabled =
+    submitting || aiReading || projectResolving || postcode.length !== 4 ||
+    (stage === "details" && missing.length > 0);
+
+  const errId = (field: DetailField) => `detail-err-${field}`;
+
   return (
     <div className="quote-page min-h-screen ground-bone pt-16">
       <div className="max-w-2xl mx-auto px-6 py-10">
@@ -126,53 +339,70 @@ export function QuoteReviewSubmit({
         <SLabel>Review quote</SLabel>
         <h1 className="font-semibold text-ink mb-2 font-display t-hd1">Review and submit</h1>
         <p className="text-body mb-6 t-bd-sm">No payment at this stage. A reviewed quote is issued after manual technical review.</p>
+
+        {mergedCount > 0 && (
+          <div className="quote-notice--info border border-sage/30 bg-sage-wash p-4 mb-4">
+            <p className="font-semibold text-ink t-bd-sm">Your quotes have been combined</p>
+            <p className="text-body mt-1 t-cap">
+              You already had a saved quote on this account, so the {mergedCount} item{mergedCount === 1 ? "" : "s"} you
+              just built have been added to it. The list below is the whole project — have a look before you submit.
+            </p>
+          </div>
+        )}
+
         <div className="quote-panel p-5 mb-4">
-          <SLabel>Your quote</SLabel>
-          <div className="space-y-2 mb-3">
-            {quote.items.map((it, i) => (
-              <div key={it.id} className="flex justify-between gap-3 border-b border-black/6 last:border-0 py-1.5 t-bd-sm">
-                <span className="text-ink min-w-0 truncate">{String(i + 1).padStart(2, "0")} · {productLabel(it.productSlug)} — {mm(it.height)} × {mm(it.width)} ×{it.qty}</span>
-                <span className="text-body flex-shrink-0 font-data">
-                  {it.review?.customerConfigurationChanged && (typeof it.lineTotal !== "number" || !Number.isFinite(it.lineTotal))
-                    ? "Pending final price"
-                    : lineBlocksSubmission(it) ? "Review" : fmt(gstAdjust(linePriceTotal(it), gstMode))}
-                </span>
-              </div>
-            ))}
-            {quote.files.length > 0 && <p className="text-body pt-1 t-cap">+ {quote.files.length} uploaded file{quote.files.length !== 1 ? "s" : ""} for review</p>}
-          </div>
-          {delivery ? (
-            <>
-              <div className="flex justify-between border-t border-black/8 pt-3 t-bd-sm"><span className="text-body">{pendingPriceCount ? "Priced-items subtotal" : "Windows and doors"}</span><span className="text-ink font-data">{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
-              <div className="flex justify-between t-bd-sm"><span className="text-body">Delivery to {postcode}</span><span className="text-ink font-data">{fmt(gstAdjust(delivery.amount, gstMode))} {gstSuffix(gstMode)}</span></div>
-              <div className="flex justify-between border-t border-black/8 pt-2 t-bd-sm"><span className="font-semibold text-ink">Project total</span><span className="font-semibold text-ink font-data">{fmt(gstAdjust(total + delivery.amount, gstMode))} {gstSuffix(gstMode)}</span></div>
-              <p className="text-body t-cap">
-                {delivery.conservative
-                  ? "That postcode is outside our usual runs, so we've allowed generously. "
-                  : "An estimate. "}A person checks the delivery against real freight before your quote is issued.
-              </p>
-            </>
+          <SLabel>{mergedCount > 0 ? `Your quote · ${quote.items.length} items` : "Your quote"}</SLabel>
+          {projectResolving ? (
+            <div className="py-4">
+              <p className="text-ink t-bd-sm">Updating your project…</p>
+              <p className="text-body mt-1 t-cap">We're checking for anything already saved to your account.</p>
+            </div>
           ) : (
-            <div className="flex justify-between border-t border-black/8 pt-3 t-bd-sm"><span className="text-body">{pendingPriceCount ? "Priced-items subtotal" : "Estimated total"}</span><span className="font-semibold text-ink font-data">{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
+            <>
+              <div className="space-y-2 mb-3">
+                {quote.items.map((it, i) => (
+                  <div key={it.id} className="flex justify-between gap-3 border-b border-black/6 last:border-0 py-1.5 t-bd-sm">
+                    <span className="text-ink min-w-0 truncate">{String(i + 1).padStart(2, "0")} · {productLabel(it.productSlug)} — {mm(it.height)} × {mm(it.width)} ×{it.qty}</span>
+                    <span className="text-body flex-shrink-0 font-data">
+                      {it.review?.customerConfigurationChanged && (typeof it.lineTotal !== "number" || !Number.isFinite(it.lineTotal))
+                        ? "Pending final price"
+                        : lineBlocksSubmission(it) ? "Review" : fmt(gstAdjust(linePriceTotal(it), gstMode))}
+                    </span>
+                  </div>
+                ))}
+                {quote.files.length > 0 && <p className="text-body pt-1 t-cap">+ {quote.files.length} uploaded file{quote.files.length !== 1 ? "s" : ""} for review</p>}
+              </div>
+              {delivery ? (
+                <>
+                  <div className="flex justify-between border-t border-black/8 pt-3 t-bd-sm"><span className="text-body">{pendingPriceCount ? "Priced-items subtotal" : "Windows and doors"}</span><span className="text-ink font-data">{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
+                  <div className="flex justify-between t-bd-sm"><span className="text-body">Delivery to {postcode}</span><span className="text-ink font-data">{fmt(gstAdjust(delivery.amount, gstMode))} {gstSuffix(gstMode)}</span></div>
+                  <div className="flex justify-between border-t border-black/8 pt-2 t-bd-sm"><span className="font-semibold text-ink">Project total</span><span className="font-semibold text-ink font-data">{fmt(gstAdjust(total + delivery.amount, gstMode))} {gstSuffix(gstMode)}</span></div>
+                  <p className="text-body t-cap">
+                    {delivery.conservative
+                      ? "That postcode is outside our usual runs, so we've allowed generously. "
+                      : "An estimate. "}A person checks the delivery against real freight before your quote is issued.
+                  </p>
+                </>
+              ) : (
+                <div className="flex justify-between border-t border-black/8 pt-3 t-bd-sm"><span className="text-body">{pendingPriceCount ? "Priced-items subtotal" : "Estimated total"}</span><span className="font-semibold text-ink font-data">{fmt(gstAdjust(total, gstMode))} {gstSuffix(gstMode)}</span></div>
+              )}
+              {gstFlipped && gstMode === "ex" && (
+                <p className="text-body mt-2 t-cap">Now showing prices ex GST, the setting on your account.</p>
+              )}
+              {pendingPriceCount > 0 && <p className="mt-2 text-amber-800 t-cap">{pendingPriceCount} customer-changed configuration{pendingPriceCount === 1 ? "" : "s"} will be added after we confirm the exact product and price.</p>}
+            </>
           )}
-          {pendingPriceCount > 0 && <p className="mt-2 text-amber-800 t-cap">{pendingPriceCount} customer-changed configuration{pendingPriceCount === 1 ? "" : "s"} will be added after we confirm the exact product and price.</p>}
         </div>
-        <div className="quote-panel p-5 space-y-4 mb-4">
-          {user && <p className="text-sage flex items-center gap-1.5 t-bd-sm"><CheckCircle className="w-4 h-4" />Pre-filled from your account — edit if needed.</p>}
-          <div><FieldLabel htmlFor="contact-name">Full name</FieldLabel><Input id="contact-name" value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Your name" /></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><FieldLabel htmlFor="contact-email">Email</FieldLabel><Input id="contact-email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="your@email.com" /></div>
-            <div><FieldLabel htmlFor="contact-phone">Phone</FieldLabel><Input id="contact-phone" value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="(03) 9000 0000" /></div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><FieldLabel htmlFor="delivery-suburb">Delivery suburb</FieldLabel><Input id="delivery-suburb" value={suburb} onChange={e => setSuburb(e.target.value)} placeholder="e.g. Preston VIC" /></div>
-            <div>
+
+        {/* ── Stage 0: pre-gate ─────────────────────────────────────────────── */}
+        {stage === "pregate" && (
+          <div className="quote-panel p-5 space-y-4 mb-4">
+            <div className="max-w-xs">
               <FieldLabel htmlFor="delivery-postcode">Delivery postcode</FieldLabel>
               <Input id="delivery-postcode" value={postcode} inputMode="numeric" maxLength={4}
-                autoComplete="postal-code"
                 aria-invalid={!!postcodeError || undefined}
                 aria-describedby={postcodeError ? "postcode-err" : "postcode-help"}
-                onChange={e => { setPostcode(e.target.value.replace(/\D/g, "").slice(0, 4)); setPostcodeError(""); }}
+                onChange={(e) => { setPostcode(e.target.value.replace(/\D/g, "").slice(0, 4)); setPostcodeError(""); }}
                 onBlur={() => { if (postcode && postcode.length !== 4) setPostcodeError("Enter your 4-digit delivery postcode."); }}
                 placeholder="3072" />
               {postcodeError
@@ -180,10 +410,177 @@ export function QuoteReviewSubmit({
                 : <p id="postcode-help" className="text-body mt-1 t-cap">We price delivery from this.</p>}
             </div>
           </div>
-        </div>
+        )}
+
+        {/* ── Stage 1: sign in or create ────────────────────────────────────── */}
+        {stage === "signin" && (
+          <div className="quote-panel p-5 mb-4 border-sage" style={{ boxShadow: "inset 3px 0 0 var(--sage)" }}>
+            <OtpSignIn
+              heading={OTP_COPY.gate.heading}
+              subcopy={OTP_COPY.gate.subcopy}
+              onAuthed={handleAuthed}
+              onCancel={() => setGateOpened(false)}
+              cancelLabel="Back to my quote"
+            />
+          </div>
+        )}
+
+        {/* ── Stage 3: your details ─────────────────────────────────────────── */}
+        {stage === "details" && user && (
+          <div className="quote-panel p-5 space-y-4 mb-4">
+            <div>
+              <h2 className="font-semibold text-ink font-display t-hd2">Your details</h2>
+              <p className="text-body mt-1 t-bd-sm">So we can quote you properly and get the delivery right. We'll keep these on your account — next quote, they're already filled in.</p>
+              {user.name && (
+                <p className="text-sage flex items-center gap-1.5 mt-2 t-bd-sm"><CheckCircle className="w-4 h-4" />From your account — edit if anything's changed.</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <FieldLabel htmlFor="detail-name">Full name</FieldLabel>
+                <Input id="detail-name" value={name} autoComplete="name" maxLength={DETAIL_LIMITS.name}
+                  autoFocus={!user.name}
+                  aria-invalid={!!fieldError("name") || undefined}
+                  aria-describedby={fieldError("name") ? errId("name") : undefined}
+                  onChange={(e) => setName(e.target.value)} onBlur={() => markTouched("name")}
+                  placeholder="e.g. Sam Taylor" />
+                {fieldError("name") && <p id={errId("name")} role="alert" className="text-red-700 mt-1 t-cap">{fieldError("name")}</p>}
+              </div>
+              <div>
+                <FieldLabel htmlFor="detail-phone">Phone</FieldLabel>
+                <Input id="detail-phone" value={phone} autoComplete="tel" maxLength={DETAIL_LIMITS.phone}
+                  aria-invalid={!!fieldError("phone") || undefined}
+                  aria-describedby={fieldError("phone") ? errId("phone") : "detail-phone-help"}
+                  onChange={(e) => setPhone(e.target.value)} onBlur={() => markTouched("phone")}
+                  placeholder="0412 345 678" />
+                {fieldError("phone")
+                  ? <p id={errId("phone")} role="alert" className="text-red-700 mt-1 t-cap">{fieldError("phone")}</p>
+                  : <p id="detail-phone-help" className="text-body mt-1 t-cap">Mobile, landline or 1300/1800.</p>}
+              </div>
+            </div>
+
+            {/* Email is a read-only ROW, not an input: it is the sign-in identity
+                and an accidental edit is a lockout. */}
+            <div>
+              <FieldLabel>Email</FieldLabel>
+              <p className="text-ink flex items-center gap-2 t-bd-sm">
+                {user.email}
+                <span className="chip bg-sage-wash text-sage border border-sage/20 px-1.5 py-0.5 t-cap">Verified</span>
+              </p>
+              <p className="text-body mt-1 t-cap">This is your sign-in email. Contact us if you need it changed.</p>
+            </div>
+
+            <div className="border-t border-black/8 pt-4">
+              <p className="text-ink-soft mb-3 t-label">Your address</p>
+              <div className="space-y-4">
+                <div>
+                  <FieldLabel htmlFor="detail-address1">Street address</FieldLabel>
+                  <Input id="detail-address1" value={addressLine1} autoComplete="address-line1" maxLength={DETAIL_LIMITS.addressLine1}
+                    aria-invalid={!!fieldError("addressLine1") || undefined}
+                    aria-describedby={fieldError("addressLine1") ? errId("addressLine1") : undefined}
+                    onChange={(e) => setAddressLine1(e.target.value)} onBlur={() => markTouched("addressLine1")}
+                    placeholder="12 Bridge Street" />
+                  {fieldError("addressLine1") && <p id={errId("addressLine1")} role="alert" className="text-red-700 mt-1 t-cap">{fieldError("addressLine1")}</p>}
+                </div>
+                <div>
+                  <FieldLabel htmlFor="detail-address2">Unit, level or building (optional)</FieldLabel>
+                  <Input id="detail-address2" value={addressLine2} autoComplete="address-line2" maxLength={DETAIL_LIMITS.addressLine2}
+                    onChange={(e) => setAddressLine2(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="sm:col-span-1">
+                    <FieldLabel htmlFor="detail-suburb">Suburb</FieldLabel>
+                    <Input id="detail-suburb" value={addressSuburb} autoComplete="address-level2" maxLength={DETAIL_LIMITS.addressSuburb}
+                      aria-invalid={!!fieldError("addressSuburb") || undefined}
+                      aria-describedby={fieldError("addressSuburb") ? errId("addressSuburb") : undefined}
+                      onChange={(e) => setAddressSuburb(e.target.value)} onBlur={() => markTouched("addressSuburb")}
+                      placeholder="Preston" />
+                    {fieldError("addressSuburb") && <p id={errId("addressSuburb")} role="alert" className="text-red-700 mt-1 t-cap">{fieldError("addressSuburb")}</p>}
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="detail-state">State</FieldLabel>
+                    <select id="detail-state" value={addressState} autoComplete="address-level1"
+                      aria-invalid={!!fieldError("addressState") || undefined}
+                      aria-describedby={fieldError("addressState") ? errId("addressState") : undefined}
+                      onChange={(e) => setAddressState(e.target.value)} onBlur={() => markTouched("addressState")}
+                      className="field-control w-full border px-3 py-2.5 text-ink focus:outline-none transition-colors t-bd-sm">
+                      <option value="">Choose…</option>
+                      {AU_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    {fieldError("addressState") && <p id={errId("addressState")} role="alert" className="text-red-700 mt-1 t-cap">{fieldError("addressState")}</p>}
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="detail-postcode">Postcode</FieldLabel>
+                    <Input id="detail-postcode" value={addressPostcode} inputMode="numeric" maxLength={4} autoComplete="postal-code"
+                      aria-invalid={!!fieldError("addressPostcode") || undefined}
+                      aria-describedby={fieldError("addressPostcode") ? errId("addressPostcode") : undefined}
+                      onChange={(e) => setAddressPostcode(e.target.value.replace(/\D/g, "").slice(0, 4))} onBlur={() => markTouched("addressPostcode")}
+                      placeholder="3072" />
+                    {fieldError("addressPostcode") && <p id={errId("addressPostcode")} role="alert" className="text-red-700 mt-1 t-cap">{fieldError("addressPostcode")}</p>}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-black/8 pt-4">
+              <p className="text-ink-soft mb-1 t-label">Delivery for this project</p>
+              <p className="text-body mb-3 t-cap">Where these windows and doors go — usually a site, not an office. We don't assume it, so it starts blank each time.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel htmlFor="delivery-suburb">Delivery suburb</FieldLabel>
+                  {/* No autoComplete on either delivery field: browser address
+                      autofill would reintroduce exactly the wrong-address-by-
+                      default failure this precedence exists to prevent. */}
+                  <Input id="delivery-suburb" value={suburb}
+                    onChange={(e) => setSuburb(e.target.value)}
+                    placeholder="e.g. Craigieburn VIC" />
+                </div>
+                <div>
+                  <FieldLabel htmlFor="delivery-postcode">Delivery postcode</FieldLabel>
+                  <Input id="delivery-postcode" value={postcode} inputMode="numeric" maxLength={4}
+                    aria-invalid={!!postcodeError || undefined}
+                    aria-describedby={postcodeError ? "postcode-err" : "postcode-help"}
+                    onChange={(e) => { setPostcode(e.target.value.replace(/\D/g, "").slice(0, 4)); setPostcodeError(""); }}
+                    onBlur={() => { if (postcode && postcode.length !== 4) setPostcodeError("Enter your 4-digit delivery postcode."); }}
+                    placeholder="3072" />
+                  {postcodeError
+                    ? <p id="postcode-err" role="alert" className="text-red-700 mt-1 t-cap">{postcodeError}</p>
+                    : <p id="postcode-help" className="text-body mt-1 t-cap">We price delivery from this.</p>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="quote-notice--info border border-line p-4 mb-6 text-body t-cap"><AlertCircle className="w-3 h-3 inline mr-1" />Delivery is priced from your postcode and confirmed on technical review. Estimated totals are confirmed on that same review. No deposit until you approve the reviewed quote. Supply only — tailgate to the kerb, and installation is not included.</div>
-        {submitError && <p role="alert" className="text-red-700 flex items-center gap-1.5 mb-3 justify-end t-bd-sm"><AlertCircle className="w-4 h-4" />{submitError}</p>}
-        <div className="flex justify-end"><Btn variant="sage" size="lg" disabled={!contactName || !contactEmail || postcode.length !== 4 || submitting || aiReading} onClick={handleSubmit}>{submitting ? "Submitting…" : aiReading ? "Refining estimate…" : <>Submit for technical review <Send className="w-4 h-4" /></>}</Btn></div>
+
+        {submitError && <p role="alert" className="quote-notice--danger text-red-700 flex items-center gap-1.5 mb-3 justify-end t-bd-sm"><AlertCircle className="w-4 h-4" />{submitError}</p>}
+
+        {/* Submit is NOT RENDERED while re-resolving — not merely disabled — so no
+            keyboard or scripted path reaches it against a merge-deleted id. */}
+        {stage !== "resolving" && (
+          <>
+            {stage === "pregate" && (
+              <p className="text-body mb-2 text-center sm:text-right t-cap">
+                Submitting needs an account — we'll email you a code. About a minute.
+              </p>
+            )}
+            {stage === "details" && missing.length > 0 && (
+              <p className="text-body mb-2 text-center sm:text-right t-cap">
+                Still needed: {missing.map((f) => FIELD_LABEL[f]).join(", ")}.
+              </p>
+            )}
+            {stage !== "signin" && (
+              <div className="flex justify-end">
+                <Btn variant="sage" size="lg" disabled={submitDisabled}
+                  onClick={stage === "pregate" ? openGate : handleSubmit}>
+                  {submitting ? "Submitting…" : aiReading ? "Refining estimate…" : <>Submit for technical review <Send className="w-4 h-4" /></>}
+                </Btn>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

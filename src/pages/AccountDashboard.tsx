@@ -19,7 +19,7 @@ import {
 type OpenRecord = (rec: { orderId?: string; projectId?: string; status?: string }) => void;
 
 export function AccountDashboard({ user, setPage, onOpenRecord }: {
-  user: { name: string; company: string; email: string };
+  user: { name: string; displayName: string; company: string; email: string };
   setPage: (p: Page) => void;
   onOpenRecord: OpenRecord;
 }) {
@@ -59,7 +59,9 @@ export function AccountDashboard({ user, setPage, onOpenRecord }: {
     return s + (due?.amount ?? 0);
   }, 0);
   const brandNew = projs.length === 0 && ords.length === 0;
-  const first = user.name.trim().split(" ")[0] || "there";
+  // displayName, never the raw stored name: a greeting is a DISPLAY, and a
+  // nameless account is greeted rather than left blank — but nothing here writes.
+  const first = user.displayName.trim().split(" ")[0] || "there";
 
   return (
     <>

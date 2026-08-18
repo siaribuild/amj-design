@@ -27,7 +27,9 @@ export const SECTION_LABEL: Record<AccountSection, string> = {
   help: "Help",
 };
 
-type ShellUser = { name: string; company: string; email: string; type?: string };
+// `displayName` is the display-only fallback for an account whose name is
+// still NULL; the raw `name` is what a WRITE would bind, and nothing here writes.
+type ShellUser = { name: string; displayName: string; company: string; email: string; type?: string };
 
 export function AccountShell({ section, setPage, user, onSignOut, children }: {
   section: AccountSection;
@@ -112,10 +114,10 @@ function Rail({ section, setPage, user, onSignOut }: {
       {/* Identity header — the always-on "which account / am I trade" glance. */}
       <div className="flex items-center gap-[11px] px-2.5 pb-[15px] border-b border-black/10 mb-2">
         <span className="w-[38px] h-[38px] bg-sage text-white grid place-items-center flex-shrink-0 font-data t-data">
-          {initialsOf(user.company || user.name)}
+          {initialsOf(user.company || user.displayName)}
         </span>
         <div className="min-w-0">
-          <div className="font-semibold text-ink truncate t-bd-sm">{user.company || user.name}</div>
+          <div className="font-semibold text-ink truncate t-bd-sm">{user.company || user.displayName}</div>
           <div className="tracking-[0.05em] text-body mt-0.5 font-data t-data-sm">
             {(user.type ?? "customer").toUpperCase()}{user.company ? " · TRADE" : ""}
           </div>

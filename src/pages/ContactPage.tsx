@@ -25,7 +25,7 @@ import { TURNSTILE_SITE_KEY, useTurnstile } from "../lib/turnstile";
 
 type Intent = "question" | "appointment_request";
 type Tab = "ask" | "visit";
-type ContactUser = { name: string; email: string; phone: string; company: string; type?: string } | null;
+type ContactUser = { name: string; displayName: string; email: string; phone: string; company: string; type?: string } | null;
 
 const BEST_TIMES = [["anytime", "Anytime, business hours"], ["morning", "Morning (8am–12pm)"], ["afternoon", "Afternoon (12–5pm)"]];
 
@@ -47,7 +47,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
 
   const [tab, setTab] = useState<Tab>(initialTab);
   // Shared contact fields (persist across tabs)
-  const [name, setName] = useState(user?.name ?? "");
+  const [name, setName] = useState(user?.displayName ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
   // Ask
@@ -67,7 +67,7 @@ export function ContactPage({ setPage, user }: { setPage: (p: Page) => void; use
 
   const turnstileRef = useTurnstile(setToken, tab);
   useEffect(() => { getLocations().then(r => setLocations(r.locations)).catch(() => setLocations([])); }, []);
-  useEffect(() => { if (user) { setName(v => v || user.name); setEmail(v => v || user.email); setPhone(v => v || user.phone); } }, [user]);
+  useEffect(() => { if (user) { setName(v => v || user.displayName); setEmail(v => v || user.email); setPhone(v => v || user.phone); } }, [user]);
 
   const intent: Intent = tab === "visit" ? "appointment_request" : "question";
   const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());

@@ -25,7 +25,7 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import {
-  Session, freePort, login, makeRunDir, projectRoot, removeRunDir,
+  Session, completeAccount, freePort, login, makeRunDir, projectRoot, removeRunDir,
   requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
@@ -125,6 +125,12 @@ test("T2 — the referral discount reaches the price through loadAccountDiscount
       return saved.body.items[0].lineTotal;
     };
     const userIdFor = async (email) => (await sql(`SELECT id FROM user WHERE email='${email}'`))[0].id;
+    // Since registration Phase 1 every account is created at 0% — a standing
+    // account discount is GRANTED, never inherited from a column default. These
+    // tests are about how the referral percent COMPOSES with a standing rate, so
+    // the standing rate has to be set rather than assumed.
+    const grantStandingDiscount = async (email, percent = 5) =>
+      sql(`UPDATE user SET discount_percent = ${percent} WHERE email='${email}'`);
     const seedReferral = async (referredUserId, overrides = {}) => {
       const o = { status: "recorded", discountPercent: 2.5, expiresAt: "datetime('now','+12 months')", ...overrides };
       await sql(
@@ -143,12 +149,14 @@ test("T2 — the referral discount reaches the price through loadAccountDiscount
 
       const control = new Session(baseUrl);
       await login(control, "/api/auth", "referred.control@example.com");
+      await grantStandingDiscount("referred.control@example.com");
       const nonReferred = await saveLine(control);
       assert.ok(nonReferred < anonTotal, "the standing account discount applies to a registered account");
 
       const referred = new Session(baseUrl);
       await login(referred, "/api/auth", "referred.pricing@example.com");
       const referredUserId = await userIdFor("referred.pricing@example.com");
+      await grantStandingDiscount("referred.pricing@example.com");
       await seedReferral(referredUserId);
       // Guard the guard: a silently failed INSERT would make this test pass for
       // the wrong reason the moment the implementation lands.
@@ -225,8 +233,9 @@ test("T2 — the referral discount reaches the price through loadAccountDiscount
         method: "PUT", json: { title: "Issue stamp", items: [aLine()] },
       });
       const id = saved.body.project.id;
+      await completeAccount(referred, { name: "Issue Stamp" });
       await requestJson(referred, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Issue Stamp", email: "issue.referred@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 250 } });
       await requestJson(staff, `/api/ops/projects/${id}/issue-quote`, { method: "POST" });

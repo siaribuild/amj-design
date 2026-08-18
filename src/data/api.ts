@@ -124,6 +124,13 @@ export interface AuthUserDto {
   company: string | null;
   abn: string | null;
   priceGstMode: "inc" | "ex";
+  /** The ACCOUNT address (migration 0053). A project's delivery destination is a
+   *  different fact in a different place and is never derived from these. */
+  addressLine1: string | null;
+  addressLine2: string | null;
+  addressSuburb: string | null;
+  addressState: string | null;
+  addressPostcode: string | null;
   type: string;
   createdAt: string | null;
 }
@@ -328,18 +335,24 @@ export type ApiQuote =
   }
   | { live: false; status: string };
 
+// THE BODY CARRIES ONE FACT: where this project's windows and doors go.
+// Identity comes from the session and never from the request (spec §7.1), so
+// there is no `contact` here for a caller to fill in — or to spoof.
+//
 // postcode is REQUIRED, not optional — a caller that forgets it fails to
 // compile, rather than 400ing at submit time with no indication why (D7/D8).
-export interface SubmitContact { name: string; email: string; phone?: string; suburb?: string; postcode: string }
+export interface SubmitDelivery { suburb?: string; postcode: string }
 /** Outcome of a submission — callers gate their success UI on `ok`. */
 export type SubmitResult = { ok: true; status: string } | { ok: false; error: string };
 
-/** Submit the draft project for review (Draft -> Submitted). The server
- * re-validates state/lines/contact and persists the contact; throws on rejection. */
-export const submitProject = (projectId: string, contact: SubmitContact) =>
+/** Submit the draft project for review (Draft -> Submitted). Requires a session
+ * that owns the project; the server re-validates state, lines and the
+ * completeness of the ACCOUNT, and stamps the account's contact details onto the
+ * project. Throws on rejection. */
+export const submitProject = (projectId: string, delivery: SubmitDelivery) =>
   req<{ id: string; status: string }>(`/api/projects/${projectId}/submit`, {
     method: "POST",
-    body: JSON.stringify({ contact }),
+    body: JSON.stringify({ delivery }),
   });
 
 /** E9 — a delivery PREVIEW for the submit screen. Never called from the
@@ -360,7 +373,11 @@ export const getDeliveryEstimate = (projectId: string, postcode: string) =>
   });
 
 /** Update the signed-in customer's profile / business details / price preference. */
-export const updateProfile = (patch: { name?: string; phone?: string; company?: string; abn?: string; priceGstMode?: "inc" | "ex" }) =>
+export const updateProfile = (patch: {
+  name?: string; phone?: string; company?: string; abn?: string; priceGstMode?: "inc" | "ex";
+  addressLine1?: string; addressLine2?: string;
+  addressSuburb?: string; addressState?: string; addressPostcode?: string;
+}) =>
   req<{ user: AuthUserDto }>("/api/auth/profile", { method: "POST", body: JSON.stringify(patch) });
 
 export const getQuote = (projectId: string) =>

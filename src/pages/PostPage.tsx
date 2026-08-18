@@ -244,7 +244,7 @@ export function PostPage({ slug, setPage, onOpenProduct }: {
       <CtaBanner
         ground={related.length > 0 ? "paper" : "bone"}
         title="Your windows and doors, priced before you commit."
-        sub="Free to start, no account, and every quote checked by a person before you pay."
+        sub="Free to price with no account, and every quote checked by a person before you pay."
         onQuote={() => go("quote")}
       />
     </div>

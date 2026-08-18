@@ -109,13 +109,23 @@ test("referral program — migration 0051", { timeout: 600_000 }, async (t) => {
 
     await t.test("the referral migrations are the append-only tail of the directory", async () => {
       for (const m of MIGRATIONS) assert.ok(allMigrations.includes(m), `migrations/${m} does not exist`);
+      // Append-only means nothing was numbered INTO or BEFORE the referral set —
+      // NOT that nothing may ever follow it. This asserted the set was the last
+      // thing in the directory, which made every future feature's first migration
+      // a referral regression; registration Phase 1's 0053 was the first to hit it.
+      const first = allMigrations.indexOf(MIGRATIONS[0]);
       assert.deepEqual(
-        allMigrations.slice(-MIGRATIONS.length), MIGRATIONS,
-        "migrations are append-only; something has been numbered into or past the referral set",
+        allMigrations.slice(first, first + MIGRATIONS.length), MIGRATIONS,
+        "migrations are append-only; something has been numbered into the referral set",
       );
-      const applied = await sql(`SELECT name FROM d1_migrations ORDER BY id DESC LIMIT ${MIGRATIONS.length}`);
+      for (const later of allMigrations.slice(first + MIGRATIONS.length)) {
+        assert.ok(later > MIGRATIONS[MIGRATIONS.length - 1],
+          `migrations/${later} sorts before the referral set it was added after`);
+      }
+      const applied = (await sql("SELECT name FROM d1_migrations ORDER BY id")).map((r) => r.name);
+      const appliedFirst = applied.indexOf(MIGRATIONS[0]);
       assert.deepEqual(
-        applied.map((r) => r.name).reverse(), MIGRATIONS,
+        applied.slice(appliedFirst, appliedFirst + MIGRATIONS.length), MIGRATIONS,
         "the referral migrations were applied by the migration runner, not by hand",
       );
     });

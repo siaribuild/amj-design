@@ -8,7 +8,8 @@ import {
   Search, Lock, Key, Bell, Settings, ExternalLink
 } from "lucide-react";
 import { type Page, SAGE, DARK, WindowMark, SLabel, Btn, CtaBanner, FieldLabel, Input } from "./ui";
-import { TURNSTILE_SITE_KEY, useTurnstile } from "../lib/turnstile";
+import { OtpSignIn, OTP_COPY } from "../components/OtpSignIn";
+import { NameStep } from "../components/NameStep";
 import { getSiteBrand, brandName } from "../data/sanity";
 import { ObfuscatedEmail } from "../components/ObfuscatedEmail";
 import { ProductsPage } from "../pages/ProductsPage";
@@ -36,29 +37,50 @@ import { matchSchedule } from "../data/scheduleMatch";
 import { Seo } from "./Seo";
 import type { QItem, QFile, QuoteState } from "../data/configurator";
 import { suggestCode, fmt, DEFAULT_PROJECT_TITLE } from "../data/configurator";
-import { getCurrentProject, hydrateQuoteItems, saveLines, submitProject, updateProfile, clearDraft, updateCurrentSegment, me as fetchMe, logout as apiLogout, requestCode, verifyCode, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, ApiError, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitContact, type SubmitResult } from "../data/api";
+import { getCurrentProject, hydrateQuoteItems, saveLines, submitProject, updateProfile, clearDraft, updateCurrentSegment, me as fetchMe, logout as apiLogout, guestTrackRequest, guestTrackVerify, guestRecord, guestSignOut, getProjects, getOrders, ApiError, type AuthUserDto, type ApiOrder, type ApiProjectSummary, type SubmitDelivery, type SubmitResult } from "../data/api";
 import { GstContext, type GstMode } from "../data/gst";
 import { SAGE_LIGHT as SAGE_LT } from "../styles/tokens";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AuthUser {
   id: string;
-  name: string; company: string; type: "builder" | "trade" | "owner-builder";
+  /** THE RAW STORED NAME — "" when the account has none yet. Anything that
+   *  WRITES a name must bind this, never `displayName`. */
+  name: string;
+  /** Display-only fallback, never written to the database (AC-7). */
+  displayName: string;
+  company: string; type: "builder" | "trade" | "owner-builder";
   email: string; phone: string;
+  /** The ACCOUNT address (migration 0053). A project's delivery destination is a
+   *  different fact in a different place and is never derived from these. */
+  addressLine1: string; addressLine2: string;
+  addressSuburb: string; addressState: string; addressPostcode: string;
   abn: string; priceGstMode: GstMode; createdAt: string | null;
 }
 
 // Map the server user onto the UI's AuthUser. `type` belongs to the organisation
 // layer (not built yet) and defaults until that lands; `company` (business name),
 // `abn` and `priceGstMode` are real, editable fields on the user's profile.
+//
+// ⚠️ THE RAW/DISPLAY SPLIT IS LOAD-BEARING. This function used to bake the email
+// local part into `name`, so the profile page would silently write "j.smith92"
+// to the database on the next save — a derived value becoming a stored one
+// behind the customer's back. `name` is now exactly what is stored; the fallback
+// lives in `displayName` and is displayed, never persisted.
 function toAuthUser(u: AuthUserDto): AuthUser {
   return {
     id: u.id,
-    name: u.name || u.email.split("@")[0],
+    name: u.name || "",
+    displayName: u.name || u.email.split("@")[0],
     company: u.company || "",
     type: "builder",
     email: u.email,
     phone: u.phone || "",
+    addressLine1: u.addressLine1 || "",
+    addressLine2: u.addressLine2 || "",
+    addressSuburb: u.addressSuburb || "",
+    addressState: u.addressState || "",
+    addressPostcode: u.addressPostcode || "",
     abn: u.abn || "",
     priceGstMode: u.priceGstMode === "ex" ? "ex" : "inc",
     createdAt: u.createdAt || null,
@@ -255,9 +277,9 @@ function Nav({ page, setPage, user, setUser, onSelectCategory }: {
           {user && (
             <>
               <div className="flex items-center gap-[11px] px-5 py-3 bg-sage/20 border-b border-white/10">
-                <span className="w-[34px] h-[34px] bg-sage text-white grid place-items-center flex-shrink-0 font-data t-data">{initialsOf(user.company || user.name)}</span>
+                <span className="w-[34px] h-[34px] bg-sage text-white grid place-items-center flex-shrink-0 font-data t-data">{initialsOf(user.company || user.displayName)}</span>
                 <div className="min-w-0">
-                  <div className="font-semibold text-white truncate t-bd-sm">{user.company || user.name}</div>
+                  <div className="font-semibold text-white truncate t-bd-sm">{user.company || user.displayName}</div>
                   <div className="text-white/55 tracking-[0.04em] font-data t-data-sm">{user.type.toUpperCase()}{user.company ? " · TRADE" : ""}</div>
                 </div>
               </div>
@@ -310,7 +332,7 @@ function Nav({ page, setPage, user, setUser, onSelectCategory }: {
             ) : (
               <button onClick={() => go("login")}
                 className="w-full text-left px-5 py-3.5 text-white/60 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer t-bd-sm">
-                <Lock className="w-4 h-4" />Sign in / Register
+                <Lock className="w-4 h-4" />Sign in or create account
               </button>
             )}
           </div>
@@ -1235,7 +1257,7 @@ function HomePage({ setPage, signedIn }: { setPage: (p: Page, pathOverride?: str
           visitor to re-decide at the moment the page wants them to act. */}
       <CtaBanner
         title="Your windows and doors, priced before you commit."
-        sub="Free, no account, and a person checks every quote before you pay a cent."
+        sub="Price it free with no account, and a person checks every quote before you pay a cent."
         onQuote={() => go("quote")}
       />
     </div>
@@ -1257,99 +1279,35 @@ function HomePage({ setPage, signedIn }: { setPage: (p: Page, pathOverride?: str
 // ═══════════════════════════════════════════════════════════════════════════════
 function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: (u: AuthUser) => void }) {
   const go = (p: Page) => { setPage(p); window.scrollTo(0, 0); };
-  const [step, setStep] = useState<"email" | "code">("email");
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [devCode, setDevCode] = useState<string | undefined>();
-  // Turnstile, present only where a site key is configured. The Worker demands a
-  // token on /api/auth/challenge whenever TURNSTILE_SECRET is set: the endpoint
-  // is unauthenticated and emails whatever address it is given, so the caller has
-  // to be vouched for. Without a key this is inert and the flow is unchanged.
-  const [captchaToken, setCaptchaToken] = useState("");
-  const turnstileRef = useTurnstile(setCaptchaToken, step);
-  const captchaReady = !TURNSTILE_SITE_KEY || !!captchaToken;
+  // A verified account whose name is still NULL. THE NAME STEP LIVES HERE — and
+  // in the account shell — because these are the two paths that sign a person in
+  // with no details form after them. The submit gate asks in its details form
+  // instead, and never renders the step (design §16.4).
+  const [needsName, setNeedsName] = useState<AuthUserDto | null>(null);
 
-  const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
-
-  const sendCode = async () => {
-    if (!validEmail || busy || !captchaReady) return;
-    setBusy(true); setError("");
-    try {
-      const r = await requestCode(email.trim(), captchaToken || undefined);
-      setDevCode(r.devCode);       // shown only in dev (no email provider yet)
-      setStep("code");
-    } catch { setError("Couldn't send a code. Try again."); }
-    finally { setBusy(false); }
-  };
-
-  const verify = async () => {
-    if (!/^\d{6}$/.test(code.trim()) || busy) return;
-    setBusy(true); setError("");
-    try {
-      const r = await verifyCode(email.trim(), code.trim());
-      if (r.user) { setUser(toAuthUser(r.user)); go("dashboard"); }
-    } catch { setError("That code didn't match. Check it or resend."); }
-    finally { setBusy(false); }
-  };
+  if (needsName) {
+    return (
+      <NameStep email={needsName.email} onSaved={(u) => { setUser(toAuthUser(u)); go("dashboard"); }} />
+    );
+  }
 
   return (
     <div className="relative min-h-screen ground-bone flex items-center justify-center pt-16 pb-24 overflow-hidden">
       <div className="w-full max-w-sm mx-auto px-6 relative">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4"><WindowMark size={32} color={SAGE} /></div>
-          <h1 className="font-semibold text-ink font-display t-hd2">
-            {step === "email" ? "Sign in or register" : "Enter your code"}
-          </h1>
-          <p className="text-body mt-1 t-bd-sm">
-            {step === "email"
-              ? "We'll email you a one-time code — no password needed"
-              : `We sent a 6-digit code to ${email.trim()}`}
-          </p>
         </div>
-        <div className="group relative card p-6 space-y-4 overflow-hidden">
+        <div className="group relative card p-6 overflow-hidden">
           <FrameCorners size={10} color={SAGE} show="always" />
-          {step === "email" ? (
-            <>
-              <div>
-                <FieldLabel>Email</FieldLabel>
-                <Input type="email" value={email} autoFocus
-                  onChange={e => setEmail(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && sendCode()}
-                  placeholder="your@email.com" />
-              </div>
-              {TURNSTILE_SITE_KEY && <div ref={turnstileRef} />}
-              <Btn variant="sage" size="md" onClick={sendCode}
-                className={`w-full justify-center ${!validEmail || busy || !captchaReady ? "opacity-50 pointer-events-none" : ""}`}>
-                {busy ? "Sending…" : "Send code"}
-              </Btn>
-            </>
-          ) : (
-            <>
-              <div>
-                <FieldLabel>6-digit code</FieldLabel>
-                <Input value={code} autoFocus inputMode="numeric" maxLength={6}
-                  onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  onKeyDown={e => e.key === "Enter" && verify()}
-                  placeholder="••••••" />
-              </div>
-              {devCode && (
-                <p className="text-sage bg-sage-wash border border-sage/20 px-2 py-1.5 t-cap">
-                  Dev mode — your code is <span className="font-mono font-semibold">{devCode}</span>
-                </p>
-              )}
-              <Btn variant="sage" size="md" onClick={verify}
-                className={`w-full justify-center ${code.length !== 6 || busy ? "opacity-50 pointer-events-none" : ""}`}>
-                {busy ? "Verifying…" : "Verify & continue"}
-              </Btn>
-              <button onClick={() => { setStep("email"); setCode(""); setError(""); }}
-                className="text-body hover:text-ink cursor-pointer t-bd-sm">
-                ← Use a different email
-              </button>
-            </>
-          )}
-          {error && <p className="text-red-600 t-cap">{error}</p>}
+          <OtpSignIn
+            heading={OTP_COPY.login.heading}
+            subcopy={OTP_COPY.login.subcopy}
+            onAuthed={(u) => {
+              setUser(toAuthUser(u));
+              if (u.name === null || u.name === "") setNeedsName(u);
+              else go("dashboard");
+            }}
+          />
         </div>
         <div className="mt-4 text-center">
           <div className="border-t border-black/8 pt-4">
@@ -1360,7 +1318,7 @@ function LoginPage({ setPage, setUser }: { setPage: (p: Page) => void; setUser: 
           </div>
         </div>
         <div className="mt-6 bg-bone border border-black/8 p-4 text-body t-cap">
-          Your quote is saved as you go. Sign in to keep it against your account across devices — guest quotes don't require an account.
+          Your quote is saved as you go. Sign in to keep it against your account across devices, and to send it in for review.
         </div>
       </div>
     </div>
@@ -1391,7 +1349,14 @@ function ProfilePage({ user, setPage, setUser, authLoading, embedded }: { user: 
     setSaving(true); setSaveError("");
     try {
       const r = await updateProfile({ name: name.trim(), phone: phone.trim(), company: company.trim(), abn: abn.trim() });
-      setUser({ ...user, name: r.user.name || user.name, phone: r.user.phone || "", company: r.user.company || "", abn: r.user.abn || "" });
+      // The RAW name, and its display fallback recomputed from it. Binding the
+      // fallback here is how a derived "j.smith92" used to become a stored one.
+      setUser({
+        ...user,
+        name: r.user.name ?? "",
+        displayName: r.user.name || user.email.split("@")[0],
+        phone: r.user.phone || "", company: r.user.company || "", abn: r.user.abn || "",
+      });
       setSaved(true); setTimeout(() => setSaved(false), 2500);
     } catch {
       setSaveError("Couldn't save your changes. Please try again.");
@@ -1994,6 +1959,16 @@ export default function App() {
   // (claimAnonProjectForUser). So there is no local-only work to protect here —
   // what comes back already contains it.
   const hydratedIdentityRef = useRef<string | null>(null);
+  // TRUE WHILE THE IDENTITY-KEYED HYDRATION HAS A FETCH IN FLIGHT. Signing in at
+  // the submit gate runs the claim-merge, which may DELETE the project id the
+  // review screen is holding and fold its lines into an existing draft. The gate
+  // withholds its details panel and its Submit button — not disabled, not
+  // rendered — until the answer lands, so no request can be issued against an id
+  // that no longer exists (AC-26/27, E6).
+  const [projectResolving, setProjectResolving] = useState(false);
+  // The project's own delivery destination, if it already has one. Precedence #1
+  // for the gate's delivery fields; the ACCOUNT ADDRESS IS NEVER A PRECEDENCE.
+  const [storedDelivery, setStoredDelivery] = useState<{ suburb: string | null; postcode: string | null } | null>(null);
   useEffect(() => {
     const identity = user?.email ?? "anon";
     const changed = hydratedIdentityRef.current !== null
@@ -2001,9 +1976,11 @@ export default function App() {
     hydratedIdentityRef.current = identity;
 
     let cancelled = false;
+    if (changed) setProjectResolving(true);
     getCurrentProject()
       .then(r => {
         if (cancelled) return;
+        setStoredDelivery(r.delivery ? { suburb: null, postcode: r.delivery.postcode } : null);
         // Only a DRAFT project is the editable "current" quote. A submitted/closed
         // project must not populate the builder (nor become the submit target) — the
         // customer starts a fresh draft instead. The tracking page reads such
@@ -2038,7 +2015,7 @@ export default function App() {
         }
       })
       .catch(() => { /* offline / API down — keep working in-memory */ })
-      .finally(() => { if (!cancelled) hydratedRef.current = true; });
+      .finally(() => { if (!cancelled) { hydratedRef.current = true; setProjectResolving(false); } });
     return () => { cancelled = true; };
   }, [user?.email]);
 
@@ -2091,7 +2068,7 @@ export default function App() {
   // Flush any pending autosave first so the server validates + submits the latest
   // lines (and we hold a real project id), then only report success when the
   // server actually accepted the submission — the caller gates its success UI on it.
-  const submitCurrentProject = async (contact: SubmitContact): Promise<SubmitResult> => {
+  const submitCurrentProject = async (delivery: SubmitDelivery): Promise<SubmitResult> => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     let id = projectId;
     try {
@@ -2102,7 +2079,7 @@ export default function App() {
     } catch { return { ok: false, error: "network" }; }
     if (!id) return { ok: false, error: "no_project" };
     try {
-      const r = await submitProject(id, contact);
+      const r = await submitProject(id, delivery);
       // THE DRAFT IS NO LONGER OURS. Submission moves the project out of 'draft'
       // server-side, so the builder is holding a job that is now under review —
       // and the dashboard, reading the server, already invites a NEW quote. Going
@@ -2159,7 +2136,7 @@ export default function App() {
       // THE project builder. It was the A/B arm at /quote-project until the
       // comparison closed in its favour; the card builder it replaced is gone.
       // Not a hero page, so the header stays solid over its bone canvas.
-      case "quote":            return <QuoteProjectPage setPage={navigateTo} user={user} quote={quote} projectId={projectId} onSubmit={submitCurrentProject} />;
+      case "quote":            return <QuoteProjectPage setPage={navigateTo} user={user} quote={quote} projectId={projectId} onSubmit={submitCurrentProject} onAuthed={(u) => setUser(toAuthUser(u))} projectResolving={projectResolving} storedDelivery={storedDelivery} />;
       // Without setPage the page's own CTAs called setPage?.(…) on undefined and
       // did nothing but scroll to top — a dead end for traffic the home page sends.
       case "how-it-works":     return <HowItWorksPage setPage={navigateTo} />;
@@ -2185,6 +2162,12 @@ export default function App() {
   // in the effect above, never during render.
   function inShell(section: AccountSection, node: React.ReactNode) {
     if (!user) return <div className="min-h-screen ground-bone" />;
+    // E4 — the account exists with name = NULL (they closed the tab mid-gate).
+    // No account section is reachable until the question is answered, and it is
+    // asked exactly once: the same `name === null` signal drives /login.
+    if (!user.name) {
+      return <NameStep email={user.email} variant="interstitial" onSaved={(u) => setUser(toAuthUser(u))} />;
+    }
     const signOut = () => { apiLogout().catch(() => {}); setUser(null); navigateTo("home"); };
     return <AccountShell section={section} setPage={navigateTo} user={user} onSignOut={signOut}>{node}</AccountShell>;
   }
