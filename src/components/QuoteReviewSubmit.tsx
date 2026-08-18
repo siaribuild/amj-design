@@ -170,7 +170,6 @@ export function QuoteReviewSubmit({
   const [addressState, setAddressState] = useState(user?.addressState ?? "");
   const [addressPostcode, setAddressPostcode] = useState(user?.addressPostcode ?? "");
   const [touched, setTouched] = useState<Partial<Record<DetailField, boolean>>>({});
-  const [serverFieldErrors, setServerFieldErrors] = useState<DetailField[]>([]);
 
   // Adopt the account's values when identity arrives (the inline sign-in) or
   // changes. Only fields the customer has not touched are overwritten, so typing
@@ -250,10 +249,13 @@ export function QuoteReviewSubmit({
     onAuthed?.(fresh);
   };
 
+  // §16.5.3's per-field over-limit message has no branch here on purpose: every
+  // input carries its own `maxLength`, so a value cannot exceed the stated
+  // maximum from this form. The server still refuses one — that is the point of
+  // a server floor — and a refusal it should never have had to make is reported
+  // at panel level rather than pretending to know which field a crafted request
+  // carried.
   const fieldError = (field: DetailField): string => {
-    if (serverFieldErrors.includes(field)) {
-      return `That's longer than we can store — keep ${FIELD_LABEL[field]} under ${DETAIL_LIMITS[field]} characters.`;
-    }
     if (!touched[field] || !missing.includes(field)) return "";
     if (field === "phone" && phone.trim()) return PHONE_INVALID;
     return FIELD_ERROR[field];
@@ -273,7 +275,7 @@ export function QuoteReviewSubmit({
     }
     if (!/^\d{4}$/.test(postcode)) { setPostcodeError("Enter your 4-digit delivery postcode."); return; }
 
-    setSubmitting(true); setSubmitError(""); setPostcodeError(""); setServerFieldErrors([]);
+    setSubmitting(true); setSubmitError(""); setPostcodeError("");
     try {
       // The account is the single home of these facts, and the profile endpoint
       // is its single writer. Only the changed ones are sent, and the button
