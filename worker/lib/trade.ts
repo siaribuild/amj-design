@@ -374,6 +374,76 @@ export async function approveApplication(
   return { ok: true };
 }
 
+/** Ops rejects a queued application (AC-P2-38).
+ *
+ *  The mirror of approve in shape and NOT in effect: a rejection touches no
+ *  `user` row at all. It does not change the rate, it does not clear the stored
+ *  ABN, and — P2-A11 — it does not revoke an existing verification. A verified
+ *  account whose NEW application is rejected stays verified until somebody
+ *  explicitly revokes it, which is a different act with a different button. */
+export async function rejectApplication(
+  env: Env, applicationId: string, actor: UserRow, reason: string,
+): Promise<{ ok: true } | { ok: false; error: "not_found" | "already_decided" | "invalid_reason" }> {
+  const trimmed = String(reason ?? "").trim();
+  // Required, and checked before anything is read: a rejection someone has to
+  // guess at is not a decision.
+  if (!trimmed) return { ok: false, error: "invalid_reason" };
+
+  const application = await env.DB.prepare("SELECT * FROM trade_application WHERE id = ?")
+    .bind(applicationId).first<ApplicationRow>();
+  if (!application) return { ok: false, error: "not_found" };
+  if (application.status !== "pending") return { ok: false, error: "already_decided" };
+
+  const claim = await env.DB.prepare(
+    `UPDATE trade_application
+        SET status = 'rejected', decided_via = 'ops', decided_by = ?1,
+            decided_at = datetime('now'), decision_reason = ?2
+      WHERE id = ?3 AND status = 'pending'`,
+  ).bind(actor.id, trimmed, applicationId).run();
+  if (Number(claim.meta?.changes ?? 0) === 0) return { ok: false, error: "already_decided" };
+
+  await logEvent(env, {
+    actor: actor.id, entityType: "user", entityId: application.user_id,
+    action: "trade.rejected", after: { applicationId },
+  });
+  return { ok: true };
+}
+
+/** Ops revokes an account's trade status (AC-P2-30).
+ *
+ *  Acts on the ACCOUNT, not on an application id: "stop this customer paying
+ *  trade prices" is the thing a person means, and making them find the right
+ *  application first would be an invitation to revoke the wrong one.
+ *
+ *  The ABN and business name stay on the account. Verified-ness is derived from
+ *  the standing grant, so ending the grant is the whole of the revocation — the
+ *  account simply carries on as a private one. And because pricing reads
+ *  `discount_percent` per request, the customer's very next preview is retail
+ *  with nothing to invalidate: no session, no token, no cached flag (AB-P2-15). */
+export async function revokeTrade(
+  env: Env, customerId: string, actor: UserRow, reason: string,
+): Promise<{ ok: true } | { ok: false; error: "not_found" | "not_verified" | "invalid_reason" }> {
+  const trimmed = String(reason ?? "").trim();
+  if (!trimmed) return { ok: false, error: "invalid_reason" };
+
+  const customer = await env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(customerId).first<UserRow>();
+  if (!customer || customer.type !== "customer") return { ok: false, error: "not_found" };
+
+  const claim = await env.DB.prepare(
+    `UPDATE trade_application
+        SET revoked_at = datetime('now'), revoked_by = ?1, revoke_reason = ?2
+      WHERE user_id = ?3 AND status = 'approved' AND revoked_at IS NULL AND superseded_at IS NULL`,
+  ).bind(actor.id, trimmed, customerId).run();
+  if (Number(claim.meta?.changes ?? 0) === 0) return { ok: false, error: "not_verified" };
+
+  await env.DB.prepare("UPDATE user SET discount_percent = 0 WHERE id = ?").bind(customerId).run();
+  await logEvent(env, {
+    actor: actor.id, entityType: "user", entityId: customerId,
+    action: "trade.revoked", after: { reason: trimmed },
+  });
+  return { ok: true };
+}
+
 /** The grant, in one atomic batch — the only writer of trade facts onto `user`.
  *
  *  `insert` is the statement that creates or claims the approving application,

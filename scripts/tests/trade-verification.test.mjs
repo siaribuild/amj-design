@@ -653,6 +653,94 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       assert.equal(logged.actor, staffId, "with its actor");
       assert.ok(!JSON.stringify(logged).includes(ABR_FIXTURES.keystone), "and without the ABN in the log line");
     });
+
+    await t.test("AC-P2-38: a rejection needs a reason, and leaves a working private account", async () => {
+      const staff = new Session(baseUrl);
+      const staffAddress = `tv-rejecter-${stamp}@openframe.com.au`;
+      await login(staff, "/api/ops/auth", staffAddress);
+      await sql(`UPDATE user SET role = 'estimator' WHERE email = '${esc(staffAddress)}'`);
+      const staffId = (await userRow(staffAddress)).id;
+
+      const applicant = await newAccount("reject", "gmail.com");
+      await apply(applicant.session, {
+        abn: ABR_FIXTURES.oversized, businessName: "Something Or Other", source: "profile",
+      });
+      const rejectId = (await applications(applicant.email))[0].id;
+
+      // A reason is REQUIRED: a rejection someone has to guess at is not a
+      // decision, it is a shrug.
+      const noReason = await staff.request(`/api/ops/trade/applications/${rejectId}/reject`, {
+        method: "POST", json: {},
+      });
+      assert.equal(noReason.status, 400);
+      assert.deepEqual(await noReason.json(), { error: "invalid_reason" });
+      assert.equal((await applications(applicant.email))[0].status, "pending", "and nothing was decided");
+
+      const reject = await staff.request(`/api/ops/trade/applications/${rejectId}/reject`, {
+        method: "POST", json: { reason: "Could not confirm the business name against the register." },
+      });
+      assert.equal(reject.status, 200);
+      const row = (await applications(applicant.email))[0];
+      assert.equal(row.status, "rejected");
+      assert.equal(row.decided_via, "ops");
+      assert.equal(row.decided_by, staffId);
+      assert.equal(row.decision_reason, "Could not confirm the business name against the register.");
+      // The account remains a working private account and its rate is untouched.
+      assert.equal(Number((await userRow(applicant.email)).discount_percent), 0);
+      assert.equal((await requestJson(applicant.session, "/api/auth/me")).body.trade.verified, false);
+      const queue = (await requestJson(staff, "/api/ops/trade/applications")).body.applications;
+      assert.equal(queue.some((a) => a.id === rejectId), false, "and the item leaves the queue");
+    });
+
+    await t.test("AC-P2-30 / AB-P2-15: revoking puts an account back on retail, immediately", async () => {
+      const staff = new Session(baseUrl);
+      const staffAddress = `tv-revoker-${stamp}@openframe.com.au`;
+      await login(staff, "/api/ops/auth", staffAddress);
+      await sql(`UPDATE user SET role = 'estimator' WHERE email = '${esc(staffAddress)}'`);
+      const staffId = (await userRow(staffAddress)).id;
+
+      const account = await newAccount("revoke", "northsidebuild.com.au");
+      await apply(account.session, {
+        abn: ABR_FIXTURES.northside, businessName: "Northside Building Pty Ltd", source: "profile",
+      });
+      const accountId = (await userRow(account.email)).id;
+      assert.equal(Number((await userRow(account.email)).discount_percent), 5, "verified first");
+
+      // A reason is required here too — a customer's prices are about to change
+      // and somebody will be asked why.
+      const noReason = await staff.request(`/api/ops/trade/customers/${accountId}/revoke`, {
+        method: "POST", json: {},
+      });
+      assert.equal(noReason.status, 400);
+      assert.equal(Number((await userRow(account.email)).discount_percent), 5, "a refused revoke changes nothing");
+
+      const revoke = await staff.request(`/api/ops/trade/customers/${accountId}/revoke`, {
+        method: "POST", json: { reason: "Business sold; the ABN is no longer theirs." },
+      });
+      assert.equal(revoke.status, 200);
+      assert.deepEqual(await revoke.json(), { ok: true });
+
+      const after = await userRow(account.email);
+      assert.equal(Number(after.discount_percent), 0, "back to retail");
+      assert.equal(after.abn, ABR_FIXTURES.northside, "the ABN stays — the account keeps working as a private one");
+      const row = (await applications(account.email))[0];
+      assert.ok(row.revoked_at);
+      assert.equal(row.revoked_by, staffId);
+      assert.equal(row.revoke_reason, "Business sold; the ABN is no longer theirs.");
+
+      // AB-P2-15: the customer's OWN open session already reads the new state.
+      // Nothing trade-related is baked into a session or a token.
+      const me = (await requestJson(account.session, "/api/auth/me")).body.trade;
+      assert.equal(me.verified, false);
+      assert.equal(me.history.some((h) => h.outcome === "revoked"), true);
+
+      // A second revoke has nothing to revoke.
+      const again = await staff.request(`/api/ops/trade/customers/${accountId}/revoke`, {
+        method: "POST", json: { reason: "again" },
+      });
+      assert.equal(again.status, 409);
+      assert.deepEqual(await again.json(), { error: "not_verified" });
+    });
   } finally {
     if (server) await stop(server);
     if (stub) await stub.close();

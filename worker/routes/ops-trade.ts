@@ -13,7 +13,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { resolveStaff } from "../lib/staff";
-import { approveApplication, pendingApplications } from "../lib/trade";
+import { approveApplication, pendingApplications, rejectApplication, revokeTrade } from "../lib/trade";
 
 export const opsTrade = new Hono<{ Bindings: Env }>();
 
@@ -45,4 +45,39 @@ opsTrade.post("/applications/:id/approve", async (c) => {
   if (result.error === "not_found") return c.json({ error: "not_found" }, 404);
   if (result.error === "already_decided") return c.json({ error: "already_decided" }, 409);
   return c.json({ error: result.error }, 403);
+});
+
+// POST /api/ops/trade/applications/:id/reject { reason }
+//
+// The reason is required and it is what the customer's record carries forward,
+// so it is prose a colleague reads in six months rather than a status code.
+opsTrade.post("/applications/:id/reject", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  const reason = typeof body?.reason === "string" ? body.reason.slice(0, MAX_REASON) : "";
+
+  const result = await rejectApplication(c.env, c.req.param("id"), staff, reason);
+  if (result.ok) return c.json({ ok: true });
+  if (result.error === "not_found") return c.json({ error: "not_found" }, 404);
+  if (result.error === "already_decided") return c.json({ error: "already_decided" }, 409);
+  return c.json({ error: result.error }, 400);
+});
+
+// POST /api/ops/trade/customers/:id/revoke { reason }
+//
+// Addressed to the ACCOUNT rather than to an application: "stop this customer
+// paying trade prices" is what a person means, and making them find the right
+// application first would be an invitation to revoke the wrong one.
+opsTrade.post("/customers/:id/revoke", async (c) => {
+  const staff = await resolveStaff(c.env, c.req.raw);
+  if (!staff) return c.json({ error: "forbidden" }, 403);
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  const reason = typeof body?.reason === "string" ? body.reason.slice(0, MAX_REASON) : "";
+
+  const result = await revokeTrade(c.env, c.req.param("id"), staff, reason);
+  if (result.ok) return c.json({ ok: true });
+  if (result.error === "not_found") return c.json({ error: "not_found" }, 404);
+  if (result.error === "not_verified") return c.json({ error: "not_verified" }, 409);
+  return c.json({ error: result.error }, 400);
 });
