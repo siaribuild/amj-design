@@ -1,11 +1,14 @@
 # User registration — Phase 1: Honest registration + the submission gate
 
 Branch: `feat/user-registration`
-Status: **revision 3 — the owner reviewed the mock at the gate and directed two changes
-(2026-08-18). The gate has NO separate name stage; details render as directly editable inputs and
+Status: **revision 4 — ACCEPTED WITH CONDITIONS (2026-08-19, @d30996ab). AC-14 amended to the
+owner's "one field, one press" ruling: delivery starts blank on every project and the outstanding
+caption must name it; a disabled Submit with no stated cause is a defect. See §14.**
+Revision 3 (2026-08-18) — the owner reviewed the mock at the gate and directed two changes:
+the gate has NO separate name stage; details render as directly editable inputs and
 the delivery fields are NEVER seeded from the account address. AC-42's prefill clause is struck —
 the Q1 ruling of revision 2 is overturned by the owner's later ruling at the mock gate. §12
-"Decisions needed" is EMPTY.**
+"Decisions needed" is EMPTY.
 Author: product-manager
 Date: 2026-08-18
 
@@ -662,3 +665,9 @@ Assumptions still live and vetoable at any later gate: the grill's **A1, A2, A4*
 **A-P1-4** and **A-P1-5**. The ux-designer's own `ASSUMED:` items (code-expiry wording, resend
 cooldown, GST caption, gate vs `/login` sub-copy, the merge notice, autofocus, delivery
 `autoComplete` absence) are listed in design §16.11 and remain vetoable there.
+
+## 14. Acceptance
+
+See `docs/specs/user-registration-phase-1-acceptance.md` — **ACCEPTED WITH CONDITIONS**,
+2026-08-19, at `d30996ab`. 57/57 criteria met (53 on direct evidence, 4 indirect), nothing
+descoped, no scope creep, all three declared regression-suite edits ratified.
