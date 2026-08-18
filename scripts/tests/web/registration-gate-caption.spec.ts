@@ -26,6 +26,13 @@
 // wrong under EITHER resolution, and that the spec already requires of the
 // screen (AC-17, design §16.5.4): when Submit is disabled, the outstanding work
 // is named in a caption above it.
+//
+// RESOLVED (owner, 2026-08-19): delivery gives way to nothing — it starts blank
+// every project, because a business customer is expected never to deliver to the
+// same address twice. AC-14 becomes ONE FIELD, ONE PRESS: the customer types the
+// site, and the caption must name delivery while it is the gap. The conditional
+// above is therefore now unconditional in practice, and the second half of this
+// file pins the resolution rather than the ambiguity.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
 
@@ -90,4 +97,44 @@ test("a disabled Submit always names what is outstanding", async ({ page }) => {
       "Submit is disabled and no caption above it says why — AC-17 / design §16.5.4 require the outstanding work to be named",
     ).toBeVisible();
   }
+
+  // The owner's resolution, pinned: the ONE outstanding thing is the delivery
+  // destination, the caption says so by name, and nothing about the account is
+  // listed beside it — every stored value arrived.
+  const caption = page.getByText(/^Still needed:/);
+  await expect(caption).toHaveText("Still needed: delivery postcode.");
+
+  // One field, one press.
+  await page.getByLabel("Delivery postcode").fill("3072");
+  await expect(caption).toHaveCount(0);
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect(page.getByRole("heading", { name: "Quote submitted" })).toBeVisible();
+});
+
+// The account half of the same caption still works — a gap there is named with
+// the delivery gap, in form order, so the customer sees one list and not two.
+test("account gaps and the delivery gap are named together, in form order", async ({ page }) => {
+  const email = `gatecap-partial-${stamp}-${seq++}@example.com`;
+  const challenge = await page.request.post("/api/auth/challenge", { data: { email }, headers: { "X-Forwarded-For": nextIp() } });
+  const { devCode } = await challenge.json();
+  expect(devCode, `dev OTP for ${email}`).toBeTruthy();
+  expect((await page.request.post("/api/auth/verify", { data: { email, code: devCode } })).ok()).toBeTruthy();
+  // Everything but the phone, so exactly one account field is outstanding.
+  expect((await page.request.post("/api/auth/profile", {
+    data: {
+      name: COMPLETE.name, addressLine1: COMPLETE.addressLine1,
+      addressSuburb: COMPLETE.addressSuburb, addressState: COMPLETE.addressState,
+      addressPostcode: COMPLETE.addressPostcode,
+    },
+  })).ok()).toBeTruthy();
+
+  const saved = await page.request.put("/api/projects/current/lines", {
+    data: { title: `Gate caption partial ${stamp}`, items: [A_LINE] },
+  });
+  expect(saved.ok(), `save lines: ${await saved.text()}`).toBeTruthy();
+
+  await openReview(page);
+  await expect(page.getByRole("heading", { name: "Your details" })).toBeVisible();
+  await expect(page.getByText(/^Still needed:/)).toHaveText("Still needed: phone, delivery postcode.");
 });

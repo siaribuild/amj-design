@@ -393,6 +393,19 @@ export function QuoteReviewSubmit({
     submitting || aiReading || projectResolving || postcode.length !== 4 ||
     (stage === "details" && missing.length > 0);
 
+  /** EVERYTHING still standing between the customer and Submit, in form order.
+   *
+   *  `submitMissing` answers for the ACCOUNT, and the delivery postcode is not an
+   *  account fact — so a returning customer with a complete profile met a disabled
+   *  button and an empty caption: the one gap on the screen was the only one
+   *  nothing named. Delivery starts blank every project on purpose (MG-2: a tradie
+   *  delivers to a different site every time), which makes naming it not a
+   *  courtesy but the whole instruction — one field, then one press. */
+  const outstanding = [
+    ...missing.map((f) => FIELD_LABEL[f]),
+    ...(postcode.length === 4 ? [] : ["delivery postcode"]),
+  ];
+
   const errId = (field: DetailField) => `detail-err-${field}`;
 
   /** Every required detail field's control, so "the first invalid field" is a
@@ -753,9 +766,9 @@ export function QuoteReviewSubmit({
                 Submitting needs an account — we'll email you a code. About a minute.
               </p>
             )}
-            {stage === "details" && missing.length > 0 && (
+            {stage === "details" && outstanding.length > 0 && (
               <p className="text-body mb-2 text-center sm:text-right t-cap">
-                Still needed: {missing.map((f) => FIELD_LABEL[f]).join(", ")}.
+                Still needed: {outstanding.join(", ")}.
               </p>
             )}
             {/* Full-width on a phone, right-aligned on desktop (§16.10): the one
