@@ -82,4 +82,13 @@ export interface Env {
   SCAN_AUTH?: string;
   /** Sanity publish-webhook signing secret (secret). Verifies §11.3 callbacks. */
   SANITY_WEBHOOK_SECRET?: string;
+  /** ABN Lookup (ABR) web-services credential — a SECRET
+   *  (`wrangler secret put ABR_GUID`), never a VITE_* var, so the client bundle
+   *  cannot contain it. Unset ⇒ every trade application queues for manual
+   *  review rather than auto-passing (design §4, E-P2-18). */
+  ABR_GUID?: string;
+  /** Test seam for the ABR client: overrides the register's base URL so suites
+   *  drive scripts/tests/abr-stub.mjs instead of the live registrar. Dev/test
+   *  only — production leaves it unset and the default endpoint applies. */
+  ABR_BASE_URL?: string;
 }
