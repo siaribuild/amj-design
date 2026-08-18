@@ -14,6 +14,7 @@ import {
   findOrCreateUser, isDevEnv, isEmail, normEmail, resolveUser, sessionCookie, sixDigit, storeChallenge, userDto,
 } from "../lib/auth";
 import { recordReferral } from "../lib/referrals";
+import { tradeStateOf } from "../lib/trade";
 import { sourceIp, verifyTurnstile } from "../lib/captcha";
 import { notify } from "../lib/email";
 
@@ -23,7 +24,18 @@ export const auth = new Hono<{ Bindings: Env }>();
 auth.get("/me", async (c) => {
   const user = await resolveUser(c.env, c.req.raw);
   if (!user) return c.json({ authenticated: false, anonymous: true, user: null });
-  return c.json({ authenticated: true, anonymous: false, user: userDto(user) });
+  // The trade state is DERIVED from the application ledger on every read
+  // (ADR-0002), and it is a sibling of `user` rather than a field inside
+  // userDto: userDto is what POST /verify serves, and that response must stay
+  // byte-identical (AC-P2-56).
+  //
+  // Status only. No rate, no queue reason, no ABR evidence, no other holder —
+  // P2-A7 holds because tradeStateOf has no such field to serialise.
+  return c.json({
+    authenticated: true, anonymous: false,
+    user: userDto(user),
+    trade: await tradeStateOf(c.env, user),
+  });
 });
 
 // POST /api/auth/challenge { email, token? } — always neutral (no account enumeration).

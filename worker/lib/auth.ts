@@ -41,6 +41,10 @@ export interface UserRow {
   address_postcode: string | null;
   type: string;
   role: string | null;
+  // Self-declared builder/tradie (migration 0054). Gates nothing — it tells ops
+  // who they are talking to; whether the account is verified is the ledger's
+  // business, never this column's.
+  trade_label: string | null;
   created_at: string | null;
   session_epoch: number;
   // Commercial, read-only everywhere outside the two creation INSERTs.

@@ -19,7 +19,7 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import {
-  Session, freePort, login, makeRunDir, projectRoot, removeRunDir,
+  Session, freePort, login, makeRunDir, projectRoot, removeRunDir, requestJson,
   run, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 import { ABR_FIXTURES, startAbrStub } from "./abr-stub.mjs";
@@ -111,7 +111,7 @@ test("lookupAbn: the one module that knows ABR exists (design §4)", async (t) =
 // Runs against `wrangler dev` with the ABR stub wired in through ABR_BASE_URL.
 // Decisions are asserted from D1 as well as from the response, because a 200
 // that wrote nothing and a 200 that wrote the wrong thing are different failures.
-test("AC-P2-20/21/22/23/27: the triple decides, and every queued answer is the same answer", { timeout: 1_800_000 }, async () => {
+test("trade verification — the decision, the grant, and its abuse cases", { timeout: 1_800_000 }, async (t) => {
   const runDir = await makeRunDir("trade");
   const assets = join(runDir, "assets");
   const state = join(runDir, "state");
@@ -170,66 +170,126 @@ test("AC-P2-20/21/22/23/27: the triple decides, and every queued answer is the s
     };
     const apply = (session, json) => session.request("/api/trade/application", { method: "POST", json });
 
-    // ALL THREE CRITERIA PASS — approved with no ops action and no queue item.
-    const auto = await newAccount("auto", "smithbros.com.au");
-    const autoRes = await apply(auto.session, {
-      abn: ABR_FIXTURES.active, businessName: "Smith Brothers Pty Ltd", label: "builder", source: "trade_page",
-    });
-    assert.equal(autoRes.status, 200);
-    const autoApps = await applications(auto.email);
-    // The reason (if any) is carried into the message on purpose: "expected
-    // verified, got under_review" is not a diagnosis, and the reason lives in
-    // D1 rather than in the deliberately constant response body.
-    assert.deepEqual(await autoRes.clone().json(), { ok: true, status: "verified" },
-      `auto-pass queued instead. reasons=${autoApps[0]?.queue_reasons} snapshot=${autoApps[0]?.abr_snapshot}`);
+    await t.test("AC-P2-20/21/22/23/27: the triple decides, and every queued answer is the same answer", async () => {
+      // ALL THREE CRITERIA PASS — approved with no ops action and no queue item.
+      const auto = await newAccount("auto", "smithbros.com.au");
+      const autoRes = await apply(auto.session, {
+        abn: ABR_FIXTURES.active, businessName: "Smith Brothers Pty Ltd", label: "builder", source: "trade_page",
+      });
+      assert.equal(autoRes.status, 200);
+      const autoApps = await applications(auto.email);
+      // The reason (if any) is carried into the message on purpose: "expected
+      // verified, got under_review" is not a diagnosis, and the reason lives in
+      // D1 rather than in the deliberately constant response body.
+      assert.deepEqual(await autoRes.clone().json(), { ok: true, status: "verified" },
+        `auto-pass queued instead. reasons=${autoApps[0]?.queue_reasons} snapshot=${autoApps[0]?.abr_snapshot}`);
 
-    assert.equal(autoApps.length, 1, "exactly one application row");
-    assert.equal(autoApps[0].status, "approved");
-    assert.equal(autoApps[0].decided_via, "auto");
-    assert.equal(autoApps[0].decided_by, null, "an auto-pass has no deciding staff member");
-    assert.equal(JSON.parse(autoApps[0].queue_reasons ?? "[]").length, 0, "AC-P2-20: no queue item");
-    assert.equal(autoApps[0].abn, ABR_FIXTURES.active, "the submitted ABN is frozen on the application");
-    assert.ok(JSON.parse(autoApps[0].abr_snapshot).evaluated, "the ABR snapshot is frozen evidence (AC-P2-26)");
-    const autoUser = await userRow(auto.email);
-    assert.equal(Number(autoUser.discount_percent), 5, "AC-P2-28: the business-account default is applied");
-    assert.equal(autoUser.abn, ABR_FIXTURES.active);
-    assert.equal(autoUser.trade_label, "builder");
+      assert.equal(autoApps.length, 1, "exactly one application row");
+      assert.equal(autoApps[0].status, "approved");
+      assert.equal(autoApps[0].decided_via, "auto");
+      assert.equal(autoApps[0].decided_by, null, "an auto-pass has no deciding staff member");
+      assert.equal(JSON.parse(autoApps[0].queue_reasons ?? "[]").length, 0, "AC-P2-20: no queue item");
+      assert.equal(autoApps[0].abn, ABR_FIXTURES.active, "the submitted ABN is frozen on the application");
+      assert.ok(JSON.parse(autoApps[0].abr_snapshot).evaluated, "the ABR snapshot is frozen evidence (AC-P2-26)");
+      const autoUser = await userRow(auto.email);
+      assert.equal(Number(autoUser.discount_percent), 5, "AC-P2-28: the business-account default is applied");
+      assert.equal(autoUser.abn, ABR_FIXTURES.active);
+      assert.equal(autoUser.trade_label, "builder");
 
-    // ONE CRITERION FAILS, three different ways. Each queues; none rejects.
-    // Each uses a DIFFERENT ABN on purpose: the auto-pass above now holds a
-    // standing grant on ABR_FIXTURES.active, and reusing it would add
-    // duplicate_abn to the reasons — correct behaviour, and a second variable.
-    const inactive = await newAccount("inactive", "smithbros.com.au");
-    const inactiveRes = await apply(inactive.session, {
-      abn: ABR_FIXTURES.cancelled, businessName: "Smith Brothers Pty Ltd", source: "profile",
-    });
-    const mismatch = await newAccount("mismatch", "quantumleap.com.au");
-    const mismatchRes = await apply(mismatch.session, {
-      abn: ABR_FIXTURES.otherEntity, businessName: "Smith Brothers Pty Ltd", source: "profile",
-    });
-    const freeMail = await newAccount("freemail", "gmail.com");
-    const freeMailRes = await apply(freeMail.session, {
-      abn: ABR_FIXTURES.northside, businessName: "Northside Building Pty Ltd", source: "profile",
+      // ONE CRITERION FAILS, three different ways. Each queues; none rejects.
+      // Each uses a DIFFERENT ABN on purpose: the auto-pass above now holds a
+      // standing grant on ABR_FIXTURES.active, and reusing it would add
+      // duplicate_abn to the reasons — correct behaviour, and a second variable.
+      const inactive = await newAccount("inactive", "smithbros.com.au");
+      const inactiveRes = await apply(inactive.session, {
+        abn: ABR_FIXTURES.cancelled, businessName: "Smith Brothers Pty Ltd", source: "profile",
+      });
+      const mismatch = await newAccount("mismatch", "quantumleap.com.au");
+      const mismatchRes = await apply(mismatch.session, {
+        abn: ABR_FIXTURES.otherEntity, businessName: "Smith Brothers Pty Ltd", source: "profile",
+      });
+      const freeMail = await newAccount("freemail", "gmail.com");
+      const freeMailRes = await apply(freeMail.session, {
+        abn: ABR_FIXTURES.northside, businessName: "Northside Building Pty Ltd", source: "profile",
+      });
+
+      const queued = { abn_inactive: inactive, name_mismatch: mismatch, email_domain: freeMail };
+      for (const [reason, account] of Object.entries(queued)) {
+        const apps = await applications(account.email);
+        assert.equal(apps.length, 1, `${reason}: one application row`);
+        assert.equal(apps[0].status, "pending", `${reason} is QUEUED, never rejected`);
+        assert.equal(apps[0].decided_via, null, `${reason}: nothing decided it`);
+        assert.deepEqual(JSON.parse(apps[0].queue_reasons ?? "[]"), [reason], `${reason} is the recorded reason`);
+        assert.equal(Number((await userRow(account.email)).discount_percent), 0, `${reason}: a queued application grants nothing`);
+      }
+
+      // AB-P2-7 / AC-P2-27: the endpoint must not be an oracle for WHICH fact is
+      // wrong. Byte-compared, not eyeballed.
+      const bodies = await Promise.all([inactiveRes, mismatchRes, freeMailRes].map((r) => r.clone().text()));
+      assert.equal(bodies[0], bodies[1], "abn-status and name failures answer identically");
+      assert.equal(bodies[1], bodies[2], "name and email-domain failures answer identically");
+      assert.equal(bodies[0], JSON.stringify({ ok: true, status: "under_review" }));
+      assert.equal(inactiveRes.status, mismatchRes.status);
+      assert.equal(mismatchRes.status, freeMailRes.status);
     });
 
-    const queued = { abn_inactive: inactive, name_mismatch: mismatch, email_domain: freeMail };
-    for (const [reason, account] of Object.entries(queued)) {
-      const apps = await applications(account.email);
-      assert.equal(apps.length, 1, `${reason}: one application row`);
-      assert.equal(apps[0].status, "pending", `${reason} is QUEUED, never rejected`);
-      assert.equal(apps[0].decided_via, null, `${reason}: nothing decided it`);
-      assert.deepEqual(JSON.parse(apps[0].queue_reasons ?? "[]"), [reason], `${reason} is the recorded reason`);
-      assert.equal(Number((await userRow(account.email)).discount_percent), 0, `${reason}: a queued application grants nothing`);
-    }
+    await t.test("P2-A7 / AC-P2-13: /me carries trade STATUS, and nothing commercial", async () => {
+      const me = async (session) => (await requestJson(session, "/api/auth/me")).body;
 
-    // AB-P2-7 / AC-P2-27: the endpoint must not be an oracle for WHICH fact is
-    // wrong. Byte-compared, not eyeballed.
-    const bodies = await Promise.all([inactiveRes, mismatchRes, freeMailRes].map((r) => r.clone().text()));
-    assert.equal(bodies[0], bodies[1], "abn-status and name failures answer identically");
-    assert.equal(bodies[1], bodies[2], "name and email-domain failures answer identically");
-    assert.equal(bodies[0], JSON.stringify({ ok: true, status: "under_review" }));
-    assert.equal(inactiveRes.status, mismatchRes.status);
-    assert.equal(mismatchRes.status, freeMailRes.status);
+      // A brand-new account: every trade fact absent, none of them undefined —
+      // the client renders five states off this struct and a missing key is a
+      // different bug from a false one.
+      const fresh = await newAccount("me-fresh", "example.com");
+      assert.deepEqual((await me(fresh.session)).trade, {
+        verified: false, verifiedSince: null, provenance: null,
+        label: null, abn: null, pending: null, history: [],
+      });
+
+      // Verified.
+      const verified = await newAccount("me-verified", "quantumleap.com.au");
+      await apply(verified.session, {
+        abn: ABR_FIXTURES.otherEntity, businessName: "Quantum Leap Logistics Pty Ltd",
+        label: "tradie", source: "profile",
+      });
+      const verifiedTrade = (await me(verified.session)).trade;
+      assert.equal(verifiedTrade.verified, true);
+      assert.equal(verifiedTrade.provenance, "auto");
+      assert.equal(verifiedTrade.label, "tradie");
+      assert.equal(verifiedTrade.abn, ABR_FIXTURES.otherEntity);
+      assert.equal(verifiedTrade.pending, null);
+      assert.ok(verifiedTrade.verifiedSince, "a verified account knows when it became one");
+      // AC-P2-13: the history is an OUTLINE — date and outcome, nothing else.
+      assert.equal(verifiedTrade.history.length, 1);
+      assert.deepEqual(Object.keys(verifiedTrade.history[0]).sort(), ["at", "outcome"]);
+      assert.equal(verifiedTrade.history[0].outcome, "approved");
+
+      // Pending. The submitted ABN comes back (it is the account's own), the
+      // reason it queued does NOT (P2-A3).
+      const pending = await newAccount("me-pending", "gmail.com");
+      await apply(pending.session, {
+        abn: ABR_FIXTURES.northside, businessName: "Northside Building Pty Ltd", source: "profile",
+      });
+      const pendingTrade = (await me(pending.session)).trade;
+      assert.equal(pendingTrade.verified, false);
+      assert.deepEqual(Object.keys(pendingTrade.pending).sort(), ["abn", "businessName", "createdAt"]);
+      assert.equal(pendingTrade.pending.abn, ABR_FIXTURES.northside);
+
+      // P2-A7: no rate, no criterion, no evidence, no other account — on ANY of
+      // the three. Asserted over the whole serialised response, because a leak
+      // that arrives through a nested key is still a leak.
+      for (const session of [fresh.session, verified.session, pending.session]) {
+        const raw = JSON.stringify(await me(session));
+        for (const forbidden of ["discount", "queue_reasons", "queueReasons", "abr_snapshot",
+                                 "abrSnapshot", "duplicate", "entityName", "reasons"]) {
+          assert.ok(!raw.toLowerCase().includes(forbidden.toLowerCase()),
+            `/api/auth/me must not serialise ${forbidden}: ${raw}`);
+        }
+      }
+      // The anonymous branch is untouched: no trade key at all.
+      const anon = await requestJson(new Session(baseUrl), "/api/auth/me");
+      assert.equal(anon.body.authenticated, false);
+      assert.equal(anon.body.trade, undefined);
+    });
   } finally {
     if (server) await stop(server);
     if (stub) await stub.close();

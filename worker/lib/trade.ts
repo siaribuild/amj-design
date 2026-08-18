@@ -76,6 +76,64 @@ const pendingApplication = (env: Env, userId: string) =>
   env.DB.prepare("SELECT * FROM trade_application WHERE user_id = ? AND status = 'pending' LIMIT 1")
     .bind(userId).first<ApplicationRow>();
 
+/** What the account holder is allowed to know about their own trade-ness.
+ *
+ *  DERIVED on every read — never stored, never cached, never in a session
+ *  (ADR-0002). `verified` and `pending` can be true together: a verified account
+ *  re-applying with a new ABN is both, which is precisely why no single status
+ *  column could ever have expressed this (E-P2-6).
+ *
+ *  Note what is NOT here: `discount_percent`, the queue reasons, the ABR
+ *  snapshot, and any hint that another account holds this ABN. This struct is
+ *  served to the customer, and P2-A7 is the reason each of those is absent
+ *  rather than filtered. */
+export interface TradeState {
+  verified: boolean;
+  verifiedSince: string | null;
+  provenance: "auto" | "ops" | "grandfathered" | null;
+  label: "builder" | "tradie" | null;
+  abn: string | null;
+  pending: { abn: string; businessName: string; createdAt: string } | null;
+  /** Outline only — date and outcome (AC-P2-13). No reason, no actor, no ABN. */
+  history: { at: string; outcome: "approved" | "rejected" | "revoked" }[];
+}
+
+export async function tradeStateOf(env: Env, user: UserRow): Promise<TradeState> {
+  const [standing, pending, decided] = await Promise.all([
+    standingGrant(env, user.id),
+    pendingApplication(env, user.id),
+    env.DB.prepare(
+      `SELECT status, decided_at, revoked_at, created_at FROM trade_application
+        WHERE user_id = ? AND status <> 'pending' ORDER BY created_at`,
+    ).bind(user.id).all<{ status: string; decided_at: string | null; revoked_at: string | null; created_at: string | null }>(),
+  ]);
+
+  const history: TradeState["history"] = [];
+  for (const row of decided.results ?? []) {
+    const at = row.decided_at ?? row.created_at ?? "";
+    if (row.status === "approved") history.push({ at, outcome: "approved" });
+    if (row.status === "rejected") history.push({ at, outcome: "rejected" });
+    // An approved-then-revoked application is TWO events, so the timeline reads
+    // in true order rather than collapsing a reversal into its cause.
+    if (row.revoked_at) history.push({ at: row.revoked_at, outcome: "revoked" });
+  }
+  history.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+
+  const label = user.trade_label === "builder" || user.trade_label === "tradie" ? user.trade_label : null;
+  const via = standing?.decided_via;
+  return {
+    verified: !!standing,
+    verifiedSince: standing?.decided_at ?? null,
+    provenance: via === "auto" || via === "ops" || via === "grandfathered" ? via : null,
+    label,
+    abn: user.abn ?? null,
+    pending: pending
+      ? { abn: pending.abn ?? "", businessName: pending.business_name ?? "", createdAt: pending.created_at ?? "" }
+      : null,
+    history,
+  };
+}
+
 /** POST /api/trade/application, decided.
  *
  *  The order below is spec §4.5's order and it is load-bearing: a field error
