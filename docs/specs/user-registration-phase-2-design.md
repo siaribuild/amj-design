@@ -1249,6 +1249,18 @@ this section is the contract.
 Every string in **bold quotes** is final copy. `ASSUMED:` tags mark choices made without the
 owner, vetoable at any later gate. This section governs design §10 track (b), steps 9–15.
 
+**Revision 4 (2026-08-19, owner ruling P2-D5 — "builder vs tradie - no difference"):** the
+self-declared builder/tradie label is **removed from the product**, not merely ignored in logic.
+`P2-D5` (recorded in `docs/specs/user-registration-grill-conclusions.md`) **supersedes D7**
+("self-declared label collected at registration"), which is why no reader should reinstate the
+control from D7, from spec §2.1.10, or from the `trade_label` column the design already shipped.
+The optional business group is now **exactly two fields — ABN and business name** (name required
+only once an ABN is present), identical at all three doors, which makes the revision-3 one-flow
+correction cleaner still. The vocabulary survives — builders and tradies are both trade
+accounts — the product simply stops asking which. Every control, evidence row, sub-line, helper
+and absence assertion naming the label is struck below; **AC-P2-15's "no builder/tradie control
+at the gate" is restated as "no builder/tradie control exists on any surface"**.
+
 **Revision 3 (2026-08-19, owner review of the mock — surfaces 2-6 APPROVED, surface 1 reworked):**
 the owner approved the account card, the submit-gate group, the ops queue and the four emails as
 drafted; they must not drift. **Surface 1 was rejected as an architecture error, not a styling
@@ -1290,8 +1302,9 @@ responsive rules §16.10). Everything here is an addition to that contract, neve
    when it's done" is the strongest promise permitted (Q2).
 3. **The customer is never told which criterion failed** (`ASSUMED: P2-A3`). Two applications
    queued for different reasons produce identical screens and identical emails.
-4. **No builder/tradie control at the submit gate** (Q5). It appears on `/trade-account` and the
-   account page only.
+4. **No builder/tradie control exists on any surface** (P2-D5, superseding Q5 and D7). The
+   question is not asked at the gate, on the trade page, on the account page, or anywhere else,
+   and no surface displays such a label.
 5. **No repricing promise.** Nothing says a submitted quote will be updated.
 6. **Phase 1's AC-41 silence ends here by design.** Trade copy appears on exactly four surfaces
    (AC-P2-48). A tester finding it there is recording conformance, not a regression.
@@ -1335,7 +1348,7 @@ is what happens after it.
 | | |
 |---|---|
 | **The flow** | Phase 1's, unchanged: **email → 6-digit code → your details**. Same components (`OtpSignIn`, then the details step), same order, same copy, at every entry point |
-| **The addition** | one **optional ABN + business-name group** (plus the builder/tradie label where permitted), inside the details — the *same* group as the submit gate's (§18.5) and the account card's (§18.3) |
+| **The addition** | one **optional ABN + business-name group** — two fields, nothing else (P2-D5) — inside the details — the *same* group as the submit gate's (§18.5) and the account card's (§18.3) |
 | **The fork** | **after** the flow, and only there: an ABN was entered ⇒ verification runs and one of the two outcome panels appears (§18.4); no ABN ⇒ an ordinary private account, exactly as Phase 1 |
 | **What `/trade-account` owns** | the hero, the benefits column, the trade copy, and the trade intent. It **hosts** the signup; it does not own a flow |
 
@@ -1375,7 +1388,6 @@ because that is the same "optional last" position it holds at the gate.
 | Group helper | **"Add your ABN and we'll check it against the Australian Business Register as soon as you're signed in. If it checks out, trade pricing is on your account straight away. You can also add it later from your account."** (this is one of the four AC-P2-48 advertising surfaces) |
 | Field 1 | label **"Business name"**, placeholder **"ABC Constructions"**, helper **"As it's registered against the ABN."**, max 200, `autoComplete="organization"` |
 | Field 2 | label **"ABN"**, placeholder **"00 000 000 000"**, helper **"11 digits. Spaces are fine."**, `inputMode="numeric"`, raw max 32 |
-| Field 3 | legend **"Builder or tradie?"**, two radios **"Builder"** / **"Tradie"**, **neither pre-selected**, helper **"Optional. It just tells us who we're working with."** |
 | Turnstile + button | Phase-1 `OtpSignIn`, unchanged: **"Email me a code"** → busy **"Sending…"**; Turnstile gating and its caption **"Complete the check above to continue."** unchanged |
 | Caption under the button | **"Your business details stay on this screen — we send them for checking the moment you're signed in."** |
 
@@ -1432,8 +1444,7 @@ No second OTP anywhere below.
 `ProfilePage`'s **Business details** card (`App.tsx:1400-1407`) is replaced in place by
 `TradeApplicationCard source="profile"`. It keeps the same grid position (right column, beside
 Personal details) and the same card treatment. The page's **"Save changes"** button no longer
-has an ABN or company field to save; it saves name and phone as before, plus the builder/tradie
-label when the card is in its verified state.
+has an ABN or company field to save; it saves name and phone exactly as before.
 
 ### 18.3.1 No ABN on file — the affordance (AC-P2-9)
 
@@ -1441,15 +1452,14 @@ label when the card is in its verified state.
 |---|---|
 | Heading (h3, `t-bd-sm` semibold) | **"Trade account"** |
 | Sub | **"Trade customers get better prices across the site — while you configure, not just on the quote we send back. Add your ABN and we'll check it against the Australian Business Register."** |
-| Fields | Business name · ABN · Builder or tradie? — labels, placeholders and helpers exactly as §18.2.3 |
+| Fields | Business name · ABN — labels, placeholders and helpers exactly as §18.2.3 |
 | Button | **"Apply for trade pricing"** → busy **"Checking your details…"** |
 
 ### 18.3.2 Verified (AC-P2-11)
 
 Pill **"Active"** (positive tone, tick + word). Line **"Trade pricing applies to your account."**
-Read-only rows: **"Business"**, **"ABN"** (formatted `51 824 753 556`). The builder/tradie
-segmented control stays **editable** here (owner ruling Q5) and saves through the page's
-existing Save changes button. **The ABN is not an editable field on this surface.** Business
+Read-only rows: **"Business"**, **"ABN"** (formatted `51 824 753 556`). **The ABN is not an
+editable field on this surface**, and there is no third control — the card holds two facts. Business
 name is read-only too (`ASSUMED: P2-ARCH-5` — a change goes through a new application or ops).
 Footer line: **"Changed ABN or trading name?"** + **"Send us the new details"** +
 **"— your trade pricing stays while we check them."** Then the history outline (§18.6).
@@ -1494,7 +1504,8 @@ Sage outcome block, CheckCircle, 3px inset spine — Phase 1's "this went well" 
 > anywhere on the site are already your prices."**
 > **"Anything already with us for review will be priced by our team."**
 
-Then read-only Business / ABN / (label, when stated) rows, then **"Start a quote"** (sage) and
+Then read-only Business and ABN rows — the two facts the account now holds — then
+**"Start a quote"** (sage) and
 **"Go to my account"** (ghost).
 
 **One structure at both widths** (revision 2, ui-designer finding 3): desktop and mobile render
@@ -1535,7 +1546,8 @@ between required groups would read as another demand.
 | Field | label **"ABN (optional)"**, placeholder **"00 000 000 000"**, `inputMode="numeric"` |
 | Paired field (renders only while the ABN field is non-empty) | label **"Business name"**, placeholder **"ABC Constructions"**, helper **"Needed with an ABN."** |
 
-**No builder/tradie control exists on this screen** (AC-P2-15). **The whole group is absent —
+**No builder/tradie control exists here or anywhere else** (AC-P2-15 as restated by P2-D5).
+**The whole group is absent —
 not disabled — when the account is verified or has an application pending** (AC-P2-19).
 
 ### 18.5.1 Enablement and the caption
@@ -1611,7 +1623,7 @@ the figure, attention treatment when non-zero and plain when zero. The tile open
 
 Lives in **Customers**, as a tab above the customer list: **"Trade applications"** with the count
 as a chip, beside **"All customers"**. Table columns, in order: **Applicant** (name over email) ·
-**Business** (name over builder/tradie, or **"Not stated"**) · **ABN** (formatted, tabular) ·
+**Business** (name) · **ABN** (formatted, tabular) ·
 **Why it queued** (one chip per reason) · **From** (**"Trade page"** / **"Account page"** /
 **"Submit gate"**) · **Applied** (date) · Open.
 
@@ -1630,8 +1642,9 @@ Three stacked cards: **applicant + submission**, **what the register said**, **d
 
 - Header: business name (h3), applicant name · email · **"Open customer record"** link, pill
   **"Awaiting decision"**.
-- Submission rows: **"Submitted ABN"**, **"Submitted name"**, **"Builder / tradie"** (value or
-  **"Not stated"**), **"Applied from"** (source + date/time).
+- Submission rows: **"Submitted ABN"**, **"Submitted name"**, **"Applied from"** (source +
+  date/time). Every application carries the same two facts whichever door it came through, so
+  there is no per-source variation and no "not stated" row.
 - Evidence card label: **"What the register said · checked {date, time}"**; rows **"Entity
   name"**, **"Entity status"** (e.g. **"Active since 1 Jul 2014"**), **"Entity type"**, **"Trading
   names"** (· separated). When the lookup failed: a single row **"Register unavailable at the
@@ -1695,9 +1708,6 @@ Phase 1 §16.9 applies unchanged. Additions:
   focus moves to the panel heading (`tabIndex={-1}`), and the panel sits in an
   `aria-live="polite"` region so a screen reader announces the outcome. This is the only thing
   that changed on the page and it must not be missed.
-- **The builder/tradie control is a real radio group** — `role="radiogroup"` with a `legend`,
-  arrow keys move between the two options, neither is pre-selected, and it is skippable by Tab.
-  Never a segmented button set built from `div`s.
 - **The paired business-name field at the gate**, when it appears, does **not** steal focus —
   the customer is still typing the ABN. It is announced by the caption change (already an
   `aria-live` region in Phase 1) and by the field's own label when reached.
@@ -1737,12 +1747,12 @@ Phase 1 §16.9 applies unchanged. Additions:
 | `P2-UX-1` | The gate's caption entry for a malformed ABN reads "ABN", reusing Phase 1's "Still needed:" sentence rather than introducing a second caption idiom | §18.5.1 |
 | `P2-UX-2` | The optional business group sits **last** in the details stage, after delivery | §18.5 |
 | ~~`P2-UX-3`~~ | ~~On `/trade-account` the business fields come **before** the email/OTP step~~ — **STRUCK by the owner, 2026-08-19** (revision 3): one universal flow, the optional group inside it, the fork after it | §18.2 |
-| `P2-UX-4` | The builder/tradie control has **no pre-selected option** and is genuinely optional; skipping it is never called out | §18.2.3 |
+| ~~`P2-UX-4`~~ | ~~The builder/tradie control has no pre-selected option…~~ — **moot: the control is REMOVED by owner ruling P2-D5, 2026-08-19** | — |
 | `P2-UX-5` | The four emails carry **no greeting line** (null-name safety); `{business}` is the only body variable | §18.8 |
 | `P2-UX-6` | Rejected and revoked states use **mute** tone, not attention/danger — a private account is not an error state | §18.3.5 |
 | `P2-UX-7` | The ops queue is a **tab** inside Customers (exercising P2-A9's placement latitude), with the count as a dashboard tile | §18.7.1-2 |
 | `P2-UX-8` | Wording of the ops evidence labels ("What the register said", "The three checks") — staff-facing, tunable without a gate | §18.7.3 |
-| `P2-UX-9` | The verified card keeps **business name read-only** (design `P2-ARCH-5`) while the builder/tradie label stays editable | §18.3.2 |
+| `P2-UX-9` | The verified card keeps **business name read-only** (design `P2-ARCH-5`); the ABN is read-only there too | §18.3.2 |
 | `P2-UX-10` | **Orchestrator's decision, not the owner's — flagged for veto.** On `/trade-account` the optional group renders **already revealed**; everywhere else it stays collapsed until relevant. Same component, same flow, same copy — only the initial disclosure differs by entry point | §18.2.1 |
 
 ## 18.13 What must not appear (assert, don't assume)
@@ -1751,7 +1761,8 @@ Playwright absence assertions, not review items:
 
 1. No `%` and no derivable figure pair on `/trade-account`, the account page, the gate, the
    confirmation screen, or any rendered email (AC-P2-47).
-2. No builder/tradie control anywhere inside the submit gate (AC-P2-15).
+2. No builder/tradie control, radio, select or label on **any** surface — customer or ops —
+   and no rendered text offering the choice (AC-P2-15 as restated by P2-D5).
 3. No ABN field at the gate for a verified or pending account (AC-P2-19).
 4. No referral-code input on anything this phase adds (AC-P2-57).
 5. No queue reason, criterion name, or other-ABN-holder reference in any customer-facing

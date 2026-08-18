@@ -431,14 +431,9 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
 .outcome.mute{border-color:var(--tone-mute-bd);background:var(--tone-mute-bg);box-shadow:inset 3px 0 0 var(--quiet)}
 .outcome.mute > svg{color:var(--quiet)}
 .outcome.mute h4{color:var(--ink-soft)}
-/* Builder/tradie self-declaration. Segmented, two options, neither pre-selected:
-   it is self-declared, so nothing may guess it. */
-.seg{display:flex;gap:0}
-.seg > label{flex:1;border:1px solid var(--line-strong);padding:9px 12px;display:flex;align-items:center;gap:8px;color:var(--ink);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);background:var(--control-fill,var(--paper))}
-.seg > label + label{margin-left:-1px}
-.seg > label.on{border-color:var(--sage);background:var(--sage-veil);color:var(--sage-ink);font-weight:500}
-.dot{width:14px;height:14px;flex:none;border:1px solid var(--line-strong);border-radius:50%}
-.seg > label.on .dot{border-color:var(--sage);box-shadow:inset 0 0 0 3px var(--paper),inset 0 0 0 8px var(--sage)}
+/* A segmented builder/tradie control lived here until P2-D5 ("builder vs
+   tradie - no difference") removed the question itself. Rules deleted, not left
+   dead: the optional business group is two fields, ABN and business name. */
 /* History outline — date + outcome, nothing else (AC-P2-13). */
 .histrow{display:flex;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid rgba(0,0,0,.06);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);color:var(--body)}
 .histrow:last-child{border-bottom:0}
@@ -462,8 +457,8 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
 .crit .mk.p{color:var(--tone-pos);border-color:var(--tone-pos-bd);background:var(--tone-pos-bg)}
 .crit .mk.f{color:var(--tone-attn);border-color:var(--tone-attn-bd);background:var(--tone-attn-bg)}
 .crit .mk.u{color:var(--tone-mute);border-color:var(--tone-mute-bd);background:var(--tone-mute-bg)}
-/* The queue's secondary line — the applicant's email under their name, the
-   builder/tradie label under the business. The markup asked for `block` and
+/* The queue's secondary line — the applicant's email under their name. The
+   markup asked for `block` and
    nothing defined it, so every one of them ran on to the end of the line above
    and the two-line cell the table was designed around never appeared. */
 .block{display:block}
@@ -611,14 +606,6 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
                       <input class="field mono" id="a1-abn" placeholder="00 000 000 000" inputmode="numeric">
                       <p class="helptext">11 digits. Spaces are fine.</p>
                     </div>
-                    <div>
-                      <span class="field-label">Builder or tradie?</span>
-                      <div class="seg">
-                        <label><span class="dot"></span>Builder</label>
-                        <label><span class="dot"></span>Tradie</label>
-                      </div>
-                      <p class="helptext">Optional. It just tells us who we're working with.</p>
-                    </div>
                   </div>
                 </div>
 
@@ -652,7 +639,6 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
                 <div class="col g12">
                   <div><label class="field-label" for="a1m-bn">Business name</label><input class="field" id="a1m-bn" placeholder="ABC Constructions"></div>
                   <div><label class="field-label" for="a1m-abn">ABN</label><input class="field mono" id="a1m-abn" placeholder="00 000 000 000" inputmode="numeric"><p class="helptext">11 digits. Spaces are fine.</p></div>
-                  <div><span class="field-label">Builder or tradie?</span><div class="seg"><label><span class="dot"></span>Builder</label><label><span class="dot"></span>Tradie</label></div><p class="helptext">Optional.</p></div>
                 </div>
               </div>
               <div class="grouprule">
@@ -798,7 +784,6 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
             <div class="col g8 mb16">
               <div class="readonly"><span class="t-cap c-quiet">Business</span><span>Buildright Constructions</span></div>
               <div class="readonly"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
-              <div class="readonly"><span class="t-cap c-quiet">You are a</span><span>Tradie</span></div>
             </div>
             <div class="row g12">
               <span class="btn btn-md b-sage">Start a quote <svg class="ic" aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
@@ -960,7 +945,6 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
                 <div class="col g12">
                   <div><label class="field-label" for="b1-bn">Business name</label><input class="field" id="b1-bn" placeholder="ABC Constructions"></div>
                   <div><label class="field-label" for="b1-abn">ABN</label><input class="field mono" id="b1-abn" placeholder="00 000 000 000" inputmode="numeric"><p class="helptext">11 digits. Spaces are fine.</p></div>
-                  <div><span class="field-label">Builder or tradie?</span><div class="seg"><label><span class="dot"></span>Builder</label><label><span class="dot"></span>Tradie</label></div><p class="helptext">Optional.</p></div>
                 </div>
                 <span class="btn btn-md b-sage mt16" style="width:100%;justify-content:center">Apply for trade pricing</span>
               </div>
@@ -988,7 +972,6 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
               <div class="col g12">
                 <div><label class="field-label" for="b1m-bn">Business name</label><input class="field" id="b1m-bn" placeholder="ABC Constructions"></div>
                 <div><label class="field-label" for="b1m-abn">ABN</label><input class="field mono" id="b1m-abn" placeholder="00 000 000 000" inputmode="numeric"></div>
-                <div><span class="field-label">Builder or tradie?</span><div class="seg"><label><span class="dot"></span>Builder</label><label><span class="dot"></span>Tradie</label></div></div>
               </div>
               <span class="btn btn-md b-sage mt16" style="width:100%;justify-content:center">Apply for trade pricing</span>
             </div>
@@ -1032,7 +1015,6 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
               <div class="readonly"><span class="t-cap c-quiet">Business</span><span>Buildright Constructions</span></div>
               <div class="readonly"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
             </div>
-            <div class="mb12"><span class="field-label">Builder or tradie?</span><div class="seg"><label><span class="dot"></span>Builder</label><label class="on"><span class="dot"></span>Tradie</label></div></div>
             <p class="t-cap c-body">Changed ABN or trading name? <span class="linkbtn">Send us the new details</span> — your trade pricing stays while we check them.</p>
             <div class="grouprule">
               <p class="t-label c-quiet mb8">History</p>
@@ -1131,7 +1113,7 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
   <div class="shead">
     <div class="n">Surface 4 · Door (c) — the optional field</div>
     <h2>The submit gate gains one optional question, and no third stage</h2>
-    <p>Inside Phase 1's existing details stage, below everything required, sits an optional ABN. Empty, it changes nothing at all: same one press, same caption, same Phase 1 screen. Filled, it never delays the submission — the quote goes, and the checking happens after. <b>There is no builder/tradie control here</b> (owner ruling Q5).</p>
+    <p>Inside Phase 1's existing details stage, below everything required, sits an optional ABN. Empty, it changes nothing at all: same one press, same caption, same Phase 1 screen. Filled, it never delays the submission — the quote goes, and the checking happens after. <b>The group is exactly two fields — ABN and business name</b> (P2-D5).</p>
     <div class="path">src/components/QuoteReviewSubmit.tsx · details stage · rendered only when the account is neither verified nor pending (AC-P2-19)</div>
   </div>
 
@@ -1361,7 +1343,7 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
                   <tbody>
                     <tr>
                       <td><span class="md">Sam Taylor</span><span class="block c-body t-cap">sam@gmail.com</span></td>
-                      <td>Buildright Constructions<span class="block c-body t-cap">Tradie</span></td>
+                      <td>Buildright Constructions</td>
                       <td class="fdata nw">51 824 753 556</td>
                       <td><span class="chip ch-warn">Free-mail address</span></td>
                       <td class="c-body nw">Trade page</td>
@@ -1370,7 +1352,7 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
                     </tr>
                     <tr>
                       <td><span class="md">Dani Okafor</span><span class="block c-body t-cap">dani@okaforglazing.com.au</span></td>
-                      <td>Okafor Glazing Group<span class="block c-body t-cap">Builder</span></td>
+                      <td>Okafor Glazing Group</td>
                       <td class="fdata nw">29 002 589 460</td>
                       <td><span class="chip ch-warn">Name doesn't match</span> <span class="chip ch-info">Also verified elsewhere</span></td>
                       <td class="c-body nw">Account page</td>
@@ -1379,7 +1361,7 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
                     </tr>
                     <tr>
                       <td><span class="md">Chris Nguyen</span><span class="block c-body t-cap">chris@nguyenwindows.com.au</span></td>
-                      <td>Nguyen Windows<span class="block c-body t-cap">Not stated</span></td>
+                      <td>Nguyen Windows</td>
                       <td class="fdata nw">12 345 678 901</td>
                       <td><span class="chip ch-mute">Register unavailable</span></td>
                       <td class="c-body nw">Submit gate</td>
@@ -1406,7 +1388,7 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
     </div>
     <div class="note">
       <b>Reasons in the list, evidence in the detail</b>
-      <p>Every reason an application queued is shown as its own chip, because a decision often turns on the combination ("name mismatch <em>and</em> already verified elsewhere" is a different call from either alone). "Not stated" is what a gate-originated application shows for builder/tradie — the gate never asks (Q5), and the absence is stated rather than shown as an empty cell.</p>
+      <p>Every reason an application queued is shown as its own chip, because a decision often turns on the combination ("name mismatch <em>and</em> already verified elsewhere" is a different call from either alone). Every application carries the same two facts — ABN and business name — whichever door it came through, so the column needs no per-source variation.</p>
     </div>
   </div>
 
@@ -1428,7 +1410,6 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
             </div>
             <div class="evid"><span class="k">Submitted ABN</span><span class="v fdata">29 002 589 460</span></div>
             <div class="evid"><span class="k">Submitted name</span><span class="v">Okafor Glazing Group</span></div>
-            <div class="evid"><span class="k">Builder / tradie</span><span class="v">Builder (self-declared)</span></div>
             <div class="evid"><span class="k">Applied from</span><span class="v">Account page · 19 Aug 2026, 9:14am</span></div>
           </div>
 
@@ -1482,7 +1463,7 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
               <div><p class="t-hd3" style="color:var(--ops)">Sam Taylor</p><p class="t-bd-sm c-body">sam@buildright.com.au · 0412 345 678</p></div>
               <span class="pill p-pos"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Trade · Active</span>
             </div>
-            <div class="evid"><span class="k">Business</span><span class="v">Buildright Constructions · Tradie</span></div>
+            <div class="evid"><span class="k">Business</span><span class="v">Buildright Constructions</span></div>
             <div class="evid"><span class="k">ABN</span><span class="v fdata">51 824 753 556</span></div>
             <div class="evid"><span class="k">Trade since</span><span class="v">2 Aug 2026 · approved automatically</span></div>
             <div class="evid"><span class="k">Account rate</span><span class="v fdata">5%</span></div>
@@ -1623,7 +1604,7 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
       <div><h4>No percentage, anywhere customer-facing</h4><p>Not on the trade page, the account card, the gate, the confirmation, or any of the four emails — and no pair of figures from which one could be derived by subtraction. The ops console is the single exception and is not a customer surface.</p></div>
       <div><h4>No timeframe</h4><p>No "1 business day", no "usually", no date, no progress bar implying elapsed time. Not in UI, not in email.</p></div>
       <div><h4>No named criterion</h4><p>No screen or email tells the customer which of the checks needed a human. The two customer-facing outcomes are byte-identical across every queue reason.</p></div>
-      <div><h4>No builder/tradie control at the submit gate</h4><p>The gate asks for ABN and business name only. The label is asked on the trade page and the account page, and reads "Not stated" for ops.</p></div>
+      <div><h4>No second signup form</h4><p><code>/trade-account</code>, <code>/login</code> and the submit gate mount the same sign-in component and the same details step. The trade page renders no email, code or name field of its own.</p></div>
       <div><h4>No referral-code field</h4><p>Nothing this phase adds carries one, and no endpoint it adds accepts one.</p></div>
       <div><h4>No repricing promise</h4><p>Nothing says a submitted quote will be updated. Ops prices a reviewed quote at the account's current rate; nothing recalculates on its own.</p></div>
     </div>
