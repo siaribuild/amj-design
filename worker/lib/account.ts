@@ -45,7 +45,7 @@ const DETAIL_KEYS: readonly DetailField[] = [
 
 export type AccountUpdateResult =
   | { ok: true; user: UserRow }
-  | { ok: false; error: "invalid_fields"; fields: (DetailField | "tradeLabel")[] }
+  | { ok: false; error: "invalid_fields"; fields: DetailField[] }
   /** Registration Phase 2, P2-A4: this account's ABN is verified or under
    *  review, and this path — the payout writer — may not change it. */
   | { ok: false; error: "abn_locked" };
@@ -59,20 +59,7 @@ export async function updateAccountDetails(
   for (const field of DETAIL_KEYS) {
     if (patch[field] !== undefined) supplied[field] = String(patch[field]);
   }
-  const fields: (DetailField | "tradeLabel")[] = detailsPatchProblems(supplied);
-
-  // The self-declared builder/tradie label (owner ruling Q5 wants it editable
-  // from the profile page). Deliberately NOT in src/data/accountDetails:
-  // `submitMissing` must never demand it, because it gates nothing (D7) and a
-  // quote submission must not start asking for it. Empty clears it; anything
-  // outside the two values is refused by name rather than silently coerced.
-  let tradeLabel: string | null | undefined;
-  if (patch.tradeLabel !== undefined) {
-    const value = String(patch.tradeLabel).trim().toLowerCase();
-    if (!value) tradeLabel = null;
-    else if (value === "builder" || value === "tradie") tradeLabel = value;
-    else fields.push("tradeLabel");
-  }
+  const fields = detailsPatchProblems(supplied);
   if (fields.length) return { ok: false, error: "invalid_fields", fields };
 
   const value = (field: DetailField, current: string | null): string | null => {
@@ -100,8 +87,7 @@ export async function updateAccountDetails(
 
   await env.DB.prepare(
     `UPDATE user SET name = ?, phone = ?, company = ?, abn = ?, price_gst_mode = ?,
-        address_line1 = ?, address_line2 = ?, address_suburb = ?, address_state = ?, address_postcode = ?,
-        trade_label = ?
+        address_line1 = ?, address_line2 = ?, address_suburb = ?, address_state = ?, address_postcode = ?
       WHERE id = ?`,
   ).bind(
     value("name", user.name), value("phone", user.phone),
@@ -109,7 +95,6 @@ export async function updateAccountDetails(
     value("addressLine1", user.address_line1), value("addressLine2", user.address_line2),
     value("addressSuburb", user.address_suburb), value("addressState", user.address_state),
     value("addressPostcode", user.address_postcode),
-    tradeLabel === undefined ? user.trade_label : tradeLabel,
     user.id,
   ).run();
 

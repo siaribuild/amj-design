@@ -11,7 +11,7 @@ import {
 } from "../lib/auth";
 import { sourceIp } from "../lib/captcha";
 import { notify } from "../lib/email";
-import { findOrCreateInternalUser, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
+import { findOrCreateInternalUser, hasAssignedRole, isStaffEmail, resolveOpsUser, resolveStaff } from "../lib/staff";
 import { drainLearningOutbox, issueQuote, ISSUABLE_FROM } from "../lib/issue";
 import {
   deliveryCost, loadProjectAreaM2, loadZonesAndRanges, normalisePostcode, resolveZone, zoneIsPriced,
@@ -98,7 +98,11 @@ const safeParse = (s: string): Record<string, any> => {
 // refused. Every `isStaffUser` gate below therefore excludes them.
 const isManufacturer = (staff: { role: string | null } | null) => staff?.role === "manufacturer";
 const isStaffUser = (staff: { role: string | null } | null) => !!staff && !isManufacturer(staff);
-const hasAssignedRole = isStaffUser;
+// hasAssignedRole now lives in worker/lib/staff.ts — the Phase-2 trade queue
+// asks the same question about the same customer PII, and one rule with two
+// spellings is how they come to disagree. The aliases below stay local: they
+// name CAPABILITIES that happen to coincide with staff-ness today, and folding
+// them into one import would erase distinctions a real role model will need.
 const canRecordPayment = isStaffUser;
 const canManageLearning = isStaffUser;
 const canIssueQuote = isStaffUser;
@@ -1426,7 +1430,7 @@ ops.get("/customers", async (c) => {
   if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const { results } = await c.env.DB.prepare(`
     SELECT u.id, u.name, u.email, u.phone, u.company, u.abn, u.created_at,
-           u.discount_percent, u.trade_label,
+           u.discount_percent,
            -- Trade-ness is DERIVED, never stored (ADR-0002): "verified" is
            -- "holds a standing grant", and this EXISTS is the SQL spelling of
            -- the same sentence tradeStateOf reads in TypeScript.
@@ -1451,8 +1455,8 @@ ops.get("/customers", async (c) => {
   // read. Read-only — this phase deliberately ships no editor for the rate.
   return c.json({
     customers: results.map((row) => {
-      const { trade_verified: verified, discount_percent: rate, trade_label: label, ...rest } = row;
-      return { ...rest, tradeVerified: !!Number(verified), tradeLabel: label ?? null, discountPercent: Number(rate ?? 0) };
+      const { trade_verified: verified, discount_percent: rate, ...rest } = row;
+      return { ...rest, tradeVerified: !!Number(verified), discountPercent: Number(rate ?? 0) };
     }),
   });
 });
@@ -1527,7 +1531,6 @@ ops.get("/customers/:id", async (c) => {
       id: u.id, name: u.name, email: u.email, phone: u.phone,
       company: u.company, abn: u.abn, createdAt: u.created_at,
       discountPercent: Number(u.discount_percent ?? 0),
-      tradeLabel: u.trade_label ?? null,
       trade: { verified: trade.verified, verifiedSince: trade.verifiedSince, provenance: trade.provenance },
     },
     tradeHistory,

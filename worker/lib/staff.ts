@@ -138,6 +138,18 @@ export async function resolveOpsUser(env: Env, req: Request): Promise<UserRow | 
   return resolveInternalUser(env, req);
 }
 
+/** Does this ops user hold a role that may see customer data?
+ *
+ *  ONE home for the predicate `worker/routes/ops.ts` has used inline since the
+ *  console's customer list existed: everyone internal EXCEPT a manufacturer
+ *  partner. Exported here because the Phase-2 trade queue carries the same
+ *  customer PII and asks exactly the same question — two spellings of one rule
+ *  is how they come to disagree, and the disagreement would be silent.
+ *
+ *  Not admin-only, deliberately (owner ruling Q4). */
+export const hasAssignedRole = (user: { role: string | null } | null): boolean =>
+  !!user && user.role !== "manufacturer";
+
 /** The acting STAFF member, or null. A manufacturer partner is authenticated but
  *  is not staff, and is refused here. */
 export async function resolveStaff(env: Env, req: Request): Promise<UserRow | null> {

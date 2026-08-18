@@ -20,7 +20,7 @@ export const trade = new Hono<{ Bindings: Env }>();
 
 const SOURCES: readonly TradeSource[] = ["trade_page", "profile", "submit_gate"];
 
-// POST /api/trade/application { abn, businessName, label?, source? }
+// POST /api/trade/application { abn, businessName, source? }
 //
 // The ABN travels in the BODY of a POST — never a query string or a path
 // segment, where a referrer or a browser history would carry it (AB-P2-16).
@@ -41,7 +41,7 @@ trade.post("/application", async (c) => {
   const source = SOURCES.includes(body?.source as TradeSource) ? body.source as TradeSource : "profile";
 
   const result = await applyForTrade(c.env, user, {
-    abn: body?.abn, businessName: body?.businessName, label: body?.label,
+    abn: body?.abn, businessName: body?.businessName,
     source, ip: sourceIp(c.req.raw),
   });
 

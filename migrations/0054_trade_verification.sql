@@ -5,16 +5,16 @@
 -- Design: docs/specs/user-registration-phase-2-design.md §3.
 -- ADR: docs/adr/0002-trade-status-derived-from-application-ledger.md
 --
--- Additive + targeted UPDATE only: one CREATE TABLE, three CREATE INDEX, one
--- ALTER TABLE ADD COLUMN, two UPDATE user, three INSERT ... SELECT.
+-- Additive + targeted UPDATE only: one CREATE TABLE, three CREATE INDEX,
+-- two UPDATE user, three INSERT ... SELECT. No ALTER TABLE at all.
 -- NO table rebuild, NO DROP, NO default change. In particular migration 0032's
 -- `DEFAULT 5` on user.discount_percent stays untouched dead weight: altering a
 -- column default in SQLite means rebuilding `user`, and a rebuild in THIS
 -- database has already fired ON DELETE CASCADE and destroyed production rows
 -- (handover §4.7, AC-P2-52).
 --
--- children affected: none expected (additive CREATE TABLE / ADD COLUMN / UPDATE /
--- INSERT only; membership.user_id (migrations/0001:42) and ai_daily_usage.user_id
+-- children affected: none expected (additive CREATE TABLE / UPDATE / INSERT
+-- only; membership.user_id (migrations/0001:42) and ai_daily_usage.user_id
 -- (migrations/0023:24) are user's ON DELETE CASCADE children, and nothing here
 -- drops or rebuilds user, so no cascade can fire). Row counts for user,
 -- membership, project, quote_line, payout and "order" are unchanged by this file
@@ -23,8 +23,12 @@
 -- ── The trade-verification ledger ───────────────────────────────────────────
 -- One row per application attempt. The frozen-copy pattern a Payout already uses
 -- (CONTEXT.md): the ACCOUNT row holds the live fact (user.abn, user.company,
--- user.trade_label, user.discount_percent); THIS table holds what was submitted
--- and what the ABR said at that moment.
+-- user.discount_percent); THIS table holds what was submitted and what the ABR
+-- said at that moment.
+--
+-- There is no builder/tradie column. The owner ruled on 2026-08-19 that the two
+-- are no different in anything this system does (P2-D5, superseding D7), so the
+-- distinction is not stored rather than stored and ignored.
 --
 -- There is deliberately NO trade-status column on `user`. "Currently verified"
 -- IS "has a standing grant row here" — ADR-0002 records why a stored enum is
@@ -42,7 +46,6 @@ CREATE TABLE trade_application (
   -- fill this column (AC-P2-51 / E-P2-9).
   abn             TEXT,
   business_name   TEXT,
-  trade_label     TEXT,                                -- 'builder' | 'tradie' | NULL (not stated)
   source          TEXT NOT NULL DEFAULT 'profile',     -- 'trade_page' | 'profile' | 'submit_gate' | 'migration'
   -- Decision state.
   status          TEXT NOT NULL DEFAULT 'pending',     -- 'pending' | 'approved' | 'rejected'
@@ -76,11 +79,6 @@ CREATE UNIQUE INDEX trade_application_one_standing
 -- state unrepresentable.
 CREATE INDEX trade_application_abn ON trade_application(abn) WHERE abn IS NOT NULL;
 
--- The self-declared builder/tradie label (D7). It lives on `user` because it is a
--- live account fact ops reads and the account holder edits later on the profile
--- page (owner ruling Q5). It gates nothing.
-ALTER TABLE user ADD COLUMN trade_label TEXT;
-
 -- ── Staff pinning (AC-P2-50) ────────────────────────────────────────────────
 -- Staff never carry a customer discount. Phase 1 fixed the two creation INSERTs
 -- only; the rows that existed before it are still on migration 0032's default.
@@ -109,33 +107,33 @@ UPDATE user SET discount_percent = 5
 -- individually, and so an address absent from a local/dev database simply
 -- inserts nothing. The ABN is copied normalised WHERE PRESENT and never invented.
 INSERT INTO trade_application
-  (id, user_id, abn, business_name, trade_label, source, status,
+  (id, user_id, abn, business_name, source, status,
    decided_via, decided_at, decision_reason, created_at)
 SELECT lower(hex(randomblob(16))), id,
        CASE WHEN abn IS NULL OR replace(abn,' ','') = '' THEN NULL ELSE replace(abn,' ','') END,
-       company, NULL, 'migration', 'approved',
+       company, 'migration', 'approved',
        'grandfathered', datetime('now'),
        'Grandfathered by owner decision (grill D4, 2026-08-19); not verified against ABR.',
        datetime('now')
 FROM user WHERE type = 'customer' AND email = 'gediminas.bereznevicius@gmail.com';
 
 INSERT INTO trade_application
-  (id, user_id, abn, business_name, trade_label, source, status,
+  (id, user_id, abn, business_name, source, status,
    decided_via, decided_at, decision_reason, created_at)
 SELECT lower(hex(randomblob(16))), id,
        CASE WHEN abn IS NULL OR replace(abn,' ','') = '' THEN NULL ELSE replace(abn,' ','') END,
-       company, NULL, 'migration', 'approved',
+       company, 'migration', 'approved',
        'grandfathered', datetime('now'),
        'Grandfathered by owner decision (grill D4, 2026-08-19); not verified against ABR.',
        datetime('now')
 FROM user WHERE type = 'customer' AND email = 'sarah@northsidebuild.com.au';
 
 INSERT INTO trade_application
-  (id, user_id, abn, business_name, trade_label, source, status,
+  (id, user_id, abn, business_name, source, status,
    decided_via, decided_at, decision_reason, created_at)
 SELECT lower(hex(randomblob(16))), id,
        CASE WHEN abn IS NULL OR replace(abn,' ','') = '' THEN NULL ELSE replace(abn,' ','') END,
-       company, NULL, 'migration', 'approved',
+       company, 'migration', 'approved',
        'grandfathered', datetime('now'),
        'Grandfathered by owner decision (grill D4, 2026-08-19); not verified against ABR.',
        datetime('now')

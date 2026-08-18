@@ -6,7 +6,7 @@
 // never quietly become the way around a gate.
 //
 // Trade-ness is DERIVED, never stored (ADR-0002). The account row holds the live
-// facts — abn, company, trade_label, discount_percent — and `trade_application`
+// facts — abn, company, discount_percent — and `trade_application`
 // holds every verification fact. "Currently verified" is "has a standing grant
 // row", which is why a verified account can also have an application pending
 // (E-P2-6) and why an ops edit to `user.abn` can never mint a verified ABN.
@@ -54,21 +54,23 @@ export const TRADE_EMAILS = {
   trade_ack: {
     eventType: "trade.application.queued",
     subject: "We're checking your trade account details",
-    body: (vars: { name?: string | null; business?: string | null }) =>
+    body: (vars: { business?: string | null }) =>
       `Thanks — we've got your ABN and business details for ${vars.business || "your business"}. `
       + "We're checking them and we'll be in touch. Your account works as normal in the meantime.",
   },
   trade_approved: {
     eventType: "trade.application.approved",
     subject: "Your trade account is active",
-    body: (_vars: { name?: string | null; business?: string | null }) =>
-      "Your trade account is active. Trade pricing applies to your account from now on. "
+    body: (_vars: { business?: string | null }) =>
+      "Your trade account is active.\n\n"
+      + "Trade pricing applies from now on — when you're signed in, the prices you see are "
+      + "already your prices.\n\n"
       + "Anything already with us for review will be priced by our team.",
   },
   trade_rejected: {
     eventType: "trade.application.rejected",
     subject: "About your trade account application",
-    body: (_vars: { name?: string | null; business?: string | null }) =>
+    body: (_vars: { business?: string | null }) =>
       "We weren't able to set up a trade account from the details you sent. Your account still "
       + "works exactly as before — you can price jobs, submit them and track them — and you're "
       + "welcome to apply again with updated details, or reply to this email and we'll help.",
@@ -76,7 +78,7 @@ export const TRADE_EMAILS = {
   trade_revoked: {
     eventType: "trade.revoked",
     subject: "A change to your trade account",
-    body: (_vars: { name?: string | null; business?: string | null }) =>
+    body: (_vars: { business?: string | null }) =>
       "Trade pricing no longer applies to your account, so the prices you see from now on are our "
       + "standard prices. If you think that's a mistake, reply to this email and we'll sort it out.",
   },
@@ -91,17 +93,18 @@ export type TradeEmailKey = keyof typeof TRADE_EMAILS;
  *  is a thing to chase, not a reason to un-verify somebody. */
 async function sendTradeEmail(
   env: Env, key: TradeEmailKey, recipient: string,
-  vars: { name?: string | null; business?: string | null },
+  vars: { business?: string | null },
 ): Promise<void> {
   const template = TRADE_EMAILS[key];
   await notify(env, {
     recipient,
     eventType: template.eventType,
     templateKey: key,
-    // Passed for the AUTHORED template to substitute. applyPlaceholders
-    // collapses a provided null to "", so an authored template must not lead
-    // with a bare "Hi [name]," — noted for the Sanity authoring task.
-    vars: { name: vars.name ?? "", business: vars.business ?? "" },
+    // `business` is the ONLY variable, and it is passed only where a business
+    // name is guaranteed. There is deliberately no `name`: applyPlaceholders
+    // collapses a provided null to "", and an account whose holder never typed
+    // a name would have been greeted "Hi ," (owner ruling, 2026-08-19).
+    vars: { business: vars.business ?? "" },
     email: { to: recipient, subject: template.subject, text: template.body(vars), templateKey: key },
   });
 }
@@ -114,7 +117,7 @@ export type ApplyResult =
   | { ok: true; status: "verified" | "under_review" }
   | {
       ok: false;
-      error: "invalid_abn" | "invalid_business_name" | "invalid_label"
+      error: "invalid_abn" | "invalid_business_name"
            | "forbidden" | "application_pending" | "rate_limited";
     };
 
@@ -125,7 +128,6 @@ interface ApplicationRow {
   user_id: string;
   abn: string | null;
   business_name: string | null;
-  trade_label: string | null;
   status: string;
   decided_via: string | null;
   decided_at: string | null;
@@ -160,7 +162,6 @@ export interface TradeState {
   verified: boolean;
   verifiedSince: string | null;
   provenance: "auto" | "ops" | "grandfathered" | null;
-  label: "builder" | "tradie" | null;
   abn: string | null;
   pending: { abn: string; businessName: string; createdAt: string } | null;
   /** Outline only — date and outcome (AC-P2-13). No reason, no actor, no ABN. */
@@ -188,13 +189,11 @@ export async function tradeStateOf(env: Env, user: UserRow): Promise<TradeState>
   }
   history.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 
-  const label = user.trade_label === "builder" || user.trade_label === "tradie" ? user.trade_label : null;
   const via = standing?.decided_via;
   return {
     verified: !!standing,
     verifiedSince: standing?.decided_at ?? null,
     provenance: via === "auto" || via === "ops" || via === "grandfathered" ? via : null,
-    label,
     abn: user.abn ?? null,
     pending: pending
       ? { abn: pending.abn ?? "", businessName: pending.business_name ?? "", createdAt: pending.created_at ?? "" }
@@ -209,7 +208,6 @@ export interface OpsTradeApplication {
   applicant: { id: string; name: string | null; email: string };
   abn: string | null;
   businessName: string | null;
-  label: string | null;
   source: string;
   queueReasons: string[];
   abrSnapshot: unknown;
@@ -227,7 +225,7 @@ export interface OpsTradeApplication {
  *  a research task: the frozen ABR evidence and every reason it queued. */
 export async function pendingApplications(env: Env): Promise<OpsTradeApplication[]> {
   const rows = await env.DB.prepare(
-    `SELECT t.id, t.user_id, t.abn, t.business_name, t.trade_label, t.source,
+    `SELECT t.id, t.user_id, t.abn, t.business_name, t.source,
             t.queue_reasons, t.abr_snapshot, t.created_at,
             u.name AS applicant_name, u.email AS applicant_email
        FROM trade_application t JOIN user u ON u.id = t.user_id
@@ -235,7 +233,7 @@ export async function pendingApplications(env: Env): Promise<OpsTradeApplication
       ORDER BY t.created_at`,
   ).all<{
     id: string; user_id: string; abn: string | null; business_name: string | null;
-    trade_label: string | null; source: string; queue_reasons: string | null;
+    source: string; queue_reasons: string | null;
     abr_snapshot: string | null; created_at: string | null;
     applicant_name: string | null; applicant_email: string;
   }>();
@@ -272,7 +270,6 @@ export async function pendingApplications(env: Env): Promise<OpsTradeApplication
     applicant: { id: row.user_id, name: row.applicant_name, email: row.applicant_email },
     abn: row.abn,
     businessName: row.business_name,
-    label: row.trade_label,
     source: row.source,
     queueReasons: parse<string[]>(row.queue_reasons, []),
     abrSnapshot: parse<unknown>(row.abr_snapshot, null),
@@ -372,7 +369,7 @@ export async function abnWriteAllowed(env: Env, user: UserRow, digits: string): 
  *  costs no ABR call and no rate-limit spend, and the caps are spent before any
  *  ABR call rather than after one. */
 export async function applyForTrade(env: Env, user: UserRow, input: {
-  abn: unknown; businessName: unknown; label?: unknown;
+  abn: unknown; businessName: unknown;
   source: TradeSource; ip: string;
 }): Promise<ApplyResult> {
   // 1. Format and checksum. This is a FIELD ERROR, exactly like a malformed
@@ -386,12 +383,6 @@ export async function applyForTrade(env: Env, user: UserRow, input: {
   const rawName = typeof input.businessName === "string" ? input.businessName : "";
   const businessName = rawName.trim();
   if (!businessName || businessName.length > MAX_BUSINESS_NAME) return { ok: false, error: "invalid_business_name" };
-
-  let label: string | null = null;
-  if (input.label !== undefined && input.label !== null && input.label !== "") {
-    if (input.label !== "builder" && input.label !== "tradie") return { ok: false, error: "invalid_label" };
-    label = input.label;
-  }
 
   // 2. Staff-ness. Checked here AND at approval, so no path can grant an
   //    internal account (AB-P2-11).
@@ -454,11 +445,11 @@ export async function applyForTrade(env: Env, user: UserRow, input: {
   const id = uuid();
   const insert = (status: "approved" | "pending") => env.DB.prepare(
     `INSERT INTO trade_application
-       (id, user_id, abn, business_name, trade_label, source, status, queue_reasons, abr_snapshot,
+       (id, user_id, abn, business_name, source, status, queue_reasons, abr_snapshot,
         decided_via, decided_at, created_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'))`,
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now'))`,
   ).bind(
-    id, user.id, abn, businessName, label, input.source, status,
+    id, user.id, abn, businessName, input.source, status,
     JSON.stringify(reasons), JSON.stringify(snapshot),
     status === "approved" ? "auto" : null,
     status === "approved" ? new Date().toISOString().slice(0, 19).replace("T", " ") : null,
@@ -466,18 +457,18 @@ export async function applyForTrade(env: Env, user: UserRow, input: {
 
   try {
     if (reasons.length === 0) {
-      await grant(env, { applicationId: id, applicant: user, abn, businessName, label, insert: insert("approved") });
+      await grant(env, { applicationId: id, applicant: user, abn, businessName, insert: insert("approved") });
       await logEvent(env, {
         actor: "system", entityType: "user", entityId: user.id,
         action: "trade.approved", after: { applicationId: id, via: "auto" },
       });
       // An auto-pass is told it is active and nothing else: the applicant was
       // never under review, so acknowledging a review would be a small lie.
-      await sendTradeEmail(env, "trade_approved", user.email, { name: user.name, business: businessName });
+      await sendTradeEmail(env, "trade_approved", user.email, { business: businessName });
       return { ok: true, status: "verified" };
     }
     await insert("pending").run();
-    await sendTradeEmail(env, "trade_ack", user.email, { name: user.name, business: businessName });
+    await sendTradeEmail(env, "trade_ack", user.email, { business: businessName });
     return { ok: true, status: "under_review" };
   } catch (e) {
     // The partial unique indexes turn a concurrent double-submit into a
@@ -523,7 +514,7 @@ export async function approveApplication(
 
   const changes = await grant(env, {
     applicationId, applicant,
-    abn: application.abn, businessName: application.business_name, label: application.trade_label,
+    abn: application.abn, businessName: application.business_name,
     insert: claim,
   });
   if (!changes) return { ok: false, error: "already_decided" };
@@ -532,8 +523,7 @@ export async function approveApplication(
     actor: actor.id, entityType: "user", entityId: applicant.id,
     action: "trade.approved", after: { applicationId, via: "ops" },
   });
-  await sendTradeEmail(env, "trade_approved", applicant.email,
-    { name: applicant.name, business: application.business_name });
+  await sendTradeEmail(env, "trade_approved", applicant.email, { business: application.business_name });
   return { ok: true };
 }
 
@@ -572,9 +562,9 @@ export async function rejectApplication(
   // The REASON never travels to the customer. A duplicate rejection must not
   // disclose that somebody else holds that ABN (AC-P2-44), and one general body
   // is what keeps that true without a per-reason branch to get wrong.
-  const applicant = await env.DB.prepare("SELECT email, name FROM user WHERE id = ?")
-    .bind(application.user_id).first<{ email: string; name: string | null }>();
-  if (applicant) await sendTradeEmail(env, "trade_rejected", applicant.email, { name: applicant.name });
+  const applicant = await env.DB.prepare("SELECT email FROM user WHERE id = ?")
+    .bind(application.user_id).first<{ email: string }>();
+  if (applicant) await sendTradeEmail(env, "trade_rejected", applicant.email, {});
   return { ok: true };
 }
 
@@ -612,7 +602,7 @@ export async function revokeTrade(
   });
   // Owner ruling Q1: they are told. Their prices are about to change, and a
   // silent revocation reads as a bug.
-  await sendTradeEmail(env, "trade_revoked", customer.email, { name: customer.name });
+  await sendTradeEmail(env, "trade_revoked", customer.email, {});
   return { ok: true };
 }
 
@@ -631,7 +621,6 @@ async function grant(env: Env, opts: {
   applicant: UserRow;
   abn: string | null;
   businessName: string | null;
-  label: string | null;
   insert: D1PreparedStatement;
 }): Promise<number> {
   const prior = await standingGrant(env, opts.applicant.id);
@@ -651,14 +640,13 @@ async function grant(env: Env, opts: {
     claimIndex = 1;
   }
   statements.push(opts.insert);
-  // COALESCE so a gate-originated NULL label never blanks a value the account
-  // holder already stated. `type='customer'` on every write, so no path can put
-  // a trade fact on an internal row (AC-P2-34).
+  // COALESCE so a NULL never blanks a value the account already holds.
+  // `type='customer'` on every write, so no path can put a trade fact on an
+  // internal row (AC-P2-34).
   statements.push(env.DB.prepare(
-    `UPDATE user SET abn = COALESCE(?1, abn), company = COALESCE(?2, company),
-        trade_label = COALESCE(?3, trade_label)
-      WHERE id = ?4 AND type = 'customer'`,
-  ).bind(opts.abn, opts.businessName, opts.label, opts.applicant.id));
+    `UPDATE user SET abn = COALESCE(?1, abn), company = COALESCE(?2, company)
+      WHERE id = ?3 AND type = 'customer'`,
+  ).bind(opts.abn, opts.businessName, opts.applicant.id));
   if (!prior) {
     statements.push(env.DB.prepare(
       "UPDATE user SET discount_percent = ?1 WHERE id = ?2 AND type = 'customer'",

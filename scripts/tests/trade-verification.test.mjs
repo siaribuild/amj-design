@@ -194,7 +194,7 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       // ALL THREE CRITERIA PASS — approved with no ops action and no queue item.
       const auto = await newAccount("auto", "smithbros.com.au");
       const autoRes = await apply(auto.session, {
-        abn: ABR_FIXTURES.active, businessName: "Smith Brothers Pty Ltd", label: "builder", source: "trade_page",
+        abn: ABR_FIXTURES.active, businessName: "Smith Brothers Pty Ltd", source: "trade_page",
       });
       assert.equal(autoRes.status, 200);
       const autoApps = await applications(auto.email);
@@ -214,7 +214,6 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       const autoUser = await userRow(auto.email);
       assert.equal(Number(autoUser.discount_percent), 5, "AC-P2-28: the business-account default is applied");
       assert.equal(autoUser.abn, ABR_FIXTURES.active);
-      assert.equal(autoUser.trade_label, "builder");
 
       // ONE CRITERION FAILS, three different ways. Each queues; none rejects.
       // Each uses a DIFFERENT ABN on purpose: the auto-pass above now holds a
@@ -262,19 +261,18 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       const fresh = await newAccount("me-fresh", "example.com");
       assert.deepEqual((await me(fresh.session)).trade, {
         verified: false, verifiedSince: null, provenance: null,
-        label: null, abn: null, pending: null, history: [],
+        abn: null, pending: null, history: [],
       });
 
       // Verified.
       const verified = await newAccount("me-verified", "quantumleap.com.au");
       await apply(verified.session, {
         abn: ABR_FIXTURES.otherEntity, businessName: "Quantum Leap Logistics Pty Ltd",
-        label: "tradie", source: "profile",
+        source: "profile",
       });
       const verifiedTrade = (await me(verified.session)).trade;
       assert.equal(verifiedTrade.verified, true);
       assert.equal(verifiedTrade.provenance, "auto");
-      assert.equal(verifiedTrade.label, "tradie");
       assert.equal(verifiedTrade.abn, ABR_FIXTURES.otherEntity);
       assert.equal(verifiedTrade.pending, null);
       assert.ok(verifiedTrade.verifiedSince, "a verified account knows when it became one");
@@ -391,7 +389,6 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
         [{ abn: ABR_FIXTURES.active, businessName: "" }, "invalid_business_name"],
         // Non-ASCII digit lookalikes are simply not digits.
         [{ abn: "５１０００００６８０", businessName: "Smith Brothers" }, "invalid_abn"],
-        [{ abn: ABR_FIXTURES.active, businessName: "Smith Brothers", label: "wholesaler" }, "invalid_label"],
       ]) {
         const res = await apply(huge.session, { ...payload, source: "profile" });
         assert.equal(res.status, 400, JSON.stringify(payload).slice(0, 80));
@@ -522,27 +519,6 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       assert.equal((await userRow(verified.email)).abn, ABR_FIXTURES.harbour, "the stored ABN is unchanged");
     });
 
-    await t.test("owner ruling Q5: the builder/tradie label is self-declared and set from the profile", async () => {
-      const account = await newAccount("label", "example.com");
-      const res = await account.session.request("/api/auth/profile", {
-        method: "POST", json: { tradeLabel: "tradie" },
-      });
-      assert.equal(res.status, 200);
-      assert.equal((await userRow(account.email)).trade_label, "tradie");
-      assert.equal((await requestJson(account.session, "/api/auth/me")).body.trade.label, "tradie");
-
-      const bad = await account.session.request("/api/auth/profile", {
-        method: "POST", json: { tradeLabel: "wholesaler" },
-      });
-      assert.equal(bad.status, 400);
-      assert.deepEqual((await bad.json()).fields, ["tradeLabel"], "refused by name, never coerced");
-      assert.equal((await userRow(account.email)).trade_label, "tradie", "the stored value survives the refusal");
-
-      const cleared = await account.session.request("/api/auth/profile", { method: "POST", json: { tradeLabel: "" } });
-      assert.equal(cleared.status, 200, "and it can be cleared");
-      assert.equal((await userRow(account.email)).trade_label, null);
-    });
-
     // Characterisation of the rest of abnWriteAllowed (design §6.6): the two
     // cases the AB-P2-12 probe above does not reach.
     await t.test("E-P2-19 / owner ruling Q7: a private account may still write its ABN; a pending one may not swap", async () => {
@@ -584,7 +560,7 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
     await t.test("AC-P2-36: the queue shows a pending application to assigned-role staff", async () => {
       const applicant = await newAccount("queue-a", "gmail.com");
       await apply(applicant.session, {
-        abn: ABR_FIXTURES.wattle, businessName: "Wattle Grove Windows Pty Ltd", label: "builder", source: "trade_page",
+        abn: ABR_FIXTURES.wattle, businessName: "Wattle Grove Windows Pty Ltd", source: "trade_page",
       });
       const queuedId = (await applications(applicant.email))[0].id;
 
@@ -607,7 +583,7 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
     await t.test("AC-P2-37 / AC-P2-42: a non-admin assigned-role staff member approves, and it is attributed", async () => {
       const applicant = await newAccount("approve", "gmail.com");
       await apply(applicant.session, {
-        abn: ABR_FIXTURES.keystone, businessName: "Keystone Carpentry Pty Ltd", label: "tradie", source: "profile",
+        abn: ABR_FIXTURES.keystone, businessName: "Keystone Carpentry Pty Ltd", source: "profile",
       });
       const applicantId = (await userRow(applicant.email)).id;
       const queuedId = (await applications(applicant.email))[0].id;
@@ -636,7 +612,6 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       const granted = await userRow(applicant.email);
       assert.equal(Number(granted.discount_percent), 5, "the §5.5 grant is applied");
       assert.equal(granted.abn, ABR_FIXTURES.keystone);
-      assert.equal(granted.trade_label, "tradie");
       const me = (await requestJson(applicant.session, "/api/auth/me")).body.trade;
       assert.equal(me.verified, true);
       assert.equal(me.provenance, "ops");
@@ -914,7 +889,7 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
 
       const applicant = await newAccount("console-list", "gmail.com");
       await apply(applicant.session, {
-        abn: ABR_FIXTURES.northside, businessName: "Northside Building Pty Ltd", label: "builder", source: "trade_page",
+        abn: ABR_FIXTURES.northside, businessName: "Northside Building Pty Ltd", source: "trade_page",
       });
       const applicantId = (await userRow(applicant.email)).id;
 
@@ -923,11 +898,6 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       assert.ok(row, "the applicant is in the customer list");
       assert.equal(row.tradeVerified, false, "an application pending is not a verification");
       assert.equal(Number(row.discountPercent), 0);
-      // The list shows the ACCOUNT's live label, which a pending application has
-      // not written — the submitted one is on the queue item (AC-P2-36), where
-      // the person deciding can see it. Nothing is copied onto the account until
-      // the grant, which is the same rule the ABN follows.
-      assert.equal(row.tradeLabel, null);
 
       const pendingId = (await applications(applicant.email))[0].id;
       assert.equal((await staff.request(`/api/ops/trade/applications/${pendingId}/approve`, {
@@ -936,7 +906,6 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       const after = (await requestJson(staff, "/api/ops/customers")).body.customers.find((r) => r.id === applicantId);
       assert.equal(after.tradeVerified, true);
       assert.equal(Number(after.discountPercent), 5);
-      assert.equal(after.tradeLabel, "builder", "the grant is what puts the label on the account");
     });
 
     await t.test("AC-P2-40: the customer record carries the trade status and the decision history", async () => {
@@ -947,7 +916,7 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
 
       const applicant = await newAccount("console-record", "gmail.com");
       await apply(applicant.session, {
-        abn: ABR_FIXTURES.harbour, businessName: "Harbour Edge Joinery Pty Ltd", label: "tradie", source: "profile",
+        abn: ABR_FIXTURES.harbour, businessName: "Harbour Edge Joinery Pty Ltd", source: "profile",
       });
       const applicantId = (await userRow(applicant.email)).id;
       const pendingId = (await applications(applicant.email))[0].id;
@@ -1225,6 +1194,88 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
 
       // AC-P2-53: the six tables are the same size they were.
       assert.deepEqual(await counts(), before, `AC-P2-53: ${COUNTED.join(", ")} row counts identical`);
+    });
+
+    // AC-P2-31 / AC-P2-32 / AB-P2-8 — proven by ABSENCE, twice over: once from
+    // the database (nothing stored changed) and once from the source (no code
+    // path exists that could have changed it). The Phase-1 AB-12 pattern.
+    await t.test("AC-P2-31 / AB-P2-8: approval reprices nothing, and nothing sensitive is logged", async () => {
+      const staff = new Session(baseUrl);
+      await login(staff, "/api/ops/auth", `tv-noreprice-${stamp}@openframe.com.au`);
+
+      const dump = async () => ({
+        lines: await sql("SELECT * FROM quote_line ORDER BY id"),
+        orders: await sql('SELECT * FROM "order" ORDER BY id'),
+        projects: await sql("SELECT id, title, status_customer, status_internal FROM project ORDER BY id"),
+      });
+      const before = await dump();
+      assert.ok(before.lines.length > 0, "the seeded database has priced rows to protect");
+
+      const business = spareBusiness(4);
+      const account = await newAccount("noreprice", "gmail.com");
+      await apply(account.session, { abn: business.abn, businessName: business.businessName, source: "profile" });
+      const accountId = (await userRow(account.email)).id;
+      const applicationId = (await applications(account.email))[0].id;
+      assert.equal((await staff.request(`/api/ops/trade/applications/${applicationId}/approve`, {
+        method: "POST", json: {},
+      })).status, 200);
+      assert.deepEqual(await dump(), before, "AC-P2-31: approval changed no stored price, line, quote or order");
+
+      assert.equal((await staff.request(`/api/ops/trade/customers/${accountId}/revoke`, {
+        method: "POST", json: { reason: "Test." },
+      })).status, 200);
+      assert.deepEqual(await dump(), before, "AC-P2-31: nor did revocation");
+
+      // ...and no code path exists that could have. Absence proven, not assumed.
+      const sources = Object.fromEntries(await Promise.all(
+        ["worker/lib/trade.ts", "worker/lib/abr.ts", "worker/lib/trade-match.ts",
+         "worker/routes/trade.ts", "worker/routes/ops-trade.ts"]
+          .map(async (rel) => [rel, await readFile(join(projectRoot, rel), "utf8")]),
+      ));
+      for (const [rel, source] of Object.entries(sources)) {
+        for (const forbidden of ["quote_line", '"order"', "estimator/pricing", "repriceReferralDrafts", "issueQuote"]) {
+          assert.ok(!source.includes(forbidden), `${rel} must never name ${forbidden}`);
+        }
+        // AC-P2-60: organisation/membership are untouched by this phase.
+        for (const table of ["organisation", "membership"]) {
+          assert.ok(!new RegExp(`\\b${table}\\b`).test(source), `${rel} must not reference ${table}`);
+        }
+      }
+
+      // AB-P2-8: log discipline. Every console.* in the two modules that HANDLE
+      // an ABN and a credential must be a fixed string — no interpolation at
+      // all, which is the only version of this rule that cannot be got wrong.
+      for (const rel of ["worker/lib/abr.ts", "worker/lib/trade.ts"]) {
+        const calls = sources[rel].match(/console\.\w+\([^)]*\)/g) ?? [];
+        for (const call of calls) {
+          // No interpolation AT ALL. A fixed string cannot leak a value, which
+          // is the only version of this rule that cannot be got wrong later —
+          // "don't log the ABN" invites an argument about which variable is
+          // safe, and this does not. (Naming ABR_GUID as a CONFIG KEY in the
+          // missing-credential warning is fine and useful; it is the value that
+          // must never appear, and a fixed string has no values in it.)
+          assert.equal(/\$\{|`|\+/.test(call), false, `${rel}: ${call} interpolates into a log line`);
+          assert.equal(/\d{11}/.test(call), false, `${rel}: ${call} contains something ABN-shaped`);
+        }
+      }
+      // The credential is not a VITE_* var, so it cannot reach the client bundle
+      // by construction — and nothing else references it either.
+      for (const [rel, source] of Object.entries(sources)) {
+        if (rel === "worker/lib/abr.ts") continue;
+        assert.ok(!source.includes("ABR_GUID"),
+          `${rel} must not name the credential — abr.ts is the only module that knows ABR exists`);
+      }
+      assert.equal(sources["worker/lib/abr.ts"].includes("VITE_"), false,
+        "and it is not a VITE_* var, so the client bundle cannot contain it");
+
+      // House rule, one place per fact: the assigned-role predicate has ONE
+      // definition. Two spellings of the same rule is how they come to disagree.
+      const staffLib = await readFile(join(projectRoot, "worker/lib/staff.ts"), "utf8");
+      const opsRoutes = await readFile(join(projectRoot, "worker/routes/ops.ts"), "utf8");
+      assert.ok(/export const hasAssignedRole|export function hasAssignedRole/.test(staffLib),
+        "hasAssignedRole lives in worker/lib/staff.ts");
+      assert.ok(/import[^;]*hasAssignedRole[^;]*from "\.\.\/lib\/staff"/.test(opsRoutes),
+        "and worker/routes/ops.ts imports it rather than defining a second copy");
     });
   } finally {
     if (server) await stop(server);

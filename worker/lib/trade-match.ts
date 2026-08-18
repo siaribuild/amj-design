@@ -145,7 +145,7 @@ const MIN_DOMAIN_CONTAINMENT = 4;
 /** Mailbox providers where the domain says nothing about the business.
  *
  *  A free mailbox can NEVER satisfy criterion 3 (D2) — not "scores lower",
- *  never. Exported so the unit table pins membership; additions are one-line
+ *  never. Exported so the unit table pins what is on the list; additions are one-line
  *  edits. An unlisted webmail provider is treated as a business domain, which is
  *  a named residual (design §9.5.4): it still has to fuzzy-match the business
  *  name to matter, so the cost of a gap here is an auto-pass that needed a

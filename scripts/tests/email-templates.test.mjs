@@ -77,7 +77,7 @@ test("the four Phase-2 email templates: dot-free keys, and copy that promises no
     // different string with a different consumer.
     assert.match(template.eventType, /^trade\./, `${key}'s event type is dot-namespaced`);
 
-    const rendered = `${template.subject}\n${template.body({ name: "Sam", business: "Harbour Edge Joinery" })}`;
+    const rendered = `${template.subject}\n${template.body({ business: "Harbour Edge Joinery" })}`;
     // AC-P2-43/61/64: no percentage, and no figure at all — a bare number is
     // how a percentage gets derived by subtraction.
     assert.ok(!rendered.includes("%"), `${key} must contain no percentage`);
@@ -92,12 +92,27 @@ test("the four Phase-2 email templates: dot-free keys, and copy that promises no
                               "already verified", "another business"]) {
       assert.ok(!rendered.toLowerCase().includes(disclosure), `${key} must not mention another holder`);
     }
+    // Owner ruling 2026-08-19: NO COMPARATIVE. "Trade pricing" is the NAME of
+    // the thing, not a deduction from something else, and the possessive line
+    // ("the prices you see are already your prices") does the explaining.
+    for (const comparative of ["better price", "cheaper", "you save", "discount",
+                               "less than", "lower price"]) {
+      assert.ok(!rendered.toLowerCase().includes(comparative),
+        `${key} must not compare prices (${comparative})`);
+    }
+    // ...and NO GREETING. `business` is the only body variable, used only where
+    // a business name is guaranteed — an account whose holder never typed a
+    // name would otherwise have been greeted "Hi ,".
+    assert.equal(/^\s*(hi|hello|dear|hey)\b/i.test(template.body({ business: "X" })), false,
+      `${key} must not open with a greeting`);
+    assert.equal(/\[name\]|\bname\b/i.test(template.body({})), false,
+      `${key} must not reference a name at all`);
   }
 
   // The fallback is rendered AT THE CALL SITE, because notify() only runs
   // applyPlaceholders when a Sanity template exists. A fallback still carrying
   // a literal [business] would ship a bracket to a customer.
-  const ack = TRADE_EMAILS.trade_ack.body({ name: "Sam", business: "Harbour Edge Joinery" });
+  const ack = TRADE_EMAILS.trade_ack.body({ business: "Harbour Edge Joinery" });
   assert.ok(ack.includes("Harbour Edge Joinery"), "the fallback substitutes its own values");
   assert.equal(/\[[a-zA-Z]+\]/.test(ack), false, "and leaves no unresolved placeholder");
   // A missing business name must not leave a dangling bracket either.
