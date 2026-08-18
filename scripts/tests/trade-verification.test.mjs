@@ -290,6 +290,188 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       assert.equal(anon.body.authenticated, false);
       assert.equal(anon.body.trade, undefined);
     });
+
+    // Characterisation of the duplicate rule already shipped in applyForTrade
+    // (design §6.2 step 5) — it has never had a test of its own.
+    await t.test("AC-P2-24 / AB-P2-10: a duplicate ABN is queued however well it scores", async () => {
+      const abn = ABR_FIXTURES.activeNoGst;
+      const first = await newAccount("dupe-a", "smithbros.com.au");
+      assert.deepEqual(
+        await (await apply(first.session, { abn, businessName: "Smith Brothers Pty Ltd", source: "profile" })).json(),
+        { ok: true, status: "verified" },
+      );
+
+      // B applies with an EQUALLY perfect triple — same ABN, same business, same
+      // domain — and is queued anyway. The duplicate rule outranks the triple.
+      const second = await newAccount("dupe-b", "smithbros.com.au");
+      const secondRes = await apply(second.session, {
+        // Spaced on purpose: the rule compares 11 digits, not typing.
+        abn: `${abn.slice(0, 2)} ${abn.slice(2, 5)} ${abn.slice(5, 8)} ${abn.slice(8)}`,
+        businessName: "Smith Brothers Pty Ltd", source: "profile",
+      });
+      const secondApps = await applications(second.email);
+      assert.equal(secondApps[0].status, "pending", "AC-P2-24: a duplicate is queued, never auto-approved");
+      assert.deepEqual(JSON.parse(secondApps[0].queue_reasons), ["duplicate_abn"]);
+      assert.equal(Number((await userRow(second.email)).discount_percent), 0);
+      // The other holder is recorded for OPS, in the snapshot only.
+      const snapshot = JSON.parse(secondApps[0].abr_snapshot);
+      assert.deepEqual(snapshot.evaluated.duplicateOf, [(await userRow(first.email)).id]);
+
+      // AB-P2-10: and B's account never learns any of that. The body is the
+      // ordinary under-review constant, byte for byte.
+      assert.equal(await secondRes.clone().text(), JSON.stringify({ ok: true, status: "under_review" }));
+      const secondMe = JSON.stringify((await requestJson(second.session, "/api/auth/me")).body);
+      assert.ok(!secondMe.includes(first.email), "B is never told who holds the ABN");
+      assert.ok(!secondMe.includes((await userRow(first.email)).id));
+    });
+
+    // Characterisation of the outage path already shipped in lookupAbn +
+    // applyForTrade (design §4, §6.2 step 7).
+    await t.test("AC-P2-25 / E-P2-2: the register being down queues, never blocks and never approves", async () => {
+      for (const [label, abn] of [["timeout", ABR_FIXTURES.slow], ["http-500", ABR_FIXTURES.serverError],
+                                  ["garbage", ABR_FIXTURES.malformed]]) {
+        const account = await newAccount(`outage-${label}`, "smithbros.com.au");
+        const res = await apply(account.session, {
+          abn, businessName: "Smith Brothers Pty Ltd", source: "profile",
+        });
+        // The customer sees the ORDINARY under-review state. An outage is our
+        // problem, and the response must not become a status page for it.
+        assert.equal(await res.clone().text(), JSON.stringify({ ok: true, status: "under_review" }), label);
+        const apps = await applications(account.email);
+        assert.equal(apps[0].status, "pending", `${label}: nothing is approved`);
+        assert.ok(JSON.parse(apps[0].queue_reasons).includes("abr_unavailable"), `${label}: the reason is recorded`);
+        assert.equal(JSON.parse(apps[0].abr_snapshot).outcome, "unavailable",
+          `${label}: the snapshot says the criteria were unevaluable rather than guessing at them`);
+        assert.equal(Number((await userRow(account.email)).discount_percent), 0);
+        // The account keeps working: it can still read its own state.
+        assert.equal((await requestJson(account.session, "/api/auth/me")).body.trade.verified, false);
+      }
+    });
+
+    // Characterisation of the validation and cap order already shipped in
+    // applyForTrade (design §6.2 steps 1-4). "Made no ABR call" is asserted from
+    // the stub's counter, not inferred from the response.
+    await t.test("AC-P2-7 / AB-P2-6 / AB-P2-13 / AB-P2-1 / AB-P2-3: refusals that cost the register nothing", async () => {
+      // AC-P2-7: a bad checksum is a FIELD ERROR. No row, no ABR call.
+      const bad = await newAccount("badabn", "smithbros.com.au");
+      const beforeBad = stub.hits().length;
+      const badRes = await apply(bad.session, { abn: "12345678901", businessName: "Smith Brothers", source: "profile" });
+      assert.equal(badRes.status, 400);
+      assert.deepEqual(await badRes.json(), { error: "invalid_abn" });
+      assert.equal((await applications(bad.email)).length, 0, "nothing to reject, because nothing was created");
+      assert.equal(stub.hits().length, beforeBad, "a checksum failure spends no ABR call");
+
+      // AB-P2-13: unbounded input is refused with the field named, and nothing
+      // unbounded reaches D1.
+      const huge = await newAccount("huge", "smithbros.com.au");
+      const beforeHuge = stub.hits().length;
+      for (const [payload, error] of [
+        [{ abn: "5".repeat(1000), businessName: "Smith Brothers" }, "invalid_abn"],
+        [{ abn: ABR_FIXTURES.active, businessName: "N".repeat(100_000) }, "invalid_business_name"],
+        [{ abn: ABR_FIXTURES.active, businessName: "" }, "invalid_business_name"],
+        // Non-ASCII digit lookalikes are simply not digits.
+        [{ abn: "５１０００００６８０", businessName: "Smith Brothers" }, "invalid_abn"],
+        [{ abn: ABR_FIXTURES.active, businessName: "Smith Brothers", label: "wholesaler" }, "invalid_label"],
+      ]) {
+        const res = await apply(huge.session, { ...payload, source: "profile" });
+        assert.equal(res.status, 400, JSON.stringify(payload).slice(0, 80));
+        assert.deepEqual(await res.json(), { error });
+      }
+      assert.equal((await applications(huge.email)).length, 0);
+      assert.equal(stub.hits().length, beforeHuge, "no malformed application reaches the register");
+
+      // AB-P2-1 / AB-P2-3: crafting the outcome. These keys are not stripped —
+      // nothing in the endpoint looks at them.
+      const crafty = await newAccount("crafty", "quantumleap.com.au");
+      const craftyRes = await apply(crafty.session, {
+        abn: ABR_FIXTURES.northside, businessName: "Definitely Not Quantum Leap", source: "profile",
+        status: "verified", discountPercent: 40, discount_percent: 40, tradeStatus: "verified",
+        trade_verified: 1, decidedBy: "someone", decided_via: "ops", tier: "trade", type: "internal",
+        role: "admin", id: "u_staff1", abrSnapshot: { outcome: "found" }, queue_reasons: [],
+      });
+      assert.deepEqual(await craftyRes.json(), { ok: true, status: "under_review" },
+        "the status is whatever the server's own verification decided");
+      const craftyRow = await userRow(crafty.email);
+      assert.equal(Number(craftyRow.discount_percent), 0);
+      assert.equal(craftyRow.type, "customer");
+      assert.equal(craftyRow.role, null);
+      const craftyApp = (await applications(crafty.email))[0];
+      assert.equal(craftyApp.status, "pending");
+      assert.equal(craftyApp.decided_via, null);
+      assert.equal(craftyApp.decided_by, null);
+
+      // AB-P2-6: the per-account cap, spent BEFORE any ABR call. The account
+      // above has used one; five is the cap, so the sixth is refused.
+      const capped = await newAccount("capped", "smithbros.com.au");
+      for (let i = 0; i < 5; i++) {
+        // Each attempt must fail verification so the next one is allowed
+        // (a verified account with no pending row can keep applying).
+        const res = await apply(capped.session, { abn: ABR_FIXTURES.notFound, businessName: `Attempt ${i}`, source: "profile" });
+        if (res.status === 200) {
+          // A queued application blocks the next attempt at step 3 before the
+          // cap is reached, so clear it and keep counting the caps themselves.
+          await sql(`DELETE FROM trade_application WHERE user_id = '${esc((await userRow(capped.email)).id)}'`);
+        }
+      }
+      const beforeCap = stub.hits().length;
+      const cappedRes = await apply(capped.session, { abn: ABR_FIXTURES.active, businessName: "Smith Brothers", source: "profile" });
+      assert.equal(cappedRes.status, 429);
+      assert.deepEqual(await cappedRes.json(), { error: "rate_limited" });
+      assert.equal(stub.hits().length, beforeCap, "a rate-limited caller never reaches the register");
+    });
+
+    // Characterisation of the self-checks already shipped in worker/routes/trade.ts
+    // (design §7.1, §9.3). There is no auth middleware in this Worker, so a new
+    // endpoint is unauthenticated until it says otherwise — these prove it says so.
+    await t.test("AB-P2-5 / AB-P2-4 / AB-P2-11: no session, no subject id, no internal account", async () => {
+      // AB-P2-5: anonymous. Refused before any work, and the register is untouched.
+      const before = stub.hits().length;
+      const anon = new Session(baseUrl);
+      const anonRes = await apply(anon, { abn: ABR_FIXTURES.active, businessName: "Smith Brothers", source: "profile" });
+      assert.equal(anonRes.status, 401);
+      assert.deepEqual(await anonRes.json(), { error: "unauthorized" });
+      assert.equal(stub.hits().length, before,
+        "an unauthenticated caller can never spend the ABR quota or use the site as an ABN checker");
+
+      // AB-P2-4: there is NO subject id to supply. Not a filter — a 404, because
+      // no such route exists to accept one.
+      const victim = await newAccount("victim", "smithbros.com.au");
+      await apply(victim.session, { abn: ABR_FIXTURES.cancelled, businessName: "Smith Brothers Pty Ltd", source: "profile" });
+      const victimId = (await userRow(victim.email)).id;
+      const victimApp = (await applications(victim.email))[0];
+      const attacker = await newAccount("attacker", "smithbros.com.au");
+      for (const path of [
+        `/api/trade/application/${victimApp.id}`,
+        `/api/trade/application?userId=${victimId}`,
+        `/api/trade/applications/${victimId}`,
+        `/api/trade/customers/${victimId}`,
+      ]) {
+        const res = await attacker.session.request(path);
+        assert.ok(res.status === 404 || res.status === 405, `${path} must not serve anything: ${res.status}`);
+        const body = await res.text();
+        assert.ok(!body.includes(ABR_FIXTURES.cancelled), `${path} leaked an ABN`);
+        assert.ok(!body.includes(victim.email), `${path} leaked an account`);
+      }
+      // And a subject id in the BODY is simply not read: the application it
+      // creates belongs to the attacker's own session.
+      await apply(attacker.session, {
+        abn: ABR_FIXTURES.northside, businessName: "Northside Building Pty Ltd", source: "profile",
+        userId: victimId, user_id: victimId,
+      });
+      assert.equal((await applications(victim.email)).length, 1, "the victim gained no application");
+      assert.equal((await applications(attacker.email)).length, 1);
+
+      // AB-P2-11: an internal account is refused at the door. Staff-ness is its
+      // own axis and ops must never carry a customer discount.
+      const staff = new Session(baseUrl);
+      const staffAddress = `tv-staff-${stamp}@openframe.com.au`;
+      await login(staff, "/api/ops/auth", staffAddress);
+      const staffRes = await apply(staff, { abn: ABR_FIXTURES.active, businessName: "Smith Brothers", source: "profile" });
+      assert.equal(staffRes.status, 403);
+      assert.deepEqual(await staffRes.json(), { error: "forbidden" });
+      assert.equal((await applications(staffAddress)).length, 0);
+      assert.equal(Number((await userRow(staffAddress)).discount_percent), 0);
+    });
   } finally {
     if (server) await stop(server);
     if (stub) await stub.close();
