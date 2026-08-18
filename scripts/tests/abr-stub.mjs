@@ -46,6 +46,25 @@ export const ABR_FIXTURES = {
   oversized: "53000000964",
 };
 
+/** Checksum-valid ABNs for tests that need a business NOBODY has verified yet.
+ *
+ *  An auto-pass consumes an ABN for the rest of a run — the next applicant on
+ *  the same number is a duplicate, correctly — so a suite that reuses fixtures
+ *  ends up asserting the duplicate rule by accident. `spareBusiness(n)` hands
+ *  out a whole consistent business instead: an ABN, the name the register holds
+ *  for it, and a domain that satisfies criterion 3. */
+const SPARE_ABNS = [
+  "81000008768", "81000020276", "81000043566", "81000045073",
+  "81000066856", "81000068363", "81000120149", "81000122752",
+  "81000143439", "81000166729", "81000168236", "81000180840",
+];
+
+export function spareBusiness(index) {
+  const abn = SPARE_ABNS[index];
+  if (!abn) throw new Error(`no spare ABR business at index ${index} (only ${SPARE_ABNS.length} exist)`);
+  return { abn, businessName: `Spare ${index} Joinery Pty Ltd`, domain: `spare${index}joinery.com.au` };
+}
+
 const ENTITY = {
   [ABR_FIXTURES.active]: {
     AbnStatus: "Active", AbnStatusEffectiveFrom: "2014-07-01",
@@ -92,6 +111,15 @@ const ENTITY = {
 function bodyFor(abn) {
   const known = ENTITY[abn];
   if (known) return { Abn: abn, Acn: "", AddressPostcode: "3000", AddressState: "VIC", Message: "", ...known };
+  const spare = SPARE_ABNS.indexOf(abn);
+  if (spare >= 0) {
+    return {
+      Abn: abn, Acn: "", AddressPostcode: "3000", AddressState: "VIC", Message: "",
+      AbnStatus: "Active", AbnStatusEffectiveFrom: "2015-05-05",
+      EntityName: `SPARE ${spare} JOINERY PTY LTD`, EntityTypeName: "Australian Private Company",
+      BusinessName: [`SPARE ${spare} JOINERY`], Gst: "2015-05-05",
+    };
+  }
   if (abn === ABR_FIXTURES.oversized) {
     return {
       Abn: abn, AbnStatus: "Active", AbnStatusEffectiveFrom: "2001-01-01",

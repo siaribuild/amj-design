@@ -19,10 +19,10 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import {
-  Session, freePort, login, makeRunDir, projectRoot, removeRunDir, requestJson,
+  COMPLETE_ACCOUNT, Session, completeAccount, freePort, login, makeRunDir, projectRoot, removeRunDir, requestJson,
   run, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
-import { ABR_FIXTURES, startAbrStub } from "./abr-stub.mjs";
+import { ABR_FIXTURES, spareBusiness, startAbrStub } from "./abr-stub.mjs";
 
 const MANUFACTURER_DOMAIN = "partner.example";
 
@@ -962,6 +962,84 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       assert.equal(record.tradeHistory[0].outcome, "approved");
       assert.equal(record.tradeHistory[0].decidedBy.id, staffId);
       assert.equal(record.tradeHistory[0].decisionReason, "Confirmed by phone.");
+    });
+
+    await t.test("AC-P2-36: a duplicate application names the other holder, to STAFF only", async () => {
+      const staff = new Session(baseUrl);
+      await login(staff, "/api/ops/auth", `tv-dupes-${stamp}@openframe.com.au`);
+
+      // A business nobody has verified yet, so the ONLY reason the second
+      // application queues is the duplicate rule.
+      const business = spareBusiness(0);
+      const holder = await newAccount("holder", business.domain);
+      assert.deepEqual(await (await apply(holder.session, {
+        abn: business.abn, businessName: business.businessName, source: "profile",
+      })).json(), { ok: true, status: "verified" });
+      const holderId = (await userRow(holder.email)).id;
+
+      const second = await newAccount("second-holder", business.domain);
+      await apply(second.session, {
+        abn: business.abn, businessName: business.businessName, source: "profile",
+      });
+      const secondAppId = (await applications(second.email))[0].id;
+
+      // The person deciding must be able to SEE the other account — D2.1 lets
+      // them knowingly allow two holders, and they cannot decide that blind.
+      const item = (await requestJson(staff, "/api/ops/trade/applications")).body
+        .applications.find((a) => a.id === secondAppId);
+      assert.ok(item);
+      assert.deepEqual(item.queueReasons, ["duplicate_abn"]);
+      assert.equal(item.duplicateHolders.length, 1);
+      assert.equal(item.duplicateHolders[0].id, holderId);
+      assert.equal(item.duplicateHolders[0].email, holder.email);
+
+      // Resolved LIVE, not frozen: once the first grant ends, the second
+      // applicant is no longer competing with anybody.
+      assert.equal((await staff.request(`/api/ops/trade/customers/${holderId}/revoke`, {
+        method: "POST", json: { reason: "Test revocation." },
+      })).status, 200);
+      const after = (await requestJson(staff, "/api/ops/trade/applications")).body
+        .applications.find((a) => a.id === secondAppId);
+      assert.deepEqual(after.duplicateHolders, [],
+        "a holder who has since been revoked stops being shown as one");
+    });
+
+    // AC-P2-55 — a Phase-1 seam the owner asked to carry: the phone and address
+    // registration started collecting have never been shown to the staff who
+    // need them. Same record, same gate, same customer's PII.
+    await t.test("AC-P2-55: the ops project record shows the customer's phone and account address", async () => {
+      const staff = new Session(baseUrl);
+      await login(staff, "/api/ops/auth", `tv-project-${stamp}@openframe.com.au`);
+
+      const customer = await newAccount("record-contact", "example.com");
+      const customerId = (await userRow(customer.email)).id;
+      await completeAccount(customer.session);
+      const projectId = `tv-project-${stamp}`;
+      await sql(
+        `INSERT INTO project (id, title, owner_user_id, status_customer)
+         VALUES ('${esc(projectId)}', 'Contact seam', '${esc(customerId)}', 'submitted')`,
+      );
+
+      const record = (await requestJson(staff, `/api/ops/projects/${projectId}`)).body.project;
+      assert.equal(record.customerPhone, COMPLETE_ACCOUNT.phone);
+      assert.deepEqual(record.customerAddress, {
+        line1: COMPLETE_ACCOUNT.addressLine1,
+        line2: null,
+        suburb: COMPLETE_ACCOUNT.addressSuburb,
+        state: COMPLETE_ACCOUNT.addressState,
+        postcode: COMPLETE_ACCOUNT.addressPostcode,
+      });
+
+      // An account that has filled nothing in reads as absent, not as blanks.
+      const bare = await newAccount("record-bare", "example.com");
+      const bareProjectId = `tv-project-bare-${stamp}`;
+      await sql(
+        `INSERT INTO project (id, title, owner_user_id, status_customer)
+         VALUES ('${esc(bareProjectId)}', 'No contact', '${esc((await userRow(bare.email)).id)}', 'submitted')`,
+      );
+      const bareRecord = (await requestJson(staff, `/api/ops/projects/${bareProjectId}`)).body.project;
+      assert.equal(bareRecord.customerPhone, null);
+      assert.equal(bareRecord.customerAddress, null);
     });
   } finally {
     if (server) await stop(server);

@@ -145,6 +145,11 @@ export interface OpsTradeApplication {
   queueReasons: string[];
   abrSnapshot: unknown;
   createdAt: string | null;
+  /** Any account CURRENTLY verified on the same ABN, resolved live rather than
+   *  frozen: D2.1 lets a human knowingly allow two holders, and they cannot
+   *  decide that blind — nor should they see a holder whose grant has since
+   *  ended (AC-P2-36). Ops-only; a customer never learns any of this. */
+  duplicateHolders: { id: string; name: string | null; email: string }[];
 }
 
 /** Applications awaiting a decision — PENDING ONLY (AC-P2-35).
@@ -171,7 +176,29 @@ export async function pendingApplications(env: Env): Promise<OpsTradeApplication
     try { return JSON.parse(raw) as T; } catch { return fallback; }
   };
 
-  return (rows.results ?? []).map((row) => ({
+  const pending = rows.results ?? [];
+
+  // Resolved live in ONE query for the whole queue rather than per row: the
+  // snapshot's duplicateOf is what was true at lookup time, and a holder
+  // revoked since then must stop being shown as one.
+  const abns = [...new Set(pending.map((r) => r.abn).filter((a): a is string => !!a))];
+  const holders = new Map<string, { id: string; name: string | null; email: string }[]>();
+  if (abns.length) {
+    const placeholders = abns.map(() => "?").join(",");
+    const found = await env.DB.prepare(
+      `SELECT t.abn, u.id, u.name, u.email
+         FROM trade_application t JOIN user u ON u.id = t.user_id
+        WHERE t.abn IN (${placeholders})
+          AND t.status = 'approved' AND t.revoked_at IS NULL AND t.superseded_at IS NULL`,
+    ).bind(...abns).all<{ abn: string; id: string; name: string | null; email: string }>();
+    for (const row of found.results ?? []) {
+      const list = holders.get(row.abn) ?? [];
+      list.push({ id: row.id, name: row.name, email: row.email });
+      holders.set(row.abn, list);
+    }
+  }
+
+  return pending.map((row) => ({
     id: row.id,
     applicant: { id: row.user_id, name: row.applicant_name, email: row.applicant_email },
     abn: row.abn,
@@ -181,6 +208,7 @@ export async function pendingApplications(env: Env): Promise<OpsTradeApplication
     queueReasons: parse<string[]>(row.queue_reasons, []),
     abrSnapshot: parse<unknown>(row.abr_snapshot, null),
     createdAt: row.created_at,
+    duplicateHolders: (row.abn ? holders.get(row.abn) ?? [] : []).filter((h) => h.id !== row.user_id),
   }));
 }
 

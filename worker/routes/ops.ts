@@ -463,7 +463,10 @@ ops.get("/projects/:id", async (c) => {
   if (!(await resolveStaff(c.env, c.req.raw))) return c.json({ error: "forbidden" }, 403);
   const id = c.req.param("id");
   const p = await c.env.DB.prepare(`
-    SELECT p.*, o.name AS org_name, u.name AS customer_name, u.email AS customer_email
+    SELECT p.*, o.name AS org_name, u.name AS customer_name, u.email AS customer_email,
+           u.phone AS customer_phone, u.address_line1 AS customer_line1, u.address_line2 AS customer_line2,
+           u.address_suburb AS customer_suburb, u.address_state AS customer_state,
+           u.address_postcode AS customer_postcode
       FROM project p
       LEFT JOIN organisation o ON o.id = p.organisation_id
       LEFT JOIN user u  ON u.id  = p.owner_user_id
@@ -538,6 +541,20 @@ ops.get("/projects/:id", async (c) => {
       // Submission contact captured at submit time (persisted even for anon submitters).
       contactName: p.contact_name ?? null, contactEmail: p.contact_email ?? null,
       contactPhone: p.contact_phone ?? null, deliverySuburb: p.delivery_suburb ?? null,
+      // AC-P2-55 — a Phase-1 seam finally connected. Registration has been
+      // collecting the account holder's phone and address since Phase 1 and
+      // showing them to nobody. This is a read-only DISPLAY on a record that
+      // already serves this customer's name, email and ABN, behind the same
+      // gate, to the same staff. Absent stays absent: an account that filled
+      // nothing in reads as null rather than as a row of blanks.
+      customerPhone: p.customer_phone ?? null,
+      customerAddress: (p.customer_line1 || p.customer_suburb || p.customer_postcode)
+        ? {
+            line1: p.customer_line1 ?? null, line2: p.customer_line2 ?? null,
+            suburb: p.customer_suburb ?? null, state: p.customer_state ?? null,
+            postcode: p.customer_postcode ?? null,
+          }
+        : null,
       updatedAt: p.updated_at,
     },
     // Shown BEFORE the reviewer prices the job, which is the only moment it can
