@@ -513,6 +513,65 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       assert.deepEqual(await swap.json(), { error: "abn_locked" });
       assert.equal((await userRow(verified.email)).abn, ABR_FIXTURES.harbour, "the stored ABN is unchanged");
     });
+
+    await t.test("owner ruling Q5: the builder/tradie label is self-declared and set from the profile", async () => {
+      const account = await newAccount("label", "example.com");
+      const res = await account.session.request("/api/auth/profile", {
+        method: "POST", json: { tradeLabel: "tradie" },
+      });
+      assert.equal(res.status, 200);
+      assert.equal((await userRow(account.email)).trade_label, "tradie");
+      assert.equal((await requestJson(account.session, "/api/auth/me")).body.trade.label, "tradie");
+
+      const bad = await account.session.request("/api/auth/profile", {
+        method: "POST", json: { tradeLabel: "wholesaler" },
+      });
+      assert.equal(bad.status, 400);
+      assert.deepEqual((await bad.json()).fields, ["tradeLabel"], "refused by name, never coerced");
+      assert.equal((await userRow(account.email)).trade_label, "tradie", "the stored value survives the refusal");
+
+      const cleared = await account.session.request("/api/auth/profile", { method: "POST", json: { tradeLabel: "" } });
+      assert.equal(cleared.status, 200, "and it can be cleared");
+      assert.equal((await userRow(account.email)).trade_label, null);
+    });
+
+    // Characterisation of the rest of abnWriteAllowed (design §6.6): the two
+    // cases the AB-P2-12 probe above does not reach.
+    await t.test("E-P2-19 / owner ruling Q7: a private account may still write its ABN; a pending one may not swap", async () => {
+      const profile = (session, json) => session.request("/api/auth/profile", { method: "POST", json });
+
+      // A PRIVATE account may still make itself payable here — today's
+      // behaviour, unchanged. The lock only narrows a VERIFIED account.
+      const priv = await newAccount("lock-private", "example.com");
+      assert.equal((await profile(priv.session, { abn: ABR_FIXTURES.notFound })).status, 200);
+      assert.equal((await userRow(priv.email)).abn, ABR_FIXTURES.notFound);
+
+      // A PENDING application locks the column too — compared against the
+      // application's frozen ABN, since a pending application has written none.
+      const pending = await newAccount("lock-pending", "gmail.com");
+      await apply(pending.session, {
+        abn: ABR_FIXTURES.keystone, businessName: "Keystone Carpentry Pty Ltd", source: "profile",
+      });
+      assert.equal((await applications(pending.email))[0].status, "pending");
+      const swap = await profile(pending.session, { abn: ABR_FIXTURES.notFound });
+      assert.equal(swap.status, 400);
+      assert.deepEqual(await swap.json(), { error: "abn_locked" });
+      assert.equal((await userRow(pending.email)).abn, null, "a pending application still writes nothing");
+
+      // E-P2-19: the ABN already under review is a no-op that passes, and
+      // spacing does not make it different digits.
+      const spaced = ABR_FIXTURES.keystone.replace(/^(\d\d)(\d\d\d)(\d\d\d)(\d\d\d)$/, "$1 $2 $3 $4");
+      assert.equal((await profile(pending.session, { abn: spaced })).status, 200,
+        "re-submitting the ABN under review is not a swap");
+
+      // The lock NARROWS what a session may write to its own row; it has not
+      // widened the allowlist. discount_percent is still unreachable from here.
+      await profile(priv.session, { discountPercent: 40, discount_percent: 40, type: "internal", role: "admin" });
+      const after = await userRow(priv.email);
+      assert.equal(Number(after.discount_percent), 0);
+      assert.equal(after.type, "customer");
+      assert.equal(after.role, null);
+    });
   } finally {
     if (server) await stop(server);
     if (stub) await stub.close();
