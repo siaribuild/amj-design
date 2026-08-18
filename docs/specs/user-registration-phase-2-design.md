@@ -1249,6 +1249,21 @@ this section is the contract.
 Every string in **bold quotes** is final copy. `ASSUMED:` tags mark choices made without the
 owner, vetoable at any later gate. This section governs design §10 track (b), steps 9–15.
 
+**Revision 5 (2026-08-19, owner copy ruling — the comparative register is retired):** *"Trade pricing" is
+the NAME of the thing; the possessive line does the explaining.* It is a **status, not a
+deduction** — which is consistent with the rate being folded into line prices with no discount
+line anywhere. "Better prices" was rejected as comparative with no reference point ("better than
+what?") and for reading as a markdown; the brand is **AMJ Trade Direct**, so trade is already the
+promise, and "trade pricing" is the term a tradie uses at a supplier's counter. **Banned
+register:** "better", "cheaper", "lower prices", "save on", "you save", or any other comparative
+or deduction framing, on every surface and in every email. Where a sentence must explain what
+trade pricing *means*, it does so **possessively** — "the prices you see are already your
+prices" — never comparatively. The five owner-approved strings are quoted verbatim in §18.2.2,
+§18.3.1, §18.5 and §18.8, and **"you may qualify"** on the account card and gate is deliberate:
+the reader may be a private customer with an ABN who does not know they qualify, and nothing may
+promise an outcome before verification. §18.14's open question 1 is **answered and struck** by
+this ruling; question 2 (gate group placement) stays open.
+
 **Revision 4 (2026-08-19, owner ruling P2-D5 — "builder vs tradie - no difference"):** the
 self-declared builder/tradie label is **removed from the product**, not merely ignored in logic.
 `P2-D5` (recorded in `docs/specs/user-registration-grill-conclusions.md`) **supersedes D7**
@@ -1295,8 +1310,10 @@ responsive rules §16.10). Everything here is an addition to that contract, neve
 ## 18.0 The rules this phase's copy obeys (all owner rulings)
 
 1. **No percentage on any customer surface**, and no pair of figures from which one could be
-   derived by subtraction. Trade pricing is described as **better prices** — never as a
-   discount, never with a worked example. The ops console is the one exception and is not a
+   derived by subtraction. **"Trade pricing" is the name of the thing** — a status, never a
+   deduction and never a comparison. No "better", "cheaper", "lower", "save on" or "you save"
+   anywhere; where a sentence must explain what it means it does so possessively ("the prices
+   you see are already your prices"), never with a worked example. The ops console is the one exception and is not a
    customer surface.
 2. **No timeframe, anywhere** — not in UI, not in email. "We'll be in touch" / "we'll email you
    when it's done" is the strongest promise permitted (Q2).
@@ -1363,10 +1380,11 @@ The **only** entry-point-specific behaviour anywhere in this phase:
 ### 18.2.2 Page structure
 
 Hero and benefits column unchanged except for one added benefit line, first in the list:
-**"Better prices, everywhere"** / **"Trade pricing applies while you configure, not just on the
-quote we send back."** The hero sub-line gains "better prices" in its existing list:
+**"Trade pricing, everywhere"** / **"It applies while you configure — not just on the quote we
+send back."** The hero sub-line names trade pricing in its existing list:
 **"Upload every schedule you're sitting on and get them priced the same day. Trade accounts get
-better prices, priority review, saved details, and a name to call."**
+trade pricing, priority review, saved details, and a name to call."** (Mobile hero, same list
+shortened: **"Trade accounts get trade pricing, priority review and saved details."**)
 
 The right-hand card (today the dead mock form, `App.tsx:1690-1704`) is **deleted** and replaced
 by the standard signup: `OtpSignIn` with the optional group mounted inside it
@@ -1451,7 +1469,7 @@ has an ABN or company field to save; it saves name and phone exactly as before.
 | Slot | Copy |
 |---|---|
 | Heading (h3, `t-bd-sm` semibold) | **"Trade account"** |
-| Sub | **"Trade customers get better prices across the site — while you configure, not just on the quote we send back. Add your ABN and we'll check it against the Australian Business Register."** |
+| Sub | **"Have an ABN? You may qualify for trade pricing. Add it and we'll check it against the Australian Business Register."** — "may qualify" is deliberate: the reader may be a private customer with an ABN who doesn't know they qualify, and nothing may promise an outcome before verification |
 | Fields | Business name · ABN — labels, placeholders and helpers exactly as §18.2.3 |
 | Button | **"Apply for trade pricing"** → busy **"Checking your details…"** |
 
@@ -1542,7 +1560,7 @@ between required groups would read as another demand.
 | Slot | Copy |
 |---|---|
 | Group label | **"Your business (optional)"** |
-| Group helper (the 4th AC-P2-48 advertising surface) | **"Got an ABN? Add it and we'll check whether you qualify for trade pricing — better prices on everything you configure from then on. It won't hold up this submission."** |
+| Group helper (the 4th AC-P2-48 advertising surface) | **"Got an ABN? Add it and we'll check whether you qualify for trade pricing. It won't hold up this submission."** |
 | Field | label **"ABN (optional)"**, placeholder **"00 000 000 000"**, `inputMode="numeric"` |
 | Paired field (renders only while the ABN field is non-empty) | label **"Business name"**, placeholder **"ABC Constructions"**, helper **"Needed with an ABN."** |
 
@@ -1697,6 +1715,10 @@ Copy as rendered in the mock (§6 of the file). Binding properties, beyond the �
   and only in `trade_ack` and `trade_approved`, where a business name is guaranteed.
 - Subjects: **"We're checking your trade account details"** · **"Your trade account is active"** ·
   **"About your trade account application"** · **"A change to your trade account"**.
+- `trade_approved`'s opening is owner-approved verbatim and is the model for the whole register:
+  **"Your trade account is active."** / **"Trade pricing applies from now on — when you're
+  signed in, the prices you see are already your prices."** Possessive, not comparative; a
+  status, not a deduction.
 - Every one ends with the existing footer line **"Reply to this email and a person will read
   it."** — the only support route offered anywhere in this phase.
 
@@ -1786,12 +1808,9 @@ Neither blocks implementation; both are cheap to change now and annoying to chan
 they go to the owner **with** the mock rather than after it. Recorded here so they survive into
 the gate presentation.
 
-1. **Is "better prices" the phrase AMJ wants?** It is the standing description of trade pricing
-   on every customer surface and in two of the four emails, chosen because it states the benefit
-   without implying a discount off a published number (which is what the no-percentage,
-   no-derivable-pair rule exists to prevent). Alternatives that obey the same rule: "trade
-   pricing" alone, or "your pricing". Changing it is one string in five places; changing it
-   after the copy ships means re-authoring Sanity templates too.
+1. ~~**Is the comparative phrasing the one AMJ wants?**~~ — **ANSWERED by the owner,
+   2026-08-19: retired.** "Trade pricing" is the name of the thing; the possessive line explains it. See the
+   revision-5 block for the ruling and the banned register. Nothing outstanding here.
 2. **Should the gate's optional business group sit earlier than last?** (`P2-UX-2`.) It
    currently sits after delivery, under its own rule, so nothing optional interrupts the run of
    required fields — which also means a hurrying tradie may never scroll to it. Moving it up to
