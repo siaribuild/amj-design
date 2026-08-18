@@ -24,6 +24,8 @@ import {
 } from "./helpers.mjs";
 import { ABR_FIXTURES, startAbrStub } from "./abr-stub.mjs";
 
+const MANUFACTURER_DOMAIN = "partner.example";
+
 test("lookupAbn: the one module that knows ABR exists (design §4)", async (t) => {
   const runDir = await makeRunDir("abr-client");
   const outfile = join(runDir, "abr.mjs");
@@ -154,6 +156,11 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:",
       "--var", "SANITY_PROJECT_ID:", "--var", "AI_EXTRACTION_MODE:manual",
       "--var", `ABR_BASE_URL:${stub.baseUrl}`, "--var", "ABR_GUID:test-guid-do-not-log",
+      // A manufacturer partner has to be REAL to be refused for the right
+      // reason: the role is derived from the email domain on every sign-in
+      // (worker/lib/staff.ts), so configuring the domain is the only way to
+      // provision one through the path that actually mints them.
+      "--var", `MANUFACTURER_EMAIL_DOMAINS:${MANUFACTURER_DOMAIN}`,
     ], { env: wranglerEnv });
     await waitForUrl(`${baseUrl}/api/health`, server);
 
@@ -571,6 +578,80 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       assert.equal(Number(after.discount_percent), 0);
       assert.equal(after.type, "customer");
       assert.equal(after.role, null);
+    });
+
+    await t.test("AC-P2-36: the queue shows a pending application to assigned-role staff", async () => {
+      const applicant = await newAccount("queue-a", "gmail.com");
+      await apply(applicant.session, {
+        abn: ABR_FIXTURES.wattle, businessName: "Wattle Grove Windows Pty Ltd", label: "builder", source: "trade_page",
+      });
+      const queuedId = (await applications(applicant.email))[0].id;
+
+      // Owner ruling Q4: assigned-role staff, NOT admin-only.
+      const staff = new Session(baseUrl);
+      const staffAddress = `tv-ops-${stamp}@openframe.com.au`;
+      await login(staff, "/api/ops/auth", staffAddress);
+      await sql(`UPDATE user SET role = 'estimator' WHERE email = '${esc(staffAddress)}'`);
+
+      const queue = (await requestJson(staff, "/api/ops/trade/applications")).body.applications;
+      const item = queue.find((a) => a.id === queuedId);
+      assert.ok(item, "the queued application is in the queue");
+      assert.equal(item.applicant.email, applicant.email);
+      assert.equal(item.abn, ABR_FIXTURES.wattle);
+      assert.deepEqual(item.queueReasons, ["email_domain"]);
+      assert.equal(item.abrSnapshot.entityName, "WATTLE GROVE WINDOWS PTY LTD",
+        "AC-P2-26: the frozen evidence, not a fresh lookup");
+    });
+
+    await t.test("AC-P2-37 / AC-P2-42: a non-admin assigned-role staff member approves, and it is attributed", async () => {
+      const applicant = await newAccount("approve", "gmail.com");
+      await apply(applicant.session, {
+        abn: ABR_FIXTURES.keystone, businessName: "Keystone Carpentry Pty Ltd", label: "tradie", source: "profile",
+      });
+      const applicantId = (await userRow(applicant.email)).id;
+      const queuedId = (await applications(applicant.email))[0].id;
+
+      // Owner ruling Q4: assigned-role staff, NOT admin-only. This one is not
+      // an admin, and it must succeed.
+      const staff = new Session(baseUrl);
+      const staffAddress = `tv-approver-${stamp}@openframe.com.au`;
+      await login(staff, "/api/ops/auth", staffAddress);
+      await sql(`UPDATE user SET role = 'estimator' WHERE email = '${esc(staffAddress)}'`);
+      const staffId = (await userRow(staffAddress)).id;
+
+      const approve = await staff.request(`/api/ops/trade/applications/${queuedId}/approve`, {
+        method: "POST", json: { note: "Spoke to the owner; ABN confirmed." },
+      });
+      assert.equal(approve.status, 200);
+      assert.deepEqual(await approve.json(), { ok: true });
+
+      const decided = (await applications(applicant.email))[0];
+      assert.equal(decided.status, "approved");
+      assert.equal(decided.decided_via, "ops");
+      assert.equal(decided.decided_by, staffId, "the decision records WHO made it");
+      assert.ok(decided.decided_at, "and when");
+      assert.equal(decided.decision_reason, "Spoke to the owner; ABN confirmed.");
+
+      const granted = await userRow(applicant.email);
+      assert.equal(Number(granted.discount_percent), 5, "the §5.5 grant is applied");
+      assert.equal(granted.abn, ABR_FIXTURES.keystone);
+      assert.equal(granted.trade_label, "tradie");
+      const me = (await requestJson(applicant.session, "/api/auth/me")).body.trade;
+      assert.equal(me.verified, true);
+      assert.equal(me.provenance, "ops");
+
+      // The item leaves the queue.
+      const after = (await requestJson(staff, "/api/ops/trade/applications")).body.applications;
+      assert.equal(after.some((a) => a.id === queuedId), false);
+
+      // AC-P2-42: attributed in the audit log, and the ABN is NOT in the entry.
+      const events = await sql(
+        `SELECT actor, action, after_json FROM audit_event WHERE entity_id = '${esc(applicantId)}' AND action LIKE 'trade.%'`,
+      );
+      const logged = events.find((e) => e.action === "trade.approved");
+      assert.ok(logged, `the approval is logged: ${JSON.stringify(events)}`);
+      assert.equal(logged.actor, staffId, "with its actor");
+      assert.ok(!JSON.stringify(logged).includes(ABR_FIXTURES.keystone), "and without the ABN in the log line");
     });
   } finally {
     if (server) await stop(server);

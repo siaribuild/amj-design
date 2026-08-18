@@ -134,6 +134,56 @@ export async function tradeStateOf(env: Env, user: UserRow): Promise<TradeState>
   };
 }
 
+/** One row of the ops review queue — a staff surface, never customer-served. */
+export interface OpsTradeApplication {
+  id: string;
+  applicant: { id: string; name: string | null; email: string };
+  abn: string | null;
+  businessName: string | null;
+  label: string | null;
+  source: string;
+  queueReasons: string[];
+  abrSnapshot: unknown;
+  createdAt: string | null;
+}
+
+/** Applications awaiting a decision — PENDING ONLY (AC-P2-35).
+ *
+ *  Everything a human needs in order to decide is here, so that deciding is not
+ *  a research task: the frozen ABR evidence and every reason it queued. */
+export async function pendingApplications(env: Env): Promise<OpsTradeApplication[]> {
+  const rows = await env.DB.prepare(
+    `SELECT t.id, t.user_id, t.abn, t.business_name, t.trade_label, t.source,
+            t.queue_reasons, t.abr_snapshot, t.created_at,
+            u.name AS applicant_name, u.email AS applicant_email
+       FROM trade_application t JOIN user u ON u.id = t.user_id
+      WHERE t.status = 'pending'
+      ORDER BY t.created_at`,
+  ).all<{
+    id: string; user_id: string; abn: string | null; business_name: string | null;
+    trade_label: string | null; source: string; queue_reasons: string | null;
+    abr_snapshot: string | null; created_at: string | null;
+    applicant_name: string | null; applicant_email: string;
+  }>();
+
+  const parse = <T>(raw: string | null, fallback: T): T => {
+    if (!raw) return fallback;
+    try { return JSON.parse(raw) as T; } catch { return fallback; }
+  };
+
+  return (rows.results ?? []).map((row) => ({
+    id: row.id,
+    applicant: { id: row.user_id, name: row.applicant_name, email: row.applicant_email },
+    abn: row.abn,
+    businessName: row.business_name,
+    label: row.trade_label,
+    source: row.source,
+    queueReasons: parse<string[]>(row.queue_reasons, []),
+    abrSnapshot: parse<unknown>(row.abr_snapshot, null),
+    createdAt: row.created_at,
+  }));
+}
+
 /** The P2-A4 lock: may this profile/payout write set `user.abn` to these digits?
  *
  *  Two paths write `user.abn` and they have different powers (spec §4.7). The
@@ -277,6 +327,53 @@ export async function applyForTrade(env: Env, user: UserRow, input: {
   }
 }
 
+/** Ops approves a queued application (AC-P2-37).
+ *
+ *  The claim is a GUARDED UPDATE, not a read-then-write: `AND status='pending'`
+ *  in the WHERE clause is the authorization of the state transition itself, so
+ *  two staff members clicking approve at the same moment produce exactly one
+ *  decision and one grant. `changes = 0` means somebody already decided it.
+ *
+ *  NOBODY APPROVES THEIR OWN APPLICATION. Structurally impossible today —
+ *  applicants are customers, deciders are internal, and an internal account is
+ *  refused at both ends — but the check is one line and survives any future
+ *  loosening of either fact. */
+export async function approveApplication(
+  env: Env, applicationId: string, actor: UserRow, note?: string,
+): Promise<{ ok: true } | { ok: false; error: "not_found" | "already_decided" | "forbidden" }> {
+  const application = await env.DB.prepare("SELECT * FROM trade_application WHERE id = ?")
+    .bind(applicationId).first<ApplicationRow & { business_name: string | null }>();
+  if (!application) return { ok: false, error: "not_found" };
+  if (application.status !== "pending") return { ok: false, error: "already_decided" };
+  if (application.user_id === actor.id) return { ok: false, error: "forbidden" };
+
+  const applicant = await env.DB.prepare("SELECT * FROM user WHERE id = ?")
+    .bind(application.user_id).first<UserRow>();
+  // AB-P2-11, the second of two independent checks: staff-ness is its own axis
+  // and no path may put a customer discount on an internal account.
+  if (!applicant || applicant.type !== "customer") return { ok: false, error: "forbidden" };
+
+  const claim = env.DB.prepare(
+    `UPDATE trade_application
+        SET status = 'approved', decided_via = 'ops', decided_by = ?1,
+            decided_at = datetime('now'), decision_reason = ?2
+      WHERE id = ?3 AND status = 'pending'`,
+  ).bind(actor.id, note?.trim() || null, applicationId);
+
+  const changes = await grant(env, {
+    applicationId, applicant,
+    abn: application.abn, businessName: application.business_name, label: application.trade_label,
+    insert: claim,
+  });
+  if (!changes) return { ok: false, error: "already_decided" };
+
+  await logEvent(env, {
+    actor: actor.id, entityType: "user", entityId: applicant.id,
+    action: "trade.approved", after: { applicationId, via: "ops" },
+  });
+  return { ok: true };
+}
+
 /** The grant, in one atomic batch — the only writer of trade facts onto `user`.
  *
  *  `insert` is the statement that creates or claims the approving application,
@@ -294,15 +391,22 @@ async function grant(env: Env, opts: {
   businessName: string | null;
   label: string | null;
   insert: D1PreparedStatement;
-}): Promise<void> {
+}): Promise<number> {
   const prior = await standingGrant(env, opts.applicant.id);
   const statements: D1PreparedStatement[] = [];
+  let claimIndex = 0;
   if (prior) {
+    // The EXISTS clause is what makes a lost race harmless. Without it, two
+    // staff members approving a re-application at the same instant would have
+    // the loser supersede the winner's brand-new grant and leave the account
+    // unverified — the one ordering in this batch that is not idempotent.
     statements.push(env.DB.prepare(
       `UPDATE trade_application SET superseded_at = datetime('now')
         WHERE user_id = ?1 AND id <> ?2
-          AND status = 'approved' AND revoked_at IS NULL AND superseded_at IS NULL`,
+          AND status = 'approved' AND revoked_at IS NULL AND superseded_at IS NULL
+          AND EXISTS (SELECT 1 FROM trade_application WHERE id = ?2 AND status = 'pending')`,
     ).bind(opts.applicant.id, opts.applicationId));
+    claimIndex = 1;
   }
   statements.push(opts.insert);
   // COALESCE so a gate-originated NULL label never blanks a value the account
@@ -318,5 +422,8 @@ async function grant(env: Env, opts: {
       "UPDATE user SET discount_percent = ?1 WHERE id = ?2 AND type = 'customer'",
     ).bind(TRADE_DISCOUNT_DEFAULT, opts.applicant.id));
   }
-  await env.DB.batch(statements);
+  const results = await env.DB.batch(statements);
+  // How many rows the CLAIM touched. Zero means somebody else decided this
+  // application between the read above and this batch (AB-P2-14).
+  return Number(results[claimIndex]?.meta?.changes ?? 0);
 }
