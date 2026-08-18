@@ -106,9 +106,14 @@ export async function findOrCreateInternalUser(env: Env, email: string): Promise
   // UNIQUE index; the loser's insert threw, nothing catches it, and the caller got
   // a bare 500 on sign-in. Now the loser inserts nothing and reads back the row
   // the winner created, which is the same identity either way.
+  // discount_percent is named explicitly as 0 (AC-40). Staff are not customers
+  // and never price anything for themselves; the column's DEFAULT of 5 meant every
+  // internal account created after migration 0032 silently carried a customer
+  // discount. Existing internal rows are NOT rewritten here — pinning those is
+  // Phase 2, and the promote/re-verify branch above deliberately never touches it.
   await env.DB.prepare(
-    `INSERT INTO user (id, email, name, type, role, last_verified_at)
-     SELECT ?, ?, ?, 'internal', ?, datetime('now')
+    `INSERT INTO user (id, email, name, type, role, discount_percent, last_verified_at)
+     SELECT ?, ?, ?, 'internal', ?, 0, datetime('now')
       WHERE NOT EXISTS (SELECT 1 FROM user WHERE email = ?)`,
   ).bind(id, email, email.split("@")[0], role, email).run();
   return (await env.DB.prepare("SELECT * FROM user WHERE email = ?").bind(email).first<UserRow>())!;

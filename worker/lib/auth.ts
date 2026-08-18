@@ -150,10 +150,18 @@ export async function findOrCreateUser(env: Env, email: string): Promise<{ user:
     return { user: existing, created: false };
   }
   const id = uuid();
-  const name = email.split("@")[0];
+  // name stays NULL: the person types their own name at the submission gate or at
+  // the name step (AC-5). Deriving "j.smith92" from an email address and calling
+  // it a name is the dishonesty registration Phase 1 exists to end.
+  //
+  // discount_percent is written EXPLICITLY as 0 (AC-9). The column's DEFAULT is 5
+  // and it stays that way: changing a column default in SQLite means rebuilding
+  // `user`, and a rebuild in this database has already fired ON DELETE CASCADE and
+  // destroyed production rows. Naming the value at every INSERT makes the default
+  // harmless dead weight instead.
   await env.DB.prepare(
-    "INSERT INTO user (id, email, name, last_verified_at) VALUES (?, ?, ?, datetime('now'))",
-  ).bind(id, email, name).run();
+    "INSERT INTO user (id, email, name, discount_percent, last_verified_at) VALUES (?, ?, NULL, 0, datetime('now'))",
+  ).bind(id, email).run();
   return { user: (await env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(id).first<UserRow>())!, created: true };
 }
 
