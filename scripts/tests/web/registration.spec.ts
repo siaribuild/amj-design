@@ -529,3 +529,26 @@ test.describe("AC-12 — the Turnstile gate on the sign-in step", () => {
     await expect(page.getByText("Complete the check above to continue.")).toHaveCount(0);
   });
 });
+
+// ─── §16.3.2 — the code step is its own step, and says so ─────────────────────
+// The heading and sub-copy were rendered outside the step conditional, so the
+// code step kept the email step's "Sign in or create your account" and never told
+// the person WHICH address the code had just gone to — the one fact they need to
+// know where to look, and the one that catches a typo in the address.
+test("the code step names the address the code went to, and how long it lasts", async ({ page }) => {
+  await buildDraft(page.request, `Code step ${stamp}`);
+  await openReview(page);
+  await page.getByLabel("Delivery postcode").fill("3072");
+  await page.getByRole("button", { name: /Submit for technical review/ }).click();
+
+  const email = freshEmail("codestep");
+  await expect(page.getByRole("heading", { name: "Sign in or create your account" })).toBeVisible();
+  await page.getByLabel("Email").fill(email);
+  await page.getByRole("button", { name: /email me a code/i }).click();
+
+  await expect(page.getByRole("heading", { name: "Enter your code" })).toBeVisible();
+  await expect(page.getByText(`We sent a 6-digit code to ${email}. It expires in 10 minutes.`)).toBeVisible();
+  // …and the email step's framing is gone, rather than sitting above it.
+  await expect(page.getByRole("heading", { name: "Sign in or create your account" })).toHaveCount(0);
+  await expect(page.getByText(/A person reviews every quote/)).toHaveCount(0);
+});

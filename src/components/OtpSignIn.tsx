@@ -14,7 +14,7 @@
 // ⚠️ NO MESSAGE HERE MAY DIFFER BETWEEN AN ADDRESS THAT HAS AN ACCOUNT AND ONE
 // THAT DOES NOT (AB-5). There is no "we don't recognise that email", ever.
 // ═══════════════════════════════════════════════════════════════════════════════
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertCircle } from "lucide-react";
 import { Btn, FieldLabel, Input } from "../app/ui";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "../lib/turnstile";
@@ -22,9 +22,13 @@ import { requestCode, verifyCode, ApiError, type AuthUserDto } from "../data/api
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
-export function OtpSignIn({ heading, subcopy, layout = "card", onAuthed, onCancel, cancelLabel }: {
+export function OtpSignIn({ heading, subcopy, layout = "card", stepBadge, onAuthed, onCancel, cancelLabel }: {
   heading: string;
   subcopy: string;
+  /** The step numeral beside the heading (§16.3). Present only where the gate is
+   *  actually a numbered sequence — a returning customer who never saw a sign-in
+   *  step is not on step 2 of anything, so the caller decides. */
+  stepBadge?: string;
   /** PRESENTATION ONLY — same flow, same copy, same states.
    *
    *  `card` is /login: a 384px column where a full-bleed field and a full-bleed
@@ -51,7 +55,6 @@ export function OtpSignIn({ heading, subcopy, layout = "card", onAuthed, onCance
   const [rateLimited, setRateLimited] = useState(false);
   const [devCode, setDevCode] = useState<string | undefined>();
   const [cooldown, setCooldown] = useState(0);
-  const codeRef = useRef<HTMLDivElement>(null);
 
   // Turnstile, present only where a site key is configured. The Worker demands a
   // token on /api/auth/challenge whenever TURNSTILE_SECRET is set: the endpoint
@@ -101,10 +104,31 @@ export function OtpSignIn({ heading, subcopy, layout = "card", onAuthed, onCance
   };
 
   return (
-    <div className="space-y-4" ref={codeRef}>
+    <div className="space-y-4">
+      {/* THE HEADING BELONGS TO THE STEP, not to the component. Rendered outside
+          the conditional, the code step kept the email step's framing and never
+          said which address the code had gone to — so a typo in the address was
+          invisible until the code that could never arrive didn't (§16.3.2). */}
       <div>
-        <h2 tabIndex={-1} className="font-semibold text-ink font-display t-hd2">{heading}</h2>
-        <p className="text-body mt-1 t-bd-sm">{subcopy}</p>
+        <div className="flex items-baseline gap-2.5">
+          {stepBadge && (
+            <span aria-hidden="true"
+              className="w-6 h-6 flex-shrink-0 grid place-items-center self-start mt-0.5 bg-sage text-white font-data t-data">
+              {stepBadge}
+            </span>
+          )}
+          {/* Not a focus target: §16.9 sends focus to the field when a single
+              field is the obvious one, which both of these steps are — and both
+              fields already autoFocus on mount. */}
+          <h2 className="font-semibold text-ink font-display t-hd2">
+            {step === "email" ? heading : "Enter your code"}
+          </h2>
+        </div>
+        <p className="text-body mt-1 t-bd-sm">
+          {step === "email"
+            ? subcopy
+            : `We sent a 6-digit code to ${email.trim()}. It expires in 10 minutes.`}
+        </p>
       </div>
 
       {step === "email" ? (
@@ -189,8 +213,9 @@ export function OtpSignIn({ heading, subcopy, layout = "card", onAuthed, onCance
                 className="text-body hover:text-ink cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed t-bd-sm">
                 {cooldown > 0 ? `Resend code (${cooldown}s)` : "Resend code"}
               </button>
-              <button type="button" onClick={() => { setStep("email"); setCode(""); setError(""); setDevCode(undefined); }}
-                className="text-body hover:text-ink cursor-pointer t-bd-sm">
+              <button type="button" disabled={busy}
+                onClick={() => { setStep("email"); setCode(""); setError(""); setDevCode(undefined); }}
+                className="text-body hover:text-ink cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed t-bd-sm">
                 Use a different email
               </button>
             </div>
