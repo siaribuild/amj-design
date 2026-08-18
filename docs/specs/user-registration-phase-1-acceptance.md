@@ -315,3 +315,29 @@ permanent test. Worth folding into Phase 2's suite when the ops contact line lan
 4. **Q4 — deploy gating.** Confirm the full battery, the full web suite and the security stage gate
    run and pass at the accepted commit before Phase 1 goes to production? *Recommendation: yes,
    required.*
+
+---
+
+## Owner sign-off — 2026-08-19
+
+The owner reviewed this verdict and ruled on all four decisions:
+
+1. **Stage-0 caption — FIX BEFORE DEPLOY.** The unexplained disabled Submit also occurs on the
+   anonymous pre-gate screen (no delivery postcode typed). Same treatment as AC-14 rev 4: the
+   outstanding caption names it. Routed to the developer.
+2. **The five live assumptions — RATIFIED as shipped:** A1 (guest tracking untouched), A2
+   (details collected at the gate, not at account creation), A4 (phone format-only, no SMS),
+   A-P1-4 (no auto-submit after the code), A-P1-5 (a NULL name is *displayed* as the email local
+   part and **never stored** — a name remains required wherever it matters: no quote can be
+   submitted without one, and `/login` enforces it via `NameStep`). The owner asked for
+   clarification on A-P1-5 specifically and accepted it once the display-only nature was explicit.
+3. **AU-only phone validation — ACCEPTED for Phase 1.** An account holding a non-AU number cannot
+   save a profile change until it is corrected; the refusal names the field and states nothing was
+   saved. Rationale: AU-only is ruling Q2/D9, production holds 3 team accounts, ops can correct a
+   row directly.
+4. **Deploy gating — CONFIRMED required.** Full `npm test` + `npm run test:web` green at the final
+   commit, plus the security stage gate and a green security-sweep CI run on the deployed commit.
+
+Conditions C1–C4 are therefore: C1 in progress (developer runs the full gate after the stage-0
+fix), C2 in progress (security review), C3 closed (spec header now reads revision 4), C4 closed
+(ratified above).
