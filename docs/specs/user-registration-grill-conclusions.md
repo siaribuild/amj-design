@@ -97,6 +97,9 @@ CONTEXT.md's Customer definition, which currently says accounts are trade busine
 - **Phase 2 — Trade verification.** ABN + business name + builder/tradie label; live ABR check;
   auto-pass triple; ops review queue + outcome emails; one-ABN rule; staff pinned 0;
   3 prod accounts grandfathered trade. Value: tradies get trade pricing legitimately.
+  Owner add-on (2026-08-18, "so I would not forget"): the referral payout form pre-fills its
+  ABN field from the account's stored ABN; ops project record gains the read-only contact line
+  (phone/address) deferred out of Phase 1.
 - **Phase 3 — The shop window.** Real trade-account page (replacing the mock that silently
   discards applications); "trade pricing exists" surfaces; CONTEXT.md invariants + referral
   abuse-case regressions.
