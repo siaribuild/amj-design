@@ -178,9 +178,11 @@ test("a returning customer's details are live inputs — no sign-in stage, nothi
 
   await openReview(page);
 
-  // No sign-in stage at all.
+  // No sign-in stage at all — and therefore no step numerals: a returning
+  // customer never saw a step 1, so they are not on step 2 of anything.
   await expect(page.getByRole("heading", { name: "Sign in or create your account" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Your details" })).toBeVisible();
+  await expect(page.getByTestId("stage-badge")).toHaveCount(0);
 
   // Every stored value is already IN an editable input.
   await expect(page.getByLabel("Full name")).toHaveValue(COMPLETE.name);
@@ -551,4 +553,38 @@ test("the code step names the address the code went to, and how long it lasts", 
   // …and the email step's framing is gone, rather than sitting above it.
   await expect(page.getByRole("heading", { name: "Sign in or create your account" })).toHaveCount(0);
   await expect(page.getByText(/A person reviews every quote/)).toHaveCount(0);
+});
+
+// ─── §16.3 badges + §16.5.1 carried-over helper ──────────────────────────────
+// The gate reads as a numbered two-stage sequence ONLY for someone who actually
+// went through the sign-in — a returning customer is not on step 2 of anything
+// (the approved mock's surface 6 carries no badge). And the delivery postcode a
+// visitor typed before the gate must say where it came from, so a value that
+// appeared on its own is not mistaken for one the site guessed.
+test("the gate numbers its two stages, and says where a carried postcode came from", async ({ page }) => {
+  await buildDraft(page.request, `Badges ${stamp}`);
+  await openReview(page);
+
+  await page.getByLabel("Delivery postcode").fill("3072");
+  await page.getByRole("button", { name: /Submit for technical review/ }).click();
+
+  // Stage 1 carries its numeral.
+  await expect(page.getByRole("heading", { name: "Sign in or create your account" })).toBeVisible();
+  await expect(page.getByTestId("stage-badge")).toHaveText("1");
+
+  await gateSignIn(page, freshEmail("badges"));
+  await expect(page.getByRole("heading", { name: "Your details" })).toBeVisible();
+
+  // Stage 2 carries its own.
+  await expect(page.getByTestId("stage-badge")).toHaveText("2");
+
+  // …and the postcode typed before the gate says it was carried, not guessed.
+  await expect(page.getByLabel("Delivery postcode")).toHaveValue("3072");
+  await expect(page.getByText("Carried over from the postcode you used above.")).toBeVisible();
+  await expect(page.getByText("We price delivery from this.")).toHaveCount(0);
+
+  // Typing a different destination makes it the customer's own value again.
+  await page.getByLabel("Delivery postcode").fill("3064");
+  await expect(page.getByText("Carried over from the postcode you used above.")).toHaveCount(0);
+  await expect(page.getByText("We price delivery from this.")).toBeVisible();
 });

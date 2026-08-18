@@ -112,7 +112,7 @@ export function OtpSignIn({ heading, subcopy, layout = "card", stepBadge, onAuth
       <div>
         <div className="flex items-baseline gap-2.5">
           {stepBadge && (
-            <span aria-hidden="true"
+            <span aria-hidden="true" data-testid="stage-badge"
               className="w-6 h-6 flex-shrink-0 grid place-items-center self-start mt-0.5 bg-sage text-white font-data t-data">
               {stepBadge}
             </span>

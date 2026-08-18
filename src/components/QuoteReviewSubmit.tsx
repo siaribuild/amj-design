@@ -204,6 +204,11 @@ export function QuoteReviewSubmit({
   const [suburb, setSuburb] = useState(storedDelivery?.suburb ?? "");
   const [postcode, setPostcode] = useState(storedDelivery?.postcode ?? "");
   const [postcodeError, setPostcodeError] = useState("");
+  // The pre-gate value, remembered so the details form can say where it came
+  // from. It is the ONLY thing that ever pre-fills a delivery field, and a value
+  // that appears on its own — with no account address anywhere near it — is
+  // exactly the kind of thing a person assumes the site guessed (§16.5.1).
+  const [carriedPostcode, setCarriedPostcode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
@@ -253,6 +258,9 @@ export function QuoteReviewSubmit({
   const openGate = () => {
     if (attentionCount > 0) { onFixBlocked(); return; }
     linesBeforeAuth.current = quote.items.length;
+    // Only a value the visitor typed here counts as carried; a project's own
+    // stored destination was already theirs and needs no explaining.
+    if (/^\d{4}$/.test(postcode) && !storedDelivery?.postcode) setCarriedPostcode(postcode);
     setGateOpened(true);
   };
 
@@ -462,6 +470,7 @@ export function QuoteReviewSubmit({
               heading={OTP_COPY.gate.heading}
               subcopy={OTP_COPY.gate.subcopy}
               layout="inline"
+              stepBadge="1"
               onAuthed={handleAuthed}
               onCancel={() => setGateOpened(false)}
               cancelLabel="Back to my quote"
@@ -473,7 +482,18 @@ export function QuoteReviewSubmit({
         {stage === "details" && user && (
           <div className="quote-panel p-5 space-y-4 mb-4">
             <div>
-              <h2 className="font-semibold text-ink font-display t-hd2">Your details</h2>
+              {/* Numbered only for someone who actually went through the sign-in.
+                  A returning customer never saw a step 1, so they are not on step
+                  2 of anything — the approved mock's surface 6 carries no badge. */}
+              <div className="flex items-baseline gap-2.5">
+                {gateOpened && (
+                  <span aria-hidden="true" data-testid="stage-badge"
+                    className="w-6 h-6 flex-shrink-0 grid place-items-center self-start mt-0.5 bg-sage text-white font-data t-data">
+                    2
+                  </span>
+                )}
+                <h2 className="font-semibold text-ink font-display t-hd2">Your details</h2>
+              </div>
               <p className="text-body mt-1 t-bd-sm">So we can quote you properly and get the delivery right. We'll keep these on your account — next quote, they're already filled in.</p>
               {user.name && (
                 <p className="text-sage flex items-center gap-1.5 mt-2 t-bd-sm"><CheckCircle className="w-4 h-4" />From your account — edit if anything's changed.</p>
@@ -603,7 +623,11 @@ export function QuoteReviewSubmit({
                     placeholder="3072" />
                   {postcodeError
                     ? <FieldError id="postcode-err">{postcodeError}</FieldError>
-                    : <p id="postcode-help" className="text-body mt-1 t-cap">We price delivery from this.</p>}
+                    : <p id="postcode-help" className="text-body mt-1 t-cap">
+                        {carriedPostcode && postcode === carriedPostcode
+                          ? "Carried over from the postcode you used above."
+                          : "We price delivery from this."}
+                      </p>}
                 </div>
               </div>
             </div>
