@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { join } from "node:path";
 import {
-  Session, demoEmail, freePort, login, makeRunDir, removeRunDir,
+  Session, completeAccount, demoEmail, freePort, login, makeRunDir, removeRunDir,
   requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
@@ -149,7 +149,7 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       ], { env: wranglerEnv });
       await requestJson(buyer, `/api/projects/${current.body.project.id}/submit`, {
         method: "POST",
-        json: { contact: { name: "Upload Test", email: "upload@example.com" } },
+        json: { delivery: { postcode: "3072" } },
       }, 409);
       await run(process.execPath, [
         wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
@@ -624,13 +624,31 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       await requestJson(staff, "/api/ops/orders/o_1/pay", { method: "POST", json: { kind: "deposit" } }, 409);
     });
 
-    await t.test("customer submit: server validates state/lines/contact and persists the contact", async () => {
+    await t.test("customer submit: server validates session/state/lines/account and persists the account's contact", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "submitter@example.com");
-      // Empty draft cannot be submitted, even with a contact.
       const empty = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [] } });
       const pid = empty.body.project.id;
-      const emptyDraft = await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "Sam", email: "sam@example.com", postcode: "3072" } } }, 400);
+
+      // The submission gate, in the order the server applies it. No session at
+      // all is 401 before anything else is looked at.
+      const stranger = new Session(baseUrl);
+      const noSession = await requestJson(stranger, `/api/projects/${pid}/submit`, {
+        method: "POST", json: { delivery: { postcode: "3072" } },
+      }, 401);
+      assert.deepEqual(noSession.body, { error: "unauthorized" });
+
+      // A signed-in customer whose account is not complete is refused by name,
+      // whatever the browser said.
+      const incomplete = await requestJson(buyer, `/api/projects/${pid}/submit`, {
+        method: "POST", json: { delivery: { postcode: "3072" } },
+      }, 400);
+      assert.equal(incomplete.body.error, "incomplete_profile");
+      assert.ok(incomplete.body.missing.includes("name"));
+      await completeAccount(buyer, { name: "Sam Builder" });
+
+      // Empty draft cannot be submitted, complete account or not.
+      const emptyDraft = await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { delivery: { postcode: "3072" } } }, 400);
       assert.equal(emptyDraft.body.error, "empty_quote");
 
       // A fully-priced line makes the quote submittable.
@@ -655,7 +673,7 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
         method: "PUT", json: { items: [line] },
       }, 409);
       await requestJson(buyer, `/api/projects/${pid}/submit`, {
-        method: "POST", json: { contact: { name: "Sam", email: "sam@example.com" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       }, 409);
       await run(process.execPath, [
         wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
@@ -674,24 +692,30 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
          VALUES ('${pid}',1,'test-pending','scheduled',0);`,
       ], { env: wranglerEnv });
       await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST",
-        json: { contact: { name: "Sam", email: "sam@example.com" } } }, 409);
+        json: { delivery: { postcode: "3072" } } }, 409);
       await run(process.execPath, [
         wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
         "--command", `UPDATE ai_job_claim SET status='completed' WHERE project_id='${pid}' AND source_generation=1;`,
       ], { env: wranglerEnv });
 
-      // Contact is required by the server, not just the SPA.
-      await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "", email: "" } } }, 400);
+      // The delivery postcode is required by the server, not just the SPA.
+      await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { delivery: {} } }, 400);
+      // An identity in the body is not read at all — the contact persisted below
+      // is the SESSION's, and this one falls on the floor.
       const ok = await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST",
-        json: { contact: { name: "Sam Builder", email: "sam@example.com", phone: "0400 000 000", suburb: "Preston VIC 3072", postcode: "3072" } } });
+        json: {
+          contact: { name: "Someone Else", email: "victim@example.com" },
+          delivery: { suburb: "Preston VIC 3072", postcode: "3072" },
+        } });
       assert.equal(ok.body.status, "submitted");
       // A submitted project is no longer a draft — resubmission is rejected.
-      await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { contact: { name: "Sam", email: "sam@example.com" } } }, 409);
+      await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST", json: { delivery: { postcode: "3072" } } }, 409);
       // P1-01: nor can its source/evidence be wiped via the draft-only clear endpoint.
       await requestJson(buyer, "/api/projects/current/clear", { method: "POST" }, 409);
-      // The contact was persisted and is visible to staff.
+      // The contact was persisted FROM THE ACCOUNT and is visible to staff.
       const opsView = await requestJson(staff, `/api/ops/projects/${pid}`);
-      assert.equal(opsView.body.project.contactEmail, "sam@example.com");
+      assert.equal(opsView.body.project.contactEmail, "submitter@example.com");
+      assert.notEqual(opsView.body.project.contactEmail, "victim@example.com");
       assert.equal(opsView.body.project.deliverySuburb, "Preston VIC 3072");
       const reconciliationNote = opsView.body.comments.find((comment) => comment.kind === "note" && /Automatic document reconciliation/.test(comment.body));
       assert.ok(reconciliationNote, "submission carries the visible document discrepancies into the staff review thread");
@@ -760,6 +784,7 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
     await t.test("registered customer can submit source documents for human review after an AI capacity limit", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "capacity-fallback@example.com");
+      await completeAccount(buyer);
       const draft = await requestJson(buyer, "/api/projects/current/lines", {
         method: "PUT",
         json: { items: [] },
@@ -782,7 +807,7 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       assert.equal(status.body.run.diagnostic.code, "RATE_LIMITED");
       const submitted = await requestJson(buyer, `/api/projects/${pid}/submit`, {
         method: "POST",
-        json: { contact: { name: "Casey Builder", email: "casey@example.com", postcode: "3072" } },
+        json: { delivery: { postcode: "3072" } },
       });
       assert.equal(submitted.body.status, "submitted");
     });
@@ -790,6 +815,7 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
     await t.test("AI capacity fallback cannot submit after its last source file is deleted", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "empty-capacity-fallback@example.com");
+      await completeAccount(buyer);
       const draft = await requestJson(buyer, "/api/projects/current/lines", {
         method: "PUT",
         json: { items: [] },
@@ -809,7 +835,7 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       ], { env: wranglerEnv });
       const rejected = await requestJson(buyer, `/api/projects/${pid}/submit`, {
         method: "POST",
-        json: { contact: { name: "Casey Builder", email: "casey@example.com", postcode: "3072" } },
+        json: { delivery: { postcode: "3072" } },
       }, 400);
       assert.equal(rejected.body.error, "empty_quote");
     });
@@ -817,6 +843,7 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
     await t.test("stalled AI work fails visibly within the UX window and can proceed to human review", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "stalled-ai-fallback@example.com");
+      await completeAccount(buyer);
       const draft = await requestJson(buyer, "/api/projects/current/lines", {
         method: "PUT",
         json: { items: [] },
@@ -844,7 +871,7 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       assert.equal(status.body.run.diagnostic.code, "TEMPORARY_FAILURE");
       const submitted = await requestJson(buyer, `/api/projects/${pid}/submit`, {
         method: "POST",
-        json: { contact: { name: "Stalled AI", email: "stalled-ai@example.com", postcode: "3072" } },
+        json: { delivery: { postcode: "3072" } },
       });
       assert.equal(submitted.body.status, "submitted");
     });
@@ -852,6 +879,7 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
     await t.test("registered customer AI edits reach staff repricing but cannot pass approval unpriced", async () => {
       const buyer = new Session(baseUrl);
       await login(buyer, "/api/auth", "ai-edit@example.com");
+      await completeAccount(buyer);
       const line = { code: "W09", location: "Study", productSlug: "amj80-series-awning-window", width: "900", height: "1200", qty: 1,
         options: { colour: "Monument", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" } };
       const saved = await requestJson(buyer, "/api/projects/current/lines", { method: "PUT", json: { items: [line] } });
@@ -864,7 +892,7 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
          WHERE project_id='${pid}';`,
       ], { env: wranglerEnv });
       const submitted = await requestJson(buyer, `/api/projects/${pid}/submit`, { method: "POST",
-        json: { contact: { name: "AI Edit", email: "ai-edit@example.com", postcode: "3072" } } });
+        json: { delivery: { postcode: "3072" } } });
       assert.equal(submitted.body.status, "submitted");
 
       await requestJson(staff, `/api/ops/projects/${pid}/start-pricing`, { method: "POST", json: {} });
@@ -956,9 +984,16 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       const anonTotal = (await save(guest)).body.items[0].lineTotal;
       assert.ok(anonTotal > 0, "an anonymous line prices");
 
-      // Registered: 5% by default (0032), applied before the $10 rounding.
+      // Registered AND given a rate. Since registration Phase 1 every account is
+      // created at 0% — a discount is granted, never inherited from a column
+      // default — so the rate this test is about is set explicitly. Written
+      // straight to D1 because no endpoint may write it, which is half the point.
       const member = new Session(baseUrl);
       await login(member, "/api/auth", "discount.default@example.com");
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", "UPDATE user SET discount_percent = 5 WHERE email = 'discount.default@example.com'",
+      ], { env: wranglerEnv });
       const memberTotal = (await save(member)).body.items[0].lineTotal;
       assert.ok(memberTotal < anonTotal, `registered (${memberTotal}) prices below anonymous (${anonTotal})`);
       // The discount is applied to the UNROUNDED subtotal and the result is then
@@ -973,6 +1008,10 @@ test("API edge cases and negative paths", { timeout: 300_000 }, async (t) => {
       // percentage off the price is exactly the field a browser would like to set.
       const liar = new Session(baseUrl);
       await login(liar, "/api/auth", "discount.liar@example.com");
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state,
+        "--command", "UPDATE user SET discount_percent = 5 WHERE email = 'discount.liar@example.com'",
+      ], { env: wranglerEnv });
       const lied = await requestJson(liar, "/api/projects/current/lines", {
         method: "PUT",
         json: { title: "Discount probe", items: [{ ...line, discountPercent: 90, ownerUserId: "u_demo" }] },

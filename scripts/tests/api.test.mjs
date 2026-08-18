@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { join } from "node:path";
 import {
-  Session, freePort, login, makeRunDir, removeRunDir, requestJson,
+  Session, completeAccount, freePort, login, makeRunDir, removeRunDir, requestJson,
   run, seedUserCount, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
@@ -346,7 +346,12 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
     // submitter. Both failures were silent: the lookup found nothing, the
     // anti-enumeration response still advanced the UI to the code screen, and no
     // email was ever sent.
-    await t.test("anonymous quote is trackable by its OF-Q reference", async () => {
+    // Since registration Phase 1 the submitter is always an account holder (the
+    // anonymous submit path is gone), but the legacy guest-tracking flow is
+    // untouched and must keep working — a person who signed in once, submitted,
+    // and later came back on a device with no session still tracks by reference
+    // and email (A1/D10, AC-37).
+    await t.test("a submitted quote is trackable by its OF-Q reference", async () => {
       const guest = new Session(baseUrl);
       const email = "anon.tracker@example.com";
       const saved = await requestJson(guest, "/api/projects/current/lines", {
@@ -365,10 +370,20 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       const ref = saved.body.project.ref;
       assert.match(ref, /^OF-Q-\d+$/);
 
+      // The claim cookie as it stood BEFORE sign-in, kept for the authorisation
+      // assertion further down.
+      const claimOnlyCookies = new Map(guest.cookies);
+
+      // The gate: sign in (which claims the draft), complete the account, submit.
+      await login(guest, "/api/auth", email);
+      await completeAccount(guest, { name: "Anon Tester" });
       await requestJson(guest, `/api/projects/${projectId}/submit`, {
         method: "POST",
-        json: { contact: { name: "Anon Tester", email, phone: "0400 000 000", suburb: "Rowville", postcode: "3178" } },
+        json: { delivery: { suburb: "Rowville", postcode: "3178" } },
       });
+      // …and then this device forgets the session, which is the situation the
+      // guest-tracking flow exists for.
+      await requestJson(guest, "/api/auth/logout", { method: "POST" });
 
       // A code must actually be issued — the reported symptom was silence here.
       const req = await requestJson(guest, "/api/guest/track/request", { method: "POST", json: { email, ref } });
@@ -400,7 +415,7 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       // itself authorise acting on a committed record. Proving control of the
       // email address is the bar, which is what this session has now done.
       const cookieOnly = new Session(baseUrl);
-      cookieOnly.cookies = new Map(guest.cookies);
+      cookieOnly.cookies = claimOnlyCookies;
       cookieOnly.cookies.delete("apertly_guest");
       await requestJson(cookieOnly, `/api/projects/${projectId}/quote`, {}, 404);
       // …and with the verified guest session, the same request resolves. (This
@@ -446,9 +461,10 @@ test("local Worker, D1, KV, R2, auth, quote, and order journeys", { timeout: 300
       const projectId = made.body.project.id;
       const parentId = made.body.items[0].id;
       const openingTotal = made.body.items[0].lineTotal;
+      await completeAccount(cust, { name: "Composite Tester" });
       await requestJson(cust, `/api/projects/${projectId}/submit`, {
         method: "POST",
-        json: { contact: { name: "Composite Tester", email: "composite@example.com", phone: "0400 000 000", suburb: "Rowville", postcode: "3178" } },
+        json: { delivery: { suburb: "Rowville", postcode: "3178" } },
       });
 
       const split = await requestJson(ops, `/api/ops/lines/${parentId}/split`, {
