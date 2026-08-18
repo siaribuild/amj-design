@@ -82,11 +82,13 @@
 .b-outline{border-color:var(--ink);color:var(--ink);background:transparent}
 .b-ghost{color:var(--body);background:transparent}
 .b-danger{background:var(--destructive);color:#fff}
-.b-sage is-disabled{background:var(--ink);color:#fff;opacity:.4}
 /* A disabled Btn keeps its OWN fill and drops to 40% (ui.tsx:96 disabled:opacity-40;
    /login uses opacity-50 for the not-yet-valid case). So a not-yet-ready sage
    Submit is a faded SAGE button, never a dark ink one — it must read as the same
-   button waiting, not a different button. */
+   button waiting, not a different button. A dark-ink disabled variant that the
+   Phase 1 preamble carried (dead, because its selector was missing a dot) has
+   been DELETED here rather than carried forward: "fixing" that typo would have
+   silently inverted the rule the owner approved. Do not reinstate it. */
 .is-disabled{opacity:.4}
 .is-pending{opacity:.5}
 /* Inputs — .field-control. theme.css:602 fills from --control-fill, which
@@ -777,9 +779,14 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
         <div class="cap"><span>Mobile · 375w</span><span>verified</span></div>
         <div class="screen mob"><div class="mkt" style="padding:20px">
           <div class="card p20">
-            <span class="pill p-pos mb12" style="display:inline-flex"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Trade account · Active</span>
-            <h3 class="t-hd3 c-ink mb4" style="margin-top:8px">Your trade account is active</h3>
-            <p class="t-cap c-body mb16">Your ABN checked out. Trade pricing applies to your account from now on — the prices you see anywhere on the site are already your prices. Anything already with us for review will be priced by our team.</p>
+            <div class="outcome mb16">
+              <svg class="ic ic-20" aria-hidden="true"><use href="#i-check-circle"/></svg>
+              <div>
+                <h4>Your trade account is active</h4>
+                <p>Your ABN checked out. Trade pricing applies to your account from now on — the prices you see anywhere on the site are already your prices.</p>
+                <p>Anything already with us for review will be priced by our team.</p>
+              </div>
+            </div>
             <div class="col g8 mb16">
               <div class="readonly"><span class="t-cap c-quiet">Business</span><span>Buildright Constructions</span></div>
               <div class="readonly"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
@@ -788,6 +795,10 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
           </div>
         </div></div>
       </div>
+    </div>
+    <div class="note">
+      <b>One structure at both widths</b>
+      <p>Desktop and mobile render the <b>same</b> thing: the outcome block (icon, heading, prose), then the read-only rows, then the actions. <b>No status pill on either outcome panel, at either width</b> — the outcome block already carries the heading, and a pill beside it would state the same fact twice. Pills belong on the account card (surface 3), where the card has its own heading and the status is the answer to a question the customer came asking.</p>
     </div>
     <div class="note">
       <b>What is deliberately absent</b>
@@ -827,10 +838,18 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
         <div class="cap"><span>Mobile · 375w</span><span>under review</span></div>
         <div class="screen mob"><div class="mkt" style="padding:20px">
           <div class="card p20">
-            <span class="pill p-work mb12" style="display:inline-flex"><svg class="ic ic-12" aria-hidden="true"><use href="#i-clock"/></svg>Trade application · Under review</span>
-            <h3 class="t-hd3 c-ink mb4" style="margin-top:8px">We're checking your details</h3>
-            <p class="t-cap c-body mb16">Thanks — we've got the ABN and business details for Buildright Constructions. Someone here is checking them and we'll email you when it's done. Your account works as normal in the meantime — you can price jobs, submit them and track them.</p>
-            <div class="readonly mb16"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
+            <div class="outcome work mb16">
+              <svg class="ic ic-20" aria-hidden="true"><use href="#i-clock"/></svg>
+              <div>
+                <h4>We're checking your details</h4>
+                <p>Thanks — we've got the ABN and business details for Buildright Constructions. Someone here is checking them and we'll email you when it's done.</p>
+                <p>Your account works as normal in the meantime — you can price jobs, submit them and track them.</p>
+              </div>
+            </div>
+            <div class="col g8 mb16">
+              <div class="readonly"><span class="t-cap c-quiet">Business</span><span>Buildright Constructions</span></div>
+              <div class="readonly"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
+            </div>
             <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Start a quote <svg class="ic" aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
           </div>
         </div></div>
@@ -1202,7 +1221,7 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
 
   <div class="state">
     <h3><span class="tag g">State</span> Confirmation — the submission is done, the ABN check is not</h3>
-    <p>One added line on Phase 1's existing confirmation screen, present only when an ABN went with the submission. It states no percentage, no timeframe, and <b>no promise that this quote will be repriced</b>.</p>
+    <p>One added block on Phase 1's existing confirmation screen, present only when an ABN went with the submission. It states no percentage, no timeframe, and <b>no promise that this quote will be repriced</b> — and it sits <b>below the actions, under a rule</b>, deliberately far from Phase 1's "1–2 business days" quote-review line so the two can never be read as one promise.</p>
     <div class="frames">
       <div class="dev half">
         <div class="cap"><span>Desktop · confirmation</span><span>submitted with an ABN</span></div>
@@ -1211,12 +1230,14 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
             <div style="width:56px;height:56px;border:1px solid rgba(90,122,106,.3);background:var(--sage-wash);display:grid;place-items:center;margin:0 auto 20px"><svg width="24" height="24" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" stroke-width="1.5" aria-hidden="true"><use href="#i-mark"/></svg></div>
             <h2 class="t-hd2 c-ink mb8">Quote submitted</h2>
             <p class="t-bd-sm c-body mb16">We've received your project and emailed a confirmation to <span class="c-ink">sam@buildright.com.au</span>. We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote with its reference. Expect a response within 1–2 business days.</p>
-            <div class="outcome work" style="text-align:left;margin-bottom:16px">
-              <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
-              <div><h4>We're checking your ABN</h4><p>We'll email you about your trade account separately. This quote isn't waiting on it.</p></div>
-            </div>
             <p class="t-cap c-body mb16">No payment at this stage. Deposit only after you approve the reviewed quote.</p>
-            <div class="row g12 jc"><span class="btn btn-md b-sage">View status</span><span class="btn btn-md b-ghost">Back to home</span></div>
+            <div class="row g12 jc mb24"><span class="btn btn-md b-sage">View status</span><span class="btn btn-md b-ghost">Back to home</span></div>
+            <div class="bt" style="padding-top:20px">
+              <div class="outcome work" style="text-align:left">
+                <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
+                <div><h4>Your trade account is a separate check</h4><p>The response time above is for your quote review. Checking your ABN is a separate job with <b>no timeframe attached</b> — we'll email you when it's done, and your quote isn't waiting on it.</p></div>
+              </div>
+            </div>
           </div>
         </div></div>
       </div>
@@ -1228,18 +1249,25 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
             <div style="width:56px;height:56px;border:1px solid rgba(90,122,106,.3);background:var(--sage-wash);display:grid;place-items:center;margin:0 auto 20px"><svg width="24" height="24" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" stroke-width="1.5" aria-hidden="true"><use href="#i-mark"/></svg></div>
             <h2 class="t-hd2 c-ink mb8">Quote submitted</h2>
             <p class="t-bd-sm c-body mb16">We've received your project and emailed a confirmation to <span class="c-ink">sam@buildright.com.au</span>. We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote with its reference. Expect a response within 1–2 business days.</p>
-            <div class="outcome mute" style="text-align:left;margin-bottom:16px">
-              <svg class="ic" aria-hidden="true"><use href="#i-info"/></svg>
-              <div><h4>We couldn't start the ABN check</h4><p>Your quote is safely submitted. You can add your ABN any time from <span class="linkbtn">your account</span>.</p></div>
+            <p class="t-cap c-body mb16">No payment at this stage. Deposit only after you approve the reviewed quote.</p>
+            <div class="row g12 jc mb24"><span class="btn btn-md b-sage">View status</span><span class="btn btn-md b-ghost">Back to home</span></div>
+            <div class="bt" style="padding-top:20px">
+              <div class="outcome mute" style="text-align:left">
+                <svg class="ic" aria-hidden="true"><use href="#i-info"/></svg>
+                <div><h4>We couldn't start the ABN check</h4><p>Your quote is safely submitted and isn't affected. You can add your ABN any time from <span class="linkbtn">your account</span>.</p></div>
+              </div>
             </div>
-            <div class="row g12 jc"><span class="btn btn-md b-sage">View status</span><span class="btn btn-md b-ghost">Back to home</span></div>
           </div>
         </div></div>
       </div>
     </div>
     <div class="flag">
+      <b>Two timeframes must never touch</b>
+      <p>Phase 1's confirmation promises a quote-review response in <b>1–2 business days</b>. That promise is about the quote and only the quote. In the first draft of this mock the ABN block sat two lines under it, and a fast reader would have carried the 1–2 days onto the verification — a turnaround promise by adjacency, which the owner's ruling forbids as absolutely as one in words. The block now sits after the actions, behind a rule, and <b>says out loud that the response time above is not its own</b>.</p>
+    </div>
+    <div class="flag">
       <b>The one sentence that must not creep</b>
-      <p>"This quote isn't waiting on it" is the whole truth and the whole promise. It must never become "and we'll update your quote if it's approved" — ops prices a reviewed quote at the account's rate when they review it, and <b>nothing recalculates behind the customer's back</b> (P2-D4). A repricing promise here would be a promise the system does not keep.</p>
+      <p>"Your quote isn't waiting on it" is the whole truth and the whole promise. It must never become "and we'll update your quote if it's approved" — ops prices a reviewed quote at the account's rate when they review it, and <b>nothing recalculates behind the customer's back</b> (P2-D4). A repricing promise here would be a promise the system does not keep.</p>
     </div>
   </div>
 </section>
@@ -1383,7 +1411,11 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
               <div class="crit"><span class="mk p"><svg aria-hidden="true"><use href="#i-check"/></svg></span>ABN is valid and active</div>
               <div class="crit"><span class="mk f"><svg aria-hidden="true"><use href="#i-x"/></svg></span>Submitted name matches the register — "Okafor Glazing Group" vs entity and 2 trading names</div>
               <div class="crit"><span class="mk p"><svg aria-hidden="true"><use href="#i-check"/></svg></span>Email domain plausibly matches the business — okaforglazing.com.au</div>
-              <div class="crit"><span class="mk f"><svg aria-hidden="true"><use href="#i-x"/></svg></span>ABN not verified on another account — <span class="linkbtn" style="margin-left:4px">Priya Raman · priya@ogglass.com.au</span></div>
+            </div>
+            <div class="grouprule">
+              <p class="t-label c-quiet mb8">Duplicate ABN</p>
+              <div class="crit"><span class="mk f"><svg aria-hidden="true"><use href="#i-x"/></svg></span>This ABN is already verified on another account — <span class="linkbtn" style="margin-left:4px">Priya Raman · priya@ogglass.com.au</span></div>
+              <p class="helptext">A duplicate always comes to a person, however well the three checks score. You can still approve it if two accounts legitimately share the ABN.</p>
             </div>
           </div>
 

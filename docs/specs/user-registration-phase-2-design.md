@@ -1249,6 +1249,22 @@ this section is the contract.
 Every string in **bold quotes** is final copy. `ASSUMED:` tags mark choices made without the
 owner, vetoable at any later gate. This section governs design §10 track (b), steps 9–15.
 
+**Revision 2 (2026-08-19, after the ui-designer's visual pass — four copy/structure divergences
+it correctly refused to fix itself):**
+
+1. **The ops "three checks" list held four rows.** The duplicate-ABN test is now its own block
+   below the triple — it is a separate gate, evaluated before the ABR lookup, and it forces a
+   queue regardless of the triple's score (§18.7.3).
+2. **The confirmation's trade block moved below the actions, behind a rule, and now explicitly
+   disclaims the quote-review response time** it used to sit two lines under (§18.5.2). This is
+   the owner's no-turnaround ruling defended against promise-by-adjacency, not a layout
+   preference.
+3. **Surfaces 2's outcome panels are one structure at both widths** — outcome block, rows,
+   actions; **no status pill at either width** (§18.4.1).
+4. **The dead `.b-sage is-disabled` rule is deleted from the mock's preamble** (a missing dot
+   made it inert; "fixing" the typo would have turned the approved faded-sage disabled Submit
+   into a dark ink button).
+
 **Inherited without restatement:** Phase 1 design §16 (the gate's one-screen model, its stages,
 its "a disabled Submit is never unexplained" rule, its focus/keyboard/a11y rules §16.9 and its
 responsive rules §16.10). Everything here is an addition to that contract, never a replacement.
@@ -1419,8 +1435,14 @@ Sage outcome block, CheckCircle, 3px inset spine — Phase 1's "this went well" 
 > **"Anything already with us for review will be priced by our team."**
 
 Then read-only Business / ABN / (label, when stated) rows, then **"Start a quote"** (sage) and
-**"Go to my account"** (ghost). On mobile the block leads with the pill **"Trade account ·
-Active"**, the two paragraphs merge into one, and the primary button is full-width.
+**"Go to my account"** (ghost).
+
+**One structure at both widths** (revision 2, ui-designer finding 3): desktop and mobile render
+the same three parts in the same order — outcome block, read-only rows, actions — with the same
+two paragraphs. Mobile changes only what mobile always changes: full-width primary button, 20px
+card padding. **No status pill on either outcome panel, at either width.** The outcome block's heading
+already states the status; a pill beside it says the same fact twice. Pills belong on the account
+card (§18.3), where the card carries its own heading.
 
 ### 18.4.2 Under review
 
@@ -1431,6 +1453,9 @@ Work-tone block, clock icon. **Never amber, never a triangle, never the word "un
 > them and we'll email you when it's done."**
 > **"Your account works as normal in the meantime — you can price jobs, submit them and track
 > them."**
+
+Then the same read-only rows and actions as §18.4.1, in the same order, at both widths, with no
+status pill.
 
 **This copy is constant across every queue reason** — free mailbox, name mismatch, inactive ABN,
 duplicate, ABR outage. There is no third panel and no per-reason variant. A future request to say
@@ -1483,16 +1508,31 @@ is **"That ABN doesn't look right. Check the 11 digits and try again."**)
 2. **After** the server confirms submission, and only then, the client fires
    `applyForTrade({ ..., source: "submit_gate" })`. The submit request itself never waits on
    ABR.
-3. The confirmation screen (`QuoteSubmitted`) renders unchanged, plus one block:
-   - application created → work tone: **"We're checking your ABN"** /
-     **"We'll email you about your trade account separately. This quote isn't waiting on it."**
+3. The confirmation screen (`QuoteSubmitted`) renders unchanged, plus one block **placed after
+   the action buttons, under a full-width hairline rule** — see the placement rule below:
+   - application created → work tone: **"Your trade account is a separate check"** /
+     **"The response time above is for your quote review. Checking your ABN is a separate job
+     with no timeframe attached — we'll email you when it's done, and your quote isn't waiting
+     on it."**
    - application call failed → mute tone: **"We couldn't start the ABN check"** /
-     **"Your quote is safely submitted. You can add your ABN any time from your account."**
-     (the last three words link to the account page).
+     **"Your quote is safely submitted and isn't affected. You can add your ABN any time from
+     your account."** (the last three words link to the account page).
    - no ABN entered → no block at all.
 
-**"This quote isn't waiting on it" is the whole promise.** It must never grow into "and we'll
-update your quote if it's approved" (P2-D4).
+**Placement is load-bearing, not cosmetic** (revision 2, ui-designer finding 2). Phase 1's
+confirmation carries **"Expect a response within 1–2 business days"** — the quote-review SLA. In
+the first draft the trade block sat two lines beneath it, and a fast reader would have attached
+that number to the ABN check: a turnaround promised by adjacency, which the owner's ruling
+forbids as absolutely as one promised in words. Two defences, both required:
+
+1. **Distance and structure** — the block sits below the actions, behind a rule, at the end of
+   the screen. It is not part of the paragraph that carries the SLA.
+2. **An explicit disclaimer in the copy** — "The response time above is for your quote review …
+   no timeframe attached". The block denies the number rather than merely avoiding it.
+
+Neither may be dropped in implementation, and no future edit may move this block above the
+actions. **"Your quote isn't waiting on it" is the whole promise** — it must never grow into
+"and we'll update your quote if it's approved" (P2-D4).
 
 ## 18.6 The history outline (AC-P2-13)
 
@@ -1536,10 +1576,18 @@ Three stacked cards: **applicant + submission**, **what the register said**, **d
   name"**, **"Entity status"** (e.g. **"Active since 1 Jul 2014"**), **"Entity type"**, **"Trading
   names"** (· separated). When the lookup failed: a single row **"Register unavailable at the
   time — nothing was returned."**
-- **"The three checks"** — one line per criterion with a pass/fail/not-evaluated mark:
-  **"ABN is valid and active"** · **"Submitted name matches the register"** (with the compared
-  names) · **"Email domain plausibly matches the business"** (with the domain) · and, when
-  relevant, **"ABN not verified on another account"** with the other holder(s) as links.
+- **"The three checks"** — exactly three lines, one per criterion of the auto-pass triple, each
+  with a pass / fail / not-evaluated mark: **"ABN is valid and active"** · **"Submitted name
+  matches the register"** (with the compared names) · **"Email domain plausibly matches the
+  business"** (with the domain). The heading counts the rows; if a criterion is ever added or
+  removed, the heading changes with it.
+- **"Duplicate ABN"** — a **separate** block below the triple, rendered only when
+  `duplicate_abn` is among the queue reasons (revision 2, ui-designer finding 1). It is not one
+  of the three: the engine evaluates it before the ABR lookup and it forces a queue however well
+  the triple scores, so listing it as a fourth "check" misdescribed both the count and the
+  mechanism. Row: **"This ABN is already verified on another account"** with the other holder(s)
+  as links to their records; caption: **"A duplicate always comes to a person, however well the
+  three checks score. You can still approve it if two accounts legitimately share the ABN."**
 - Decision card: field **"Decision note"**, placeholder **"Why you're approving or rejecting —
   the customer never sees this."**, helper **"Required to reject. Optional to approve."**;
   buttons **"Approve trade pricing"** (primary) and **"Reject"** (secondary).
@@ -1648,16 +1696,33 @@ Playwright absence assertions, not review items:
 5. No queue reason, criterion name, or other-ABN-holder reference in any customer-facing
    response, screen or email (AB-P2-7, AC-P2-44).
 6. No timeframe token ("business day", "hours", "usually", a date) in any outcome screen or
-   email (AC-P2-64).
+   email (AC-P2-64) — **and, on the confirmation screen, no trade block rendered above the
+   action buttons**, where it would inherit Phase 1's quote-review SLA by adjacency (§18.5.2).
+   The Playwright assertion is positional as well as textual: the trade block's DOM position is
+   after the actions container.
 7. Trade copy on exactly the four AC-P2-48 surfaces and nowhere else — home page, nav, quote
    builder and review pricing panels stay silent.
 
-## 18.14 Open questions for the owner
+## 18.14 Open questions for the owner — put these at the mock gate
 
-None blocking. Two worth a look at the gate review:
+Neither blocks implementation; both are cheap to change now and annoying to change later, so
+they go to the owner **with** the mock rather than after it. Recorded here so they survive into
+the gate presentation.
 
-1. **"Better prices" as the standing phrase.** Every surface uses it. If AMJ prefers "trade
-   pricing" alone, or "your pricing", it is one string change in three places.
-2. **The gate's optional group sits last** (`P2-UX-2`). If the owner would rather a tradie meet
-   it earlier — right after their name and phone, where identity questions live — it moves; the
-   trade-off is that an optional block then interrupts the run of required fields.
+1. **Is "better prices" the phrase AMJ wants?** It is the standing description of trade pricing
+   on every customer surface and in two of the four emails, chosen because it states the benefit
+   without implying a discount off a published number (which is what the no-percentage,
+   no-derivable-pair rule exists to prevent). Alternatives that obey the same rule: "trade
+   pricing" alone, or "your pricing". Changing it is one string in five places; changing it
+   after the copy ships means re-authoring Sanity templates too.
+2. **Should the gate's optional business group sit earlier than last?** (`P2-UX-2`.) It
+   currently sits after delivery, under its own rule, so nothing optional interrupts the run of
+   required fields — which also means a hurrying tradie may never scroll to it. Moving it up to
+   sit beside name and phone would put it in front of more eyes at the cost of interrupting the
+   required run. The owner overruled "keep the gate minimal" once already (P2-D3), so this is
+   their call, not a re-litigation of it.
+
+**Resolved without the owner** (recorded so the gate can see what was decided rather than
+asked): the two ui-designer copy findings above — the "three checks" count and the SLA
+adjacency — were both settled on the rules already given (the triple is three, and no turnaround
+may be promised), so neither became a question.
