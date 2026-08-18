@@ -1,10 +1,11 @@
 # User registration — Phase 1: Honest registration + the submission gate
 
 Branch: `feat/user-registration`
-Status: **revision 2 — the owner answered all five questions of revision 1 (2026-08-18). Delivery
-pre-fill and the 13/1300/1800 phone shapes are now DECIDED rather than assumed; new staff accounts
-at 0% is IN scope; the ops read-only contact line is OUT (a named Phase 2 seam); Phase 1 says
-nothing about trade pricing anywhere. §12 "Decisions needed" is EMPTY.**
+Status: **revision 3 — the owner reviewed the mock at the gate and directed two changes
+(2026-08-18). The gate has NO separate name stage; details render as directly editable inputs and
+the delivery fields are NEVER seeded from the account address. AC-42's prefill clause is struck —
+the Q1 ruling of revision 2 is overturned by the owner's later ruling at the mock gate. §12
+"Decisions needed" is EMPTY.**
 Author: product-manager
 Date: 2026-08-18
 
@@ -12,20 +13,29 @@ Date: 2026-08-18
 That document is binding. Its *Actors and needs* section is reproduced verbatim in §3; its decisions
 ledger (D1–D10) and assumptions (A1–A4) govern wherever this spec is silent.
 
+**Interaction authority:** `docs/specs/user-registration-phase-1-design.md` **§16** (ux-designer,
+revision 2) with the mock `docs/mocks/registration-phase-1-submit-gate.html`. §16 owns stage
+structure, field order and copy; where this spec and §16 describe the same screen, §16 is the
+picture and this document is the acceptance contract. The two were reconciled in this revision —
+the ux-designer flagged the AC-42 contradiction in writing (§16.11 `UX-4`) rather than papering
+over it.
+
 **Phase cut:** this is Phase 1 of three. Phase 2 (trade verification: ABN/ABR, ops review queue,
 builder/tradie labels, staff pinning, grandfathering) and Phase 3 (trade-account page, marketing
 surfaces) are **out of scope here** — §6 names the seams they attach to. Deferred tickets T1–T4 are
 untouched.
 
-**Owner rulings folded into this revision (revision 1 → 2):**
+**Owner rulings, in the order they were made:**
 
-| Q | Ruling | Effect on this spec |
+| # | Ruling | Effect on this spec |
 |---|---|---|
-| Q1 | Delivery address **pre-fills** from the account address, editable per quote | §4.3 — `A-P1-1` promoted from assumption to decision |
-| Q2 | 13 / 1300 / 1800 service numbers **are** valid contact phones | §7.2 — `A-P1-2` promoted to decision |
-| Q3 | New internal/staff accounts **also** start at 0% — the bind-value fix is in Phase 1 | §2.1, AC-40; existing staff rows still pinned in Phase 2 |
-| Q4 | The ops read-only contact/address line is **deferred to Phase 2** | Removed from scope entirely; recorded as seam §6.6 |
-| Q5 | **Say nothing** about trade pricing in any Phase 1 UI | §2.3, AC-41 |
+| Q1 (rev 1→2) | Delivery pre-fills from the account address | **OVERTURNED at the mock gate — see MG-2 below.** Recorded, not deleted (§13) |
+| Q2 (rev 1→2) | 13 / 1300 / 1800 service numbers **are** valid contact phones | §7.2, AC-20 — stands |
+| Q3 (rev 1→2) | New internal/staff accounts **also** start at 0% | §2.1, AC-40 — stands; existing staff rows pinned in Phase 2 |
+| Q4 (rev 1→2) | The ops read-only contact/address line is **deferred to Phase 2** | Seam §6.6 — stands |
+| Q5 (rev 1→2) | **Say nothing** about trade pricing in any Phase 1 UI | §2.3, AC-41 — stands |
+| **MG-1** (rev 2→3, mock gate) | **No separate name step inside the gate.** *"Why ask for full name separately and then ask for name and surname as part of details? Feels like unneeded step."* | §4.2, §4.4, AC-6 |
+| **MG-2** (rev 2→3, mock gate) | **Pre-filled details are directly editable, and delivery is never seeded from the account address.** *"Tradies are unlikely to deliver to the same address, ever — it will most likely be their customer site address each time."* | §4.3, AC-14, AC-42 |
 
 ---
 
@@ -59,7 +69,9 @@ turn away someone wandering around."*
   one point and one point only: **Submit for review**.
 - A person who submits a quote has an account, a verified email, a name they typed themselves, an
   address and a contactable phone number.
-- A returning customer submits their second quote without re-typing any of it.
+- A returning customer submits their second quote without re-typing any of it — **and without
+  clicking anything open to correct what has changed**.
+- Nothing is asked twice. One question, one field, one time.
 - No account is created on trade pricing by accident — customer or staff.
 - The referral attribution seam, the one-draft claim-merge rule, and the OTP anti-enumeration and
   rate-limiting properties are **provably unchanged** by this work.
@@ -71,24 +83,27 @@ turn away someone wandering around."*
 ### 2.1 In scope
 
 1. **Honest sign-in/create UI.** The OTP flow keeps its mechanics exactly (D1) and stops
-   misdescribing itself: relabelled entry points, corrected supporting copy, and the person's
-   **name collected from the person** instead of derived from their email address.
+   misdescribing itself: relabelled entry points (§16.12 lists every string), corrected supporting
+   copy, and the person's **name collected from the person** instead of derived from their email
+   address.
 2. **The submission gate.** `Submit for review` requires a session. Without one, the OTP
    sign-in/create step runs **inline on the submit screen**; the existing claim-merge bridge
    (`claimAnonProjectForUser`, `worker/lib/access.ts:108-138`) attaches the draft; submission then
-   proceeds.
+   proceeds. **Two stages, not three: sign in → your details → submit** (MG-1).
 3. **Deletion of the anonymous submit path** — the body-supplied identity at
    `worker/routes/quote.ts:191-206`. Identity at submit comes from the session, never the request.
 4. **Minimum data to submit:** name, address, phone (AU format validation, format-only — no SMS,
    A4), email (verified by OTP by construction). Collected at the gate when missing (A2), persisted
-   on the account, pre-filled thereafter — including pre-filling this project's delivery
-   destination from the account address (Q1).
+   on the account, and **pre-filled into directly editable fields** thereafter (MG-2).
 5. **New accounts are created at `discount_percent = 0`** (D4) — **customer accounts
    (`worker/lib/auth.ts:154-156`) and internal/staff accounts (`worker/lib/staff.ts:110`) alike**
    (Q3). Existing rows of either kind untouched.
-6. **Migration** adding account address columns to `user` (additive only — §7.3).
-7. **GST house rule** on every surface this phase adds or changes (§8).
-8. **Abuse-case criteria** (§10) and browser-level coverage (§11).
+6. **A `NameStep` for the two paths where no details form follows** — after verifying at `/login`,
+   and the nameless-account interstitial (E4). It is **never rendered inside the gate** (MG-1,
+   §16.4).
+7. **Migration** adding account address columns to `user` (additive only — §7.3).
+8. **GST house rule** on every surface this phase adds or changes (§8).
+9. **Abuse-case criteria** (§10) and browser-level coverage (§11).
 
 ### 2.2 Out of scope — later phases (seams noted in §6)
 
@@ -157,9 +172,9 @@ invented.*
 
 | Actor | Served in Phase 1 | Deferred |
 |---|---|---|
-| Private customer | Anonymous browsing/pricing untouched; one-minute OTP account at the point of submission; a name they typed; their quote reaches a human with real contact details | — |
-| Tradie / Builder | Same account creation path; details captured once and pre-filled thereafter | Trade pricing (Phase 2 — see §2.4), ABN, the builder/tradie label |
-| Ops (staff) | Every new submission carries a verified email, a real name, an address and a phone; time-wasters filtered at the door; a newly created staff account no longer carries a customer discount (Q3) | Seeing the new phone/address on an ops screen (Q4); the review queue, ABN visibility, revocation, pinning of existing staff rows |
+| Private customer | Anonymous browsing/pricing untouched; one-minute OTP account at the point of submission; a name they typed, asked once; their quote reaches a human with real contact details | — |
+| Tradie / Builder | Same account creation path; details captured once and pre-filled into editable fields thereafter; **the delivery destination starts blank every time, because it is a different site every time** (MG-2) | Trade pricing (Phase 2 — see §2.4), ABN, the builder/tradie label |
+| Ops (staff) | Every new submission carries a verified email, a real name, an address and a phone, and a delivery address the customer actually entered for that job; time-wasters filtered at the door; a newly created staff account no longer carries a customer discount (Q3) | Seeing the new phone/address on an ops screen (Q4); the review queue, ABN visibility, revocation, pinning of existing staff rows |
 
 ---
 
@@ -168,49 +183,80 @@ invented.*
 ### 4.1 Anonymous, before the gate — unchanged
 
 Browse → configure → live prices → autosave draft → upload documents. No account, no prompt, no
-change of any kind. The claim cookie continues to hold the draft.
+change of any kind. The claim cookie continues to hold the draft. The review screen's delivery
+postcode field and its delivery estimate stay where they are today, before the gate (§16.2,
+`UX-1`) — "anyone can see a price" includes the delivery part of it.
 
-### 4.2 The gate
+### 4.2 The gate — two stages (MG-1)
 
 The customer presses **Submit for technical review** on the review screen
 (`src/components/QuoteReviewSubmit.tsx`).
 
-**Without a session,** the contact panel on that screen is replaced by a two-step, in-place
-sign-in/create:
+**Without a session,** the gate panel opens in place:
 
-1. **Email** — one field, the Turnstile widget when `TURNSTILE_SITE_KEY` is configured (the
-   existing `/api/auth/challenge` requirement, `worker/routes/auth.ts:46-49`), and honest framing:
-   this creates an account if they don't have one.
-2. **Code** — the six-digit OTP, verified through the unchanged `POST /api/auth/verify`.
+- **Stage 1 — sign in or create.** Email field, the Turnstile widget when `TURNSTILE_SITE_KEY` is
+  configured (the existing `/api/auth/challenge` requirement, `worker/routes/auth.ts:46-49`), then
+  the six-digit OTP, verified through the unchanged `POST /api/auth/verify`. Honest framing: this
+  creates an account if they don't have one.
+- **Stage 2 — your details** (§4.3). On success the page **does not auto-submit** and **does not
+  ask for the name on its own screen**. Submission remains the customer's deliberate act.
 
-On success the page **does not auto-submit**. It advances to **Your details** (§4.3) with everything
-the account already knows pre-filled. Submission remains the customer's deliberate act.
+**There is no name stage inside the gate.** A fresh account arrives at the details form with an
+empty, required **Full name** field that blocks Submit and is named in the outstanding-items
+caption; a returning account arrives with the same field filled. Same panel, different starting
+values. Asking for the name in its own step and then again in the details form is one question
+asked twice, and the owner removed it.
 
-**With a session,** the sign-in steps do not appear at all — the screen goes straight to
-**Your details**, pre-filled.
+**With a session,** the sign-in stage does not appear at all — the screen goes straight to
+**Your details**, pre-filled (§4.3, AC-14).
 
-### 4.3 Your details — the minimum to submit (D9, A2)
+### 4.3 Your details — the minimum to submit (D9, A2), directly editable (MG-2)
 
 | Field | Source of truth | Required | Validation |
 |---|---|---|---|
-| Full name | `user.name` | yes | non-empty after trim |
-| Email | `user.email` | — | not editable here; verified by OTP by construction |
+| Full name | `user.name` | yes | non-empty after trim; **empty for a fresh account** |
 | Phone | `user.phone` | yes | AU format (§7.2), format-only (A4) |
-| Address (line 1, line 2 optional, suburb, state, postcode) | `user.address_*` (new, §7.3) | yes except line 2 | non-empty; postcode 4 digits; state one of the 8 AU values |
+| Email | `user.email` | — | **read-only display row** — it is the sign-in identity, and an accidental edit is a lockout |
+| Address (street, unit/level optional, suburb, state, postcode) | `user.address_*` (new, §7.3) | yes except unit/level | non-empty; postcode 4 digits; state one of the 8 AU values |
 | Delivery suburb + postcode for **this project** | `project.delivery_suburb` / `project.delivery_postcode` (existing) | yes | unchanged from today |
+
+**Every field is a live, directly editable input.** There is no collapsed summary and no "Edit
+details" affordance for a returning customer: correcting a stale phone number costs a cursor, not a
+click-to-expand and then a cursor. Email is the single exception, and it is read-only rather than
+hidden.
 
 Pressing **Submit for technical review** persists any changed account fields, then submits.
 
-**The account address and the project's delivery destination are different facts and stay in
-different places** (house rule: one place per fact). **DECIDED (Q1):** the delivery fields
-**pre-fill from the account address** when they are empty, and stay editable per quote — a tradie's
-delivery address is a site, not their office.
+**The account address and the project's delivery destination are different facts, stored in
+different places, and one is never guessed from the other** (MG-2). Delivery precedence, highest
+first, with no fourth entry:
 
-### 4.4 After a first-ever sign-in, wherever it happens
+1. The project's stored `delivery_suburb` / `delivery_postcode`, if it has any.
+2. The postcode the visitor typed **before the gate** (postcode only — there is no pre-gate suburb
+   field).
+3. **Empty.**
 
-A newly created account has **no name** (§7.1). The client shows a single mandatory **"What's your
-name?"** step immediately after verification — at the gate, at `/login`, anywhere `verify` reports a
-created account — and saves it through the existing `POST /api/auth/profile`.
+**The account address is never read into a delivery field** — not on a first quote, not on a fifth,
+not as a placeholder. The primary actor is a tradie and their delivery destination is their
+customer's site, different nearly every time; a prefill that is wrong nearly every time is worse
+than a blank field, because it is wrong *and* it stops the field being read. The account address is
+still required and still collected — it is quote and paperwork data, and Phase 2's ops view depends
+on it (seam §6.6). It is simply not a delivery guess.
+
+### 4.4 The name step — outside the gate only (MG-1)
+
+`NameStep` is a real component that must be built, but the submit gate never renders it. It exists
+for the two paths that sign a person in with **no details form after them**:
+
+| Path | Trigger |
+|---|---|
+| `/login` | `user.name === null` after verification → the name step instead of the dashboard |
+| Account interstitial (E4) | `user && !user.name` inside the account shell → the name step instead of the section content |
+
+The deciding rule: **ask for the name where it is not about to be asked for anyway.** Both paths key
+off the same `user.name === null` signal, so someone who abandoned the gate mid-way and later signs
+in at `/login` is asked exactly once, there. The step is mandatory in both — no skip, no dismissal,
+no "later".
 
 ### 4.5 The claim-merge collision — the customer sees what will be submitted
 
@@ -227,8 +273,8 @@ list that changed underneath them.
 ## 5. Acceptance criteria
 
 Every criterion is independently verifiable. **AC-n** are functional; **AB-n** (§10) are abuse cases
-the tester must *attempt* and see refused. AC-40 and AC-41 were added in revision 2 and are numbered
-after the existing set so no earlier id moves.
+the tester must *attempt* and see refused. AC-40/41/42 were added in revision 2 and AC-6, AC-14,
+AC-17 and AC-42 were amended in revision 3 (MG-1/MG-2); no id has ever been reused or renumbered.
 
 ### 5.1 Anonymity before the gate is unchanged
 
@@ -248,9 +294,15 @@ after the existing set so no earlier id moves.
   account.
 - **AC-5** — Given an email address with no existing account, When the OTP is verified, Then a
   `user` row is created with **`name` NULL** — the email local part is never written to `name`.
-- **AC-6** — Given a just-created account, When verification completes, Then the customer is shown a
-  mandatory single-field name step, and cannot reach the dashboard or the submit action until a
-  non-empty name is saved.
+- **AC-6** *(amended, rev 3 / MG-1)* — Given a just-created account, When verification completes,
+  Then the person is required to supply a name before they can go further, satisfied **in exactly
+  one of two ways depending on where they signed in**:
+  **(a)** at `/login` or in the account shell, a mandatory single-field name step, with the
+  dashboard and the account sections unreachable until a non-empty name is saved;
+  **(b)** inside the submit gate, a **required, empty, autofocused Full name field in the details
+  form** which blocks Submit and is named in the outstanding-items caption.
+  **The gate must not render a separate name step** — the name is asked once, in the form that was
+  going to ask for it anyway.
 - **AC-7** — Given an account whose `name` is NULL, When any customer surface displays the person's
   name, Then it falls back to a display-only derivation (email local part) and **never writes that
   value to the database**.
@@ -261,7 +313,7 @@ after the existing set so no earlier id moves.
 - **AC-10** — Given an account that existed before this phase's deploy, When the migration and the
   new code are applied, Then its `discount_percent` is byte-for-byte what it was — customer and
   internal rows alike.
-- **AC-40** *(revision 2, Q3)* — Given a newly created **internal/staff** account
+- **AC-40** *(rev 2, Q3)* — Given a newly created **internal/staff** account
   (`findOrCreateInternalUser`, `worker/lib/staff.ts:79-115`), When its row is read, Then
   `discount_percent` is **0**; and Given an **existing** internal account that is promoted or
   re-verified, When that path runs, Then its `discount_percent` is left exactly as it was — pinning
@@ -275,10 +327,13 @@ after the existing set so no earlier id moves.
 - **AC-12** — Given the gate's email step with `TURNSTILE_SITE_KEY` configured, When it renders,
   Then the Turnstile widget is present and the Send-code action is disabled until a token exists.
 - **AC-13** — Given the gate's code step, When a correct code is entered, Then a session is
-  established, the screen advances to **Your details**, and **no submission has occurred**.
-- **AC-14** — Given a signed-in customer with a complete profile, When they reach the review screen,
-  Then no sign-in step is shown, the details are pre-filled from their account, and Submit is
-  enabled without further typing.
+  established, the screen advances **directly to Your details** (no intermediate name step), and
+  **no submission has occurred**.
+- **AC-14** *(amended, rev 3 / MG-2)* — Given a signed-in customer with a complete profile, When
+  they reach the review screen, Then no sign-in stage is shown and every stored value is already in
+  a **live, editable input** — Submit is reachable with **no further typing and no further
+  clicking**, and correcting any single field takes exactly one interaction (a cursor into it).
+  There is no collapsed summary and no expand-to-edit affordance anywhere in the details panel.
 - **AC-15** — Given a signed-in customer, When they submit, Then the project moves to
   `status_customer = 'submitted'` exactly as it does today (state guards, line readiness, duplicate
   codes, AI-generation checks all unchanged), and the confirmation screen is shown only on a
@@ -286,18 +341,22 @@ after the existing set so no earlier id moves.
 - **AC-16** — Given a submitted project, When the persisted contact fields are read, Then
   `contact_name`, `contact_email` and `contact_phone` hold **the account's** values, and no value
   supplied in the request body was used.
-- **AC-17** — Given a signed-in customer whose account is missing name, phone or address, When they
-  reach the review screen, Then Submit is disabled until each missing field is filled, and the
-  missing ones are individually identified.
+- **AC-17** *(amended, rev 3 / MG-1)* — Given a signed-in customer whose account is missing name,
+  phone or address, When they reach the review screen, Then Submit is disabled and the outstanding
+  items are individually named in a caption above it — **`full name` included whenever it is
+  missing**, which for a fresh account is the first item listed. The caption empties as the fields
+  are filled, and untouched fields are not marked as errors before the customer has touched them.
 - **AC-18** — Given the details step, When the customer fills the fields and submits, Then the
   values are persisted on the **account**, and on their next quote every one of them is pre-filled.
 - **AC-19** — Given a customer who edits a pre-filled field before submitting, When the submission
   succeeds, Then the edited value is persisted to the account (the gate is the account's editing
   surface as well as its collection surface).
-- **AC-42** *(revision 2, Q1)* — Given an account with a stored address and a project whose delivery
-  suburb/postcode are empty, When the customer reaches the details step, Then the delivery fields are
-  **pre-filled from the account address**; and When the customer overwrites them and submits, Then
-  the project stores the overwritten delivery destination and **the account address is unchanged**.
+- **AC-42** *(amended, rev 3 / MG-2 — the prefill clause is struck)* — Given an account with a
+  stored address, When the customer reaches the details step, Then the delivery fields are
+  **never pre-filled from the account address**, and instead follow this precedence: the project's
+  stored delivery values if any, else the postcode the visitor typed before the gate (postcode
+  only), else **empty**; and When the customer enters or overwrites the delivery values and submits,
+  Then the project stores the entered delivery destination and **the account address is unchanged**.
 
 ### 5.4 Phone and address validation
 
@@ -371,7 +430,7 @@ after the existing set so no earlier id moves.
   by nothing until Phase 2).
 - **AC-39** — Given the pricing engine, When any quote is priced before and after this change for an
   account whose `discount_percent` is unchanged, Then every line total is identical.
-- **AC-41** *(revision 2, Q5)* — Given every surface this phase adds or changes, When it is read
+- **AC-41** *(rev 2, Q5)* — Given every surface this phase adds or changes, When it is read
   end to end, Then it makes **no mention of trade pricing, trade accounts, discounts, or applying
   for any of them**, and contains no link to the trade-account mock
   (`src/app/App.tsx:1675-1734`).
@@ -388,7 +447,7 @@ Recorded so the later phases attach cleanly and so nobody builds them early:
 2. **`discount_percent` is written at account creation only** — for customer and internal rows
    alike (Q3). Phase 2 owns every other write: trade verification, pinning **existing** staff rows,
    and grandfathering the 3 prod accounts.
-3. **The details step is the natural home of Phase 2's ABN + business name + builder/tradie label.**
+3. **The details form is the natural home of Phase 2's ABN + business name + builder/tradie label.**
    Phase 1 adds none of them and leaves no placeholder.
 4. **The trade-account mock (`src/app/App.tsx:1675-1734`) is untouched** — it still discards
    applications, which is Phase 3's problem. Phase 1 must not link to it from any new surface
@@ -462,14 +521,14 @@ new surface displays a discount percentage or any figure from which one is deriv
 | E1 | OTP email never arrives at the gate | Resend is available; the draft and the claim cookie survive; nothing is submitted |
 | E2 | `/api/auth/challenge` returns 429 (IP rate limit, `worker/lib/auth.ts:113-119`) | The gate shows a plain "too many attempts, try again later" message; the draft is untouched; the limit itself is unchanged |
 | E3 | Wrong code entered repeatedly | Existing attempt burn (`consumeChallenge`, `auth.ts:123-138`) applies unchanged; the gate reports failure without saying whether the account existed |
-| E4 | Customer closes the tab mid-gate after verifying | The account exists (possibly nameless); returning re-enters at the name step, then the details step; the draft is theirs |
+| E4 | Customer closes the tab mid-gate after verifying | The account exists with `name = NULL`; returning through the account shell shows the **nameless-account interstitial** (§4.4), and returning through `/login` shows the name step — each asks once. Returning through the gate instead asks in the details form (AC-6b). The draft is theirs either way |
 | E5 | Customer signs in at the gate with an account that already has a draft | §4.5 / AC-26 — merged, re-resolved, redisplayed |
-| E6 | Delivery estimate preview after a merge | Re-fetched against the surviving project id; a stale preview is never shown against a different project |
-| E7 | Draft has blocking or unpriced lines | Existing behaviour wins: the customer is sent back to fix them; the gate is not reached |
+| E6 | Delivery estimate preview after a merge | Re-fetched against the surviving project id; a stale preview is never shown against a different project, and the estimate is suppressed while the project is re-resolving |
+| E7 | Draft has blocking or unpriced lines | Existing behaviour wins: the customer is sent back to fix them **before the gate opens** — a customer with unpriced lines never sees a sign-in field |
 | E8 | Uploaded documents still being scanned / AI still reading | Existing guards unchanged (`ai_processing`, `virus_status='pending'`) |
 | E9 | Account with `price_gst_mode` NULL | Treated as `inc`, as today (`userDto`, `worker/lib/auth.ts:48`) |
 | E10 | Legacy submitted projects whose `contact_*` came from the old anonymous path | Untouched and still readable by ops; no backfill |
-| E11 | Customer's account address differs from the delivery destination | Both stored, in their own places (§4.3); delivery pre-fills from the account address and stays editable (AC-42) |
+| E11 | Customer's account address differs from the delivery destination — **the normal case** | Both stored, in their own places (§4.3). Delivery is **never** seeded from the account address; it carries the pre-gate postcode or starts empty (AC-42) |
 | E12 | Over-long input in any new field | Refused or clipped at a stated maximum; nothing unbounded is stored |
 | E13 | Two tabs, one signs in at the gate | The other tab re-resolves identity on its next request rather than submitting against a stale project id |
 | E14 | A staff (`type='internal'`) account signs in on the customer site | Unchanged by this phase; the gate applies the same rules. A staff account created after this deploy carries 0%, so no staff-priced quote can be produced through it (AC-40) |
@@ -528,18 +587,24 @@ is identical whether or not the gate renders).
 
 **Playwright — `scripts/tests/web/registration.spec.ts` (new), at minimum:**
 
-1. Anonymous build → Submit → inline OTP → name step → details → submitted confirmation (AC-11,
-   AC-13, AC-6, AC-15).
-2. Returning signed-in customer: details pre-filled, no sign-in step, submit in one action (AC-14,
-   AC-18).
-3. Missing-details case: Submit disabled and each missing field named (AC-17).
+1. Anonymous build → Submit → inline OTP → **straight to the details form** (assert no separate
+   name step is rendered inside the gate) → fill → submitted confirmation (AC-11, AC-13, AC-6b,
+   AC-15).
+2. Returning signed-in customer: values already in editable inputs, no sign-in stage, no
+   expand-to-edit control anywhere in the panel, submit in one action (AC-14, AC-18).
+3. Missing-details case: Submit disabled and every outstanding item named, **`full name` included
+   for a fresh account** (AC-17).
 4. Invalid phone rejected in the browser; a `1300` number accepted (AC-20, AC-21).
 5. GST mode flips to `ex` on the review screen after inline sign-in, with no reload (AC-35).
 6. No referral-code field exists anywhere on the gate, and no trade-pricing copy appears on it
    (AC-32, AC-41).
 7. The merge case: existing draft + anonymous draft, merged list redisplayed before submit (AC-26).
-8. Delivery fields pre-filled from the account address, and an override persisting to the project
-   without touching the account (AC-42).
+8. **Delivery is never seeded from the account address** (AC-42): a customer whose account address
+   is complete reaches the details step with an empty delivery suburb, and a delivery postcode that
+   is either the pre-gate value or empty — never the account postcode when the two differ. An
+   entered delivery destination persists to the project and leaves the account address untouched.
+9. The surviving `NameStep`: signing in at `/login` with a nameless account shows the single-field
+   step and blocks the dashboard until it is answered (AC-6a).
 
 **Existing Playwright coverage that must keep passing unmodified:**
 `scripts/tests/web/customer.spec.ts:383-409`, `scripts/tests/web/referral.spec.ts`.
@@ -563,23 +628,32 @@ legitimate; doing it silently is not.
 
 ## 12. Decisions needed (owner)
 
-**None.** All five questions from revision 1 were answered on 2026-08-18 and are folded into the
-body above (see the ruling table in the header). No question remains open on this phase.
+**None.** The five questions of revision 1 were answered on 2026-08-18; the two mock-gate changes
+(MG-1, MG-2) were directed by the owner on the same day and are folded into the body above. No
+question remains open on this phase.
 
 ---
 
 ## 13. Assumptions register
+
+Three states are distinguished deliberately, so acceptance can tell them apart: **assumed** (my
+call, still vetoable), **decided** (the owner answered), and **overturned** (the owner decided one
+way and then ruled the other way later — the history is kept, not erased).
 
 | Tag | Assumption / decision | Where | Status |
 |---|---|---|---|
 | A1 (grill) | Legacy guest-tracking flow untouched | §2.3, AC-37 | assumed, unvetoed |
 | A2 (grill) | Name/address/phone demanded at the submit gate, not at account creation | §4.3 | assumed, unvetoed |
 | A4 (grill) | Phone validation is format-only; no SMS | §4.3, AC-24 | assumed, unvetoed |
-| ~~`ASSUMED: A-P1-1`~~ | Delivery suburb/postcode pre-fill from the account address, editable | §4.3, AC-42 | **DECIDED — owner, Q1** |
+| `A-P1-1` | Delivery suburb/postcode pre-fill from the account address | §4.3, AC-42 | **OVERTURNED.** Assumed in rev 1 → **decided** by owner ruling Q1 in rev 2 → **reversed** by owner ruling MG-2 at the mock gate in rev 3. The account address is now never read into a delivery field; the surviving half of AC-42 (an entered delivery persists to the project, the account address is untouched) was correct throughout |
 | ~~`ASSUMED: A-P1-2`~~ | 13/1300/1800 numbers are valid contact phones | §7.2, AC-20 | **DECIDED — owner, Q2** |
 | ~~`ASSUMED: A-P1-3`~~ | New internal/staff accounts are also created at 0% | §2.1, AC-40 | **DECIDED — owner, Q3** |
 | `ASSUMED: A-P1-4` | After OTP at the gate, submission is **not** automatic — the customer presses Submit | §4.2 | assumed, unvetoed |
 | `ASSUMED: A-P1-5` | A NULL name is displayed as the email local part, never stored | AC-7 | assumed, unvetoed |
+| — | The gate asks for the name once, in the details form; `NameStep` survives only outside the gate | §4.4, AC-6 | **DECIDED — owner, MG-1** |
+| — | Details render as directly editable inputs; no collapsed summary, no expand-to-edit | §4.3, AC-14 | **DECIDED — owner, MG-2** |
 
-Two assumptions remain live and vetoable at any later gate: **A-P1-4** and **A-P1-5**, plus the
-grill's own A1, A2 and A4.
+Assumptions still live and vetoable at any later gate: the grill's **A1, A2, A4**, plus
+**A-P1-4** and **A-P1-5**. The ux-designer's own `ASSUMED:` items (code-expiry wording, resend
+cooldown, GST caption, gate vs `/login` sub-copy, the merge notice, autofocus, delivery
+`autoComplete` absence) are listed in design §16.11 and remain vetoable there.
