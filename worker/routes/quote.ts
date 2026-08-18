@@ -2,9 +2,11 @@
 // the issued quote (customer), accept (customer -> creates order + deposit invoice).
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { ownedProject } from "../lib/access";
+import { ownedProject, type ProjectRow } from "../lib/access";
+import { detailsOf } from "../lib/account";
+import { submitMissing } from "../../src/data/accountDetails";
 import { resolveStaff } from "../lib/staff";
-import { isEmail, normEmail, resolveUser } from "../lib/auth";
+import { resolveUser } from "../lib/auth";
 import { createOrderFromProject, orderDto, depositOf, balanceOf, type OrderRow } from "../lib/orders";
 import { onOrderCreated } from "../lib/referrals";
 import { issuedReferralBadge } from "../lib/referral-discount";
@@ -133,13 +135,25 @@ quote.post("/projects/:id/clarification-reply", async (c) => {
   return c.json({ ok: true, status: "under_review" });
 });
 
-// POST /api/projects/:id/submit { contact:{ name, email, phone?, suburb? } } —
-// customer submits the draft for review. The server is the authority on whether a
-// project may progress: it re-validates state, line readiness, code uniqueness and
-// contact details (the client's checks are advisory only) and persists the contact
-// so anonymous submissions carry a durable identity for staff.
+// POST /api/projects/:id/submit { delivery:{ postcode, suburb? } } — customer
+// submits the draft for review. The server is the authority on whether a project
+// may progress: it re-validates state, line readiness, code uniqueness and the
+// completeness of the ACCOUNT (the client's checks are advisory only).
+//
+// THE SUBMISSION GATE. Identity comes from the session and never from the request
+// (spec §7.1). This route deliberately does NOT call `ownedProject`: that helper
+// also honours the anonymous claim cookie and a guest-tracking grant, which are a
+// cart capability and a read capability respectively — correct for every other
+// caller, and exactly what must not open this one (AB-1, AB-4). It is left
+// untouched for those callers and this route carries its own session requirement.
 quote.post("/projects/:id/submit", async (c) => {
-  const p = await ownedProject(c.env, c.req.raw, c.req.param("id"));
+  const user = await resolveUser(c.env, c.req.raw);
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  // Ownership is IN the SQL rather than a post-check, so a miss answers 404 with
+  // no project data in the body at all (AB-2).
+  const p = await c.env.DB
+    .prepare("SELECT * FROM project WHERE id = ? AND owner_user_id = ?")
+    .bind(c.req.param("id"), user.id).first<ProjectRow>();
   if (!p) return c.json({ error: "not_found" }, 404);
   if (p.status_customer !== "draft") {
     return c.json({ error: "invalid_state", status: p.status_customer }, 409);
@@ -187,20 +201,27 @@ quote.post("/projects/:id/submit", async (c) => {
     }
   }
 
+  // The server-side floor under the gate's client validation. A crafted request
+  // cannot submit past an incomplete or invalid account, whatever the browser
+  // said (AC-17/21/22/23). A stored-but-invalid phone counts as missing.
+  const missing = submitMissing(detailsOf(user));
+  if (missing.length) return c.json({ error: "incomplete_profile", missing }, 400);
+
   const body = await c.req.json().catch(() => ({}));
-  const contact = (body?.contact && typeof body.contact === "object" ? body.contact : {}) as Record<string, unknown>;
-  const contactName = String(contact.name ?? "").trim();
-  const contactEmail = normEmail(contact.email);
-  const contactPhone = String(contact.phone ?? "").trim();
-  const suburb = String(contact.suburb ?? "").trim();
-  if (!contactName || !isEmail(contactEmail)) {
-    return c.json({ error: "missing_contact" }, 400);
-  }
+  // The body carries ONE fact: where this project's windows and doors go. The
+  // customer's identity is the session's, so `contact` is simply not read — a
+  // posted `contact.email` falls on the floor rather than being filtered (AB-3).
+  const delivery = (body?.delivery && typeof body.delivery === "object" ? body.delivery : {}) as Record<string, unknown>;
+  // Suburb is optional free text; clipped rather than refused (enquiry precedent).
+  const suburb = String(delivery.suburb ?? "").trim().slice(0, 80);
+  const contactName = user.name ?? "";
+  const contactEmail = user.email;
+  const contactPhone = user.phone ?? "";
   // The postcode is required at submit, inside this same form — no new step,
   // no new screen (D7/D8). Distinct codes for missing vs malformed so the
   // customer-facing message can say which: a customer who typed "300" and one
   // who typed nothing get different sentences on the review screen.
-  const rawPostcode = typeof contact.postcode === "string" ? contact.postcode.trim() : "";
+  const rawPostcode = typeof delivery.postcode === "string" ? delivery.postcode.trim() : "";
   if (!rawPostcode) return c.json({ error: "missing_postcode" }, 400);
   const postcode = normalisePostcode(rawPostcode);
   if (!postcode) return c.json({ error: "invalid_postcode" }, 400);
@@ -284,10 +305,9 @@ quote.post("/projects/:id/submit", async (c) => {
       contactName, contactEmail, contactPhone || null, suburb || null, postcode, p.id,
       submitState.ai_generation, submitState.quote_edit_version,
     ),
-    // Backfill the signed-in user's profile from the contact when it's still blank.
-    c.env.DB.prepare(
-      "UPDATE user SET name = COALESCE(NULLIF(name, ''), ?), phone = COALESCE(NULLIF(phone, ''), ?) WHERE id = ?",
-    ).bind(contactName, contactPhone || null, p.owner_user_id ?? "__anonymous_no_user__"),
+    // The user backfill that used to sit here is GONE. Identity flows account →
+    // project now, never body → account: the profile endpoint is the single
+    // writer of account facts (design §12).
   ]);
   if (Number(committed[0]?.meta?.changes ?? 0) !== 1) {
     const payload = await c.env.DB.prepare(

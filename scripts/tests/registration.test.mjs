@@ -12,7 +12,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import {
-  Session, freePort, login, makeRunDir, removeRunDir,
+  Session, completeAccount, freePort, login, makeRunDir, removeRunDir,
   run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
@@ -194,7 +194,147 @@ test("user registration — creation values, the submission gate, and its abuse 
       assert.ok(untouched.name.length < 200, "nothing unbounded reached D1");
     });
 
-    void newAccount;
+    /** A draft with one priced line, built anonymously. Returns the anon session
+     *  (which holds the claim cookie) and the project id. */
+    const anonDraft = async (title) => {
+      const session = new Session(baseUrl);
+      const saved = await session.request("/api/projects/current/lines", {
+        method: "PUT",
+        json: {
+          title,
+          items: [{
+            code: "W01", location: "Living", productSlug: "amj80-series-sliding-window",
+            width: "1200", height: "900", qty: 1,
+            options: { colour: "Dover White", hardware: "AMJ Standard D Shape Handle", flyscreen: "None", installation: "Sub Sill & Head" },
+            lineTotal: 1,
+          }],
+        },
+      });
+      assert.equal(saved.status, 200, "the anonymous draft was built");
+      return { session, id: (await saved.json()).project.id };
+    };
+
+    const statusOf = async (projectId) =>
+      (await sql(`SELECT status_customer FROM project WHERE id = '${esc(projectId)}'`))[0]?.status_customer ?? null;
+
+    await t.test("AB-1 / AB-4 / AB-12 / AB-14: nothing without a session can submit", async () => {
+      const draft = await anonDraft("AB-1 draft");
+
+      // AB-1 — a valid claim cookie for a complete draft is a CART capability. It
+      // used to be a submit capability, which is the hole this phase closes.
+      const refused = await draft.session.request(`/api/projects/${draft.id}/submit`, {
+        method: "POST", json: { delivery: { postcode: "3072", suburb: "Preston" } },
+      });
+      assert.equal(refused.status, 401, "the claim cookie cannot submit");
+      assert.deepEqual(await refused.json(), { error: "unauthorized" });
+      assert.equal(await statusOf(draft.id), "draft", "and nothing moved");
+
+      // AB-12 — the deleted anonymous shape, exactly as it used to be sent.
+      const oldShape = await draft.session.request(`/api/projects/${draft.id}/submit`, {
+        method: "POST", json: { contact: { name: "Sam", email: "sam@example.com", postcode: "3072" } },
+      });
+      assert.equal(oldShape.status, 401, "the old name+email+postcode body is not an identity");
+      assert.equal(await statusOf(draft.id), "draft");
+
+      // AB-14 — no session at all, no cookie of any kind.
+      const stranger = new Session(baseUrl);
+      const bare = await stranger.request(`/api/projects/${draft.id}/submit`, { method: "POST", json: {} });
+      assert.equal(bare.status, 401);
+      assert.deepEqual(await bare.json(), { error: "unauthorized" });
+
+      // AB-4 — a guest-tracking grant is a READ capability. Granted directly in
+      // D1 against this draft so the probe tests the authorisation rule and not
+      // the tracking flow's own (correct) refusal to issue one for a draft.
+      const guestToken = `guest-ab4-${stamp}`;
+      await sql(`INSERT INTO guest_grant (id, record_type, record_id, email, token, expires_at) VALUES ('gg-ab4-${esc(stamp)}', 'project', '${esc(draft.id)}', 'guest@example.com', '${esc(guestToken)}', datetime('now','+12 hours'))`);
+      const guest = new Session(baseUrl);
+      guest.cookies.set("apertly_guest", guestToken);
+      const guestSubmit = await guest.request(`/api/projects/${draft.id}/submit`, {
+        method: "POST", json: { delivery: { postcode: "3072" } },
+      });
+      assert.equal(guestSubmit.status, 401, "a tracking grant is never a submit capability");
+      assert.equal(await statusOf(draft.id), "draft");
+    });
+
+    await t.test("AB-2 / AB-3 / AC-16: identity comes from the session, never the request", async () => {
+      const owner = await newAccount("owner");
+      await completeAccount(owner.session);
+      const draft = await anonDraft("AB-2 draft");
+      // The owner signs in on the anonymous session — the claim-merge bridge
+      // attaches the draft, exactly as the gate does.
+      await login(draft.session, "/api/auth", owner.email);
+
+      // AB-2 — a second customer, with a real session, aiming at someone else's id.
+      const attacker = await newAccount("attacker");
+      await completeAccount(attacker.session);
+      const crossAccount = await attacker.session.request(`/api/projects/${draft.id}/submit`, {
+        method: "POST", json: { delivery: { postcode: "3072" } },
+      });
+      assert.equal(crossAccount.status, 404, "ownership is in the SQL, not a post-check");
+      assert.deepEqual(await crossAccount.json(), { error: "not_found" },
+        "and the refusal leaks no project data");
+      assert.equal(await statusOf(draft.id), "draft", "B's project is unchanged");
+
+      // AB-3 / AC-16 — the owner submits, supplying somebody else's identity.
+      const submitted = await draft.session.request(`/api/projects/${draft.id}/submit`, {
+        method: "POST",
+        json: {
+          delivery: { postcode: "3072", suburb: "Preston" },
+          contact: { name: "Someone Else", email: "victim@example.com", phone: "0400 000 000" },
+        },
+      });
+      assert.equal(submitted.status, 200, "the submission itself succeeds");
+      assert.equal((await submitted.json()).status, "submitted");
+
+      const row = (await sql(`SELECT contact_name, contact_email, contact_phone, delivery_postcode, delivery_suburb FROM project WHERE id = '${esc(draft.id)}'`))[0];
+      assert.equal(row.contact_email, owner.email, "the account's email, never the body's");
+      assert.notEqual(row.contact_email, "victim@example.com");
+      assert.equal(row.contact_name, "Sam Taylor", "the account's name");
+      assert.notEqual(row.contact_name, "Someone Else");
+      assert.equal(row.contact_phone, "0412 345 678");
+      assert.equal(row.delivery_postcode, "3072", "delivery IS a per-project fact and still comes from the body");
+      assert.equal(row.delivery_suburb, "Preston");
+      assert.equal(await userRow("victim@example.com"), null,
+        "posting an email at submit does not conjure an account");
+    });
+
+    await t.test("AC-17 / AC-22 / AC-23 server floor: an incomplete account cannot submit", async () => {
+      const who = await newAccount("incomplete");
+      const draft = await anonDraft("incomplete draft");
+      await login(draft.session, "/api/auth", who.email);
+
+      // Nothing on the account but a verified email — the fresh-account case.
+      const refused = await draft.session.request(`/api/projects/${draft.id}/submit`, {
+        method: "POST", json: { delivery: { postcode: "3072" } },
+      });
+      assert.equal(refused.status, 400);
+      const body = await refused.json();
+      assert.equal(body.error, "incomplete_profile");
+      assert.deepEqual(body.missing,
+        ["name", "phone", "addressLine1", "addressSuburb", "addressState", "addressPostcode"],
+        "every outstanding field is named");
+      assert.equal(await statusOf(draft.id), "draft");
+
+      // A stored-but-invalid phone is treated as missing, not waved through: a
+      // legacy row carrying junk must be corrected at the gate, not submitted
+      // around. Written straight to D1 because the profile endpoint refuses it.
+      await completeAccount(draft.session);
+      await sql(`UPDATE user SET phone = '12345' WHERE email = '${esc(who.email)}'`);
+      const junkPhone = await draft.session.request(`/api/projects/${draft.id}/submit`, {
+        method: "POST", json: { delivery: { postcode: "3072" } },
+      });
+      assert.equal(junkPhone.status, 400);
+      assert.deepEqual((await junkPhone.json()).missing, ["phone"]);
+      assert.equal(await statusOf(draft.id), "draft");
+
+      // A service number is a valid contact phone (owner ruling Q2).
+      await completeAccount(draft.session, { phone: "1300 123 456" });
+      const ok = await draft.session.request(`/api/projects/${draft.id}/submit`, {
+        method: "POST", json: { delivery: { postcode: "3072" } },
+      });
+      assert.equal(ok.status, 200, "a 1300 number is accepted");
+      assert.equal(await statusOf(draft.id), "submitted");
+    });
   } finally {
     await stop(server);
     await removeRunDir(runDir);

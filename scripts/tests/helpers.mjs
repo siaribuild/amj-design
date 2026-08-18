@@ -181,6 +181,29 @@ const testSourceIp = () => {
   return `198.18.${(n >> 8) & 255}.${n & 255}`;
 };
 
+// The submission gate (registration Phase 1) refuses a signed-in customer whose
+// account has no name, phone or address — server-side, whatever the browser said.
+// So every suite that submits a quote now needs an account that is actually
+// complete, and this is the one place that says what "complete" means. Overrides
+// exist for the suites that care about a particular value (a 1300 number, a
+// specific state) rather than about completeness itself.
+export const COMPLETE_ACCOUNT = {
+  name: "Sam Taylor",
+  phone: "0412 345 678",
+  addressLine1: "12 Bridge Street",
+  addressSuburb: "Preston",
+  addressState: "VIC",
+  addressPostcode: "3072",
+};
+
+export async function completeAccount(session, overrides = {}) {
+  const { body } = await requestJson(session, "/api/auth/profile", {
+    method: "POST",
+    json: { ...COMPLETE_ACCOUNT, ...overrides },
+  });
+  return body.user;
+}
+
 export async function login(session, prefix, email) {
   const headers = { "X-Forwarded-For": testSourceIp() };
   const challenge = await requestJson(session, `${prefix}/challenge`, { method: "POST", json: { email }, headers });
