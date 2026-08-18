@@ -741,6 +741,162 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       assert.equal(again.status, 409);
       assert.deepEqual(await again.json(), { error: "not_verified" });
     });
+
+    // Characterisation of the resolveStaff self-check already shipped in
+    // worker/routes/ops-trade.ts — every handler asks on its own, because there
+    // is no middleware and a new endpoint is open until it says otherwise.
+    await t.test("AB-P2-2 / AB-P2-11: the authorization matrix for every ops-trade endpoint", async () => {
+      const victim = await newAccount("matrix-victim", "gmail.com");
+      await apply(victim.session, {
+        abn: ABR_FIXTURES.active, businessName: "Smith Brothers Pty Ltd", source: "profile",
+      });
+      const victimId = (await userRow(victim.email)).id;
+      const openId = (await applications(victim.email))[0].id;
+
+      // A MANUFACTURER partner is a real account minted by the sign-in path, not
+      // a row someone UPDATEd — the role is re-pinned from the email domain on
+      // every sign-in, so this is the only honest way to have one.
+      const partner = new Session(baseUrl);
+      const partnerAddress = `tv-partner-${stamp}@${MANUFACTURER_DOMAIN}`;
+      await login(partner, "/api/ops/auth", partnerAddress);
+      assert.equal((await userRow(partnerAddress)).role, "manufacturer", "the partner is genuinely a partner");
+
+      const customer = await newAccount("matrix-customer", "example.com");
+      const anonymous = new Session(baseUrl);
+
+      const endpoints = [
+        ["GET", "/api/ops/trade/applications", undefined],
+        ["POST", `/api/ops/trade/applications/${openId}/approve`, { note: "mine now" }],
+        ["POST", `/api/ops/trade/applications/${openId}/reject`, { reason: "no" }],
+        ["POST", `/api/ops/trade/customers/${victimId}/revoke`, { reason: "no" }],
+      ];
+      for (const [who, session] of [["anonymous", anonymous], ["customer", customer.session], ["manufacturer", partner]]) {
+        for (const [method, path, json] of endpoints) {
+          const res = await session.request(path, json ? { method, json } : { method });
+          assert.equal(res.status, 403, `${who} ${method} ${path}`);
+          const body = await res.text();
+          assert.deepEqual(JSON.parse(body), { error: "forbidden" }, `${who} ${method} ${path} body`);
+          // AB-P2-2: 403 "with no body data" — not a redacted payload, none.
+          assert.ok(!body.includes(victim.email), `${who} ${path} leaked an account`);
+          assert.ok(!body.includes(ABR_FIXTURES.active), `${who} ${path} leaked an ABN`);
+        }
+      }
+      // And nothing moved.
+      const untouched = (await applications(victim.email))[0];
+      assert.equal(untouched.status, "pending");
+      assert.equal(untouched.decided_by, null);
+      assert.equal(Number((await userRow(victim.email)).discount_percent), 0);
+    });
+
+    // Characterisation of the guarded claim already shipped in
+    // approveApplication (design §6.5) — the WHERE clause IS the authorization
+    // of the state transition.
+    await t.test("AC-P2-39 / AB-P2-14: one decision, however many times it is clicked", async () => {
+      const staff = new Session(baseUrl);
+      const staffAddress = `tv-racer-${stamp}@openframe.com.au`;
+      await login(staff, "/api/ops/auth", staffAddress);
+      await sql(`UPDATE user SET role = 'estimator' WHERE email = '${esc(staffAddress)}'`);
+
+      const account = await newAccount("raced", "gmail.com");
+      await apply(account.session, {
+        abn: ABR_FIXTURES.harbour, businessName: "Harbour Edge Joinery Pty Ltd", source: "profile",
+      });
+      const racedId = (await applications(account.email))[0].id;
+
+      // Three staff members, same instant, same application.
+      const results = await Promise.all([1, 2, 3].map(() =>
+        staff.request(`/api/ops/trade/applications/${racedId}/approve`, { method: "POST", json: {} })));
+      const codes = results.map((r) => r.status).sort();
+      assert.deepEqual(codes, [200, 409, 409], `exactly one approval wins: ${codes}`);
+      assert.equal((await applications(account.email)).length, 1, "one decision record");
+      assert.equal(Number((await userRow(account.email)).discount_percent), 5,
+        "and the rate is applied once, not twice");
+
+      // A later replay, sequentially, is the same refusal.
+      const replay = await staff.request(`/api/ops/trade/applications/${racedId}/approve`, { method: "POST", json: {} });
+      assert.equal(replay.status, 409);
+      assert.deepEqual(await replay.json(), { error: "already_decided" });
+      const rejectAfter = await staff.request(`/api/ops/trade/applications/${racedId}/reject`, {
+        method: "POST", json: { reason: "changed my mind" },
+      });
+      assert.equal(rejectAfter.status, 409, "and it cannot be flipped the other way either");
+      assert.equal((await applications(account.email))[0].status, "approved");
+
+      // An application that does not exist is a 404, not a 409.
+      assert.equal((await staff.request("/api/ops/trade/applications/no-such-id/approve", {
+        method: "POST", json: {},
+      })).status, 404);
+    });
+
+    // Characterisation of grant()'s rate rule (design §6.5.4): discount_percent
+    // moves only on a not-verified -> verified transition.
+    await t.test("AC-P2-29 / E-P2-6: a negotiated rate survives a re-approval", async () => {
+      const staff = new Session(baseUrl);
+      const staffAddress = `tv-rates-${stamp}@openframe.com.au`;
+      await login(staff, "/api/ops/auth", staffAddress);
+      await sql(`UPDATE user SET role = 'estimator' WHERE email = '${esc(staffAddress)}'`);
+      const approve = (id) => staff.request(`/api/ops/trade/applications/${id}/approve`, { method: "POST", json: {} });
+
+      const account = await newAccount("negotiated", "gmail.com");
+      await apply(account.session, {
+        abn: ABR_FIXTURES.wattle, businessName: "Wattle Grove Windows Pty Ltd", source: "profile",
+      });
+      const accountId = (await userRow(account.email)).id;
+      assert.equal((await approve((await applications(account.email))[0].id)).status, 200);
+      assert.equal(Number((await userRow(account.email)).discount_percent), 5);
+
+      // Ops negotiates a different rate. This phase deliberately ships no editor
+      // for it, so the negotiation is a direct write — which is exactly the
+      // state AC-P2-29 says a later approval must not disturb.
+      await sql(`UPDATE user SET discount_percent = 12 WHERE id = '${esc(accountId)}'`);
+
+      // E-P2-6: a verified account re-applies — verified AND pending at once,
+      // the case no single status column could ever have expressed.
+      assert.equal((await apply(account.session, {
+        abn: ABR_FIXTURES.keystone, businessName: "Keystone Carpentry Pty Ltd", source: "profile",
+      })).status, 200);
+      const reMe = (await requestJson(account.session, "/api/auth/me")).body.trade;
+      assert.equal(reMe.verified, true, "still verified while the new application is checked");
+      assert.ok(reMe.pending, "and pending at the same time");
+
+      const secondId = (await applications(account.email)).find((a) => a.status === "pending").id;
+      assert.equal((await approve(secondId)).status, 200);
+      assert.equal(Number((await userRow(account.email)).discount_percent), 12,
+        "AC-P2-29: the negotiated rate is untouched by a re-approval");
+
+      // The previous grant is superseded, not left standing beside the new one.
+      const standing = (await applications(account.email)).filter(
+        (a) => a.status === "approved" && !a.revoked_at && !a.superseded_at);
+      assert.equal(standing.length, 1, "exactly one standing grant");
+      assert.equal(standing[0].id, secondId);
+    });
+
+    // Characterisation of the SECOND staff-ness guard, the one in
+    // approveApplication rather than in applyForTrade (design §6.5.2).
+    await t.test("AC-P2-34 / AB-P2-11: an internal account cannot be granted trade status by any path", async () => {
+      const staff = new Session(baseUrl);
+      const staffAddress = `tv-internal-${stamp}@openframe.com.au`;
+      await login(staff, "/api/ops/auth", staffAddress);
+      const internalId = (await userRow(staffAddress)).id;
+
+      // An internal account cannot hold an application through the API at all,
+      // so the row is planted directly — which is precisely the state the
+      // second guard exists for. One check would have been a promise; two make
+      // it true whichever way the row arrived.
+      const plantedId = `planted-${stamp}`;
+      await sql(
+        `INSERT INTO trade_application (id, user_id, abn, business_name, source, status)
+         VALUES ('${esc(plantedId)}', '${esc(internalId)}', '${esc(ABR_FIXTURES.harbour)}', 'Harbour Edge Joinery', 'profile', 'pending')`,
+      );
+
+      const admin = new Session(baseUrl);
+      await login(admin, "/api/ops/auth", `tv-admin-${stamp}@openframe.com.au`);
+      const planted = await admin.request(`/api/ops/trade/applications/${plantedId}/approve`, { method: "POST", json: {} });
+      assert.equal(planted.status, 403);
+      assert.equal(Number((await userRow(staffAddress)).discount_percent), 0, "and its rate stays 0");
+      assert.equal((await sql(`SELECT status FROM trade_application WHERE id = '${esc(plantedId)}'`))[0].status, "pending");
+      assert.equal((await userRow(staffAddress)).type, "internal");
+    });
   } finally {
     if (server) await stop(server);
     if (stub) await stub.close();
