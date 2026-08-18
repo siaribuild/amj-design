@@ -1,8 +1,8 @@
 # User registration — Phase 2: Trade verification (ABN / ABR)
 
 Branch: `feat/user-registration`
-Status: **revision 2 — decision gate answered by the owner (2026-08-19). §12 "Decisions needed" is
-EMPTY. Ready for the architect.**
+Status: **revision 3 — decision gate answered by the owner (2026-08-19); AB-P2-16 amended after the
+architect's design pass (§14 finding 3). §12 "Decisions needed" is EMPTY. Ready for the developer.**
 Author: product-manager
 Date: 2026-08-19
 
@@ -26,8 +26,14 @@ supersession).
 **Revision 2 changes:** owner rulings on Q1 (revocation email — yes), Q2 (acknowledgement promises
 no turnaround), Q4 (any assigned-role staff may decide), Q5 (no builder/tradie label at the gate);
 grandfathering resolved to three named addresses (§5.9); both owner add-ons confirmed in scope; and
-a new §7 specifying all four Phase-2 emails as **Sanity-authored templates with Worker fallbacks**
+§7 specifying all four Phase-2 emails as **Sanity-authored templates with Worker fallbacks**
 (AC-P2-61…64).
+
+**Revision 3 change (correction, not a decision):** **AB-P2-16** was unsatisfiable as written — the
+ATO ABN Lookup JSON web service is GET-only, so the ABN necessarily rides in the query string of the
+request *we make to the registrar*. The criterion always meant *our* surfaces; it now says so, split
+into an executable clause and an explicit carve-out with its reason (§6). **AB-P2-8** is extended to
+name error responses explicitly. No other change.
 
 **Sizing note.** This is one phase of an already-wayfindered effort, so it does not need re-charting
 — but it is at the top of what one pipeline run should carry (a third-party dependency, three
@@ -628,9 +634,12 @@ privilege that changes what a customer pays**. These are acceptance criteria, no
   match, and on the email domain respectively, When their customer-facing responses are compared
   byte for byte, Then they are identical — the endpoint cannot be used to discover which fact is
   wrong, nor to test ABNs or business names.
-- **AB-P2-8 — the ABR credential.** Given the built client bundle, every API response body, and the
-  Worker logs (including a forced ABR error path), When each is searched for the ABR GUID, Then it
-  appears in none of them; and Then no log line contains a submitted ABN in any environment.
+- **AB-P2-8 — the ABR credential.** *(extended, rev 3)* Given the built client bundle, every API
+  response body **including every error response**, and the Worker logs (including a forced ABR
+  failure path — timeout, 5xx, and malformed-response), When each is searched for the value of
+  `ABR_GUID`, Then it appears in **none** of them; Then no error surfaced to a customer or to ops
+  contains the outbound ABR URL, and Then no log line contains a submitted ABN in any environment.
+  The credential is a Worker secret and exists only in the outbound request to the registrar.
 - **AB-P2-9 — the borrowed ABN.** Given a valid, active ABN belonging to a real business the
   applicant does not own, When they apply with a matching business name from a free-mail address,
   Then the application is **queued, never auto-approved**. *(Residual risk, accepted by the owner:
@@ -658,8 +667,21 @@ privilege that changes what a customer pays**. These are acceptance criteria, no
   open browser tab, When ops revokes their trade status, Then their next priced request returns
   retail prices — the grant is read from the account row per request and is never baked into a
   session or token.
-- **AB-P2-16 — the ABN in transit.** Given every request this phase adds, When the URLs are
-  inspected, Then no ABN appears in a query string, a path segment, or a referrer-leaking location.
+- **AB-P2-16 — the ABN never travels through one of OUR URLs.** *(amended, rev 3 — architect design
+  pass §14 finding 3. The original wording, "no ABN appears in a query string", was unsatisfiable:
+  see the carve-out below.)*
+  **(a) Executable clause — our own surfaces.** Given every request this phase adds **that a browser
+  makes**, When the URLs, the router definitions and the server access/application logs are
+  inspected, Then **no ABN appears in a query string, in a path segment, or anywhere else in a URL**;
+  every ABN our API accepts arrives in a **POST body**; and Given an endpoint is called with an ABN
+  supplied as a query parameter instead, Then it is ignored or refused — never read from there
+  (which would otherwise leak the ABN into logs, browser history and `Referer` headers).
+  **(b) Carve-out — the outbound registrar call is out of scope for this criterion.** The ATO ABN
+  Lookup JSON web service is **GET-only**, so the ABN and the GUID necessarily ride in the query
+  string of the server-to-server request **we make to the registrar**. There is no POST variant to
+  switch to. That leg is a TLS call from the Worker to the ATO, is never logged by us
+  (AB-P2-8), never reaches a browser, and cannot appear in a `Referer` header — the tester records
+  it as designed-and-accepted, **not as a finding**.
 
 ---
 
@@ -712,8 +734,11 @@ deploy — but until they exist, the copy above is what customers read.
    precedes any remote apply.
 7. **Rate limits** on verification: one per-account cap and one per-IP cap, both enforced before any
    ABR call (AB-P2-6). Reuse the existing challenge-limit machinery rather than inventing a second.
-8. **Logging:** no submitted ABN and no ABR credential in any Worker log line. Ops audit entries
-   reference the application id and the account, which is the existing `logEvent` pattern.
+8. **Inbound ABNs arrive in POST bodies; the outbound ABR GET is the one exception and is never
+   logged.** The ATO service is GET-only, so the outbound URL necessarily carries the ABN and the
+   `ABR_GUID`. That URL must never be logged, echoed in an error message, returned to a client, or
+   reconstructed on any customer or ops surface. No submitted ABN and no credential appears in any
+   Worker log line (AB-P2-8, AB-P2-16).
 9. **Email template ids are dot-free `snake_case`** and always accompanied by an inline fallback
    (§7).
 
@@ -756,15 +781,17 @@ it** (house rule: the server-served HTML is identical whether or not any of it r
 6. A verified account at the gate sees no ABN field (AC-P2-19).
 7. A percentage sweep across all four advertising surfaces — no `%`-bearing discount copy, no
    subtraction pair (AC-P2-47/48).
+8. **No ABN in any browser-made URL** across the whole flow — the network log is inspected for
+   query strings and path segments carrying an 11-digit ABN (AB-P2-16a).
 
 **Playwright — ops queue coverage in `scripts/tests/web/ops.spec.ts` (existing harness reused; a
 separate `trade-queue.spec.ts` is acceptable if the architect prefers):**
 
-8. A queued application appears with its reasons and ABR snapshot; approve **as a non-admin
+9. A queued application appears with its reasons and ABR snapshot; approve **as a non-admin
    assigned-role staff member** → the customer's account is verified and their next preview is a
    trade price; revoke → back to retail (AC-P2-35/36/37/30, AB-P2-15).
-9. Reject → the customer account still works; the decision and reason appear in the account's
-   history (AC-P2-38/40).
+10. Reject → the customer account still works; the decision and reason appear in the account's
+    history (AC-P2-38/40).
 
 **node:test — `scripts/tests/trade-verification.test.mjs` (new):**
 
@@ -778,6 +805,10 @@ separate `trade-queue.spec.ts` is acceptable if the architect prefers):**
   staff, **non-admin assigned-role staff (must succeed)**, admin (AB-P2-1…5, AB-P2-11, AC-P2-37).
 - Rate limits, mass assignment, oversized input, ABN-swap refusal (AB-P2-6, AB-P2-1, AB-P2-13,
   AB-P2-12).
+- **Credential and ABN containment:** a forced ABR failure (timeout, 5xx, malformed body) produces
+  an error response and log output containing neither `ABR_GUID` nor the submitted ABN nor the
+  outbound URL; and an ABN supplied as a query parameter to any new endpoint is ignored or refused
+  (AB-P2-8, AB-P2-16a).
 - The four emails: each event enqueues a send with the right dot-free `templateKey`; with no Sanity
   document the fallback subject/body is used and the send succeeds; with a stubbed authored template
   the authored copy wins; no rendered email contains a percentage or a timeframe (AC-P2-43/44/45/46,
@@ -833,6 +864,10 @@ legitimate; doing it silently is not, and the reason goes to the user when the d
 | Q6 | Keep the two owner add-ons? | **Keep both** — requested by the owner at the Phase-1 mock gate; they are in the grill's phase cut and handover §3.3 → §2.1.11, AC-P2-54/55 |
 | Q7 | Private accounts still payable via the referral payout form? | **Leave it** — D6 unchanged; this phase only stops a *verified* account swapping its ABN there (P2-A4 stands) → §4.7 |
 
+Revision 3's AB-P2-16 amendment is a **correction, not a decision** — the criterion as written could
+not be satisfied by any implementation, and its intent (our surfaces, not the registrar's API shape)
+is unchanged.
+
 The only owner action item remaining is not a decision: **the four `emailTemplate` documents need
 authoring in Sanity Studio before or at deploy** (§7). A missing document is safe — the Worker
 fallback sends — so it blocks nothing.
@@ -871,6 +906,10 @@ Recorded so the architect and the owner can see where I had to interpret rather 
 8. **Grandfathering is not verification.** Two of the three grandfathered accounts have no ABN. The
    spec grants them trade status on the owner's authority (D4) and labels the provenance
    `grandfathered` so no later reader mistakes them for accounts that passed the triple.
+9. **My own AB-P2-16 was unsatisfiable** (rev 1–2): the ATO service is GET-only, so "no ABN in a
+   query string" could never hold for the outbound leg. Caught by the architect's design pass, not
+   by me. Amended in rev 3 into an executable clause plus a named carve-out — the lesson being that
+   a security criterion must name the *boundary* it governs, not just the forbidden shape.
 
 ---
 
