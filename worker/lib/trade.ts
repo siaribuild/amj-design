@@ -16,6 +16,7 @@ import { abnValid, normalizeAbn } from "../../src/data/abn";
 import { emailDomainPlausible, nameMatches } from "./trade-match";
 import { lookupAbn } from "./abr";
 import { logEvent } from "./activity";
+import { notify } from "./email";
 import { uuid } from "./util";
 
 /** The business-account default rate — THE one named place in the code.
@@ -36,6 +37,74 @@ const RATE_WINDOW_SECONDS = 3600;
 const MAX_BUSINESS_NAME = 200;
 /** A raw ABN longer than this is not a typo, it is a payload (AB-P2-13). */
 const MAX_RAW_ABN = 32;
+
+/** The four outcome emails (spec §7).
+ *
+ *  THE KEY MUST NOT CONTAIN A DOT. Templates are fetched from the PUBLIC Sanity
+ *  dataset by `_id`, and anonymous reads only see dot-free ids — a key like
+ *  `trade.approved` would resolve to nothing, forever, silently, and the
+ *  fallback would send while the authored copy sat there dead. The EVENT name
+ *  is a different string with a different consumer and keeps the house's dotted
+ *  namespacing.
+ *
+ *  `body` is a function because notify() only runs applyPlaceholders when a
+ *  Sanity template EXISTS: the inline fallback has to arrive already rendered,
+ *  or a customer receives a literal [business]. */
+export const TRADE_EMAILS = {
+  trade_ack: {
+    eventType: "trade.application.queued",
+    subject: "We're checking your trade account details",
+    body: (vars: { name?: string | null; business?: string | null }) =>
+      `Thanks — we've got your ABN and business details for ${vars.business || "your business"}. `
+      + "We're checking them and we'll be in touch. Your account works as normal in the meantime.",
+  },
+  trade_approved: {
+    eventType: "trade.application.approved",
+    subject: "Your trade account is active",
+    body: (_vars: { name?: string | null; business?: string | null }) =>
+      "Your trade account is active. Trade pricing applies to your account from now on. "
+      + "Anything already with us for review will be priced by our team.",
+  },
+  trade_rejected: {
+    eventType: "trade.application.rejected",
+    subject: "About your trade account application",
+    body: (_vars: { name?: string | null; business?: string | null }) =>
+      "We weren't able to set up a trade account from the details you sent. Your account still "
+      + "works exactly as before — you can price jobs, submit them and track them — and you're "
+      + "welcome to apply again with updated details, or reply to this email and we'll help.",
+  },
+  trade_revoked: {
+    eventType: "trade.revoked",
+    subject: "A change to your trade account",
+    body: (_vars: { name?: string | null; business?: string | null }) =>
+      "Trade pricing no longer applies to your account, so the prices you see from now on are our "
+      + "standard prices. If you think that's a mistake, reply to this email and we'll sort it out.",
+  },
+};
+
+export type TradeEmailKey = keyof typeof TRADE_EMAILS;
+
+/** Send one outcome email through the existing notify() path.
+ *
+ *  A send failure never fails the decision: notify records the notification row
+ *  as `failed` and the grant is already committed. An email that did not go out
+ *  is a thing to chase, not a reason to un-verify somebody. */
+async function sendTradeEmail(
+  env: Env, key: TradeEmailKey, recipient: string,
+  vars: { name?: string | null; business?: string | null },
+): Promise<void> {
+  const template = TRADE_EMAILS[key];
+  await notify(env, {
+    recipient,
+    eventType: template.eventType,
+    templateKey: key,
+    // Passed for the AUTHORED template to substitute. applyPlaceholders
+    // collapses a provided null to "", so an authored template must not lead
+    // with a bare "Hi [name]," — noted for the Sanity authoring task.
+    vars: { name: vars.name ?? "", business: vars.business ?? "" },
+    email: { to: recipient, subject: template.subject, text: template.body(vars), templateKey: key },
+  });
+}
 
 export type TradeQueueReason =
   | "abn_inactive" | "abn_not_found" | "name_mismatch"
@@ -402,9 +471,13 @@ export async function applyForTrade(env: Env, user: UserRow, input: {
         actor: "system", entityType: "user", entityId: user.id,
         action: "trade.approved", after: { applicationId: id, via: "auto" },
       });
+      // An auto-pass is told it is active and nothing else: the applicant was
+      // never under review, so acknowledging a review would be a small lie.
+      await sendTradeEmail(env, "trade_approved", user.email, { name: user.name, business: businessName });
       return { ok: true, status: "verified" };
     }
     await insert("pending").run();
+    await sendTradeEmail(env, "trade_ack", user.email, { name: user.name, business: businessName });
     return { ok: true, status: "under_review" };
   } catch (e) {
     // The partial unique indexes turn a concurrent double-submit into a
@@ -459,6 +532,8 @@ export async function approveApplication(
     actor: actor.id, entityType: "user", entityId: applicant.id,
     action: "trade.approved", after: { applicationId, via: "ops" },
   });
+  await sendTradeEmail(env, "trade_approved", applicant.email,
+    { name: applicant.name, business: application.business_name });
   return { ok: true };
 }
 
@@ -494,6 +569,12 @@ export async function rejectApplication(
     actor: actor.id, entityType: "user", entityId: application.user_id,
     action: "trade.rejected", after: { applicationId },
   });
+  // The REASON never travels to the customer. A duplicate rejection must not
+  // disclose that somebody else holds that ABN (AC-P2-44), and one general body
+  // is what keeps that true without a per-reason branch to get wrong.
+  const applicant = await env.DB.prepare("SELECT email, name FROM user WHERE id = ?")
+    .bind(application.user_id).first<{ email: string; name: string | null }>();
+  if (applicant) await sendTradeEmail(env, "trade_rejected", applicant.email, { name: applicant.name });
   return { ok: true };
 }
 
@@ -529,6 +610,9 @@ export async function revokeTrade(
     actor: actor.id, entityType: "user", entityId: customerId,
     action: "trade.revoked", after: { reason: trimmed },
   });
+  // Owner ruling Q1: they are told. Their prices are about to change, and a
+  // silent revocation reads as a bug.
+  await sendTradeEmail(env, "trade_revoked", customer.email, { name: customer.name });
   return { ok: true };
 }
 

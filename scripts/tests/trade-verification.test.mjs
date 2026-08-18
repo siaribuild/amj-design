@@ -1041,6 +1041,63 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       assert.equal(bareRecord.customerPhone, null);
       assert.equal(bareRecord.customerAddress, null);
     });
+
+    await t.test("AC-P2-43/44/45/61: every outcome sends its email, with its own dot-free key", async () => {
+      const notifications = async (email) => sql(
+        `SELECT event_type, template_key, delivery_state FROM notification
+          WHERE recipient_subject = '${esc(email)}' AND template_key LIKE 'trade%'
+          ORDER BY sent_at, rowid`,
+      );
+      const staff = new Session(baseUrl);
+      await login(staff, "/api/ops/auth", `tv-mail-${stamp}@openframe.com.au`);
+
+      // An auto-pass emails trade_approved and nothing else — the applicant was
+      // never under review, so telling them so would be a lie.
+      const auto = spareBusiness(1);
+      const autoAccount = await newAccount("mail-auto", auto.domain);
+      await apply(autoAccount.session, { abn: auto.abn, businessName: auto.businessName, source: "trade_page" });
+      assert.deepEqual((await notifications(autoAccount.email)).map((n) => [n.event_type, n.template_key]),
+        [["trade.application.approved", "trade_approved"]]);
+
+      // A queued application acknowledges, then the ops decision follows.
+      const queued = spareBusiness(2);
+      const queuedAccount = await newAccount("mail-queued", "gmail.com");
+      await apply(queuedAccount.session, { abn: queued.abn, businessName: queued.businessName, source: "profile" });
+      assert.deepEqual((await notifications(queuedAccount.email)).map((n) => n.template_key), ["trade_ack"]);
+
+      const queuedId = (await applications(queuedAccount.email))[0].id;
+      assert.equal((await staff.request(`/api/ops/trade/applications/${queuedId}/approve`, {
+        method: "POST", json: {},
+      })).status, 200);
+      assert.deepEqual((await notifications(queuedAccount.email)).map((n) => n.template_key),
+        ["trade_ack", "trade_approved"]);
+
+      // Revoking tells them, because their prices are about to change and a
+      // silent revocation reads as a bug (owner ruling Q1).
+      const queuedUserId = (await userRow(queuedAccount.email)).id;
+      assert.equal((await staff.request(`/api/ops/trade/customers/${queuedUserId}/revoke`, {
+        method: "POST", json: { reason: "Test." },
+      })).status, 200);
+      assert.deepEqual((await notifications(queuedAccount.email)).map((n) => n.template_key),
+        ["trade_ack", "trade_approved", "trade_revoked"]);
+
+      // And a rejection.
+      const rejected = spareBusiness(3);
+      const rejectedAccount = await newAccount("mail-rejected", "gmail.com");
+      await apply(rejectedAccount.session, { abn: rejected.abn, businessName: rejected.businessName, source: "profile" });
+      const rejectedId = (await applications(rejectedAccount.email))[0].id;
+      assert.equal((await staff.request(`/api/ops/trade/applications/${rejectedId}/reject`, {
+        method: "POST", json: { reason: "Could not confirm." },
+      })).status, 200);
+      assert.deepEqual((await notifications(rejectedAccount.email)).map((n) => n.template_key),
+        ["trade_ack", "trade_rejected"]);
+
+      // AC-P2-62: every key that reached the notification log is dot-free.
+      const keys = (await sql("SELECT DISTINCT template_key AS k FROM notification WHERE template_key LIKE 'trade%'"))
+        .map((r) => r.k);
+      assert.equal(keys.length, 4, `all four keys were exercised: ${keys}`);
+      for (const key of keys) assert.ok(!key.includes("."), `${key} must be dot-free`);
+    });
   } finally {
     if (server) await stop(server);
     if (stub) await stub.close();

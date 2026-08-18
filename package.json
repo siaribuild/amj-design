@@ -12,7 +12,7 @@
     "db:reset": "node scripts/reset-db.mjs",
     "cf:deploy": "vite build && wrangler deploy --var APP_ENV:production",
     "preflight": "node scripts/preflight.mjs",
-    "test": "npm run typecheck:gate && npm run test:docs && npm run test:unit && npm run test:catalogue && npm run test:scan && npm run test:estimator && npm run test:estimator-rules && npm run test:estimator-learning && npm run test:estimator-recommendation && npm run test:thermal && npm run test:ai-foundation && npm run test:ai-jobs && npm run test:ai-pipeline && npm run test:schedule && npm run test:build && npm run test:composite && npm run test:drawing && npm run test:pairing && npm run test:compatibility && npm run test:delivery && npm run test:referral && npm run test:registration && npm run test:trade && npm run test:api",
+    "test": "npm run typecheck:gate && npm run test:docs && npm run test:unit && npm run test:catalogue && npm run test:scan && npm run test:estimator && npm run test:estimator-rules && npm run test:estimator-learning && npm run test:estimator-recommendation && npm run test:thermal && npm run test:ai-foundation && npm run test:ai-jobs && npm run test:ai-pipeline && npm run test:schedule && npm run test:build && npm run test:composite && npm run test:drawing && npm run test:pairing && npm run test:compatibility && npm run test:delivery && npm run test:referral && npm run test:registration && npm run test:trade && npm run test:email && npm run test:api",
     "test:all": "npm run test && npm run test:web",
     "test:unit": "node --test scripts/tests/unit.test.mjs",
     "test:schedule": "node --test scripts/tests/schedule.test.mjs",
@@ -38,6 +38,7 @@
     "test:compatibility": "node --test scripts/tests/compatibility.test.mjs scripts/tests/composite-select.test.mjs",
     "test:delivery": "node --test --test-concurrency=1 scripts/tests/delivery.test.mjs",
     "test:trade": "node --test --test-concurrency=1 scripts/tests/trade-verification.test.mjs",
+    "test:email": "node --test scripts/tests/email-templates.test.mjs",
     "test:referral": "node --test --test-concurrency=1 scripts/tests/pricing-golden.test.mjs scripts/tests/referral-lifecycle.test.mjs scripts/tests/referral-pricing.test.mjs scripts/tests/referral-codes.test.mjs scripts/tests/referral-screens.test.mjs scripts/tests/referral-security.test.mjs",
     "test:docs": "node --test scripts/tests/docs.test.mjs",
     "test:registration": "node --test --test-concurrency=1 scripts/tests/registration.test.mjs"
