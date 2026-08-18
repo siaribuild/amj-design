@@ -42,7 +42,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 import { IonButton, IonNote } from "@ionic/react";
 import { Plate } from "./Plate";
-import { CANDIDATES, LENS_NAMES, type Lens, type Line } from "./data";
+import { CANDIDATES, LENS_NAMES, RECORD, type Lens, type Line } from "./data";
 import { Money, mm } from "./ui";
 import type { ElevationSize } from "./elevation";
 
@@ -207,7 +207,10 @@ function Body({ line, k, failed }: { line: Line; k: Lens["key"]; failed: boolean
           </div>
         ) : (
           <IonNote className="fact basis" style={{ display: "block" }}>
-            estimate · {line.qty > 1 ? "line total for all units · " : ""}this account's setting
+            {/* "estimate" is struck project-wide: the owner asked for it, and the
+                glossary puts the word on Quote's own _Avoid_ line because the
+                estimator is a different concept. */}
+            {line.qty > 1 ? "line total for all units · " : ""}{RECORD.gstMode} · this account's setting
           </IonNote>
         )}
       </>
@@ -265,7 +268,7 @@ export function LineBody({
           <div><dt>Quantity</dt><dd>×{line.qty}</dd></div>
           <div><dt>Frame system</dt><dd>{line.frame}</dd></div>
           <div><dt>Line total</dt>
-            <dd><Money cents={line.priceCents} absent="no rate" inline /></dd></div>
+            <dd><Money cents={line.priceCents} absent="no rate" /></dd></div>
         </dl>
       </section>
       {line.lenses.map((l) => <Section key={l.key} line={line} lens={l} />)}

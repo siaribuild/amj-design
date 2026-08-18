@@ -1,38 +1,50 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // THE RECORD SURFACE
 //
-// Below 1024 it is the plane stack: the list is the surface, a line is a push.
-// At 1024 and above the same list becomes the persistent left rail and the
-// selected line's body fills the canvas beside it — no push, no stack, and
-// (critique 4) no panel covering it when the editor opens.
+// Reworked against the owner's package. Reading down the header:
 //
-// GROWTH LAW, MOVE 1 ONLY: a zone that was a plane becomes a pane. That is the
-// whole mechanism at every width, and it is applied twice — to the LINES (list →
-// canvas) and to the five JOB BLOCKS (push rows → the same canvas). Move 2, "a
-// push that was a plane becomes a disclosure in place", is withdrawn: the blocks
-// stay destinations, the routes are the same at every width, nothing is behind a
-// click, and there is one information architecture rather than two.
+//   ‹ Projects                                        back, and it NAMES where
+//   OF-Q-10482 · Wattle Grove — Lot 14   $48,802.40   identity + the money
+//   Marchetti Constructions · Ana Bianchi     ex GST
+//   WAITING ON US   Technical review · 3 days      ›  ranked, taps to Progress
+//   [ Lines · 18 ][ Project ]                         the segment he liked
+//   • 2 lines have no rate            show only these the filter, now scoped
 //
-// CRITIQUE 1, the record half. The Lines / Job control is an ion-segment with TWO
-// equal columns and `scrollable={false}` stated in the markup rather than left to
-// the default, because a default is not a decision. The one filter on this
-// surface is a full-width row, not a chip in a strip.
+// THE LEADING SLOT is the one real design problem in the package.
+// "even if we don't have it yet, the navigation should not be missing" — so back
+// must exist, and in production the record is pushed from a list and is never the
+// root. But the drawer opener wants that slot too, and a drawer with no trigger
+// is a regression recorded twice in this repo (UX-AUDIT.md D2, HIGH).
+//
+// Both cannot have it. Two 44px targets, `‹` and `☰`, would take 88px of a 375px
+// bar before the title starts — and the owner's own instinct was that `☰` on the
+// left beside `⋯` on the right "feels weird".
+//
+// Resolved: BACK TAKES THE SLOT AND NAMES ITS DESTINATION — `‹ Projects`, not a
+// bare chevron — and the drawer opener lives on Projects, which is a destination
+// root and where switching destination belongs. Global navigation is two taps,
+// both visible and both labelled, and there is no screen from which the
+// destinations are unreachable, which is what the recorded regression actually
+// was. Inside a record — where a founder spends the day — the trade buys the
+// top-right corner for the money he said he misses.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { useState } from "react";
 import {
-  IonPage, IonHeader, IonToolbar, IonButtons, IonButton, IonMenuButton,
+  IonPage, IonHeader, IonToolbar, IonButtons, IonButton, IonBackButton,
   IonContent, IonFooter, IonSegment, IonSegmentButton, IonLabel, IonActionSheet,
 } from "@ionic/react";
 import { useHistory, useParams } from "react-router-dom";
-import { LINES, RECORD } from "../data";
-import { setStore, useEditorPane, useShortViewport, useStore, useWidthClass, visibleLines } from "../store";
+import { DELIVERY, LINES, RECORD } from "../data";
+import {
+  setStore, useEditorPane, useShortViewport, useStore, useWidthClass, visibleLines,
+} from "../store";
 import { LineBody } from "../LineBody";
 import { Plate } from "../Plate";
 import { LineScroller, LineSwitcher, useMoveKeys } from "../LineScroller";
 import { EditorPane } from "../Editor";
 import {
-  AddLineRow, FilterRow, JobBlockBody, JobBlocks, LifecycleRow, LineList,
-  RecordIdentity, Totals,
+  FilterRow, LineList, ProjectBlockBody, ProjectBlocks, RecordIdentity,
+  RecordTotal, StateRow, Totals,
 } from "../pieces";
 
 export function RecordPage() {
@@ -44,7 +56,7 @@ export function RecordPage() {
   const canvasPlate = short ? "sm" : "md";
   const paneBand = useEditorPane();
   const { selectedId, filterUnpriced, draft, editing } = useStore();
-  const [segment, setSegment] = useState<"lines" | "job">("lines");
+  const [segment, setSegment] = useState<"lines" | "project">("lines");
   const [block, setBlock] = useState("progress");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -56,8 +68,6 @@ export function RecordPage() {
 
   const pick = (id: string) => {
     setStore({ selectedId: id });
-    /* Below 1024 choosing a line pushes its plane; at 1024 and above the canvas
-       beside the rail is already showing it, so selection is the whole act. */
     if (!wide) history.push(`/record/${ref}/line/${id}`);
   };
   const move = (d: -1 | 1) => { const n = run[at + d]; if (n) setStore({ selectedId: n.id }); };
@@ -67,65 +77,66 @@ export function RecordPage() {
     else setStore({ editing: id });
   };
   const openBlock = (k: string) => {
-    if (wide) setBlock(k);
-    else history.push(`/record/${ref}/job/${k}`);
+    if (wide) { setSegment("project"); setBlock(k); }
+    else history.push(`/record/${ref}/project/${k}`);
   };
+  const openDelivery = () => history.push(`/record/${ref}/delivery`);
 
   const listColumn = segment === "lines" ? (
     <>
       <LineList lines={run} selectedId={selected?.id ?? null} dense={wide} onPick={pick} />
-      <AddLineRow onClick={() => openEditor(LINES[3].id)} />
-      {!wide && <Totals />}
+      {!wide && <Totals onReviewDelivery={openDelivery} />}
     </>
   ) : (
     <>
-      <JobBlocks current={wide ? block : undefined} onOpen={openBlock} />
-      {!wide && <Totals />}
+      <ProjectBlocks current={wide ? block : undefined} onOpen={openBlock} />
+      {!wide && <Totals onReviewDelivery={openDelivery} />}
     </>
   );
 
   const header = (
     <IonHeader className="ion-no-border">
-      <IonToolbar>
+      {/* Back at the start, the money in the end slot — the corner the overflow
+          used to hold, and the corner he asked for it in. */}
+      <IonToolbar className="navbar">
         <IonButtons slot="start">
-          {/* The shell owns the navigation opener and it is never removable — that
-              regression is on the record twice. Below 1024 this button is the only
-              route to the destinations; at 1024 and above ion-split-pane keeps the
-              whole destination list permanently on screen, which is the same
-              guarantee met a different way. */}
-          <IonMenuButton aria-label="Open the console menu" />
+          <IonBackButton defaultHref="/projects" text="Projects" />
         </IonButtons>
-        <RecordIdentity />
-        <IonButtons slot="end">
-          <IonButton onClick={() => setSheetOpen(true)}
-            aria-label="More actions for this record">···</IonButton>
-        </IonButtons>
+        <div slot="end"><RecordTotal /></div>
       </IonToolbar>
-      <LifecycleRow />
-      <FilterRow on={filterUnpriced} onToggle={() => setStore({ filterUnpriced: !filterUnpriced })} />
+      <RecordIdentity />
+      <StateRow onOpenProgress={() => openBlock("progress")} />
       <IonToolbar>
         <IonSegment value={segment} scrollable={false}
-          onIonChange={(e) => setSegment((e.detail.value as "lines" | "job") ?? "lines")}>
+          onIonChange={(e) => setSegment((e.detail.value as "lines" | "project") ?? "lines")}>
           <IonSegmentButton value="lines"><IonLabel>Lines · {LINES.length}</IonLabel></IonSegmentButton>
-          <IonSegmentButton value="job"><IonLabel>Job</IonLabel></IonSegmentButton>
+          <IonSegmentButton value="project"><IonLabel>Project</IonLabel></IonSegmentButton>
         </IonSegment>
       </IonToolbar>
+      {segment === "lines" && (
+        <FilterRow on={filterUnpriced}
+          onToggle={() => setStore({ filterUnpriced: !filterUnpriced })} />
+      )}
     </IonHeader>
   );
 
-  /* R-153 — one primary, ⋯ for the rest, and the blocked primary's reason beneath
-     it inside the footer. RULE A1b — the blocked primary is INERT, not faded: the
-     one thing that has to stay readable is why you cannot proceed. */
+  /* The bottom action panel, called out as working — one primary, the overflow
+     beside it, and the status explanation BELOW the buttons. It now also carries
+     `⋯`, which came down from the top-right, and "Add a line", which came out of
+     the list: add and delete keep their acceptance criteria (AC-95, AC-96), they
+     just stop taking a permanent row for something "I don't anticipate that
+     being a frequent action". */
+  const blocked = DELIVERY.finalCents === null
+    ? `${RECORD.unpricedCount} lines have no rate, and delivery is not confirmed`
+    : `${RECORD.unpricedCount} lines have no rate`;
   const footer = (
     <IonFooter className="ion-no-border">
       <div className="actions">
         <IonButton className="inert" disabled>Issue quote</IonButton>
         <IonButton className="more" fill="outline" onClick={() => setSheetOpen(true)}
-          aria-label="More actions for this record">···</IonButton>
+          aria-label="More actions for this project">···</IonButton>
       </div>
-      <p className="reason">
-        {RECORD.unpricedCount} lines have no rate yet. Nothing else is blocking.
-      </p>
+      <p className="reason">{blocked}</p>
     </IonFooter>
   );
 
@@ -133,12 +144,13 @@ export function RecordPage() {
     <IonActionSheet
       isOpen={sheetOpen}
       onDidDismiss={() => setSheetOpen(false)}
-      header="This record"
+      header={`${RECORD.ref} · ${RECORD.title}`}
       buttons={[
         { text: "Add a line", handler: () => openEditor(LINES[3].id) },
+        { text: "Confirm the delivery charge", handler: openDelivery },
         { text: "Request clarification" },
-        { text: "Add a note" },
-        { text: "Copy a link to this record" },
+        { text: "Add a note to this project" },
+        { text: "Copy a link to this project" },
         { text: `Refresh · updated ${RECORD.updatedAt}` },
         { text: "Cancel", role: "cancel" },
       ]}
@@ -157,19 +169,16 @@ export function RecordPage() {
     );
   }
 
-  /* ── ≥ 1024 : rail + canvas ──────────────────────────────────────────────── */
+  /* ── ≥ 1024 : rail + canvas. Out of scope this pass; kept working. ───────── */
   return (
     <IonPage>
       {header}
       <IonContent className="ws">
-        {/* At ≥1280 the editor is a THIRD COLUMN, not an overlay: the canvas
-            reflows beside it so the plate is never covered, which is what makes
-            R-87 and R-50's live redraw true rather than nominal. */}
         <div className="zones" data-editing={paneBand && editing ? "" : undefined}>
           <div className="zone rail">{listColumn}</div>
           <div className="zone canvas">
-            {segment === "job" ? (
-              <div className="canvas-scroll"><JobBlockBody block={block} /></div>
+            {segment === "project" ? (
+              <div className="canvas-scroll"><ProjectBlockBody block={block} /></div>
             ) : selected ? (
               <>
                 <div className="canvas-ident">
@@ -190,8 +199,6 @@ export function RecordPage() {
                     dirtyFrom={draft?.from ?? null}
                     heightMm={draft?.heightMm} widthMm={draft?.widthMm} />
                 </div>
-                {/* The same deck, at every width — one composition, not a
-                    desktop variant of it. */}
                 <div className="deck">
                   <LineScroller run={run} at={at} filtered={filterUnpriced}
                     onPick={(id) => setStore({ selectedId: id })}

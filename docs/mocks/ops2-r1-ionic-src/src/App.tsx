@@ -7,7 +7,7 @@ import { IonReactHashRouter } from "@ionic/react-router";
 import { Redirect, Route, useHistory, useParams } from "react-router-dom";
 import { RecordPage } from "./pages/RecordPage";
 import { LinePage } from "./pages/LinePage";
-import { JobBlockPage } from "./pages/JobBlockPage";
+import { DeliveryPage, ProjectBlockPage, ProjectListPage } from "./pages/SmallPlanes";
 import { EditorDock, EditorPlane } from "./Editor";
 import { planeTransition } from "./transitions";
 import { setStore, useEditorPane, useStore, useWidthClass } from "./store";
@@ -27,7 +27,7 @@ function NavDrawer() {
           <IonList lines="none">
             <IonListHeader><IonLabel>OpenFrame ops</IonLabel></IonListHeader>
             {DESTINATIONS.map((d, i) => (
-              <IonItem key={d} button detail={false} href="#/record/OF-Q-10482"
+              <IonItem key={d} button detail={false} href="#/projects"
                 color={i === 0 ? "light" : undefined}
                 aria-current={i === 0 ? "page" : undefined}>
                 <IonLabel>{d}</IonLabel>
@@ -93,12 +93,16 @@ export default function App() {
         <IonSplitPane contentId="main" when={wide}>
           <NavDrawer />
           <IonRouterOutlet id="main" animation={planeTransition}>
+            {/* The record is NEVER the root: it is pushed from Projects, so
+                back always has somewhere real to go. */}
+            <Route exact path="/projects" component={ProjectListPage} />
             <Route exact path="/record/:ref" component={RecordPage} />
-            <Route exact path="/record/:ref/job/:block" component={JobBlockPage} />
+            <Route exact path="/record/:ref/project/:block" component={ProjectBlockPage} />
+            <Route exact path="/record/:ref/delivery" component={DeliveryPage} />
             <Route exact path="/record/:ref/line/:lineId" component={LineRoute} />
             <Route exact path="/record/:ref/line/:lineId/edit" component={EditRoute} />
             <Route exact path="/">
-              <Redirect to="/record/OF-Q-10482" />
+              <Redirect to="/projects" />
             </Route>
           </IonRouterOutlet>
         </IonSplitPane>

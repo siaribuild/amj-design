@@ -53,8 +53,7 @@ export const RECORD = {
   daysInState: 3,
   gstMode: "ex GST" as const,
   goodsCents: 4822000,
-  deliveryAbsent: "not priced — Zone 4 — Outer metro has no rate",
-  totalCents: 4822000,
+  totalCents: 4880240,
   unpricedCount: 2,
   updatedAt: "09:14",
 };
@@ -209,4 +208,82 @@ export const JOB_BLOCKS = [
   { key: "files", name: "Files", sub: "4 attached" },
   { key: "history", name: "History", sub: "23 events" },
   { key: "notes", name: "Notes", sub: "2 on this job" },
+] as const;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   The PROJECT tab's material. "Job" is struck: CONTEXT.md's glossary lists it
+   under Project's explicit _Avoid_ line ("job, enquiry"), so the old tab title
+   was a vocabulary violation regardless of taste.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export const PROJECTS = [
+  { ref: "OF-Q-10482", title: "Wattle Grove — Lot 14", customer: "Marchetti Constructions", phase: "Technical review", waitingOn: "us", totalCents: 4822000, flagged: true },
+  { ref: "OF-Q-10479", title: "Hillside Rd — Unit 3", customer: "Bellcorp Homes", phase: "Quoted", waitingOn: "the customer", totalCents: 2914500, flagged: false },
+  { ref: "OF-Q-10471", title: "Marsden Estate — Stage 2", customer: "Aravel Group", phase: "Estimating", waitingOn: "us", totalCents: null, flagged: true },
+];
+
+/* ═══ DELIVERY ══════════════════════════════════════════════════════════════
+   "once SOME number is available - that's up to ops to verify and confirm,
+   update (most likely) and submit as part of the final quote. Do not overthink
+   'why and where the number is coming from.'"
+
+   So this is a figure and the ability to change it. There is deliberately NO
+   zone, NO basis and NO rate arithmetic here: they would be reading with no
+   change in behaviour, because ops rings the courier and updates the number
+   whatever produced it.
+
+   The review PATTERN transfers from a line — propose, confirm, override, submit.
+   The DERIVATION surface does not: a line's reasoning is genuinely complex and
+   the reviewer has to adjudicate it, whereas this is a table lookup about to be
+   replaced by a phone call.
+
+   `proposedCents: null` is an ERROR, not a variant. It is drawn plainly and the
+   interface is not built around it. */
+export const DELIVERY = {
+  proposedCents: 58240 as number | null,
+  /** What ops confirmed, after the call. Null until then. Updating is expected. */
+  finalCents: null as number | null,
+  note: "",
+};
+
+export const PAYMENTS = {
+  orderNo: "10482",
+  received: [] as { what: string; cents: number; when: string; how: string }[],
+  expected: [
+    { what: "Deposit · 30%", cents: 1446600, when: "on acceptance" },
+    { what: "Balance", cents: 3375400, when: "before delivery" },
+  ],
+};
+
+export const FILES = {
+  source: { name: "Lot14-windows-schedule.pdf", size: "2.4 MB", when: "Mon 14:02", who: "Ana Bianchi" },
+  attachments: [
+    { name: "elevation-A.pdf", size: "1.1 MB", when: "Tue 09:20", who: "Gedas" },
+    { name: "AMJ67T-thermal-cert.pdf", size: "480 KB", when: "Tue 09:24", who: "Gedas" },
+    { name: "site-photo-north.jpg", size: "3.2 MB", when: "Wed 08:03", who: "Ana Bianchi" },
+  ],
+};
+
+export const HISTORY = [
+  { when: "Tue 09:24", who: "Gedas", what: "Attached AMJ67T-thermal-cert.pdf" },
+  { when: "Tue 09:12", who: "Gedas", what: "Note added to W04" },
+  { when: "Tue 09:05", who: "Gedas", what: "Moved to Technical review" },
+  { when: "Mon 14:06", who: "System", what: "Estimator proposed 18 lines" },
+  { when: "Mon 14:02", who: "Ana Bianchi", what: "Uploaded Lot14-windows-schedule.pdf" },
+];
+
+export const PROJECT_NOTES = [
+  { who: "Gedas · Tue 09:06", body: "Ana wants the alfresco door confirmed with AMJ before we issue." },
+  { who: "Gedas · Mon 14:30", body: "Builder's own schedule, not an architect's — sizes may be nominal." },
+];
+
+/* Delivery is deliberately NOT here. See DeliveryPlane: it is reviewed where the
+   money is read, alongside the lines it is charged against, not configured on a
+   settings page. */
+export const PROJECT_BLOCKS = [
+  { key: "progress", name: "Progress" },
+  { key: "payments", name: "Payments" },
+  { key: "files", name: "Files" },
+  { key: "history", name: "History" },
+  { key: "notes", name: "Notes" },
 ] as const;

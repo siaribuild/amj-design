@@ -1,0 +1,135 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   The reworked mobile project view. Same rules as ops2.css: no palette, no
+   fonts, no radii of our own — everything is Ionic's, or mixed from Ionic's own
+   two ends by the tokens defined there.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The back bar. It NAMES its destination rather than showing a bare chevron:
+   this is the only navigation on the record, so it has to carry its own label —
+   a lone "‹" says there is a way out without saying to where. */
+ion-toolbar.navbar { --min-height: 48px; --padding-end: 12px; }
+ion-toolbar.navbar ion-back-button { --padding-start: 4px; font-size: .875rem; }
+
+/* Identity, with the money in the corner that used to hold the overflow. */
+.rec-head {
+  padding: 2px 14px 8px; min-width: 0;
+  border-bottom: 1px solid var(--ops-line);
+}
+.rec-head h1 {
+  margin: 0; font-size: .9375rem; line-height: 1.25; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rec-head .sub {
+  display: block; font-size: .75rem; line-height: 1.35; color: var(--ops-quiet);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rec-total { text-align: right; padding-inline-end: 2px; }
+
+/* The ranked lifecycle: two weights, not four facts at one. */
+.staterow {
+  display: flex; align-items: baseline; gap: 8px; width: 100%;
+  min-height: 40px; padding: 6px 14px; border: 0; text-align: left;
+  background: var(--ops-surface); cursor: pointer;
+  border-bottom: 1px solid var(--ops-line);
+}
+.sr-owed {
+  flex: none; font-size: .8125rem; font-weight: 700; letter-spacing: .02em;
+  color: var(--ops-ink);
+}
+/* Ours to move is the one worth marking. Waiting on someone else is not our
+   queue, so it stays quiet — that difference is the whole point of ranking. */
+.sr-owed[data-ours] { color: var(--ion-color-warning-shade); }
+.sr-rest {
+  flex: 1 1 auto; min-width: 0; font-size: .75rem; color: var(--ops-quiet);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sr-chev { flex: none; font-size: 16px; color: var(--ops-quiet); }
+
+/* The filter, under the segment it belongs to. */
+.filterrow {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  min-height: 40px; padding: 6px 14px; border: 0; text-align: left;
+  background: var(--ops-warn-tint); cursor: pointer;
+  border-bottom: 1px solid var(--ops-line);
+}
+.fr-dot {
+  flex: none; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ion-color-warning-shade);
+}
+.fr-text { flex: 1 1 auto; min-width: 0; font-size: .8125rem; color: var(--ops-ink); }
+/* Not the primary hue: on the warning tint it measured 4.34:1 against the dark
+   palette, under rule A1's floor. Ink plus an underline carries "this is a
+   control" without borrowing a colour that has to fight the tint behind it. */
+.fr-act {
+  flex: none; font-size: .75rem; font-weight: 700; color: var(--ops-ink);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.filterrow[aria-pressed="true"] .fr-text { font-weight: 600; }
+
+/* Row end: the price, and the badge beneath it when there is one. */
+.rowend { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+
+/* Delivery in the totals panel — a reviewable row, not a statement. */
+.delivery-row {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 32px; padding: 0 0 0 6px; border: 0; background: none;
+  cursor: pointer; color: inherit; font: inherit;
+}
+.delivery-row ion-icon { font-size: 15px; color: var(--ops-quiet); }
+.d-state {
+  font-size: .6875rem; font-weight: 600; padding: 1px 6px; border-radius: 999px;
+  background: var(--ops-warn-tint); color: var(--ops-ink); white-space: nowrap;
+}
+.d-missing { font-size: .8125rem; font-weight: 600; color: var(--ion-color-danger-shade); }
+.totals dt.tot, .totals dd.tot { font-weight: 700; padding-top: 6px; }
+.totals-basis { margin: 8px 0 0; font-size: .75rem; color: var(--ops-quiet); }
+
+/* Project-tab rows and block bodies. */
+.pb-name { font-size: .9375rem; font-weight: 600; }
+.sub-h {
+  margin: 16px 0 6px; font-size: .6875rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ops-quiet);
+}
+.section > .sub-h:first-child { margin-top: 0; }
+ul.rows { list-style: none; margin: 0; padding: 0; }
+ul.rows li {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px;
+  padding: 8px 0; border-bottom: 1px solid var(--ops-line);
+}
+ul.rows .r-name { font-size: .875rem; overflow-wrap: anywhere; }
+ul.rows .r-when { grid-column: 1; font-size: .75rem; color: var(--ops-quiet); }
+ul.rows .money { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+ul.rows.trail li { grid-template-columns: minmax(0, 1fr); }
+.block-act { margin-top: 18px; display: grid; gap: 6px; }
+.block-act ion-button { margin: 0; }
+ion-item.flush { --padding-start: 0; --inner-padding-end: 0; --background: transparent; }
+ion-button.offto { margin: 14px 0 0; --padding-start: 0; }
+.proposed {
+  display: flex; align-items: baseline; gap: 8px; margin: 0 0 16px;
+  font-size: .8125rem; color: var(--ops-quiet);
+}
+
+/* Danger's counterpart to .note-warning. Rule A2 — the two never share a
+   treatment: danger is filled and stated as a fault, warning is bordered and
+   stops nobody. */
+.note-danger {
+  margin: 0 0 16px; padding: 10px 12px;
+  border: 1px solid var(--ion-color-danger-shade); border-left-width: 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ion-color-danger, #eb445a) 12%, var(--ops-bg));
+  color: var(--ops-ink); font-size: .875rem; line-height: 1.4;
+}
+.note-danger .lede { display: block; margin-bottom: 2px; }
+
+.linkish {
+  border: 0; background: none; padding: 0; cursor: pointer;
+  font: inherit; font-weight: 600; color: var(--ion-color-primary);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+
+/* Header budget. It carries back, the total, identity, customer, the ranked
+   state, the tabs and the filter — everything the owner asked to be there — so
+   each band is trimmed to what it needs rather than to the default 48px bar.
+   Measured at 375x812: 218px of header, 76px of footer, 518px of list. */
+ion-toolbar.navbar { --min-height: 44px; }
+ion-header ion-toolbar:has(ion-segment) { --min-height: 44px; --padding-top: 0; --padding-bottom: 0; }

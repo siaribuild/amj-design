@@ -17,6 +17,7 @@ import "@ionic/react/css/palettes/dark.system.css";
 /* ops2's own layer — layout Ionic has no component for, plus three functional
    overrides. No palette, no fonts, no radii, no shadows. */
 import "./ops2.css";
+import "./ops2-record.css";
 
 setupIonicReact({
   /* R-164: focus a heading on every navigation — Ionic config, not our code. */

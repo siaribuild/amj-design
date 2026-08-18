@@ -8,6 +8,13 @@ dark palette (`@ionic/react/css/palettes/dark.system.css`).
 This spec is the contract. Where it and the mock disagree, this document is
 wrong and should be corrected — the mock is what the owner approved.
 
+**Amended after the owner's phone review.** Section 12 records that pass and
+supersedes anything above it that it contradicts. Its scope was **the mobile
+project view only** — the line detail plane and every width above phone were
+explicitly deferred ("Once fully happy, we'll worry about ItemDetail view and
+then - desktop"), so sections 5.2, 6 and 7 below still describe the desktop
+geometry as built and unreviewed.
+
 Binding inputs unchanged: `docs/ops-redesign/GRILL-CONCLUSIONS.md` (D1–D19,
 C1–C8), `docs/specs/ops2.md`, `docs/ops2/register.md`,
 `docs/ops-redesign/LEARNINGS.md`.
@@ -84,11 +91,13 @@ which C4 forbids outright.
 | A panel failed to load | danger |
 | Delete confirmation | danger |
 
-### A3 — Every money figure carries its GST basis
-On the figure, in the account's ex/inc setting, at a legible size — not a column
-heading, not a footnote. **One component renders money** (`Money` in `src/ui.tsx`)
-so no call site can forget it. Absence renders as a reason, not a dash:
-`no rate`, `no rate for Zone 4 — Outer metro`.
+### A3 — The GST basis is stated once, where it governs
+**Amended — see §12.3.** The rule exists so nobody misreads a number, and
+printing "ex GST" against eighteen line prices defeats it rather than enforcing
+it. The basis is now stated once per place it governs — under the project total
+in the header, and under the totals panel — and never inside a list. **One
+component renders money** (`Money` in `src/ui.tsx`), and rows pass
+`basis={false}`. Absence still renders as a reason, not a dash: `no rate`.
 
 ---
 
@@ -479,7 +488,270 @@ console says when it last read (`Updated 09:14`).
 
 ---
 
-## 11. Decisions needed
+## 11. Decisions needed (R1)
 
-**None.** The form-level disclosure question does not arise — there is no
-`<details>` and no collapsible group anywhere in the editor.
+**None at the time of the first pass.** Superseded by section 13.
+
+---
+
+# 12. The mobile project view — reworked after the owner's phone review
+
+Scope of this pass: **the mobile project view only** (Lines + Project). The line
+detail plane and every width above phone were explicitly deferred. Colour was
+parked — nothing in this section changes theming.
+
+Preserved untouched, because he named them as working: the Lines/Project
+segmented control, the totals panel at the end of the list, the bottom action
+panel with its status explanation below the buttons, the phase ribbon's
+placement, the project name beside the leading control, and the Lines concept.
+
+## 12.1 The header, top to bottom
+
+```
+┌───────────────────────────────────────────────────┐
+│ ‹ Projects                        $48,802.40      │ 44  back + the money
+│                                       ex GST      │
+│ OF-Q-10482 · Wattle Grove — Lot 14                │ 46  identity
+│ Marchetti Constructions · Ana Bianchi             │
+│ WAITING ON US   Technical review · 3 days      ›  │ 40  ranked state
+│ [ Lines · 18 ][ Project ]                         │ 44  the segment
+│ • 2 lines have no rate         show only these    │ 40  the filter
+└───────────────────────────────────────────────────┘
+```
+
+Measured at 375×812: 218px header, 73px footer, 521px of list. At 320×690:
+218 / 73 / 399, no horizontal overflow.
+
+## 12.2 The leading slot — the one real design problem in the package
+
+Two requirements collided. **Back must exist** — "even if we don't have it yet,
+the navigation should not be missing", and in production the record is pushed
+from a list, so it is never the root. **The drawer opener must not disappear** —
+a drawer with no trigger is a regression recorded twice here (`UX-AUDIT.md` D2,
+HIGH).
+
+Both cannot have the slot. Two 44px targets take 88px of a 375px bar before the
+title starts, and the owner's own instinct was that a hamburger on the left
+beside an overflow on the right "feels weird".
+
+**Resolved: back takes the slot and names its destination** — `‹ Projects`, not
+a bare chevron, because this is the record's only navigation and a lone chevron
+says there is a way out without saying to where. **The drawer opener lives on
+Projects**, which is a destination root and where switching destination belongs.
+
+Global navigation is therefore two taps, both visible and both labelled, and
+there is no screen from which the destinations are unreachable — which is what
+the recorded regression actually was. Inside a record, where a founder spends
+the day, the trade buys the top-right corner for the money.
+
+Implementation: a `/projects` route exists and is the stack root; `/` redirects
+to it; the record is always pushed. `IonBackButton defaultHref="/projects"
+text="Projects"`.
+
+## 12.3 The top-right corner
+
+`⋯` moved down to the bottom action panel, where the other actions already
+were. The **project total takes the corner**, in the `end` slot of the back bar:
+`$48,802.40` over `ex GST`. It is on screen at every scroll position and on both
+tabs.
+
+This is now the primary home of rule A3's GST basis. The basis appears in exactly
+two places on the surface — here, and under the totals panel — and nowhere else.
+Eighteen identical captions is how a caption becomes invisible.
+
+## 12.4 The lifecycle, ranked
+
+Was `Now · Technical review · waiting on us · 3 days in this state`: four facts
+at one weight in one dotted run, which is why it had to be read in full before it
+said anything.
+
+Now two ranked lines in one 40px row:
+
+| | |
+|---|---|
+| **WAITING ON US** | who owes the next move — bold, and toned when it is ours |
+| Technical review · 3 days | which phase, and how stale — quiet |
+
+Variants: `Waiting on us` / `Waiting on the customer` / `With the manufacturer`.
+`Now ·` is deleted outright — it carried no information.
+
+The row is a button and opens Progress, where the ribbon and the move control
+live.
+
+## 12.5 The Lines tab
+
+- **The flag sentence is out of the row.** "it pollutes the screen. Highlight is
+  enough." The row keeps the warning rule down its leading edge and its
+  `needs review` badge; the sentence lives on the line itself, where the fix is.
+- **"ex GST" is out of every row** — see 12.3.
+- **"Add a line" is out of the list and into the bottom `⋯` sheet.** This is a
+  move, not a cut: **AC-95 and AC-96 stand unchanged.** He objected to its
+  prominence ("I don't anticipate that being a frequent action"), not its
+  existence.
+- **"estimate" is gone from the totals panel.** His instruction, and the
+  glossary agrees — the word is on Quote's own _Avoid_ line because the
+  estimator is a different concept.
+- **The filter moved below the segment**, because it filters the Lines list and
+  belongs to it. Above the segment it read as a property of the whole record and
+  appeared on the Project tab too.
+
+## 12.6 Delivery — a reviewable figure, not a settings surface
+
+> "zones are for estimating only - the task of ops is to confirm the price with
+> couriers and update it as a final offer. Functionally, it is no different from
+> the line review process."
+>
+> "once SOME number is available - that's up to ops to verify and confirm, update
+> (most likely) and submit as part of the final quote. Do not overthink 'why and
+> where the number is coming from.'"
+
+### Where it lives, and why
+
+**In the totals panel, as a reviewable row.** The instinct was the Project tab;
+the reasoning points here. Three placements were possible:
+
+- **A row in the Lines list.** Refused. A Line is "one configured opening" in the
+  glossary. A delivery row there has no drawing, no size and no per-line actions,
+  breaks the `Lines · 18` count, and puts a non-opening in a filmstrip of
+  openings.
+- **The Project tab.** Refused. That is where a project's standing facts live.
+  Delivery is money on this quote, and filing it beside Files and History puts it
+  away from every figure it is added to.
+- **The totals panel.** Taken. It is already where delivery appears, it is where
+  money is read, and it is what you reach after working down the eighteen lines —
+  so the review sequence is lines, then delivery, then the total, in the order
+  the eye already travels.
+
+### The row
+
+| State | Renders |
+|---|---|
+| Proposed, not yet confirmed | `$582.40` + a quiet `not confirmed` pill, tappable |
+| Confirmed | `$640.00`, tappable, no fuss |
+| No figure at all | `no figure — set it` in danger tone |
+
+### The screen
+
+A figure and the ability to change it. **No zone, no basis, no rate arithmetic,
+no "why does it say that" panel.** The review *pattern* transfers from a line —
+propose, confirm, override, submit — but the *derivation surface* does not: a
+line's reasoning is complex and has to be adjudicated, whereas this is a lookup
+about to be replaced by a phone call.
+
+- The field is **pre-filled with the proposed figure**, because updating is the
+  expected path, not the exception.
+- The primary says **Confirm delivery**, not "Override" — nothing frames this as
+  overruling a machine.
+- An optional note ("e.g. two deliveries, second to site").
+- A read-back strip showing the project total (R-159, the same device the line
+  editor uses).
+- Copy beneath: "Confirming records the figure against this project. It changes
+  nothing for any other project."
+
+**No figure is an error state, not a variant.** It renders as a plain fault
+(`.note-danger`, filled — rule A2 keeps danger and warning apart) and the same
+field below is how it gets fixed. The interface is not built around it.
+`worker/lib/delivery.ts` resolves postcode zone → fallback zone →
+`unpriced_table`, and its own comment calls the last a deployment fault.
+
+### Copy that was over-explaining
+
+`not priced — Zone 4 — Outer metro has no rate` told the reader about a rate
+table they cannot act on from that screen. It is now `$582.40 · not confirmed`,
+or `no figure — set it`.
+
+## 12.7 The Project tab (was "Job")
+
+**The rename is owed on vocabulary grounds, not taste.** `CONTEXT.md` lists
+"job" on Project's explicit _Avoid_ line: *"Avoid: job, enquiry"*.
+
+**Recommendation: "Project".** The record is what ops opens; within it, `Lines`
+are what is being quoted and `Project` is the container around them.
+
+> **For the architect.** "Project" is glossary-correct but partially overlaps
+> itself: the glossary defines Project as the container *including* its lines,
+> and this tab is the container *minus* its lines. That is tolerable in a
+> two-tab split, but if a precise term is wanted for "a project's own facts as
+> distinct from its lines", the glossary does not currently have one. Either
+> way, `Job` must go.
+
+### The five blocks, each with a real summary line
+
+| Block | Summary |
+|---|---|
+| Progress | `Technical review · waiting on us · 3 days` |
+| Payments | `Nothing received · 2 expected` |
+| Files | `1 schedule · 3 attachments` |
+| History | `5 events · last Tue 09:24` |
+| Notes | `2 notes on this project` |
+
+Push rows at every width — move 1 only, no disclosure anywhere.
+
+**Progress.** The phase ribbon (placement unchanged — he called it good; it wraps
+at `repeat(auto-fit, minmax(92px, 1fr))` rather than scrolling), then who it is
+waiting on, days in phase, and who moved it. A **"Waiting on the manufacturer"
+toggle** (D10) — orthogonal to phase and the only `waitingOn` value a human sets,
+so a switch rather than a phase step. Primary: `Move to Quoted`, with "Nothing is
+locked — you can move it back."
+
+**Payments.** Order no., what has been received (empty state honest: "Nothing
+received yet."), what is expected with amounts and timing. Primary: `Record a
+payment`, with "Recording a payment here does not send anything to the customer."
+
+**Files.** The source schedule named separately from later attachments, each with
+size, time and who. Primary: `Add a file`.
+
+**History.** Reverse-chronological: what, then who and when. Copy: "Entity,
+action, actor and time. It is a record, not an undo — nothing here can be
+reversed from this screen."
+
+**Notes.** Project-level notes. Primary: `Add a note to this project`, with "A
+note on the project, not on a line. Line notes stay on the line."
+
+## 12.8 The bottom action panel
+
+Unchanged in structure — one primary, the overflow beside it, the status
+explanation below the buttons — and it now carries the `⋯` that came down from
+the top-right. Its sheet holds: Add a line · Confirm the delivery charge ·
+Request clarification · Add a note to this project · Copy a link · Refresh.
+
+The blocked reason now names both blockers:
+`2 lines have no rate, and delivery is not confirmed`.
+
+## 12.9 One contrast fix
+
+The filter row's action word was Ionic's primary hue on the warning tint and
+measured **4.34:1** on the dark palette, under rule A1's floor. It is now ink
+plus an underline. Re-measured at 320×690 dark: no failures.
+
+---
+
+# 13. Decisions needed
+
+Owner-only. Three items, all consequences of this pass rather than open design
+questions.
+
+1. **`waitingOn` may want to generalise.** Waiting on a **courier** is the same
+   shape as waiting on the **manufacturer** — a third party, outside the phase
+   ladder, set by a human. `worker/lib/lifecycle.ts:56`'s union has already grown
+   once for Manufacturer, and growing it once per counterparty will not hold.
+   Suggest a `{ kind: "third-party", who }` shape instead of one flag each. The
+   architect owns the model; the reading is settled either way — the state row
+   says `With the manufacturer` / `With the courier`, and the Progress toggle
+   names the party.
+
+2. **The delivery override belongs in the divergence record.** A human confirming
+   a delivery figure different from the proposed one is proposed→issued, exactly
+   like a line field, and §3 of the grill conclusions records divergences once at
+   issue. It is currently specced for line fields only. **This needs new
+   acceptance criteria** — the recording, and the negative case that nothing is
+   written before issue (C5: never per-save).
+
+3. **Delivery confirmation as an issue gate.** The mock's blocked reason now says
+   delivery is not confirmed, which implies confirming it is required before
+   `Issue quote` enables. That is a business rule, not a design one. If it is
+   *not* required, the reason line drops that clause and the row keeps its
+   `not confirmed` pill as information only.
+
+Also flagged, not a decision: **AC-95/AC-96 (line add and delete) are unchanged.**
+"Add a line" moved from the list into the overflow. Nothing was descoped.
