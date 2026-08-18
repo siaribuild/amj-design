@@ -18,6 +18,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
 import {
   COMPLETE_ACCOUNT, Session, completeAccount, freePort, login, makeRunDir, projectRoot, removeRunDir, requestJson,
   run, start, stop, viteCli, waitForUrl, wranglerCli,
@@ -1097,6 +1098,133 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
         .map((r) => r.k);
       assert.equal(keys.length, 4, `all four keys were exercised: ${keys}`);
       for (const key of keys) assert.ok(!key.includes("."), `${key} must be dot-free`);
+    });
+
+    // AC-P2-50…53 — the migration's DATA half, run against a populated database.
+    //
+    // The harness applies migrations to an EMPTY database and seeds afterwards,
+    // so the grandfathering INSERT…SELECTs match nothing at migration time. That
+    // is a harness artefact, not the production ordering, and asserting against
+    // it would prove nothing. So the data half is extracted from the real
+    // migration file and executed here against seeded rows — the same SQL text
+    // that will run in production, in the order production will run it.
+    await t.test("AC-P2-50/51/52/53: staff pinned, exactly three grandfathered, nothing else touched", async () => {
+      const { TRADE_DISCOUNT_DEFAULT } = await import(pathToFileURL(await (async () => {
+        const bundlePath = join(runDir, "trade-const.mjs");
+        await build({
+          stdin: {
+            contents: `export { TRADE_DISCOUNT_DEFAULT } from ${JSON.stringify(join(projectRoot, "worker/lib/trade.ts"))};`,
+            resolveDir: projectRoot, sourcefile: "entry.ts", loader: "ts",
+          },
+          bundle: true, format: "esm", platform: "node", outfile: bundlePath, logLevel: "silent",
+        });
+        return bundlePath;
+      })()).href);
+
+      const GRANDFATHERED = [
+        "gediminas.bereznevicius@gmail.com",
+        "sarah@northsidebuild.com.au",
+        "doni@siaribuild.com.au",
+      ];
+
+      // AC-P2-52: the file is additive. No rebuild, no DROP — a rebuild in this
+      // database has already cascade-deleted production rows.
+      const migration = await readFile(join(projectRoot, "migrations/0054_trade_verification.sql"), "utf8");
+      assert.equal(/\bDROP\s+TABLE\b/i.test(migration), false, "no DROP TABLE");
+      assert.equal(/\bALTER\s+TABLE\s+\w+\s+RENAME\b/i.test(migration), false, "no table rename (rebuild)");
+      assert.equal(/\bDROP\s+COLUMN\b/i.test(migration), false, "no DROP COLUMN");
+
+      // AC-P2-51: matching is by explicit address, never "every customer row
+      // that exists when the migration runs" — which would silently grandfather
+      // anyone who registers between now and the deploy.
+      for (const email of GRANDFATHERED) assert.ok(migration.includes(email), `${email} is named explicitly`);
+      // Every statement that grants anything must be constrained by ADDRESS.
+      // The check is on the text because the danger is a statement that grants
+      // correctly today and grants to everyone after one careless edit.
+      // A fixed window rather than "up to the next semicolon": the decision
+      // reason itself contains one, inside a string literal.
+      const windowAfter = (index) => migration.slice(index, index + 900);
+      for (const match of migration.matchAll(/UPDATE user SET discount_percent = [1-9]/g)) {
+        assert.ok(/email\s+IN\s*\(|email\s*=\s*'/i.test(windowAfter(match.index)),
+          "a granting UPDATE must name its addresses");
+      }
+      const inserts = [...migration.matchAll(/INSERT INTO trade_application/g)];
+      assert.equal(inserts.length, 3, "three single-address INSERTs, so the reviewed SQL names each grant");
+      for (const match of inserts) {
+        assert.ok(/email\s*=\s*'/i.test(windowAfter(match.index)),
+          "a grandfathering INSERT must name its address");
+      }
+
+      // The rate literal in the migration must equal the code's one named place.
+      const literal = /discount_percent\s*=\s*(\d+)\s*\r?\n\s*WHERE type = 'customer'/i.exec(migration);
+      assert.ok(literal, "the grandfather rate literal is findable in the migration");
+      assert.equal(Number(literal[1]), TRADE_DISCOUNT_DEFAULT,
+        "AC-P2-51: the migration's rate and TRADE_DISCOUNT_DEFAULT agree");
+
+      // Production's own record: one of the three holds an ABN and a company.
+      await sql(`UPDATE user SET abn = '33629698013', company = 'Motro Constructions'
+                  WHERE email = '${esc(GRANDFATHERED[0])}'`);
+
+      // AC-P2-53's six tables. The spec says "payout"; the table is actually
+      // `referral_payout` (migrations/0051:146) — there is no table named
+      // `payout`, so the criterion is read as naming the payout table.
+      const COUNTED = ["user", "membership", "project", "quote_line", "referral_payout", '"order"'];
+      const counts = async () => {
+        const row = (await sql(`SELECT ${COUNTED.map((t, i) => `(SELECT count(*) FROM ${t}) AS c${i}`).join(", ")}`))[0];
+        return COUNTED.map((_, i) => Number(row[`c${i}`]));
+      };
+      const before = await counts();
+      const othersBefore = await sql(
+        `SELECT id, discount_percent FROM user WHERE type = 'customer'
+           AND email NOT IN (${GRANDFATHERED.map((e) => `'${esc(e)}'`).join(",")}) ORDER BY id`,
+      );
+
+      // Run the real SQL, from the real file.
+      const marker = "-- ── Staff pinning";
+      const at = migration.indexOf(marker);
+      assert.ok(at > 0, "the migration's data half is where the test expects it");
+      const dataHalf = join(runDir, "0054-data.sql");
+      await writeFile(dataHalf, migration.slice(at), "utf8");
+      await run(process.execPath, [
+        wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", dataHalf,
+      ], { env: wranglerEnv });
+
+      // AC-P2-50: Phase 1 fixed creation only; this pins the rows that predate it.
+      assert.equal(
+        Number((await sql("SELECT count(*) AS n FROM user WHERE type = 'internal' AND discount_percent <> 0"))[0].n), 0,
+        "no internal account carries a customer discount",
+      );
+
+      // AC-P2-51: exactly three, by provenance, with the ABN copied where it
+      // exists and NOTHING INVENTED where it does not.
+      const rows = await sql(
+        `SELECT u.email, u.discount_percent, t.abn, t.status, t.decided_via, t.decided_by, t.decision_reason
+           FROM trade_application t JOIN user u ON u.id = t.user_id
+          WHERE t.decided_via = 'grandfathered' ORDER BY u.email`,
+      );
+      assert.equal(rows.length, 3, `exactly three grandfathered rows: ${JSON.stringify(rows.map((r) => r.email))}`);
+      assert.deepEqual(rows.map((r) => r.email).sort(), [...GRANDFATHERED].sort());
+      for (const row of rows) {
+        assert.equal(row.status, "approved");
+        assert.equal(row.decided_by, null, "granted by owner decision, not by a person clicking approve");
+        assert.equal(Number(row.discount_percent), TRADE_DISCOUNT_DEFAULT);
+        assert.ok(/[Gg]randfathered/.test(row.decision_reason), "and the record says so in words");
+      }
+      assert.equal(rows.find((r) => r.email === GRANDFATHERED[0]).abn, "33629698013", "an ABN on file is copied");
+      for (const email of GRANDFATHERED.slice(1)) {
+        assert.equal(rows.find((r) => r.email === email).abn, null,
+          `${email} holds no ABN and none is invented for it`);
+      }
+
+      // ...and no other customer's rate moved.
+      const othersAfter = await sql(
+        `SELECT id, discount_percent FROM user WHERE type = 'customer'
+           AND email NOT IN (${GRANDFATHERED.map((e) => `'${esc(e)}'`).join(",")}) ORDER BY id`,
+      );
+      assert.deepEqual(othersAfter, othersBefore, "AC-P2-51: nobody else's discount changed");
+
+      // AC-P2-53: the six tables are the same size they were.
+      assert.deepEqual(await counts(), before, `AC-P2-53: ${COUNTED.join(", ")} row counts identical`);
     });
   } finally {
     if (server) await stop(server);

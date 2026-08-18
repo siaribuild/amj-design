@@ -530,7 +530,7 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
   <b>User registration Phase 2 — trade verification</b>
   <span class="mono" style="font-size:11px;color:#6E7376">AMJ Trade Direct / OpenFrame · UX mock for approval</span>
   <nav>
-    <a href="#s1">1 · Trade signup</a>
+    <a href="#s1">1 · Trade page</a>
     <a href="#s2">2 · Outcomes</a>
     <a href="#s3">3 · Account page</a>
     <a href="#s4">4 · Submit gate</a>
@@ -558,15 +558,16 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
 <!-- ══════════════════════════════════════════════════════════════════════ 1 -->
 <section class="surface" id="s1">
   <div class="shead">
-    <div class="n">Surface 1 · Door (a) — the primary path</div>
-    <h2>/trade-account becomes the real signup</h2>
-    <p>The hero and the benefits column stay exactly as they are. The card beside them — today a form wired to nothing, which silently throws away every application typed into it — becomes a working signup: business details, then the Phase-1 email-OTP step. A tradie who has never touched the site can finish this cold and walk away with trade pricing.</p>
-    <div class="path">src/app/App.tsx · TradePage (the mock form at 1690-1704 is deleted) → src/components/trade/TradeApplicationCard.tsx, source="trade_page"</div>
+    <div class="n">Surface 1 · Door (a) — marketing page, universal flow</div>
+    <h2>/trade-account hosts the same signup everyone else gets</h2>
+    <p>There is <b>one registration flow</b> in this product — email, 6-digit code, your details — and Phase 2 does not add a second one. What it adds is an <b>optional ABN + business-name group inside the details</b>, the same group that appears at the submit gate and on the account card. The fork is what happens <em>after</em>: an ABN was entered, so verification runs and one of the two outcome panels appears; no ABN, and this is an ordinary private account exactly as Phase 1 shipped it.</p>
+    <p>The trade page's job is to <b>explain and to carry trade intent</b> — hero, benefits, the trade copy — not to own a flow. Its only difference from every other entry point is that the optional group arrives <b>already revealed</b>, because someone who navigated here came specifically to hand over an ABN.</p>
+    <div class="path">src/app/App.tsx · TradePage (the mock form at 1690-1704 is deleted) · the Phase-1 OtpSignIn + details step, with TradeApplicationCard's optional group mounted inside it (source="trade_page")</div>
   </div>
 
   <div class="state">
-    <h3><span class="tag">State</span> Cold visitor · nothing entered yet</h3>
-    <p>Business details are asked <em>before</em> the email step, because they are the reason this person is on this page. The values are held on screen across the OTP and sent the moment the session exists — the caption under the button says so, so the sequence never looks like the form was ignored.</p>
+    <h3><span class="tag">State</span> Step 1 · email — with the optional business group revealed</h3>
+    <p>Field order is the flow's own, unchanged: email first, then the optional group, then the human check, then the button. Nothing about the composition is specific to this page except that the group starts open.</p>
     <div class="frames">
 
       <div class="dev desk">
@@ -588,41 +589,43 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
               </div>
 
               <div class="card p24" style="--control-fill:var(--bone)">
-                <h3 class="t-hd3 c-ink mb4">Open your trade account</h3>
-                <p class="t-bd-sm c-body mb16" style="max-width:44ch">We check your ABN against the Australian Business Register. If it all checks out, trade pricing is on your account straight away.</p>
+                <h3 class="t-hd3 c-ink mb4">Sign in or create your account</h3>
+                <p class="t-bd-sm c-body mb16" style="max-width:44ch">We'll email you a 6-digit code — no password. If you don't have an account yet, this creates one.</p>
 
-                <p class="t-label c-quiet mb12">Your business</p>
-                <div class="col g12">
-                  <div>
-                    <label class="field-label" for="a1-bn">Business name</label>
-                    <input class="field" id="a1-bn" placeholder="ABC Constructions">
-                    <p class="helptext">As it's registered against the ABN.</p>
-                  </div>
-                  <div>
-                    <label class="field-label" for="a1-abn">ABN</label>
-                    <input class="field mono" id="a1-abn" placeholder="00 000 000 000" inputmode="numeric">
-                    <p class="helptext">11 digits. Spaces are fine.</p>
-                  </div>
-                  <div>
-                    <span class="field-label">Builder or tradie?</span>
-                    <div class="seg">
-                      <label><span class="dot"></span>Builder</label>
-                      <label><span class="dot"></span>Tradie</label>
+                <div class="mb16">
+                  <label class="field-label" for="a1-em">Email</label>
+                  <input class="field" id="a1-em" placeholder="your@email.com">
+                </div>
+
+                <div class="grouprule">
+                  <p class="t-label c-quiet mb4">Your business (optional)</p>
+                  <p class="t-cap c-body mb12" style="max-width:46ch">Add your ABN and we'll check it against the Australian Business Register as soon as you're signed in. If it checks out, trade pricing is on your account straight away. You can also add it later from your account.</p>
+                  <div class="col g12">
+                    <div>
+                      <label class="field-label" for="a1-bn">Business name</label>
+                      <input class="field" id="a1-bn" placeholder="ABC Constructions">
+                      <p class="helptext">As it's registered against the ABN.</p>
                     </div>
-                    <p class="helptext">Optional. It just tells us who we're working with.</p>
+                    <div>
+                      <label class="field-label" for="a1-abn">ABN</label>
+                      <input class="field mono" id="a1-abn" placeholder="00 000 000 000" inputmode="numeric">
+                      <p class="helptext">11 digits. Spaces are fine.</p>
+                    </div>
+                    <div>
+                      <span class="field-label">Builder or tradie?</span>
+                      <div class="seg">
+                        <label><span class="dot"></span>Builder</label>
+                        <label><span class="dot"></span>Tradie</label>
+                      </div>
+                      <p class="helptext">Optional. It just tells us who we're working with.</p>
+                    </div>
                   </div>
                 </div>
 
                 <div class="grouprule">
-                  <p class="t-label c-quiet mb8">Your account</p>
-                  <p class="t-cap c-body mb12" style="max-width:46ch">We'll email you a 6-digit code — no password. If you already have an account, this signs you into it.</p>
-                  <div class="mb12">
-                    <label class="field-label" for="a1-em">Email</label>
-                    <input class="field" id="a1-em" placeholder="your@email.com">
-                  </div>
                   <div class="ts mb12"><span class="box"></span><span class="t-cap c-body">Verifying you're human</span><span class="cf">CLOUDFLARE<br>Privacy · Terms</span></div>
                   <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Email me a code</span>
-                  <p class="helptext" style="margin-top:10px">Your business details stay on this screen — we send them the moment you're signed in.</p>
+                  <p class="helptext" style="margin-top:10px">Your business details stay on this screen — we send them for checking the moment you're signed in.</p>
                 </div>
               </div>
             </div>
@@ -640,21 +643,22 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
           </div></div>
           <div style="padding:20px">
             <div class="card p20" style="--control-fill:var(--bone)">
-              <h3 class="t-hd3 c-ink mb4">Open your trade account</h3>
-              <p class="t-cap c-body mb16">We check your ABN against the Australian Business Register. If it all checks out, trade pricing is on your account straight away.</p>
-              <p class="t-label c-quiet mb12">Your business</p>
-              <div class="col g12">
-                <div><label class="field-label" for="a1m-bn">Business name</label><input class="field" id="a1m-bn" placeholder="ABC Constructions"></div>
-                <div><label class="field-label" for="a1m-abn">ABN</label><input class="field mono" id="a1m-abn" placeholder="00 000 000 000" inputmode="numeric"><p class="helptext">11 digits. Spaces are fine.</p></div>
-                <div><span class="field-label">Builder or tradie?</span><div class="seg"><label><span class="dot"></span>Builder</label><label><span class="dot"></span>Tradie</label></div><p class="helptext">Optional.</p></div>
+              <h3 class="t-hd3 c-ink mb4">Sign in or create your account</h3>
+              <p class="t-cap c-body mb16">We'll email you a 6-digit code — no password. If you don't have an account yet, this creates one.</p>
+              <div class="mb16"><label class="field-label" for="a1m-em">Email</label><input class="field" id="a1m-em" placeholder="your@email.com"></div>
+              <div class="grouprule">
+                <p class="t-label c-quiet mb4">Your business (optional)</p>
+                <p class="t-cap c-body mb12">Add your ABN and we'll check it as soon as you're signed in. You can also add it later from your account.</p>
+                <div class="col g12">
+                  <div><label class="field-label" for="a1m-bn">Business name</label><input class="field" id="a1m-bn" placeholder="ABC Constructions"></div>
+                  <div><label class="field-label" for="a1m-abn">ABN</label><input class="field mono" id="a1m-abn" placeholder="00 000 000 000" inputmode="numeric"><p class="helptext">11 digits. Spaces are fine.</p></div>
+                  <div><span class="field-label">Builder or tradie?</span><div class="seg"><label><span class="dot"></span>Builder</label><label><span class="dot"></span>Tradie</label></div><p class="helptext">Optional.</p></div>
+                </div>
               </div>
               <div class="grouprule">
-                <p class="t-label c-quiet mb8">Your account</p>
-                <p class="t-cap c-body mb12">We'll email you a 6-digit code — no password. If you already have an account, this signs you into it.</p>
-                <div class="mb12"><label class="field-label" for="a1m-em">Email</label><input class="field" id="a1m-em" placeholder="your@email.com"></div>
                 <div class="ts mb12"><span class="box"></span><span class="t-cap c-body">Verifying you're human</span><span class="cf">CLOUDFLARE<br>Privacy · Terms</span></div>
                 <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Email me a code</span>
-                <p class="helptext" style="margin-top:10px">Your business details stay on this screen — we send them the moment you're signed in.</p>
+                <p class="helptext" style="margin-top:10px">Your business details stay on this screen — we send them for checking the moment you're signed in.</p>
               </div>
             </div>
           </div>
@@ -663,62 +667,90 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
 
     </div>
     <div class="note">
-      <b>Why business first, account second</b>
-      <p>The person arrived to get a trade account, so the page asks the trade question first and the plumbing second. It also matters mechanically: <b>no unauthenticated endpoint accepts an ABN</b>, so the values are held in component state and posted only once the session exists (AC-P2-3). The caption is what stops that delay reading as "it ignored what I typed".</p>
-      <p>The builder/tradie control is a two-option segmented radio with <b>nothing pre-selected</b> — it is self-declared, so a default would be the machine guessing. Skipping it is fine and gates nothing; the ops record reads "not stated".</p>
+      <b>One flow, one optional group — and what actually differs here</b>
+      <p>This is the Phase-1 signup, in the Phase-1 order, with the Phase-1 copy: <b>email → code → your details</b>. The optional business group is the <b>same group</b> as the submit gate's (surface 4) and the account card's (surface 3) — same labels, same helpers, same validation, same rule that a business name becomes required only once an ABN is present.</p>
+      <p>Exactly one thing is entry-point-specific: on <code>/trade-account</code> the group renders <b>already revealed</b>, because a visitor who navigated to the trade page came to hand over an ABN and should be able to type it where they expect to. Everywhere else it stays collapsed until it is relevant. <b>Nothing else forks</b> — not the order, not the components, not the copy.</p>
+      <p>The group sits after the email field and before the human check because <b>no unauthenticated endpoint may accept an ABN</b>: the values are held in browser state and posted only once the session exists (AC-P2-3). The caption is what stops that delay reading as "it ignored what I typed".</p>
+    </div>
+    <div class="flag">
+      <b>This replaces the first draft's ordering, on the owner's correction</b>
+      <p>The first draft composed a bespoke card — "Your business" first, then "Your account" — arguing that the trade question should come first because it is why the visitor is on the page. The owner rejected the premise: <em>"I don't understand why are we creating a new registration flow for business users, rather than simply adding a field within one established in P1?"</em> That is the stronger argument. A second registration form is a second thing to build, test, and keep in step forever, and the conversion nicety it bought does not pay for that. <b>One flow, one optional group, one fork — after the fact.</b></p>
     </div>
   </div>
 
   <div class="state">
-    <h3><span class="tag b">State</span> Code step · business details held</h3>
-    <p>Phase 1's <code>OtpSignIn</code> code step, unchanged, with one added reassurance line in the slot Phase 1 uses for "your quote is safe".</p>
+    <h3><span class="tag b">State</span> Step 2 · code, with the business details held</h3>
+    <p>Phase 1's code step, unchanged, with one added line in the slot Phase 1 uses for "your quote is safe". The held values are shown read-only so nothing looks lost.</p>
     <div class="frames">
       <div class="dev half">
         <div class="cap"><span>Desktop · card only</span><span>OTP code step</span></div>
         <div class="screen"><div class="mkt p24">
           <div class="card p24" style="--control-fill:var(--bone);max-width:420px">
-            <p class="t-label c-quiet mb12">Your business</p>
-            <div class="readonly mb8"><span>ABC Constructions</span><span class="chip ch-mute">Held</span></div>
-            <div class="readonly mb16"><span class="v">51 824 753 556</span><span class="chip ch-mute">Held</span></div>
+            <h3 class="t-hd3 c-ink mb4">Enter your code</h3>
+            <p class="t-cap c-body mb12">We sent a 6-digit code to sam@buildright.com.au. It expires in 10 minutes.</p>
+            <div class="mb12"><label class="field-label" for="a2-c">6-digit code</label><input class="field mono focusring" id="a2-c" value="418 260" style="max-width:160px"></div>
+            <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Verify &amp; continue</span>
+            <div class="row g16 mt12"><span class="linkbtn">Resend code</span><span class="linkbtn">Use a different email</span></div>
             <div class="grouprule">
-              <h3 class="t-hd3 c-ink mb4">Enter your code</h3>
-              <p class="t-cap c-body mb12">We sent a 6-digit code to sam@buildright.com.au. It expires in 10 minutes.</p>
-              <div class="mb12"><label class="field-label" for="a2-c">6-digit code</label><input class="field mono focusring" id="a2-c" value="418 260" style="max-width:160px"></div>
-              <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Verify &amp; continue</span>
-              <div class="row g16 mt12"><span class="linkbtn">Resend code</span><span class="linkbtn">Use a different email</span></div>
-              <p class="helptext" style="margin-top:10px">Your business details are still here — we send them for checking as soon as you're in.</p>
+              <p class="t-label c-quiet mb8">Your business (optional)</p>
+              <div class="readonly mb8"><span>ABC Constructions</span><span class="chip ch-mute">Held</span></div>
+              <div class="readonly"><span class="v">51 824 753 556</span><span class="chip ch-mute">Held</span></div>
+              <p class="helptext" style="margin-top:10px">Still here — we send these for checking as soon as you're in.</p>
+            </div>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="dev half">
+        <div class="cap"><span>Desktop · card only</span><span>step 3 · your details, check running</span></div>
+        <div class="screen"><div class="mkt p24">
+          <div class="card p24" style="--control-fill:var(--bone);max-width:420px">
+            <h3 class="t-hd3 c-ink mb4">What's your name?</h3>
+            <p class="t-cap c-body mb12">This is the name that goes on your quotes and how we'll address you.</p>
+            <div class="mb12"><label class="field-label" for="a2b-n">Full name</label><input class="field focusring" id="a2b-n" placeholder="e.g. Sam Taylor"></div>
+            <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Save and continue</span>
+            <div class="grouprule">
+              <div class="outcome work">
+                <span class="spinner" style="margin-top:3px"></span>
+                <div><h4>Checking your ABN</h4><p>We're checking the details you added. Carry on — we'll show you the result here.</p></div>
+              </div>
             </div>
           </div>
         </div></div>
       </div>
     </div>
+    <div class="note">
+      <b>The details step is Phase 1's, not a new one</b>
+      <p>Off the submit gate, Phase 1's details step is the single mandatory <code>NameStep</code> — an account with a NULL name is what made the site invent "j.smith92" in the first place. Phase 2 does not touch it. The verification runs <b>beside</b> it, announced quietly, and its result replaces this block with one of the two approved outcome panels (surface 2) the moment it lands.</p>
+      <p>If the person saves their name before the check returns, they land on their dashboard and the outcome panel is on their account page — same two panels, same copy, no third state invented for the race.</p>
+    </div>
   </div>
 
   <div class="state">
     <h3><span class="tag r">State</span> Field errors · nothing is created, nothing is looked up</h3>
-    <p>An ABN that fails its checksum is a <b>field error like a malformed phone number</b> — no application record, no ABR call, no rate-limit spend. The customer just fixes the digits. A business name is required whenever an ABN is present, because the name is one of the three things being checked.</p>
+    <p>Identical to the submit gate's behaviour, because it is the same group. An ABN that fails its checksum is a <b>field error like a malformed phone number</b> — no application record, no ABR call, no rate-limit spend. A business name is required whenever an ABN is present, because the name is one of the three things being checked.</p>
     <div class="frames">
       <div class="dev half">
-        <div class="cap"><span>Desktop · card only</span><span>ABN checksum failure</span></div>
+        <div class="cap"><span>Desktop · group only</span><span>ABN checksum failure</span></div>
         <div class="screen"><div class="mkt p24">
           <div class="card p24" style="--control-fill:var(--bone);max-width:420px">
-            <p class="t-label c-quiet mb12">Your business</p>
+            <p class="t-label c-quiet mb12">Your business (optional)</p>
             <div class="col g12">
               <div><label class="field-label" for="a3-bn">Business name</label><input class="field" id="a3-bn" value="Buildright Constructions"></div>
               <div>
                 <label class="field-label" for="a3-abn">ABN</label>
                 <input class="field mono err" id="a3-abn" value="51 824 753 551" aria-invalid="true">
-                <p class="errtext"><svg class="ic ic-13" aria-hidden="true"><use href="#i-alert"/></svg>That ABN doesn't look right. Check the 11 digits and try again.</p>
+                <p class="errtext"><svg class="ic ic-13" aria-hidden="true"><use href="#i-alert"/></svg>That ABN doesn't look right. Check the 11 digits, or clear the field to continue without it.</p>
               </div>
             </div>
           </div>
         </div></div>
       </div>
       <div class="dev half">
-        <div class="cap"><span>Desktop · card only</span><span>business name missing</span></div>
+        <div class="cap"><span>Desktop · group only</span><span>business name missing</span></div>
         <div class="screen"><div class="mkt p24">
           <div class="card p24" style="--control-fill:var(--bone);max-width:420px">
-            <p class="t-label c-quiet mb12">Your business</p>
+            <p class="t-label c-quiet mb12">Your business (optional)</p>
             <div class="col g12">
               <div>
                 <label class="field-label" for="a4-bn">Business name</label>
@@ -734,10 +766,10 @@ table.ops td.nw,table.ops th.nw{white-space:nowrap}
     <div class="note">
       <b>Never an ABN-guessing oracle</b>
       <p>The checksum is the <em>only</em> thing checked in the browser, and it is the same function the Worker uses (<code>src/data/abn.ts</code>). Everything past it — whether the ABN exists, whether it's active, whether the name matches — happens server-side behind a session and is <b>never reported back field-by-field</b>. That is a deliberate security property, not a copy decision.</p>
+      <p>A malformed ABN blocks the step it is on, exactly as it blocks Submit at the gate: silently discarding what someone typed is worse, and Phase 1 forbids an unexplained disabled button. Clearing the field always releases it.</p>
     </div>
   </div>
 </section>
-
 <!-- ══════════════════════════════════════════════════════════════════════ 2 -->
 <section class="surface" id="s2">
   <div class="shead">

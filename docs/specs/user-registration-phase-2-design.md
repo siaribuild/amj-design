@@ -1302,9 +1302,41 @@ facts — a standing grant and a pending application — plus the history outlin
 greyed-out Active pill, no third status label. The customer's pricing is not in doubt and the
 screen must not suggest it is.
 
-## 18.2 Door (a) — `/trade-account`
+## 18.2 Door (a) — `/trade-account`, a marketing page hosting the universal flow
 
-### 18.2.1 Page structure
+**Revision 3 (owner review, 2026-08-19) replaces the whole of this section.** The first draft
+composed a bespoke card on this page — "Your business" (name, ABN, label) and then "Your
+account" (email, Turnstile, code) — arguing that the trade question should come first because it
+is why the visitor is on the page. The owner rejected the premise, and the ruling is binding:
+
+> *"I don't understand why are we creating a new registration flow for business users, rather
+> than simply adding a field within one established in P1? /trade-account is for marketing that,
+> but the flow is, unless there's a good reason not to do this — universal with a small fork
+> depending on whether or not ABN was entered."*
+
+**There is one registration flow in this product and Phase 2 does not add a second.** The
+conversion argument behind "business first, account second" does not pay for a second form to
+build, test and keep in step forever. What Phase 2 adds is an optional field group; what forks
+is what happens after it.
+
+### 18.2.1 The model, stated once
+
+| | |
+|---|---|
+| **The flow** | Phase 1's, unchanged: **email → 6-digit code → your details**. Same components (`OtpSignIn`, then the details step), same order, same copy, at every entry point |
+| **The addition** | one **optional ABN + business-name group** (plus the builder/tradie label where permitted), inside the details — the *same* group as the submit gate's (§18.5) and the account card's (§18.3) |
+| **The fork** | **after** the flow, and only there: an ABN was entered ⇒ verification runs and one of the two outcome panels appears (§18.4); no ABN ⇒ an ordinary private account, exactly as Phase 1 |
+| **What `/trade-account` owns** | the hero, the benefits column, the trade copy, and the trade intent. It **hosts** the signup; it does not own a flow |
+
+The **only** entry-point-specific behaviour anywhere in this phase:
+
+> `ASSUMED: P2-UX-10` **(orchestrator's decision, 2026-08-19 — not the owner's; flagged for
+> veto.)** On `/trade-account` the optional group renders **already revealed**; everywhere else
+> it stays collapsed until relevant. A visitor who navigated to the trade page came specifically
+> to hand over an ABN and should be able to type it where they expect to. Same component, same
+> flow, same copy — only the initial disclosure differs.
+
+### 18.2.2 Page structure
 
 Hero and benefits column unchanged except for one added benefit line, first in the list:
 **"Better prices, everywhere"** / **"Trade pricing applies while you configure, not just on the
@@ -1312,61 +1344,78 @@ quote we send back."** The hero sub-line gains "better prices" in its existing l
 **"Upload every schedule you're sitting on and get them priced the same day. Trade accounts get
 better prices, priority review, saved details, and a name to call."**
 
-The right-hand card (today the mock form, `App.tsx:1690-1704`) is **deleted** and replaced by
-`TradeApplicationCard source="trade_page"`.
+The right-hand card (today the dead mock form, `App.tsx:1690-1704`) is **deleted** and replaced
+by the standard signup: `OtpSignIn` with the optional group mounted inside it
+(`source="trade_page"`, group revealed).
 
-### 18.2.2 Anonymous — the cold signup card
+### 18.2.3 Step 1 — email, with the optional group revealed
 
-Order: **business first, account second.** The person came for a trade account; the plumbing is
-secondary. It is also mechanically required — no unauthenticated endpoint accepts an ABN — so
-the entered values are held in component state and posted the moment `onAuthed` fires.
+Field order is the flow's own: **email → optional group → Turnstile → button**. The group sits
+between the email field and the human check because no unauthenticated endpoint may accept an
+ABN — the values are held in browser state and posted once the session exists (AC-P2-3) — and
+because that is the same "optional last" position it holds at the gate.
 
 | Slot | Copy |
 |---|---|
-| Heading (h2, `t-hd3`) | **"Open your trade account"** |
-| Sub | **"We check your ABN against the Australian Business Register. If it all checks out, trade pricing is on your account straight away."** |
-| Group label 1 | **"Your business"** |
+| Heading (h2, `t-hd3`) | **"Sign in or create your account"** (Phase 1's `/login` heading, unchanged) |
+| Sub | **"We'll email you a 6-digit code — no password. If you don't have an account yet, this creates one."** |
+| Email | Phase-1 field, label **"Email"**, placeholder `your@email.com` |
+| Group label | **"Your business (optional)"** |
+| Group helper | **"Add your ABN and we'll check it against the Australian Business Register as soon as you're signed in. If it checks out, trade pricing is on your account straight away. You can also add it later from your account."** (this is one of the four AC-P2-48 advertising surfaces) |
 | Field 1 | label **"Business name"**, placeholder **"ABC Constructions"**, helper **"As it's registered against the ABN."**, max 200, `autoComplete="organization"` |
 | Field 2 | label **"ABN"**, placeholder **"00 000 000 000"**, helper **"11 digits. Spaces are fine."**, `inputMode="numeric"`, raw max 32 |
 | Field 3 | legend **"Builder or tradie?"**, two radios **"Builder"** / **"Tradie"**, **neither pre-selected**, helper **"Optional. It just tells us who we're working with."** |
-| Group label 2 | **"Your account"** |
-| Group 2 sub | **"We'll email you a 6-digit code — no password. If you already have an account, this signs you into it."** |
-| Email + Turnstile + button | Phase-1 `OtpSignIn`, unchanged: **"Email me a code"** → busy **"Sending…"**; Turnstile gating and its caption **"Complete the check above to continue."** unchanged |
-| Caption under the button | **"Your business details stay on this screen — we send them the moment you're signed in."** |
+| Turnstile + button | Phase-1 `OtpSignIn`, unchanged: **"Email me a code"** → busy **"Sending…"**; Turnstile gating and its caption **"Complete the check above to continue."** unchanged |
+| Caption under the button | **"Your business details stay on this screen — we send them for checking the moment you're signed in."** |
 
-Code step: Phase-1 copy verbatim (**"Enter your code"**, **"We sent a 6-digit code to {email}. It
-expires in 10 minutes."**, **"Verify & continue"** → **"Verifying…"**, **"Resend code"**,
-**"Use a different email"**). The reassurance slot Phase 1 uses for the quote carries instead:
-**"Your business details are still here — we send them for checking as soon as you're in."**
-Above the OTP block, the held values render as two read-only rows (business name, formatted ABN)
-each with a **"Held"** chip, so the person can see nothing was lost.
+A malformed ABN blocks this step and shows its inline error, exactly as it blocks Submit at the
+gate (§18.5.1); clearing the field always releases it. Error copy here:
+**"That ABN doesn't look right. Check the 11 digits, or clear the field to continue without
+it."** Missing business name with an ABN present: **"Enter the business name registered to this
+ABN."**
 
-**Sequence after `onAuthed`:**
+### 18.2.4 Step 2 — code
 
-1. Session exists. The card immediately shows a working state: heading **"Checking your
-   details…"** with the Phase-1 spinner, no buttons. (Typical duration is one ABR round trip,
-   bounded at 5 s.)
-2. `applyForTrade({ abn, businessName, label, source: "trade_page" })`.
-3. `"verified"` → the Active panel (§18.4.1). `"under_review"` → the Under-review panel
-   (§18.4.2). Either way the card then calls `onTradeChanged()` and the app refetches `me()`.
-4. **Transient failure** (network, 5xx, 429): the entered values stay on screen, editable, with a
-   panel-level message and a **"Try again"** button — and the person **is signed in regardless**
-   (AC-P2-3). Copy: 5xx/network — **"We couldn't send your details just now. Nothing is lost —
-   try again."**; 429 — **"That's a few attempts in a short time. Give it a few minutes and try
-   again — you're signed in and your account works as normal."**
+Phase-1 copy verbatim (**"Enter your code"**, **"We sent a 6-digit code to {email}. It expires in
+10 minutes."**, **"Verify & continue"** → **"Verifying…"**, **"Resend code"**, **"Use a different
+email"**). Below the actions, under a hairline, the held values render read-only (business name,
+formatted ABN) each with a **"Held"** chip, and one caption: **"Still here — we send these for
+checking as soon as you're in."**
 
-### 18.2.3 Signed-in visitors on `/trade-account`
+### 18.2.5 Step 3 — your details, with the check running beside it
 
-- **Not verified, nothing pending:** the same card without the account group — heading
-  **"Open your trade account"**, business name pre-filled from `user.company`, primary button
-  **"Apply for trade pricing"** → busy **"Checking your details…"**. No second OTP.
+Off the submit gate, Phase 1's details step is the mandatory single-field `NameStep`
+(**"What's your name?"**, **"Full name"**, **"Save and continue"**). **Phase 2 does not modify
+it.** The moment the session exists, `applyForTrade({ abn, businessName, label, source:
+"trade_page" })` fires, and a work-tone block renders beneath the name field:
+
+> **"Checking your ABN"** / **"We're checking the details you added. Carry on — we'll show you
+> the result here."**
+
+- Result arrives while the person is still on this step ⇒ the block is replaced in place by the
+  Active or Under-review panel (§18.4).
+- The person saves their name first ⇒ they land on their dashboard as Phase 1 sends them, and
+  the outcome panel is on their account page (§18.3). **No third state is invented for the
+  race**, and the outcome copy is identical either way.
+- **Transient failure** (network, 5xx, 429): the person **is signed in regardless** (AC-P2-3),
+  and the block becomes a mute-tone retry — **"We couldn't send your details just now. Nothing
+  is lost — try again."**; 429: **"That's a few attempts in a short time. Give it a few minutes
+  and try again — you're signed in and your account works as normal."** The entered values stay
+  on screen, editable.
+
+### 18.2.6 Signed-in visitors on `/trade-account`
+
+No second OTP anywhere below.
+
+- **Not verified, nothing pending:** the optional group alone, revealed, business name pre-filled
+  from `user.company`, primary button **"Apply for trade pricing"** → busy **"Checking your
+  details…"**.
 - **Verified:** no form. Heading **"Your trade account"**, pill **"Active"**, line **"Trade
   pricing applies to your account. There's nothing more to do here."**, read-only Business and
   ABN rows, then **"Changed ABN or trading name?"** + text button **"Send us the new details"**
   + **"— your current trade pricing stays while we check them."**
 - **Pending / rejected / revoked:** the corresponding account-card panel (§18.3.3–18.3.5),
   identical component, identical copy.
-
 ## 18.3 Door (b) — the account page trade card
 
 `ProfilePage`'s **Business details** card (`App.tsx:1400-1407`) is replaced in place by
@@ -1676,13 +1725,14 @@ Phase 1 §16.9 applies unchanged. Additions:
 |---|---|---|
 | `P2-UX-1` | The gate's caption entry for a malformed ABN reads "ABN", reusing Phase 1's "Still needed:" sentence rather than introducing a second caption idiom | §18.5.1 |
 | `P2-UX-2` | The optional business group sits **last** in the details stage, after delivery | §18.5 |
-| `P2-UX-3` | On `/trade-account` the business fields come **before** the email/OTP step | §18.2.2 |
-| `P2-UX-4` | The builder/tradie control has **no pre-selected option** and is genuinely optional; skipping it is never called out | §18.2.2 |
+| ~~`P2-UX-3`~~ | ~~On `/trade-account` the business fields come **before** the email/OTP step~~ — **STRUCK by the owner, 2026-08-19** (revision 3): one universal flow, the optional group inside it, the fork after it | §18.2 |
+| `P2-UX-4` | The builder/tradie control has **no pre-selected option** and is genuinely optional; skipping it is never called out | §18.2.3 |
 | `P2-UX-5` | The four emails carry **no greeting line** (null-name safety); `{business}` is the only body variable | §18.8 |
 | `P2-UX-6` | Rejected and revoked states use **mute** tone, not attention/danger — a private account is not an error state | §18.3.5 |
 | `P2-UX-7` | The ops queue is a **tab** inside Customers (exercising P2-A9's placement latitude), with the count as a dashboard tile | §18.7.1-2 |
 | `P2-UX-8` | Wording of the ops evidence labels ("What the register said", "The three checks") — staff-facing, tunable without a gate | §18.7.3 |
 | `P2-UX-9` | The verified card keeps **business name read-only** (design `P2-ARCH-5`) while the builder/tradie label stays editable | §18.3.2 |
+| `P2-UX-10` | **Orchestrator's decision, not the owner's — flagged for veto.** On `/trade-account` the optional group renders **already revealed**; everywhere else it stays collapsed until relevant. Same component, same flow, same copy — only the initial disclosure differs by entry point | §18.2.1 |
 
 ## 18.13 What must not appear (assert, don't assume)
 
