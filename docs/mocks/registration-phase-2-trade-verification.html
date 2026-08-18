@@ -1,0 +1,1534 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registration Phase 2 — trade verification — UX mock</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='1' y='1' width='18' height='18' fill='none' stroke='%235A7A6A' stroke-width='2'/%3E%3Cline x1='10' y1='1' x2='10' y2='19' stroke='%235A7A6A' stroke-width='2'/%3E%3Cline x1='1' y1='10' x2='19' y2='10' stroke='%235A7A6A' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   PRODUCT TOKENS — copied from src/styles/theme.css. Do not invent values.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --paper:#FFFFFF; --bone:#FBFAF8; --recessive:#F5F3F0; --shade:#E8E5DF;
+  --line:rgba(19,19,17,.18); --line-strong:rgba(19,19,17,.28);
+  --sage:#5A7A6A; --sage-light:#8CA99B; --sage-deep:#3f5a4c; --sage-ink:#355344;
+  --sage-hover:#4a6858; --sage-wash:#F3F6F5; --sage-veil:#F7FAF8;
+  --ink:#131311; --ink-soft:#3a3835; --ink-hover:#2a2a27;
+  --body:#5c5a56; --body-soft:#6f6c67;
+  --quiet:#8b8880; --quieter:#9a9894; --quietest:#b5b2ac;
+  --night:#0c0c0a; --ops:#14150f; --ops-panel:#1d1e17;
+  --positive:#2c7a54; --warning:#8a6a2a; --warning-ink:#7a5410;
+  --attention:#C0392B; --attention-ink:#96271B;
+  --info:#4C6A88; --info-ink:#31485f; --destructive:#C0392B;
+  --tone-attn:#A2610A; --tone-attn-bg:rgba(178,110,15,.10); --tone-attn-bd:rgba(178,110,15,.34);
+  --tone-pos:#2C7A54;  --tone-pos-bg:rgba(44,122,84,.10);   --tone-pos-bd:rgba(44,122,84,.30);
+  --tone-work:#4C6A88; --tone-work-bg:rgba(76,106,136,.10); --tone-work-bd:rgba(76,106,136,.30);
+  --tone-mute:#8b897f; --tone-mute-bg:rgba(0,0,0,.045);     --tone-mute-bd:rgba(0,0,0,.12);
+  /* Space Grotesk / Inter are loaded from Google Fonts in the real app. A mock
+     may make no external request, so the stack falls through to the system UI
+     face. Type SIZE, WEIGHT, TRACKING and RHYTHM are the real values; only the
+     letterforms differ from production. */
+  --font-display:"Space Grotesk",ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+  --font-body:"Inter",ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+  --font-data:var(--font-display);
+  --t-ds1:56px; --t-ds1-lh:58px; --t-ds2:40px; --t-ds2-lh:44px;
+  --t-hd1:30px; --t-hd1-lh:36px; --t-hd2:22px; --t-hd2-lh:28px; --t-hd3:17px; --t-hd3-lh:24px;
+  --t-bdlg:18px; --t-bdlg-lh:29px; --t-bd:16px; --t-bd-lh:26px; --t-bdsm:14px; --t-bdsm-lh:21px;
+  --t-cap:13px; --t-cap-lh:18px; --t-lbl:11px; --t-lbl-lh:14px;
+  --t-dat:14px; --t-dat-lh:20px; --t-datsm:12px; --t-datsm-lh:16px;
+  --radius:2px;
+}
+*{box-sizing:border-box;margin:0;padding:0;border:0 solid var(--line)}
+/* Type roles */
+.t-ds1{font:600 var(--t-ds1)/var(--t-ds1-lh) var(--font-display);letter-spacing:-1.4px}
+.t-ds2{font:600 var(--t-ds2)/var(--t-ds2-lh) var(--font-display);letter-spacing:-.9px}
+.t-hd1{font:600 var(--t-hd1)/var(--t-hd1-lh) var(--font-display);letter-spacing:-.6px}
+.t-hd2{font:600 var(--t-hd2)/var(--t-hd2-lh) var(--font-display);letter-spacing:-.3px}
+.t-hd3{font:600 var(--t-hd3)/var(--t-hd3-lh) var(--font-display);letter-spacing:-.1px}
+.t-bd-lg{font:400 var(--t-bdlg)/var(--t-bdlg-lh) var(--font-body)}
+.t-bd{font:400 var(--t-bd)/var(--t-bd-lh) var(--font-body)}
+.t-bd-sm{font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.t-cap{font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)}
+.t-label{font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase}
+.t-data{font:500 var(--t-dat)/var(--t-dat-lh) var(--font-data);font-variant-numeric:tabular-nums}
+.t-data-sm{font:500 var(--t-datsm)/var(--t-datsm-lh) var(--font-data);font-variant-numeric:tabular-nums}
+.fd{font-family:var(--font-display)}
+.fdata{font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.sb{font-weight:600}.md{font-weight:500}
+/* Colour roles */
+.c-ink{color:var(--ink)}.c-inks{color:var(--ink-soft)}.c-body{color:var(--body)}
+.c-quiet{color:var(--quiet)}.c-quieter{color:var(--quieter)}.c-quietest{color:var(--quietest)}
+.c-sage{color:var(--sage)}.c-saged{color:var(--sage-deep)}.c-sagei{color:var(--sage-ink)}
+.c-white{color:#fff}.c-w70{color:rgba(255,255,255,.7)}.c-w55{color:rgba(255,255,255,.55)}
+.c-w40{color:rgba(255,255,255,.4)}.c-sagel{color:var(--sage-light)}
+.c-attn{color:var(--tone-attn)}.c-pos{color:var(--tone-pos)}.c-work{color:var(--tone-work)}
+.c-warn{color:var(--warning-ink)}.c-info{color:var(--info-ink)}.c-dest{color:var(--destructive)}
+/* Grounds + card, exactly as theme.css derives them */
+.ground-paper{background:var(--paper);--card-fill:var(--bone)}
+.ground-bone{background:var(--bone);--card-fill:var(--paper)}
+.ground-night{background:var(--night)}
+.card{border:1px solid var(--line);background:var(--card-fill,var(--bone))}
+.panel-head{background:var(--recessive);border-bottom:1px solid var(--line)}
+.panel-result{background:var(--sage-wash);border-top:1px solid var(--line)}
+.figure{font-family:var(--font-data);font-variant-numeric:tabular-nums;font-weight:600;line-height:1;color:var(--sage-deep);font-size:2.2rem}
+/* Buttons — src/app/ui.tsx Btn */
+.btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-body);font-weight:500;letter-spacing:.02em;cursor:default;border:1px solid transparent;white-space:nowrap}
+.btn-sm{padding:8px 16px;font-size:var(--t-cap);line-height:var(--t-cap-lh)}
+.btn-md{padding:12px 24px;font-size:var(--t-bdsm);line-height:var(--t-bdsm-lh)}
+.btn-lg{padding:16px 32px;font-size:var(--t-bdsm);line-height:var(--t-bdsm-lh)}
+.b-primary{background:var(--ink);color:#fff}
+.b-sage{background:var(--sage);color:#fff}
+.b-outline{border-color:var(--ink);color:var(--ink);background:transparent}
+.b-ghost{color:var(--body);background:transparent}
+.b-danger{background:var(--destructive);color:#fff}
+.b-sage is-disabled{background:var(--ink);color:#fff;opacity:.4}
+/* A disabled Btn keeps its OWN fill and drops to 40% (ui.tsx:96 disabled:opacity-40;
+   /login uses opacity-50 for the not-yet-valid case). So a not-yet-ready sage
+   Submit is a faded SAGE button, never a dark ink one — it must read as the same
+   button waiting, not a different button. */
+.is-disabled{opacity:.4}
+.is-pending{opacity:.5}
+/* Inputs — .field-control. theme.css:602 fills from --control-fill, which
+   .quote-panel sets to --bone; focus lifts it to paper and the border to sage.
+   A white-on-white field was the mock's own invention. */
+.field{width:100%;border:1px solid var(--line-strong);background:var(--control-fill,var(--paper));padding:10px 12px;color:var(--ink);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.field.mono{font-family:var(--font-data);font-variant-numeric:tabular-nums;letter-spacing:.06em}
+.field.err{border-color:var(--attention);background:color-mix(in oklab,var(--attention) 7%,var(--paper));color:var(--attention-ink)}
+.field.focus{border-color:var(--sage);background:var(--paper)}
+.field-label{display:block;color:var(--ink-soft);margin-bottom:6px;font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase}
+/* Status pill — pages/accountModel StatusPill (icon + word, never colour alone) */
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid;white-space:nowrap;font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-display);letter-spacing:1px;text-transform:uppercase}
+.p-attn{color:var(--tone-attn);background:var(--tone-attn-bg);border-color:var(--tone-attn-bd)}
+.p-pos{color:var(--tone-pos);background:var(--tone-pos-bg);border-color:var(--tone-pos-bd)}
+.p-work{color:var(--tone-work);background:var(--tone-work-bg);border-color:var(--tone-work-bd)}
+.p-mute{color:var(--tone-mute);background:var(--tone-mute-bg);border-color:var(--tone-mute-bd)}
+.p-draft{color:var(--body);background:transparent;border:1px dashed rgba(0,0,0,.1)}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--line);white-space:nowrap;font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)}
+.ch-sage{border-color:rgba(90,122,106,.3);background:var(--sage-wash);color:var(--sage-ink)}
+.ch-warn{border-color:rgba(180,120,40,.4);color:var(--warning-ink);background:rgba(180,120,40,.07)}
+.ch-mute{background:var(--bone);color:var(--body)}
+.ch-info{border-color:rgba(76,106,136,.38);background:rgba(76,106,136,.08);color:var(--info-ink)}
+/* Notices */
+.notice{padding:14px 16px;border:1px solid}
+.n-info{border-color:rgba(76,106,136,.32);background:color-mix(in oklab,var(--info) 6%,var(--paper));color:var(--info-ink)}
+.n-warn{border-color:rgba(180,120,40,.35);background:color-mix(in oklab,var(--warning) 9%,var(--paper));color:var(--warning-ink)}
+.n-sage{border-color:rgba(90,122,106,.35);background:rgba(90,122,106,.06);color:var(--sage-ink)}
+.n-dest{border-color:rgba(192,57,43,.35);background:color-mix(in oklab,var(--destructive) 7%,var(--paper));color:var(--attention-ink)}
+/* Layout helpers */
+.wrap{max-width:1152px;margin:0 auto;padding:0 24px}
+.sect{padding-block:96px;position:relative}
+.sect-sm{padding-block:64px;position:relative}
+.row{display:flex;align-items:center}.col{display:flex;flex-direction:column}
+.g4{gap:4px}.g6{gap:6px}.g8{gap:8px}.g10{gap:10px}.g12{gap:12px}.g16{gap:16px}.g20{gap:20px}.g24{gap:24px}.g32{gap:32px}
+.wr{flex-wrap:wrap}.ac{align-items:center}.ab{align-items:baseline}.as{align-items:flex-start}
+.jb{justify-content:space-between}.je{justify-content:flex-end}.jc{justify-content:center}
+.grow{flex:1;min-width:0}.mt-auto{margin-top:auto}
+.bt{border-top:1px solid var(--line)}.bb{border-bottom:1px solid var(--line)}
+.bt8{border-top:1px solid rgba(0,0,0,.08)}.bb8{border-bottom:1px solid rgba(0,0,0,.08)}
+.bb5{border-bottom:1px solid rgba(0,0,0,.05)}
+.p12{padding:12px}.p16{padding:16px}.p20{padding:20px}.p24{padding:24px}.p32{padding:32px}
+.px16{padding-inline:16px}.px20{padding-inline:20px}.py10{padding-block:10px}.py12{padding-block:12px}.py14{padding-block:14px}
+.mb4{margin-bottom:4px}.mb6{margin-bottom:6px}.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}
+.mb16{margin-bottom:16px}.mb20{margin-bottom:20px}.mb24{margin-bottom:24px}.mb32{margin-bottom:32px}
+.mt4{margin-top:4px}.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}.mt24{margin-top:24px}
+.tr{text-align:right}.tc{text-align:center}
+.mark{width:20px;height:20px;flex:none}
+/* ─── The two existing card TRACKS, copied from App.tsx ────────────────────
+   A: numbered steps      App.tsx:1061-1078  grid-cols-1 sm:2 lg:3 gap-0
+   B: two-column Q&A      App.tsx:1192-1206  grid-cols-1 md:2 gap-0
+   The negative margins are the whole mechanism: adjacent borders collapse to a
+   single hairline, so the track reads as ONE object rather than N tiles. */
+.track3{display:grid;grid-template-columns:repeat(3,1fr);gap:0}
+.track3 > *:nth-child(n+2){margin-left:-1px}
+.track2{display:grid;grid-template-columns:repeat(2,1fr);gap:0}
+.track2 > *:nth-child(n+3){margin-top:-1px}
+.track2 > *:nth-child(even){margin-left:-1px}
+.track1{display:grid;grid-template-columns:1fr;gap:0}
+.track1 > *:nth-child(n+2){margin-top:-1px}
+/* The step badge — App.tsx:1066. NOT .figure: theme.css reserves .figure for a
+   SECTION's headline number and warns that a display numeral inside a card is
+   "twice the weight of the thing it was annotating". */
+.stepbadge{width:32px;height:32px;flex:none;border:1px solid rgba(90,122,106,.4);display:flex;align-items:center;justify-content:center;color:var(--sage);font:500 12px/16px var(--font-data);font-variant-numeric:tabular-nums}
+.seamchev{position:absolute;right:-10px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:rgba(90,122,106,.6);background:var(--paper);z-index:10;display:grid;place-items:center;font-size:13px}
+/* The fact row — App.tsx:1169-1174 (the AS 2047 strip): a quiet fixed-width
+   data-face key beside body prose at reading width. No cells, no fills, no
+   boxes: the hairline between rows is the only structure. */
+.condrow{display:flex;align-items:baseline;gap:24px;padding:14px 0;border-bottom:1px solid var(--line)}
+.condkey{flex:none;width:180px;color:var(--sage-deep);font:500 var(--t-dat)/var(--t-dat-lh) var(--font-data);font-variant-numeric:tabular-nums}
+.condrow.stacked{flex-direction:column;align-items:stretch;gap:4px}
+.condrow.stacked .condkey{width:auto}
+.measure{max-width:68ch}.prose{max-width:54ch}
+/* Site header / footer chrome, for context in the marketing frames */
+.sitehdr{height:64px;background:var(--night);color:#fff;display:flex;align-items:center}
+.sitehdr a{color:rgba(255,255,255,.72);text-decoration:none}
+/* Account rail (AccountShell) */
+.rail-item{display:flex;align-items:center;gap:11px;padding:10px 12px;border-left:2px solid transparent;color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.rail-item.on{color:var(--ink);font-weight:600;background:rgba(90,122,106,.07);border-left-color:var(--sage)}
+/* Ops chrome */
+.ops-shell{background:var(--bone);display:flex;min-height:100%}
+.ops-rail{width:224px;flex:none;background:var(--ops);color:#fff;display:flex;flex-direction:column}
+.ops-nav{display:flex;align-items:center;gap:10px;padding:8px 20px;color:rgba(255,255,255,.5);border-left:2px solid transparent;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.ops-nav.on{color:#fff;background:rgba(255,255,255,.08);border-left-color:var(--sage)}
+.ops-hdr{height:56px;background:#fff;border-bottom:1px solid rgba(0,0,0,.08);display:flex;align-items:center;padding:0 32px;gap:8px}
+table.ops{width:100%;border-collapse:collapse;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+table.ops thead tr{text-align:left;color:var(--quiet);border-bottom:1px solid rgba(0,0,0,.08)}
+table.ops th{padding:10px 12px;font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase;font-weight:500;text-align:left}
+table.ops th:first-child,table.ops td:first-child{padding-left:16px}
+table.ops th:last-child,table.ops td:last-child{padding-right:16px}
+table.ops td{padding:10px 12px;color:var(--ops);border-bottom:1px solid rgba(0,0,0,.05);vertical-align:top}
+table.ops tbody tr:last-child td{border-bottom:0}
+table.ops .num{text-align:right;font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.ops-empty{background:#fff;border:1px dashed rgba(0,0,0,.15);padding:48px;text-align:center;color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.ops-tab{padding:8px 0;border-bottom:2px solid transparent;color:var(--quiet);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);margin-bottom:-1px}
+.ops-tab.on{border-bottom-color:var(--sage);color:var(--ops);font-weight:500}
+.ops-in{border:1px solid rgba(0,0,0,.12);padding:2px 8px;text-align:right;font:500 var(--t-dat)/var(--t-dat-lh) var(--font-data);font-variant-numeric:tabular-nums;width:96px}
+.ops-btn{padding:8px 14px;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);white-space:nowrap}
+.ops-btn.pri{background:var(--sage);color:#fff}
+.ops-btn.sec{border:1px solid rgba(0,0,0,.15);color:var(--ink);background:#fff}
+.ops-btn.gho{color:var(--quiet);background:transparent}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOCK CHROME — deliberately unlike the product so nothing here can be
+   mistaken for UI. Slate ground, mono labels, orange accent.
+   ══════════════════════════════════════════════════════════════════════════ */
+body{background:#181A1B;color:#C9CBCC;font:400 15px/1.6 ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#top{position:sticky;top:0;z-index:60;background:#101112;border-bottom:1px solid #2E3133}
+#top .in{max-width:1400px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+#top b{color:#fff;font-size:15px;letter-spacing:-.2px}
+#top nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+#top nav a{color:#9BA0A3;text-decoration:none;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:5px 9px;border:1px solid #2E3133;font-family:ui-monospace,monospace}
+#top nav a:hover{color:#fff;border-color:#E8863A}
+.page{max-width:1400px;margin:0 auto;padding:0 24px 120px}
+.intro{padding:44px 0 32px;border-bottom:1px solid #2E3133;margin-bottom:8px}
+.intro h1{color:#fff;font-size:34px;line-height:1.15;letter-spacing:-.8px;font-weight:650;margin-bottom:10px}
+.intro p{max-width:78ch;color:#A8ACAE;margin-bottom:10px}
+.kicker{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#E8863A;margin-bottom:12px}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1px;background:#2E3133;border:1px solid #2E3133;margin-top:24px}
+.rules div{background:#1D1F21;padding:14px 16px}
+.rules h4{color:#E8863A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;font-weight:600}
+.rules p{font-size:13px;line-height:1.55;color:#A8ACAE;margin:0}
+section.surface{padding-top:56px}
+.shead{border-top:1px solid #2E3133;padding-top:20px;margin-bottom:8px}
+.shead .n{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.14em;color:#E8863A;text-transform:uppercase}
+.shead h2{color:#fff;font-size:25px;letter-spacing:-.4px;font-weight:650;margin:6px 0 8px}
+.shead p{max-width:80ch;color:#A8ACAE;font-size:14px;margin-bottom:4px}
+.shead .path{font-family:ui-monospace,monospace;font-size:12px;color:#6E7376}
+.state{margin-top:36px}
+/* DIRECT CHILD ONLY. As a descendant selector this leaked into every <h3>
+   inside every product frame — white text, 16px, display:flex — because the
+   frames are nested in .state. Chrome must never reach into .screen. */
+.state > h3{color:#fff;font-size:16px;font-weight:620;margin-bottom:4px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.state > h3 .tag{font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#101112;background:#E8863A;padding:2px 7px}
+.state > h3 .tag.g{background:#5A9A72}.state > h3 .tag.b{background:#5F8AB0}.state > h3 .tag.r{background:#C0392B;color:#fff}
+.state > p{color:#9BA0A3;font-size:13.5px;max-width:82ch;margin-bottom:14px}
+.frames{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
+.dev{background:#0E0F10;border:1px solid #2E3133;padding:9px;flex:none}
+.dev > .cap{font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#7E8386;padding:0 2px 8px;display:flex;justify-content:space-between;gap:12px}
+.dev .screen{overflow:hidden;background:#fff}
+.dev.desk{width:1198px}.dev.desk .screen{width:1180px}
+.dev.wide{width:1338px}.dev.wide .screen{width:1320px}
+.dev.mob{width:393px}.dev.mob .screen{width:375px}
+.note{margin-top:14px;border-left:2px solid #E8863A;padding:2px 0 2px 14px;max-width:88ch}
+/* DIRECT CHILD ONLY — the note's title. As `.note b` this also hit every
+   inline <b> inside the note's paragraphs, rendering mid-sentence emphasis as
+   an orange uppercase block label on its own line. */
+.note > b{color:#E8863A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:3px}
+.note p b{color:#D6DADC;font-weight:650}
+.note p{color:#A8ACAE;font-size:13px;line-height:1.6;margin-bottom:6px}
+.note p:last-child{margin-bottom:0}
+.note code,.intro code,.rules code{font-family:ui-monospace,monospace;font-size:12px;background:#2A2D2F;color:#D9C08F;padding:1px 4px}
+.flag{border:1px solid #C0392B;background:rgba(192,57,43,.12);padding:12px 14px;margin-top:14px;max-width:88ch}
+.flag > b{color:#E9776A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:4px}
+.flag p b{color:#F0D3CF;font-weight:650}
+.flag p{color:#D8B7B2;font-size:13px;line-height:1.6;margin:0}
+</style>
+</head>
+<body>
+
+<style>
+/* ── Extra frame sizes + review-screen helpers for THIS mock ────────────── */
+.dev.mid{width:938px}.dev.mid .screen{width:920px}
+.dev.half{width:698px}.dev.half .screen{width:680px}
+/* Page shell — QuoteReviewSubmit.tsx:124  max-w-2xl mx-auto px-6 py-10, on
+   .quote-page (ground bone, card fill paper). px-6 is unconditional: the real
+   screen does NOT narrow its gutter on a phone, so neither does this mock. */
+.revwrap{max-width:672px;margin:0 auto;padding:0 24px}
+.revpage{background:var(--bone);--card-fill:var(--paper);padding:22px 0 40px}
+.slabel{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.slabel span{color:var(--sage);font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase}
+/* .quote-panel (theme.css:560) — and the --control-fill it hands its inputs. */
+.qpanel{border:1px solid var(--line);background:var(--paper);--control-fill:var(--bone);padding:20px;margin-bottom:16px}
+/* The panel the gate is currently standing on. Same vocabulary the configurator
+   already uses for the live card — quote-item-card[data-state="added"],
+   theme.css:576 — a 55%-mixed sage border plus the 3px inset spine. Full-strength
+   sage was louder than anything the product actually draws. The spine overlaps
+   the padding rather than being added to it, which is what the built card does. */
+.qpanel.live{border-color:color-mix(in oklab,var(--sage) 55%,var(--line));box-shadow:inset 3px 0 0 var(--sage)}
+/* A panel shown only for context, dimmed so the gate reads. */
+.qpanel.ctx{opacity:.55}
+.qrow{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-bottom:1px solid rgba(0,0,0,.06);padding:6px 0;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.qrow:last-of-type{border-bottom:0}
+/* The label truncates; anything AFTER it must not. Before this the "Just added"
+   chip lived inside the truncating span, so on the longest merged line it was the
+   first thing the ellipsis ate — the one element on the screen that must survive. */
+.qrow .lbl{color:var(--ink);min-width:0;display:flex;align-items:baseline;gap:6px}
+.qrow .lbl > .txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qrow .amt{color:var(--body);flex:none;font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.totrow{display:flex;justify-content:space-between;gap:12px;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.totrow .k{color:var(--body)}.totrow .v{color:var(--ink);flex:none;font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.totrow.big{border-top:1px solid rgba(0,0,0,.08);padding-top:8px;margin-top:8px}
+.totrow.big .k,.totrow.big .v{font-weight:600;color:var(--ink)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.mob .grid2,.mob .grid3{grid-template-columns:1fr}
+.backlink{display:flex;align-items:center;gap:4px;color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);margin-bottom:20px}
+/* Stage head. The numeral is optically centred on the heading's cap-height, not
+   on its line box — flex-start alone floated it a couple of px high. */
+.stagehead{display:flex;align-items:flex-start;gap:12px}
+.stagenum{width:26px;height:26px;flex:none;margin-top:1px;border:1px solid rgba(90,122,106,.45);color:var(--sage);display:flex;align-items:center;justify-content:center;font:500 12px/1 var(--font-data);font-variant-numeric:tabular-nums}
+/* Turnstile's own footprint: the managed widget renders at a fixed 300×65 and
+   does NOT stretch to its container. Drawing it at container width oversold how
+   much room it takes, especially at 375. */
+.ts{width:300px;max-width:100%;height:65px;border:1px solid var(--line-strong);background:var(--recessive);padding:0 12px;display:flex;align-items:center;gap:10px}
+.ts .box{width:24px;height:24px;border:1px solid var(--line-strong);background:#fff;flex:none}
+.ts .box.done{background:var(--sage);border-color:var(--sage);color:#fff;display:flex;align-items:center;justify-content:center}
+.ts .cf{margin-left:auto;flex:none;text-align:right;color:var(--quiet);font:400 9px/11px var(--font-body);letter-spacing:.02em}
+.helptext{color:var(--body);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:4px}
+/* Errors carry a mark as well as a colour — the product's own rule (StatusPill:
+   icon + word, never colour alone), applied to inline field errors too. */
+.errtext{color:var(--attention-ink);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:4px;display:flex;align-items:flex-start;gap:5px}
+.errtext > svg{flex:none;margin-top:3px}
+.readonly{border:1px solid var(--line);background:var(--recessive);padding:10px 12px;color:var(--ink);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.linkbtn{color:var(--sage-ink);text-decoration:underline;text-underline-offset:2px;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);background:none}
+.spinner{width:14px;height:14px;border:2px solid rgba(90,122,106,.3);border-top-color:var(--sage);border-radius:50%;display:inline-block;vertical-align:-2px;animation:spin .8s linear infinite}
+.btn .spinner{border-color:rgba(255,255,255,.35);border-top-color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
+.focusring{outline:2px solid var(--sage);outline-offset:2px}
+.sub{color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+/* "Just added" — the quietest thing that can still be found. Sage wash, data
+   face, no fill strong enough to read as a warning: a merge is a convenience. */
+.newchip{display:inline-flex;align-items:center;flex:none;padding:1px 6px;border:1px solid rgba(90,122,106,.35);background:var(--sage-wash);color:var(--sage-ink);font:600 10px/14px var(--font-data);letter-spacing:.08em;text-transform:uppercase;position:relative;top:-1px}
+/* The stage/section rule inside a panel — a hairline plus a data-face label,
+   the same "no cells, no fills" structure the product uses for fact rows. */
+.grouprule{border-top:1px solid var(--line);padding-top:16px;margin-top:4px}
+/* The merge notice. It reports a convenience, so it is built out of the sage
+   "this changed for the better" vocabulary — the same 3px spine the live panel
+   and quote-item-card[data-state="added"] use — and never out of warning
+   colour. A CheckCircle, not an AlertCircle: nothing here went wrong. The
+   headline leads in sage-ink; the explanation steps back to --body so the
+   notice informs at a glance and rewards a second read. */
+.mergenotice{display:flex;gap:12px;align-items:flex-start;padding:16px 16px 16px 17px;border:1px solid rgba(90,122,106,.35);background:rgba(90,122,106,.06);box-shadow:inset 3px 0 0 var(--sage)}
+.mergenotice > svg{color:var(--sage);margin-top:2px}
+.mergenotice h4{color:var(--sage-ink);font:600 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-display);letter-spacing:-.1px;margin-bottom:3px}
+.mergenotice p{color:var(--ink-soft);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);max-width:58ch}
+.resolving{display:flex;flex-direction:column;align-items:center;gap:6px;padding:32px 0;text-align:center}
+select.field{appearance:none;padding-right:32px;background-image:linear-gradient(45deg,transparent 50%,var(--body) 50%),linear-gradient(135deg,var(--body) 50%,transparent 50%);background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--attention-ink) 50%),linear-gradient(135deg,var(--attention-ink) 50%,transparent 50%)}
+/* The submit foot: caption and action share one right-aligned column so the
+   ragged edge that matters (the button's) is the one they line up on. */
+.submitfoot{display:flex;flex-direction:column;align-items:flex-end;gap:8px;text-align:right}
+.submitfoot > p{max-width:46ch}
+/* ── Icons ────────────────────────────────────────────────────────────────
+   The product draws lucide-react at w-4/h-4 (ChevronLeft, Send, AlertCircle,
+   CheckCircle). The mock had been standing in text glyphs — "→" for the Send
+   paper-plane, "‹" for ChevronLeft, "ⓘ" for AlertCircle — which is the tell
+   that separates a mock from a screenshot. Same paths, inlined as a sprite so
+   the file still makes no external request. */
+.ic{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ic-12{width:12px;height:12px}.ic-13{width:13px;height:13px}.ic-14{width:14px;height:14px}
+/* SLabel's WindowMark is size={10} (ui.tsx:63). The mock's markup asked for 10
+   via width/height attributes but carried class="mark", whose CSS width:20px
+   beat them — so every section label wore a double-size mark. */
+.mark10{width:10px;height:10px;flex:none;fill:none}
+</style>
+
+<style>
+/* ── Phase 2 additions ─────────────────────────────────────────────────────
+   Nothing new is invented here: these are the same primitives the Phase 1 mock
+   built (card, panel, pill, chip, notice, field) arranged for the surfaces this
+   phase touches — the trade page card, the account-page card, the ops queue
+   table and the four emails. */
+.dev.mid{width:938px}.dev.mid .screen{width:920px}
+.dev.half{width:698px}.dev.half .screen{width:680px}
+.dev.acct{width:898px}.dev.acct .screen{width:880px}
+/* Marketing page shell (TradePage): bone ground, card fill paper. */
+.mkt{background:var(--bone);--card-fill:var(--paper)}
+.mktwrap{max-width:1104px;margin:0 auto;padding:0 24px}
+.hero{background:var(--night);padding:52px 0 26px;position:relative;overflow:hidden}
+.hero .glow{position:absolute;inset:0;background:linear-gradient(120deg,rgba(90,122,106,.34),rgba(12,12,10,0) 62%)}
+.hero .in{position:relative}
+/* Account page shell (AccountShell): rail + content. */
+.acctpage{background:var(--bone);--card-fill:var(--paper);display:flex;min-height:100%}
+.acctrail{width:208px;flex:none;padding:22px 0;border-right:1px solid var(--line)}
+.acctbody{flex:1;min-width:0;padding:26px 26px 36px}
+/* Panels reused from the review screen. */
+.qpanel{border:1px solid var(--line);background:var(--paper);--control-fill:var(--bone);padding:20px;margin-bottom:16px}
+.qpanel.live{border-color:color-mix(in oklab,var(--sage) 55%,var(--line));box-shadow:inset 3px 0 0 var(--sage)}
+.qpanel.ctx{opacity:.55}
+.revwrap{max-width:672px;margin:0 auto;padding:0 24px}
+.revpage{background:var(--bone);--card-fill:var(--paper);padding:22px 0 40px}
+.slabel{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.slabel span{color:var(--sage);font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase}
+.qrow{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-bottom:1px solid rgba(0,0,0,.06);padding:6px 0;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.qrow:last-of-type{border-bottom:0}
+.qrow .lbl{color:var(--ink);min-width:0;display:flex;align-items:baseline;gap:6px}
+.qrow .lbl > .txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qrow .amt{color:var(--body);flex:none;font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.totrow{display:flex;justify-content:space-between;gap:12px;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.totrow .k{color:var(--body)}.totrow .v{color:var(--ink);flex:none;font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.totrow.big{border-top:1px solid rgba(0,0,0,.08);padding-top:8px;margin-top:8px}
+.totrow.big .k,.totrow.big .v{font-weight:600;color:var(--ink)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.mob .grid2,.mob .grid3{grid-template-columns:1fr}
+.backlink{display:flex;align-items:center;gap:4px;color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);margin-bottom:20px}
+.ts{width:300px;max-width:100%;height:65px;border:1px solid var(--line-strong);background:var(--recessive);padding:0 12px;display:flex;align-items:center;gap:10px}
+.ts .box{width:24px;height:24px;border:1px solid var(--line-strong);background:#fff;flex:none}
+.ts .box.done{background:var(--sage);border-color:var(--sage);color:#fff;display:flex;align-items:center;justify-content:center}
+.ts .cf{margin-left:auto;flex:none;text-align:right;color:var(--quiet);font:400 9px/11px var(--font-body);letter-spacing:.02em}
+.helptext{color:var(--body);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:4px}
+.errtext{color:var(--attention-ink);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:4px;display:flex;align-items:flex-start;gap:5px}
+.errtext > svg{flex:none;margin-top:3px}
+.readonly{border:1px solid var(--line);background:var(--recessive);padding:10px 12px;color:var(--ink);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.readonly .v{font-family:var(--font-data);font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.linkbtn{color:var(--sage-ink);text-decoration:underline;text-underline-offset:2px;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);background:none}
+.spinner{width:14px;height:14px;border:2px solid rgba(90,122,106,.3);border-top-color:var(--sage);border-radius:50%;display:inline-block;vertical-align:-2px;animation:spin .8s linear infinite}
+.btn .spinner{border-color:rgba(255,255,255,.35);border-top-color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
+.focusring{outline:2px solid var(--sage);outline-offset:2px}
+.sub{color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.grouprule{border-top:1px solid var(--line);padding-top:16px;margin-top:18px}
+.submitfoot{display:flex;flex-direction:column;align-items:flex-end;gap:8px;text-align:right}
+.submitfoot > p{max-width:46ch}
+select.field{appearance:none;padding-right:32px;background-image:linear-gradient(45deg,transparent 50%,var(--body) 50%),linear-gradient(135deg,var(--body) 50%,transparent 50%);background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+/* The outcome notice — the same sage "this went well" vocabulary as Phase 1's
+   merge notice (3px inset spine, CheckCircle). The under-review variant uses
+   the WORK tone, never a warning: a queued application is not a fault and must
+   not be dressed as one. */
+.outcome{display:flex;gap:12px;align-items:flex-start;padding:16px 16px 16px 17px;border:1px solid rgba(90,122,106,.35);background:rgba(90,122,106,.06);box-shadow:inset 3px 0 0 var(--sage)}
+.outcome > svg{color:var(--sage);margin-top:2px;flex:none}
+.outcome h4{color:var(--sage-ink);font:600 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-display);letter-spacing:-.1px;margin-bottom:3px}
+.outcome p{color:var(--ink-soft);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);max-width:62ch}
+.outcome p + p{margin-top:6px}
+.outcome.work{border-color:var(--tone-work-bd);background:var(--tone-work-bg);box-shadow:inset 3px 0 0 var(--info)}
+.outcome.work > svg{color:var(--info)}
+.outcome.work h4{color:var(--info-ink)}
+.outcome.mute{border-color:var(--tone-mute-bd);background:var(--tone-mute-bg);box-shadow:inset 3px 0 0 var(--quiet)}
+.outcome.mute > svg{color:var(--quiet)}
+.outcome.mute h4{color:var(--ink-soft)}
+/* Builder/tradie self-declaration. Segmented, two options, neither pre-selected:
+   it is self-declared, so nothing may guess it. */
+.seg{display:flex;gap:0}
+.seg > label{flex:1;border:1px solid var(--line-strong);padding:9px 12px;display:flex;align-items:center;gap:8px;color:var(--ink);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);background:var(--control-fill,var(--paper))}
+.seg > label + label{margin-left:-1px}
+.seg > label.on{border-color:var(--sage);background:var(--sage-veil);color:var(--sage-ink);font-weight:500}
+.dot{width:14px;height:14px;flex:none;border:1px solid var(--line-strong);border-radius:50%}
+.seg > label.on .dot{border-color:var(--sage);box-shadow:inset 0 0 0 3px var(--paper),inset 0 0 0 8px var(--sage)}
+/* History outline — date + outcome, nothing else (AC-P2-13). */
+.histrow{display:flex;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid rgba(0,0,0,.06);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);color:var(--body)}
+.histrow:last-child{border-bottom:0}
+.histrow .d{flex:none;width:104px;font-family:var(--font-data);font-variant-numeric:tabular-nums;color:var(--ink-soft)}
+/* Ops evidence rows. */
+.evid{display:flex;align-items:baseline;gap:16px;padding:8px 0;border-bottom:1px solid rgba(0,0,0,.06);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.evid:last-child{border-bottom:0}
+.evid .k{flex:none;width:164px;color:var(--quiet);font:500 var(--t-datsm)/var(--t-datsm-lh) var(--font-data);letter-spacing:.04em;text-transform:uppercase}
+.evid .v{color:var(--ops);min-width:0}
+.crit{display:flex;align-items:center;gap:8px;padding:5px 0;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);color:var(--ops)}
+.crit .mk{width:16px;height:16px;flex:none;display:grid;place-items:center;border:1px solid;font:600 10px/10px var(--font-data)}
+.crit .mk.p{color:var(--tone-pos);border-color:var(--tone-pos-bd);background:var(--tone-pos-bg)}
+.crit .mk.f{color:var(--tone-attn);border-color:var(--tone-attn-bd);background:var(--tone-attn-bg)}
+.crit .mk.u{color:var(--tone-mute);border-color:var(--tone-mute-bd);background:var(--tone-mute-bg)}
+.opstile{background:#fff;border:1px solid rgba(0,0,0,.08);padding:14px 16px}
+.opstile .n{font:600 26px/30px var(--font-data);font-variant-numeric:tabular-nums;color:var(--ops)}
+.opstile .l{font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin-bottom:4px}
+.opstile.due{border-color:rgba(178,110,15,.34);background:var(--tone-attn-bg)}
+.opstile.due .n{color:var(--tone-attn)}
+/* Email renderings — a plain client frame, deliberately unlike the app. */
+.mail{background:#EFEEEC;padding:18px}
+.mailcard{background:#fff;border:1px solid rgba(0,0,0,.10);max-width:560px;margin:0 auto}
+.mailhdr{padding:12px 20px;border-bottom:1px solid rgba(0,0,0,.08);background:#FAF9F7}
+.mailsub{color:var(--ink);font:600 var(--t-bd)/var(--t-bd-lh) var(--font-display);letter-spacing:-.2px}
+.mailfrom{color:var(--quiet);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:2px}
+.mailbody{padding:22px 20px;color:var(--ink-soft);font:400 var(--t-bdsm)/22px var(--font-body)}
+.mailbody p{margin-bottom:14px}
+.mailbody p:last-child{margin-bottom:0}
+.mailfoot{padding:14px 20px;border-top:1px solid rgba(0,0,0,.08);color:var(--quiet);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)}
+.ic{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ic-12{width:12px;height:12px}.ic-13{width:13px;height:13px}.ic-14{width:14px;height:14px}.ic-20{width:20px;height:20px}
+.mark10{width:10px;height:10px;flex:none;fill:none}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><path d="M21.8 10A10 10 0 1 1 17 3.34"/><path d="m9 11 3 3L22 4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="i-building" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20"/><path d="M9 22v-4h6v4M9 6h.01M15 6h.01M9 10h.01M15 10h.01M9 14h.01M15 14h.01"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16"/><path d="m2 7 10 6 10-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  <symbol id="i-mark" viewBox="0 0 20 20"><rect x="1" y="1" width="18" height="18" stroke-width="1.5"/><path d="M10 1v18M1 10h18" stroke-width="1.5"/></symbol>
+</defs></svg>
+
+<div id="top"><div class="in">
+  <b>User registration Phase 2 — trade verification</b>
+  <span class="mono" style="font-size:11px;color:#6E7376">AMJ Trade Direct / OpenFrame · UX mock for approval</span>
+  <nav>
+    <a href="#s1">1 · Trade signup</a>
+    <a href="#s2">2 · Outcomes</a>
+    <a href="#s3">3 · Account page</a>
+    <a href="#s4">4 · Submit gate</a>
+    <a href="#s5">5 · Ops queue</a>
+    <a href="#s6">6 · Emails</a>
+    <a href="#appendix">Appendix</a>
+  </nav>
+</div></div>
+
+<div class="page">
+
+<div class="intro">
+  <div class="kicker">Phase 2 · docs/specs/user-registration-phase-2.md · design §10 steps 9–15</div>
+  <h1>One verification, three doors, and never a percentage.</h1>
+  <p>A tradie proves their business once. If the ABN, the business name and the email domain all check out against the ABR, <b style="color:#D6DADC">trade pricing is theirs in that same interaction</b> — while they configure, not after they quote. Anything else goes to a person. Nothing is ever auto-rejected, and the customer is never told which check needed a human.</p>
+  <p>Trade pricing is described only as <em>better prices</em>. No percentage appears on any customer surface, and no pair of figures from which one could be derived by subtraction. Phase 1's AC-41 silence about trade <b style="color:#D6DADC">ends here by design</b> — these are the only surfaces where trade pricing is mentioned (AC-P2-48). A tester finding trade copy here is recording conformance, not a regression.</p>
+  <div class="rules">
+    <div><h4>Two outcomes, never three</h4><p><b>Active</b>, or <b>we're checking</b>. There is no machine rejection: an ABR outage, a gmail address and a name that didn't quite match all land in the same under-review screen, worded identically.</p></div>
+    <div><h4>No timeframe, ever</h4><p>Nothing on screen or in any email says how long a review takes — no "one business day", no "usually", no date. "We'll be in touch" is the whole promise (owner ruling Q2).</p></div>
+    <div><h4>A refusal costs nothing</h4><p>A rejected application leaves a fully working private account — quoting, submitting, tracking, referrals. The screen says exactly that, and offers to apply again.</p></div>
+    <div><h4>Verified and pending at once</h4><p>A verified account applying with a new ABN keeps its trade pricing while the new one is checked. Every screen renders both facts; no single status word is used anywhere.</p></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 1 -->
+<section class="surface" id="s1">
+  <div class="shead">
+    <div class="n">Surface 1 · Door (a) — the primary path</div>
+    <h2>/trade-account becomes the real signup</h2>
+    <p>The hero and the benefits column stay exactly as they are. The card beside them — today a form wired to nothing, which silently throws away every application typed into it — becomes a working signup: business details, then the Phase-1 email-OTP step. A tradie who has never touched the site can finish this cold and walk away with trade pricing.</p>
+    <div class="path">src/app/App.tsx · TradePage (the mock form at 1690-1704 is deleted) → src/components/trade/TradeApplicationCard.tsx, source="trade_page"</div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">State</span> Cold visitor · nothing entered yet</h3>
+    <p>Business details are asked <em>before</em> the email step, because they are the reason this person is on this page. The values are held on screen across the OTP and sent the moment the session exists — the caption under the button says so, so the sequence never looks like the form was ignored.</p>
+    <div class="frames">
+
+      <div class="dev desk">
+        <div class="cap"><span>Desktop · 1180w</span><span>anonymous · /trade-account</span></div>
+        <div class="screen"><div class="mkt">
+          <div class="hero"><div class="glow"></div><div class="mktwrap in">
+            <div class="row g8 mb12"><svg class="mark10" viewBox="0 0 20 20" fill="none" stroke="rgba(255,255,255,.55)" aria-hidden="true"><use href="#i-mark"/></svg><span class="t-label c-w55">Trade account</span></div>
+            <h1 class="t-ds2 c-white mb8">Quote more jobs. Chase fewer reps.</h1>
+            <p class="t-bd c-w70" style="max-width:52ch">Upload every schedule you're sitting on and get them priced the same day. Trade accounts get better prices, priority review, saved details, and a name to call.</p>
+          </div></div>
+          <div class="mktwrap" style="padding-top:36px;padding-bottom:40px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start">
+              <div class="col g16">
+                <div class="row as g12"><svg class="mark10" style="margin-top:6px" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><div><p class="t-bd-sm md c-ink">Better prices, everywhere</p><p class="t-cap c-body">Trade pricing applies while you configure, not just on the quote we send back.</p></div></div>
+                <div class="row as g12"><svg class="mark10" style="margin-top:6px" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><div><p class="t-bd-sm md c-ink">Your jobs jump the queue</p><p class="t-cap c-body">Trade projects are reviewed first.</p></div></div>
+                <div class="row as g12"><svg class="mark10" style="margin-top:6px" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><div><p class="t-bd-sm md c-ink">Stop re-typing</p><p class="t-cap c-body">Contacts, addresses and specs carry over to the next job.</p></div></div>
+                <div class="row as g12"><svg class="mark10" style="margin-top:6px" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><div><p class="t-bd-sm md c-ink">A name and a number</p><p class="t-cap c-body">Not a general inbox.</p></div></div>
+                <div class="row as g12"><svg class="mark10" style="margin-top:6px" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><div><p class="t-bd-sm md c-ink">Send them all at once</p><p class="t-cap c-body">Every schedule on your desk, one submission.</p></div></div>
+              </div>
+
+              <div class="card p24" style="--control-fill:var(--bone)">
+                <h3 class="t-hd3 c-ink mb4">Open your trade account</h3>
+                <p class="t-bd-sm c-body mb16" style="max-width:44ch">We check your ABN against the Australian Business Register. If it all checks out, trade pricing is on your account straight away.</p>
+
+                <p class="t-label c-quiet mb12">Your business</p>
+                <div class="col g12">
+                  <div>
+                    <label class="field-label" for="a1-bn">Business name</label>
+                    <input class="field" id="a1-bn" placeholder="ABC Constructions">
+                    <p class="helptext">As it's registered against the ABN.</p>
+                  </div>
+                  <div>
+                    <label class="field-label" for="a1-abn">ABN</label>
+                    <input class="field mono" id="a1-abn" placeholder="00 000 000 000" inputmode="numeric">
+                    <p class="helptext">11 digits. Spaces are fine.</p>
+                  </div>
+                  <div>
+                    <span class="field-label">Builder or tradie?</span>
+                    <div class="seg">
+                      <label><span class="dot"></span>Builder</label>
+                      <label><span class="dot"></span>Tradie</label>
+                    </div>
+                    <p class="helptext">Optional. It just tells us who we're working with.</p>
+                  </div>
+                </div>
+
+                <div class="grouprule">
+                  <p class="t-label c-quiet mb8">Your account</p>
+                  <p class="t-cap c-body mb12" style="max-width:46ch">We'll email you a 6-digit code — no password. If you already have an account, this signs you into it.</p>
+                  <div class="mb12">
+                    <label class="field-label" for="a1-em">Email</label>
+                    <input class="field" id="a1-em" placeholder="your@email.com">
+                  </div>
+                  <div class="ts mb12"><span class="box"></span><span class="t-cap c-body">Verifying you're human</span><span class="cf">CLOUDFLARE<br>Privacy · Terms</span></div>
+                  <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Email me a code</span>
+                  <p class="helptext" style="margin-top:10px">Your business details stay on this screen — we send them the moment you're signed in.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="dev mob">
+        <div class="cap"><span>Mobile · 375w</span><span>anonymous</span></div>
+        <div class="screen mob"><div class="mkt">
+          <div class="hero" style="padding:36px 0 20px"><div class="glow"></div><div class="mktwrap in" style="padding:0 20px">
+            <div class="row g8 mb8"><svg class="mark10" viewBox="0 0 20 20" fill="none" stroke="rgba(255,255,255,.55)" aria-hidden="true"><use href="#i-mark"/></svg><span class="t-label c-w55">Trade account</span></div>
+            <h1 class="t-hd1 c-white mb8">Quote more jobs. Chase fewer reps.</h1>
+            <p class="t-bd-sm c-w70">Trade accounts get better prices, priority review and saved details.</p>
+          </div></div>
+          <div style="padding:20px">
+            <div class="card p20" style="--control-fill:var(--bone)">
+              <h3 class="t-hd3 c-ink mb4">Open your trade account</h3>
+              <p class="t-cap c-body mb16">We check your ABN against the Australian Business Register. If it all checks out, trade pricing is on your account straight away.</p>
+              <p class="t-label c-quiet mb12">Your business</p>
+              <div class="col g12">
+                <div><label class="field-label" for="a1m-bn">Business name</label><input class="field" id="a1m-bn" placeholder="ABC Constructions"></div>
+                <div><label class="field-label" for="a1m-abn">ABN</label><input class="field mono" id="a1m-abn" placeholder="00 000 000 000" inputmode="numeric"><p class="helptext">11 digits. Spaces are fine.</p></div>
+                <div><span class="field-label">Builder or tradie?</span><div class="seg"><label><span class="dot"></span>Builder</label><label><span class="dot"></span>Tradie</label></div><p class="helptext">Optional.</p></div>
+              </div>
+              <div class="grouprule">
+                <p class="t-label c-quiet mb8">Your account</p>
+                <p class="t-cap c-body mb12">We'll email you a 6-digit code — no password. If you already have an account, this signs you into it.</p>
+                <div class="mb12"><label class="field-label" for="a1m-em">Email</label><input class="field" id="a1m-em" placeholder="your@email.com"></div>
+                <div class="ts mb12"><span class="box"></span><span class="t-cap c-body">Verifying you're human</span><span class="cf">CLOUDFLARE<br>Privacy · Terms</span></div>
+                <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Email me a code</span>
+                <p class="helptext" style="margin-top:10px">Your business details stay on this screen — we send them the moment you're signed in.</p>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+
+    </div>
+    <div class="note">
+      <b>Why business first, account second</b>
+      <p>The person arrived to get a trade account, so the page asks the trade question first and the plumbing second. It also matters mechanically: <b>no unauthenticated endpoint accepts an ABN</b>, so the values are held in component state and posted only once the session exists (AC-P2-3). The caption is what stops that delay reading as "it ignored what I typed".</p>
+      <p>The builder/tradie control is a two-option segmented radio with <b>nothing pre-selected</b> — it is self-declared, so a default would be the machine guessing. Skipping it is fine and gates nothing; the ops record reads "not stated".</p>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag b">State</span> Code step · business details held</h3>
+    <p>Phase 1's <code>OtpSignIn</code> code step, unchanged, with one added reassurance line in the slot Phase 1 uses for "your quote is safe".</p>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop · card only</span><span>OTP code step</span></div>
+        <div class="screen"><div class="mkt p24">
+          <div class="card p24" style="--control-fill:var(--bone);max-width:420px">
+            <p class="t-label c-quiet mb12">Your business</p>
+            <div class="readonly mb8"><span>ABC Constructions</span><span class="chip ch-mute">Held</span></div>
+            <div class="readonly mb16"><span class="v">51 824 753 556</span><span class="chip ch-mute">Held</span></div>
+            <div class="grouprule">
+              <h3 class="t-hd3 c-ink mb4">Enter your code</h3>
+              <p class="t-cap c-body mb12">We sent a 6-digit code to sam@buildright.com.au. It expires in 10 minutes.</p>
+              <div class="mb12"><label class="field-label" for="a2-c">6-digit code</label><input class="field mono focusring" id="a2-c" value="418 260" style="max-width:160px"></div>
+              <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Verify &amp; continue</span>
+              <div class="row g16 mt12"><span class="linkbtn">Resend code</span><span class="linkbtn">Use a different email</span></div>
+              <p class="helptext" style="margin-top:10px">Your business details are still here — we send them for checking as soon as you're in.</p>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag r">State</span> Field errors · nothing is created, nothing is looked up</h3>
+    <p>An ABN that fails its checksum is a <b>field error like a malformed phone number</b> — no application record, no ABR call, no rate-limit spend. The customer just fixes the digits. A business name is required whenever an ABN is present, because the name is one of the three things being checked.</p>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop · card only</span><span>ABN checksum failure</span></div>
+        <div class="screen"><div class="mkt p24">
+          <div class="card p24" style="--control-fill:var(--bone);max-width:420px">
+            <p class="t-label c-quiet mb12">Your business</p>
+            <div class="col g12">
+              <div><label class="field-label" for="a3-bn">Business name</label><input class="field" id="a3-bn" value="Buildright Constructions"></div>
+              <div>
+                <label class="field-label" for="a3-abn">ABN</label>
+                <input class="field mono err" id="a3-abn" value="51 824 753 551" aria-invalid="true">
+                <p class="errtext"><svg class="ic ic-13" aria-hidden="true"><use href="#i-alert"/></svg>That ABN doesn't look right. Check the 11 digits and try again.</p>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+      <div class="dev half">
+        <div class="cap"><span>Desktop · card only</span><span>business name missing</span></div>
+        <div class="screen"><div class="mkt p24">
+          <div class="card p24" style="--control-fill:var(--bone);max-width:420px">
+            <p class="t-label c-quiet mb12">Your business</p>
+            <div class="col g12">
+              <div>
+                <label class="field-label" for="a4-bn">Business name</label>
+                <input class="field err" id="a4-bn" value="" aria-invalid="true">
+                <p class="errtext"><svg class="ic ic-13" aria-hidden="true"><use href="#i-alert"/></svg>Enter the business name registered to this ABN.</p>
+              </div>
+              <div><label class="field-label" for="a4-abn">ABN</label><input class="field mono" id="a4-abn" value="51 824 753 556"></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Never an ABN-guessing oracle</b>
+      <p>The checksum is the <em>only</em> thing checked in the browser, and it is the same function the Worker uses (<code>src/data/abn.ts</code>). Everything past it — whether the ABN exists, whether it's active, whether the name matches — happens server-side behind a session and is <b>never reported back field-by-field</b>. That is a deliberate security property, not a copy decision.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 2 -->
+<section class="surface" id="s2">
+  <div class="shead">
+    <div class="n">Surface 2 · The two outcomes</div>
+    <h2>Active in the same breath, or a person is looking at it</h2>
+    <p>The card replaces itself in place — no navigation, no toast, no new page. There are exactly two outcomes and the customer can never tell which check sent them to the second one. The same two panels appear on the account page (surface 3), rendered by the same component.</p>
+    <div class="path">src/components/trade/TradeApplicationCard.tsx · POST /api/trade/application → <span class="mono">{ ok:true, status:"verified" }</span> or <span class="mono">{ ok:true, status:"under_review" }</span></div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag g">State</span> Auto-passed — the clean triple</h3>
+    <p>Valid and active ABN, business name matches the ABR record, email domain matches the business, nobody else verified on that ABN. Trade pricing is live from this instant: the next price this person sees anywhere on the site is already their price.</p>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop · card in place</span><span>verified</span></div>
+        <div class="screen"><div class="mkt p24">
+          <div class="card p24" style="max-width:420px">
+            <div class="outcome mb16">
+              <svg class="ic ic-20" aria-hidden="true"><use href="#i-check-circle"/></svg>
+              <div>
+                <h4>Your trade account is active</h4>
+                <p>Your ABN checked out. Trade pricing applies to your account from now on — the prices you see anywhere on the site are already your prices.</p>
+                <p>Anything already with us for review will be priced by our team.</p>
+              </div>
+            </div>
+            <div class="col g8 mb16">
+              <div class="readonly"><span class="t-cap c-quiet">Business</span><span>Buildright Constructions</span></div>
+              <div class="readonly"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
+              <div class="readonly"><span class="t-cap c-quiet">You are a</span><span>Tradie</span></div>
+            </div>
+            <div class="row g12">
+              <span class="btn btn-md b-sage">Start a quote <svg class="ic" aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
+              <span class="btn btn-md b-ghost">Go to my account</span>
+            </div>
+          </div>
+        </div></div>
+      </div>
+      <div class="dev mob">
+        <div class="cap"><span>Mobile · 375w</span><span>verified</span></div>
+        <div class="screen mob"><div class="mkt" style="padding:20px">
+          <div class="card p20">
+            <span class="pill p-pos mb12" style="display:inline-flex"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Trade account · Active</span>
+            <h3 class="t-hd3 c-ink mb4" style="margin-top:8px">Your trade account is active</h3>
+            <p class="t-cap c-body mb16">Your ABN checked out. Trade pricing applies to your account from now on — the prices you see anywhere on the site are already your prices. Anything already with us for review will be priced by our team.</p>
+            <div class="col g8 mb16">
+              <div class="readonly"><span class="t-cap c-quiet">Business</span><span>Buildright Constructions</span></div>
+              <div class="readonly"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
+            </div>
+            <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Start a quote <svg class="ic" aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>What is deliberately absent</b>
+      <p>No percentage. No "you save". No before/after pair. No sample price. The claim is <b>"trade pricing applies"</b> and the proof is the price itself, on the next screen the person looks at (AC-P2-4/47).</p>
+      <p>No promise about existing quotes being repriced, either — the line says our team prices what's already with us, which is true, rather than "your submitted quote will be updated", which would be a repricing promise the system deliberately does not make (P2-D4).</p>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag b">State</span> Queued for review — the gmail sole trader, and every other near-miss</h3>
+    <p>This is the common case and it must not read as a rejection or as a failure. Same wording whatever sent it here: a free-mailbox address, a name that didn't match, an inactive ABN, an ABR outage, or someone else already verified on that ABN. The customer is never told which.</p>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop · card in place</span><span>under review</span></div>
+        <div class="screen"><div class="mkt p24">
+          <div class="card p24" style="max-width:420px">
+            <div class="outcome work mb16">
+              <svg class="ic ic-20" aria-hidden="true"><use href="#i-clock"/></svg>
+              <div>
+                <h4>We're checking your details</h4>
+                <p>Thanks — we've got the ABN and business details for Buildright Constructions. Someone here is checking them and we'll email you when it's done.</p>
+                <p>Your account works as normal in the meantime — you can price jobs, submit them and track them.</p>
+              </div>
+            </div>
+            <div class="col g8 mb16">
+              <div class="readonly"><span class="t-cap c-quiet">Business</span><span>Buildright Constructions</span></div>
+              <div class="readonly"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
+            </div>
+            <div class="row g12">
+              <span class="btn btn-md b-sage">Start a quote <svg class="ic" aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
+              <span class="btn btn-md b-ghost">Go to my account</span>
+            </div>
+          </div>
+        </div></div>
+      </div>
+      <div class="dev mob">
+        <div class="cap"><span>Mobile · 375w</span><span>under review</span></div>
+        <div class="screen mob"><div class="mkt" style="padding:20px">
+          <div class="card p20">
+            <span class="pill p-work mb12" style="display:inline-flex"><svg class="ic ic-12" aria-hidden="true"><use href="#i-clock"/></svg>Trade application · Under review</span>
+            <h3 class="t-hd3 c-ink mb4" style="margin-top:8px">We're checking your details</h3>
+            <p class="t-cap c-body mb16">Thanks — we've got the ABN and business details for Buildright Constructions. Someone here is checking them and we'll email you when it's done. Your account works as normal in the meantime — you can price jobs, submit them and track them.</p>
+            <div class="readonly mb16"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
+            <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Start a quote <svg class="ic" aria-hidden="true"><use href="#i-arrow-right"/></svg></span>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Work tone, not warning tone</b>
+      <p>The panel uses the console-blue "in progress" tone the product already spends on <em>things underway</em>, with a clock — never amber, never a triangle. Nothing has gone wrong and the copy never implies it might: no "unfortunately", no "we couldn't", no "if approved".</p>
+      <p><b>No timeframe appears anywhere</b> (owner ruling Q2). "We'll email you when it's done" is as specific as the product is allowed to be.</p>
+    </div>
+    <div class="flag">
+      <b>Load-bearing constraint</b>
+      <p>These two panels are the <b>only</b> two the endpoint can produce. There is no third "we couldn't verify that" screen, and no variation of this copy per reason — two applications queued for different reasons must be indistinguishable to the customer (AC-P2-27 / AB-P2-7). If a future tweak wants to say "we couldn't reach the register just now", that reintroduces the oracle and must be refused.</p>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">State</span> A verified account opens /trade-account again</h3>
+    <p>No form. It shows what it already has, and one quiet way through if their ABN has genuinely changed.</p>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop · card only</span><span>signed in · verified</span></div>
+        <div class="screen"><div class="mkt p24">
+          <div class="card p24" style="max-width:420px">
+            <div class="row jb ac mb12"><h3 class="t-hd3 c-ink">Your trade account</h3><span class="pill p-pos"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Active</span></div>
+            <p class="t-bd-sm c-body mb16">Trade pricing applies to your account. There's nothing more to do here.</p>
+            <div class="col g8 mb16">
+              <div class="readonly"><span class="t-cap c-quiet">Business</span><span>Buildright Constructions</span></div>
+              <div class="readonly"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
+            </div>
+            <p class="t-cap c-body">Changed ABN or trading name? <span class="linkbtn">Send us the new details</span> — your current trade pricing stays while we check them.</p>
+          </div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 3 -->
+<section class="surface" id="s3">
+  <div class="shead">
+    <div class="n">Surface 3 · Door (b) — the majority path</div>
+    <h2>Profile settings: the Business details card becomes the trade card</h2>
+    <p>Today the profile page has a free-text <b>Business name</b> and <b>ABN</b> pair that writes straight to the account and means nothing. It becomes the verification affordance — same component as the trade page, same two outcomes — and it is where everyone who registered during Phase 1, plus every private-to-business convert, gets picked up.</p>
+    <div class="path">src/app/App.tsx · ProfilePage (1400-1407 replaced) → TradeApplicationCard source="profile" · state from GET /api/auth/me → trade</div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">State</span> No ABN on file — the affordance</h3>
+    <p>The card sits where Business details sits today, in the right-hand column beside Personal details. It is the one place on the account page that says trade pricing exists.</p>
+    <div class="frames">
+      <div class="dev acct">
+        <div class="cap"><span>Desktop · 880w content</span><span>signed in · private account</span></div>
+        <div class="screen"><div class="acctpage">
+          <div class="acctrail">
+            <div class="rail-item">Dashboard</div>
+            <div class="rail-item">My projects</div>
+            <div class="rail-item">Orders</div>
+            <div class="rail-item on">Profile settings</div>
+            <div class="rail-item">Refer &amp; earn</div>
+          </div>
+          <div class="acctbody">
+            <div class="slabel"><svg class="mark10" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><span>Customer account</span></div>
+            <h1 class="t-hd1 c-ink mb20">Profile settings</h1>
+            <div class="grid2 as" style="align-items:start">
+              <div class="card p20" style="--control-fill:var(--bone)">
+                <h3 class="t-bd-sm sb c-ink mb12">Personal details</h3>
+                <div class="col g12">
+                  <div><label class="field-label" for="b1-n">Full name</label><input class="field" id="b1-n" value="Sam Taylor"></div>
+                  <div><label class="field-label" for="b1-p">Phone number</label><input class="field" id="b1-p" value="0412 345 678"></div>
+                </div>
+              </div>
+              <div class="card p20" style="--control-fill:var(--bone)">
+                <h3 class="t-bd-sm sb c-ink mb4">Trade account</h3>
+                <p class="t-cap c-body mb16">Trade customers get better prices across the site — while you configure, not just on the quote we send back. Add your ABN and we'll check it against the Australian Business Register.</p>
+                <div class="col g12">
+                  <div><label class="field-label" for="b1-bn">Business name</label><input class="field" id="b1-bn" placeholder="ABC Constructions"></div>
+                  <div><label class="field-label" for="b1-abn">ABN</label><input class="field mono" id="b1-abn" placeholder="00 000 000 000" inputmode="numeric"><p class="helptext">11 digits. Spaces are fine.</p></div>
+                  <div><span class="field-label">Builder or tradie?</span><div class="seg"><label><span class="dot"></span>Builder</label><label><span class="dot"></span>Tradie</label></div><p class="helptext">Optional.</p></div>
+                </div>
+                <span class="btn btn-md b-sage mt16" style="width:100%;justify-content:center">Apply for trade pricing</span>
+              </div>
+            </div>
+            <div class="mt16"><span class="btn btn-md b-sage">Save changes</span></div>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="dev mob">
+        <div class="cap"><span>Mobile · 375w</span><span>private account</span></div>
+        <div class="screen mob"><div class="acctpage" style="display:block">
+          <div style="padding:20px">
+            <h1 class="t-hd2 c-ink mb16">Profile settings</h1>
+            <div class="card p20 mb16" style="--control-fill:var(--bone)">
+              <h3 class="t-bd-sm sb c-ink mb12">Personal details</h3>
+              <div class="col g12">
+                <div><label class="field-label" for="b1m-n">Full name</label><input class="field" id="b1m-n" value="Sam Taylor"></div>
+                <div><label class="field-label" for="b1m-p">Phone number</label><input class="field" id="b1m-p" value="0412 345 678"></div>
+              </div>
+            </div>
+            <div class="card p20" style="--control-fill:var(--bone)">
+              <h3 class="t-bd-sm sb c-ink mb4">Trade account</h3>
+              <p class="t-cap c-body mb16">Trade customers get better prices across the site — while you configure, not just on the quote we send back. Add your ABN and we'll check it against the Australian Business Register.</p>
+              <div class="col g12">
+                <div><label class="field-label" for="b1m-bn">Business name</label><input class="field" id="b1m-bn" placeholder="ABC Constructions"></div>
+                <div><label class="field-label" for="b1m-abn">ABN</label><input class="field mono" id="b1m-abn" placeholder="00 000 000 000" inputmode="numeric"></div>
+                <div><span class="field-label">Builder or tradie?</span><div class="seg"><label><span class="dot"></span>Builder</label><label><span class="dot"></span>Tradie</label></div></div>
+              </div>
+              <span class="btn btn-md b-sage mt16" style="width:100%;justify-content:center">Apply for trade pricing</span>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>The ABN stops being a free-text profile field</b>
+      <p>Today anyone can type anything into ABN and press Save. After this it is only ever submitted <b>as an application</b>, and once verified it is a read-only row here (AC-P2-11). The "Save changes" button below still saves name and phone; it no longer has an ABN to save.</p>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag b">State</span> Application pending · <span class="tag g">State</span> Verified · <span class="tag">State</span> Verified + a newer application pending</h3>
+    <p>Three cards, same slot. The third is the state a single status field cannot express — and it is not exotic: it is what a tradie who changes entity or trading name looks like the moment they tell us.</p>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Card · pending</span><span>trade.pending</span></div>
+        <div class="screen"><div class="mkt p24">
+          <div class="card p20" style="max-width:420px">
+            <div class="row jb ac mb12"><h3 class="t-bd-sm sb c-ink">Trade account</h3><span class="pill p-work"><svg class="ic ic-12" aria-hidden="true"><use href="#i-clock"/></svg>Under review</span></div>
+            <p class="t-cap c-body mb16">We're checking the details you sent. We'll email you when it's done — your account works as normal in the meantime.</p>
+            <div class="col g8">
+              <div class="readonly"><span class="t-cap c-quiet">Business</span><span>Buildright Constructions</span></div>
+              <div class="readonly"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
+              <div class="readonly"><span class="t-cap c-quiet">Sent</span><span>19 August 2026</span></div>
+            </div>
+            <p class="helptext" style="margin-top:12px">You can send new details once this one's been looked at.</p>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="dev half">
+        <div class="cap"><span>Card · verified</span><span>trade.verified</span></div>
+        <div class="screen"><div class="mkt p24">
+          <div class="card p20" style="--control-fill:var(--bone);max-width:420px">
+            <div class="row jb ac mb12"><h3 class="t-bd-sm sb c-ink">Trade account</h3><span class="pill p-pos"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Active</span></div>
+            <p class="t-cap c-body mb16">Trade pricing applies to your account.</p>
+            <div class="col g8 mb12">
+              <div class="readonly"><span class="t-cap c-quiet">Business</span><span>Buildright Constructions</span></div>
+              <div class="readonly"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
+            </div>
+            <div class="mb12"><span class="field-label">Builder or tradie?</span><div class="seg"><label><span class="dot"></span>Builder</label><label class="on"><span class="dot"></span>Tradie</label></div></div>
+            <p class="t-cap c-body">Changed ABN or trading name? <span class="linkbtn">Send us the new details</span> — your trade pricing stays while we check them.</p>
+            <div class="grouprule">
+              <p class="t-label c-quiet mb8">History</p>
+              <div class="histrow"><span class="d">2 Aug 2026</span><span>Trade pricing approved</span></div>
+              <div class="histrow"><span class="d">28 Jul 2026</span><span>Not approved</span></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="dev half">
+        <div class="cap"><span>Card · verified AND pending</span><span>E-P2-6</span></div>
+        <div class="screen"><div class="mkt p24">
+          <div class="card p20" style="max-width:420px">
+            <div class="row jb ac mb12"><h3 class="t-bd-sm sb c-ink">Trade account</h3><span class="pill p-pos"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Active</span></div>
+            <p class="t-cap c-body mb12">Trade pricing applies to your account.</p>
+            <div class="col g8 mb16">
+              <div class="readonly"><span class="t-cap c-quiet">Business</span><span>Buildright Constructions</span></div>
+              <div class="readonly"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
+            </div>
+            <div class="outcome work">
+              <svg class="ic" aria-hidden="true" style="margin-top:3px"><use href="#i-clock"/></svg>
+              <div>
+                <h4>New details under review</h4>
+                <p>We're checking ABN 29 002 589 460 for Buildright Group Pty Ltd, sent 19 August 2026. <b>Your trade pricing is unaffected while we do</b> — nothing changes on your account unless we tell you.</p>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Two facts, two lines, no invented word</b>
+      <p>The card never collapses this into one status. The standing grant renders as it always does — <b>Active</b>, with the verified ABN — and the new application renders beneath it as its own block. No "re-verifying", no "pending renewal", no greyed-out Active pill: nothing about the customer's pricing is in doubt, and the screen must not suggest it is.</p>
+      <p>The <b>history outline</b> (AC-P2-13) is date + outcome and nothing else. No reasons, no ABNs of past attempts, no staff names — that detail is ops-only.</p>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag r">State</span> Rejected · <span class="tag r">State</span> Revoked</h3>
+    <p>Both say plainly what happened, neither blames, and both make the next move obvious. Neither is styled as an error: a private account is a perfectly good account, and the screen must not imply the person has lost something they had.</p>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Card · rejected</span><span>account fully intact</span></div>
+        <div class="screen"><div class="mkt p24">
+          <div class="card p20" style="max-width:420px">
+            <div class="row jb ac mb12"><h3 class="t-bd-sm sb c-ink">Trade account</h3><span class="pill p-mute">Not approved</span></div>
+            <div class="outcome mute mb16">
+              <svg class="ic" aria-hidden="true" style="margin-top:3px"><use href="#i-alert"/></svg>
+              <div>
+                <h4>We couldn't set up trade pricing from those details</h4>
+                <p>Your account still works exactly as before — you can price jobs, submit them, track them and use Refer &amp; earn. You're welcome to try again with updated details, or reply to our email and we'll help.</p>
+              </div>
+            </div>
+            <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Try again with new details</span>
+            <div class="grouprule">
+              <p class="t-label c-quiet mb8">History</p>
+              <div class="histrow"><span class="d">19 Aug 2026</span><span>Not approved</span></div>
+              <div class="histrow"><span class="d">12 Aug 2026</span><span>Not approved</span></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="dev half">
+        <div class="cap"><span>Card · revoked</span><span>ops removed trade status</span></div>
+        <div class="screen"><div class="mkt p24">
+          <div class="card p20" style="max-width:420px">
+            <div class="row jb ac mb12"><h3 class="t-bd-sm sb c-ink">Trade account</h3><span class="pill p-mute">Not active</span></div>
+            <div class="outcome mute mb16">
+              <svg class="ic" aria-hidden="true" style="margin-top:3px"><use href="#i-alert"/></svg>
+              <div>
+                <h4>Trade pricing no longer applies</h4>
+                <p>You're seeing our standard prices from now on. Everything else on your account is unchanged. If you think that's a mistake, <span class="linkbtn">get in touch</span> and we'll sort it out.</p>
+              </div>
+            </div>
+            <span class="btn btn-md b-outline" style="width:100%;justify-content:center">Apply again</span>
+            <div class="grouprule">
+              <p class="t-label c-quiet mb8">History</p>
+              <div class="histrow"><span class="d">19 Aug 2026</span><span>Trade pricing removed</span></div>
+              <div class="histrow"><span class="d">2 Aug 2026</span><span>Trade pricing approved</span></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="flag">
+      <b>Never name the reason, never name the other holder</b>
+      <p>A rejection screen and a rejection email say only that it didn't work out. They never say which check failed, and a duplicate-ABN rejection <b>never discloses that another account holds that ABN</b> (AC-P2-44). If ops needs to explain a specific case, they do it by replying to the person — a human decision, not a rendered field.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 4 -->
+<section class="surface" id="s4">
+  <div class="shead">
+    <div class="n">Surface 4 · Door (c) — the optional field</div>
+    <h2>The submit gate gains one optional question, and no third stage</h2>
+    <p>Inside Phase 1's existing details stage, below everything required, sits an optional ABN. Empty, it changes nothing at all: same one press, same caption, same Phase 1 screen. Filled, it never delays the submission — the quote goes, and the checking happens after. <b>There is no builder/tradie control here</b> (owner ruling Q5).</p>
+    <div class="path">src/components/QuoteReviewSubmit.tsx · details stage · rendered only when the account is neither verified nor pending (AC-P2-19)</div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">State</span> Optional ABN, left empty — Phase 1 behaviour, untouched</h3>
+    <p>An empty ABN never disables Submit and never appears in the "Still needed:" caption. The group sits last, after delivery, so nothing optional interrupts the run of required fields.</p>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop · content column</span><span>details stage · ABN empty</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel ctx">
+            <div class="slabel"><svg class="mark10" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" aria-hidden="true"><use href="#i-mark"/></svg><span>Your quote</span></div>
+            <div class="totrow"><span class="k">Windows and doors</span><span class="v">$5,280.00</span></div>
+            <div class="totrow"><span class="k">Delivery to 3072</span><span class="v">$340.00</span></div>
+            <div class="totrow big"><span class="k">Project total</span><span class="v">$5,620.00 inc GST</span></div>
+          </div>
+          <div class="qpanel live">
+            <div class="row jb ab mb16"><h2 class="t-hd2 c-ink">Your details</h2><span class="t-cap c-sagei row g4"><svg class="ic ic-13" aria-hidden="true"><use href="#i-check"/></svg>From your account — edit if anything's changed.</span></div>
+            <div class="grid2 mb12">
+              <div><label class="field-label" for="c1-n">Full name</label><input class="field" id="c1-n" value="Sam Taylor"></div>
+              <div><label class="field-label" for="c1-p">Phone</label><input class="field" id="c1-p" value="0412 345 678"></div>
+            </div>
+            <div class="readonly mb16"><span>sam@buildright.com.au</span><span class="chip ch-sage"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Verified</span></div>
+            <p class="t-label c-quiet mb8">Your address</p>
+            <div class="mb12"><label class="field-label" for="c1-a1">Street address</label><input class="field" id="c1-a1" value="12 Bridge Street"></div>
+            <div class="grid3 mb16">
+              <div><label class="field-label" for="c1-sb">Suburb</label><input class="field" id="c1-sb" value="Preston"></div>
+              <div><label class="field-label" for="c1-st">State</label><select class="field" id="c1-st"><option>VIC</option></select></div>
+              <div><label class="field-label" for="c1-pc">Postcode</label><input class="field" id="c1-pc" value="3072"></div>
+            </div>
+            <p class="t-label c-quiet mb4">Delivery for this project</p>
+            <p class="t-cap c-body mb12">Where these windows and doors go — usually a site, not an office. We don't assume it, so it starts blank each time.</p>
+            <div class="grid2 mb16">
+              <div><label class="field-label" for="c1-ds">Delivery suburb</label><input class="field" id="c1-ds" value="Craigieburn"></div>
+              <div><label class="field-label" for="c1-dp">Delivery postcode</label><input class="field" id="c1-dp" value="3064"></div>
+            </div>
+            <div class="grouprule">
+              <p class="t-label c-quiet mb4">Your business (optional)</p>
+              <p class="t-cap c-body mb12" style="max-width:56ch">Got an ABN? Add it and we'll check whether you qualify for trade pricing — better prices on everything you configure from then on. It won't hold up this submission.</p>
+              <div style="max-width:260px"><label class="field-label" for="c1-abn">ABN (optional)</label><input class="field mono" id="c1-abn" placeholder="00 000 000 000" inputmode="numeric"></div>
+            </div>
+          </div>
+          <div class="submitfoot">
+            <span class="btn btn-lg b-sage">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span>
+          </div>
+        </div></div></div>
+      </div>
+
+      <div class="dev half">
+        <div class="cap"><span>Desktop · business group only</span><span>ABN entered → business name appears</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel live">
+            <p class="t-label c-quiet mb4">Your business (optional)</p>
+            <p class="t-cap c-body mb12" style="max-width:56ch">Got an ABN? Add it and we'll check whether you qualify for trade pricing — better prices on everything you configure from then on. It won't hold up this submission.</p>
+            <div class="grid2">
+              <div><label class="field-label" for="c2-abn">ABN (optional)</label><input class="field mono focusring" id="c2-abn" value="51 824 753 556"></div>
+              <div><label class="field-label" for="c2-bn">Business name</label><input class="field" id="c2-bn" placeholder="ABC Constructions"><p class="helptext">Needed with an ABN.</p></div>
+            </div>
+          </div>
+          <div class="submitfoot">
+            <p class="t-cap c-body">Still needed: business name.</p>
+            <span class="btn btn-lg b-sage is-disabled">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span>
+          </div>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Why the business group sits last</b>
+      <p>Everything above it is required; this is the only optional thing on the screen. Putting it between required groups would interrupt the one run of fields the customer has to complete, and would read as another demand. Last, under its own hairline rule, it reads as an offer.</p>
+      <p>The paired <b>Business name</b> field does not exist until the ABN field has something in it, and disappears again when it's cleared — the caption entry with it (AC-P2-15).</p>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag r">State</span> Malformed ABN — Submit disabled, and the caption says why</h3>
+    <p>Phase 1's rule is absolute: <b>a disabled Submit is never unexplained</b>. A checksum failure disables Submit, names the ABN in the caption, and shows the inline error. Clearing the field re-enables Submit instantly, with no round trip.</p>
+    <div class="frames">
+      <div class="dev mob">
+        <div class="cap"><span>Mobile · 375w</span><span>checksum failure</span></div>
+        <div class="screen mob"><div class="revpage"><div class="revwrap">
+          <div class="qpanel live">
+            <p class="t-label c-quiet mb4">Your business (optional)</p>
+            <p class="t-cap c-body mb12">Got an ABN? Add it and we'll check whether you qualify for trade pricing. It won't hold up this submission.</p>
+            <div class="col g12">
+              <div>
+                <label class="field-label" for="c3-abn">ABN (optional)</label>
+                <input class="field mono err" id="c3-abn" value="51 824 753 551" aria-invalid="true">
+                <p class="errtext"><svg class="ic ic-13" aria-hidden="true"><use href="#i-alert"/></svg>That ABN doesn't look right. Check the 11 digits, or clear the field to submit without it.</p>
+              </div>
+              <div><label class="field-label" for="c3-bn">Business name</label><input class="field" id="c3-bn" value="Buildright Constructions"></div>
+            </div>
+          </div>
+          <p class="t-cap c-body mb12 tc">Still needed: ABN.</p>
+          <span class="btn btn-lg b-sage is-disabled" style="width:100%;justify-content:center">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span>
+        </div></div></div>
+      </div>
+
+      <div class="dev mob">
+        <div class="cap"><span>Mobile · 375w</span><span>verified or pending account</span></div>
+        <div class="screen mob"><div class="revpage"><div class="revwrap">
+          <div class="qpanel live">
+            <p class="t-label c-quiet mb4">Delivery for this project</p>
+            <p class="t-cap c-body mb12">Where these windows and doors go — usually a site, not an office.</p>
+            <div class="col g12">
+              <div><label class="field-label" for="c4-ds">Delivery suburb</label><input class="field" id="c4-ds" value="Craigieburn"></div>
+              <div><label class="field-label" for="c4-dp">Delivery postcode</label><input class="field" id="c4-dp" value="3064"></div>
+            </div>
+          </div>
+          <span class="btn btn-lg b-sage" style="width:100%;justify-content:center">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Nothing is asked twice</b>
+      <p>The right-hand frame is the same screen for an account that is already trade-verified <em>or</em> has an application pending: <b>the business group is not rendered at all</b> — not disabled, not greyed, absent (AC-P2-19). The details stage ends at delivery, exactly as Phase 1 shipped it.</p>
+      <p>The caption entry for a malformed ABN reads <b>"Still needed: ABN."</b> — the same caption machinery, the same sentence shape, one more entry. It is slightly odd English for a value that is present but wrong; the alternative was a second caption idiom on the same screen, which is worse. The inline error carries the actual instruction.</p>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag g">State</span> Confirmation — the submission is done, the ABN check is not</h3>
+    <p>One added line on Phase 1's existing confirmation screen, present only when an ABN went with the submission. It states no percentage, no timeframe, and <b>no promise that this quote will be repriced</b>.</p>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop · confirmation</span><span>submitted with an ABN</span></div>
+        <div class="screen"><div class="revpage" style="padding:40px 0">
+          <div style="max-width:420px;margin:0 auto;text-align:center;padding:0 24px">
+            <div style="width:56px;height:56px;border:1px solid rgba(90,122,106,.3);background:var(--sage-wash);display:grid;place-items:center;margin:0 auto 20px"><svg width="24" height="24" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" stroke-width="1.5" aria-hidden="true"><use href="#i-mark"/></svg></div>
+            <h2 class="t-hd2 c-ink mb8">Quote submitted</h2>
+            <p class="t-bd-sm c-body mb16">We've received your project and emailed a confirmation to <span class="c-ink">sam@buildright.com.au</span>. We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote with its reference. Expect a response within 1–2 business days.</p>
+            <div class="outcome work" style="text-align:left;margin-bottom:16px">
+              <svg class="ic" aria-hidden="true" style="margin-top:3px"><use href="#i-clock"/></svg>
+              <div><h4>We're checking your ABN</h4><p>We'll email you about your trade account separately. This quote isn't waiting on it.</p></div>
+            </div>
+            <p class="t-cap c-body mb16">No payment at this stage. Deposit only after you approve the reviewed quote.</p>
+            <div class="row g12 jc"><span class="btn btn-md b-sage">View status</span><span class="btn btn-md b-ghost">Back to home</span></div>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="dev half">
+        <div class="cap"><span>Desktop · confirmation</span><span>the ABN check couldn't be started</span></div>
+        <div class="screen"><div class="revpage" style="padding:40px 0">
+          <div style="max-width:420px;margin:0 auto;text-align:center;padding:0 24px">
+            <div style="width:56px;height:56px;border:1px solid rgba(90,122,106,.3);background:var(--sage-wash);display:grid;place-items:center;margin:0 auto 20px"><svg width="24" height="24" viewBox="0 0 20 20" fill="none" stroke="var(--sage)" stroke-width="1.5" aria-hidden="true"><use href="#i-mark"/></svg></div>
+            <h2 class="t-hd2 c-ink mb8">Quote submitted</h2>
+            <p class="t-bd-sm c-body mb16">We've received your project and emailed a confirmation to <span class="c-ink">sam@buildright.com.au</span>. We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote with its reference. Expect a response within 1–2 business days.</p>
+            <div class="outcome mute" style="text-align:left;margin-bottom:16px">
+              <svg class="ic" aria-hidden="true" style="margin-top:3px"><use href="#i-alert"/></svg>
+              <div><h4>We couldn't start the ABN check</h4><p>Your quote is safely submitted. You can add your ABN any time from <span class="linkbtn">your account</span>.</p></div>
+            </div>
+            <div class="row g12 jc"><span class="btn btn-md b-sage">View status</span><span class="btn btn-md b-ghost">Back to home</span></div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="flag">
+      <b>The one sentence that must not creep</b>
+      <p>"This quote isn't waiting on it" is the whole truth and the whole promise. It must never become "and we'll update your quote if it's approved" — ops prices a reviewed quote at the account's rate when they review it, and <b>nothing recalculates behind the customer's back</b> (P2-D4). A repricing promise here would be a promise the system does not keep.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 5 -->
+<section class="surface" id="s5">
+  <div class="shead">
+    <div class="n">Surface 5 · Ops console</div>
+    <h2>A queue that only ever holds judgment calls</h2>
+    <p>Clean passes never appear here — they were approved by the machine. What lands in this queue is a gmail sole trader, a name that didn't quite match, an ABN the register says is cancelled, an outage, or a second account claiming an ABN someone else already holds. Each arrives with the evidence already gathered, so a decision is a read and a click. <b>Any staff member with an assigned role can clear it</b> (owner ruling Q4) — not admins only.</p>
+    <div class="path">src/ops/OpsApp.tsx (dashboard count) · src/ops/Customers.tsx (queue + detail + 360) · GET /api/ops/trade/applications</div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">State</span> The count, visible without opening the queue</h3>
+    <div class="frames">
+      <div class="dev mid">
+        <div class="cap"><span>Desktop · dashboard tiles</span><span>3 waiting</span></div>
+        <div class="screen"><div style="background:var(--bone);padding:20px">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+            <div class="opstile"><p class="l">Projects</p><p class="n">18</p></div>
+            <div class="opstile"><p class="l">Awaiting review</p><p class="n">4</p></div>
+            <div class="opstile due"><p class="l">Trade applications</p><p class="n">3</p></div>
+            <div class="opstile"><p class="l">Enquiries</p><p class="n">2</p></div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">State</span> The queue · populated, and empty</h3>
+    <p>It lives in the Customers area, above the customer list, because a trade application is a fact about a customer. Density over polish: one row per application, the reasons readable without opening anything.</p>
+    <div class="frames">
+      <div class="dev wide">
+        <div class="cap"><span>Desktop · ops console 1320w</span><span>Customers → Trade applications</span></div>
+        <div class="screen"><div class="ops-shell" style="min-height:460px">
+          <div class="ops-rail">
+            <div style="padding:16px 20px;color:#fff" class="t-bd-sm sb">OpenFrame <span class="c-w40">Ops</span></div>
+            <div class="ops-nav">Dashboard</div>
+            <div class="ops-nav">Projects</div>
+            <div class="ops-nav on">Customers</div>
+            <div class="ops-nav">Enquiries</div>
+            <div class="ops-nav">Pricing</div>
+            <div class="ops-nav">Referrals</div>
+            <div class="ops-nav">Audit</div>
+          </div>
+          <div class="grow">
+            <div class="ops-hdr"><span class="t-bd-sm sb" style="color:var(--ops)">Customers</span><span class="mt-auto"></span></div>
+            <div style="padding:20px 32px">
+              <div class="row g16 mb12" style="border-bottom:1px solid rgba(0,0,0,.08)">
+                <span class="ops-tab on">Trade applications <span class="chip ch-warn" style="margin-left:6px">3</span></span>
+                <span class="ops-tab">All customers</span>
+              </div>
+              <div class="card" style="background:#fff">
+                <table class="ops">
+                  <thead><tr><th>Applicant</th><th>Business</th><th>ABN</th><th>Why it queued</th><th>From</th><th>Applied</th><th></th></tr></thead>
+                  <tbody>
+                    <tr>
+                      <td><span class="md">Sam Taylor</span><span class="block c-quiet t-cap">sam@gmail.com</span></td>
+                      <td>Buildright Constructions<span class="block c-quiet t-cap">Tradie</span></td>
+                      <td class="fdata">51 824 753 556</td>
+                      <td><span class="chip ch-warn">Free-mail address</span></td>
+                      <td class="c-body">Trade page</td>
+                      <td class="c-body">19 Aug 2026</td>
+                      <td class="tr"><span class="ops-btn sec">Open</span></td>
+                    </tr>
+                    <tr>
+                      <td><span class="md">Dani Okafor</span><span class="block c-quiet t-cap">dani@okaforglazing.com.au</span></td>
+                      <td>Okafor Glazing Group<span class="block c-quiet t-cap">Builder</span></td>
+                      <td class="fdata">29 002 589 460</td>
+                      <td><span class="chip ch-warn">Name doesn't match</span> <span class="chip ch-info">Also verified elsewhere</span></td>
+                      <td class="c-body">Account page</td>
+                      <td class="c-body">19 Aug 2026</td>
+                      <td class="tr"><span class="ops-btn sec">Open</span></td>
+                    </tr>
+                    <tr>
+                      <td><span class="md">Chris Nguyen</span><span class="block c-quiet t-cap">chris@nguyenwindows.com.au</span></td>
+                      <td>Nguyen Windows<span class="block c-quiet t-cap">Not stated</span></td>
+                      <td class="fdata">12 345 678 901</td>
+                      <td><span class="chip ch-mute">Register unavailable</span></td>
+                      <td class="c-body">Submit gate</td>
+                      <td class="c-body">18 Aug 2026</td>
+                      <td class="tr"><span class="ops-btn sec">Open</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="dev mid">
+        <div class="cap"><span>Desktop · empty queue</span><span>nothing waiting</span></div>
+        <div class="screen"><div style="background:var(--bone);padding:24px 32px">
+          <div class="ops-empty">
+            <p class="t-bd-sm md" style="color:var(--ops);margin-bottom:4px">Nothing waiting</p>
+            <p>Applications that pass every check are approved automatically and never appear here. This queue only holds the ones that need a person.</p>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Reasons in the list, evidence in the detail</b>
+      <p>Every reason an application queued is shown as its own chip, because a decision often turns on the combination ("name mismatch <em>and</em> already verified elsewhere" is a different call from either alone). "Not stated" is what a gate-originated application shows for builder/tradie — the gate never asks (Q5), and the absence is stated rather than shown as an empty cell.</p>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">State</span> One application · what the machine saw</h3>
+    <p>The frozen ABR snapshot as it was at lookup time, each criterion marked pass / fail / not evaluated, plus the other holder of a duplicate ABN with a link to their record. Nothing here is re-fetched: it is evidence, not a live view.</p>
+    <div class="frames">
+      <div class="dev mid">
+        <div class="cap"><span>Desktop · application detail</span><span>duplicate + name mismatch</span></div>
+        <div class="screen"><div style="background:var(--bone);padding:20px 28px">
+          <p class="t-cap c-body row g4 mb12"><svg class="ic ic-13" aria-hidden="true"><use href="#i-chevron-left"/></svg>Back to trade applications</p>
+          <div class="card p20 mb12" style="background:#fff">
+            <div class="row jb as mb16">
+              <div>
+                <p class="t-hd3" style="color:var(--ops)">Okafor Glazing Group</p>
+                <p class="t-bd-sm c-body">Dani Okafor · dani@okaforglazing.com.au · <span class="linkbtn">Open customer record</span></p>
+              </div>
+              <span class="pill p-work"><svg class="ic ic-12" aria-hidden="true"><use href="#i-clock"/></svg>Awaiting decision</span>
+            </div>
+            <div class="evid"><span class="k">Submitted ABN</span><span class="v fdata">29 002 589 460</span></div>
+            <div class="evid"><span class="k">Submitted name</span><span class="v">Okafor Glazing Group</span></div>
+            <div class="evid"><span class="k">Builder / tradie</span><span class="v">Builder (self-declared)</span></div>
+            <div class="evid"><span class="k">Applied from</span><span class="v">Account page · 19 Aug 2026, 9:14am</span></div>
+          </div>
+
+          <div class="card p20 mb12" style="background:#fff">
+            <p class="t-label c-quiet mb12">What the register said · checked 19 Aug 2026, 9:14am</p>
+            <div class="evid"><span class="k">Entity name</span><span class="v">OKAFOR GLAZING PTY LTD</span></div>
+            <div class="evid"><span class="k">Entity status</span><span class="v">Active since 1 Jul 2014</span></div>
+            <div class="evid"><span class="k">Entity type</span><span class="v">Australian Private Company</span></div>
+            <div class="evid"><span class="k">Trading names</span><span class="v">OKAFOR GLAZING · OG GLASS</span></div>
+            <div class="grouprule">
+              <p class="t-label c-quiet mb8">The three checks</p>
+              <div class="crit"><span class="mk p">✓</span>ABN is valid and active</div>
+              <div class="crit"><span class="mk f">✕</span>Submitted name matches the register — "Okafor Glazing Group" vs entity and 2 trading names</div>
+              <div class="crit"><span class="mk p">✓</span>Email domain plausibly matches the business — okaforglazing.com.au</div>
+              <div class="crit"><span class="mk f">✕</span>ABN not verified on another account — <span class="linkbtn" style="margin-left:4px">Priya Raman · priya@ogglass.com.au</span></div>
+            </div>
+          </div>
+
+          <div class="card p20" style="background:#fff">
+            <label class="field-label" for="d1-r">Decision note</label>
+            <input class="field" id="d1-r" placeholder="Why you're approving or rejecting — the customer never sees this.">
+            <p class="helptext mb16">Required to reject. Optional to approve.</p>
+            <div class="row g8">
+              <span class="ops-btn pri">Approve trade pricing</span>
+              <span class="ops-btn sec">Reject</span>
+              <span class="mt-auto"></span>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Approve is not "verified" — it is a person's decision, recorded as one</b>
+      <p>Approving writes the ABN, business name and label onto the account, grants the trade rate, records who decided and when, and sends the customer the approval email. Rejecting writes <b>nothing</b> to the account: the customer keeps working exactly as before. Neither touches a stored price, quote line or order.</p>
+      <p>If someone else already decided this one, the buttons return a plain <b>"Someone already decided this — reload to see the outcome."</b> rather than silently doing it twice.</p>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">State</span> Customer record · trade block, history, and revoke</h3>
+    <p>The 360 gains a trade block: status, ABN, where it came from, the account's current rate (read-only — ops is not a customer surface), and every application and decision in order. Grandfathered rows read as grandfathered, and an account with no ABN says so.</p>
+    <div class="frames">
+      <div class="dev mid">
+        <div class="cap"><span>Desktop · customer 360</span><span>verified account</span></div>
+        <div class="screen"><div style="background:var(--bone);padding:20px 28px">
+          <div class="card p20 mb12" style="background:#fff">
+            <div class="row jb as mb16">
+              <div><p class="t-hd3" style="color:var(--ops)">Sam Taylor</p><p class="t-bd-sm c-body">sam@buildright.com.au · 0412 345 678</p></div>
+              <span class="pill p-pos"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Trade · Active</span>
+            </div>
+            <div class="evid"><span class="k">Business</span><span class="v">Buildright Constructions · Tradie</span></div>
+            <div class="evid"><span class="k">ABN</span><span class="v fdata">51 824 753 556</span></div>
+            <div class="evid"><span class="k">Trade since</span><span class="v">2 Aug 2026 · approved automatically</span></div>
+            <div class="evid"><span class="k">Account rate</span><span class="v fdata">5%</span></div>
+          </div>
+          <div class="card p20 mb12" style="background:#fff">
+            <p class="t-label c-quiet mb12">Trade application history</p>
+            <div class="evid"><span class="k">2 Aug 2026</span><span class="v"><span class="chip ch-sage">Approved</span> automatically · ABN 51 824 753 556 · Buildright Constructions</span></div>
+            <div class="evid"><span class="k">28 Jul 2026</span><span class="v"><span class="chip ch-mute">Rejected</span> by Jo Fraser · ABN 51 824 753 556 · "Business name on the application didn't match; asked customer to resend."</span></div>
+          </div>
+          <div class="card p20" style="background:#fff">
+            <p class="t-bd-sm md mb4" style="color:var(--ops)">Remove trade status</p>
+            <p class="t-cap c-body mb12" style="max-width:64ch">The account goes back to standard prices immediately and the customer is emailed. Nothing already quoted or ordered changes.</p>
+            <div class="row g8 ac">
+              <input class="field" placeholder="Reason — recorded against the account" style="max-width:360px">
+              <span class="ops-btn sec" style="border-color:rgba(192,57,43,.4);color:var(--destructive)">Remove trade status</span>
+            </div>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="dev mid">
+        <div class="cap"><span>Desktop · customer 360</span><span>grandfathered, no ABN on file</span></div>
+        <div class="screen"><div style="background:var(--bone);padding:20px 28px">
+          <div class="card p20 mb12" style="background:#fff">
+            <div class="row jb as mb16">
+              <div><p class="t-hd3" style="color:var(--ops)">Sarah Northside</p><p class="t-bd-sm c-body">sarah@northsidebuild.com.au</p></div>
+              <span class="pill p-pos"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Trade · Active</span>
+            </div>
+            <div class="evid"><span class="k">Business</span><span class="v c-quiet">Not stated</span></div>
+            <div class="evid"><span class="k">ABN</span><span class="v c-quiet">No ABN on file</span></div>
+            <div class="evid"><span class="k">Trade since</span><span class="v">19 Aug 2026 · granted by owner decision (grandfathered), not checked against the register</span></div>
+            <div class="evid"><span class="k">Account rate</span><span class="v fdata">5%</span></div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>The rate is visible here and only here</b>
+      <p>Ops is not a customer surface, so the account's percentage is shown plainly — it is the number staff need when they price a reviewed quote. It is <b>read-only</b>: this phase grants and revokes the rate; a negotiated rate is still set by hand in the database (spec §2.2). No editor, no discount line, no trade toggle on the quote screen — that tension is deferred to its own ticket.</p>
+      <p>"Granted by owner decision (grandfathered), not checked against the register" is the honest wording for the three seeded accounts. It must not read as if a machine verified them.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 6 -->
+<section class="surface" id="s6">
+  <div class="shead">
+    <div class="n">Surface 6 · The four emails</div>
+    <h2>What the customer reads when nobody is looking at a screen</h2>
+    <p>All four are authored in Sanity Studio; the copy below is the wording that ships in the Worker as a fallback, so it is what customers read until the documents exist. <b>None names a percentage. None names a timeframe. None mentions another account.</b></p>
+    <div class="path">templateKeys (dot-free, snake_case): trade_ack · trade_approved · trade_rejected · trade_revoked</div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag b">trade_ack</span> An application queued for review</h3>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Email · 680w</span><span>fallback copy</span></div>
+        <div class="screen"><div class="mail">
+          <div class="mailcard">
+            <div class="mailhdr"><p class="mailsub">We're checking your trade account details</p><p class="mailfrom">AMJ Trade Direct &lt;hello@amjtradedirect.com.au&gt;</p></div>
+            <div class="mailbody">
+              <p>Thanks — we've got the ABN and business details for <b>Buildright Constructions</b>.</p>
+              <p>Someone here is checking them and we'll be in touch.</p>
+              <p>Your account works as normal in the meantime: you can price jobs, submit them and track them.</p>
+            </div>
+            <div class="mailfoot">AMJ Trade Direct · Reply to this email and a person will read it.</div>
+          </div>
+        </div></div>
+      </div>
+      <div class="dev half">
+        <div class="cap"><span>Email · 680w</span><span>fallback copy</span></div>
+        <div class="screen"><div class="mail">
+          <div class="mailcard">
+            <div class="mailhdr"><p class="mailsub">Your trade account is active</p><p class="mailfrom">AMJ Trade Direct &lt;hello@amjtradedirect.com.au&gt;</p></div>
+            <div class="mailbody">
+              <p>Your trade account is active.</p>
+              <p>Trade pricing applies to your account from now on — when you're signed in, the prices you see are already your prices.</p>
+              <p>Anything already with us for review will be priced by our team.</p>
+            </div>
+            <div class="mailfoot">AMJ Trade Direct · Reply to this email and a person will read it.</div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="note"><b>trade_approved</b><p>Fires on approval whether the machine or a person made it — the customer cannot tell the difference and does not need to. No percentage; no "you save"; no claim that an existing quote will be repriced.</p></div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag r">trade_rejected</span> · <span class="tag r">trade_revoked</span></h3>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Email · 680w</span><span>fallback copy</span></div>
+        <div class="screen"><div class="mail">
+          <div class="mailcard">
+            <div class="mailhdr"><p class="mailsub">About your trade account application</p><p class="mailfrom">AMJ Trade Direct &lt;hello@amjtradedirect.com.au&gt;</p></div>
+            <div class="mailbody">
+              <p>We weren't able to set up a trade account from the details you sent.</p>
+              <p>Your account still works exactly as before — you can price jobs, submit them and track them.</p>
+              <p>You're welcome to apply again with updated details, or just reply to this email and we'll help.</p>
+            </div>
+            <div class="mailfoot">AMJ Trade Direct · Reply to this email and a person will read it.</div>
+          </div>
+        </div></div>
+      </div>
+      <div class="dev half">
+        <div class="cap"><span>Email · 680w</span><span>fallback copy</span></div>
+        <div class="screen"><div class="mail">
+          <div class="mailcard">
+            <div class="mailhdr"><p class="mailsub">A change to your trade account</p><p class="mailfrom">AMJ Trade Direct &lt;hello@amjtradedirect.com.au&gt;</p></div>
+            <div class="mailbody">
+              <p>Trade pricing no longer applies to your account, so the prices you see from now on are our standard prices.</p>
+              <p>Everything else on your account is unchanged.</p>
+              <p>If you think that's a mistake, reply to this email and we'll sort it out.</p>
+            </div>
+            <div class="mailfoot">AMJ Trade Direct · Reply to this email and a person will read it.</div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>No greeting line, on purpose</b>
+      <p>Accounts can exist with no name on file, and the template engine renders a missing variable as an empty string — so <code>Hi {name},</code> becomes <code>Hi ,</code> for exactly the customers least likely to forgive it. None of the four opens with a greeting; the only variable used in a body is <code>{business}</code>, and only in the one email where a business name is guaranteed to exist.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════ APPENDIX -->
+<section class="surface" id="appendix">
+  <div class="shead">
+    <div class="n">Appendix</div>
+    <h2>What must not appear, and what changed since Phase 1</h2>
+  </div>
+
+  <div class="state">
+    <h3>Absence assertions — things a test proves, not things a reviewer remembers</h3>
+    <div class="rules" style="margin-top:8px">
+      <div><h4>No percentage, anywhere customer-facing</h4><p>Not on the trade page, the account card, the gate, the confirmation, or any of the four emails — and no pair of figures from which one could be derived by subtraction. The ops console is the single exception and is not a customer surface.</p></div>
+      <div><h4>No timeframe</h4><p>No "1 business day", no "usually", no date, no progress bar implying elapsed time. Not in UI, not in email.</p></div>
+      <div><h4>No named criterion</h4><p>No screen or email tells the customer which of the checks needed a human. The two customer-facing outcomes are byte-identical across every queue reason.</p></div>
+      <div><h4>No builder/tradie control at the submit gate</h4><p>The gate asks for ABN and business name only. The label is asked on the trade page and the account page, and reads "Not stated" for ops.</p></div>
+      <div><h4>No referral-code field</h4><p>Nothing this phase adds carries one, and no endpoint it adds accepts one.</p></div>
+      <div><h4>No repricing promise</h4><p>Nothing says a submitted quote will be updated. Ops prices a reviewed quote at the account's current rate; nothing recalculates on its own.</p></div>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3>Phase 1's AC-41 silence ends here, by design</h3>
+    <p>Phase 1 asserted that no Phase-1 surface mentions trade pricing at all. Phase 2 deliberately adds that copy to <b>exactly four surfaces</b>: <code>/trade-account</code>, the account page's trade card, the submit gate's optional-ABN helper text, and the outcome emails. Everywhere else — home page, nav, quote builder, review screen pricing panels — stays silent; the shop window is Phase 3's job. The Phase-1 Playwright assertions covering these four are updated openly, citing the Phase-2 spec. <b>A tester finding trade copy on these four surfaces is recording conformance, not a regression.</b></p>
+  </div>
+
+  <div class="state">
+    <h3>Where the words live</h3>
+    <p>Every string in these frames is final copy and is repeated, with its focus order, ARIA behaviour, loading and disabled states, in the interaction spec appended to the architect's design as <b>§18</b> of <code>docs/specs/user-registration-phase-2-design.md</code>. The mock is the picture; that section is the contract.</p>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

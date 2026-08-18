@@ -1236,3 +1236,428 @@ decision ledger; everything this design added on its own authority is technical,
 gains nothing server-side) · `organisation`/`membership` (no reference anywhere new) ·
 `scripts/db/seed.sql` · `migrations/0001-0053` · `api.test.mjs:129-150` ·
 `customer.spec.ts:383-409` · `PATCH /api/ops/customers/:id` semantics.
+
+---
+
+# 18. Interaction spec (ux-designer, 2026-08-19)
+
+Appended after the architect's design; **nothing above is edited**. Companion mock:
+**`docs/mocks/registration-phase-2-trade-verification.html`** (self-contained, no external
+requests, desktop + 375px, every state below as a labelled frame). The mock is the picture;
+this section is the contract.
+
+Every string in **bold quotes** is final copy. `ASSUMED:` tags mark choices made without the
+owner, vetoable at any later gate. This section governs design §10 track (b), steps 9–15.
+
+**Inherited without restatement:** Phase 1 design §16 (the gate's one-screen model, its stages,
+its "a disabled Submit is never unexplained" rule, its focus/keyboard/a11y rules §16.9 and its
+responsive rules §16.10). Everything here is an addition to that contract, never a replacement.
+
+## 18.0 The rules this phase's copy obeys (all owner rulings)
+
+1. **No percentage on any customer surface**, and no pair of figures from which one could be
+   derived by subtraction. Trade pricing is described as **better prices** — never as a
+   discount, never with a worked example. The ops console is the one exception and is not a
+   customer surface.
+2. **No timeframe, anywhere** — not in UI, not in email. "We'll be in touch" / "we'll email you
+   when it's done" is the strongest promise permitted (Q2).
+3. **The customer is never told which criterion failed** (`ASSUMED: P2-A3`). Two applications
+   queued for different reasons produce identical screens and identical emails.
+4. **No builder/tradie control at the submit gate** (Q5). It appears on `/trade-account` and the
+   account page only.
+5. **No repricing promise.** Nothing says a submitted quote will be updated.
+6. **Phase 1's AC-41 silence ends here by design.** Trade copy appears on exactly four surfaces
+   (AC-P2-48). A tester finding it there is recording conformance, not a regression.
+
+## 18.1 The five customer states, and the two facts they are rendered from
+
+The client never stores a status word. It renders `me().trade`, which carries two independent
+facts — a standing grant and a pending application — plus the history outline:
+
+| Rendered state | Condition | Where it appears |
+|---|---|---|
+| **None** | no grant, no pending, no history | trade page, account card, gate (field offered) |
+| **Under review** | `trade.pending != null`, no grant | trade page, account card, gate (field withheld) |
+| **Active** | grant present, no pending | trade page, account card, gate (field withheld) |
+| **Active + under review** (E-P2-6) | grant present **and** `trade.pending != null` | account card, trade page |
+| **Not approved** / **Not active** | no grant; history's most recent entry is `rejected` / `revoked` | account card, trade page |
+
+**Active + under review renders both blocks, never a merged word.** No "re-verifying", no
+greyed-out Active pill, no third status label. The customer's pricing is not in doubt and the
+screen must not suggest it is.
+
+## 18.2 Door (a) — `/trade-account`
+
+### 18.2.1 Page structure
+
+Hero and benefits column unchanged except for one added benefit line, first in the list:
+**"Better prices, everywhere"** / **"Trade pricing applies while you configure, not just on the
+quote we send back."** The hero sub-line gains "better prices" in its existing list:
+**"Upload every schedule you're sitting on and get them priced the same day. Trade accounts get
+better prices, priority review, saved details, and a name to call."**
+
+The right-hand card (today the mock form, `App.tsx:1690-1704`) is **deleted** and replaced by
+`TradeApplicationCard source="trade_page"`.
+
+### 18.2.2 Anonymous — the cold signup card
+
+Order: **business first, account second.** The person came for a trade account; the plumbing is
+secondary. It is also mechanically required — no unauthenticated endpoint accepts an ABN — so
+the entered values are held in component state and posted the moment `onAuthed` fires.
+
+| Slot | Copy |
+|---|---|
+| Heading (h2, `t-hd3`) | **"Open your trade account"** |
+| Sub | **"We check your ABN against the Australian Business Register. If it all checks out, trade pricing is on your account straight away."** |
+| Group label 1 | **"Your business"** |
+| Field 1 | label **"Business name"**, placeholder **"ABC Constructions"**, helper **"As it's registered against the ABN."**, max 200, `autoComplete="organization"` |
+| Field 2 | label **"ABN"**, placeholder **"00 000 000 000"**, helper **"11 digits. Spaces are fine."**, `inputMode="numeric"`, raw max 32 |
+| Field 3 | legend **"Builder or tradie?"**, two radios **"Builder"** / **"Tradie"**, **neither pre-selected**, helper **"Optional. It just tells us who we're working with."** |
+| Group label 2 | **"Your account"** |
+| Group 2 sub | **"We'll email you a 6-digit code — no password. If you already have an account, this signs you into it."** |
+| Email + Turnstile + button | Phase-1 `OtpSignIn`, unchanged: **"Email me a code"** → busy **"Sending…"**; Turnstile gating and its caption **"Complete the check above to continue."** unchanged |
+| Caption under the button | **"Your business details stay on this screen — we send them the moment you're signed in."** |
+
+Code step: Phase-1 copy verbatim (**"Enter your code"**, **"We sent a 6-digit code to {email}. It
+expires in 10 minutes."**, **"Verify & continue"** → **"Verifying…"**, **"Resend code"**,
+**"Use a different email"**). The reassurance slot Phase 1 uses for the quote carries instead:
+**"Your business details are still here — we send them for checking as soon as you're in."**
+Above the OTP block, the held values render as two read-only rows (business name, formatted ABN)
+each with a **"Held"** chip, so the person can see nothing was lost.
+
+**Sequence after `onAuthed`:**
+
+1. Session exists. The card immediately shows a working state: heading **"Checking your
+   details…"** with the Phase-1 spinner, no buttons. (Typical duration is one ABR round trip,
+   bounded at 5 s.)
+2. `applyForTrade({ abn, businessName, label, source: "trade_page" })`.
+3. `"verified"` → the Active panel (§18.4.1). `"under_review"` → the Under-review panel
+   (§18.4.2). Either way the card then calls `onTradeChanged()` and the app refetches `me()`.
+4. **Transient failure** (network, 5xx, 429): the entered values stay on screen, editable, with a
+   panel-level message and a **"Try again"** button — and the person **is signed in regardless**
+   (AC-P2-3). Copy: 5xx/network — **"We couldn't send your details just now. Nothing is lost —
+   try again."**; 429 — **"That's a few attempts in a short time. Give it a few minutes and try
+   again — you're signed in and your account works as normal."**
+
+### 18.2.3 Signed-in visitors on `/trade-account`
+
+- **Not verified, nothing pending:** the same card without the account group — heading
+  **"Open your trade account"**, business name pre-filled from `user.company`, primary button
+  **"Apply for trade pricing"** → busy **"Checking your details…"**. No second OTP.
+- **Verified:** no form. Heading **"Your trade account"**, pill **"Active"**, line **"Trade
+  pricing applies to your account. There's nothing more to do here."**, read-only Business and
+  ABN rows, then **"Changed ABN or trading name?"** + text button **"Send us the new details"**
+  + **"— your current trade pricing stays while we check them."**
+- **Pending / rejected / revoked:** the corresponding account-card panel (§18.3.3–18.3.5),
+  identical component, identical copy.
+
+## 18.3 Door (b) — the account page trade card
+
+`ProfilePage`'s **Business details** card (`App.tsx:1400-1407`) is replaced in place by
+`TradeApplicationCard source="profile"`. It keeps the same grid position (right column, beside
+Personal details) and the same card treatment. The page's **"Save changes"** button no longer
+has an ABN or company field to save; it saves name and phone as before, plus the builder/tradie
+label when the card is in its verified state.
+
+### 18.3.1 No ABN on file — the affordance (AC-P2-9)
+
+| Slot | Copy |
+|---|---|
+| Heading (h3, `t-bd-sm` semibold) | **"Trade account"** |
+| Sub | **"Trade customers get better prices across the site — while you configure, not just on the quote we send back. Add your ABN and we'll check it against the Australian Business Register."** |
+| Fields | Business name · ABN · Builder or tradie? — labels, placeholders and helpers exactly as §18.2.2 |
+| Button | **"Apply for trade pricing"** → busy **"Checking your details…"** |
+
+### 18.3.2 Verified (AC-P2-11)
+
+Pill **"Active"** (positive tone, tick + word). Line **"Trade pricing applies to your account."**
+Read-only rows: **"Business"**, **"ABN"** (formatted `51 824 753 556`). The builder/tradie
+segmented control stays **editable** here (owner ruling Q5) and saves through the page's
+existing Save changes button. **The ABN is not an editable field on this surface.** Business
+name is read-only too (`ASSUMED: P2-ARCH-5` — a change goes through a new application or ops).
+Footer line: **"Changed ABN or trading name?"** + **"Send us the new details"** +
+**"— your trade pricing stays while we check them."** Then the history outline (§18.6).
+
+### 18.3.3 Pending (AC-P2-12)
+
+Pill **"Under review"** (work tone, clock). Body **"We're checking the details you sent. We'll
+email you when it's done — your account works as normal in the meantime."** Read-only rows:
+Business, ABN, **"Sent"** (long date). Caption: **"You can send new details once this one's been
+looked at."** **No form is rendered and no second application can be started.**
+
+### 18.3.4 Active + under review (E-P2-6)
+
+The verified block exactly as §18.3.2, then a work-tone block beneath it:
+
+> **"New details under review"**
+> **"We're checking ABN {abn} for {business}, sent {date}. Your trade pricing is unaffected while
+> we do — nothing changes on your account unless we tell you."**
+
+### 18.3.5 Rejected and revoked (AC-P2-13, AC-P2-30)
+
+Neither uses attention/danger colour: both are mute-tone. Nothing failed and nothing broke.
+
+| | Rejected | Revoked |
+|---|---|---|
+| Pill | **"Not approved"** (mute) | **"Not active"** (mute) |
+| Heading | **"We couldn't set up trade pricing from those details"** | **"Trade pricing no longer applies"** |
+| Body | **"Your account still works exactly as before — you can price jobs, submit them, track them and use Refer & earn. You're welcome to try again with updated details, or reply to our email and we'll help."** | **"You're seeing our standard prices from now on. Everything else on your account is unchanged. If you think that's a mistake, get in touch and we'll sort it out."** |
+| Action | **"Try again with new details"** (sage) | **"Apply again"** (outline) |
+
+Neither names a reason, and a duplicate-ABN rejection **never discloses that another account
+holds that ABN** (AC-P2-44).
+
+## 18.4 The two outcome panels (shared by doors a and b)
+
+### 18.4.1 Verified
+
+Sage outcome block, CheckCircle, 3px inset spine — Phase 1's "this went well" vocabulary.
+
+> **"Your trade account is active"**
+> **"Your ABN checked out. Trade pricing applies to your account from now on — the prices you see
+> anywhere on the site are already your prices."**
+> **"Anything already with us for review will be priced by our team."**
+
+Then read-only Business / ABN / (label, when stated) rows, then **"Start a quote"** (sage) and
+**"Go to my account"** (ghost). On mobile the block leads with the pill **"Trade account ·
+Active"**, the two paragraphs merge into one, and the primary button is full-width.
+
+### 18.4.2 Under review
+
+Work-tone block, clock icon. **Never amber, never a triangle, never the word "unfortunately".**
+
+> **"We're checking your details"**
+> **"Thanks — we've got the ABN and business details for {business}. Someone here is checking
+> them and we'll email you when it's done."**
+> **"Your account works as normal in the meantime — you can price jobs, submit them and track
+> them."**
+
+**This copy is constant across every queue reason** — free mailbox, name mismatch, inactive ABN,
+duplicate, ABR outage. There is no third panel and no per-reason variant. A future request to say
+"we couldn't reach the register just now" reintroduces the oracle and must be refused
+(AB-P2-7).
+
+## 18.5 Door (c) — the submit gate
+
+Position: **last group in the details stage**, under a hairline rule, after the delivery group.
+Everything above it is required; this is the only optional thing on the screen, and putting it
+between required groups would read as another demand.
+
+| Slot | Copy |
+|---|---|
+| Group label | **"Your business (optional)"** |
+| Group helper (the 4th AC-P2-48 advertising surface) | **"Got an ABN? Add it and we'll check whether you qualify for trade pricing — better prices on everything you configure from then on. It won't hold up this submission."** |
+| Field | label **"ABN (optional)"**, placeholder **"00 000 000 000"**, `inputMode="numeric"` |
+| Paired field (renders only while the ABN field is non-empty) | label **"Business name"**, placeholder **"ABC Constructions"**, helper **"Needed with an ABN."** |
+
+**No builder/tradie control exists on this screen** (AC-P2-15). **The whole group is absent —
+not disabled — when the account is verified or has an application pending** (AC-P2-19).
+
+### 18.5.1 Enablement and the caption
+
+Folds into Phase 1's existing `outstanding` machinery (`QuoteReviewSubmit.tsx:418-437`):
+
+| Field state | Submit | Caption entry |
+|---|---|---|
+| ABN empty | enabled (Phase-1 behaviour, untouched) | **nothing** |
+| ABN checksum-invalid | disabled | **"ABN"** |
+| ABN valid, business name empty | disabled | **"business name"** |
+| ABN valid, business name present | enabled | nothing |
+
+Caption renders as Phase 1's sentence: **"Still needed: ABN."** / **"Still needed: business
+name."** / with other gaps, in form order. Clearing the ABN field restores Phase-1 behaviour
+instantly, with **no round trip** (the checksum is `src/data/abn.ts`, client-side).
+
+`ASSUMED: P2-UX-1` — "Still needed: ABN" is slightly odd English for a value that is present but
+wrong. The alternative was a second caption idiom on one screen, which is worse; the inline error
+carries the actual instruction. Inline error copy:
+
+> **"That ABN doesn't look right. Check the 11 digits, or clear the field to submit without it."**
+
+(the trailing clause exists only at the gate — elsewhere the field is not optional and the copy
+is **"That ABN doesn't look right. Check the 11 digits and try again."**)
+
+### 18.5.2 Submit sequence (AC-P2-17)
+
+1. Phase-1 sequence runs unchanged: client-validate → profile diff/save → `onSubmit`.
+2. **After** the server confirms submission, and only then, the client fires
+   `applyForTrade({ ..., source: "submit_gate" })`. The submit request itself never waits on
+   ABR.
+3. The confirmation screen (`QuoteSubmitted`) renders unchanged, plus one block:
+   - application created → work tone: **"We're checking your ABN"** /
+     **"We'll email you about your trade account separately. This quote isn't waiting on it."**
+   - application call failed → mute tone: **"We couldn't start the ABN check"** /
+     **"Your quote is safely submitted. You can add your ABN any time from your account."**
+     (the last three words link to the account page).
+   - no ABN entered → no block at all.
+
+**"This quote isn't waiting on it" is the whole promise.** It must never grow into "and we'll
+update your quote if it's approved" (P2-D4).
+
+## 18.6 The history outline (AC-P2-13)
+
+Date + outcome, nothing else. No reasons, no past ABNs, no staff names — that detail is ops-only.
+Group label **"History"**; rows read **"Trade pricing approved"**, **"Not approved"**, **"Trade
+pricing removed"**. Newest first. Absent when there is no history.
+
+## 18.7 Ops console
+
+### 18.7.1 The count (AC-P2-35)
+
+Dashboard tile, in the existing tile row: label **"Trade applications"**, the pending count as
+the figure, attention treatment when non-zero and plain when zero. The tile opens the queue.
+
+### 18.7.2 The queue
+
+Lives in **Customers**, as a tab above the customer list: **"Trade applications"** with the count
+as a chip, beside **"All customers"**. Table columns, in order: **Applicant** (name over email) ·
+**Business** (name over builder/tradie, or **"Not stated"**) · **ABN** (formatted, tabular) ·
+**Why it queued** (one chip per reason) · **From** (**"Trade page"** / **"Account page"** /
+**"Submit gate"**) · **Applied** (date) · Open.
+
+Reason chip copy: **"Free-mail address"** · **"Name doesn't match"** · **"ABN not active"** ·
+**"ABN not found"** · **"Also verified elsewhere"** · **"Register unavailable"**.
+
+Empty state: **"Nothing waiting"** / **"Applications that pass every check are approved
+automatically and never appear here. This queue only holds the ones that need a person."**
+
+Load: existing ops spinner. Load failure: **"Couldn't load trade applications."** with the error,
+matching `Customers.tsx`'s existing failure row.
+
+### 18.7.3 One application (AC-P2-26/36)
+
+Three stacked cards: **applicant + submission**, **what the register said**, **decision**.
+
+- Header: business name (h3), applicant name · email · **"Open customer record"** link, pill
+  **"Awaiting decision"**.
+- Submission rows: **"Submitted ABN"**, **"Submitted name"**, **"Builder / tradie"** (value or
+  **"Not stated"**), **"Applied from"** (source + date/time).
+- Evidence card label: **"What the register said · checked {date, time}"**; rows **"Entity
+  name"**, **"Entity status"** (e.g. **"Active since 1 Jul 2014"**), **"Entity type"**, **"Trading
+  names"** (· separated). When the lookup failed: a single row **"Register unavailable at the
+  time — nothing was returned."**
+- **"The three checks"** — one line per criterion with a pass/fail/not-evaluated mark:
+  **"ABN is valid and active"** · **"Submitted name matches the register"** (with the compared
+  names) · **"Email domain plausibly matches the business"** (with the domain) · and, when
+  relevant, **"ABN not verified on another account"** with the other holder(s) as links.
+- Decision card: field **"Decision note"**, placeholder **"Why you're approving or rejecting —
+  the customer never sees this."**, helper **"Required to reject. Optional to approve."**;
+  buttons **"Approve trade pricing"** (primary) and **"Reject"** (secondary).
+- Busy: buttons disabled, acting button reads **"Approving…"** / **"Rejecting…"**.
+- Reject with an empty note: inline **"Add a reason before rejecting."**
+- 409: **"Someone already decided this — reload to see the outcome."**
+- On success the item leaves the queue and the view returns to the list.
+
+### 18.7.4 Customer record (AC-P2-40/41)
+
+Trade block on the 360: pill **"Trade · Active"** or **"Trade · None"**; rows **"Business"**,
+**"ABN"** (**"No ABN on file"** when null — never an empty cell), **"Trade since"** (date +
+provenance: **"approved automatically"** / **"approved by {staff}"** / **"granted by owner
+decision (grandfathered), not checked against the register"**), **"Account rate"** (the
+percentage, **read-only** — ops is not a customer surface; there is no editor in this phase).
+
+History card: one row per application and per revocation, newest first — date, outcome chip
+(**Approved** / **Rejected** / **Pending** / **Trade status removed**), decider, ABN, business
+name, decision reason.
+
+Revoke card: heading **"Remove trade status"**, body **"The account goes back to standard prices
+immediately and the customer is emailed. Nothing already quoted or ordered changes."**, required
+reason field (placeholder **"Reason — recorded against the account"**), destructive-outline
+button **"Remove trade status"** → busy **"Removing…"**. Empty reason: **"Add a reason before
+removing trade status."** 409: **"This account isn't on trade pricing."**
+
+## 18.8 The four emails
+
+Copy as rendered in the mock (§6 of the file). Binding properties, beyond the §18.0 rules:
+
+- **No greeting line in any of the four.** `applyPlaceholders` renders a missing variable as an
+  empty string, so `Hi {name},` becomes `Hi ,` for accounts with no name — which is exactly the
+  set of customers least likely to forgive it. The only variable used in a body is `{business}`,
+  and only in `trade_ack` and `trade_approved`, where a business name is guaranteed.
+- Subjects: **"We're checking your trade account details"** · **"Your trade account is active"** ·
+  **"About your trade account application"** · **"A change to your trade account"**.
+- Every one ends with the existing footer line **"Reply to this email and a person will read
+  it."** — the only support route offered anywhere in this phase.
+
+## 18.9 Focus, keyboard, ARIA
+
+Phase 1 §16.9 applies unchanged. Additions:
+
+- **Outcome panels take focus.** When the card swaps to its Active / Under-review / error state,
+  focus moves to the panel heading (`tabIndex={-1}`), and the panel sits in an
+  `aria-live="polite"` region so a screen reader announces the outcome. This is the only thing
+  that changed on the page and it must not be missed.
+- **The builder/tradie control is a real radio group** — `role="radiogroup"` with a `legend`,
+  arrow keys move between the two options, neither is pre-selected, and it is skippable by Tab.
+  Never a segmented button set built from `div`s.
+- **The paired business-name field at the gate**, when it appears, does **not** steal focus —
+  the customer is still typing the ABN. It is announced by the caption change (already an
+  `aria-live` region in Phase 1) and by the field's own label when reached.
+- **Inline field errors** carry `role="alert"`, `aria-invalid` on the input and
+  `aria-describedby` to the message id — the Phase-1 `FieldError` component unchanged.
+- **The ABN field** uses `inputMode="numeric"` but not `type="number"` (spaces are accepted and
+  spinners are wrong), and no `autoComplete`.
+- **Ops**: queue rows are reachable as buttons; approve/reject/revoke are `button` elements with
+  their busy state announced; the decision note is labelled, not placeholder-only.
+- **Errors carry a mark as well as a colour** everywhere (the product's icon + word rule).
+
+## 18.10 Responsive
+
+- Trade page: the two-column layout collapses to one below `md`, benefits above the card. Card
+  padding 24 → 20 at 375. Primary buttons full-width on mobile.
+- Account page: Personal details and the trade card stack below `lg`, trade card second.
+- Gate: unchanged from Phase 1; the business group's two fields stack below `sm`.
+- Ops queue: the table is desktop-only, and below `lg` it becomes the card-per-row treatment
+  `Customers.tsx` already uses for the customer list — a six-column table cannot fit 375px and
+  the page must never scroll horizontally.
+- Read-only ABN rows use tabular figures and never wrap mid-number.
+
+## 18.11 Loading, empty, error and long-content behaviour
+
+| Surface | Loading | Empty | Error | Long content |
+|---|---|---|---|---|
+| Trade card | **"Checking your details…"** + spinner, buttons removed | n/a | panel-level messages, §18.2.2.4 | business names clamp at 200 chars; the read-only row wraps rather than truncating |
+| Account card | inherits the page's `me()` load | the "no ABN" affordance **is** the empty state | **"Couldn't load your trade status. Reload the page."** | history outline scrolls with the card; no cap needed (rare) |
+| Gate group | none (client-side only) | n/a | inline field error | — |
+| Ops queue | existing spinner | **"Nothing waiting"** copy above | **"Couldn't load trade applications."** | reason chips wrap; ABR trading-name lists are capped at 20 by the engine and render on one wrapped line |
+| Ops detail | spinner | n/a | **"Couldn't load this application."** | decision reasons wrap; no truncation |
+
+## 18.12 Assumptions (`ASSUMED:` — vetoable)
+
+| Tag | Assumption | Where |
+|---|---|---|
+| `P2-UX-1` | The gate's caption entry for a malformed ABN reads "ABN", reusing Phase 1's "Still needed:" sentence rather than introducing a second caption idiom | §18.5.1 |
+| `P2-UX-2` | The optional business group sits **last** in the details stage, after delivery | §18.5 |
+| `P2-UX-3` | On `/trade-account` the business fields come **before** the email/OTP step | §18.2.2 |
+| `P2-UX-4` | The builder/tradie control has **no pre-selected option** and is genuinely optional; skipping it is never called out | §18.2.2 |
+| `P2-UX-5` | The four emails carry **no greeting line** (null-name safety); `{business}` is the only body variable | §18.8 |
+| `P2-UX-6` | Rejected and revoked states use **mute** tone, not attention/danger — a private account is not an error state | §18.3.5 |
+| `P2-UX-7` | The ops queue is a **tab** inside Customers (exercising P2-A9's placement latitude), with the count as a dashboard tile | §18.7.1-2 |
+| `P2-UX-8` | Wording of the ops evidence labels ("What the register said", "The three checks") — staff-facing, tunable without a gate | §18.7.3 |
+| `P2-UX-9` | The verified card keeps **business name read-only** (design `P2-ARCH-5`) while the builder/tradie label stays editable | §18.3.2 |
+
+## 18.13 What must not appear (assert, don't assume)
+
+Playwright absence assertions, not review items:
+
+1. No `%` and no derivable figure pair on `/trade-account`, the account page, the gate, the
+   confirmation screen, or any rendered email (AC-P2-47).
+2. No builder/tradie control anywhere inside the submit gate (AC-P2-15).
+3. No ABN field at the gate for a verified or pending account (AC-P2-19).
+4. No referral-code input on anything this phase adds (AC-P2-57).
+5. No queue reason, criterion name, or other-ABN-holder reference in any customer-facing
+   response, screen or email (AB-P2-7, AC-P2-44).
+6. No timeframe token ("business day", "hours", "usually", a date) in any outcome screen or
+   email (AC-P2-64).
+7. Trade copy on exactly the four AC-P2-48 surfaces and nowhere else — home page, nav, quote
+   builder and review pricing panels stay silent.
+
+## 18.14 Open questions for the owner
+
+None blocking. Two worth a look at the gate review:
+
+1. **"Better prices" as the standing phrase.** Every surface uses it. If AMJ prefers "trade
+   pricing" alone, or "your pricing", it is one string change in three places.
+2. **The gate's optional group sits last** (`P2-UX-2`). If the owner would rather a tradie meet
+   it earlier — right after their name and phone, where identity questions live — it moves; the
+   trade-off is that an optional block then interrupts the run of required fields.
