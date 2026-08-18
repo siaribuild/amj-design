@@ -1,15 +1,16 @@
 # User registration — Phase 2: Trade verification (ABN / ABR)
 
 Branch: `feat/user-registration`
-Status: **revision 3 — decision gate answered by the owner (2026-08-19); AB-P2-16 amended after the
-architect's design pass (§14 finding 3). §12 "Decisions needed" is EMPTY. Ready for the developer.**
+Status: **revision 4 — owner scope reduction P2-D5 (the builder/tradie question is removed from the
+product) and the one-universal-flow correction folded in. §12 "Decisions needed" is EMPTY.**
 Author: product-manager
 Date: 2026-08-19
 
 **Grill input:** `docs/specs/user-registration-grill-conclusions.md` — the binding decision record
-(owner grill closed 2026-08-18; **Phase 2 decisions P2-D1…P2-D4 added 2026-08-19**). D1–D10, the
-invariants and the assumptions A1–A4 govern wherever this spec is silent. Its *Actors and needs*
-section is reproduced verbatim in §3.
+(owner grill closed 2026-08-18; **Phase 2 decisions P2-D1…P2-D5**). D1–D10, the invariants and the
+assumptions A1–A4 govern wherever this spec is silent, **except that P2-D5 supersedes D7's
+"self-declared label collected at registration"**. The *Actors and needs* section is reproduced
+verbatim in §3.
 
 **Phase 1 is DEPLOYED to production (2026-08-19).** This spec extends live behaviour, not a plan.
 What shipped, what it deliberately left, and the eight operational rules that bit during Phase 1 are
@@ -19,21 +20,17 @@ this phase must keep obeying: two stages, directly editable fields, *a disabled 
 unexplained*).
 
 **Criterion ids:** `AC-P2-n` (functional, 64 of them) and `AB-P2-n` (16 abuse cases the tester must
-attempt and see refused). Phase 1's `AC-n` / `AB-n` are a separate, closed set — no id is reused or
-renumbered, and none is retired except where this spec says so explicitly (§5.8, the AC-41
-supersession).
+attempt and see refused). Phase 1's `AC-n` / `AB-n` are a separate, closed set. **No id has ever been
+reused or renumbered in this document** — amendments are made in place and dated, so a tester holding
+an earlier revision can see exactly what moved.
 
-**Revision 2 changes:** owner rulings on Q1 (revocation email — yes), Q2 (acknowledgement promises
-no turnaround), Q4 (any assigned-role staff may decide), Q5 (no builder/tradie label at the gate);
-grandfathering resolved to three named addresses (§5.9); both owner add-ons confirmed in scope; and
-§7 specifying all four Phase-2 emails as **Sanity-authored templates with Worker fallbacks**
-(AC-P2-61…64).
+### Changelog
 
-**Revision 3 change (correction, not a decision):** **AB-P2-16** was unsatisfiable as written — the
-ATO ABN Lookup JSON web service is GET-only, so the ABN necessarily rides in the query string of the
-request *we make to the registrar*. The criterion always meant *our* surfaces; it now says so, split
-into an executable clause and an explicit carve-out with its reason (§6). **AB-P2-8** is extended to
-name error responses explicitly. No other change.
+| Rev | Change |
+|---|---|
+| 2 | Owner rulings Q1 (revocation email — yes), Q2 (acknowledgement promises no turnaround), Q4 (any assigned-role staff may decide), Q5 (no builder/tradie label at the gate); grandfathering resolved to three named addresses (§5.9); both owner add-ons confirmed in scope; §7 added — all four emails are **Sanity-authored templates with Worker fallbacks** (AC-P2-61…64) |
+| 3 | **Correction, not a decision.** `AB-P2-16` was unsatisfiable as written — the ATO ABN Lookup service is GET-only, so the ABN necessarily rides in the query string of the request *we make to the registrar*. Split into an executable clause (our surfaces) and a named carve-out (§6). `AB-P2-8` extended to name error responses explicitly |
+| **4** | **(a) Owner ruling P2-D5 — "builder vs tradie: no difference".** The question is **removed from the product**, not merely ignored in logic: nothing captures, stores, displays or returns the label. The *vocabulary* survives (a builder and a tradie are both trade/business accounts); the product stops asking which. The optional business group is now exactly **ABN + business name**, business name required only once an ABN is present, **identical at all three doors**. `user.trade_label` is dropped from migration 0054 — **not yet applied to production**, so it is removed rather than reversed. Amended: §2.1.10, §4.1, §4.2, §4.3, §4.4, §7, §9, §10, AC-P2-1, AC-P2-3, AC-P2-10, **AC-P2-15** (restated as a phase-wide absence assertion so the removal stays enforced), AC-P2-36, and `ASSUMED: P2-A2` (superseded). **(b) One universal registration flow** — owner's structural correction at the mock gate (Surfaces 2–6 approved, Surface 1 reworked to match): there is Phase 1's single registration flow, with the optional business group inside its details step. `/trade-account` is a **marketing page hosting that same signup**, not a second flow; the only entry-point-specific behaviour is that the group renders **already revealed** there. Previously an orchestrator assumption; now owner-approved |
 
 **Sizing note.** This is one phase of an already-wayfindered effort, so it does not need re-charting
 — but it is at the top of what one pipeline run should carry (a third-party dependency, three
@@ -79,6 +76,7 @@ and nobody ever sees a percentage.
 - Nobody — customer, tradie or anonymous visitor — ever sees a discount percentage, and no reviewed
   quote is repriced behind a customer's back (P2-D4).
 - Ops never carries a customer discount: existing staff rows are pinned to 0 in this phase.
+- **Nobody is asked a question whose answer changes nothing** (P2-D5).
 
 ---
 
@@ -86,13 +84,16 @@ and nobody ever sees a percentage.
 
 ### 2.1 In scope
 
-1. **Three entry points into ONE verification** (P2-D1/D2/D3). All three collect the same facts,
-   call the same verification, write the same account fields, and produce the same two outcomes:
-   - **(a) `/trade-account` becomes the real signup** — the Phase-1 email-OTP flow extended with
-     ABN + business name + builder/tradie label, **reachable cold** by someone who has never quoted.
-     The dead mock form is deleted, not left beside it.
+1. **Three entry points into ONE verification, inside ONE registration flow** (P2-D1/D2/D3, plus the
+   owner's one-flow correction). There is Phase 1's single registration flow; the optional business
+   group lives inside its details step. All three entry points collect the same facts, call the same
+   verification, write the same account fields, and produce the same two outcomes:
+   - **(a) `/trade-account`** — a marketing page **hosting that same signup**, reachable cold by
+     someone who has never quoted. Its only entry-point-specific behaviour: the business group
+     renders **already revealed**. The dead mock form is deleted, not left beside it.
    - **(b) The profile/account page** — a first-class "add your ABN, get trade pricing" affordance.
-   - **(c) An optional ABN field at the submit gate** — optional, never a submission blocker.
+   - **(c) The submit gate's details step** — the same optional business group, collapsed until
+     wanted; never a submission blocker.
 2. **The hybrid auto-pass triple (D2)** against the live ABR register, with every near-miss queued
    for a human and **nothing auto-rejected**.
 3. **The duplicate-ABN rule (D2.1)** — an ABN already verified elsewhere can never auto-pass; it
@@ -111,9 +112,11 @@ and nobody ever sees a percentage.
    the three named production accounts grandfathered as trade (§5.9).
 9. **Advertising the existence of trade pricing (D5)** on four named surfaces — never the
    percentage. Phase 1's AC-41 silence ends here, by design (§5.8).
-10. **The builder/tradie self-declared label (D7)** — captured on `/trade-account` and the profile
-    page (**not** at the submit gate, owner ruling Q5), stored, shown to ops. The two labels are
-    functionally identical in this phase.
+10. **The builder/tradie question is REMOVED from the product** (**P2-D5**, superseding D7's
+    self-declared label). No surface asks it, no column stores it, no DTO returns it, no ops screen
+    shows it, no email mentions it. The vocabulary survives — a builder and a tradie are both trade
+    accounts — but the product stops asking a question whose answer changes nothing in this phase.
+    The optional business group is exactly **ABN + business name**.
 11. **Two owner add-ons, confirmed in scope** (grill §"Phase cut", handover §3.3; requested by the
     owner at the Phase-1 mock gate "so I would not forget"): the referral payout form pre-fills its
     ABN from the account's stored ABN, and the ops project record gains the read-only customer
@@ -130,6 +133,10 @@ and nobody ever sees a percentage.
   and no single lever to apply or correct trade pricing during review. A real tension, explicitly
   deferred. **Nothing in this phase may start solving it** — no discount line, no trade toggle on
   the ops quote screen, no repricing button.
+- **Any distinction between builders and tradies** (P2-D5). If a later feature — plans upload,
+  priority handling — genuinely needs the distinction, it asks for it *then*, in the place where it
+  matters, and it justifies the question by what it changes. This phase does not collect it
+  speculatively.
 - **ABN-less private referrers** (#4), **SMS verification** (#5), **guest-flow retirement** (#6),
   **`organisation`/`membership` wire-or-delete** (#7). Phase 2 keeps tiers on `user` and **must not
   touch those two tables**.
@@ -159,9 +166,10 @@ and nobody ever sees a percentage.
 - **Referral rules, rates, gates and surfaces** (D6). No referral-code input field on any form this
   phase adds (`worker/routes/referrals.ts:38-49`). The payout-form prefill is a prefill only.
 - **Anonymous browsing, configuring, live pricing, autosave, uploads, the guest tracking flow.**
-- **Phase 1's gate structure** — two stages, directly editable inputs, delivery never seeded from
-  the account address, no separate name step. The optional ABN field is added *inside* the existing
-  details stage; it does not add a third stage.
+- **Phase 1's flow and gate structure** — one registration flow, two gate stages, directly editable
+  inputs, delivery never seeded from the account address, no separate name step. The optional
+  business group is added *inside* the existing details step; it does not add a stage, a screen or a
+  second flow.
 
 ---
 
@@ -187,74 +195,88 @@ invented.*
   the ABN visible on every account; power to revoke trade status; never carrying a customer
   discount themselves.
 
+> **Note on the Builder entry (P2-D5, 2026-08-19).** The quoted text above is preserved verbatim as
+> the grill recorded it. Its clause "*the builder/tradie split is a self-declared label collected at
+> registration*" is **superseded**: the owner ruled there is no difference, so the label is not
+> collected at all. Everything else in that entry stands — builders and tradies are functionally
+> identical trade accounts, and a later feature that genuinely needs the distinction asks for it in
+> the place where it matters.
+
 **What Phase 2 serves for each actor:**
 
 | Actor | Served in Phase 2 | Not yet |
 |---|---|---|
 | Private customer | Untouched everywhere, except that they now *learn trade pricing exists* on four surfaces (D5) and can opt in if they qualify; a rejected application costs them nothing — the account keeps working (A3) | — |
-| Tradie | Cold arrival at `/trade-account` → verified → **trade prices while configuring**, not after; a gmail address costs a wait and a human, never a rejection; the ABN is asked once and lives in one place | The quote-level representation of trade pricing (#10) |
-| Builder | Identical to tradie, plus the self-declared label stored so later features (plans upload, priority handling) can key off it | Everything the label is *for* — this phase only captures it |
+| Tradie | Cold arrival at `/trade-account` → verified → **trade prices while configuring**, not after; a gmail address costs a wait and a human, never a rejection; the ABN is asked once and lives in one place; **two fields, not three** | The quote-level representation of trade pricing (#10) |
+| Builder | Identical to tradie in every respect, and now identical in the form too — the product no longer asks which they are (P2-D5) | A distinction, if and when a feature needs one |
 | Ops | A queue holding only judgment calls, each with the ABR evidence gathered and duplicates flagged; **any assigned-role staffer can clear it**, not just an admin; ABN + trade status on every customer record; revocation; a decision history; **existing staff rows pinned to 0** — ops stops carrying a customer discount; the customer's phone and address finally visible on the project record | A per-account rate editor (still D1 by hand); a trade signal on the quote itself (#10) |
 
 ---
 
 ## 4. The flows
 
-### 4.1 One verification, three doors
+### 4.1 One registration flow, one verification, three doors
 
-Every entry point collects the same facts and calls the **same** authenticated verification:
+There is **one registration flow** — Phase 1's — and the optional **business group** lives inside its
+details step. The three "doors" are places that flow is reached from, not three flows.
 
-| Fact | Stored on | Notes |
+The business group is exactly two fields:
+
+| Field | Stored on | Required? |
 |---|---|---|
-| ABN | `user.abn` (existing column) | **Written on approval only** — see §4.7. Normalised to 11 digits everywhere; humans may type spaces |
-| Business name | `user.company` (existing column) | Required whenever an ABN is submitted — criterion 2 of the triple cannot be evaluated without it |
-| Builder / tradie label | new account field | Collected on `/trade-account` and the profile page only (Q5). Self-declared, never inferred, never gates anything (D7) |
+| ABN | `user.abn` (existing column) | Optional. **Written on approval only** — see §4.7. Normalised to 11 digits everywhere; humans may type spaces |
+| Business name | `user.company` (existing column) | Required **only once an ABN is present** — criterion 2 of the triple cannot be evaluated without it |
 
-**The server ordering is fixed and identical for all three doors:** a session exists first, then the
+**There is no third field.** The builder/tradie question is removed from the product (P2-D5): no
+control renders it, no column stores it, no DTO carries it, no ops screen shows it.
+
+**The server ordering is fixed and identical at all three doors:** a session exists first, then the
 application is created. **No unauthenticated endpoint anywhere accepts an ABN** — this is what stops
 the verification endpoint being a free public ABN-validation oracle, and it is what keeps
 `/api/auth/verify` unedited (handover §4.3). Where the *screen* asks for the ABN before the OTP
-(door (a) very likely will), the client holds the entered values and posts them the moment the
-session is established.
+(door (a) does), the client holds the entered values and posts them the moment the session is
+established.
 
-### 4.2 Door (a) — `/trade-account`, the real signup (P2-D1, the primary path)
+### 4.2 Door (a) — `/trade-account`, the marketing page that hosts the signup (P2-D1, the primary path)
 
-The marketing page keeps its content and **loses its fake form**. In its place, a working signup:
-email → OTP (the Phase-1 `OtpSignIn` component, Turnstile and rate limits unchanged) → ABN,
-business name, builder/tradie. A cold visitor who has never quoted can complete it end to end.
+The page keeps its marketing content and **loses its fake form**. In its place it hosts **the same
+registration flow** every other door uses: email → OTP (the Phase-1 `OtpSignIn` component, Turnstile
+and rate limits unchanged) → details, with the **business group already revealed** because a visitor
+who arrived here came for exactly that. That reveal is the *only* entry-point-specific behaviour in
+the phase.
 
 - Auto-pass → the page says the trade account is **active**, and the next price the visitor sees
   anywhere on the site is a trade price. No percentage, no "you saved" line.
 - Anything else → the page says it is **under review**, the account works normally meanwhile, and no
   reason is given for *which* check needed a human (§4.5, P2-A3).
 - A signed-in visitor who is already verified sees their status, not a form. A signed-in visitor who
-  is not verified gets the form without a second OTP.
+  is not verified gets the business group revealed and pre-filled, without a second OTP.
 
 ### 4.3 Door (b) — the profile/account page (P2-D2)
 
 The profile page today has a free-text **Business name** and **ABN** pair
 (`src/app/App.tsx:1400-1407`) that writes straight to the account and means nothing. It becomes the
-verification affordance: *add your ABN, get trade pricing* — the same fields (including the
-builder/tradie label), the same verification, the same two outcomes, plus the status of any
-application in flight and the history of past ones.
+verification affordance: *add your ABN, get trade pricing* — the same two fields, the same
+verification, the same two outcomes, plus the status of any application in flight and the history of
+past ones.
 
-### 4.4 Door (c) — the optional ABN field at the submit gate (P2-D3)
+### 4.4 Door (c) — the submit gate's details step (P2-D3)
 
-The owner overruled the recommendation to keep the gate minimal, so the details stage gains an
-**optional** ABN field, with a paired business-name field that appears only when an ABN is being
-entered. **No builder/tradie label is asked at the gate** (owner ruling Q5) — an application that
-originates there reads as "not stated" for ops, and the person can set it later on the profile page.
-The Phase-1 gate contract holds without exception:
+The owner overruled the recommendation to keep the gate minimal, so the details step carries the
+same **optional** business group, collapsed until wanted. The Phase-1 gate contract holds without
+exception:
 
 - An empty ABN never disables Submit and **never appears in the "Still needed:" caption**.
+- Entering an ABN makes business name required alongside it — the same rule as every other door, not
+  a gate-specific one.
 - A malformed ABN disables Submit **and is named in the caption** — Phase 1's rule that a disabled
   Submit is never unexplained is absolute (owner ruling, 2026-08-19). Clearing the field re-enables
   Submit immediately. This is a client-side format check and costs no round trip (P2-A1).
 - A well-formed ABN **never delays submission**: the quote submits, and verification runs
   afterwards. The customer is told their ABN is being checked and is **not** told that this quote
   will be repriced — it will not be (P2-D4).
-- An account already verified, or with an application pending, sees no ABN field. Nothing is asked
-  twice.
+- An account already verified, or with an application pending, sees no business group. Nothing is
+  asked twice.
 
 ### 4.5 The verification decision
 
@@ -292,7 +314,7 @@ ABNs or probing business names.
 
 Approval — auto or by a human — does exactly this:
 
-1. writes the submitted ABN, business name and label onto the account;
+1. writes the submitted ABN and business name onto the account;
 2. marks the account trade-verified, recording who decided, when, and on what evidence;
 3. sets `user.discount_percent` to the **business-account default** (currently 5), read from one
    named place in the code (D4; migration 0032's column `DEFAULT 5` stays untouched dead weight —
@@ -336,19 +358,20 @@ that edit is logged as today and **does not** grant, revoke or re-verify anythin
 
 Every criterion is independently verifiable and maps onto a test the developer can write.
 
-### 5.1 Door (a) — `/trade-account` as the real signup
+### 5.1 Door (a) — `/trade-account` as the marketing page hosting the signup
 
-- **AC-P2-1** — Given a visitor with no session, When they open `/trade-account`, Then the page
-  presents a working trade signup (email, ABN, business name, builder/tradie), and **no field on the
-  page discards what is typed into it** — the mock form at `src/app/App.tsx:1690-1704` no longer
-  exists in the DOM.
+- **AC-P2-1** *(amended, rev 4)* — Given a visitor with no session, When they open
+  `/trade-account`, Then the page hosts **the same registration flow used everywhere else** (email
+  OTP → details) with the **business group — ABN and business name, two fields — already revealed**;
+  **no builder/tradie control is rendered**; and **no field on the page discards what is typed into
+  it** — the mock form at `src/app/App.tsx:1690-1704` no longer exists in the DOM.
 - **AC-P2-2** — Given that visitor, When they complete the email OTP step, Then the account is
   created through the unchanged `POST /api/auth/verify` (same request shape, same
   attribution → clear `of_ref` → claim-merge → session ordering) and a session is established.
-- **AC-P2-3** — Given a visitor who entered ABN, business name and label **before** verifying their
-  email, When the session is established, Then those values are submitted to the verification
-  endpoint without re-typing; and Given that call fails transiently, Then the values are still on
-  screen and retryable, and the person is signed in regardless.
+- **AC-P2-3** *(amended, rev 4)* — Given a visitor who entered ABN and business name **before**
+  verifying their email, When the session is established, Then those values are submitted to the
+  verification endpoint without re-typing; and Given that call fails transiently, Then the values
+  are still on screen and retryable, and the person is signed in regardless.
 - **AC-P2-4** — Given a cold signup whose ABN is valid and active, whose business name matches the
   ABR record, whose email domain plausibly matches, and whose ABN is not verified on another
   account, When the application is submitted, Then the account is trade-verified in that same
@@ -366,17 +389,19 @@ Every criterion is independently verifiable and maps onto a test the developer c
   **no ABR call is made**.
 - **AC-P2-8** — Given a signed-in account already trade-verified, When it opens `/trade-account`,
   Then it sees its verified status and no application form; and Given a signed-in account that is
-  not verified, Then it sees the ABN form pre-filled with any stored business name and is not asked
-  to verify its email again.
+  not verified, Then it sees the business group revealed and pre-filled with any stored business
+  name, and is not asked to verify its email again.
 
 ### 5.2 Door (b) — the profile/account page
 
 - **AC-P2-9** — Given a signed-in account with no ABN, When it opens the profile/account page, Then
   a first-class affordance offers to add an ABN **and states that trade pricing exists**, with no
   percentage and no worked example from which one could be derived.
-- **AC-P2-10** — Given that affordance, When ABN + business name + label are submitted, Then the
-  same verification runs and the same two outcomes occur as door (a) — verified with the grant
-  applied, or under review — with no behavioural difference attributable to the entry point.
+- **AC-P2-10** *(amended, rev 4)* — Given that affordance, When **ABN + business name** are
+  submitted, Then the **same flow, the same endpoint and the same verification** run as at every
+  other door, producing the same two outcomes — verified with the grant applied, or under review —
+  with **no behavioural difference and no field difference attributable to the entry point**, the
+  sole permitted variation being whether the business group starts revealed or collapsed.
 - **AC-P2-11** — Given a trade-verified account, When it opens the profile page, Then its trade
   status and ABN are shown and **the ABN is not a free-text editable field** there.
 - **AC-P2-12** — Given an account with an application already pending, When it opens the profile
@@ -387,19 +412,24 @@ Every criterion is independently verifiable and maps onto a test the developer c
   every private-account capability is intact — quoting, submitting, tracking, referral participation
   (A3).
 
-### 5.3 Door (c) — the optional ABN field at the submit gate
+### 5.3 Door (c) — the submit gate's details step
 
 - **AC-P2-14** — Given a signed-in customer with no ABN at the gate's details stage, When the panel
-  renders, Then an **optional** ABN field is present, and leaving it empty neither disables Submit
-  nor adds anything to the "Still needed:" caption.
-- **AC-P2-15** — Given the gate's optional ABN field, When a value is entered, Then a paired
-  business-name field is required alongside it before the ABN is accepted, **and no builder/tradie
-  control is rendered at the gate** (owner ruling Q5); and When the ABN field is cleared, Then that
-  requirement disappears.
-- **AC-P2-16** — Given a malformed ABN in the gate's optional field, When the customer tries to
-  submit, Then Submit is disabled **and the caption names the ABN field**; and When the field is
-  cleared, Then Submit is enabled again with no round trip.
-- **AC-P2-17** — Given a well-formed ABN in the gate's optional field, When the customer submits,
+  renders, Then the **optional** business group is available, and leaving it empty neither disables
+  Submit nor adds anything to the "Still needed:" caption.
+- **AC-P2-15** *(restated, rev 4 — P2-D5; scope widened from the gate to the whole phase so the
+  removal stays enforced rather than becoming trivially true)* — Given **every surface this phase
+  adds or changes** — `/trade-account`, the profile/account page, the submit gate, every ops screen,
+  and every email — When each is rendered and its DOM, its API payloads and its stored columns are
+  inspected, Then **no builder/tradie control, value, column or field exists anywhere**: no radio,
+  select, chip or checkbox offering the choice; no `trade_label`-shaped column in the schema; no such
+  key in any request or response body; and no ops screen or email that names either word as a
+  property of an account. And Given the gate's business group, When an ABN is entered, Then **exactly
+  one** further field is required — business name.
+- **AC-P2-16** — Given a malformed ABN in the gate's optional business group, When the customer
+  tries to submit, Then Submit is disabled **and the caption names the ABN field**; and When the
+  field is cleared, Then Submit is enabled again with no round trip.
+- **AC-P2-17** — Given a well-formed ABN in the gate's business group, When the customer submits,
   Then the project reaches `status_customer = 'submitted'` exactly as in Phase 1, and **the submit
   request completes without an ABR round trip in its critical path** (P2-A1 — measurable: the ABR
   stub records no call before the submit response, and submit latency is unchanged when the stub is
@@ -408,7 +438,7 @@ Every criterion is independently verifiable and maps onto a test the developer c
   acknowledges that the ABN is being checked, states **no percentage** and **no timeframe**, and
   **does not promise that this quote will be repriced** (P2-D4).
 - **AC-P2-19** — Given an account that is trade-verified or has an application pending, When it
-  reaches the gate, Then **no ABN field is rendered**.
+  reaches the gate, Then **no business group is rendered**.
 
 ### 5.4 The verification decision
 
@@ -465,10 +495,11 @@ Every criterion is independently verifiable and maps onto a test the developer c
 - **AC-P2-35** — Given applications awaiting a decision, When staff open the ops console, Then a
   trade-applications queue is reachable and the **count of pending applications is visible without
   opening it**; the queue contains **only** applications awaiting a decision.
-- **AC-P2-36** — Given a queued application, When staff view it, Then it shows the applicant's name
-  and email, the submitted ABN, business name and builder/tradie label (or "not stated" for
-  gate-originated applications), **every reason it queued**, the ABR snapshot, the date applied, and
-  a link to any other account holding the same ABN.
+- **AC-P2-36** *(amended, rev 4)* — Given a queued application, When staff view it, Then it shows
+  the applicant's name and email, the submitted ABN, the business name, **every reason it queued**,
+  the ABR snapshot, the date applied, and a link to any other account holding the same ABN — and
+  **no builder/tradie field, value or "not stated" placeholder appears anywhere on the row or its
+  detail** (P2-D5).
 - **AC-P2-37** — Given a queued application, When **any staff member with an assigned role** (admin
   or otherwise — owner ruling Q4) approves it, Then the account becomes trade-verified with the §5.5
   grant applied, the decision records the deciding staff member and the time, and the item leaves
@@ -516,9 +547,10 @@ Every criterion is independently verifiable and maps onto a test the developer c
   that event fires, Then the authored subject and body are used in place of the fallback, and the
   existing caching behaviour is unchanged (successful fetches cached ~5 minutes, failures never
   cached).
-- **AC-P2-64** — Given all four Phase-2 emails in both their authored and fallback forms, When their
-  rendered subject and body are inspected, Then **none contains a discount percentage, a pair of
-  figures from which one could be derived, or a promised turnaround time**.
+- **AC-P2-64** *(amended, rev 4)* — Given all four Phase-2 emails in both their authored and
+  fallback forms, When their rendered subject, body and **variable set** are inspected, Then none
+  contains a discount percentage, a pair of figures from which one could be derived, a promised
+  turnaround time, **or any builder/tradie variable or wording** (P2-D5).
 
 ### 5.8 Advertising the existence of trade pricing (D5)
 
@@ -528,8 +560,8 @@ Every criterion is independently verifiable and maps onto a test the developer c
   AC-36).
 - **AC-P2-48** — Given this phase, When the site is swept for copy about trade pricing existing,
   Then it appears on **exactly these four surfaces and nowhere else**: `/trade-account`, the profile
-  affordance, the submit gate's optional ABN helper text, and the outcome emails. The home page, the
-  nav, the quote builder and the review screen's pricing panels stay silent (Phase 3 owns wider
+  affordance, the submit gate's business-group helper text, and the outcome emails. The home page,
+  the nav, the quote builder and the review screen's pricing panels stay silent (Phase 3 owns wider
   marketing).
 - **AC-P2-49** — Given Phase 1's **AC-41** ("no mention of trade pricing on any Phase 1 surface"),
   When the Phase-1 Playwright assertions are re-run, Then the assertions covering the four surfaces
@@ -560,10 +592,12 @@ than dressing it up as a verified result, and their ops record says so (provenan
   column); and **no other customer row's `discount_percent` or trade status changes**. Matching is
   by explicit address — never "every customer row that exists when the migration runs", which would
   silently grandfather anyone who registers between now and the deploy.
-- **AC-P2-52** — Given the migration, When it is reviewed and applied, Then it consists only of
-  `ADD COLUMN`, `CREATE TABLE`, `INSERT` and targeted `UPDATE` statements — **no table rebuild**
-  (`d1-migration-safety` is mandatory reading; a rebuild in this database has already cascade-deleted
-  production rows) — and it is numbered after `0053`.
+- **AC-P2-52** *(amended, rev 4)* — Given the migration, When it is reviewed and applied, Then it
+  consists only of `ADD COLUMN`, `CREATE TABLE`, `INSERT` and targeted `UPDATE` statements — **no
+  table rebuild** (`d1-migration-safety` is mandatory reading; a rebuild in this database has
+  already cascade-deleted production rows) — it is numbered after `0053`, and **it defines no
+  builder/tradie column**: `user.trade_label` is removed from migration 0054 outright (0054 has
+  **not** been applied to production, so this is a removal, never a reversal).
 - **AC-P2-53** — Given pre-migration row counts for `user`, `membership`, `project`, `quote_line`,
   `payout` and `"order"`, When the migration has been applied, Then every count is identical.
 
@@ -595,7 +629,7 @@ than dressing it up as a verified result, and their ops record says so (provenan
   ("signing in re-resolves the current project"), `scripts/tests/web/registration.spec.ts`,
   `scripts/tests/web/registration-gate-caption.spec.ts`, `scripts/tests/email-templates.test.mjs`
   and the referral suites all pass — with any edit to them **declared** in the developer's report and
-  justified by AC-P2-49, the new gate field or the new template keys, never silent.
+  justified by AC-P2-49, the new business group or the new template keys, never silent.
 - **AC-P2-60** — Given the `organisation` and `membership` tables, When the final diff is read, Then
   **neither is written to, read from, or altered** by anything this phase adds (ticket #7 unresolved).
 
@@ -694,8 +728,8 @@ body inline at the call site, so a Sanity outage or a not-yet-authored template 
 send**. Successful fetches cache for ~5 minutes; failures are never cached. **Template ids must not
 contain a dot** — the public dataset exposes only dot-free ids to anonymous reads.
 
-So all four Phase-2 emails are authored in Sanity Studio and shipped with a fallback. None may name
-a percentage; none may name a timeframe (Q2).
+All four Phase-2 emails are authored in Sanity Studio and shipped with a fallback. None may name a
+percentage, a timeframe (Q2), **or a builder/tradie word as a property of the account** (P2-D5).
 
 | Key | Fires when | Vars | Fallback subject | Fallback body (may be reworded by the ux/ui stage; the constraints are binding) |
 |---|---|---|---|---|
@@ -703,6 +737,9 @@ a percentage; none may name a timeframe (Q2).
 | `trade_approved` | An application is approved — auto or by ops | `name`, `business` | Your trade account is active | "Your trade account is active. Trade pricing applies to your account from now on. Anything already with us for review will be priced by our team." **No percentage. No claim that an existing quote will be repriced.** |
 | `trade_rejected` | Ops rejects an application | `name` | About your trade account application | "We weren't able to set up a trade account from the details you sent. Your account still works exactly as before — you can price jobs, submit them and track them — and you're welcome to apply again with updated details, or reply to this email and we'll help." **Never mentions another account or another ABN holder.** |
 | `trade_revoked` | Ops revokes trade status | `name` | A change to your trade account | "Trade pricing no longer applies to your account, so the prices you see from now on are our standard prices. If you think that's a mistake, reply to this email and we'll sort it out." **No percentage, no blame.** |
+
+**The variable set is exactly `name` and `business`** — there is no `label`, `tier` or
+`accountType` variable, and no template may introduce one (AC-P2-64).
 
 Every send goes through the existing `notify(...)` path with an `eventType` in the house
 dot-namespaced style (e.g. `trade.application.queued`) — the **event** name may contain dots; the
@@ -731,7 +768,8 @@ deploy — but until they exist, the copy above is what customers read.
    return active, cancelled, unknown, slow and erroring responses.
 6. **Migrations are append-only, numbered after `0053`, additive only, never a table rebuild**; the
    `d1-migration-safety` skill is mandatory reading before writing one, and a production export
-   precedes any remote apply.
+   precedes any remote apply. **Migration 0054 defines no builder/tradie column** (P2-D5; 0054 is
+   not yet applied to production, so the column is removed from it, not reversed later).
 7. **Rate limits** on verification: one per-account cap and one per-IP cap, both enforced before any
    ABR call (AB-P2-6). Reuse the existing challenge-limit machinery rather than inventing a second.
 8. **Inbound ABNs arrive in POST bodies; the outbound ABR GET is the one exception and is never
@@ -741,22 +779,29 @@ deploy — but until they exist, the copy above is what customers read.
    Worker log line (AB-P2-8, AB-P2-16).
 9. **Email template ids are dot-free `snake_case`** and always accompanied by an inline fallback
    (§7).
+10. **One registration flow.** The business group is a component *inside* Phase 1's details step,
+    reused by all three doors with a single prop deciding whether it starts revealed. A second
+    signup component, a second submit endpoint, or a `/trade-account`-specific copy of the flow is a
+    design defect, not an implementation choice.
 
 ---
 
 ## 9. Data facts this phase adds (spec-level — the architect names the schema)
 
-1. **Trade status on the account** — one of: none, pending, verified, rejected, revoked; plus the
-   builder/tradie label. Trade-ness is an axis on `user`, parallel to staff-ness and payability
-   (CONTEXT.md invariant 2). **Not** on `organisation`/`membership` (#7).
-2. **An application record per attempt** — the frozen submitted ABN, business name, label, the ABR
+1. **Trade status on the account** — one of: none, pending, verified, rejected, revoked. Trade-ness
+   is an axis on `user`, parallel to staff-ness and payability (CONTEXT.md invariant 2). **Not** on
+   `organisation`/`membership` (#7). **No builder/tradie column exists** — P2-D5 removes the
+   question from the product, and migration 0054 (not yet applied to production) drops
+   `user.trade_label` rather than shipping a column nothing writes.
+2. **An application record per attempt** — the frozen submitted ABN and business name, the ABR
    snapshot, the queue reasons, the outcome, the deciding actor, timestamps, and a free-text reason
    for a human decision. This is history, not a second home for the ABN (§4.7).
 3. **Provenance** — `auto`, `ops`, or `grandfathered`, so AC-P2-40 and AC-P2-51 can distinguish a
    decision someone made from a row a migration wrote.
 4. **CONTEXT.md** gains *Trade account / trade-ness* and *Trade application* (architect owns the
    file; the grill already requires the Customer definition to be updated to "anyone with an
-   account, private or business").
+   account, private or business"). The entry should record that **builder and tradie are the same
+   thing to this system** — vocabulary, not a stored property (P2-D5).
 
 ---
 
@@ -768,29 +813,32 @@ it** (house rule: the server-served HTML is identical whether or not any of it r
 **Playwright — `scripts/tests/web/trade-verification.spec.ts` (new), at minimum:**
 
 1. Cold `/trade-account` signup, auto-pass triple (ABR stubbed active + matching) → active state,
-   no percentage in the DOM, and a subsequent price preview at the trade rate (AC-P2-1/2/4/5).
+   no percentage in the DOM, and a subsequent price preview at the trade rate (AC-P2-1/2/4/5); the
+   business group renders **already revealed** and holds **exactly two fields**.
 2. Cold signup from a gmail address → under-review state, no rejection copy, account usable
    (AC-P2-6, AC-P2-23).
 3. Checksum-invalid ABN → inline error, no application created, no ABR call (AC-P2-7).
 4. Profile affordance: private account adds an ABN and reaches the same two outcomes; a verified
    account's profile shows status with no editable ABN field (AC-P2-9/10/11).
-5. Submit gate: optional ABN empty → submits in one press and never appears in the caption; ABN
+5. Submit gate: business group empty → submits in one press and never appears in the caption; ABN
    malformed → Submit disabled and named in the caption; ABN valid → submits with no ABR call in
-   the request path and shows the acknowledgement; **no builder/tradie control anywhere in the gate**
-   (AC-P2-14/15/16/17/18).
-6. A verified account at the gate sees no ABN field (AC-P2-19).
+   the request path and shows the acknowledgement (AC-P2-14/16/17/18).
+6. A verified account at the gate sees no business group (AC-P2-19).
 7. A percentage sweep across all four advertising surfaces — no `%`-bearing discount copy, no
    subtraction pair (AC-P2-47/48).
 8. **No ABN in any browser-made URL** across the whole flow — the network log is inspected for
    query strings and path segments carrying an 11-digit ABN (AB-P2-16a).
+9. **The builder/tradie absence sweep (AC-P2-15):** every customer surface this phase touches is
+   searched for a control or copy offering the choice — none exists, on any of them.
 
 **Playwright — ops queue coverage in `scripts/tests/web/ops.spec.ts` (existing harness reused; a
 separate `trade-queue.spec.ts` is acceptable if the architect prefers):**
 
-9. A queued application appears with its reasons and ABR snapshot; approve **as a non-admin
-   assigned-role staff member** → the customer's account is verified and their next preview is a
-   trade price; revoke → back to retail (AC-P2-35/36/37/30, AB-P2-15).
-10. Reject → the customer account still works; the decision and reason appear in the account's
+10. A queued application appears with its reasons and ABR snapshot; approve **as a non-admin
+    assigned-role staff member** → the customer's account is verified and their next preview is a
+    trade price; revoke → back to retail (AC-P2-35/36/37/30, AB-P2-15). **No builder/tradie field
+    appears on the row, the detail, or the customer 360** (AC-P2-15, AC-P2-36).
+11. Reject → the customer account still works; the decision and reason appear in the account's
     history (AC-P2-38/40).
 
 **node:test — `scripts/tests/trade-verification.test.mjs` (new):**
@@ -809,13 +857,17 @@ separate `trade-queue.spec.ts` is acceptable if the architect prefers):**
   an error response and log output containing neither `ABR_GUID` nor the submitted ABN nor the
   outbound URL; and an ABN supplied as a query parameter to any new endpoint is ignored or refused
   (AB-P2-8, AB-P2-16a).
+- **Label absence at the data layer (AC-P2-15):** a `trade_label` / `tier` / `accountType` key
+  posted to the application endpoint is ignored; the account DTO and every ops payload contain no
+  such key; the schema contains no such column.
 - The four emails: each event enqueues a send with the right dot-free `templateKey`; with no Sanity
   document the fallback subject/body is used and the send succeeds; with a stubbed authored template
-  the authored copy wins; no rendered email contains a percentage or a timeframe (AC-P2-43/44/45/46,
-  AC-P2-61…64) — extending `scripts/tests/email-templates.test.mjs` where that suite already owns
-  the mechanism.
+  the authored copy wins; no rendered email contains a percentage, a timeframe or a builder/tradie
+  variable (AC-P2-43/44/45/46, AC-P2-61…64) — extending
+  `scripts/tests/email-templates.test.mjs` where that suite already owns the mechanism.
 - Migration behaviour: staff pinned, **the three named addresses** grandfathered (two with no ABN
-  written), no other row touched, row counts identical (AC-P2-50…53).
+  written), no other row touched, row counts identical, **no builder/tradie column created**
+  (AC-P2-50…53).
 
 **Unit — `scripts/tests/unit.test.mjs` (existing):** the name-matching and email-domain-plausibility
 functions as pure functions, with a table of AU business-name shapes (Pty Ltd, T/A, ampersands,
@@ -839,34 +891,35 @@ legitimate; doing it silently is not, and the reason goes to the user when the d
 ## 11. Suggested build slices (each independently landable and committable)
 
 1. **Verification core + door (a).** ABR client with its stub seam, the triple, the duplicate rule,
-   the application record, the grant, the authenticated endpoint, `/trade-account` rebuilt.
-   Deployable and demonstrable on its own.
+   the application record, the grant, the authenticated endpoint, the shared business-group
+   component, `/trade-account` rebuilt around the universal flow. Deployable on its own.
 2. **Ops queue + the four emails + revocation.** The queue surface, decisions by assigned-role
    staff, history, audit, the templates and fallbacks, the ABN/status/rate columns on the customer
    record.
 3. **Doors (b) and (c) + the migration + the two carried seams.** Profile affordance, the gate's
-   optional field, staff pinning and grandfathering the three named accounts, the payout-form
+   business group, staff pinning and grandfathering the three named accounts, the payout-form
    prefill, the ops contact line.
 
 ---
 
 ## 12. Decisions needed (owner)
 
-**EMPTY.** Every question raised at revision 1 has been answered:
+**EMPTY.** Every question raised at revision 1 has been answered, and revisions 3 and 4 introduced
+none:
 
 | # | Question | Owner's ruling (2026-08-19) |
 |---|---|---|
-| Q1 | Email the customer on revocation? | **Yes** — plainly, no percentage named. Their prices are about to change; a silent revocation reads as a bug. → §4.6, AC-P2-61, `trade_revoked` |
-| Q2 | Does the acknowledgement email promise a turnaround? | **No timeframe anywhere.** "We're checking your details and will be in touch." → AC-P2-45, AC-P2-64, `trade_ack` |
-| Q3 | Grandfathering — which accounts, identified how? | **Three named addresses at deploy time** (§5.9), never "all rows existing at migration time". Two of the three hold no ABN and are granted by owner decision, recorded as such |
-| Q4 | Who may approve / reject / revoke? | **Any assigned-role staff member**, not admin-only; every decision logged with who made it; manufacturer partner accounts excluded → AC-P2-37, AB-P2-11, §8.2 |
-| Q5 | Builder/tradie label at the submit gate? | **No.** ABN + business name only there; the label is asked on `/trade-account` and the profile page → §4.4, AC-P2-15 |
-| Q6 | Keep the two owner add-ons? | **Keep both** — requested by the owner at the Phase-1 mock gate; they are in the grill's phase cut and handover §3.3 → §2.1.11, AC-P2-54/55 |
-| Q7 | Private accounts still payable via the referral payout form? | **Leave it** — D6 unchanged; this phase only stops a *verified* account swapping its ABN there (P2-A4 stands) → §4.7 |
+| Q1 | Email the customer on revocation? | **Yes** — plainly, no percentage named → §4.6, AC-P2-61, `trade_revoked` |
+| Q2 | Does the acknowledgement email promise a turnaround? | **No timeframe anywhere** → AC-P2-45, AC-P2-64, `trade_ack` |
+| Q3 | Grandfathering — which accounts, identified how? | **Three named addresses at deploy time** (§5.9); two hold no ABN and are granted by owner decision, recorded as such |
+| Q4 | Who may approve / reject / revoke? | **Any assigned-role staff member**, not admin-only; logged; manufacturer accounts excluded → AC-P2-37, AB-P2-11, §8.2 |
+| Q5 | Builder/tradie label at the submit gate? | **No** — and **superseded four hours later by P2-D5**, which removes the question from the product entirely → §2.1.10, AC-P2-15 |
+| Q6 | Keep the two owner add-ons? | **Keep both** → §2.1.11, AC-P2-54/55 |
+| Q7 | Private accounts still payable via the referral payout form? | **Leave it** — D6 unchanged; only a *verified* account is stopped from swapping its ABN there → §4.7 |
 
-Revision 3's AB-P2-16 amendment is a **correction, not a decision** — the criterion as written could
-not be satisfied by any implementation, and its intent (our surfaces, not the registrar's API shape)
-is unchanged.
+Revision 3's `AB-P2-16` amendment was a **correction** (the criterion could not be satisfied by any
+implementation). Revision 4's changes are an **owner scope reduction (P2-D5)** and an **owner
+structural correction** (one universal flow) — both rulings handed down, neither a question back.
 
 The only owner action item remaining is not a decision: **the four `emailTemplate` documents need
 authoring in Sanity Studio before or at deploy** (§7). A missing document is safe — the Worker
@@ -881,35 +934,35 @@ Recorded so the architect and the owner can see where I had to interpret rather 
 1. **"ABN keeps ONE home — the account row" (P2-D2) vs. the ops history requirement (A3) and the
    duplicate rule (D2.1).** History needs a per-attempt record that includes the submitted ABN.
    Resolved in §4.7: the account row is the live fact; the application record is a frozen historical
-   copy, the same pattern payouts already use. If the owner reads P2-D2 more strictly than that,
-   ops history and duplicate detection both become unbuildable.
+   copy, the same pattern payouts already use.
 2. **Two writers of `user.abn`.** The profile/payout ABN field (existing, D6) and the verification
-   flow (new). D2 makes the ABN a verified fact; D6 keeps it free text for payouts. Resolved in
-   §4.7 by giving the payout path no granting power and refusing it while verified/pending
-   (P2-A4) — **affirmed by the owner at the gate (Q7)**.
+   flow (new). Resolved in §4.7 by giving the payout path no granting power and refusing it while
+   verified/pending (P2-A4) — **affirmed by the owner at the gate (Q7)**.
 3. **Two `5`s.** D4's "business-account default (5)" now lives in code, while migration 0032's
-   column `DEFAULT 5` must stay (a rebuild is forbidden). The code constant is the authority; the
-   column default remains harmless dead weight, exactly as Phase 1 left it.
-4. **P2-D3 ends Phase 1's AC-41 silence.** AC-41 asserted "no trade copy anywhere" over surfaces
-   this phase now deliberately adds trade copy to. AC-P2-49 supersedes it on four named surfaces and
+   column `DEFAULT 5` must stay (a rebuild is forbidden). The code constant is the authority.
+4. **P2-D3 ends Phase 1's AC-41 silence.** AC-P2-49 supersedes AC-41 on four named surfaces and
    requires the Phase-1 Playwright assertions to be updated openly, citing this spec.
 5. **"Never a hard block" (D2.1) is a knowingly accepted risk.** Ops can approve a duplicate ABN;
-   combined with the borrowed-ABN case (AB-P2-9) that means ABN *ownership* is never proven by this
-   system. The controls are visibility, human order review, and revocation — stated plainly rather
-   than implied.
+   with the borrowed-ABN case (AB-P2-9) that means ABN *ownership* is never proven by this system.
+   The controls are visibility, human order review, and revocation.
 6. **The handover's "ABR benefits payout validation for free" vs D6's "no referral code changes".**
-   Referral payability stays on the checksum-only test. If the owner later wants payouts gated on a
-   live ABR check, that is a separate small ticket, not a silent extension of this phase.
-7. **The Phase-2 scope list handed to me omitted the two owner add-ons** that the grill's phase cut
-   and handover §3.3 both place in Phase 2. Raised at the gate and **confirmed in scope** — not a
-   descope.
-8. **Grandfathering is not verification.** Two of the three grandfathered accounts have no ABN. The
-   spec grants them trade status on the owner's authority (D4) and labels the provenance
-   `grandfathered` so no later reader mistakes them for accounts that passed the triple.
-9. **My own AB-P2-16 was unsatisfiable** (rev 1–2): the ATO service is GET-only, so "no ABN in a
-   query string" could never hold for the outbound leg. Caught by the architect's design pass, not
-   by me. Amended in rev 3 into an executable clause plus a named carve-out — the lesson being that
-   a security criterion must name the *boundary* it governs, not just the forbidden shape.
+   Referral payability stays on the checksum-only test.
+7. **The Phase-2 scope list handed to me omitted the two owner add-ons.** Raised at the gate and
+   **confirmed in scope** — not a descope.
+8. **Grandfathering is not verification.** Two of the three grandfathered accounts have no ABN; the
+   provenance is labelled `grandfathered` so no later reader mistakes them for accounts that passed
+   the triple.
+9. **My own AB-P2-16 was unsatisfiable** (rev 1–2): the ATO service is GET-only. Caught by the
+   architect's design pass, not by me. Amended in rev 3 — a security criterion must name the
+   *boundary* it governs, not just the forbidden shape.
+10. **D7's builder/tradie label vs P2-D5** *(new, rev 4)*. D7 and the grill's verbatim Builder actor
+    entry both say the split is "a self-declared label collected at registration… for future
+    features to key off". P2-D5 supersedes that clause: the owner ruled there is no difference, so
+    nothing collects it. The *actor* distinction survives as vocabulary — a builder still buys
+    differently from a tradie — but the product stops storing an answer no code reads. Speculative
+    capture is exactly the kind of question a later feature should ask for itself, in the place
+    where it changes something. The verbatim actor text is preserved with a supersession note
+    rather than edited, so the record stays honest (§3).
 
 ---
 
@@ -918,7 +971,7 @@ Recorded so the architect and the owner can see where I had to interpret rather 
 | Tag | Assumption | Where | Status |
 |---|---|---|---|
 | `ASSUMED: P2-A1` | An ABN entered at the submit gate must not block or delay submission: verification runs asynchronously after the quote submits. My refinement — a **malformed** ABN does block Submit and is named in the caption, because silently discarding what someone typed is worse and Phase 1 forbids an unexplained disabled Submit | §4.4, AC-P2-16/17 | carried from the decision record; assumed, unvetoed |
-| ~~`ASSUMED: P2-A2`~~ | No builder/tradie label at the gate; ABN + business name only | §4.4, AC-P2-15 | **DECIDED — owner, Q5** |
+| ~~`ASSUMED: P2-A2`~~ | No builder/tradie label at the gate; ABN + business name only | §4.4, AC-P2-15 | **DECIDED — owner, Q5**, then **SUPERSEDED — owner, P2-D5**: the label is removed from the product entirely, so the assumption is moot and AC-P2-15 now asserts its absence phase-wide |
 | `ASSUMED: P2-A3` | The customer is never told which criterion sent their application to review | §4.5, AC-P2-27, AB-P2-7 | assumed, unvetoed |
 | `ASSUMED: P2-A4` | `user.abn` cannot be written through the profile/payout path while the account is trade-verified or has an application pending | §4.7, AB-P2-12, E-P2-19 | assumed; **affirmed by the owner at Q7** |
 | `ASSUMED: P2-A5` | Approval never overwrites an ops-negotiated rate on an already-verified account; revocation always sets 0 | §4.6, AC-P2-29/30 | assumed, unvetoed |
@@ -927,8 +980,8 @@ Recorded so the architect and the owner can see where I had to interpret rather 
 | ~~`ASSUMED: P2-A8`~~ | An acknowledgement email is sent when an application queues | AC-P2-45, §7 | **DECIDED — owner, Q2** (sent; names no timeframe) |
 | `ASSUMED: P2-A9` | The ops queue lives inside the existing Customers area with a pending count visible from the console landing surface; the exact placement is the ux/ui stage's call, its existence and the count are not | AC-P2-35 | assumed, unvetoed |
 | `ASSUMED: P2-A10` | One pending application per account; re-submitting while pending is refused with the current status rather than creating a second row | §4.4, AC-P2-12, E-P2-5 | assumed, unvetoed |
-| `ASSUMED: P2-A11` | A rejected application never revokes an existing trade status; only an explicit revoke does (relevant when a verified account re-applies with a new ABN) | E-P2-6 | assumed, unvetoed |
-| `ASSUMED: P2-A12` | The fallback email copy in §7 — wording is mine; the constraints on it (no percentage, no timeframe, no mention of another ABN holder) are owner rulings and are **not** assumptions. The ux/ui/copy stage may reword within those constraints | §7 | assumed, unvetoed |
+| `ASSUMED: P2-A11` | A rejected application never revokes an existing trade status; only an explicit revoke does | E-P2-6 | assumed, unvetoed |
+| `ASSUMED: P2-A12` | The fallback email copy in §7 — wording is mine; the constraints on it (no percentage, no timeframe, no mention of another ABN holder, no builder/tradie variable) are owner rulings and are **not** assumptions. The ux/ui/copy stage may reword within those constraints | §7 | assumed, unvetoed |
 
 Grill assumptions **A1 (guest flow untouched)**, **A2 (details at the gate)**, **A3 (a rejected
 application leaves a working private account, emailed outcome, re-application allowed, ops sees
@@ -961,6 +1014,7 @@ history)** and **A4 (no SMS)** remain live and are honoured by this spec.
 | E-P2-19 | Customer with a pending application opens the referral payout form | The ABN field is pre-filled but the write is refused while pending (P2-A4); the form explains that the ABN is being checked |
 | E-P2-20 | Business name given as a trading style ("Smith Bros") vs the ABR legal name ("SMITH BROTHERS PTY LTD") | Fuzzy matching is expected to pass this; where it does not, the outcome is a queue entry, never a rejection — the cost of a weak matcher is ops time, never a lost customer |
 | E-P2-21 | Sanity is down when an outcome email fires | The fallback subject/body sends (AC-P2-46); the failure is not cached, so the next send retries the fetch |
+| E-P2-22 | A later feature genuinely needs to know builder vs tradie | It asks then, where the answer changes something, and stores it there — this phase leaves no column, no placeholder and no half-collected data to reconcile (P2-D5) |
 
 ---
 
