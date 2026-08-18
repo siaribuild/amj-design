@@ -1249,6 +1249,17 @@ this section is the contract.
 Every string in **bold quotes** is final copy. `ASSUMED:` tags mark choices made without the
 owner, vetoable at any later gate. This section governs design §10 track (b), steps 9–15.
 
+**Revision 3 (2026-08-19, owner review of the mock — surfaces 2-6 APPROVED, surface 1 reworked):**
+the owner approved the account card, the submit-gate group, the ops queue and the four emails as
+drafted; they must not drift. **Surface 1 was rejected as an architecture error, not a styling
+note:** the first draft composed a bespoke signup on `/trade-account` (business details, then the
+email/OTP step), which is a second registration form in all but name. §18.2 is replaced in full —
+**one universal flow (email → code → your details), one optional ABN + business-name group inside
+it, and a fork only in what happens after**. `/trade-account` is a marketing page that hosts the
+same signup everyone else gets. `ASSUMED: P2-UX-3` is struck; `ASSUMED: P2-UX-10` (the group
+starts revealed on the trade page only) is new and is the orchestrator's call, flagged for the
+owner's veto.
+
 **Revision 2 (2026-08-19, after the ui-designer's visual pass — four copy/structure divergences
 it correctly refused to fix itself):**
 
@@ -1430,7 +1441,7 @@ label when the card is in its verified state.
 |---|---|
 | Heading (h3, `t-bd-sm` semibold) | **"Trade account"** |
 | Sub | **"Trade customers get better prices across the site — while you configure, not just on the quote we send back. Add your ABN and we'll check it against the Australian Business Register."** |
-| Fields | Business name · ABN · Builder or tradie? — labels, placeholders and helpers exactly as §18.2.2 |
+| Fields | Business name · ABN · Builder or tradie? — labels, placeholders and helpers exactly as §18.2.3 |
 | Button | **"Apply for trade pricing"** → busy **"Checking your details…"** |
 
 ### 18.3.2 Verified (AC-P2-11)
@@ -1713,7 +1724,7 @@ Phase 1 §16.9 applies unchanged. Additions:
 
 | Surface | Loading | Empty | Error | Long content |
 |---|---|---|---|---|
-| Trade card | **"Checking your details…"** + spinner, buttons removed | n/a | panel-level messages, §18.2.2.4 | business names clamp at 200 chars; the read-only row wraps rather than truncating |
+| Trade page signup | Phase-1 `OtpSignIn` busy states, unchanged; the trade check runs beside the details step as **"Checking your ABN"** + spinner, never blocking it | n/a | the retry block in §18.2.5 (the person stays signed in) | business names clamp at 200 chars; the read-only held row wraps rather than truncating |
 | Account card | inherits the page's `me()` load | the "no ABN" affordance **is** the empty state | **"Couldn't load your trade status. Reload the page."** | history outline scrolls with the card; no cap needed (rare) |
 | Gate group | none (client-side only) | n/a | inline field error | — |
 | Ops queue | existing spinner | **"Nothing waiting"** copy above | **"Couldn't load trade applications."** | reason chips wrap; ABR trading-name lists are capped at 20 by the engine and render on one wrapped line |
@@ -1752,6 +1763,11 @@ Playwright absence assertions, not review items:
    after the actions container.
 7. Trade copy on exactly the four AC-P2-48 surfaces and nowhere else — home page, nav, quote
    builder and review pricing panels stay silent.
+8. **No second signup form.** `/trade-account`, `/login` and the submit gate all mount the same
+   `OtpSignIn` and the same details step; the trade page renders no email, code or name field of
+   its own. The Playwright assertion is structural: the trade page's signup controls carry the
+   same ids/labels as `/login`'s, and the page contains no form element the shared component did
+   not render.
 
 ## 18.14 Open questions for the owner — put these at the mock gate
 
