@@ -168,7 +168,19 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       await login(session, "/api/auth", email);
       return { session, email };
     };
-    const apply = (session, json) => session.request("/api/trade/application", { method: "POST", json });
+    // Every probe gets its OWN source address unless it says otherwise. The
+    // per-IP application cap is real (20/hour) and a suite that shared one
+    // bucket would start 429-ing partway through — a failure that reads as a
+    // broken decision engine rather than as a working control. Documentation
+    // range 198.51.100.0/24 and friends, so these can never be a real client.
+    let probeSource = 0;
+    const testIp = () => {
+      const n = probeSource++;
+      return `198.51.${(n >> 8) & 255}.${n & 255}`;
+    };
+    const apply = (session, json, ip) => session.request("/api/trade/application", {
+      method: "POST", json, headers: { "X-Forwarded-For": ip ?? testIp() },
+    });
 
     await t.test("AC-P2-20/21/22/23/27: the triple decides, and every queued answer is the same answer", async () => {
       // ALL THREE CRITERIA PASS — approved with no ops action and no queue item.
@@ -400,24 +412,38 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       assert.equal(craftyApp.decided_via, null);
       assert.equal(craftyApp.decided_by, null);
 
-      // AB-P2-6: the per-account cap, spent BEFORE any ABR call. The account
-      // above has used one; five is the cap, so the sixth is refused.
+      // AB-P2-6, cap 1 of 2 — PER ACCOUNT (5/hour), spent BEFORE any ABR call.
+      // The pending row is cleared between attempts so the cap is what refuses
+      // the sixth, not the one-open-application rule.
       const capped = await newAccount("capped", "smithbros.com.au");
+      const cappedId = (await userRow(capped.email)).id;
       for (let i = 0; i < 5; i++) {
-        // Each attempt must fail verification so the next one is allowed
-        // (a verified account with no pending row can keep applying).
         const res = await apply(capped.session, { abn: ABR_FIXTURES.notFound, businessName: `Attempt ${i}`, source: "profile" });
-        if (res.status === 200) {
-          // A queued application blocks the next attempt at step 3 before the
-          // cap is reached, so clear it and keep counting the caps themselves.
-          await sql(`DELETE FROM trade_application WHERE user_id = '${esc((await userRow(capped.email)).id)}'`);
-        }
+        assert.equal(res.status, 200, `attempt ${i} is under the cap`);
+        await sql(`DELETE FROM trade_application WHERE user_id = '${esc(cappedId)}'`);
       }
       const beforeCap = stub.hits().length;
-      const cappedRes = await apply(capped.session, { abn: ABR_FIXTURES.active, businessName: "Smith Brothers", source: "profile" });
+      const cappedRes = await apply(capped.session, { abn: ABR_FIXTURES.notFound, businessName: "Smith Brothers", source: "profile" });
       assert.equal(cappedRes.status, 429);
       assert.deepEqual(await cappedRes.json(), { error: "rate_limited" });
       assert.equal(stub.hits().length, beforeCap, "a rate-limited caller never reaches the register");
+
+      // AB-P2-6, cap 2 of 2 — PER SOURCE (20/hour). Many accounts, one address:
+      // the per-account cap says nothing about total volume, which is exactly
+      // the axis a bot rotating accounts would use.
+      const sharedIp = "203.0.113.77";
+      for (let i = 0; i < 20; i++) {
+        const account = await newAccount(`ipcap-${i}`, "smithbros.com.au");
+        const res = await apply(account.session, { abn: ABR_FIXTURES.notFound, businessName: `Attempt ${i}`, source: "profile" }, sharedIp);
+        assert.equal(res.status, 200, `application ${i} from one address is under the cap`);
+      }
+      const beforeIpCap = stub.hits().length;
+      const twentyFirst = await newAccount("ipcap-over", "smithbros.com.au");
+      const ipCapRes = await apply(twentyFirst.session, { abn: ABR_FIXTURES.notFound, businessName: "One too many", source: "profile" }, sharedIp);
+      assert.equal(ipCapRes.status, 429);
+      assert.deepEqual(await ipCapRes.json(), { error: "rate_limited" });
+      assert.equal((await applications(twentyFirst.email)).length, 0, "and it created nothing");
+      assert.equal(stub.hits().length, beforeIpCap, "nor reached the register");
     });
 
     // Characterisation of the self-checks already shipped in worker/routes/trade.ts
@@ -471,6 +497,21 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       assert.deepEqual(await staffRes.json(), { error: "forbidden" });
       assert.equal((await applications(staffAddress)).length, 0);
       assert.equal(Number((await userRow(staffAddress)).discount_percent), 0);
+    });
+
+    await t.test("AB-P2-12: a verified account cannot swap its ABN through the payout path", async () => {
+      const verified = await newAccount("lock-verified", "harbouredge.com.au");
+      await apply(verified.session, {
+        abn: ABR_FIXTURES.harbour, businessName: "Harbour Edge Joinery Pty Ltd", source: "profile",
+      });
+      assert.equal((await userRow(verified.email)).abn, ABR_FIXTURES.harbour, "the account is verified first");
+
+      const swap = await verified.session.request("/api/auth/profile", {
+        method: "POST", json: { abn: ABR_FIXTURES.notFound },
+      });
+      assert.equal(swap.status, 400);
+      assert.deepEqual(await swap.json(), { error: "abn_locked" });
+      assert.equal((await userRow(verified.email)).abn, ABR_FIXTURES.harbour, "the stored ABN is unchanged");
     });
   } finally {
     if (server) await stop(server);

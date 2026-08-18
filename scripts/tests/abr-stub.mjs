@@ -26,6 +26,12 @@ export const ABR_FIXTURES = {
   otherEntity: "70000000760",
   /** Active, registered to a business whose domain is northsidebuild.com.au. */
   northside: "70000000841",
+  /** Active. Spares — an auto-pass consumes an ABN for the rest of a run (the
+   *  next applicant on the same number is a duplicate, correctly), so a test
+   *  that needs a clean verification needs its own. */
+  harbour: "70000000792",
+  keystone: "70000000873",
+  wattle: "70000000954",
   /** On the register, but cancelled (abn_inactive). */
   cancelled: "51000000761",
   /** The register answers: no such ABN (abn_not_found). */
@@ -60,6 +66,21 @@ const ENTITY = {
     AbnStatus: "Active", AbnStatusEffectiveFrom: "2016-02-02",
     EntityName: "NORTHSIDE BUILDING PTY LTD", EntityTypeName: "Australian Private Company",
     BusinessName: ["NORTHSIDE BUILD"], Gst: "2016-02-02",
+  },
+  [ABR_FIXTURES.harbour]: {
+    AbnStatus: "Active", AbnStatusEffectiveFrom: "2018-08-08",
+    EntityName: "HARBOUR EDGE JOINERY PTY LTD", EntityTypeName: "Australian Private Company",
+    BusinessName: ["HARBOUR EDGE"], Gst: "2018-08-08",
+  },
+  [ABR_FIXTURES.keystone]: {
+    AbnStatus: "Active", AbnStatusEffectiveFrom: "2013-04-04",
+    EntityName: "KEYSTONE CARPENTRY PTY LTD", EntityTypeName: "Australian Private Company",
+    BusinessName: ["KEYSTONE CARPENTRY"], Gst: "2013-04-04",
+  },
+  [ABR_FIXTURES.wattle]: {
+    AbnStatus: "Active", AbnStatusEffectiveFrom: "2020-10-10",
+    EntityName: "WATTLE GROVE WINDOWS PTY LTD", EntityTypeName: "Australian Private Company",
+    BusinessName: ["WATTLE GROVE WINDOWS"], Gst: "2020-10-10",
   },
   [ABR_FIXTURES.cancelled]: {
     AbnStatus: "Cancelled", AbnStatusEffectiveFrom: "2021-09-30",

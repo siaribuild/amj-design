@@ -134,6 +134,31 @@ export async function tradeStateOf(env: Env, user: UserRow): Promise<TradeState>
   };
 }
 
+/** The P2-A4 lock: may this profile/payout write set `user.abn` to these digits?
+ *
+ *  Two paths write `user.abn` and they have different powers (spec §4.7). The
+ *  verification flow writes it AND grants; the profile / referral payout form
+ *  writes it for payout purposes and grants nothing. This is the one rule that
+ *  keeps the second from undoing the first: an approved trade ABN can never be
+ *  swapped out through the payout form (AB-P2-12).
+ *
+ *  EQUAL DIGITS ALWAYS PASS. A verified tradie joining the referral program with
+ *  their own pre-filled ABN is the common case, and refusing it would be a bug
+ *  wearing a security badge (E-P2-19).
+ *
+ *  A PENDING application is compared against its own frozen ABN rather than
+ *  against `user.abn`, because a pending application has not written that column
+ *  and there would be nothing to compare with. */
+export async function abnWriteAllowed(env: Env, user: UserRow, digits: string): Promise<boolean> {
+  const standing = await standingGrant(env, user.id);
+  if (standing) return digits === normalizeAbn(user.abn);
+  const pending = await pendingApplication(env, user.id);
+  if (pending) return digits === normalizeAbn(pending.abn);
+  // A private account may still make itself payable here — today's behaviour,
+  // unchanged (owner ruling Q7).
+  return true;
+}
+
 /** POST /api/trade/application, decided.
  *
  *  The order below is spec §4.5's order and it is load-bearing: a field error

@@ -145,6 +145,8 @@ auth.post("/profile", async (c) => {
   if (!user) return c.json({ error: "unauthorized" }, 401);
   const body = await c.req.json().catch(() => ({}));
   const result = await updateAccountDetails(c.env, user, body);
+  // P2-A4: the ABN this path may write is narrowed once verification owns it.
+  if (!result.ok && result.error === "abn_locked") return c.json({ error: "abn_locked" }, 400);
   if ("fields" in result) return c.json({ error: "invalid_fields", fields: result.fields }, 400);
   return c.json({ user: userDto(result.user) });
 });

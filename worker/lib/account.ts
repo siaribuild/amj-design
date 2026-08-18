@@ -21,6 +21,8 @@ import {
   detailsPatchProblems,
   type AccountDetails, type DetailField,
 } from "../../src/data/accountDetails";
+import { normalizeAbn } from "../../src/data/abn";
+import { abnWriteAllowed } from "./trade";
 
 /** A user row in the client-facing key set the validators and the browser speak. */
 export function detailsOf(u: UserRow): AccountDetails {
@@ -43,7 +45,10 @@ const DETAIL_KEYS: readonly DetailField[] = [
 
 export type AccountUpdateResult =
   | { ok: true; user: UserRow }
-  | { ok: false; error: "invalid_fields"; fields: DetailField[] };
+  | { ok: false; error: "invalid_fields"; fields: DetailField[] }
+  /** Registration Phase 2, P2-A4: this account's ABN is verified or under
+   *  review, and this path — the payout writer — may not change it. */
+  | { ok: false; error: "abn_locked" };
 
 export async function updateAccountDetails(
   env: Env, user: UserRow, body: unknown,
@@ -68,6 +73,13 @@ export async function updateAccountDetails(
   // pre-existing too and out of this phase's changed-field set (Phase 2 owns ABN).
   const company = patch.company !== undefined ? String(patch.company).trim() : user.company;
   const abn = patch.abn !== undefined ? String(patch.abn).trim() : user.abn;
+  // P2-A4: this is the PAYOUT writer of user.abn, and it grants nothing. Once
+  // the verification flow has written an ABN — or is in the middle of checking
+  // one — this path may no longer change it. Asked of the engine rather than
+  // answered here, so "what counts as verified" keeps exactly one definition.
+  if (patch.abn !== undefined && !(await abnWriteAllowed(env, user, normalizeAbn(abn)))) {
+    return { ok: false, error: "abn_locked" };
+  }
   // Only 'ex' opts out; anything else (incl. unset/invalid) means inclusive.
   const priceGstMode = patch.priceGstMode !== undefined
     ? (String(patch.priceGstMode) === "ex" ? "ex" : "inc")
