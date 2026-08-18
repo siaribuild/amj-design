@@ -341,3 +341,39 @@ The owner reviewed this verdict and ruled on all four decisions:
 Conditions C1–C4 are therefore: C1 in progress (developer runs the full gate after the stage-0
 fix), C2 in progress (security review), C3 closed (spec header now reads revision 4), C4 closed
 (ratified above).
+
+## Security stage gate — PASS (2026-08-19)
+
+`security-review` run over the branch diff vs `main`. **No HIGH or MEDIUM findings; zero findings
+of any severity survived filtering.** All D1 access parameterised; no unsafe DOM sink introduced;
+no new dependency.
+
+The five properties this design depends on were each verified to HOLD:
+
+1. **OTP anti-enumeration** — `/challenge` is byte-unchanged on this branch and never queries
+   `user` for existence; no account-existence branch exists to leak.
+2. **Rate limits** — per-source (60/hr) and per-recipient (5/15min) unchanged.
+3. **Every new/changed handler self-checks auth** — `/profile` resolves the session and takes no
+   subject id (the SQL binds `WHERE id = ?` to the session user); submit resolves and folds
+   ownership into the SELECT, 404 with no project data on a mismatch.
+4. **`normEmail` on every email write path** — all three Worker writes reached only with a
+   normalised value; the new write path cannot touch email at all (excluded from the allowlist).
+5. **`discount_percent` unwritable by any endpoint** — no UPDATE targets it anywhere; the only
+   writes are hard-coded `0` literals at account creation. `type`, `role`, `referral_code` and
+   `id` are likewise unreachable from a customer body.
+
+Additionally verified: the new PII columns reach no non-owner surface — both ops customer reads
+select explicit columns and omit the address; the fields appear in no email template, PDF, log
+line or third-party request. Migration `0053` is additive only, so the `membership` CASCADE
+hazard cannot fire.
+
+**Coverage limits:** static read-only review; no exploit executed and no suite run here (the
+tester's AB-1…AB-14 execution log corroborates independently). Runtime config (CSP, deployed
+cookie flags), the email provider, and the production D1 schema were not inspected live.
+
+**Pre-existing issue found, deliberately NOT folded into this phase:** an ops email change
+(`worker/routes/ops.ts:1456`) does not propagate to `project.contact_email`, so the old address
+can still obtain a guest grant and thereby accept / request changes on that customer's projects
+(`worker/routes/guest.ts:43` → `worker/lib/access.ts:183-184`). Raised as separate work. Note
+this branch *reduces* the adjacent risk: pinning `contact_email` to the session identity removes
+the vector where an anonymous submitter could set it to a third party's address.
