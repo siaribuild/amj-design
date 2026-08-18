@@ -18,6 +18,7 @@ import {
   type DeliveryZone,
 } from "../lib/delivery";
 import { logEvent } from "../lib/activity";
+import { applicationHistory, tradeStateOf } from "../lib/trade";
 import {
   splitLine, mergeComposite, recomputeComposite,
   updateSegment, addSegment, removeSegment, loadCompositePolicy, compatibilityConflict,
@@ -305,7 +306,8 @@ ops.get("/summary", async (c) => {
         (SELECT count(*) FROM project p2 WHERE p2.status_internal IN ('estimator_assigned','technical_review_required')
            AND NOT EXISTS (SELECT 1 FROM quote_line l2 WHERE l2.project_id = p2.id
                             AND (l2.status <> 'ready' OR l2.line_total IS NULL)))                        AS ready_to_issue,
-        (SELECT count(*) FROM enquiry WHERE workflow_status = 'new')                              AS new_enquiries
+        (SELECT count(*) FROM enquiry WHERE workflow_status = 'new')                              AS new_enquiries,
+        (SELECT count(*) FROM trade_application WHERE status = 'pending')                         AS trade_applications
     `).first<Record<string, number>>();
 
     return c.json({
@@ -316,9 +318,14 @@ ops.get("/summary", async (c) => {
       customers: row?.customers ?? 0,
       readyToIssue: row?.ready_to_issue ?? 0,
       newEnquiries: row?.new_enquiries ?? 0,
+      // AC-P2-35: the trade queue's depth, visible without opening it. One
+      // subselect in the summary that already runs, rather than a second
+      // request from the dashboard — and it inherits the degraded-to-zero
+      // behaviour of every other count here.
+      tradeApplications: row?.trade_applications ?? 0,
     });
   } catch {
-    return c.json({ submissions: 0, inReview: 0, activeOrders: 0, awaitingPayment: 0, customers: 0, readyToIssue: 0, newEnquiries: 0, degraded: true });
+    return c.json({ submissions: 0, inReview: 0, activeOrders: 0, awaitingPayment: 0, customers: 0, readyToIssue: 0, newEnquiries: 0, tradeApplications: 0, degraded: true });
   }
 });
 
@@ -1402,11 +1409,18 @@ ops.get("/customers", async (c) => {
   if (!hasAssignedRole(staff)) return c.json({ error: "forbidden_role" }, 403);
   const { results } = await c.env.DB.prepare(`
     SELECT u.id, u.name, u.email, u.phone, u.company, u.abn, u.created_at,
+           u.discount_percent, u.trade_label,
+           -- Trade-ness is DERIVED, never stored (ADR-0002): "verified" is
+           -- "holds a standing grant", and this EXISTS is the SQL spelling of
+           -- the same sentence tradeStateOf reads in TypeScript.
+           EXISTS(SELECT 1 FROM trade_application t
+                   WHERE t.user_id = u.id AND t.status = 'approved'
+                     AND t.revoked_at IS NULL AND t.superseded_at IS NULL) AS trade_verified,
            (SELECT count(*) FROM project WHERE owner_user_id = u.id) AS projects,
            (SELECT count(*) FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.owner_user_id = u.id) AS orders
       FROM user u
      WHERE u.type = 'customer'
-     ORDER BY u.created_at DESC`).all();
+     ORDER BY u.created_at DESC`).all<Record<string, unknown>>();
   // Attribution is the compensating control for flat access — every staff action
   // is meant to be answerable later. It was not applied to the READS, which is
   // where the customer data actually leaves: this endpoint returns every
@@ -1416,7 +1430,14 @@ ops.get("/customers", async (c) => {
     actor: staff.id, entityType: "user", entityId: "*",
     action: `viewed the customer list (${results.length} record(s))`,
   });
-  return c.json({ customers: results });
+  // AC-P2-41: trade status and the current rate ride the rows staff already
+  // read. Read-only — this phase deliberately ships no editor for the rate.
+  return c.json({
+    customers: results.map((row) => {
+      const { trade_verified: verified, discount_percent: rate, trade_label: label, ...rest } = row;
+      return { ...rest, tradeVerified: !!Number(verified), tradeLabel: label ?? null, discountPercent: Number(rate ?? 0) };
+    }),
+  });
 });
 
 // PATCH /api/ops/customers/:id { name?, phone?, company?, abn?, email? } — staff
@@ -1480,11 +1501,19 @@ ops.get("/customers/:id", async (c) => {
   const { results: projects } = await c.env.DB.prepare("SELECT id, title, status_customer, status_internal, updated_at FROM project WHERE owner_user_id = ? ORDER BY updated_at DESC").bind(id).all();
   const { results: ordersRows } = await c.env.DB.prepare('SELECT o.id, o.order_no, o.stage, o.total FROM "order" o JOIN project p ON p.id = o.project_id WHERE p.owner_user_id = ? ORDER BY o.created_at DESC').bind(id).all();
   await logEvent(c.env, { actor: staff.id, entityType: "user", entityId: id, action: "viewed customer record" });
+  // Trade status is DERIVED from the ledger (ADR-0002), and the rate is shown
+  // READ-ONLY — this phase deliberately ships no editor for it, and the ops ABN
+  // edit below stays non-granting.
+  const [trade, tradeHistory] = await Promise.all([tradeStateOf(c.env, u), applicationHistory(c.env, id)]);
   return c.json({
     customer: {
       id: u.id, name: u.name, email: u.email, phone: u.phone,
       company: u.company, abn: u.abn, createdAt: u.created_at,
+      discountPercent: Number(u.discount_percent ?? 0),
+      tradeLabel: u.trade_label ?? null,
+      trade: { verified: trade.verified, verifiedSince: trade.verifiedSince, provenance: trade.provenance },
     },
+    tradeHistory,
     projects, orders: ordersRows,
   });
 });

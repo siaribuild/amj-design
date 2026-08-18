@@ -897,6 +897,72 @@ test("trade verification — the decision, the grant, and its abuse cases", { ti
       assert.equal((await sql(`SELECT status FROM trade_application WHERE id = '${esc(plantedId)}'`))[0].status, "pending");
       assert.equal((await userRow(staffAddress)).type, "internal");
     });
+
+    await t.test("AC-P2-35: the pending count is visible without opening the queue", async () => {
+      const staff = new Session(baseUrl);
+      await login(staff, "/api/ops/auth", `tv-summary-${stamp}@openframe.com.au`);
+      const summary = (await requestJson(staff, "/api/ops/summary")).body;
+      const pending = (await sql("SELECT count(*) AS n FROM trade_application WHERE status = 'pending'"))[0].n;
+      assert.ok(Number(pending) >= 1, "there are applications awaiting a decision");
+      assert.equal(Number(summary.tradeApplications), Number(pending));
+    });
+
+    await t.test("AC-P2-41: the customer list carries trade status alongside the rate, read-only", async () => {
+      const staff = new Session(baseUrl);
+      await login(staff, "/api/ops/auth", `tv-list-${stamp}@openframe.com.au`);
+
+      const applicant = await newAccount("console-list", "gmail.com");
+      await apply(applicant.session, {
+        abn: ABR_FIXTURES.northside, businessName: "Northside Building Pty Ltd", label: "builder", source: "trade_page",
+      });
+      const applicantId = (await userRow(applicant.email)).id;
+
+      const list = (await requestJson(staff, "/api/ops/customers")).body.customers;
+      const row = list.find((r) => r.id === applicantId);
+      assert.ok(row, "the applicant is in the customer list");
+      assert.equal(row.tradeVerified, false, "an application pending is not a verification");
+      assert.equal(Number(row.discountPercent), 0);
+      // The list shows the ACCOUNT's live label, which a pending application has
+      // not written — the submitted one is on the queue item (AC-P2-36), where
+      // the person deciding can see it. Nothing is copied onto the account until
+      // the grant, which is the same rule the ABN follows.
+      assert.equal(row.tradeLabel, null);
+
+      const pendingId = (await applications(applicant.email))[0].id;
+      assert.equal((await staff.request(`/api/ops/trade/applications/${pendingId}/approve`, {
+        method: "POST", json: {},
+      })).status, 200);
+      const after = (await requestJson(staff, "/api/ops/customers")).body.customers.find((r) => r.id === applicantId);
+      assert.equal(after.tradeVerified, true);
+      assert.equal(Number(after.discountPercent), 5);
+      assert.equal(after.tradeLabel, "builder", "the grant is what puts the label on the account");
+    });
+
+    await t.test("AC-P2-40: the customer record carries the trade status and the decision history", async () => {
+      const staff = new Session(baseUrl);
+      const staffAddress = `tv-record-${stamp}@openframe.com.au`;
+      await login(staff, "/api/ops/auth", staffAddress);
+      const staffId = (await userRow(staffAddress)).id;
+
+      const applicant = await newAccount("console-record", "gmail.com");
+      await apply(applicant.session, {
+        abn: ABR_FIXTURES.harbour, businessName: "Harbour Edge Joinery Pty Ltd", label: "tradie", source: "profile",
+      });
+      const applicantId = (await userRow(applicant.email)).id;
+      const pendingId = (await applications(applicant.email))[0].id;
+      assert.equal((await staff.request(`/api/ops/trade/applications/${pendingId}/approve`, {
+        method: "POST", json: { note: "Confirmed by phone." },
+      })).status, 200);
+
+      const record = (await requestJson(staff, `/api/ops/customers/${applicantId}`)).body;
+      assert.equal(record.customer.trade.verified, true);
+      assert.equal(record.customer.trade.provenance, "ops");
+      assert.equal(Number(record.customer.discountPercent), 5, "read-only, alongside the status");
+      assert.equal(record.tradeHistory.length, 1);
+      assert.equal(record.tradeHistory[0].outcome, "approved");
+      assert.equal(record.tradeHistory[0].decidedBy.id, staffId);
+      assert.equal(record.tradeHistory[0].decisionReason, "Confirmed by phone.");
+    });
   } finally {
     if (server) await stop(server);
     if (stub) await stub.close();

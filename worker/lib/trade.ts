@@ -184,6 +184,66 @@ export async function pendingApplications(env: Env): Promise<OpsTradeApplication
   }));
 }
 
+/** One line of a customer's verification history, for the ops record. */
+export interface OpsTradeHistoryEntry {
+  at: string;
+  abn: string | null;
+  businessName: string | null;
+  outcome: "approved" | "rejected" | "pending" | "revoked";
+  reasons: string[];
+  decidedVia: string | null;
+  decidedBy: { id: string; name: string | null } | null;
+  decisionReason: string | null;
+}
+
+/** Every application this account has ever made, in the order things happened.
+ *
+ *  An approved-then-revoked application yields TWO entries, because the timeline
+ *  should say what happened rather than only how it ended. Grandfathered rows
+ *  read `decidedVia: "grandfathered"`, and a NULL abn stays NULL — the record
+ *  says "no ABN on file" rather than inventing one (AC-P2-40 / E-P2-9). */
+export async function applicationHistory(env: Env, customerId: string): Promise<OpsTradeHistoryEntry[]> {
+  const rows = await env.DB.prepare(
+    `SELECT t.abn, t.business_name, t.status, t.queue_reasons, t.decided_via, t.decided_by,
+            t.decided_at, t.decision_reason, t.revoked_at, t.revoked_by, t.revoke_reason, t.created_at,
+            d.name AS decided_by_name, r.name AS revoked_by_name
+       FROM trade_application t
+       LEFT JOIN user d ON d.id = t.decided_by
+       LEFT JOIN user r ON r.id = t.revoked_by
+      WHERE t.user_id = ?
+      ORDER BY t.created_at, t.rowid`,
+  ).bind(customerId).all<Record<string, string | null>>();
+
+  const entries: OpsTradeHistoryEntry[] = [];
+  for (const row of rows.results ?? []) {
+    let reasons: string[] = [];
+    try { reasons = row.queue_reasons ? JSON.parse(row.queue_reasons) as string[] : []; } catch { reasons = []; }
+    entries.push({
+      at: row.decided_at ?? row.created_at ?? "",
+      abn: row.abn,
+      businessName: row.business_name,
+      outcome: row.status === "approved" ? "approved" : row.status === "rejected" ? "rejected" : "pending",
+      reasons,
+      decidedVia: row.decided_via,
+      decidedBy: row.decided_by ? { id: row.decided_by, name: row.decided_by_name } : null,
+      decisionReason: row.decision_reason,
+    });
+    if (row.revoked_at) {
+      entries.push({
+        at: row.revoked_at,
+        abn: row.abn,
+        businessName: row.business_name,
+        outcome: "revoked",
+        reasons: [],
+        decidedVia: "ops",
+        decidedBy: row.revoked_by ? { id: row.revoked_by, name: row.revoked_by_name } : null,
+        decisionReason: row.revoke_reason,
+      });
+    }
+  }
+  return entries.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+}
+
 /** The P2-A4 lock: may this profile/payout write set `user.abn` to these digits?
  *
  *  Two paths write `user.abn` and they have different powers (spec §4.7). The
