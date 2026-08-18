@@ -212,6 +212,9 @@ export function QuoteReviewSubmit({
   // that appears on its own — with no account address anywhere near it — is
   // exactly the kind of thing a person assumes the site guessed (§16.5.1).
   const [carriedPostcode, setCarriedPostcode] = useState("");
+  // The gate panel, so pressing Submit at stage 0 brings the thing it just
+  // opened into view instead of leaving it below the fold on a long quote.
+  const gatePanelRef = useRef<HTMLDivElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
@@ -276,6 +279,31 @@ export function QuoteReviewSubmit({
     if (/^\d{4}$/.test(postcode) && !storedDelivery?.postcode) setCarriedPostcode(postcode);
     setGateOpened(true);
   };
+
+  // §16.2 — the panel Submit just opened is brought into view. Instant under
+  // prefers-reduced-motion; the email field takes focus on its own (autoFocus),
+  // which is where §16.9 wants it for a single-field step.
+  useEffect(() => {
+    if (stage !== "signin" || !gatePanelRef.current) return;
+    const reduced = typeof window !== "undefined"
+      && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    gatePanelRef.current.scrollIntoView({ block: "start", behavior: reduced ? "auto" : "smooth" });
+  }, [stage]);
+
+  /** What the live region says when the stage changes (§16.9). */
+  const stageHeading =
+    stage === "signin" ? OTP_COPY.gate.heading
+      : stage === "resolving" ? "Updating your project…"
+        : stage === "details" ? "Your details"
+          : "";
+
+  /** Did ANY stored value arrive from the account? Gating this on the name alone
+   *  left a customer whose phone and address came back but whose name did not
+   *  looking at their own details with nothing crediting them. */
+  const fromAccount = !!user && [
+    user.name, user.phone, user.addressLine1, user.addressLine2,
+    user.addressSuburb, user.addressState, user.addressPostcode,
+  ].some((v) => !!v && v.trim() !== "");
 
   const handleAuthed = (fresh: AuthUserDto) => {
     if (fresh.priceGstMode === "ex" && gstMode !== "ex") setGstFlipped(true);
@@ -405,6 +433,11 @@ export function QuoteReviewSubmit({
         <h1 className="font-semibold text-ink mb-2 font-display t-hd1">Review and submit</h1>
         <p className="text-body mb-6 t-bd-sm">No payment at this stage. A reviewed quote is issued after manual technical review.</p>
 
+        {/* A stage change on a screen that never navigates is invisible to a
+            screen reader unless something says so (§16.9). Visually hidden
+            rather than absent: the announcement is the whole point. */}
+        <p aria-live="polite" className="sr-only">{stageHeading}</p>
+
         {/* A merge is a CONVENIENCE, not a fault — so this is built out of the
             sage "this changed for the better" vocabulary the product already
             owns (`.quote-item-card[data-state="added"]`: a 55%-mixed sage border
@@ -525,6 +558,7 @@ export function QuoteReviewSubmit({
             louder than anything else on the screen. */}
         {stage === "signin" && (
           <div
+            ref={gatePanelRef}
             className="quote-panel p-5 mb-4"
             style={{
               borderColor: "color-mix(in oklab, var(--sage) 55%, var(--line))",
@@ -559,7 +593,7 @@ export function QuoteReviewSubmit({
                 <h2 className="font-semibold text-ink font-display t-hd2">Your details</h2>
               </div>
               <p className="text-body mt-1 t-bd-sm">So we can quote you properly and get the delivery right. We'll keep these on your account — next quote, they're already filled in.</p>
-              {user.name && (
+              {fromAccount && (
                 <p className="text-sage flex items-center gap-1.5 mt-2 t-bd-sm"><CheckCircle className="w-4 h-4" />From your account — edit if anything's changed.</p>
               )}
             </div>

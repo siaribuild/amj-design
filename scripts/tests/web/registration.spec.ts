@@ -649,3 +649,36 @@ test("Enter submits a complete details form, and finds the gap in an incomplete 
   await page.getByLabel("Delivery suburb").press("Enter");
   await expect(page.getByRole("heading", { name: "Quote submitted" })).toBeVisible();
 });
+
+// ─── §16.9 announcements + §16.5.1 provenance ────────────────────────────────
+// A stage change on a screen that never navigates is invisible to a screen
+// reader unless something says so out loud. And the "from your account" line was
+// gated on the NAME alone, so a customer whose phone and address came back but
+// whose name did not was shown their own stored details with nothing crediting
+// them — the one case where the reassurance matters most.
+test("each stage announces itself, and stored values are credited however they arrived", async ({ page }) => {
+  const email = freshEmail("announce");
+  await apiSignIn(page.request, email);
+  // Phone and address stored, NAME deliberately absent.
+  expect((await page.request.post("/api/auth/profile", {
+    data: {
+      phone: COMPLETE.phone, addressLine1: COMPLETE.addressLine1,
+      addressSuburb: COMPLETE.addressSuburb, addressState: COMPLETE.addressState,
+      addressPostcode: COMPLETE.addressPostcode,
+    },
+  })).ok()).toBeTruthy();
+  await buildDraft(page.request, `Announce ${stamp}`);
+
+  await openReview(page);
+  await expect(page.getByRole("heading", { name: "Your details" })).toBeVisible();
+
+  // The stage is announced, not merely rendered.
+  const live = page.locator("[aria-live='polite']");
+  await expect(live).toHaveCount(1);
+  await expect(live).toHaveText("Your details");
+
+  // Values arrived from the account even though the name did not.
+  await expect(page.getByLabel("Full name")).toHaveValue("");
+  await expect(page.getByLabel("Phone")).toHaveValue(COMPLETE.phone);
+  await expect(page.getByText("From your account — edit if anything's changed.")).toBeVisible();
+});
