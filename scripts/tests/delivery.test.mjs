@@ -14,7 +14,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import {
-  Session, freePort, login, makeRunDir, removeRunDir,
+  Session, completeAccount, freePort, login, makeRunDir, removeRunDir,
   requestJson, run, staffEmail, start, stop, viteCli, waitForUrl, wranglerCli,
 } from "./helpers.mjs";
 
@@ -64,6 +64,20 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
 
     const staff = new Session(baseUrl);
     await login(staff, "/api/ops/auth", staffEmail); // admin
+
+    // THE SUBMISSION GATE (registration Phase 1). A quote can only be submitted
+    // by a signed-in customer whose account carries a name, phone and address —
+    // the server checks it, so every fixture that submits needs a real account.
+    // One address per fixture, because one draft per customer means two fixtures
+    // sharing an address would merge into each other's project.
+    //
+    // The sign-in is skipped when the session already holds one: re-issuing a
+    // code for the same address inside the cooldown returns no dev code, and the
+    // failure would read like a broken auth flow rather than a rate limit.
+    const readyToSubmit = async (session, email) => {
+      if (!session.cookies.has("apertly_session")) await login(session, "/api/auth", email);
+      await completeAccount(session);
+    };
     const anon = new Session(baseUrl);
 
     // ── The zone table (C3) ─────────────────────────────────────────────────
@@ -175,8 +189,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const s = new Session(baseUrl);
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "No postcode", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "no-postcode@example.com");
       const refused = await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "No Postcode", email: "no-postcode@example.com" } },
+        method: "POST", json: { delivery: {} },
       }, 400);
       assert.equal(refused.body.error, "missing_postcode");
       const current = await requestJson(s, "/api/projects/current");
@@ -188,8 +203,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Bad postcode", items: [aLine()] } });
       const id = saved.body.project.id;
       for (const bad of ["300", "30000", "3o00", "VIC 3000"]) {
+        await readyToSubmit(s, "bad-postcode@example.com");
         const r = await requestJson(s, `/api/projects/${id}/submit`, {
-          method: "POST", json: { contact: { name: "Bad Postcode", email: "bad-postcode@example.com", postcode: bad } },
+          method: "POST", json: { delivery: { postcode: bad } },
         }, 400);
         assert.equal(r.body.error, "invalid_postcode", `"${bad}" -> invalid_postcode`);
       }
@@ -199,9 +215,10 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const s = new Session(baseUrl);
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Good postcode", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "good-postcode@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
         method: "POST",
-        json: { contact: { name: "Good Postcode", email: "good-postcode@example.com", postcode: "0800", suburb: "Darwin NT" } },
+        json: { delivery: { postcode: "0800", suburb: "Darwin NT" } },
       });
       const rows = await sql(`SELECT delivery_postcode, delivery_suburb FROM project WHERE id='${id}'`);
       assert.equal(rows[0].delivery_postcode, "0800");
@@ -248,8 +265,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const s = new Session(baseUrl);
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Live estimate", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "live-estimate@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Live Estimate", email: "live-estimate@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       const record = await requestJson(staff, `/api/ops/projects/${id}`);
       assert.ok(record.body.delivery.estimate > 0, "a real figure");
@@ -262,8 +280,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const s = new Session(baseUrl);
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Fallback estimate", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "fallback-estimate@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Fallback Estimate", email: "fallback-estimate@example.com", postcode: "9999" } },
+        method: "POST", json: { delivery: { postcode: "9999" } },
       });
       const record = await requestJson(staff, `/api/ops/projects/${id}`);
       assert.ok(record.body.delivery.estimate > 0);
@@ -283,8 +302,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       await login(mapped, "/api/auth", "mapped-estimate-card@example.com");
       const mappedSaved = await requestJson(mapped, "/api/projects/current/lines", { method: "PUT", json: { title: "Mapped estimate card", items: [aLine()] } });
       const mappedId = mappedSaved.body.project.id;
+      await readyToSubmit(mapped, "mapped-estimate-card@example.com");
       await requestJson(mapped, `/api/projects/${mappedId}/submit`, {
-        method: "POST", json: { contact: { name: "Mapped Estimate Card", email: "mapped-estimate-card@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       const mappedRecord = await requestJson(mapped, `/api/projects/${mappedId}`);
       assert.equal(mappedRecord.body.delivery.postcode, "3072");
@@ -297,8 +317,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       await login(unmapped, "/api/auth", "unmapped-estimate-card@example.com");
       const unmappedSaved = await requestJson(unmapped, "/api/projects/current/lines", { method: "PUT", json: { title: "Unmapped estimate card", items: [aLine()] } });
       const unmappedId = unmappedSaved.body.project.id;
+      await readyToSubmit(unmapped, "unmapped-estimate-card@example.com");
       await requestJson(unmapped, `/api/projects/${unmappedId}/submit`, {
-        method: "POST", json: { contact: { name: "Unmapped Estimate Card", email: "unmapped-estimate-card@example.com", postcode: "9999" } },
+        method: "POST", json: { delivery: { postcode: "9999" } },
       });
       const unmappedRecord = await requestJson(unmapped, `/api/projects/${unmappedId}`);
       assert.ok(unmappedRecord.body.delivery.amount > 0, "never null once the fallback is priced (D9)");
@@ -319,18 +340,25 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const guestSaved = await requestJson(guest, "/api/projects/current/lines", { method: "PUT", json: { title: "Discount vs delivery (guest)", items: [aLine()] } });
       const guestId = guestSaved.body.project.id;
       const guestGoods = guestSaved.body.items[0].lineTotal;
+      await readyToSubmit(guest, "discount-vs-delivery-guest@example.com");
       await requestJson(guest, `/api/projects/${guestId}/submit`, {
-        method: "POST", json: { contact: { name: "Guest", email: "discount-vs-delivery-guest@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       const guestRecord = await requestJson(staff, `/api/ops/projects/${guestId}`);
 
       const member = new Session(baseUrl);
       await login(member, "/api/auth", "discount-vs-delivery-member@example.com");
+      // A discount is now something an account is GIVEN, not something it is
+      // born with: since registration Phase 1 both accounts above are created at
+      // 0%, so the contrast this test is about has to be set up rather than
+      // assumed. Written straight to D1 because no endpoint may write it.
+      await sql("UPDATE user SET discount_percent = 5 WHERE email = 'discount-vs-delivery-member@example.com'");
       const memberSaved = await requestJson(member, "/api/projects/current/lines", { method: "PUT", json: { title: "Discount vs delivery (member)", items: [aLine()] } });
       const memberId = memberSaved.body.project.id;
       const memberGoods = memberSaved.body.items[0].lineTotal;
+      await readyToSubmit(member, "discount-vs-delivery-member@example.com");
       await requestJson(member, `/api/projects/${memberId}/submit`, {
-        method: "POST", json: { contact: { name: "Member", email: "discount-vs-delivery-member@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       const memberRecord = await requestJson(staff, `/api/ops/projects/${memberId}`);
 
@@ -352,8 +380,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const s = new Session(baseUrl);
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Staleness check", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "staleness-check@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Staleness Check", email: "staleness-check@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
 
@@ -381,8 +410,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const s = new Session(baseUrl);
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Override check", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "override-check@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Override Check", email: "override-check@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       const before = await requestJson(staff, `/api/ops/projects/${id}`);
       const preEstimate = before.body.delivery.estimate;
@@ -399,8 +429,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const s = new Session(baseUrl);
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Audit check", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "audit-check@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Audit Check", email: "audit-check@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 340 } });
       const rows = await sql(`SELECT action FROM audit_event WHERE entity_id='${id}' AND action LIKE '%delivery%'`);
@@ -422,8 +453,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const s = new Session(baseUrl);
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Locked check", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "locked-check@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Locked Check", email: "locked-check@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 250 } });
       const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-quote`, { method: "POST" });
@@ -437,8 +469,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const s = new Session(baseUrl);
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Gate check", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "gate-check@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Gate Check", email: "gate-check@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/start-pricing`, { method: "POST" });
 
@@ -458,8 +491,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const s = new Session(baseUrl);
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Second gate check", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "second-gate@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Second Gate", email: "second-gate@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       // On 'submitted' -- in ISSUABLE_FROM -- actionsFor renders no issue
       // button at all (only estimator_assigned/technical_review_required
@@ -475,8 +509,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const s = new Session(baseUrl);
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Zero settle check", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "zero-settle@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Zero Settle", email: "zero-settle@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/start-pricing`, { method: "POST" });
       const settled = await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 0 } });
@@ -494,8 +529,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const s = new Session(baseUrl);
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Re-arm check", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "re-arm-check@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Re-arm Check", email: "re-arm-check@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/start-pricing`, { method: "POST" });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 300 } });
@@ -515,8 +551,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       await login(s, "/api/auth", "request-changes-rearm@example.com");
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Request changes re-arm", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "request-changes-rearm@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Request Changes", email: "request-changes-rearm@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/start-pricing`, { method: "POST" });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
@@ -536,8 +573,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       await login(s, "/api/auth", "clarification-rearm@example.com");
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Clarification re-arm", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "clarification-rearm@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Clarification Rearm", email: "clarification-rearm@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 250 } });
       await requestJson(staff, `/api/ops/projects/${id}/request-clarification`, { method: "POST", json: { message: "What colour frame?" } });
@@ -560,8 +598,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Freeze check", items: [aLine()] } });
       const id = saved.body.project.id;
       const goodsAmount = saved.body.items[0].lineTotal;
+      await readyToSubmit(s, "freeze-check@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Freeze Check", email: "freeze-check@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
       const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-quote`, { method: "POST" });
@@ -590,8 +629,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       await login(s, "/api/auth", "reissue-freeze@example.com");
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Reissue freeze", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "reissue-freeze@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Reissue Freeze", email: "reissue-freeze@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
       const r1 = await requestJson(staff, `/api/ops/projects/${id}/issue-quote`, { method: "POST" });
@@ -615,8 +655,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       await login(s, "/api/auth", "issued-frozen-rate@example.com");
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Issued frozen rate", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "issued-frozen-rate@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Issued Frozen Rate", email: "issued-frozen-rate@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
       await requestJson(staff, `/api/ops/projects/${id}/issue-quote`, { method: "POST" });
@@ -646,8 +687,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Order critical", items: [aLine()] } });
       const id = saved.body.project.id;
       const goodsAmount = saved.body.items[0].lineTotal;
+      await readyToSubmit(s, "order-critical@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Order Critical", email: "order-critical@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
       const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-quote`, { method: "POST" });
@@ -674,8 +716,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Deposit half", items: [aLine()] } });
       const id = saved.body.project.id;
       const goodsAmount = saved.body.items[0].lineTotal;
+      await readyToSubmit(s, "deposit-half@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Deposit Half", email: "deposit-half@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
       const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-quote`, { method: "POST" });
@@ -693,8 +736,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       await login(s, "/api/auth", "deposit-balance-cent@example.com");
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Deposit balance cent", items: [aLine({ width: "600", height: "600" })] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "deposit-balance-cent@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Deposit Balance Cent", email: "deposit-balance-cent@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 180 } }); // a real minimum-charge figure
       const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-quote`, { method: "POST" });
@@ -712,8 +756,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       await login(s, "/api/auth", "never-a-line@example.com");
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "Never a line", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "never-a-line@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "Never A Line", email: "never-a-line@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
       const issued = await requestJson(staff, `/api/ops/projects/${id}/issue-quote`, { method: "POST" });
@@ -747,8 +792,9 @@ test("delivery pricing — zones, postcodes, and the money", { timeout: 180_000 
       await login(s, "/api/auth", "gst-everywhere@example.com");
       const saved = await requestJson(s, "/api/projects/current/lines", { method: "PUT", json: { title: "GST everywhere", items: [aLine()] } });
       const id = saved.body.project.id;
+      await readyToSubmit(s, "gst-everywhere@example.com");
       await requestJson(s, `/api/projects/${id}/submit`, {
-        method: "POST", json: { contact: { name: "GST Everywhere", email: "gst-everywhere@example.com", postcode: "3072" } },
+        method: "POST", json: { delivery: { postcode: "3072" } },
       });
       await requestJson(staff, `/api/ops/projects/${id}/delivery`, { method: "PUT", json: { amount: 640 } });
       const opsBefore = await requestJson(staff, `/api/ops/projects/${id}`);
