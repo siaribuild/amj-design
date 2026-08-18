@@ -650,19 +650,33 @@ Every string below in **bold quotes** is final copy. `ASSUMED:` tags mark choice
 user, vetoable at any later gate. Structural deviations from §7.4 are tagged `UX-n` and listed in
 §16.11.
 
+**Revision 2 (owner review, 2026-08-18) — two changes, both binding:**
+
+1. **The gate no longer has a name stage.** It asked for the name at stage 2 and again in the
+   details form; it now asks once, in the details form. `NameStep` survives only for paths where
+   no details form follows (§16.4). Stages renumbered: sign in → your details → submit.
+2. **Details render as directly editable inputs, and delivery is never pre-filled from the account
+   address.** The collapsed summary with an "Edit details" affordance is out (§16.7); the delivery
+   fields carry forward only the pre-gate postcode and otherwise start empty (§16.5.2). This
+   **reverses the prefill decision behind AC-42** — see `UX-4` in §16.11; the PM amends the spec
+   text separately.
+
 ## 16.1 The one-screen model
 
 Everything happens on the existing review screen (`QuoteReviewSubmit`). The **quote panel never
 leaves** — at every stage the customer is looking at the thing they are about to submit. The panel
-below it is the *gate panel*, and it renders exactly one of five states:
+below it is the *gate panel*, and it renders exactly one of four states:
 
 | # | Stage | Condition | Gate panel |
 |---|---|---|---|
 | 0 | **Pre-gate** | `user == null` && `!gateOpened` | Delivery postcode field + the friction pre-announcement (§16.2) |
 | 1 | **Sign in / create** | `user == null` && `gateOpened` | `OtpSignIn` — email step, then code step (§16.3) |
-| 2 | **Name** | `user && !user.name` | `NameStep` (§16.4) |
-| 3 | **Re-resolving** | `projectResolving` | Working placeholder; Submit not rendered (§16.6) |
-| 4 | **Your details** | signed in, name present, resolved | The details form, collapsed or expanded (§16.5, §16.7) |
+| 2 | **Re-resolving** | `projectResolving` | Working placeholder; Submit not rendered (§16.6) |
+| 3 | **Your details** | signed in, resolved | The details form — name, phone, address, delivery, in one pass (§16.5) |
+
+There is **no `user && !user.name` branch inside the gate.** A fresh account reaches stage 3 with an
+empty, required Full name field; a returning account reaches the same stage with it filled. Same
+panel, different starting values — this is the whole of change 1.
 
 `gateOpened` is **component-local state, not persisted** — a `useState(false)` set true by the
 pre-gate Submit press and never read from storage. Stages 1–4 stay derived from props exactly as
@@ -682,8 +696,9 @@ field, the existing info notice, and the Submit button.
   entirely.** Identity comes from the session; there is nothing here to type it into.
 - **Delivery postcode stays on this screen** — see `UX-1` (§16.11). Field label
   **"Delivery postcode"**, helper **"We price delivery from this."**, `inputMode="numeric"`,
-  `maxLength=4`, digits only. Its value carries into stage 4 as the delivery postcode; the
-  account-address pre-fill (AC-42) applies only when it is still empty at that point.
+  `maxLength=4`, digits only. Its value **carries forward into stage 3** as the delivery postcode,
+  where the helper becomes **"Carried over from the postcode you used above."** It is the only
+  thing that ever pre-fills a delivery field (§16.5.2).
 - Directly above the Submit button, right-aligned with it (centred on mobile), one caption:
   > **"Submitting needs an account — we'll email you a code. About a minute."**
 
@@ -760,12 +775,33 @@ There is no "we don't recognise that email" message anywhere, ever.
 `onAuthed(user)` fires. The component does **not** submit, does not navigate, and shows no success
 toast — the stage simply advances (A-P1-4). The GST context flips at this moment (§16.8).
 
-## 16.4 Stage 2 — the name step (`NameStep`)
+## 16.4 `NameStep` — outside the gate only
+
+**The submit gate never renders this component.** Asking "What's your name?" as its own stage and
+then asking for the name again in the details form is one question asked twice; the owner's ruling
+is that it goes. Inside the gate, a details form always follows a sign-in, so the name is collected
+there (§16.5.1) and nowhere else.
+
+**The component survives, and must be built**, because two paths sign a person in with *no details
+form after them* — and an account with `name = NULL` is exactly what made the site invent
+"j.smith92" in the first place (AC-5/AC-6/AC-7):
+
+| Path | Where | Trigger |
+|---|---|---|
+| **`/login`** | `LoginPage`, straight after `onAuthed` | `user.name === null` → render `NameStep` instead of `go("dashboard")` (design §7.2, unchanged) |
+| **Account interstitial (E4)** | `inShell` (App.tsx:2186) | `user && !user.name` → render `NameStep` instead of the section content (design §7.3, unchanged) |
+
+The deciding rule, stated once: **ask for the name where it is not about to be asked for anyway.**
+
+Both paths keep the single `user.name === null` signal, so a customer who abandoned the gate
+mid-way and later signs in at `/login` is asked exactly once, there. Neither path shows a quote
+panel — neither is on the review screen.
 
 | Slot | Copy |
 |---|---|
 | Heading | **"What's your name?"** |
-| Sub | **"You're signed in as {email}. This is the name that goes on your quote and how we'll address you."** |
+| Sub (`/login`) | **"You're signed in as {email}. This is the name that goes on your quotes and how we'll address you."** |
+| Sub (interstitial) | **"This is the name that goes on your quotes and how we'll address you."** |
 | Field label | **"Full name"** · placeholder **"e.g. Sam Taylor"** · `autoComplete="name"` |
 | Button | **"Save and continue"** → busy: **"Saving…"** |
 | Empty error | **"Enter your name to continue."** |
@@ -774,20 +810,28 @@ toast — the stage simply advances (A-P1-4). The GST context flips at this mome
 Mandatory: no skip link, no dismissal, no "later". Button disabled while the trimmed value is
 empty or a save is in flight. Enter submits. Autofocus on the field when the step mounts.
 
-At `/login` the sub drops the sign-in clause: **"This is the name that goes on your quote and how
-we'll address you."** As the account-shell interstitial (E4) the heading gains no urgency wording —
-it is the same calm single question.
+The interstitial drops the sign-in clause (the person is already inside their account) and gains no
+urgency wording — it is the same calm single question.
 
-## 16.5 Stage 4 — your details
+## 16.5 Stage 3 — your details
 
 ### 16.5.1 Field order, labels, helpers
 
 Order is deliberate: identity first (shortest, most familiar), then the account address, then the
 per-project delivery. Section rules are hairlines with a `t-label` heading, not nested cards.
 
+**This form is the gate's only request for the name.** For a fresh account it arrives empty with a
+placeholder; for a returning account it arrives filled from `user.name`. The field is a normal
+required input in both cases — there is no separate step, no interstitial, and no difference in
+markup between the two.
+
+**Every field here is a live, directly editable input** — nothing is collapsed behind an "edit"
+affordance, on a first quote or a fifth (§16.7, change 2). The one exception is Email, which is a
+read-only row because it is the sign-in identity and an accidental edit is a lockout.
+
 | # | Label | Notes | `autoComplete` |
 |---|---|---|---|
-| 1 | **"Full name"** | required, max 120 | `name` |
+| 1 | **"Full name"** | required, max 120; **empty for a fresh account**, placeholder **"e.g. Sam Taylor"**; autofocused when empty on stage entry | `name` |
 | 2 | **"Phone"** | required; helper **"Mobile, landline or 1300/1800."**; max 40 | `tel` |
 | 3 | **"Email"** | **read-only display row, not an input**; value + `Verified` chip; helper **"This is your sign-in email. Contact us if you need it changed."** | — |
 | — | section: **"Your address"** | | |
@@ -796,26 +840,43 @@ per-project delivery. Section rules are hairlines with a `t-label` heading, not 
 | 6 | **"Suburb"** | required, max 80 | `address-level2` |
 | 7 | **"State"** | required; `select`, first option **"Choose…"**, then NSW VIC QLD SA WA TAS NT ACT | `address-level1` |
 | 8 | **"Postcode"** | required, 4 digits | `postal-code` |
-| — | section: **"Delivery for this project"**, caption **"Where these windows and doors go. Change it if the site isn't your address."** | | |
-| 9 | **"Delivery suburb"** | placeholder **"e.g. Preston VIC"** | — |
-| 10 | **"Delivery postcode"** | 4 digits; helper **"We price delivery from this."** (existing string — keep) | — |
+| — | section: **"Delivery for this project"**, caption **"Where these windows and doors go — usually a site, not an office. We don't assume it, so it starts blank each time."** | | |
+| 9 | **"Delivery suburb"** | **always starts empty**; placeholder **"e.g. Craigieburn VIC"** | — |
+| 10 | **"Delivery postcode"** | 4 digits; pre-filled only from the pre-gate value, helper then **"Carried over from the postcode you used above."**, otherwise **"We price delivery from this."** | — |
+
+Delivery fields carry **no** `autoComplete` — browser address autofill would reintroduce exactly
+the wrong-address-by-default failure §16.5.2 exists to prevent.
 
 Panel heading **"Your details"**, sub **"So we can quote you properly and get the delivery right.
 We'll keep these on your account — next quote, they're already filled in."**
-When any value arrived from the account, the existing line is shown above the fields:
-**"Pre-filled from your account — edit if needed."** (green check, existing treatment).
+When any value arrived from the account, a line sits beside the heading (green check, existing
+treatment): **"From your account — edit if anything's changed."** The wording invites the edit
+rather than merely permitting it, because the fields are already editable.
 
 The details panel contains **no business name, no ABN, no builder/tradie choice, no referral code,
 and no reference to trade pricing** (AC-32, AC-41, seam §6.3). The `Verified` chip refers to the
 email, never to an account status.
 
-### 16.5.2 Delivery pre-fill (AC-42)
+### 16.5.2 Delivery is never seeded from the account address (revises AC-42 — see `UX-4`)
 
-On entering stage 4: if the project's stored delivery postcode is empty **and** the stage-0
-postcode field is empty **and** the account has an address, delivery suburb ← `address_suburb`,
-delivery postcode ← `address_postcode`. Precedence, highest first: the project's stored value →
-what the customer typed at stage 0 → the account address. Editing delivery never writes the
-account address.
+Precedence for the delivery fields, highest first, and there is no fourth entry:
+
+1. The project's stored `delivery_suburb` / `delivery_postcode`, if it has any.
+2. The postcode the visitor typed at stage 0 (postcode only — there is no pre-gate suburb field).
+3. **Empty.**
+
+**The account address is never read into a delivery field.** Not on a first quote, not on a fifth,
+not when the delivery fields are blank, not as a placeholder value.
+
+Why, in the owner's terms: the primary actor is a tradie, and their delivery destination is their
+customer's site — different nearly every time. A prefill that is wrong nearly every time is worse
+than a blank field twice over: it is wrong *and* it stops the field being read. A prefilled-but-wrong
+delivery address that survives to submission is an expensive operational error, and the person who
+pays for it is the customer waiting at the other address.
+
+Editing delivery still never writes the account address (that half of AC-42 is unchanged and
+correct). The account address remains required and remains collected — it is quote and paperwork
+data, and Phase 2's ops view depends on it (seam §6.6). It is simply not a delivery guess.
 
 ### 16.5.3 Validation timing and error copy
 
@@ -855,10 +916,11 @@ Disabled while: any required field is missing or format-invalid · `submitting` 
 Because the button is disabled, the outstanding work is named in a caption directly above it —
 this is how AC-17 "individually identified" is satisfied without painting untouched fields red:
 
-> **"Still needed: phone, street address, suburb, state, postcode."**
+> **"Still needed: full name, phone, street address, suburb, state, postcode."**
 
 The caption lists the field labels in form order, lowercase, comma-separated, and disappears the
-moment the set is empty. Button label states: **"Submit for technical review"** (with the send
+moment the set is empty. **Full name is in the list** — for a fresh account it is the first thing
+outstanding, which is what replaces the deleted name stage. Button label states: **"Submit for technical review"** (with the send
 icon) → **"Submitting…"** → existing **"Refining estimate…"** while `aiReading`.
 
 ### 16.5.5 Submit sequence (what the customer sees)
@@ -873,7 +935,7 @@ icon) → **"Submitting…"** → existing **"Refining estimate…"** while `aiR
 Existing server-refusal copy is kept verbatim (`rejected`, `no_project`, postcode codes); the new
 `incomplete_profile` mapping is added per the table above.
 
-## 16.6 Stage 3 — the merge moment (AC-26/27)
+## 16.6 Stage 2 — the merge moment (AC-26/27)
 
 ### 16.6.1 While re-resolving
 
@@ -908,27 +970,32 @@ appear and the list is identical to what was on screen before sign-in.
 
 ## 16.7 The invisible gate — signed in with complete details (AC-14)
 
-Stage 4 renders **collapsed**: a summary block instead of the identity/address form.
+Stage 3 renders **the same panel as §16.5, with the account's values already in the fields.** There
+is no collapsed summary and no "Edit details" affordance: every field is a live input, a cursor
+into it is the only step, and correcting a stale phone number costs one click instead of two.
 
 ```
-YOUR DETAILS                                   [Edit details]
-Sam Taylor · 0412 345 678
-12 Bridge Street, Preston VIC 3072
-sam@buildright.com.au
-─────────────────────────────────────────────────────────────
-DELIVERY FOR THIS PROJECT
-Pre-filled from your address — change it if the site is somewhere else.
-[Delivery suburb]            [Delivery postcode]
+YOUR DETAILS                    ✓ From your account — edit if anything's changed.
+[Full name: Sam Taylor      ]   [Phone: 0412 345 678        ]
+Email  sam@buildright.com.au                          [Verified]
+[Street address: 12 Bridge Street                            ]
+[Suburb: Preston  ] [State: VIC] [Postcode: 3072]
+── DELIVERY FOR THIS PROJECT ─────────────────────────────────
+Where these windows and doors go — usually a site, not an office.
+We don't assume it, so it starts blank each time.
+[Delivery suburb:            ]  [Delivery postcode: 3072     ]
 ```
 
-The delivery fields stay **open** — they are the one fact that genuinely changes per project.
-**"Edit details"** expands the full form in place (focus moves to Full name); the control then
-reads **"Done"** and collapses it again. In the expanded state a caption reads
-**"Changes here are saved to your account when you submit."**
+Delivery stays **open and prominent** — it is the one fact that genuinely changes per project, and
+the only one the customer must actually think about. Its suburb is empty; its postcode carries the
+pre-gate value only.
 
-Submit is enabled on arrival. One press submits. `ASSUMED:` the collapse — §7.4 says "pre-filled",
-and collapsing to a summary is this spec's call; if vetoed, render the form expanded and everything
-else here still holds.
+Submit is enabled on arrival. **One press submits** — the gate is invisible because there is
+nothing to satisfy, not because anything is hidden.
+
+Compactness is welcome (tighter row spacing than the fresh-account case, no repeated helper text
+under fields whose values are already valid) but it may never be achieved by hiding a field behind
+a click.
 
 ## 16.8 GST (AC-35)
 
@@ -953,14 +1020,16 @@ appears on any of these panels (AC-36).
 
 - **Stage transitions move focus** to the new stage's heading (`tabIndex={-1}`, focused
   programmatically) except where a single field is the obvious target — stage 1 email, stage 1
-  code, stage 2 name — where focus goes to the field. Every stage change also announces via an
+  code, and the empty Full name field of a fresh account's details form — where focus goes to the
+  field. Every stage change also announces via an
   `aria-live="polite"` region carrying the stage heading.
 - **Enter submits** the current step from any single-line field in it: email → send code, code →
-  verify, name → save. In stage 4, Enter triggers Submit only when the form is valid; otherwise it
+  verify, name → save. In the details form, Enter triggers Submit only when the form is valid;
+  otherwise it
   moves focus to the first invalid field.
-- **Tab order follows visual order**; no positive `tabIndex` anywhere. "Edit details", "Resend
-  code", "Use a different email" and "Back to my quote" are real `button` elements, never
-  `a href="#"`.
+- **Tab order follows visual order**; no positive `tabIndex` anywhere. "Resend code", "Use a
+  different email" and "Back to my quote" are real `button` elements, never `a href="#"`. The
+  details form has **no disclosure control at all** — every field is reachable by Tab alone.
 - **Error announcement:** field messages carry `role="alert"`; panel-level messages sit inside a
   `role="alert"` container that is rendered (not merely revealed) when the error occurs.
 - **The 6-digit code field** is one `input` with `inputMode="numeric"` and
@@ -988,11 +1057,23 @@ appears on any of these panels (AC-36).
 |---|---|---|---|
 | `UX-1` | The **delivery postcode field and the delivery estimate stay on the pre-gate screen**; §7.4 puts the delivery-estimate effect in the details stage only | "Anyone can see a price" is the feature's founding principle, and delivery is part of the price. §8.3 deliberately leaves `POST /projects/:id/delivery-estimate` on `ownedProject` and calls it "a draft-scoped read the anonymous review screen legitimately uses pre-gate" — this uses exactly that. The E6 hazard is handled by suppressing the effect whenever `projectResolving` is true, in every stage. | Stage 0 shows no postcode field; the totals show "Windows and doors" only, with a line **"Delivery is calculated at the next step."** |
 | `UX-2` | A **stage 0** exists (gate closed until Submit is pressed) | AC-11 and Playwright §10.3.1 both require Submit to be pressable while anonymous and the OTP step to appear on that press | Render `OtpSignIn` immediately for `user == null`; the pre-announcement caption moves into the panel's sub-copy |
-| `UX-3` | Stage 4 renders **collapsed** for a complete account | Makes the gate invisible when satisfied — the brief's requirement — and keeps one-press submission genuinely one press | Render expanded; every other rule here is unaffected |
+| `UX-3` | **The gate has no name stage**; `NameStep` renders only at `/login` and as the account interstitial (§16.4) | Owner review: "why ask for full name separately and then ask for name and surname as part of details? feels like unneeded step." §7.4's `user && !user.name` row is deleted from the gate's stage table; AC-6's "mandatory single-field name step" is satisfied inside the gate by a required, empty Full name field that blocks Submit, and outside it by the surviving component | — (owner-directed, not a proposal) |
+| `UX-4` | **Delivery is never pre-filled from the account address** (§16.5.2) | Owner review: "tradies are unlikely to deliver to the same address, ever — it will most likely be their customer site address each time." A prefill that is wrong nearly every time is worse than blank: wrong *and* unread. **This reverses spec AC-42's prefill clause and ruling Q1** | — (owner-directed). **The PM must amend AC-42**: strike "pre-filled from the account address"; keep the second half (an overwritten delivery persists to the project and the account address is unchanged) verbatim. Until amended, the spec and this section disagree in writing rather than silently |
 
 `ASSUMED:` items, all vetoable: the 10-minute code-expiry wording (§16.3.2); the 30-second resend
 cooldown (§16.3.2); the GST-change caption (§16.8); the longer gate sub-copy vs the shorter
-`/login` one (§16.3.1); the "Just added" chip and the non-dismissible merge notice (§16.6.2).
+`/login` one (§16.3.1); the "Just added" chip and the non-dismissible merge notice (§16.6.2);
+autofocusing Full name when it arrives empty (§16.5.1); the absence of `autoComplete` on the two
+delivery fields (§16.5.1).
+
+**Acceptance criteria touched by revision 2** — flagged for the PM, not edited here:
+
+| AC | Effect |
+|---|---|
+| **AC-42** | Prefill clause reversed (`UX-4`). Second half unchanged. |
+| **AC-6** | Still satisfied, differently: inside the gate the mandatory name is a required field in the details form (Submit blocked, field named in "Still needed"), not a separate step. `/login` and the account interstitial keep the literal step. The dashboard remains unreachable with a NULL name. |
+| **AC-14** | Strengthened: "no further typing" now also means no further *clicking* — no expand step before a field can be corrected. |
+| **AC-17** | Unchanged, but the missing-field list now includes `name` for fresh accounts. |
 
 ## 16.12 Copy sweep — the relabelled entry points (AC-4)
 

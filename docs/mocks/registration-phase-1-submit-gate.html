@@ -360,7 +360,7 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
   <nav>
     <a href="#s1">1 · Pre-gate</a>
     <a href="#s2">2 · Sign in</a>
-    <a href="#s3">3 · Name</a>
+    <a href="#s3">3 · Name (elsewhere)</a>
     <a href="#s4">4 · Details</a>
     <a href="#s5">5 · Merge</a>
     <a href="#s6">6 · GST flip</a>
@@ -377,10 +377,10 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
   <p>Browsing, configuring, live prices, autosave and uploads are unchanged — nobody is asked for anything. <b style="color:#D6DADC">Submit for technical review</b> is the single point where an account becomes required, because quote review is the most expensive human time in the business.</p>
   <p>The friction is deliberate: an extra minute won't turn away a serious buyer, but it will turn away someone wandering around. It must never feel <em>broken</em> or <em>hostile</em> — so every screen here announces the cost before charging it, and keeps the quote itself visible the whole way through.</p>
   <div class="rules">
-    <div><h4>One screen, four stages</h4><p>The gate lives inside the existing review screen. The quote panel above it never disappears — the customer is always looking at what they are about to submit.</p></div>
+    <div><h4>One screen, two stages</h4><p>Sign in, then your details. Nothing is asked twice — the name is collected once, in the details form, alongside phone and address. The quote panel above never disappears.</p></div>
     <div><h4>Never auto-submit</h4><p>Verifying a code signs you in. It does not submit your quote. Submission stays the customer's deliberate act (A-P1-4).</p></div>
     <div><h4>Nothing about trade</h4><p>No trade pricing, trade account, discount or application appears anywhere on these screens (AC-41). No referral-code field exists on any form (AC-32).</p></div>
-    <div><h4>Invisible when satisfied</h4><p>A returning customer with complete details sees no gate at all — one press of Submit, exactly as today.</p></div>
+    <div><h4>Delivery is never assumed</h4><p>The delivery address is the customer's site, not their office — it is never seeded from the account address. It carries forward only what they typed on this screen.</p></div>
   </div>
 </div>
 
@@ -603,41 +603,36 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
 <section class="surface" id="s3">
   <div class="shead">
     <div class="n">Surface 3</div>
-    <h2>Stage 2 — "What's your name?" (fresh account only)</h2>
-    <p>A newly created account has no name — the email local part is never invented as one (AC-5/AC-7). Mandatory, one field, no skip. An existing account with a name skips this stage entirely.</p>
-    <div class="path">shared component: src/components/NameStep.tsx · rendered wherever <span class="mono">user.name === null</span></div>
+    <h2>The name step — outside the gate only</h2>
+    <p><b style="color:#D6DADC">Revised after owner review.</b> The gate used to ask "What's your name?" as its own stage and then ask for the name again in the details form. It now asks once: <b>there is no name stage inside the gate</b>. The details panel collects name, phone, address and delivery in one pass, and for a fresh account the name field simply arrives empty and required.</p>
+    <p>The component still exists, because two paths sign someone in with <em>no details form after them</em> — and a nameless account is what makes the site invent "j.smith92" all over again.</p>
+    <div class="path">src/components/NameStep.tsx · rendered where <span class="mono">user.name === null</span> AND no details form follows</div>
   </div>
   <div class="state">
-    <h3><span class="tag">3a</span> Empty · <span class="tag r">3b</span> Submitted empty</h3>
+    <h3><span class="tag g">3a</span> /login, straight after verifying · <span class="tag r">3b</span> Account interstitial (E4), empty error</h3>
+    <p>Both are outside the submit gate. Neither shows a quote panel, because neither is on the review screen.</p>
     <div class="frames">
       <div class="dev half">
-        <div class="cap"><span>Desktop</span><span>stage 2 · fresh account</span></div>
-        <div class="screen"><div class="revpage"><div class="revwrap">
-          <div class="qpanel ctx">
-            <div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,620.00 inc GST</span></div>
+        <div class="cap"><span>/login · desktop</span><span>fresh account, no gate</span></div>
+        <div class="screen"><div class="ground-bone" style="padding:36px 0"><div style="max-width:384px;margin:0 auto;padding:0 24px">
+          <div class="tc mb24">
+            <div style="display:flex;justify-content:center;margin-bottom:14px"><svg width="32" height="32" viewBox="0 0 20 20" class="c-sage" fill="none" stroke="currentColor" aria-hidden="true"><use href="#i-mark"/></svg></div>
+            <h1 class="t-hd2 c-ink">What's your name?</h1>
+            <p class="sub mt4">You're signed in as <span class="c-ink">sam@buildright.com.au</span>. This is the name that goes on your quotes and how we'll address you.</p>
           </div>
-          <div class="qpanel live">
-            <div class="stagehead">
-              <div class="stagenum">2</div>
-              <div>
-                <h2 class="t-hd2 c-ink">What's your name?</h2>
-                <p class="sub mt4">You're signed in as <span class="c-ink">sam@buildright.com.au</span>. This is the name that goes on your quote and how we'll address you.</p>
-              </div>
-            </div>
-            <div class="mt16 mb16" style="max-width:340px">
-              <label class="field-label" for="m3-nm">Full name</label>
-              <input class="field focusring" id="m3-nm" placeholder="e.g. Sam Taylor">
-            </div>
-            <span class="btn btn-md b-sage is-disabled">Save and continue</span>
+          <div class="card p24">
+            <label class="field-label" for="m3-nm">Full name</label>
+            <input class="field focusring mb16" id="m3-nm" placeholder="e.g. Sam Taylor">
+            <span class="btn btn-md b-sage is-disabled" style="width:100%;justify-content:center">Save and continue</span>
           </div>
         </div></div></div>
       </div>
       <div class="dev mob">
-        <div class="cap"><span>Mobile · 375w</span><span>error state</span></div>
-        <div class="screen mob"><div class="revpage"><div class="revwrap">
-          <div class="qpanel live">
-            <h2 class="t-hd2 c-ink mb4">What's your name?</h2>
-            <p class="sub mb16">You're signed in as <span class="c-ink">sam@…</span>. This is the name that goes on your quote.</p>
+        <div class="cap"><span>Account interstitial · 375w</span><span>E4 · empty error</span></div>
+        <div class="screen mob"><div class="ground-bone" style="padding:28px 0"><div style="padding:0 20px">
+          <div class="card p20">
+            <h1 class="t-hd2 c-ink mb4">What's your name?</h1>
+            <p class="sub mb16">This is the name that goes on your quotes and how we'll address you.</p>
             <label class="field-label" for="m3m-nm">Full name</label>
             <input class="field err" id="m3m-nm" value="   ">
             <p class="errtext mb16"><svg class="ic ic-12" aria-hidden="true"><use href="#i-alert"/></svg>Enter your name to continue.</p>
@@ -647,8 +642,9 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
       </div>
     </div>
     <div class="note">
-      <b>Same step, three doorways</b>
-      <p>The identical component appears after verifying at <code>/login</code>, and as an interstitial over any account page for a returning nameless account (E4). One signal drives it — <code>user.name === null</code> — so a customer who closed the tab mid-gate re-enters exactly where they left off.</p>
+      <b>The rule, stated once</b>
+      <p>Ask for the name <b>where it is not about to be asked for anyway</b>. Inside the gate a details form always follows a sign-in, so the gate never renders this step. At <code>/login</code> and on the account pages nothing follows, so it does.</p>
+      <p>One signal still drives it — <code>user.name === null</code> — so a customer who abandoned the gate mid-way and later signs in at <code>/login</code> is asked once, there.</p>
     </div>
   </div>
 </section>
@@ -657,22 +653,22 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
 <section class="surface" id="s4">
   <div class="shead">
     <div class="n">Surface 4</div>
-    <h2>Stage 3 — your details</h2>
-    <p>The minimum to submit: a name they typed, an AU-valid phone, a full address, and the delivery destination for this project. Collected once, stored on the account, pre-filled forever after. This panel is also the account's editing surface (AC-19).</p>
-    <div class="path">src/components/QuoteReviewSubmit.tsx · stage: signed in, details incomplete</div>
+    <h2>Stage 2 — your details</h2>
+    <p>The minimum to submit: a name they typed, an AU-valid phone, a full address, and the delivery destination for this project — <b style="color:#D6DADC">all of it in one pass</b>. The name is asked here and nowhere else in the gate. Collected once, stored on the account, pre-filled next time. This panel is also the account's editing surface (AC-19).</p>
+    <div class="path">src/components/QuoteReviewSubmit.tsx · stage: signed in (whether the account is new or returning)</div>
   </div>
 
   <div class="state">
-    <h3><span class="tag">4a</span> First time · nothing pre-filled except delivery</h3>
-    <p>Address is empty, so nothing pre-fills the delivery fields except the postcode the visitor already typed pre-gate. Submit is disabled and says what is still outstanding — no field is painted red before the customer has touched it.</p>
+    <h3><span class="tag">4a</span> Fresh account · name empty and required</h3>
+    <p>Nothing pre-fills except the delivery postcode the visitor already typed pre-gate. The name field is the first thing in the form and starts empty — this is the <em>only</em> place the gate asks for it. Submit is disabled and names what is still outstanding; no field is painted red before the customer has touched it.</p>
     <div class="frames">
       <div class="dev half">
-        <div class="cap"><span>Desktop</span><span>stage 3 · empty</span></div>
+        <div class="cap"><span>Desktop</span><span>stage 2 · fresh account</span></div>
         <div class="screen"><div class="revpage"><div class="revwrap">
           <div class="qpanel ctx"><div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,620.00 inc GST</span></div></div>
           <div class="qpanel">
             <div class="stagehead mb16">
-              <div class="stagenum">3</div>
+              <div class="stagenum">2</div>
               <div>
                 <h2 class="t-hd2 c-ink">Your details</h2>
                 <p class="sub mt4">So we can quote you properly and get the delivery right. We'll keep these on your account — next quote, they're already filled in.</p>
@@ -680,7 +676,7 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
             </div>
 
             <div class="grid2 mb16">
-              <div><label class="field-label" for="m4-nm">Full name</label><input class="field" id="m4-nm" value="Sam Taylor"></div>
+              <div><label class="field-label" for="m4-nm">Full name</label><input class="field focusring" id="m4-nm" placeholder="e.g. Sam Taylor"></div>
               <div><label class="field-label" for="m4-ph">Phone</label><input class="field" id="m4-ph" placeholder="0412 345 678"><p class="helptext">Mobile, landline or 1300/1800.</p></div>
             </div>
             <div class="mb20">
@@ -699,14 +695,14 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
             </div>
 
             <p class="t-label c-sage mb4 grouprule">Delivery for this project</p>
-            <p class="t-cap c-body mb12">Where these windows and doors go. Change it if the site isn't your address.</p>
+            <p class="t-cap c-body mb12">Where these windows and doors go — usually a site, not an office. We don't assume it, so it starts blank each time.</p>
             <div class="grid2 mb20">
               <div><label class="field-label" for="m4-ds">Delivery suburb</label><input class="field" id="m4-ds" placeholder="e.g. Preston VIC"></div>
-              <div><label class="field-label" for="m4-dp">Delivery postcode</label><input class="field" id="m4-dp" value="3072"><p class="helptext">We price delivery from this.</p></div>
+              <div><label class="field-label" for="m4-dp">Delivery postcode</label><input class="field" id="m4-dp" value="3072"><p class="helptext">Carried over from the postcode you used above.</p></div>
             </div>
 
             <div class="bt8 submitfoot" style="padding-top:16px">
-              <p class="t-cap c-body">Still needed: phone, street address, suburb, state, postcode.</p>
+              <p class="t-cap c-body">Still needed: full name, phone, street address, suburb, state, postcode.</p>
               <span class="btn btn-lg b-sage is-disabled">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span>
             </div>
           </div>
@@ -714,12 +710,12 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
       </div>
 
       <div class="dev mob">
-        <div class="cap"><span>Mobile · 375w</span><span>stage 3 · empty</span></div>
+        <div class="cap"><span>Mobile · 375w</span><span>stage 2 · fresh account</span></div>
         <div class="screen mob"><div class="revpage"><div class="revwrap">
           <div class="qpanel">
             <h2 class="t-hd2 c-ink mb4">Your details</h2>
             <p class="sub mb16">So we can quote you properly and get the delivery right. We'll keep these on your account.</p>
-            <label class="field-label" for="m4m-nm">Full name</label><input class="field mb12" id="m4m-nm" value="Sam Taylor">
+            <label class="field-label" for="m4m-nm">Full name</label><input class="field focusring mb12" id="m4m-nm" placeholder="e.g. Sam Taylor">
             <label class="field-label" for="m4m-ph">Phone</label><input class="field" id="m4m-ph" placeholder="0412 345 678"><p class="helptext" style="margin-bottom:12px">Mobile, landline or 1300/1800.</p>
             <label class="field-label">Email</label>
             <div class="readonly mb16"><span style="overflow:hidden;text-overflow:ellipsis">sam@buildright.com.au</span><span class="chip ch-sage"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Verified</span></div>
@@ -732,14 +728,23 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
               <div><label class="field-label" for="m4m-pc">Postcode</label><input class="field" id="m4m-pc" placeholder="3072"></div>
             </div>
             <p class="t-label c-sage mb4 grouprule">Delivery for this project</p>
-            <p class="t-cap c-body mb12">Change it if the site isn't your address.</p>
+            <p class="t-cap c-body mb12">Usually a site, not an office — so it starts blank each time.</p>
             <label class="field-label" for="m4m-ds">Delivery suburb</label><input class="field mb12" id="m4m-ds" placeholder="e.g. Preston VIC">
             <label class="field-label" for="m4m-dp">Delivery postcode</label><input class="field mb16" id="m4m-dp" value="3072">
-            <p class="t-cap c-body mb8">Still needed: phone, street address, suburb, state, postcode.</p>
+            <p class="t-cap c-body mb8">Still needed: full name, phone, street address, suburb, state, postcode.</p>
             <span class="btn btn-lg b-sage is-disabled" style="width:100%;justify-content:center">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span>
           </div>
         </div></div></div>
       </div>
+    </div>
+    <div class="note">
+      <b>Two questions collapsed into one</b>
+      <p>The gate previously asked "What's your name?" as its own stage and then asked for the name again here. It now asks once, in this form, alongside everything else it needs. A fresh account and a returning one see the <b>same panel</b> — only the starting values differ.</p>
+    </div>
+    <div class="flag">
+      <b>Delivery is never seeded from the account address</b>
+      <p>The delivery fields carry forward <b>only</b> the postcode the visitor typed on this screen pre-gate. They are never filled from the account address, on a first quote or a fifth.</p>
+      <p>A tradie's delivery destination is their customer's site, and it is different nearly every time. A prefilled-but-wrong delivery address that survives to submission is an expensive operational error, and prefill is exactly what stops someone reading the field. <b>This reverses the earlier decision behind AC-42's prefill clause</b> — flagged for the PM to amend the spec text, not silently contradicted.</p>
     </div>
   </div>
 
@@ -861,8 +866,8 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
           </div>
           <div class="qpanel">
             <h2 class="t-hd2 c-ink mb4">Your details</h2>
-            <p class="sub">Pre-filled from your account — edit if needed.</p>
-            <p class="t-cap c-quiet mt12">(fields as Surface 4)</p>
+            <p class="sub">From your account — edit if anything's changed.</p>
+            <p class="t-cap c-quiet mt12">(the same editable fields as Surface 4)</p>
           </div>
           <div style="text-align:right"><span class="btn btn-lg b-sage">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span></div>
         </div></div></div>
@@ -936,44 +941,52 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
   <div class="shead">
     <div class="n">Surface 7</div>
     <h2>Already signed in, details complete — the gate is invisible</h2>
-    <p>The returning customer's screen. No sign-in step, no name step, no form to fill: their details are shown as a single line they can expand, and the delivery destination — the one fact that genuinely changes per project — stays open. <b>One press submits.</b></p>
+    <p>The returning customer's screen. No sign-in step, no name step, nothing to re-type: it is the <b>same panel as Surface 4</b>, with their account values already in the fields. Every field is a live input — nothing hides behind an "edit" affordance. <b>One press submits.</b></p>
     <div class="path">stage: signed in, submitMissing() empty</div>
   </div>
   <div class="state">
-    <h3><span class="tag g">7a</span> Collapsed summary (default) · <span class="tag">7b</span> Expanded for editing</h3>
+    <h3><span class="tag g">7a</span> Prefilled and directly editable · delivery starts empty</h3>
+    <p>Their name, phone and address are filled and immediately editable — a cursor into any of them is the only step. The delivery fields carry only the postcode used for the estimate above; the suburb is blank, because the site is somewhere new nearly every time.</p>
     <div class="frames">
       <div class="dev half">
         <div class="cap"><span>Desktop</span><span>one-action submit</span></div>
         <div class="screen"><div class="revpage"><div class="revwrap">
-          <div class="qpanel"><div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,109.09 ex GST</span></div></div>
+          <div class="qpanel ctx"><div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,109.09 ex GST</span></div></div>
           <div class="qpanel">
-            <div class="row jb as g16 mb16">
-              <div>
-                <p class="t-label c-sage mb6">Your details</p>
-                <p class="t-bd-sm c-ink">Sam Taylor · 0412 345 678</p>
-                <p class="t-bd-sm c-body">12 Bridge Street, Preston VIC 3072</p>
-                <p class="t-cap c-body mt4">sam@buildright.com.au</p>
-              </div>
-              <span class="linkbtn" style="flex:none">Edit details</span>
+            <div class="row jb ac g16 mb16">
+              <h2 class="t-hd2 c-ink">Your details</h2>
+              <p class="row g6 ac" style="color:var(--sage);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)"><svg class="ic ic-13" aria-hidden="true"><use href="#i-check-circle"/></svg>From your account — edit if anything's changed.</p>
             </div>
-            <div class="bt8" style="padding-top:16px">
-              <p class="t-label c-sage mb4">Delivery for this project</p>
-              <p class="t-cap c-body mb12">Pre-filled from your address — change it if the site is somewhere else.</p>
-              <div class="grid2">
-                <div><label class="field-label" for="m7-ds">Delivery suburb</label><input class="field" id="m7-ds" value="Preston"></div>
-                <div><label class="field-label" for="m7-dp">Delivery postcode</label><input class="field" id="m7-dp" value="3072"></div>
-              </div>
+            <div class="grid2 mb16">
+              <div><label class="field-label" for="m7-nm">Full name</label><input class="field" id="m7-nm" value="Sam Taylor"></div>
+              <div><label class="field-label" for="m7-ph">Phone</label><input class="field" id="m7-ph" value="0412 345 678"></div>
+            </div>
+            <div class="mb16">
+              <label class="field-label">Email</label>
+              <div class="readonly"><span>sam@buildright.com.au</span><span class="chip ch-sage"><svg class="ic ic-12" aria-hidden="true"><use href="#i-check"/></svg>Verified</span></div>
+            </div>
+            <div class="mb16"><label class="field-label" for="m7-a1">Street address</label><input class="field" id="m7-a1" value="12 Bridge Street"></div>
+            <div class="grid3 mb20">
+              <div><label class="field-label" for="m7-sb">Suburb</label><input class="field" id="m7-sb" value="Preston"></div>
+              <div><label class="field-label" for="m7-st">State</label><select class="field" id="m7-st"><option>VIC</option></select></div>
+              <div><label class="field-label" for="m7-pc">Postcode</label><input class="field" id="m7-pc" value="3072"></div>
+            </div>
+            <p class="t-label c-sage mb4 grouprule">Delivery for this project</p>
+            <p class="t-cap c-body mb12">Where these windows and doors go — usually a site, not an office. We don't assume it, so it starts blank each time.</p>
+            <div class="grid2">
+              <div><label class="field-label" for="m7-ds">Delivery suburb</label><input class="field" id="m7-ds" placeholder="e.g. Craigieburn VIC"></div>
+              <div><label class="field-label" for="m7-dp">Delivery postcode</label><input class="field" id="m7-dp" value="3072"><p class="helptext">Carried over from the postcode you used above.</p></div>
             </div>
           </div>
           <div style="text-align:right"><span class="btn btn-lg b-sage">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span></div>
         </div></div></div>
       </div>
       <div class="dev mob">
-        <div class="cap"><span>Mobile · 375w</span><span>expanded to edit</span></div>
+        <div class="cap"><span>Mobile · 375w</span><span>same panel, one column</span></div>
         <div class="screen mob"><div class="revpage"><div class="revwrap">
           <div class="qpanel">
-            <div class="row jb ac mb16"><p class="t-label c-sage">Your details</p><span class="linkbtn t-cap">Done</span></div>
-            <p class="row g6 ac mb16" style="color:var(--sage);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)"><svg class="ic" aria-hidden="true"><use href="#i-check-circle"/></svg>Pre-filled from your account — edit if needed.</p>
+            <h2 class="t-hd2 c-ink mb8">Your details</h2>
+            <p class="row g6 ac mb16" style="color:var(--sage);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)"><svg class="ic ic-13" aria-hidden="true"><use href="#i-check-circle"/></svg>From your account — edit if anything's changed.</p>
             <label class="field-label">Full name</label><input class="field mb12" value="Sam Taylor">
             <label class="field-label">Phone</label><input class="field mb12" value="0412 345 678">
             <label class="field-label">Street address</label><input class="field mb12" value="12 Bridge Street">
@@ -982,14 +995,19 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
               <div><label class="field-label">State</label><select class="field"><option>VIC</option></select></div>
               <div><label class="field-label">Postcode</label><input class="field" value="3072"></div>
             </div>
-            <p class="t-cap c-body">Changes here are saved to your account when you submit.</p>
+            <p class="t-label c-sage mb4 grouprule">Delivery for this project</p>
+            <p class="t-cap c-body mb12">Usually a site, not an office — so it starts blank each time.</p>
+            <label class="field-label">Delivery suburb</label><input class="field mb12" placeholder="e.g. Craigieburn VIC">
+            <label class="field-label">Delivery postcode</label><input class="field mb16" value="3072">
+            <span class="btn btn-lg b-sage" style="width:100%;justify-content:center">Submit for technical review <svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span>
           </div>
         </div></div></div>
       </div>
     </div>
     <div class="note">
       <b>Where the account gets edited</b>
-      <p>The gate is the account's editing surface as well as its collection surface (AC-19): an edited value is written to the account on submit and pre-fills every future quote. Delivery is the exception — it belongs to the project, and overwriting it never touches the account address (AC-42).</p>
+      <p>The gate is the account's editing surface as well as its collection surface (AC-19): an edited value is written to the account on submit and pre-fills the next quote. Delivery is the exception — it belongs to the project, is never written back to the account, and is never read from it either.</p>
+      <p>The email row is the one thing that is not an input: it is the sign-in identity, and an accidental edit is a lockout. It stays a read-only row with its <b>Verified</b> chip, exactly as in Surface 4.</p>
     </div>
   </div>
 </section>
