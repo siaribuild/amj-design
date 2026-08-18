@@ -764,7 +764,7 @@ disabled for 30 s with the label **"Resend code (28s)"** counting down, then ret
 | `/challenge` failed (network / 5xx) | inline under the button, `role="alert"` | **"Couldn't send a code. Try again."** |
 | `/challenge` 429 (E2) | `.quote-notice--warning` block above the button | **"Too many code requests from this connection. Try again in a few minutes — your quote is saved and nothing is lost."** |
 | Wrong code (E3) | field error under the code input, `aria-invalid` set | **"That code didn't match. Check it and try again, or resend a new one."** |
-| Challenge burned / expired | same slot | **"That code has expired. Send a new one to continue."** |
+| Challenge burned / expired | same slot | ~~"That code has expired. Send a new one to continue."~~ **Struck (tester Finding 3, 2026-08-19): `/verify` deliberately returns the identical `invalid_code` for wrong, expired and burned — the client cannot distinguish them, and must not try (AB-5/AB-7). The wrong-code copy above serves all three; its "or resend a new one" clause carries the expired case.** |
 | `/verify` network failure | same slot | **"Something went wrong verifying that code. Please try again."** |
 
 None of these may differ between an address that has an account and one that does not (AB-5).
@@ -990,8 +990,15 @@ Delivery stays **open and prominent** — it is the one fact that genuinely chan
 the only one the customer must actually think about. Its suburb is empty; its postcode carries the
 pre-gate value only.
 
-Submit is enabled on arrival. **One press submits** — the gate is invisible because there is
-nothing to satisfy, not because anything is hidden.
+**Owner ruling 2026-08-19 (supersedes the next paragraph's "one press"):** delivery starts blank
+on every project, so the returning customer's contract is **one field, one press** — they type
+the site's delivery destination, and Submit enables. Whenever delivery (or anything else) blocks
+submission, the "Still needed:" caption names it; Submit must never sit disabled unexplained.
+This reconciles AC-14 with MG-2 — the "carried over" postcode exists only on the anonymous path,
+where stage 0 captured one.
+
+~~Submit is enabled on arrival. **One press submits** — the gate is invisible because there is
+nothing to satisfy, not because anything is hidden.~~
 
 Compactness is welcome (tighter row spacing than the fresh-account case, no repeated helper text
 under fields whose values are already valid) but it may never be achieved by hiding a field behind

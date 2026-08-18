@@ -329,11 +329,16 @@ AC-17 and AC-42 were amended in revision 3 (MG-1/MG-2); no id has ever been reus
 - **AC-13** — Given the gate's code step, When a correct code is entered, Then a session is
   established, the screen advances **directly to Your details** (no intermediate name step), and
   **no submission has occurred**.
-- **AC-14** *(amended, rev 3 / MG-2)* — Given a signed-in customer with a complete profile, When
-  they reach the review screen, Then no sign-in stage is shown and every stored value is already in
-  a **live, editable input** — Submit is reachable with **no further typing and no further
-  clicking**, and correcting any single field takes exactly one interaction (a cursor into it).
-  There is no collapsed summary and no expand-to-edit affordance anywhere in the details panel.
+- **AC-14** *(amended, rev 4 / owner ruling 2026-08-19: "one field, one press")* — Given a
+  signed-in customer with a complete profile, When they reach the review screen, Then no sign-in
+  stage is shown and every stored **account** value is already in a **live, editable input** —
+  correcting any single field takes exactly one interaction (a cursor into it), and there is no
+  collapsed summary and no expand-to-edit affordance anywhere in the details panel. The **delivery
+  destination starts blank on every project** (MG-2: business users are expected never to deliver
+  to the same address) — the customer types the site and presses Submit: **one field, one press**.
+  While delivery (or anything else) blocks submission, Submit is disabled AND the "Still needed:"
+  caption names every outstanding item, delivery included — a disabled Submit with no stated cause
+  is a defect (tester Finding 1, 2026-08-19).
 - **AC-15** — Given a signed-in customer, When they submit, Then the project moves to
   `status_customer = 'submitted'` exactly as it does today (state guards, line readiness, duplicate
   codes, AI-generation checks all unchanged), and the confirmation screen is shown only on a
