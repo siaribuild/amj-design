@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registration Phase 1 — submit gate — UX mock</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='1' y='1' width='18' height='18' fill='none' stroke='%235A7A6A' stroke-width='2'/%3E%3Cline x1='10' y1='1' x2='10' y2='19' stroke='%235A7A6A' stroke-width='2'/%3E%3Cline x1='1' y1='10' x2='19' y2='10' stroke='%235A7A6A' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   PRODUCT TOKENS — copied from src/styles/theme.css. Do not invent values.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --paper:#FFFFFF; --bone:#FBFAF8; --recessive:#F5F3F0; --shade:#E8E5DF;
+  --line:rgba(19,19,17,.18); --line-strong:rgba(19,19,17,.28);
+  --sage:#5A7A6A; --sage-light:#8CA99B; --sage-deep:#3f5a4c; --sage-ink:#355344;
+  --sage-hover:#4a6858; --sage-wash:#F3F6F5; --sage-veil:#F7FAF8;
+  --ink:#131311; --ink-soft:#3a3835; --ink-hover:#2a2a27;
+  --body:#5c5a56; --body-soft:#6f6c67;
+  --quiet:#8b8880; --quieter:#9a9894; --quietest:#b5b2ac;
+  --night:#0c0c0a; --ops:#14150f; --ops-panel:#1d1e17;
+  --positive:#2c7a54; --warning:#8a6a2a; --warning-ink:#7a5410;
+  --attention:#C0392B; --attention-ink:#96271B;
+  --info:#4C6A88; --info-ink:#31485f; --destructive:#C0392B;
+  --tone-attn:#A2610A; --tone-attn-bg:rgba(178,110,15,.10); --tone-attn-bd:rgba(178,110,15,.34);
+  --tone-pos:#2C7A54;  --tone-pos-bg:rgba(44,122,84,.10);   --tone-pos-bd:rgba(44,122,84,.30);
+  --tone-work:#4C6A88; --tone-work-bg:rgba(76,106,136,.10); --tone-work-bd:rgba(76,106,136,.30);
+  --tone-mute:#8b897f; --tone-mute-bg:rgba(0,0,0,.045);     --tone-mute-bd:rgba(0,0,0,.12);
+  /* Space Grotesk / Inter are loaded from Google Fonts in the real app. A mock
+     may make no external request, so the stack falls through to the system UI
+     face. Type SIZE, WEIGHT, TRACKING and RHYTHM are the real values; only the
+     letterforms differ from production. */
+  --font-display:"Space Grotesk",ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+  --font-body:"Inter",ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+  --font-data:var(--font-display);
+  --t-ds1:56px; --t-ds1-lh:58px; --t-ds2:40px; --t-ds2-lh:44px;
+  --t-hd1:30px; --t-hd1-lh:36px; --t-hd2:22px; --t-hd2-lh:28px; --t-hd3:17px; --t-hd3-lh:24px;
+  --t-bdlg:18px; --t-bdlg-lh:29px; --t-bd:16px; --t-bd-lh:26px; --t-bdsm:14px; --t-bdsm-lh:21px;
+  --t-cap:13px; --t-cap-lh:18px; --t-lbl:11px; --t-lbl-lh:14px;
+  --t-dat:14px; --t-dat-lh:20px; --t-datsm:12px; --t-datsm-lh:16px;
+  --radius:2px;
+}
+*{box-sizing:border-box;margin:0;padding:0;border:0 solid var(--line)}
+/* Type roles */
+.t-ds1{font:600 var(--t-ds1)/var(--t-ds1-lh) var(--font-display);letter-spacing:-1.4px}
+.t-ds2{font:600 var(--t-ds2)/var(--t-ds2-lh) var(--font-display);letter-spacing:-.9px}
+.t-hd1{font:600 var(--t-hd1)/var(--t-hd1-lh) var(--font-display);letter-spacing:-.6px}
+.t-hd2{font:600 var(--t-hd2)/var(--t-hd2-lh) var(--font-display);letter-spacing:-.3px}
+.t-hd3{font:600 var(--t-hd3)/var(--t-hd3-lh) var(--font-display);letter-spacing:-.1px}
+.t-bd-lg{font:400 var(--t-bdlg)/var(--t-bdlg-lh) var(--font-body)}
+.t-bd{font:400 var(--t-bd)/var(--t-bd-lh) var(--font-body)}
+.t-bd-sm{font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.t-cap{font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)}
+.t-label{font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase}
+.t-data{font:500 var(--t-dat)/var(--t-dat-lh) var(--font-data);font-variant-numeric:tabular-nums}
+.t-data-sm{font:500 var(--t-datsm)/var(--t-datsm-lh) var(--font-data);font-variant-numeric:tabular-nums}
+.fd{font-family:var(--font-display)}
+.fdata{font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.sb{font-weight:600}.md{font-weight:500}
+/* Colour roles */
+.c-ink{color:var(--ink)}.c-inks{color:var(--ink-soft)}.c-body{color:var(--body)}
+.c-quiet{color:var(--quiet)}.c-quieter{color:var(--quieter)}.c-quietest{color:var(--quietest)}
+.c-sage{color:var(--sage)}.c-saged{color:var(--sage-deep)}.c-sagei{color:var(--sage-ink)}
+.c-white{color:#fff}.c-w70{color:rgba(255,255,255,.7)}.c-w55{color:rgba(255,255,255,.55)}
+.c-w40{color:rgba(255,255,255,.4)}.c-sagel{color:var(--sage-light)}
+.c-attn{color:var(--tone-attn)}.c-pos{color:var(--tone-pos)}.c-work{color:var(--tone-work)}
+.c-warn{color:var(--warning-ink)}.c-info{color:var(--info-ink)}.c-dest{color:var(--destructive)}
+/* Grounds + card, exactly as theme.css derives them */
+.ground-paper{background:var(--paper);--card-fill:var(--bone)}
+.ground-bone{background:var(--bone);--card-fill:var(--paper)}
+.ground-night{background:var(--night)}
+.card{border:1px solid var(--line);background:var(--card-fill,var(--bone))}
+.panel-head{background:var(--recessive);border-bottom:1px solid var(--line)}
+.panel-result{background:var(--sage-wash);border-top:1px solid var(--line)}
+.figure{font-family:var(--font-data);font-variant-numeric:tabular-nums;font-weight:600;line-height:1;color:var(--sage-deep);font-size:2.2rem}
+/* Buttons — src/app/ui.tsx Btn */
+.btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-body);font-weight:500;letter-spacing:.02em;cursor:default;border:1px solid transparent;white-space:nowrap}
+.btn-sm{padding:8px 16px;font-size:var(--t-cap);line-height:var(--t-cap-lh)}
+.btn-md{padding:12px 24px;font-size:var(--t-bdsm);line-height:var(--t-bdsm-lh)}
+.btn-lg{padding:16px 32px;font-size:var(--t-bdsm);line-height:var(--t-bdsm-lh)}
+.b-primary{background:var(--ink);color:#fff}
+.b-sage{background:var(--sage);color:#fff}
+.b-outline{border-color:var(--ink);color:var(--ink);background:transparent}
+.b-ghost{color:var(--body);background:transparent}
+.b-danger{background:var(--destructive);color:#fff}
+.b-disabled{background:var(--ink);color:#fff;opacity:.4}
+/* Inputs — .field-control */
+.field{width:100%;border:1px solid var(--line-strong);background:var(--paper);padding:10px 12px;color:var(--ink);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.field.mono{font-family:var(--font-data);font-variant-numeric:tabular-nums;letter-spacing:.06em}
+.field.err{border-color:var(--attention);background:color-mix(in oklab,var(--attention) 7%,var(--paper));color:var(--attention-ink)}
+.field.focus{border-color:var(--sage)}
+.field-label{display:block;color:var(--ink-soft);margin-bottom:6px;font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase}
+/* Status pill — pages/accountModel StatusPill (icon + word, never colour alone) */
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid;white-space:nowrap;font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-display);letter-spacing:1px;text-transform:uppercase}
+.p-attn{color:var(--tone-attn);background:var(--tone-attn-bg);border-color:var(--tone-attn-bd)}
+.p-pos{color:var(--tone-pos);background:var(--tone-pos-bg);border-color:var(--tone-pos-bd)}
+.p-work{color:var(--tone-work);background:var(--tone-work-bg);border-color:var(--tone-work-bd)}
+.p-mute{color:var(--tone-mute);background:var(--tone-mute-bg);border-color:var(--tone-mute-bd)}
+.p-draft{color:var(--body);background:transparent;border:1px dashed rgba(0,0,0,.1)}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--line);white-space:nowrap;font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)}
+.ch-sage{border-color:rgba(90,122,106,.3);background:var(--sage-wash);color:var(--sage-ink)}
+.ch-warn{border-color:rgba(180,120,40,.4);color:var(--warning-ink);background:rgba(180,120,40,.07)}
+.ch-mute{background:var(--bone);color:var(--body)}
+.ch-info{border-color:rgba(76,106,136,.38);background:rgba(76,106,136,.08);color:var(--info-ink)}
+/* Notices */
+.notice{padding:14px 16px;border:1px solid}
+.n-info{border-color:rgba(76,106,136,.32);background:color-mix(in oklab,var(--info) 6%,var(--paper));color:var(--info-ink)}
+.n-warn{border-color:rgba(180,120,40,.35);background:color-mix(in oklab,var(--warning) 9%,var(--paper));color:var(--warning-ink)}
+.n-sage{border-color:rgba(90,122,106,.35);background:rgba(90,122,106,.06);color:var(--sage-ink)}
+.n-dest{border-color:rgba(192,57,43,.35);background:color-mix(in oklab,var(--destructive) 7%,var(--paper));color:var(--attention-ink)}
+/* Layout helpers */
+.wrap{max-width:1152px;margin:0 auto;padding:0 24px}
+.sect{padding-block:96px;position:relative}
+.sect-sm{padding-block:64px;position:relative}
+.gridpaper::before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,rgba(90,122,106,.045) 1px,transparent 1px),linear-gradient(to bottom,rgba(90,122,106,.045) 1px,transparent 1px);background-size:64px 64px}
+.row{display:flex;align-items:center}.col{display:flex;flex-direction:column}
+.g4{gap:4px}.g6{gap:6px}.g8{gap:8px}.g10{gap:10px}.g12{gap:12px}.g16{gap:16px}.g20{gap:20px}.g24{gap:24px}.g32{gap:32px}
+.wr{flex-wrap:wrap}.ac{align-items:center}.ab{align-items:baseline}.as{align-items:flex-start}
+.jb{justify-content:space-between}.je{justify-content:flex-end}.jc{justify-content:center}
+.grow{flex:1;min-width:0}.mt-auto{margin-top:auto}
+.bt{border-top:1px solid var(--line)}.bb{border-bottom:1px solid var(--line)}
+.bt8{border-top:1px solid rgba(0,0,0,.08)}.bb8{border-bottom:1px solid rgba(0,0,0,.08)}
+.bb5{border-bottom:1px solid rgba(0,0,0,.05)}
+.p12{padding:12px}.p16{padding:16px}.p20{padding:20px}.p24{padding:24px}.p32{padding:32px}
+.px16{padding-inline:16px}.px20{padding-inline:20px}.py10{padding-block:10px}.py12{padding-block:12px}.py14{padding-block:14px}
+.mb4{margin-bottom:4px}.mb6{margin-bottom:6px}.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}
+.mb16{margin-bottom:16px}.mb20{margin-bottom:20px}.mb24{margin-bottom:24px}.mb32{margin-bottom:32px}
+.mt4{margin-top:4px}.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}.mt24{margin-top:24px}
+.tr{text-align:right}.tc{text-align:center}
+.mark{width:20px;height:20px;flex:none}
+/* ─── The two existing card TRACKS, copied from App.tsx ────────────────────
+   A: numbered steps      App.tsx:1061-1078  grid-cols-1 sm:2 lg:3 gap-0
+   B: two-column Q&A      App.tsx:1192-1206  grid-cols-1 md:2 gap-0
+   The negative margins are the whole mechanism: adjacent borders collapse to a
+   single hairline, so the track reads as ONE object rather than N tiles. */
+.track3{display:grid;grid-template-columns:repeat(3,1fr);gap:0}
+.track3 > *:nth-child(n+2){margin-left:-1px}
+.track2{display:grid;grid-template-columns:repeat(2,1fr);gap:0}
+.track2 > *:nth-child(n+3){margin-top:-1px}
+.track2 > *:nth-child(even){margin-left:-1px}
+.track1{display:grid;grid-template-columns:1fr;gap:0}
+.track1 > *:nth-child(n+2){margin-top:-1px}
+/* The step badge — App.tsx:1066. NOT .figure: theme.css reserves .figure for a
+   SECTION's headline number and warns that a display numeral inside a card is
+   "twice the weight of the thing it was annotating". */
+.stepbadge{width:32px;height:32px;flex:none;border:1px solid rgba(90,122,106,.4);display:flex;align-items:center;justify-content:center;color:var(--sage);font:500 12px/16px var(--font-data);font-variant-numeric:tabular-nums}
+.seamchev{position:absolute;right:-10px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:rgba(90,122,106,.6);background:var(--paper);z-index:10;display:grid;place-items:center;font-size:13px}
+/* The fact row — App.tsx:1169-1174 (the AS 2047 strip): a quiet fixed-width
+   data-face key beside body prose at reading width. No cells, no fills, no
+   boxes: the hairline between rows is the only structure. */
+.condrow{display:flex;align-items:baseline;gap:24px;padding:14px 0;border-bottom:1px solid var(--line)}
+.condkey{flex:none;width:180px;color:var(--sage-deep);font:500 var(--t-dat)/var(--t-dat-lh) var(--font-data);font-variant-numeric:tabular-nums}
+.condrow.stacked{flex-direction:column;align-items:stretch;gap:4px}
+.condrow.stacked .condkey{width:auto}
+.sagebar{border-left:3px solid var(--sage)}
+.attnbar{border-left:3px solid var(--tone-attn)}
+.mutebar{border-left:3px solid var(--tone-mute-bd)}
+.infobar{border-left:3px solid var(--info)}
+.measure{max-width:68ch}.prose{max-width:54ch}
+/* Site header / footer chrome, for context in the marketing frames */
+.sitehdr{height:64px;background:var(--night);color:#fff;display:flex;align-items:center}
+.sitehdr a{color:rgba(255,255,255,.72);text-decoration:none}
+/* Account rail (AccountShell) */
+.rail-item{display:flex;align-items:center;gap:11px;padding:10px 12px;border-left:2px solid transparent;color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.rail-item.on{color:var(--ink);font-weight:600;background:rgba(90,122,106,.07);border-left-color:var(--sage)}
+/* Ops chrome */
+.ops-shell{background:var(--bone);display:flex;min-height:100%}
+.ops-rail{width:224px;flex:none;background:var(--ops);color:#fff;display:flex;flex-direction:column}
+.ops-nav{display:flex;align-items:center;gap:10px;padding:8px 20px;color:rgba(255,255,255,.5);border-left:2px solid transparent;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.ops-nav.on{color:#fff;background:rgba(255,255,255,.08);border-left-color:var(--sage)}
+.ops-hdr{height:56px;background:#fff;border-bottom:1px solid rgba(0,0,0,.08);display:flex;align-items:center;padding:0 32px;gap:8px}
+table.ops{width:100%;border-collapse:collapse;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+table.ops thead tr{text-align:left;color:var(--quiet);border-bottom:1px solid rgba(0,0,0,.08)}
+table.ops th{padding:10px 12px;font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase;font-weight:500;text-align:left}
+table.ops th:first-child,table.ops td:first-child{padding-left:16px}
+table.ops th:last-child,table.ops td:last-child{padding-right:16px}
+table.ops td{padding:10px 12px;color:var(--ops);border-bottom:1px solid rgba(0,0,0,.05);vertical-align:top}
+table.ops tbody tr:last-child td{border-bottom:0}
+table.ops .num{text-align:right;font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.ops-empty{background:#fff;border:1px dashed rgba(0,0,0,.15);padding:48px;text-align:center;color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.ops-tab{padding:8px 0;border-bottom:2px solid transparent;color:var(--quiet);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);margin-bottom:-1px}
+.ops-tab.on{border-bottom-color:var(--sage);color:var(--ops);font-weight:500}
+.ops-in{border:1px solid rgba(0,0,0,.12);padding:2px 8px;text-align:right;font:500 var(--t-dat)/var(--t-dat-lh) var(--font-data);font-variant-numeric:tabular-nums;width:96px}
+.ops-btn{padding:8px 14px;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);white-space:nowrap}
+.ops-btn.pri{background:var(--sage);color:#fff}
+.ops-btn.sec{border:1px solid rgba(0,0,0,.15);color:var(--ink);background:#fff}
+.ops-btn.gho{color:var(--quiet);background:transparent}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOCK CHROME — deliberately unlike the product so nothing here can be
+   mistaken for UI. Slate ground, mono labels, orange accent.
+   ══════════════════════════════════════════════════════════════════════════ */
+body{background:#181A1B;color:#C9CBCC;font:400 15px/1.6 ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#top{position:sticky;top:0;z-index:60;background:#101112;border-bottom:1px solid #2E3133}
+#top .in{max-width:1400px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+#top b{color:#fff;font-size:15px;letter-spacing:-.2px}
+#top nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+#top nav a{color:#9BA0A3;text-decoration:none;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:5px 9px;border:1px solid #2E3133;font-family:ui-monospace,monospace}
+#top nav a:hover{color:#fff;border-color:#E8863A}
+.page{max-width:1400px;margin:0 auto;padding:0 24px 120px}
+.intro{padding:44px 0 32px;border-bottom:1px solid #2E3133;margin-bottom:8px}
+.intro h1{color:#fff;font-size:34px;line-height:1.15;letter-spacing:-.8px;font-weight:650;margin-bottom:10px}
+.intro p{max-width:78ch;color:#A8ACAE;margin-bottom:10px}
+.kicker{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#E8863A;margin-bottom:12px}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1px;background:#2E3133;border:1px solid #2E3133;margin-top:24px}
+.rules div{background:#1D1F21;padding:14px 16px}
+.rules h4{color:#E8863A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px;font-weight:600}
+.rules p{font-size:13px;line-height:1.55;color:#A8ACAE;margin:0}
+section.surface{padding-top:56px}
+.shead{border-top:1px solid #2E3133;padding-top:20px;margin-bottom:8px}
+.shead .n{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.14em;color:#E8863A;text-transform:uppercase}
+.shead h2{color:#fff;font-size:25px;letter-spacing:-.4px;font-weight:650;margin:6px 0 8px}
+.shead p{max-width:80ch;color:#A8ACAE;font-size:14px;margin-bottom:4px}
+.shead .path{font-family:ui-monospace,monospace;font-size:12px;color:#6E7376}
+.state{margin-top:36px}
+/* DIRECT CHILD ONLY. As a descendant selector this leaked into every <h3>
+   inside every product frame — white text, 16px, display:flex — because the
+   frames are nested in .state. Chrome must never reach into .screen. */
+.state > h3{color:#fff;font-size:16px;font-weight:620;margin-bottom:4px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.state > h3 .tag{font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#101112;background:#E8863A;padding:2px 7px}
+.state > h3 .tag.g{background:#5A9A72}.state > h3 .tag.b{background:#5F8AB0}.state > h3 .tag.r{background:#C0392B;color:#fff}
+.state > p{color:#9BA0A3;font-size:13.5px;max-width:82ch;margin-bottom:14px}
+.frames{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
+.dev{background:#0E0F10;border:1px solid #2E3133;padding:9px;flex:none}
+.dev > .cap{font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#7E8386;padding:0 2px 8px;display:flex;justify-content:space-between;gap:12px}
+.dev .screen{overflow:hidden;background:#fff}
+.dev.desk{width:1198px}.dev.desk .screen{width:1180px}
+.dev.wide{width:1338px}.dev.wide .screen{width:1320px}
+.dev.mob{width:393px}.dev.mob .screen{width:375px}
+.note{margin-top:14px;border-left:2px solid #E8863A;padding:2px 0 2px 14px;max-width:88ch}
+/* DIRECT CHILD ONLY — the note's title. As `.note b` this also hit every
+   inline <b> inside the note's paragraphs, rendering mid-sentence emphasis as
+   an orange uppercase block label on its own line. */
+.note > b{color:#E8863A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:3px}
+.note p b{color:#D6DADC;font-weight:650}
+.note p{color:#A8ACAE;font-size:13px;line-height:1.6;margin-bottom:6px}
+.note p:last-child{margin-bottom:0}
+.note code,.intro code,.rules code{font-family:ui-monospace,monospace;font-size:12px;background:#2A2D2F;color:#D9C08F;padding:1px 4px}
+.flag{border:1px solid #C0392B;background:rgba(192,57,43,.12);padding:12px 14px;margin-top:14px;max-width:88ch}
+.flag > b{color:#E9776A;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:4px}
+.flag p b{color:#F0D3CF;font-weight:650}
+.flag p{color:#D8B7B2;font-size:13px;line-height:1.6;margin:0}
+</style>
+</head>
+<body>
+
+<style>
+/* ── Extra frame sizes + review-screen helpers for THIS mock ────────────── */
+.dev.mid{width:938px}.dev.mid .screen{width:920px}
+.dev.half{width:698px}.dev.half .screen{width:680px}
+.revwrap{max-width:672px;margin:0 auto;padding:0 24px}
+.revpage{background:var(--bone);--card-fill:var(--paper);padding:22px 0 40px}
+.slabel{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.slabel span{color:var(--sage);font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase}
+.qpanel{border:1px solid var(--line);background:var(--paper);padding:20px;margin-bottom:16px}
+.qrow{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid rgba(0,0,0,.06);padding:6px 0;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.qrow:last-of-type{border-bottom:0}
+.qrow .lbl{color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qrow .amt{color:var(--body);flex:none;font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.totrow{display:flex;justify-content:space-between;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.totrow .k{color:var(--body)}.totrow .v{color:var(--ink);font-family:var(--font-data);font-variant-numeric:tabular-nums}
+.totrow.big{border-top:1px solid rgba(0,0,0,.08);padding-top:8px;margin-top:2px}
+.totrow.big .k,.totrow.big .v{font-weight:600;color:var(--ink)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.mob .grid2,.mob .grid3{grid-template-columns:1fr}
+.backlink{display:flex;align-items:center;gap:4px;color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);margin-bottom:18px}
+.stagehead{display:flex;align-items:flex-start;gap:12px;margin-bottom:4px}
+.stagenum{width:26px;height:26px;flex:none;border:1px solid rgba(90,122,106,.45);color:var(--sage);display:flex;align-items:center;justify-content:center;font:500 12px/1 var(--font-data)}
+.ts{border:1px solid var(--line-strong);background:var(--recessive);padding:10px 12px;display:flex;align-items:center;gap:10px;max-width:302px}
+.ts .box{width:22px;height:22px;border:1px solid var(--line-strong);background:#fff;flex:none}
+.ts .box.done{background:var(--sage);border-color:var(--sage);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px}
+.helptext{color:var(--body);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:5px}
+.errtext{color:var(--attention-ink);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:5px}
+.readonly{border:1px solid var(--line);background:var(--recessive);padding:10px 12px;color:var(--ink);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.linkbtn{color:var(--sage-ink);text-decoration:underline;text-underline-offset:2px;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);background:none}
+.spinner{width:14px;height:14px;border:2px solid rgba(90,122,106,.3);border-top-color:var(--sage);border-radius:50%;display:inline-block;vertical-align:-2px}
+.focusring{outline:2px solid var(--sage);outline-offset:2px}
+.sub{color:var(--body);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
+.newchip{display:inline-flex;align-items:center;padding:1px 6px;border:1px solid rgba(90,122,106,.35);background:var(--sage-wash);color:var(--sage-ink);font:600 10px/14px var(--font-data);letter-spacing:.09em;text-transform:uppercase;margin-left:6px;vertical-align:1px}
+select.field{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--body) 50%),linear-gradient(135deg,var(--body) 50%,transparent 50%);background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+</style>
+
+<div id="top"><div class="in">
+  <b>User registration Phase 1 — the submission gate</b>
+  <span class="mono" style="font-size:11px;color:#6E7376">AMJ Trade Direct / OpenFrame · UX mock for approval</span>
+  <nav>
+    <a href="#s1">1 · Pre-gate</a>
+    <a href="#s2">2 · Sign in</a>
+    <a href="#s3">3 · Name</a>
+    <a href="#s4">4 · Details</a>
+    <a href="#s5">5 · Merge</a>
+    <a href="#s6">6 · GST flip</a>
+    <a href="#s7">7 · Signed in</a>
+    <a href="#s8">8 · Relabels</a>
+  </nav>
+</div></div>
+
+<div class="page">
+
+<div class="intro">
+  <div class="kicker">Phase 1 · docs/specs/user-registration-phase-1.md</div>
+  <h1>Anonymity ends at one button, and only at that one.</h1>
+  <p>Browsing, configuring, live prices, autosave and uploads are unchanged — nobody is asked for anything. <b style="color:#D6DADC">Submit for technical review</b> is the single point where an account becomes required, because quote review is the most expensive human time in the business.</p>
+  <p>The friction is deliberate: an extra minute won't turn away a serious buyer, but it will turn away someone wandering around. It must never feel <em>broken</em> or <em>hostile</em> — so every screen here announces the cost before charging it, and keeps the quote itself visible the whole way through.</p>
+  <div class="rules">
+    <div><h4>One screen, four stages</h4><p>The gate lives inside the existing review screen. The quote panel above it never disappears — the customer is always looking at what they are about to submit.</p></div>
+    <div><h4>Never auto-submit</h4><p>Verifying a code signs you in. It does not submit your quote. Submission stays the customer's deliberate act (A-P1-4).</p></div>
+    <div><h4>Nothing about trade</h4><p>No trade pricing, trade account, discount or application appears anywhere on these screens (AC-41). No referral-code field exists on any form (AC-32).</p></div>
+    <div><h4>Invisible when satisfied</h4><p>A returning customer with complete details sees no gate at all — one press of Submit, exactly as today.</p></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 1 -->
+<section class="surface" id="s1">
+  <div class="shead">
+    <div class="n">Surface 1</div>
+    <h2>Review and submit — anonymous, before the gate</h2>
+    <p>What an anonymous visitor sees when they reach the review step. The quote is fully priced, delivery included: <b>seeing the price never requires an account</b>. One quiet line under the totals says what pressing Submit will cost them in effort, so the sign-in step that follows is expected rather than sprung.</p>
+    <div class="path">src/components/QuoteReviewSubmit.tsx · stage: <span class="mono">user == null</span>, gate not yet opened</div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">State</span> Populated draft · anonymous</h3>
+    <p>Delivery postcode stays on this screen pre-gate (see UX-1 in the interaction spec) so the total the visitor sees is the whole number, not a partial one.</p>
+    <div class="frames">
+
+      <div class="dev half">
+        <div class="cap"><span>Desktop · 1280w (content column)</span><span>anonymous</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="backlink">‹ Back to MyProject</div>
+          <div class="slabel"><svg class="mark" width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span>Review quote</span></div>
+          <h1 class="t-hd1 c-ink mb8">Review and submit</h1>
+          <p class="sub mb20">No payment at this stage. A reviewed quote is issued after manual technical review.</p>
+
+          <div class="qpanel">
+            <div class="slabel"><svg class="mark" width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span>Your quote</span></div>
+            <div class="mb12">
+              <div class="qrow"><span class="lbl">01 · Awning window — 600 × 900 ×2</span><span class="amt">$1,240.00</span></div>
+              <div class="qrow"><span class="lbl">02 · Sliding door — 2100 × 1800 ×1</span><span class="amt">$3,180.00</span></div>
+              <div class="qrow"><span class="lbl">03 · Fixed window — 1200 × 900 ×1</span><span class="amt">$860.00</span></div>
+              <p class="t-cap c-body" style="padding-top:6px">+ 1 uploaded file for review</p>
+            </div>
+            <div class="bt8" style="padding-top:12px">
+              <div class="totrow mb4"><span class="k">Windows and doors</span><span class="v">$5,280.00 inc GST</span></div>
+              <div class="totrow mb4"><span class="k">Delivery to 3072</span><span class="v">$340.00 inc GST</span></div>
+              <div class="totrow big"><span class="k">Project total</span><span class="v">$5,620.00 inc GST</span></div>
+              <p class="t-cap c-body mt8">An estimate. A person checks the delivery against real freight before your quote is issued.</p>
+            </div>
+          </div>
+
+          <div class="qpanel">
+            <label class="field-label" for="m1-pc">Delivery postcode</label>
+            <div style="max-width:180px"><input class="field" id="m1-pc" value="3072"></div>
+            <p class="helptext">We price delivery from this.</p>
+          </div>
+
+          <div class="notice n-info mb20" style="font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)">
+            ⓘ Delivery is priced from your postcode and confirmed on technical review. No deposit until you approve the reviewed quote. Supply only — tailgate to the kerb, installation not included.
+          </div>
+
+          <div style="text-align:right">
+            <p class="t-cap c-body mb8">Submitting needs an account — we'll email you a code. About a minute.</p>
+            <span class="btn btn-lg b-sage">Submit for technical review →</span>
+          </div>
+        </div></div></div>
+      </div>
+
+      <div class="dev mob">
+        <div class="cap"><span>Mobile · 375w</span><span>anonymous</span></div>
+        <div class="screen mob"><div class="revpage"><div class="revwrap" style="padding:0 20px">
+          <div class="backlink">‹ Back to MyProject</div>
+          <h1 class="t-hd1 c-ink mb8">Review and submit</h1>
+          <p class="sub mb16">No payment at this stage. A reviewed quote is issued after manual technical review.</p>
+          <div class="qpanel" style="padding:16px">
+            <div class="slabel"><svg class="mark" width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span>Your quote</span></div>
+            <div class="qrow"><span class="lbl">01 · Awning window ×2</span><span class="amt">$1,240.00</span></div>
+            <div class="qrow"><span class="lbl">02 · Sliding door ×1</span><span class="amt">$3,180.00</span></div>
+            <div class="qrow"><span class="lbl">03 · Fixed window ×1</span><span class="amt">$860.00</span></div>
+            <div class="bt8 mt12" style="padding-top:12px">
+              <div class="totrow mb4"><span class="k">Windows and doors</span><span class="v">$5,280.00</span></div>
+              <div class="totrow mb4"><span class="k">Delivery to 3072</span><span class="v">$340.00</span></div>
+              <div class="totrow big"><span class="k">Project total</span><span class="v">$5,620.00 inc GST</span></div>
+            </div>
+          </div>
+          <div class="qpanel" style="padding:16px">
+            <label class="field-label" for="m1m-pc">Delivery postcode</label>
+            <div style="max-width:160px"><input class="field" id="m1m-pc" value="3072"></div>
+            <p class="helptext">We price delivery from this.</p>
+          </div>
+          <p class="t-cap c-body mb8 tc">Submitting needs an account — we'll email you a code. About a minute.</p>
+          <span class="btn btn-lg b-sage" style="width:100%;justify-content:center">Submit for technical review →</span>
+        </div></div></div>
+      </div>
+
+    </div>
+    <div class="note">
+      <b>Why the line is there</b>
+      <p>AC-11 requires the sign-in step to appear <b>when Submit is pressed</b> — so Submit stays the one primary action and the screen never opens with an email field in the customer's face. The cost is announced first; the click that imposes it is theirs.</p>
+      <p>Nothing on this screen says "no account needed", and nothing says "trade". The old contact panel (name/email/phone) is gone from the anonymous view entirely — identity now comes from the session.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 2 -->
+<section class="surface" id="s2">
+  <div class="shead">
+    <div class="n">Surface 2</div>
+    <h2>Stage 1 — sign in or create account (in place)</h2>
+    <p>Pressing Submit expands this panel where the contact panel used to be, scrolls it into view and focuses the email field. The quote panel above stays exactly where it was. <b>Verifying does not submit</b>.</p>
+    <div class="path">shared component: src/components/OtpSignIn.tsx (also used by /login)</div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">2a</span> Email step · Turnstile present</h3>
+    <p>Send-code stays disabled until the Turnstile token exists (AC-12). Where no site key is configured, the widget slot is absent and the button is enabled by a valid email alone.</p>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop</span><span>stage 1 · email</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel" style="opacity:.55">
+            <div class="slabel"><svg class="mark" width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span>Your quote</span></div>
+            <div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,620.00 inc GST</span></div>
+            <p class="t-cap c-quiet mt8">(panel unchanged — shown collapsed here so the gate reads clearly)</p>
+          </div>
+
+          <div class="qpanel" style="border-color:var(--sage);box-shadow:inset 3px 0 0 var(--sage)">
+            <div class="stagehead">
+              <div class="stagenum">1</div>
+              <div>
+                <h2 class="t-hd2 c-ink">Sign in or create your account</h2>
+                <p class="sub mt4">A person reviews every quote, so we need to know whose it is. Enter your email and we'll send a 6-digit code — no password. If you don't have an account yet, this creates one.</p>
+              </div>
+            </div>
+            <div class="mt16 mb12" style="max-width:340px">
+              <label class="field-label" for="m2-em">Email</label>
+              <input class="field focusring" id="m2-em" value="sam@buildright.com.au" placeholder="your@email.com">
+            </div>
+            <div class="ts mb16"><div class="box done">✓</div><div><div class="t-cap c-ink">Success!</div><div class="t-cap c-quiet">Cloudflare Turnstile</div></div></div>
+            <div class="row g16 ac">
+              <span class="btn btn-md b-sage">Email me a code</span>
+              <span class="linkbtn">Back to my quote</span>
+            </div>
+          </div>
+        </div></div></div>
+      </div>
+
+      <div class="dev mob">
+        <div class="cap"><span>Mobile · 375w</span><span>stage 1 · email</span></div>
+        <div class="screen mob"><div class="revpage"><div class="revwrap" style="padding:0 20px">
+          <div class="qpanel" style="padding:16px;opacity:.55">
+            <div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,620.00</span></div>
+          </div>
+          <div class="qpanel" style="padding:16px;border-color:var(--sage);box-shadow:inset 3px 0 0 var(--sage)">
+            <h2 class="t-hd2 c-ink mb4">Sign in or create your account</h2>
+            <p class="sub mb16">A person reviews every quote, so we need to know whose it is. We'll email a 6-digit code — no password. If you're new, this creates your account.</p>
+            <label class="field-label" for="m2m-em">Email</label>
+            <input class="field focusring mb12" id="m2m-em" value="sam@buildright.com.au">
+            <div class="ts mb16" style="max-width:100%"><div class="box done">✓</div><div><div class="t-cap c-ink">Success!</div><div class="t-cap c-quiet">Cloudflare Turnstile</div></div></div>
+            <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Email me a code</span>
+            <div class="tc mt12"><span class="linkbtn">Back to my quote</span></div>
+          </div>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Honest framing (AC-4)</b>
+      <p>The heading, the button and the supporting copy all say the same thing: this signs you in <em>or creates an account</em>. Nothing on the page claims a quote can be submitted without one.</p>
+      <p>Existence-neutrality is preserved: the copy never differs between an address that has an account and one that doesn't, and neither does the response.</p>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">2b</span> Code step · Resend · error variants</h3>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop</span><span>stage 1 · code</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel" style="border-color:var(--sage);box-shadow:inset 3px 0 0 var(--sage)">
+            <div class="stagehead">
+              <div class="stagenum">1</div>
+              <div>
+                <h2 class="t-hd2 c-ink">Enter your code</h2>
+                <p class="sub mt4">We sent a 6-digit code to <span class="c-ink">sam@buildright.com.au</span>. It expires in 10 minutes.</p>
+              </div>
+            </div>
+            <div class="mt16 mb12" style="max-width:200px">
+              <label class="field-label" for="m2-cd">6-digit code</label>
+              <input class="field mono focusring" id="m2-cd" value="418 260" style="letter-spacing:.22em;font-size:18px">
+            </div>
+            <div class="row g16 ac mb12">
+              <span class="btn btn-md b-sage">Verify &amp; continue</span>
+              <span class="linkbtn">Resend code</span>
+              <span class="linkbtn">Use a different email</span>
+            </div>
+            <p class="t-cap c-quiet">Your quote is safe — nothing is submitted until you press Submit for technical review.</p>
+          </div>
+        </div></div></div>
+      </div>
+
+      <div class="dev half">
+        <div class="cap"><span>Desktop</span><span>error + busy states</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel" style="border-color:var(--sage);box-shadow:inset 3px 0 0 var(--sage)">
+            <p class="t-label c-quiet mb12">Wrong code (existence-neutral, attempt burn unchanged)</p>
+            <div class="mb12" style="max-width:200px">
+              <label class="field-label">6-digit code</label>
+              <input class="field err mono" value="111 111" style="letter-spacing:.22em;font-size:18px">
+              <p class="errtext">That code didn't match. Check it and try again, or resend a new one.</p>
+            </div>
+            <div class="bt8 mt16" style="padding-top:16px">
+              <p class="t-label c-quiet mb12">Too many code requests (HTTP 429)</p>
+              <div class="notice n-warn mb16" style="font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)">Too many code requests from this connection. Try again in a few minutes — your quote is saved and nothing is lost.</div>
+              <p class="t-label c-quiet mb12">Verifying (button busy, fields locked)</p>
+              <span class="btn btn-md b-disabled"><span class="spinner"></span> Verifying…</span>
+              <p class="t-cap c-quiet mt8">Resend and "use a different email" are suppressed while a verify is in flight.</p>
+            </div>
+          </div>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Resend (E1)</b>
+      <p>"Resend code" is available from the moment the code step opens, with a 30-second cooldown between presses — the label becomes <code>Resend code (28s)</code> and is not pressable during it. Resending never invalidates the customer's draft or claim cookie.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 3 -->
+<section class="surface" id="s3">
+  <div class="shead">
+    <div class="n">Surface 3</div>
+    <h2>Stage 2 — "What's your name?" (fresh account only)</h2>
+    <p>A newly created account has no name — the email local part is never invented as one (AC-5/AC-7). Mandatory, one field, no skip. An existing account with a name skips this stage entirely.</p>
+    <div class="path">shared component: src/components/NameStep.tsx · rendered wherever <span class="mono">user.name === null</span></div>
+  </div>
+  <div class="state">
+    <h3><span class="tag">3a</span> Empty · <span class="tag r">3b</span> Submitted empty</h3>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop</span><span>stage 2 · fresh account</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel" style="opacity:.55">
+            <div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,620.00 inc GST</span></div>
+          </div>
+          <div class="qpanel" style="border-color:var(--sage);box-shadow:inset 3px 0 0 var(--sage)">
+            <div class="stagehead">
+              <div class="stagenum">2</div>
+              <div>
+                <h2 class="t-hd2 c-ink">What's your name?</h2>
+                <p class="sub mt4">You're signed in as <span class="c-ink">sam@buildright.com.au</span>. This is the name that goes on your quote and how we'll address you.</p>
+              </div>
+            </div>
+            <div class="mt16 mb16" style="max-width:340px">
+              <label class="field-label" for="m3-nm">Full name</label>
+              <input class="field focusring" id="m3-nm" placeholder="e.g. Sam Taylor">
+            </div>
+            <span class="btn btn-md b-disabled">Save and continue</span>
+          </div>
+        </div></div></div>
+      </div>
+      <div class="dev mob">
+        <div class="cap"><span>Mobile · 375w</span><span>error state</span></div>
+        <div class="screen mob"><div class="revpage"><div class="revwrap" style="padding:0 20px">
+          <div class="qpanel" style="padding:16px;border-color:var(--sage);box-shadow:inset 3px 0 0 var(--sage)">
+            <h2 class="t-hd2 c-ink mb4">What's your name?</h2>
+            <p class="sub mb16">You're signed in as <span class="c-ink">sam@…</span>. This is the name that goes on your quote.</p>
+            <label class="field-label" for="m3m-nm">Full name</label>
+            <input class="field err" id="m3m-nm" value="   ">
+            <p class="errtext mb16">Enter your name to continue.</p>
+            <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Save and continue</span>
+          </div>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Same step, three doorways</b>
+      <p>The identical component appears after verifying at <code>/login</code>, and as an interstitial over any account page for a returning nameless account (E4). One signal drives it — <code>user.name === null</code> — so a customer who closed the tab mid-gate re-enters exactly where they left off.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 4 -->
+<section class="surface" id="s4">
+  <div class="shead">
+    <div class="n">Surface 4</div>
+    <h2>Stage 3 — your details</h2>
+    <p>The minimum to submit: a name they typed, an AU-valid phone, a full address, and the delivery destination for this project. Collected once, stored on the account, pre-filled forever after. This panel is also the account's editing surface (AC-19).</p>
+    <div class="path">src/components/QuoteReviewSubmit.tsx · stage: signed in, details incomplete</div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag">4a</span> First time · nothing pre-filled except delivery</h3>
+    <p>Address is empty, so nothing pre-fills the delivery fields except the postcode the visitor already typed pre-gate. Submit is disabled and says what is still outstanding — no field is painted red before the customer has touched it.</p>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop</span><span>stage 3 · empty</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel" style="opacity:.55"><div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,620.00 inc GST</span></div></div>
+          <div class="qpanel">
+            <div class="stagehead mb16">
+              <div class="stagenum">3</div>
+              <div>
+                <h2 class="t-hd2 c-ink">Your details</h2>
+                <p class="sub mt4">So we can quote you properly and get the delivery right. We'll keep these on your account — next quote, they're already filled in.</p>
+              </div>
+            </div>
+
+            <div class="grid2 mb16">
+              <div><label class="field-label" for="m4-nm">Full name</label><input class="field" id="m4-nm" value="Sam Taylor"></div>
+              <div><label class="field-label" for="m4-ph">Phone</label><input class="field" id="m4-ph" placeholder="0412 345 678"><p class="helptext">Mobile, landline or 1300/1800.</p></div>
+            </div>
+            <div class="mb20">
+              <label class="field-label">Email</label>
+              <div class="readonly"><span>sam@buildright.com.au</span><span class="chip ch-sage">Verified</span></div>
+              <p class="helptext">This is your sign-in email. Contact us if you need it changed.</p>
+            </div>
+
+            <p class="t-label c-quiet mb12" style="border-top:1px solid var(--line);padding-top:16px">Your address</p>
+            <div class="mb16"><label class="field-label" for="m4-a1">Street address</label><input class="field" id="m4-a1" placeholder="12 Bridge Street"></div>
+            <div class="mb16"><label class="field-label" for="m4-a2">Unit, level or building <span class="c-quiet" style="text-transform:none;letter-spacing:0;font-weight:400">(optional)</span></label><input class="field" id="m4-a2"></div>
+            <div class="grid3 mb20">
+              <div><label class="field-label" for="m4-sb">Suburb</label><input class="field" id="m4-sb" placeholder="Preston"></div>
+              <div><label class="field-label" for="m4-st">State</label><select class="field" id="m4-st"><option>Choose…</option><option>NSW</option><option>VIC</option><option>QLD</option><option>SA</option><option>WA</option><option>TAS</option><option>NT</option><option>ACT</option></select></div>
+              <div><label class="field-label" for="m4-pc">Postcode</label><input class="field" id="m4-pc" placeholder="3072"></div>
+            </div>
+
+            <p class="t-label c-quiet mb4" style="border-top:1px solid var(--line);padding-top:16px">Delivery for this project</p>
+            <p class="t-cap c-body mb12">Where these windows and doors go. Change it if the site isn't your address.</p>
+            <div class="grid2 mb20">
+              <div><label class="field-label" for="m4-ds">Delivery suburb</label><input class="field" id="m4-ds" placeholder="e.g. Preston VIC"></div>
+              <div><label class="field-label" for="m4-dp">Delivery postcode</label><input class="field" id="m4-dp" value="3072"><p class="helptext">We price delivery from this.</p></div>
+            </div>
+
+            <div class="bt8" style="padding-top:16px;text-align:right">
+              <p class="t-cap c-body mb8">Still needed: phone, street address, suburb, state, postcode.</p>
+              <span class="btn btn-lg b-disabled">Submit for technical review →</span>
+            </div>
+          </div>
+        </div></div></div>
+      </div>
+
+      <div class="dev mob">
+        <div class="cap"><span>Mobile · 375w</span><span>stage 3 · empty</span></div>
+        <div class="screen mob"><div class="revpage"><div class="revwrap" style="padding:0 20px">
+          <div class="qpanel" style="padding:16px">
+            <h2 class="t-hd2 c-ink mb4">Your details</h2>
+            <p class="sub mb16">So we can quote you properly and get the delivery right. We'll keep these on your account.</p>
+            <label class="field-label" for="m4m-nm">Full name</label><input class="field mb12" id="m4m-nm" value="Sam Taylor">
+            <label class="field-label" for="m4m-ph">Phone</label><input class="field" id="m4m-ph" placeholder="0412 345 678"><p class="helptext" style="margin-bottom:12px">Mobile, landline or 1300/1800.</p>
+            <label class="field-label">Email</label>
+            <div class="readonly mb16"><span style="overflow:hidden;text-overflow:ellipsis">sam@buildright.com.au</span><span class="chip ch-sage">Verified</span></div>
+            <p class="t-label c-quiet mb12" style="border-top:1px solid var(--line);padding-top:14px">Your address</p>
+            <label class="field-label" for="m4m-a1">Street address</label><input class="field mb12" id="m4m-a1" placeholder="12 Bridge Street">
+            <label class="field-label" for="m4m-a2">Unit, level or building (optional)</label><input class="field mb12" id="m4m-a2">
+            <label class="field-label" for="m4m-sb">Suburb</label><input class="field mb12" id="m4m-sb" placeholder="Preston">
+            <div class="grid2" style="grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+              <div><label class="field-label" for="m4m-st">State</label><select class="field" id="m4m-st"><option>Choose…</option><option>VIC</option></select></div>
+              <div><label class="field-label" for="m4m-pc">Postcode</label><input class="field" id="m4m-pc" placeholder="3072"></div>
+            </div>
+            <p class="t-label c-quiet mb4" style="border-top:1px solid var(--line);padding-top:14px">Delivery for this project</p>
+            <p class="t-cap c-body mb12">Change it if the site isn't your address.</p>
+            <label class="field-label" for="m4m-ds">Delivery suburb</label><input class="field mb12" id="m4m-ds" placeholder="e.g. Preston VIC">
+            <label class="field-label" for="m4m-dp">Delivery postcode</label><input class="field mb16" id="m4m-dp" value="3072">
+            <p class="t-cap c-body mb8">Still needed: phone, street address, suburb, state, postcode.</p>
+            <span class="btn btn-lg b-disabled" style="width:100%;justify-content:center">Submit for technical review →</span>
+          </div>
+        </div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag r">4b</span> Validation errors · inline, on blur</h3>
+    <p>Format errors appear when the customer leaves a field, never as they type. Every message names the field and shows an accepted shape rather than a rule.</p>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop</span><span>error states</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel">
+            <div class="grid2 mb16">
+              <div><label class="field-label">Full name</label><input class="field err" value=""><p class="errtext">Enter your full name.</p></div>
+              <div><label class="field-label">Phone</label><input class="field err" value="12345"><p class="errtext">That doesn't look like an Australian number. Try a mobile (0412 345 678), a landline (03 9000 0000) or a service number (1300 123 456).</p></div>
+            </div>
+            <div class="mb16"><label class="field-label">Street address</label><input class="field err" value=""><p class="errtext">Enter your street address.</p></div>
+            <div class="grid3 mb16">
+              <div><label class="field-label">Suburb</label><input class="field err" value=""><p class="errtext">Enter your suburb.</p></div>
+              <div><label class="field-label">State</label><select class="field err"><option>Choose…</option></select><p class="errtext">Choose your state.</p></div>
+              <div><label class="field-label">Postcode</label><input class="field err" value="307"><p class="errtext">Enter a 4-digit postcode.</p></div>
+            </div>
+            <div class="grid2 mb16">
+              <div><label class="field-label">Delivery suburb</label><input class="field" value="Preston VIC"></div>
+              <div><label class="field-label">Delivery postcode</label><input class="field err" value="30"><p class="errtext">Enter your 4-digit delivery postcode.</p></div>
+            </div>
+            <div class="notice n-dest mb16" style="font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)">
+              <b>Before we can submit, we need:</b> your phone number, street address, suburb, state and postcode.
+            </div>
+            <div style="text-align:right"><span class="btn btn-lg b-disabled">Submit for technical review →</span></div>
+          </div>
+        </div></div></div>
+      </div>
+      <div class="dev half">
+        <div class="cap"><span>Desktop</span><span>server refusals + long content</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel">
+            <p class="t-label c-quiet mb12">Server refused the profile save (400 invalid_fields)</p>
+            <div class="notice n-dest mb20" style="font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)">We couldn't save your details — check your phone number and street address, then try again.</div>
+
+            <p class="t-label c-quiet mb12">Server refused the submission (400 incomplete_profile)</p>
+            <div class="notice n-dest mb20" style="font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)">We still need your phone number before this can go to review.</div>
+
+            <p class="t-label c-quiet mb12">Over-length value (AB-13 / E12)</p>
+            <div class="mb20"><label class="field-label">Street address</label><input class="field err" value="Unit 14, Level 3, The Riverside Commercial Exchange Bui…"><p class="errtext">That's longer than we can store — keep the street address under 120 characters.</p></div>
+
+            <p class="t-label c-quiet mb12">Long content, no truncation of the customer's own words</p>
+            <div class="mb20">
+              <label class="field-label">Full name</label>
+              <input class="field" value="Bartholomew Featherstonehaugh-Cholmondeley">
+              <p class="helptext">Values wrap or scroll; nothing is clipped visually, and nothing is silently trimmed on save.</p>
+            </div>
+
+            <p class="t-label c-quiet mb12">Submitting</p>
+            <span class="btn btn-lg b-disabled"><span class="spinner"></span> Submitting…</span>
+          </div>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Client validation is advisory</b>
+      <p>Every message above has a server twin. The browser's job is to stop a wasted round trip; the Worker's job is to refuse regardless of what the browser said (AC-22). The copy is written once and used for both.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 5 -->
+<section class="surface" id="s5">
+  <div class="shead">
+    <div class="n">Surface 5</div>
+    <h2>The claim-merge moment — two drafts become one</h2>
+    <p>Signing in mid-submit attaches the anonymous draft to the account. If that account <b>already had</b> a draft, the anonymous lines are merged into it and the anonymous project ceases to exist. The customer must never submit a list that changed underneath them — so the screen holds, re-resolves, and re-displays before Submit is reachable (AC-26/27).</p>
+    <div class="path">worker/lib/access.ts claimAnonProjectForUser · client flag: projectResolving</div>
+  </div>
+
+  <div class="state">
+    <h3><span class="tag b">5a</span> Re-resolving · <span class="tag g">5b</span> Merged list re-displayed</h3>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop</span><span>projectResolving = true</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel">
+            <div class="slabel"><svg class="mark" width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span>Your quote</span></div>
+            <div style="padding:28px 0;text-align:center">
+              <p class="t-bd-sm c-ink mb4"><span class="spinner"></span> &nbsp;Updating your project…</p>
+              <p class="t-cap c-body">We're checking for anything already saved to your account.</p>
+            </div>
+          </div>
+          <div class="qpanel" style="opacity:.5">
+            <p class="t-cap c-quiet">Details and Submit are withheld until this finishes — no request is ever made against a project id that the merge deleted.</p>
+          </div>
+        </div></div></div>
+      </div>
+
+      <div class="dev half">
+        <div class="cap"><span>Desktop</span><span>merge complete</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="notice n-sage mb16">
+            <p class="t-bd-sm sb" style="color:var(--sage-ink);margin-bottom:4px">Your quotes have been combined</p>
+            <p class="t-cap" style="color:var(--sage-ink)">You already had a saved quote on this account, so the three items you just built have been added to it. The list below is the whole project — have a look before you submit.</p>
+          </div>
+          <div class="qpanel">
+            <div class="slabel"><svg class="mark" width="10" height="10" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg><span>Your quote · 5 items</span></div>
+            <div class="mb12">
+              <div class="qrow"><span class="lbl">01 · Double-hung window — 900 × 1200 ×2</span><span class="amt">$2,180.00</span></div>
+              <div class="qrow"><span class="lbl">02 · Entry door — 2100 × 900 ×1</span><span class="amt">$1,680.00</span></div>
+              <div class="qrow"><span class="lbl">03 · Awning window — 600 × 900 ×2 <span class="newchip">Just added</span></span><span class="amt">$1,240.00</span></div>
+              <div class="qrow"><span class="lbl">04 · Sliding door — 2100 × 1800 ×1 <span class="newchip">Just added</span></span><span class="amt">$3,180.00</span></div>
+              <div class="qrow"><span class="lbl">05 · Fixed window — 1200 × 900 ×1 <span class="newchip">Just added</span></span><span class="amt">$860.00</span></div>
+              <p class="t-cap c-body" style="padding-top:6px">+ 1 uploaded file for review</p>
+            </div>
+            <div class="bt8" style="padding-top:12px">
+              <div class="totrow mb4"><span class="k">Windows and doors</span><span class="v">$9,140.00 inc GST</span></div>
+              <div class="totrow mb4"><span class="k">Delivery to 3072</span><span class="v">$340.00 inc GST</span></div>
+              <div class="totrow big"><span class="k">Project total</span><span class="v">$9,480.00 inc GST</span></div>
+            </div>
+          </div>
+          <div class="qpanel">
+            <h2 class="t-hd2 c-ink mb4">Your details</h2>
+            <p class="sub">Pre-filled from your account — edit if needed.</p>
+            <p class="t-cap c-quiet mt12">(fields as Surface 4)</p>
+          </div>
+          <div style="text-align:right"><span class="btn btn-lg b-sage">Submit for technical review →</span></div>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Legible, not alarming</b>
+      <p>Three things carry the moment: a plain-language notice that states <em>what happened and why</em>, an item count in the panel label, and a <b>Just added</b> chip on the lines that moved. Nothing is coloured as a warning — a merge is a convenience, not a fault.</p>
+      <p>The notice and the chips persist until the customer submits or leaves the screen. They are not dismissible: their whole job is to be present at the moment of the decision.</p>
+    </div>
+    <div class="flag">
+      <b>Must not happen</b>
+      <p>Submit must be unreachable — not merely disabled-looking — while the re-resolve is in flight, and the delivery estimate must be re-fetched against the surviving project id (E6). A stale estimate shown against a different project is the failure this stage exists to prevent.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 6 -->
+<section class="surface" id="s6">
+  <div class="shead">
+    <div class="n">Surface 6</div>
+    <h2>The GST flip — same screen, no reload</h2>
+    <p>An anonymous visitor always sees GST-inclusive prices. If the account they sign in to prefers ex-GST, every price on the screen re-renders in that mode the instant the session lands (AC-35). The house rule holds on the one screen where an identity changes mid-flow.</p>
+    <div class="path">GstContext reads user.priceGstMode · src/data/gst.ts</div>
+  </div>
+  <div class="state">
+    <h3><span class="tag">Before</span> anonymous · inc GST &nbsp; <span class="tag g">After</span> signed in · ex GST</h3>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Before sign-in</span><span>mode: inc (default)</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel">
+            <div class="qrow"><span class="lbl">01 · Awning window ×2</span><span class="amt">$1,240.00</span></div>
+            <div class="qrow"><span class="lbl">02 · Sliding door ×1</span><span class="amt">$3,180.00</span></div>
+            <div class="qrow"><span class="lbl">03 · Fixed window ×1</span><span class="amt">$860.00</span></div>
+            <div class="bt8 mt12" style="padding-top:12px">
+              <div class="totrow mb4"><span class="k">Windows and doors</span><span class="v">$5,280.00 inc GST</span></div>
+              <div class="totrow mb4"><span class="k">Delivery to 3072</span><span class="v">$340.00 inc GST</span></div>
+              <div class="totrow big"><span class="k">Project total</span><span class="v">$5,620.00 inc GST</span></div>
+            </div>
+          </div>
+        </div></div></div>
+      </div>
+      <div class="dev half">
+        <div class="cap"><span>After verifying (no page reload)</span><span>mode: ex (account)</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel">
+            <div class="qrow"><span class="lbl">01 · Awning window ×2</span><span class="amt">$1,127.27</span></div>
+            <div class="qrow"><span class="lbl">02 · Sliding door ×1</span><span class="amt">$2,890.91</span></div>
+            <div class="qrow"><span class="lbl">03 · Fixed window ×1</span><span class="amt">$781.82</span></div>
+            <div class="bt8 mt12" style="padding-top:12px">
+              <div class="totrow mb4"><span class="k">Windows and doors</span><span class="v">$4,800.00 ex GST</span></div>
+              <div class="totrow mb4"><span class="k">Delivery to 3072</span><span class="v">$309.09 ex GST</span></div>
+              <div class="totrow big"><span class="k">Project total</span><span class="v">$5,109.09 ex GST</span></div>
+              <p class="t-cap c-body mt8">Now showing prices ex GST, the setting on your account. <span class="linkbtn">Change in your profile</span></p>
+            </div>
+          </div>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Why the extra line</b>
+      <p>Numbers dropping by ~9% at the exact moment someone signs in reads as a bug — or worse, as a bait. One quiet caption explains it and points at the setting. It appears only on the render immediately following a sign-in on this screen, never on a normal visit.</p>
+      <p>No discount percentage, and no pair of figures a discount could be derived from by subtraction, appears anywhere (AC-36).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 7 -->
+<section class="surface" id="s7">
+  <div class="shead">
+    <div class="n">Surface 7</div>
+    <h2>Already signed in, details complete — the gate is invisible</h2>
+    <p>The returning customer's screen. No sign-in step, no name step, no form to fill: their details are shown as a single line they can expand, and the delivery destination — the one fact that genuinely changes per project — stays open. <b>One press submits.</b></p>
+    <div class="path">stage: signed in, submitMissing() empty</div>
+  </div>
+  <div class="state">
+    <h3><span class="tag g">7a</span> Collapsed summary (default) · <span class="tag">7b</span> Expanded for editing</h3>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>Desktop</span><span>one-action submit</span></div>
+        <div class="screen"><div class="revpage"><div class="revwrap">
+          <div class="qpanel"><div class="totrow"><span class="k">3 items · 1 file</span><span class="v">$5,109.09 ex GST</span></div></div>
+          <div class="qpanel">
+            <div class="row jb as g16 mb16">
+              <div>
+                <p class="t-label c-quiet mb6">Your details</p>
+                <p class="t-bd-sm c-ink">Sam Taylor · 0412 345 678</p>
+                <p class="t-bd-sm c-body">12 Bridge Street, Preston VIC 3072</p>
+                <p class="t-cap c-quiet mt4">sam@buildright.com.au</p>
+              </div>
+              <span class="linkbtn" style="flex:none">Edit details</span>
+            </div>
+            <div class="bt8" style="padding-top:16px">
+              <p class="t-label c-quiet mb4">Delivery for this project</p>
+              <p class="t-cap c-body mb12">Pre-filled from your address — change it if the site is somewhere else.</p>
+              <div class="grid2">
+                <div><label class="field-label" for="m7-ds">Delivery suburb</label><input class="field" id="m7-ds" value="Preston"></div>
+                <div><label class="field-label" for="m7-dp">Delivery postcode</label><input class="field" id="m7-dp" value="3072"></div>
+              </div>
+            </div>
+          </div>
+          <div style="text-align:right"><span class="btn btn-lg b-sage">Submit for technical review →</span></div>
+        </div></div></div>
+      </div>
+      <div class="dev mob">
+        <div class="cap"><span>Mobile · 375w</span><span>expanded to edit</span></div>
+        <div class="screen mob"><div class="revpage"><div class="revwrap" style="padding:0 20px">
+          <div class="qpanel" style="padding:16px">
+            <div class="row jb ac mb16"><p class="t-label c-quiet">Your details</p><span class="linkbtn t-cap">Done</span></div>
+            <p class="sub mb16" style="color:var(--sage-ink)">✓ Pre-filled from your account — edit if needed.</p>
+            <label class="field-label">Full name</label><input class="field mb12" value="Sam Taylor">
+            <label class="field-label">Phone</label><input class="field mb12" value="0412 345 678">
+            <label class="field-label">Street address</label><input class="field mb12" value="12 Bridge Street">
+            <label class="field-label">Suburb</label><input class="field mb12" value="Preston">
+            <div class="grid2" style="grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+              <div><label class="field-label">State</label><select class="field"><option>VIC</option></select></div>
+              <div><label class="field-label">Postcode</label><input class="field" value="3072"></div>
+            </div>
+            <p class="t-cap c-body">Changes here are saved to your account when you submit.</p>
+          </div>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Where the account gets edited</b>
+      <p>The gate is the account's editing surface as well as its collection surface (AC-19): an edited value is written to the account on submit and pre-fills every future quote. Delivery is the exception — it belongs to the project, and overwriting it never touches the account address (AC-42).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 8 -->
+<section class="surface" id="s8">
+  <div class="shead">
+    <div class="n">Surface 8</div>
+    <h2>Honest relabels — every entry point that lied</h2>
+    <p>The site currently tells people guest quotes don't need an account while quietly creating one and naming it after their email address. Three surfaces change wording; none changes mechanics.</p>
+    <div class="path">src/app/App.tsx:313 (nav) · 1303/1363 (/login) · 1238 + PostPage.tsx:247 (CTA copy)</div>
+  </div>
+  <div class="state">
+    <h3><span class="tag r">Before</span> today &nbsp; <span class="tag g">After</span> Phase 1</h3>
+    <div class="frames">
+      <div class="dev half">
+        <div class="cap"><span>/login — today</span><span>before</span></div>
+        <div class="screen"><div class="ground-bone" style="padding:32px 0"><div style="max-width:384px;margin:0 auto;padding:0 24px">
+          <div class="tc mb24">
+            <div style="display:flex;justify-content:center;margin-bottom:14px"><svg width="32" height="32" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg></div>
+            <h1 class="t-hd2 c-ink">Sign in or register</h1>
+            <p class="sub mt4">We'll email you a one-time code — no password needed</p>
+          </div>
+          <div class="card p24 mb16">
+            <label class="field-label">Email</label><input class="field mb16" placeholder="your@email.com">
+            <span class="btn btn-md b-sage" style="width:100%;justify-content:center">Send code</span>
+          </div>
+          <div class="notice" style="background:var(--bone);border-color:rgba(0,0,0,.08);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);color:var(--body)">Your quote is saved as you go. Sign in to keep it against your account across devices — guest quotes don't require an account.</div>
+        </div></div></div>
+      </div>
+      <div class="dev half">
+        <div class="cap"><span>/login — Phase 1</span><span>after</span></div>
+        <div class="screen"><div class="ground-bone" style="padding:32px 0"><div style="max-width:384px;margin:0 auto;padding:0 24px">
+          <div class="tc mb24">
+            <div style="display:flex;justify-content:center;margin-bottom:14px"><svg width="32" height="32" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#5A7A6A" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#5A7A6A" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#5A7A6A" stroke-width="1.5"/></svg></div>
+            <h1 class="t-hd2 c-ink">Sign in or create account</h1>
+            <p class="sub mt4">We'll email you a one-time code — no password needed. If you're new, this creates your account.</p>
+          </div>
+          <div class="card p24 mb16">
+            <label class="field-label">Email</label><input class="field mb16" placeholder="your@email.com">
+            <div class="ts mb16" style="max-width:100%"><div class="box"></div><div><div class="t-cap c-ink">Verify you are human</div><div class="t-cap c-quiet">Cloudflare Turnstile</div></div></div>
+            <span class="btn btn-md b-disabled" style="width:100%;justify-content:center">Send code</span>
+          </div>
+          <div class="notice" style="background:var(--bone);border-color:rgba(0,0,0,.08);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);color:var(--body)">Your quote is saved as you go. Sign in to keep it against your account across devices, and to send it in for review.</div>
+        </div></div></div>
+      </div>
+    </div>
+
+    <div class="frames" style="margin-top:20px">
+      <div class="dev half">
+        <div class="cap"><span>Site header nav</span><span>before → after</span></div>
+        <div class="screen"><div class="sitehdr"><div style="display:flex;align-items:center;gap:24px;padding:0 24px;width:100%">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" stroke="#8CA99B" stroke-width="1.5"/><line x1="10" y1="1" x2="10" y2="19" stroke="#8CA99B" stroke-width="1.5"/><line x1="1" y1="10" x2="19" y2="10" stroke="#8CA99B" stroke-width="1.5"/></svg>
+          <span style="color:#fff;font:600 14px var(--font-display)">AMJ Trade Direct</span>
+          <span style="margin-left:auto;color:rgba(255,255,255,.72);font:400 13px var(--font-body);text-decoration:line-through">🔒 Sign in / Register</span>
+          <span style="color:#fff;font:400 13px var(--font-body)">🔒 Sign in or create account</span>
+        </div></div></div>
+      </div>
+      <div class="dev half">
+        <div class="cap"><span>CTA banner copy</span><span>before → after</span></div>
+        <div class="screen"><div class="ground-paper p24">
+          <div class="mb16">
+            <p class="t-label c-quiet mb6">Today (App.tsx:1238, PostPage.tsx:247)</p>
+            <p class="t-bd-sm c-body" style="text-decoration:line-through">Free, no account, and a person checks every quote before you pay a cent.</p>
+          </div>
+          <div class="mb16">
+            <p class="t-label c-quiet mb6">Phase 1</p>
+            <p class="t-bd-sm c-ink">Price it free with no account, and a person checks every quote before you pay a cent.</p>
+          </div>
+          <div class="notice n-info" style="font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)">Kept as-is, because they remain true: the free <b>estimate</b> needs no account (App.tsx:690, 816), order <b>tracking</b> needs no account (1624), and the <b>contact</b> form needs no account (ContactPage:240).</div>
+        </div></div></div>
+      </div>
+    </div>
+    <div class="note">
+      <b>What is not on any of these screens</b>
+      <p>No trade pricing, no trade account, no discount, no "apply", no "coming soon", no link to the trade page, and no referral-code field. Phase 1 is silent about all of it, deliberately (AC-41, AC-32).</p>
+    </div>
+  </div>
+</section>
+
+<section class="surface">
+  <div class="shead">
+    <div class="n">Handoff</div>
+    <h2>Where the detail lives</h2>
+    <p>Step order, focus and keyboard behaviour, every error string, loading and disabled states, and the exact headings and button labels are written up as <b>§16 Interaction spec</b>, appended to <span class="mono">docs/specs/user-registration-phase-1-design.md</span>. The mock is the picture; that section is the contract.</p>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

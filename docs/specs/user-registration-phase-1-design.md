@@ -637,3 +637,383 @@ Frozen and untouched: `scripts/tests/api.test.mjs:129-150`,
 `worker/lib/estimator/pricing.ts`, `worker/lib/referrals.ts`, all of `src/ops/**`,
 `worker/routes/ops*.ts`, `scripts/db/seed.sql`, `api.test.mjs:129-150`,
 `customer.spec.ts:383-409`, `App.tsx:1675-1734` (TradePage).
+
+---
+
+# 16. Interaction spec (ux-designer, 2026-08-18)
+
+Appended after the architect's design; nothing above is edited. Companion mock:
+**`docs/mocks/registration-phase-1-submit-gate.html`** (self-contained, no external requests).
+The mock is the picture; this section is the contract.
+
+Every string below in **bold quotes** is final copy. `ASSUMED:` tags mark choices made without the
+user, vetoable at any later gate. Structural deviations from §7.4 are tagged `UX-n` and listed in
+§16.11.
+
+## 16.1 The one-screen model
+
+Everything happens on the existing review screen (`QuoteReviewSubmit`). The **quote panel never
+leaves** — at every stage the customer is looking at the thing they are about to submit. The panel
+below it is the *gate panel*, and it renders exactly one of five states:
+
+| # | Stage | Condition | Gate panel |
+|---|---|---|---|
+| 0 | **Pre-gate** | `user == null` && `!gateOpened` | Delivery postcode field + the friction pre-announcement (§16.2) |
+| 1 | **Sign in / create** | `user == null` && `gateOpened` | `OtpSignIn` — email step, then code step (§16.3) |
+| 2 | **Name** | `user && !user.name` | `NameStep` (§16.4) |
+| 3 | **Re-resolving** | `projectResolving` | Working placeholder; Submit not rendered (§16.6) |
+| 4 | **Your details** | signed in, name present, resolved | The details form, collapsed or expanded (§16.5, §16.7) |
+
+`gateOpened` is **component-local state, not persisted** — a `useState(false)` set true by the
+pre-gate Submit press and never read from storage. Stages 1–4 stay derived from props exactly as
+§7.4 specifies, so no stale stage can survive an auth change elsewhere in the app.
+
+Stage 0 exists because AC-11 requires the sign-in step to appear **when Submit is pressed**. It
+also keeps the screen from opening with an email field in a stranger's face, which is what turns
+deliberate friction into perceived hostility.
+
+## 16.2 Stage 0 — pre-gate (anonymous)
+
+**What is on the screen:** back link, `SLabel` "Review quote", h1 **"Review and submit"**, the
+existing sub-line, the quote panel with full totals *including delivery*, the delivery-postcode
+field, the existing info notice, and the Submit button.
+
+- The old contact panel (name / email / phone inputs) is **deleted from the anonymous view
+  entirely.** Identity comes from the session; there is nothing here to type it into.
+- **Delivery postcode stays on this screen** — see `UX-1` (§16.11). Field label
+  **"Delivery postcode"**, helper **"We price delivery from this."**, `inputMode="numeric"`,
+  `maxLength=4`, digits only. Its value carries into stage 4 as the delivery postcode; the
+  account-address pre-fill (AC-42) applies only when it is still empty at that point.
+- Directly above the Submit button, right-aligned with it (centred on mobile), one caption:
+  > **"Submitting needs an account — we'll email you a code. About a minute."**
+
+  This is the pre-announcement. It is the only place the gate is mentioned before it appears.
+- Submit label, states and disabled rules are **unchanged from today**: disabled while
+  `submitting`, `aiReading`, or postcode is not 4 digits; the blocking-lines path
+  (`attentionCount > 0` then `onFixBlocked()`) runs before the gate opens, so a customer with
+  unpriced lines is sent back to fix them and never sees a sign-in field (E7).
+
+**Press behaviour:** pressing Submit at stage 0 sets `gateOpened = true`, does **not** call the
+API, scrolls the gate panel into view (`scrollIntoView({ block: "start", behavior: "smooth" })`,
+suppressed under `prefers-reduced-motion`) and moves focus to the email input.
+
+## 16.3 Stage 1 — sign in or create (`OtpSignIn`)
+
+The panel is marked as the active step: `border-color: var(--sage)` plus
+`box-shadow: inset 3px 0 0 var(--sage)` — the same active treatment
+`.quote-item-card[data-state="added"]` already uses. A step-number badge sits beside the heading.
+
+### 16.3.1 Email step — copy
+
+| Slot | Copy |
+|---|---|
+| Heading (h2, `t-hd2`) | **"Sign in or create your account"** |
+| Sub | **"A person reviews every quote, so we need to know whose it is. Enter your email and we'll send a 6-digit code — no password. If you don't have an account yet, this creates one."** |
+| Field label | **"Email"** · placeholder `your@email.com` (load-bearing string, §7.2 — keep) |
+| Primary button | **"Email me a code"** → busy: **"Sending…"** |
+| Secondary | **"Back to my quote"** (text button; sets `gateOpened = false`) |
+
+At `/login` the same component renders heading **"Sign in or create account"** and sub
+**"We'll email you a one-time code — no password needed. If you're new, this creates your
+account."** — the `heading`/`subcopy` props exist for exactly this difference. `ASSUMED:` the gate
+uses the longer, reason-giving sub and `/login` the short one.
+
+**Turnstile (AC-12).** When `TURNSTILE_SITE_KEY` is configured the widget renders between the
+email field and the button. **"Email me a code" is disabled until a token exists**, and while
+disabled carries a caption **"Complete the check above to continue."** With no site key the widget
+slot is absent and the button is gated on a valid email alone. Never render an empty bordered box
+where the widget would be.
+
+### 16.3.2 Code step — copy
+
+| Slot | Copy |
+|---|---|
+| Heading | **"Enter your code"** |
+| Sub | **"We sent a 6-digit code to {email}. It expires in 10 minutes."** |
+| Field label | **"6-digit code"** · `inputMode="numeric"`, `maxLength=6`, digits stripped on input |
+| Primary button | **"Verify & continue"** (load-bearing string, §7.2 — keep) → busy: **"Verifying…"** |
+| Secondary | **"Resend code"** · **"Use a different email"** |
+| Reassurance (caption under the actions) | **"Your quote is safe — nothing is submitted until you press Submit for technical review."** |
+
+`ASSUMED:` the 10-minute expiry matches the challenge TTL; if the TTL differs, the number changes
+to match it rather than the sentence being dropped.
+
+**Resend (E1).** Available from the moment the code step opens. After a press the control is
+disabled for 30 s with the label **"Resend code (28s)"** counting down, then returns to
+**"Resend code"**. A resend never touches the draft or the claim cookie.
+
+### 16.3.3 Errors — exact copy
+
+| Condition | Placement | Copy |
+|---|---|---|
+| `/challenge` failed (network / 5xx) | inline under the button, `role="alert"` | **"Couldn't send a code. Try again."** |
+| `/challenge` 429 (E2) | `.quote-notice--warning` block above the button | **"Too many code requests from this connection. Try again in a few minutes — your quote is saved and nothing is lost."** |
+| Wrong code (E3) | field error under the code input, `aria-invalid` set | **"That code didn't match. Check it and try again, or resend a new one."** |
+| Challenge burned / expired | same slot | **"That code has expired. Send a new one to continue."** |
+| `/verify` network failure | same slot | **"Something went wrong verifying that code. Please try again."** |
+
+None of these may differ between an address that has an account and one that does not (AB-5).
+There is no "we don't recognise that email" message anywhere, ever.
+
+### 16.3.4 On success
+
+`onAuthed(user)` fires. The component does **not** submit, does not navigate, and shows no success
+toast — the stage simply advances (A-P1-4). The GST context flips at this moment (§16.8).
+
+## 16.4 Stage 2 — the name step (`NameStep`)
+
+| Slot | Copy |
+|---|---|
+| Heading | **"What's your name?"** |
+| Sub | **"You're signed in as {email}. This is the name that goes on your quote and how we'll address you."** |
+| Field label | **"Full name"** · placeholder **"e.g. Sam Taylor"** · `autoComplete="name"` |
+| Button | **"Save and continue"** → busy: **"Saving…"** |
+| Empty error | **"Enter your name to continue."** |
+| Save failure | **"Couldn't save your name. Please try again."** |
+
+Mandatory: no skip link, no dismissal, no "later". Button disabled while the trimmed value is
+empty or a save is in flight. Enter submits. Autofocus on the field when the step mounts.
+
+At `/login` the sub drops the sign-in clause: **"This is the name that goes on your quote and how
+we'll address you."** As the account-shell interstitial (E4) the heading gains no urgency wording —
+it is the same calm single question.
+
+## 16.5 Stage 4 — your details
+
+### 16.5.1 Field order, labels, helpers
+
+Order is deliberate: identity first (shortest, most familiar), then the account address, then the
+per-project delivery. Section rules are hairlines with a `t-label` heading, not nested cards.
+
+| # | Label | Notes | `autoComplete` |
+|---|---|---|---|
+| 1 | **"Full name"** | required, max 120 | `name` |
+| 2 | **"Phone"** | required; helper **"Mobile, landline or 1300/1800."**; max 40 | `tel` |
+| 3 | **"Email"** | **read-only display row, not an input**; value + `Verified` chip; helper **"This is your sign-in email. Contact us if you need it changed."** | — |
+| — | section: **"Your address"** | | |
+| 4 | **"Street address"** | required, max 120 | `address-line1` |
+| 5 | **"Unit, level or building (optional)"** | optional, max 120 | `address-line2` |
+| 6 | **"Suburb"** | required, max 80 | `address-level2` |
+| 7 | **"State"** | required; `select`, first option **"Choose…"**, then NSW VIC QLD SA WA TAS NT ACT | `address-level1` |
+| 8 | **"Postcode"** | required, 4 digits | `postal-code` |
+| — | section: **"Delivery for this project"**, caption **"Where these windows and doors go. Change it if the site isn't your address."** | | |
+| 9 | **"Delivery suburb"** | placeholder **"e.g. Preston VIC"** | — |
+| 10 | **"Delivery postcode"** | 4 digits; helper **"We price delivery from this."** (existing string — keep) | — |
+
+Panel heading **"Your details"**, sub **"So we can quote you properly and get the delivery right.
+We'll keep these on your account — next quote, they're already filled in."**
+When any value arrived from the account, the existing line is shown above the fields:
+**"Pre-filled from your account — edit if needed."** (green check, existing treatment).
+
+The details panel contains **no business name, no ABN, no builder/tradie choice, no referral code,
+and no reference to trade pricing** (AC-32, AC-41, seam §6.3). The `Verified` chip refers to the
+email, never to an account status.
+
+### 16.5.2 Delivery pre-fill (AC-42)
+
+On entering stage 4: if the project's stored delivery postcode is empty **and** the stage-0
+postcode field is empty **and** the account has an address, delivery suburb ← `address_suburb`,
+delivery postcode ← `address_postcode`. Precedence, highest first: the project's stored value →
+what the customer typed at stage 0 → the account address. Editing delivery never writes the
+account address.
+
+### 16.5.3 Validation timing and error copy
+
+Format validation fires **on blur** and again on submit — never per keystroke. Once a field has
+shown an error it re-validates on change, so the error clears as soon as it is fixed. No field is
+marked invalid before the customer has touched it.
+
+| Failure | Message |
+|---|---|
+| Name empty | **"Enter your full name."** |
+| Phone empty | **"Enter a phone number we can reach you on."** |
+| Phone invalid | **"That doesn't look like an Australian number. Try a mobile (0412 345 678), a landline (03 9000 0000) or a service number (1300 123 456)."** |
+| Street address empty | **"Enter your street address."** |
+| Suburb empty | **"Enter your suburb."** |
+| State not chosen | **"Choose your state."** |
+| Postcode missing/short | **"Enter a 4-digit postcode."** |
+| Delivery postcode missing/short | **"Enter your 4-digit delivery postcode."** (existing string — keep) |
+| Over-limit (server `invalid_fields`) | **"That's longer than we can store — keep {field label, lowercase} under {N} characters."** |
+| Server `invalid_fields`, generic | panel-level: **"We couldn't save your details — check {field list}, then try again."** |
+| Server `incomplete_profile` | panel-level: **"We still need {field list} before this can go to review."** |
+| Profile save network failure | panel-level: **"Couldn't save your details. Please try again."** |
+
+Field lists read as prose: *"your phone number, street address and suburb"*. `DetailField` → prose
+mapping (single source, in the component): `name` → "your full name", `phone` → "your phone
+number", `addressLine1` → "your street address", `addressSuburb` → "your suburb", `addressState` →
+"your state", `addressPostcode` → "your postcode".
+
+Each field error renders under its input as `t-cap` in `--attention-ink`, with `role="alert"`,
+`aria-invalid` on the input and `aria-describedby` pointing at the message id — the pattern the
+existing postcode field already uses. Panel-level messages use `.quote-notice--danger`.
+
+### 16.5.4 Submit button — enablement and what it says
+
+Disabled while: any required field is missing or format-invalid · `submitting` · `aiReading` ·
+`projectResolving` · blocking lines exist.
+
+Because the button is disabled, the outstanding work is named in a caption directly above it —
+this is how AC-17 "individually identified" is satisfied without painting untouched fields red:
+
+> **"Still needed: phone, street address, suburb, state, postcode."**
+
+The caption lists the field labels in form order, lowercase, comma-separated, and disappears the
+moment the set is empty. Button label states: **"Submit for technical review"** (with the send
+icon) → **"Submitting…"** → existing **"Refining estimate…"** while `aiReading`.
+
+### 16.5.5 Submit sequence (what the customer sees)
+
+1. Client-validate. Fail → focus the first invalid field, show its message, nothing sent.
+2. Diff the details against `user`. If changed, `updateProfile(patch)`; the button reads
+   **"Submitting…"** for the whole sequence — the profile save is never narrated as a separate
+   step. On `invalid_fields`: stop, show messages, button returns to enabled.
+3. `onSubmit({ suburb, postcode })`.
+4. On server-confirmed ok → the existing `QuoteSubmitted` confirmation screen, unchanged.
+
+Existing server-refusal copy is kept verbatim (`rejected`, `no_project`, postcode codes); the new
+`incomplete_profile` mapping is added per the table above.
+
+## 16.6 Stage 3 — the merge moment (AC-26/27)
+
+### 16.6.1 While re-resolving
+
+The quote panel's body is replaced (the panel and its `SLabel` stay) by:
+
+> **"Updating your project…"** with a spinner
+> **"We're checking for anything already saved to your account."**
+
+The details panel and the Submit button are **not rendered at all** while `projectResolving` — not
+rendered rather than disabled, so no keyboard or scripted path reaches them and no
+delivery-estimate request can be issued against a project id the merge may have deleted (E6).
+Expected duration is well under a second; no skeleton, no progress bar.
+
+### 16.6.2 After the merge — what the customer sees
+
+When the re-resolved project has more lines than the screen was showing, three things appear and
+persist until submission or navigation (they are **not dismissible** — their job is to be present
+at the moment of the decision):
+
+1. A sage notice **above** the quote panel:
+   > **"Your quotes have been combined"**
+   > **"You already had a saved quote on this account, so the {n} item{s} you just built have been added to it. The list below is the whole project — have a look before you submit."**
+2. The panel label becomes **"Your quote · {n} items"**.
+3. Each newly merged line carries a small **"Just added"** chip (sage wash, label scale).
+
+Nothing is styled as a warning or an error: a merge is a convenience, not a fault. No count of
+"your old items", no diff view, no undo — there is nothing to undo, and offering one would imply
+the merge was a mistake.
+
+When **no** merge occurred (AC-25 — the anonymous project simply transferred), none of the three
+appear and the list is identical to what was on screen before sign-in.
+
+## 16.7 The invisible gate — signed in with complete details (AC-14)
+
+Stage 4 renders **collapsed**: a summary block instead of the identity/address form.
+
+```
+YOUR DETAILS                                   [Edit details]
+Sam Taylor · 0412 345 678
+12 Bridge Street, Preston VIC 3072
+sam@buildright.com.au
+─────────────────────────────────────────────────────────────
+DELIVERY FOR THIS PROJECT
+Pre-filled from your address — change it if the site is somewhere else.
+[Delivery suburb]            [Delivery postcode]
+```
+
+The delivery fields stay **open** — they are the one fact that genuinely changes per project.
+**"Edit details"** expands the full form in place (focus moves to Full name); the control then
+reads **"Done"** and collapses it again. In the expanded state a caption reads
+**"Changes here are saved to your account when you submit."**
+
+Submit is enabled on arrival. One press submits. `ASSUMED:` the collapse — §7.4 says "pre-filled",
+and collapsing to a summary is this spec's call; if vetoed, render the form expanded and everything
+else here still holds.
+
+## 16.8 GST (AC-35)
+
+No new mechanism: `GstContext` already reads `user.priceGstMode`, so `setUser` re-renders every
+price on the screen. Two requirements sit on top of it:
+
+- Line prices, subtotal, delivery and project total **all** flip together, with `gstSuffix`
+  changing from `inc GST` to `ex GST`. No reload, no refetch, no flash of the old figure.
+- Because numbers visibly drop at the moment of sign-in, one caption appears under the totals **on
+  the first render after an inline sign-in only**:
+
+  > **"Now showing prices ex GST, the setting on your account."** + link **"Change in your profile"**
+
+  When the account's mode equals the guest default (`inc`), nothing changed and the caption is
+  **not** shown. `ASSUMED:` this caption is new copy, not in §7.4; it exists so a ~9% drop reads as
+  a preference rather than a bug or a bait.
+
+No discount percentage, and no pair of figures from which one could be derived by subtraction,
+appears on any of these panels (AC-36).
+
+## 16.9 Focus, keyboard and accessibility
+
+- **Stage transitions move focus** to the new stage's heading (`tabIndex={-1}`, focused
+  programmatically) except where a single field is the obvious target — stage 1 email, stage 1
+  code, stage 2 name — where focus goes to the field. Every stage change also announces via an
+  `aria-live="polite"` region carrying the stage heading.
+- **Enter submits** the current step from any single-line field in it: email → send code, code →
+  verify, name → save. In stage 4, Enter triggers Submit only when the form is valid; otherwise it
+  moves focus to the first invalid field.
+- **Tab order follows visual order**; no positive `tabIndex` anywhere. "Edit details", "Resend
+  code", "Use a different email" and "Back to my quote" are real `button` elements, never
+  `a href="#"`.
+- **Error announcement:** field messages carry `role="alert"`; panel-level messages sit inside a
+  `role="alert"` container that is rendered (not merely revealed) when the error occurs.
+- **The 6-digit code field** is one `input` with `inputMode="numeric"` and
+  `autoComplete="one-time-code"` — never six boxes: six boxes break paste and are hostile with a
+  screen reader.
+- **Touch targets** at least 44 px on mobile; the state field uses the native `select` picker.
+- **Reduced motion:** the scroll to the gate is instant and the spinner becomes a static
+  **"Updating your project…"** line under `prefers-reduced-motion: reduce`.
+- **Contrast:** error text uses `--attention-ink` on paper (existing token pairing), never
+  `--attention` on a wash.
+
+## 16.10 Responsive behaviour
+
+- Content column unchanged (`max-w-2xl`, 24 px gutters; 20 px at 375 px).
+- All two- and three-column field grids collapse to one column below `sm`. The state/postcode pair
+  stays side by side on mobile — both are short, and splitting them wastes a screen.
+- Primary buttons go **full-width** on mobile (right-aligned on desktop); the "Still needed:"
+  caption centres above them.
+- The quote line list truncates the product description with an ellipsis and never wraps the price
+  away from its row — existing behaviour, unchanged.
+
+## 16.11 Deviations from §7.4, and assumptions
+
+| Tag | What | Why | If vetoed |
+|---|---|---|---|
+| `UX-1` | The **delivery postcode field and the delivery estimate stay on the pre-gate screen**; §7.4 puts the delivery-estimate effect in the details stage only | "Anyone can see a price" is the feature's founding principle, and delivery is part of the price. §8.3 deliberately leaves `POST /projects/:id/delivery-estimate` on `ownedProject` and calls it "a draft-scoped read the anonymous review screen legitimately uses pre-gate" — this uses exactly that. The E6 hazard is handled by suppressing the effect whenever `projectResolving` is true, in every stage. | Stage 0 shows no postcode field; the totals show "Windows and doors" only, with a line **"Delivery is calculated at the next step."** |
+| `UX-2` | A **stage 0** exists (gate closed until Submit is pressed) | AC-11 and Playwright §10.3.1 both require Submit to be pressable while anonymous and the OTP step to appear on that press | Render `OtpSignIn` immediately for `user == null`; the pre-announcement caption moves into the panel's sub-copy |
+| `UX-3` | Stage 4 renders **collapsed** for a complete account | Makes the gate invisible when satisfied — the brief's requirement — and keeps one-press submission genuinely one press | Render expanded; every other rule here is unaffected |
+
+`ASSUMED:` items, all vetoable: the 10-minute code-expiry wording (§16.3.2); the 30-second resend
+cooldown (§16.3.2); the GST-change caption (§16.8); the longer gate sub-copy vs the shorter
+`/login` one (§16.3.1); the "Just added" chip and the non-dismissible merge notice (§16.6.2).
+
+## 16.12 Copy sweep — the relabelled entry points (AC-4)
+
+Beyond the sites §7.3 names, one more was found and is **in scope**:
+
+- **`src/app/App.tsx:313`** — nav item **"Sign in / Register"** → **"Sign in or create account"**.
+  It is an entry point to the sign-in surface and carries the same claim its heading does.
+- `App.tsx:1303` heading → **"Sign in or create account"**; sub → **"We'll email you a one-time
+  code — no password needed. If you're new, this creates your account."**
+- `App.tsx:1363` → **"Your quote is saved as you go. Sign in to keep it against your account
+  across devices, and to send it in for review."** (the "guest quotes don't require an account"
+  clause is deleted, not reworded).
+- `App.tsx:1238` → **"Price it free with no account, and a person checks every quote before you
+  pay a cent."**; `src/pages/PostPage.tsx:247` → **"Free to price with no account, and every quote
+  checked by a person before you pay."**
+- **Kept unchanged, because they remain true:** `App.tsx:690`, `App.tsx:816` (free estimate),
+  `App.tsx:1624` (order tracking), `src/pages/ContactPage.tsx:240` (contact form). Matches
+  deviation D-3.
+
+## 16.13 What must not appear (assert, don't assume)
+
+On every panel this spec describes: no trade pricing, no trade account, no discount, no percentage,
+no "apply", no "coming soon", no link to `TradePage`, and **no referral-code input field of any
+kind**. These are Playwright absence assertions (§10.3.6), not review items.
