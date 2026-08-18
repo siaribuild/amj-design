@@ -164,3 +164,19 @@ review.
 (P2-D3) while the customer is mid-submission, `ASSUMED:` entering it there must NOT block or
 delay submission — the quote submits, verification runs asynchronously, and per P2-D4 trade
 pricing applies from approval onward rather than retroactively. Veto at the spec gate if wrong.
+
+### P2-D5 — builder/tradie label REMOVED (owner, 2026-08-19)
+
+**Supersedes D7's "self-declared label collected at registration".** Reviewing the Phase 2 mock the
+owner ruled: *"builder vs tradie - no difference"* — remove the question entirely rather than keep
+capturing a label nothing behaves on.
+
+Effect: no builder/tradie control on any surface (trade page, profile, submit gate); no
+`user.trade_label` column in migration 0054; no builder/tradie row in the ops application detail
+or customer 360. D7's three-tier vocabulary still stands as *language* — builder and tradie are
+both trade/business accounts — but the product stops asking which.
+
+**Why it holds:** the distinction was being captured only for a future feature (plans upload) that
+does not exist yet. When it does, the owner will know what distinction actually matters and can ask
+a better question then. Migrations are append-only, so re-adding a column later costs nothing that
+carrying a dead one now would have saved.
