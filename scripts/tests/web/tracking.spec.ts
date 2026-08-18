@@ -156,9 +156,22 @@ test("a submitted quote is trackable by its OF-Q reference, anonymously", async 
   const project = (await saved.json()).project;
   expect(project.ref, "a submitted quote gets an OF-Q reference").toMatch(/^OF-Q-\d+$/);
 
-  await page.request.post(`/api/projects/${project.id}/submit`, {
-    data: { contact: { name: "E2E Tester", email, phone: "0400 000 000", suburb: "Rowville", postcode: "3178" } },
+  // The submission gate: only a signed-in customer with a complete account can
+  // submit. The guest TRACKING flow below is untouched by that, and still works
+  // from a reference and an email address on a device with no session.
+  const signIn = await page.request.post("/api/auth/challenge", { data: { email } });
+  const { devCode: signInCode } = await signIn.json();
+  await page.request.post("/api/auth/verify", { data: { email, code: signInCode } });
+  await page.request.post("/api/auth/profile", {
+    data: {
+      name: "E2E Tester", phone: "0400 000 000", addressLine1: "12 Bridge Street",
+      addressSuburb: "Preston", addressState: "VIC", addressPostcode: "3072",
+    },
   });
+  await page.request.post(`/api/projects/${project.id}/submit`, {
+    data: { delivery: { suburb: "Rowville", postcode: "3178" } },
+  });
+  await page.request.post("/api/auth/logout", { data: {} });
 
   // Now track it the way the confirmation email tells them to.
   await page.goto("/track-order");

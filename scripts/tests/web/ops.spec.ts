@@ -31,6 +31,27 @@ async function staffLogin(page: Page) {
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 }
 
+/** Give the page's request context a signed-in customer with a complete account.
+ *
+ *  The submission gate refuses anything less, server-side, so a fixture that
+ *  submits a quote for ops to look at has to satisfy it. Done through the API
+ *  rather than the UI: these are ops tests, and driving the customer sign-in
+ *  screen here would burn an OTP challenge on something none of them assert. */
+async function signInAndComplete(page: Page, email: string, name: string) {
+  const challenge = await page.request.post("/api/auth/challenge", { data: { email } });
+  const { devCode } = await challenge.json();
+  expect(devCode, `dev OTP for ${email}`).toBeTruthy();
+  const verified = await page.request.post("/api/auth/verify", { data: { email, code: devCode } });
+  expect(verified.ok(), `verify ${email}`).toBeTruthy();
+  const profile = await page.request.post("/api/auth/profile", {
+    data: {
+      name, phone: "0412 345 678", addressLine1: "12 Bridge Street",
+      addressSuburb: "Preston", addressState: "VIC", addressPostcode: "3072",
+    },
+  });
+  expect(profile.ok(), `complete account for ${email}`).toBeTruthy();
+}
+
 test("the dashboard points at work rather than counting it", async ({ page }) => {
   await staffLogin(page);
   // Rows that link, never buttons that act — the dashboard is a pointer to the
@@ -218,8 +239,9 @@ test("T-C6: the record shows the machine estimate beside the number staff confir
     },
   });
   expect(saved.ok()).toBeTruthy();
+  await signInAndComplete(page, "tc6-delivery-check@example.com", "T-C6 Customer");
   const submitted = await page.request.post(`/api/projects/${(await saved.json()).project.id}/submit`, {
-    data: { contact: { name: "T-C6 Customer", email: "tc6-delivery-check@example.com", postcode: "3072" } },
+    data: { delivery: { postcode: "3072" } },
   });
   expect(submitted.ok()).toBeTruthy();
 
@@ -268,8 +290,9 @@ test("T-C7: Issue reviewed quote is blocked, and says delivery is why", async ({
   });
   expect(saved.ok()).toBeTruthy();
   const projectId = (await saved.json()).project.id;
+  await signInAndComplete(page, "tc7-gate-check@example.com", "T-C7 Customer");
   const submitted = await page.request.post(`/api/projects/${projectId}/submit`, {
-    data: { contact: { name: "T-C7 Customer", email: "tc7-gate-check@example.com", postcode: "3072" } },
+    data: { delivery: { postcode: "3072" } },
   });
   expect(submitted.ok()).toBeTruthy();
 
@@ -337,8 +360,9 @@ test("T-C8: a staff override settles delivery, unblocks issuing, and the issued 
   const savedBody = await saved.json();
   const projectId = savedBody.project.id;
   const goods = savedBody.items[0].lineTotal;
+  await signInAndComplete(page, "tc8-flip-check@example.com", "T-C8 Customer");
   const submitted = await page.request.post(`/api/projects/${projectId}/submit`, {
-    data: { contact: { name: "T-C8 Customer", email: "tc8-flip-check@example.com", postcode: "3072" } },
+    data: { delivery: { postcode: "3072" } },
   });
   expect(submitted.ok()).toBeTruthy();
 

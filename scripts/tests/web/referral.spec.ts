@@ -134,7 +134,22 @@ async function newAccount(label: string): Promise<Identity> {
   expect(devCode, `dev OTP for ${email}`).toBeTruthy();
   const verified = await ctx.post("/api/auth/verify", { data: { email, code: devCode } });
   expect(verified.ok(), `verify ${email}`).toBeTruthy();
+  await completeDetails(ctx, label);
   return { ctx, email };
+}
+
+/** The submission gate refuses an account with no name, phone or address —
+ *  server-side, so a detail-less fixture cannot submit anything. This is the ONLY
+ *  change these fixtures needed; no referral assertion moved. */
+async function completeDetails(ctx: APIRequestContext, label: string): Promise<void> {
+  const saved = await ctx.post("/api/auth/profile", {
+    data: {
+      name: `Referral ${label}`, phone: "0412 345 678",
+      addressLine1: "12 Bridge Street", addressSuburb: "Preston",
+      addressState: "VIC", addressPostcode: "3072",
+    },
+  });
+  expect(saved.ok(), `complete details for ${label}`).toBeTruthy();
 }
 
 /** Hand an identity's session to the browser. */
@@ -277,6 +292,7 @@ async function newReferredAccount(label: string, code: string, business: string)
   const verified = await ctx.post("/api/auth/verify", { data: { email, code: devCode } });
   expect(verified.ok(), `verify ${email}`).toBeTruthy();
   await ctx.post("/api/auth/profile", { data: { company: business } });
+  await completeDetails(ctx, label);
   return { ctx, email };
 }
 
@@ -303,7 +319,7 @@ async function orderFor(who: Identity, title: string, stop: "issued" | "accepted
   expect(body.items[0].lineTotal, "the line prices — a null total means the estimator, not the referral").toBeTruthy();
 
   const submitted = await who.ctx.post(`/api/projects/${projectId}/submit`, {
-    data: { contact: { name: title, email: who.email, postcode: "3072" } },
+    data: { delivery: { postcode: "3072" } },
   });
   expect(submitted.ok(), `submit: ${await submitted.text()}`).toBeTruthy();
 

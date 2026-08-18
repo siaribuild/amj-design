@@ -46,6 +46,29 @@ async function mockProject(page: Page, items: MockItem[], files: unknown[] = [])
   });
 }
 
+/** A signed-in customer whose account is complete, route-mocked.
+ *
+ *  The submission gate refuses anything less, so a review-screen test that wants
+ *  to reach the details stage has to have one. Mocked rather than real for the
+ *  same reason the project is: these tests are about the BUILDER and its review
+ *  screen, and a real OTP round trip per test would burn the per-address cap. */
+async function mockSignedIn(page: Page, overrides: Record<string, unknown> = {}) {
+  const user = {
+    id: "u-qp", email: "qp@example.com", name: "Quote Project", phone: "0412 345 678",
+    company: null, abn: null, priceGstMode: "inc",
+    addressLine1: "12 Bridge Street", addressLine2: null,
+    addressSuburb: "Preston", addressState: "VIC", addressPostcode: "3072",
+    type: "customer", role: null, createdAt: null, ...overrides,
+  };
+  await page.route("**/api/auth/me", (route) =>
+    route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ authenticated: true, anonymous: false, user }),
+    }));
+  await page.route("**/api/auth/profile", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ user }) }));
+}
+
 /** A priced, composite parent carrying a TECHNICAL-only review flag. Priced and
  *  submittable — the case that must stay visually neutral. */
 const compositeItem: MockItem = {
@@ -384,6 +407,7 @@ test("a submitted job leaves the builder — it does not linger until a refresh"
   // is right to keep. So the reset belongs at submission, and this test walks
   // the round trip rather than asserting on the confirmation screen — which
   // shows no openings either way and would pass with the bug present.
+  await mockSignedIn(page);
   await mockProject(page, [compositeItem]);
   await page.route("**/api/projects/*/submit", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "project-qp", status: "submitted" }) }));
@@ -392,8 +416,6 @@ test("a submitted job leaves the builder — it does not linger until a refresh"
   await page.getByRole("region", { name: "Project summary and actions" })
     .getByRole("button", { name: /Submit for technical review/ }).click();
   await expect(page.getByRole("heading", { name: "Review and submit" })).toBeVisible();
-  await page.getByPlaceholder("Your name").fill("Regression Tester");
-  await page.getByPlaceholder("your@email.com").fill("regression@example.com");
   await page.getByLabel("Delivery postcode").fill("3072"); // required at submit (D7)
 
   // From here the server has NO draft to hand back — same customer, so the
@@ -974,9 +996,11 @@ test("T-C2: the submit screen asks for a postcode and will not submit without fo
   await page.getByRole("region", { name: "Project summary and actions" })
     .getByRole("button", { name: /Submit for technical review/ }).click();
 
+  // The contact fields that used to sit here are gone: identity comes from the
+  // session, and an anonymous visitor sees only the postcode and the gate's
+  // pre-announcement. What this test is about — four digits or no submission —
+  // is unchanged.
   const submit = page.getByRole("button", { name: /Submit for technical review/ });
-  await page.getByLabel("Full name").fill("Postcode Tester");
-  await page.getByLabel("Email").fill("postcode-tester@example.com");
   await expect(submit).toBeDisabled();
 
   const postcode = page.getByLabel("Delivery postcode");

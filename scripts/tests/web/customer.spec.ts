@@ -20,7 +20,7 @@ const DEMO_EMAIL = seedEmail("u_demo");
 // email login form.
 async function otpLogin(page: Page, emailPlaceholder: RegExp, email: string, verifyName: RegExp) {
   await page.getByPlaceholder(emailPlaceholder).first().fill(email);
-  await page.getByRole("button", { name: /send code/i }).click();
+  await page.getByRole("button", { name: /email me a code|send code/i }).click();
   const devText = await page.getByText(/Dev mode/i).textContent();
   const code = devText?.match(/\d{6}/)?.[0] ?? "";
   await page.getByPlaceholder("••••••").fill(code);
@@ -434,10 +434,25 @@ test("T-C5: the issued quote asks for half of goods plus delivery", async ({ pag
   const projectId = savedBody.project.id;
   const goods = savedBody.items[0].lineTotal;
 
+  // The submission gate: a session that owns the project, and an account with a
+  // name, phone and address. Created here through the API so the test's own
+  // subject — the issued quote's deposit arithmetic — is what it exercises.
+  const challenge = await page.request.post("/api/auth/challenge", { data: { email } });
+  const { devCode } = await challenge.json();
+  expect(devCode, `dev OTP for ${email}`).toBeTruthy();
+  expect((await page.request.post("/api/auth/verify", { data: { email, code: devCode } })).ok()).toBeTruthy();
+  expect((await page.request.post("/api/auth/profile", {
+    data: {
+      name: "TC5 Customer", phone: "0412 345 678", addressLine1: "12 Bridge Street",
+      addressSuburb: "Preston", addressState: "VIC", addressPostcode: "3072",
+    },
+  })).ok()).toBeTruthy();
   const submitted = await page.request.post(`/api/projects/${projectId}/submit`, {
-    data: { contact: { name: "TC5 Customer", email, postcode: "3072" } },
+    data: { delivery: { postcode: "3072" } },
   });
   expect(submitted.ok()).toBeTruthy();
+  // …and this device forgets the session, so the UI half below signs in for real.
+  await page.request.post("/api/auth/logout", { data: {} });
 
   const OPS_HOST = "ops.localhost:8788";
   const rawEmail = `tc5-ops-${stamp}@openframe.com.au`;

@@ -256,7 +256,14 @@ test("auth: normEmail, isEmail, sixDigit, sha256hex, userDto", async () => {
   assert.match(M.sixDigit(), /^\d{6}$/);
   assert.equal(await M.sha256hex("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
   assert.deepEqual(M.userDto({ id: "u1", email: "e@x.com", name: "N", phone: null, company: "Acme", abn: "12345678901", price_gst_mode: "ex", type: "internal", role: "admin", created_at: "2026-01-02 03:04:05", session_epoch: 0 }),
-    { id: "u1", email: "e@x.com", name: "N", phone: null, company: "Acme", abn: "12345678901", priceGstMode: "ex", type: "internal", role: "admin", createdAt: "2026-01-02 03:04:05" });
+    {
+      id: "u1", email: "e@x.com", name: "N", phone: null, company: "Acme", abn: "12345678901", priceGstMode: "ex",
+      // The account address (migration 0053) — served only on customer surfaces,
+      // to the account owner. Null-safe, so a pre-0053 row reads as absent
+      // rather than undefined.
+      addressLine1: null, addressLine2: null, addressSuburb: null, addressState: null, addressPostcode: null,
+      type: "internal", role: "admin", createdAt: "2026-01-02 03:04:05",
+    });
   // Unset / legacy rows default to inc-GST display.
   assert.equal(M.userDto({ id: "u2", email: "e2@x.com", name: null, phone: null, company: null, abn: null, price_gst_mode: null, type: "customer", role: null, created_at: null, session_epoch: 0 }).priceGstMode, "inc");
 });
