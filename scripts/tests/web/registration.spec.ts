@@ -234,17 +234,23 @@ test("Submit is disabled and every outstanding item is named, full name first", 
   await expect(submit).toBeDisabled();
   const caption = page.getByText(/^Still needed:/);
   await expect(caption).toBeVisible();
+  // In form order, and the DELIVERY gap is on the list with the account ones:
+  // delivery is blank on every project by design (MG-2), so for a fresh account
+  // it is simply the last outstanding field rather than a special case.
   await expect(caption, "full name is the first thing outstanding for a fresh account")
-    .toHaveText("Still needed: full name, phone, street address, suburb, state, postcode.");
+    .toHaveText("Still needed: full name, phone, street address, suburb, state, postcode, delivery postcode.");
 
   // No field is marked invalid before it has been touched.
   await expect(page.getByText("Enter your full name.")).toHaveCount(0);
 
-  // The caption empties as the fields are filled.
+  // The caption shrinks to the one thing left as the account fields are filled…
   await fillDetails(page);
-  await expect(caption).toHaveCount(0);
+  await expect(caption).toHaveText("Still needed: delivery postcode.");
+  await expect(submit).toBeDisabled();
 
+  // …and empties on the last field, which is the one press away from submitting.
   await page.getByLabel("Delivery postcode").fill("3072");
+  await expect(caption).toHaveCount(0);
   await expect(submit).toBeEnabled();
 });
 
