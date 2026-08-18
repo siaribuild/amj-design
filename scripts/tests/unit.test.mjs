@@ -24,6 +24,7 @@ await build({
       export { parseCookies, newToken, claimCookie, CLAIM_COOKIE } from ${p("worker/lib/util.ts")};
       export { normEmail, isEmail, sixDigit, sha256hex, userDto } from ${p("worker/lib/auth.ts")};
       export { normalizePhone, enquiryReference, validateEnquiry } from ${p("worker/lib/enquiry.ts")};
+      export { isValidAuPhone, normalizePhone as normalizePhoneShared } from ${p("src/data/phone.ts")};
       export { availableActions, ACTION_LABEL, TRANSITIONS, STAGES, STAGE_LABEL, DEPOSIT_PERCENT, depositOf, balanceOf } from ${p("worker/lib/orders.ts")};
       export { editedFieldsAfterSave } from ${p("worker/lib/lines.ts")};
       export { pricingOptionSlugsFromOptions } from ${p("worker/lib/estimator/estimate.ts")};
@@ -936,4 +937,28 @@ test("T-A30: the customer's running estimate has no delivery term, and cannot gr
     deliveryTotal: 999999, delivery: { amount: 999999 },
   });
   assert.equal(summary.total, 500 + 640);
+});
+
+// AU phone validation — ONE implementation, shared by the Worker and the browser
+// (registration Phase 1, spec §7.2 / AC-20 / AC-21). Service numbers are valid
+// contact phones by owner ruling Q2.
+test("isValidAuPhone: accepted AU shapes, rejected junk", () => {
+  for (const good of [
+    "0412 345 678", "+61 412 345 678", "(03) 9000 0000", "1300 123 456", "13 12 34",
+    "1800 123 456", "0412345678", "61412345678",
+  ]) {
+    assert.equal(M.isValidAuPhone(good), true, `${good} must be accepted`);
+  }
+  for (const bad of [
+    "12345", "abc", "0000000000", "04123456789", "", null, undefined,
+    "0112345678", "1400123456", "131234567",
+  ]) {
+    assert.equal(M.isValidAuPhone(bad), false, `${JSON.stringify(bad)} must be rejected`);
+  }
+});
+
+// Spec §7.2: exactly ONE "normalise an AU phone" implementation. The enquiry
+// route's export must BE the shared one, not a second copy that agrees today.
+test("one AU phone normaliser: worker/lib/enquiry re-exports src/data/phone", () => {
+  assert.equal(M.normalizePhone, M.normalizePhoneShared);
 });

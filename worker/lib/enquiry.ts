@@ -1,6 +1,7 @@
 // Enquiry helpers — pure, unit-testable. Reference formatting, phone
 // normalisation (AU), and branch validation for the Contact page fork.
 import { isEmail } from "./auth";
+import { normalizePhone } from "../../src/data/phone";
 
 export const ENQUIRY_INTENTS = ["question", "appointment_request"] as const;
 export type EnquiryIntent = (typeof ENQUIRY_INTENTS)[number];
@@ -13,14 +14,10 @@ export const FORM_VERSION = "contact-2026-08";
 export const enquiryReference = (year: number, seq: number) =>
   `OF-ENQ-${year}-${String(seq).padStart(6, "0")}`;
 
-// Normalise an AU phone number to a bare local form for matching (display value is
-// kept separately). "+61 4xx" / "61 4xx" → "04xx"; other input keeps its digits.
-export function normalizePhone(raw: unknown): string {
-  const digits = String(raw ?? "").replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("61") && digits.length >= 10) return "0" + digits.slice(2);
-  return digits;
-}
+// AU phone normalisation lives in src/data/phone.ts — ONE implementation shared
+// by the Worker and the browser bundle (spec §7.2). Re-exported here so the
+// enquiry route and its callers keep importing it from where they always did.
+export { normalizePhone } from "../../src/data/phone";
 
 export interface EnquiryInput {
   intent?: string;
