@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import { CLAIM_COOKIE, parseCookies } from "../lib/util";
 import { claimAnonProjectForUser } from "../lib/access";
+import { updateAccountDetails } from "../lib/account";
 import {
   challengeAllowed, challengeSourceAllowed, clearCookie, consumeChallenge, createSession, destroySession,
   findOrCreateUser, isDevEnv, isEmail, normEmail, resolveUser, sessionCookie, sixDigit, storeChallenge, userDto,
@@ -120,25 +121,20 @@ auth.post("/verify", async (c) => {
   return c.json({ authenticated: true, anonymous: false, user: userDto(user) });
 });
 
-// POST /api/auth/profile { name?, phone?, company?, abn?, priceGstMode? } — persist
-// the signed-in user's editable profile fields + business registration details +
-// price-display preference (the account page mutates the server, not just React).
+// POST /api/auth/profile { name?, phone?, company?, abn?, priceGstMode?,
+// addressLine1?, addressLine2?, addressSuburb?, addressState?, addressPostcode? }
+// — persist the signed-in user's own editable fields.
+//
+// Thin by design: the allowlist, the validation, the trimming and the single
+// session-scoped UPDATE all live in worker/lib/account.ts. No subject id is
+// accepted in the path or the body — scoping is by session only (spec §7.4).
 auth.post("/profile", async (c) => {
   const user = await resolveUser(c.env, c.req.raw);
   if (!user) return c.json({ error: "unauthorized" }, 401);
   const body = await c.req.json().catch(() => ({}));
-  const name = body?.name !== undefined ? String(body.name).trim() : user.name;
-  const phone = body?.phone !== undefined ? String(body.phone).trim() : user.phone;
-  const company = body?.company !== undefined ? String(body.company).trim() : user.company;
-  const abn = body?.abn !== undefined ? String(body.abn).trim() : user.abn;
-  // Only 'ex' opts out; anything else (incl. unset/invalid) means inclusive.
-  const priceGstMode = body?.priceGstMode !== undefined
-    ? (String(body.priceGstMode) === "ex" ? "ex" : "inc")
-    : user.price_gst_mode;
-  await c.env.DB.prepare("UPDATE user SET name = ?, phone = ?, company = ?, abn = ?, price_gst_mode = ? WHERE id = ?")
-    .bind(name || null, phone || null, company || null, abn || null, priceGstMode || null, user.id).run();
-  const fresh = (await c.env.DB.prepare("SELECT * FROM user WHERE id = ?").bind(user.id).first<typeof user>())!;
-  return c.json({ user: userDto(fresh) });
+  const result = await updateAccountDetails(c.env, user, body);
+  if (!result.ok) return c.json({ error: result.error, fields: result.fields }, 400);
+  return c.json({ user: userDto(result.user) });
 });
 
 // POST /api/auth/logout — drop the session and clear the cookie.

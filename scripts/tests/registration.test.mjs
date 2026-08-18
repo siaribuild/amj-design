@@ -115,6 +115,85 @@ test("user registration — creation values, the submission gate, and its abuse 
         "re-verifying an existing internal account must not touch its discount");
     });
 
+    const validDetails = {
+      name: "Sam Taylor", phone: "0412 345 678",
+      addressLine1: "12 Bridge Street", addressLine2: "Unit 4",
+      addressSuburb: "Preston", addressState: "vic", addressPostcode: "3072",
+    };
+
+    await t.test("AC-18 / AB-10 / AB-11 / AB-13: the profile endpoint is the one writer, and it is narrow", async () => {
+      const who = await newAccount("profile");
+
+      // AB-14 / the endpoint's own auth self-check: no session, no data.
+      const anon = new Session(baseUrl);
+      const unauth = await anon.request("/api/auth/profile", { method: "POST", json: validDetails });
+      assert.equal(unauth.status, 401);
+      assert.deepEqual(await unauth.json(), { error: "unauthorized" });
+
+      // The happy path stores every field, and the DTO hands them back.
+      const saved = await who.session.request("/api/auth/profile", { method: "POST", json: validDetails });
+      assert.equal(saved.status, 200);
+      const dto = (await saved.json()).user;
+      assert.equal(dto.addressLine1, "12 Bridge Street");
+      assert.equal(dto.addressSuburb, "Preston");
+      assert.equal(dto.addressState, "VIC", "state is stored uppercase");
+      assert.equal(dto.addressPostcode, "3072");
+      const row = await userRow(who.email);
+      assert.equal(row.address_line1, "12 Bridge Street");
+      assert.equal(row.address_state, "VIC");
+
+      // AB-10 — mass assignment. The allowlist is what makes this structural: the
+      // handler never reads these keys, so there is nothing to filter.
+      const before = await userRow(who.email);
+      const massAssign = await who.session.request("/api/auth/profile", {
+        method: "POST",
+        json: {
+          addressSuburb: "Preston",
+          discountPercent: 25, discount_percent: 25, type: "internal", role: "admin",
+          referral_code: "AAA-BBB", id: "u_demo", email: "victim@example.com", session_epoch: 99,
+        },
+      });
+      assert.equal(massAssign.status, 200);
+      const after = await userRow(who.email);
+      assert.equal(Number(after.discount_percent), Number(before.discount_percent), "discount is unwritable here");
+      assert.equal(after.type, before.type);
+      assert.equal(after.role, before.role);
+      assert.equal(after.email, before.email, "the sign-in identity is not editable");
+      assert.equal(after.session_epoch, before.session_epoch);
+      // AB-9: a referral code posted as an extra body field falls on the floor.
+      const referrals = await sql(`SELECT count(*) AS n FROM referral WHERE referred_user_id = '${esc(after.id)}'`);
+      assert.equal(Number(referrals[0].n), 0, "no referral can be created by posting a code to a form");
+
+      // AB-11 — no subject id exists anywhere. Neither in the body (above) nor in
+      // a path: the route simply does not exist.
+      const victim = await newAccount("victim");
+      const victimBefore = await userRow(victim.email);
+      const byPath = await who.session.request(`/api/auth/profile/${victimBefore.id}`, {
+        method: "POST", json: { name: "Hijacked" },
+      });
+      assert.equal(byPath.status, 404, "there is no per-subject profile route to find");
+      assert.equal((await userRow(victim.email)).name, victimBefore.name, "B's row is unchanged");
+
+      // AB-13 / AC-22 / AC-23 — refused by name, not clipped, and nothing stored.
+      for (const [patch, fields] of [
+        [{ phone: "12345" }, ["phone"]],
+        [{ addressPostcode: "307" }, ["addressPostcode"]],
+        [{ addressState: "XX" }, ["addressState"]],
+        [{ name: "x".repeat(100_000) }, ["name"]],
+        [{ addressLine1: "x".repeat(100_000) }, ["addressLine1"]],
+      ]) {
+        const refused = await who.session.request("/api/auth/profile", { method: "POST", json: patch });
+        assert.equal(refused.status, 400, `${JSON.stringify(patch)} must be refused`);
+        const body = await refused.json();
+        assert.equal(body.error, "invalid_fields");
+        assert.deepEqual(body.fields, fields, "the refusal names the field");
+      }
+      const untouched = await userRow(who.email);
+      assert.equal(untouched.name, "Sam Taylor", "a refused patch stores nothing");
+      assert.equal(untouched.address_line1, "12 Bridge Street");
+      assert.ok(untouched.name.length < 200, "nothing unbounded reached D1");
+    });
+
     void newAccount;
   } finally {
     await stop(server);

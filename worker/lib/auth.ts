@@ -31,10 +31,20 @@ export interface UserRow {
   company: string | null;
   abn: string | null;
   price_gst_mode: string | null;
+  // The ACCOUNT address (migration 0053) — the account holder's own address.
+  // A project's delivery destination is a different fact in a different place
+  // (project.delivery_*) and is never derived from these.
+  address_line1: string | null;
+  address_line2: string | null;
+  address_suburb: string | null;
+  address_state: string | null;
+  address_postcode: string | null;
   type: string;
   role: string | null;
   created_at: string | null;
   session_epoch: number;
+  // Commercial, read-only everywhere outside the two creation INSERTs.
+  discount_percent: number;
 }
 
 export const userDto = (u: UserRow) => ({
@@ -46,6 +56,13 @@ export const userDto = (u: UserRow) => ({
   abn: u.abn ?? null,
   // Price-display preference; 'inc' is the default when unset (guests + legacy rows).
   priceGstMode: u.price_gst_mode === "ex" ? "ex" : "inc",
+  // Account address. Served only on customer surfaces (/me, /verify, /profile) to
+  // the account owner; no ops DTO carries them (AC-38 — Phase 2 owns that view).
+  addressLine1: u.address_line1 ?? null,
+  addressLine2: u.address_line2 ?? null,
+  addressSuburb: u.address_suburb ?? null,
+  addressState: u.address_state ?? null,
+  addressPostcode: u.address_postcode ?? null,
   type: u.type,
   role: u.role ?? null,
   createdAt: u.created_at ?? null,
