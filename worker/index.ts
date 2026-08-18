@@ -17,6 +17,7 @@ import { guest } from "./routes/guest";
 import { files } from "./routes/files";
 import { enquiries } from "./routes/enquiries";
 import { referrals } from "./routes/referrals";
+import { trade } from "./routes/trade";
 import { parse } from "./routes/parse";
 import { ops } from "./routes/ops";
 import { opsReferrals } from "./routes/ops-referrals";
@@ -78,6 +79,10 @@ api.route("/api", enquiries);
 
 // Referral program — the referrer's own screen and the public program figures.
 api.route("/api", referrals);
+
+// Trade verification (ABN / ABR) — the customer side. Session-scoped; no
+// subject id exists on any endpoint here.
+api.route("/api/trade", trade);
 
 // Schedule upload → parse into estimator draft lines (quota-limited).
 api.route("/api", parse);

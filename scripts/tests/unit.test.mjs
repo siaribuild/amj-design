@@ -1079,6 +1079,12 @@ test("emailDomainPlausible: criterion 3, and the free-mailbox floor (AC-P2-23)",
   assert.equal(M.emailDomainPlausible("a@northside-building.com.au", names).pass, true);
   assert.equal(M.emailDomainPlausible("a@northsidebuilding.com", names).pass, true);
   assert.equal(M.emailDomainPlausible("sarah@northsidebuild.com.au", names).domain, "northsidebuild.com.au");
+  // A domain is an abbreviation by nature, and the register spells abbreviations
+  // out: smithbros.com.au belongs to SMITH BROTHERS PTY LTD, whose trading name
+  // is "SMITH BROS". The name matcher canonicalises BROS → BROTHERS (E-P2-20),
+  // which is right for criterion 2 and would silently break criterion 3 — so the
+  // domain is compared against BOTH the expanded and the unexpanded forms.
+  assert.equal(M.emailDomainPlausible("sam@smithbros.com.au", ["Smith Brothers Pty Ltd", "SMITH BROS"]).pass, true);
   assert.equal(M.emailDomainPlausible("sarah@northsidebuild.com.au", names).freeMailbox, false);
 
   // QUEUES: acronyms are deliberately NOT matched (three-letter collisions are

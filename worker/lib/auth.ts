@@ -128,10 +128,24 @@ export async function challengeAllowed(env: Env, email: string): Promise<boolean
  *  path — a cheaper denial-of-service than the one being prevented. The cap is a
  *  ceiling on sustained abuse, not a mutex. */
 export async function challengeSourceAllowed(env: Env, ip: string): Promise<boolean> {
-  const key = `otpip:${ip}`;
+  return withinCap(env, `otpip:${ip}`, MAX_CHALLENGES_PER_IP, CHALLENGE_IP_WINDOW);
+}
+
+/** The counter above, key-agnostic.
+ *
+ *  Generalised rather than copied for the trade-application caps (spec §8.7:
+ *  "reuse the existing challenge-limit machinery rather than inventing a
+ *  second"). Behaviour is byte-identical to what challengeSourceAllowed did
+ *  inline, which is why that function is now a one-line delegate — the existing
+ *  AB-6 probes go on proving this code, rather than proving a copy of it.
+ *
+ *  The read-modify-write burst window documented above is inherited in full. It
+ *  is a ceiling on sustained abuse, not a mutex, and every caller is choosing
+ *  that trade knowingly. */
+export async function withinCap(env: Env, key: string, max: number, windowSeconds: number): Promise<boolean> {
   const count = parseInt((await env.KV.get(key)) ?? "0", 10) || 0;
-  if (count >= MAX_CHALLENGES_PER_IP) return false;
-  await env.KV.put(key, String(count + 1), { expirationTtl: CHALLENGE_IP_WINDOW });
+  if (count >= max) return false;
+  await env.KV.put(key, String(count + 1), { expirationTtl: windowSeconds });
   return true;
 }
 

@@ -18,7 +18,10 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-import { makeRunDir, projectRoot, removeRunDir } from "./helpers.mjs";
+import {
+  Session, freePort, login, makeRunDir, projectRoot, removeRunDir,
+  run, start, stop, viteCli, waitForUrl, wranglerCli,
+} from "./helpers.mjs";
 import { ABR_FIXTURES, startAbrStub } from "./abr-stub.mjs";
 
 test("lookupAbn: the one module that knows ABR exists (design §4)", async (t) => {
@@ -99,6 +102,137 @@ test("lookupAbn: the one module that knows ABR exists (design §4)", async (t) =
     });
   } finally {
     await stub.close();
+    await removeRunDir(runDir);
+  }
+});
+
+// ── The engine, over HTTP, against a real Worker ────────────────────────────
+//
+// Runs against `wrangler dev` with the ABR stub wired in through ABR_BASE_URL.
+// Decisions are asserted from D1 as well as from the response, because a 200
+// that wrote nothing and a 200 that wrote the wrong thing are different failures.
+test("AC-P2-20/21/22/23/27: the triple decides, and every queued answer is the same answer", { timeout: 1_800_000 }, async () => {
+  const runDir = await makeRunDir("trade");
+  const assets = join(runDir, "assets");
+  const state = join(runDir, "state");
+  const wranglerEnv = { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
+  let server;
+  let stub;
+  try {
+    await run(process.execPath, [viteCli, "build", "--outDir", assets, "--emptyOutDir"]);
+    await run(process.execPath, [wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], { env: wranglerEnv });
+    await run(process.execPath, [wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], { env: wranglerEnv });
+
+    // Retried on lock contention: this CLI opens the same local SQLite file the
+    // running Worker holds. A collision is a harness artefact, not the product
+    // refusing anything, and without this it reads like a broken abuse case.
+    const contention = /SQLITE_BUSY|database is locked|jsgInternalError|internal error/i;
+    const sql = async (command, attempt = 0) => {
+      try {
+        const r = await run(process.execPath, [
+          wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--json", "--command", command,
+        ], { env: wranglerEnv });
+        return JSON.parse(r.stdout.slice(r.stdout.indexOf("[")))[0].results;
+      } catch (error) {
+        if (attempt >= 8 || !contention.test(String(error?.message ?? error))) throw error;
+        await new Promise((resolveWait) => setTimeout(resolveWait, 300 * (attempt + 1)));
+        return sql(command, attempt + 1);
+      }
+    };
+    const esc = (value) => String(value).replace(/'/g, "''");
+    const userRow = async (email) => (await sql(`SELECT * FROM user WHERE email = '${esc(email)}'`))[0] ?? null;
+    const applications = async (email) => sql(
+      `SELECT t.* FROM trade_application t JOIN user u ON u.id = t.user_id WHERE u.email = '${esc(email)}' ORDER BY t.created_at, t.rowid`,
+    );
+
+    stub = await startAbrStub();
+    const port = await freePort();
+    const baseUrl = `http://127.0.0.1:${port}`;
+    server = start(process.execPath, [
+      wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port),
+      "--persist-to", state, "--assets", assets, "--log-level", "warn",
+      "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:",
+      "--var", "SANITY_PROJECT_ID:", "--var", "AI_EXTRACTION_MODE:manual",
+      "--var", `ABR_BASE_URL:${stub.baseUrl}`, "--var", "ABR_GUID:test-guid-do-not-log",
+    ], { env: wranglerEnv });
+    await waitForUrl(`${baseUrl}/api/health`, server);
+
+    let seq = 0;
+    const stamp = Date.now().toString(36);
+    // Every account gets its own address: the per-recipient OTP cap is 5 per 15
+    // minutes and a shared address silently exhausts it (handover §4.2).
+    const freshEmail = (label, domain = "example.com") => `tv-${label}-${stamp}-${seq++}@${domain}`;
+    const newAccount = async (label, domain) => {
+      const session = new Session(baseUrl);
+      const email = freshEmail(label, domain);
+      await login(session, "/api/auth", email);
+      return { session, email };
+    };
+    const apply = (session, json) => session.request("/api/trade/application", { method: "POST", json });
+
+    // ALL THREE CRITERIA PASS — approved with no ops action and no queue item.
+    const auto = await newAccount("auto", "smithbros.com.au");
+    const autoRes = await apply(auto.session, {
+      abn: ABR_FIXTURES.active, businessName: "Smith Brothers Pty Ltd", label: "builder", source: "trade_page",
+    });
+    assert.equal(autoRes.status, 200);
+    const autoApps = await applications(auto.email);
+    // The reason (if any) is carried into the message on purpose: "expected
+    // verified, got under_review" is not a diagnosis, and the reason lives in
+    // D1 rather than in the deliberately constant response body.
+    assert.deepEqual(await autoRes.clone().json(), { ok: true, status: "verified" },
+      `auto-pass queued instead. reasons=${autoApps[0]?.queue_reasons} snapshot=${autoApps[0]?.abr_snapshot}`);
+
+    assert.equal(autoApps.length, 1, "exactly one application row");
+    assert.equal(autoApps[0].status, "approved");
+    assert.equal(autoApps[0].decided_via, "auto");
+    assert.equal(autoApps[0].decided_by, null, "an auto-pass has no deciding staff member");
+    assert.equal(JSON.parse(autoApps[0].queue_reasons ?? "[]").length, 0, "AC-P2-20: no queue item");
+    assert.equal(autoApps[0].abn, ABR_FIXTURES.active, "the submitted ABN is frozen on the application");
+    assert.ok(JSON.parse(autoApps[0].abr_snapshot).evaluated, "the ABR snapshot is frozen evidence (AC-P2-26)");
+    const autoUser = await userRow(auto.email);
+    assert.equal(Number(autoUser.discount_percent), 5, "AC-P2-28: the business-account default is applied");
+    assert.equal(autoUser.abn, ABR_FIXTURES.active);
+    assert.equal(autoUser.trade_label, "builder");
+
+    // ONE CRITERION FAILS, three different ways. Each queues; none rejects.
+    // Each uses a DIFFERENT ABN on purpose: the auto-pass above now holds a
+    // standing grant on ABR_FIXTURES.active, and reusing it would add
+    // duplicate_abn to the reasons — correct behaviour, and a second variable.
+    const inactive = await newAccount("inactive", "smithbros.com.au");
+    const inactiveRes = await apply(inactive.session, {
+      abn: ABR_FIXTURES.cancelled, businessName: "Smith Brothers Pty Ltd", source: "profile",
+    });
+    const mismatch = await newAccount("mismatch", "quantumleap.com.au");
+    const mismatchRes = await apply(mismatch.session, {
+      abn: ABR_FIXTURES.otherEntity, businessName: "Smith Brothers Pty Ltd", source: "profile",
+    });
+    const freeMail = await newAccount("freemail", "gmail.com");
+    const freeMailRes = await apply(freeMail.session, {
+      abn: ABR_FIXTURES.northside, businessName: "Northside Building Pty Ltd", source: "profile",
+    });
+
+    const queued = { abn_inactive: inactive, name_mismatch: mismatch, email_domain: freeMail };
+    for (const [reason, account] of Object.entries(queued)) {
+      const apps = await applications(account.email);
+      assert.equal(apps.length, 1, `${reason}: one application row`);
+      assert.equal(apps[0].status, "pending", `${reason} is QUEUED, never rejected`);
+      assert.equal(apps[0].decided_via, null, `${reason}: nothing decided it`);
+      assert.deepEqual(JSON.parse(apps[0].queue_reasons ?? "[]"), [reason], `${reason} is the recorded reason`);
+      assert.equal(Number((await userRow(account.email)).discount_percent), 0, `${reason}: a queued application grants nothing`);
+    }
+
+    // AB-P2-7 / AC-P2-27: the endpoint must not be an oracle for WHICH fact is
+    // wrong. Byte-compared, not eyeballed.
+    const bodies = await Promise.all([inactiveRes, mismatchRes, freeMailRes].map((r) => r.clone().text()));
+    assert.equal(bodies[0], bodies[1], "abn-status and name failures answer identically");
+    assert.equal(bodies[1], bodies[2], "name and email-domain failures answer identically");
+    assert.equal(bodies[0], JSON.stringify({ ok: true, status: "under_review" }));
+    assert.equal(inactiveRes.status, mismatchRes.status);
+    assert.equal(mismatchRes.status, freeMailRes.status);
+  } finally {
+    if (server) await stop(server);
+    if (stub) await stub.close();
     await removeRunDir(runDir);
   }
 });

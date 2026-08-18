@@ -40,6 +40,14 @@ const ABBREVIATIONS: Record<string, string> = { BROS: "BROTHERS" };
  *  Order matters: `&` and `P/L` are expanded while their punctuation still
  *  exists, because the next step destroys it. */
 export function normalizeBusinessName(raw: string | null | undefined): string {
+  return normalizeTokens(raw, true).join(" ");
+}
+
+/** `expand` controls the abbreviation table. Criterion 2 wants it on (so
+ *  "Smith Bros" reaches "SMITH BROTHERS PTY LTD"); criterion 3 needs the
+ *  unexpanded form too, because a DOMAIN is an abbreviation by nature, and
+ *  expanding the register's side moves it further away rather than closer. */
+function normalizeTokens(raw: string | null | undefined, expand: boolean): string[] {
   let s = String(raw ?? "").toUpperCase();
   s = s.replace(/&/g, " AND ");
   s = s.replace(/\bP\s*\/\s*L\b/g, " PTY LTD ");
@@ -48,8 +56,7 @@ export function normalizeBusinessName(raw: string | null | undefined): string {
   if (tokens[0] === "THE") tokens = tokens.slice(1);
   // Repeatedly, so "PTY LTD" and "PTY. LTD. TRUSTEE" both come off entirely.
   while (tokens.length > 1 && LEGAL_FORM_TOKENS.has(tokens[tokens.length - 1])) tokens = tokens.slice(0, -1);
-  tokens = tokens.map((t) => ABBREVIATIONS[t] ?? t);
-  return tokens.join(" ");
+  return expand ? tokens.map((t) => ABBREVIATIONS[t] ?? t) : tokens;
 }
 
 /** Split a submitted name on a trading-as marker.
@@ -175,9 +182,16 @@ function domainCore(domain: string): string {
   return d.replace(/[^a-z0-9]/g, "").toUpperCase();
 }
 
-/** The space-stripped normalised form of a name, for comparison against a
- *  domain, which has no spaces to give. */
-const squash = (name: string | null | undefined) => normalizeBusinessName(name).replace(/ /g, "");
+/** The space-stripped normalised forms of a name, for comparison against a
+ *  domain, which has no spaces to give. TWO of them — with the abbreviation
+ *  table applied and without. `smithbros.com.au` belongs to SMITH BROTHERS PTY
+ *  LTD, whose trading name is "SMITH BROS": expanding BROS is exactly what
+ *  criterion 2 needs and exactly what criterion 3 must not be limited to. */
+const squashVariants = (name: string | null | undefined): string[] => {
+  const expanded = normalizeTokens(name, true).join("");
+  const literal = normalizeTokens(name, false).join("");
+  return expanded === literal ? [expanded] : [expanded, literal];
+};
 
 /** Criterion 3: does the account's email domain plausibly belong to this business?
  *
@@ -198,14 +212,15 @@ export function emailDomainPlausible(
   const core = domainCore(domain);
   if (!core) return { pass: false, domain, freeMailbox: false };
   for (const name of names) {
-    const squashed = squash(name);
-    if (!squashed) continue;
-    const shorter = core.length <= squashed.length ? core : squashed;
-    const longer = core.length <= squashed.length ? squashed : core;
-    if (shorter.length >= MIN_DOMAIN_CONTAINMENT && longer.includes(shorter)) {
-      return { pass: true, domain, freeMailbox: false };
+    for (const squashed of squashVariants(name)) {
+      if (!squashed) continue;
+      const shorter = core.length <= squashed.length ? core : squashed;
+      const longer = core.length <= squashed.length ? squashed : core;
+      if (shorter.length >= MIN_DOMAIN_CONTAINMENT && longer.includes(shorter)) {
+        return { pass: true, domain, freeMailbox: false };
+      }
+      if (dice(core, squashed) >= DOMAIN_DICE_THRESHOLD) return { pass: true, domain, freeMailbox: false };
     }
-    if (dice(core, squashed) >= DOMAIN_DICE_THRESHOLD) return { pass: true, domain, freeMailbox: false };
   }
   return { pass: false, domain, freeMailbox: false };
 }
