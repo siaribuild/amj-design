@@ -1105,3 +1105,49 @@ Beyond the sites §7.3 names, one more was found and is **in scope**:
 On every panel this spec describes: no trade pricing, no trade account, no discount, no percentage,
 no "apply", no "coming soon", no link to `TradePage`, and **no referral-code input field of any
 kind**. These are Playwright absence assertions (§10.3.6), not review items.
+
+---
+
+# 17. Conformance review (architect, 2026-08-19 — final diff at `d30996ab`)
+
+Verdict: **CONFORMS.** Every file, module, endpoint, migration and test artifact this design
+named exists in the diff; the structural claims (zero new endpoints, identity from the session,
+`worker/lib/account.ts` as the single write path for account contact facts, validation truth in
+`src/data/phone.ts` + `src/data/accountDetails.ts` imported by both Worker and browser, `/verify`
+byte-untouched at `worker/routes/auth.ts:70-121`, migration 0053 additive with no `user` rebuild)
+all hold. Deviations D-1/D-2/D-3 were implemented exactly as declared; the 2026-08-19 owner
+rulings (delivery blank + "Still needed" names the delivery gap; the expired-code copy struck)
+are implemented as ruled. The following deviations are **accepted and recorded** — the design is
+amended to match reality, not the code changed back:
+
+- **`scripts/tests/web/registration-gate-caption.spec.ts` (new)** — tester-authored red test
+  pinning the AC-14 owner resolution ("one field, one press"; caption names the delivery gap),
+  made green in 64112ecb/d30996ab. It is the named artifact for the §16.7 amendment and is
+  picked up by the Playwright `testMatch` glob; treat it as part of §10.3.
+- **`src/data/api.ts` — `ApiError` gains `fields?: string[]`** carrying the server's
+  `invalid_fields` list to the client; §6's error contract now includes it. This is how the
+  §16.5.3 refusal messages name their fields (tester minor: the Worker was already correct,
+  the client boundary was dropping the list).
+- **`src/app/ui.tsx` — `Input` draws `aria-invalid`** (attention border + wash). Supports
+  §16.5.3/§16.9; the attribute was set but had no visual. In-scope consequence, not creep.
+- **`scripts/tests/web/customer.spec.ts:20-26, 239-242`** — two selector updates beyond the
+  "T-C5 only" scope in §10.4, both forced by copy this design itself mandated (§16.3.1
+  "Email me a code", §16.12 "Sign in or create account"). The §10.4 table under-scoped;
+  the frozen ranges (`api.test.mjs:129-150`, `customer.spec.ts:383-409`) are untouched.
+- **`scripts/tests/referral-lifecycle.test.mjs:110-131`** — not in §10.4's fallout table;
+  migration 0053 broke its "referral set is the last thing in `migrations/`" assertion, which
+  was unsatisfiable the moment any later feature shipped a migration. Ruling: the re-expression
+  (set contiguous; runner-applied contiguously in order) is a **correct restatement**, not a
+  weakening — the durable property is "nothing numbered into the set", and that is kept intact.
+  Two caveats for a future pass, neither blocking: (a) the "everything after sorts higher" loop
+  is vacuous — `allMigrations` is `readdir().sort()`, so it can never fire; (b) the old
+  last-N-applied check incidentally caught a backdated migration applied out of name order, and
+  no suite now guards that. A one-line `assert.deepEqual(applied, [...applied].sort())` would
+  restore it in a forever-satisfiable form.
+- **`referral-pricing.test.mjs:128-133` / `api-edge.test.mjs:987-1015`** — standing discounts
+  granted explicitly (straight to D1) because AC-9 ends inheritance from the column default.
+  Correct: the tests are about composition with a standing rate, so the rate must be arranged;
+  writing it via SQL rather than an endpoint re-asserts AB-10. Assertions unchanged.
+
+Open trivia (cosmetic, ride any next commit — no fix round): `AU_STATES` is imported unused at
+`worker/lib/account.ts:21`.
