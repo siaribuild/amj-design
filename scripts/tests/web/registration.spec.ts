@@ -11,6 +11,47 @@
 // Spec §11 (nine journeys) and design §10.3.
 // ═══════════════════════════════════════════════════════════════════════════════
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
+import { spawn, type ChildProcess } from "node:child_process";
+import { createServer } from "node:net";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+
+// The AC-12 block boots its own server (see the bottom of this file); these are
+// the same paths scripts/tests/helpers.mjs uses, resolved from the Playwright cwd.
+const projectRoot = process.cwd();
+const viteCli = join(projectRoot, "node_modules", "vite", "bin", "vite.js");
+const wranglerCli = join(projectRoot, "node_modules", "wrangler", "bin", "wrangler.js");
+
+function runNode(args: string[], env: Record<string, string>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, args, {
+      cwd: projectRoot, env: { ...process.env, ...env }, windowsHide: true, stdio: "ignore",
+    });
+    child.on("error", reject);
+    child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`${args[0]} exited ${code}`))));
+  });
+}
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const s = createServer();
+    s.unref();
+    s.on("error", reject);
+    s.listen(0, "127.0.0.1", () => {
+      const address = s.address();
+      s.close(() => resolve(typeof address === "object" && address ? address.port : 0));
+    });
+  });
+}
+
+async function waitFor(url: string, timeoutMs = 120_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try { if ((await fetch(url)).ok) return; } catch { /* not up yet */ }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`Timed out waiting for ${url}`);
+}
 
 const stamp = Date.now().toString(36);
 let seq = 0;
@@ -404,4 +445,76 @@ test("signing in at /login with a nameless account demands a name before the das
   const me = await (await page.request.get("/api/auth/me")).json();
   expect(me.user.name).toBe("Sam Taylor");
   expect(me.user.name).not.toContain("reg-web-");
+});
+
+// ─── AC-12: the Turnstile widget, on its own keyed server ─────────────────────
+// DEVIATION D-2, approved. This block boots its OWN wrangler dev, serving an SPA
+// built with Cloudflare's always-passes Turnstile test key. It is isolated on
+// purpose: baking that key into the shared harness would make every UI sign-in in
+// the suite — including the two frozen specs — depend on challenges.cloudflare.com
+// being reachable. The network dependency is confined to exactly this block, and
+// it is the named residual of the deviation.
+test.describe("AC-12 — the Turnstile gate on the sign-in step", () => {
+  const TEST_SITE_KEY = "1x00000000000000000000AA";       // Cloudflare: always passes
+  const TEST_SECRET = "1x0000000000000000000000000000000AA";
+  let server: ChildProcess | undefined;
+  let base = "";
+  let runDir = "";
+
+  test.beforeAll(async () => {
+    runDir = await mkdtemp(join(projectRoot, ".codex-tmp", "web-turnstile-"));
+    const assets = join(runDir, "assets");
+    const state = join(runDir, "state");
+    const env = { WRANGLER_LOG_PATH: join(runDir, "wrangler.log"), XDG_CONFIG_HOME: join(runDir, "config") };
+    await runNode([viteCli, "build", "--outDir", assets, "--emptyOutDir"], { ...env, VITE_TURNSTILE_SITE_KEY: TEST_SITE_KEY });
+    await runNode([wranglerCli, "d1", "migrations", "apply", "apertly-db", "--local", "--persist-to", state], env);
+    await runNode([wranglerCli, "d1", "execute", "apertly-db", "--local", "--persist-to", state, "--file", "scripts/db/seed.sql"], env);
+
+    const port = await freePort();
+    base = `http://127.0.0.1:${port}`;
+    server = spawn(process.execPath, [
+      wranglerCli, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port),
+      "--persist-to", state, "--assets", assets, "--log-level", "warn",
+      "--var", "APP_ENV:development", "--var", "ACCESS_TEAM_DOMAIN:", "--var", "ACCESS_AUD:",
+      "--var", "SANITY_PROJECT_ID:", "--var", "AI_EXTRACTION_MODE:manual",
+      "--var", `TURNSTILE_SECRET:${TEST_SECRET}`,
+    ], { cwd: projectRoot, env: { ...process.env, ...env }, stdio: "ignore", windowsHide: true });
+    await waitFor(`${base}/api/health`);
+  });
+
+  test.afterAll(async () => {
+    if (server?.pid) {
+      if (process.platform === "win32") spawn("taskkill", ["/PID", String(server.pid), "/T", "/F"], { windowsHide: true });
+      else server.kill();
+    }
+    await rm(runDir, { recursive: true, force: true, maxRetries: 3 });
+  });
+
+  test("the widget renders in the gate and Send-code waits for its token", async ({ page }) => {
+    const saved = await page.request.put(`${base}/api/projects/current/lines`, {
+      data: { title: `Turnstile ${stamp}`, items: [A_LINE] },
+    });
+    expect(saved.ok(), `save lines on the keyed server: ${await saved.text()}`).toBeTruthy();
+
+    await page.goto(`${base}/quote`);
+    const bar = page.getByRole("region", { name: "Project summary and actions" });
+    await expect(bar).toBeVisible({ timeout: 30_000 });
+    await bar.getByRole("button", { name: /Submit for technical review/ }).click();
+    await page.getByLabel("Delivery postcode").fill("3072");
+    await page.getByRole("button", { name: /Submit for technical review/ }).click();
+
+    await expect(page.getByRole("heading", { name: "Sign in or create your account" })).toBeVisible();
+    // The widget SLOT exists — and never an empty bordered box where it would be.
+    await expect(page.getByTestId("turnstile-slot")).toBeAttached();
+
+    const send = page.getByRole("button", { name: /email me a code/i });
+    await page.getByLabel("Email").fill(freshEmail("turnstile"));
+    // Disabled until a token exists, and saying so rather than looking broken.
+    await expect(page.getByText("Complete the check above to continue.")).toBeVisible();
+    await expect(send).toBeDisabled();
+
+    // The test key passes on its own; the button opens once its callback fires.
+    await expect(send).toBeEnabled({ timeout: 30_000 });
+    await expect(page.getByText("Complete the check above to continue.")).toHaveCount(0);
+  });
 });

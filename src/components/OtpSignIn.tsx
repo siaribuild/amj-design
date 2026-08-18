@@ -113,8 +113,12 @@ export function OtpSignIn({ heading, subcopy, onAuthed, onCancel, cancelLabel }:
               Too many code requests from this connection. Try again in a few minutes — your quote is saved and nothing is lost.
             </p>
           )}
+          {/* REALLY disabled, not merely dimmed. `pointer-events: none` leaves the
+              control operable by keyboard and announces as enabled to a screen
+              reader — which is not what "disabled until a token exists" means. */}
           <Btn variant="sage" size="md" onClick={() => send()}
-            className={`w-full justify-center ${!validEmail || busy || !captchaReady ? "opacity-50 pointer-events-none" : ""}`}>
+            disabled={!validEmail || busy || !captchaReady}
+            className="w-full justify-center">
             {busy ? "Sending…" : "Email me a code"}
           </Btn>
           {TURNSTILE_SITE_KEY && !captchaToken && (
@@ -147,12 +151,13 @@ export function OtpSignIn({ heading, subcopy, onAuthed, onCancel, cancelLabel }:
             </p>
           )}
           <Btn variant="sage" size="md" onClick={verify}
-            className={`w-full justify-center ${code.length !== 6 || busy ? "opacity-50 pointer-events-none" : ""}`}>
+            disabled={code.length !== 6 || busy}
+            className="w-full justify-center">
             {busy ? "Verifying…" : "Verify & continue"}
           </Btn>
           <div className="flex flex-wrap gap-4">
-            <button type="button" onClick={() => send(true)}
-              className={`text-body hover:text-ink cursor-pointer t-bd-sm ${cooldown > 0 || busy ? "opacity-50 pointer-events-none" : ""}`}>
+            <button type="button" onClick={() => send(true)} disabled={cooldown > 0 || busy}
+              className="text-body hover:text-ink cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed t-bd-sm">
               {cooldown > 0 ? `Resend code (${cooldown}s)` : "Resend code"}
             </button>
             <button type="button" onClick={() => { setStep("email"); setCode(""); setError(""); setDevCode(undefined); }}

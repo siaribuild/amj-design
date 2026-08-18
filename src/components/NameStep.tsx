@@ -68,7 +68,8 @@ export function NameStep({ email, onSaved, variant = "login" }: {
             {error && <p id="name-step-err" role="alert" className="text-red-700 mt-1 t-cap">{error}</p>}
           </div>
           <Btn variant="sage" size="md" onClick={save}
-            className={`w-full justify-center ${!name.trim() || saving ? "opacity-50 pointer-events-none" : ""}`}>
+            disabled={!name.trim() || saving}
+            className="w-full justify-center">
             {saving ? "Saving…" : "Save and continue"}
           </Btn>
         </div>
