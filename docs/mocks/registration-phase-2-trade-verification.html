@@ -394,6 +394,11 @@ select.field.err{background-image:linear-gradient(45deg,transparent 50%,var(--at
 .errtext > svg{flex:none;margin-top:3px}
 .readonly{border:1px solid var(--line);background:var(--recessive);padding:10px 12px;color:var(--ink);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);display:flex;justify-content:space-between;align-items:center;gap:10px}
 .readonly .v{font-family:var(--font-data);font-variant-numeric:tabular-nums;letter-spacing:.04em}
+/* The key half of a read-back row is content, not chrome — "Business", "ABN",
+   "Sent" are the only thing naming the value beside them. At --quiet on the
+   --recessive fill they measured 3.1:1, under AA for 13px, on customer screens.
+   --body clears it at 6.2:1 and still steps back from the value it labels. */
+.readonly > .t-cap{color:var(--body)}
 .linkbtn{color:var(--sage-ink);text-decoration:underline;text-underline-offset:2px;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);background:none}
 .spinner{width:14px;height:14px;border:2px solid rgba(90,122,106,.3);border-top-color:var(--sage);border-radius:50%;display:inline-block;vertical-align:-2px;animation:spin .8s linear infinite}
 .btn .spinner{border-color:rgba(255,255,255,.35);border-top-color:#fff}
@@ -410,10 +415,14 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
    the WORK tone, never a warning: a queued application is not a fault and must
    not be dressed as one. */
 .outcome{display:flex;gap:12px;align-items:flex-start;padding:16px 16px 16px 17px;border:1px solid rgba(90,122,106,.35);background:rgba(90,122,106,.06);box-shadow:inset 3px 0 0 var(--sage)}
-.outcome > svg{color:var(--sage);margin-top:2px;flex:none}
-.outcome h4{color:var(--sage-ink);font:600 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-display);letter-spacing:-.1px;margin-bottom:3px}
+/* One icon size for every outcome panel, set here rather than per instance.
+   The panels had been mixing a 20px and a 16px mark with three different inline
+   margin-tops, so the same component sat at a different optical weight on each
+   screen. 18px against the 21px heading line box centres on the cap-height. */
+.outcome > svg{color:var(--sage);width:18px;height:18px;margin-top:2px;flex:none}
+.outcome h4{color:var(--sage-ink);font:600 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-display);letter-spacing:-.1px;margin-bottom:5px}
 .outcome p{color:var(--ink-soft);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);max-width:62ch}
-.outcome p + p{margin-top:6px}
+.outcome p + p{margin-top:8px}
 .outcome.work{border-color:var(--tone-work-bd);background:var(--tone-work-bg);box-shadow:inset 3px 0 0 var(--info)}
 .outcome.work > svg{color:var(--info)}
 .outcome.work h4{color:var(--info-ink)}
@@ -435,28 +444,59 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
 /* Ops evidence rows. */
 .evid{display:flex;align-items:baseline;gap:16px;padding:8px 0;border-bottom:1px solid rgba(0,0,0,.06);font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body)}
 .evid:last-child{border-bottom:0}
-.evid .k{flex:none;width:164px;color:var(--quiet);font:500 var(--t-datsm)/var(--t-datsm-lh) var(--font-data);letter-spacing:.04em;text-transform:uppercase}
+/* --quiet under a 12px uppercase key measured 3.4:1. Ops staff read these rows
+   all day to make a decision that costs a customer money; --body-soft clears AA
+   at 5.0:1 and still sits a full tier behind the value. */
+.evid .k{flex:none;width:164px;color:var(--body-soft);font:500 var(--t-datsm)/var(--t-datsm-lh) var(--font-data);letter-spacing:.04em;text-transform:uppercase}
 .evid .v{color:var(--ops);min-width:0}
-.crit{display:flex;align-items:center;gap:8px;padding:5px 0;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);color:var(--ops)}
-.crit .mk{width:16px;height:16px;flex:none;display:grid;place-items:center;border:1px solid;font:600 10px/10px var(--font-data)}
+/* A deliberately empty value ("Not stated", "No ABN on file") is still the
+   answer to the row's question, so it stays readable instead of fading out. */
+.evid .v.c-quiet{color:var(--body)}
+/* A criterion row wraps at the ops column width, so the mark hangs from the
+   first line rather than floating to the centre of a two-line row. */
+.crit{display:flex;align-items:flex-start;gap:8px;padding:5px 0;font:400 var(--t-bdsm)/var(--t-bdsm-lh) var(--font-body);color:var(--ops)}
+.crit .mk{width:16px;height:16px;margin-top:3px;flex:none;display:grid;place-items:center;border:1px solid}
+.crit .mk > svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
 .crit .mk.p{color:var(--tone-pos);border-color:var(--tone-pos-bd);background:var(--tone-pos-bg)}
 .crit .mk.f{color:var(--tone-attn);border-color:var(--tone-attn-bd);background:var(--tone-attn-bg)}
 .crit .mk.u{color:var(--tone-mute);border-color:var(--tone-mute-bd);background:var(--tone-mute-bg)}
+/* The queue's secondary line — the applicant's email under their name, the
+   builder/tradie label under the business. The markup asked for `block` and
+   nothing defined it, so every one of them ran on to the end of the line above
+   and the two-line cell the table was designed around never appeared. */
+.block{display:block}
+table.ops td .block{margin-top:1px}
+/* Queue column widths. Left to auto, the business column squeezed to 158px and
+   wrapped "Buildright Constructions" onto two lines, so two rows stood at 82px
+   and one at 63px — a ragged scan down a list whose whole job is scanning. The
+   three atomic values (ABN, source, date) never wrap; only the reason chips do,
+   which is correct, because a second reason is a second thing to read. */
+table.ops col.c-appl{width:206px}table.ops col.c-biz{width:206px}
+table.ops col.c-abn{width:132px}table.ops col.c-why{width:216px}
+table.ops col.c-src{width:110px}table.ops col.c-when{width:106px}table.ops col.c-act{width:54px}
+table.ops td.nw,table.ops th.nw{white-space:nowrap}
 .opstile{background:#fff;border:1px solid rgba(0,0,0,.08);padding:14px 16px}
 .opstile .n{font:600 26px/30px var(--font-data);font-variant-numeric:tabular-nums;color:var(--ops)}
 .opstile .l{font:600 var(--t-lbl)/var(--t-lbl-lh) var(--font-data);letter-spacing:1px;text-transform:uppercase;color:var(--quiet);margin-bottom:4px}
 .opstile.due{border-color:rgba(178,110,15,.34);background:var(--tone-attn-bg)}
 .opstile.due .n{color:var(--tone-attn)}
+/* The due tile's label rides the same attention ink as its number: at --quiet
+   on the amber wash it measured 3.0:1, the lowest reading on any screen here. */
+.opstile.due .l{color:var(--tone-attn)}
 /* Email renderings — a plain client frame, deliberately unlike the app. */
 .mail{background:#EFEEEC;padding:18px}
 .mailcard{background:#fff;border:1px solid rgba(0,0,0,.10);max-width:560px;margin:0 auto}
-.mailhdr{padding:12px 20px;border-bottom:1px solid rgba(0,0,0,.08);background:#FAF9F7}
-.mailsub{color:var(--ink);font:600 var(--t-bd)/var(--t-bd-lh) var(--font-display);letter-spacing:-.2px}
-.mailfrom{color:var(--quiet);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:2px}
-.mailbody{padding:22px 20px;color:var(--ink-soft);font:400 var(--t-bdsm)/22px var(--font-body)}
+.mailhdr{padding:14px 22px;border-bottom:1px solid rgba(0,0,0,.08);background:#FAF9F7}
+.mailsub{color:var(--ink);font:600 var(--t-hd3)/var(--t-hd3-lh) var(--font-display);letter-spacing:-.2px}
+.mailfrom{color:var(--body);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body);margin-top:3px}
+/* Email is read at the client's own size, not the app's. 14px is the app's
+   secondary tier and reads as fine print in an inbox; these four are the whole
+   message, so they get the body tier and a mail-client measure. */
+.mailbody{padding:24px 22px;color:var(--ink-soft);font:400 var(--t-bd)/var(--t-bd-lh) var(--font-body)}
 .mailbody p{margin-bottom:14px}
+.mailbody p:first-child{color:var(--ink)}
 .mailbody p:last-child{margin-bottom:0}
-.mailfoot{padding:14px 20px;border-top:1px solid rgba(0,0,0,.08);color:var(--quiet);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)}
+.mailfoot{padding:16px 22px;border-top:1px solid rgba(0,0,0,.08);color:var(--body);font:400 var(--t-cap)/var(--t-cap-lh) var(--font-body)}
 .ic{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .ic-12{width:12px;height:12px}.ic-13{width:13px;height:13px}.ic-14{width:14px;height:14px}.ic-20{width:20px;height:20px}
 .mark10{width:10px;height:10px;flex:none;fill:none}
@@ -474,6 +514,13 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
   <symbol id="i-mail" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16"/><path d="m2 7 10 6 10-6"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
   <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  <!-- lucide Info and Minus. Info (not AlertCircle) is what a non-error outcome
+       gets: the rejected and revoked panels report a fact, not a fault, and an
+       exclamation glyph would make the product sound cross with the customer.
+       Minus is the icon half of the muted StatusPill — the pill rule is icon +
+       word, never colour alone, and "Not approved" had been wearing colour only. -->
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
   <symbol id="i-mark" viewBox="0 0 20 20"><rect x="1" y="1" width="18" height="18" stroke-width="1.5"/><path d="M10 1v18M1 10h18" stroke-width="1.5"/></symbol>
 </defs></svg>
 
@@ -707,7 +754,7 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
         <div class="screen"><div class="mkt p24">
           <div class="card p24" style="max-width:420px">
             <div class="outcome mb16">
-              <svg class="ic ic-20" aria-hidden="true"><use href="#i-check-circle"/></svg>
+              <svg class="ic" aria-hidden="true"><use href="#i-check-circle"/></svg>
               <div>
                 <h4>Your trade account is active</h4>
                 <p>Your ABN checked out. Trade pricing applies to your account from now on — the prices you see anywhere on the site are already your prices.</p>
@@ -758,7 +805,7 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
         <div class="screen"><div class="mkt p24">
           <div class="card p24" style="max-width:420px">
             <div class="outcome work mb16">
-              <svg class="ic ic-20" aria-hidden="true"><use href="#i-clock"/></svg>
+              <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
               <div>
                 <h4>We're checking your details</h4>
                 <p>Thanks — we've got the ABN and business details for Buildright Constructions. Someone here is checking them and we'll email you when it's done.</p>
@@ -956,7 +1003,7 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
               <div class="readonly"><span class="t-cap c-quiet">ABN</span><span class="v">51 824 753 556</span></div>
             </div>
             <div class="outcome work">
-              <svg class="ic" aria-hidden="true" style="margin-top:3px"><use href="#i-clock"/></svg>
+              <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
               <div>
                 <h4>New details under review</h4>
                 <p>We're checking ABN 29 002 589 460 for Buildright Group Pty Ltd, sent 19 August 2026. <b>Your trade pricing is unaffected while we do</b> — nothing changes on your account unless we tell you.</p>
@@ -981,9 +1028,9 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
         <div class="cap"><span>Card · rejected</span><span>account fully intact</span></div>
         <div class="screen"><div class="mkt p24">
           <div class="card p20" style="max-width:420px">
-            <div class="row jb ac mb12"><h3 class="t-bd-sm sb c-ink">Trade account</h3><span class="pill p-mute">Not approved</span></div>
+            <div class="row jb ac mb12"><h3 class="t-bd-sm sb c-ink">Trade account</h3><span class="pill p-mute"><svg class="ic ic-12" aria-hidden="true"><use href="#i-minus"/></svg>Not approved</span></div>
             <div class="outcome mute mb16">
-              <svg class="ic" aria-hidden="true" style="margin-top:3px"><use href="#i-alert"/></svg>
+              <svg class="ic" aria-hidden="true"><use href="#i-info"/></svg>
               <div>
                 <h4>We couldn't set up trade pricing from those details</h4>
                 <p>Your account still works exactly as before — you can price jobs, submit them, track them and use Refer &amp; earn. You're welcome to try again with updated details, or reply to our email and we'll help.</p>
@@ -1003,9 +1050,9 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
         <div class="cap"><span>Card · revoked</span><span>ops removed trade status</span></div>
         <div class="screen"><div class="mkt p24">
           <div class="card p20" style="max-width:420px">
-            <div class="row jb ac mb12"><h3 class="t-bd-sm sb c-ink">Trade account</h3><span class="pill p-mute">Not active</span></div>
+            <div class="row jb ac mb12"><h3 class="t-bd-sm sb c-ink">Trade account</h3><span class="pill p-mute"><svg class="ic ic-12" aria-hidden="true"><use href="#i-minus"/></svg>Not active</span></div>
             <div class="outcome mute mb16">
-              <svg class="ic" aria-hidden="true" style="margin-top:3px"><use href="#i-alert"/></svg>
+              <svg class="ic" aria-hidden="true"><use href="#i-info"/></svg>
               <div>
                 <h4>Trade pricing no longer applies</h4>
                 <p>You're seeing our standard prices from now on. Everything else on your account is unchanged. If you think that's a mistake, <span class="linkbtn">get in touch</span> and we'll sort it out.</p>
@@ -1165,7 +1212,7 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
             <h2 class="t-hd2 c-ink mb8">Quote submitted</h2>
             <p class="t-bd-sm c-body mb16">We've received your project and emailed a confirmation to <span class="c-ink">sam@buildright.com.au</span>. We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote with its reference. Expect a response within 1–2 business days.</p>
             <div class="outcome work" style="text-align:left;margin-bottom:16px">
-              <svg class="ic" aria-hidden="true" style="margin-top:3px"><use href="#i-clock"/></svg>
+              <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
               <div><h4>We're checking your ABN</h4><p>We'll email you about your trade account separately. This quote isn't waiting on it.</p></div>
             </div>
             <p class="t-cap c-body mb16">No payment at this stage. Deposit only after you approve the reviewed quote.</p>
@@ -1182,7 +1229,7 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
             <h2 class="t-hd2 c-ink mb8">Quote submitted</h2>
             <p class="t-bd-sm c-body mb16">We've received your project and emailed a confirmation to <span class="c-ink">sam@buildright.com.au</span>. We'll review dimensions, specifications and manufacturing suitability, then issue a reviewed quote with its reference. Expect a response within 1–2 business days.</p>
             <div class="outcome mute" style="text-align:left;margin-bottom:16px">
-              <svg class="ic" aria-hidden="true" style="margin-top:3px"><use href="#i-alert"/></svg>
+              <svg class="ic" aria-hidden="true"><use href="#i-info"/></svg>
               <div><h4>We couldn't start the ABN check</h4><p>Your quote is safely submitted. You can add your ABN any time from <span class="linkbtn">your account</span>.</p></div>
             </div>
             <div class="row g12 jc"><span class="btn btn-md b-sage">View status</span><span class="btn btn-md b-ghost">Back to home</span></div>
@@ -1241,7 +1288,7 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
             <div class="ops-nav">Audit</div>
           </div>
           <div class="grow">
-            <div class="ops-hdr"><span class="t-bd-sm sb" style="color:var(--ops)">Customers</span><span class="mt-auto"></span></div>
+            <div class="ops-hdr"><span class="t-bd-sm sb" style="color:var(--ops)">Customers</span></div>
             <div style="padding:20px 32px">
               <div class="row g16 mb12" style="border-bottom:1px solid rgba(0,0,0,.08)">
                 <span class="ops-tab on">Trade applications <span class="chip ch-warn" style="margin-left:6px">3</span></span>
@@ -1249,33 +1296,34 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
               </div>
               <div class="card" style="background:#fff">
                 <table class="ops">
-                  <thead><tr><th>Applicant</th><th>Business</th><th>ABN</th><th>Why it queued</th><th>From</th><th>Applied</th><th></th></tr></thead>
+                  <colgroup><col class="c-appl"><col class="c-biz"><col class="c-abn"><col class="c-why"><col class="c-src"><col class="c-when"><col class="c-act"></colgroup>
+                  <thead><tr><th>Applicant</th><th>Business</th><th class="nw">ABN</th><th>Why it queued</th><th class="nw">From</th><th class="nw">Applied</th><th></th></tr></thead>
                   <tbody>
                     <tr>
-                      <td><span class="md">Sam Taylor</span><span class="block c-quiet t-cap">sam@gmail.com</span></td>
-                      <td>Buildright Constructions<span class="block c-quiet t-cap">Tradie</span></td>
-                      <td class="fdata">51 824 753 556</td>
+                      <td><span class="md">Sam Taylor</span><span class="block c-body t-cap">sam@gmail.com</span></td>
+                      <td>Buildright Constructions<span class="block c-body t-cap">Tradie</span></td>
+                      <td class="fdata nw">51 824 753 556</td>
                       <td><span class="chip ch-warn">Free-mail address</span></td>
-                      <td class="c-body">Trade page</td>
-                      <td class="c-body">19 Aug 2026</td>
+                      <td class="c-body nw">Trade page</td>
+                      <td class="c-body nw">19 Aug 2026</td>
                       <td class="tr"><span class="ops-btn sec">Open</span></td>
                     </tr>
                     <tr>
-                      <td><span class="md">Dani Okafor</span><span class="block c-quiet t-cap">dani@okaforglazing.com.au</span></td>
-                      <td>Okafor Glazing Group<span class="block c-quiet t-cap">Builder</span></td>
-                      <td class="fdata">29 002 589 460</td>
+                      <td><span class="md">Dani Okafor</span><span class="block c-body t-cap">dani@okaforglazing.com.au</span></td>
+                      <td>Okafor Glazing Group<span class="block c-body t-cap">Builder</span></td>
+                      <td class="fdata nw">29 002 589 460</td>
                       <td><span class="chip ch-warn">Name doesn't match</span> <span class="chip ch-info">Also verified elsewhere</span></td>
-                      <td class="c-body">Account page</td>
-                      <td class="c-body">19 Aug 2026</td>
+                      <td class="c-body nw">Account page</td>
+                      <td class="c-body nw">19 Aug 2026</td>
                       <td class="tr"><span class="ops-btn sec">Open</span></td>
                     </tr>
                     <tr>
-                      <td><span class="md">Chris Nguyen</span><span class="block c-quiet t-cap">chris@nguyenwindows.com.au</span></td>
-                      <td>Nguyen Windows<span class="block c-quiet t-cap">Not stated</span></td>
-                      <td class="fdata">12 345 678 901</td>
+                      <td><span class="md">Chris Nguyen</span><span class="block c-body t-cap">chris@nguyenwindows.com.au</span></td>
+                      <td>Nguyen Windows<span class="block c-body t-cap">Not stated</span></td>
+                      <td class="fdata nw">12 345 678 901</td>
                       <td><span class="chip ch-mute">Register unavailable</span></td>
-                      <td class="c-body">Submit gate</td>
-                      <td class="c-body">18 Aug 2026</td>
+                      <td class="c-body nw">Submit gate</td>
+                      <td class="c-body nw">18 Aug 2026</td>
                       <td class="tr"><span class="ops-btn sec">Open</span></td>
                     </tr>
                   </tbody>
@@ -1332,21 +1380,20 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
             <div class="evid"><span class="k">Trading names</span><span class="v">OKAFOR GLAZING · OG GLASS</span></div>
             <div class="grouprule">
               <p class="t-label c-quiet mb8">The three checks</p>
-              <div class="crit"><span class="mk p">✓</span>ABN is valid and active</div>
-              <div class="crit"><span class="mk f">✕</span>Submitted name matches the register — "Okafor Glazing Group" vs entity and 2 trading names</div>
-              <div class="crit"><span class="mk p">✓</span>Email domain plausibly matches the business — okaforglazing.com.au</div>
-              <div class="crit"><span class="mk f">✕</span>ABN not verified on another account — <span class="linkbtn" style="margin-left:4px">Priya Raman · priya@ogglass.com.au</span></div>
+              <div class="crit"><span class="mk p"><svg aria-hidden="true"><use href="#i-check"/></svg></span>ABN is valid and active</div>
+              <div class="crit"><span class="mk f"><svg aria-hidden="true"><use href="#i-x"/></svg></span>Submitted name matches the register — "Okafor Glazing Group" vs entity and 2 trading names</div>
+              <div class="crit"><span class="mk p"><svg aria-hidden="true"><use href="#i-check"/></svg></span>Email domain plausibly matches the business — okaforglazing.com.au</div>
+              <div class="crit"><span class="mk f"><svg aria-hidden="true"><use href="#i-x"/></svg></span>ABN not verified on another account — <span class="linkbtn" style="margin-left:4px">Priya Raman · priya@ogglass.com.au</span></div>
             </div>
           </div>
 
-          <div class="card p20" style="background:#fff">
+          <div class="card p20" style="background:#fff;--control-fill:var(--bone)">
             <label class="field-label" for="d1-r">Decision note</label>
             <input class="field" id="d1-r" placeholder="Why you're approving or rejecting — the customer never sees this.">
             <p class="helptext mb16">Required to reject. Optional to approve.</p>
             <div class="row g8">
               <span class="ops-btn pri">Approve trade pricing</span>
               <span class="ops-btn sec">Reject</span>
-              <span class="mt-auto"></span>
             </div>
           </div>
         </div></div>
@@ -1381,7 +1428,7 @@ select.field{appearance:none;padding-right:32px;background-image:linear-gradient
             <div class="evid"><span class="k">2 Aug 2026</span><span class="v"><span class="chip ch-sage">Approved</span> automatically · ABN 51 824 753 556 · Buildright Constructions</span></div>
             <div class="evid"><span class="k">28 Jul 2026</span><span class="v"><span class="chip ch-mute">Rejected</span> by Jo Fraser · ABN 51 824 753 556 · "Business name on the application didn't match; asked customer to resend."</span></div>
           </div>
-          <div class="card p20" style="background:#fff">
+          <div class="card p20" style="background:#fff;--control-fill:var(--bone)">
             <p class="t-bd-sm md mb4" style="color:var(--ops)">Remove trade status</p>
             <p class="t-cap c-body mb12" style="max-width:64ch">The account goes back to standard prices immediately and the customer is emailed. Nothing already quoted or ordered changes.</p>
             <div class="row g8 ac">
