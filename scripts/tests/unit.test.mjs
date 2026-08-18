@@ -1005,6 +1005,94 @@ test("abnValid / normalizeAbn / formatAbn: one ABN validator, two callers", () =
   assert.equal(M.formatAbn(null), "");
 });
 
+// Phase-2 design §5.1 — criterion 2 of the auto-pass triple. The cost asymmetry
+// is deliberate and it is what this table pins: a false NEGATIVE costs ops
+// minutes (the application queues, a human looks), a false POSITIVE is one third
+// of an auto-pass whose residual risk the owner accepted (AB-P2-9). So the
+// "must queue" rows are as load-bearing as the "must pass" ones.
+test("nameMatches: the fuzzy business-name match (AC-P2-22, E-P2-20)", () => {
+  const abr = ["SMITH BROTHERS PTY LTD", "SMITH BROS CONSTRUCTIONS"];
+
+  // Normalisation: case, punctuation, legal form, ampersand, P/L, leading THE.
+  assert.equal(M.normalizeBusinessName("The Smith Brothers Pty. Ltd."), "SMITH BROTHERS");
+  assert.equal(M.normalizeBusinessName("Smith & Sons P/L"), "SMITH AND SONS");
+  assert.equal(M.normalizeBusinessName("smith-brothers (constructions)"), "SMITH BROTHERS CONSTRUCTIONS");
+  // E-P2-20's named case: BROS canonicalises to BROTHERS.
+  assert.equal(M.normalizeBusinessName("Smith Bros"), "SMITH BROTHERS");
+
+  // "X T/A Y" gives two candidates, each matched independently.
+  assert.deepEqual(M.businessNameCandidates("Motro Holdings T/A Motro Constructions"),
+    ["Motro Holdings", "Motro Constructions"]);
+  assert.deepEqual(M.businessNameCandidates("Motro Holdings trading as Motro Constructions"),
+    ["Motro Holdings", "Motro Constructions"]);
+  assert.deepEqual(M.businessNameCandidates("Siari Build"), ["Siari Build"]);
+
+  // PASSES: exact in any case/punctuation, legal-form drift, BROS, reorder,
+  // 2+-token containment, one realistic typo, and the T/A split.
+  for (const submitted of [
+    "Smith Brothers Pty Ltd", "SMITH BROTHERS", "smith brothers pty. ltd.",
+    "Smith Bros", "The Smith Brothers", "Brothers Smith",
+    "Smith Brothers Constructions", "Smith Brotherz",
+    "Jones Holdings T/A Smith Brothers",
+  ]) {
+    assert.equal(M.nameMatches(submitted, abr).pass, true, `${submitted} must match`);
+  }
+  assert.equal(M.nameMatches("Smith Bros", abr).matched, "SMITH BROTHERS PTY LTD");
+
+  // QUEUES (never rejects): acronyms, a bare surname against a multi-word entity,
+  // an unrelated business, a single shared token, and an empty submission.
+  //
+  // "Smith Brothres" is in this list on purpose and it is worth knowing why: at
+  // Dice ≥ 0.85 a single SUBSTITUTION passes (0.92 above) but a single
+  // TRANSPOSITION does not — swapping two characters breaks three bigrams and
+  // scores 0.77 on a 14-character name. Design §5.1 lists "a single realistic
+  // typo" as a pass, which is true of substitutions and not of transpositions.
+  // The threshold is kept as designed: the failure direction is a queue entry,
+  // which costs ops a minute, and loosening a matcher to catch transpositions
+  // widens the auto-pass surface instead.
+  for (const submitted of ["SB", "Smith", "Northside Building", "Brothers", "Smith Brothres", "", "   "]) {
+    assert.equal(M.nameMatches(submitted, abr).pass, false, `${JSON.stringify(submitted)} must queue`);
+  }
+  // No usable ABR names at all (outage / not found) can never be a match.
+  assert.equal(M.nameMatches("Smith Brothers", []).pass, false);
+  assert.equal(M.nameMatches("Smith Brothers", [null, undefined, ""]).pass, false);
+});
+
+// Phase-2 design §5.2 — criterion 3. The free-mailbox floor is the one part of
+// the triple that is absolute: D2 says a gmail address can NEVER satisfy this,
+// however well the name scores. Everything else is fuzzy and queues on failure.
+test("emailDomainPlausible: criterion 3, and the free-mailbox floor (AC-P2-23)", () => {
+  const names = ["Northside Building Pty Ltd", "NORTHSIDE BUILD"];
+
+  for (const free of ["sam@gmail.com", "SAM@Gmail.com", "sam@hotmail.com.au", "sam@bigpond.net.au",
+                      "sam@outlook.com", "sam@yahoo.com.au", "sam@icloud.com", "sam@proton.me"]) {
+    const r = M.emailDomainPlausible(free, names);
+    assert.equal(r.pass, false, `${free} must fail criterion 3`);
+    assert.equal(r.freeMailbox, true, `${free} must be recognised as a free mailbox`);
+  }
+  assert.equal(M.FREE_MAIL_DOMAINS.has("gmail.com"), true);
+  assert.equal(M.FREE_MAIL_DOMAINS.has("northsidebuild.com.au"), false);
+
+  // Business domains: the public suffix comes off, then containment either way.
+  assert.equal(M.emailDomainPlausible("sarah@northsidebuild.com.au", names).pass, true);
+  assert.equal(M.emailDomainPlausible("doni@siaribuild.com.au", ["Siari Build"]).pass, true);
+  assert.equal(M.emailDomainPlausible("a@northside-building.com.au", names).pass, true);
+  assert.equal(M.emailDomainPlausible("a@northsidebuilding.com", names).pass, true);
+  assert.equal(M.emailDomainPlausible("sarah@northsidebuild.com.au", names).domain, "northsidebuild.com.au");
+  assert.equal(M.emailDomainPlausible("sarah@northsidebuild.com.au", names).freeMailbox, false);
+
+  // QUEUES: acronyms are deliberately NOT matched (three-letter collisions are
+  // everywhere), an unrelated business domain fails, and a sub-4-character core
+  // can never reach containment on its own.
+  assert.equal(M.emailDomainPlausible("sam@sbc.com.au", ["Smith Building Co"]).pass, false);
+  assert.equal(M.emailDomainPlausible("sam@totallyunrelated.com.au", names).pass, false);
+  assert.equal(M.emailDomainPlausible("sam@nsb.com.au", names).pass, false);
+  // Malformed input is a fail, never a throw.
+  assert.equal(M.emailDomainPlausible("not-an-email", names).pass, false);
+  assert.equal(M.emailDomainPlausible("", names).pass, false);
+  assert.equal(M.emailDomainPlausible("sam@northsidebuild.com.au", []).pass, false);
+});
+
 // What blocks SUBMISSION (spec §4.3 / AC-17 / AC-23). A stored-but-invalid phone
 // counts as missing on purpose: a legacy row with junk in it must be corrected at
 // the gate, not submitted around.
